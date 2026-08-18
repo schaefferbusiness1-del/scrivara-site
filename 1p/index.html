@@ -42363,6 +42363,32 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   [0, 1200, 3000].forEach(function (ms) {
     bootTimers.push(setTimeout(function () { safe(function () { enforceEmptyBanner('boot'); }); }, ms));
   });
+  /* MEASURED 2026-08-17 (nextglow lane): all three passes can run BEFORE the
+     account namespace exists. uns('activePt') then resolves to a pre-login key,
+     activeId() returns '', and enforceEmptyBanner() returns false having done
+     nothing — so a slow sign-in or a slow bundle leaves yesterday's patient on
+     the banner and the sweep never runs again. Reproduced with the account
+     established only after the bundle resolved: bootCleared stayed 0, and
+     calling the same predicate by hand immediately cleared it (did:true,
+     activePt "syn-0" -> "").
+
+     The sign-in path is already covered by the session boundary; this covers
+     the paths that do not announce one. BOUNDED and IDEMPOTENT: it stops the
+     moment an account is visible (or after ~24s), and every pass re-asks the
+     same predicate — which returns false for a patient the doctor has since
+     chosen, and refuses outright while there is work in the editor. */
+  (function lateBootSweep() {
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      var haveAccount = safe(function () {
+        return typeof uns === 'function' && String(uns('activePt') || '').length > 'activePt'.length;
+      }, false);
+      if (haveAccount) { clearInterval(iv); safe(function () { enforceEmptyBanner('boot-late'); }); return; }
+      if (tries > 20) clearInterval(iv);
+    }, 1200);
+    bootTimers.push(iv);
+  })();
 })();
 </script>
 <!-- ===== end visitowner-1.0.0 ========================================= -->

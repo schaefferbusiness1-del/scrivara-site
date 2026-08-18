@@ -6,7 +6,7 @@
  * check, so they cannot silently come back:
  *
  *   1. The guided ring lights exactly ONE VISIBLE next step on every screen -
- *      and lights NOTHING in Normal or Everything mode.
+ *      in EVERY mode (nextglow-1.0.0 owns it; msl-1.0.0's guided-only ring is retired).
  *   2. The three modes are reachable without opening Settings, and the
  *      Settings field is BUILT by the msl block rather than living in the
  *      shell's markup (so promoting the block carries its own switch).
@@ -113,9 +113,21 @@ for (const name of SHELLS) {
     `${name}: eligible() went back to offsetParent, which is null for every fixed element`);
   ok(src.includes('function shown(el)') && src.includes('getBoundingClientRect'),
     `${name}: the ring lost its box-based visibility test`);
-  /* one stale ring on a hidden node is how this broke the first time */
-  ok(/var prev = document\.querySelectorAll\('\.msl-next'\)/.test(src),
-    `${name}: markNext clears only the FIRST ring again`);
+  /* THE RING MOVED OUT (nextglow-1.0.0, 2026-08-17). msl-1.0.0 no longer draws
+     it — its stylesheet is deleted and markNext() delegates — because the owner
+     needs the glow in EVERY mode, on every state and every dialog, and two
+     owners of one ring is the stale-ring defect this suite was written for.
+     The property that mattered is unchanged and still asserted, one layer up:
+     the sweep is querySelectorAll (never querySelector), so a ring left on a
+     hidden node cannot survive. What is asserted here now is that there is
+     exactly ONE owner. Per-room, per-state behaviour lives in
+     tests/1p-nextglow-path-contract.test.js. */
+  ok(/document\.querySelectorAll\('\.msl-next'\)/.test(src),
+    `${name}: markNext no longer sweeps EVERY stale .msl-next (querySelectorAll, not querySelector)`);
+  ok(/function markNext\(mode\) \{[\s\S]{0,400}__mlsNextGlow/.test(src),
+    `${name}: markNext() no longer delegates to nextglow-1.0.0, so the glow has two owners again`);
+  ok(src.indexOf('.msl-next::after') < 0,
+    `${name}: the retired msl-1.0.0 ring stylesheet is back — two stylesheets able to draw a ring is the defect`);
   /* the view-change trigger */
   ok(src.includes("attributeFilter:['style']"),
     `${name}: the ring no longer re-evaluates when a view's display changes`);
@@ -574,7 +586,10 @@ function harness() {
       });
     },
     rings: function () {
-      return Array.prototype.slice.call(document.querySelectorAll('.msl-next')).map(function (r) {
+      /* Both selectors on purpose: [data-mls-next="1"] is what nextglow-1.0.0
+         marks, and .msl-next is the retired class — reading BOTH means this
+         helper still catches a stale ring if the old owner ever comes back. */
+      return Array.prototype.slice.call(document.querySelectorAll('[data-mls-next="1"],.msl-next')).map(function (r) {
         return { id: r.id || '', text: (r.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40), visible: visible(r) };
       });
     },
@@ -1207,7 +1222,14 @@ async function runtime() {
           }));
           eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)} ${why ? JSON.stringify(why) : ''}`);
         } else {
-          eq(rings.length, 0, `${screen} in ${mode} mode lit a guided ring: ${JSON.stringify(rings)}`);
+          /* THE RULE INVERTED, on the owner's order (2026-08-17): "FOR EVERY
+             SINGLE SYSTEM THE MOST LIKELY NEXT BUTTON ... SHOULD BE GLOWING."
+             This used to assert that Normal and Everything light NOTHING —
+             which meant that on the DEFAULT mode, the screen a doctor actually
+             looks at, there was no next step at all. nextglow-1.0.0 lights one
+             in every mode, so the assertion is now the same as guided's. */
+          eq(lit.length, 1,
+            `${screen} in ${mode} mode lit ${lit.length} next steps, not 1 — the glow must be on in EVERY mode: ${JSON.stringify(rings)}`);
         }
       }
     }
