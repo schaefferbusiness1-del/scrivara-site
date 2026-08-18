@@ -54,7 +54,12 @@ function slice(first, last) {
  * visible review decision rather than an accidental omission. */
 const guarded = [
   ['config GET', "api('/api/avatar/config')", "/* ---- inbox tab"],
-  ['face model POST', "api('/api/avatar/office/facelook'", 'faceTintFromPortrait(src, function (res)'],
+  /* avml-1.0.0 moved this slice's END marker deliberately: the portrait callback
+     now also receives the decoded image (`function (res0, decoded)`) so the
+     on-device landmark reader can measure the same pixels without a second
+     decode. The property being pinned is unchanged and still holds — the
+     facelook POST may not apply a completion without apiResponseCurrent(). */
+  ['face model POST', "api('/api/avatar/office/facelook'", 'faceTintFromPortrait(src, function (res0'],
   ['config POST', "api('/api/avatar/config', { method: 'POST'", '/* av-5.3.0'],
   ['inbox GET', "api('/api/avatar/checkins?status=' + status)", 'function open()'],
   ['kiosk turn POST', "api('/api/avatar/office/turn'", '/* THE SELF-END WATCHDOG'],

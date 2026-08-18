@@ -135,7 +135,14 @@ ok(/timers\.indexOf\(timer\)/.test(studio) && /clearPollTimers\(\)/.test(studio)
 
 /* ---- 3. THE MATCH HAS A DEADLINE --------------------------------------- */
 
-const visionSlice = between(source, 'function requestVision(pixelRes)', 'faceTintFromPortrait(src,');
+/* avml-1.0.0 moved this boundary DELIBERATELY: requestVision now takes a second
+   argument, the plain-words line saying whether the on-device landmark model was
+   part of the read (`function requestVision(pixelRes, lmStatusLine)`). The four
+   properties this slice exists to pin — one settle, a bounded wait, a late reply
+   discarded, and a slow read that still reads as progress — are unchanged and
+   still asserted below. The boundary is matched on the function NAME so it
+   survives a further argument without silently slicing nothing. */
+const visionSlice = between(source, 'function requestVision(pixelRes', 'faceTintFromPortrait(src,');
 ok(/VISION_WAIT_MS = 30000/.test(source), 'the vision read has no bounded wait');
 ok(/var settled = false;[\s\S]*function settle\(fn\) \{ if \(settled\) return; settled = true;/.test(visionSlice),
   'the vision read can settle twice and mutate the character behind the doctor');

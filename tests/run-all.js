@@ -269,6 +269,14 @@ const tests = [
      COLOUR and a magnolia wall is skin-coloured. */
   '1p-avatar-warm-wall-proof.js',
   '1p-avatar-capture-fit.test.js',
+  /* avml-1.0.0 — the bundled on-device face landmark model, and the honest
+     ABSENCES it makes claimable (no glasses / no beard / hairline visible),
+     which is what lifted the ledger off the nine-of-fourteen ceiling avfit-1.2.0
+     measured and could not pass. Three parts: the bundle's exact bytes and
+     digests and the two-shell CSP edit; an EXECUTING run of the real model in
+     real Chrome over eleven synthetic sitters; and the fallback path with the
+     model file blocked. */
+  '1p-avatar-landmark-evidence.test.js',
   /* …and setup-flow drives the owner's actual screen: real module, real Setup
      form, a portrait that really reads five of fourteen, the real Match button,
      and then it reads what he was looking at — the five applied and labelled,
