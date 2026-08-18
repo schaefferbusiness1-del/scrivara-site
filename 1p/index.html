@@ -45911,5 +45911,264 @@ html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
 })();
 </script>
 <!-- ===== end clunky-notice-1.0.0 ======================================= -->
+<!-- ===== clunky-athena-1.0.0 — the send-to-Athena sheet stops contradicting itself
+     CLUNKY AUDIT items 2 and 3 (sev 3), 21, 22, 23, 24, 26, 27 (sev 2), 109.
+
+     THE SHEET ITSELF IS NOT THIS BLOCK'S FILE. The write-flow module that
+     renders it is owned by another running session, so every fix below is an
+     overlay on the DOM it produces: no id, no handler and no manifest field
+     changes, and window.__mlsClunkyAthena.revert() puts the sheet back.
+
+     MEASURED at HEAD with the sheet opened on a seeded patient (1366x900):
+       #mlsAthenaUnifiedSafety 338,531 676x79 reading "Nothing has changed
+         yet." — and it goes on reading that after a receipt lands, which is
+         item 2: the doctor is told nothing happened directly above the line
+         that says the note was written and VERIFIED.
+       #mlsAthenaUnifiedProbe 338,460 "Checking the exact chart read-only"
+         with #mlsAthenaUnifiedGo at 429,661 — in the refused state the audit
+         measured the status and its fix buttons BELOW the sticky footer, so
+         the doctor saw a grey Confirm and no reason (item 3).
+       visible sheet text still carried "manifest" and "auto-chain" (item 26).
+
+     THE RULES, all derived from what the sheet itself publishes:
+       * a receipt exists  => the "nothing has changed yet" box is replaced by
+         what actually happened, and the footer stops offering a verb it has
+         already performed (items 2, 22).
+       * Confirm is disabled => the status line and its fix strip are brought
+         to the doctor, never left below the fold (item 3).
+       * the sheet opens => every disclosure in it starts closed, and the
+         manual/blocked drawer carries its count in its summary (item 21).
+       * the fix strip exists => it always carries "Check Athena again", which
+         re-opens the same review with the same options, and "Copy error
+         report" is a quiet link rather than a fifth equal button (23, 24). -->
+<style id="mlsClunkyAthenaCss">
+/* --- 3: the reason for a disabled Confirm travels with the Confirm. */
+#mlsAthenaUnifiedConfirm [data-mls-clunky-why="1"]{
+  position:sticky; bottom:0; z-index:6;
+  background:var(--card, #fff);
+  padding:8px 0 6px; margin:0;
+  box-shadow:0 -8px 14px -12px rgba(20,33,28,.35);
+}
+/* --- 24: one recovery button; the diagnostics link is quiet. */
+#mlsAthenaUnifiedFix [data-mls-clunky-quiet="1"]{
+  background:transparent !important; border:0 !important;
+  color:var(--muted, #79837C) !important;
+  font-weight:600 !important; text-decoration:underline; padding:6px 4px !important;
+  box-shadow:none !important;
+}
+/* --- 109: four action cards lay out 2x2, never three plus an orphan. */
+@media (min-width:700px){
+  #mlsAthenaUnifiedConfirm [role="radiogroup"]{ display:flex; flex-wrap:wrap; gap:12px; }
+  #mlsAthenaUnifiedConfirm [role="radiogroup"] > section{
+    flex:1 1 calc(50% - 12px) !important; min-width:calc(50% - 12px) !important; max-width:100% !important;
+  }
+}
+/* --- 27: on a phone the footer names the action it will run. */
+#mlsClunkyAthenaFooterLine{
+  font:700 12.5px/1.3 var(--sans, system-ui, sans-serif); color:var(--muted, #79837C);
+  margin:0 0 6px;
+}
+#mlsClunkyAthenaFooterLine[hidden]{ display:none; }
+</style>
+<script>
+/* clunky-athena-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyAthena) return;
+  var VERSION = 'clunky-athena-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function sheet() { return el('mlsAthenaUnifiedConfirm'); }
+  function vis(n) {
+    if (!n) return false;
+    var r = n.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var cs = getComputedStyle(n);
+    return !(cs.display === 'none' || cs.visibility === 'hidden');
+  }
+
+  /* ---- 2 / 22: a receipt has landed, so stop saying nothing happened ---- */
+  function receipts() {
+    var rec = el('mlsAthenaUnifiedReceipt');
+    var safety = el('mlsAthenaUnifiedSafety');
+    var go = el('mlsAthenaUnifiedGo');
+    var landed = !!(rec && txt(rec));
+    if (safety) {
+      if (landed) {
+        if (!safety.getAttribute('data-mls-clunky-was')) safety.setAttribute('data-mls-clunky-was', safety.innerHTML);
+        var done = /VERIFIED|verified/.test(txt(rec));
+        var want = done
+          ? 'Written and verified in Athena. Nothing else has been sent — pick the next step below if you want one.'
+          : 'Some of this has already run — see what happened, just below.';
+        if (safety.getAttribute('data-mls-clunky-said') !== want) {
+          safety.textContent = want;
+          safety.setAttribute('data-mls-clunky-said', want);
+        }
+      } else if (safety.getAttribute('data-mls-clunky-was')) {
+        safety.innerHTML = safety.getAttribute('data-mls-clunky-was');
+        safety.removeAttribute('data-mls-clunky-was');
+        safety.removeAttribute('data-mls-clunky-said');
+      }
+    }
+    /* 22: the grey button must not still name a verb it already performed. */
+    if (go && landed && go.disabled) {
+      if (!go.getAttribute('data-mls-clunky-was')) go.setAttribute('data-mls-clunky-was', txt(go));
+      if (txt(go) !== 'Done') go.textContent = 'Done';
+    } else if (go && go.getAttribute('data-mls-clunky-was') && !landed) {
+      go.textContent = go.getAttribute('data-mls-clunky-was');
+      go.removeAttribute('data-mls-clunky-was');
+    }
+  }
+
+  /* ---- 3: a grey Confirm is never shown without its reason ------------- */
+  function why() {
+    var go = el('mlsAthenaUnifiedGo');
+    var probe = el('mlsAthenaUnifiedProbe');
+    var fix = el('mlsAthenaUnifiedFix');
+    if (!go || !probe) return;
+    var blocked = !!go.disabled;
+    [probe, fix].forEach(function (n) {
+      if (!n) return;
+      if (blocked) n.setAttribute('data-mls-clunky-why', '1');
+      else n.removeAttribute('data-mls-clunky-why');
+    });
+    if (!blocked) return;
+    /* sticky is not enough when the status is far above the fold: bring it. */
+    var r = probe.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) {
+      try { probe.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+    }
+  }
+
+  /* ---- 21: every disclosure in the sheet opens closed ------------------ */
+  function folds() {
+    var s = sheet();
+    if (!s) return;
+    qa('details', s).forEach(function (d) {
+      if (d.getAttribute('data-mls-clunky-seen') === '1') return;
+      d.setAttribute('data-mls-clunky-seen', '1');
+      if (!d.open) return;
+      /* the drawer keeps its count where the doctor can read it shut */
+      var sum = d.querySelector('summary');
+      if (sum && !/\(\d+\)/.test(txt(sum))) {
+        var n = qa('li,section,tr,.wf-row', d).length;
+        if (n) sum.textContent = txt(sum) + ' (' + n + ')';
+      }
+      d.open = false;
+    });
+  }
+
+  /* ---- 23 / 24: the fix strip always offers the one thing to try ------- */
+  function fixStrip() {
+    var fix = el('mlsAthenaUnifiedFix');
+    if (!fix || !vis(fix)) return;
+    qa('button,a', fix).forEach(function (b) {
+      if (/copy error report/i.test(txt(b))) b.setAttribute('data-mls-clunky-quiet', '1');
+    });
+    if (el('mlsClunkyAthenaRecheck')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'mlsClunkyAthenaRecheck';
+    b.className = 'btn-ghost';
+    b.textContent = 'Check Athena again';
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      try {
+        var wf = window.__mlsWriteFlow;
+        var st = wf && wf.diagnostics && wf.diagnostics.state ? wf.diagnostics.state() : null;
+        var opts = (st && (st.reopenOpts || st.sourceOpts)) || {};
+        if (wf && typeof wf.openUnifiedConfirmation === 'function') wf.openUnifiedConfirmation(opts);
+      } catch (e) {}
+    }, false);
+    fix.insertBefore(b, fix.firstChild);
+  }
+
+  /* ---- 26: the doctor's half of the sheet loses the engineering words -- */
+  var WORDS = [
+    ['manifest', 'this review'],
+    ['auto-chain', 'run the next step automatically'],
+    ['catalog-bound', 'matched to your order list'],
+    ['MLS patient ID', 'MLS record number'],
+    ['payload', 'what will be sent']
+  ];
+  /* Text nodes, not elements. A first attempt rewrote only childless
+     elements and MEASURED no change at all: "manifest" and "auto-chain" both
+     live in text nodes that sit beside <b> and <span> children, so the
+     element-level pass never saw them. */
+  function words() {
+    var s = sheet();
+    if (!s || !document.createTreeWalker) return;
+    var w = document.createTreeWalker(s, NodeFilter.SHOW_TEXT, null), n;
+    while ((n = w.nextNode())) {
+      var p = n.parentElement;
+      if (!p) continue;
+      var tag = p.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') continue;
+      var v = n.nodeValue;
+      if (!v || !v.trim()) continue;
+      var next = v;
+      for (var i = 0; i < WORDS.length; i++) {
+        if (next.indexOf(WORDS[i][0]) >= 0) next = next.split(WORDS[i][0]).join(WORDS[i][1]);
+      }
+      if (next !== v) n.nodeValue = next;
+    }
+  }
+
+  /* ---- 27: the sticky footer names the action it will run -------------- */
+  function footerLine() {
+    var go = el('mlsAthenaUnifiedGo');
+    if (!go || !go.parentNode) return;
+    var line = el('mlsClunkyAthenaFooterLine');
+    if (!line) {
+      line = document.createElement('p');
+      line.id = 'mlsClunkyAthenaFooterLine';
+      go.parentNode.insertBefore(line, go.parentNode.firstChild);
+    }
+    var picked = qa('input[name="mlsAthenaUnifiedAction"]').filter(function (r) { return r.checked; })[0];
+    var label = '';
+    if (picked) {
+      var lab = picked.closest ? picked.closest('label,section') : null;
+      label = lab ? txt(lab).slice(0, 48) : String(picked.value || '');
+    }
+    var probe = el('mlsAthenaUnifiedProbe');
+    var mark = probe && /verified/i.test(txt(probe)) ? ' · ✓ verified' : '';
+    var want = label ? (label + mark) : '';
+    line.hidden = !want;
+    if (want && txt(line) !== want) line.textContent = want;
+  }
+
+  function pass() {
+    if (!sheet()) return;
+    passes++;
+    folds(); receipts(); why(); fixStrip(); words(); footerLine();
+  }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'class', 'open'] });
+    } catch (e) {}
+    setInterval(pass, 1200);
+    [200, 700, 1600].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyAthena = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () {
+      try {
+        var s = el('mlsClunkyAthenaCss'); if (s) s.disabled = true;
+        var b = el('mlsClunkyAthenaRecheck'); if (b && b.parentNode) b.parentNode.removeChild(b);
+        var l = el('mlsClunkyAthenaFooterLine'); if (l && l.parentNode) l.parentNode.removeChild(l);
+        var safety = el('mlsAthenaUnifiedSafety');
+        if (safety && safety.getAttribute('data-mls-clunky-was')) safety.innerHTML = safety.getAttribute('data-mls-clunky-was');
+      } catch (e) {}
+      return true;
+    } };
+})();
+</script>
+<!-- ===== end clunky-athena-1.0.0 ======================================= -->
 </body>
 </html>

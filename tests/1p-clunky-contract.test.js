@@ -38,7 +38,8 @@ const BLOCKS = [
   'clunky-settings-1.0.0',
   'clunky-staffprep-1.0.0',
   'clunky-dock-1.0.0',
-  'clunky-notice-1.0.0'
+  'clunky-notice-1.0.0',
+  'clunky-athena-1.0.0'
 ];
 
 /* ============================================================ PART 1: static */
@@ -576,6 +577,57 @@ async function runtime() {
       ok(b.bottom !== '0px',
         `${b.id} is pinned to bottom:0 and lands on the dock instead of above it (CLUNKY 15, 97)`);
     }
+
+    /* ============================================ ATHENA REVIEW SHEET ==== */
+    const ath = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      const out = { api: !!window.__mlsWriteFlow };
+      if (!out.api) return out;
+      try { const pts = getPatients(); if (typeof selectPatient === 'function') selectPatient(pts[0].id); } catch (e) {}
+      await sleep(600);
+      try { const nb = document.getElementById('noteBox'); if (nb) nb.value = 'PROCEDURE: Lumbar medial branch block'; } catch (e) {}
+      try { window.__mlsWriteFlow.openUnifiedConfirmation({}); } catch (e) { out.openErr = String(e && e.message).slice(0, 120); }
+      await sleep(1500);
+      const card = document.getElementById('mlsAthenaUnifiedConfirm');
+      out.opened = !!card;
+      if (!card) return out;
+      /* 26: engineering vocabulary is not in the doctor's half of the sheet. */
+      out.jargon = ['manifest', 'auto-chain', 'catalog-bound', 'MLS patient ID']
+        .filter((k) => (card.innerText || '').indexOf(k) >= 0);
+      /* 21: nothing in the sheet ships open. */
+      out.openFolds = Array.prototype.slice.call(card.querySelectorAll('details')).filter((d) => d.open).length;
+      /* 23: the fix strip always offers the one thing to try next. */
+      out.recheck = !!document.getElementById('mlsClunkyAthenaRecheck');
+      /* 3: a disabled Confirm brings its reason with it. */
+      const go = document.getElementById('mlsAthenaUnifiedGo');
+      if (go) { go.disabled = true; go.dispatchEvent(new Event('change', { bubbles: true })); }
+      await sleep(900);
+      out.why = Array.prototype.slice.call(card.querySelectorAll('[data-mls-clunky-why="1"]')).map((n) => n.id);
+      out.probePos = (function () { const n = document.getElementById('mlsAthenaUnifiedProbe'); return n ? getComputedStyle(n).position : null; })();
+      /* 2 / 22: a receipt lands - the "nothing has changed yet" box and the
+         footer verb must both stop lying. */
+      const rec = document.getElementById('mlsAthenaUnifiedReceipt');
+      if (rec) rec.innerHTML = '<div>Write reviewed note - VERIFIED - written and verified</div>';
+      await sleep(1500);
+      out.safety = (function () { const n = document.getElementById('mlsAthenaUnifiedSafety'); return n ? (n.textContent || '').replace(/\s+/g, ' ').trim() : ''; })();
+      out.goText = go ? (go.textContent || '').trim() : '';
+      try { window.__mlsWriteFlow.closeUnifiedConfirmation(); } catch (e) {}
+      return out;
+    });
+    measured.athena = { jargon: ath.jargon, openFolds: ath.openFolds, why: ath.why, goText: ath.goText };
+    ok(ath.api && ath.opened, 'the Athena review sheet did not open, so nothing below was measured');
+    eq(ath.jargon && ath.jargon.length, 0,
+      `the review sheet still reads: ${(ath.jargon || []).join(', ')} (CLUNKY 26)`);
+    eq(ath.openFolds, 0, `${ath.openFolds} disclosures in the review sheet ship OPEN (CLUNKY 21)`);
+    ok(ath.recheck, 'the fix strip has no permanent "Check Athena again", so the instruction points at nothing (CLUNKY 23)');
+    ok(ath.why && ath.why.indexOf('mlsAthenaUnifiedProbe') >= 0,
+      'a disabled Confirm & Send is shown with its reason left below the fold (CLUNKY 3)');
+    eq(ath.probePos, 'sticky', 'the read-only status line does not travel with the footer (CLUNKY 3)');
+    ok(!/Nothing has changed yet/.test(ath.safety),
+      `after a VERIFIED receipt the sheet still says "${ath.safety.slice(0, 40)}..." (CLUNKY 2)`);
+    eq(ath.goText, 'Done',
+      `after a verified write the grey button still reads "${ath.goText}" - a verb it already performed (CLUNKY 22)`);
     await page.close();
 
     /* ------------------------------------------------------------ 390x844 */
