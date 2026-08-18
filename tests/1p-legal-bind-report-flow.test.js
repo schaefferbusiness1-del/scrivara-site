@@ -1,0 +1,946 @@
+'use strict';
+
+/* EXECUTED contract for the 2026-08-17 Legal / IME restoration lane.
+ *
+ * Owner, verbatim: "the Legal / IME workspace needs a lot of work. I used to
+ * have this amazing legal space ... It really needs to be able to add a
+ * patient to it - or grab a patient from Athena and then add it - and you can
+ * pick the report and all that stuff."
+ *
+ * Three things are proved here, all by RUNNING the module, never by grepping:
+ *
+ *   1. THE FLOW. unbound -> bound -> report-picked -> generated -> exported,
+ *      published on the room root as data-mls-legal-state so the next-step
+ *      glow lane has a state to light. Change re-binds AND re-freezes.
+ *
+ *   2. THE EMR BOUNDARY. "Grab from the EMR" delegates to read entry points
+ *      the app already ships. This module owns no transport, so the strongest
+ *      available proof is run here: a postMessage spy on window, document and
+ *      the global, across a full workspace lifetime including both read ops,
+ *      must observe ZERO messages; the op table must contain only its two read
+ *      keys; and every write/execute verb name must be refused with no
+ *      delegate invoked at all.
+ *
+ *   3. THE RESTORED PRODUCTION FEATURES. Each function ported out of
+ *      feat_mls_legalpack.js is executed against a sample whose right answer
+ *      is known, because the /1p fork's own regressions (one "Unattributed"
+ *      provider chip for every imported row; office visits filed as operative
+ *      notes; a provider-filtered export that never said it was filtered) all
+ *      passed a green gate for exactly as long as nobody executed them.
+ *
+ * Synthetic names only. No network, no PHI, no clipboard, no download, no
+ * print, no extension, no patient store write.
+ */
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = path.resolve(__dirname, '..');
+const source = fs.readFileSync(path.join(root, '1p-feat_mls_legalpack.js'), 'utf8');
+let checks = 0;
+function ok(value, message) { assert.ok(value, message); checks++; }
+function eq(actual, expected, message) { assert.strictEqual(actual, expected, message); checks++; }
+/* Values crossing the vm realm boundary carry that realm's prototypes, so a
+   strict deep-equal would fail on identity rather than on content. */
+function deep(actual, expected, message) {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(actual)), expected, message); checks++;
+}
+
+/* ------------------------------------------------------------------ fixture */
+function node(tag) {
+  const el = {
+    tagName: String(tag || 'div').toUpperCase(), id: '', value: '', hidden: false,
+    disabled: false, innerHTML: '', textContent: '', className: '', style: {},
+    parentNode: null, children: [], listeners: {}, attributes: {}, files: [],
+    appendChild(child) { child.parentNode = this; this.children.push(child); return child; },
+    removeChild(child) { this.children = this.children.filter(x => x !== child); child.parentNode = null; },
+    setAttribute(k, v) { this.attributes[k] = String(v); if (k === 'hidden') this.hidden = true; if (k === 'disabled') this.disabled = true; },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attributes, k) ? this.attributes[k] : null; },
+    getAttributeNames() { return Object.keys(this.attributes); },
+    removeAttribute(k) { delete this.attributes[k]; if (k === 'hidden') this.hidden = false; if (k === 'disabled') this.disabled = false; },
+    contains(candidate) { return candidate === this || (this.children || []).some(c => c.contains ? c.contains(candidate) : c === candidate); },
+    addEventListener(name, fn) {
+      const prior = this.listeners[name];
+      const handlers = prior && prior._handlers ? prior._handlers.slice() : (prior ? [prior] : []);
+      handlers.push(fn);
+      const dispatch = (...args) => handlers.slice().forEach(h => h(...args));
+      dispatch._handlers = handlers; this.listeners[name] = dispatch;
+    },
+    removeEventListener(name, fn) {
+      const prior = this.listeners[name]; if (!prior) return;
+      const handlers = (prior._handlers || [prior]).filter(h => h !== fn);
+      if (!handlers.length) { delete this.listeners[name]; return; }
+      const dispatch = (...args) => handlers.slice().forEach(h => h(...args));
+      dispatch._handlers = handlers; this.listeners[name] = dispatch;
+    },
+    querySelectorAll() { return []; }, click() {},
+    focus() { if (this._document) this._document.activeElement = this; this.focused = true; }
+  };
+  return el;
+}
+
+function makeClock() {
+  let now = 0, next = 1;
+  const timers = new Map();
+  return {
+    setTimeout(fn, ms) { const id = next++; timers.set(id, { id, at: now + Number(ms || 0), fn }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    tick(ms) {
+      const end = now + Number(ms || 0);
+      for (;;) {
+        const due = [...timers.values()].filter(t => t.at <= end).sort((a, b) => a.at - b.at || a.id - b.id)[0];
+        if (!due) break;
+        timers.delete(due.id); now = due.at; due.fn();
+      }
+      now = end;
+    },
+    count() { return timers.size; }
+  };
+}
+async function flush(turns = 24) { while (turns-- > 0) await Promise.resolve(); }
+
+/* The workspace paints with innerHTML, which this fixture does not parse. The
+   UI ids it then wires are supplied directly so every control is real. */
+const UI_IDS = {
+  mlsP1LegalClose: 'button', mlsP1LegalCompile: 'button', mlsP1LegalChronCopy: 'button',
+  mlsP1LegalChronDownload: 'button', mlsP1LegalChronPrint: 'button', mlsP1LegalProviders: 'div',
+  mlsP1LegalChronology: 'div', mlsP1LegalDrop: 'button', mlsP1LegalFile: 'input',
+  mlsP1LegalSources: 'div', mlsP1LegalDoi: 'input', mlsP1LegalQuestions: 'textarea',
+  mlsP1LegalGenerate: 'button', mlsP1LegalCancel: 'button', mlsP1LegalStatus: 'div',
+  mlsP1LegalDraftCopy: 'button', mlsP1LegalDraftDownload: 'button', mlsP1LegalDraftPrint: 'button',
+  mlsP1LegalDraft: 'textarea', mlsP1LegalLetterheadEmail: 'input', mlsP1LegalLetterheadPreview: 'pre',
+  /* p1-legal-flow-2.0.0 / p1-legal-bind-2.0.0 */
+  mlsP1LegalBanner: 'div', mlsP1LegalRoster: 'div', mlsP1LegalReadOps: 'div',
+  mlsP1LegalReportTypes: 'div', mlsP1LegalFreeze: 'div',
+  /* p1-legal-stepper-1.0.0 */
+  mlsP1LegalStepper: 'ol'
+};
+/* the four ids each collapsed card owns */
+const CARD_KEYS = ['report', 'chronology', 'records', 'generate', 'draft'];
+CARD_KEYS.forEach(key => {
+  const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+  UI_IDS['mlsP1LegalDisclose' + suffix] = 'button';
+  UI_IDS['mlsP1LegalBody' + suffix] = 'div';
+  UI_IDS['mlsP1LegalSum' + suffix] = 'span';
+  UI_IDS['mlsP1LegalCue' + suffix] = 'span';
+});
+
+function makeRuntime(options = {}) {
+  const ids = {};
+  const head = node('head'), body = node('body'), rootNode = node('html');
+  rootNode.appendChild(head); rootNode.appendChild(body);
+  const events = {};
+  const posted = [];
+  const patients = (options.patients || [
+    { id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A',
+      problems: 'M54.50 Low back pain',
+      visits: [
+        /* an IMPORTED row: no `provider` field at all, the clinician's name is
+           inside the raw athenaOne line, and that line ends in the provider's
+           SPECIALTY ("Orthopedic Surgery") - the exact shape that used to file
+           an office visit as an operative note. */
+        { date: '2025-02-02', type: 'Office visit',
+          raw: 'Office visit\n02-02-2025 9:15 AM, M Synthetic, DO, Orthopedic Surgery\nPain follow-up. Return in 4 weeks.' },
+        { date: '2025-01-10', type: 'Lumbar MRI', provider: 'M Synthetic', detail: 'Documented impression only.',
+          aiSummary: 'Synthetic stored summary line.' }
+      ],
+      docs: [{ date: '2025-01-08', name: 'Outside hospital records', text: 'Synthetic outside record.' }] },
+    { id: 'B', name: 'Synthetic Beta', dob: '03/04/1990', mrn: 'TEST-B', visits: [] },
+    { id: 'C', name: 'Synthetic Gamma', dob: '05/06/1975', mrn: 'MRN-9001', visits: [] }
+  ]).map(p => JSON.parse(JSON.stringify(p)));
+  let activeId = Object.prototype.hasOwnProperty.call(options, 'activeId') ? options.activeId : 'A';
+  let epoch = 1;
+  const pendingAi = [];
+  const notes = {
+    A: [{ patientId: 'A', updated: 4, signed: true, provider: 'M Synthetic, DO',
+      coding: { icd: [{ code: 'M51.36', desc: 'Other intervertebral disc degeneration, lumbar region' }] },
+      soap: 'S:\nPain.\nA:\nLumbar strain.\nPLAN:\nContinue therapy. Follow-up in 4 weeks. MRI reviewed.\nO:\nNormal gait.' }]
+  };
+  function byIdOf(id) { return patients.filter(p => String(p.id) === String(id))[0] || null; }
+  const window = {
+    __MLS_P1_PREVIEW: { enabled: true, route: '/1p/' },
+    _mlsActivePtEpoch: epoch,
+    _calAppts: options.calAppts || [],
+    getPatients: () => patients.slice(),
+    activePatient: () => byIdOf(activeId),
+    getActivePtId: () => String(activeId || ''),
+    patientNotes: id => (notes[id] || []).slice(),
+    __mlsVisitModel: { getVisits: p => (p && p.visits) || [] },
+    addEventListener(name, fn) { events[name] = fn; },
+    removeEventListener(name) { delete events[name]; },
+    postMessage(...args) { posted.push({ target: 'window', args }); },
+    aiCallRaw(sys, user, key, opts) { return new Promise((resolve, reject) => pendingAi.push({ sys, user, key, opts, resolve, reject })); },
+    getKey: () => 'synthetic-key', toast() {}, open: () => null
+  };
+  if (options.withSwitcher !== false) {
+    window.openPatient = function (id) {
+      const previous = activeId;
+      activeId = String(id); epoch++; window._mlsActivePtEpoch = epoch;
+      if (events['mls:active-patient-changed']) events['mls:active-patient-changed']({ detail: { previousId: previous, patientId: activeId } });
+    };
+  }
+  if (options.readers) Object.assign(window, options.readers);
+  const clock = makeClock();
+  function findIn(tree, id) {
+    if (!tree) return null; if (tree.id === id) return tree;
+    for (const child of tree.children || []) { const found = findIn(child, id); if (found) return found; }
+    return null;
+  }
+  const document = {
+    head, body, documentElement: rootNode, activeElement: null, currentScript: null,
+    getElementById: id => ids[id] || findIn(rootNode, id),
+    createElement(tag) { const el = node(tag); el._document = document; return el; },
+    postMessage(...args) { posted.push({ target: 'document', args }); }
+  };
+  [head, body, rootNode].forEach(el => { el._document = document; });
+  const installScript = node('script');
+  installScript.setAttribute('data-mls-asset', 'feat_mls_legalpack.js');
+  installScript.setAttribute('data-mls-install-token', 'synthetic-legal-install');
+  document.currentScript = installScript;
+  window.__mlsP1LegalLoader = { installed: true, version: 'p1-legal-1.0.0', state: 'loading', installToken: 'synthetic-legal-install' };
+  window.bkUser = Object.prototype.hasOwnProperty.call(options, 'user') ? options.user : { role: 'doctor' };
+  Object.keys(UI_IDS).forEach(id => { const el = node(UI_IDS[id]); el.id = id; el._document = document; ids[id] = el; });
+  const context = {
+    window, document,
+    navigator: { clipboard: { writeText: () => Promise.resolve() } },
+    location: { search: options.search || '' }, URLSearchParams,
+    URL: { createObjectURL: () => 'blob:synthetic', revokeObjectURL() {} },
+    Blob, Date, JSON, Math, Object, Array, String, Number, RegExp, Promise, AbortController,
+    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, console,
+    postMessage(...args) { posted.push({ target: 'global', args }); }
+  };
+  window.window = window; window.document = document; window.navigator = context.navigator;
+  vm.createContext(context); vm.runInContext(source, context, { filename: '1p-feat_mls_legalpack.js' });
+  return {
+    window, document, ids, clock, pendingAi, posted, patients, notes,
+    api: window.__mlsP1LegalPack,
+    root() { return document.getElementById('mlsP1LegalRoot'); },
+    stage() { const r = this.root(); return r ? r.getAttribute('data-mls-legal-state') : null; },
+    setActive(id) { activeId = String(id); epoch++; window._mlsActivePtEpoch = epoch; },
+    fire(name, detail) { if (events[name]) events[name]({ detail: detail || {} }); }
+  };
+}
+
+/* ==========================================================================
+   1. THE FLOW: unbound -> bound -> report-picked -> generated -> exported
+   ======================================================================== */
+(async function run() {
+  {
+    const r = makeRuntime();
+    deep(r.api.stages, ['unbound', 'bound', 'report-picked', 'generated', 'exported'],
+      'the published flow stages are not the four the glow lane wires plus unbound');
+  }
+
+  /* Opening with NO active patient is now a real, named state - it is how a
+     clinician ADDS a patient - and it says so instead of refusing silently. */
+  {
+    const r = makeRuntime({ activeId: '' });
+    eq(r.api.open(), true, 'the workspace refused to open without an active patient, so a patient can never be added');
+    eq(r.stage(), 'unbound', 'an unbound workspace does not publish the unbound state');
+    eq(r.api.state().patientBound, false, 'an unbound workspace claims a bound patient');
+    eq(r.root().getAttribute('data-mls-legal-bound'), 'false', 'the room root does not publish its bound flag');
+    ok(/No patient bound/.test(r.ids.mlsP1LegalBanner.innerHTML), 'the unbound header does not say plainly that no patient is bound');
+    ok(/Add a patient/.test(r.ids.mlsP1LegalRoster.innerHTML), 'the unbound state offers no way to add a patient');
+    ok(/Grab from the EMR/.test(r.ids.mlsP1LegalReadOps.innerHTML), 'the unbound state offers no way to grab a patient from the EMR');
+    eq(r.ids.mlsP1LegalGenerate.disabled, true, 'Generate is reachable with no patient bound');
+    eq(r.ids.mlsP1LegalCompile.disabled, true, 'Compile is reachable with no patient bound');
+    eq(r.api.state().stage, 'unbound', 'the state receipt disagrees with the room root');
+    /* Step 2 must not complete before step 1: a "report-picked" state with no
+       patient would aim the next-step glow at a correctly-disabled Generate. */
+    eq(r.api.pickReport('ime'), false, 'a report type was picked with no patient bound');
+    eq(r.stage(), 'unbound', 'picking a report while unbound advanced the published flow state');
+    eq(r.api.state().reportType, '', 'picking a report while unbound recorded a report type');
+    ok(/Bind a patient first/i.test(r.ids.mlsP1LegalStatus.textContent), 'the refusal did not say which step comes first');
+  }
+
+  /* Re-binding to the patient ALREADY active is a real Change - the app emits
+     no switch event, so this is the path that would silently keep a stale
+     snapshot if the re-bind were driven off the event alone. */
+  {
+    const r = makeRuntime();
+    r.api.open(); r.api.pickReport('ime');
+    r.patients[0].visits.push({ date: '2025-05-05', type: 'Office visit', provider: 'M Synthetic', detail: 'Added before the no-op Change.' });
+    eq(r.api.snapshotDrifted(), true, 'the fixture did not actually move the chart under the snapshot');
+    eq(r.api.bindTo('A'), true, 'a Change back to the already-active patient failed');
+    eq(r.window.getActivePtId(), 'A', 'the no-op Change moved the active patient');
+    eq(r.api.snapshotDrifted(), false, 'a Change to the already-active patient did not re-freeze the snapshot');
+    eq(r.api.state().reportType, '', 'the no-op Change kept the previous report type');
+    eq(r.stage(), 'bound', 'the no-op Change did not return the flow to the bound step');
+    ok(r.api.chronologyText().includes('Added before the no-op Change.'), 'the re-freeze did not pick up the new entry');
+  }
+
+  /* Add a patient from the roster: search, pick, bind, and the whole flow. */
+  {
+    const r = makeRuntime({ activeId: '' });
+    r.api.open();
+    deep(r.api.roster('gamma').map(p => p.id), ['C'], 'roster search by name did not find the patient');
+    deep(r.api.roster('MRN-9001').map(p => p.id), ['C'], 'roster search by MRN did not find the patient');
+    deep(r.api.roster('05/06/1975').map(p => p.id), ['C'], 'roster search by DOB did not find the patient');
+    deep(r.api.roster('z'), [], 'a one-character query searched the roster');
+    deep(r.api.roster('no-such-patient'), [], 'roster search invented a match');
+
+    eq(r.api.bindTo('C'), true, 'binding to a roster patient failed');
+    eq(r.stage(), 'bound', 'binding did not advance the flow to bound');
+    eq(r.window.getActivePtId(), 'C', 'binding did not go through the app own active-patient switch');
+    ok(/Bound to Synthetic Gamma/.test(r.ids.mlsP1LegalBanner.innerHTML), 'the bound header does not name the patient');
+    ok(/MRN-9001/.test(r.ids.mlsP1LegalBanner.innerHTML), 'the bound header does not carry the MRN chip');
+    ok(/p1l-bindname/.test(r.ids.mlsP1LegalBanner.innerHTML), 'the bound header is not the large identity card');
+    ok(/id="mlsP1LegalChange"/.test(r.ids.mlsP1LegalBanner.innerHTML), 'the bound header has no Change button beside it');
+    eq(r.api.state().reportType, '', 'binding pre-picked a report type instead of asking');
+    eq(r.ids.mlsP1LegalGenerate.disabled, true, 'Generate was reachable before a report type was picked');
+
+    eq(r.api.pickReport('not-a-report'), false, 'an unknown report type was accepted');
+    eq(r.api.state().reportType, '', 'a refused report type still changed the state');
+    eq(r.api.pickReport('ime'), true, 'picking the IME report type failed');
+    eq(r.stage(), 'report-picked', 'picking a report did not advance the flow');
+    eq(r.root().getAttribute('data-mls-legal-report'), 'ime', 'the room root does not publish the picked report');
+    eq(r.ids.mlsP1LegalGenerate.disabled, false, 'Generate stayed unreachable after a report type was picked');
+
+    const promise = r.api.generateDraft();
+    for (let i = 0; i < 14; i++) {
+      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
+      r.pendingAi[i].resolve('Synthetic section body ' + (i + 1));
+    }
+    eq(await promise, true, 'the IME generation did not complete');
+    eq(r.stage(), 'generated', 'a completed draft did not advance the flow to generated');
+    eq(r.ids.mlsP1LegalDraftCopy.disabled, false, 'export stayed disabled after generation');
+
+    r.ids.mlsP1LegalDraftCopy.listeners.click();
+    await flush();
+    eq(r.stage(), 'exported', 'exporting the draft did not advance the flow to exported');
+  }
+
+  /* Change re-binds AND re-freezes: no prior model, filter, file, draft, report
+     type or snapshot may survive into the new patient's workspace. */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.stage(), 'bound', 'opening on an active patient did not bind');
+    r.api.pickReport('narrative');
+    r.api.addFiles([{ name: 'carryover.txt', type: 'text/plain', size: 12, text: () => Promise.resolve('Synthetic carryover text.') }]);
+    await flush();
+    eq(r.api.state().sourceCount, 1, 'the fixture did not stage a local file to carry over');
+    const frozenA = r.ids.mlsP1LegalFreeze.textContent;
+    ok(/Frozen at /.test(frozenA), 'the chronology does not report when its snapshot was frozen');
+    ok(/documented entries/.test(frozenA), 'the frozen notice does not say how much it froze');
+
+    eq(r.api.bindTo('B'), true, 'Change to another roster patient failed');
+    eq(r.stage(), 'bound', 'Change did not return the flow to the bound step');
+    eq(r.api.state().reportType, '', 'Change carried the previous report type across patients');
+    eq(r.api.state().sourceCount, 0, 'Change carried the previous patient local records across');
+    eq(r.ids.mlsP1LegalDraft.value, '', 'Change left the previous patient draft on screen');
+    eq(r.ids.mlsP1LegalDraftCopy.disabled, true, 'Change left the previous patient export enabled');
+    ok(/Bound to Synthetic Beta/.test(r.ids.mlsP1LegalBanner.innerHTML), 'Change did not repaint the identity header');
+    ok(r.api.chronologyText().includes('Synthetic Beta'), 'the chronology still belongs to the previous patient');
+    ok(!r.api.chronologyText().includes('Synthetic Alpha'), 'the previous patient survived into the re-bound chronology');
+    ok(/Frozen at /.test(r.ids.mlsP1LegalFreeze.textContent), 'Change did not re-freeze a snapshot for the new patient');
+  }
+
+  /* The frozen-snapshot warning is a MEASUREMENT, not a label: it must appear
+     when the chart really moves under the workspace, and clear on re-compile. */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.api.snapshotDrifted(), false, 'a freshly frozen snapshot reported drift');
+    ok(/unchanged/.test(r.ids.mlsP1LegalFreeze.textContent), 'the fresh snapshot notice does not report the re-check');
+    r.patients[0].visits.push({ date: '2025-03-03', type: 'Office visit', provider: 'M Synthetic', detail: 'Added after the freeze.' });
+    eq(r.api.snapshotDrifted(), true, 'a chart change under the frozen snapshot was not detected');
+    r.ids.mlsP1LegalCompile.listeners.click();
+    eq(r.api.snapshotDrifted(), false, 're-compiling did not re-freeze the snapshot');
+    ok(/unchanged/.test(r.ids.mlsP1LegalFreeze.textContent), 're-compiling left the stale warning up');
+    ok(r.api.chronologyText().includes('Added after the freeze.'), 're-compiling did not pick up the new entry');
+    /* and a Change re-runs the same check for the newly bound patient */
+    r.patients[1].visits.push({ date: '2025-04-04', type: 'Office visit', provider: 'M Synthetic', detail: 'Beta entry.' });
+    r.api.bindTo('B');
+    eq(r.api.snapshotDrifted(), false, 'Change did not re-freeze, so the new patient started out stale');
+    ok(r.api.chronologyText().includes('Beta entry.'), 'the re-frozen snapshot missed the new patient own record');
+  }
+
+  /* An EXTERNAL patient change is still the fail-closed event it always was.
+     Only a change this workspace ASKED for is a re-bind. */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    r.api.pickReport('ime');
+    r.window.openPatient('B');           /* not requested by the workspace */
+    eq(r.api.state().open, false, 'an external patient change no longer closed the workspace');
+    eq(r.api.state().patientBound, false, 'an external patient change kept the old binding');
+    eq(r.api.state().reportType, '', 'an external patient change kept the old report type');
+  }
+
+  /* A build with no patient switcher must SAY so, not silently do nothing. */
+  {
+    const r = makeRuntime({ withSwitcher: false, activeId: 'A' });
+    r.api.open();
+    eq(r.api.bindTo('C'), false, 'binding claimed success with no switcher available');
+    ok(/no patient switcher/i.test(r.ids.mlsP1LegalStatus.textContent), 'a missing switcher was not reported honestly');
+    eq(r.window.getActivePtId(), 'A', 'a refused bind changed the active patient anyway');
+    eq(r.api.bindTo('not-in-roster'), false, 'binding to a patient outside the roster was accepted');
+    ok(/not in this account/i.test(r.ids.mlsP1LegalStatus.textContent), 'an off-roster bind was not refused honestly');
+  }
+
+  /* ==========================================================================
+     2. THE EMR BOUNDARY - read only, delegated, and provably silent
+     ======================================================================== */
+  {
+    const r = makeRuntime();
+    deep(r.api.readOps().map(op => op.key), ['day', 'chart'],
+      'the read-op allowlist is not exactly the two read operations');
+    /* Every op is unavailable until the app reader it delegates to is loaded,
+       and an unavailable op must refuse rather than fake a result. */
+    deep(r.api.readOps().map(op => op.available), [false, false],
+      'a read op reported itself available with no app reader loaded');
+    r.api.open();
+    eq(await r.api.runReadOp('day', { date: '2026-08-17' }), false, 'an unavailable read op reported success');
+    ok(/not loaded/i.test(r.ids.mlsP1LegalStatus.textContent), 'an unavailable read op did not say why nothing ran');
+  }
+
+  /* Both ops delegate, and NOTHING is posted anywhere during a full lifetime. */
+  {
+    const dayCalls = [], chartCalls = [];
+    const r = makeRuntime({
+      readers: {
+        __mlsSI: { dayPull: opts => { dayCalls.push(opts); return Promise.resolve({ ok: true }); } },
+        pullPatientChartViaAssist: (btn, opts) => { chartCalls.push({ btn, opts }); return Promise.resolve(true); }
+      }
+    });
+    r.api.open();
+    deep(r.api.readOps().map(op => op.available), [true, true], 'a loaded app reader was not detected');
+
+    eq(await r.api.runReadOp('day', { date: '2026-08-17' }), true, 'the day read did not complete');
+    eq(dayCalls.length, 1, 'the day read did not delegate exactly once to the app schedule reader');
+    eq(dayCalls[0].date, '2026-08-17', 'the day read did not pass the requested day');
+    eq(dayCalls[0].includeHistory, true, 'the day read did not request the chart histories that carry identity');
+
+    eq(await r.api.runReadOp('chart'), true, 'the chart read did not complete');
+    eq(chartCalls.length, 1, 'the chart read did not delegate exactly once to the app chart reader');
+    eq(chartCalls[0].btn, null, 'the chart read passed a DOM button into the app reader');
+    eq(chartCalls[0].opts.patientId, 'A', 'the chart read did not scope itself to the bound patient');
+
+    /* THE BOUNDARY: no envelope, to any target, ever. */
+    deep(r.posted, [], 'the workspace posted a message of its own instead of delegating to the app readers');
+  }
+
+  /* Every write/execute verb the bridge accepts must be refused by the op
+     table with NO delegate invoked - the table is the allowlist. */
+  {
+    let delegated = 0;
+    const r = makeRuntime({
+      readers: {
+        __mlsSI: { dayPull: () => { delegated++; return Promise.resolve({ ok: true }); } },
+        pullPatientChartViaAssist: () => { delegated++; return Promise.resolve(true); }
+      }
+    });
+    r.api.open();
+    const REFUSED = ['mlsAppPasteNote', 'mlsAppAthenaActionV2', 'mlsAppSignAndSave', 'mlsAppPushVisit',
+      'mlsAppVerifiedWrite', 'mlsAppWriteV2', 'mlsAppReviewScreen', 'mlsAppPrepProcTemplate',
+      'place_order', 'sign_encounter', 'stage_billing', 'write_note', 'save_draft',
+      'write', 'constructor', '__proto__', 'toString', 'hasOwnProperty'];
+    for (const key of REFUSED) {
+      eq(await r.api.runReadOp(key, {}), false, 'the op table accepted "' + key + '"');
+    }
+    eq(delegated, 0, 'a refused operation still reached a delegate');
+    deep(r.posted, [], 'a refused operation posted a message');
+    /* and the two real ops still work afterwards, so the refusals are a gate,
+       not a wedge */
+    eq(await r.api.runReadOp('day', {}), true, 'the read gate wedged the workspace shut after refusing');
+    eq(delegated, 1, 'the day read did not run after the refusals');
+  }
+
+  /* A read op must never run over a live draft or another read. */
+  {
+    let dayRuns = 0, release = null;
+    const r = makeRuntime({ readers: { __mlsSI: { dayPull: () => { dayRuns++; return new Promise(resolve => { release = resolve; }); } } } });
+    r.api.open(); r.api.pickReport('ime');
+    r.api.runReadOp('day', {});
+    await flush();
+    eq(dayRuns, 1, 'the first read did not start');
+    eq(r.api.state().reading, 'day', 'a running read is not reported in the state receipt');
+    eq(r.ids.mlsP1LegalGenerate.disabled, true, 'Generate stayed live while the EMR was being read');
+    eq(await r.api.runReadOp('day', {}), false, 'a second read started over a running one');
+    eq(dayRuns, 1, 'a second read reached the delegate while one was already running');
+    release({ ok: true }); await flush();
+    eq(r.api.state().reading, '', 'the finished read did not release its slot');
+    eq(r.ids.mlsP1LegalGenerate.disabled, false, 'Generate stayed disabled after the read finished');
+  }
+
+  /* A delegate that rejects must be reported, never swallowed into a green UI. */
+  {
+    const r = makeRuntime({ readers: { __mlsSI: { dayPull: () => Promise.reject(new Error('synthetic reader failure')) } } });
+    r.api.open();
+    eq(await r.api.runReadOp('day', {}), false, 'a failed read reported success');
+    ok(/synthetic reader failure/.test(r.ids.mlsP1LegalStatus.textContent), 'a failed read hid its reason');
+    eq(r.api.state().reading, '', 'a failed read left its slot held');
+  }
+
+  /* ==========================================================================
+     3. THE RESTORED PRODUCTION FEATURES - each one EXECUTED
+     ======================================================================== */
+  {
+    const r = makeRuntime();
+    const R = r.api.restored;
+
+    /* provOfVisit: the imported-row provider that used to be lost entirely */
+    eq(R.provOfVisit({ provider: 'M Synthetic' }), 'M Synthetic', 'the explicit provider field was ignored');
+    eq(R.provOfVisit({ raw: 'Office visit\n02-02-2025 9:15 AM, M Synthetic, DO, Orthopedic Surgery\nbody' }),
+      'M Synthetic', 'the provider inside an imported athenaOne row was not recovered');
+    eq(R.provOfVisit({ raw: 'Office visit\n2/2/2025, A Reader, MD, Neurology' }), 'A Reader',
+      'the provider inside a slash-dated imported row was not recovered');
+    eq(R.provOfVisit({ raw: 'Nothing dated here at all' }), '', 'a provider was invented from an undated row');
+    eq(R.provOfVisit({ raw: '02-02-2025, 9:15, notes' }), '', 'a numeric field was mistaken for a provider name');
+
+    /* normProv: one clinician must be one filter chip */
+    eq(R.normProv('M Synthetic, DO'), 'M Synthetic', 'the DO credential was not normalized away');
+    eq(R.normProv('M Synthetic MD'), 'M Synthetic', 'the MD credential was not normalized away');
+    eq(R.normProv('M  Synthetic'), 'M Synthetic', 'internal whitespace was not collapsed');
+    eq(R.normProv('M Synthetic, PA-C'), 'M Synthetic', 'the PA-C credential was not normalized away');
+    eq(R.normProv(''), '', 'an empty provider became a name');
+
+    /* classifiable: the specialty suffix must not survive into classification */
+    ok(!/Orthopedic Surgery/.test(R.classifiable('Office visit', '02-02-2025 9:15 AM, M Synthetic, DO, Orthopedic Surgery\nPain follow-up.')),
+      'the athenaOne provider/specialty line survived into the classifier input');
+    ok(/Pain follow-up\./.test(R.classifiable('Office visit', '02-02-2025 9:15 AM, M Synthetic, DO, Orthopedic Surgery\nPain follow-up.')),
+      'stripping the provider line also deleted the clinical text');
+
+    /* planOf: a dictated SOAP note stops the PLAN at the next SOAP letter */
+    eq(R.planOf('S:\nPain.\nPLAN:\nContinue therapy.\nO:\nNormal gait.'), 'Continue therapy.',
+      'the PLAN section did not stop at the following SOAP block');
+    eq(R.planOf('A:\nStrain.\nP: Ice and rest.'), 'Ice and rest.', 'a single-letter P: plan was not recovered');
+    eq(R.planOf('No plan section at all here.'), '', 'a plan was invented from a note that has none');
+
+    /* fuLinesOf */
+    deep(R.fuLinesOf('Continue therapy.\nFollow-up in 4 weeks.\nReturn to clinic if worse.'),
+      ['Follow-up in 4 weeks.', 'Return to clinic if worse.'], 'documented follow-up lines were not extracted');
+    deep(R.fuLinesOf('Nothing scheduled.'), [], 'a follow-up was invented');
+
+    /* icdOf: the STRUCTURED coding object the fork used to ignore */
+    deep(R.icdOf({ icd: [{ code: 'M51.36', desc: 'Lumbar disc degeneration' }] }),
+      ['M51.36 - Lumbar disc degeneration'], 'structured ICD-10 coding was not read');
+    deep(R.icdOf({ icd10: ['M54.5'] }), ['M54.5'], 'the icd10 spelling of the coding array was not read');
+    deep(R.icdOf(null), [], 'a diagnosis was invented from absent coding');
+    deep(R.icdOf({}), [], 'a diagnosis was invented from an empty coding object');
+  }
+
+  /* The classifier end to end on the model: the imported row keeps its
+     provider, is NOT filed as a procedure, and the stored AI summary survives. */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    const model = r.api.buildModel(JSON.parse(JSON.stringify(r.patients[0])),
+      Object.freeze({ patientId: 'A', patientEpoch: 1, name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A' }));
+    const visit = model.items.filter(i => i.title === 'Office visit')[0];
+    ok(visit, 'the imported office visit is missing from the model');
+    eq(visit.provider, 'M Synthetic', 'the imported row lost its provider to "Unattributed" again');
+    eq(visit.category, 'visit', 'the provider specialty filed an office visit as a procedure again');
+    deep(model.providers, ['M Synthetic', 'Unattributed'],
+      'the provider roster is not credential-normalized into one chip per clinician');
+    ok(model.items.some(i => /Synthetic stored summary line\./.test(i.body)), 'a stored AI summary was dropped');
+    ok(model.items.some(i => /AI summary \(AI-generated - verify\)/.test(i.body)), 'a stored AI summary was not labelled as AI-generated');
+    ok(model.items.some(i => i.category === 'diagnosis' && /M51\.36/.test(i.title)), 'structured visit coding never reached the chronology');
+    ok(model.items.some(i => i.category === 'plan' && /Continue therapy\./.test(i.body)), 'the documented treatment plan never reached the chronology');
+    ok(model.items.every(i => i.category !== 'plan' || !/Normal gait/.test(i.body)), 'the plan section swallowed the following SOAP block');
+  }
+
+  /* A scheduled FUTURE appointment is a documented follow-up; a same-named
+     appointment for a different patient is not. */
+  {
+    const today = new Date();
+    const future = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+    const pad = n => (n < 10 ? '0' : '') + n;
+    const futureYmd = future.getFullYear() + '-' + pad(future.getMonth() + 1) + '-' + pad(future.getDate());
+    const pastYmd = (today.getFullYear() - 1) + '-01-01';
+    const r = makeRuntime({ calAppts: [
+      { name: 'Synthetic Alpha', appt_date: futureYmd, reason: 'Six-week recheck', provider: 'M Synthetic' },
+      { name: 'Synthetic Alpha', appt_date: pastYmd, reason: 'Already happened' },
+      { name: 'Synthetic Beta', appt_date: futureYmd, reason: 'Another patient appointment' }
+    ] });
+    r.api.open();
+    const text = r.api.chronologyText();
+    ok(/Six-week recheck/.test(text), 'a scheduled future appointment is not in the chronology');
+    ok(!/Already happened/.test(text), 'a past calendar row was filed as a future follow-up');
+    ok(!/Another patient appointment/.test(text), 'another patient calendar row crossed into this chronology');
+  }
+
+  /* activeFilterNote: a provider-filtered export must SAY it is partial, in
+     the exported bytes - not only in the on-screen chips. */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.api.restored.activeFilterNote(), '', 'an unfiltered compilation claimed a filter was active');
+    const unfiltered = r.api.chronologyText();
+    ok(unfiltered.length > 0, 'the chronology is empty, so the filter test would prove nothing');
+    ok(!/PROVIDER FILTER ACTIVE/.test(unfiltered), 'an unfiltered export carried a filter warning');
+    ok(/Documented impression only\./.test(unfiltered), 'the unfiltered export is missing the provider row under test');
+
+    eq(r.api.filterProvider('No Such Provider', false), false, 'the filter accepted a provider who is not in the roster');
+    eq(r.api.filterProvider('M Synthetic', false), true, 'turning a provider chip off failed');
+    const filtered = r.api.chronologyText();
+    ok(/PROVIDER FILTER ACTIVE/.test(filtered), 'a provider-filtered export did not say it was filtered');
+    ok(/EXCLUDED FROM THIS COMPILATION: M Synthetic/.test(filtered), 'the filtered export does not name who was excluded');
+    ok(/PARTIAL/.test(filtered), 'the filtered export does not say it is a partial record');
+    ok(!/Documented impression only\./.test(filtered), 'the excluded provider rows are still in the export');
+    ok(filtered.indexOf('PROVIDER FILTER ACTIVE') < filtered.indexOf('VISITS & ENCOUNTERS'),
+      'the filter warning is buried below the record instead of leading it');
+
+    eq(r.api.filterProvider('M Synthetic', true), true, 'turning the provider chip back on failed');
+    eq(r.api.restored.activeFilterNote(), '', 'restoring every provider left the filter warning armed');
+    ok(!/PROVIDER FILTER ACTIVE/.test(r.api.chronologyText()), 'restoring every provider left the export marked partial');
+  }
+
+  /* ==========================================================================
+     4. REPORT TYPES
+     ======================================================================== */
+  {
+    const r = makeRuntime();
+    const types = r.api.reportTypes;
+    deep(types.map(t => t.key), ['ime', 'narrative', 'records', 'chronology'],
+      'the report-type list changed without a decision');
+    types.forEach(t => {
+      ok(t.label && t.label.length > 4, 'report type ' + t.key + ' has no label');
+      ok(t.blurb && t.blurb.length > 30, 'report type ' + t.key + ' has no one-line description for the picker');
+    });
+    deep(types.map(t => t.sectionCount), [14, 13, 5, 0], 'the report types do not have distinct section sets');
+    eq(r.api.sectionsFor('ime').length, 14, 'the IME set is not the 14-section default');
+    eq(r.api.sectionsFor('narrative').length, 13, 'the narrative set kept the IME OPINIONS section');
+    ok(!r.api.sectionsFor('narrative').some(s => /OPINIONS/.test(s[0])), 'the narrative report states numbered opinions');
+    ok(r.api.sectionsFor('ime').some(s => /XIV\. OPINIONS/.test(s[0])), 'the IME report lost its OPINIONS section');
+    ok(r.api.sectionsFor('records').every(s => !/CAUSATION|OPINION/.test(s[0])), 'the records summary offers opinions');
+  }
+
+  /* The counsel-questions section appears only when questions are supplied,
+     and only for the types that answer questions. */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.api.runSections('ime').length, 14, 'an empty questions box still added a questions section');
+    r.ids.mlsP1LegalQuestions.value = '1. Is the lumbar injury related to the documented event?';
+    eq(r.api.runSections('ime').length, 15, 'supplied questions did not add their own IME section');
+    ok(/ANSWERS TO THE QUESTIONS ASKED/.test(r.api.runSections('ime')[14][0]), 'the questions section is not named for what it does');
+    eq(r.api.runSections('narrative').length, 14, 'supplied questions did not add their own narrative section');
+    eq(r.api.runSections('records').length, 5, 'the records summary invented a questions section');
+    eq(r.api.runSections('chronology').length, 0, 'the deterministic chronology report gained AI sections');
+  }
+
+  /* The narrative type really runs 13 calls, not 14. */
+  {
+    const r = makeRuntime();
+    r.api.open(); r.api.pickReport('narrative');
+    const promise = r.api.generateDraft();
+    for (let i = 0; i < 13; i++) {
+      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
+      r.pendingAi[i].resolve('Synthetic narrative body ' + (i + 1));
+    }
+    eq(await promise, true, 'the narrative generation did not complete');
+    eq(r.pendingAi.length, 13, 'the narrative report made other than 13 AI calls');
+    ok(/Report type: Medical-legal narrative/.test(r.ids.mlsP1LegalDraft.value), 'the report does not name the type it is');
+    ok(!/XIV\. OPINIONS/.test(r.ids.mlsP1LegalDraft.value), 'the narrative report printed an OPINIONS section');
+    ok(/^XV\. ATTESTATION$/m.test(r.ids.mlsP1LegalDraft.value), 'the narrative report lost the signature attestation');
+  }
+
+  /* The records-chronology type calls NO model at all. */
+  {
+    const r = makeRuntime();
+    r.api.open(); r.api.pickReport('chronology');
+    eq(await r.api.generateDraft(), true, 'the deterministic chronology report did not complete');
+    eq(r.pendingAi.length, 0, 'the deterministic chronology report called AI');
+    eq(r.stage(), 'generated', 'the deterministic report did not advance the flow');
+    const out = r.ids.mlsP1LegalDraft.value;
+    ok(/READ-ONLY MEDICAL-LEGAL CHRONOLOGY/.test(out), 'the chronology report does not contain the chronology');
+    ok(/^XV\. ATTESTATION$/m.test(out), 'the chronology report lost the signature attestation');
+    ok(/UNSIGNED DRAFT/.test(out), 'the chronology report lost its unsigned-draft framing');
+    ok(out.indexOf('[The practice name is not configured') === 0, 'the chronology report does not lead with the letterhead');
+  }
+
+  /* An API caller that never picks a type still gets the IME document, and the
+     state then SAYS ime rather than leaving the receipt blank. */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.api.state().reportType, '', 'the workspace pre-picked a report type');
+    const promise = r.api.generateDraft();
+    for (let i = 0; i < 14; i++) {
+      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
+      r.pendingAi[i].resolve('Synthetic default body ' + (i + 1));
+    }
+    eq(await promise, true, 'the default generation did not complete');
+    eq(r.pendingAi.length, 14, 'the default report is no longer the 14-section IME');
+    eq(r.api.state().reportType, 'ime', 'the default run did not record which type it used');
+  }
+
+  /* ==========================================================================
+     5. The room contract the next-step glow lane wires against
+     ======================================================================== */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.root().getAttribute('role'), 'dialog', 'the room root stopped being the dialog');
+    ok(r.root().getAttribute('data-mls-legal-state') !== null, 'the room root publishes no flow state');
+    ['bind', 'report', 'generate', 'export'].forEach(step => {
+      ok(r.root().innerHTML.indexOf('data-mls-legal-step="' + step + '"') >= 0,
+        'the room does not mark its ' + step + ' step for the glow lane');
+    });
+
+    /* This fixture hands the module its control nodes directly, so it would
+       NOT notice a control the shell markup never renders. Cross-check the
+       painted markup against every id the module actually looks up, and
+       against the fixture's own list, so neither can drift silently. */
+    const painted = new Set();
+    let hit; const idRe = /id="(mlsP1Legal[A-Za-z0-9]*)"/g;
+    while ((hit = idRe.exec(r.root().innerHTML)) !== null) painted.add(hit[1]);
+    const looked = new Set();
+    const lookRe = /byId\('(mlsP1Legal[A-Za-z0-9]*)'\)/g;
+    while ((hit = lookRe.exec(source)) !== null) looked.add(hit[1]);
+    /* ids painted later by a renderer, not by the one-time shell */
+    const RENDERED_LATER = ['mlsP1LegalChange', 'mlsP1LegalRosterSearch', 'mlsP1LegalRosterResults', 'mlsP1LegalReadDay'];
+    deep([...looked].filter(id => !painted.has(id) && RENDERED_LATER.indexOf(id) < 0).sort(), [],
+      'the module looks up a control the shell markup never renders');
+    deep([...painted].filter(id => !Object.prototype.hasOwnProperty.call(UI_IDS, id) &&
+      /* static labels/landmarks, never looked up or wired */
+      ['mlsP1LegalTitle', 'mlsP1LegalFileHelp', 'mlsP1LegalLetterhead', 'mlsP1LegalDraftLabel'].indexOf(id) < 0).sort(), [],
+      'the shell renders a control this fixture never supplies, so its wiring is untested');
+    RENDERED_LATER.forEach(id => {
+      const host = id === 'mlsP1LegalChange' ? r.ids.mlsP1LegalBanner
+        : (id === 'mlsP1LegalReadDay' ? r.ids.mlsP1LegalReadOps : r.ids.mlsP1LegalRoster);
+      ok(host.innerHTML.indexOf('id="' + id + '"') >= 0, 'the renderer never paints ' + id);
+    });
+  }
+
+  /* ==========================================================================
+     6. p1-legal-stepper-1.0.0 - "I open the legal page and I have no idea
+        where to go next, and this patient data should start collapsed."
+     ======================================================================== */
+  {
+    const r = makeRuntime({ activeId: '' });
+    r.api.open();
+    /* the stepper states all four steps, up front, with the current one marked */
+    const stepper = r.ids.mlsP1LegalStepper.innerHTML;
+    ['Bind patient', 'Pick report', 'Generate', 'Export'].forEach((label, i) => {
+      ok(stepper.indexOf(label) >= 0, 'the stepper does not show step ' + (i + 1) + ' (' + label + ')');
+    });
+    ok(/data-state="current"[^>]*data-mls-legal-stepitem="bind"/.test(stepper) ||
+      /data-mls-legal-stepitem="bind"[^>]*aria-current="step"/.test(stepper) ||
+      /data-state="current"/.test(stepper), 'the stepper marks no current step');
+    eq((stepper.match(/data-state="current"/g) || []).length, 1, 'more than one step is marked current');
+    deep(r.api.flow(), { stage: 'unbound', step: 'bind', next: 'mlsP1LegalRosterSearch' },
+      'the published flow receipt is wrong while unbound');
+    eq(r.root().getAttribute('data-mls-legal-next'), 'mlsP1LegalRosterSearch',
+      'the room root does not publish the id of the next control for the glow lane');
+  }
+
+  /* the next-control id tracks the stage, and exactly one control wears it */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.api.flow().next, 'mlsP1LegalReport_ime', 'a bound patient does not point at the report picker');
+    ok(/id="mlsP1LegalReport_ime"/.test(r.ids.mlsP1LegalReportTypes.innerHTML), 'the report picker has no stable per-type control id');
+    ok(/id="mlsP1LegalReport_chronology"/.test(r.ids.mlsP1LegalReportTypes.innerHTML), 'not every report type has a stable control id');
+    r.api.pickReport('ime');
+    eq(r.api.flow().next, 'mlsP1LegalGenerate', 'a picked report does not point at Generate');
+    eq(r.root().getAttribute('data-mls-legal-next'), 'mlsP1LegalGenerate', 'the room root did not republish the next control');
+    /* until the shared glow lands, the next control carries its own emphasis
+       and the stale one must give it up */
+    ok(/p1l-nextctl/.test(r.ids.mlsP1LegalGenerate.className), 'the next control carries no local emphasis');
+    ok(!/p1l-nextctl/.test(r.ids.mlsP1LegalRosterSearch ? r.ids.mlsP1LegalRosterSearch.className : ''), 'a stale next control kept its emphasis');
+    const promise = r.api.generateDraft();
+    for (let i = 0; i < 14; i++) {
+      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
+      r.pendingAi[i].resolve('Synthetic body ' + (i + 1));
+    }
+    await promise;
+    eq(r.api.flow().next, 'mlsP1LegalDraftDownload', 'a generated draft does not point at an export');
+    ok(/p1l-nextctl/.test(r.ids.mlsP1LegalDraftDownload.className), 'the export control carries no emphasis');
+    ok(!/p1l-nextctl/.test(r.ids.mlsP1LegalGenerate.className), 'Generate kept the emphasis after it was used');
+    r.ids.mlsP1LegalDraftDownload.listeners.click(); await flush();
+    eq(r.api.flow(), null, 'a finished flow still points somewhere');
+  }
+
+  /* EVERYTHING below the header starts collapsed; only the current step opens */
+  {
+    const r = makeRuntime({ activeId: '' });
+    r.api.open();
+    CARD_KEYS.forEach(key => {
+      const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+      eq(r.ids['mlsP1LegalBody' + suffix].hidden, true, 'the ' + key + ' card did not start collapsed');
+      eq(r.ids['mlsP1LegalDisclose' + suffix].getAttribute('aria-expanded'), 'false', 'the ' + key + ' card lies about being collapsed');
+      eq(r.ids['mlsP1LegalCue' + suffix].textContent, 'Expand', 'the ' + key + ' card offers no Expand affordance');
+    });
+    /* a bound patient's default view is the stepper + the report picker */
+    r.api.bindTo('C');
+    eq(r.ids.mlsP1LegalBodyReport.hidden, false, 'binding a patient did not open the report picker');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, true, 'binding a patient dumped the chronology on screen');
+    eq(r.ids.mlsP1LegalBodyDraft.hidden, true, 'binding a patient opened the draft card');
+    eq(r.ids.mlsP1LegalBodyGenerate.hidden, true, 'binding a patient opened the generate card');
+    /* the current step auto-opens as the flow advances */
+    r.api.pickReport('ime');
+    eq(r.ids.mlsP1LegalBodyGenerate.hidden, false, 'picking a report did not open the step it points at');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, true, 'picking a report opened the raw chronology');
+    /* a card the clinician opens is never force-closed by a later stage */
+    eq(r.api.toggleCard('chronology'), true, 'the chronology card could not be opened by hand');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, false, 'the hand-opened card stayed hidden');
+    eq(r.ids.mlsP1LegalCueChronology.textContent, 'Collapse', 'an open card still offers Expand');
+    r.api.pickReport('narrative');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, false, 'a stage change force-closed a card the clinician opened');
+    eq(r.api.toggleCard('nope'), false, 'an unknown card key was accepted');
+    /* the one-line summaries are what a collapsed card shows */
+    ok(/entr(y|ies)/.test(r.ids.mlsP1LegalSumChronology.textContent), 'the collapsed chronology has no entry-count summary');
+    ok(/compiled /.test(r.ids.mlsP1LegalSumChronology.textContent), 'the collapsed chronology does not say when it was compiled');
+    ok(/no local files/.test(r.ids.mlsP1LegalSumRecords.textContent), 'the collapsed local-records card has no summary');
+    ok(/Medical-legal narrative/.test(r.ids.mlsP1LegalSumReport.textContent), 'the collapsed report card does not name the pick');
+  }
+
+  /* Each encounter is collapsed to its date/type line, not a raw dump. */
+  {
+    const r = makeRuntime();
+    r.api.open(); r.api.toggleCard('chronology', true);
+    const html = r.ids.mlsP1LegalChronology.innerHTML;
+    const heads = (html.match(/data-row-toggle="/g) || []).length;
+    const bodies = (html.match(/class="p1l-rowbody" id="mlsP1LegalRowBody\d+" hidden/g) || []).length;
+    ok(heads > 0, 'the chronology renders no collapsible encounter rows');
+    eq(bodies, heads, 'an encounter body was rendered already expanded');
+    ok(/Office visit</.test(html), 'the collapsed row does not show the encounter type');
+    ok(!/Pain follow-up\./.test(html.replace(/<pre[\s\S]*?<\/pre>/g, '')), 'the encounter body leaked outside its collapsed body');
+  }
+
+  /* ==========================================================================
+     7. p1-legal-scrub-1.0.0 - the owner's EXACT screenshot samples
+     ======================================================================== */
+  {
+    const r = makeRuntime();
+    const scrub = r.api.scrubBody;
+    /* sample A: athenaOne page chrome stored as an encounter body */
+    const A = 'Office visit 02-02-2025\nrecently edited this chart at . Refresh to view the most current information.REFRESH CHART\nPatient reports 6/10 low back pain radiating to the left calf.';
+    const a = scrub(A);
+    ok(!/REFRESH CHART/.test(a.text), 'the athenaOne refresh banner survived into the displayed body');
+    ok(!/recently edited this chart/.test(a.text), 'the "recently edited this chart" banner survived');
+    ok(/6\/10 low back pain radiating to the left calf/.test(a.text), 'the scrubber deleted the clinical line');
+    eq(a.chrome, 1, 'the chrome line count is wrong');
+    eq(a.code, 0, 'a chrome line was miscounted as script');
+    eq(a.raw, A, 'the raw body was not preserved verbatim');
+
+    /* THE SHAPE THE SCREENSHOT ACTUALLY SHOWS: the banner is on the SAME line
+       as clinical text. A line-level stoplist deletes the clinical sentence
+       with the banner - the defect class this cut-the-phrase rule exists for. */
+    const inline = scrub('Assessment: lumbar radiculopathy. recently edited this chart at . Refresh to view the most current information.REFRESH CHART');
+    ok(/Assessment: lumbar radiculopathy\./.test(inline.text),
+      'a banner sharing a line with clinical text took the clinical text with it');
+    ok(!/REFRESH CHART|recently edited/.test(inline.text), 'the inline banner survived');
+    eq(inline.refused, false, 'the inline case fell back to raw instead of cleaning');
+
+    /* sample B: a <script> tag's text stored as an encounter body */
+    const B = 'Print Premier Ortho and Philadelphia Hand to Shoulder • 100 Example Rd\n' +
+      'window.Original = {}; window.Original.IsSafari = IsSafari;\n' +
+      'IsSafari = function(){ return 0; }\n' +
+      'Jotter = function(params) { var svgjottercontainerid = params.div; }\n' +
+      'Impression: L5-S1 disc herniation with left S1 radiculopathy.';
+    const b = scrub(B);
+    ok(!/window\.Original/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/IsSafari/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/Jotter/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/svgjottercontainerid/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/Print Premier Ortho/.test(b.text), 'the print-header page furniture survived');
+    ok(/L5-S1 disc herniation with left S1 radiculopathy\./.test(b.text), 'the scrubber deleted the clinical impression');
+    ok(b.removed >= 2, 'the scrubber under-counted what it removed: ' + b.removed);
+    eq(b.raw, B, 'the raw body was not preserved verbatim');
+
+    /* The SHARED production token walker is preferred when it is loaded,
+       because the captured script is usually interleaved with the note on ONE
+       long line - exactly the owner's screenshot. Prove the delegation, and
+       prove the clinical tail survives it. */
+    {
+      const withShared = makeRuntime({ readers: { __mlsVisitModel: {
+        getVisits: p => (p && p.visits) || [],
+        _stripPageDebris: text => String(text).replace(/window\.[\s\S]*?params\.div;\s*\}/g, ' ')
+      } } });
+      const s = withShared.api.scrubBody(
+        'Print Premier Ortho window.Original = {}; IsSafari = function(){ return 0; } Jotter = function(params) { var svgjottercontainerid = params.div; } Impression: L5-S1 herniation.');
+      eq(s.shared, true, 'the shared production debris stripper was not used when it was available');
+      ok(/Impression: L5-S1 herniation\./.test(s.text), 'delegating to the shared stripper lost the clinical tail');
+      ok(!/window\.Original|svgjottercontainerid/.test(s.text), 'delegating to the shared stripper left script text');
+    }
+    /* and with no shared stripper loaded, the local fallback still runs */
+    eq(scrub('window.Original = {};\nImpression: intact.').shared, false,
+      'the fallback claimed to have used a stripper that is not loaded');
+
+    /* NEVER delete a clinical line. These are the near-misses that a greedy
+       pattern would have eaten - "loss of function (grade 3)" was the reason
+       the code patterns require assignment or brace syntax. */
+    [
+      'Exam: loss of function (grade 3) in the left wrist.',
+      'Patient function (ADLs) unchanged since the last visit.',
+      'Discussed the variable response to the epidural injection.',
+      'MRI window for repeat imaging is 6 weeks.',
+      'The patient will print the work note at the front desk.',
+      'Constant pain; variable at night.'
+    ].forEach(line => {
+      const kept = scrub('Header\n' + line + '\nFooter');
+      ok(kept.text.indexOf(line) >= 0, 'the scrubber deleted a clinical line: ' + JSON.stringify(line));
+      eq(kept.removed, 0, 'the scrubber flagged a clinical line: ' + JSON.stringify(line));
+    });
+
+    /* a body that is ENTIRELY junk falls back to raw rather than vanishing:
+       a cleaner that silently empties an encounter is worse than the junk */
+    const allJunk = scrub('REFRESH CHART\nrecently edited this chart at .');
+    eq(allJunk.refused, true, 'an entirely-suppressed body did not fall back to raw');
+    eq(allJunk.text, 'REFRESH CHART\nrecently edited this chart at .', 'the fallback did not show the raw text');
+    eq(allJunk.removed, 0, 'the refused fallback still claimed to have removed lines');
+    /* and an empty body stays empty without claiming anything */
+    deep({ text: scrub('').text, removed: scrub('').removed, refused: scrub('').refused },
+      { text: '', removed: 0, refused: false }, 'an empty body was mishandled');
+  }
+
+  /* End to end: the junk never reaches the screen or the export, the count is
+     declared, and the raw text stays reachable. */
+  {
+    const junkPatient = [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A',
+      visits: [{ date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic',
+        detail: 'recently edited this chart at . Refresh to view the most current information.REFRESH CHART\n' +
+          'window.Original = {}; IsSafari = function(){ return 0; }\n' +
+          'Assessment: lumbar radiculopathy, left S1.' }] }];
+    const r = makeRuntime({ patients: junkPatient });
+    r.api.open(); r.api.toggleCard('chronology', true);
+    const painted = r.ids.mlsP1LegalChronology.innerHTML;
+    ok(!/REFRESH CHART/.test(painted), 'the EMR banner reached the rendered chronology');
+    ok(!/IsSafari/.test(painted), 'captured script text reached the rendered chronology');
+    ok(/lumbar radiculopathy/.test(painted), 'the clinical assessment was lost from the rendered chronology');
+    ok(/hidden as non-clinical/.test(painted), 'the suppression was silent on screen');
+    ok(/data-row-raw="/.test(painted), 'there is no way to reach the raw text');
+
+    const text = r.api.chronologyText();
+    ok(!/REFRESH CHART/.test(text), 'the EMR banner reached the exported chronology');
+    ok(!/IsSafari/.test(text), 'captured script text reached the exported chronology');
+    ok(/lumbar radiculopathy/.test(text), 'the clinical assessment was lost from the exported chronology');
+    ok(/DISPLAY NOTE: \d+ line\(s\)/.test(text), 'the export does not declare what it suppressed');
+    ok(/the stored chart was not modified/.test(text), 'the export does not say the record itself is untouched');
+
+    /* Show raw brings the exact stored bytes back, on demand */
+    const rawButton = /data-row-raw="(\d+)"/.exec(painted);
+    ok(rawButton, 'no raw toggle was rendered for a cleaned row');
+    r.api.showRaw(rawButton[1], true);
+    ok(/IsSafari/.test(r.ids.mlsP1LegalChronology.innerHTML), 'Show raw did not restore the exact stored text');
+    r.api.showRaw(rawButton[1], false);
+    ok(!/IsSafari/.test(r.ids.mlsP1LegalChronology.innerHTML), 'Show cleaned did not go back to the cleaned text');
+  }
+
+  /* the delimited blocks stay delimited, so promotion is a copy not a diff */
+  ['p1-legal-restore-2.0.0', 'p1-legal-bind-2.0.0', 'p1-legal-reports-2.0.0',
+    'p1-legal-scrub-1.0.0', 'p1-legal-stepper-1.0.0'].forEach(name => {
+    const a = source.indexOf('/* ===== ' + name + ' =');
+    const b = source.indexOf('/* ===== end ' + name + ' ===== */');
+    ok(a >= 0 && b > a, 'the ' + name + ' block is missing or unclosed');
+    ok(source.indexOf('/* ===== ' + name + ' =', a + 1) < 0, 'the ' + name + ' block appears twice');
+  });
+
+  /* the twins stay canonical - this lane changed no shell byte */
+  {
+    const canon = v => String(v)
+      .replace("base-uri 'self'", "base-uri 'none'")
+      .replace(/<!-- p1-live-1\.0\.0:[\s\S]*?<base href="\/1p">\r?\n/, '')
+      .replace("route:'/1p/'", "route:'/1pScribeFlow.html'");
+    eq(canon(fs.readFileSync(path.join(root, '1p', 'index.html'), 'utf8')),
+      fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8'),
+      'the two /1p shells are no longer twins');
+  }
+
+  console.log('PASS 1p Legal bind / report / flow (' + checks + ' assertions)');
+})().catch(error => { console.error(error && error.stack ? error.stack : error); process.exit(1); });
