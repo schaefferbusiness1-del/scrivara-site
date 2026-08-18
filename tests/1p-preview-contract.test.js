@@ -89,7 +89,13 @@ const P1_CONFIG_RELEASE_SUBS = [
    raised only by successes, one frozen day-note pass budget → background backfill, backfill presence re-check with a
    PHI-free receipt, same-day re-pull never re-opens a read note, earliest-first, busy-click gate); /cloned re-derived at
    cloned-20260817-r7. Production and extension baselines untouched (469607c9). */
-const P1_BASE_COMMIT = '883284d6306a170090e994ec2e52b05c81ca4f2b';
+/* Advanced by the 1p train of 2026-08-18 (batches 10+11): dock seedSide (in-lane choice only), quietnotify-1.0.0,
+   pull-speed 2 (dnb2/dnp2/dnbf/dnrs/dnpri), dockcal-1.0.0, avatar-3 (avfit capture ladder, honest partial, stay Avatar),
+   profile pvr-1.0.0 (one visit resolver, chart-field honesty), op notes opnote-day-2.0.0 (grid + expanded note, no green
+   bar), 1p-feat_mls_b121_pack.js fork (p1-backfill-footer-1.0.0), clunky-* blocks (51 items), visit lane survives the
+   note phase + glow maintained; /cloned re-derived at cloned-20260818-r9 (18 files). Production/extension baselines
+   untouched (469607c9). */
+const P1_BASE_COMMIT = 'c1bfa929cc141e7d9e1d4dde9f565b69dbe00f0e';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
