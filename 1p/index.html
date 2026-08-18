@@ -5380,6 +5380,15 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div class="row tight"><button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="importPatients()">📥 Import patients</button></div>
           <p class="note" id="importResult"></p>
 
+          <!-- ===== junkscrub-settings-1.0.0 — what the one-time note cleanup found =====
+               PHI-free by construction: counts, what was removed, and the DATES of the
+               affected days. The day buttons route to the SAME "Pull this day" the Visit
+               screen uses, and nothing is pulled until the doctor presses one. -->
+          <b style="font-size:13.5px;display:block;margin-top:16px">🧹 EMR page text found in stored notes</b>
+          <p class="note" style="margin:4px 0 6px">Some early chart pulls captured the EMR's own page along with the note — its menus, its refresh prompt, and the script the page runs. MLS took that text back out of the stored notes and kept the untouched original beside each one. Nothing was deleted.</p>
+          <div id="junkScrubBox" style="margin-top:6px;font-size:13px;color:var(--muted)"></div>
+          <!-- ===== end junkscrub-settings-1.0.0 ===== -->
+
         </div>
       </details>
       <!-- ===== end advint-1.0.0 ===== -->
@@ -7419,6 +7428,11 @@ function __mlsPtsBootBarrier(paint){
      paint - a migration that is slow, refused, or impossible must not delay a
      single roster pixel. */
   try{ __mlsPtsAutoMigrate(p,'boot'); }catch(ePmg){}
+  /* junkscrub-1.0.0: the one-time stored-note cleanup rides the same barrier
+     and is just as far behind the paint - it starts with its own Worker-timer
+     delay and re-checks the account itself, so this line can never block or
+     bind work to an unresolved namespace. */
+  try{ if(window.__mlsJunkScrub&&typeof window.__mlsJunkScrub.boot==='function') window.__mlsJunkScrub.boot('boot'); }catch(eJsb){}
   var migrated=false;
   try{ migrated=(localStorage.getItem(uns('ptsGenV2'))!=null)&&(localStorage.getItem(uns('patients'))==null); }catch(ePm){}
   if(!migrated){ runPaint(); return; }
@@ -9432,6 +9446,7 @@ function openSettings(){
   if(!(window.__mlsUiUnification&&window.__mlsUiUnification.installed)) mlsBuildSettingsTabs();
   if(typeof loadLegalProfile==='function') loadLegalProfile();
   try{ if(typeof backendMode==='function'&&backendMode()&&bkToken()){ if(typeof loadApiKeys==='function') loadApiKeys(); if(typeof loadEmrSync==='function') loadEmrSync(); } }catch(e){}
+  try{ if(typeof __mlsJunkScrubRender==='function') __mlsJunkScrubRender(); }catch(eJsr){} /* junkscrub-1.0.0 */
   document.getElementById('settingsModal').classList.add('show');
   try{ if(window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcileSettings==='function') window.__mlsUiUnification.reconcileSettings(); }catch(e){}
 }
@@ -45964,6 +45979,421 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 })();
 </script>
 <!-- ===== end quietnotify-1.0.0 ========================================= -->
+<!-- ===== junkscrub-1.0.0 — the Athena page text comes back OUT of the notes ===
+     Before the extension's reader was fixed, some history/visit pulls captured
+     the athenaOne PAGE around the note: the sketchpad shim it runs inline
+     ("window.Original = {}", "IsSafari = function(){...}", "Jotter =
+     function(params){ var svgjottercontainerid = params.div.id; }"), the
+     chart-refresh prompt ("...recently edited this chart... REFRESH CHART"),
+     the print header ("Print <practice> - <address> NAME, First (id #NNN,
+     dob: MM/DD/YYYY)") and page furniture. That debris was glued around - and
+     sometimes in front of - the real note, and it is still sitting in stored
+     visit bodies.
+
+     The Legal/IME lane already hides it at DISPLAY time (its report builder's
+     scrubBody). This block fixes the DATA, once per account.
+
+     WHY THIS DOES NOT REUSE __mlsVisitModel._stripPageDebris.
+     That shared cleaner is a TOKEN WALKER: any token matching its start rule
+     (which includes the prefix "window." and the word "Jotter") puts it in
+     code mode, and it needs five consecutive prose tokens to come back out.
+     Measured against the shipped feat_visits.js:
+       "Patient fell through a window. Laceration to right forearm, 4 cm,
+        repaired with 5-0 nylon."
+       becomes
+       "Patient fell through a cm, repaired with 5-0 nylon."
+     Losing an injury site is survivable for a rendered summary. It is not
+     survivable for a rewrite of stored clinical text, so this block carries
+     its OWN rules, and every one of them is anchored to syntax a clinical
+     sentence cannot contain: an assignment, a declaration, a function body, a
+     tag, or an exact athenaOne string. The display-side defect is reported
+     separately; nothing here changes feat_visits.js.
+
+     THE FIVE PROMISES, enforced in code below and not only in comments:
+       1. NOTHING IS DELETED. A visit is never removed, and the untouched
+          original of every field this block edits is kept beside it under
+          _rawBeforeScrub.
+       2. REMOVAL ONLY. The cleaned text, with whitespace ignored, must be a
+          SUBSEQUENCE of the original. No character is ever invented, moved or
+          rewritten - if that check fails the record is refused, not written.
+       3. NO SIGNATURE, NO WRITE. A body that matches no rule is not rewritten
+          at all: it stays byte-identical.
+       4. A BODY IS NEVER EMPTIED. If the rules would leave nothing readable,
+          the record is refused and the original stands.
+       5. ONLY PULLED BODIES. Only visits whose source says they came from the
+          EMR reader are in scope. Anything the doctor or the app authored is
+          out of scope, as is anything already scrubbed (idempotent) and
+          anything marked noScrub.
+     It runs once per account, in the background, on a Worker timer (a hidden
+     tab freezes setTimeout and rAF - see __mlsBgSleep), never during a pull,
+     and it reports a PHI-FREE receipt: counts, rule names, and the DATES of
+     the affected days. No name, no id, no note text ever leaves this block. -->
+<script>
+/* ===== junkscrub-1.0.0 */
+(function () {
+  'use strict';
+  var VERSION = 'junkscrub-1.0.0';
+  var FLAG_SUFFIX = 'junkScrubV1';
+  var FIELDS = ['raw', 'findings', 'plan'];      /* the three _visitBodyText joins */
+  var MAX_APPLY_PER_RUN = 400;                   /* bounded work per session; resumes next boot */
+  var START_DELAY_MS = 20000, SCAN_CHUNK = 25, SCAN_REST_MS = 60, APPLY_REST_MS = 300;
+
+  function S(v) { return v == null ? '' : String(v); }
+  function isFn(f) { return typeof f === 'function'; }
+  function safe(f, d) { try { return f(); } catch (e) { return d; } }
+
+  /* ------------------------------------------------------------------ RULES
+     Each rule removes ONE recognisable piece of athenaOne page furniture. The
+     `why` is what the doctor-facing receipt says. Every rule below is paired
+     in tests/junk-scrub-detector.test.js with a fixture that proves it fires
+     and a clinical NEAR-MISS that proves it does not. */
+  var RULES = [
+    /* --- captured inline script ------------------------------------------ */
+    { id: 'script-tag', why: 'page script', re: /<script\b[^>]*>[\s\S]*?<\/script\s*>/gi },
+    { id: 'script-tag-stray', why: 'page script', re: /<\/?script\b[^>]*>/gi },
+    /* "IsSafari = function(){ return 0; }" / "Jotter = function(params) {...}".
+       Requires "= function(" AND a brace body: the clinical phrase "loss of
+       function (grade 3)" has neither. */
+    { id: 'fn-assign', why: 'page script', re: /[A-Za-z_$][\w$]*\s*=\s*function\s*\([^)]{0,200}\)\s*\{[\s\S]{0,4000}?\}/g },
+    /* "window.Original = {};" / "window.Original.IsSafari = IsSafari;".
+       Requires a property assignment terminated by a semicolon, so the English
+       sentence "fell through a window. Laceration..." can never match. */
+    { id: 'window-assign', why: 'page script', re: /\bwindow\s*\.\s*[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*=\s*[^;\n]{0,200};/g },
+    /* "var svgjottercontainerid = params.div.id;" */
+    { id: 'var-decl', why: 'page script', re: /\b(?:var|let|const)\s+[A-Za-z_$][\w$]*\s*=\s*[^;\n]{0,200};/g },
+    /* Identifiers that exist ONLY in athenaOne's sketchpad shim. Deliberately
+       excludes the bare word "Jotter", which is also an ordinary English noun
+       (a Jotter pad) - it is covered by fn-assign when it is really code. */
+    { id: 'sketchpad-ident', why: 'page script', re: /\b(?:svgjottercontainerid|SVGJotter|VMLJSONToRaphaelJSON|GetStrokesDimensions|PutSketchpad|SketchpadData|IsSafari)\b/g },
+    { id: 'params-div', why: 'page script', re: /\bparams\s*\.\s*div(?:\s*\.\s*[A-Za-z_$][\w$]*)?/g },
+
+    /* --- the chart-refresh prompt ---------------------------------------- */
+    { id: 'refresh-prompt', why: 'EMR page text', re: /\brecently edited this chart(?:\s+at\s*\.?)?/gi },
+    { id: 'refresh-line', why: 'EMR page text', re: /\bRefresh to view the most current information\.?/gi },
+    { id: 'refresh-button', why: 'EMR page text', re: /\bREFRESH CHART\b/g },
+
+    /* --- the print header ------------------------------------------------ */
+    /* "Print <practice> - <address> LAST, First (id #7731709, dob: 06/01/1967)".
+       [^.\n] keeps the match inside ONE sentence on ONE line, so it can never
+       reach backwards across a clinical sentence to find the id tail. */
+    { id: 'print-header', why: 'EMR page text', re: /\bPrint\b[^.\n]{0,240}?\(id\s*#\d+,\s*dob:\s*\d{1,2}\/\d{1,2}\/\d{2,4}\)[\s.•-]*/g },
+    { id: 'id-dob-tail', why: 'EMR page text', re: /\(id\s*#\d+,\s*dob:\s*\d{1,2}\/\d{1,2}\/\d{2,4}\)/g },
+
+    /* --- navigation furniture -------------------------------------------- */
+    /* Exact case, exactly as athenaOne renders its skip link. The lowercase
+       clinical sentence "skip to main content" is NOT matched. */
+    { id: 'skip-link', why: 'page navigation', re: /\bSkip to main content\b/g },
+    { id: 'athenanet-host', why: 'page navigation', re: /(?:https?:\/\/)?athenanet\.athenahealth\.com\S*/g },
+    { id: 'athena-footer', why: 'page navigation', re: /\bPowered by athenahealth\b/gi }
+  ];
+
+  /* ---------------------------------------------------------------- helpers */
+  /* Promise 2: with whitespace ignored, `a` must be a subsequence of `b`. */
+  function isSubsequence(a, b) {
+    var i = 0, j = 0;
+    while (i < a.length && j < b.length) { if (a.charCodeAt(i) === b.charCodeAt(j)) i += 1; j += 1; }
+    return i === a.length;
+  }
+  function bare(s) { return S(s).replace(/\s+/g, ''); }
+
+  /* The ONLY text transform outside the rules: whitespace left behind by a
+     removal. Every operation here DELETES whitespace, so promise 2 holds. */
+  function tidy(s) {
+    return S(s).replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^[ \t]+|[ \t]+$/g, '');
+  }
+
+  /* scrub(text) -> {hit, text, removed, rules[], whys[], refused, why} */
+  function scrub(text) {
+    var raw = S(text);
+    var out = { hit: false, text: raw, removed: 0, rules: [], whys: [], refused: false, why: '' };
+    if (!raw) return out;
+    var stage = raw, i, before, r;
+    for (i = 0; i < RULES.length; i += 1) {
+      r = RULES[i];
+      before = stage;
+      stage = safe(function () { return before.replace(r.re, ' '); }, before);
+      if (stage !== before) { out.rules.push(r.id); if (out.whys.indexOf(r.why) < 0) out.whys.push(r.why); }
+    }
+    if (!out.rules.length) return out;                       /* promise 3 */
+    var cleaned = tidy(stage);
+    if (!/[A-Za-z0-9]/.test(cleaned)) { out.refused = true; out.why = 'would-empty'; return out; }  /* promise 4 */
+    if (!isSubsequence(bare(cleaned), bare(raw))) { out.refused = true; out.why = 'not-removal-only'; return out; } /* promise 2 */
+    if (cleaned.length >= raw.length) { out.refused = true; out.why = 'no-shrink'; return out; }
+    out.hit = true; out.text = cleaned; out.removed = raw.length - cleaned.length;
+    return out;
+  }
+  function detect(text) { return scrub(text).rules; }
+
+  /* Promise 5. Junk can only have arrived through the EMR reader, so only a
+     reader-sourced row is ever in scope. The source vocabulary is the same one
+     feat_visits.js:_remoteVisit uses to decide a row is remote. */
+  var REMOTE_RE = /athena|legacy|grab|pullrec|cohort/i;
+  function inScope(v) {
+    if (!v || typeof v !== 'object') return false;
+    if (v.noScrub === true) return false;                    /* explicit opt-out */
+    if (v._rawBeforeScrub) return false;                     /* already done: idempotent */
+    if (!REMOTE_RE.test(S(v.source))) return false;          /* doctor/app-authored: never touched */
+    for (var i = 0; i < FIELDS.length; i += 1) if (S(v[FIELDS[i]]).length) return true;
+    return false;
+  }
+
+  /* ---------------------------------------------------------------- the scan
+     Pure over an array of patient rows. Returns a PHI-FREE tally plus the plan
+     of exactly which rows would change. No name, id or note text is recorded
+     in the tally - `plan` is internal and never rendered or persisted. */
+  function scanRows(rows) {
+    var rep = {
+      version: VERSION, scannedPatients: 0, scannedBodies: 0, flaggedPatients: 0,
+      flaggedVisits: 0, flaggedBodies: 0, bytesRemoved: 0, refusedBodies: 0,
+      rules: Object.create(null), refusals: Object.create(null), whys: [], days: []
+    };
+    var plan = [], dayseen = Object.create(null);
+    (rows || []).forEach(function (p) {
+      if (!p || typeof p !== 'object') return;
+      rep.scannedPatients += 1;
+      var visits = Array.isArray(p.visits) ? p.visits : [];
+      var changed = [];
+      visits.forEach(function (v, idx) {
+        if (!inScope(v)) return;
+        var edits = null, rules = [], whys = [], bytes = 0, f, res, k;
+        for (k = 0; k < FIELDS.length; k += 1) {
+          f = FIELDS[k];
+          if (!S(v[f]).length) continue;
+          rep.scannedBodies += 1;
+          res = scrub(v[f]);
+          if (res.refused) {
+            rep.refusedBodies += 1;
+            rep.refusals[res.why] = (rep.refusals[res.why] || 0) + 1;
+            continue;
+          }
+          if (!res.hit) continue;
+          (edits || (edits = Object.create(null)))[f] = res.text;
+          bytes += res.removed;
+          rep.flaggedBodies += 1;
+          res.rules.forEach(function (id) { rep.rules[id] = (rep.rules[id] || 0) + 1; if (rules.indexOf(id) < 0) rules.push(id); });
+          res.whys.forEach(function (w) { if (whys.indexOf(w) < 0) whys.push(w); if (rep.whys.indexOf(w) < 0) rep.whys.push(w); });
+        }
+        if (!edits) return;
+        rep.flaggedVisits += 1;
+        rep.bytesRemoved += bytes;
+        var day = S(v.date).slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(day) && !dayseen[day]) { dayseen[day] = 1; rep.days.push(day); }
+        changed.push({ idx: idx, edits: edits, rules: rules, whys: whys, bytes: bytes });
+      });
+      if (changed.length) { rep.flaggedPatients += 1; plan.push({ id: p.id, changed: changed }); }
+    });
+    rep.days.sort();
+    return { report: rep, plan: plan };
+  }
+
+  /* Build the replacement visit array for one patient. Returns null when
+     nothing applies. Never mutates the stored objects: every changed visit is
+     a NEW object, so a refusal anywhere leaves the roster untouched. */
+  function applyToPatient(p, changed) {
+    var visits = Array.isArray(p.visits) ? p.visits : [];
+    var next = visits.slice(), touched = 0, at = Date.now();
+    changed.forEach(function (c) {
+      var v = visits[c.idx];
+      if (!v || typeof v !== 'object') return;
+      if (!inScope(v)) return;                               /* re-checked at write time */
+      var copy = Object.assign({}, v), keep = Object.create(null), f, ok = true;
+      for (f in c.edits) {
+        if (!Object.prototype.hasOwnProperty.call(c.edits, f)) continue;
+        /* last-moment re-proof of promise 2 against the row we are about to write */
+        if (!isSubsequence(bare(c.edits[f]), bare(v[f])) || !/[A-Za-z0-9]/.test(c.edits[f])) { ok = false; break; }
+        keep[f] = v[f];
+        copy[f] = c.edits[f];
+      }
+      if (!ok) return;
+      copy._rawBeforeScrub = keep;                           /* promise 1 */
+      copy._junkScrubbedAt = at;
+      copy._junkScrubRules = c.rules.slice();
+      next[c.idx] = copy;
+      touched += 1;
+    });
+    if (!touched) return null;
+    return { visits: next, touched: touched };
+  }
+
+  /* ------------------------------------------------------------- the receipt */
+  function flagKey() { return isFn(window.uns) ? window.uns(FLAG_SUFFIX) : ''; }
+  function readReceipt() {
+    var k = safe(flagKey, '');
+    if (!k) return null;
+    return safe(function () { var s = localStorage.getItem(k); return s ? JSON.parse(s) : null; }, null);
+  }
+  function writeReceipt(rec) {
+    var k = safe(flagKey, '');
+    if (!k) return false;
+    return safe(function () { localStorage.setItem(k, JSON.stringify(rec)); return true; }, false);
+  }
+  /* PHI-free by construction: counts, rule names, and dates. Nothing else. */
+  function publicReceipt(rep, mode, applied, complete) {
+    return {
+      version: VERSION, at: Date.now(), mode: mode, complete: complete !== false,
+      scannedPatients: rep.scannedPatients, scannedBodies: rep.scannedBodies,
+      flaggedPatients: rep.flaggedPatients, flaggedVisits: rep.flaggedVisits,
+      flaggedBodies: rep.flaggedBodies, bytesRemoved: rep.bytesRemoved,
+      refusedBodies: rep.refusedBodies, refusals: Object.assign({}, rep.refusals),
+      rules: Object.assign({}, rep.rules), whys: rep.whys.slice(),
+      days: rep.days.slice(), appliedPatients: applied || 0, errors: rep.errors || 0
+    };
+  }
+
+  /* ----------------------------------------------------------------- the run */
+  function nsUsable() {
+    var k = safe(function () { return window.uns('patients'); }, '');
+    return !!k && k.indexOf('::undefined::') < 0 && k.indexOf('::_::') < 0 && /::patients$/.test(k);
+  }
+  function pullRunning() {
+    if (safe(function () { return window.__mlsPullShieldForeign(); }, false)) return true;
+    return safe(function () { var d = window.__mlsDaySwitch; return !!(d && isFn(d.isBusy) && d.isBusy()); }, false);
+  }
+  function rest(ms) {
+    return safe(function () { return Promise.resolve(window.__mlsBgSleep(ms)); },
+      null) || new Promise(function (r) { setTimeout(r, ms); });
+  }
+
+  /* run({apply}) -> Promise<receipt|null>. apply:false is the DRY RUN. */
+  function run(opts) {
+    opts = opts || {};
+    var apply = opts.apply === true;
+    if (!nsUsable()) return Promise.resolve(null);
+    var key0 = safe(function () { return window.uns('patients'); }, '');
+    var rows = safe(function () { return window.getPatients() || []; }, []);
+    if (!rows.length) return Promise.resolve(null);
+
+    var scanned = scanRows(rows), rep = scanned.report, plan = scanned.plan;
+    rep.errors = 0;
+    if (!apply || !plan.length) return Promise.resolve(publicReceipt(rep, apply ? 'applied' : 'dry-run', 0, true));
+
+    var i = 0, applied = 0, capped = false;
+    function step() {
+      if (safe(function () { return window.uns('patients'); }, '') !== key0) return Promise.resolve(false);
+      if (i >= plan.length) return Promise.resolve(true);
+      if (applied >= MAX_APPLY_PER_RUN) { capped = true; return Promise.resolve(true); }
+      if (pullRunning()) return rest(5000).then(step);
+      var entry = plan[i]; i += 1;
+      var live = safe(function () { return (window.getPatients() || []).filter(function (x) { return x && String(x.id) === String(entry.id); })[0] || null; }, null);
+      if (!live) return rest(0).then(step);
+      var built = applyToPatient(live, entry.changed);
+      if (!built) return rest(0).then(step);
+      var ok = safe(function () {
+        window.upsertPatient(Object.assign({}, live, { visits: built.visits }));
+        return true;
+      }, false);
+      if (ok) applied += 1; else rep.errors += 1;
+      return rest(APPLY_REST_MS).then(step);
+    }
+    return step().then(function (finished) {
+      return publicReceipt(rep, 'applied', applied, finished && !capped);
+    });
+  }
+
+  /* The one-per-account background pass. Never throws, never gates boot.
+     The first delay is a Worker sleep, not setTimeout, because the doctor's
+     MLS tab spends the working day HIDDEN behind athenaOne and a hidden tab's
+     timers are frozen, not merely throttled. The retry loop exists because the
+     barrier that calls this can fire before the account namespace resolves or
+     before the roster has hydrated - a one-shot latch there would mean the
+     cleanup silently never ran. */
+  var started = false, MAX_TRIES = 40, RETRY_MS = 15000;
+  function boot(why) {
+    if (started) return null;
+    started = true;
+    var tries = 0;
+    function attempt() {
+      if (nsUsable()) {
+        var prior = readReceipt();
+        if (prior && prior.complete === true) {              /* once per account */
+          window.__mlsJunkScrubReceipt = prior;
+          return Promise.resolve(prior);
+        }
+        return run({ apply: true }).then(function (rec) {
+          if (!rec) return again();                          /* roster not hydrated yet */
+          rec.why = S(why || 'boot');
+          writeReceipt(rec);
+          window.__mlsJunkScrubReceipt = rec;
+          announce(rec);
+          return rec;
+        });
+      }
+      return again();
+    }
+    function again() {
+      tries += 1;
+      if (tries > MAX_TRIES) return Promise.resolve(null);
+      return rest(RETRY_MS).then(attempt);
+    }
+    return rest(START_DELAY_MS).then(attempt).then(null, function () { return null; });
+  }
+
+  /* The tray line. 'ok' routes it to the activity tray as an OUTCOME, so it
+     never becomes a toast, and it carries no name, id or note text. */
+  function announce(rec) {
+    if (!rec || !rec.flaggedVisits) return false;
+    var n = rec.flaggedVisits;
+    return safe(function () {
+      window.toast('Cleaned ' + n + ' ' + (n === 1 ? 'note that had' : 'notes that had') +
+        ' Athena page text in them; nothing was deleted.', 'ok');
+      return true;
+    }, false);
+  }
+
+  window.__mlsJunkScrub = {
+    version: VERSION,
+    rules: RULES.map(function (r) { return { id: r.id, why: r.why }; }),
+    detect: detect,
+    scrub: scrub,
+    inScope: inScope,
+    scanRows: scanRows,
+    applyToPatient: applyToPatient,
+    dryRun: function () { return run({ apply: false }); },
+    run: run,
+    boot: boot,
+    receipt: function () { return window.__mlsJunkScrubReceipt || readReceipt(); },
+    _t: { isSubsequence: isSubsequence, tidy: tidy, publicReceipt: publicReceipt, flagKey: flagKey }
+  };
+})();
+
+/* The Settings row: the receipt, and a doctor-started re-pull of the affected
+   days. Nothing here pulls on its own. */
+function __mlsJunkScrubRender() {
+  var box = document.getElementById('junkScrubBox');
+  if (!box) return false;
+  var api = window.__mlsJunkScrub, rec = api && api.receipt ? api.receipt() : null;
+  if (!rec) { box.innerHTML = '<span class="note">Nothing to report yet — this check runs in the background after you sign in.</span>'; return true; }
+  if (!rec.flaggedVisits) { box.innerHTML = '<span class="note">Checked ' + rec.scannedBodies + ' stored note' + (rec.scannedBodies === 1 ? '' : 's') + ' — none had EMR page text in them.</span>'; return true; }
+  var parts = [];
+  parts.push('<div style="font-size:13px;color:var(--ink)"><b>' + rec.flaggedVisits + '</b> note' + (rec.flaggedVisits === 1 ? '' : 's') +
+    ' across <b>' + rec.flaggedPatients + '</b> chart' + (rec.flaggedPatients === 1 ? '' : 's') + ' had ' + (rec.whys.length ? rec.whys.join(' and ') : 'EMR page text') +
+    ' removed (' + rec.bytesRemoved + ' characters). The original of every one is still stored beside it — nothing was deleted.</div>');
+  if (rec.days && rec.days.length) {
+    parts.push('<p class="note" style="margin:6px 0 4px">Affected days. Re-pulling a day replaces those notes with a fresh, clean read. Nothing is pulled until you press a day.</p>');
+    parts.push('<div class="row tight" id="junkScrubDays" style="flex-wrap:wrap;gap:6px">' +
+      rec.days.map(function (d) {
+        return '<button class="btn-ghost" style="font-size:13px;padding:7px 11px" data-jsday="' + d + '" onclick="__mlsJunkScrubRepull(this.getAttribute(\'data-jsday\'))">' + d + '</button>';
+      }).join('') + '</div>');
+  }
+  parts.push('<p class="note" id="junkScrubMsg" style="margin:6px 0 0"></p>');
+  box.innerHTML = parts.join('');
+  return true;
+}
+/* Routes to the SAME day pull the Visit screen uses. Doctor-started, one day. */
+function __mlsJunkScrubRepull(day) {
+  var msg = document.getElementById('junkScrubMsg');
+  var say = function (t) { try { if (msg) msg.textContent = t; } catch (e) {} };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) { say('That day could not be read.'); return false; }
+  var ds = window.__mlsDaySwitch;
+  if (!ds || typeof ds.setDay !== 'function' || typeof ds.pullDay !== 'function') { say('Open the Visit screen and use Pull this day.'); return false; }
+  if (typeof ds.isBusy === 'function' && ds.isBusy()) { say('A pull is already running — try this day again when it finishes.'); return false; }
+  if (!ds.setDay(day)) { say('That day could not be selected — open the Visit screen and use Pull this day.'); return false; }
+  say('Pulling ' + day + ' from Athena…');
+  setTimeout(function () { try { ds.pullDay(); } catch (e) {} }, 250);
+  return true;
+}
+</script>
+<!-- ===== end junkscrub-1.0.0 ============================================= -->
 <!-- ===== dockcal-1.0.0 — the dock says "Calendar", not "Day" =================
      Owner, 2026-08-18: "where did the calendar view go? it disappeared from the
      bottom tab thing." It never left: the calm shell's first dock destination
