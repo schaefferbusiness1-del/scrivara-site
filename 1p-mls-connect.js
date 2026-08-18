@@ -4995,13 +4995,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var pct = total ? Math.round((done / total) * 100) : 0;
     /* dnp-1.0.0: 100% is a CLAIM. While the engine reports an unfinished
        day-note phase the pull is not finished, so the bar stops at 99%. */
-    if (pct >= 100 && S && S.phase && String(S.phase.kind || '') === 'day-notes' && S.running === true) pct = 99;
+    var heldForDayNotes = (pct >= 100 && S && S.phase && String(S.phase.kind || '') === 'day-notes' && S.running === true);
+    if (heldForDayNotes) pct = 99;
     var p = buildPanel();
     setText(p, 'done', String(done));
     setText(p, 'total', String(total));
     var fill = p.querySelector('.pp-fill');
     if (fill) { var w = pct + '%'; if (fill.style.width !== w) fill.style.width = w; }
-    setText(p, 'pct', pct + '% complete');
+    /* uimap-1.0.0: a bar that sits at 99% saying "99% complete" and never moves
+       reads as a stall. The engine already knows WHY it is held; say so, so the
+       doctor can see the pull is still doing something rather than stuck. */
+    setText(p, 'pct', heldForDayNotes ? '99% — reading today’s notes' : (pct + '% complete'));
     /* ppt-2.0: "skipped" was the FAILED counter's label - failures called
        skips, counted per settle event. Chart-level truth, no euphemism. */
     var reChecking = Math.max(0, done - ok - failed);
@@ -5016,7 +5020,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        beside it, never inside the failure count. */
     var dnUnreadLive = 0, dnRetryLive = 0;
     try { (S.rows || []).forEach(function (r) { var d = String((r && r.dn) || ''); if (d.indexOf('unread:') === 0) dnUnreadLive++; else if (d.indexOf('retrying:') === 0) dnRetryLive++; }); } catch (eDn) {}
-    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
+    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
     /* ===== end dv3-1.0.0 ===== */
     setText(p, 'elapsed', mmss(Date.now() - startedAt) + ' elapsed');
     /* ===== dnp-1.0.0 (the bar does not claim 100% while a phase is running) ==
@@ -5066,7 +5070,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
       try { var hbD = document.getElementById('mlsPullProgHide'); if (hbD) { hbD.textContent = 'Done'; hbD.onclick = function () { doneDismissed = true; render(); }; } } catch (eHb) {}
     }
-    var doneLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : ''); /* dv3-1.0.0 */
+    /* uimap-1.0.0: "N not saved" left the doctor with a number and no meaning \u2014
+       not saved WHERE, and what does he do about it. The reason is already on
+       every row underneath, so the summary says to look there. */
+    var doneLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : ''); /* dv3-1.0.0 */
     /* ===== cap-1.0.0 + tny-1.0.0 (the DONE card says all four things) =====
        "saved \u00B7 summaries pending N" is the honest wording for a day whose
        charts landed while the backend AI was unavailable; "not seen yet" is
@@ -13710,7 +13717,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var icon = card.querySelector('.mls-sv-icon');
         if (icon) icon.textContent = '✓';
         if (title) title.textContent = 'Saved — schedule pull stored on the calendar';
-        if (lines) lines.textContent = 'All ' + m[1] + ' pulled rows are saved locally (schedule pulls store appointments, not per-patient visits — the 0-of-' + m[1] + ' figure was a mis-count, not a failure). Server sync completes in the background.';
+        /* uimap-1.0.0 (owner 2026-08-17, "bad UI everywhere"): the old line
+           explained the app's own arithmetic to a doctor — "the 0-of-N figure
+           was a mis-count, not a failure". A doctor does not know what the
+           0-of-N figure is, and being told a number he never asked about was
+           wrong is a reason to distrust every other number on the screen. Say
+           what happened to his data instead. */
+        if (lines) lines.textContent = 'All ' + m[1] + ' appointments from this schedule pull are saved on this computer. Patient charts are pulled separately. Sending them to your account finishes in the background.';
         SV.demoted++;
         (function (c) { setTimeout(function () { try { if (c.parentNode) c.parentNode.removeChild(c); } catch (e) {} }, 9000); })(card);
       }
@@ -18716,7 +18729,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var icon = card.querySelector('.mls-sv-icon');
         if (icon) icon.textContent = '✓';
         if (title) title.textContent = 'Saved — schedule pull stored on the calendar';
-        if (lines) lines.textContent = 'All ' + m[1] + ' pulled rows are saved locally (schedule pulls store appointments, not per-patient visits — the 0-of-' + m[1] + ' figure was a mis-count, not a failure). Server sync completes in the background.';
+        /* uimap-1.0.0 (owner 2026-08-17, "bad UI everywhere"): the old line
+           explained the app's own arithmetic to a doctor — "the 0-of-N figure
+           was a mis-count, not a failure". A doctor does not know what the
+           0-of-N figure is, and being told a number he never asked about was
+           wrong is a reason to distrust every other number on the screen. Say
+           what happened to his data instead. */
+        if (lines) lines.textContent = 'All ' + m[1] + ' appointments from this schedule pull are saved on this computer. Patient charts are pulled separately. Sending them to your account finishes in the background.';
         SV.demoted++;
         (function (c) { setTimeout(function () { try { if (c.parentNode) c.parentNode.removeChild(c); } catch (e) {} }, 9000); })(card);
       }

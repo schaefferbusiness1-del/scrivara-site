@@ -37989,27 +37989,17 @@ html[data-msl="guided"] #calendarView .card.cx-agenda > p.mini,
 html[data-msl="calm"] #mlsT3Roster .t3r-cap:not(.t3r-census),
 html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !important; }
 
-/* ---- The guided next step ------------------------------------------
-   Exactly ONE element carries .msl-next at a time. This is deliberate: in
-   this app every existing infinite pulse means "a recorder or recognizer is
-   LIVE", so a decorative blink would collide with a clinical signal. This is
-   a soft standing ring, not a blink, and it is bounded to one target. */
-.msl-next{ position:relative; }
-.msl-next::after{
-  content:''; position:absolute; inset:-4px; border-radius:inherit; pointer-events:none;
-  box-shadow:0 0 0 2px var(--brand), 0 0 0 6px color-mix(in srgb, var(--brand) 22%, transparent);
-  animation:mslNextRing 2.4s var(--mls-ease-inout,ease-in-out) infinite;
-}
-@keyframes mslNextRing{
-  0%,100%{ opacity:.45; }
-  50%    { opacity:1; }
-}
-/* The shell's blanket reduce-motion rule at :2684 already neutralizes the
-   animation. This makes the still state deliberate rather than incidental:
-   the ring stays fully visible, so the guidance survives without motion. */
-@media (prefers-reduced-motion: reduce){
-  .msl-next::after{ animation:none !important; opacity:1 !important; }
-}
+/* ---- The guided next step: RETIRED, absorbed by nextglow-1.0.0 ------
+   This block used to own a soft ring that lit only in guided mode. The owner's
+   2026-08-17 order ("FOR EVERY SINGLE SYSTEM THE MOST LIKELY NEXT BUTTON TO
+   MOVE ALONG THE PATH SHOULD BE GLOWING") needs it in EVERY mode, on every
+   state and every dialog, so it moved to nextglow-1.0.0 and there is now
+   exactly ONE owner of the glow.
+
+   The .msl-next stylesheet is deliberately GONE rather than left inert: two
+   stylesheets both able to draw a ring is precisely how the stale-ring defect
+   this block once fixed comes back. markNext() below now delegates, and a test
+   asserts .msl-next never appears on any element. */
 
 /* ---- The mode chip, top right ---------------------------------------
    Owner: "a dad mode where you click it". Until now the only way in was a
@@ -38391,35 +38381,27 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     return null;
   }
+  /* THE GLOW MOVED OUT. nextglow-1.0.0 owns it now — every mode, every state,
+     every dialog — so this is a delegation and not a second opinion. It also
+     sweeps any .msl-next a hot reload of an older build may have left behind,
+     because two owners of one ring is the defect this function used to fix.
+     NEXT_STEPS / NEXT_OVERLAYS survive ONLY as the observer list below: those
+     containers are still exactly the nodes whose display changes mean "the
+     screen changed", which is when the folds must be re-applied. */
   function markNext(mode) {
-    /* querySelectorAll, not querySelector: one stale ring left behind on a
-       hidden node is exactly how this ended up lit on seven screens at once. */
-    var prev = document.querySelectorAll('.msl-next'), p;
-    for (p = 0; p < prev.length; p++) prev[p].classList.remove('msl-next');
-    if (mode !== 'guided') return '';
-
-    var i, host, target;
-    for (i = 0; i < NEXT_OVERLAYS.length; i++) {
-      host = document.getElementById(NEXT_OVERLAYS[i][0]);
-      if (!host || !host.classList.contains('show') || !shown(host)) continue;
-      target = firstEligible(host, NEXT_OVERLAYS[i][1]);
-      if (target) { target.classList.add('msl-next'); return NEXT_OVERLAYS[i][0]; }
-      return NEXT_OVERLAYS[i][0];
-    }
-    for (i = 0; i < NEXT_STEPS.length; i++) {
-      host = document.getElementById(NEXT_STEPS[i][0]);
-      if (!host || !shown(host)) continue;                  /* not the shown view */
-      target = firstEligible(host, NEXT_STEPS[i][1]);
-      if (target) { target.classList.add('msl-next'); return NEXT_STEPS[i][0]; }
-      return NEXT_STEPS[i][0];   /* this IS the shown view; nothing actionable */
-    }
+    var stale = document.querySelectorAll('.msl-next'), p;
+    for (p = 0; p < stale.length; p++) stale[p].classList.remove('msl-next');
+    try { if (window.__mlsNextGlow) window.__mlsNextGlow.refresh(); } catch (e) {}
     return '';
   }
-  /* Public, so a test can ask what the ring believes rather than infer it. */
+  /* Public, so a test can ask what the glow believes rather than infer it.
+     Kept at this name because callers and suites already use it; the answer now
+     comes from the one owner. */
   function nextStepReport() {
-    var lit = document.querySelectorAll('.msl-next'), out = [], k;
-    for (k = 0; k < lit.length; k++) out.push({ id: lit[k].id || '', visible: shown(lit[k]) });
-    return { mode: document.documentElement.getAttribute('data-msl') || 'calm', lit: out };
+    var mode = document.documentElement.getAttribute('data-msl') || 'calm';
+    var ng = null;
+    try { ng = window.__mlsNextGlow ? window.__mlsNextGlow.report() : null; } catch (e) { ng = null; }
+    return { mode: mode, owner: 'nextglow-1.0.0', lit: ng ? ng.lit : [], glow: ng };
   }
 
   var queued = false, lateTimer = 0;
@@ -42381,8 +42363,1987 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   [0, 1200, 3000].forEach(function (ms) {
     bootTimers.push(setTimeout(function () { safe(function () { enforceEmptyBanner('boot'); }); }, ms));
   });
+  /* MEASURED 2026-08-17 (nextglow lane): all three passes can run BEFORE the
+     account namespace exists. uns('activePt') then resolves to a pre-login key,
+     activeId() returns '', and enforceEmptyBanner() returns false having done
+     nothing — so a slow sign-in or a slow bundle leaves yesterday's patient on
+     the banner and the sweep never runs again. Reproduced with the account
+     established only after the bundle resolved: bootCleared stayed 0, and
+     calling the same predicate by hand immediately cleared it (did:true,
+     activePt "syn-0" -> "").
+
+     The sign-in path is already covered by the session boundary; this covers
+     the paths that do not announce one. BOUNDED and IDEMPOTENT: it stops the
+     moment an account is visible (or after ~24s), and every pass re-asks the
+     same predicate — which returns false for a patient the doctor has since
+     chosen, and refuses outright while there is work in the editor. */
+  (function lateBootSweep() {
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      /* Deliberately NOT gated on "does an account exist yet". uns() returns a
+         namespaced key before the real account is in place too, so any such
+         probe reports ready while activeId() is still reading the wrong
+         namespace — it would fire once, find nothing, and stop, which is the
+         exact failure this exists to cover. The predicate itself is the only
+         honest test, it is idempotent by construction, and it costs one
+         localStorage read; so just keep asking until it acts or time is up. */
+      var did = safe(function () { return enforceEmptyBanner('boot-late'); }, false);
+      if (did || tries > 20) clearInterval(iv);
+    }, 1200);
+    bootTimers.push(iv);
+  })();
 })();
 </script>
 <!-- ===== end visitowner-1.0.0 ========================================= -->
+<!-- ===== nextglow-1.0.0 — one glowing next step, everywhere =============
+     OWNER, 2026-08-17 (his caps): "THAT'S A BIG PROBLEM WITH THIS PROGRAM — A
+     WHERE-TO-GO-NEXT INDICATOR OR WHERE THINGS ARE. FOR EVERY SINGLE SYSTEM THE
+     MOST LIKELY NEXT BUTTON TO MOVE ALONG THE PATH SHOULD BE GLOWING."
+
+     WHAT THIS REPLACES. msl-1.0.0 already had a guided ring, and it was not
+     enough on three counts, each measured:
+       1. It only lit in "guided" mode. Normal is the DEFAULT, so on the screen
+          a doctor actually looks at, nothing glowed at all.
+       2. It was a 2px halo at 45-100% opacity — the owner's word for it was
+          "too subtle", and the app's own primary buttons already carry a
+          10px-30px coloured shadow, so the ring was quieter than the furniture
+          around it.
+       3. It covered 11 view containers and 2 dialogs. It knew nothing about
+          STATE: the Visit room lit the same control whether the doctor had no
+          patient, was recording, or had a finished note on screen.
+
+     SO THERE IS EXACTLY ONE OWNER OF THE GLOW. msl-1.0.0's markNext() now
+     delegates here and its .msl-next stylesheet is gone; nothing else in the
+     app adds the attribute. A test asserts .msl-next never appears.
+
+     THREE THINGS MAKE IT UNMISSABLE WITHOUT LYING:
+       (a) A REAL PULSE. A 3px ring, a 9px wash and a 26px bloom, pulsing
+           opacity 0.55->1 with a 2.2% scale. prefers-reduced-motion stills it
+           at full strength rather than hiding it.
+       (b) A "Next" TAG. Not a pseudo-element and not a child node — ONE fixed
+           element, #mlsNgTag, positioned from the target's measured rect.
+           WHY NOT ::before: several candidates already own ::before (the mode
+           chip's checkmark) and replacing it would delete a real affordance.
+           WHY NOT A CHILD NODE: this app reads button TEXT to decide state —
+           recordingNow() is /recording|stop/i on #captureBtn.textContent — so
+           injecting the word "Next" into a control could flip a state machine.
+           Measured, not assumed: the tag is a sibling of nothing and touches
+           no control's textContent.
+       (c) A REASON, when the natural next step is blocked. If the step the
+           path says comes next is disabled, the glow moves to the control that
+           UNBLOCKS it and the tag says why in one line. The glow is never on a
+           disabled or hidden control — that is asserted per room per state.
+
+     THE PATH TABLE IS DECLARATIVE AND LIVES IN ONE PLACE (PATHS below), so a
+     room's next step is data, not code, and a test can walk the same table.
+
+     IT NEVER GLOWS SOMETHING DESTRUCTIVE. Candidates are the forward step; no
+     entry names a delete, a clear, a stop or a sign-out. -->
+<style id="mlsNextGlowCss">
+/* The halo. ::after on the control itself is the mechanism msl-1.0.0 already
+   proved safe on these targets; only its strength changes. It carries no
+   background, so it can never cover a label. */
+[data-mls-next="1"]{ position:relative; }
+[data-mls-next="1"]::after{
+  content:''; position:absolute; inset:-5px; border-radius:inherit; pointer-events:none;
+  box-shadow:
+    0 0 0 3px var(--mls-ng-ring, #2E6A4B),
+    0 0 0 9px color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 26%, transparent),
+    0 0 26px 5px color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 45%, transparent);
+  animation:mlsNgPulse 2.2s var(--mls-ease-inout, ease-in-out) infinite;
+}
+/* color-mix is not universal; the fallback ring is a plain rgba so an older
+   engine still shows a real halo rather than nothing. */
+@supports not (color: color-mix(in srgb, red 50%, transparent)){
+  [data-mls-next="1"]::after{
+    box-shadow:0 0 0 3px #2E6A4B, 0 0 0 9px rgba(46,106,75,.26), 0 0 26px 5px rgba(46,106,75,.45);
+  }
+}
+@keyframes mlsNgPulse{
+  0%,100%{ opacity:.55; transform:scale(1); }
+  50%    { opacity:1;   transform:scale(1.022); }
+}
+/* The shell's blanket reduce-motion rule kills the animation; this makes the
+   still state DELIBERATE — full strength, so the guidance survives without
+   motion instead of fading to nothing. */
+@media (prefers-reduced-motion: reduce){
+  [data-mls-next="1"]::after{ animation:none !important; opacity:1 !important; transform:none !important; }
+}
+/* A control inside a scroll container clips its own outline; the halo is drawn
+   with box-shadow precisely so it is not clipped by overflow on the CONTROL,
+   but an ancestor with overflow:hidden still can. Nothing to do about that in
+   CSS, so the tag (which is fixed) carries the message in that case. */
+
+#mlsNgTag{
+  position:fixed; z-index:9460; pointer-events:none;
+  display:none; align-items:center; gap:6px;
+  max-width:min(300px, 72vw);
+  padding:4px 9px; border-radius:var(--r-pill,999px);
+  font:800 11px/1.25 var(--sans, system-ui, sans-serif); letter-spacing:.03em;
+  color:#fff; background:var(--mls-ng-ring, #2E6A4B);
+  box-shadow:0 3px 10px rgba(20,33,28,.28);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#mlsNgTag[data-shown="1"]{ display:inline-flex; }
+/* AN INLINE LINK THAT IS THE NEXT STEP BECOMES A BUTTON. Owner: "Open in
+   History →" must be BIG and glowing. It ships as a bare inline <a> inside a
+   sentence, so a halo alone would ring a line of text. Scoped to
+   [data-mls-next="1"], so it can only ever affect the ONE control that is
+   currently the next step, and it reverts the moment the glow moves. */
+a[data-mls-next="1"]{
+  display:inline-flex !important; align-items:center; gap:6px;
+  margin:8px 4px 4px 0; padding:11px 18px !important;
+  font:800 14px/1.2 var(--sans, system-ui, sans-serif) !important;
+  color:#fff !important; background:var(--mls-ng-ring, #2E6A4B) !important;
+  border-radius:var(--r-ctl, 11px); text-decoration:none !important;
+}
+#mlsNgTag .mlsNgWhy{
+  font-weight:600; letter-spacing:0; opacity:.92;
+  white-space:normal; max-width:210px;
+}
+@media print{ #mlsNgTag{ display:none !important; } }
+</style>
+<script>
+/* nextglow-1.0.0 controller. */
+(function () {
+  'use strict';
+  if (window.__mlsNextGlow) return;
+
+  var VERSION = 'nextglow-1.0.0';
+  var ATTR = 'data-mls-next';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function q(sel, root) {
+    return safe(function () { return (root || document).querySelector(sel); }, null);
+  }
+  function txt(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function trimmed(v) { var s = txt(v); return s.trim ? s.trim() : s; }
+
+  /* Visible means it occupies real space AND is not display:none / hidden /
+     fully transparent. offsetParent is NOT usable: it is null for every
+     position:fixed element, which silently disqualified the dock, the chips and
+     every modal in the ring this block replaces. */
+  function shown(e) {
+    if (!e) return false;
+    var r = safe(function () { return e.getBoundingClientRect(); }, null);
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs = safe(function () { return getComputedStyle(e); }, null);
+    if (!cs) return false;
+    return !(cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0');
+  }
+  function enabled(e) {
+    if (!e) return false;
+    if (e.disabled === true) return false;
+    if (e.getAttribute && e.getAttribute('aria-disabled') === 'true') return false;
+    return true;
+  }
+  function eligible(e) { return !!(e && enabled(e) && shown(e)); }
+  /* Present but refusing: the case that earns an "unblock" hop. */
+  function blocked(e) { return !!(e && shown(e) && !enabled(e)); }
+
+  /* ---------------- state readers -------------------------------------
+     Every one of these reads the APP's own signal rather than a private
+     mirror, so the glow cannot disagree with the screen. */
+
+  function valueOf(id) { var e = el(id); return e ? trimmed(e.value) : ''; }
+  function recording() {
+    if (safe(function () { return document.body.classList.contains('mls-recording'); }, false)) return true;
+    var cb = el('captureBtn');
+    if (!cb) return false;
+    if (safe(function () { return cb.classList.contains('recording'); }, false)) return true;
+    /* the same fallback the flow lane uses, so the two can never disagree */
+    return /recording|stop visit|stop recording/i.test(txt(cb.textContent));
+  }
+  function hasTranscript() { return !!(valueOf('transcript') || valueOf('ez3flTranscript')); }
+  function hasNote() { return !!(valueOf('noteBox') || valueOf('ez3flNote')); }
+  function noteSigned() {
+    var b = el('statusBadge');
+    return !!(b && /signed/i.test(txt(b.textContent)));
+  }
+  function activePatientId() {
+    return safe(function () {
+      return typeof window.getActivePtId === 'function' ? txt(window.getActivePtId()) : '';
+    }, '');
+  }
+  function patientChosen() {
+    /* The DELIBERATE act, not the leftover: uns('activePt') lives in
+       localStorage and survives the night, so a restored id is not a choice.
+       visitowner-1.0.0 owns the clearing; this only reads the same signal. */
+    return safe(function () {
+      return typeof window.activePtChosenThisSession === 'function'
+        ? window.activePtChosenThisSession() === true : !!activePatientId();
+    }, false);
+  }
+
+  /* Visit is a five-state machine and the ONLY correct next step depends on
+     which state it is in. Ordered most-specific first. */
+  function visitState() {
+    if (recording()) return 'recording';
+    if (hasNote()) return noteSigned() ? 'signed' : 'drafted';
+    if (hasTranscript()) return 'paused';
+    if (activePatientId()) return 'patient';
+    return 'nopatient';
+  }
+
+  /* ---------------- THE PATH TABLE ------------------------------------
+     One row per room / dialog. Read in order; the first row whose host is on
+     screen owns the glow.
+
+       id     stable name, used by the tests and by report()
+       host   the container that must be visible for this row to own the glow
+       modal  true when the host is a dialog (checked before any view)
+       states ordered list of { when, steps, why }
+                when  optional predicate; the first matching entry wins
+                steps ordered candidate selectors; the first ELIGIBLE one glows
+                why   the one line the tag shows (optional)
+              A step may be { sel, unblock, why }: if `sel` exists but is
+              DISABLED, the glow hops to `unblock` and shows `why`.
+
+     A room with no honest single next step is deliberately ABSENT: guessing
+     teaches the doctor to distrust the glow, which is worse than no glow. */
+  var PATHS = [
+    /* ---- dialogs and takeovers, most specific first ------------------ */
+    {
+      id: 'athenaReview', host: '#mlsAthenaUnifiedConfirm', modal: true,
+      states: [
+        { when: function (h) { return eligible(q('#mlsAthenaUnifiedGo', h)); },
+          steps: ['#mlsAthenaUnifiedGo'], why: 'The chart is verified — this sends only this one action' },
+        { when: function (h) { return eligible(q('#mlsAthenaUnifiedFix button', h)); },
+          steps: ['#mlsAthenaUnifiedFix button'], why: 'Clear this before MLS can send' },
+        { steps: ['#mlsAthenaUnifiedRecheck', '#mlsAthenaUnifiedProbe button', '#mlsAthenaUnifiedClose'],
+          why: 'Check Athena again once the chart is open' }
+      ]
+    },
+    {
+      id: 'pullProgress', host: '#mlsPullProgPanel', modal: true,
+      /* ONE control, whose LABEL is the state: the dialog reuses
+         #mlsPullProgHide as "Hide (keep pulling)" while running and rewrites it
+         to "Done" when the run finishes. Glowing the id rather than the label
+         means this row cannot go dark on the transition. "Stop pull" is
+         deliberately never the lit step. */
+      states: [{ steps: ['#mlsPullProgHide'] }]
+    },
+    {
+      id: 'opnotes', host: '#opPrepModal', modal: true,
+      states: [
+        /* FILL-IN-THE-BLANKS IS DONE. Owner, 2026-08-17: once the note is
+           saved, "Open in History →" is the next step and must be big and
+           glowing. It is a bare inline <a> with no id inside the room's own
+           saved-message, so it is matched on the shell literal in its onclick
+           — the one stable thing about it — rather than by adding an id to
+           op-note code another lane is rebuilding right now. */
+        { steps: [
+            { sel: '#opPrepModal a[onclick*="showView(\'history\')"]',
+              reason: 'Read the note you just saved' }
+          ] },
+        { steps: [
+            { sel: '#opPrepGenAllBtn', unblock: '#oprTabTpls',
+              reason: 'Draft every op note this day needs',
+              why: 'Assign a template to each procedure first' },
+            '#opPrepModal .btn-primary', '#oprBack'
+          ] }
+      ]
+    },
+    {
+      id: 'templates', host: '#templatesModal', modal: true,
+      states: [{ steps: ['#tplUploadBtn', '#templatesModal .btn-primary', '#templatesModal .modal-x'] }]
+    },
+    {
+      id: 'settings', host: '#settingsModal', modal: true,
+      /* MEASURED: "Save changes" is DISABLED until something is actually
+         changed, so a single row with one `why` produced a glow on the × that
+         still read "Save what you changed" — the glow was right and the
+         sentence was a lie. Each step carries its own line instead. */
+      states: [
+        { steps: [
+            { sel: '#settingsModal .btn-primary', reason: 'Save what you changed' },
+            { sel: '#settingsModal .modal-x', reason: 'Nothing is waiting — close when you are done' }
+          ] }
+      ]
+    },
+    {
+      id: 'legal', host: '#legalModal,#legalFillModal,#mlsLegalRoom', modal: true,
+      /* SCAFFOLD. The legal/IME lane owns the legal pack module and is still
+         naming its states; these are its CURRENT controls, and the row degrades
+         to the dialog's own primary if none of them exist, so it can never
+         point at nothing. When that lane hands its state names over, this row
+         grows a `states` list per state — no other file changes. */
+      states: [{ steps: ['#legalGenBtn', '#legalFillGo', '#legalModal .btn-primary', '#legalFillModal .btn-primary'] }]
+    },
+    {
+      id: 'setup', host: '#setupModal', modal: true,
+      states: [{ steps: ['#setupModal .btn-primary', '#setupModal .modal-x'] }]
+    },
+    {
+      id: 'countersign', host: '#countersignModal', modal: true,
+      states: [{ steps: ['#countersignModal .btn-primary', '#countersignModal .modal-x'] }]
+    },
+    {
+      id: 'patientDetail', host: '#patientModal', modal: true,
+      states: [{ steps: ['#patientModal .btn-primary', '#patientModal .modal-x'] }]
+    },
+
+    /* ---- sign-in, before any view: the app screen is not up yet ------- */
+    {
+      id: 'signin', host: '#authScreen',
+      states: [
+        { when: function () { return !trimmed(valueOf('authEmail')); },
+          steps: ['#authEmail'], why: 'Your email' },
+        { when: function () { return !trimmed(valueOf('authPass')); },
+          steps: ['#authPass'], why: 'Your password' },
+        { steps: ['#authBtn'] }
+      ]
+    },
+
+    /* ---- rooms -------------------------------------------------------- */
+    {
+      id: 'visit', host: '#visitView',
+      states: [
+        /* NO PATIENT. The engine hero reads "Start Recording — <first
+           scheduled name>", which is a shortcut to the NEXT APPOINTMENT and
+           not a chart the doctor picked. Glowing it would teach exactly the
+           habit the owner is complaining about, so the glow goes to the act of
+           choosing. The hero keeps working; it is simply not the lit step. */
+        { when: function () { return visitState() === 'nopatient'; },
+          steps: ['#ez3Choose', '#ez3Change', '#mlsDsPullBtn'],
+          why: 'Pick the patient this visit belongs to' },
+        { when: function () { return visitState() === 'recording'; },
+          steps: ['.ez3fl-recbtn', '#ez3Stop', '#ez3Rec2', '#captureBtn'],
+          why: 'Pause when you are done talking' },
+        { when: function () { return visitState() === 'paused'; },
+          steps: [
+            { sel: '#ez3flGen', unblock: '#ez3flTranscript',
+              why: 'Record or paste some visit text first' },
+            '#ez3Gen', '#genBtn'
+          ],
+          why: 'Write one note from everything captured' },
+        { when: function () { return visitState() === 'drafted'; },
+          steps: ['#ez3flReview', '#mlsReviewSignBtn', '#signNoteBtn', '#ez3Review'],
+          why: 'Read it, then sign' },
+        { when: function () { return visitState() === 'signed'; },
+          steps: ['#pushAllEmrBtn', '#mlsAthenaSendBtn', '#ez3Send'],
+          why: 'Nothing is sent until you confirm' },
+        /* patient chosen, nothing captured yet */
+        { steps: ['#ez3Rec', '#ez3Next', '.ez3fl-recbtn', '#captureBtn'],
+          why: 'Just talk — MLS writes the note' }
+      ]
+    },
+    {
+      id: 'calendar', host: '#calendarView',
+      states: [
+        { steps: ['#mlsCvNxt_calendar', '#calendarView .cx-todaybtn', '#calendarView .btn-primary'],
+          why: 'Read that day’s appointments from Athena' }
+      ]
+    },
+    {
+      id: 'patients', host: '#patientsView',
+      states: [
+        { when: function () { return !!activePatientId(); },
+          steps: ['#profileCard > h2 button.btn-green', '#ptPullAthenaBtn'],
+          why: 'Start this patient’s visit' },
+        { steps: ['#ptList .pt-item', '#ptSearch', '#ptNewBtn'],
+          why: 'Open the patient you are about to see' }
+      ]
+    },
+    {
+      id: 'history', host: '#historyView',
+      states: [{ steps: ['#mlsCvNxt_history', '#histNewVisitBtn', '#pullChartBtn', '#histSearch'],
+        why: 'Bring this patient’s chart across from Athena' }]
+    },
+    {
+      id: 'recs', host: '#recsView',
+      states: [{ steps: ['#genRecsBtn', '#recsView .btn-primary'],
+        why: 'Suggestions you review before anything is ordered' }]
+    },
+    /* studioView BEFORE analysisView, deliberately: feat_mls_studio_merge.js
+       hoists #analysisView INSIDE #studioView, so on AI Studio both containers
+       are shown and the first match wins. */
+    {
+      id: 'studio', host: '#studioView',
+      states: [{ steps: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn'],
+        why: 'Ask about this visit or your practice' }]
+    },
+    {
+      id: 'analysis', host: '#analysisView',
+      states: [{ steps: ['#t7AxRefresh', '#anaBaselineRefresh', '#anaOutcomesRefresh',
+        '#analysisView .btn-primary', '#analysisView button'],
+        why: 'Re-read the numbers' }]
+    },
+    {
+      id: 'orders', host: '#ordersView',
+      states: [{ steps: ['#ordersView .btn-primary', '#ordersView button'] }]
+    },
+    {
+      id: 'intake', host: '#intakeView',
+      states: [{ steps: ['#intakeView .ik-submit', '#intakeView button'] }]
+    },
+    {
+      id: 'staffprep', host: '#mlsStEzPanel,#staffPrepView',
+      states: [{ steps: ['#mlsStMonthStart', '#mlsStMonthResume', '#mlsStEzPanel .btn-primary',
+        '#mlsStEzPanel button'] }]
+    },
+    {
+      id: 'avatar', host: '#mlsAvKiosk,#mlsAvCheckin',
+      states: [{ steps: ['#mlsAvStart', '#mlsAvNext', '#mlsAvKiosk .btn-primary'] }]
+    },
+    {
+      id: 'extension', host: '#mlsExtHealth,#getExtensionView',
+      states: [
+        { steps: ['#mlsExtDownload', '#mlsExtInstall', '#mlsExtVerify', '#mlsExtHealth .btn-primary'] }
+      ]
+    },
+    {
+      id: 'admin', host: '#adminView',
+      states: [{ steps: ['#adminView .btn-primary', '#adminView button'] }]
+    },
+    {
+      id: 'team', host: '#teamView',
+      states: [{ steps: ['#teamView .btn-primary', '#teamView button'] }]
+    },
+    {
+      id: 'legalReq', host: '#legalReqView',
+      states: [{ steps: ['#legalReqView .btn-primary', '#legalReqView button'] }]
+    }
+  ];
+
+  /* ---------------- resolution ---------------------------------------- */
+
+  function hostOf(row) {
+    var sels = row.host.split(',');
+    for (var i = 0; i < sels.length; i++) {
+      var h = q(trimmed(sels[i]));
+      if (!h) continue;
+      if (!shown(h)) continue;
+      if (row.modal) {
+        /* A DIALOG OWNS THE SCREEN ONLY WHILE .show IS ON IT. Measured defect:
+           `shown()` alone was true for #opPrepModal with .show removed — the
+           .modal-bg keeps a box — so the op-note room kept the glow across six
+           later dialogs. Every dialog in this app is a .modal-bg driven by the
+           .show class, so that class IS the open/closed signal; a host that is
+           not a .modal-bg (a full-screen room, a sheet) falls back to being
+           visible, which is the only signal it has. */
+        var isBg = safe(function () { return h.classList.contains('modal-bg'); }, false);
+        if (isBg && !safe(function () { return h.classList.contains('show'); }, false)) continue;
+      }
+      return h;
+    }
+    return null;
+  }
+
+  /* WHICH ROOM IS ACTUALLY OPEN. showView() leaves several view containers
+     displayed at once — feat_mls_studio_merge.js hoists #analysisView inside
+     #studioView, and Orders and Admin were BOTH measured glowing Analysis's
+     "Refresh baseline metrics" because #analysisView still had a box behind
+     them. Container visibility cannot settle that; the app's own currentView
+     can, and it is the same value the shell's own renderers branch on. Used as
+     a PREFERENCE, never as a requirement: if it names a room whose row has no
+     eligible step, the ordered scan below still runs. */
+  function currentRoomId() {
+    return safe(function () {
+      return (typeof window.currentView === 'string') ? window.currentView : '';
+    }, '');
+  }
+
+  /* Resolve one step definition to { el, why } or null. */
+  function resolveStep(step, host, rowWhy) {
+    var sel = (typeof step === 'string') ? step : step.sel;
+    var e = q(sel, host) || q(sel);
+    if (eligible(e)) return { el: e, why: (typeof step === 'string') ? rowWhy : (step.reason || rowWhy) };
+    /* THE UNBLOCK HOP. The step exists and is on screen but refuses, so glow
+       what makes it possible and say so. Never glow the refusing control. */
+    if (typeof step !== 'string' && step.unblock && blocked(e)) {
+      var u = q(step.unblock, host) || q(step.unblock);
+      if (eligible(u)) return { el: u, why: step.why || rowWhy };
+    }
+    return null;
+  }
+
+  function tryRow(row) {
+    var host = hostOf(row);
+    if (!host) return null;
+    for (var s = 0; s < row.states.length; s++) {
+      var st = row.states[s];
+      if (typeof st.when === 'function' && !safe(function () { return st.when(host); }, false)) continue;
+      for (var k = 0; k < st.steps.length; k++) {
+        var hit = resolveStep(st.steps[k], host, st.why);
+        if (hit) return { room: row.id, state: s, el: hit.el, why: hit.why || '' };
+      }
+    }
+    return { room: row.id, state: -1, el: null, why: '' };
+  }
+
+  function pick() {
+    /* Dialogs still win outright — one really is on top of everything. Then the
+       room the app SAYS is current, then the ordered scan. */
+    var i, row, got;
+    for (i = 0; i < PATHS.length; i++) {
+      if (!PATHS[i].modal) continue;
+      got = tryRow(PATHS[i]);
+      if (got) return got;
+    }
+    var cur = currentRoomId();
+    if (cur) {
+      for (i = 0; i < PATHS.length; i++) {
+        if (PATHS[i].modal || PATHS[i].id !== cur) continue;
+        got = tryRow(PATHS[i]);
+        if (got && got.el) return got;      /* only when it actually resolved */
+        break;
+      }
+    }
+    for (i = 0; i < PATHS.length; i++) {
+      row = PATHS[i];
+      if (row.modal) continue;
+      var host = hostOf(row);
+      if (!host) continue;
+      for (var s = 0; s < row.states.length; s++) {
+        var st = row.states[s];
+        if (typeof st.when === 'function' && !safe(function () { return st.when(host); }, false)) continue;
+        for (var k = 0; k < st.steps.length; k++) {
+          var hit = resolveStep(st.steps[k], host, st.why);
+          if (hit) return { room: row.id, state: s, el: hit.el, why: hit.why || '' };
+        }
+        /* this state matched and produced nothing actionable: fall through to
+           the row's later, less specific states rather than leaving the room
+           dark — the measured failure of the ring this replaces */
+      }
+      /* the room is on screen and has no eligible step at all. Do NOT fall
+         through to a room behind it: that is how a stale ring ends up on a
+         hidden control. */
+      return { room: row.id, state: -1, el: null, why: '' };
+    }
+    return { room: '', state: -1, el: null, why: '' };
+  }
+
+  /* ---------------- the tag ------------------------------------------- */
+
+  var _tag = null;
+  function tag() {
+    if (_tag && _tag.isConnected) return _tag;
+    if (!document.body) return null;
+    var t = el('mlsNgTag');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'mlsNgTag';
+      t.setAttribute('aria-hidden', 'true');   /* the halo is the affordance; the
+                                                  tag is decoration for sighted
+                                                  users and must not be read
+                                                  twice by a screen reader */
+      document.body.appendChild(t);
+    }
+    _tag = t;
+    return t;
+  }
+  function paintTag(target, why) {
+    var t = tag();
+    if (!t) return;
+    if (!target) { t.removeAttribute('data-shown'); return; }
+    var r = safe(function () { return target.getBoundingClientRect(); }, null);
+    if (!r) { t.removeAttribute('data-shown'); return; }
+    t.textContent = '';
+    var lead = document.createElement('span');
+    lead.textContent = 'NEXT';
+    t.appendChild(lead);
+    if (why) {
+      var w = document.createElement('span');
+      w.className = 'mlsNgWhy';
+      w.textContent = why;
+      t.appendChild(w);
+    }
+    t.setAttribute('data-shown', '1');
+    /* Measure AFTER the text is in, or the clamp uses last frame's width. */
+    var tr = safe(function () { return t.getBoundingClientRect(); }, null) || { width: 60, height: 20 };
+    var top = r.top - tr.height - 6;
+    var left = r.left;
+    /* Above the control by default; below it when there is no room above, so
+       the tag never leaves the viewport. */
+    if (top < 4) top = Math.min(r.bottom + 6, innerHeight - tr.height - 4);
+    if (left + tr.width > innerWidth - 6) left = innerWidth - tr.width - 6;
+    if (left < 6) left = 6;
+    t.style.top = Math.round(top) + 'px';
+    t.style.left = Math.round(left) + 'px';
+  }
+
+  /* ---------------- marking ------------------------------------------- */
+
+  var _last = { room: '', id: '', why: '' };
+
+  function clearAll() {
+    var prev = safe(function () { return document.querySelectorAll('[' + ATTR + ']'); }, []);
+    for (var i = 0; i < prev.length; i++) safe(function () { prev[i].removeAttribute(ATTR); });
+    /* msl-1.0.0's class is retired; sweep any that a hot reload left behind so
+       there is provably ONE owner of the glow. */
+    var stale = safe(function () { return document.querySelectorAll('.msl-next'); }, []);
+    for (var j = 0; j < stale.length; j++) safe(function () { stale[j].classList.remove('msl-next'); });
+  }
+
+  function mark() {
+    var hit = pick();
+    clearAll();
+    if (hit.el) {
+      safe(function () { hit.el.setAttribute(ATTR, '1'); });
+      paintTag(hit.el, hit.why);
+    } else {
+      paintTag(null, '');
+    }
+    _last = { room: hit.room, id: (hit.el && hit.el.id) || '', why: hit.why || '' };
+    return _last;
+  }
+
+  /* ---------------- scheduling ---------------------------------------- */
+  /* setTimeout, never requestAnimationFrame: rAF does not fire in a tab that is
+     not compositing, so a doctor returning to a backgrounded tab would find the
+     glow frozen on whatever the app was doing when it was hidden. */
+  var queued = false, lateTimer = 0;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () {
+      queued = false;
+      safe(mark);
+      /* ONE bounded second look. A view container's display flips BEFORE the
+         module that fills it has painted, so the first pass can settle for a
+         weaker candidate. Not a poll: exactly one follow-up per refresh. */
+      if (lateTimer) clearTimeout(lateTimer);
+      lateTimer = setTimeout(function () { lateTimer = 0; safe(mark); }, 420);
+    }, 0);
+  }
+
+  function watch() {
+    /* showView() switches a view by writing .style.display on its container, so
+       that attribute IS the view-change signal — no hook into shared code, and
+       a programmatic caller (the Copilot, a deep link, the calendar peek)
+       cannot bypass it. */
+    for (var i = 0; i < PATHS.length; i++) {
+      var sels = PATHS[i].host.split(',');
+      for (var s = 0; s < sels.length; s++) {
+        var h = q(trimmed(sels[s]));
+        if (!h || h.__mlsNgWatched) continue;
+        h.__mlsNgWatched = true;
+        safe(function () {
+          new MutationObserver(refresh).observe(h, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+        });
+      }
+    }
+    if (watch.__events) return;
+    watch.__events = 1;
+    ['mls:view-changed', 'mls:ui-ready', 'mls:active-patient-changed'].forEach(function (n) {
+      safe(function () { window.addEventListener(n, refresh, false); });
+    });
+    ['click', 'input', 'change'].forEach(function (n) {
+      safe(function () { document.addEventListener(n, refresh, true); });
+    });
+    ['resize', 'orientationchange'].forEach(function (n) {
+      safe(function () { window.addEventListener(n, refresh, false); });
+    });
+    /* The tag is fixed and the control is not, so a scroll moves them apart.
+       Repositioning only (no re-pick), passive, so it cannot cost a frame. */
+    safe(function () {
+      window.addEventListener('scroll', function () {
+        var t = el('mlsNgTag');
+        if (!t || t.getAttribute('data-shown') !== '1') return;
+        var cur = q('[' + ATTR + '="1"]');
+        if (cur) paintTag(cur, _last.why); else paintTag(null, '');
+      }, true);
+    });
+    /* The body is rebuilt constantly by the shared modules. One observer on
+       body/childList (no subtree) is cheap and catches a room being swapped. */
+    safe(function () {
+      new MutationObserver(refresh).observe(document.body, { childList: true });
+    });
+    /* A slow re-arm for containers that do not exist yet at boot (the op-note
+       room, the Athena sheet, the pull dialog). Bounded: 20 passes, then it
+       stops and lives on events alone. */
+    var n = 0;
+    var iv = setInterval(function () {
+      watch();
+      refresh();
+      if (++n > 20) clearInterval(iv);
+    }, 900);
+  }
+
+  window.__mlsNextGlow = {
+    version: VERSION,
+    refresh: refresh,
+    /* What the glow BELIEVES, so a test can ask rather than infer. */
+    report: function () {
+      var lit = safe(function () { return document.querySelectorAll('[' + ATTR + '="1"]'); }, []);
+      var out = [];
+      for (var i = 0; i < lit.length; i++) {
+        out.push({
+          id: lit[i].id || '',
+          cls: txt(lit[i].className).slice(0, 40),
+          visible: shown(lit[i]),
+          enabled: enabled(lit[i]),
+          text: trimmed(txt(lit[i].textContent)).replace(/\s+/g, ' ').slice(0, 44)
+        });
+      }
+      var t = el('mlsNgTag');
+      return {
+        room: _last.room, expectedId: _last.id, why: _last.why,
+        lit: out, count: out.length,
+        stale: safe(function () { return document.querySelectorAll('.msl-next').length; }, 0),
+        tagShown: !!(t && t.getAttribute('data-shown') === '1'),
+        tagText: t ? trimmed(txt(t.textContent)) : ''
+      };
+    },
+    /* The table itself, so a test walks the SAME data the runtime does rather
+       than a second copy that can drift. */
+    paths: PATHS,
+    visitState: visitState,
+    revert: function () {
+      clearAll();
+      var t = el('mlsNgTag');
+      if (t && t.parentNode) t.parentNode.removeChild(t);
+      var css = el('mlsNextGlowCss');
+      if (css && css.parentNode) css.parentNode.removeChild(css);
+      return true;
+    }
+  };
+
+  function boot() { watch(); refresh(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end nextglow-1.0.0 ============================================ -->
+<!-- ===== visitflow-1.0.0 — the transcript stays, and one record control ===
+     OWNER, 2026-08-17 21:35Z, from his own screenshot of the Visit room while
+     recording: the transcript box ("The visit conversation appears here as you
+     speak…") DISAPPEARS once recording starts, and a huge dark "Start
+     Recording" button sits on screen BELOW the live "● Pause recording" strip.
+     Two record controls saying opposite things, and no transcript.
+
+     BOTH HALVES ARE MEASURED, AND NEITHER WAS A GUESS.
+
+     (1) THE TRANSCRIPT. feat_mls_calm_shell.js:405 ships
+             body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}
+         and :3472 sets that class from the WORD COUNT:
+             t.classList.toggle('mls-empty', /(?:^|\D)0\s*words/i.test(textOf(t)))
+         Calm is the DEFAULT mode. So the box is hidden whenever the count reads
+         zero — which is exactly the moment recording starts and nothing has
+         been recognised yet, and stays hidden through every silence before the
+         first word. Measured on this shell, no patient chosen: the wrapper
+         computes display:none and getBoundingClientRect() is 0x0, so the box
+         the doctor is told to watch is not on the page at all.
+
+         Hiding an empty box is a REASONABLE idea at rest and a wrong one while
+         a recorder is live: the empty box IS the feedback. So this narrows the
+         shared rule instead of deleting it — the box comes back whenever
+         capture is live, whenever a note exists, and whenever the doctor is
+         focused in it, and stays folded at rest exactly as before.
+
+         feat_mls_calm_shell.js is a SHARED module (no 1p- prefix): editing it
+         would ship to production. This is an overlay. Specificity is not
+         decoration — the shared rule is (0,3,1) with !important and is injected
+         at runtime AFTER this stylesheet, so a matching-specificity rule loses
+         on source order. `html body.mls-calm[...]` is (0,3,2) and wins.
+
+     (2) TWO RECORD CONTROLS. 1p-mls-connect.js:6762 already makes the engine's
+         recording controls yield while the flow lane's pill is offered — but
+         the list is only #ez3Stop and #ez3Rec2. The engine's BIG hero buttons
+         are #ez3Rec / #ez3Next / #ez3Nxt / #ez3Now, and none of them is in it.
+         Measured on this shell: with a patient chosen the hero #ez3Rec renders
+         720x82 reading "🎙 Start Recording", and the lane pill renders 48px
+         reading "⏸ Pause recording" — both visible, both driving the same one
+         recorder, saying opposite things. That is the owner's screenshot.
+
+         The yield is extended to the hero ids, with the SAME guard shape the
+         shipped rule uses and for the same reason: it is gated on the lane pill
+         being REALLY offered (`.ez3fl-recbtn:not([hidden])`), so when the pill
+         is hidden — idle with no transcript, which is the state the hero is
+         designed for — the hero survives untouched. It can therefore never hide
+         the last record control on the screen. Phones are excluded outright:
+         there the whole lane is CSS-hidden and :not([hidden]) cannot see that,
+         so the engine hero is the only one left and must stay.
+
+         PROVEN BOTH WAYS, because a fix that removes the last record control
+         would be worse than the defect: the suite asserts >=1 visible record
+         control in every state AND exactly one while recording.
+
+     WHAT THIS DELIBERATELY DOES NOT DO. It does not relabel #ez3Next. That
+     button names the NEXT SCHEDULED patient, and tests/record-verb-names-the-
+     patient-once.test.js pins that on purpose ("the HOME screen Start Recording
+     button must still name the patient"). nextglow-1.0.0 handles the owner's
+     "nothing pre-armed" concern the honest way instead: with no patient chosen
+     the glow is on "Choose patient", never on the pre-armed hero. -->
+<style id="mlsVisitFlowCss">
+/* ---- (1) THE TRANSCRIPT IS PRESENT WHENEVER CAPTURE IS LIVE -----------
+   body.mls-recording is written by the flow lane's own syncTopLane() — the one
+   place in the app that already knows whether capture is live — so this reads
+   the app's signal rather than inventing a second one.
+   Four conditions, any one of which brings the box back:
+     · capture is live                       (body.mls-recording)
+     · the doctor is typing or pasting in it (:focus-within)
+     · a note exists                          (the box is the source text)
+     · the doctor asked for every control     (data-msl="full") */
+html body.mls-recording .ez3fl-transcript.mls-empty,
+html body.mls-calm.mls-recording .ez3fl-transcript.mls-empty,
+html body.mls-calm .ez3fl-transcript.mls-empty:focus-within,
+html[data-msl="full"] body.mls-calm .ez3fl-transcript.mls-empty{
+  display:block !important;
+}
+/* While live it is the thing to look at, so it is not a folded afterthought. */
+html body.mls-recording .ez3fl-transcript{
+  border-color:#78B99D !important;
+  box-shadow:0 0 0 3px rgba(46,106,75,.13) !important;
+}
+/* A live recorder with nothing recognised yet must SAY so, or an empty box
+   reads as a broken microphone. One line, only while live and only while the
+   box is still empty, injected by CSS so it costs no node and cannot desync. */
+html body.mls-recording .ez3fl-transcript.mls-empty .ez3fl-txhead::after{
+  content:'Listening — your words appear here as they are recognised.';
+  flex-basis:100%; order:9;
+  font:600 11.5px/1.35 var(--sans, system-ui, sans-serif);
+  color:#2E6A4B;
+}
+
+/* ---- (2) ONE RECORD CONTROL -------------------------------------------
+   The same shape as the shipped yield at 1p-mls-connect.js:6762, extended to
+   the engine's four BIG hero ids. Gated on the lane pill really being offered,
+   so it can never hide the last record control; phones excluded because the
+   lane is CSS-hidden there and :not([hidden]) cannot see that. */
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Rec,
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Next,
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Nxt,
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Now{
+  display:none !important;
+}
+/* :has() is not universal. Without it the rule above simply does not apply and
+   the screen is exactly what it is today — a graceful no-op, never a hidden
+   control. The runtime pass below is the belt to that braces: it mirrors the
+   same predicate in JS so an engine with no :has() still gets one control. */
+</style>
+<script>
+/* visitflow-1.0.0 runtime.
+   Everything above is CSS; this exists for two things CSS cannot do:
+     · engines without :has() (the yield would silently not apply)
+     · telling a test what the machine BELIEVES, rather than inferring it. */
+(function () {
+  'use strict';
+  if (window.__mlsVisitFlow) return;
+
+  var VERSION = 'visitflow-1.0.0';
+  var HERO = ['ez3Rec', 'ez3Next', 'ez3Nxt', 'ez3Now'];
+  var MARK = 'data-mls-vf-yield';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function q(s) { return safe(function () { return document.querySelector(s); }, null); }
+
+  function supportsHas() {
+    return safe(function () { return typeof CSS !== 'undefined' && CSS.supports && CSS.supports('selector(:has(*))'); }, false);
+  }
+  function shown(e) {
+    if (!e) return false;
+    var r = safe(function () { return e.getBoundingClientRect(); }, null);
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs = safe(function () { return getComputedStyle(e); }, null);
+    return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  }
+  function phone() { return safe(function () { return document.body.classList.contains('mls-phone'); }, false); }
+
+  /* The lane pill is REALLY offered — the same fact the shipped CSS reads. */
+  function pillOffered() {
+    var lane = q('.ez3fl-record');
+    if (!lane || lane.hidden) return false;
+    var pill = lane.querySelector('.ez3fl-recbtn');
+    return !!(pill && !pill.hidden && shown(pill));
+  }
+
+  function hide(e) {
+    if (!e || e.getAttribute(MARK) === '1') return false;
+    e.setAttribute(MARK, '1');
+    e.style.setProperty('display', 'none', 'important');
+    return true;
+  }
+  function unhide(e) {
+    if (!e || e.getAttribute(MARK) !== '1') return false;
+    e.removeAttribute(MARK);
+    e.style.removeProperty('display');
+    return true;
+  }
+
+  /* The JS mirror of the CSS yield, for engines with no :has(). Never removes
+     a node and never touches a hero while the pill is NOT offered, so the last
+     record control is safe by the same argument the CSS relies on. */
+  function yieldHeroes() {
+    if (supportsHas()) return 0;      /* CSS already did it */
+    var want = !phone() && pillOffered();
+    var n = 0;
+    for (var i = 0; i < HERO.length; i++) {
+      var h = el(HERO[i]);
+      if (!h) continue;
+      if (want) { hide(h); n++; } else unhide(h);
+    }
+    return n;
+  }
+
+  /* (3) A CONTROL THAT SAYS "Stop recording" WHILE NOTHING IS RECORDING.
+     MEASURED on this shell in the note-drafted state: the flow lane's pill is
+     hidden (a note exists, so there is nothing to resume), which releases the
+     shipped yield — and the engine's #ez3Stop comes back reading
+     "⏸ Stop recording" with no recorder running. The doctor is offered a stop
+     for something that is not happening.
+
+     Handled in JS rather than CSS on purpose: the only honest test is "is
+     capture live", and live() reads the engine's own #captureBtn class AND its
+     label, which no selector can. THE INVARIANT IS EXPLICIT — a stale control
+     is hidden only while at least one OTHER record control is visible, so this
+     can never leave the screen with no way to record or stop. Fully reversible;
+     the moment capture goes live the control is given straight back. */
+  function hideStaleStops() {
+    var ids = ['ez3Stop', 'ez3Rec2'];
+    var i, e;
+    if (live()) {                       /* give everything back, immediately */
+      for (i = 0; i < ids.length; i++) unhide(el(ids[i]));
+      return 0;
+    }
+    /* RESTORE FIRST. The invariant is CONTINUOUS, not a one-time check, and
+       assuming otherwise is a bug I shipped and measured: the control that
+       justified hiding this one (the flow lane's Resume pill) disappears the
+       moment a note exists, and the screen was left with ZERO record controls.
+       So every pass first asks "is anything left?" and hands one back if not. */
+    if (!recordControls().length) {
+      for (i = 0; i < ids.length; i++) if (unhide(el(ids[i]))) return 0;
+      return 0;
+    }
+    var n = 0;
+    for (i = 0; i < ids.length; i++) {
+      e = el(ids[i]);
+      if (!e) continue;
+      if (e.getAttribute(MARK) === '1') { n++; continue; }
+      if (!shown(e)) continue;
+      if (!/stop|pause/i.test(String(e.textContent || ''))) continue;
+      /* count what would be left if this one went */
+      var mine = ids[i];
+      var others = recordControls().filter(function (c) { return c.id !== mine; });
+      if (!others.length) continue;     /* never the last one */
+      if (hide(e)) n++;
+    }
+    return n;
+  }
+
+  function syncControls() { return yieldHeroes() + hideStaleStops(); }
+
+  /* Every VISIBLE control on the visit screen that drives the one recorder.
+     Read off the DOM the doctor sees, so a test cannot be satisfied by a
+     node that exists and is invisible. */
+  function recordControls() {
+    var out = [];
+    var seen = [];
+    var cands = safe(function () {
+      return document.querySelectorAll('#mlsEz3 .ez3fl-recbtn, #mlsEz3 .ez3-big, #ez3Stop, #ez3Rec2, #captureBtn');
+    }, []);
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (seen.indexOf(c) >= 0) continue;
+      seen.push(c);
+      var t = safe(function () { return String(c.textContent || ''); }, '');
+      /* The VERB must lead the label, after any emoji. A bare /record/ over the
+         whole string counted #ez3Gen — "Generate one note / Uses every RECORDED
+         and typed segment" — as a recording control, which would have let a
+         "one control" assertion pass on a screen that had none. */
+      if (!/^[^A-Za-z]*(start|stop|pause|resume|record)\b/i.test(t.trim())) continue;
+      if (!shown(c)) continue;
+      out.push({ id: c.id || '', cls: String(c.className || '').slice(0, 30),
+        text: t.trim().replace(/\s+/g, ' ').slice(0, 44) });
+    }
+    return out;
+  }
+
+  function live() {
+    if (safe(function () { return document.body.classList.contains('mls-recording'); }, false)) return true;
+    var cb = el('captureBtn');
+    if (!cb) return false;
+    if (safe(function () { return cb.classList.contains('recording'); }, false)) return true;
+    return /recording|stop visit|stop recording/i.test(String(cb.textContent || ''));
+  }
+
+  window.__mlsVisitFlow = {
+    version: VERSION,
+    /* What the screen actually offers, for the suite. */
+    report: function () {
+      var tx = q('.ez3fl-transcript');
+      var box = el('ez3flTranscript');
+      var ctrls = recordControls();
+      return {
+        recording: live(),
+        pillOffered: pillOffered(),
+        hasSupport: supportsHas(),
+        transcriptPresent: !!box,
+        transcriptVisible: shown(box),
+        transcriptWrapVisible: shown(tx),
+        transcriptMarkedEmpty: !!(tx && safe(function () { return tx.classList.contains('mls-empty'); }, false)),
+        recordControls: ctrls,
+        recordCount: ctrls.length,
+        recordingLabels: ctrls.filter(function (c) { return /pause|stop/i.test(c.text); }).length,
+        startLabels: ctrls.filter(function (c) { return /start/i.test(c.text); }).length
+      };
+    },
+    sync: syncControls,
+    revert: function () {
+      var all = HERO.concat(['ez3Stop', 'ez3Rec2']);
+      for (var i = 0; i < all.length; i++) unhide(el(all[i]));
+      var css = el('mlsVisitFlowCss');
+      if (css && css.parentNode) css.parentNode.removeChild(css);
+      return true;
+    }
+  };
+
+  /* setTimeout, never rAF: a non-compositing tab freezes rAF, and this must
+     still be correct when the doctor comes back to the tab. */
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () { queued = false; safe(syncControls); }, 0);
+  }
+  function boot() {
+    refresh();
+    ['click', 'input', 'change'].forEach(function (n) {
+      safe(function () { document.addEventListener(n, refresh, true); });
+    });
+    safe(function () { window.addEventListener('mls:view-changed', refresh, false); });
+    /* The engine rebuilds #ez3Wrap from an HTML string on its own cadence, so
+       a one-shot pass would be undone. Bounded observer on the body host. */
+    safe(function () {
+      var host = el('mlsEz3Body');
+      if (host && !host.__mlsVfWatched) {
+        host.__mlsVfWatched = true;
+        new MutationObserver(refresh).observe(host, { childList: true, subtree: true });
+      }
+    });
+    /* the host may not exist yet; bounded re-arm, then events alone */
+    var n = 0;
+    var iv = setInterval(function () {
+      safe(function () {
+        var host = el('mlsEz3Body');
+        if (host && !host.__mlsVfWatched) {
+          host.__mlsVfWatched = true;
+          new MutationObserver(refresh).observe(host, { childList: true, subtree: true });
+        }
+      });
+      refresh();
+      if (++n > 20) clearInterval(iv);
+    }, 900);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end visitflow-1.0.0 =========================================== -->
+<!-- ===== dockspace-1.0.0 — the room switcher owns its own layer =========
+     OWNER, 2026-08-17 ~21:55Z: "at different aspect ratios and sizes of screen,
+     the tab selector on the bottom — or it can be at the top or the left or the
+     right depending on its position — things get in the way of it, and it looks
+     awful. Notifications cover it up, or other things like that."
+
+     MEASURED FIRST, real Chrome, 13 viewport sizes x 4 dock positions, real
+     rect intersection against the app's own floating furniture:
+
+       dock at TOP:    the toast covers the dock at 10 of 13 sizes,
+                       ~18,221 px2 of overlap every time
+       dock at BOTTOM: 0 overlaps
+       dock at LEFT / RIGHT: 0 overlaps
+
+     WHY THE TOP CASE AND NOT THE OTHERS, exactly: the toast is placed by
+     mlsNoticeAnchor() (shell :6402), which walks #appHeader, #mlsCtxBar and
+     #patientBar and parks the notice 10px under the lowest of them — about
+     y=99. feat_mls_calm_shell.js parks a top dock at top:88px, 85px tall, so
+     the dock occupies y=88..173 and the toast lands inside it. The anchor
+     function has never known the dock exists. Left/right are clean because the
+     anchor already offsets horizontally for a fixed left rail, and bottom is
+     clean because the toast is a TOP notice.
+
+     THE FIX IS A RESERVED SAFE-AREA, NOT A Z-INDEX WAR. Winning a stacking
+     contest would put the dock ON TOP of the notification — the doctor would
+     still not be able to read the notification, which is not better. Instead
+     the dock publishes the band it occupies as CSS custom properties, and the
+     floating furniture is offset out of that band. Both stay readable.
+
+       <html data-mls-dock-band="top|bottom|left|right">
+       --mls-dock-thickness    the dock's own size across the band
+       --mls-dock-clear-top    y below which content is clear of it
+       --mls-dock-clear-bottom distance from the viewport bottom to clear it
+       --mls-dock-clear-left   x right of which content is clear of it
+       --mls-dock-clear-right  distance from the viewport right to clear it
+
+     All four are 0px unless the dock is really on that side, so every rule
+     below is a no-op in the three positions it does not apply to.
+
+     WHY CSS max() AND NOT A WRAPPER around mlsSyncNoticeAnchor(). The shell
+     recomputes --mls-notice-top on every toast() call, so anything written
+     after it is overwritten on the next notification. max() composes with the
+     shell's own value instead of fighting it: the notice keeps its own
+     header-aware placement and is additionally pushed clear of the dock, and
+     if the dock is not at the top the max() resolves to the shell's value
+     unchanged. No shared function is wrapped and no ordering can break it.
+
+     REFLOW. The dock must never wrap to two rows, never clip an item, and
+     never leave the viewport. On the horizontal bands it is capped to the
+     viewport and SCROLLS rather than wrapping; on the vertical bands the same
+     on the other axis. Scrolling is the only honest answer at 320px: a wrapped
+     row silently doubles the dock's thickness (measured: 63px -> 85px between
+     1440 and 1024), which then eats the clearance every rule here depends on.
+
+     IT NEVER CHANGES THE DOCK'S POSITION OR PREFERENCE. dock-1p-1.1.0 still
+     owns the picker; this block only measures where the dock ended up and
+     keeps everything else out of its way. If the dock is not installed, every
+     variable stays 0px and nothing on the page moves. -->
+<style id="mlsDockSpaceCss">
+:root{
+  --mls-dock-thickness:0px;
+  --mls-dock-clear-top:0px;
+  --mls-dock-clear-bottom:0px;
+  --mls-dock-clear-left:0px;
+  --mls-dock-clear-right:0px;
+}
+
+/* ---- (1) NOTIFICATIONS ------------------------------------------------
+   The measured defect. max() composes with the shell's own anchor. */
+html[data-mls-dock-band="top"] .toast{
+  top:max(var(--mls-notice-top,96px), var(--mls-dock-clear-top)) !important;
+}
+/* A left or right rail: the notice is centred on the viewport, so half of a
+   300px toast can still reach into a 128px rail. Shift the centre into the
+   free area rather than shrinking the toast. */
+html[data-mls-dock-band="left"] .toast{
+  left:max(var(--mls-notice-left,50%), calc(var(--mls-dock-clear-left) + 50%)) !important;
+}
+html[data-mls-dock-band="right"] .toast{
+  left:min(var(--mls-notice-left,50%), calc(100vw - var(--mls-dock-clear-right) - 50%)) !important;
+}
+/* The phone notice shelf is a static in-flow strip; it needs the band as
+   padding, not as a coordinate. */
+html[data-mls-dock-band="top"] #mlsMobileNoticeShelf{ padding-top:var(--mls-dock-thickness) !important; }
+html[data-mls-dock-band="bottom"] #mlsMobileNoticeShelf{ padding-bottom:var(--mls-dock-thickness) !important; }
+
+/* ---- (2) THE STANDING CHIPS ------------------------------------------
+   The mode chip and the date chip sit top-right; a top dock reaches them at
+   narrow widths where it stretches. The Next tag is mine and must obey the
+   same rule as everything else — a tag that covers the dock would be this
+   block's own version of the defect it fixes. */
+html[data-mls-dock-band="top"] #mslChip{
+  top:max(calc(env(safe-area-inset-top,0px) + 62px), var(--mls-dock-clear-top)) !important;
+}
+html[data-mls-dock-band="right"] #mslChip{
+  right:max(calc(env(safe-area-inset-right,0px) + 18px), var(--mls-dock-clear-right)) !important;
+}
+
+/* ---- (3) FLOATING BUTTONS AND THE PULL PANEL -------------------------
+   The pull pill lives bottom-left and the pull panel is a fixed card; both
+   land on a bottom or left dock. */
+html[data-mls-dock-band="bottom"] #mlsPullProgFab,
+html[data-mls-dock-band="bottom"] #mlsDaDock,
+html[data-mls-dock-band="bottom"] #mlsAsstFab,
+html[data-mls-dock-band="bottom"] #mlsVoiceCluster{
+  bottom:calc(var(--mls-dock-clear-bottom) + 8px) !important;
+}
+html[data-mls-dock-band="left"] #mlsPullProgFab,
+html[data-mls-dock-band="left"] #mlsDaDock{
+  left:calc(var(--mls-dock-clear-left) + 8px) !important;
+}
+html[data-mls-dock-band="right"] #mlsAsstFab,
+html[data-mls-dock-band="right"] #mlsVoiceCluster{
+  right:calc(var(--mls-dock-clear-right) + 8px) !important;
+}
+html[data-mls-dock-band="bottom"] #mlsPullProgPanel{ padding-bottom:var(--mls-dock-thickness) !important; }
+html[data-mls-dock-band="top"] #mlsPullProgPanel{ padding-top:var(--mls-dock-thickness) !important; }
+
+/* ---- (4) DIALOG CARDS -------------------------------------------------
+   The scrim SHOULD cover the dock — that is what makes the dock inert while a
+   dialog owns the screen, and taking that away would let a doctor navigate out
+   from under a confirmation. What must not cover it is the dialog CARD, so the
+   card is inset out of the band and the scrim is left alone. */
+html[data-mls-dock-band="top"] .modal-bg.show > .modal{ margin-top:var(--mls-dock-thickness) !important; }
+html[data-mls-dock-band="bottom"] .modal-bg.show > .modal{ margin-bottom:var(--mls-dock-thickness) !important; }
+
+/* ---- (5) THE PAGE ITSELF ---------------------------------------------
+   The calm shell already reserves #appWrap padding per side. This adds the
+   scroll padding it does not: without it, "scroll this control into view"
+   parks the control exactly under the dock. */
+html[data-mls-dock-band="top"]{ scroll-padding-top:var(--mls-dock-clear-top); }
+html[data-mls-dock-band="bottom"]{ scroll-padding-bottom:var(--mls-dock-clear-bottom); }
+html[data-mls-dock-band="left"]{ scroll-padding-left:var(--mls-dock-clear-left); }
+html[data-mls-dock-band="right"]{ scroll-padding-right:var(--mls-dock-clear-right); }
+
+/* ---- (6) REFLOW: ONE ROW, NEVER CLIPPED, ALWAYS INSIDE ---------------
+   Cap to the viewport and scroll on the long axis. flex-wrap:nowrap is the
+   load-bearing declaration: wrapping is what doubled the dock's thickness at
+   the 768-1280 widths, and the thickness is what every clearance above is
+   computed from. Scrollbars are hidden because the dock is six items — the
+   overflow is a safety valve, not a scroll region a doctor should see. */
+#mlsDock{
+  max-width:calc(100vw - 20px) !important;
+  max-height:calc(100vh - 20px) !important;
+  box-sizing:border-box;
+}
+html[data-mls-dock-band="top"] #mlsDock,
+html[data-mls-dock-band="bottom"] #mlsDock{
+  flex-wrap:nowrap !important;
+  overflow-x:auto; overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+html[data-mls-dock-band="left"] #mlsDock,
+html[data-mls-dock-band="right"] #mlsDock{
+  flex-wrap:nowrap !important;
+  overflow-y:auto; overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+#mlsDock::-webkit-scrollbar{ width:0; height:0; }
+/* An item must not be squeezed below a tap target, and must not stretch the
+   row: fixed basis, no shrink, so six items are six items at every width. */
+html[data-mls-dock-band="top"] #mlsDock > button,
+html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
+/* Compact strip on narrow widths: the label stays (an icon-only dock is a
+   guessing game) but it stops setting the item width. */
+@media (max-width:520px){
+  #mlsDock > button{ min-width:52px !important; padding:7px 8px 6px !important; font-size:10.5px !important; }
+}
+@media (max-width:380px){
+  #mlsDock > button{ min-width:46px !important; padding:6px 6px 5px !important; }
+}
+/* Short viewports: a 1024x600 laptop or a landscape phone has no room for a
+   dock that reserves 112px at the top. */
+@media (max-height:700px){
+  html[data-mls-dock-band="top"] #mlsDock,
+  html[data-mls-dock-band="bottom"] #mlsDock{ padding-top:4px !important; padding-bottom:4px !important; }
+  #mlsDock > button{ padding-top:6px !important; padding-bottom:5px !important; }
+}
+</style>
+<script>
+/* dockspace-1.0.0 controller: measure the dock, publish the band. */
+(function () {
+  'use strict';
+  if (window.__mlsDockSpace) return;
+
+  var VERSION = 'dockspace-1.0.0';
+  var GAP = 12;                      /* breathing room outside the dock */
+  var SIDES = ['top', 'bottom', 'left', 'right'];
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function root() { return document.documentElement; }
+  function dock() { return safe(function () { return document.getElementById('mlsDock'); }, null); }
+
+  function shown(e) {
+    if (!e) return false;
+    var r = safe(function () { return e.getBoundingClientRect(); }, null);
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs = safe(function () { return getComputedStyle(e); }, null);
+    return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  }
+
+  /* WHICH SIDE, measured rather than believed. body[data-mls-dock] is the
+     PREFERENCE; below 640px the calm shell pins the dock to the bottom
+     regardless of it, so the attribute and the pixels disagree exactly where a
+     doctor is most likely to be on a phone. The geometry is the truth, and the
+     attribute is only the tie-break. */
+  function bandOf(r) {
+    var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+    if (!vw || !vh) return '';
+    var horizontal = r.width >= r.height;
+    if (horizontal) return (r.top + r.height / 2) < vh / 2 ? 'top' : 'bottom';
+    return (r.left + r.width / 2) < vw / 2 ? 'left' : 'right';
+  }
+
+  function clear() {
+    var s = root().style;
+    safe(function () { root().removeAttribute('data-mls-dock-band'); });
+    s.setProperty('--mls-dock-thickness', '0px');
+    for (var i = 0; i < SIDES.length; i++) s.setProperty('--mls-dock-clear-' + SIDES[i], '0px');
+  }
+
+  var _last = '';
+  function sync() {
+    var d = dock();
+    if (!d || !shown(d)) { if (_last !== 'none') { clear(); _last = 'none'; } return null; }
+    var r = safe(function () { return d.getBoundingClientRect(); }, null);
+    if (!r) return null;
+    var band = bandOf(r);
+    if (!band) return null;
+    var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+    var thickness = (band === 'top' || band === 'bottom') ? r.height : r.width;
+
+    var vals = { top: 0, bottom: 0, left: 0, right: 0 };
+    if (band === 'top') vals.top = Math.round(r.bottom + GAP);
+    else if (band === 'bottom') vals.bottom = Math.round((vh - r.top) + GAP);
+    else if (band === 'left') vals.left = Math.round(r.right + GAP);
+    else vals.right = Math.round((vw - r.left) + GAP);
+
+    var sig = band + '|' + Math.round(thickness) + '|' + vals.top + '|' + vals.bottom + '|' + vals.left + '|' + vals.right;
+    /* An unconditional style write costs a whole-document recalc, so this only
+       writes on change — but "no change" must be checked against the DOM, not
+       only against the last value this function computed. MEASURED: clearing
+       the attribute from outside (a revert, a hot reload, another module) left
+       _last holding the old signature, so sync() returned early and the band
+       was never republished — the clearances silently stayed at 0 and every
+       rule that depends on them became a no-op. Cheap to be sure. */
+    var live = safe(function () { return root().getAttribute('data-mls-dock-band'); }, null);
+    if (sig === _last && live === band) return sig;
+    _last = sig;
+    var s = root().style;
+    safe(function () { root().setAttribute('data-mls-dock-band', band); });
+    s.setProperty('--mls-dock-thickness', Math.round(thickness) + 'px');
+    for (var i = 0; i < SIDES.length; i++) {
+      s.setProperty('--mls-dock-clear-' + SIDES[i], vals[SIDES[i]] + 'px');
+    }
+    return sig;
+  }
+
+  /* Does anything actually cover the dock right now? The suite's assertion, but
+     exposed here so it reads the SAME rects the runtime does rather than a
+     second implementation that can drift. `sel` list is the app's own floating
+     furniture; a modal SCRIM is excluded on purpose (see the CSS note). */
+  var FURNITURE = ['.toast', '#toast', '#mlsMobileNoticeShelf', '#mslChip', '#mlsNgTag',
+    '#mlsPullProgFab', '#mlsPullProgPanel', '#mlsUpdateBar', '#mlsAvChip',
+    '#mlsAsstFab', '#mlsAsstPanel', '#mlsDaDock', '#mlsVoiceCluster',
+    '#mlsTbMenuPanel', '#mlsWdDeck', '.modal-bg.show > .modal'];
+
+  function overlaps() {
+    var d = dock();
+    if (!d || !shown(d)) return { dock: false, hits: [] };
+    var dr = d.getBoundingClientRect();
+    var hits = [];
+    FURNITURE.forEach(function (sel) {
+      var list = safe(function () { return document.querySelectorAll(sel); }, []);
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        if (e === d || d.contains(e) || e.contains(d)) continue;
+        if (!shown(e)) continue;
+        var r = e.getBoundingClientRect();
+        var ix = Math.max(0, Math.min(dr.right, r.right) - Math.max(dr.left, r.left));
+        var iy = Math.max(0, Math.min(dr.bottom, r.bottom) - Math.max(dr.top, r.top));
+        if (ix > 1 && iy > 1) hits.push({ sel: sel, id: e.id || '', area: Math.round(ix * iy) });
+      }
+    });
+    return { dock: true, hits: hits };
+  }
+
+  /* Geometry the suite asserts on: one row, nothing clipped, inside the view. */
+  function geometry() {
+    var d = dock();
+    if (!d || !shown(d)) return { present: false };
+    var dr = d.getBoundingClientRect();
+    var items = [];
+    var kids = safe(function () { return d.children; }, []);
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k.nodeType !== 1) continue;
+      if (k.classList && k.classList.contains('mls-dock-pill')) continue;  /* the sliding indicator, not an item */
+      if (!shown(k)) continue;
+      items.push(k);
+    }
+    var band = root().getAttribute('data-mls-dock-band') || '';
+    var horizontal = dr.width >= dr.height;
+    var across = {};                    /* distinct LINES across the band */
+    var clipped = [];
+    items.forEach(function (k) {
+      var r = k.getBoundingClientRect();
+      /* The item CENTRE, in a generous bucket. Measuring the item's top called
+         a single row two rows: the dock's items are different heights (a 68px
+         icon+label button beside a 46px Ask field), and centred items with
+         different heights have different tops by construction. The centre is
+         what "same row" actually means. */
+      var centre = horizontal ? (r.top + r.height / 2) : (r.left + r.width / 2);
+      across[Math.round(centre / 20)] = 1;
+      /* Clipped means outside the dock's SCROLLABLE content box, not outside
+         its border box: an item parked in the scroll overflow is reachable. */
+      var overflowsBox = horizontal
+        ? (r.top < dr.top - 2 || r.bottom > dr.bottom + 2)
+        : (r.left < dr.left - 2 || r.right > dr.right + 2);
+      if (overflowsBox) clipped.push(k.id || (k.textContent || '').trim().slice(0, 14));
+    });
+    return {
+      present: true, band: band,
+      rect: { x: Math.round(dr.left), y: Math.round(dr.top), w: Math.round(dr.width), h: Math.round(dr.height) },
+      items: items.length,
+      lines: Object.keys(across).length,
+      clipped: clipped,
+      insideViewport: dr.left >= -1 && dr.top >= -1
+        && dr.right <= (window.innerWidth || 0) + 1 && dr.bottom <= (window.innerHeight || 0) + 1,
+      overflowX: Math.max(0, d.scrollWidth - d.clientWidth),
+      overflowY: Math.max(0, d.scrollHeight - d.clientHeight),
+      thickness: parseFloat(getComputedStyle(root()).getPropertyValue('--mls-dock-thickness')) || 0
+    };
+  }
+
+  window.__mlsDockSpace = {
+    version: VERSION,
+    sync: sync,
+    overlaps: overlaps,
+    geometry: geometry,
+    report: function () {
+      var g = geometry(), o = overlaps();
+      return { band: root().getAttribute('data-mls-dock-band') || '', geometry: g, overlaps: o.hits, clean: o.hits.length === 0 };
+    },
+    revert: function () {
+      clear();
+      var css = document.getElementById('mlsDockSpaceCss');
+      if (css && css.parentNode) css.parentNode.removeChild(css);
+      return true;
+    }
+  };
+
+  /* setTimeout, never rAF — a non-compositing or backgrounded tab freezes rAF
+     entirely, and the reserved band would then be whatever it was when the tab
+     was last visible. */
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () { queued = false; safe(sync); }, 0);
+  }
+
+  function boot() {
+    refresh();
+    ['resize', 'orientationchange'].forEach(function (n) {
+      safe(function () { window.addEventListener(n, refresh, false); });
+    });
+    safe(function () { window.addEventListener('mls:view-changed', refresh, false); });
+    safe(function () { document.addEventListener('click', refresh, true); });
+    /* The dock is idle-scheduled behind requiresFoundation and can be absent
+       for 40+ seconds after the bundle resolves, so a boot-time observer would
+       have nothing to attach to. Attach when it appears, and keep a bounded
+       re-arm rather than a permanent poll. */
+    var n = 0;
+    var iv = setInterval(function () {
+      var d = dock();
+      if (d && !d.__mlsDsWatched) {
+        d.__mlsDsWatched = true;
+        safe(function () {
+          new MutationObserver(refresh).observe(d, { attributes: true, childList: true, attributeFilter: ['style', 'class'] });
+        });
+      }
+      refresh();
+      if (++n > 60) clearInterval(iv);     /* ~54s, past the dock's worst case */
+    }, 900);
+    safe(function () {
+      new MutationObserver(refresh).observe(document.body, { attributes: true, attributeFilter: ['data-mls-dock', 'class'] });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end dockspace-1.0.0 =========================================== -->
+<!-- ===== uimap-1.0.0 — the confusing places named in the map, fixed ======
+     Owner 2026-08-17: "there are continuity errors and glitches… things that
+     are complex all over the site and bad UI everywhere… map out all bad UI and
+     confusing pages and pages with too many buttons and FIX IT."
+
+     THIS BLOCK IS THE FIX HALF. The measurement half is
+     scratchpad/UI_MAP_2026-08-17.md (+ .json): every room and dialog, its
+     visible controls at rest, nesting depth, duplicate names, dead ends and
+     jargon, ranked by busyness. Only the offenders that can be reached from a
+     /1p shell without editing a shared module are fixed here; the rest are
+     listed in the map with the reason.
+
+     WHAT THE MAP ACTUALLY FOUND, and what it did NOT. The going assumption was
+     "duplicate verbs everywhere". Measured at rest, 1366x900, 12 synthetic
+     patients: duplicate ACCESSIBLE NAMES exist on exactly two screens, and one
+     of those is legitimate (twelve patient rows each carrying one "Record").
+     Most "duplicate verbs" are distinct actions with distinct names — Analysis
+     has "Refresh outcomes and marketing" and "Refresh baseline metrics", Admin
+     has four differently-named refreshes. Naming those a defect and "fixing"
+     them would have been churn. They are not touched. -->
+<style id="mlsUiMapCss">
+/* Nothing here changes layout; these are the two labels below getting room to
+   say what they do without the arrow glyph shrinking. */
+#calendarView .cx-navbtn{ white-space:nowrap; }
+</style>
+<script>
+/* uimap-1.0.0 runtime. */
+(function () {
+  'use strict';
+  if (window.__mlsUiMap) return;
+
+  var VERSION = 'uimap-1.0.0';
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+
+  var api = { version: VERSION, tplHops: 0, namedArrows: 0 };
+
+  /* ==================================================================
+     1. "Templates" TAKES YOU TO TEMPLATES, NOT TO THE OPERATING LIST
+     ==================================================================
+     MEASURED, and the op-note lane measured the same thing from the other
+     side: #templatesModal is ONE node, and feat_mls_opnote_room.js MOVES it
+     into #oprPanelTpls the first time the room's Templates tab is used. From
+     then on, pressing "Templates" anywhere in the app calls openTemplates(),
+     which puts .show on a node that now lives inside the op-note room — so the
+     whole full-screen operating list opens, on its DEFAULT tab, and the doctor
+     who asked for a template library is looking at today's procedures.
+
+     Proof it is real and not theoretical: this is exactly why the UI map's own
+     probe recorded "Templates: not reachable at rest" and then reported the
+     op-note room as the owner of the screen for every dialog it opened
+     afterwards — the room had been left open by the Templates hop.
+
+     That lane's fix was to RELABEL the button so it warns you. This finishes
+     the job: if the hop opens the room, land on the room's Templates tab, so
+     the destination matches the request. The room's own tab button is clicked
+     — no new navigation, no moved node, nothing removed. If the node has not
+     been moved yet, the plain dialog opens exactly as before and this is a
+     no-op.
+
+     Wrapping rather than editing openTemplates(): the function is shell code
+     shared with production's own copy of this file, and a wrapper keeps the
+     whole change inside this block so promotion is a copy and revert() puts
+     the original back byte for byte. */
+  var _openTemplates = null;
+  function wrapTemplates() {
+    var fn = window.openTemplates;
+    if (typeof fn !== 'function' || fn.__mlsUiMapWrapped) return false;
+    _openTemplates = fn;
+    var wrapped = function () {
+      var out = safe(function () { return fn.apply(this, arguments); }.bind(this), undefined);
+      /* Only when the hop really landed in the room. Two macrotasks, not one:
+         the room paints its tabs after openTemplates returns. */
+      setTimeout(function () {
+        safe(function () {
+          var room = el('opPrepModal');
+          if (!room || !room.classList.contains('show')) return;   /* plain dialog: nothing to do */
+          var tab = el('oprTabTpls');
+          if (!tab || tab.getAttribute('aria-selected') === 'true') return;
+          tab.click();
+          api.tplHops++;
+        });
+      }, 0);
+      return out;
+    };
+    wrapped.__mlsUiMapWrapped = true;
+    window.openTemplates = wrapped;
+    return true;
+  }
+
+  /* ==================================================================
+     2. TWO CONTROLS CALLED "◀" AND TWO CALLED "▶"
+     ==================================================================
+     MEASURED on Calendar at rest: duplicate accessible names "◀" and "▶".
+     A glyph is not a label — nothing in it says whether it steps a day, a
+     week or a month, and the calendar's mode is a separate control the doctor
+     may not be looking at. The visible glyph is left exactly as it is (it is
+     the affordance and shrinking or replacing it would be a layout change);
+     only the ACCESSIBLE NAME is written, from the calendar's own current mode,
+     so a screen reader and the duplicate-name contract both get the truth.
+
+     Re-applied on mutation because the calendar re-renders its header whenever
+     the mode or the month changes, and the mode is exactly what the name
+     depends on. */
+  function calendarMode() {
+    var ids = ['calMode_day', 'calMode_week', 'calMode_month'];
+    for (var i = 0; i < ids.length; i++) {
+      var b = el(ids[i]);
+      if (b && safe(function () { return b.classList.contains('on'); }, false)) {
+        return ids[i].split('_')[1];
+      }
+    }
+    return '';
+  }
+  function nameArrows() {
+    var host = safe(function () { return document.getElementById('calendarView'); }, null);
+    if (!host) return 0;
+    var btns = safe(function () { return host.querySelectorAll('.cx-navbtn'); }, []);
+    if (!btns.length) return 0;
+    var unit = calendarMode() || 'period';
+    var n = 0;
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      var t = safe(function () { return String(b.textContent || '').trim(); }, '');
+      var back = t.indexOf('◀') >= 0 || t.indexOf('<') === 0;
+      var fwd = t.indexOf('▶') >= 0 || t.indexOf('>') === 0;
+      if (!back && !fwd) continue;
+      var want = (back ? 'Previous ' : 'Next ') + unit;
+      if (b.getAttribute('aria-label') !== want) { b.setAttribute('aria-label', want); n++; }
+      if (b.getAttribute('title') !== want) b.setAttribute('title', want);
+    }
+    api.namedArrows = n;
+    return n;
+  }
+
+  /* ================================================================== */
+
+  api.report = function () {
+    return {
+      version: VERSION,
+      templatesWrapped: !!(window.openTemplates && window.openTemplates.__mlsUiMapWrapped),
+      tplHops: api.tplHops,
+      calendarMode: calendarMode(),
+      arrowNames: safe(function () {
+        var out = [];
+        var b = document.querySelectorAll('#calendarView .cx-navbtn');
+        for (var i = 0; i < b.length; i++) out.push(b[i].getAttribute('aria-label') || '');
+        return out;
+      }, [])
+    };
+  };
+  api.revert = function () {
+    if (_openTemplates) { window.openTemplates = _openTemplates; _openTemplates = null; }
+    safe(function () {
+      var b = document.querySelectorAll('#calendarView .cx-navbtn');
+      for (var i = 0; i < b.length; i++) { b[i].removeAttribute('aria-label'); b[i].removeAttribute('title'); }
+    });
+    var css = el('mlsUiMapCss');
+    if (css && css.parentNode) css.parentNode.removeChild(css);
+    return true;
+  };
+  window.__mlsUiMap = api;
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never rAF — a non-compositing tab never fires rAF and the
+       names would silently never be written. */
+    setTimeout(function () { queued = false; safe(wrapTemplates); safe(nameArrows); }, 0);
+  }
+  function boot() {
+    refresh();
+    safe(function () { window.addEventListener('mls:view-changed', refresh, false); });
+    safe(function () { document.addEventListener('click', refresh, true); });
+    /* openTemplates and #calendarView both exist late (the shell defines the
+       function in a later script, the calendar renders on first visit), so a
+       bounded re-arm rather than one shot at boot. */
+    var n = 0;
+    var iv = setInterval(function () { refresh(); if (++n > 20) clearInterval(iv); }, 900);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end uimap-1.0.0 =============================================== -->
+<!-- ===== pullface-1.0.0 — sync goes quiet, and ONE bar for the whole pull ==
+     OWNER, 2026-08-17 22:33Z, watching a live pull: "I hate this '10 patients
+     syncing to server…' thing — that should be done in the background to make
+     this feel like magic, not foreground. Also that bar is broken: it should
+     move on to pulling history and restart again."
+
+     BOTH ARE PRESENTATION. Neither touches an engine, a receipt, a queue or a
+     count: the queue still drains exactly as it did and every number shown is
+     the number the engine reported.
+
+     ==================================================================
+     A. SYNC IS SILENT UNTIL IT NEEDS HIM
+     ==================================================================
+     _renderBackupBadge() (shell :22388) paints a fixed amber chip at
+     left:16px bottom:84px reading "⏳ N patients syncing to server…" for as
+     long as the queue is non-empty. It is bottom-left foreground furniture
+     during the busiest moment of the day, and it reports WORK IN PROGRESS,
+     which is not something a doctor can act on.
+
+     WHAT REPLACES IT. Nothing, while the queue is draining: a neutral dot in
+     the dock's status area, and that is all. The chip comes back only when the
+     queue is genuinely STUCK — the same count, not falling, for longer than
+     the stall window — because that is the only state where the doctor has
+     something to decide. Its wording is the owner's: "N patients didn't save
+     to your account — retrying". One tap still runs the same retry the amber
+     chip ran, so nothing is lost; the same information also stays permanently
+     available in Settings → Account, which is where a doctor goes to ask.
+
+     WHY A STALL WINDOW AND NOT "IS A PULL RUNNING". A pull can finish and
+     leave a queue behind, and that queue draining quietly is still normal. The
+     honest test is whether the count is FALLING, and that is measured here
+     rather than assumed.
+
+     ==================================================================
+     B. ONE BAR, THREE PHASES, NEVER PARKED AT 100%
+     ==================================================================
+     Every painter in this file computes its width from the CURRENT PHASE's own
+     "N of M": Schedule 24 of 24 is 100%, and then Histories starts again at
+     1 of 24. So the bar fills, sits full while the doctor waits, and then
+     appears to restart — which is exactly what he described.
+
+     There are FIVE copies of that painter (#mlsDsPullBar x4 and #mlsCvHeroBar),
+     each deliberately self-contained so one lane's missing element cannot blank
+     another's bar. Editing five copies invites the fifth to drift, so this is
+     ONE observer over the rendered bars instead: whatever a painter writes, the
+     phase word is read back out of the label it already produces, mapped onto a
+     segment of the WHOLE pull, and the width and text rewritten.
+
+       Schedule        0 → 30%
+       Histories      30 → 80%
+       Today's notes  80 → 99%
+
+     99, not 100, while the pull is still running: 100% is a claim that the work
+     is finished, and the pull holds its lease past the last history. The bar
+     reaches 100% and reads "Done" only when the engine says the run is over.
+     A phase the engine skips (already verified today) is announced in three
+     words and the bar moves on rather than sitting still.
+
+     REVERSIBLE: revert() restores _renderBackupBadge and stops the observer;
+     the next paint from any of the five painters puts the original bar back. -->
+<style id="mlsPullFaceCss">
+/* The quiet indicator. A dot, in the dock's own status area when there is one,
+   and otherwise nothing at all — never a floating chip. */
+#mlsSyncDot{
+  display:none; width:7px; height:7px; border-radius:50%;
+  background:#9BB3A6; margin-left:6px; flex:0 0 auto;
+  vertical-align:middle;
+}
+#mlsSyncDot[data-on="1"]{ display:inline-block; }
+/* The failure chip. Same one-tap retry, but it is a NOTICE, not a progress
+   readout, so it reads like the other things that need an answer. */
+#_backupBadge[data-mls-quiet="1"]{ display:none !important; }
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsPullFace) return;
+
+  var VERSION = 'pullface-1.0.0';
+  var STALL_MS = 45000;      /* not falling for this long = stuck, not busy */
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function num(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+
+  var api = {
+    version: VERSION,
+    quietedPaints: 0, stuckShown: 0, barPaints: 0,
+    lastPhase: '', lastPct: -1
+  };
+
+  /* ================================================================
+     A. THE SYNC BADGE
+     ================================================================ */
+  var _origBadge = null;
+  var pendingSeen = { count: -1, since: 0 };
+
+  function pendingCount() {
+    var n = 0;
+    n += safe(function () { return (window._pendingBackupGet ? window._pendingBackupGet() : []).length; }, 0);
+    n += safe(function () { return (window._pendingSyncGet ? window._pendingSyncGet() : []).length; }, 0);
+    return n;
+  }
+  /* Falling = healthy. Flat and non-zero for STALL_MS = the doctor needs to
+     know. Measured from the count itself rather than from "is a pull running",
+     because a queue draining after a pull is still perfectly normal. */
+  function stuck() {
+    var n = pendingCount();
+    var now = Date.now();
+    if (n !== pendingSeen.count) { pendingSeen = { count: n, since: now }; return false; }
+    if (!n) return false;
+    return (now - pendingSeen.since) >= STALL_MS;
+  }
+
+  function syncDot(on) {
+    var d = el('mlsSyncDot');
+    if (!d) {
+      /* The dock's own status area if the dock is up; otherwise do not create
+         floating furniture at all — silence is the requirement. */
+      var host = el('mlsDockStatus') || el('mlsDock');
+      if (!host) return null;
+      d = document.createElement('span');
+      d.id = 'mlsSyncDot';
+      d.setAttribute('role', 'status');
+      d.setAttribute('aria-label', 'Saving to your account');
+      host.appendChild(d);
+    }
+    var want = on ? '1' : '0';
+    if (d.getAttribute('data-on') !== want) d.setAttribute('data-on', want);
+    if (on) d.title = pendingCount() + ' item(s) still saving to your account';
+    return d;
+  }
+
+  /* The chip itself is the shell's node; it is HIDDEN by attribute rather than
+     removed, so the shell's own remove()/re-create path is untouched and one
+     attribute puts it back. */
+  function quietBadge() {
+    var b = el('_backupBadge');
+    var n = pendingCount();
+    if (!n) { syncDot(false); return false; }
+    var isStuck = stuck();
+    syncDot(!isStuck);
+    if (!b) return false;
+    if (isStuck) {
+      if (b.getAttribute('data-mls-quiet') === '1') b.removeAttribute('data-mls-quiet');
+      /* the owner's words, and it says what to do rather than what is happening */
+      var want = '⚠ ' + n + ' item' + (n === 1 ? '' : 's') + ' didn’t save to your account — retrying. Tap for details.';
+      if (b.textContent !== want) { b.textContent = want; api.stuckShown++; }
+      b.style.background = '#fff7e6'; b.style.borderColor = '#f0d9a0'; b.style.color = '#8a5a00';
+      return true;
+    }
+    if (b.getAttribute('data-mls-quiet') !== '1') { b.setAttribute('data-mls-quiet', '1'); api.quietedPaints++; }
+    return false;
+  }
+
+  function wrapBadge() {
+    var fn = window._renderBackupBadge;
+    if (typeof fn !== 'function' || fn.__mlsPullFaceWrapped) return false;
+    _origBadge = fn;
+    var w = function () {
+      var out = safe(function () { return fn.apply(this, arguments); }.bind(this), undefined);
+      safe(quietBadge);
+      return out;
+    };
+    w.__mlsPullFaceWrapped = true;
+    window._renderBackupBadge = w;
+    return true;
+  }
+
+  /* ================================================================
+     B. ONE BAR
+     ================================================================ */
+  var BARS = ['mlsDsPullBar', 'mlsCvHeroBar'];
+  /* start, end of each phase's slice of the WHOLE pull */
+  var SEG = {
+    schedule: [0, 30],
+    history: [30, 80],
+    daynote: [80, 99]
+  };
+  function phaseOf(label) {
+    var s = String(label || '');
+    if (/today.?s note|day note|daynote/i.test(s)) return 'daynote';
+    if (/histor|encounter|chart/i.test(s)) return 'history';
+    if (/schedule|identity|appointment/i.test(s)) return 'schedule';
+    return '';
+  }
+  function phaseWord(p) {
+    return p === 'daynote' ? 'Today’s notes' : (p === 'history' ? 'Histories' : 'Schedule');
+  }
+  /* Is the run still going? The ENGINE's own flag. Deliberately NOT
+     window.__mlsPullProgress: that global is the progress SCREEN's api object,
+     it does not expose state(), and a second block in this same file assigns
+     the boolean `true` to the same name — reading it would have produced a
+     confident wrong answer. __mlsDayHistoryPull.state is what the progress
+     screen itself reads. `null` means "cannot tell", and a null is treated as
+     still-running, because claiming 100% is the failure mode being fixed. */
+  function running() {
+    return safe(function () {
+      var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
+      if (s && typeof s.running === 'boolean') return s.running;
+      return null;
+    }, null);
+  }
+
+  function paintOne(bar) {
+    var fill = bar && bar.firstElementChild;
+    if (!fill) return false;
+    var label = String(fill.textContent || '');
+    if (!label || bar.style.display === 'none') return false;
+    /* Written by us already this tick? Do not re-derive from our own output. */
+    var mm = label.match(/(\d+)\s*\/\s*(\d+)/);
+    var p = phaseOf(label);
+    if (!p || !mm || num(mm[2]) <= 0) return false;
+
+    var seg = SEG[p];
+    var within = Math.max(0, Math.min(1, num(mm[1]) / num(mm[2])));
+    var pct = Math.round(seg[0] + within * (seg[1] - seg[0]));
+    var isRunning = running();
+    /* 100% is a claim the whole pull is finished. Only the engine may make it. */
+    if (isRunning !== false) pct = Math.min(pct, 99);
+    pct = Math.max(3, pct);
+
+    /* Keep whatever elapsed-time tail the painter appended — it is its own
+       clock and rewriting it would restart it under the doctor's eyes. */
+    var tail = '';
+    var dot = label.indexOf('·');
+    if (dot >= 0) tail = label.slice(dot);
+    var text = phaseWord(p) + ' ' + mm[1] + '/' + mm[2] + (tail ? ' ' + tail.trim() : '');
+
+    var w = pct + '%';
+    if (fill.style.width !== w) fill.style.width = w;
+    if (fill.textContent !== text) fill.textContent = text;
+    bar.setAttribute('data-mls-phase', p);
+    bar.setAttribute('data-mls-pct', String(pct));
+    api.lastPhase = p; api.lastPct = pct; api.barPaints++;
+    return true;
+  }
+
+  function paintBars() {
+    var did = false;
+    for (var i = 0; i < BARS.length; i++) {
+      var b = el(BARS[i]);
+      if (b) did = paintOne(b) || did;
+    }
+    return did;
+  }
+
+  /* ================================================================ */
+
+  api.report = function () {
+    var out = { version: VERSION, pending: pendingCount(), stuck: stuck(), bars: [] };
+    var badge = el('_backupBadge');
+    out.badgePresent = !!badge;
+    out.badgeQuiet = !!(badge && badge.getAttribute('data-mls-quiet') === '1');
+    out.badgeVisible = !!(badge && safe(function () {
+      var r = badge.getBoundingClientRect();
+      var cs = getComputedStyle(badge);
+      return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
+    }, false));
+    var dot = el('mlsSyncDot');
+    out.dotOn = !!(dot && dot.getAttribute('data-on') === '1');
+    out.badgeWrapped = !!(window._renderBackupBadge && window._renderBackupBadge.__mlsPullFaceWrapped);
+    for (var i = 0; i < BARS.length; i++) {
+      var b = el(BARS[i]);
+      if (!b) continue;
+      out.bars.push({
+        id: BARS[i],
+        shown: b.style.display !== 'none',
+        phase: b.getAttribute('data-mls-phase') || '',
+        pct: num(b.getAttribute('data-mls-pct')),
+        text: String((b.firstElementChild && b.firstElementChild.textContent) || '')
+      });
+    }
+    out.running = running();
+    return out;
+  };
+  api.paintBars = paintBars;
+  api.quietBadge = quietBadge;
+  api.revert = function () {
+    if (_origBadge) { window._renderBackupBadge = _origBadge; _origBadge = null; }
+    safe(function () {
+      var b = el('_backupBadge'); if (b) b.removeAttribute('data-mls-quiet');
+      var d = el('mlsSyncDot'); if (d && d.parentNode) d.parentNode.removeChild(d);
+    });
+    var css = el('mlsPullFaceCss');
+    if (css && css.parentNode) css.parentNode.removeChild(css);
+    return true;
+  };
+  window.__mlsPullFace = api;
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never rAF: the pull runs with the tab backgrounded all the
+       time, and rAF does not fire there — the bar would freeze mid-phase. */
+    setTimeout(function () { queued = false; safe(wrapBadge); safe(quietBadge); safe(paintBars); }, 0);
+  }
+  function boot() {
+    refresh();
+    /* The bars are repainted by five different painters on their own cadences,
+       so observe the nodes rather than hooking any one of them. */
+    var attach = function () {
+      for (var i = 0; i < BARS.length; i++) {
+        var b = el(BARS[i]);
+        if (!b || b.__mlsPfWatched) continue;
+        b.__mlsPfWatched = true;
+        safe(function () {
+          new MutationObserver(refresh).observe(b, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style'] });
+        });
+      }
+      var badge = el('_backupBadge');
+      if (badge && !badge.__mlsPfWatched) {
+        badge.__mlsPfWatched = true;
+        safe(function () { new MutationObserver(refresh).observe(badge, { childList: true, characterData: true, subtree: true }); });
+      }
+    };
+    attach();
+    /* A pull is minutes long and these nodes are created and destroyed inside
+       it, so this one keeps running for the life of the tab — but it is two
+       getElementById calls and a change-guarded write, not a scan. */
+    setInterval(function () { attach(); refresh(); }, 700);
+    safe(function () { document.addEventListener('click', refresh, true); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end pullface-1.0.0 ============================================ -->
 </body>
 </html>
