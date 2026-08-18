@@ -17,7 +17,7 @@
 <!-- The app still has legacy inline modules/handlers, so `unsafe-inline` is
      temporarily required. Worker code is limited to same-origin files and
      same-document blob URLs; remote/eval-based execution remains unavailable. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' https://scrivara-backend.onrender.com https://api.openai.com; frame-src 'self'; worker-src 'self' blob:; form-action 'self'; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' https://scrivara-backend.onrender.com https://api.openai.com; frame-src 'self'; worker-src 'self' blob:; form-action 'self'; object-src 'none'; base-uri 'self'">
 <meta name="copyright" content="© 2026 MLS Scribe LLC. All rights reserved. Proprietary and confidential.">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow,noarchive">
