@@ -286,6 +286,23 @@
       return matches.length === 1 ? matches[0] : '';
     } catch (e) { return ''; }
   }
+  /* awb-1.0.0 (2026-08-18): the day's import ledger is the FRESHEST id source,
+     but it only exists after a successful schedule pull — and a hidden athena
+     tab can leave a whole day unledgered while every write blocks with "run
+     the day pull" (measured live: 17 booked rows, 14 ledgered, 3 forever
+     unbindable). The backend calendar row itself carries the REAL Athena
+     appointment id captured at booking (staff sync writes
+     athena_appointment_id in Athena's own id namespace — never the backend
+     row id wf2-1.9.0 forbids). Accept it only as a FALLBACK when the ledger
+     cannot resolve, digits-only, and only off a row already matched to this
+     exact patient id; the live probe still fail-closes on a stale/moved id
+     before anything can execute. */
+  function athenaAppointmentIdFromBookingRow(row) {
+    try {
+      var id = S(row && (row.athena_appointment_id || row.athenaAppointmentId)).trim();
+      return /^\d{1,18}$/.test(id) ? id : '';
+    } catch (e) { return ''; }
+  }
   /* Use a schedule expectation only when it is traceable to an explicit visit
      context or one unambiguous closest appointment for this exact patient. */
   function expectedVisitContext(patient, opts) {
@@ -310,7 +327,7 @@
             return a && S(a.patient_external_id || a.patientId || '').trim() === pidS &&
               visitDay(a.day_local || a.appt_date || a.start_at) === suppliedDate;
           });
-          if (pidS && dayRows.length === 1) suppliedAppointment = athenaAppointmentIdFromImportIndex(pidS, dayRows[0].id, suppliedDate) || '';
+          if (pidS && dayRows.length === 1) suppliedAppointment = athenaAppointmentIdFromImportIndex(pidS, dayRows[0].id, suppliedDate) || athenaAppointmentIdFromBookingRow(dayRows[0]) || '';
         } catch (eResolve) {}
       }
       return { visitDate: athenaVisitDate(suppliedDate), provider: suppliedProvider, appointmentId: suppliedAppointment, encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
@@ -347,7 +364,8 @@
        stands (the live probe stays the fail-closed arbiter either way). */
     var resolvable = rows.filter(function (x) {
       var d0 = visitDay(x.row.day_local || x.row.appt_date || x.row.start_at);
-      return !!(d0 && athenaAppointmentIdFromImportIndex(pid, x.row.id, d0));
+      return !!(d0 && (athenaAppointmentIdFromImportIndex(pid, x.row.id, d0) ||
+        (pid && S(x.row.patient_external_id || x.row.patientId).trim() === pid && athenaAppointmentIdFromBookingRow(x.row))));
     });
     if (resolvable.length) rows = resolvable;
     if (rows.length > 1 && rows[0].distance === rows[1].distance && String(rows[0].row.id || '') !== String(rows[1].row.id || '')) return null;
@@ -362,7 +380,8 @@
        its mere truthiness flipped the unified manifest's exact-visit gate from
        blocked to ready. An empty id is honest: the manifest blocks with the
        real reason unless a bound encounter id + URL exists. */
-    return { visitDate: athenaVisitDate(day), provider: provider, appointmentId: suppliedAppointment || athenaAppointmentIdFromImportIndex(pid, hit.id, day) || '', encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
+    return { visitDate: athenaVisitDate(day), provider: provider, appointmentId: suppliedAppointment || athenaAppointmentIdFromImportIndex(pid, hit.id, day) ||
+      ((pid && S(hit.patient_external_id || hit.patientId).trim() === pid) ? athenaAppointmentIdFromBookingRow(hit) : '') || '', encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
   }
   function statusEl(opts) {
     try {
