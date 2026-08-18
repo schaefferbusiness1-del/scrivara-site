@@ -188,6 +188,13 @@ const tests = [
          machine that publishes data-mls-avatar-state / -next for the glow lane. */
   '1p-avatar-capture-readability-proof.js',
   '1p-avatar-capture-fit.test.js',
+  /* …and setup-flow drives the owner's actual screen: real module, real Setup
+     form, a portrait that really reads five of fourteen, the real Match button,
+     and then it reads what he was looking at — the five applied and labelled,
+     the nine named as defaults, no "match" claim, the Face style select still
+     on Animated character (the UNTOUCHED case, which is the one that used to
+     flip), and the form pointing at the next control. */
+  '1p-avatar-setup-flow-runtime.test.js',
   '1p-one-template-upload-and-month-range.test.js',
   '1p-template-mode-adapter-runtime.test.js',
   '1p-rangejobs-runtime.test.js',
