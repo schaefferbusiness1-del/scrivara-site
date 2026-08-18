@@ -281,6 +281,26 @@ ok(/UNVERIFIED IN A REAL BROWSER/.test(source),
   'the module stopped saying that the FaceDetector path has never been proven in a real browser');
 
 /* ---- 1c. THE STRUCTURE LOCATOR ---------------------------------------- */
+
+/* ⛔ IT RUNS ONCE PER SHUTTER PRESS, NEVER IN THE 8Hz LIVE LOOP. Measured on a
+   720px warm-wall frame: captureFit — which runs faceFitLocate TWICE and the
+   whole candidate ladder — takes a median of 104ms (85-241ms over 12 runs). At
+   125ms per live tick that would eat the entire frame budget and turn the
+   viewfinder into a slideshow, and the live view's own contract already bans
+   heavier work there. The live line uses faceFitReport, which only reads the
+   box the tick already measured. */
+{
+  const liveSlice = between(source, 'function faceLiveLoopStart(video, overlay, ui)', '/* ===== avfit-1.0.0');
+  const renderSlice = between(source, 'function faceLiveStatusRender(ui, res, q, ready, feed)', 'function faceLiveLoopStart');
+  const measureSlice = between(source, 'function faceLiveMeasure(video)', 'function faceLiveReady');
+  [['the live loop', liveSlice], ['the live status line', renderSlice], ['the live measure', measureSlice]]
+    .forEach(([name, slice]) => {
+      ok(!/faceFitLocate\s*\(/.test(slice), name + ' runs the locator every tick — a ~100ms scan inside a 125ms budget');
+      ok(!/faceFitApply\s*\(|faceFitCandidates\s*\(/.test(slice), name + ' runs the candidate ladder every tick');
+    });
+  ok(/faceFitReport\(res, q\)/.test(renderSlice),
+    'the live line no longer reads the box the tick already measured, so it must be measuring it again');
+}
 ok(/FACE_LOCATE_MIN_SKIN = 0\.45/.test(source), 'the locator lost its skin-coverage term, so a bookshelf can win');
 ok(/FACE_LOCATE_ABS_FLOOR = 1\.6/.test(source), 'the locator lost its absolute structure floor, so a flat wall can win');
 ok(/FACE_LOCATE_REL_FLOOR/.test(source), 'the locator lost its per-frame relative floor');
