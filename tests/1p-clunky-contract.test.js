@@ -982,12 +982,13 @@ async function runtime() {
       const t = hv ? (hv.innerText || '') : '';
       out.readOnly = (t.match(/READ-ONLY/g) || []).length;
       out.pullOpen = (t.match(/Pull open Athena patient/g) || []).length;
-      out.hero = C.shown('#mlsCvNxt_history');
+      out.hero = { shown: C.shown('#mlsCvNxt_history'), text: C.text('#mlsCvNxt_history') };
       out.note = C.text('#mlsClunkyHistNote');
       /* the fix must UNDO itself the moment a patient is chosen again */
       try { selectPatient(getPatients()[0].id); } catch (e) {}
       await sleep(1800);
-      out.back = { bar: C.shown('#mlsCtxBar'), hero: C.shown('#mlsCvNxt_history'), note: C.shown('#mlsClunkyHistNote') };
+      out.back = { bar: C.shown('#mlsCtxBar'), hero: C.shown('#mlsCvNxt_history'),
+        heroText: C.text('#mlsCvNxt_history'), note: C.shown('#mlsClunkyHistNote') };
       /* 51: a saved visit opens the note */
       saveNotes([{ id: 'n-clunky2', patientId: getPatients()[0].id, patient: getPatients()[0].name,
         date: '2026-08-10T09:00:00', text: 'PROCEDURE: Synthetic block\nFINDINGS: harness text only.' }]);
@@ -1034,11 +1035,22 @@ async function runtime() {
       `History with no patient still prints ${hist.readOnly} READ-ONLY pull captions (CLUNKY 50)`);
     eq(hist.pullOpen, 0,
       `History with no patient still says "Pull open Athena patient" ${hist.pullOpen} times (CLUNKY 50)`);
-    ok(!hist.hero, 'the "Pull chart from Athena" hero is offered with no patient to pull (CLUNKY 50)');
-    ok(/Choose a patient/.test(hist.note || ''),
-      `the hero went away without saying what to do instead (got "${hist.note}") (CLUNKY 50)`);
-    ok(hist.back && hist.back.bar && hist.back.hero && !hist.back.note,
-      'choosing a patient again does not bring the banner and the pull hero back - the fix is not reversible (CLUNKY 49, 50)');
+    /* 50 IS A RELABEL, NOT A HIDE. Hiding it was tried and 1p-nextglow-path
+       -contract refused it: #mlsCvNxt_history is the ONE lit control on this
+       room, and an invisible next step is a worse defect than a wrong one. So
+       the button must still be there, must not claim to pull a chart for a
+       patient who is not chosen, and must say what to do instead. */
+    ok(hist.hero && hist.hero.shown,
+      'the History next-step button is not on screen at all - the glow lane points at it by id (CLUNKY 50 guard)');
+    ok(hist.hero && !/Pull chart from Athena/.test(hist.hero.text || ''),
+      `with no patient the hero still offers "${(hist.hero && hist.hero.text || '').slice(0, 50)}" (CLUNKY 50)`);
+    ok(hist.hero && /Choose a patient/.test(hist.hero.text || ''),
+      `the hero does not name the real next step (got "${(hist.hero && hist.hero.text || '').slice(0, 50)}") (CLUNKY 50)`);
+    ok(!/Choose a patient/.test(hist.note || ''),
+      `the note repeats the hero's instruction instead of describing the list (got "${hist.note}") (CLUNKY 50)`);
+    ok(hist.back && hist.back.bar && hist.back.hero && !hist.back.note &&
+      /Pull chart from Athena/.test(hist.back.heroText || ''),
+      `choosing a patient again does not restore the banner and the real hero label (got "${(hist.back && hist.back.heroText || '').slice(0, 40)}") - the fix is not reversible (CLUNKY 49, 50)`);
     ok(hist.vndLoaded, 'the saved-visit dialog module did not install, so CLUNKY 51 was not measured');
     ok(hist.dlg, 'the saved-visit dialog did not open, so CLUNKY 51 was not measured');
     ok(hist.noteShown, 'clicking a saved visit still shows everything except the note (CLUNKY 51)');

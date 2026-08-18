@@ -41802,6 +41802,8 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 }
 #mlsDockNudge.on{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 #mlsDockNudge #mlsDockNudgeText{ flex:1 1 220px; min-width:0; }
+#mlsDockNudge .mlsDockNudgeWhy{ margin-top:3px; font-weight:500; }
+#mlsDockNudge .mlsDockNudgeWhy > summary{ cursor:pointer; color:var(--muted,#5b6b7c); font-size:12px; }
 #mlsDockNudge .mlsDockNudgeRow{ display:flex; gap:8px; flex-wrap:wrap; margin-top:0; margin-left:auto; }
 #mlsDockNudge button{
   min-height:38px; padding:8px 14px; border-radius:var(--r-ctl,10px);
@@ -42243,13 +42245,23 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       '</div>';
     /* textContent, not markup: this copy is the whole point and it must read
        the same everywhere it is quoted. */
-    /* clunky2-dock-1.0.0 (CLUNKY 42): 221 characters of explanation, on top
-       of the work it was explaining. The measurement it was quoting belongs in
-       this comment, not on the doctor's screen: along the bottom the bar sits
-       over the page at every scroll position except the very end; on the left
-       or right it never does. */
-    box.querySelector('#mlsDockNudgeText').textContent =
-      'Taskbar covering your work? Move it to the side and it never will.';
+    /* clunky2-dock-1.0.0 (CLUNKY 42): 221 characters of explanation, laid on
+       top of the work it was explaining. A first pass CUT the explanation, and
+       1p-ui-shape-contract refused it - correctly: an earlier lane pinned this
+       nudge as an EXPLANATION, not a nag, and the measured reason is what
+       makes it one. So the reason stays, word for word, one click away on the
+       same strip. Nodes rather than a markup string, for the same reason the
+       original used textContent: this copy is the whole point. */
+    var nText = box.querySelector('#mlsDockNudgeText');
+    nText.textContent = 'Taskbar covering your work? Move it to the side and it never will.';
+    var why = document.createElement('details');
+    why.className = 'mlsDockNudgeWhy';
+    var whyS = document.createElement('summary');
+    whyS.textContent = 'Why';
+    var whyP = document.createElement('span');
+    whyP.textContent = 'Along the bottom the taskbar sits over the page at every scroll position except the very end; on the left or right it never covers your work.';
+    why.appendChild(whyS); why.appendChild(whyP);
+    nText.appendChild(why);
     var yes = box.querySelector('#mlsDockNudgeYes');
     var no = box.querySelector('#mlsDockNudgeNo');
     yes.textContent = 'Move it to the left';
@@ -48304,7 +48316,12 @@ html[data-mls-clunky-nopt] #mlsCtxBar{ display:none !important; }
 
 /* --- 50: with no patient chosen, the controls that need one stand down and
    one line says what to do instead. */
-html[data-mls-clunky-nopt] #historyView #mlsCvNxt_history,
+/* The HERO IS NOT HIDDEN. A first pass hid it, and 1p-nextglow-path-contract
+   failed on the next run: the one lit control on History is #mlsCvNxt_history,
+   and hiding it sent the glow to the search box. It is relabelled instead (see
+   historyHero below) - which is the better fix anyway, because "choose a
+   patient" IS the next step on this screen. The duplicate toolbar control and
+   the READ-ONLY captions that hung off it do stand down. */
 html[data-mls-clunky-nopt] #historyView #pullChartBtn,
 html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !important; }
 #mlsClunkyHistNote{
@@ -48424,6 +48441,55 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     return n;
   }
 
+  /* --- 50: the hero, told the truth ---------------------------------
+     MEASURED at HEAD with no patient chosen: a green primary reading "Pull
+     chart from Athena" over "Brings this patient's name, date of birth and
+     every prior visit into MLS" - on a screen listing every patient's visits,
+     moments after the app said no patient was selected.
+     The button keeps its place (it is the room's one next step, and the glow
+     lane points at it by id); only its words and its destination change while
+     there is nobody to pull. Both are restored from the button's own stored
+     copy the moment a patient is chosen, so nothing is lost. */
+  var HERO_BIG = 'Choose a patient first';
+  var HERO_SUB = 'Pick who the chart is for, then pull it from here.';
+  function historyHero(noPt){
+    var hero = el('mlsCvNxt_history');
+    if (!hero) return false;
+    var big = hero.querySelector('.mls-cv-big'), sub = hero.querySelector('.mls-cv-sub');
+    if (!big) return false;
+    if (noPt) {
+      if (hero.getAttribute('data-mls-clunky-hero') !== '1') {
+        hero.setAttribute('data-mls-clunky-was-big', big.textContent || '');
+        if (sub) hero.setAttribute('data-mls-clunky-was-sub', sub.textContent || '');
+        hero.setAttribute('data-mls-clunky-hero', '1');
+      }
+      if (big.textContent !== HERO_BIG) big.textContent = HERO_BIG;
+      if (sub && sub.textContent !== HERO_SUB) sub.textContent = HERO_SUB;
+    } else if (hero.getAttribute('data-mls-clunky-hero') === '1') {
+      var wasBig = hero.getAttribute('data-mls-clunky-was-big');
+      var wasSub = hero.getAttribute('data-mls-clunky-was-sub');
+      if (wasBig != null) big.textContent = wasBig;
+      if (sub && wasSub != null) sub.textContent = wasSub;
+      hero.removeAttribute('data-mls-clunky-hero');
+      hero.removeAttribute('data-mls-clunky-was-big');
+      hero.removeAttribute('data-mls-clunky-was-sub');
+    }
+    return true;
+  }
+  /* Capture phase, so the frozen module's own handler never runs while the
+     button is offering something else. */
+  function armHero(){
+    try {
+      document.addEventListener('click', function(ev){
+        var t = ev.target;
+        var hero = t && t.closest ? t.closest('#mlsCvNxt_history') : null;
+        if (!hero || hero.getAttribute('data-mls-clunky-hero') !== '1') return;
+        ev.preventDefault(); ev.stopPropagation();
+        try { if (typeof window.showView === 'function') window.showView('patients'); } catch (e) {}
+      }, true);
+    } catch (e) {}
+  }
+
   function historyNote(show){
     var note = el('mlsClunkyHistNote');
     if (!show) { if (note) note.hidden = true; return; }
@@ -48436,7 +48502,9 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
       if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(note, anchor.nextSibling);
       else card.insertBefore(note, card.firstChild);
     }
-    var want = 'Showing every saved visit. Choose a patient to pull their chart from Athena.';
+    /* Context for the LIST. The next step is the hero's job - two controls
+       saying "choose a patient" is the defect this lane exists to remove. */
+    var want = 'Showing every saved visit on this account, not one patient\u2019s.';
     if (note.textContent !== want) note.textContent = want;
     note.hidden = false;
   }
@@ -48480,8 +48548,8 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
       }
 
       var hv = el('historyView');
-      if (hv && vis(hv)) { markReadOnlyCaptions(hv); historyNote(noPt); }
-      else historyNote(false);
+      if (hv && vis(hv)) { markReadOnlyCaptions(hv); historyNote(noPt); historyHero(noPt); }
+      else { historyNote(false); historyHero(false); }
 
       /* 142: the page hero repeats the bar's title. Marked only while the bar
          really carries that title, so a screen whose header says something
@@ -48525,6 +48593,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     ['mls:active-patient-changed', 'mls:view-changed'].forEach(function(ev){
       try { window.addEventListener(ev, pass); } catch (e) {}
     });
+    armHero();
     setInterval(pass, 1200);
     [200, 700, 1500, 3000].forEach(function(ms){ setTimeout(pass, ms); });
     pass();
@@ -48538,6 +48607,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
         var s = el('mlsClunkyRoomsCss'); if (s) s.disabled = true;
         document.documentElement.removeAttribute('data-mls-clunky-nopt');
         var n = el('mlsClunkyHistNote'); if (n && n.parentNode) n.parentNode.removeChild(n);
+        historyHero(false);
         var seg = document.querySelector('[data-mls-clunky-seg="1"]'); if (seg && seg.parentNode) seg.parentNode.removeChild(seg);
         Array.prototype.forEach.call(document.querySelectorAll('[data-mls-clunky-ro],[data-mls-clunky-dupetitle],[data-mls-clunky-suhead]'), function(x){
           x.removeAttribute('data-mls-clunky-ro'); x.removeAttribute('data-mls-clunky-dupetitle'); x.removeAttribute('data-mls-clunky-suhead');
