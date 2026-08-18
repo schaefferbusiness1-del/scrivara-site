@@ -184,8 +184,24 @@ const FIXTURE = function () {
       longHair: true, hair: '#5a3a20' }, base));
     cases.push(Object.assign({ name: '1280x720 head 30% off-centre', w: 1280, h: 720, headFrac: 0.30, dx: -0.14 }, base));
     cases.push(Object.assign({ name: 'CANARY 1280x720 head 4%', w: 1280, h: 720, headFrac: 0.04, canary: true }, base));
+    cases.push(Object.assign({ name: 'CANARY beige wall, no face', w: 1280, h: 720, headFrac: 0.30,
+      canary: true, wall: true, bg: '#f5e6d3', ceiling: '#f5e6d3' }, base));
     return { rows: cases.map(cs => {
-      const square = window.__fitCaptureSquare(window.__fitFrame(cs));
+      const square = window.__fitCaptureSquare(
+        cs.wall ? (function () {
+          /* ⛔ THE CONFIDENTLY-WRONG CASE. #f5e6d3 is the beige WALL this
+             project has measured walking through the skin mask twice — it
+             passes the YCbCr window and the hue band, and on one real
+             photograph the detector chose a wall instead of the face. Nothing
+             here is a face: no crop may be planned and no trait may be
+             claimed. */
+          const c = document.createElement('canvas'); c.width = cs.w; c.height = cs.h;
+          const x = c.getContext('2d');
+          x.fillStyle = '#f5e6d3'; x.fillRect(0, 0, cs.w, cs.h);
+          x.fillStyle = '#efdfc9'; x.fillRect(0, cs.h * 0.55, cs.w, cs.h * 0.45);
+          x.fillStyle = '#c8b49a'; x.fillRect(cs.w * 0.62, 0, cs.w * 0.06, cs.h);
+          return c;
+        }()) : window.__fitFrame(cs));
       const fit = owner.captureFit(square);
       return { name: cs.name, canary: cs.canary === true, fit: fit };
     }) };
@@ -257,13 +273,21 @@ const FIXTURE = function () {
   ok(ordinary.every(r => r.fit.after.claimed >= 5),
     'an ordinary laptop framing reads fewer than five of fourteen after the fit');
 
-  /* ---- 3. ⛔ THE CANARY ------------------------------------------------- */
-  const canary = out.rows.filter(r => r.canary)[0];
-  ok(canary, 'the 12-pixel-face canary is missing');
-  eq(canary.fit.fitted, false,
+  /* ---- 3. ⛔ THE TWO CANARIES ------------------------------------------- */
+  const tiny = out.rows.filter(r => /head 4%/.test(r.name))[0];
+  ok(tiny, 'the 12-pixel-face canary is missing');
+  eq(tiny.fit.fitted, false,
     'a head at 4% of frame height WAS cropped and upscaled — [[face-matcher-measured-a-12-pixel-face]], recreated by its own fix');
-  eq(canary.fit.after.claimed, 0,
-    'a head at 4% of frame height is described anyway: ' + canary.fit.after.derived.join(', '));
+  eq(tiny.fit.after.claimed, 0,
+    'a head at 4% of frame height is described anyway: ' + tiny.fit.after.derived.join(', '));
+  const wall = out.rows.filter(r => /beige wall/.test(r.name))[0];
+  ok(wall, 'the confidently-wrong wall canary is missing');
+  eq(wall.fit.fitted, false, 'a picture of a wall was cropped as though it contained a face');
+  eq(wall.fit.after.claimed, 0,
+    'a beige wall was described as a person: ' + wall.fit.after.derived.join(', '));
+  eq(wall.fit.before.claimed, 0,
+    'a beige wall was described as a person BEFORE the fit too: ' + wall.fit.before.derived.join(', '));
+  eq(wall.fit.after.fit.ready, false, 'the framing guide calls a wall a ready portrait');
 
   /* ---- 4. THE MEASURED CEILING, RECORDED RATHER THAN ASSERTED ----------- */
   const best = out.rows.reduce((m, r) => Math.max(m, r.fit.after.claimed), 0);
