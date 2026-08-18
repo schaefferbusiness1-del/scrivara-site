@@ -45257,6 +45257,263 @@ html[data-mls-dock-band="top"] body[data-mls-dock="top"] #appWrap{
 })();
 </script>
 <!-- ===== end dockspace-1.1.0 =========================================== -->
+<!-- ===== firstrun-1p-1.0.0 — the setup card lands where a new doctor looks ===
+     CLUNKY 45: "The 'Get MLS working - 0 of 3 done' checklist is tucked under
+     the visit card and hangs off the bottom of the screen."
+     CLUNKY 46: "The tour card sits on top of the very navigation rail it is
+     highlighting - on the phone it covers the whole highlighted area."
+
+     feat_mls_firstrun.js is a shared module this lane may not edit, so both are
+     fixed from here: one moves a node the module made, the other re-places a
+     card the module positioned. Neither wraps a shared function and both are
+     reversible.
+
+     REPRODUCED FIRST (real Chrome, fresh storage - no firstRunDone, no
+     mls_fr_shown - Visit view, __mlsFirstRun.ensure() with every gate passing):
+
+     45, at 1280x800: #mlsFrCard is 640x217 at y=988, bottom 1205, i.e. 405px
+         BELOW the fold of an 800px screen. Its parent is #visitView and it is
+         CHILD INDEX 4. The module mounts it "above #visitHero" and does exactly
+         that - but #visitHero is not the top of the Visit view, it is the fifth
+         child, and in this state it is display:none, so the checklist for a
+         doctor who has set nothing up yet renders under everything the setup is
+         for. At 375x812 the same card is at y=1263.
+         This block moves it to #visitView's FIRST child. Nothing else about it
+         changes: the module still owns its rows, its truth reads, its Dismiss
+         (which writes the per-account firstRunDone, so a dismissal is
+         remembered) and its removal.
+
+     46, at 1280x800, tour step 1: the card is 380x199 at (12,505) and the ring
+         it is pointing at is 116x423 at (11,189) - 115x107 = 12,228 px2 of the
+         highlighted rail covered by the card explaining it. The cause is in the
+         module's positionStep(): it tries BELOW the anchor, then ABOVE, and has
+         no third option, so a TALL anchor (a 423px navigation rail on an 800px
+         screen) has room for neither and the card is clamped straight onto it.
+         At 375x812 the card is a bottom sheet at y=605..812 pinned by the
+         module's own !important media rule, and the ring is at y=738..811.
+         This block adds the missing case - BESIDE - and on the phone flips the
+         sheet to the top edge when the ring is in the bottom half. It only acts
+         when the two really intersect, so every step the module already places
+         well is left exactly as it is.
+
+     WHY IT CANNOT FIGHT THE MODULE. The module writes the card's inline
+     left/top; this block reads that write (an attribute observer on the card)
+     and only writes when the result overlaps AND the value it wants differs
+     from what is already there. Its own write is therefore the last one, and
+     the next observer pass finds no overlap and writes nothing. -->
+<style id="mlsFrFitCss">
+/* The module pins the phone sheet with `top:auto!important;bottom:0!important`
+   inside its own media query, so flipping edges needs both !important and more
+   specificity - not one or the other. */
+@media (max-width:699.98px){
+  html body #mlsFrTourCard.mls-fr-topsheet{
+    top:0 !important; bottom:auto !important;
+    border-radius:0 0 16px 16px;
+    box-shadow:0 12px 36px rgba(18,38,28,.30);
+  }
+}
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsFirstRunFit) return;
+
+  var VERSION = 'firstrun-1p-1.0.0';
+  var GAP = 16;             /* the module's own anchor gap */
+  var EDGE = 12;            /* the module's own viewport margin */
+  var DOCK_CLEAR = 96;      /* the module's own bottom-dock clearance */
+  var SHEET_BP = 700;       /* the module's own bottom-sheet breakpoint */
+  var TOP_CLASS = 'mls-fr-topsheet';
+  var stats = { lifted: 0, placed: 0, flipped: 0, lastPlacement: '' };
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function shown(el) {
+    if (!el) return false;
+    var r = safe(function () { return el.getBoundingClientRect(); }, null);
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs = safe(function () { return getComputedStyle(el); }, null);
+    return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden';
+  }
+  function area(a, b) {
+    var w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+    var h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    return (w > 1 && h > 1) ? Math.round(w * h) : 0;
+  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  /* ---------------------------------------------------------------- 45 ---- */
+  function liftCard() {
+    var card = byId('mlsFrCard');
+    if (!card) return false;
+    var view = byId('visitView');
+    if (!view || card.parentElement !== view) return false;
+    if (view.firstElementChild === card) return false;
+    var ok = safe(function () { view.insertBefore(card, view.firstElementChild); return true; }, false);
+    if (ok) stats.lifted++;
+    return ok;
+  }
+
+  /* ---------------------------------------------------------------- 46 ---- */
+  var busy = false;
+  function fitTour() {
+    if (busy) return false;
+    var card = byId('mlsFrTourCard'), ring = byId('mlsFrRing');
+    if (!card || !ring || !shown(card) || !shown(ring)) return false;
+    var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+    if (!vw || !vh) return false;
+    var cr = safe(function () { return card.getBoundingClientRect(); }, null);
+    var rr = safe(function () { return ring.getBoundingClientRect(); }, null);
+    if (!cr || !rr) return false;
+
+    busy = true;
+    try {
+      if (vw < SHEET_BP) {
+        /* The sheet's geometry is !important in the module's own stylesheet, so
+           the only thing that can honestly change is WHICH EDGE it is pinned
+           to. ACT ONLY ON A REAL OVERLAP, and only if the other edge is
+           strictly better: predicting from "which half is the ring in" flipped
+           the sheet on steps that were already fine and left it mid-flip on the
+           next one (measured: step 3 at 375x812 still covered its ring by
+           3,540px2). Overlap is the only thing worth writing for, and "strictly
+           less" makes a second pass impossible. */
+        var before = area(cr, rr);
+        if (!before) return false;
+        var isTop = card.classList.contains(TOP_CLASS);
+        card.classList.toggle(TOP_CLASS, !isTop);
+        var after = safe(function () { return card.getBoundingClientRect(); }, null);
+        var now = after ? area(after, rr) : before;
+        if (now >= before) {
+          card.classList.toggle(TOP_CLASS, isTop);   /* it was no better */
+          return false;
+        }
+        stats.flipped++;
+        stats.lastPlacement = isTop ? 'sheet-bottom' : 'sheet-top';
+        return true;
+      }
+
+      if (!area(cr, rr)) return false;
+
+      /* The case positionStep() has no branch for: no room above, none below,
+         but plenty BESIDE. Rooms are measured, and the largest one wins even
+         when it is negative, so the worst case is the least bad placement
+         rather than the one that lands on the ring. */
+      var cw = cr.width, ch = cr.height;
+      var maxTop = Math.max(EDGE, vh - ch - DOCK_CLEAR);
+      var maxLeft = Math.max(EDGE, vw - cw - EDGE);
+      var midTop = clamp(Math.round(rr.top + rr.height / 2 - ch / 2), EDGE, maxTop);
+      var midLeft = clamp(Math.round(rr.left + rr.width / 2 - cw / 2), EDGE, maxLeft);
+      var cands = [
+        { k: 'right', room: (vw - EDGE) - (rr.right + GAP) - cw, left: Math.round(rr.right + GAP), top: midTop },
+        { k: 'left', room: (rr.left - GAP - cw) - EDGE, left: Math.round(rr.left - GAP - cw), top: midTop },
+        { k: 'below', room: (vh - DOCK_CLEAR) - (rr.bottom + GAP) - ch, left: midLeft, top: Math.round(rr.bottom + GAP) },
+        { k: 'above', room: (rr.top - GAP - ch) - EDGE, left: midLeft, top: Math.round(rr.top - GAP - ch) }
+      ];
+      var best = cands[0];
+      for (var i = 1; i < cands.length; i++) if (cands[i].room > best.room) best = cands[i];
+      var left = clamp(best.left, EDGE, maxLeft);
+      var top = clamp(best.top, EDGE, maxTop);
+      var lpx = left + 'px', tpx = top + 'px';
+      if (card.style.left === lpx && card.style.top === tpx) return false;
+      card.style.left = lpx;
+      card.style.top = tpx;
+      stats.placed++;
+      stats.lastPlacement = best.k;
+      return true;
+    } finally { busy = false; }
+  }
+
+  function pass() { liftCard(); fitTour(); }
+
+  /* ------------------------------------------------------------ wiring ---- */
+  var observers = [];
+  var listeners = [];
+  var timers = [];
+  function on(target, name, fn, cap) {
+    safe(function () { target.addEventListener(name, fn, !!cap); });
+    listeners.push([target, name, fn, !!cap]);
+  }
+  function later(fn, ms) { timers.push(safe(function () { return setTimeout(fn, ms); }, 0)); }
+  function watch(node, opts, fn) {
+    var mo = safe(function () { var m = new MutationObserver(fn); m.observe(node, opts); return m; }, null);
+    if (mo) observers.push(mo);
+    return mo;
+  }
+
+  /* the card: the module inserts it as a DIRECT child of #visitView, so
+     childList without subtree sees the mount and nothing else. */
+  var viewTries = 0;
+  var viewIv = setInterval(function () {
+    var v = byId('visitView');
+    if (v && !v.__mlsFrFitWatched) {
+      v.__mlsFrFitWatched = true;
+      watch(v, { childList: true }, liftCard);
+      liftCard();
+    }
+    if (v || ++viewTries > 40) clearInterval(viewIv);
+  }, 700);
+  timers.push(viewIv);
+
+  /* the tour: it is appended to <body> as one node, and everything this block
+     cares about afterwards is an inline style write on the card or the ring. */
+  var cardWatched = false;
+  function armTour() {
+    var wrap = byId('mlsFrTour');
+    if (!wrap) { cardWatched = false; return; }
+    if (cardWatched) return;
+    var card = byId('mlsFrTourCard'), ring = byId('mlsFrRing');
+    if (!card || !ring) return;
+    cardWatched = true;
+    watch(card, { attributes: true, attributeFilter: ['style', 'class'] }, fitTour);
+    watch(ring, { attributes: true, attributeFilter: ['style'] }, fitTour);
+    fitTour();
+    later(fitTour, 60);
+  }
+  watch(document.documentElement, { childList: true, subtree: false }, armTour);
+  if (document.body) watch(document.body, { childList: true }, armTour);
+  else on(document, 'DOMContentLoaded', function () { watch(document.body, { childList: true }, armTour); pass(); });
+
+  on(window, 'resize', function () { later(fitTour, 0); }, false);
+  on(window, 'mls:loader-ready', pass, false);
+  on(window, 'mls:view-changed', pass, false);
+  [900, 2600, 6200, 12000].forEach(function (ms) { later(pass, ms); });
+
+  window.__mlsFirstRunFit = {
+    version: VERSION,
+    installed: true,
+    liftCard: liftCard,
+    fitTour: fitTour,
+    pass: pass,
+    report: function () {
+      var card = byId('mlsFrCard'), view = byId('visitView');
+      var tc = byId('mlsFrTourCard'), ring = byId('mlsFrRing');
+      var overlap = (tc && ring && shown(tc) && shown(ring))
+        ? area(tc.getBoundingClientRect(), ring.getBoundingClientRect()) : 0;
+      return {
+        stats: stats,
+        cardMounted: !!card,
+        cardIsFirst: !!(card && view && card.parentElement === view && view.firstElementChild === card),
+        cardIndex: (card && card.parentElement)
+          ? Array.prototype.indexOf.call(card.parentElement.children, card) : -1,
+        tourOpen: !!byId('mlsFrTour'),
+        tourOverlap: overlap,
+        sheetTop: !!(tc && tc.classList.contains(TOP_CLASS))
+      };
+    },
+    revert: function () {
+      observers.forEach(function (m) { safe(function () { m.disconnect(); }); });
+      listeners.forEach(function (l) { safe(function () { l[0].removeEventListener(l[1], l[2], l[3]); }); });
+      timers.forEach(function (t) { safe(function () { clearTimeout(t); clearInterval(t); }); });
+      observers = []; listeners = []; timers = [];
+      safe(function () { var c = byId('mlsFrTourCard'); if (c) c.classList.remove(TOP_CLASS); });
+      safe(function () { var s = byId('mlsFrFitCss'); if (s && s.parentNode) s.parentNode.removeChild(s); });
+      safe(function () { delete window.__mlsFirstRunFit; });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end firstrun-1p-1.0.0 ========================================= -->
 <!-- ===== uimap-1.0.0 — the confusing places named in the map, fixed ======
      Owner 2026-08-17: "there are continuity errors and glitches… things that
      are complex all over the site and bad UI everywhere… map out all bad UI and

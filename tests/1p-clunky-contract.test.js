@@ -43,7 +43,9 @@ const BLOCKS = [
   'clunky-calendar-1.0.0',
   /* clunky2 lane (2026-08-18): the rooms the first lane did not reach. */
   'clunky2-rooms-1.0.0',
-  'clunky2-visitnote-1.0.0'
+  'clunky2-visitnote-1.0.0',
+  /* open-items lane (2026-08-18): items 45 and 46, the first-run surfaces. */
+  'firstrun-1p-1.0.0'
 ];
 
 /* ============================================================ PART 1: static */
@@ -1525,6 +1527,139 @@ async function runtime() {
       `the top dock pushes the first patient row ${top41.firstRow.y - bot41.firstRow.y}px lower than a bottom dock does, for a dock only ${top41.dock.h}px tall (CLUNKY 41)`);
     eq(bot41.pad, 22, `the bottom dock's #appWrap reservation changed to ${bot41.pad}px — the top-dock rule is leaking into the other positions (CLUNKY 41 guard)`);
     await dockPage.close();
+
+    /* ================================ CLUNKY 45 + 46: THE FIRST-RUN SURFACES
+     * 45: the checklist "hangs off the bottom of the screen".
+     * 46: "the tour card sits on top of the very rail it is highlighting."
+     *
+     * REPRODUCED at HEAD with a genuine first run - firstRunDone cleared,
+     * sessionStorage mls_fr_shown cleared, every gate in __mlsFirstRun._gates
+     * passing, Visit view shown:
+     *    45  #mlsFrCard 640x217 at y=988 (bottom 1205) in an 800px viewport,
+     *        parent #visitView, CHILD INDEX 4 - the module mounts it above
+     *        #visitHero, which is the fifth child and display:none here.
+     *        375x812: the same card at y=1263.
+     *    46  tour step 1: card 380x199 at (12,505) over a 116x423 ring at
+     *        (11,189) = 12,228px2 covered. 375x812: the bottom sheet at
+     *        y=605..812 over a ring at y=738..811.
+     * The previous lane recorded both as "not reached": the module is the LAST
+     * script in the bundle and #mlsFrCard measures 0x0 until it arrives, so the
+     * wait below is load-bearing, not padding. */
+    const frPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    frPage.on('pageerror', (e) => pageErrors.push(String(e.message).slice(0, 160)));
+    await boot(frPage, port);
+    /* feat_mls_firstrun.js is idle-scheduled at the very end of the bundle and
+       an idle callback never fires in a non-compositing tab - the same trap the
+       dock has, handled the same way: wait, then load it directly. */
+    let frArrived = await frPage.waitForFunction(() => !!window.__mlsFirstRun, null, { timeout: 45000 })
+      .then(() => true).catch(() => false);
+    if (!frArrived) {
+      await frPage.evaluate(() => new Promise((done) => {
+        const s = document.createElement('script');
+        s.src = 'feat_mls_firstrun.js?v=harness';
+        s.onload = () => done(true); s.onerror = () => done(false);
+        (document.body || document.head).appendChild(s);
+      }));
+      frArrived = await frPage.waitForFunction(() => !!window.__mlsFirstRun, null, { timeout: 30000 })
+        .then(() => true).catch(() => false);
+    }
+    ok(frArrived, 'feat_mls_firstrun.js never arrived, so items 45 and 46 were not measured at all');
+    const frFit = await frPage.evaluate(() => (window.__mlsFirstRunFit || {}).version || '');
+    eq(frFit, 'firstrun-1p-1.0.0', 'the first-run placement block did not install');
+    await frPage.evaluate(() => {
+      try {
+        Object.keys(localStorage).forEach((k) => { if (/firstRunDone/.test(k)) localStorage.removeItem(k); });
+        sessionStorage.removeItem('mls_fr_shown');
+      } catch (e) {}
+      window.__clunky.nav('nav_visit');
+    });
+    await frPage.waitForTimeout(1500);
+    const fr45 = await frPage.evaluate(() => {
+      try { window.__mlsFirstRun._resetProbeCache(); } catch (e) {}
+      const made = window.__mlsFirstRun.ensure();
+      window.__mlsFirstRunFit.pass();
+      const c = document.getElementById('mlsFrCard');
+      const r = c ? c.getBoundingClientRect() : null;
+      return { made: made, gates: window.__mlsFirstRun._gates.pass(),
+        rect: r ? { y: Math.round(r.y), h: Math.round(r.height) } : null,
+        report: window.__mlsFirstRunFit.report(),
+        pulls: Array.prototype.slice.call(document.querySelectorAll('button,a'))
+          .filter((b) => /^pull (today|day)/i.test((b.textContent || '').trim()))
+          .filter((b) => { const q = b.getBoundingClientRect(); return q.width > 0 && q.height > 0 && q.top < innerHeight && q.bottom > 0; })
+          .map((b) => b.id || (b.textContent || '').trim().slice(0, 16)) };
+    });
+    measured.firstrun45 = fr45;
+    ok(fr45.report.cardMounted, `the first-run checklist did not mount (gates pass=${fr45.gates}) so 45 was not measured`);
+    ok(fr45.report.cardIsFirst,
+      `#mlsFrCard is child ${fr45.report.cardIndex} of #visitView, not the first — it renders under the visit card again (CLUNKY 45)`);
+    ok(fr45.rect && fr45.rect.y < 800,
+      `#mlsFrCard starts at y=${fr45.rect && fr45.rect.y} in an 800px viewport — off the bottom of the screen (CLUNKY 45)`);
+    ok(fr45.rect && fr45.rect.y < 400,
+      `#mlsFrCard starts at y=${fr45.rect && fr45.rect.y}; it is the first thing a doctor with nothing set up should see (CLUNKY 45)`);
+    eq(fr45.pulls.length, 1,
+      `${fr45.pulls.length} "Pull today" buttons are on screen at once with the checklist up: ${fr45.pulls.join(', ')} (CLUNKY 45)`);
+
+    /* 46 — the tour, every reachable step, desktop then phone. */
+    const tourAt = async (label) => {
+      const seen = [];
+      await frPage.evaluate(() => {
+        try { window.__mlsFirstRun._closeTour(); } catch (e) {}
+        window.__mlsFirstRun.tour();
+      });
+      await frPage.waitForTimeout(700);
+      for (let i = 0; i < 4; i++) {
+        const m = await frPage.evaluate(() => {
+          const c = document.getElementById('mlsFrTourCard'), g = document.getElementById('mlsFrRing');
+          const vis = (e) => { if (!e) return false; const q = e.getBoundingClientRect();
+            return q.width > 0 && q.height > 0 && getComputedStyle(e).display !== 'none'; };
+          if (!vis(c) || !vis(g)) return null;
+          const a = c.getBoundingClientRect(), b = g.getBoundingClientRect();
+          const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          return { overlap: (w > 1 && h > 1) ? Math.round(w * h) : 0,
+            card: [Math.round(a.x), Math.round(a.y), Math.round(a.width), Math.round(a.height)],
+            ring: [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)] };
+        });
+        if (!m) break;
+        seen.push(m);
+        const advanced = await frPage.evaluate(() => {
+          const n = document.getElementById('mlsFrTourNext');
+          if (!n) return false; n.click(); return true;
+        });
+        if (!advanced) break;
+        await frPage.waitForTimeout(450);
+      }
+      await frPage.evaluate(() => { try { window.__mlsFirstRun._closeTour(); } catch (e) {} });
+      ok(seen.length >= 1, `${label}: the guided tour never drew a ring, so 46 was not measured`);
+      seen.forEach((m, i) => {
+        eq(m.overlap, 0,
+          `${label} tour step ${i + 1}: the card ${JSON.stringify(m.card)} covers ${m.overlap}px2 of the ring ${JSON.stringify(m.ring)} it is explaining (CLUNKY 46)`);
+      });
+      return seen;
+    };
+    measured.firstrun46desk = await tourAt('desktop 1280x800');
+    await frPage.setViewportSize({ width: 375, height: 812 });
+    await frPage.waitForTimeout(700);
+    measured.firstrun46phone = await tourAt('phone 375x812');
+    await frPage.setViewportSize({ width: 1280, height: 800 });
+    await frPage.waitForTimeout(500);
+
+    /* 45 — DISMISS REMEMBERS. The module writes the per-account firstRunDone,
+       and a remembered dismissal is the difference between a helpful card and
+       a nag. Asserted because moving the card makes it more prominent. */
+    const dismissed = await frPage.evaluate(async () => {
+      const b = document.getElementById('mlsFrDismiss');
+      if (!b) return { no: true };
+      b.click();
+      await new Promise((r) => setTimeout(r, 400));
+      const again = window.__mlsFirstRun.ensure();
+      return { done: window.__mlsFirstRun._gates.isDone(), card: !!document.getElementById('mlsFrCard'), again: again };
+    });
+    measured.firstrunDismiss = dismissed;
+    ok(dismissed.done === true, 'Dismiss did not record the first run as done, so the checklist comes back (CLUNKY 45)');
+    eq(dismissed.card, false, 'Dismiss left the checklist on screen (CLUNKY 45)');
+    eq(dismissed.again, false, 'the checklist mounted again after being dismissed (CLUNKY 45)');
+    await frPage.close();
 
     ok(pageErrors.length === 0, 'the page threw: ' + pageErrors.slice(0, 3).join(' | '));
   } finally {
