@@ -34,7 +34,8 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
 /* Every block this suite owns. Adding one here makes it carry the same
    existence + lane-neutrality checks as its neighbours. */
 const BLOCKS = [
-  'clunky-header-1.0.0'
+  'clunky-header-1.0.0',
+  'clunky-settings-1.0.0'
 ];
 
 /* ============================================================ PART 1: static */
@@ -272,6 +273,128 @@ async function runtime() {
     });
     ok(!signin.chip, 'the mode chip is on screen before sign-in (CLUNKY 83)');
     ok(!signin.today, 'the date chip is on screen before sign-in (CLUNKY 83)');
+
+    /* ===================================================== SETTINGS ===== */
+    const set = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      try { openSettings(); } catch (e) {}
+      await sleep(1600);
+      const out = { titles: 0, foot: {}, railHead: C.shown('.mls-set-rail-head') };
+      /* 135: one "⚙️ Settings" on screen, not two. */
+      Array.prototype.slice.call(document.querySelectorAll('#settingsModal h3, #settingsModal .mls-set-rail-head'))
+        .forEach(function (n) { if (C.visible(n) && /Settings/.test(n.textContent || '')) out.titles++; });
+
+      const tabs = Array.prototype.slice.call(document.querySelectorAll('#settingsTabBar .set-tab'));
+      out.tabCount = tabs.length;
+      /* 136: one footer shape on every tab. */
+      for (let i = 0; i < tabs.length; i++) {
+        tabs[i].click();
+        await sleep(420);
+        const row = document.querySelector('#settingsModal .modal > .row');
+        const btns = row ? Array.prototype.slice.call(row.querySelectorAll('button')).filter(C.visible)
+          .map(function (b) { return (b.textContent || '').trim(); }) : [];
+        out.foot[(tabs[i].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 16)] = btns.join('|');
+      }
+      /* 76 / 79 / 80: the vendor cards are behind ONE closed disclosure. */
+      for (const t of tabs) { if (/Integrations/.test(t.textContent || '')) { t.click(); break; } }
+      await sleep(1100);
+      const fold = document.getElementById('mlsClunkySetVendor');
+      out.fold = fold ? {
+        open: fold.open,
+        holds: ['athApiSettingsCard', 'schedApiCard'].filter(function (id) {
+          const c = document.getElementById(id);
+          return !!(c && c.closest('#mlsClunkySetVendor'));
+        })
+      } : null;
+      /* innerText, not a rect: a closed <details> keeps boxes for its
+         subtree in Chrome, so a rect-based visibility helper calls hidden
+         vendor cards visible. Rendered text is the honest reading. */
+      const sect = Array.prototype.slice.call(document.querySelectorAll('#settingsModal .set-section')).filter(C.visible);
+      const shown = sect.map(function (s) { return s.innerText || ''; }).join(' ');
+      out.jargonOnScreen = ['_lastUpdated', 'idempotent', 'redirect URI', 'refresh tokens']
+        .filter(function (k) { return shown.indexOf(k) >= 0; });
+      /* 77: one download control for one file. */
+      out.downloads = Array.prototype.slice.call(document.querySelectorAll('#settingsModal button, #settingsModal a[href]'))
+        .filter(C.visible)
+        .filter(function (e) { return /download mls assist|direct package/i.test(e.textContent || ''); })
+        .map(function (e) { return (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40); });
+      out.words = shown.trim().split(/\s+/).length;
+      out.scrollH = (function () { const m = document.querySelector('#settingsModal .modal'); return m ? m.scrollHeight : 0; })();
+
+      /* 137: scrolled, the round × must not land inside the search input. */
+      const modal = document.querySelector('#settingsModal .modal');
+      if (modal) modal.scrollTop = 320;
+      await sleep(350);
+      out.xInSearch = C.overlap('#settingsModal .modal-x', '#settingsSearch');
+
+      /* 75: the two "where navigation lives" dropdowns have different names. */
+      for (const t of tabs) { if (/Display/.test(t.textContent || '')) { t.click(); break; } }
+      await sleep(500);
+      out.dockLabel = (function () {
+        const s = document.getElementById('qolDockSide');
+        const f = s && s.closest ? s.closest('.field') : null;
+        const l = f ? f.querySelector('label') : null;
+        return l ? (l.textContent || '').trim() : null;
+      })();
+      /* 131: the shared-computer field agrees with its own dropdown. */
+      for (const t of tabs) { if (/Account/.test(t.textContent || '')) { t.click(); break; } }
+      await sleep(500);
+      out.shared = (function () {
+        const cb = document.getElementById('swSharedToggle');
+        const note = document.getElementById('swSharedNote');
+        const sel = document.getElementById('idleMins');
+        const on = typeof swEnabled === 'function' ? swEnabled() : null;
+        const noteNum = note ? ((note.textContent || '').match(/after (\d+) quiet/) || [])[1] || null : null;
+        return { on: on, checked: cb ? cb.checked : null, noteNum: noteNum, sel: sel ? sel.value : null,
+          noteSaysOn: note ? /^On:/.test((note.textContent || '').trim()) : null };
+      })();
+      /* 74: only ONE place in the dialog claims a live connection. */
+      out.connectedClaims = [];
+      for (const t of tabs) {
+        t.click(); await sleep(320);
+        const s2 = Array.prototype.slice.call(document.querySelectorAll('#settingsModal .set-section')).filter(C.visible)
+          .map(function (x) { return x.innerText || ''; }).join(' ');
+        if (/Connected to your clinic's MLS server/i.test(s2)) out.connectedClaims.push('account-notice');
+      }
+      /* 132: Google Business is in exactly one tab. */
+      out.gbpTabs = 0;
+      for (const t of tabs) {
+        t.click(); await sleep(300);
+        const s3 = Array.prototype.slice.call(document.querySelectorAll('#settingsModal .set-section')).filter(C.visible)
+          .map(function (x) { return x.innerText || ''; }).join(' ');
+        if (/Google Business/i.test(s3)) out.gbpTabs++;
+      }
+      try { closeSettings(); } catch (e) {}
+      return out;
+    });
+    measured.settings = {
+      titles: set.titles, downloads: set.downloads, words: set.words, scrollH: set.scrollH,
+      fold: set.fold, shared: set.shared, gbpTabs: set.gbpTabs, jargon: set.jargonOnScreen
+    };
+    eq(set.titles, 1, `"Settings" is written ${set.titles} times at the top of its own dialog (CLUNKY 135)`);
+    const shapes = Object.keys(set.foot).map((k) => set.foot[k]);
+    eq(new Set(shapes).size, 1,
+      `the Settings footer changes shape by tab: ${JSON.stringify(set.foot)} (CLUNKY 136)`);
+    ok(shapes[0] && shapes[0].indexOf('Save changes') >= 0 && shapes[0].indexOf('Cancel') >= 0,
+      `the one footer is "${shapes[0]}" - Save and Cancel must both survive (CLUNKY 136)`);
+    ok(set.fold && set.fold.open === false, 'the vendor cards are not behind a closed disclosure (CLUNKY 76)');
+    eq(set.fold && set.fold.holds.length, 2,
+      'the Athena API and Scheduling API cards are not both inside the vendor fold (CLUNKY 79, 80)');
+    eq(set.jargonOnScreen.length, 0,
+      `vendor documentation is still in the open on Integrations: ${set.jargonOnScreen.join(', ')} (CLUNKY 79, 80)`);
+    eq(set.downloads.length, 1,
+      `Integrations offers ${set.downloads.length} controls to download one file: ${set.downloads.join(' / ')} (CLUNKY 77)`);
+    eq(set.xInSearch, null, 'scrolled, the round × sits inside the settings search box (CLUNKY 137)');
+    ok(set.dockLabel && set.dockLabel !== 'Navigation bar',
+      `the taskbar dropdown is still called "${set.dockLabel}", the same thing as "Navigation layout" (CLUNKY 75)`);
+    ok(set.shared && set.shared.checked === set.shared.on,
+      `the shared-computer switch shows ${set.shared && set.shared.checked} while the feature is ${set.shared && set.shared.on} (CLUNKY 131)`);
+    ok(!set.shared.noteSaysOn || String(set.shared.noteNum) === String(set.shared.sel),
+      `the shared-computer note says ${set.shared.noteNum} minutes while the dropdown says ${set.shared.sel} (CLUNKY 131)`);
+    eq(set.connectedClaims.length, 0,
+      'the Account tab still claims a live connection that the Advanced tab denies (CLUNKY 74)');
+    ok(set.gbpTabs <= 1, `Google Business is configured in ${set.gbpTabs} different tabs (CLUNKY 132)`);
     await page.close();
 
     /* ------------------------------------------------------------ 390x844 */

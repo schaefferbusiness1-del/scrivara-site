@@ -34451,15 +34451,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return '<div class="mls-r44-row"><label for="' + id + '" style="flex:1">' + label + '</label><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '></div>';
     }
     sec.innerHTML = '<b style="font-size:16px">🎛 MLS Controls</b><div class="sub">Every new feature, one place.</div>'
-      + row('🎙️ Voice button acts standalone (no chat panel pop-up)', 'r44cVoiceSA', c.voiceStandalone)
+      /* CLUNKY 132: this list read like an engineer's checklist — "HTTP
+         errors", "legacy guided-visit view", "MLS cloud backend", "Voice
+         button acts standalone (no chat panel pop-up)". Same switches, same
+         ids, same handlers; the words are now about what the doctor sees. */
+      + row('🎙️ Voice button records without opening the chat panel', 'r44cVoiceSA', c.voiceStandalone)
       + row('Show the 🎙️ voice button', 'r44cVoice', c.showVoice)
       + '<div class="mls-r44-row"><label for="r44cTunnel" style="flex:1">Show "Simple mode (tunnel)" guided view</label><input type="checkbox" id="r44cTunnel"' + (c.showTunnel ? ' checked' : '') + '><button class="mls-r44-btn ghost" id="r44cTunnelGo">🎯 Open</button></div>'
       + row('🎂 Show birthdays on patient chips', 'r44cBday', c.birthdays)
-      + row('Friendly "no patients scheduled" messages (instead of HTTP errors)', 'r44cErr', c.friendlyErrors)
+      + row('Say "no patients scheduled" instead of showing an error code', 'r44cErr', c.friendlyErrors)
       + '<div class="mls-r44-row"><label for="r44cQp" style="flex:1">Quick-pick patients shown</label><select id="r44cQp" class="mls-r44-field" style="width:70px;margin:0"><option' + (c.qpCount === 3 ? ' selected' : '') + '>3</option><option' + (c.qpCount === 5 ? ' selected' : '') + '>5</option><option' + (c.qpCount === 8 ? ' selected' : '') + '>8</option></select></div>'
-      + '<div class="mls-r44-row"><label style="flex:1">🌟 Google Business Profile</label><span class="mls-r44-badge wait" id="r44cGbpSt">checking…</span><button class="mls-r44-btn ghost" id="r44cGbpOpen">Open</button></div>'
+      + '<div class="mls-r44-row" id="r44cGbpRow"><label style="flex:1">🌟 Google Business Profile</label><span class="mls-r44-badge wait" id="r44cGbpSt">checking…</span><button class="mls-r44-btn ghost" id="r44cGbpOpen">Open</button></div>'
       + '<div class="mls-r44-row"><label style="flex:1">Plan</label><span class="mls-r44-badge on" id="r44cPlan">checking…</span></div>'
-      + '<div class="mls-r44-row"><label style="flex:1">MLS cloud backend</label><span class="mls-r44-badge wait" id="r44cBk">checking…</span></div>';
+      /* CLUNKY 74: "MLS cloud backend  not connected" sat one tab away from
+         "Connected to your clinic's MLS server". This row is the only one
+         that asks the server, so it is the only one that gets to say the
+         word, and it says it about a thing a doctor recognises. */
+      + '<div class="mls-r44-row"><label style="flex:1">Connection to your MLS server</label><span class="mls-r44-badge wait" id="r44cBk">checking…</span></div>';
     host.appendChild(sec);
     sec.querySelector('#r44cVoiceSA').onchange = function () { setCtl('voiceStandalone', this.checked); };
     sec.querySelector('#r44cVoice').onchange = function () { setCtl('showVoice', this.checked); };
@@ -34502,6 +34510,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     sec.querySelector('#r44cErr').onchange = function () { setCtl('friendlyErrors', this.checked); };
     sec.querySelector('#r44cQp').onchange = function () { setCtl('qpCount', Number(this.value)); };
     sec.querySelector('#r44cGbpOpen').onclick = function () { openGbp(); };
+    /* CLUNKY 132: Google Business lived in two tabs - the link field on
+       Practice & provider, this status + Open button here on Advanced. One
+       place: the row joins the field it is about. Done AFTER every
+       sec.querySelector() above, because moving it first makes those
+       lookups return null and the whole panel throws. */
+    try {
+      var gbpRow = sec.querySelector('#r44cGbpRow');
+      var gbpFld = $('googleBusinessUrl');
+      gbpFld = gbpFld && gbpFld.closest ? gbpFld.closest('.field') : null;
+      if (gbpRow && gbpFld) gbpFld.appendChild(gbpRow);
+    } catch (eGbp) {}
     hjson('/api/gbp/status').then(function (s) {
       var el = $('r44cGbpSt'); if (!el) return;
       el.textContent = s.connected ? ('connected' + (s.email ? ' · ' + s.email : '')) : (s.configured ? 'ready to connect' : 'not configured');

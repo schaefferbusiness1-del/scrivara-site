@@ -4723,7 +4723,14 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="keyok" id="keyOk">✔ Key saved on this device.</p>
     </div>
     <div class="field" id="backendNotice" style="display:none">
-      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Connected to your clinic's MLS server.</b> AI note generation is ready — no API key needed on this device. Your key stays securely on the server.</p>
+      <!-- CLUNKY 74: this box used to open with "Connected to your clinic's
+           MLS server" while the Advanced tab, in the same session, said "MLS
+           cloud backend  not connected". Both were true of different things:
+           this one is about how AI is CONFIGURED for the account, the other
+           about whether the server answered a health check just now. Only one
+           of them may use the word "connected", and it is the one that
+           actually asks. -->
+      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Your clinic's MLS server handles AI for this account.</b> No API key is needed on this device — your key stays securely on the server. The Advanced tab shows whether that server is reachable right now.</p>
     </div>
     <div class="field" id="redeemField" style="display:none">
       <label for="redeemInputSettings">Access code</label>
@@ -9326,6 +9333,15 @@ function openSettings(){
   document.getElementById('docSpec').value=getSpec();
   document.getElementById('keyOk').className=getKey()?'keyok show':'keyok';
   const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=(getIdleMins()===0?'off':String(getIdleMins()));
+  /* CLUNKY 131. MEASURED: with swEnabled() === false, the shared-computer
+     checkbox rendered CHECKED and its note read the ON text - "locks the
+     screen after 15 quiet minutes" - directly above a dropdown correctly
+     showing 30. The field is painted once when it is built, before the
+     shared-workstation state settles, and nothing re-read it afterwards;
+     calling the module's own sync here corrected the checkbox to false and
+     the note to the OFF text in the same probe. The number was never the
+     defect - the whole field was stale. */
+  try{ if(typeof swSyncSettingsField==='function') swSyncSettingsField(); }catch(e){}
   const dc=document.getElementById('defaultComment'); if(dc) dc.value=getDefaultComment();
   // QoL settings (MLS)
   const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
@@ -44995,5 +45011,232 @@ html.mls-clunky-hdr #mslToday{ padding:4px 10px; }
 })();
 </script>
 <!-- ===== end clunky-header-1.0.0 ======================================= -->
+<!-- ===== clunky-settings-1.0.0 — the Settings dialog stops arguing with itself
+     CLUNKY AUDIT items 75, 76, 77, 79, 80, 82, 133, 134, 135, 136, 137.
+
+     MEASURED at HEAD, 1366x900, the dialog opened on a seeded 28-patient day:
+       * "⚙️ Settings" rendered TWICE — the modal's own <h3> and the rail head
+         the settings-clean pass inserts above the tab list (both visible).
+       * scrolled 300px, the round × (1151,29 34x34) sat INSIDE the sticky
+         search row (387,17 816x66) — a 34x34 overlap, i.e. on the input.
+       * the footer changed shape by tab: tabs 0–5 showed [Save changes,
+         Cancel]; Integrations and Advanced HID Save and relabelled the ghost
+         to "Done", so on exactly the two tabs with the most switches the
+         doctor is given no way to tell whether anything was saved.
+       * Integrations: 55 visible controls, 4,050px of scroll, with
+         #athApiSettingsCard (380px of "Exact redirect URI" / "client
+         credentials and refresh tokens") and #schedApiCard (369px of
+         "GET /fhir/Appointment?_lastUpdated=gt<last sync>") open by default.
+       * THREE download controls for one file: #extDlBtn "Download MLS Assist
+         v3.0.63 (.zip)", "Download MLS Assist (latest)", "Direct package
+         (v3.0.63 ZIP)".
+       * Display carried two dropdowns that both read as "where navigation
+         lives": "Navigation layout (this device)" and "Navigation bar".
+       * Practice: #googleBusinessUrl 178x22 among 770x38 siblings, and
+         #clinicLogoInput rendered as a live green Choose File button while
+         `disabled` was true, with nothing on screen saying why.
+
+     WHAT THIS BLOCK DOES NOT DO. It deletes no control and no handler. The
+     vendor cards move into one closed disclosure and keep their ids, their
+     wiring and their place in the DOM order; the duplicate download links are
+     hidden, not removed, so the module that owns them keeps working. -->
+<style id="mlsClunkySettingsCss">
+/* --- 135: one title. The rail head is decorative (it is already hidden on
+       phones by the settings-clean pass); the <h3> is the dialog's accessible
+       title and its sticky header, so the rail head is the one that goes. */
+html #settingsModal .mls-set-rail-head{ display:none !important; }
+
+/* --- 137: the sticky search row keeps its hands off the round ×.
+   The settings-clean pass sets `padding:14px 0 12px !important` from
+   `#settingsModal.mls-settings-clean .mls-set-search-row` (one id, two
+   classes), so a rule with one id and one class loses even with !important.
+   Matched class-for-class, plus html, to out-specify it. */
+html #settingsModal.mls-settings-clean .mls-set-search-row,
+html #settingsModal .mls-set-search-row{ padding-right:56px !important; }
+
+/* --- 134: the Google link field is a field like its neighbours. */
+html #settingsModal #googleBusinessUrl{
+  width:100% !important; box-sizing:border-box !important; min-height:38px !important;
+}
+/* --- 134: a control that cannot be used must not look like one that can. */
+html #settingsModal input[type=file][disabled]{
+  opacity:.55 !important; cursor:not-allowed !important; filter:grayscale(1);
+}
+.mlsClunkyWhy{
+  display:block; margin:4px 0 0; font:600 12px/1.4 var(--sans, system-ui, sans-serif);
+  color:var(--muted, #79837C);
+}
+/* --- 76/79/80: the vendor fold reads as one line until it is opened. */
+#mlsClunkySetVendor{ margin:12px 0 4px; }
+#mlsClunkySetVendor > summary{
+  cursor:pointer; padding:8px 0; font:700 13.5px/1.3 var(--sans, system-ui, sans-serif);
+  color:var(--ink, #1A211C); list-style:revert;
+}
+#mlsClunkySetVendor > summary .note{ font-weight:400; }
+#mlsClunkySetVendor > .mlsClunkySetVendorBody{
+  margin-top:10px; border-left:3px solid var(--line, #D9D6CD); padding-left:12px;
+}
+/* --- 133: no desktop-Chrome download offer on a phone. */
+.mlsClunkyPhoneOnly{ display:none; }
+@media (max-width:600px){
+  html #settingsModal .mlsClunkyDesktopOnly{ display:none !important; }
+  html #settingsModal .mlsClunkyPhoneOnly{ display:block; }
+}
+</style>
+<script>
+/* clunky-settings-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkySettings) return;
+  var VERSION = 'clunky-settings-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function q(sel, root) { try { return (root || document).querySelector(sel); } catch (e) { return null; } }
+  function qa(sel, root) { try { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); } catch (e) { return []; } }
+  function txt(node) { return ((node && (node.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function open() { var m = el('settingsModal'); return !!(m && m.classList.contains('show')); }
+
+  /* ---- 136: ONE FOOTER, EVERY TAB ------------------------------------
+     The settings-clean pass calls its own updateSettingsFooter() on every
+     group change and hides the primary on legal/integrations/advanced. That
+     is not a saving distinction the doctor can see — saveSettings() is one
+     function over the whole dialog — so the shape is normalised back. The
+     correction is idempotent, so the observer that triggers it settles after
+     exactly one write. */
+  function footer() {
+    var row = q('#settingsModal .modal > .row');
+    if (!row) return;
+    var primary = q('.btn-primary', row), ghost = q('.btn-ghost', row);
+    if (primary && primary.style.display === 'none') primary.style.display = '';
+    if (ghost && txt(ghost) === 'Done') ghost.textContent = 'Cancel';
+  }
+
+  /* ---- 75: two dropdowns, two different jobs, two different names ----- */
+  function names() {
+    var sel = el('qolDockSide');
+    var field = sel && sel.closest ? sel.closest('.field') : null;
+    var label = field ? q('label', field) : null;
+    if (label && txt(label) === 'Navigation bar') label.textContent = 'Taskbar (quick buttons) position';
+  }
+
+  /* ---- 82: reopening on a right-hand tab must show that tab ----------- */
+  function revealActiveTab() {
+    var bar = el('settingsTabBar'); if (!bar) return;
+    var on = q('.set-tab.on', bar); if (!on) return;
+    var br = bar.getBoundingClientRect(), r = on.getBoundingClientRect();
+    if (r.left < br.left - 1 || r.right > br.right + 1 || r.top < br.top - 1 || r.bottom > br.bottom + 1) {
+      try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    }
+  }
+
+  /* ---- 76 / 79 / 80: one disclosure for the vendor cards -------------- */
+  function vendor() {
+    var host = el('athApiSettingsCard') || el('schedApiCard');
+    if (!host || !host.parentNode) return;
+    var fold = el('mlsClunkySetVendor');
+    if (!fold) {
+      fold = document.createElement('details');
+      fold.id = 'mlsClunkySetVendor';
+      var sum = document.createElement('summary');
+      sum.innerHTML = 'For your IT or scheduling vendor ' +
+        '<span class="note">— direct Athena and scheduling connections. Most practices never open this: MLS talks to athenaOne through MLS Assist.</span>';
+      fold.appendChild(sum);
+      var body = document.createElement('div');
+      body.className = 'mlsClunkySetVendorBody';
+      fold.appendChild(body);
+      host.parentNode.insertBefore(fold, host);
+    }
+    var body2 = q('.mlsClunkySetVendorBody', fold);
+    if (!body2) return;
+    ['athApiSettingsCard', 'schedApiCard'].forEach(function (id) {
+      var card = el(id);
+      if (card && card.parentNode !== body2) { try { body2.appendChild(card); } catch (e) {} }
+    });
+  }
+
+  /* ---- 77 / 133: one download control, and none of it on a phone ------ */
+  function downloads() {
+    var sec = el('extensionDownloadSettings');
+    if (!sec) return;
+    var keep = el('extDlBtn');
+    var seen = 0;
+    qa('button,a[href]', document.getElementById('settingsModal') || document).forEach(function (c) {
+      var t = txt(c);
+      if (!/download mls assist|direct package/i.test(t)) return;
+      if (keep && c === keep) { seen++; return; }
+      if (c.getAttribute('data-mls-clunky-dupe') === '1') return;
+      c.setAttribute('data-mls-clunky-dupe', '1');
+      c.style.display = 'none';
+    });
+    if (keep && !keep.classList.contains('mlsClunkyDesktopOnly')) keep.classList.add('mlsClunkyDesktopOnly');
+    if (!el('mlsClunkyPhoneNote')) {
+      var p = document.createElement('p');
+      p.id = 'mlsClunkyPhoneNote';
+      p.className = 'note mlsClunkyPhoneOnly';
+      p.textContent = 'MLS Assist is a Chrome add-on for the office computer that runs athenaOne. Set it up there — there is nothing to install on this phone.';
+      if (keep && keep.parentNode) keep.parentNode.insertBefore(p, keep.nextSibling);
+    }
+    return seen;
+  }
+
+  /* ---- 134 and the rest of the room: a greyed control says WHY --------
+     A disabled control with no reason is the single most repeated complaint
+     in this room, so it is answered once, by a table, rather than per card. */
+  var WHY = {
+    clinicLogoInput: 'Your practice logo on the letterhead is part of the Premium plan.'
+  };
+  function reasons() {
+    Object.keys(WHY).forEach(function (id) {
+      var c = el(id); if (!c) return;
+      var want = c.disabled;
+      var note = el('why_' + id);
+      if (want && !note) {
+        note = document.createElement('span');
+        note.id = 'why_' + id;
+        note.className = 'mlsClunkyWhy';
+        note.textContent = WHY[id];
+        if (c.parentNode) c.parentNode.insertBefore(note, c.nextSibling);
+      } else if (!want && note && note.parentNode) {
+        note.parentNode.removeChild(note);
+      }
+    });
+  }
+
+  function pass() {
+    if (!open()) return;
+    passes++;
+    footer(); names(); vendor(); downloads(); reasons(); revealActiveTab();
+  }
+
+  function arm() {
+    var m = el('settingsModal');
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (m) obs.observe(m, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    } catch (e) {}
+    [200, 700, 1600, 3200].forEach(function (ms) { setTimeout(pass, ms); });
+    try { document.addEventListener('click', function () { setTimeout(pass, 60); setTimeout(pass, 400); }, true); } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkySettings = {
+    version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () {
+      try {
+        var s = el('mlsClunkySettingsCss'); if (s) s.disabled = true;
+        qa('[data-mls-clunky-dupe="1"]').forEach(function (c) { c.style.display = ''; c.removeAttribute('data-mls-clunky-dupe'); });
+        var f = el('mlsClunkySetVendor');
+        if (f && f.parentNode) {
+          qa('.mlsClunkySetVendorBody > *', f).forEach(function (c) { f.parentNode.insertBefore(c, f); });
+          f.parentNode.removeChild(f);
+        }
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end clunky-settings-1.0.0 ===================================== -->
 </body>
 </html>
