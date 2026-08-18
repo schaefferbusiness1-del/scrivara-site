@@ -113,7 +113,7 @@ const P1_CONFIG_RELEASE_SUBS = [
    Fields box static; cloned r14) + junkscrub-1.0.0 (cloned r15) + opnote-day-3.0.1 rail Templates button (cloned r16)
    + awb-1.0.0 (booking-row appointment-id fallback in the writeflow fork; cloned r17). Extension/production
    baselines stay at the 3.0.64 release commit. */
-const P1_BASE_COMMIT = 'c134652423dc968939d453b42d3203c38a916e23'; /* + orphaned merge divider removed from both twins (cloned r18) */
+const P1_BASE_COMMIT = '37b7ec01a50dabffb2a4969dd9bdd17f1af13e8f'; /* train 2: six lanes (openitems, histview, avatar4, residue, caldata, opnotes5) + r19 derive. Extension/production baselines unchanged (no such files moved). */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
