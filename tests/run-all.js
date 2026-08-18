@@ -42,6 +42,7 @@ const tests = [
   '1p-nextglow-path-contract.test.js',
   '1p-visitflow-transcript-contract.test.js',
   '1p-uimap-dockspace-contract.test.js',
+  '1p-quietnotify-contract.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */

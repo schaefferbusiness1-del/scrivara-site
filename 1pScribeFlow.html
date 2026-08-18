@@ -44365,5 +44365,423 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
 })();
 </script>
 <!-- ===== end pullface-1.0.0 ============================================ -->
+<!-- ===== quietnotify-1.0.0 — the app stops shouting =====================
+     OWNER, 2026-08-18 02:40Z: "get rid of any notifications that are overkill
+     — put them in the left or somewhere not important."
+
+     THE SIZE OF THE PROBLEM, COUNTED: 1,317 toast() call sites — 939 in this
+     shell, 331 in the lane's connect bundle, 47 across the lane's forked
+     feature modules. By type:
+     461 'err', 215 'ok', 2 'warn', the rest untyped. Every one of them lands
+     in the SAME centred banner under the header, at the same size, for the
+     same duration. "Your note was saved" and "your session expired" are
+     indistinguishable, so the doctor learns to dismiss all of them.
+
+     HAND-CLASSIFYING 1,317 SITES WOULD BE A LIE. Nobody can keep that list
+     correct, and a stale list is worse than none: a new call site would arrive
+     unclassified and default to whatever the last editor assumed. So the
+     classification happens AT THE CALL, from the two things the call actually
+     carries — its type and its words — and the rules are in one place where
+     they can be read, tested, and argued with.
+
+     FOUR CLASSES:
+
+       DEBUG          never renders anywhere a doctor can see. Receipts, reason
+                      codes, serials, epochs, payloads, [object Object].
+       ACTION-NEEDED  the doctor must decide or click something: a sign-in that
+                      expired, a save that needs a retry, an Athena tab to open.
+                      ONLY these become a toast.
+       OUTCOME        it already happened and nothing is required: saved,
+                      stored, sent, copied, cleared.
+       INFO           everything else.
+
+     OUTCOME and INFO go to a quiet activity tray on the LEFT — collapsed to a
+     thin strip with a dot that lights when something new arrives. Nothing is
+     ever DISCARDED except DEBUG: a message the classifier gets wrong is still
+     one click away, which is the property that makes an aggressive default
+     safe.
+
+     THE TOAST ITSELF, when there is one: small, bottom-left, inside the dock's
+     reserved band (dockspace-1.0.0 publishes it), ONE at a time — a second
+     ACTION-NEEDED replaces the first AND pushes it to the tray, so stacking is
+     impossible and nothing is lost — and it clears itself in 6s.
+
+     NO PHI IN THE TRAY. Tray lines are counts and verbs. The sanitiser strips
+     name-shaped text rather than trusting call sites to have done so, because
+     hundreds of them interpolate a patient name and none of them know they are
+     writing to a list that stays on screen. Asserted by the suite against
+     seeded synthetic names.
+
+     THE ESCAPE HATCH. window.__mlsQuietNotify.revert() restores the shell's
+     toast() byte for byte, and every message is in the tray regardless, so a
+     doctor who wants the old behaviour loses nothing by the change. -->
+<style id="mlsQuietNotifyCss">
+/* ---- the one toast, bottom-left, inside the dock's band ---------------
+   The shell's own rule is `.toast{position:fixed;top:var(--mls-notice-top);
+   left:var(--mls-notice-left,50%);transform:translateX(-50%)}` — a centred
+   banner under the header. This moves it out of the doctor's line of sight and
+   into the corner the owner asked for, and it composes with the reserved dock
+   band rather than guessing at it. */
+html body .toast[data-mls-quiet="action"]{
+  top:auto !important;
+  bottom:calc(var(--mls-dock-clear-bottom, 0px) + 16px) !important;
+  left:calc(var(--mls-dock-clear-left, 0px) + 16px) !important;
+  right:auto !important;
+  transform:none !important;
+  max-width:min(360px, calc(100vw - var(--mls-dock-clear-left, 0px) - 32px)) !important;
+  font-size:13px !important;
+  padding:10px 14px !important;
+  border-radius:12px !important;
+}
+html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
+
+/* ---- the activity tray, left edge, collapsed ------------------------- */
+#mlsTray{
+  position:fixed; z-index:9380;
+  left:calc(var(--mls-dock-clear-left, 0px) + 10px);
+  bottom:calc(var(--mls-dock-clear-bottom, 0px) + 76px);
+  display:flex; flex-direction:column; align-items:flex-start; gap:6px;
+  max-width:min(340px, 78vw);
+  font:500 12px/1.35 var(--sans, system-ui, sans-serif);
+}
+#mlsTrayBtn{
+  display:inline-flex; align-items:center; gap:7px;
+  min-height:30px; padding:5px 11px;
+  border:1px solid var(--line, #D9D6CD); border-radius:var(--r-pill, 999px);
+  background:var(--card, #fff); color:var(--muted, #55605A);
+  box-shadow:var(--shadow, 0 2px 8px rgba(20,33,28,.10));
+  font:700 11.5px/1.15 var(--sans, system-ui, sans-serif); cursor:pointer;
+}
+#mlsTrayBtn:hover{ color:var(--ink, #1A211C); border-color:var(--muted, #8E9B91); }
+#mlsTrayDot{
+  width:7px; height:7px; border-radius:50%; background:transparent; flex:0 0 auto;
+}
+#mlsTrayBtn[data-new="1"] #mlsTrayDot{ background:#2E6A4B; }
+#mlsTrayList{
+  max-height:min(46vh, 320px); overflow-y:auto; overscroll-behavior:contain;
+  padding:8px; border:1px solid var(--line, #D9D6CD); border-radius:var(--r-ctl, 12px);
+  background:var(--card, #fff); box-shadow:var(--shadow, 0 6px 20px rgba(20,33,28,.16));
+  display:flex; flex-direction:column; gap:5px; width:100%; box-sizing:border-box;
+}
+#mlsTrayList[hidden]{ display:none; }
+#mlsTrayList .tl{
+  display:flex; gap:8px; align-items:baseline;
+  color:var(--ink, #1A211C); padding:3px 4px; border-radius:7px;
+}
+#mlsTrayList .tl .tt{ color:var(--muted, #79837C); font-variant-numeric:tabular-nums; flex:0 0 auto; font-size:11px; }
+#mlsTrayList .tl.err{ color:#8a2c24; }
+#mlsTrayList .tlEmpty{ color:var(--muted, #79837C); padding:4px; }
+@media print{ #mlsTray{ display:none !important; } }
+</style>
+<script>
+/* quietnotify-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsQuietNotify) return;
+
+  var VERSION = 'quietnotify-1.0.0';
+  var TOAST_MS = 6000;         /* the owner's ceiling for a toast with no button */
+  var KEEP = 40;               /* tray depth */
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function S(v) { return (v === null || v === undefined) ? '' : String(v); }
+
+  /* ---------------- CLASSIFICATION -------------------------------------
+     Read in order. Each rule is a claim about what the doctor has to DO, not
+     about how bad the event is: an error he cannot act on is not an
+     interruption, and a plain "info" that says "open athenaOne and press
+     Check again" is. */
+
+  /* Never rendered. These are instrument readings that leaked into a doctor
+     surface; the copyable diagnostics already carry them. */
+  var DEBUG_RE = /\[object |\bundefined\b|\bNaN\b|reason code|receipt\b|\bserial\b|\bepoch\b|\bpayload\b|\bmanifest\b|stack trace|\bidempoten|\bmutex\b|\bschema\b|\bendpoint\b|https?:\/\//i;
+
+  /* Something to click, choose, allow, fix, or retry. */
+  var ACTION_RE = new RegExp([
+    'try again', 'retry', '\\bre-?try\\b',
+    'sign in', 'log ?in', 'session (has )?expired', 'signed out',
+    '\\bopen (athena|the|your|this)', 'switch to', 'go to',
+    'choose ', 'select ', 'pick ',
+    'press ', 'tap ', 'click ',
+    'allow ', 'enable ', 'turn on',
+    'add your', 'connect ', 'update mls', 'install ',
+    '\\bfirst\\b', '\\brequired\\b', '\\bneeds?\\b', 'must ',
+    'not saved', 'could not save', 'failed to save',
+    'check athena', 'nothing was (saved|sent|changed)'
+  ].join('|'), 'i');
+
+  /* It already happened and nothing is being asked of him. */
+  /* Past tense AND work-in-progress. "10 patients syncing to server…" is the
+     app reporting what it is doing, not a request — the owner named that exact
+     string as one to get out of the way — so the progress participles belong
+     here rather than falling through to INFO. */
+  var OUTCOME_RE = /\b(saved|stored|created|updated|added|removed|deleted|copied|sent|signed|done|complete[d]?|backed up|cleared|generated|drafted|imported|exported|pulled|synced|finished|syncing|saving|pulling|uploading|drafting|generating|backing up)\b/i;
+
+  function classify(msg, type) {
+    var m = S(msg).trim();
+    if (!m) return 'debug';
+    if (DEBUG_RE.test(m)) return 'debug';
+    if (ACTION_RE.test(m)) return 'action';
+    /* An 'err' with nothing to do is still not an interruption — it goes to the
+       tray, where it lights the dot and waits. This is the aggressive half of
+       the change, and it is only safe because NOTHING is discarded. */
+    if (S(type) === 'ok') return 'outcome';
+    if (OUTCOME_RE.test(m)) return 'outcome';
+    return 'info';
+  }
+
+  /* ---------------- PHI SANITISER --------------------------------------
+     The tray persists on screen, so its lines must carry no patient identity.
+     Hundreds of call sites interpolate a name and none of them know that. This
+     strips name-SHAPED text rather than trusting the caller:
+       · anything after "for ", "to ", "—" that begins with a capital
+       · two or more adjacent Capitalised words
+       · a Capitalised word carrying a possessive
+       · quoted strings (widget titles, file names, free text)
+       · long digit runs (MRN, DOB, phone)
+     What survives is the verb and the counts, which is what the owner asked
+     for. Deliberately over-eager: losing a word from a tray line costs
+     nothing, and the full text is never needed there. */
+  function sanitize(msg) {
+    var s = S(msg);
+    s = s.replace(/["“”'’][^"“”'’]{0,80}["“”'’]/g, '…');
+    s = s.replace(/\b[A-Z][a-z]+['’]s\b/g, 'the patient’s');
+    s = s.replace(/\b(?:for|to|from|of)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g, '');
+    s = s.replace(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+/g, '');
+    /* Parentheticals in this app are almost always the identity aside —
+       "(MRN100000, DOB 01/02/1970)" — and nothing in a tray line needs one. */
+    s = s.replace(/\([^)]{0,90}\)/g, '');
+    /* Any token carrying 3+ digits: MRN100000, athenaId 900001, a phone, an
+       account number. \b\d{4,}\b missed MRN100000 outright, because there is no
+       word boundary between the N and the 1 — measured, in the suite. */
+    s = s.replace(/\b[A-Za-z#]*\d{3,}[A-Za-z0-9-]*/g, '');
+    s = s.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, '');
+    s = s.replace(/\b\d{4}-\d{2}-\d{2}\b/g, '');
+    s = s.replace(/\s{2,}/g, ' ').replace(/\s+([.,;:])/g, '$1').trim();
+    s = s.replace(/^[\s—\-·,;:]+/, '').replace(/[\s—\-·,;:]+$/, '');
+    if (s.length > 96) s = s.slice(0, 95).replace(/\s\S*$/, '') + '…';
+    return s || 'Activity';
+  }
+
+  /* ---------------- THE TRAY ------------------------------------------- */
+  var lines = [];
+  var unseen = 0;
+  var open = false;
+
+  function hhmm() {
+    var d = new Date();
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+
+  function ensureTray() {
+    var host = el('mlsTray');
+    if (host) return host;
+    if (!document.body) return null;
+    host = document.createElement('div');
+    host.id = 'mlsTray';
+    host.innerHTML =
+      '<div id="mlsTrayList" role="log" aria-label="Recent activity" hidden></div>' +
+      '<button type="button" id="mlsTrayBtn" aria-expanded="false" aria-controls="mlsTrayList">' +
+        '<span id="mlsTrayDot" aria-hidden="true"></span><span id="mlsTrayLabel">Activity</span>' +
+      '</button>';
+    document.body.appendChild(host);
+    var btn = host.querySelector('#mlsTrayBtn');
+    btn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      open = !open;
+      unseen = 0;
+      paintTray();
+    }, false);
+    document.addEventListener('click', function (ev) {
+      if (!open) return;
+      if (ev.target && ev.target.closest && ev.target.closest('#mlsTray')) return;
+      open = false; paintTray();
+    }, false);
+    document.addEventListener('keydown', function (ev) {
+      if (ev && ev.key === 'Escape' && open) { open = false; paintTray(); }
+    }, false);
+    paintTray();
+    return host;
+  }
+
+  function paintTray() {
+    var host = ensureTray();
+    if (!host) return;
+    var btn = host.querySelector('#mlsTrayBtn');
+    var list = host.querySelector('#mlsTrayList');
+    var label = host.querySelector('#mlsTrayLabel');
+    if (btn) {
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      btn.setAttribute('data-new', unseen > 0 ? '1' : '0');
+      btn.setAttribute('title', unseen > 0
+        ? unseen + ' new since you last looked'
+        : 'Everything MLS has done recently');
+    }
+    if (label) {
+      var want = unseen > 0 ? ('Activity · ' + unseen) : 'Activity';
+      if (label.textContent !== want) label.textContent = want;
+    }
+    if (!list) return;
+    if (!open) { list.setAttribute('hidden', ''); return; }
+    list.removeAttribute('hidden');
+    list.textContent = '';
+    if (!lines.length) {
+      var e0 = document.createElement('div');
+      e0.className = 'tlEmpty';
+      e0.textContent = 'Nothing yet.';
+      list.appendChild(e0);
+      return;
+    }
+    for (var i = lines.length - 1; i >= 0; i--) {
+      var row = document.createElement('div');
+      row.className = 'tl' + (lines[i].kind === 'err' ? ' err' : '');
+      var t = document.createElement('span');
+      t.className = 'tt';
+      t.textContent = lines[i].at;
+      var b = document.createElement('span');
+      b.textContent = lines[i].text;
+      row.appendChild(t); row.appendChild(b);
+      list.appendChild(row);
+    }
+  }
+
+  function toTray(msg, type) {
+    var text = sanitize(msg);
+    var last = lines[lines.length - 1];
+    /* the app repeats the same line on a poll; count it instead of listing it */
+    if (last && last.text === text) { last.n++; last.at = hhmm(); }
+    else {
+      lines.push({ text: text, at: hhmm(), kind: S(type) === 'err' ? 'err' : '', n: 1 });
+      if (lines.length > KEEP) lines.shift();
+    }
+    unseen++;
+    paintTray();
+  }
+
+  /* ---------------- THE ONE TOAST -------------------------------------- */
+  var activeAt = 0;
+  var activeTimer = 0;
+
+  function showAction(msg, type, base) {
+    var node = el('toast');
+    /* ONE AT A TIME. A second action while one is up replaces it — and the one
+       being replaced goes to the tray, so "one at a time" never means "lost". */
+    if (node && activeAt && Date.now() - activeAt < TOAST_MS) {
+      var prev = S(node.textContent);
+      if (prev && prev !== S(msg)) toTray(prev, node.className.indexOf('err') >= 0 ? 'err' : '');
+    }
+    var out = safe(function () { return base(msg, type); }, null);
+    node = el('toast');
+    if (node) node.setAttribute('data-mls-quiet', 'action');
+    activeAt = Date.now();
+    if (activeTimer) clearTimeout(activeTimer);
+    /* ≤6s. The shell has its own timer; this is a ceiling on top of it, not a
+       replacement, so a shorter shell timeout still wins. */
+    activeTimer = setTimeout(function () {
+      activeTimer = 0;
+      var n = el('toast');
+      if (!n) return;
+      if (Date.now() - activeAt < TOAST_MS - 50) return;
+      safe(function () { n.classList.remove('show'); });
+    }, TOAST_MS);
+    /* it is also part of the record */
+    toTray(msg, type);
+    return out;
+  }
+
+  /* ---------------- THE WRAP ------------------------------------------- */
+  var base = null;
+  var installed = false;
+  var counts = { action: 0, outcome: 0, info: 0, debug: 0 };
+
+  function install() {
+    var fn = window.toast;
+    if (typeof fn !== 'function' || fn.__mlsQuietWrapped) return false;
+    base = fn;
+    var wrapped = function (msg, type) {
+      var kind = classify(msg, type);
+      counts[kind]++;
+      if (kind === 'debug') return null;
+      if (kind === 'action') return showAction(msg, type, base);
+      toTray(msg, type);
+      return null;
+    };
+    wrapped.__mlsQuietWrapped = true;
+    window.toast = wrapped;
+    installed = true;
+    return true;
+  }
+
+  window.__mlsQuietNotify = {
+    version: VERSION,
+    classify: classify,
+    sanitize: sanitize,
+    counts: counts,
+    report: function () {
+      var node = el('toast');
+      var vis = function (e) {
+        if (!e) return false;
+        var r = safe(function () { return e.getBoundingClientRect(); }, null);
+        if (!r || r.width <= 0 || r.height <= 0) return false;
+        var cs = safe(function () { return getComputedStyle(e); }, null);
+        return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+      };
+      var r = node ? safe(function () { return node.getBoundingClientRect(); }, null) : null;
+      return {
+        version: VERSION,
+        /* installed = our wrapper is IN the chain. outermost = nothing has
+           wrapped us since. They differ whenever a later module wraps
+           window.toast, which is normal and harmless — our classification
+           still runs underneath theirs — so the suite asserts `installed`,
+           and `outermost` is reported for diagnosis rather than asserted. */
+        installed: installed,
+        outermost: !!(window.toast && window.toast.__mlsQuietWrapped),
+        counts: { action: counts.action, outcome: counts.outcome, info: counts.info, debug: counts.debug },
+        toastVisible: vis(node),
+        toastRect: r ? { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } : null,
+        toastText: node ? S(node.textContent) : '',
+        trayCount: lines.length,
+        trayUnseen: unseen,
+        trayOpen: open,
+        trayLines: lines.map(function (l) { return l.text; }),
+        trayVisible: vis(el('mlsTrayBtn'))
+      };
+    },
+    setOpen: function (v) { open = (v !== false); unseen = 0; paintTray(); return open; },
+    /* Boot fires its own notifications; a test measuring a fixture must be able
+       to start from zero rather than subtract a number it did not choose. */
+    resetCounts: function () {
+      counts.action = 0; counts.outcome = 0; counts.info = 0; counts.debug = 0;
+      lines.length = 0; unseen = 0; paintTray();
+      return true;
+    },
+    revert: function () {
+      if (base) { window.toast = base; base = null; }
+      var t = el('mlsTray'); if (t && t.parentNode) t.parentNode.removeChild(t);
+      var css = el('mlsQuietNotifyCss'); if (css && css.parentNode) css.parentNode.removeChild(css);
+      var n = el('toast'); if (n) n.removeAttribute('data-mls-quiet');
+      return true;
+    }
+  };
+
+  function boot() {
+    install();
+    ensureTray();
+    /* INSTALL ONCE. The first version of this re-installed every 700ms so a
+       module that re-assigned window.toast could not slip past. MEASURED: that
+       is a wrapper factory. Another module wraps OUR wrapper (its wrapper does
+       not carry our flag), the next pass wraps ITS wrapper, and the chain grows
+       every 700ms — one fixture run counted 11,730 classifications of twelve
+       messages. A module that wraps us still works correctly, because our
+       classification simply runs underneath theirs; a module that REPLACES us
+       outright is the case this loop was for, and it is not worth an
+       exponential wrapper chain to catch. */
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end quietnotify-1.0.0 ========================================= -->
 </body>
 </html>
