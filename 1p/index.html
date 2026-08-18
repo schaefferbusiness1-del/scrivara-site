@@ -40471,6 +40471,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 /* THE RAIL'S ONE PRIMARY. This is the shell's own #opPrepGenAllBtn, moved. */
 #mlsOpnRailAct{ display:flex; flex-direction:column; gap:7px; margin:0 0 9px; }
 #mlsOpnRailAct:empty{ display:none; }
+/* opnote-day-3.0.1: the rail's Templates hop - quiet, secondary, always there. */
+#mlsOpnRailAct #mlsOpnRailTpl{ min-height:40px; padding:8px 12px; border-radius:10px; border:1px solid var(--line, #D9D6CD); background:var(--card, #fff); color:var(--ink, #1A211C); font:600 12.5px system-ui; cursor:pointer; text-align:center; }
+#mlsOpnRailAct #mlsOpnRailTpl:hover{ filter:brightness(.97); }
 #mlsOpnRailAct #opPrepGenAllBtn{
   width:100%; box-sizing:border-box; min-height:44px; text-align:center;
   font:800 13.5px/1.2 var(--sans) !important; padding:12px 14px !important;
@@ -41362,6 +41365,23 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       if (ok) { if (modal.getAttribute('data-mlsopn-gen') !== 'railed') modal.setAttribute('data-mlsopn-gen', 'railed'); }
       else if (modal.getAttribute('data-mlsopn-gen')) modal.removeAttribute('data-mlsopn-gen');
     }
+    /* opnote-day-3.0.1 (owner, 2026-08-18: 'there is no Templates button'):
+       the room's own top bar - and with it the Templates tab - is hidden in
+       every state but 'templates', so from the day list there was NO way
+       into the template library. ONE plain button in the rail, calling the
+       shell's own openTemplates() (the single Templates hop this room keeps).
+       Never a second library, never a second highlight: it is not a glow
+       candidate. */
+    var tpl = el('mlsOpnRailTpl');
+    if (!tpl) {
+      tpl = document.createElement('button');
+      tpl.type = 'button'; tpl.id = 'mlsOpnRailTpl';
+      tpl.setAttribute('aria-label', 'Op-note templates');
+      tpl.title = 'Manage the op-note templates drafts follow';
+      tpl.textContent = '📄 Templates';
+      tpl.addEventListener('click', function () { try { if (typeof window.openTemplates === 'function') window.openTemplates(); } catch (e) {} }, false);
+    }
+    if (tpl.parentNode !== host) { try { host.appendChild(tpl); } catch (e2) {} }
     return ok;
   }
   /* WHERE THE RAIL LIVES. #oprDayRail is production's own left column and the

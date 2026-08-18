@@ -645,6 +645,36 @@ async function runtime() {
     ok(new RegExp(String(N_DAY)).test(gen.text),
       `the Draft-all button does not say how many notes the day needs: "${gen.text}"`);
 
+    /* opnote-day-3.0.1 — owner 2026-08-18: "there is no Templates button".
+       The room's top bar (and its Templates tab) is hidden outside the
+       templates state, so the rail carries ONE plain Templates button that
+       calls the shell's own openTemplates(). Visible from the day list, ≥40px,
+       not a glow candidate, and pressing it reaches the templates state. */
+    const tplBtn = await page.evaluate(async () => {
+      const b = document.getElementById('mlsOpnRailTpl');
+      const act = document.getElementById('mlsOpnRailAct');
+      const out = { present: !!b, visible: !!(b && window.__opn.visible(b)), inRail: !!(b && act && b.parentNode === act),
+        h: b ? Math.round(b.getBoundingClientRect().height) : 0, text: b ? (b.textContent || '').trim() : '',
+        lit: !!(b && b.matches('.mls-nextglow, [data-mls-nextglow="1"]')) };
+      if (b) {
+        b.click();
+        await new Promise((r) => setTimeout(r, 900));
+        out.stateAfter = document.getElementById('opPrepModal') ? document.getElementById('opPrepModal').getAttribute('data-mls-opnotes-state') : null;
+        out.panelOn = !!(document.getElementById('oprPanelTpls') && document.getElementById('oprPanelTpls').classList.contains('on'));
+        /* come back to the day for the rest of the suite */
+        try { const tab = document.getElementById('oprTabProcs'); if (tab) tab.click(); } catch (e) {}
+        try { if (window.__mlsOpDay && typeof window.__mlsOpDay.showDay === 'function') window.__mlsOpDay.showDay(); } catch (e) {}
+        await new Promise((r) => setTimeout(r, 700));
+        out.stateBack = document.getElementById('opPrepModal') ? document.getElementById('opPrepModal').getAttribute('data-mls-opnotes-state') : null;
+      }
+      return out;
+    });
+    ok(tplBtn.present && tplBtn.visible && tplBtn.inRail, `the rail has no visible Templates button (opnote-day-3.0.1): ${JSON.stringify(tplBtn)}`);
+    ok(tplBtn.h >= 40, `the rail Templates button is ${tplBtn.h}px tall (must be ≥ 40)`);
+    ok(/templates/i.test(tplBtn.text), `the rail Templates button reads "${tplBtn.text}"`);
+    ok(!tplBtn.lit, 'the rail Templates button must never be the glowing next step');
+    ok(tplBtn.panelOn || tplBtn.stateAfter === 'templates', `pressing the rail Templates button did not reach the templates panel: ${JSON.stringify(tplBtn)}`);
+
     /* ================================================================
      * 2. NOTHING IS SELECTED ON OPEN
      * Owner, twice: "always start on all scheduled patients."
@@ -1145,8 +1175,13 @@ async function runtime() {
     const tpl = await page.evaluate(() => {
       const outside = Array.from(document.querySelectorAll('button[onclick="openTemplates()"]'))
         .filter((b) => !b.closest('#opPrepModal'));
+      /* opnote-day-3.0.1: the rail's ONE Templates hop (#mlsOpnRailTpl) is
+         allowed on the day — the owner asked for it by name ("there is no
+         Templates button"). It calls the shell's openTemplates(); it is not a
+         library and not a second picker, and it is asserted separately above. */
       const inside = Array.from(document.querySelectorAll('#opPrepModal button'))
         .filter(window.__opn.visible)
+        .filter((b) => b.id !== 'mlsOpnRailTpl')
         .filter((b) => /template/i.test(b.textContent || ''));
       return {
         outside: outside.length,
@@ -1490,8 +1525,9 @@ async function runtime() {
       await page.waitForTimeout(1800);
       const list = await page.evaluate(() => window.__opn.shape());
       measured.budgetList = list;
-      ok(list.railN <= 6,
-        `the rail shows ${list.railN} controls that are not a patient: ${JSON.stringify(list.railIds)} (budget 6: ‹ day › Today search + Draft all)`);
+      /* opnote-day-3.0.1: budget 7 — the owner asked for the Templates button by name. */
+      ok(list.railN <= 7,
+        `the rail shows ${list.railN} controls that are not a patient: ${JSON.stringify(list.railIds)} (budget 7: ‹ day › Today search + Draft all + Templates)`);
       ok(list.paneN <= 1,
         `the note pane shows ${list.paneN} controls with nothing selected: ${JSON.stringify(list.paneIds)}`);
       await page.evaluate(() => window.__mlsOpDay.openNote(0));
