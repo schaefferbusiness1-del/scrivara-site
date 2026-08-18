@@ -2515,8 +2515,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     // Allergies ALWAYS first in the body - patient-safety convention.
     lines.push('ALLERGIES: ' + (trim(ctx.allergies) || (unread ? 'NOT PULLED from Athena yet \u2014 no allergy data has been read for this patient; this is NOT a documented NKDA, confirm with patient' : 'None recorded — confirm with patient (NKDA not yet documented)')));
-    lines.push('PROBLEMS: ' + (trim(ctx.problems) || 'Not recorded'));
-    lines.push('MEDICATIONS: ' + (trim(ctx.meds) || 'Not recorded'));
+    /* pvr-1.0.0: 'Not recorded' is a placeholder the calm shell flattens to an
+       em-dash, and rightly - it is not an answer. ctx.emptyText carries the one
+       the coverage receipt supports. */
+    var blank = ctx.emptyText || {};
+    lines.push('PROBLEMS: ' + (trim(ctx.problems) || blank.problems || 'Not recorded'));
+    lines.push('MEDICATIONS: ' + (trim(ctx.meds) || blank.meds || 'Not recorded'));
 
     var v = ctx.vitals || {};
     var vBits = [];
@@ -2528,7 +2532,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (trim(v.heightIn)) vBits.push('Ht ' + trim(v.heightIn) + 'in');
     if (trim(v.weightLb)) vBits.push('Wt ' + trim(v.weightLb) + 'lb');
     if (ctx.bmi != null) vBits.push('BMI ' + ctx.bmi);
-    lines.push('VITALS: ' + (vBits.length ? vBits.join(', ') : 'Not recorded'));
+    lines.push('VITALS: ' + (vBits.length ? vBits.join(', ') : (blank.vitals || 'Not recorded')));
 
     var h = ctx.history || {};
     var hBits = [];
@@ -2695,8 +2699,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       careFlags: cleanListField(p.careFlags),
       visitCount: lv.count, lastDate: lv.lastDate,
       lastExcerpt: withholdIfOtherPatient(scrubPageDebris(lv.lastExcerpt), p),
-      outsideText: outsideRecordsText(p)
+      outsideText: outsideRecordsText(p),
+      /* pvr-1.0.0: the honest sentence for each EMPTY clinical field, resolved
+         here where the patient record (and its coverage receipt) is in hand.
+         generatePrepSummary stays pure - it prints what it is given. */
+      emptyText: prepEmptyText(p)
     });
+  }
+  /* Downstream, feat_mls_calm_shell renders these lines as labelled rows and
+     turns anything matching /^(none recorded|not recorded|none|n\/a|unknown|-|—)?$/i
+     into a bare em-dash, on the stated grounds that the app "cannot tell 'the
+     chart says none' from 'we never read that card'". With athenaProfileCoverage
+     .sourceEvidence it now can - so hand it a sentence it will not flatten,
+     rather than a placeholder it is right to distrust. */
+  function prepEmptyText(p) {
+    var out = {};
+    var cf = null; try { cf = window.__mlsChartField; } catch (e) { return out; }
+    if (!cf || !isFn(cf.state)) return out;
+    ['problems', 'meds', 'vitals', 'history', 'allergies'].forEach(function (k) {
+      try {
+        var st = cf.state(p, k);
+        if (st && st.state !== 'present') out[k] = st.text;
+      } catch (e2) {}
+    });
+    return out;
   }
 
   /* ============================== UI LAYER ============================== */
@@ -50803,7 +50829,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!st) return { text: qtxt(shown, max), quiet: false, read: false };
     if (st.state === 'present') return { text: qtxt(shown, max), quiet: false, read: false };
     var can = false; try { can = !!st.canRead && typeof cf.canRead === 'function' && cf.canRead(); } catch (e3) {}
-    return { text: st.text, quiet: true, read: can, state: st.state };
+    /* short on the chip (the tile scrolls at 76px), the WHY on the tooltip */
+    return { text: st.text, detail: st.detail || '', quiet: true, read: can, state: st.state };
   }
   function quickRow(pc) {
     /* 2026-07-28 owner order: separate little boxes with everything the
@@ -50884,7 +50911,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        still cannot be seen the chip goes straight back to saying so. */
     q.innerHTML = boxes.map(function (b) {
       var f = b[1] || {};
-      return '<div class="qb pvr-chip' + (f.quiet ? ' is-quiet' : '') + '" data-pvr-key="' + esc2(b[0]) + '"' + (f.state ? (' data-pvr-state="' + esc2(f.state) + '"') : '') + '>' +
+      return '<div class="qb pvr-chip' + (f.quiet ? ' is-quiet' : '') + '" data-pvr-key="' + esc2(b[0]) + '"' +
+        (f.state ? (' data-pvr-state="' + esc2(f.state) + '"') : '') +
+        (f.detail ? (' title="' + esc2(f.detail) + '"') : '') + '>' +
         '<div class="qk">' + b[0] + '</div><div class="qv">' + esc2(f.text) + '</div>' +
         (f.read ? '<button type="button" class="pvr-read">Read from Athena</button>' : '') +
         '</div>';

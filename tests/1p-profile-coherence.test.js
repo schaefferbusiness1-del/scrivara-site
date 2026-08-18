@@ -619,6 +619,20 @@ async function runtime() {
     measured.timelineOpen = tl2;
     eq(tl2.shown, 5, `"Show all" showed ${tl2.shown} of 5`);
 
+    /* A PULLED chart has visits and NO notes, which is _renderProfAtGlance's
+       "New patient — start their first visit" branch: measured on this exact
+       fixture, the strip said 5 visits while that line said New patient. */
+    const glance5 = await page.evaluate(() => window.__pvr.counts());
+    measured.glanceOnPulled = glance5;
+    eq(glance5.glance, 5, `the at-a-glance chip says ${glance5.glance} on a 5-visit pulled chart`);
+    eq(glance5.strip, 5, `the strip says ${glance5.strip} on a 5-visit pulled chart`);
+    eq(glance5.panel, 5, `the panel says ${glance5.panel} on a 5-visit pulled chart`);
+    const welcome = await page.evaluate(() => {
+      const el = document.getElementById('profAtGlance');
+      return el ? String(el.textContent).toLowerCase().indexOf('new patient') >= 0 : null;
+    });
+    eq(welcome, false, 'a chart with five pulled visits is still being called a new patient');
+
     /* ONE empty state on an empty chart (there were two). */
     await page.evaluate(() => window.__pvr.open('syn-empty'));
     await page.waitForTimeout(1600);

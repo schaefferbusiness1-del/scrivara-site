@@ -42719,7 +42719,8 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     var what = FIELD_LABEL[key] || key;
     if (!chartLanded(p)) {
       return { state: 'not_pulled', value: '', canRead: true,
-               text: 'Not pulled from Athena yet.' };
+               text: 'Not pulled from Athena yet.',
+               detail: 'No chart has been read from athenaOne for this record, so nothing here is a clinical finding.' };
     }
     var cov = coverageCard(p, key);
     if (cov && cov.card && cov.card.status === 'not_documented') {
@@ -42734,23 +42735,32 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
       var proven = surfaceProven(cov, key);
       if (proven === true) {
         return { state: 'none', value: '', canRead: false,
-                 text: 'None documented in Athena' + (cov.at ? (' as of ' + cov.at) : '') + '.' };
+                 text: 'None documented in Athena' + (cov.at ? (' as of ' + cov.at) : '') + '.',
+                 detail: 'The chart was read and Athena reported no ' + what + '.' };
       }
       return { state: 'not_captured', value: '', canRead: true,
-               text: 'Not captured — ' + MISSED_SURFACE[key] + ' was not read during the last pull.' };
+               text: 'Not captured — ' + MISSED_SURFACE[key] + ' was not read.',
+               detail: MISSED_DETAIL[key] || ('The ' + what + ' section was not read during the last pull.') };
     }
     /* A chart landed, and this section is not verified in its receipt at all. */
     return { state: 'not_captured', value: '', canRead: true,
-             text: 'Not captured — the ' + what + ' section was not readable in the last chart read.' };
+             text: 'Not captured — the ' + what + ' section was not readable.',
+             detail: 'A chart landed for this patient, but its receipt does not verify the ' + what + ' section.' };
   }
-  /* Which Athena surface each section rides on, in the doctor's words. */
+  /* SHORT for the chip - the strip's tiles scroll at 76px and a sentence that
+     needs six lines is a sentence the doctor does not read. The WHY travels in
+     detail, which the tooltip and the prep summary have room for. */
   var MISSED_SURFACE = {
-    problems: "athenaOne's appointment briefing (the only page that lists Active Problems)",
-    meds: "athenaOne's Historical Meds list",
+    problems: "Athena's appointment briefing",
+    meds: "Athena's Historical Meds list",
     allergies: 'the allergies section',
     summary: 'the chart summary',
     vitals: 'the vitals section',
     history: 'the history section'
+  };
+  var MISSED_DETAIL = {
+    problems: 'athenaOne lists Active Problems only on the appointment briefing, and the reader must navigate away from it to prove identity. That page was not part of the last read, so this is not a statement that the patient has no problems.',
+    meds: 'athenaOne renders the ongoing medication list under a "Historical Meds" heading, and MLS does not open that view during a pull. An empty medication list here means it was not read, not that the patient takes none.'
   };
   /* allergies / summary / vitals / history ride on rd.text — the frame set the
      extension receipt already proves complete — so an empty one of those on a
@@ -43005,13 +43015,29 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
       var el = document.getElementById('profAtGlance');
       if (!el) return;
       var b = el.querySelector('span b');
-      if (!b) return;
-      var want = str(res.count);
-      if (b.textContent !== want) {
-        b.textContent = want;
-        var label = b.nextSibling;
-        if (label && label.nodeType === 3) label.nodeValue = ' visit' + (res.count === 1 ? '' : 's');
+      if (b) {
+        var want = str(res.count);
+        if (b.textContent !== want) {
+          b.textContent = want;
+          var label = b.nextSibling;
+          if (label && label.nodeType === 3) label.nodeValue = ' visit' + (res.count === 1 ? '' : 's');
+        }
+        return;
       }
+      /* _renderProfAtGlance takes its "New patient - start their first visit"
+         branch on patientNotes(id).length === 0, which is true of EVERY chart
+         whose visits came from an Athena pull rather than from a note recorded
+         here. Measured on a 5-visit pulled chart: the strip said "5 visits" and
+         this line said "New patient" at the same instant - a fourth surface
+         disagreeing with the other three. It is only rewritten when the
+         resolver actually knows of a visit; a genuinely new patient keeps the
+         module's own welcome. */
+      if (!res.count) return;
+      var chip = 'background:#eef4fc;border:1px solid #d7e6fb;border-radius:999px;padding:3px 11px;font-size:12px;color:#204034';
+      var html = '<span style="' + chip + '"><b>' + res.count + '</b> visit' + (res.count === 1 ? '' : 's') + '</span>';
+      var first = res.entries[0];
+      if (first && first.date) html += ' <span style="' + chip + '"><b>' + first.date + '</b> last seen</span>';
+      if (el.getAttribute('data-pvr') !== html) { el.setAttribute('data-pvr', html); el.innerHTML = html; }
     });
   }
   function schedule() { if (deb) return; deb = setTimeout(function () { deb = null; safe(pass); }, 120); }
