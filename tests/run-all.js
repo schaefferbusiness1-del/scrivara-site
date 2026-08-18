@@ -72,6 +72,13 @@ const tests = [
   '1p-capture-before-ai-runtime.test.js',
   '1p-day-note-day-and-future-runtime.test.js',
   '1p-daynote-column-and-not-yet-runtime.test.js',
+  /* pullspeed2 (owner 2026-08-17, "any way we can make it faster? this looks
+     so clunky"): the day-note pass gets ONE total budget, the per-row ceiling
+     may only be raised by a SUCCESS, a note already read this account day is
+     never re-opened, and the background backfill asks mlsAthenaPresence before
+     it repeats the false "open your signed-in athenaOne". Causal control
+     against origin/main, and a before/after table. */
+  '1p-daynote-pass-budget-and-backfill-runtime.test.js',
   '1p-empty-day-regex-and-authority-repair.test.js',
   /* dsdiag-1.1.0 (readiness §11): the copyable pull report carried no pull id,
      no user, no practice/plan and no storage receipt, so two doctors' reports

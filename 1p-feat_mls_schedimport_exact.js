@@ -4570,30 +4570,6 @@
       if (now < 0) return true;                     /* cannot prove it - read it */
       return now >= mins;
     }
-    /* ===== dnb2-1.0.0 (ONE retry, and only after observable progress) ======
-       Owner deliverable 1. dnd2-1.0.0 made every TIMING refusal deferrable,
-       which is right, but it made them ALL deferrable: a row whose chart never
-       opened bought a second full-length wait on no evidence at all, and on
-       the measured machine that is where the minutes went. A retry is only
-       worth the doctor's clock when the FIRST attempt got somewhere:
-         (a) chart-open    - this pull's own verified chart read for this row
-                             landed moments earlier, so the tab really was on
-                             this patient; or
-         (b) encounter-index - the reader came back holding an index/receipt,
-                             so it reached the encounter surface.
-       Anything else is deferred ONLY when the pass budget handed it over
-       (tnStampHandedOff), which is a queue decision, not a retry bet.
-       Codes only - no name, DOB or MRN can reach these strings. */
-    function tnProgressCode(entry, res) {
-      if (entry && entry.dayNoteChartOpen === true) return "chart-open";
-      var r = (res && typeof res === "object") ? res : null;
-      if (r) {
-        if (Number(r.expected || 0) > 0 || Number(r.indexCount || 0) > 0 || Number(r.visitCount || 0) > 0) return "encounter-index";
-        var rec = (r.receipt && typeof r.receipt === "object") ? r.receipt : null;
-        if (rec && (Number(rec.expected || 0) > 0 || Number(rec.parsed || 0) > 0 || rec.indexComplete === true)) return "encounter-index";
-      }
-      return "";
-    }
     function tnStampNotYet(entry, from) {
       if (!entry) return;
       entry.todayNote = "not-yet";
@@ -5454,6 +5430,12 @@
            read instead of trusting the history capture's aging one. A failed
            chart read (rd null) leaves todayNote null for the tail pass and the
            sweep, exactly as before. */
+        /* dnb2-1.0.0: THIS pull opened and verified this patient's chart. That
+           is the observable progress the one retry is allowed to bet on, and
+           it belongs HERE rather than inside the inline day-note leg below: a
+           row the fuse sent to the tail pass had its chart opened just the
+           same, and must not be misread as "no evidence". */
+        if (rd) one.dayNoteChartOpen = true;
         if (!stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {
           var dnDay = batchRowDay(row); /* dnd-1.0.0 */
           var dnGate = tnDayApplicable(dnDay); /* dnf-1.0.0 */
@@ -5497,7 +5479,6 @@
               /* dnb2-1.0.0: THIS pull's own verified chart read for this row
                  landed a moment ago (the `rd` gate above) - that is the
                  observable progress a retry is allowed to bet on. */
-              one.dayNoteChartOpen = true;
               one.todayNoteAttempts = Number(one.todayNoteAttempts || 0) + 1;
               var dnProgress = "";
               try {
@@ -6004,8 +5985,8 @@
       function tnSeenRank(row) {
         var st = String((row && (row.status || row.apptStatus || row.appointmentStatus)) || "").trim().toLowerCase();
         if (!st) return 2;
-        if (/checked ?out|check-?out|completed|complete|seen|closed|discharged/.test(st)) return 0;
-        if (/checked ?in|check-?in|arrived|roomed|in ?room|intake|ready/.test(st)) return 1;
+        if (/check(?:ed)?[ -]?out|completed|complete|seen|closed|discharged/.test(st)) return 0;
+        if (/check(?:ed)?[ -]?in|arrived|roomed|in[ -]?room|intake|ready/.test(st)) return 1;
         return 3;
       }
       var tnOrder = [];
@@ -6103,6 +6084,17 @@
       /* dnp-1.0.0: the day-note pass is over - the bar may claim completion. */
       try { ppPhase(null); } catch (ePpPh2) {}
       try { ppCurrent("finishing \u2014 recording the day verdict"); } catch (ePpFin) {}
+      /* dnrs-1.0.0: the day ledger is written BEFORE this pass (it is the
+         pre-sweep write, above), so without this second write the ONLY notes
+         it would ever record as read are the inline ones - and the same-day
+         re-pull skip would then re-open every chart the TAIL pass had already
+         read. todayNoteReadAt merges with what is already there, so writing
+         twice adds ids and erases none. Sub-batches never write. */
+      if (!sweepDepth) safe(function () {
+        tnAggregate();
+        var dnLedgerDay = tnBatchDay();
+        if (dnLedgerDay) recordHistoryVerdict(dnLedgerDay, receipt, rows.length);
+      });
     }
     finalizeVerdict();
     /* si-1.9.0 (owner directive 2026-07-22): pulls must COMPLETE during
@@ -6143,6 +6135,15 @@
         var sub = null;
         try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, { depth: 1, deadlineCapAt: batchDeadlineAt, progressBase: Math.max(0, rows.length - swept.rows.length), progressTotal: rows.length, scopeDay: batchScopeDay }); } catch (eSweep) { break; }
         receipt.sweepPasses = sweepPass;
+        /* dnrs-1.0.0: a SWEEP is a whole sub-batch with its own receipt, so its
+           chart opens were invisible to the outer count - measured here as
+           chartCalls 8 against chartOpensHistory 2. "How many charts did this
+           pull open" has to mean the pull, sweeps included. */
+        safe(function () {
+          if (!sub) return;
+          receipt.chartOpensHistory = Number(receipt.chartOpensHistory || 0) + Number(sub.chartOpensHistory || 0);
+          receipt.chartOpensDayNote = Number(receipt.chartOpensDayNote || 0) + Number(sub.chartOpensDayNote || 0);
+        });
         if (!sub || !Array.isArray(sub.patients)) break;
         var recoveredIds = {};
         sub.patients.forEach(function (sp) {
@@ -6356,6 +6357,30 @@
     return "other";
   }
   function tnIsNoTabReason(reason) { return TN_NO_TAB_REASON.test(String(reason || "")); }
+  /* ===== dnb2-1.0.0 (ONE retry, and only after observable progress) ======
+     Owner deliverable 1. dnd2-1.0.0 made every TIMING refusal deferrable,
+     which is right, but it made them ALL deferrable: a row whose chart never
+     opened bought a second full-length wait on no evidence at all, and on
+     the measured machine that is where the minutes went. A retry is only
+     worth the doctor's clock when the FIRST attempt got somewhere:
+       (a) chart-open    - this pull's own verified chart read for this row
+                           landed moments earlier, so the tab really was on
+                           this patient; or
+       (b) encounter-index - the reader came back holding an index/receipt,
+                           so it reached the encounter surface.
+     Anything else is deferred ONLY when the pass budget handed it over
+     (tnStampHandedOff), which is a queue decision, not a retry bet.
+     Codes only - no name, DOB or MRN can reach these strings. */
+  function tnProgressCode(entry, res) {
+    if (entry && entry.dayNoteChartOpen === true) return "chart-open";
+    var r = (res && typeof res === "object") ? res : null;
+    if (r) {
+      if (Number(r.expected || 0) > 0 || Number(r.indexCount || 0) > 0 || Number(r.visitCount || 0) > 0) return "encounter-index";
+      var rec = (r.receipt && typeof r.receipt === "object") ? r.receipt : null;
+      if (rec && (Number(rec.expected || 0) > 0 || Number(rec.parsed || 0) > 0 || rec.indexComplete === true)) return "encounter-index";
+    }
+    return "";
+  }
   /* the backfill's PHI-free receipt. Counts and codes only, by construction. */
   var _tnBackfill = { queued: 0, attempted: 0, recovered: 0, remaining: 0, rounds: 0,
     presenceChecks: 0, presenceVerified: 0, presenceAbsent: 0, presenceUnknown: 0,
@@ -6396,7 +6421,13 @@
     "deadline-exceeded",
     "\\btimed? ?out\\b|\\btimeout\\b",
     "is still showing a different patient",
-    "not responding|unreachable"
+    "not responding|unreachable",
+    /* dnbf-1.0.0: a no-athena-tab refusal is the class p1-athena-presence-1.0.0
+       already proved transient for the NAV leg - a missed 1.2-1.5 s ping while
+       the tab renders, not an absent athena. It has to reach the backfill for
+       the presence re-check to have anything to correct. SWEEPABLE_REASON has
+       treated it this way for the history leg since fdx-1.1.0. */
+    "no-athena-tab|no athenaone tab|open-failed"
   ].join("|"), "i");
   /* the deterministic refusals that must NEVER be re-driven */
   var TN_NOT_DEFERRABLE_REASON = /(safety stop|cannot all be verified|encounter index without verified full detail|extension-predates-scoped-read|identity|different patient than this read expects and could not)/i;
@@ -9034,6 +9065,9 @@
     _todayNoteBackfillReceipt: tnBackfillReceipt,
     _todayNoteReasonCodes: function () { return TN_REASON_CODES.slice(); },
     _todayNoteReasonCode: tnReasonCode,
+    /* dnb2-1.0.0: the retry's progress predicate, so its contract can be
+       EXECUTED rather than grepped for. Read-only, pure. */
+    _todayNoteProgressCode: tnProgressCode,
     _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,
     resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },
