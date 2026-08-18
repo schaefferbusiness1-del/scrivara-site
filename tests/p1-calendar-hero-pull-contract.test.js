@@ -30,8 +30,16 @@ const connectSource = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf
 const START_MARKER = '/* ============================================================\n * p1-cal-hero-pull-contract';
 const startIdx = connectSource.indexOf(START_MARKER);
 assert(startIdx >= 0, 'could not locate the p1-cal-hero-pull-contract module in 1p-mls-connect.js');
-const moduleSource = connectSource.slice(startIdx);
-assert(/\}\)\(\);\s*$/.test(moduleSource), 'the extracted hero-pull-contract module does not end in a closed IIFE — extraction boundary is wrong');
+/* 2026-08-18: the module used to be the LAST code in the file, so slicing to
+   EOF happened to work. The calendar-polish blocks (calmbar-1.0.0,
+   caldaysel-1.0.0) now append AFTER it as top-level delimited blocks, so the
+   boundary is explicit: the module ends at the first COLUMN-0 block marker
+   after it. calmreceipt-1.0.0 lives INSIDE the module (indented marker) and
+   stays part of the extraction on purpose. */
+let endIdx = connectSource.indexOf('\n/* ===== ', startIdx + START_MARKER.length);
+if (endIdx < 0) endIdx = connectSource.length;
+const moduleSource = connectSource.slice(startIdx, endIdx);
+assert(/\}\)\(\);\s*$/.test(moduleSource.trimEnd()), 'the extracted hero-pull-contract module does not end in a closed IIFE — extraction boundary is wrong');
 
 /* ---------------------------------------------------------------- fake DOM */
 function makeEl(tag) {
