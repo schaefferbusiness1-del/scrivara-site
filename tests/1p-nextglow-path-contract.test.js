@@ -206,12 +206,19 @@ const EXPECT = {
   opnotes: 'opPrepGenAllBtn'
 };
 
-async function settle(page, tries = 10) {
+async function settle(page, tries = 15) {
+  /* Wait for the glow to REACH one lit control and hold it for two samples.
+     (2026-08-18: the old rule returned on the first stable pair, so a slow
+     machine that had not yet revealed the drafted-note row reported a stable
+     0 twice and the suite failed on timing, not on the invariant. The state
+     transitions here — recorder flips, note reveal — are driven by the app's
+     own sync cadence and can take >400 ms under load; the invariant is
+     unchanged: exactly one lit control, and it must be the expected one.) */
   let prev = '', r = null;
   for (let i = 0; i < tries; i++) {
     r = await page.evaluate(() => window.__mlsNextGlow.report());
     const sig = r.count + '|' + r.lit.map((l) => l.id + l.text).join(',') + '|' + r.room;
-    if (sig === prev) return r;
+    if (sig === prev && r.count === 1) return r;
     prev = sig;
     await page.waitForTimeout(400);
   }
