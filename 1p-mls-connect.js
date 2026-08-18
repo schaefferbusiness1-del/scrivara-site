@@ -17774,6 +17774,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   API.openMonth = openMonth;
   API.draftAll = draftAll;
+  /* notes-idle-1.0.0: draft-all's running flag, read-only. The idle day-note
+     catch-up must not open an Athena chart while the doctor is watching a
+     19-patient draft run, and RUN.on was the only truth about that - it lived
+     in this closure with no way to ask it. One boolean, no behaviour change. */
+  API.isDrafting = function () { return RUN.on === true; };
   API.testMatch = runMatchTest;
   /* b940: the workroom's template rail reads health through THIS owner — one
      source for the honest heuristics, never a duplicated copy that drifts. */
