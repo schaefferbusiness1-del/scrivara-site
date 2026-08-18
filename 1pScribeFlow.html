@@ -40554,20 +40554,42 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   min-height:40px; padding:8px 14px; box-sizing:border-box; border-radius:var(--r-pill,999px);
 }
 
-/* ---- the rail becomes the top strip, and never disappears ---- */
+/* ---- the rail becomes the top strip, and never disappears ----
+   MEASURED at 768x1024 with the list capped alone: the strip came to 511px of
+   a 1024px window (307px of list + ~200px of day head) and the note pane was
+   left 327px — the selector had eaten the room. Below the shell's own 900px
+   breakpoint the WHOLE strip is capped instead, the day switcher sticks to the
+   top of it so it never scrolls away, and the primary and the search share one
+   row. fitList() stands down at these widths so an inline max-height cannot
+   fight the cap. */
 @media (max-width:900px){
+  /* !important on the cap, and it is load-bearing: msl-fit-1.1.0 ships
+     `@media (max-width:1100px){ html[data-msl="calm"] #oprDayRail{
+     max-height:none !important } }` — written when this lane FOLDED the rail,
+     where uncapping it was right. MEASURED without this: the strip came to
+     677px of a 1024px window because that rule won. */
   #opPrepModal[data-mls-opnotes-state] #oprDayRail{
-    border-right:0; border-bottom:1px solid var(--line); padding:10px 12px;
+    border-right:0; border-bottom:1px solid var(--line); padding:8px 12px 10px;
+    max-height:38vh !important; overflow:auto !important;
   }
-  #mlsOpDayList{ max-height:30vh; }
+  #mlsOpDay{
+    position:sticky; top:0; z-index:2; background:var(--card);
+    margin:0 0 6px; padding:0 0 4px;
+  }
+  #mlsOpDayHead{ margin:0 0 5px; }
+  #mlsOpDayCount{ margin:0 0 5px; }
+  #mlsOpnRailAct{ flex-direction:row; align-items:stretch; margin:0 0 6px; }
+  #mlsOpnRailAct > *{ flex:1 1 0; min-width:0; }
+  #mlsOpDayTools{ margin:0; }
+  #mlsOpDayList{ max-height:none !important; overflow:visible !important; }
   #mlsOpDayGrid{
     display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;
   }
   #mlsOpnName{ font-size:16px; }
 }
 @media (max-width:620px){
+  #opPrepModal[data-mls-opnotes-state] #oprDayRail{ max-height:34vh !important; }
   #mlsOpDayGrid{ grid-template-columns:minmax(0,1fr); }
-  #mlsOpDayList{ max-height:26vh; }
   #mlsOpnPick{ padding:22px 14px; }
 }
 @media print{ #oprDayRail,#mlsOpnNote,#mlsOpnPick{ display:none; } }
@@ -41021,15 +41043,18 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var band = dockBand();
     var top = 0, vh = 0, vw = 0;
     try { top = host.getBoundingClientRect().top; vh = window.innerHeight || 0; vw = window.innerWidth || 0; } catch (e) { return 0; }
-    var avail = Math.round(vh - top - band - 10);
     /* BELOW 900px THE RAIL IS THE TOP STRIP, NOT A COLUMN, and the two share
-       one vertical axis. MEASURED at 768x1024 without this: the strip took
-       695px of a 1024px window and left the note 327px — the selector had
-       eaten the room. The strip is capped at 30% of the window there, which is
-       ~5 patients on screen and the rest one scroll away; the note keeps the
-       rest. 900 is the shell's own breakpoint for this grid, read from the
-       same place the CSS uses it. */
-    if (vw && vw <= 900) avail = Math.min(avail, Math.round(vh * 0.30));
+       one vertical axis — so the cap has to be on the WHOLE strip (day head
+       included), not on the list inside it. MEASURED at 768x1024 with the list
+       capped alone: 307px of list plus ~200px of head came to a 511px strip
+       and left the note 327px. The strip's cap is CSS at these widths (see the
+       @media block above); this function stands down and clears anything it
+       wrote at a wider viewport, so the two cannot fight. */
+    if (vw && vw <= 900) {
+      if (host.style.maxHeight) { host.style.maxHeight = ''; host.style.overflowY = ''; }
+      return 0;
+    }
+    var avail = Math.round(vh - top - band - 10);
     /* Below this there is no room to scroll INSIDE and the rail's own scroller
        is the better answer; leaving it alone is the honest fallback. */
     if (!vh || avail < 140) {
