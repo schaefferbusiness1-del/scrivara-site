@@ -3,7 +3,6 @@
   "paths": [
     "1p-avatar-model/LICENSE-face-api.txt",
     "1p-avatar-model/LICENSE-tensorflow.txt",
-    "1p-avatar-model/NOTICE.md",
     "1p-avatar-model/face-api-1.7.15.js",
     "1p-avatar-model/face_landmark_68_model-weights_manifest.json",
     "1p-avatar-model/face_landmark_68_model.weights",
