@@ -49940,6 +49940,22 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
    name twice in #calendarView). It stands down in Day view only; in month and
    week view it still adds what those grids cannot show. */
 html #calendarView[data-cal-mode="day"] #mlsUx1DayChips{ display:none !important; }
+/* --- 38: "More calendar tools" opened 47 more controls, and 33 of them were
+   ONE thing: the rail's mini-month (31 day buttons + two arrows) - a second
+   month grid disclosed directly beside the real one. MEASURED at 1280x800,
+   month mode: 9 controls -> 56 on pressing the disclosure, 49 of them under
+   40px.
+
+   The mini-month is a duplicate ONLY in month mode. In day and week mode it
+   is the only month picker on the screen and stays exactly as reachable as
+   feat_mls_calm_views.js makes it - this rule is keyed to the mode attribute
+   published by renderCalendar, so "More" still discloses it there. That
+   module's fold contract is untouched: its own rule
+   (body.mls-cv:not(.mls-cv-open-calendar) ...) has higher specificity and
+   still owns the closed state; this only adds the month-mode case, which is
+   the case where the disclosure was revealing a copy of what is already on
+   screen. */
+html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !important; }
 /* --- 36: a 36px column of 20px chips is not a month anyone can read or tap.
    Below 600px the month becomes what it can actually be at that width — a
    picker: the day number and the count badge the renderer already draws, with

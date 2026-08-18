@@ -922,6 +922,85 @@ async function runtime() {
     eq(calx.day.maxCopies, 1,
       `a Day-view patient is on screen ${calx.day.maxCopies} times over ${calx.day.rows} appointments - the timeline is repeating what another strip already said (CLUNKY 33)`);
 
+    /* ============================ CLUNKY 38: More calendar tools ======= */
+    /* MEASURED at HEAD, month mode: pressing "More calendar tools" took
+       #calendarView from 9 to 56 visible controls, 49 of them under 40px -
+       and 33 of those 47 were ONE thing, the rail's mini-month (31 day
+       buttons + two arrows), a second month grid disclosed beside the real
+       one.
+
+       THE FOLD CONTRACT IS NOT WEAKENED. feat_mls_calm_views.js's promise is
+       that everything it folds has a route back IN THE SAME VIEW. The
+       mini-month keeps that route in day and week mode, where it is the only
+       month picker on screen; it is suppressed only in MONTH mode, where the
+       thing being disclosed is a copy of the grid already on screen. Both are
+       measured below - hidden in month, and really there AND clickable in day
+       and week. */
+    const more = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      const discl = () => Array.prototype.slice.call(
+        document.querySelectorAll('#calendarView button,#calendarView [role=button]'))
+        .find((b) => /more calendar tools/i.test(b.textContent || ''));
+      const miniState = () => {
+        const el = document.querySelector('#calendarView .cx-card.cx-mini');
+        if (!el) return { present: false, shown: false, days: 0 };
+        const days = Array.prototype.slice.call(el.querySelectorAll('.cx-mini-day')).filter(C.visible);
+        return { present: true, shown: C.visible(el), days: days.length,
+          clickable: days.length ? !!days[0].onclick : false };
+      };
+      const openMore = async () => {
+        const b = discl();
+        if (!b) return false;
+        if (/^hide/i.test((b.textContent || '').trim())) return true;   /* already open */
+        b.click(); await sleep(900);
+        return true;
+      };
+
+      const out = {};
+      /* --- month --- */
+      window.calSetMode('month'); await sleep(700);
+      out.beforeCtrls = C.ctrls('#calendarView').length;
+      out.hasDisclosure = !!discl();
+      out.opened = await openMore();
+      /* Counted off the ELEMENTS, not off C.ctrls()'s label strings: mapping
+         a label back to a node matches the wrong one whenever two controls
+         share a label, which is exactly what a duplicate-heavy panel has. */
+      const CTRL = 'button,a[href],input:not([type=hidden]),select,textarea,[role=button],[role=tab],[role=menuitem]';
+      const afterEls = Array.prototype.slice.call(document.querySelectorAll('#calendarView ' + CTRL)).filter(C.visible);
+      out.afterCtrls = afterEls.length;
+      out.afterUnder40 = afterEls.filter((e) => e.getBoundingClientRect().height < 40).length;
+      out.month = miniState();
+
+      /* --- day and week: the route back must still work --- */
+      window._calRefDate = '2026-08-17'; window.calSetMode('day'); await sleep(700);
+      await openMore();
+      out.day = miniState();
+      window.calSetMode('week'); await sleep(700);
+      await openMore();
+      out.week = miniState();
+
+      window.calSetMode('month'); await sleep(500);
+      return out;
+    });
+    measured.calMore = more;
+    ok(more.hasDisclosure,
+      'the "More calendar tools" disclosure is not on the calendar, so the CLUNKY 38 checks would pass vacuously');
+    ok(more.month.present,
+      'the rail mini-month is gone from the DOM entirely - CLUNKY 38 hides it in month mode, it must never be deleted');
+    ok(!more.month.shown,
+      `"More calendar tools" still discloses the rail's mini-month in MONTH mode (${more.month.days} day buttons) beside the month grid it copies (CLUNKY 38)`);
+    ok(more.afterCtrls < 30,
+      `"More calendar tools" opens ${more.afterCtrls} visible controls in month mode (was 56 at HEAD, 33 of them the duplicate mini-month) (CLUNKY 38)`);
+    /* The route back, both directions - a fold with a dead disclosure is the
+       defect feat_mls_calm_views.js exists to prevent. */
+    ok(more.day.shown && more.day.days >= 28,
+      `day mode: "More" no longer reveals a usable mini-month (shown ${more.day.shown}, ${more.day.days} day buttons) - the fold's route back is dead (CLUNKY 38)`);
+    ok(more.day.clickable,
+      'day mode: the disclosed mini-month day cells lost their click handler (CLUNKY 38)');
+    ok(more.week.shown && more.week.days >= 28,
+      `week mode: "More" no longer reveals a usable mini-month (shown ${more.week.shown}, ${more.week.days} day buttons) (CLUNKY 38)`);
+
     /* ================================================================== */
     /* ============ clunky2 lane (2026-08-18) =========================== */
     /* ================================================================== */
