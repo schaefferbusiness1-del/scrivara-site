@@ -75,6 +75,20 @@ for (const shell of SHELLS) {
   ok(/live === band/.test(ds),
     `${shell}: sync() short-circuits on its own cached signature only — an externally cleared band would never be republished`);
 
+  /* THE PRODUCTION PREFERENCE MUST NOT COUNT AS A CHOICE MADE HERE.
+     REPRODUCED 2026-08-17 at 1440px on one build: a clean account gets a
+     102x409 LEFT rail; the same page with sf_u::<account>::qolDockSide='bottom'
+     pre-seeded — the value the PRODUCTION app writes for the same account on
+     the same origin — gets a 660x68 BOTTOM bar. That is the owner's "why does
+     this load the OLD UI". */
+  const dk = blockOf(src, 'dock-1p-1.1.0');
+  ok(/function laneTag\(\)/.test(dk),
+    `${shell}: dock-1p's seed marker is not keyed per deployment — /1p and /cloned share an account, so whichever loads first would silence the other`);
+  ok(/mlsDockSideSeeded@/.test(dk),
+    `${shell}: the dock seed marker is not lane-scoped`);
+  ok(!/if \(SIDE_RE\.test\(readAny\(SIDE_KEY\)\)\) \{ writeAll\(SEEDED/.test(dk),
+    `${shell}: seedSide() again treats ANY stored qolDockSide as the doctor's choice — that is the shared production value`);
+
   const pf = blockOf(src, 'pullface-1.0.0');
   ok(/__mlsDayHistoryPull/.test(pf),
     `${shell}: pullface-1.0.0 must read the ENGINE's run flag (__mlsDayHistoryPull.state), not the progress screen's api object`);
@@ -232,6 +246,21 @@ async function runtime() {
 
     eq(await page.evaluate(() => window.__mlsDockSpace.version), 'dockspace-1.0.0',
       'dockspace-1.0.0 did not install');
+
+    /* FIRST-PAINT SHAPE: with no choice made in this deployment, a desktop
+       width must land on the SIDE RAIL, not the production bottom bar. This is
+       the runtime half of the static checks above. */
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(1500);
+    const railed = await page.evaluate(() => {
+      const d = document.getElementById('mlsDock');
+      if (!d) return null;
+      const r = d.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.left) };
+    });
+    ok(railed, 'the dock never appeared at 1440px');
+    ok(railed.h > railed.w,
+      `the dock defaulted to a ${railed.w}x${railed.h} BAR at 1440px instead of a side rail — a dock side saved by another deployment on this account is being read as a choice made here`);
 
     /* ---- 1, 2, 3 ---------------------------------------------------- */
     for (const side of SIDES) {
