@@ -48757,14 +48757,24 @@ html #mlsToolsMenu .gh{ font-size:13px !important; }
     max-height:calc(100vh - var(--mls-header-h, 88px) - var(--mls-dock-clear-bottom, 0px) - 24px) !important;
   }
 }
-/* --- 40: a 46px box is an icon, so it looks like one. */
-html body[data-mls-dock="left"] #mlsDockAsk,
-html body[data-mls-dock="right"] #mlsDockAsk{
-  text-align:center;
-  font-size:15px;
+/* --- 40: a 46px box is an icon, so it looks like one.
+   The state is keyed to WHAT THE BOX IS SHOWING (data-mls-clunky-ask, written
+   by ask() below from a real text measurement), not to which edge the dock is
+   parked on. The old rules centred the text for any left/right dock and only
+   un-centred it on :focus, so a rail state that was wide enough to defeat the
+   90px threshold but far too narrow for the 254px label rendered the string
+   CENTRED AND CLIPPED AT BOTH ENDS - which shows the MIDDLE of the sentence
+   ("...r an actio...") rather than a readable start.
+
+   Centre applies to the ICON only. Any state carrying words reads from its
+   start with an ellipsis, so a mid-string slice cannot render no matter what a
+   later block does to the rail's width. */
+html #mlsDockAsk[data-mls-clunky-ask="icon"]{ text-align:center; font-size:15px; }
+html #mlsDockAsk[data-mls-clunky-ask="short"],
+html #mlsDockAsk[data-mls-clunky-ask="full"]{
+  text-align:left; font-size:13px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-html body[data-mls-dock="left"] #mlsDockAsk:focus,
-html body[data-mls-dock="right"] #mlsDockAsk:focus{ text-align:left; font-size:13px; }
 /* --- 73 / 123: a bar with tabs does not also say it has nothing to say. */
 html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
 </style>
@@ -48782,19 +48792,54 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
   function side() { try { return document.body.getAttribute('data-mls-dock') || 'bottom'; } catch (e) { return 'bottom'; } }
 
   /* ---- 39 / 40: the finder is named for what it does ------------------ */
+  /* MEASURED, 1366x900, every laid-out dock state: the label needs 254px and
+     the box offers 148px at rest / 226px focused, with text-overflow:clip - so
+     the finder's placeholder was cut mid-glyph in EVERY state, on all three
+     dock sides, at every viewport at or above 761px. The old rule picked the
+     label from one magic number (`width >= 90`) as though 90px could show a
+     254px sentence; between 90px and 254px it set a label the box could not
+     hold, and the centring rule above then threw away both ends of it.
+
+     The label is now chosen by MEASURING it in the box's own computed font:
+     the fullest wording that leaves a readable prefix wins, and the icon is
+     used only when even "Find..." will not fit. */
   var FIND = 'Find a patient, a screen or an action';
+  var SHORT = 'Find\u2026';   /* escaped, not literal: a sweep that rewrites this file in a single-byte encoding turns a raw U+2026 into a control byte */
+  var ICON = '🔎';
+  var PREFIX_MIN = 90;   /* px of words that still say what the box is for */
+  var _askCtx = null;
+  function textFits(a, str) {
+    try {
+      var cs = window.getComputedStyle(a);
+      var avail = a.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      if (!(avail > 0)) return { avail: 0, need: 0, fits: false };
+      if (!_askCtx) _askCtx = document.createElement('canvas').getContext('2d');
+      _askCtx.font = [cs.fontStyle, cs.fontWeight, cs.fontSize, cs.fontFamily].join(' ');
+      var need = _askCtx.measureText(String(str || '')).width;
+      return { avail: avail, need: need, fits: need <= avail - 2 };
+    } catch (e) { return { avail: 0, need: 0, fits: false }; }
+  }
   function ask() {
     var a = el('mlsDockAsk');
     if (!a) return;
     if (a.getAttribute('aria-label') !== 'Find') a.setAttribute('aria-label', 'Find');
-    var rail = side() === 'left' || side() === 'right';
-    var wide = a.getBoundingClientRect().width >= 90;
-    var want = (rail && !wide && document.activeElement !== a) ? '🔎' : FIND;
+    var full = textFits(a, FIND);
+    var want, state;
+    /* A box with room for a meaningful prefix keeps the full wording and lets
+       the ellipsis do its job - "Find a patient, a scre..." says more than
+       "Find...". Below that it steps down, and only an icon-sized box gets an
+       icon. */
+    if (full.fits || full.avail >= PREFIX_MIN) { want = FIND; state = 'full'; }
+    else if (textFits(a, SHORT).fits) { want = SHORT; state = 'short'; }
+    else { want = ICON; state = 'icon'; }
     if (a.placeholder !== want) a.placeholder = want;
+    if (a.getAttribute('data-mls-clunky-ask') !== state) a.setAttribute('data-mls-clunky-ask', state);
     if (!a.getAttribute('data-mls-clunky-wired')) {
       a.setAttribute('data-mls-clunky-wired', '1');
-      a.addEventListener('focus', function () { a.placeholder = FIND; }, false);
-      a.addEventListener('blur', function () { setTimeout(ask, 20); }, false);
+      /* Focus widens the box through a CSS transition, so re-measure after it
+         rather than forcing a label the box may still be too small for. */
+      a.addEventListener('focus', function () { setTimeout(ask, 0); setTimeout(ask, 240); }, false);
+      a.addEventListener('blur', function () { setTimeout(ask, 20); setTimeout(ask, 260); }, false);
     }
   }
 

@@ -659,6 +659,94 @@ async function runtime() {
     ok(dock.ask && (dock.ask.w >= 90 || dock.ask.ph.length <= 3),
       `the side-rail finder is ${dock.ask && dock.ask.w}px wide with placeholder "${dock.ask && dock.ask.ph}" - it renders as "Asl" (CLUNKY 40)`);
     ok(dock.ask && dock.ask.aria, 'the dock finder lost its accessible name when it became an icon (CLUNKY 40)');
+
+    /* ============ the finder's label never renders as a mid-string slice ===
+     * OWNER, 2026-08-18: the bottom finder painted a clipped FRAGMENT of its
+     * placeholder ("r an actio" - the middle of "Find a patient, a screen or
+     * an action") plus the tools nub below it.
+     *
+     * MEASURED at HEAD, 1366x900, every laid-out dock state and all three
+     * sides: the label needs 254px, the box offers 148px at rest and 226px
+     * focused, and text-overflow computed `clip` - so the placeholder was cut
+     * mid-glyph everywhere, with no ellipsis. The old rule chose the label
+     * from one magic number (`width >= 90`) as though 90px could show a 254px
+     * sentence, and the companion CSS centred it for any left/right dock,
+     * which is what turns a clipped label into a MIDDLE-of-string slice.
+     *
+     * The label is now measured in the box's own font. Both rail states are
+     * pinned here: the 46px collapsed rail (icon) and the words state. */
+    const find = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const read = () => {
+        const a = document.getElementById('mlsDockAsk');
+        if (!a) return { present: false };
+        const cs = getComputedStyle(a);
+        const r = a.getBoundingClientRect();
+        const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+        const avail = Math.round(a.clientWidth - pad);
+        const ph = a.placeholder || '';
+        const c = document.createElement('canvas').getContext('2d');
+        c.font = [cs.fontStyle, cs.fontWeight, cs.fontSize, cs.fontFamily].join(' ');
+        const need = Math.round(c.measureText(ph).width);
+        return { present: true, w: Math.round(r.width), ph, phLen: ph.length,
+          state: a.getAttribute('data-mls-clunky-ask'),
+          align: cs.textAlign, ellipsis: cs.textOverflow,
+          avail, need, clipped: need > avail + 1,
+          /* the owner's signature: words, clipped, and centred - which throws
+             away BOTH ends and leaves the middle of the sentence */
+          midSlice: ph.length > 6 && need > avail + 1 && cs.textAlign === 'center' };
+      };
+      const settle = async (side) => {
+        document.body.setAttribute('data-mls-dock', side);
+        await sleep(300);
+        try { window.__mlsClunkyDock.pass(); } catch (e) {}
+        await sleep(250);
+        return read();
+      };
+      const out = { rail: await settle('left'), bottom: await settle('bottom') };
+      const a = document.getElementById('mlsDockAsk');
+      if (a) { a.focus(); await sleep(500); try { window.__mlsClunkyDock.pass(); } catch (e) {} await sleep(200); }
+      out.focused = read();
+      if (a) a.blur();
+      const n = document.getElementById('mlsDockNub');
+      if (n) {
+        const nr = n.getBoundingClientRect();
+        const ncs = getComputedStyle(n);
+        out.nub = { present: true, w: Math.round(nr.width), h: Math.round(nr.height),
+          shown: nr.width > 0 && nr.height > 0 && ncs.display !== 'none' && ncs.visibility !== 'hidden' };
+      } else out.nub = { present: false };
+      await settle('left');
+      return out;
+    });
+    measured.dockFind = find;
+
+    /* NO STATE MAY EVER PAINT A MID-STRING SLICE. */
+    for (const [name, s] of [['side rail', find.rail], ['bottom bar', find.bottom], ['focused', find.focused]]) {
+      if (!s.present) continue;
+      ok(!s.midSlice,
+        `${name}: the finder paints a clipped, centred placeholder - the doctor sees the MIDDLE of "${s.ph}" (${s.need}px of label in ${s.avail}px, align ${s.align}) (owner 2026-08-18)`);
+      ok(s.state === 'icon' || s.align === 'left',
+        `${name}: the finder shows words but is centred (align ${s.align}), so clipping takes both ends instead of the tail (owner 2026-08-18)`);
+      ok(s.state === 'icon' || s.ellipsis === 'ellipsis',
+        `${name}: the finder shows words with text-overflow ${s.ellipsis} - a clipped label is cut mid-glyph with no ellipsis (owner 2026-08-18)`);
+    }
+    /* An icon-sized box shows an ICON, with no fragment of a word in it. */
+    if (find.rail.present && find.rail.w < 90) {
+      eq(find.rail.state, 'icon',
+        `the ${find.rail.w}px collapsed rail shows "${find.rail.ph}" instead of an icon (CLUNKY 40)`);
+      ok(find.rail.phLen <= 2 && !find.rail.clipped,
+        `the collapsed rail's placeholder "${find.rail.ph}" is ${find.rail.need}px in a ${find.rail.avail}px box (CLUNKY 40)`);
+    }
+    /* A box with room for words says what it is for. */
+    if (find.focused.present && find.focused.avail >= 90) {
+      eq(find.focused.state, 'full',
+        `the focused finder is ${find.focused.avail}px wide but still shows "${find.focused.ph}" (owner 2026-08-18)`);
+    }
+    /* The nub is a real affordance or it is not there at all. */
+    if (find.nub.present && find.nub.shown) {
+      ok(find.nub.w >= 44 && find.nub.h >= 44,
+        `the dock nub is ${find.nub.w}x${find.nub.h} - below the 44x44 a thumb needs for the menu it opens (owner 2026-08-18)`);
+    }
     ok(dock.rightNow && !(dock.rightNow.segs > 0 && /Nothing to do here yet/.test(dock.rightNow.text)),
       `the right-now bar shows ${dock.rightNow && dock.rightNow.segs} tabs AND "Nothing to do here yet" (CLUNKY 73, 123)`);
     ok(dock.tools && dock.tools.bottom <= dock.tools.viewport,
