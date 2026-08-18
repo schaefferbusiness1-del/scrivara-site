@@ -42824,7 +42824,11 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
      Everything below only ever adds, hides or rewrites text that a shared module
      produced. It never removes a node another module owns, so a re-render by
      that module restores its own state and the next pass re-applies ours. */
-  var PASS_MS = 700;
+  /* The interval is the SLOW fallback, not the mechanism: the #profileCard
+     observer and 'mls:active-patient-changed' carry every real change, and a
+     resolve() walks this patient's visits and notes. 700ms was a third pass per
+     second competing with feat_visit_history_ext's 3s sweep and pf2's own. */
+  var PASS_MS = 1500;
   var timer = null, obs = null, obsTarget = null, deb = null;
 
   function activeP() { return safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null); }
@@ -42970,12 +42974,42 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     }
     return n;
   }
-  var svObs = null;
+  var svObs = null, svDeb = null, svHostObs = null, svHost = null;
+  function scrubSoon() {
+    if (svDeb) return;
+    /* 0, not a comfortable 60: MutationObserver already batches per microtask,
+       so this coalesces a burst into one pass while still scrubbing on the very
+       next task. A name is PHI - it may not sit on screen for a tenth of a
+       second because a debounce felt tidier. */
+    svDeb = setTimeout(function () { svDeb = null; safe(function () { deidentify(); }); }, 0);
+  }
+  /* TWO NARROW OBSERVERS, NEVER ONE WIDE ONE.
+     The first version watched document.body with subtree:true, which wakes this
+     lane on every mutation the whole app makes - and this codebase has a
+     recorded stacked-observer freeze risk (see feat_mls_pervisit_unify's note on
+     why it uses an interval instead). Measured consequence: 1p-ui-shape-contract
+     failed 1 run in 3 on this branch and 0 in 2 on the base commit, always on a
+     view that had not finished appearing.
+     The stack is a single element with a fixed id appended DIRECTLY to body (or
+     relocated into the mobile shelf), so watching body's direct children is
+     enough to notice it arrive, and watching the stack itself is enough to
+     notice a card land in it. */
   function watchNotices() {
-    if (svObs) return;
     if (!window.MutationObserver) return;
-    svObs = new MutationObserver(function () { safe(function () { deidentify(); }); });
-    safe(function () { svObs.observe(document.body || document.documentElement, { childList: true, subtree: true }); });
+    if (!svObs) {
+      svObs = new MutationObserver(function () { bindNoticeHost(); scrubSoon(); });
+      safe(function () { svObs.observe(document.body || document.documentElement, { childList: true, subtree: false }); });
+    }
+    bindNoticeHost();
+  }
+  function bindNoticeHost() {
+    var host = document.getElementById('mls-save-verify-stack');
+    if (!host || host === svHost) return;
+    safe(function () { if (svHostObs) svHostObs.disconnect(); });
+    svHost = host;
+    svHostObs = new MutationObserver(scrubSoon);
+    safe(function () { svHostObs.observe(host, { childList: true, subtree: true, characterData: true }); });
+    scrubSoon();
   }
 
   /* 5) the strip's own repaint hook — pf2 owns #pf2Quick, so this block only
@@ -43052,6 +43086,8 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     safe(function () { if (deb) clearTimeout(deb); }); deb = null;
     safe(function () { if (obs) obs.disconnect(); }); obs = null; obsTarget = null;
     safe(function () { if (svObs) svObs.disconnect(); }); svObs = null;
+    safe(function () { if (svHostObs) svHostObs.disconnect(); }); svHostObs = null; svHost = null;
+    safe(function () { if (svDeb) clearTimeout(svDeb); }); svDeb = null;
     safe(function () { if (document.body) { document.body.classList.remove('pvr-on'); document.body.classList.remove('pvr-empty'); } });
     safe(function () {
       var sec = document.getElementById('mlsVisitHistoryExt');

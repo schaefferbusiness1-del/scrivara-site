@@ -84,6 +84,16 @@ for (const name of SHELLS) {
   for (const state of ["'present'", "'none'", "'not_captured'", "'not_pulled'"]) {
     ok(block.indexOf(state) > 0, `${name}: the block must name the ${state} state`);
   }
+  /* NO BODY-WIDE SUBTREE OBSERVER. This codebase has a recorded stacked-observer
+     freeze risk, and the first version of this block woke on every mutation the
+     whole app made: 1p-ui-shape-contract then failed 1 run in 3 here and 0 in 2
+     on the base commit, always on a view that had not finished appearing. The
+     save-verify stack has a fixed id and is appended directly to body, so
+     body's DIRECT children plus the stack itself is all that is needed. */
+  ok(block.indexOf('childList: true, subtree: false') > 0,
+    `${name}: the notice watcher must observe body's direct children only`);
+  eq(block.split('document.body || document.documentElement, { childList: true, subtree: true }').length - 1, 0,
+    `${name}: a body-wide subtree observer is back`);
   /* rAF never fires in a non-compositing tab; a UI controller must not CALL it.
      Naming it in a comment is how the next reader learns why. */
   eq(block.indexOf('requestAnimationFrame('), -1, `${name}: pvr-1.0.0 must not schedule on requestAnimationFrame`);
@@ -451,6 +461,19 @@ function harness() {
       return { before: before, after: after, changed: changed,
                namedBefore: before.indexOf(name) >= 0, namedAfter: after.indexOf(name) >= 0 };
     },
+    /* The path that actually runs in the app: the module appends a card and
+       NOTHING calls deidentify — the observer has to catch it. A de-identifier
+       proven only by a direct call is a de-identifier that never fires. */
+    bannerAuto: function (name) {
+      if (!window.__mlsSaveVerify || typeof window.__mlsSaveVerify.banner !== 'function') return { skipped: true };
+      window.__mlsSaveVerify.banner('ok', '✓ Saved & verified: ' + name, ['Now 4 visits on file.'], { ttl: 0 });
+      var host = document.getElementById('mls-save-verify-stack');
+      return { immediate: host ? String(host.textContent) : '' };
+    },
+    bannerRead: function () {
+      var host = document.getElementById('mls-save-verify-stack');
+      return host ? String(host.textContent) : '';
+    },
     /* THE CAUSAL CONTROL. Undo the block, force every owner to repaint from its
        own code, and read the same three numbers off the same screen. */
     /* THE CAUSAL CONTROL. revert() withdraws all three globals the block
@@ -596,6 +619,18 @@ async function runtime() {
       eq(notice.namedAfter, false, `the save notice still names the patient: ${JSON.stringify(notice.after).slice(0, 200)}`);
       ok(notice.after.indexOf('Saved & verified') >= 0, 'the notice lost its meaning along with the name');
       ok(notice.after.indexOf('2 visits stored') >= 0, 'the notice lost its count');
+
+      /* AND the path that runs in the app: nothing calls deidentify, the
+         observer must. */
+      const auto = await page.evaluate(() => window.__pvr.bannerAuto('Zed Sample'));
+      ok(auto.immediate.indexOf('Zed Sample') >= 0,
+        'the control failed: the module did not put the name on the card at all');
+      await page.waitForTimeout(400);
+      const settled = await page.evaluate(() => window.__pvr.bannerRead());
+      measured.noticeAuto = settled.slice(0, 120);
+      eq(settled.indexOf('Zed Sample'), -1,
+        `the observer did not scrub a banner nobody called deidentify for: ${JSON.stringify(settled).slice(0, 200)}`);
+      ok(settled.indexOf('Now 4 visits on file') >= 0, 'the auto-scrubbed notice lost its count');
     }
 
     /* -- 4. THE TIMELINE ------------------------------------------------- */
