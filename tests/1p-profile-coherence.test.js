@@ -130,8 +130,10 @@ for (const name of SHELLS) {
   eq(canon(read('1p/index.html')), read('1pScribeFlow.html'), 'the two /1p shells are no longer twins');
 }
 
-/* LANE NEUTRALITY — production and /cloned must not have moved by one byte. */
-for (const name of ['ScribeFlow.html', 'mls-connect.js', 'cloned-mls-connect.js', 'cloned/index.html']) {
+/* LANE NEUTRALITY — production must not have moved by one byte. (/cloned is
+   DERIVED from /1p by scripts/derive-cloned-from-1p.js since 2026-08-17, so it
+   carries this block by design; tests/cloned-lane-contract pins that.) */
+for (const name of ['ScribeFlow.html', 'mls-connect.js']) {
   const p = path.join(root, name);
   if (!fs.existsSync(p)) continue;
   const src = fs.readFileSync(p, 'utf8');
