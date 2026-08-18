@@ -1972,6 +1972,38 @@
       previewHash: manifest.previewHash, receiptSessionId: manifest.receiptSessionId, statusEl: opts.statusEl || null, preferredAction: opts.preferredAction || ''
     };
   }
+  /* srr-1.0.0 (2026-08-18): a review OPENED before the day's schedule pull
+     binds no encounter, every write row paints CANNOT SEND, and NOTHING on the
+     open sheet re-resolves — blocked rows never probe, so only a human press
+     of "Check Athena again" rebuilds. Measured live: the owner's sheet sat
+     unbound while a fresh manifest for the same patient bound (14/14 rows
+     bind after the pull). While an OPEN sheet is unbound, poll the LOCAL
+     resolver only (no bridge, no Athena, no network) and the moment the day
+     ledger or booking row can name the encounter, rebuild through the SAME
+     reopen path the button uses — a manifest is never mutated in place.
+     Bounded: 5s ticks for 5 minutes, one reopen (fresh id non-empty implies
+     the rebuilt manifest binds, so the poller can never re-arm into a loop),
+     self-disarms on close or when a newer review replaces this state. */
+  function srrArmIfUnbound(state) {
+    try {
+      var visit = (state.manifest && state.manifest.visit) || {};
+      if (S(visit.appointmentId).trim() || (S(visit.encounterId).trim() && S(visit.encounterUrl).trim())) return false;
+      if (!state.reopenOpts) return false;
+      var ticks = 0;
+      var timer = setInterval(function () {
+        try {
+          ticks++;
+          if (state.closed || unifiedAthenaState !== state || ticks > 60) { clearInterval(timer); return; }
+          var fresh = expectedVisitContext(state.manifest.patient, state.reopenOpts);
+          if (!fresh || !S(fresh.appointmentId).trim()) return;
+          clearInterval(timer);
+          unifiedStatus(state, 'The day pull has named this exact encounter — rebinding this review now. Nothing was sent.', '');
+          openUnifiedConfirmation(state.reopenOpts);
+        } catch (eTick) { try { clearInterval(timer); } catch (e2) {} }
+      }, 5000);
+      return true;
+    } catch (e) { return false; }
+  }
   function renderUnifiedOrderSummary(orderRows, manifest) {
     if (!orderRows.length) return '';
     var items = orderRows.map(function (row) {
@@ -2573,6 +2605,7 @@
     wfdxReset(manifest);
     var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, receipts: {}, running: false, halted: false, closed: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
+    srrArmIfUnbound(state); /* srr-1.0.0 */
     unifiedAthenaState = state;
     if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
     /* p1-autobind-2.0.0: if the visit is unbound, use its exact imported appointment
