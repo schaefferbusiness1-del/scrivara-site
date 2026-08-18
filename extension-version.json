@@ -1,5 +1,5 @@
 {
   "version": "3.0.64",
   "minChrome": 116,
-  "notes": "v3.0.64 - Chart reads keep their pace while the athenaOne tab is in the background: every step that waits inside Athena now runs at normal speed even when that tab is hidden, so the days visit notes finish alongside the histories instead of timing out. Nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+."
+  "notes": "v3.0.64 - Chart reads keep their pace while the athenaOne tab is in the background: every step that waits inside Athena now runs at normal speed even when that tab is hidden, so the day's visit notes finish alongside the histories instead of timing out. Nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+."
 }
