@@ -95,6 +95,15 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
       ok(!new RegExp("sel: '" + never.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'").test(span),
         `${name}: the block folds ${never} through its registry, which must never happen`);
     }
+    /* THE COMMENTS MUST CLOSE. This block is mostly prose, and an edit that
+       drops a comment OPENER while keeping its terminator leaves stray text in
+       the STYLESHEET — which silently kills the rule that follows it. MEASURED
+       twice in one afternoon: once it took the Fields box's animation guard
+       out, once it took the re-entrancy note's own rule with it. Counting the
+       two markers is enough to catch it, and it costs nothing. */
+    const styleTxt = span.slice(span.indexOf('<style'), span.indexOf('</style>'));
+    eq((styleTxt.match(/\/\*/g) || []).length, (styleTxt.match(/\*\//g) || []).length,
+      `${name}: the op-note room's stylesheet has unbalanced comment markers — a stray terminator leaves prose in the CSS and kills the next rule`);
     /* the state attribute the guided-glow lane consumes */
     ok(span.indexOf('data-mls-opnotes-state') > 0, `${name}: the block no longer exposes its room state`);
     ok(span.indexOf('data-mls-opnotes-next') > 0, `${name}: the block no longer exposes its next control`);
@@ -471,9 +480,17 @@ function harness(days) {
       var cur = document.querySelector('#opPrepList > div.opr-cur');
       var box = cur ? cur.querySelector('.onf-fillbox') : null;
       if (!box) return { box: false };
-      var out = { box: true, vis: visible(box), cls: String(box.className), anim: [] };
+      var out = { box: true, vis: visible(box), cls: String(box.className), anim: [], glow: [] };
       var nodes = [box].concat(Array.prototype.slice.call(box.querySelectorAll('*')));
       nodes.forEach(function (e) {
+        /* THE ONE CONTROL THAT IS ALLOWED TO MOVE. The contract is "the only
+           animated thing in the room is the single next step" — so the glowing
+           control is counted separately rather than scored as a violation of
+           the rule it is the exception to. */
+        if (e.getAttribute && e.getAttribute('data-mls-next') === '1') {
+          out.glow.push(e.id || String(e.className || '').slice(0, 22) || e.tagName);
+          return;
+        }
         ['', '::before', '::after'].forEach(function (ps) {
           var cs = getComputedStyle(e, ps || null);
           if (cs && cs.animationName && cs.animationName !== 'none') {
@@ -493,7 +510,9 @@ function harness(days) {
         (document.getAnimations ? document.getAnimations() : []).forEach(function (a) {
           if (a.playState !== 'running') return;
           var t = a.effect && a.effect.target;
-          if (t && t.nodeType === 1 && box.contains(t)) out.running.push(t.id || t.tagName);
+          if (!t || t.nodeType !== 1 || !box.contains(t)) return;
+          if (t.getAttribute && t.getAttribute('data-mls-next') === '1') return;   /* the glow */
+          out.running.push(t.id || t.tagName);
         });
       } catch (e) {}
       return out;
