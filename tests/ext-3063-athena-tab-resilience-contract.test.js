@@ -15,9 +15,12 @@ const root = path.join(__dirname, '..');
 const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
-/* version + digest form */
-assert.strictEqual(manifest.version, '3.0.63', 'manifest version must be 3.0.63');
-assert(/^3\.0\.63\+core-sha256:[0-9a-f]{64}$/.test(String(manifest.version_name || '')), 'version_name must carry the stamped core digest');
+/* version + digest form. Pin moved 3.0.63 -> 3.0.64 deliberately (2026-08-18):
+   the 3.0.64 release (mls-hs-1.0.0 hidden-safe sleeps) changes no resilience
+   semantics; the four source-level fixes below are still asserted against the
+   live background.js bytes. */
+assert.strictEqual(manifest.version, '3.0.64', 'manifest version must be 3.0.64');
+assert(/^3\.0\.64\+core-sha256:[0-9a-f]{64}$/.test(String(manifest.version_name || '')), 'version_name must carry the stamped core digest');
 
 /* 1. session probe counts RENDERED day tabs; ping aggregates it */
 assert(bg.includes('var calTabs = 0;'), 'probe must count rendered day tabs');
