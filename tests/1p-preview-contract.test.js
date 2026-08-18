@@ -107,8 +107,8 @@ const P1_CONFIG_RELEASE_SUBS = [
    reads; owner 2026-08-18: extension releases are the lead's own hands, only the Web Store upload is his): the
    21-surface sweep moved the feed, downloads, notes and the chk3064 loader token in production AND /1p, so all
    three baselines advance to that commit; /1p also carries clunky-cal-1.0.1 (month grid keeps its column) and
-   /cloned is re-derived at cloned-20260818-r12. */
-const P1_BASE_COMMIT = '2165bc242da40c139f1a0577d4611c3638c677b0';
+   /cloned is re-derived at cloned-20260818-r12; the notes apostrophe fix (0x19 byte) moved all three again. */
+const P1_BASE_COMMIT = 'c2f36e923e56134bda8b541b2716669a5958393b';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
@@ -117,7 +117,7 @@ const P1_BASE_COMMIT = '2165bc242da40c139f1a0577d4611c3638c677b0';
    resilience - rendered-strip preference, missed-ping re-check, empty week strip -> recovery
    ladder, athenaTabs on goto/schedule/presence replies; digest fb803aca..., zip c71a6375... -
    documented in scripts/sweep-3063.js. Nothing about writing moved. */
-const EXTENSION_BASE_COMMIT = '2165bc242da40c139f1a0577d4611c3638c677b0';
+const EXTENSION_BASE_COMMIT = 'c2f36e923e56134bda8b541b2716669a5958393b';
 /* Advanced by the SAME extension release train, for the pin lines ONLY: the
    production Settings card version strings + release notes (ScribeFlow.html,
    ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
@@ -133,7 +133,7 @@ const EXTENSION_BASE_COMMIT = '2165bc242da40c139f1a0577d4611c3638c677b0';
    version strings + release notes, get-extension/_config/inventory pins, feat_mls_checker.js
    SERVER_EXT_VERSION + its chk3063 loader token in mls-connect.js/-staging.js - exactly what
    every prior extension release moved. No production behaviour changed. */
-const PRODUCTION_BASE_COMMIT = '2165bc242da40c139f1a0577d4611c3638c677b0';
+const PRODUCTION_BASE_COMMIT = 'c2f36e923e56134bda8b541b2716669a5958393b';
 
 const P1_FILES = [
   '1pScribeFlow.html',
