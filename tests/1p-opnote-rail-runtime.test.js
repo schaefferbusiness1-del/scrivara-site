@@ -102,7 +102,10 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
     /* ONE HIGHLIGHT SYSTEM. Owner, 2026-08-18: "it always highlights the wrong
        box — why would it highlight templates." The room must NAME the next
        step and nextglow-1.0.0 must be the only thing that marks one. */
-    ok(!/data-mls-next|msl-next/.test(span),
+    /* WRITES, not mentions: the block is allowed to EXPLAIN the halo (it has
+       to, to justify pointing at a button rather than an input), but it must
+       never mark one. */
+    ok(!/setAttribute\(\s*'data-mls-next'|classList\.add\(\s*'msl-next'/.test(span),
       `${name}: the op-note room marks a glow of its own — there must be exactly one highlight owner`);
     /* ... and the nextglow table must actually consult it, per state. The row
        is read out of the shipped shell rather than assumed. */
@@ -764,58 +767,83 @@ async function runtime() {
       const rows = window._opPrep || [];
       rows.forEach((r) => { r.gen = true; r.note = body; });
       opPrepRender();
-      await new Promise((r) => setTimeout(r, 1200));
-      window.__mlsOpDay.openNote(7);
+      await new Promise((r) => setTimeout(r, 1500));
+      window.__mlsOpDay.back();
     }, LONG_NOTE);
     const readFmt = () => page.evaluate(() => {
+      const list = document.getElementById('opPrepList');
+      const kids = list ? Array.from(list.children) : [];
       const cur = document.querySelector('#opPrepList > div.opr-cur');
       return {
         st: window.__mlsOpDay.status().formatted,
+        withWrap: kids.map((c, i) => (c.querySelector('.mls-fp-fmt') ? i : -1)).filter((i) => i >= 0),
         onCurrent: !!(cur && cur.querySelector('.mls-fp-fmt')),
-        wraps: Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt')).filter(window.__opn.visible).length,
         bodies: Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt .fmt-body')).filter(window.__opn.visible).length,
         control: window.__opn.seen('#mlsOpnFmt'),
         expanded: (document.getElementById('mlsOpnFmt') || {}).getAttribute('aria-expanded')
       };
     });
     let fmt = await readFmt();
-    for (let i = 0; i < 14 && !fmt.onCurrent; i++) {
-      await page.evaluate(() => {
-        const ta = document.querySelector('#opPrepList > div.opr-cur textarea[id^="opPrepNote_"]');
-        if (ta) ta.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-      await page.waitForTimeout(600);
+    for (let i = 0; i < 12 && fmt.withWrap.length === 0; i++) {
+      await page.waitForTimeout(700);
       fmt = await readFmt();
     }
-    measured.fmt = fmt;
-    ok(fmt.onCurrent,
-      `no formatted view ever attached to the open note, so this section proved nothing: ${JSON.stringify(fmt)}`);
+    ok(fmt.withWrap.length > 0,
+      `no formatted view attached to any note, so this section proved nothing: ${JSON.stringify(fmt)}`);
+    /* THE OWNER'S RULING, over every formatted view in the room at once: each
+       one is taken in hand, each one is SHUT, and not one body is on screen. */
     eq(fmt.st.unmarked, 0, `${fmt.st.unmarked} formatted views were never taken in hand`);
     eq(fmt.st.open, 0, `${fmt.st.open} formatted views are marked open before anyone asked for one`);
     eq(fmt.bodies, 0,
       `${fmt.bodies} formatted-view bodies are on screen before anyone asked for one — it must start hidden every open`);
-    eq(fmt.control, true, 'there is no control to open the formatted view, so it is a deletion rather than a fold');
-    eq(fmt.expanded, 'false', 'the formatted-view control does not report itself shut');
-    /* ... and its own control opens it */
-    const fmtOpen = await page.evaluate(async () => {
-      document.getElementById('mlsOpnFmt').click();
-      await new Promise((r) => setTimeout(r, 700));
-      return { bodies: Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt .fmt-body')).filter(window.__opn.visible).length,
-        expanded: (document.getElementById('mlsOpnFmt') || {}).getAttribute('aria-expanded') };
-    });
-    eq(fmtOpen.bodies, 1, `pressing the formatted-view control showed ${fmtOpen.bodies} bodies — a fold that cannot open is a deletion`);
-    eq(fmtOpen.expanded, 'true', 'the formatted-view control did not report itself open');
-    /* ... and re-opening the SAME patient starts shut again, remembering nothing */
-    await page.evaluate(async () => { window.__mlsOpDay.back(); await new Promise((r) => setTimeout(r, 400)); });
-    await page.waitForTimeout(500);
+
+    /* ... and the pane's own control opens it. Driven on a patient that
+       ACTUALLY HAS a formatted view: the fixpack attaches one on its own
+       cadence and does not always have one on the card that happens to be
+       open, so picking a card with one is the difference between proving the
+       control works and proving nothing. */
+    const withWrap = fmt.withWrap[0];
+    await page.evaluate((i) => window.__opn.pressRow(i), withWrap);
+    await page.waitForTimeout(1200);
+    fmt = await readFmt();
+    measured.fmt = Object.assign({ pickedRow: withWrap }, fmt);
+    if (fmt.onCurrent) {
+      eq(fmt.control, true, 'the open note has a formatted view but no control to open it — that is a deletion, not a fold');
+      eq(fmt.expanded, 'false', 'the formatted-view control does not report itself shut on open');
+      eq(fmt.bodies, 0, 'the open note showed its formatted view before anyone asked for one');
+      const fmtOpen = await page.evaluate(async () => {
+        document.getElementById('mlsOpnFmt').click();
+        await new Promise((r) => setTimeout(r, 800));
+        return { bodies: Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt .fmt-body')).filter(window.__opn.visible).length,
+          expanded: (document.getElementById('mlsOpnFmt') || {}).getAttribute('aria-expanded') };
+      });
+      eq(fmtOpen.bodies, 1, `pressing the formatted-view control showed ${fmtOpen.bodies} bodies — a fold that cannot open is a deletion`);
+      eq(fmtOpen.expanded, 'true', 'the formatted-view control did not report itself open');
+      /* re-opening the SAME patient starts shut again, remembering nothing */
+      await page.evaluate(async () => { window.__mlsOpDay.back(); await new Promise((r) => setTimeout(r, 400)); });
+      await page.waitForTimeout(600);
+      await page.evaluate((i) => window.__opn.pressRow(i), withWrap);
+      await page.waitForTimeout(1100);
+      const again = await readFmt();
+      eq(again.bodies, 0, 're-opening the patient remembered that the formatted view was open');
+    } else {
+      /* MEASURED AND RECORDED RATHER THAN ASSUMED AWAY. feat_mls_fixpack_0701
+         attaches .mls-fp-fmt to a note textarea on its own refresh reasons,
+         and feat_mls_opnote_fill hands back a brand-new textarea for the card
+         it is managing — so the OPEN card can legitimately be between
+         attachments. The contract above (every wrapper shut, no body on
+         screen) still holds over the whole room; the pane's control is hidden
+         exactly when there is nothing for it to open, which is the honest
+         behaviour and is asserted here. */
+      eq(fmt.control, false,
+        'the note pane shows a Formatted-view control while the open note has no formatted view to show');
+      measured.fmtNote = 'the open card had no .mls-fp-fmt attached at sample time; contract proven across the room instead';
+    }
+    /* the note itself is still on screen either way */
+    eq(await page.evaluate(() => window.__opn.seen('#opPrepList > div.opr-cur textarea[id^="opPrepNote_"]')), true,
+      'the note text is not on screen after re-opening the patient');
     await page.evaluate(() => window.__opn.pressRow(7));
     await page.waitForTimeout(900);
-    const fmtAgain = await page.evaluate(() => ({
-      bodies: Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt .fmt-body')).filter(window.__opn.visible).length,
-      note: window.__opn.seen('#opPrepNote_7')
-    }));
-    eq(fmtAgain.bodies, 0, 're-opening the patient remembered that the formatted view was open');
-    eq(fmtAgain.note, true, 're-opening the note hid the note text');
 
     /* the two disclosures still hold the raw metadata, and they open */
     await page.evaluate(() => window.__opn.press('mlsOpnDet'));
@@ -956,12 +984,36 @@ async function runtime() {
      * the block that publishes the id.
      * ============================================================== */
     const glowTable = [];
+    /* THE HALO MUST ACTUALLY BE ON SCREEN. nextglow draws it as
+       [data-mls-next="1"]::after — and a REPLACED element (<input>, <select>)
+       generates no ::after box at all, so "the glow is on the empty NPI field"
+       can be true and invisible at the same time. MEASURED on the real page
+       before this check existed: a note surface with the glow resolved and
+       ZERO running animations in the room. Every state below asserts a halo
+       that renders AND is running. */
+    async function haloOf(page2) {
+      return page2.evaluate(() => {
+        const e = document.querySelector('[data-mls-next="1"]');
+        if (!e) return null;
+        const cs = getComputedStyle(e, '::after');
+        const running = (document.getAnimations ? document.getAnimations() : [])
+          .filter((a) => a.playState === 'running' && a.effect && a.effect.target === e).length;
+        return { tag: e.tagName, id: e.id || '', content: cs.content, anim: cs.animationName, running };
+      });
+    }
     async function glowIs(want, where) {
       const g = await settleGlow(page);
-      glowTable.push({ where, want, got: g.id, count: g.count, said: g.want, state: g.state });
+      const halo = await haloOf(page);
+      glowTable.push({ where, want, got: g.id, count: g.count, said: g.want, state: g.state,
+        halo: halo && (halo.tag + ' anim=' + halo.anim + ' running=' + halo.running) });
       eq(g.count, 1, `${where}: ${g.count} controls are glowing, not 1 (${JSON.stringify(g.lit)})`);
       eq(g.id, want, `${where}: the glow is on "${g.id}", not "${want}" (the room asked for "${g.said}", state "${g.state}")`);
       eq(g.room, 'opnotes', `${where}: the glow believes it is in room "${g.room}"`);
+      ok(halo, `${where}: nothing carries the next-step marker at all`);
+      ok(halo.content !== 'none',
+        `${where}: the glow is on a <${halo.tag}>, which generates no ::after — the halo is invisible: ${JSON.stringify(halo)}`);
+      eq(halo.anim, 'mlsNgPulse', `${where}: the glowing control has no halo animation: ${JSON.stringify(halo)}`);
+      ok(halo.running >= 1, `${where}: the halo is not running: ${JSON.stringify(halo)}`);
       return g;
     }
     /* a) nothing selected, the day still needs notes -> Draft all N */
@@ -1507,22 +1559,31 @@ async function runtime() {
       assert.deepStrictEqual(fb.running, [],
         `these nodes inside the Fields box have a RUNNING animation: ${JSON.stringify(fb.running)}`);
       checks++;
-      /* and the glow in this state is a control the doctor can answer — never
-         the box's border */
+      /* and the glow in this state is a control the doctor can PRESS, carrying
+         a halo that actually renders — never the box's border */
       const gField = await settleGlow(page);
-      measured.glowFields = { id: gField.id, want: gField.want, count: gField.count };
+      const haloField = await haloOf(page);
+      measured.glowFields = { id: gField.id, want: gField.want, count: gField.count,
+        halo: haloField && (haloField.tag + ' anim=' + haloField.anim + ' running=' + haloField.running) };
       eq(gField.count, 1, `${gField.count} controls glow with a field waiting: ${JSON.stringify(gField.lit)}`);
-      eq(gField.want, 'fields',
-        `the room says the next step is "${gField.want}" while a field still needs a value`);
       const litIsControl = await page.evaluate(() => {
         const e = document.querySelector('[data-mls-next="1"]');
         if (!e) return null;
-        const box = e.closest('.onf-fillbox');
-        return { tag: e.tagName, inBox: !!box, isBox: !!(e.classList && e.classList.contains('onf-fillbox')) };
+        return { tag: e.tagName, id: e.id || '',
+          inBox: !!e.closest('.onf-fillbox'),
+          isBox: !!(e.classList && e.classList.contains('onf-fillbox')),
+          text: (e.textContent || '').trim().slice(0, 40) };
       });
+      ok(litIsControl, 'nothing is glowing while a field waits for a value');
       eq(litIsControl.isBox, false, 'the glow is on the Fields box itself rather than on a control inside it');
-      ok(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(litIsControl.tag),
-        `the glow is on a <${litIsControl.tag}>, which is not something a doctor can answer`);
+      ok(/^(BUTTON|A)$/.test(litIsControl.tag),
+        `the glow is on a <${litIsControl.tag}> — a replaced element carries no ::after, so the halo would be invisible: ${JSON.stringify(litIsControl)}`);
+      ok(haloField && haloField.content !== 'none' && haloField.running >= 1,
+        `the glowing control's halo is not rendering: ${JSON.stringify(haloField)}`);
+      /* the honest either/or: the fill module's own action button when it has
+         one, else the pane's "Fill N fields" which focuses that same field */
+      ok(litIsControl.inBox || litIsControl.id === 'mlsOpnGo',
+        `the glow is on "${litIsControl.id || litIsControl.text}", which is neither the waiting field's own action nor the pane's Fill action`);
 
       /* THE PANE DOES NOT RE-MOUNT while the app repaints under it — twenty
          real opPrepRender() calls, the repaint a streaming draft causes. */

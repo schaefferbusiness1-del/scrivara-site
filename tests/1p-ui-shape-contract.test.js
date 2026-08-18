@@ -203,7 +203,7 @@ for (const name of SHELLS) {
      itself — the owner's "it always highlights the wrong box" was two systems
      disagreeing. */
   ok(/function glowId\(\)/.test(day), `${name}: opnote-day no longer publishes the one next-step id`);
-  ok(!/data-mls-next|msl-next/.test(day),
+  ok(!/setAttribute\(\s*'data-mls-next'|classList\.add\(\s*'msl-next'/.test(day),
     `${name}: opnote-day marks a glow of its own — there must be exactly one highlight owner (nextglow-1.0.0)`);
   ok(/__mlsNextGlow[\s\S]{0,120}refresh/.test(day),
     `${name}: opnote-day no longer tells nextglow-1.0.0 that the room changed, so the glow lags the screen`);

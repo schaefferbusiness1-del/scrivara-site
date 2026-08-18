@@ -40275,6 +40275,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #opPrepModal[data-mlsopn="normal"]:not([data-mlsopn-more="open"]) .mlsopn-adv-normal{
   display:none !important;
 }
+/* AND THE ONES A REGISTRY CANNOT NAME. MEASURED: with the named regions
+   folded, three patient buttons were still painted OVER — by #oprTplMode
+   (.opr-tplmode / .opr-nav-st), which feat_mls_opnote_room.js appends to
+   #oprDayRail at runtime, as a SIBLING of #oprTplRail rather than inside it.
+   A per-selector registry cannot cover a node another module has not built
+   yet, and enumerating them re-derives every time that module adds one. In
+   Simple and Normal the rail IS the patient list, so the rule is stated once
+   over the whole column: everything in it that is not the list stands down,
+   and Everything (or the one More disclosure) gives all of it back. */
+#opPrepModal[data-mlsopn="simple"]:not([data-mlsopn-more="open"]) #oprDayRail > *:not(#mlsOpnRail),
+#opPrepModal[data-mlsopn="normal"]:not([data-mlsopn-more="open"]) #oprDayRail > *:not(#mlsOpnRail){
+  display:none !important;
+}
 
 /* The Draft-all row in the editor is EMPTY once its button has moved to the
    rail, and it is only folded once that move is verified — an unconditional
@@ -40545,6 +40558,15 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpnDiscl{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 4px; }
 #mlsOpnState{ align-self:center; }
 #mlsOpnKeys{ margin:8px 0 0; font:500 11.5px/1.5 var(--sans); color:var(--muted); }
+
+/* THE DAY-BRAIN'S OWN CONTROL IS A TAP TARGET TOO. MEASURED at 1440x900 in
+   this room: #opdbFold ("Show only who needs an op note") renders 154x26 —
+   under every touch floor, on the control that decides whether the doctor can
+   see the patients the day-brain held back. feat_mls_opnote_daybrain.js is not
+   this lane's to edit and its behaviour is untouched; this is size only. */
+#opPrepModal #opdbFold{
+  min-height:40px; padding:8px 14px; box-sizing:border-box; border-radius:var(--r-pill,999px);
+}
 
 /* ---- the rail becomes the top strip, and never disappears ---- */
 @media (max-width:900px){
@@ -40935,6 +40957,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     if (isNaN(i) || i < 0 || i >= r.length) return false;
     sel = i;
     detOpen = false; tplOpen = false;
+    fmtReset();
     selectRow(i);
     paint();
     return true;
@@ -41048,6 +41071,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     k = okKey(k);
     if (!k) return false;
     sel = -1; query = ''; detOpen = false; tplOpen = false;
+    fmtReset();
     try {
       if (typeof window.opPrepSetDay === 'function') { window.opPrepSetDay(k); return true; }
       if (typeof window.openOpPrep === 'function') { window.openOpPrep(k); return true; }
@@ -41149,6 +41173,27 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         try { btn.click(); } catch (e2) {}
       }
       n++;
+    }
+    return n;
+  }
+  /* EVERY OPEN IS A FRESH SHUT. fmtSync() only takes an UNMARKED wrapper in
+     hand, and re-opening the same patient does not rebuild it — so MEASURED:
+     a doctor who opened the formatted view, went back to the day and returned
+     to the same patient found it still open. The owner's ruling is "ALWAYS
+     start hidden and only expand if you click it", so choosing a patient (or
+     a day) resets it, through the module's own Hide button. */
+  function fmtReset() {
+    var modal = el('opPrepModal');
+    if (!modal) return 0;
+    var wraps;
+    try { wraps = modal.querySelectorAll('.mls-fp-fmt'); } catch (e) { return 0; }
+    var i, n = 0;
+    for (i = 0; i < wraps.length; i++) {
+      var w = wraps[i];
+      var body = w.querySelector('.fmt-body');
+      var btn = w.querySelector('.fmt-bar button');
+      if (body && btn && body.style.display !== 'none') { try { btn.click(); } catch (e2) {} n++; }
+      if (w.getAttribute('data-mls-fmt') !== 'shut') w.setAttribute('data-mls-fmt', 'shut');
     }
     return n;
   }
@@ -41502,16 +41547,28 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      builds its controls without ids, and marking one from here would be this
      block writing into another module's node. nextglow resolves it with the
      module's OWN vocabulary instead — `label:not(.onf-has)` is how the fill
-     module itself says "this field still has no value". */
+     module itself says "this field still has no value", and `.onf-field` is
+     its own wrapper for one field and its actions.
+
+     WHY A BUTTON AND NOT THE FIELD ITSELF, MEASURED. nextglow's halo is
+     `[data-mls-next="1"]::after`. An <input> and a <select> are replaced
+     elements: they generate NO ::before/::after box at all, so marking one
+     produces a control that is "the next step" with nothing visible on it —
+     measured on the real page as a note surface with zero running animations
+     while the glow believed it was pointing at the empty NPI field. The first
+     ACTION BUTTON of the first unanswered field ("Dictate to fill", "use") is
+     a real element, it carries the halo, and pressing it is what fills the
+     field. When the box offers no button, glowId falls back to #mlsOpnGo,
+     which is labelled "Fill N fields" and focuses that same field. */
   function fieldsNext() {
     var card = curCard();
     if (!card) return null;
     var n = null;
-    try {
-      n = card.querySelector('.onf-fillbox label:not(.onf-has) select, ' +
-        '.onf-fillbox label:not(.onf-has) input, .onf-fillbox label:not(.onf-has) textarea');
-    } catch (e) { return null; }
-    if (!n) return null;
+    /* :has() is already used by this shell's own room CSS; on an engine
+       without it querySelector throws and this degrades to #mlsOpnGo. */
+    try { n = card.querySelector('.onf-fillbox .onf-field:has(label:not(.onf-has)) .onf-field-actions button'); }
+    catch (e) { n = null; }
+    if (!n || n.disabled) return null;
     var r = null;
     try { r = n.getBoundingClientRect(); } catch (e2) { return null; }
     return (r && r.width > 0 && r.height > 0) ? n : null;
@@ -41571,8 +41628,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   function runNotice(text) {
     notice = S(text);
     lastSig = '';
-    paint();
+    /* The line is written HERE and not left to the next paint. This is called
+       from inside the burst that opening the room causes, and its RETURN VALUE
+       is what msl-autodraft branches on: a false makes it raise the floating
+       toast instead. Ensure the rail exists, write the line, then let the
+       normal pass catch up. */
+    if (roomOpen()) { try { ensureHosts(); } catch (e) {} }
     var n = el('mlsOpnNotice');
+    if (n) { n.textContent = notice; n.hidden = !notice; }
+    paint();
+    n = el('mlsOpnNotice');
     return !!(n && !n.hidden && S(n.textContent) === notice);
   }
 
@@ -41598,10 +41663,17 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
        · COALESCING. refresh() settles for 60 ms rather than 0, so a burst of
          records from one opPrepRender() produces exactly one paint.
      setTimeout, never requestAnimationFrame: rAF does not fire in a hidden or
-     non-compositing tab and the room would never paint there. */
+     non-compositing tab and the room would never paint there.
+
+     THE FLAG GATES refresh(), NOT paint(). A first version returned early from
+     paint() itself, and MEASURED it broke a real caller: msl-autodraft calls
+     runNotice() from inside the mutation burst that opening the room causes,
+     the paint was suppressed, runNotice could not produce its receipt, and
+     autodraft fell back to the floating toast the owner asked us to retire.
+     A DIRECT paint() is always somebody's deliberate act — a selection, a day
+     change, a disclosure — and must never be dropped. */
   var painting = false;
   function paint() {
-    if (painting) return false;
     painting = true;
     try { return paintInner(); }
     finally { setTimeout(function () { painting = false; }, 0); }
@@ -44132,15 +44204,15 @@ a[data-mls-next="1"]{
           steps: [{ sel: '#tpfStop', reason: 'Drafting — you can stop any time' }] },
         /* THE NOTE IS WAITING ON A DETAIL. Owner, 2026-08-18, of the amber
            Fields box: the thing that moves must be the control he has to
-           answer, not the box's border. `label:not(.onf-has)` is
-           feat_mls_opnote_fill's OWN marker for "this field has no value yet",
-           so this points at the module's first unanswered control rather than
-           at a node this lane invented. Falls back to the pane's one action. */
+           answer, not the box's border. `label:not(.onf-has)` and `.onf-field`
+           are feat_mls_opnote_fill's OWN vocabulary for "this field has no
+           value yet", so this points at the module's first unanswered field
+           rather than at a node this lane invented — and at its BUTTON, not
+           the input, because the halo is an ::after and a replaced element
+           generates none (see fieldsNext). Falls back to the pane's action. */
         { when: function () { return opnWant() === 'fields'; },
           steps: [
-            { sel: '#opPrepList > div.opr-cur .onf-fillbox label:not(.onf-has) select',
-              reason: 'The one detail this note still needs' },
-            { sel: '#opPrepList > div.opr-cur .onf-fillbox label:not(.onf-has) input',
+            { sel: '#opPrepList > div.opr-cur .onf-fillbox .onf-field:has(label:not(.onf-has)) .onf-field-actions button',
               reason: 'The one detail this note still needs' },
             { sel: '#mlsOpnGo' }
           ] },
