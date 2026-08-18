@@ -89,7 +89,7 @@ const P1_CONFIG_RELEASE_SUBS = [
    raised only by successes, one frozen day-note pass budget → background backfill, backfill presence re-check with a
    PHI-free receipt, same-day re-pull never re-opens a read note, earliest-first, busy-click gate); /cloned re-derived at
    cloned-20260817-r7. Production and extension baselines untouched (469607c9). */
-const P1_BASE_COMMIT = 'c0ae02ff31dac88840b7a31c9ea857dce3ae119e';
+const P1_BASE_COMMIT = '883284d6306a170090e994ec2e52b05c81ca4f2b';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
