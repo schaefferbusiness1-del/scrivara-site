@@ -42531,7 +42531,7 @@ body.pvr-on #mlsCopyVisitsBar .mls-cv-btn{background:transparent!important;color
 body.pvr-on #mlsCopyVisitsBar .mls-cv-btn:hover{background:var(--soft,#EAF1EC)!important}
 body.pvr-on #mlsCopyVisitsBar #mlsEaseAddVisit{display:none!important}
 /* The timeline, collapsed to the latest three. */
-body.pvr-on #mlsVisitHistoryExt .mlsxh-list > .pvr-hidden{display:none!important}
+body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
 #mlsVisitHistoryExt .pvr-showall{margin:8px 0 2px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
   background:transparent;color:var(--ink,#1A211C);border-radius:999px;padding:7px 14px;cursor:pointer;min-height:36px}
 #mlsVisitHistoryExt .pvr-showall:hover{background:var(--soft,#EAF1EC)}
@@ -42841,12 +42841,13 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list > .pvr-hidden{display:none!important
     var list = sec.querySelector('.mlsxh-list');
     if (!list) return;
     var pid = str(safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : ''; }, ''));
-    var kids = [], i;
-    for (i = 0; i < list.children.length; i++) {
-      var c = list.children[i];
-      if (c.classList && c.classList.contains('pvr-showall')) continue;
-      kids.push(c);
-    }
+    /* The CARDS, not the list's direct children: renderList groups them under a
+       <details> per year and a heading per month, so a chart whose visits all
+       fall in one year has exactly ONE direct child and "collapse to three"
+       would silently hide the whole timeline. Query the cards themselves, in
+       document order, which is already the module's chosen sort. */
+    var kids = [], i, found = list.querySelectorAll('.mlsxh-card');
+    for (i = 0; i < found.length; i++) kids.push(found[i]);
     var open = !!_showAll[pid];
     var over = kids.length - 3;
     for (i = 0; i < kids.length; i++) {
@@ -42918,6 +42919,13 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list > .pvr-hidden{display:none!important
   /* 5) the strip's own repaint hook — pf2 owns #pf2Quick, so this block only
         asks it to repaint when the resolver's answer has changed. */
   function pass() {
+    /* An installed check, not just a cleared timer. start() also binds
+       'mls:active-patient-changed', and removeEventListener alone is not
+       enough to prove a pass cannot land after revert(): a debounce already in
+       flight would still fire and silently re-apply the whole block - which is
+       exactly how a "with the block off" measurement stops measuring
+       anything. */
+    if (!installed) return;
     var p = activeP();
     safe(function () { deidentify(); });
     if (!document.body) return;
@@ -42958,8 +42966,9 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list > .pvr-hidden{display:none!important
     /* setTimeout, never requestAnimationFrame: rAF does not fire in a
        non-compositing tab and the profile would freeze mid-repaint. */
     timer = setInterval(function () { safe(bindObserver); safe(pass); }, PASS_MS);
-    safe(function () { window.addEventListener('mls:active-patient-changed', schedule); });
+    if (!wired) { wired = true; safe(function () { window.addEventListener('mls:active-patient-changed', schedule); }); }
   }
+  var wired = false;
   function revert() {
     safe(function () { if (timer) clearInterval(timer); }); timer = null;
     safe(function () { if (deb) clearTimeout(deb); }); deb = null;
@@ -42977,13 +42986,30 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list > .pvr-hidden{display:none!important
       for (var j = 0; j < dupe.length; j++) dupe[j].classList.remove('pvr-dup-empty');
     });
     safe(function () { var st = document.getElementById('mlsPvrCss'); if (st) st.disabled = true; });
+    /* The block published all three globals, so reverting it must withdraw all
+       three - otherwise pf2 keeps asking a resolver that is supposedly gone and
+       a "with the block off" measurement is not one. They are kept on _api so
+       install() puts them back exactly, never rebuilt. */
+    safe(function () { try { delete window.__mlsPtVisits; } catch (e) { window.__mlsPtVisits = undefined; } });
+    safe(function () { try { delete window.__mlsChartField; } catch (e) { window.__mlsChartField = undefined; } });
+    installed = false;
   }
 
-  window.__mlsPtVisits = { version: VERSION, resolve: resolve, count: count, countFor: countFor, _ymd: ymd, _scrub: scrub };
-  window.__mlsChartField = { version: VERSION, state: fieldState, landed: chartLanded, canRead: canRead, read: readFromAthena, _coverageCard: coverageCard };
-  window.__mlsProfileCalm = { version: VERSION, pass: pass, revert: revert, deidentify: deidentify, _collapseList: collapseList, _dedupeEmpty: dedupeEmpty };
+  var VISITS_API = { version: VERSION, resolve: resolve, count: count, countFor: countFor, _ymd: ymd, _scrub: scrub };
+  var FIELD_API = { version: VERSION, state: fieldState, landed: chartLanded, canRead: canRead, read: readFromAthena, _coverageCard: coverageCard };
+  var installed = false;
+  function install() {
+    window.__mlsPtVisits = VISITS_API;
+    window.__mlsChartField = FIELD_API;
+    safe(function () { var st = document.getElementById('mlsPvrCss'); if (st) st.disabled = false; });
+    if (!installed) { installed = true; start(); } else { safe(pass); }
+    return true;
+  }
+  window.__mlsProfileCalm = { version: VERSION, pass: pass, revert: revert, install: install,
+    deidentify: deidentify, _api: { visits: VISITS_API, field: FIELD_API },
+    _collapseList: collapseList, _dedupeEmpty: dedupeEmpty };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install); else install();
 })();
 </script>
 <!-- ===== end pvr-1.0.0 ================================================= -->

@@ -50791,6 +50791,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      resolves the four states from evidence the pull already writes. This
      function asks it; it never infers a state from emptiness alone, and when
      the resolver is absent it degrades to exactly the old text. */
+  function qlocal(value, max, whenEmpty) {
+    var t = qtxt(value, max);
+    return (t === '—') ? { text: whenEmpty, quiet: true, read: false, state: 'none' } : { text: t, quiet: false, read: false };
+  }
   function qfield(p, key, value, max) {
     var cf = null; try { cf = window.__mlsChartField; } catch (e) {}
     var shown = (arguments.length > 2) ? value : (p ? p[key] : '');
@@ -50832,9 +50836,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         ['Medications', qfield(p, 'meds', String(p.meds || '').split(/\n/).slice(0, 4).join('\n'), 220)],
         ['Allergies', qfield(p, 'allergies', p.allergies, 120)],
         ['Vitals', qfield(p, 'vitals', vit, 90)],
-        ['Next appt', { text: qtxt(appt && (appt.time ? appt.time + (appt.reason ? ' \u00b7 ' + appt.reason : '') : ''), 90), quiet: false, read: false }],
+        /* Next appt and Key risks are LOCAL facts - the schedule this app holds
+           and a field the doctor types - so empty really does mean none, and
+           there is no Athena read that could change it. They still get a
+           sentence rather than a dash: the doctor should never have to work out
+           which kind of nothing a dash meant. */
+        ['Next appt', qlocal(appt && (appt.time ? appt.time + (appt.reason ? ' \u00b7 ' + appt.reason : '') : ''), 90, 'Nothing scheduled.')],
         ['Visits', vfield],
-        ['Key risks', { text: qtxt(p.careFlags, 120), quiet: false, read: false }]
+        ['Key risks', qlocal(p.careFlags, 120, 'None flagged.')]
       ];
     }
     /* The signature LEADS WITH THE PATIENT ID. Built from the seven tile values
