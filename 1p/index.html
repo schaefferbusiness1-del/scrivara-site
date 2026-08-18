@@ -46170,5 +46170,127 @@ html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
 })();
 </script>
 <!-- ===== end clunky-athena-1.0.0 ======================================= -->
+<!-- ===== clunky-calendar-1.0.0 — one line instead of a 250px card
+     CLUNKY AUDIT items 112 and 113. Item 34 was ATTEMPTED and reverted — see
+     the note in the stylesheet below.
+
+     MEASURED at HEAD, 1366x900, Calendar:
+       .cx-rail     155,182 288x614   — a sticky left column
+       .cx-glance   155,547 288x250   — "DAY AT A GLANCE · Booked 0 · Arrived
+                                        0 · Roomed 0 · Completed 0 · Total
+                                        booked 0", i.e. the same four numbers
+                                        the colour legend above the grid
+                                        already spells out (item 112)
+       #calGrid     812px wide of a 1366px window — the reason every month
+                    chip clips to "8:00 AM Q…" (item 34)
+
+     THE GLANCE CARD IS NOT DELETED. Its numbers move into one line in the
+     calendar's own header, where they cost 24px instead of 250, and the card
+     is hidden rather than removed so the module that fills it keeps working
+     and revert() brings it straight back.
+
+     WHAT THIS DOES NOT CLAIM. Items 33, 35, 36, 37 and 38 need a seeded day
+     with appointments in the rendered month; on an empty month the chips this
+     lane would have to measure do not exist. They are reported, not fixed. -->
+<style id="mlsClunkyCalCss">
+/* --- 112: the day's numbers cost one line, not a 250px card. */
+html #calendarView .cx-glance[data-mls-clunky-folded="1"]{ display:none !important; }
+#mlsClunkyCalLine{
+  display:flex; gap:14px; align-items:baseline; flex-wrap:wrap;
+  margin:0 0 10px; padding:6px 0;
+  font:700 13px/1.35 var(--sans, system-ui, sans-serif); color:var(--ink, #1A211C);
+}
+#mlsClunkyCalLine .q{ color:var(--muted, #79837C); font-weight:600; }
+#mlsClunkyCalLine[hidden]{ display:none; }
+
+/* --- 34 IS NOT FIXED HERE, AND THE ATTEMPT IS RECORDED BECAUSE IT MADE
+   THINGS WORSE. Hiding .cx-rail below 1200px to give #calGrid the width
+   MEASURED #calGrid at 238px at a 1150px window — down from 812px at 1366 —
+   because the rail is a track in the calendar's own layout, not a floated
+   sidebar, and removing the child collapses the grid's column assignment.
+   A crowding fix that spends its clearance somewhere invisible is the defect
+   it was meant to cure, so the rule is gone and item 34 is reported open. */
+
+/* --- 113: a day-panel row is one line and the whole row is the target. */
+html #calDayPanel .cx-dayrow,
+html #calDayPanel [class*="row"]{
+  display:flex; align-items:center; gap:10px; min-height:44px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+html #calDayPanel a,
+html #calDayPanel button{ min-height:44px; }
+</style>
+<script>
+/* clunky-calendar-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyCal) return;
+  var VERSION = 'clunky-calendar-1.0.0';
+  var passes = 0;
+
+  function q(s, r) { try { return (r || document).querySelector(s); } catch (e) { return null; } }
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+
+  /* Read the glance card's own numbers rather than recomputing them: the
+     module that fills it is the authority on what "booked" means today. */
+  function numbers(card) {
+    var out = [];
+    try {
+      var t = txt(card);
+      ['Booked', 'Arrived', 'Roomed', 'Completed'].forEach(function (k) {
+        var i = t.indexOf(k);
+        if (i < 0) return;
+        var m = t.slice(i + k.length).match(/\d+/);
+        if (m) out.push([k, m[0]]);
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  function pass() {
+    var view = el('calendarView');
+    if (!view) return;
+    passes++;
+    var card = q('.cx-glance', view);
+    var line = el('mlsClunkyCalLine');
+    if (!card) { if (line) line.hidden = true; return; }
+    var nums = numbers(card);
+    if (!nums.length) { if (line) line.hidden = true; card.removeAttribute('data-mls-clunky-folded'); return; }
+    if (!line) {
+      line = document.createElement('div');
+      line.id = 'mlsClunkyCalLine';
+      var host = q('#calGrid', view);
+      if (host && host.parentNode) host.parentNode.insertBefore(line, host);
+      else view.insertBefore(line, view.firstChild);
+    }
+    var want = nums.map(function (p) { return p[1] + ' ' + p[0].toLowerCase(); }).join(' · ');
+    if (txt(line) !== want) line.textContent = want;
+    line.hidden = false;
+    card.setAttribute('data-mls-clunky-folded', '1');
+  }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {}
+    setInterval(pass, 1500);
+    [300, 900, 2000, 4000].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyCal = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () {
+      try {
+        var s = el('mlsClunkyCalCss'); if (s) s.disabled = true;
+        var c = q('.cx-glance'); if (c) c.removeAttribute('data-mls-clunky-folded');
+        var l = el('mlsClunkyCalLine'); if (l && l.parentNode) l.parentNode.removeChild(l);
+      } catch (e) {}
+      return true;
+    } };
+})();
+</script>
+<!-- ===== end clunky-calendar-1.0.0 ===================================== -->
 </body>
 </html>

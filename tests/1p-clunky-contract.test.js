@@ -39,7 +39,8 @@ const BLOCKS = [
   'clunky-staffprep-1.0.0',
   'clunky-dock-1.0.0',
   'clunky-notice-1.0.0',
-  'clunky-athena-1.0.0'
+  'clunky-athena-1.0.0',
+  'clunky-calendar-1.0.0'
 ];
 
 /* ============================================================ PART 1: static */
@@ -628,6 +629,46 @@ async function runtime() {
       `after a VERIFIED receipt the sheet still says "${ath.safety.slice(0, 40)}..." (CLUNKY 2)`);
     eq(ath.goText, 'Done',
       `after a verified write the grey button still reads "${ath.goText}" - a verb it already performed (CLUNKY 22)`);
+
+    /* ======================================================= CALENDAR ==== */
+    const cal = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      C.nav('nav_calendar');
+      await sleep(1800);
+      const card = document.querySelector('#calendarView .cx-glance');
+      const line = document.getElementById('mlsClunkyCalLine');
+      return {
+        cardShown: !!(card && C.visible(card)),
+        cardHeight: card ? Math.round(card.getBoundingClientRect().height) : null,
+        line: line ? (line.textContent || '').trim() : null,
+        lineShown: C.shown('#mlsClunkyCalLine'),
+        /* A DIFFERENTIAL, NOT A THRESHOLD. #calGrid is legitimately narrow in
+           some states (the audit measured 421px with the day panel open), so
+           an absolute floor fails on a state this block did not cause. What
+           this block must never do is make the grid NARROWER, so the same
+           page is measured with its stylesheet on and off. */
+        gridW: await (async () => {
+          const g = () => { const n = document.getElementById('calGrid'); return n ? Math.round(n.getBoundingClientRect().width) : null; };
+          const on = g();
+          const css = document.getElementById('mlsClunkyCalCss');
+          if (!css) return { on: on, off: on };
+          css.disabled = true;
+          await sleep(250);
+          const off = g();
+          css.disabled = false;
+          await sleep(250);
+          return { on: on, off: off };
+        })()
+      };
+    });
+    measured.calendar = cal;
+    ok(!cal.cardShown,
+      `the 250px "DAY AT A GLANCE" card is back on the calendar (${cal.cardHeight}px) alongside the colour legend (CLUNKY 112)`);
+    ok(cal.lineShown && /booked/.test(cal.line || ''),
+      `the day's numbers went away with the card instead of moving to one line (got "${cal.line}") (CLUNKY 112)`);
+    ok(cal.gridW && cal.gridW.on >= cal.gridW.off - 2,
+      `this block's stylesheet NARROWS #calGrid: ${cal.gridW.off}px without it, ${cal.gridW.on}px with it - a crowding fix that spends its clearance somewhere invisible (CLUNKY 34 guard)`);
     await page.close();
 
     /* ------------------------------------------------------------ 390x844 */
