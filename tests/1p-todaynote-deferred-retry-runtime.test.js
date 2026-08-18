@@ -65,7 +65,12 @@ function makeHarness(options) {
     athenaAppointmentId: 'appt-' + DAY + '-' + (i + 1),
     appointmentId: 'appt-' + DAY + '-' + (i + 1),
     date: DAY, scheduleDate: DAY,
-    start_local: '08:0' + i, time: '08:0' + i, reason: 'Deferred note test'
+    /* tny-1.0.0 reads the ACCOUNT clock: an appointment whose start is later
+       than now is 'not yet seen' and skipped, not refused. This fixture tests
+       the deferral lane, so its appointments must already have started at any
+       hour the gate runs - 00:00, never 08:0x (that made the suite fail every
+       morning before 8 AM ET). */
+    start_local: '00:00', time: '00:00', reason: 'Deferred note test'
   }));
 
   function fakeElement(tag, id) {
