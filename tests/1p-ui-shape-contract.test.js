@@ -62,11 +62,16 @@ const BLOCKS = [
   ['<!-- ===== dock-1p-1.1.0', '<!-- ===== end dock-1p-1.1.0'],
   ['<!-- ===== opnote-open-1.1.0', '<!-- ===== end opnote-open-1.1.0'],
   ['<!-- ===== opnote-vocab-1.0.0', '<!-- ===== end opnote-vocab-1.0.0'],
-  /* PIN MOVED 2026-08-18 (op-notes lane): opnote-day-2.0.0 is REPLACED by
+  /* PIN MOVED 2026-08-18 (op-notes lane): opnote-day-2.0.0 was REPLACED by
      opnote-day-3.0.0 on the owner's order — "that LEFT SIDE SELECTOR THING was
      great, add it back". 2.0.0's single column (a list OR one patient) is the
-     shape he rejected; 3.0.0 is the rail + the pane, always both. */
-  ['<!-- ===== opnote-day-3.0.0', '<!-- ===== end opnote-day-3.0.0'],
+     shape he rejected; 3.0.0 is the rail + the pane, always both.
+     PIN MOVED AGAIN, same day: "completely redo the op notes UI, I hate it".
+     opnote-day-4.0.0 keeps 3.0.0's rail+pane geometry (it is the shape he asked
+     for by name) and rebuilds the surface — the patient rows, the note header
+     and action bar, the status vocabulary, and a pointer route back to the day.
+     Only the NAME moved in this table; every property below is unchanged. */
+  ['<!-- ===== opnote-day-4.0.0', '<!-- ===== end opnote-day-4.0.0'],
   ['<!-- ===== view-hold-1.0.0', '<!-- ===== end view-hold-1.0.0'],
   ['<!-- ===== note-model-1.1.0', '<!-- ===== end note-model-1.1.0']
 ];
@@ -87,7 +92,7 @@ for (const name of SHELLS) {
      copies of one block is the shape that ships a fix and its own regression
      together. */
   for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'note-model-1.0.0',
-    'opnote-day-1.0.0', 'opnote-day-2.0.0']) {
+    'opnote-day-1.0.0', 'opnote-day-2.0.0', 'opnote-day-3.0.0']) {
     eq(src.indexOf('<!-- ===== ' + dead), -1,
       `${name}: the superseded ${dead} block is still present alongside its successor`);
   }
@@ -176,8 +181,8 @@ for (const name of SHELLS) {
   /* -- opnote-day: one primary action, and the button autodraft needs ---
      msl-autodraft refuses when #opPrepGenAllBtn's offsetParent is null, so a
      registry that folds it turns automatic drafting off silently. */
-  const day = src.slice(src.indexOf('<!-- ===== opnote-day-3.0.0'), src.indexOf('<!-- ===== end opnote-day-3.0.0'));
-  ok(day.includes("VERSION = 'opnote-day-3.0.0'"), `${name}: the op-note room block lost its version`);
+  const day = src.slice(src.indexOf('<!-- ===== opnote-day-4.0.0'), src.indexOf('<!-- ===== end opnote-day-4.0.0'));
+  ok(day.includes("VERSION = 'opnote-day-4.0.0'"), `${name}: the op-note room block lost its version`);
   /* PIN INVERTED 2026-08-18 (op-notes lane). 1.0.0 and 2.0.0 FOLDED
      #oprDayRail and this line pinned that fold. The owner has since ruled the
      other way — "that LEFT SIDE SELECTOR THING was great, add it back" — so
@@ -429,8 +434,8 @@ for (const name of SHELLS) {
   }
 
   /* the day board's blank counter */
-  const dBody = src.slice(src.indexOf('<!-- ===== opnote-day-3.0.0'),
-    src.indexOf('<!-- ===== end opnote-day-3.0.0'));
+  const dBody = src.slice(src.indexOf('<!-- ===== opnote-day-4.0.0'),
+    src.indexOf('<!-- ===== end opnote-day-4.0.0'));
   const blankLit = /var m = note\.match\((\/[^\n]*?\/gi)\);/.exec(dBody);
   ok(blankLit, 'the day list lost its [[key]] blank counter');
   /* the day switcher's own date guard, executed rather than grepped: a

@@ -40176,46 +40176,56 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 })();
 </script>
 <!-- ===== end opnote-vocab-1.0.0 ======================================= -->
-<!-- ===== opnote-day-3.0.0 — the day is a RAIL, the note is the room =====
-     Owner, 2026-08-18, after opnote-day-2.0.0 shipped: "I hate the new OP
-     NOTES EVEN MORE. FIX. That LEFT SIDE SELECTOR THING was great — add it
-     back. Add the left side thing back and do a NEW UI for main op notes and
-     MAKE SURE IT WORKS."
+<!-- ===== opnote-day-4.0.0 — five jobs, each two clicks from the door =====
+     Owner, 2026-08-18, looking at opnote-day-3.0.0: "completely redo the op
+     notes UI, I hate it" — and, asked what good would look like, "actually
+     good and intuitive".
 
-     WHAT HE MEANS BY "THE LEFT SIDE SELECTOR THING", read off the code rather
-     than guessed: production's room is #oprPanelProcs, a two-column grid of
-     <aside id="oprDayRail"> and <main id="oprEditor">, and the aside carries
-     <nav id="oprRowNav"> — ONE BUTTON PER PATIENT for the day, filled by
-     feat_mls_opnote_room.js. The day on screen as a list of buttons in a
-     sidebar, with the patient you picked open beside it.
+     3.0.0 HAD THE RIGHT BONES AND THE WRONG SURFACE. The rail + pane geometry
+     is the shape he asked for by name ("that LEFT SIDE SELECTOR THING was
+     great") and is kept whole. What is rebuilt is everything he actually looks
+     at: the patient rows, the note's header and action bar, the words the
+     statuses use, and the way out of a note.
 
-     opnote-day-1.0.0 FOLDED that rail. 2.0.0 then replaced the whole room with
-     a single column that is a list OR one patient, never both — so choosing
-     the next patient meant leaving the one you were on. That is the thing he
-     hates: 2.0.0 took the selector away twice over.
+     THE ROOM SERVES EXACTLY FIVE JOBS. Each is reachable in at most two
+     clicks from the moment the room opens, and each one names the control
+     that does it:
 
-     3.0.0 PUTS THE RAIL BACK AND KEEPS EVERY RULING HE HAS GIVEN.
+       1  SEE TODAY'S LIST.  Every scheduled patient, in clock order, as a
+          TWO-LINE row: [dot] time · name on the first line, the procedure and
+          a status CHIP on the second. The chips line up in one column down the
+          right edge, so the day's state is one vertical scan. Every row is the
+          same height BY CONSTRUCTION (two rows, every span clipped to one
+          line) — 3.0.0 kept a third, usually-empty "why" line to hold the
+          rows level, which is what made the list look ragged. The reason a
+          status has is still carried, on the row's own title/aria and in full
+          on the note itself; the rail shows the COUNT instead ("3 to fill"),
+          which is the part a scan can use.
 
-       LEFT (the rail, ~288px, its own scroller, always on screen):
-         the day switcher (‹ Mon, Aug 17 2026 › + a native picker + Today),
-         the count, ONE PRIMARY — "✨ Draft all N op notes", which is the
-         shell's OWN #opPrepGenAllBtn moved here rather than a second button —
-         a search box, then one button per scheduled patient carrying a status
-         dot, the time, the name, the procedure in one line and the status in a
-         WORD. The selected one is marked.
+       2  DRAFT ALL THE MISSING NOTES.  One control — the shell's OWN
+          #opPrepGenAllBtn, moved into the rail — labelled with the number it
+          will do. It is the single lit control whenever notes are missing.
 
-       RIGHT (#oprEditor): the selected patient's note, OPEN, with nothing to
-         click first. A plain header (name · procedure · day + the parsed
-         side/level chips), then the room's own card for that row — the same
-         textarea, the same [[key]] Fields box, the same save — and one row of
-         actions under it: the one primary (Draft / Fill / Save / Send), Copy,
-         Formatted view (shut on every open), and, once the note is in the
-         chart, a BIG "Open in History →".
+       3  OPEN ONE PATIENT'S NOTE.  One click on the row. The note is the
+          right-hand pane, expanded, with nothing to click first; the formatted
+          view stays behind a click, on every open, remembering nothing.
 
-       ON OPEN: nothing is selected. "Always start on all scheduled patients"
-         (owner, twice) is the whole day in the rail and a calm "pick a patient
-         on the left, or draft them all" on the right — never a patient chosen
-         for him.
+       4  GET IT INTO THE CHART.  The pane's action bar is ONE primary and one
+          quiet Copy, split away from the three "show me more" disclosures
+          underneath so a doctor never has to read past a triangle to find the
+          thing that files the note. THE PRIMARY IS NEVER A DEAD BUTTON:
+          3.0.0 rendered it DISABLED for a note the day-brain had already found
+          in the chart, and nextglow then lit a control nobody can press. It is
+          HIDDEN when there is nothing honest to do, and the real action for
+          that state — "Open in History" — takes its place.
+
+       5  SWITCH DAY.  ‹ date › + a picker + Today, first thing in the rail, at
+          every width, with the ← → keys from anywhere in the room.
+
+     AND ONE THING 3.0.0 SIMPLY DID NOT HAVE: a way back to the day with a
+     mouse. It advertised "Esc — back to the day" in a line of keyboard prose
+     under the note, which is a tell that a control was missing. #mlsOpnBack
+     replaces that paragraph.
 
      EVERY EARLIER RULING, STILL HELD AND STILL TESTED:
        · "the formatted view should always start hidden"  — fmtSync(), every
@@ -40436,19 +40446,32 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    ====================================================================== */
 #mlsOpnRail{ display:flex; flex-direction:column; min-height:0; flex:1 1 auto; gap:0; }
 #mlsOpDay{ flex:0 0 auto; margin:0 0 8px; }
-#mlsOpDayHead{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:0 0 8px; }
+/* THE DAY IS THE HEADING, AND THE CONTROLS SIT UNDER IT.
+   MEASURED at 288px (the rail's own width) with the 3.0.0 single row: at a 44px
+   touch floor the four controls come to 144px of a 262px content box and the
+   date — the one thing on this surface that says WHICH DAY the doctor is
+   drafting — was left 118px and ellipsised to "Mon, Aug 18, 2…". The date gets
+   its own line instead; the stepper, the picker and Today share the next one,
+   and Today appearing or disappearing no longer moves the arrows. */
+#mlsOpDayHead{
+  display:grid; grid-template-columns:44px 44px 44px minmax(0,1fr);
+  align-items:center; gap:6px; margin:0 0 9px;
+}
+#mlsOpDayTitle{ grid-area:1 / 1 / 2 / 5; min-width:0; font:800 15px/1.35 var(--sans); color:var(--ink); }
 #mlsOpnPrevDay,#mlsOpnNextDay{
-  min-width:40px; min-height:40px; padding:0 10px; cursor:pointer;
+  min-width:44px; min-height:44px; padding:0; cursor:pointer;
   font:800 17px/1 var(--sans); color:var(--ink);
   background:var(--card); border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
+#mlsOpnPrevDay{ grid-area:2 / 1; }
+#mlsOpnNextDay{ grid-area:2 / 2; }
 #mlsOpnPrevDay:hover,#mlsOpnNextDay:hover{ border-color:var(--brand,#2E6A4B); }
-#mlsOpDayTitle{ flex:1 1 auto; min-width:0; font:800 13.5px/1.25 var(--sans); color:var(--ink); }
 /* ONE control, not two: the friendly day name is a label and the native picker
    sits beside it as its calendar button. Hiding the input's own text field
    keeps "Mon, Aug 17 2026" from being printed twice. */
 #mlsOpnDayIn{
-  width:40px; min-height:40px; box-sizing:border-box; cursor:pointer;
+  grid-area:2 / 3;
+  width:44px; min-height:44px; box-sizing:border-box; cursor:pointer;
   padding:0 4px; background:var(--card); color:var(--ink);
   border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
@@ -40456,12 +40479,13 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpnDayIn::-webkit-inner-spin-button{ display:none; }
 #mlsOpnDayIn::-webkit-calendar-picker-indicator{ opacity:.72; cursor:pointer; }
 #mlsOpnToday{
-  min-height:40px; padding:0 13px; cursor:pointer;
+  grid-area:2 / 4; justify-self:end;
+  min-height:44px; padding:0 15px; cursor:pointer;
   font:700 12.5px/1.2 var(--sans); color:var(--ink);
   background:var(--card); border:1px solid var(--line); border-radius:var(--r-pill,999px);
 }
 #mlsOpnToday[hidden]{ display:none; }
-#mlsOpDayCount{ display:block; font:600 12px/1.4 var(--sans); color:var(--muted); margin:0 0 8px; }
+#mlsOpDayCount{ display:block; font:600 12px/1.45 var(--sans); color:var(--muted); margin:0 0 9px; }
 /* THE QUIET NOTICE. Owner: automatic drafting starting is an OUTCOME of this
    room, not an interruption — it belongs on the surface it describes, not in a
    floating toast over the whole app. One line, in the rail, that clears itself
@@ -40471,62 +40495,83 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 /* THE RAIL'S ONE PRIMARY. This is the shell's own #opPrepGenAllBtn, moved. */
 #mlsOpnRailAct{ display:flex; flex-direction:column; gap:7px; margin:0 0 9px; }
 #mlsOpnRailAct:empty{ display:none; }
-/* opnote-day-3.0.1: the rail's Templates hop - quiet, secondary, always there. */
-#mlsOpnRailAct #mlsOpnRailTpl{ min-height:40px; padding:8px 12px; border-radius:10px; border:1px solid var(--line, #D9D6CD); background:var(--card, #fff); color:var(--ink, #1A211C); font:600 12.5px system-ui; cursor:pointer; text-align:center; }
-#mlsOpnRailAct #mlsOpnRailTpl:hover{ filter:brightness(.97); }
+/* the rail's Templates hop — quiet, secondary, always there (opnote-day-3.0.1,
+   owner: "there is no Templates button"). It is never a glow candidate. */
+#mlsOpnRailAct #mlsOpnRailTpl{ min-height:44px; padding:11px 12px; border-radius:var(--r-ctl,10px); border:1px solid var(--line, #D9D6CD); background:var(--card, #fff); color:var(--ink, #1A211C); font:600 12.5px/1.2 var(--sans); cursor:pointer; text-align:center; }
+#mlsOpnRailAct #mlsOpnRailTpl:hover{ border-color:var(--brand,#2E6A4B); }
+/* THE ONE PRIMARY IS THE BIGGEST THING IN THE RAIL. It is the shell's own
+   #opPrepGenAllBtn, moved — not a copy — so it keeps its id, its onclick and
+   the offsetParent msl-autodraft refuses to start without. */
 #mlsOpnRailAct #opPrepGenAllBtn{
-  width:100%; box-sizing:border-box; min-height:44px; text-align:center;
-  font:800 13.5px/1.2 var(--sans) !important; padding:12px 14px !important;
+  width:100%; box-sizing:border-box; min-height:48px; text-align:center;
+  font:800 14px/1.25 var(--sans) !important; padding:13px 14px !important;
   border-radius:var(--r-ctl,12px) !important;
 }
 #mlsOpDayGo{
-  width:100%; box-sizing:border-box; min-height:44px;
-  font:700 13px/1.2 var(--sans); padding:12px 14px;
+  width:100%; box-sizing:border-box; min-height:48px;
+  font:700 13.5px/1.25 var(--sans); padding:13px 14px;
   border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 #mlsOpDayGo[hidden]{ display:none; }
 #mlsOpDayTools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 9px; }
 #mlsOpnSearch{
-  flex:1 1 140px; min-width:0; min-height:40px; box-sizing:border-box;
-  padding:8px 11px; font:500 12.5px/1.3 var(--sans); color:var(--ink);
+  flex:1 1 140px; min-width:0; min-height:44px; box-sizing:border-box;
+  padding:11px 12px; font:500 12.5px/1.3 var(--sans); color:var(--ink);
   background:var(--field-bg,var(--card)); border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
 #mlsOpnSearch[hidden]{ display:none; }
-/* THE PATIENTS. One button each, all the same height by construction — three
-   rows, each one line, each clipped with an ellipsis. A card whose text wraps
-   is what made the previous grid ragged. */
+/* THE PATIENTS — TWO LINES, AND EVERY ROW THE SAME HEIGHT BY CONSTRUCTION.
+
+   Line 1  [dot] 8:00 AM   Ada Sample
+   Line 2        Lumbar medial branch block          [ Drafted ]
+
+   The name owns the whole of line 1, so a long name is never truncated to make
+   room for a chip; the PROCEDURE gives way instead, which is the string the
+   ellipsis costs least. The chip sits at the end of line 2 in every row, so the
+   day's state reads as one vertical column rather than as 28 separate cards.
+
+   WHY THERE ARE TWO ROWS AND NOT THREE. 3.0.0 rendered a third line — the
+   status's reason — on EVERY row, empty on most of them, purely so that the
+   rows stayed level (a test pins the height spread at <= 2px, and one wrapped
+   line is ~16px). That is a whole line of the rail spent on nothing, and it is
+   what made the list look ragged. Here the reason is not a line: the COUNT
+   goes into the chip itself ("3 to fill"), the sentence goes onto the row's own
+   title and accessible name, and the note surface shows it in full. .mlsOpDayWhy
+   is still written — it is the row's data, and two suites read it — and is
+   simply not painted, so the grid is two rows for every row of the day. */
 #mlsOpDayList{ flex:1 1 auto; min-height:0; overflow-y:auto; margin:0 -3px; padding:0 3px 2px; }
 #mlsOpDayGrid{ display:flex; flex-direction:column; gap:5px; }
 .mlsOpDayCard{
-  display:grid; gap:2px; align-content:start; text-align:left; width:100%;
-  grid-template-rows:auto auto auto;
-  padding:8px 10px; border:1px solid var(--line); border-radius:var(--r-ctl,12px);
-  background:var(--card); cursor:pointer; min-height:40px;
+  display:grid; text-align:left; width:100%; box-sizing:border-box;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-content:center; column-gap:10px; row-gap:3px;
+  padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-ctl,12px);
+  background:var(--card); cursor:pointer; min-height:44px;
   font:inherit; color:var(--ink); overflow:hidden;
 }
 .mlsOpDayCard > span{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mlsOpDayCard:hover{ border-color:var(--brand,#2E6A4B); }
 .mlsOpDayCard:focus-visible{ outline:2px solid var(--brand,#2E6A4B); outline-offset:2px; }
-.mlsOpDayTop{ display:flex; align-items:center; gap:6px; }
+.mlsOpDayTop{ grid-row:1; grid-column:1 / -1; display:flex; align-items:center; gap:7px; min-width:0; }
 .mlsOpDayDot{ flex:0 0 auto; width:8px; height:8px; border-radius:999px; background:var(--line); }
-.mlsOpDayTime{ flex:0 0 auto; font:700 11.5px/1.4 var(--sans); color:var(--muted); }
+/* A FIXED COLUMN, not an inline word: the times are the fastest way down the
+   rail and a ragged left edge on the names undoes that. */
+.mlsOpDayTime{ flex:0 0 auto; width:56px; font:700 11.5px/1.45 var(--sans); color:var(--muted); }
 .mlsOpDayName{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  font:750 13px/1.4 var(--sans); }
-.mlsOpDayProc{ font:500 11.5px/1.45 var(--sans); color:var(--muted); }
-.mlsOpDayFoot{ display:flex; align-items:baseline; gap:6px; }
+  font:750 13.5px/1.45 var(--sans); }
+.mlsOpDayProc{ grid-row:2; grid-column:1; align-self:center;
+  font:500 12px/1.45 var(--sans); color:var(--muted); }
 .mlsOpDayChip{
+  grid-row:2; grid-column:2; align-self:center; justify-self:end;
   flex:0 0 auto; white-space:nowrap;
-  padding:1px 8px; border-radius:var(--r-pill,999px);
-  font:700 10.5px/1.5 var(--sans); letter-spacing:.2px;
+  padding:2px 9px; border-radius:var(--r-pill,999px);
+  font:700 10.5px/1.55 var(--sans); letter-spacing:.2px;
   border:1px solid var(--line); background:var(--soft); color:var(--muted);
 }
-/* Always rendered, empty when there is no reason, so every button is the same
-   height whether or not its status has something to explain. */
-.mlsOpDayWhy{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  font:500 10.5px/1.6 var(--sans); color:var(--muted); }
-.mlsOpDayAct{ display:none; }
-/* Six states, and each one is a WORD before it is a colour: the room is read
+/* Written, never painted. See the note above the card rules. */
+.mlsOpDayWhy{ display:none; }
+/* FOUR FAMILIES, and each one is a WORD before it is a colour: the room is read
    on laptop screens in bright rooms and a colour-only signal is not a status.
    The dot is the second, faster read down a 24-patient rail. */
 .mlsOpDayCard[data-mls-cardstate="drafting"] .mlsOpDayChip{ border-color:#c9a227; color:#7a5a16; background:#fff7e6; }
@@ -40541,7 +40586,26 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 .mlsOpDayCard[data-mls-cardstate="saved"]    .mlsOpDayDot{ background:#12744a; }
 .mlsOpDayCard[data-mls-cardstate="review"]   .mlsOpDayDot{ background:#c9930a; }
 .mlsOpDayCard[data-mls-cardstate="failed"]   .mlsOpDayDot{ background:#b4231e; }
-.mlsOpDayCard[aria-current="true"]{ border-color:var(--brand,#2E6A4B); box-shadow:0 0 0 1px var(--brand,#2E6A4B) inset; background:var(--soft); }
+/* THE SELECTED ROW IS A BAR, NOT A RING. MEASURED at 1440x900 in this room: the
+   1px inset ring of 3.0.0 sat directly on top of the 1px border and read, on a
+   laptop panel, as a slightly darker border — the doctor could not tell which
+   patient was open without reading the note beside it. A 3px inset edge on the
+   leading side is legible at a glance and costs no layout. */
+.mlsOpDayCard[aria-current="true"]{
+  border-color:var(--brand,#2E6A4B); background:var(--soft);
+  box-shadow:inset 3px 0 0 0 var(--brand,#2E6A4B);
+}
+/* THE OPEN NOTE'S CHIP IS THE SAME CHIP. #mlsOpnState carries .mlsOpDayChip, so
+   it already had the shape — but 3.0.0's colour table was scoped to
+   .mlsOpDayCard, so the chip on the note surface was permanently grey while the
+   row it came from was green or amber. Same fact, same colour, both places. */
+#mlsOpnState{ flex:0 0 auto; align-self:center; }
+#mlsOpnState[data-mls-cardstate="drafting"]{ border-color:#c9a227; color:#7a5a16; background:#fff7e6; }
+#mlsOpnState[data-mls-cardstate="review"]{ border-color:#f0d79a; color:#7a5a16; background:#fff7e6; }
+#mlsOpnState[data-mls-cardstate="ready"],
+#mlsOpnState[data-mls-cardstate="filed"],
+#mlsOpnState[data-mls-cardstate="saved"]{ border-color:#bfe6cf; color:#12744a; background:#eefaf3; }
+#mlsOpnState[data-mls-cardstate="failed"]{ border-color:#e8b4b1; color:#a51f1a; background:#fdeceb; }
 #mlsOpnEmpty{
   padding:16px 12px; border:1px dashed var(--line); border-radius:var(--r-ctl,10px);
   font:600 12.5px/1.55 var(--sans); color:var(--muted); text-align:center;
@@ -40556,57 +40620,98 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 /* ======================================================================
    3. THE RIGHT PANE
    ====================================================================== */
+/* NOTHING SELECTED. It carries NO control, deliberately: the one thing to press
+   from here is the rail's Draft-all, and a second copy of it would be a second
+   primary — and it carries no COUNT either, because the rail's own count line
+   is three inches to the left and two lists of the same day is the duplication
+   the owner has reported three times. */
 #mlsOpnPick{
-  margin:6px 0 0; padding:34px 22px; text-align:center;
+  margin:6px 0 0; padding:30px 22px; text-align:center;
   border:1px dashed var(--line); border-radius:var(--r-ctl,14px);
 }
-#mlsOpnPickH{ margin:0; font:800 16px/1.3 var(--sans); color:var(--ink); }
-#mlsOpnPickP{ margin:7px 0 0; font:500 13px/1.6 var(--sans); color:var(--muted); }
-#mlsOpnNote{ margin:2px 0 14px; }
-#mlsOpnHead{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:0 0 4px; }
-#mlsOpnName{ margin:0; font:800 18px/1.25 var(--sans); color:var(--ink); }
+#mlsOpnPickH{ margin:0; font:800 17px/1.3 var(--sans); color:var(--ink); }
+#mlsOpnPickP{ margin:8px auto 0; max-width:46ch; font:500 13.5px/1.65 var(--sans); color:var(--muted); }
+
+#mlsOpnNote{ margin:0 0 14px; }
+/* THE WAY BACK, WITH A MOUSE. 3.0.0 had none: it printed "Esc — back to the
+   day" under the note and left it at that, which is a keyboard shortcut
+   standing in for a control. Below the 900px breakpoint the rail is a capped
+   strip ABOVE the note, so a doctor reading a long note has scrolled the whole
+   selector off screen and Escape was the only way out. */
+#mlsOpnCrumb{ display:flex; align-items:center; gap:10px; margin:0 0 10px; }
+#mlsOpnBack{
+  min-height:44px; padding:0 15px 0 11px; cursor:pointer;
+  font:700 12.5px/1.2 var(--sans); color:var(--ink);
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r-pill,999px);
+}
+#mlsOpnBack:hover{ border-color:var(--brand,#2E6A4B); }
 #mlsOpnPos{ font:600 12px/1.3 var(--sans); color:var(--muted); }
-#mlsOpnSub{ margin:3px 0 0; font:500 12.5px/1.45 var(--sans); color:var(--muted); }
-#mlsOpnChips{ display:flex; flex-wrap:wrap; gap:5px; margin:7px 0 0; }
+/* IDENTITY AND STATE ON ONE LINE. 3.0.0 put the status chip in the ACTION row,
+   next to the button that changes it — so the thing that says what IS and the
+   thing that says what to DO wore the same shape, side by side. */
+#mlsOpnHead{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 4px; }
+#mlsOpnName{ margin:0; font:800 20px/1.25 var(--sans); color:var(--ink); }
+#mlsOpnSub{ margin:3px 0 0; font:500 13px/1.5 var(--sans); color:var(--muted); }
+#mlsOpnChips{ display:flex; flex-wrap:wrap; gap:5px; margin:8px 0 0; }
 #mlsOpnChips:empty{ display:none; }
 .mlsOpnChip{
   padding:2px 9px; border-radius:var(--r-pill,999px);
   font:700 11px/1.6 var(--sans); letter-spacing:.2px;
   border:1px solid var(--line); background:var(--soft); color:var(--muted);
 }
-#mlsOpnActs{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin:11px 0 9px; }
+/* TWO ROWS, AND THE SPLIT IS THE POINT. #mlsOpnActs is what gets the note into
+   the chart; #mlsOpnDiscl is what shows you more of it. 3.0.0 mixed them — the
+   primary sat between "⧉ Copy" and "▸ Formatted view" — so the one control
+   that files the note had no more weight than a disclosure triangle. */
+#mlsOpnActs{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin:14px 0 0; padding:0 0 13px; border-bottom:1px solid var(--line);
+}
+/* the row is given its own display, so the attribute's default rule loses */
+#mlsOpnActs[hidden]{ display:none !important; }
 #mlsOpnGo{
-  font:700 13.5px/1.2 var(--sans); min-height:44px; padding:11px 18px;
-  border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
+  font:800 14px/1.25 var(--sans); min-height:48px; padding:13px 20px;
+  border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
+/* A SAFETY NET, NOT A STATE THIS BLOCK USES. paintInner() never disables this
+   button: a primary with nothing honest to do is HIDDEN and its state's real
+   action is shown instead (see notePlan). The rule stays so that a control
+   another module disables still LOOKS inert rather than pressable. */
 #mlsOpnGo[disabled]{ opacity:.5; cursor:default; }
 #mlsOpnGo[hidden]{ display:none; }
 /* BIG, and it says where it goes. Owner, 2026-08-17: after a note is saved,
    "make sure to have an open in history button ... big and flashing". The
    flashing is nextglow-1.0.0's halo — one highlight system, not two — and this
-   is the control it is pointed at in the saved state. */
+   is the control it is pointed at in the saved state. It is also the PRIMARY
+   for a note that is already in the chart, which is the state 3.0.0 answered
+   with a disabled button. */
 #mlsOpnHist{
-  font:800 14px/1.2 var(--sans); min-height:46px; padding:12px 20px;
+  font:800 14px/1.25 var(--sans); min-height:48px; padding:13px 20px;
   border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 #mlsOpnHist[hidden]{ display:none; }
-#mlsOpnCopy,#mlsOpnFmt,#mlsOpnDet,#mlsOpnTplBtn,#mlsOpnTplLib{
-  min-height:40px; padding:9px 13px; cursor:pointer;
-  font:600 12px/1.2 var(--sans); color:var(--muted);
-  background:var(--soft); border:1px solid var(--line); border-radius:var(--r-pill,999px);
+#mlsOpnCopy{
+  min-height:44px; padding:11px 16px; cursor:pointer;
+  font:700 12.5px/1.2 var(--sans); color:var(--ink);
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
-#mlsOpnCopy:hover,#mlsOpnFmt:hover,#mlsOpnDet:hover,#mlsOpnTplBtn:hover,#mlsOpnTplLib:hover{
-  color:var(--ink); border-color:var(--muted);
+#mlsOpnCopy:hover{ border-color:var(--brand,#2E6A4B); }
+#mlsOpnFmt,#mlsOpnDet,#mlsOpnTplBtn,#mlsOpnTplLib{
+  min-height:44px; padding:11px 14px; cursor:pointer;
+  font:600 12px/1.2 var(--sans); color:var(--muted);
+  background:transparent; border:1px solid transparent; border-radius:var(--r-pill,999px);
+}
+#mlsOpnFmt:hover,#mlsOpnDet:hover,#mlsOpnTplBtn:hover,#mlsOpnTplLib:hover{
+  color:var(--ink); border-color:var(--line); background:var(--soft);
 }
 #mlsOpnFmt[aria-expanded="true"],#mlsOpnDet[aria-expanded="true"],#mlsOpnTplBtn[aria-expanded="true"]{
-  color:var(--ink); background:var(--field-bg,var(--card));
+  color:var(--ink); border-color:var(--line); background:var(--soft);
 }
+#mlsOpnTplLib{ color:var(--ink); border-color:var(--line); background:var(--soft); }
 #mlsOpnCopy[hidden],#mlsOpnFmt[hidden]{ display:none; }
-#mlsOpnDiscl{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 4px; }
-#mlsOpnState{ align-self:center; }
-#mlsOpnKeys{ margin:8px 0 0; font:500 11.5px/1.5 var(--sans); color:var(--muted); }
+#mlsOpnDiscl{ display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin:7px 0 6px; }
 
 /* THE DAY-BRAIN'S OWN CONTROL IS A TAP TARGET TOO. MEASURED at 1440x900 in
    this room: #opdbFold ("Show only who needs an op note") renders 154x26 —
@@ -40645,26 +40750,34 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      390x844: the ✕ painted over the next-day arrow — the doctor pressing
      "tomorrow" would have closed the room. Reserve its lane. */
   #mlsOpDayHead{ margin:0 0 5px; padding-right:58px; }
+  #mlsOpDayTitle{ font-size:14px; }
   #mlsOpDayCount{ margin:0 0 5px; }
   #mlsOpnRailAct{ flex-direction:row; align-items:stretch; margin:0 0 6px; }
   #mlsOpnRailAct > *{ flex:1 1 0; min-width:0; }
   #mlsOpDayTools{ margin:0; }
   #mlsOpDayList{ max-height:none !important; overflow:visible !important; }
   #mlsOpDayGrid{
-    display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:6px;
   }
-  #mlsOpnName{ font-size:16px; }
+  /* the note pane is the whole width here, so its header can breathe less */
+  #mlsOpnName{ font-size:17px; }
+  #mlsOpnActs{ margin-top:12px; padding-bottom:11px; }
 }
 @media (max-width:620px){
   #opPrepModal[data-mls-opnotes-state] #oprDayRail{ max-height:34vh !important; }
   #mlsOpDayGrid{ grid-template-columns:minmax(0,1fr); }
   #mlsOpnPick{ padding:22px 14px; }
+  /* ONE ROW, ONE DECISION. At 360 a wrapped action row puts Copy under the
+     primary and reads as two primaries; each control takes the full width and
+     the order on screen is the order of the work. */
+  #mlsOpnActs{ display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+  #mlsOpnActs > button{ width:100%; }
 }
 @media print{ #oprDayRail,#mlsOpnNote,#mlsOpnPick{ display:none; } }
 </style>
 <script>
 (function () {
-  var VERSION = 'opnote-day-3.0.0';
+  var VERSION = 'opnote-day-4.0.0';
   var RAIL = 'mlsOpnRail', BOARD = 'mlsOpDay', LISTH = 'mlsOpDayList', GRID = 'mlsOpDayGrid';
   var NOTE = 'mlsOpnNote', PICK = 'mlsOpnPick';
   var moreOpen = false;          /* the programmatic "give it all back" */
@@ -40912,12 +41025,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var rec = savedRecord(row);
     return (rec && !rec.isDraft) ? rec : null;
   }
+  /* THE CHIP IS A WORD; THE SENTENCE LIVES ELSEWHERE. `label` is what the rail
+     prints — short enough to sit at the end of a 288px row without wrapping,
+     and carrying the NUMBER when there is one, because "3 to fill" is the part
+     of "3 blanks still to fill" a scan down 28 rows can actually use. `full` is
+     the same fact written out for the note surface, where there is room for it.
+     `why` is unchanged and still the whole reason: it goes on the row's title
+     and accessible name, and onto the note's own state chip. */
+  function st3(k, label, full, why) { return { k: k, label: label, full: full, why: S(why) }; }
   function statusOf(row, i) {
     var led = ledgerState(i);
-    if (led === 'run') return { k: 'drafting', label: 'Drafting…', why: '' };
+    if (led === 'run') return st3('drafting', 'Drafting', 'Drafting…', '');
     var t = row && row._opdbTriage;
-    if (t && t.verdict === 'done') return { k: 'saved', label: 'In the chart', why: oneLine(t.why) };
-    if (t && t.verdict === 'held') return { k: 'review', label: 'Not drafted', why: oneLine(t.why) };
+    if (t && t.verdict === 'done') return st3('saved', 'In the chart', 'Already in the chart', oneLine(t.why));
+    if (t && t.verdict === 'held') return st3('review', 'Not drafted', 'Not drafted', oneLine(t.why));
     var err = S(row && (row._genErr || row._lastDraftErr));
     /* THE ROW BEATS A STALE LEDGER ROW. The ledger is per-RUN state and it is
        not cleared between runs, so a row that failed at 09:00 and was drafted
@@ -40927,16 +41048,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
        has been drafted, whatever an older run recorded. */
     if (row && row.gen && S(row.note).trim() && !err) {
       var b = blanksLeft(row);
-      if (b) return { k: 'review', label: 'Needs review', why: b + ' blank' + (b === 1 ? '' : 's') + ' still to fill' };
-      if (filedRecord(row)) return { k: 'filed', label: 'Saved to chart', why: '' };
-      return { k: 'ready', label: 'Drafted', why: '' };
+      /* The word "blank" is the fill module's own, and the `why` is what the
+         doctor reads on the note; the chip carries the count. */
+      if (b) return st3('review', b + ' to fill', 'Needs ' + b + ' more detail' + (b === 1 ? '' : 's'),
+        b + ' blank' + (b === 1 ? '' : 's') + ' still to fill');
+      if (filedRecord(row)) return st3('filed', 'In the chart', 'Saved to the chart', '');
+      return st3('ready', 'Drafted', 'Drafted, not yet in the chart', '');
     }
     if (led === 'fail' || err) {
-      return { k: 'failed', label: 'Could not draft',
-        why: oneLine(err || 'open this one for the reason') };
+      return st3('failed', 'Draft failed', 'Could not draft',
+        oneLine(err || 'open this one for the reason'));
     }
-    if (led === 'skip') return { k: 'review', label: 'Your edits kept', why: 'nothing was overwritten' };
-    return { k: 'queued', label: 'No note yet', why: '' };
+    if (led === 'skip') return st3('review', 'Edits kept', 'Your edits were kept', 'nothing was overwritten');
+    return st3('queued', 'No note yet', 'No note yet', '');
   }
   function tally() {
     var r = rows(), out = { queued: 0, drafting: 0, ready: 0, review: 0, failed: 0, saved: 0, filed: 0, n: r.length }, i;
@@ -41455,26 +41579,37 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       note = document.createElement('section');
       note.id = NOTE;
       note.setAttribute('aria-label', 'This patient’s op note');
+      /* THREE BANDS, TOP TO BOTTOM, AND NOTHING ELSE:
+           crumb   where you are and how to get back
+           head    who this is and what state the note is in
+           acts    the one thing to do, and the copy of it
+           discl   the three "show me more" folds, quiet and last
+         3.0.0 interleaved these — the status chip sat inside the action row and
+         the way back was a sentence about the Escape key at the bottom. */
       note.innerHTML =
+        '<div id="mlsOpnCrumb">' +
+          '<button type="button" id="mlsOpnBack" ' +
+            'title="Back to every patient on this day (or press Esc)">‹ All patients</button>' +
+          '<span id="mlsOpnPos"></span>' +
+        '</div>' +
         '<div id="mlsOpnHead">' +
           '<h4 id="mlsOpnName"></h4>' +
-          '<span id="mlsOpnPos"></span>' +
+          '<span id="mlsOpnState" class="mlsOpDayChip"></span>' +
         '</div>' +
         '<p id="mlsOpnSub"></p>' +
         '<div id="mlsOpnChips"></div>' +
         '<div id="mlsOpnActs">' +
           '<button type="button" id="mlsOpnGo" class="btn-primary"></button>' +
           '<button type="button" id="mlsOpnHist" hidden>📖 Open in History →</button>' +
-          '<button type="button" id="mlsOpnCopy" hidden>⧉ Copy</button>' +
-          '<button type="button" id="mlsOpnFmt" aria-expanded="false" hidden></button>' +
-          '<span id="mlsOpnState" class="mlsOpDayChip"></span>' +
+          '<button type="button" id="mlsOpnCopy" hidden>⧉ Copy the note</button>' +
         '</div>' +
         '<div id="mlsOpnDiscl">' +
+          '<button type="button" id="mlsOpnFmt" aria-expanded="false" hidden></button>' +
           '<button type="button" id="mlsOpnDet" aria-expanded="false"></button>' +
           '<button type="button" id="mlsOpnTplBtn" aria-expanded="false"></button>' +
           '<span class="mlsopn-tplrow"><button type="button" id="mlsOpnTplLib">📄 Open the template library</button></span>' +
-        '</div>' +
-        '<p id="mlsOpnKeys">Esc — back to the day · ← → — previous / next patient</p>';
+        '</div>';
+      note.querySelector('#mlsOpnBack').addEventListener('click', function () { backToList(); }, false);
       note.querySelector('#mlsOpnGo').addEventListener('click', function () { runNotePrimary(); }, false);
       note.querySelector('#mlsOpnHist').addEventListener('click', function () { openInHistory(); }, false);
       note.querySelector('#mlsOpnCopy').addEventListener('click', function () { copyNote(); }, false);
@@ -41516,15 +41651,43 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
   /* THE ONE ACTION ON A NOTE, computed from what that note actually is.
      Every branch clicks the app's own control; none of them re-implements
-     drafting, saving or the Athena review. */
+     drafting, saving or the Athena review.
+
+     THE 4.0.0 CONTRACT, AND IT IS THE WHOLE REASON THIS FUNCTION CHANGED:
+     A PLAN THAT IS RETURNED IS ALWAYS ABLE. 3.0.0 could return
+     `{ label: '✓ Already in the chart', able: false }` — a primary rendered
+     DISABLED — and two things followed from it. The doctor was shown the
+     biggest, greenest control on the surface and could not press it; and
+     glowId() went on naming `mlsOpnGo`, so nextglow-1.0.0 lit a disabled
+     button, which is precisely the invariant its own contract forbids
+     ("the glowing control is DISABLED" is a failure there).
+
+     Where there is nothing honest to press, this returns NULL. paintInner()
+     then HIDES #mlsOpnGo — never disables it — and the state's real action
+     (#mlsOpnHist for a note that is already in the chart) takes the row.
+     `able` stays on the object because the public API reports it, and it is
+     now always true. */
+  function doneVerdict(row) {
+    var t = row && row._opdbTriage;
+    return !!(t && t.verdict === 'done');
+  }
+  /* Is there something in the chart to open? Either this room's own save landed
+     (filedRecord) or the day-brain found an operative note for this procedure
+     already there. openInHistory() handles both: the receipt link when the save
+     was made in this session, the app's own four calls when it was not. */
+  function histWanted(row) {
+    if (!row) return false;
+    return !!(filedRecord(row) || (doneVerdict(row) && S(row.patientId)));
+  }
   function notePlan() {
     var r = rows(), row = r[sel];
     if (!row) return null;
     var s = statusOf(row, sel);
     var card = curCard();
     if (s.k === 'drafting') {
-      return { label: '⏹ Stop drafting', run: function () { var b = el('tpfStop'); if (b) b.click(); },
-        able: !!el('tpfStop') };
+      var stop = el('tpfStop');
+      if (!stop) return null;
+      return { label: '⏹ Stop drafting', run: function () { var b = el('tpfStop'); if (b) b.click(); }, able: true };
     }
     var t = row._opdbTriage;
     if (t && t.verdict === 'held') {
@@ -41537,14 +41700,17 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     if (t && t.verdict === 'done') {
       /* The day-brain found an operative note for this procedure already in
-         the chart. Offering "Save" here would invite a duplicate; saying so is
-         the honest action, and Everything mode still has every manual control. */
-      return { label: '✓ Already in the chart', run: function () {}, able: false };
+         the chart. Offering "Save" here would invite a duplicate — so there is
+         no primary at all, the state chip says "Already in the chart" in full,
+         and #mlsOpnHist is what the doctor presses. Everything mode still has
+         every manual control on the card itself. */
+      return null;
     }
     if (s.k === 'queued' || s.k === 'failed') {
       var gen = cardBtn(card, 'opPrepGenerateOne(');
+      if (!gen) return null;
       return { label: (s.k === 'failed' ? '↻ Try this one again' : '✨ Draft this op note'),
-        run: function () { if (gen) gen.click(); setTimeout(refresh, 400); }, able: !!gen };
+        run: function () { gen.click(); setTimeout(refresh, 400); }, able: true };
     }
     var b2 = blanksLeft(row);
     if (b2) {
@@ -41562,14 +41728,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     var rec = filedRecord(row);
     if (rec) {
+      /* The note is in the chart. Sending it on to Athena is the next step ONLY
+         where the app can actually send: with no push function on the page
+         there is no primary, and Open in History is the honest action. */
+      if (typeof window.pushHistoryNoteToAthena !== 'function') return null;
       return { label: '🚀 Send to Athena',
         run: function () {
           try { if (typeof window.pushHistoryNoteToAthena === 'function') window.pushHistoryNoteToAthena(rec.id); } catch (e) {}
-        }, able: typeof window.pushHistoryNoteToAthena === 'function' };
+        }, able: true };
     }
     var save = cardBtn(card, 'opPrepSave(');
+    if (!save) return null;
     return { label: '💾 Save to ' + (S(row.appt && row.appt.name) || 'the chart') + '’s chart',
-      run: function () { if (save) save.click(); setTimeout(refresh, 350); }, able: !!save };
+      run: function () { save.click(); setTimeout(refresh, 350); }, able: true };
   }
   function runNotePrimary() {
     var plan = notePlan();
@@ -41631,7 +41802,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
        a patient is selected, blanks left    'fields' — the FIELDS BOX's own
                                              first control that still has no
                                              value, never the box's border
-       a patient is selected, anything else  #mlsOpnGo     (Draft / Save)
+       a patient is selected, anything else  #mlsOpnGo     (Draft / Save), and
+                                             ONLY while that button is on screen
+                                             and enabled — otherwise nothing,
+                                             which hands nextglow its own
+                                             fallback rather than a dead control
        nothing selected, a run is on         #tpfStop
        nothing selected, N still to draft    #opPrepGenAllBtn  ("Draft all N")
        nothing selected, nothing to draft    #mlsOpDayGo   (Review / Save all)
@@ -41681,9 +41856,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       if (!row) return '';
       if (statusOf(row, i).k === 'drafting') return el('tpfStop') ? 'tpfStop' : '';
       var h = el('mlsOpnHist');
-      if (h && !h.hidden && filedRecord(row)) return 'mlsOpnHist';
+      if (h && !h.hidden) return 'mlsOpnHist';
       if (blanksLeft(row) > 0 && fieldsNext()) return 'fields';
-      return 'mlsOpnGo';
+      /* 4.0.0: NAME IT ONLY IF IT CAN BE PRESSED. 3.0.0 returned this id
+         unconditionally, and for a note the day-brain had already found in the
+         chart the button it named was rendered disabled — so nextglow lit a
+         control nobody can press, which its own contract calls a failure.
+         notePlan() now returns null in that state and the button is hidden;
+         reading the live element rather than predicting it is what makes the
+         two agree. Returning '' hands nextglow its own (already-tested)
+         fallback row rather than a lie. */
+      var g = el('mlsOpnGo');
+      if (g && !g.hidden && !g.disabled) return 'mlsOpnGo';
+      return '';
     }
     if (t.drafting) return el('tpfStop') ? 'tpfStop' : '';
     if (t.queued + t.failed > 0) return 'opPrepGenAllBtn';
@@ -41826,7 +42011,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     for (i = 0; i < r.length; i++) if (matches(r[i], query)) shownIdx.push(i);
 
     var plan = (st === 'note') ? notePlan() : null;
-    var filed = (st === 'note') ? filedRecord(r[sel < 0 ? 0 : sel]) : null;
+    /* "Is there something in the chart to open?" — this room's own save, or an
+       operative note the day-brain found there already. 3.0.0 asked only the
+       first, so the state it then answered with a DISABLED primary had no live
+       control on it at all. */
+    var filed = (st === 'note') ? histWanted(r[sel < 0 ? 0 : sel]) : false;
     var fw = (st === 'note') ? fmtWrap() : null;
     var fmtOpen = !!(fw && fw.getAttribute('data-mls-fmt') === 'open');
 
@@ -41848,12 +42037,18 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     if (dayIn && dayIn.value !== day) dayIn.value = day;
     if (todayBtn) todayBtn.hidden = (day === todayKey());
     if (count) {
+      /* THE ACTIONABLE NUMBER GOES FIRST. 3.0.0 led with "28 scheduled", which
+         is the one number in this line the doctor already knows — he can see
+         the rows. What he cannot see without counting is how many still need a
+         note, and that is the number the primary underneath is about. */
       var bits = [];
-      bits.push(r.length + ' scheduled');
+      bits.push(r.length + ' patient' + (r.length === 1 ? '' : 's'));
+      var need0 = t.queued + t.failed;
+      if (need0) bits.push(need0 + ' need a note');
       if (query) bits.push(shownIdx.length + ' shown');
-      if (t.ready + t.filed) bits.push((t.ready + t.filed) + ' drafted');
-      if (t.review) bits.push(t.review + ' to review');
-      if (t.failed) bits.push(t.failed + ' could not draft');
+      if (t.ready) bits.push(t.ready + ' drafted');
+      if (t.filed + t.saved) bits.push((t.filed + t.saved) + ' in the chart');
+      if (t.review) bits.push(t.review + ' to finish');
       count.textContent = r.length ? bits.join(' · ') : '';
     }
     var search = el('mlsOpnSearch');
@@ -41908,12 +42103,18 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       for (var j = 0; j < shownIdx.length; j++) {
         i = shownIdx[j];
         var sx = statusOf(r[i], i);
+        /* TWO PAINTED SPANS PER ROW PLUS THE CHIP. 3.0.0 wrapped the chip and
+           the reason in a .mlsOpDayFoot and carried a fourth, permanently
+           display:none .mlsOpDayAct ("Open note ›") that no doctor has ever
+           seen — rebuilt on every repaint of a 28-row day. Both are gone: the
+           chip is a direct grid child, and .mlsOpDayWhy stays only because it
+           is the row's data (two suites read it) and is not painted. */
         html += '<button type="button" class="mlsOpDayCard" id="mlsOpnRow' + i + '" data-mls-card-i="' + i + '"' +
           ' data-mls-cardstate="' + sx.k + '"' + (i === sel ? ' aria-current="true"' : '') + '>' +
           '<span class="mlsOpDayTop"><span class="mlsOpDayDot"></span><span class="mlsOpDayTime"></span><span class="mlsOpDayName"></span></span>' +
           '<span class="mlsOpDayProc"></span>' +
-          '<span class="mlsOpDayFoot"><span class="mlsOpDayChip"></span><span class="mlsOpDayWhy"></span></span>' +
-          '<span class="mlsOpDayAct"></span>' +
+          '<span class="mlsOpDayChip"></span>' +
+          '<span class="mlsOpDayWhy"></span>' +
           '</button>';
       }
       if (grid.__sig !== sig) {
@@ -41931,9 +42132,21 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
           card.querySelector('.mlsOpDayChip').textContent = sy.label;
           card.querySelector('.mlsOpDayWhy').textContent = sy.why;
           var hasNote = !!(rw && rw.gen && S(rw.note).trim());
-          card.querySelector('.mlsOpDayAct').textContent = (hasNote ? 'Open note' : 'Draft op note') + ' ›';
-          card.setAttribute('aria-label',
-            S(rw && rw.appt && rw.appt.name) + ' — ' + sy.label + ' — ' +
+          /* THE REASON IS NOT LOST, IT IS MOVED. The rail prints the chip; the
+             sentence behind it goes here, where a hover and a screen reader
+             both reach it, and onto the note surface in full.
+
+             data-tip, NOT title, AND THE REASON IS MEASURED. initTooltips()
+             runs a MutationObserver over document.body with
+             attributeFilter:['title'] whose whole job is to convert every
+             title it sees into data-tip — so writing `title` on 28 rows costs
+             28 attribute records, 28 removals and 28 data-tip writes on EVERY
+             repaint of the list, to arrive at the attribute written here for
+             free. The app's own tooltip reads data-tip first (see find()), so
+             the doctor sees the same bubble either way. */
+          var said = S(rw && rw.appt && rw.appt.name) + ' — ' + sy.full + (sy.why ? (' — ' + sy.why) : '');
+          card.setAttribute('data-tip', said);
+          card.setAttribute('aria-label', said + ' — ' +
             (hasNote ? 'open this note' : 'draft this op note'));
         }
       }
@@ -41970,8 +42183,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         pickH.textContent = 'Pick a patient on the left';
         var need2 = t.queued + t.failed;
         pickP.textContent = need2
-          ? ('… or press “Draft all ' + need2 + ' op note' + (need2 === 1 ? '' : 's') + '” to do the whole day at once.')
-          : 'Every patient on this day is on the left. Choose one to read or edit its note.';
+          ? ('Their note opens here, ready to read and edit. Or press “Draft all ' + need2 +
+             ' op note' + (need2 === 1 ? '' : 's') + '” to do the whole day in one go.')
+          : 'Their note opens here, ready to read and edit. Every patient scheduled on this day is already listed.';
       }
     }
 
@@ -41991,16 +42205,34 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         subEl.textContent = parts.join(' · ');
       }
       if (posEl) posEl.textContent = (r.length > 1 && sel >= 0) ? ('Patient ' + (sel + 1) + ' of ' + r.length) : '';
-      if (stEl) stEl.textContent = s.label + (s.why ? (' — ' + s.why) : '');
+      /* THE FULL SENTENCE LIVES HERE. The rail's chip is the short form; this
+         is the surface with room for the whole fact and the reason behind it,
+         and it wears the same colour as the row it came from. */
+      if (stEl) {
+        stEl.textContent = s.full + (s.why ? (' — ' + s.why) : '');
+        if (stEl.getAttribute('data-mls-cardstate') !== s.k) stEl.setAttribute('data-mls-cardstate', s.k);
+      }
       if (goEl) {
         goEl.textContent = plan ? plan.label : '';
-        goEl.disabled = !(plan && plan.able);
+        /* NEVER DISABLED. notePlan() returns null where there is nothing
+           honest to press, and a hidden control is honest where a greyed-out
+           one is an invitation the app then refuses. The one write here undoes
+           a `disabled` another module may have set. */
+        if (goEl.disabled) goEl.disabled = false;
         goEl.hidden = !plan;
       }
-      /* THE BIG ONE, and only once it is TRUE: a note that is finalized in the
-         chart is the only thing there is to open in History. */
+      /* THE BIG ONE. It is the way into a note that is already in the chart —
+         whether this room put it there or the day-brain found it — and in the
+         second case it is also the surface's PRIMARY, because there is nothing
+         else to press. */
       if (histEl) histEl.hidden = !filed;
       if (copyEl) copyEl.hidden = !noteBox();
+      /* An action row with every child hidden is a bordered empty strip. */
+      var actsEl = el('mlsOpnActs');
+      if (actsEl) {
+        var anyAct = !!plan || !!(histEl && !histEl.hidden) || !!(copyEl && !copyEl.hidden);
+        if (actsEl.hidden === anyAct) actsEl.hidden = !anyAct;
+      }
       if (fmtEl) {
         fmtEl.hidden = !fw;
         fmtEl.textContent = (fmtOpen ? '▾' : '▸') + ' Formatted view';
@@ -42204,6 +42436,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         railed: !!(gen && act && gen.parentNode === act),
         primary: dayState(), next: S(modal && modal.getAttribute('data-mls-opnotes-next')),
         glow: glowId(), selected: sel, tally: tally(),
+        /* THE INVARIANT 4.0.0 EXISTS FOR, as a number rather than a claim: a
+           primary that is on screen and cannot be pressed. Always 0 — see
+           notePlan(). It is read by the room's own suite, and by anyone who
+           wants to know whether the glow can be pointed at a dead control. */
+        deadPrimary: (function () { var g = el('mlsOpnGo'); return (g && !g.hidden && g.disabled) ? 1 : 0; })(),
+        histShown: (function () { var h = el('mlsOpnHist'); return !!(h && !h.hidden); })(),
         formatted: (function () {
           var out = { total: 0, shut: 0, open: 0, unmarked: 0 };
           if (!modal) return out;
@@ -42279,7 +42517,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   });
 })();
 </script>
-<!-- ===== end opnote-day-3.0.0 ========================================= -->
+<!-- ===== end opnote-day-4.0.0 ========================================= -->
 <!-- ===== dock-1p-1.1.0 — the taskbar stops covering the work ==========
      Owner: "that task bar getting in the way of everything. It needs to be
      better and smarter made."
