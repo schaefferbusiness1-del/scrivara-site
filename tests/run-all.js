@@ -68,6 +68,7 @@ const tests = [
      causal control so a green result cannot come from a block that does
      nothing. */
   '1p-profile-coherence.test.js',
+  '1p-histview-contract.test.js',
   /* Op Notes rebuilt around ONE mental model (owner 2026-08-17: "more simple
      and intuitive... ALWAYS start on all scheduled patients", then "I HATE
      THAT GREEN BAR and I hate how it doesn't come expanded"): the room lands
