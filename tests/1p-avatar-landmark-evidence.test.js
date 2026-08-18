@@ -158,8 +158,13 @@ ok(/host\.innerHTML = '';[\s\S]{0,900}?safe\(function \(\) \{ faceLandmarkReady\
 /* THE GATE IS UNTOUCHED — the whole point of the lane. */
 ok(avatarSrc.indexOf("examined >= 10 && claimed >= 6 && hasIdentityPalette") >= 0,
   'the avatar match gate was edited; it must stay examined>=10 && claimed>=6 && skin && hair');
-ok(/lm\.claimed\.forEach\(function \(knob\) \{[\s\S]{0,400}?faceVisionClaimGate\(knob, v\)/.test(avatarSrc),
+ok(/lm\.claimed\.forEach\(function \(knob\) \{[\s\S]{0,500}?faceVisionClaimGate\(knob, v\)/.test(avatarSrc),
   'landmark claims must still pass faceVisionClaimGate value by value');
+/* faceCombineEvidence builds a FRESH receipt, so the landmark provenance has to
+   be carried across it on purpose or lastMatchReceipt cannot say which reader
+   moved a trait. */
+ok(/combinedEvidence: true,[\s\S]{0,700}?landmarkClaimed: Array\.isArray\(pxReceipt\.landmarkClaimed\)/.test(avatarSrc),
+  'the landmark provenance is dropped by faceCombineEvidence');
 
 console.log(`PART 1 ok — ${passed} assertions on the bundle, the digests and the CSP`);
 
@@ -374,6 +379,23 @@ async function bootModule(page, port, opts) {
     ok(glassRows.length >= 2 && glassRows.every((x) => x.r.look.glasses === true),
       'a sitter wearing glasses was not detected as wearing them, so the absence claim carries no information');
     console.log(`  ${absences} absences claimed with evidence; both glasses sitters detected`);
+
+    /* ---- THE RECEIPT IS PHI-FREE, STRUCTURALLY -------------------------- */
+    /* Not "we were careful" — executed. A receipt may carry counts, knob names
+       and scalar measurements. A data URL, a base64 blob or a landmark
+       coordinate array would show up here as a long string or a nested array. */
+    for (const r of faces) {
+      for (const [key, value] of Object.entries(r.notes || {})) {
+        ok(value === null || typeof value === 'number' || typeof value === 'boolean',
+          `receipt note ${key} is a ${typeof value}; only scalars may ride in a receipt`);
+      }
+      for (const knob of r.landmarkClaimed) {
+        ok(typeof knob === 'string' && knob.length < 20 && /^[a-zA-Z]+$/.test(knob),
+          `receipt claim "${String(knob).slice(0, 40)}" is not a bare knob name`);
+      }
+      ok(!JSON.stringify(r.notes || {}).includes('data:'), 'a receipt note carried a data URL');
+    }
+    console.log('  receipts carry only counts, knob names and scalar measurements');
 
     /* ---- THE NEGATIVE CONTROLS ------------------------------------------ */
     const blank = rows.filter((x) => x.name === 'blank')[0].r;

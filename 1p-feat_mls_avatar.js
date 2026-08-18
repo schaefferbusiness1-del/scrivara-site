@@ -1948,7 +1948,15 @@
       fromIllustration: fromIllustration,
       srcKind: fromIllustration ? 'illustration' : (provedPhoto ? 'photo' : 'unknown'),
       adaptiveSegmentation: pxReceipt.adaptiveSegmentation === true,
-      combinedEvidence: true
+      combinedEvidence: true,
+      /* avml-1.0.0 — THE PROVENANCE SURVIVES THE COMBINE. This function builds a
+         FRESH receipt object, so anything the landmark merge recorded upstream
+         was being dropped exactly here and `lastMatchReceipt` could not say
+         which reader moved a trait. Counts and knob NAMES only: no image, no
+         landmark coordinate, no pixel ever rides in a receipt. */
+      landmarkClaimed: Array.isArray(pxReceipt.landmarkClaimed) ? pxReceipt.landmarkClaimed.slice() : [],
+      landmarkDisplaced: Array.isArray(pxReceipt.landmarkDisplaced) ? pxReceipt.landmarkDisplaced.slice() : [],
+      landmarkScore: Number(pxReceipt.landmarkScore) || 0
     };
     return {
       look: derived.length ? look : null,
