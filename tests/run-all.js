@@ -78,7 +78,12 @@ const tests = [
      work, an empty day drives the app's OWN pull, and the Templates duplicate
      says where it goes. Carries its own causal control against the pre-fix
      commit 1e0151a4. */
-  '1p-opnote-list-first-runtime.test.js',
+  /* RENAMED 2026-08-18 (op-notes lane): was 1p-opnote-list-first-runtime.
+     "List first" was opnote-day-2.0.0's shape — a list OR one patient, never
+     both — and the owner rejected it. The suite now proves opnote-day-3.0.0:
+     the LEFT RAIL of per-patient buttons he asked to have back, beside the
+     selected patient's note. */
+  '1p-opnote-rail-runtime.test.js',
   /* The 2026-08-17/18 clunky audit's 148 confirmed defects, as properties:
      the mode/date chips reachable rather than under the header bar, one
      state-driven primary control per Staff Prep job state, the calendar's

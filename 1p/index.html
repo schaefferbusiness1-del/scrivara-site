@@ -38358,9 +38358,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
          doctor who opened it stays opened across the module's re-renders. */
       target.setAttribute('data-msl-fold', 'closed');
     }
-    /* Keep the button's ARIA honest if something else moved the region. */
-    btn.setAttribute('aria-expanded', target.getAttribute('data-msl-fold') === 'closed' ? 'false' : 'true');
+    /* Keep the button's ARIA honest if something else moved the region.
+       IDEMPOTENT (2026-08-18, op-notes lane): this used to write the attribute
+       on EVERY refresh whether or not it had changed. Measured inside
+       #opPrepModal with the room open: 30 aria-expanded mutations in 10 s from
+       three disclosures that nobody touched. A write that changes nothing must
+       cost nothing — every observer in this app pays for it. */
+    setAttr(btn, 'aria-expanded', target.getAttribute('data-msl-fold') === 'closed' ? 'false' : 'true');
     if (!target.hasAttribute('data-msl-fold')) target.setAttribute('data-msl-fold', 'closed');
+  }
+  function setAttr(node, name, value) {
+    if (!node || !node.getAttribute) return false;
+    if (node.getAttribute(name) === value) return false;
+    node.setAttribute(name, value);
+    return true;
   }
 
   /* Card accordion. Keeps the doctor's chosen card open across the constant
@@ -38384,8 +38395,29 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       return;
     }
     if (openCard >= list.length) openCard = 0;
+    /* THE OP-NOTE ROOM OWNS THE SELECTION WHEN IT IS OPEN (2026-08-18,
+       op-notes lane). openCard is only ever moved by a click ON a card, and
+       opnote-day-3.0.0 selects a patient from a RAIL BUTTON — so this kept
+       card 0 open while the room showed card 7, marked card 7 `shut`, and the
+       rule below then hid every child of the card the doctor was reading. The
+       room re-marked it `open` on its own pass and this re-marked it `shut` on
+       the next: two writers, one attribute, oscillating about once a second.
+       MEASURED effect: the note's contents blinked, and the guided glow
+       swapped between the Fields box and the pane's action at the same rate.
+       Asking the room which card it is showing makes it ONE writer with one
+       answer; when the room is not open the index is this block's own, exactly
+       as before. */
+    var want = openCard;
+    try {
+      var sel = (window.__mlsOpDay && typeof window.__mlsOpDay.selected === 'function')
+        ? window.__mlsOpDay.selected() : -1;
+      if (sel >= 0 && sel < list.length) want = sel;
+    } catch (e) {}
+    /* IDEMPOTENT: writing the same value back on every refresh cost 17
+       mutations a pass on a 17-patient day, into observers that then repainted
+       the room. A pass that changes nothing must change nothing. */
     for (var j = 0; j < list.length; j++) {
-      list[j].setAttribute('data-msl-card', j === openCard ? 'open' : 'shut');
+      setAttr(list[j], 'data-msl-card', j === want ? 'open' : 'shut');
     }
   }
   function onCardClick(ev) {
@@ -40105,161 +40137,187 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 })();
 </script>
 <!-- ===== end opnote-vocab-1.0.0 ======================================= -->
-<!-- ===== opnote-day-2.0.0 — the day is a LIST; one patient at a time =====
-     Owner, 2026-08-17, last message of the night: "man tbh I don't even like
-     the new op notes layout — try again and make it even better, more simple
-     and intuitive. Also ALWAYS start on all scheduled patients." Earlier the
-     same night: "it should be WAY easier to switch days", "the formatted view
-     should always start hidden and only expand if you click it", and, of the
-     PROCEDURE card, "I should have to click this to open it up, it's so
-     annoying."
+<!-- ===== opnote-day-3.0.0 — the day is a RAIL, the note is the room =====
+     Owner, 2026-08-18, after opnote-day-2.0.0 shipped: "I hate the new OP
+     NOTES EVEN MORE. FIX. That LEFT SIDE SELECTOR THING was great — add it
+     back. Add the left side thing back and do a NEW UI for main op notes and
+     MAKE SURE IT WORKS."
 
-     WHAT 1.0.0 ACTUALLY MEASURED AS (real Chrome, 14 synthetic patients,
-     1366x900, this worktree at claude/fable-lanes-20260817):
+     WHAT HE MEANS BY "THE LEFT SIDE SELECTOR THING", read off the code rather
+     than guessed: production's room is #oprPanelProcs, a two-column grid of
+     <aside id="oprDayRail"> and <main id="oprEditor">, and the aside carries
+     <nav id="oprRowNav"> — ONE BUTTON PER PATIENT for the day, filled by
+     feat_mls_opnote_room.js. The day on screen as a list of buttons in a
+     sidebar, with the patient you picked open beside it.
 
-       mode         controls that are not a patient row   editors on screen
-       Simple                   10                               1
-       Normal                   14                              14
-       Everything               79                              14
+     opnote-day-1.0.0 FOLDED that rail. 2.0.0 then replaced the whole room with
+     a single column that is a list OR one patient, never both — so choosing
+     the next patient meant leaving the one you were on. That is the thing he
+     hates: 2.0.0 took the selector away twice over.
 
-     Fourteen full note editors stacked on one screen in Normal - each with its
-     own procedure input, template dropdown, Match-template button and Draft
-     button - is the "way too busy" the owner keeps reporting. 1.0.0 added a
-     board of cards ABOVE that stack rather than replacing it, so the room was
-     a list AND fourteen editors at once.
+     3.0.0 PUTS THE RAIL BACK AND KEEPS EVERY RULING HE HAS GIVEN.
 
-     AND THEN, 02:30Z, LOOKING AT IT: "I don't hate this UI but it needs some
-     work, and man I HATE THAT GREEN BAR and I hate how it doesn't come
-     expanded." Two rulings, both applied here: the all-patients CARD GRID
-     stays (calmer, not replaced), and the 100%-wide dark-green PROCEDURE hero
-     is RETIRED rather than folded - collapsing it was the wrong answer,
-     because it put the note itself one click further away.
+       LEFT (the rail, ~288px, its own scroller, always on screen):
+         the day switcher (‹ Mon, Aug 17 2026 › + a native picker + Today),
+         the count, ONE PRIMARY — "✨ Draft all N op notes", which is the
+         shell's OWN #opPrepGenAllBtn moved here rather than a second button —
+         a search box, then one button per scheduled patient carrying a status
+         dot, the time, the name, the procedure in one line and the status in a
+         WORD. The selected one is marked.
 
-     THE ONE MENTAL MODEL THIS BLOCK BUILDS.
+       RIGHT (#oprEditor): the selected patient's note, OPEN, with nothing to
+         click first. A plain header (name · procedure · day + the parsed
+         side/level chips), then the room's own card for that row — the same
+         textarea, the same [[key]] Fields box, the same save — and one row of
+         actions under it: the one primary (Draft / Fill / Save / Send), Copy,
+         Formatted view (shut on every open), and, once the note is in the
+         chart, a BIG "Open in History →".
 
-       Op Notes opens on TODAY'S SCHEDULED PATIENTS. Every appointment of the
-       day, one card each, all the same height: time and name, the procedure in
-       one line, one line of reason, one status pill and one action - "Draft op
-       note", or "Open note" once one exists. Above them: a day switcher, the
-       count strip, and a search box. Nothing else.
+       ON OPEN: nothing is selected. "Always start on all scheduled patients"
+         (owner, twice) is the whole day in the rail and a calm "pick a patient
+         on the left, or draft them all" on the right — never a patient chosen
+         for him.
 
-       Clicking a card opens THAT patient's note surface EXPANDED: a small
-       plain header (patient, time, procedure, the parsed side/level chips),
-       then the note itself with its blanks, and one action - "Generate" ->
-       "Fill fields" -> "Save to chart" -> "Send to Athena". Nothing has to be
-       clicked open to read the note. What IS behind one line is the raw
-       appointment metadata (the procedure text field) and the template
-       picker; the formatted view starts shut on every open. Esc goes back to
-       the list; the arrow keys move between patients, or between days.
+     EVERY EARLIER RULING, STILL HELD AND STILL TESTED:
+       · "the formatted view should always start hidden"  — fmtSync(), every
+         open, nothing remembered, and the module's own button owns the state.
+       · "I HATE THAT GREEN BAR"                          — _opPreviewHtml()'s
+         100%-wide dark-green hero is retired from the note surface; what it
+         carried is plain chips on the header.
+       · "I hate how it doesn't come expanded"            — the note is the
+         first thing on the right, expanded, and msl-1.0.0's own `shut` marker
+         is answered in its own vocabulary (mslAgree) so it cannot collapse it.
+       · "it should be way easier to switch days"         — ‹ › + picker +
+         Today, and the ← → keys, from anywhere in the room.
+       · "get rid of the duplicate confusing UI in templates" — the room never
+         renders a template library: #oprTplRail is folded, and there is ONE
+         hop (openTemplates / the room's own Templates tab).
+       · "it always highlights the wrong box"             — this block does not
+         highlight anything. It publishes glow() — the id of the one control
+         that is the honest next step for the surface that is actually up — and
+         nextglow-1.0.0's `opnotes` row reads it. One highlight system, one
+         answer, and refresh() pokes nextglow after every state change.
 
-     WHY THIS IS A RE-SKIN AND NOT A REWRITE. The note surface does not build
-     an editor: it SHOWS the room's own card for the selected row, the one
-     opPrepRender() has always built, with the same textarea, the same
-     [[key]] fill box, the same template select, the same
-     opPrepGenerateOne / opPrepSave calls, the same identity binding
-     (_opVisitStamp), the same day-brain triage and the same integrity guards.
-     Every generator call is the app's own; this block clicks the app's own
-     controls and never re-implements one. 102 structural grips live in these
-     two subtrees, so nothing is moved and nothing is deleted - the surfaces
-     that are superseded are folded, and Everything mode gives them all back.
+     WHY THIS IS A RE-SKIN AND NOT A REWRITE. The right pane does not build an
+     editor: it SHOWS the room's own card for the selected row, the one
+     opPrepRender() has always built, and the row cards stay exactly where they
+     are — DIRECT CHILDREN of #opPrepList. That is load-bearing and it was
+     MEASURED before choosing: feat_mls_opnote_daybrain.js finds a row's card
+     with `node.parentElement.id === 'opPrepList'` (its rowCard()), and
+     feat_mls_opnote_room.js's own solo rule is `#opPrepList.opr-solo > div`.
+     Mounting the card into the right pane would have broken both. So the cards
+     are never moved: the room's own .opr-cur marker selects one, and CSS shows
+     that one. Every generator call, every save, every Athena hop is the app's
+     own control, clicked.
 
-     WHAT IS DELIBERATELY NOT FOLDED, and why it is load-bearing:
-       #opPrepGenAllBtn  msl-autodraft-1.0.0 refuses to start when its
-                         offsetParent is null, so folding it would silently
-                         turn "always start on all scheduled patients" off. It
-                         is relabelled in place and stays visible for exactly
-                         as long as the day still has something to draft.
-       #tpfStop          the Stop button of an automatic run; its whole
-                         panel appears while a run is on and only then.
-       .modal-x          the way out of a full-screen room.
-
-     WHAT THIS BLOCK NEVER DOES. It does not decide who gets drafted: the set
-     is feat_mls_opnote_daybrain.js's triage, unchanged, and a row it holds is
-     shown as held WITH the day-brain's own sentence. It never drafts, saves,
-     or writes to Athena by itself - every one of those is the app's own
-     control, clicked. It never touches the row/patient/day binding. -->
+     WHAT MOVES, AND IT IS EXACTLY ONE NODE: #opPrepGenAllBtn. It is the
+     shell's own button, and msl-autodraft-1.0.0 refuses to start when its
+     offsetParent is null — so a copy in the rail plus the original in the
+     editor would be two Draft-all buttons, and folding the original would turn
+     automatic drafting off silently. It is re-parented into the rail with its
+     id, its onclick and its offsetParent intact, and put back by revert(). -->
 <style id="mlsOpDayCss">
 /* ======================================================================
-   1. THE ROOM IS ONE SURFACE AT A TIME
+   1. THE ROOM IS A RAIL AND A PANE — ALWAYS BOTH
 
-   One attribute on the modal drives everything: data-mls-opnotes-state is
-   "list", "note", "empty" or "templates". Written as !important because
-   feat_mls_opnote_room.js injects its own !important skin over this room, and
-   as `display:none` on the container rather than `display:revert` on the
-   child, because several of these nodes are given an inline display by their
-   own modules and revert cannot restore that.
+   One attribute on the modal drives the right-hand pane:
+   data-mls-opnotes-state is "list" (nothing selected), "note", "empty" (the
+   day has no patients) or "templates". The RAIL is not a state: it is on
+   screen in every one of them except "templates".
+
+   Written !important because feat_mls_opnote_room.js injects its own
+   !important skin over this room, and as display:none on the container rather
+   than display:revert on the child, because several of these nodes are given
+   an inline display by their own modules and revert cannot restore that.
    ====================================================================== */
 
-/* The room's own top bar is superseded: its <h3> repeated the day the switcher
-   now owns, its "< Back" was a second copy of the modal's X, and its two tabs
-   are reached from the note surface. It comes back for the Templates panel,
-   which is the room's own way home from the library. */
+/* The room's own top bar is superseded: its <h3> repeated the day the rail now
+   owns, its "< Back" was a second copy of the modal's X, and its two tabs are
+   reached from the note surface. It comes back for the Templates panel, which
+   is the room's own way home from the library. */
 #opPrepModal[data-mls-opnotes-state]:not([data-mls-opnotes-state="templates"]) .opr-top{ display:none !important; }
 
-/* The per-patient rail is the list's job now, at every level. */
+/* THE TWO-PANE GEOMETRY IS RE-ASSERTED, because two shipped rules take it
+   away. msl-fit-1.0.0 collapses #oprPanelProcs to ONE column below 1100px in
+   calm and guided (it was folding the rail, so a single column was right for
+   it), and opnote-day-1.0.0/2.0.0 collapsed it whenever the rail was folded.
+   Neither is true any more: the rail IS the selector, so it keeps its column
+   down to the shell's own 900px breakpoint, where the room legitimately
+   becomes one column and the rail becomes the top strip. */
+#opPrepModal[data-mls-opnotes-state] #oprPanelProcs{
+  grid-template-columns:288px minmax(0,1fr) !important;
+}
+@media (max-width:900px){
+  #opPrepModal[data-mls-opnotes-state] #oprPanelProcs{
+    grid-template-columns:minmax(0,1fr) !important;
+    grid-template-rows:auto minmax(0,1fr) !important;
+  }
+}
+#opPrepModal[data-mls-opnotes-state] #oprDayRail{
+  display:flex !important; flex-direction:column; min-height:0; padding:12px 13px 10px;
+}
+#opPrepModal[data-mls-opnotes-state="templates"] #oprDayRail{ display:none !important; }
+
+/* The room's OWN per-patient nav, pager and receipts are the rail's job now,
+   at every level: two lists of the same day is the duplication the owner has
+   reported three times. #opPrepEmpty is the editor's own "no patients" line,
+   which the rail's own empty state replaces. */
 #opPrepModal[data-mls-opnotes-state] #oprRowNav,
 #opPrepModal[data-mls-opnotes-state] #oprPager,
 #opPrepModal[data-mls-opnotes-state] #oprReceipt,
 #opPrepModal[data-mls-opnotes-state] #opPrepEmpty{ display:none !important; }
 
-/* THE FOLD. The secondary rail (mode switch, day picker, month tools,
-   template rail, drafting-style picker) and the bulk Fields bar are folded in
-   Simple and Normal and given back whole in Everything - or by the one
-   programmatic disclosure, data-mlsopn-more. */
+/* THE FOLD. What folds now is the rail's LEGACY CONTENT — the standing prose,
+   the mode switch, the old day row, the template rail — never the rail itself.
+   Given back whole in Everything, or by the one programmatic disclosure,
+   data-mlsopn-more. */
 #opPrepModal[data-mlsopn="simple"]:not([data-mlsopn-more="open"]) .mlsopn-adv-simple,
 #opPrepModal[data-mlsopn="normal"]:not([data-mlsopn-more="open"]) .mlsopn-adv-normal{
   display:none !important;
 }
-/* #oprPanelProcs is `grid-template-columns:290px minmax(0,1fr)`. Folding the
-   rail without this leaves a 290px empty column and the list still squeezed
-   into the right-hand track - the fold would have cost width instead of
-   giving it back. */
-#opPrepModal[data-mlsopn-rail="folded"] #oprPanelProcs{
-  grid-template-columns:minmax(0,1fr) !important;
-}
+
+/* The Draft-all row in the editor is EMPTY once its button has moved to the
+   rail, and it is only folded once that move is verified — an unconditional
+   rule here would hide the button on a page where the move never happened,
+   and msl-autodraft would silently stop starting. */
+#opPrepModal[data-mlsopn-gen="railed"] #oprEditor > .row{ display:none !important; }
 
 /* The Draft-all progress panel carries the Stop button, so it is a RUN
    surface: on while a run is on, gone otherwise. */
 #opPrepModal[data-mls-opnotes-state]:not([data-mlsopn-run="on"]) #tpfLedger{ display:none !important; }
 
-/* ---- LIST / EMPTY: no editor on screen at all ---- */
-#opPrepModal[data-mls-opnotes-state="list"] #opPrepList,
+/* ---- the RIGHT PANE, one surface at a time ---- */
+/* LIST / EMPTY: no editor on screen at all, and the pane says what to do. */
+#opPrepModal[data-mls-opnotes-state="list"] #opPrepList > div,
+#opPrepModal[data-mls-opnotes-state="empty"] #opPrepList > div,
+#opPrepModal[data-mls-opnotes-state="templates"] #opPrepList > div{ display:none !important; }
 #opPrepModal[data-mls-opnotes-state="list"] #mlsOpnNote,
-#opPrepModal[data-mls-opnotes-state="empty"] #opPrepList,
 #opPrepModal[data-mls-opnotes-state="empty"] #mlsOpnNote,
-#opPrepModal[data-mls-opnotes-state="empty"] #oprEditor > .row{ display:none !important; }
-
-/* ---- NOTE: the day list stands down and ONE card is on screen ---- */
-#opPrepModal[data-mls-opnotes-state="note"] #mlsOpDay,
-#opPrepModal[data-mls-opnotes-state="note"] #mlsOpDayList,
-#opPrepModal[data-mls-opnotes-state="note"] #oprEditor > .row{ display:none !important; }
+#opPrepModal[data-mls-opnotes-state="templates"] #mlsOpnNote,
+#opPrepModal[data-mls-opnotes-state="templates"] #mlsOpnPick{ display:none !important; }
+/* NOTE: exactly one card on screen — the one the room's own selection marks. */
+#opPrepModal[data-mls-opnotes-state="note"] #mlsOpnPick{ display:none !important; }
 #opPrepModal[data-mls-opnotes-state="note"] #opPrepList > div{ display:none !important; }
 #opPrepModal[data-mls-opnotes-state="note"] #opPrepList > div.opr-cur{ display:block !important; }
 
 /* THE GREEN PROCEDURE BAR IS GONE ---------------------------------------
-   Owner, 2026-08-17, 02:30Z, looking at it: "I HATE THAT GREEN BAR and I hate
-   how it doesn't come expanded."
-
-   Both halves are answered here and they pull in the same direction. The bar
-   is _opPreviewHtml()'s hero - a 100%-wide dark-green gradient panel carrying
-   the procedure title, the patient and the parsed side/level chips - and it is
-   the FIRST child of every card opPrepRender() builds. Collapsing it behind a
-   disclosure was the wrong answer: it put the note itself one click further
-   away. It is retired from the note surface instead, and the three things it
-   actually carried (patient, day, procedure, chips) are a plain header line
-   above the note - so the note is the first thing on screen, expanded, with
-   nothing to click first.
-
-   Presentation only, and only in this room's note surface: the node is still
-   built, still updated by _opProcChanged as the doctor types, and Everything
-   mode still shows the card whole. */
+   Owner, 2026-08-17: "I HATE THAT GREEN BAR and I hate how it doesn't come
+   expanded." The bar is _opPreviewHtml()'s hero — a 100%-wide dark-green
+   gradient panel carrying the procedure title, the patient and the parsed
+   side/level chips — and it is the FIRST child of every card opPrepRender()
+   builds. Collapsing it behind a disclosure was the wrong answer: it put the
+   note itself one click further away. It is retired from the note surface
+   instead, and the three things it carried are a plain header line above the
+   note. Presentation only, and only here: the node is still built, still
+   updated by _opProcChanged as the doctor types, and Everything mode still
+   shows the card whole. */
 #opPrepModal[data-mls-opnotes-state="note"] [id^="opPrepPrev_"]{ display:none !important; }
-/* What stays behind one line is the RAW APPOINTMENT METADATA - the procedure
-   text field and its label - never the note. */
+/* What stays behind one line is the RAW APPOINTMENT METADATA — the procedure
+   text field and its label — and the template picker. Never the note. */
 #opPrepModal[data-mls-opnotes-state="note"]:not([data-mlsopn-det="open"]) .mlsopn-det{ display:none !important; }
 #opPrepModal[data-mls-opnotes-state="note"]:not([data-mlsopn-tpl="open"]) .mlsopn-tplrow{ display:none !important; }
-/* The card's own Save button is the note header's one action; the receipt
-   line next to it (and its "Open in History" link) stays. */
+/* The card's own Save button is the pane's one action; the receipt line next
+   to it (and its "Open in History" link) stays. */
 #opPrepModal[data-mls-opnotes-state="note"] .mlsopn-saverow > button{ display:none !important; }
 
 /* THE FORMATTED VIEW STARTS SHUT --------------------------------------
@@ -40268,7 +40326,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 
    feat_mls_fixpack_0701's live formatted view (.mls-fp-fmt) attaches itself
    above each note textarea and opens EXPANDED the moment the note is long
-   enough to look structured - so the first thing a doctor saw after a draft
+   enough to look structured — so the first thing a doctor saw after a draft
    landed was the rendered copy rather than the note he is going to edit. The
    raw note is the thing you work in; the formatted view is a check.
 
@@ -40276,26 +40334,62 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    button is what changes it (see fmtSync), so there is one state, not two. */
 #opPrepModal .mls-fp-fmt[data-mls-fmt="shut"] .fmt-body{ display:none !important; }
 
-/* ======================================================================
-   2. THE DAY LIST
-   ====================================================================== */
-#mlsOpDay{ margin:0 0 12px; }
-#mlsOpDayList{ margin:2px 0 14px; }
-#mlsOpDayHead{
-  display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 10px;
+/* THE FIELDS BOX MUST NOT FLASH ---------------------------------------
+   Owner, 2026-08-18, from his own screenshot of the note: "this top yellow
+   thing flashes back and forth and I don't like it."
+
+   WHAT IT IS NOT, MEASURED before assuming. The box is feat_mls_opnote_fill's
+   .onf-fillbox — a static amber card (#e0b877 on #fffdf5); its own module
+   animates nothing. feat_mls_magic writes .mgx2-born on it (a one-shot 6px
+   entrance), and the class IS on the node — but an animation census of every
+   visible element in the room found NO running animation on that box or any
+   of its children. It was not the box that was moving.
+
+   WHAT IT ACTUALLY WAS: the fold registry re-writing its own classes ~150
+   times a second, which made the regions ABOVE this box appear and disappear
+   at the same rate and shoved the box up and down. The mechanism, the numbers
+   and the fix are in markOne() below — that is where this defect is cured.
+
+   This rule is the belt to that braces: even if a later lane adds motion to
+   this card, the box a doctor reads a missing dose out of does not move. It
+   keeps its colour, its border and its meaning, and loses only the motion.
+   The thing that SHOULD be moving in this state is the single nextglow halo,
+   and it is pointed at the field that needs a value — never at the border. */
+#opPrepModal .onf-fillbox,
+#opPrepModal .onf-fillbox::before,
+#opPrepModal .onf-fillbox::after,
+#opPrepModal .onf-fillbox *,
+#opPrepModal .onf-fillbox *::before,
+#opPrepModal .onf-fillbox *::after{
+  animation:none !important;
+  transition:none !important;
 }
+/* prefers-reduced-motion already kills it through feat_mls_magic's own
+   generated off-switch; this states the same thing for the room so the two
+   cannot drift apart. */
+@media (prefers-reduced-motion: reduce){
+  #opPrepModal .onf-fillbox,
+  #opPrepModal .onf-fillbox *{ animation:none !important; transition:none !important; }
+}
+
+/* ======================================================================
+   2. THE RAIL
+   ====================================================================== */
+#mlsOpnRail{ display:flex; flex-direction:column; min-height:0; flex:1 1 auto; gap:0; }
+#mlsOpDay{ flex:0 0 auto; margin:0 0 8px; }
+#mlsOpDayHead{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:0 0 8px; }
 #mlsOpnPrevDay,#mlsOpnNextDay{
-  min-width:40px; min-height:40px; padding:0 12px; cursor:pointer;
+  min-width:40px; min-height:40px; padding:0 10px; cursor:pointer;
   font:800 17px/1 var(--sans); color:var(--ink);
   background:var(--card); border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
 #mlsOpnPrevDay:hover,#mlsOpnNextDay:hover{ border-color:var(--brand,#2E6A4B); }
-#mlsOpDayTitle{ font:800 15px/1.2 var(--sans); color:var(--ink); }
-/* ONE control, not two: the friendly day name is a label and the native
-   picker sits beside it as its calendar button. Hiding the input's own text
-   field keeps "Mon, Aug 17 2026" from being printed twice. */
+#mlsOpDayTitle{ flex:1 1 auto; min-width:0; font:800 13.5px/1.25 var(--sans); color:var(--ink); }
+/* ONE control, not two: the friendly day name is a label and the native picker
+   sits beside it as its calendar button. Hiding the input's own text field
+   keeps "Mon, Aug 17 2026" from being printed twice. */
 #mlsOpnDayIn{
-  width:38px; min-height:40px; box-sizing:border-box; cursor:pointer;
+  width:40px; min-height:40px; box-sizing:border-box; cursor:pointer;
   padding:0 4px; background:var(--card); color:var(--ink);
   border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
@@ -40303,105 +40397,113 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpnDayIn::-webkit-inner-spin-button{ display:none; }
 #mlsOpnDayIn::-webkit-calendar-picker-indicator{ opacity:.72; cursor:pointer; }
 #mlsOpnToday{
-  min-height:40px; padding:0 14px; cursor:pointer;
+  min-height:40px; padding:0 13px; cursor:pointer;
   font:700 12.5px/1.2 var(--sans); color:var(--ink);
   background:var(--card); border:1px solid var(--line); border-radius:var(--r-pill,999px);
 }
 #mlsOpnToday[hidden]{ display:none; }
-#mlsOpDayCount{ font:600 12.5px/1.3 var(--sans); color:var(--muted); }
+#mlsOpDayCount{ display:block; font:600 12px/1.4 var(--sans); color:var(--muted); margin:0 0 8px; }
 /* THE QUIET NOTICE. Owner: automatic drafting starting is an OUTCOME of this
    room, not an interruption — it belongs on the surface it describes, not in a
-   floating toast over the whole app. One line, in the day strip, that clears
-   itself when the run is over. */
-#mlsOpnNotice{
-  margin:6px 0 0;
-  font:600 12px/1.5 var(--sans); color:var(--muted);
-}
+   floating toast over the whole app. One line, in the rail, that clears itself
+   when the run is over. */
+#mlsOpnNotice{ margin:0 0 8px; font:600 11.5px/1.5 var(--sans); color:var(--muted); }
 #mlsOpnNotice[hidden]{ display:none; }
-#mlsOpDayTools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
-#mlsOpnSearch{
-  flex:1 1 200px; min-width:150px; max-width:340px; min-height:40px; box-sizing:border-box;
-  padding:8px 12px; font:500 13px/1.3 var(--sans); color:var(--ink);
-  background:var(--field-bg,var(--card)); border:1px solid var(--line); border-radius:var(--r-ctl,10px);
+/* THE RAIL'S ONE PRIMARY. This is the shell's own #opPrepGenAllBtn, moved. */
+#mlsOpnRailAct{ display:flex; flex-direction:column; gap:7px; margin:0 0 9px; }
+#mlsOpnRailAct:empty{ display:none; }
+#mlsOpnRailAct #opPrepGenAllBtn{
+  width:100%; box-sizing:border-box; min-height:44px; text-align:center;
+  font:800 13.5px/1.2 var(--sans) !important; padding:12px 14px !important;
+  border-radius:var(--r-ctl,12px) !important;
 }
-#mlsOpnSearch[hidden]{ display:none; }
 #mlsOpDayGo{
-  font:700 13px/1.2 var(--sans); min-height:40px; padding:9px 16px;
-  border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
+  width:100%; box-sizing:border-box; min-height:44px;
+  font:700 13px/1.2 var(--sans); padding:12px 14px;
+  border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 #mlsOpDayGo[hidden]{ display:none; }
-/* THE CARDS. Owner, 02:30Z: "I don't hate this UI but it needs some work."
-   So the all-patients card grid stays and is made calm instead: EVERY card is
-   the same height by construction - four rows, each one line, each clipped
-   with an ellipsis - one status pill, one line of reason. A card whose text
-   wraps is what made the previous grid ragged. */
-#mlsOpDayGrid{
-  display:grid; gap:9px;
-  grid-template-columns:repeat(auto-fill,minmax(310px,1fr));
+#mlsOpDayTools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 9px; }
+#mlsOpnSearch{
+  flex:1 1 140px; min-width:0; min-height:40px; box-sizing:border-box;
+  padding:8px 11px; font:500 12.5px/1.3 var(--sans); color:var(--ink);
+  background:var(--field-bg,var(--card)); border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
+#mlsOpnSearch[hidden]{ display:none; }
+/* THE PATIENTS. One button each, all the same height by construction — three
+   rows, each one line, each clipped with an ellipsis. A card whose text wraps
+   is what made the previous grid ragged. */
+#mlsOpDayList{ flex:1 1 auto; min-height:0; overflow-y:auto; margin:0 -3px; padding:0 3px 2px; }
+#mlsOpDayGrid{ display:flex; flex-direction:column; gap:5px; }
 .mlsOpDayCard{
-  display:grid; gap:3px; align-content:start; text-align:left; width:100%;
-  grid-template-rows:auto auto auto auto;
-  padding:11px 13px; border:1px solid var(--line); border-radius:var(--r-ctl,12px);
-  background:var(--card); cursor:pointer;
+  display:grid; gap:2px; align-content:start; text-align:left; width:100%;
+  grid-template-rows:auto auto auto;
+  padding:8px 10px; border:1px solid var(--line); border-radius:var(--r-ctl,12px);
+  background:var(--card); cursor:pointer; min-height:40px;
   font:inherit; color:var(--ink); overflow:hidden;
 }
 .mlsOpDayCard > span{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mlsOpDayCard:hover{ border-color:var(--brand,#2E6A4B); }
 .mlsOpDayCard:focus-visible{ outline:2px solid var(--brand,#2E6A4B); outline-offset:2px; }
-.mlsOpDayTop{ display:flex; align-items:baseline; gap:8px; }
-.mlsOpDayTime{ flex:0 0 auto; font:700 12.5px/1.4 var(--sans); color:var(--muted); }
+.mlsOpDayTop{ display:flex; align-items:center; gap:6px; }
+.mlsOpDayDot{ flex:0 0 auto; width:8px; height:8px; border-radius:999px; background:var(--line); }
+.mlsOpDayTime{ flex:0 0 auto; font:700 11.5px/1.4 var(--sans); color:var(--muted); }
 .mlsOpDayName{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  font:750 13.5px/1.4 var(--sans); }
-.mlsOpDayProc{ font:500 12px/1.5 var(--sans); color:var(--muted); }
-/* Always rendered, empty when there is no reason, so every card is the same
-   height whether or not its status has something to explain. */
-.mlsOpDayWhy{ font:500 11.5px/1.5 var(--sans); color:var(--muted); min-height:17px; }
-.mlsOpDayFoot{ display:flex; align-items:center; gap:8px; margin-top:2px; }
+  font:750 13px/1.4 var(--sans); }
+.mlsOpDayProc{ font:500 11.5px/1.45 var(--sans); color:var(--muted); }
+.mlsOpDayFoot{ display:flex; align-items:baseline; gap:6px; }
 .mlsOpDayChip{
   flex:0 0 auto; white-space:nowrap;
-  padding:3px 10px; border-radius:var(--r-pill,999px);
-  font:700 11px/1.5 var(--sans); letter-spacing:.2px;
+  padding:1px 8px; border-radius:var(--r-pill,999px);
+  font:700 10.5px/1.5 var(--sans); letter-spacing:.2px;
   border:1px solid var(--line); background:var(--soft); color:var(--muted);
 }
-.mlsOpDayAct{
-  flex:1 1 auto; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  font:700 12px/1.5 var(--sans); color:var(--brand,#2E6A4B);
-}
+/* Always rendered, empty when there is no reason, so every button is the same
+   height whether or not its status has something to explain. */
+.mlsOpDayWhy{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font:500 10.5px/1.6 var(--sans); color:var(--muted); }
+.mlsOpDayAct{ display:none; }
 /* Six states, and each one is a WORD before it is a colour: the room is read
-   on laptop screens in bright rooms and a colour-only signal is not a status. */
+   on laptop screens in bright rooms and a colour-only signal is not a status.
+   The dot is the second, faster read down a 24-patient rail. */
 .mlsOpDayCard[data-mls-cardstate="drafting"] .mlsOpDayChip{ border-color:#c9a227; color:#7a5a16; background:#fff7e6; }
 .mlsOpDayCard[data-mls-cardstate="ready"]    .mlsOpDayChip{ border-color:#bfe6cf; color:#12744a; background:#eefaf3; }
 .mlsOpDayCard[data-mls-cardstate="filed"]    .mlsOpDayChip{ border-color:#bfe6cf; color:#12744a; background:#eefaf3; }
 .mlsOpDayCard[data-mls-cardstate="saved"]    .mlsOpDayChip{ border-color:#bfe6cf; color:#12744a; background:#eefaf3; }
 .mlsOpDayCard[data-mls-cardstate="review"]   .mlsOpDayChip{ border-color:#f0d79a; color:#7a5a16; background:#fff7e6; }
 .mlsOpDayCard[data-mls-cardstate="failed"]   .mlsOpDayChip{ border-color:#e8b4b1; color:#a51f1a; background:#fdeceb; }
-.mlsOpDayCard[aria-current="true"]{ border-color:var(--brand,#2E6A4B); box-shadow:0 0 0 1px var(--brand,#2E6A4B) inset; }
+.mlsOpDayCard[data-mls-cardstate="drafting"] .mlsOpDayDot{ background:#c9a227; }
+.mlsOpDayCard[data-mls-cardstate="ready"]    .mlsOpDayDot{ background:#12744a; }
+.mlsOpDayCard[data-mls-cardstate="filed"]    .mlsOpDayDot{ background:#12744a; }
+.mlsOpDayCard[data-mls-cardstate="saved"]    .mlsOpDayDot{ background:#12744a; }
+.mlsOpDayCard[data-mls-cardstate="review"]   .mlsOpDayDot{ background:#c9930a; }
+.mlsOpDayCard[data-mls-cardstate="failed"]   .mlsOpDayDot{ background:#b4231e; }
+.mlsOpDayCard[aria-current="true"]{ border-color:var(--brand,#2E6A4B); box-shadow:0 0 0 1px var(--brand,#2E6A4B) inset; background:var(--soft); }
 #mlsOpnEmpty{
-  padding:22px 18px; border:1px dashed var(--line); border-radius:var(--r-ctl,10px);
-  font:600 13px/1.55 var(--sans); color:var(--muted); text-align:center;
+  padding:16px 12px; border:1px dashed var(--line); border-radius:var(--r-ctl,10px);
+  font:600 12.5px/1.55 var(--sans); color:var(--muted); text-align:center;
 }
 #mlsOpnEmpty[hidden]{ display:none; }
 #mlsOpnPull{
-  display:inline-block; margin-top:12px; min-height:40px; padding:10px 18px; cursor:pointer;
-  font:700 13px/1.2 var(--sans); color:#fff;
+  display:inline-block; margin-top:12px; min-height:40px; padding:10px 16px; cursor:pointer;
+  font:700 12.5px/1.2 var(--sans); color:#fff;
   background:var(--brand,#2E6A4B); border:1px solid var(--brand,#2E6A4B); border-radius:var(--r-ctl,10px);
 }
 
 /* ======================================================================
-   3. THE NOTE SURFACE
+   3. THE RIGHT PANE
    ====================================================================== */
-#mlsOpnNote{ margin:2px 0 14px; }
-#mlsOpnHead{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 8px; }
-#mlsOpnBack{
-  min-height:40px; padding:0 14px; cursor:pointer;
-  font:700 12.5px/1.2 var(--sans); color:var(--ink);
-  background:var(--card); border:1px solid var(--line); border-radius:var(--r-pill,999px);
+#mlsOpnPick{
+  margin:6px 0 0; padding:34px 22px; text-align:center;
+  border:1px dashed var(--line); border-radius:var(--r-ctl,14px);
 }
-#mlsOpnBack:hover{ border-color:var(--brand,#2E6A4B); }
-#mlsOpnPos{ font:600 12px/1.3 var(--sans); color:var(--muted); }
+#mlsOpnPickH{ margin:0; font:800 16px/1.3 var(--sans); color:var(--ink); }
+#mlsOpnPickP{ margin:7px 0 0; font:500 13px/1.6 var(--sans); color:var(--muted); }
+#mlsOpnNote{ margin:2px 0 14px; }
+#mlsOpnHead{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:0 0 4px; }
 #mlsOpnName{ margin:0; font:800 18px/1.25 var(--sans); color:var(--ink); }
+#mlsOpnPos{ font:600 12px/1.3 var(--sans); color:var(--muted); }
 #mlsOpnSub{ margin:3px 0 0; font:500 12.5px/1.45 var(--sans); color:var(--muted); }
 #mlsOpnChips{ display:flex; flex-wrap:wrap; gap:5px; margin:7px 0 0; }
 #mlsOpnChips:empty{ display:none; }
@@ -40412,32 +40514,61 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 }
 #mlsOpnActs{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin:11px 0 9px; }
 #mlsOpnGo{
-  font:700 13.5px/1.2 var(--sans); min-height:42px; padding:10px 18px;
+  font:700 13.5px/1.2 var(--sans); min-height:44px; padding:11px 18px;
   border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 #mlsOpnGo[disabled]{ opacity:.5; cursor:default; }
-#mlsOpnDiscl{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 4px; }
-#mlsOpnDet,#mlsOpnTplBtn,#mlsOpnTplLib{
-  min-height:36px; padding:7px 13px; cursor:pointer;
+#mlsOpnGo[hidden]{ display:none; }
+/* BIG, and it says where it goes. Owner, 2026-08-17: after a note is saved,
+   "make sure to have an open in history button ... big and flashing". The
+   flashing is nextglow-1.0.0's halo — one highlight system, not two — and this
+   is the control it is pointed at in the saved state. */
+#mlsOpnHist{
+  font:800 14px/1.2 var(--sans); min-height:46px; padding:12px 20px;
+  border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
+  background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
+}
+#mlsOpnHist[hidden]{ display:none; }
+#mlsOpnCopy,#mlsOpnFmt,#mlsOpnDet,#mlsOpnTplBtn,#mlsOpnTplLib{
+  min-height:40px; padding:9px 13px; cursor:pointer;
   font:600 12px/1.2 var(--sans); color:var(--muted);
   background:var(--soft); border:1px solid var(--line); border-radius:var(--r-pill,999px);
 }
-#mlsOpnDet:hover,#mlsOpnTplBtn:hover,#mlsOpnTplLib:hover{ color:var(--ink); border-color:var(--muted); }
-#mlsOpnDet[aria-expanded="true"],#mlsOpnTplBtn[aria-expanded="true"]{ color:var(--ink); background:var(--field-bg,var(--card)); }
+#mlsOpnCopy:hover,#mlsOpnFmt:hover,#mlsOpnDet:hover,#mlsOpnTplBtn:hover,#mlsOpnTplLib:hover{
+  color:var(--ink); border-color:var(--muted);
+}
+#mlsOpnFmt[aria-expanded="true"],#mlsOpnDet[aria-expanded="true"],#mlsOpnTplBtn[aria-expanded="true"]{
+  color:var(--ink); background:var(--field-bg,var(--card));
+}
+#mlsOpnCopy[hidden],#mlsOpnFmt[hidden]{ display:none; }
+#mlsOpnDiscl{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 4px; }
+#mlsOpnState{ align-self:center; }
 #mlsOpnKeys{ margin:8px 0 0; font:500 11.5px/1.5 var(--sans); color:var(--muted); }
 
-@media (max-width:620px){
-  #mlsOpDayGrid{ grid-template-columns:minmax(0,1fr); }
-  #mlsOpnSearch{ max-width:none; }
+/* ---- the rail becomes the top strip, and never disappears ---- */
+@media (max-width:900px){
+  #opPrepModal[data-mls-opnotes-state] #oprDayRail{
+    border-right:0; border-bottom:1px solid var(--line); padding:10px 12px;
+  }
+  #mlsOpDayList{ max-height:30vh; }
+  #mlsOpDayGrid{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px;
+  }
   #mlsOpnName{ font-size:16px; }
 }
-@media print{ #mlsOpDay,#mlsOpDayList,#mlsOpnNote{ display:none; } }
+@media (max-width:620px){
+  #mlsOpDayGrid{ grid-template-columns:minmax(0,1fr); }
+  #mlsOpDayList{ max-height:26vh; }
+  #mlsOpnPick{ padding:22px 14px; }
+}
+@media print{ #oprDayRail,#mlsOpnNote,#mlsOpnPick{ display:none; } }
 </style>
 <script>
 (function () {
-  var VERSION = 'opnote-day-2.0.0';
-  var BOARD = 'mlsOpDay', LISTH = 'mlsOpDayList', GRID = 'mlsOpDayGrid', NOTE = 'mlsOpnNote';
+  var VERSION = 'opnote-day-3.0.0';
+  var RAIL = 'mlsOpnRail', BOARD = 'mlsOpDay', LISTH = 'mlsOpDayList', GRID = 'mlsOpDayGrid';
+  var NOTE = 'mlsOpnNote', PICK = 'mlsOpnPick';
   var moreOpen = false;          /* the programmatic "give it all back" */
   var sel = -1;                  /* the patient whose note is on screen, or -1 */
   var detOpen = false, tplOpen = false;
@@ -40482,11 +40613,21 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     d.setDate(d.getDate() + n);
     return keyOf(d);
   }
+  /* THE ROOM OPENS ON THE CONTEXT DAY. _opContextDay() is the app's own answer
+     to "which day is the doctor looking at" (the calendar's day, the visit
+     strip's day, else today); this only READS it, and only when the room has
+     not already been given a day. The day never silently jumps: once
+     window._opPrepDay is set, that is the day. */
+  function contextDay() {
+    var k = '';
+    try { if (typeof window._opContextDay === 'function') k = okKey(window._opContextDay()); } catch (e) { k = ''; }
+    return k || todayKey();
+  }
   function currentDay() {
     var k = '';
     try { k = okKey(window._opPrepDay); } catch (e) { k = ''; }
     if (!k) { try { k = okKey(rows()[0] && rows()[0].dateKey); } catch (e2) { k = ''; } }
-    return k || todayKey();
+    return k || contextDay();
   }
   function dayLong(k) {
     try {
@@ -40528,58 +40669,75 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
 
   /* ---- 1. WHAT FOLDS -------------------------------------------------
-     Containers, not individual controls: a per-control registry has to be
-     re-derived every time a shared module renames a button, and the four
-     modules that fill this room rebuild their own nodes constantly.
-
-     #oprDayRail is the whole secondary column - the mode switch, the day
-     picker, the month tools, the template rail, the per-patient nav and the
-     drafting-style picker. The list below replaces its navigational job, and
-     Everything mode gives all of it back. */
+     THE RAIL ITSELF IS NEVER FOLDED ANY MORE — that is the whole point of
+     3.0.0. What folds is the rail's legacy CONTENT, container by container,
+     because a per-control registry has to be re-derived every time a shared
+     module renames a button and the four modules that fill this room rebuild
+     their own nodes constantly. Everything mode gives all of it back. */
   var ADV = [
-    { sel: '#oprDayRail',        levels: ['simple', 'normal'], rail: true },
-    { sel: '#mlsOnfBar',         levels: ['simple', 'normal'] },
+    { sel: '#oprDayRail > p.note', levels: ['simple', 'normal'] },
+    { sel: '#opPrepModeRow',      levels: ['simple', 'normal'] },
+    { sel: '#opPrepDayRow',       levels: ['simple', 'normal'] },
+    { sel: '#oprTplRail',         levels: ['simple', 'normal'], tpl: true },
+    { sel: '#mlsOnfBar',          levels: ['simple', 'normal'] },
     /* msl-1.0.0 inserts its own named disclosure BEFORE each region it folds,
        and those buttons are siblings of the region rather than children - so
        folding #mlsOnfBar left its "Assign templates in bulk" button behind. */
-    { sel: '.msl-more',          levels: ['simple', 'normal'] },
-    { sel: '#tpfLedgerList',     levels: ['simple'] }
+    { sel: '.msl-more',           levels: ['simple', 'normal'] },
+    { sel: '#tpfLedgerList',      levels: ['simple'] }
   ];
   /* NEVER folded, at any level, and the reason is load-bearing:
        #opPrepGenAllBtn - msl-autodraft refuses when its offsetParent is null,
                           so folding it turns automatic drafting off silently.
        #tpfStop         - the Stop button of an automatic run.
-       .modal-x         - the way out of a full-screen room. */
+       .modal-x         - the way out of a full-screen room.
+       #oprDayRail      - the left-side selector the owner asked for back. */
+  /* IDEMPOTENT, AND THIS IS THE FIX FOR "IT FLASHES BACK AND FORTH".
+     MEASURED at f1efb4a2 (opnote-day-2.0.0, real Chrome, 17-patient day, room
+     at rest, 10 s): 31,150 mutations inside #opPrepModal — 3,113 PER SECOND —
+     of which 30,940 were `class`, on .msl-more (18,594), #oprDayRail (6,188)
+     and #mlsOnfBar (6,188).
+
+     The cause was this function. It REMOVED both fold classes and then ADDED
+     them back on every pass, whether or not anything had changed — four class
+     mutations per node per paint. Those mutations landed on this block's own
+     subtree `class` observer, which called refresh(), which painted again: a
+     self-feeding loop running ~150 paints a second. And because the classes
+     drive `display:none`, every one of those nodes was made VISIBLE and hidden
+     again ~150 times a second — so the regions above the note (the bulk Fields
+     bar, the rail, msl's own disclosures) blinked in and out and everything
+     below them jumped up and down. That is the "top yellow thing flashes back
+     and forth": not an animation on the Fields box, but the box being shoved
+     by a neighbour that was appearing and disappearing 150 times a second.
+
+     A class is now written ONLY when it is not already in the state it should
+     be in, so a pass that changes nothing costs zero mutations. */
+  function setClass(node, cls, want) {
+    var has = node.classList.contains(cls);
+    if (has === want) return 0;
+    if (want) node.classList.add(cls); else node.classList.remove(cls);
+    return 1;
+  }
   function markOne(row, lvl) {
     var nodes;
     try { nodes = document.querySelectorAll('#opPrepModal ' + row.sel); } catch (e) { return 0; }
     var on = row.levels.indexOf(lvl) >= 0, i, n = 0;
+    var wantSimple = on && row.levels.indexOf('simple') >= 0;
+    var wantNormal = on && row.levels.indexOf('normal') >= 0;
     for (i = 0; i < nodes.length; i++) {
       var node = nodes[i];
-      if (node.classList.contains('mlsopn-adv-simple')) node.classList.remove('mlsopn-adv-simple');
-      if (node.classList.contains('mlsopn-adv-normal')) node.classList.remove('mlsopn-adv-normal');
-      if (!on) continue;
-      if (row.levels.indexOf('simple') >= 0) node.classList.add('mlsopn-adv-simple');
-      if (row.levels.indexOf('normal') >= 0) node.classList.add('mlsopn-adv-normal');
-      n++;
+      setClass(node, 'mlsopn-adv-simple', wantSimple);
+      setClass(node, 'mlsopn-adv-normal', wantNormal);
+      if (on) n++;
     }
     return n;
   }
   function applyFold() {
     var modal = el('opPrepModal');
     if (!modal) return 0;
-    var lvl = level(), i, n = 0, railFolded = false;
-    for (i = 0; i < ADV.length; i++) {
-      var got = markOne(ADV[i], lvl);
-      n += got;
-      if (ADV[i].rail && got) railFolded = true;
-    }
+    var lvl = level(), i, n = 0;
+    for (i = 0; i < ADV.length; i++) n += markOne(ADV[i], lvl);
     if (modal.getAttribute('data-mlsopn') !== lvl) modal.setAttribute('data-mlsopn', lvl);
-    var railWant = (railFolded && !moreOpen) ? 'folded' : '';
-    if (S(modal.getAttribute('data-mlsopn-rail')) !== railWant) {
-      if (railWant) modal.setAttribute('data-mlsopn-rail', railWant);
-      else modal.removeAttribute('data-mlsopn-rail');
-    }
     var wantMore = moreOpen ? 'open' : '';
     if (S(modal.getAttribute('data-mlsopn-more')) !== wantMore) {
       if (wantMore) modal.setAttribute('data-mlsopn-more', wantMore);
@@ -40627,9 +40785,6 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var m = note.match(/\[\[[a-z0-9_]+\]\]/gi);
     return m ? m.length : 0;
   }
-  /* The chart record this row's save produced, if any. row._noteId is also set
-     by the prep module's autosave, so the id alone does not mean "filed" - the
-     record has to exist AND not be a draft. */
   /* ONE READ OF THE CHART STORE PER PASS. getNotes() parses the whole notes
      store out of localStorage; statusOf() runs for EVERY row and paint() runs
      on every mutation of this room, so a naive read here is N parses of the
@@ -40645,12 +40800,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     setTimeout(function () { notesCache = null; }, 0);
     return notesCache;
   }
+  /* The chart record this row's save produced, if any. row._noteId is also set
+     by the prep module's autosave, so the id alone does not mean "filed" - the
+     record has to exist AND not be a draft. */
   function savedRecord(row) {
     var id = S(row && row._noteId);
     if (!id) return null;
     var ns = notesNow(), i;
     for (i = 0; i < ns.length; i++) { if (ns[i] && ns[i].id === id) return ns[i]; }
     return null;
+  }
+  function filedRecord(row) {
+    var rec = savedRecord(row);
+    return (rec && !rec.isDraft) ? rec : null;
   }
   function statusOf(row, i) {
     var led = ledgerState(i);
@@ -40668,8 +40830,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     if (row && row.gen && S(row.note).trim() && !err) {
       var b = blanksLeft(row);
       if (b) return { k: 'review', label: 'Needs review', why: b + ' blank' + (b === 1 ? '' : 's') + ' still to fill' };
-      var rec = savedRecord(row);
-      if (rec && !rec.isDraft) return { k: 'filed', label: 'Saved to chart', why: '' };
+      if (filedRecord(row)) return { k: 'filed', label: 'Saved to chart', why: '' };
       return { k: 'ready', label: 'Drafted', why: '' };
     }
     if (led === 'fail' || err) {
@@ -40697,16 +40858,6 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     for (i = 0; i < r.length; i++) if (statusOf(r[i], i).k === kind) return i;
     return -1;
   }
-  /* The row the guided ring should point at on the list: the first patient who
-     still has no note. */
-  function firstUndrafted() {
-    var r = rows(), i, k;
-    for (i = 0; i < r.length; i++) {
-      k = statusOf(r[i], i).k;
-      if (k === 'queued' || k === 'failed') return i;
-    }
-    return -1;
-  }
 
   /* ---- 3. SELECTION --------------------------------------------------
      The room owns selection; this asks it, and only marks the card itself
@@ -40724,11 +40875,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
   /* THE SURFACE RECYCLES ITSELF. opPrepRender() writes #opPrepList.innerHTML
      whole - and it is called after every draft, every save, every field edit
-     and every template pick - so the .opr-cur marker the note surface shows
+     and every template pick - so the .opr-cur marker the right pane shows
      exactly one card by is DESTROYED on each of those. Measured: pressing
-     Generate rebuilt the list and the note surface went blank, because no card
-     was current any more and the note-state rule hides every card but the
-     current one. Re-asserted on every paint rather than only on selection. */
+     Generate rebuilt the list and the pane went blank, because no card was
+     current any more and the note-state rule hides every card but the current
+     one. Re-asserted on every paint rather than only on selection. */
   function ensureCurrent() {
     var list = el('opPrepList');
     if (!list || !list.children) return false;
@@ -40751,13 +40902,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      msl's paintCards() marks every op-note card `shut` except the ONE it
      remembers as open (its own index, default 0), so opening any other
      patient's note showed the doctor a collapsed green bar and nothing else.
-     That is exactly what the owner is looking at.
 
      Answered in msl's OWN vocabulary rather than by out-specifying it: the
-     card the note surface is showing IS the open card, so it is marked `open`.
-     No CSS war (a rule that forced a display value back would have to guess
-     block/flex per child and would fight this block's own two disclosures),
-     no edit to another lane's block, and msl's click-to-open still works
+     card the pane is showing IS the open card, so it is marked `open`. No CSS
+     war, no edit to another lane's block, and msl's click-to-open still works
      everywhere else. Re-asserted on every paint, because paintCards() runs
      again on every mutation of this room. */
   function mslAgree() {
@@ -40776,9 +40924,8 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       }
     } catch (e) {}
     /* Always assert the card ourselves too: the room's own select() is a
-       no-op on a page where its rail never rendered, and the note surface
-       shows exactly one card - .opr-cur - so an unmarked list is an empty
-       screen. */
+       no-op on a page where its rail never rendered, and the pane shows
+       exactly one card - .opr-cur - so an unmarked list is an empty screen. */
     markCurrent(i);
     return did;
   }
@@ -40800,28 +40947,33 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      "block: start" can put the surface's own first row at viewport 0, under
      anything fixed that paints above the room.
 
-     Every surface here is the FIRST visible child of #oprEditor for its state,
-     so the correct position is simply the top of the room's scroller. The
-     scroll is reset once per STATE TRANSITION - never on every paint, or a
-     doctor scrolling through a long note would be dragged back up on the next
-     repaint (and opPrepRender() repaints on every keystroke in a field). */
-  /* ---- 3c. THE CARDS SCROLL, THE DAY STRIP DOES NOT --------------------
-     MEASURED (real Chrome, 1366x900, 28 patients): the card grid is 848px
-     tall and starts at y=164, so it runs to y=1012 - past the bottom of a
-     900px window and straight through the band the app taskbar occupies.
-     #oprEditor is the room's scroller and already reserves 124px of
-     padding-bottom for the dock, but padding only guarantees that the LAST
-     row can be scrolled clear; it does nothing for the rows that sit in the
-     dock's band at scroll 0. dock-1p-1.1.0's own obstruction probe scores
-     that 25/25.
-
-     So the list gets its own scroller that ENDS where the dock begins. The
-     day switcher and the count stay put while the patients scroll under
-     them, which is also the better shape for a 24-patient day. The height is
-     MEASURED from the dock's own rect - never a constant, because the dock's
-     size is its own business and a number here would be wrong the first time
-     it changed - and falls back to the shell's own reservation when the dock
-     has not rendered. */
+     Every surface here is the FIRST visible child of its column, so the
+     correct position is simply the top of the room's scrollers. The scroll is
+     reset once per STATE TRANSITION - never on every paint, or a doctor
+     scrolling through a long note would be dragged back up on the next repaint
+     (and opPrepRender() repaints on every keystroke in a field). */
+  function topOfRoom() {
+    var modal = el('opPrepModal');
+    if (!modal) return false;
+    var nodes = [modal, modal.querySelector('.modal'), el('oprEditor'), el('oprDayRail'), el('oprPanelProcs')];
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n && n.scrollTop) { try { n.scrollTop = 0; } catch (e) {} }
+    }
+    return true;
+  }
+  /* ---- 3c. THE PATIENTS SCROLL, THE DAY STRIP DOES NOT -----------------
+     MEASURED (real Chrome, 1366x900, 28 patients): an uncapped patient list
+     runs past the bottom of the window and straight through the band the app
+     taskbar occupies. #oprDayRail is the rail's scroller and the shell already
+     reserves --opr-dock-clear of padding for the dock, but padding only
+     guarantees that the LAST row can be scrolled clear; it does nothing for
+     the rows that sit in the dock's band at scroll 0, and dock-1p-1.1.0's own
+     obstruction probe scores that. So the list gets its own scroller that ENDS
+     where the dock begins: the day switcher and the primary stay put while the
+     patients scroll under them. The height is MEASURED from the dock's own
+     rect - never a constant, because the dock's size is its own business - and
+     falls back to the shell's own reservation when the dock has not rendered. */
   function dockBand() {
     var dock = el('mlsDock');
     var h = 0;
@@ -40835,8 +40987,8 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
            WIDTH - not one that touches the very edge. MEASURED: testing for
            `bottom >= innerHeight - 12` scored the floating pill dock (which
            keeps a gap under itself) as "not a bottom dock", the reservation
-           came out 0, and the card list ran straight back under it - 15 of 25
-           sample points. Reserve from the dock's TOP, with a small margin. */
+           came out 0, and the list ran straight back under it. Reserve from
+           the dock's TOP, with a small margin. */
         if (d.top > h / 2 && w && d.width > w * 0.4) return Math.round(h - d.top) + 10;
         return 0;                                        /* left / right / top */
       }
@@ -40853,34 +41005,31 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   function fitList() {
     var host = el(LISTH);
     if (!host) return 0;
-    var st = stateNow();
-    if (st !== 'list' && st !== 'empty') {
+    if (stateNow() === 'templates' || !roomOpen()) {
       if (host.style.maxHeight) { host.style.maxHeight = ''; host.style.overflowY = ''; }
       return 0;
     }
     var band = dockBand();
-    var top = 0, vh = 0;
-    try { top = host.getBoundingClientRect().top; vh = window.innerHeight || 0; } catch (e) { return 0; }
-    var avail = Math.round(vh - top - band - 12);
-    /* Below this there is no room to scroll INSIDE and the room's own
-       scroller is the better answer; leaving it alone is the honest fallback. */
-    if (!vh || avail < 200) {
+    var top = 0, vh = 0, vw = 0;
+    try { top = host.getBoundingClientRect().top; vh = window.innerHeight || 0; vw = window.innerWidth || 0; } catch (e) { return 0; }
+    var avail = Math.round(vh - top - band - 10);
+    /* BELOW 900px THE RAIL IS THE TOP STRIP, NOT A COLUMN, and the two share
+       one vertical axis. MEASURED at 768x1024 without this: the strip took
+       695px of a 1024px window and left the note 327px — the selector had
+       eaten the room. The strip is capped at 30% of the window there, which is
+       ~5 patients on screen and the rest one scroll away; the note keeps the
+       rest. 900 is the shell's own breakpoint for this grid, read from the
+       same place the CSS uses it. */
+    if (vw && vw <= 900) avail = Math.min(avail, Math.round(vh * 0.30));
+    /* Below this there is no room to scroll INSIDE and the rail's own scroller
+       is the better answer; leaving it alone is the honest fallback. */
+    if (!vh || avail < 140) {
       if (host.style.maxHeight) { host.style.maxHeight = ''; host.style.overflowY = ''; }
       return 0;
     }
     var want = avail + 'px';
     if (host.style.maxHeight !== want) { host.style.maxHeight = want; host.style.overflowY = 'auto'; }
     return avail;
-  }
-  function topOfRoom() {
-    var modal = el('opPrepModal');
-    if (!modal) return false;
-    var nodes = [modal, modal.querySelector('.modal'), el('oprEditor'), el('oprPanelProcs')];
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      if (n && n.scrollTop) { try { n.scrollTop = 0; } catch (e) {} }
-    }
-    return true;
   }
   function backToList() {
     if (patientMode()) {
@@ -40924,16 +41073,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     return null;
   }
-  /* Mark the card's regions so the two disclosures can fold them. EVERY anchor
-     is an id or an onclick handler opPrepRender() itself writes - never a
-     child position, because four modules insert their own nodes into this
-     card and a positional walk marks whichever one landed there last. */
   function addClass(node, card, cls) {
     if (!node || node === card || !node.classList) return 0;
     if (node.classList.contains(cls)) return 0;
     node.classList.add(cls);
     return 1;
   }
+  /* Mark the card's regions so the two disclosures can fold them. EVERY anchor
+     is an id or an onclick handler opPrepRender() itself writes - never a
+     child position, because four modules insert their own nodes into this card
+     and a positional walk marks whichever one landed there last. */
   function markCard() {
     var card = curCard();
     if (!card) return 0;
@@ -40956,6 +41105,18 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     n += addClass(save && save.parentElement, card, 'mlsopn-saverow');
     return n;
   }
+  function noteBox() {
+    var card = curCard();
+    if (!card) return null;
+    try { return card.querySelector('textarea[id^="opPrepNote_"]'); } catch (e) { return null; }
+  }
+  /* The room's own "Open in History" anchor, written by opPrepSave() into
+     #opPrepMsg_<i>. Driven, never re-implemented. */
+  function histLink() {
+    var card = curCard();
+    if (!card) return null;
+    try { return card.querySelector('[id^="opPrepMsg_"] a'); } catch (e) { return null; }
+  }
 
   /* ---- 5. THE FORMATTED VIEW STARTS SHUT -----------------------------
      EVERY patient and EVERY open, with no remembered-open state: the marker
@@ -40967,6 +41128,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      button is what flips the module's `entry.hidden`, and a block that set
      display directly would leave the module believing the pane was open and
      re-rendering into it. One state, one owner. */
+  function fmtWrap() {
+    var card = curCard();
+    if (!card) return null;
+    try { return card.querySelector('.mls-fp-fmt'); } catch (e) { return null; }
+  }
   function fmtSync() {
     var modal = el('opPrepModal');
     if (!modal) return 0;
@@ -40986,6 +41152,15 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     return n;
   }
+  function fmtToggle() {
+    var w = fmtWrap();
+    if (!w) return false;
+    var btn = null;
+    try { btn = w.querySelector('.fmt-bar button'); } catch (e) { return false; }
+    if (!btn) return false;
+    try { btn.click(); } catch (e2) { return false; }
+    return true;
+  }
   /* The doctor's own click on that button. The module flips its state on the
      same event, so this reads the result back rather than predicting it. */
   document.addEventListener('click', function (ev) {
@@ -40997,30 +41172,32 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     setTimeout(function () {
       var body = w.querySelector('.fmt-body');
       w.setAttribute('data-mls-fmt', (body && body.style.display === 'none') ? 'shut' : 'open');
+      refresh();
     }, 0);
   }, false);
 
   /* ---- 6. ONE PLACE FOR OP-NOTE TEMPLATES ----------------------------
      Owner, 2026-08-17: "get rid of the duplicate confusing UI in Templates."
 
-     WHAT IS ACTUALLY DUPLICATED, MEASURED. There is only ONE op-note
-     generator and it is this room: of the eleven controls in the app that
-     reach openOpPrep / opPrepGenerate* / opPrepSave, eight are inside
-     #opPrepModal and the other three are ENTRY POINTS into it, not a second
-     generator. Deleting an entry point would only strand the doctor.
+     WHAT IS ACTUALLY DUPLICATED, MEASURED. There is only ONE op-note generator
+     and it is this room: of the eleven controls in the app that reach
+     openOpPrep / opPrepGenerate* / opPrepSave, eight are inside #opPrepModal
+     and the other three are ENTRY POINTS into it, not a second generator.
+     Deleting an entry point would only strand the doctor.
 
-     The real duplication is the TEMPLATES surface. #templatesModal is ONE
-     node with three buttons pointing at it, and feat_mls_opnote_room.js MOVES
-     that node into #oprPanelTpls the first time the room's Templates tab is
-     used. MEASURED: after that move, pressing "Templates" anywhere else calls
+     The real duplication is the TEMPLATES surface. #templatesModal is ONE node
+     with three buttons pointing at it, and feat_mls_opnote_room.js MOVES that
+     node into #oprPanelTpls the first time the room's Templates tab is used.
+     MEASURED: after that move, pressing "Templates" anywhere else calls
      openTemplates() and RE-OPENS THE WHOLE FULL-SCREEN OP-NOTE ROOM - the
      doctor asked for a template library and got the operating list.
 
      Not a dead end, so nothing is removed: the surface it lands on is real and
      visible. What was missing is that the button never said where it was
      taking him. It says so now, in the app's own words, and the destination is
-     unchanged - and the note surface carries its own way in, so the doctor
-     never has to leave the patient he is on.
+     unchanged. The ROOM itself renders no library at all: #oprTplRail is
+     folded with the rest of the legacy rail content, so the rail is patients
+     and only patients.
 
      THE DESTINATION GOES IN THE VISIBLE LABEL, not in `title`. MEASURED: a
      title set here reads back as absent - something later in the boot welds
@@ -41046,50 +41223,91 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
 
   /* ---- 7. THE SURFACES ----------------------------------------------- */
+  /* THE ONE NODE THAT MOVES. #opPrepGenAllBtn is the shell's own Draft-all
+     button and msl-autodraft-1.0.0 refuses to start when its offsetParent is
+     null. A copy in the rail would be a second Draft-all; folding the original
+     would turn automatic drafting off silently. So the original is re-parented
+     - id, onclick, listeners and offsetParent all intact - and the now-empty
+     editor row is folded ONLY once the move is verified. */
+  function railGen(host) {
+    var gen = el('opPrepGenAllBtn'), modal = el('opPrepModal');
+    if (!gen || !host) return false;
+    if (gen.parentNode !== host) {
+      if (!gen.__mlsOpnHome) gen.__mlsOpnHome = gen.parentNode || null;
+      try { host.insertBefore(gen, host.firstChild); } catch (e) { return false; }
+    }
+    var ok = gen.parentNode === host;
+    if (modal) {
+      if (ok) { if (modal.getAttribute('data-mlsopn-gen') !== 'railed') modal.setAttribute('data-mlsopn-gen', 'railed'); }
+      else if (modal.getAttribute('data-mlsopn-gen')) modal.removeAttribute('data-mlsopn-gen');
+    }
+    return ok;
+  }
+  /* WHERE THE RAIL LIVES. #oprDayRail is production's own left column and the
+     thing the owner asked for back, so that is the first choice and the shape
+     every measurement in this block assumes. The two fallbacks exist so a page
+     on which the room markup is older still gets a working selector rather
+     than a blank screen. */
+  function railHost() {
+    var aside = el('oprDayRail');
+    if (aside) return aside;
+    var panel = el('oprPanelProcs');
+    if (panel) {
+      var made = el('mlsOpnRailHost');
+      if (!made) {
+        made = document.createElement('aside');
+        made.id = 'mlsOpnRailHost';
+        made.setAttribute('aria-label', 'The day');
+      }
+      if (made.parentNode !== panel || panel.firstChild !== made) panel.insertBefore(made, panel.firstChild);
+      return made;
+    }
+    return el('oprEditor');
+  }
   function ensureHosts() {
     var editor = el('oprEditor'), list = el('opPrepList');
     if (!editor || !list) return null;
-    var board = el(BOARD);
-    if (!board) {
-      board = document.createElement('section');
-      board.id = BOARD;
-      board.setAttribute('aria-label', 'Scheduled patients on this day');
-      board.innerHTML =
-        '<div id="mlsOpDayHead">' +
-          '<button type="button" id="mlsOpnPrevDay" aria-label="Previous day">‹</button>' +
-          '<span id="mlsOpDayTitle"></span>' +
-          '<input type="date" id="mlsOpnDayIn" aria-label="Pick a day to prepare">' +
-          '<button type="button" id="mlsOpnNextDay" aria-label="Next day">›</button>' +
-          '<button type="button" id="mlsOpnToday" hidden>Today</button>' +
-          '<span id="mlsOpDayCount"></span>' +
-        '</div>' +
-        '<p id="mlsOpnNotice" role="status" hidden></p>' +
-        '<div id="mlsOpDayTools">' +
-          '<input type="search" id="mlsOpnSearch" placeholder="Search this day" aria-label="Search this day by name or procedure">' +
-          '<button type="button" id="mlsOpDayGo" hidden></button>' +
-        '</div>' +
-        '';
-      board.querySelector('#mlsOpnPrevDay').addEventListener('click', function () { setDay(shiftKey(currentDay(), -1)); }, false);
-      board.querySelector('#mlsOpnNextDay').addEventListener('click', function () { setDay(shiftKey(currentDay(), 1)); }, false);
-      board.querySelector('#mlsOpnToday').addEventListener('click', function () { setDay(todayKey()); }, false);
-      board.querySelector('#mlsOpnDayIn').addEventListener('change', function () { setDay(this.value); }, false);
-      board.querySelector('#mlsOpnSearch').addEventListener('input', function () { query = S(this.value); paint(); }, false);
-      board.querySelector('#mlsOpDayGo').addEventListener('click', function () { runDayPrimary(); }, false);
-    }
-    /* THE DAY SWITCHER GOES FIRST (owner, 02:30Z: "day switcher at top").
-       #oprEditor's first child is the shell's own Draft-all row, so the head
-       is inserted BEFORE it and the cards after it - reading day -> one
-       action -> the day's patients. Only this block's own nodes move; not one
-       node the room or its four satellites grip is reparented. */
-    if (board.parentNode !== editor || editor.firstChild !== board) editor.insertBefore(board, editor.firstChild);
+    var host = railHost();
+    if (!host) return null;
 
-    var listHost = el(LISTH);
-    if (!listHost) {
-      listHost = document.createElement('div');
-      listHost.id = LISTH;
-      listHost.innerHTML = '<div id="' + GRID + '"></div><div id="mlsOpnEmpty" hidden></div>';
+    var rail = el(RAIL);
+    if (!rail) {
+      rail = document.createElement('div');
+      rail.id = RAIL;
+      rail.innerHTML =
+        '<section id="' + BOARD + '" aria-label="The day being prepared">' +
+          '<div id="mlsOpDayHead">' +
+            '<button type="button" id="mlsOpnPrevDay" aria-label="Previous day">‹</button>' +
+            '<span id="mlsOpDayTitle"></span>' +
+            '<input type="date" id="mlsOpnDayIn" aria-label="Pick a day to prepare">' +
+            '<button type="button" id="mlsOpnNextDay" aria-label="Next day">›</button>' +
+            '<button type="button" id="mlsOpnToday" hidden>Today</button>' +
+          '</div>' +
+          '<span id="mlsOpDayCount"></span>' +
+          '<p id="mlsOpnNotice" role="status" hidden></p>' +
+          '<div id="mlsOpnRailAct">' +
+            '<button type="button" id="mlsOpDayGo" hidden></button>' +
+          '</div>' +
+          '<div id="mlsOpDayTools">' +
+            '<input type="search" id="mlsOpnSearch" placeholder="Search this day" aria-label="Search this day by name or procedure">' +
+          '</div>' +
+        '</section>' +
+        '<div id="' + LISTH + '">' +
+          '<nav id="' + GRID + '" aria-label="Scheduled patients on this day"></nav>' +
+          '<div id="mlsOpnEmpty" hidden></div>' +
+        '</div>';
+      rail.querySelector('#mlsOpnPrevDay').addEventListener('click', function () { setDay(shiftKey(currentDay(), -1)); }, false);
+      rail.querySelector('#mlsOpnNextDay').addEventListener('click', function () { setDay(shiftKey(currentDay(), 1)); }, false);
+      rail.querySelector('#mlsOpnToday').addEventListener('click', function () { setDay(todayKey()); }, false);
+      rail.querySelector('#mlsOpnDayIn').addEventListener('change', function () { setDay(this.value); }, false);
+      rail.querySelector('#mlsOpnSearch').addEventListener('input', function () { query = S(this.value); paint(); }, false);
+      rail.querySelector('#mlsOpDayGo').addEventListener('click', function () { runDayPrimary(); }, false);
     }
-    if (listHost.parentNode !== editor) editor.insertBefore(listHost, list);
+    /* THE RAIL GOES FIRST in its column. Only this block's own nodes move -
+       plus the one shell button named above; not one node the room or its four
+       satellites grip is reparented. */
+    if (rail.parentNode !== host || host.firstChild !== rail) host.insertBefore(rail, host.firstChild);
+    railGen(el('mlsOpnRailAct'));
 
     var note = el(NOTE);
     if (!note) {
@@ -41098,14 +41316,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       note.setAttribute('aria-label', 'This patient’s op note');
       note.innerHTML =
         '<div id="mlsOpnHead">' +
-          '<button type="button" id="mlsOpnBack">‹ All patients</button>' +
+          '<h4 id="mlsOpnName"></h4>' +
           '<span id="mlsOpnPos"></span>' +
         '</div>' +
-        '<h4 id="mlsOpnName"></h4>' +
         '<p id="mlsOpnSub"></p>' +
         '<div id="mlsOpnChips"></div>' +
         '<div id="mlsOpnActs">' +
           '<button type="button" id="mlsOpnGo" class="btn-primary"></button>' +
+          '<button type="button" id="mlsOpnHist" hidden>📖 Open in History →</button>' +
+          '<button type="button" id="mlsOpnCopy" hidden>⧉ Copy</button>' +
+          '<button type="button" id="mlsOpnFmt" aria-expanded="false" hidden></button>' +
           '<span id="mlsOpnState" class="mlsOpDayChip"></span>' +
         '</div>' +
         '<div id="mlsOpnDiscl">' +
@@ -41113,9 +41333,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
           '<button type="button" id="mlsOpnTplBtn" aria-expanded="false"></button>' +
           '<span class="mlsopn-tplrow"><button type="button" id="mlsOpnTplLib">📄 Open the template library</button></span>' +
         '</div>' +
-        '<p id="mlsOpnKeys">Esc — back to the list · ← → — previous / next patient</p>';
-      note.querySelector('#mlsOpnBack').addEventListener('click', function () { backToList(); }, false);
+        '<p id="mlsOpnKeys">Esc — back to the day · ← → — previous / next patient</p>';
       note.querySelector('#mlsOpnGo').addEventListener('click', function () { runNotePrimary(); }, false);
+      note.querySelector('#mlsOpnHist').addEventListener('click', function () { openInHistory(); }, false);
+      note.querySelector('#mlsOpnCopy').addEventListener('click', function () { copyNote(); }, false);
+      note.querySelector('#mlsOpnFmt').addEventListener('click', function () { fmtToggle(); setTimeout(refresh, 0); }, false);
       note.querySelector('#mlsOpnDet').addEventListener('click', function () { detOpen = !detOpen; paint(); }, false);
       note.querySelector('#mlsOpnTplBtn').addEventListener('click', function () { tplOpen = !tplOpen; paint(); }, false);
       note.querySelector('#mlsOpnTplLib').addEventListener('click', function () {
@@ -41123,7 +41345,17 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       }, false);
     }
     if (note.parentNode !== editor) editor.insertBefore(note, list);
-    return board;
+
+    var pick = el(PICK);
+    if (!pick) {
+      pick = document.createElement('div');
+      pick.id = PICK;
+      pick.innerHTML =
+        '<h4 id="mlsOpnPickH"></h4>' +
+        '<p id="mlsOpnPickP"></p>';
+    }
+    if (pick.parentNode !== editor) editor.insertBefore(pick, note);
+    return rail;
   }
 
   /* The app's own bulk save (feat_mls_opnote_fill's "Save all drafted", which
@@ -41170,7 +41402,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     if (s.k === 'queued' || s.k === 'failed') {
       var gen = cardBtn(card, 'opPrepGenerateOne(');
-      return { label: (s.k === 'failed' ? '↻ Try this one again' : '✨ Generate op note'),
+      return { label: (s.k === 'failed' ? '↻ Try this one again' : '✨ Draft this op note'),
         run: function () { if (gen) gen.click(); setTimeout(refresh, 400); }, able: !!gen };
     }
     var b2 = blanksLeft(row);
@@ -41187,8 +41419,8 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
           }
         }, able: true };
     }
-    var rec = savedRecord(row);
-    if (rec && !rec.isDraft) {
+    var rec = filedRecord(row);
+    if (rec) {
       return { label: '🚀 Send to Athena',
         run: function () {
           try { if (typeof window.pushHistoryNoteToAthena === 'function') window.pushHistoryNoteToAthena(rec.id); } catch (e) {}
@@ -41202,8 +41434,112 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var plan = notePlan();
     if (plan && plan.able && typeof plan.run === 'function') plan.run();
   }
+  /* THE APP'S OWN WAY INTO HISTORY. opPrepSave() writes an <a> into
+     #opPrepMsg_<i> that closes the room, sets the active patient and shows the
+     History view; clicking THAT is the whole implementation. The fallback runs
+     the same four app functions in the same order for a note that was saved in
+     an earlier session, where the receipt line no longer exists. */
+  function openInHistory() {
+    var a = histLink();
+    if (a) { try { a.click(); return true; } catch (e) {} }
+    var row = rows()[sel];
+    var pid = S(row && row.patientId);
+    if (!pid) return false;
+    try { if (typeof window.closeOpPrep === 'function') window.closeOpPrep(); } catch (e2) {}
+    try { if (typeof window.setActivePtId === 'function') window.setActivePtId(pid); } catch (e3) {}
+    try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e4) {}
+    try { if (typeof window.renderPatientBar === 'function') window.renderPatientBar(); } catch (e5) {}
+    try { if (typeof window.showView === 'function') window.showView('history'); } catch (e6) {}
+    return true;
+  }
+  /* Copy the note the doctor is looking at. The textarea IS the note - the
+     same node opPrepSave() reads - so there is no second copy of the text and
+     nothing to go stale. */
+  function copyNote() {
+    var ta = noteBox();
+    if (!ta) return false;
+    var text = S(ta.value);
+    if (!text) return false;
+    var done = false;
+    try {
+      ta.focus(); ta.select();
+      done = !!document.execCommand('copy');
+    } catch (e) { done = false; }
+    if (!done) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text); done = true; }
+      } catch (e2) { done = false; }
+    }
+    try { if (done && typeof window.toast === 'function') window.toast('Op note copied.', ''); } catch (e3) {}
+    return done;
+  }
 
-  /* ---- 8. RENDER ------------------------------------------------------ */
+  /* ---- 8. THE ONE GLOWING NEXT STEP ----------------------------------
+     Owner, 2026-08-17: "the glowing boxes animation looks good but it always
+     highlights the wrong box - why would it highlight templates."
+
+     This block does NOT highlight anything. There is one highlight system in
+     the app, nextglow-1.0.0, and its `opnotes` row asks THIS function which
+     control is the honest next step - so the glow cannot disagree with the
+     screen, and there is exactly one answer per state:
+
+       templates open                        nothing (the library is its own room)
+       the day has no patients               #mlsOpnPull
+       a patient is selected, drafting       #tpfStop
+       a patient is selected, note in chart  #mlsOpnHist   ("big and flashing")
+       a patient is selected, blanks left    'fields' — the FIELDS BOX's own
+                                             first control that still has no
+                                             value, never the box's border
+       a patient is selected, anything else  #mlsOpnGo     (Draft / Save)
+       nothing selected, a run is on         #tpfStop
+       nothing selected, N still to draft    #opPrepGenAllBtn  ("Draft all N")
+       nothing selected, nothing to draft    #mlsOpDayGo   (Review / Save all)
+                                             or nothing when the day is done
+
+     Returns an ID, never a node, so the caller resolves it against the live
+     DOM and can never light something this block believed was there. The one
+     value that is not an id is 'fields', which names a SURFACE: the fields box
+     builds its controls without ids, and marking one from here would be this
+     block writing into another module's node. nextglow resolves it with the
+     module's OWN vocabulary instead — `label:not(.onf-has)` is how the fill
+     module itself says "this field still has no value". */
+  function fieldsNext() {
+    var card = curCard();
+    if (!card) return null;
+    var n = null;
+    try {
+      n = card.querySelector('.onf-fillbox label:not(.onf-has) select, ' +
+        '.onf-fillbox label:not(.onf-has) input, .onf-fillbox label:not(.onf-has) textarea');
+    } catch (e) { return null; }
+    if (!n) return null;
+    var r = null;
+    try { r = n.getBoundingClientRect(); } catch (e2) { return null; }
+    return (r && r.width > 0 && r.height > 0) ? n : null;
+  }
+  function glowId() {
+    if (!roomOpen()) return '';
+    var st = stateNow();
+    if (st === 'templates') return '';
+    if (st === 'empty') return el('mlsOpnPull') ? 'mlsOpnPull' : '';
+    var t = tally();
+    if (st === 'note') {
+      var i = sel < 0 ? 0 : sel;
+      var row = rows()[i];
+      if (!row) return '';
+      if (statusOf(row, i).k === 'drafting') return el('tpfStop') ? 'tpfStop' : '';
+      var h = el('mlsOpnHist');
+      if (h && !h.hidden && filedRecord(row)) return 'mlsOpnHist';
+      if (blanksLeft(row) > 0 && fieldsNext()) return 'fields';
+      return 'mlsOpnGo';
+    }
+    if (t.drafting) return el('tpfStop') ? 'tpfStop' : '';
+    if (t.queued + t.failed > 0) return 'opPrepGenAllBtn';
+    var go = el('mlsOpDayGo');
+    if (go && !go.hidden) return 'mlsOpDayGo';
+    return '';
+  }
+
+  /* ---- 9. RENDER ------------------------------------------------------ */
   function stateNow() {
     if (!roomOpen()) return '';
     var panel = el('oprPanelTpls');
@@ -41220,17 +41556,17 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     return hay.indexOf(q.toLowerCase().replace(/\s+/g, ' ').trim()) >= 0;
   }
 
-  /* ---- 7b. THE QUIET RUN NOTICE -------------------------------------
+  /* ---- 9b. THE QUIET RUN NOTICE -------------------------------------
      Owner: "the 'Drafting the op notes that need one. Stop any time.' toast is
-     an OUTCOME → the quiet tray / inline status, not a top-right toast."
+     an OUTCOME -> the quiet tray / inline status, not a top-right toast."
 
      Automatic drafting starting is a fact ABOUT THIS ROOM. A floating toast
      over the whole app for it is an interruption that outlives the screen it
      describes, and it lands on top of whatever the doctor is reading. This is
-     the room's own one-line status: it appears in the day strip, next to the
-     count it is about, and it clears itself the moment the day has nothing
-     left to draft. msl-autodraft-1.0.0 calls it when it starts a run and falls
-     back to its old toast only when this block is not installed. */
+     the room's own one-line status: it appears in the rail, next to the count
+     it is about, and it clears itself the moment the day has nothing left to
+     draft. msl-autodraft-1.0.0 calls it when it starts a run and falls back to
+     its old toast only when this block is not installed. */
   var notice = '';
   function runNotice(text) {
     notice = S(text);
@@ -41241,7 +41577,36 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
 
   var lastSig = '', lastState = '', lastRowsRef = null;
+  /* ---- 9c. THE ROOM MUST NOT WAKE ITSELF -----------------------------
+     Owner, 2026-08-18: "the whole op notes thing is bugging out like crazy."
+
+     MEASURED CAUSE, and it is structural rather than cosmetic. This block
+     watches #opPrepModal with childList+subtree, and paint() WRITES into
+     #opPrepModal — the rail's markup, .opr-cur on a card, the fold classes,
+     the list's max-height, the Draft-all label. Every one of those writes was
+     delivered straight back to the observer, which called refresh(), which
+     painted again. The signature guard stopped the expensive half, so it never
+     looked like an infinite loop; it just meant the room never stopped
+     working, on top of opPrepRender()'s own repaints, the fill module's tick
+     wrapper, the day-brain's repaint and nextglow's re-resolve.
+
+     TWO GUARDS, both of which a test measures:
+       · A RE-ENTRANCY FLAG. While paint() runs, every observer callback is
+         dropped. MutationObserver delivers as a microtask, so the flag is
+         released on the next MACROtask — after this paint's own records have
+         been delivered and discarded, and never before.
+       · COALESCING. refresh() settles for 60 ms rather than 0, so a burst of
+         records from one opPrepRender() produces exactly one paint.
+     setTimeout, never requestAnimationFrame: rAF does not fire in a hidden or
+     non-compositing tab and the room would never paint there. */
+  var painting = false;
   function paint() {
+    if (painting) return false;
+    painting = true;
+    try { return paintInner(); }
+    finally { setTimeout(function () { painting = false; }, 0); }
+  }
+  function paintInner() {
     /* True whether or not the room is open: the Templates buttons live on
        other screens entirely. */
     notesCache = null;                 /* one chart read per pass, see notesNow */
@@ -41249,8 +41614,6 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     if (!roomOpen()) { lastDay = ''; return false; }
     if (!ensureHosts()) return false;
 
-    /* A day change rebuilds window._opPrep, so a remembered selection would
-       point at a different patient. */
     /* "ALWAYS START ON ALL SCHEDULED PATIENTS" (owner, twice). openOpPrep()
        REPLACES window._opPrep with a freshly built array every time it runs -
        whether the day changed or not - while opPrepRender() only repaints the
@@ -41295,23 +41658,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     for (i = 0; i < r.length; i++) if (matches(r[i], query)) shownIdx.push(i);
 
     var plan = (st === 'note') ? notePlan() : null;
-    var nextId = '';
-    if (st === 'note') nextId = 'mlsOpnGo';
-    else if (st === 'empty') nextId = 'mlsOpnPull';
-    else if (st === 'list') {
-      var fu = firstUndrafted();
-      nextId = fu >= 0 ? ('mlsOpnRow' + fu) : (el('mlsOpDayGo') && !el('mlsOpDayGo').hidden ? 'mlsOpDayGo' : '');
-    }
+    var filed = (st === 'note') ? filedRecord(r[sel < 0 ? 0 : sel]) : null;
+    var fw = (st === 'note') ? fmtWrap() : null;
+    var fmtOpen = !!(fw && fw.getAttribute('data-mls-fmt') === 'open');
 
     var sig = [VERSION, st, level(), moreOpen ? 1 : 0, sel, detOpen ? 1 : 0, tplOpen ? 1 : 0,
       day, query, runOn ? 1 : 0, bulkSave() ? 'B' : 'b', plan ? plan.label : '', plan && plan.able ? 1 : 0,
+      filed ? 'F' : 'f', fw ? (fmtOpen ? 'O' : 'S') : '-', noteBox() ? 'T' : 't',
       notice, dockBand(), Math.round((window.innerHeight || 0) / 10), shownIdx.join(',')].join('|');
     for (i = 0; i < r.length; i++) {
       var s0 = statusOf(r[i], i);
       sig += '~' + S(r[i] && r[i].appt && r[i].appt.name) + '~' + S(r[i] && r[i].proc) +
         '~' + s0.k + '~' + s0.label + '~' + s0.why;
     }
-    if (sig === lastSig) return true;
+    if (sig === lastSig) { fitList(); return true; }
     lastSig = sig;
 
     /* ---- the day switcher ---- */
@@ -41333,20 +41693,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 
     var noticeEl = el('mlsOpnNotice');
     if (noticeEl) {
-      var showNotice = !!notice && st === 'list';
-      if (showNotice) { noticeEl.textContent = notice; noticeEl.hidden = false; }
+      if (notice) { noticeEl.textContent = notice; noticeEl.hidden = false; }
       else { noticeEl.textContent = ''; noticeEl.hidden = true; }
     }
 
-    /* ---- the ONE day-level action ----
-       In 'draft' and 'stop' the shell's own button IS the action, so this one
-       steps aside rather than competing with it. */
+    /* ---- the ONE day-level secondary action ----
+       In 'draft' and 'stop' the shell's own Draft-all button IS the action, so
+       this one steps aside rather than competing with it. */
     var go = el('mlsOpDayGo');
     if (go) {
-      if (st === 'list' && dayState() === 'review') {
+      if (r.length && dayState() === 'review') {
         go.hidden = false;
         go.textContent = '👁 Review ' + t.review + ' note' + (t.review === 1 ? '' : 's');
-      } else if (st === 'list' && dayState() === 'save') {
+      } else if (r.length && dayState() === 'save') {
         go.hidden = false;
         go.textContent = bulkSave()
           ? ('💾 Save ' + t.ready + ' note' + (t.ready === 1 ? '' : 's') + ' to the charts')
@@ -41356,10 +41715,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         go.textContent = '';
       }
     }
-    /* Relabel, never move: opPrepRender() writes only this button's display,
-       so a label written here survives every repaint, and revert() puts the
-       shell's own words back. It is HIDDEN only when the day has nothing left
-       to draft, which is also when msl-autodraft has nothing to start. */
+    /* Relabel, never rebuild: opPrepRender() writes only this button's
+       display, so a label written here survives every repaint, and revert()
+       puts the shell's own words back. It is HIDDEN only when the day has
+       nothing left to draft, which is also when msl-autodraft has nothing to
+       start. */
     var gen = el('opPrepGenAllBtn');
     if (gen) {
       if (!gen.__mlsOpDayLbl) gen.__mlsOpDayLbl = S(gen.textContent);
@@ -41368,13 +41728,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         ? ('✨ Draft all ' + need + ' op note' + (need === 1 ? '' : 's'))
         : gen.__mlsOpDayLbl;
       if (S(gen.textContent) !== want) gen.textContent = want;
-      var showGen = (st === 'list') && (need > 0 || t.drafting > 0);
+      var showGen = !patientMode() && st !== 'templates' && (need > 0 || t.drafting > 0);
       if (showGen) { if (gen.getAttribute('data-mlsopn-hide')) { gen.removeAttribute('data-mlsopn-hide'); gen.style.display = ''; } }
-      else if (st === 'list') { gen.setAttribute('data-mlsopn-hide', '1'); gen.style.display = 'none'; }
-      else { gen.removeAttribute('data-mlsopn-hide'); gen.style.display = ''; }
+      else { gen.setAttribute('data-mlsopn-hide', '1'); gen.style.display = 'none'; }
     }
 
-    /* ---- the rows ---- */
+    /* ---- the patients ---- */
     var grid = el(GRID);
     if (grid) {
       var html = '';
@@ -41383,12 +41742,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         var sx = statusOf(r[i], i);
         html += '<button type="button" class="mlsOpDayCard" id="mlsOpnRow' + i + '" data-mls-card-i="' + i + '"' +
           ' data-mls-cardstate="' + sx.k + '"' + (i === sel ? ' aria-current="true"' : '') + '>' +
-          '<span class="mlsOpDayTop"><span class="mlsOpDayTime"></span><span class="mlsOpDayName"></span></span>' +
+          '<span class="mlsOpDayTop"><span class="mlsOpDayDot"></span><span class="mlsOpDayTime"></span><span class="mlsOpDayName"></span></span>' +
           '<span class="mlsOpDayProc"></span>' +
-          '<span class="mlsOpDayWhy"></span>' +
-          '<span class="mlsOpDayFoot"><span class="mlsOpDayChip"></span><span class="mlsOpDayAct"></span></span>' +
+          '<span class="mlsOpDayFoot"><span class="mlsOpDayChip"></span><span class="mlsOpDayWhy"></span></span>' +
+          '<span class="mlsOpDayAct"></span>' +
           '</button>';
-        void sx;
       }
       if (grid.__sig !== sig) {
         grid.innerHTML = html;
@@ -41401,10 +41759,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
           var rw = r[ix], sy = statusOf(rw, ix);
           card.querySelector('.mlsOpDayTime').textContent = timeOf(rw) || '—';
           card.querySelector('.mlsOpDayName').textContent = S(rw && rw.appt && rw.appt.name) || 'Patient';
-          card.querySelector('.mlsOpDayProc').textContent = oneLine(S(rw && rw.proc) || 'no procedure text', 62);
+          card.querySelector('.mlsOpDayProc').textContent = oneLine(S(rw && rw.proc) || 'no procedure text', 44);
           card.querySelector('.mlsOpDayChip').textContent = sy.label;
-          var why = card.querySelector('.mlsOpDayWhy');
-          if (why) why.textContent = sy.why;
+          card.querySelector('.mlsOpDayWhy').textContent = sy.why;
           var hasNote = !!(rw && rw.gen && S(rw.note).trim());
           card.querySelector('.mlsOpDayAct').textContent = (hasNote ? 'Open note' : 'Draft op note') + ' ›';
           card.setAttribute('aria-label',
@@ -41417,7 +41774,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     /* ---- the empty day: never a blank room ---- */
     var empty = el('mlsOpnEmpty');
     if (empty) {
-      if (r.length) { empty.hidden = true; empty.innerHTML = ''; }
+      if (r.length) { empty.hidden = true; empty.innerHTML = ''; empty.__day = ''; }
       else if (empty.__day !== day) {
         empty.__day = day;
         empty.hidden = false;
@@ -41430,17 +41787,33 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         b.textContent = '📥 Pull this day from Athena';
         b.addEventListener('click', pullThisDay, false);
         empty.appendChild(b);
-      } else if (!r.length) {
+      } else {
         empty.hidden = false;
       }
     }
 
-    /* ---- the note surface ---- */
+    /* ---- the right pane: nothing selected ---- */
+    var pickH = el('mlsOpnPickH'), pickP = el('mlsOpnPickP');
+    if (pickH && pickP) {
+      if (st === 'empty') {
+        pickH.textContent = 'Nothing scheduled on ' + dayShort(day);
+        pickP.textContent = 'Use ‹ and › on the left to find the day you operated, or pull it from Athena.';
+      } else {
+        pickH.textContent = 'Pick a patient on the left';
+        var need2 = t.queued + t.failed;
+        pickP.textContent = need2
+          ? ('… or press “Draft all ' + need2 + ' op note' + (need2 === 1 ? '' : 's') + '” to do the whole day at once.')
+          : 'Every patient on this day is on the left. Choose one to read or edit its note.';
+      }
+    }
+
+    /* ---- the right pane: one patient's note ---- */
     if (st === 'note') {
-      var row = r[sel] || r[0];
+      var row = r[sel < 0 ? 0 : sel];
       var s = statusOf(row, sel < 0 ? 0 : sel);
       var nameEl = el('mlsOpnName'), subEl = el('mlsOpnSub'), posEl = el('mlsOpnPos'),
-        stEl = el('mlsOpnState'), goEl = el('mlsOpnGo'), detEl = el('mlsOpnDet'), tplEl = el('mlsOpnTplBtn');
+        stEl = el('mlsOpnState'), goEl = el('mlsOpnGo'), detEl = el('mlsOpnDet'), tplEl = el('mlsOpnTplBtn'),
+        histEl = el('mlsOpnHist'), copyEl = el('mlsOpnCopy'), fmtEl = el('mlsOpnFmt');
       if (nameEl) nameEl.textContent = S(row && row.appt && row.appt.name) || 'Patient';
       if (subEl) {
         var parts = [];
@@ -41456,6 +41829,15 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         goEl.disabled = !(plan && plan.able);
         goEl.hidden = !plan;
       }
+      /* THE BIG ONE, and only once it is TRUE: a note that is finalized in the
+         chart is the only thing there is to open in History. */
+      if (histEl) histEl.hidden = !filed;
+      if (copyEl) copyEl.hidden = !noteBox();
+      if (fmtEl) {
+        fmtEl.hidden = !fw;
+        fmtEl.textContent = (fmtOpen ? '▾' : '▸') + ' Formatted view';
+        fmtEl.setAttribute('aria-expanded', fmtOpen ? 'true' : 'false');
+      }
       /* What the green bar carried, as plain chips on one line: the side, the
          levels and the procedure family the app's own parser reads out of the
          procedure text. Same information, no 100%-wide coloured panel between
@@ -41464,19 +41846,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       if (chipsEl) {
         var parsed = null;
         try { parsed = (typeof window._opParseProc === 'function') ? window._opParseProc(S(row && row.proc)) : null; } catch (e5) { parsed = null; }
-        var want = [];
+        var want2 = [];
         if (parsed) {
-          if (parsed.side) want.push(parsed.side);
-          (parsed.levels || []).forEach(function (l) { want.push(l); });
-          (parsed.types || []).forEach(function (x) { want.push(x); });
+          if (parsed.side) want2.push(parsed.side);
+          (parsed.levels || []).forEach(function (l) { want2.push(l); });
+          (parsed.types || []).forEach(function (x) { want2.push(x); });
         }
-        if (chipsEl.__sig !== want.join('|')) {
-          chipsEl.__sig = want.join('|');
+        if (chipsEl.__sig !== want2.join('|')) {
+          chipsEl.__sig = want2.join('|');
           chipsEl.innerHTML = '';
-          for (var ci = 0; ci < want.length; ci++) {
+          for (var ci = 0; ci < want2.length; ci++) {
             var chip = document.createElement('span');
             chip.className = 'mlsOpnChip';
-            chip.textContent = want[ci];
+            chip.textContent = want2[ci];
             chipsEl.appendChild(chip);
           }
         }
@@ -41489,16 +41871,21 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         tplEl.textContent = (tplOpen ? '▾' : '▸') + ' Template';
         tplEl.setAttribute('aria-expanded', tplOpen ? 'true' : 'false');
       }
-      var backEl = el('mlsOpnBack');
-      if (backEl) backEl.textContent = patientMode() ? '‹ All patients on this day' : '‹ All patients';
     }
 
+    /* The id the ONE glow belongs on, published for nextglow-1.0.0 and for a
+       test to read. Written on the modal so it can be measured without calling
+       into this block. */
     if (modal) {
+      var nextId = glowId();
       if (nextId) modal.setAttribute('data-mls-opnotes-next', nextId);
       else modal.removeAttribute('data-mls-opnotes-next');
     }
-    /* LAST, because it measures: everything above has finished writing, so
-       the list host's top is the one it will actually keep. */
+    /* ONE highlight system. The glow is nextglow-1.0.0's and this only tells
+       it that the room changed; it re-resolves against the live DOM. */
+    try { if (window.__mlsNextGlow && typeof window.__mlsNextGlow.refresh === 'function') window.__mlsNextGlow.refresh(); } catch (e6) {}
+    /* LAST, because it measures: everything above has finished writing, so the
+       list host's top is the one it will actually keep. */
     fitList();
     return true;
   }
@@ -41521,7 +41908,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     return true;
   }
 
-  /* ---- 9. INPUT ------------------------------------------------------- */
+  /* ---- 10. INPUT ------------------------------------------------------ */
   document.addEventListener('click', function (ev) {
     if (!ev || !ev.target || !ev.target.closest) return;
     var card = ev.target.closest('.mlsOpDayCard');
@@ -41532,9 +41919,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }, false);
 
   /* Window capture, because the shell's own Escape handler is a DOCUMENT
-     capture listener that closes the whole room - and inside a note, Escape
-     means "back to the list", not "throw the room away". Capture on window
-     runs first, and only this one case stops the event. */
+     capture listener that closes the whole room - and with a patient open,
+     Escape means "back to the day", not "throw the room away". Capture on
+     window runs first, and only this one case stops the event. */
   function typing(t) {
     if (!t || !t.tagName) return false;
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return true;
@@ -41573,22 +41960,33 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   try { window.addEventListener('keydown', onKey, true); } catch (e) {}
 
   var queued = false;
+  var COALESCE = 60;                 /* ms; see the re-entrancy note above */
   function refresh() {
+    if (painting) return;            /* our own writes must never wake us */
     if (queued) return;
+    setTimeout(function () { queued = false; paint(); }, COALESCE);
     queued = true;
-    /* setTimeout, never requestAnimationFrame: rAF does not fire in a hidden
-       or non-compositing tab and the room would never paint there. */
-    setTimeout(function () { queued = false; paint(); }, 0);
   }
 
   function watch() {
     var m = el('opPrepModal');
     if (m && !m.__mlsOpDayWatched) {
       m.__mlsOpDayWatched = true;
-      /* childList+subtree only for content. Attribute changes are filtered to
-         `class` so this block's own data-* writes cannot re-enter. */
+      /* CONTENT, subtree: this is how opPrepRender() rebuilding #opPrepList is
+         noticed, and there is no event for it. */
       try { new MutationObserver(refresh).observe(m, { childList: true, subtree: true }); } catch (e) {}
-      try { new MutationObserver(refresh).observe(m, { attributes: true, attributeFilter: ['class'], subtree: true }); } catch (e) {}
+      /* THE OPEN/CLOSED SIGNAL, and NOT subtree. The previous version watched
+         `class` across the whole subtree — and .opr-cur, .mlsopn-adv-* and
+         .mlsopn-det are all classes THIS BLOCK writes onto nodes inside it, so
+         every selection and every fold fed itself a second pass. The only
+         class that matters here is .show on the room itself. */
+      try { new MutationObserver(refresh).observe(m, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+    }
+    /* the Templates panel's own .on, which is a state of this room */
+    var tp = el('oprPanelTpls');
+    if (tp && !tp.__mlsOpDayWatched) {
+      tp.__mlsOpDayWatched = true;
+      try { new MutationObserver(refresh).observe(tp, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
     }
     var html = document.documentElement;
     if (html && !html.__mlsOpDayModeWatched) {
@@ -41610,8 +42008,15 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     back: backToList,
     setDay: setDay,
     day: currentDay,
+    contextDay: contextDay,
     shiftDay: function (n) { return setDay(shiftKey(currentDay(), n)); },
     search: function (q) { query = S(q); paint(); return query; },
+    /* THE ONE NEXT STEP, as an id. nextglow-1.0.0's `opnotes` row reads this,
+       and so does every test that asks "is the glow on the right box". */
+    glow: glowId,
+    copy: copyNote,
+    openInHistory: openInHistory,
+    toggleFormatted: function () { var did = fmtToggle(); refresh(); return did; },
     /* The quiet inline status, used by msl-autodraft instead of a toast.
        Returns TRUE only when the line is actually on screen carrying that
        text - a receipt, not a promise. */
@@ -41624,12 +42029,13 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     /* The honest answer to "what is on this screen", counted, not asserted. */
     status: function () {
       var modal = el('opPrepModal');
+      var gen = el('opPrepGenAllBtn'), act = el('mlsOpnRailAct');
       return {
         open: roomOpen(), level: level(), more: moreOpen, state: stateNow(),
-        board: !!el(BOARD), cards: (el(GRID) || { children: [] }).children.length,
-        railFolded: !!(modal && modal.getAttribute('data-mlsopn-rail') === 'folded'),
+        rail: !!el(RAIL), board: !!el(BOARD), cards: (el(GRID) || { children: [] }).children.length,
+        railed: !!(gen && act && gen.parentNode === act),
         primary: dayState(), next: S(modal && modal.getAttribute('data-mls-opnotes-next')),
-        selected: sel, tally: tally(),
+        glow: glowId(), selected: sel, tally: tally(),
         formatted: (function () {
           var out = { total: 0, shut: 0, open: 0, unmarked: 0 };
           if (!modal) return out;
@@ -41647,7 +42053,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       };
     },
     setMore: function (v) { moreOpen = !!v; lastSig = ''; paint(); return moreOpen; },
-    /* the measured height the card list is capped to, and the band it is
+    /* the measured height the patient list is capped to, and the band it is
        keeping clear - numbers, so a test can report them rather than tick */
     fit: function () {
       var host = el(LISTH);
@@ -41655,16 +42061,22 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     },
     revert: function () {
       try { window.removeEventListener('keydown', onKey, true); } catch (e0) {}
-      ['mlsOpDay', 'mlsOpDayList', 'mlsOpnNote'].forEach(function (id) {
+      /* THE MOVED BUTTON GOES HOME FIRST, or reverting this block would take
+         the shell's own Draft-all off the page with it. */
+      var gen = el('opPrepGenAllBtn');
+      if (gen) {
+        if (gen.__mlsOpnHome && gen.__mlsOpnHome.appendChild) {
+          try { gen.__mlsOpnHome.insertBefore(gen, gen.__mlsOpnHome.firstChild); } catch (e1) {}
+          try { delete gen.__mlsOpnHome; } catch (e2) {}
+        }
+        if (gen.__mlsOpDayLbl) { gen.textContent = gen.__mlsOpDayLbl; try { delete gen.__mlsOpDayLbl; } catch (e3) {} }
+        if (gen.getAttribute('data-mlsopn-hide')) { gen.removeAttribute('data-mlsopn-hide'); gen.style.display = ''; }
+      }
+      [RAIL, 'mlsOpnRailHost', NOTE, PICK].forEach(function (id) {
         var h = el(id); if (h && h.parentNode) h.parentNode.removeChild(h);
       });
       var mslCards = document.querySelectorAll('#opPrepList > div[data-msl-card]');
       for (var mc = 0; mc < mslCards.length; mc++) mslCards[mc].removeAttribute('data-msl-card');
-      var gen = el('opPrepGenAllBtn');
-      if (gen) {
-        if (gen.__mlsOpDayLbl) { gen.textContent = gen.__mlsOpDayLbl; try { delete gen.__mlsOpDayLbl; } catch (e) {} }
-        if (gen.getAttribute('data-mlsopn-hide')) { gen.removeAttribute('data-mlsopn-hide'); gen.style.display = ''; }
-      }
       var marked = document.querySelectorAll('.mlsopn-adv-simple,.mlsopn-adv-normal,.mlsopn-det,.mlsopn-tplrow,.mlsopn-saverow'), i;
       for (i = 0; i < marked.length; i++) {
         marked[i].classList.remove('mlsopn-adv-simple');
@@ -41675,8 +42087,8 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       }
       var m = el('opPrepModal');
       if (m) {
-        ['data-mlsopn', 'data-mlsopn-rail', 'data-mlsopn-more', 'data-mlsopn-run', 'data-mlsopn-det',
-          'data-mlsopn-tpl', 'data-mls-opnotes-state', 'data-mls-opnotes-next'].forEach(function (a) { m.removeAttribute(a); });
+        ['data-mlsopn', 'data-mlsopn-more', 'data-mlsopn-run', 'data-mlsopn-det', 'data-mlsopn-tpl',
+          'data-mlsopn-gen', 'data-mls-opnotes-state', 'data-mls-opnotes-next'].forEach(function (a) { m.removeAttribute(a); });
       }
       var fmt = document.querySelectorAll('.mls-fp-fmt[data-mls-fmt]');
       for (i = 0; i < fmt.length; i++) fmt[i].removeAttribute('data-mls-fmt');
@@ -41699,7 +42111,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   });
 })();
 </script>
-<!-- ===== end opnote-day-2.0.0 ========================================= -->
+<!-- ===== end opnote-day-3.0.0 ========================================= -->
 <!-- ===== dock-1p-1.1.0 — the taskbar stops covering the work ==========
      Owner: "that task bar getting in the way of everything. It needs to be
      better and smarter made."
@@ -43638,6 +44050,26 @@ a[data-mls-next="1"]{
     return 'nopatient';
   }
 
+  /* THE OP-NOTE ROOM ANSWERS FOR ITSELF ---------------------------------
+     Owner, 2026-08-18: "the glowing boxes animation looks good but it always
+     highlights the wrong box — why would it highlight templates."
+
+     The room is four surfaces behind one host (#opPrepModal): the day with
+     nothing selected, one patient's note, an empty day, and the template
+     library. A ladder of selectors cannot tell them apart — every candidate is
+     in the DOM in all four — so it lit whichever one happened to be first.
+     opnote-day-3.0.0 knows which surface is up and publishes the ID of the one
+     honest next step; this reads it and resolves that id against the live DOM,
+     so the glow can never point at something the room only believed was there.
+     Returns '' when the block is absent or the room has no honest next step,
+     and the last row of the table below is then the (unchanged) fallback. */
+  function opnWant() {
+    return safe(function () {
+      var d = window.__mlsOpDay;
+      return (d && typeof d.glow === 'function') ? trimmed(d.glow()) : '';
+    }, '');
+  }
+
   /* ---------------- THE PATH TABLE ------------------------------------
      One row per room / dialog. Read in order; the first row whose host is on
      screen owns the glow.
@@ -43678,24 +44110,59 @@ a[data-mls-next="1"]{
     },
     {
       id: 'opnotes', host: '#opPrepModal', modal: true,
+      /* ONE ROW PER SURFACE, and the surface is named by the room itself (see
+         opnWant above) rather than guessed from which selector resolves first.
+         Order is irrelevant here because the guards are mutually exclusive —
+         that is the point: a state machine, not a ladder. Every `sel` is still
+         resolved against the live DOM, so a room that names a control which is
+         hidden or disabled falls through to the last row rather than lighting
+         nothing. Templates is deliberately absent: opening a library is never
+         the next step in drafting an operative note. */
       states: [
-        /* FILL-IN-THE-BLANKS IS DONE. Owner, 2026-08-17: once the note is
-           saved, "Open in History →" is the next step and must be big and
-           glowing. It is a bare inline <a> with no id inside the room's own
-           saved-message, so it is matched on the shell literal in its onclick
-           — the one stable thing about it — rather than by adding an id to
-           op-note code another lane is rebuilding right now. */
-        { steps: [
+        /* saved — owner, 2026-08-17: "make sure to have an open in history
+           button ... big and flashing" once the note is in the chart. */
+        { when: function () { return opnWant() === 'mlsOpnHist'; },
+          steps: [
+            { sel: '#mlsOpnHist', reason: 'Read the note you just saved' },
             { sel: '#opPrepModal a[onclick*="showView(\'history\')"]',
               reason: 'Read the note you just saved' }
           ] },
+        /* a run is on: the only honest next step is the one that stops it */
+        { when: function () { return opnWant() === 'tpfStop'; },
+          steps: [{ sel: '#tpfStop', reason: 'Drafting — you can stop any time' }] },
+        /* THE NOTE IS WAITING ON A DETAIL. Owner, 2026-08-18, of the amber
+           Fields box: the thing that moves must be the control he has to
+           answer, not the box's border. `label:not(.onf-has)` is
+           feat_mls_opnote_fill's OWN marker for "this field has no value yet",
+           so this points at the module's first unanswered control rather than
+           at a node this lane invented. Falls back to the pane's one action. */
+        { when: function () { return opnWant() === 'fields'; },
+          steps: [
+            { sel: '#opPrepList > div.opr-cur .onf-fillbox label:not(.onf-has) select',
+              reason: 'The one detail this note still needs' },
+            { sel: '#opPrepList > div.opr-cur .onf-fillbox label:not(.onf-has) input',
+              reason: 'The one detail this note still needs' },
+            { sel: '#mlsOpnGo' }
+          ] },
+        /* one patient is open: the note's own single action, whatever it is
+           (Draft / Draft it anyway / Save / Send to Athena) */
+        { when: function () { return opnWant() === 'mlsOpnGo'; },
+          steps: [{ sel: '#mlsOpnGo' }] },
+        /* the day has no patients */
+        { when: function () { return opnWant() === 'mlsOpnPull'; },
+          steps: [{ sel: '#mlsOpnPull', reason: 'This day is not on the schedule yet' }] },
+        /* nothing selected and the day still needs notes */
+        { when: function () { return opnWant() === 'opPrepGenAllBtn'; },
+          steps: [{ sel: '#opPrepGenAllBtn', reason: 'Draft every op note this day needs' }] },
+        /* nothing selected, nothing left to draft, but notes to review or file */
+        { when: function () { return opnWant() === 'mlsOpDayGo'; },
+          steps: [{ sel: '#mlsOpDayGo' }] },
+        /* THE FALLBACK, unchanged from 1.0.0 and reached only when the room
+           block is absent (or says '' — the day is genuinely finished). The
+           unblock hop to the Templates tab is deliberately still gone: it is
+           what lit the wrong box. */
         { steps: [
-            /* 2026-08-18 owner: the unblock hop to the Templates tab lit the
-               WRONG box ('why would it highlight templates'). While Draft-all
-               is disabled (history loading) the glow stays on it - the ladder
-               falls through to the room's own primary button, never Templates. */
-            { sel: '#opPrepGenAllBtn',
-              reason: 'Draft every op note this day needs' },
+            { sel: '#opPrepGenAllBtn', reason: 'Draft every op note this day needs' },
             '#opPrepModal .btn-primary', '#oprBack'
           ] }
       ]
