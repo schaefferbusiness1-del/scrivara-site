@@ -7007,8 +7007,47 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      when no recording ever ran in this tab. */
   var _recSessionSeen = false;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  /* visitlane-1.0.0 — THE SCREEN'S MODE IS A STATE, NOT A HEADING.
+     This one answer decides whether the doctor's ENTIRE visit lane is removed
+     (see the kill list in ensure() below: `staff ? '...,.ez3fl-record' : ...`).
+     Until 2026-08-18 it was a text match on the FIRST .ez3-h1 inside
+     #mlsEz3Body, and a heading is the wrong instrument for it on three
+     measured counts:
+       1. IT IS WRITTEN LATE. render() calls reflectEasyMode() FIRST — which
+          stamps data-mls-easy-mode on #mlsEz3Body — and only then does
+          renderStaff()/renderHome()/renderDoctor() replace #ez3Wrap. So every
+          single render has a window in which the heading still names the
+          screen the engine is LEAVING, and this module's observer fires inside
+          exactly that window.
+       2. IT IS NOT THE ONLY .ez3-h1 IN THAT BODY. The choose screen ships
+          "Patients · <day>" and a second "Other patients" sub-heading, the
+          staff screen ships "Staff prep" AND "Schedule", and this module (plus
+          the widget deck and the staff panel) injects nodes at BODY level.
+          querySelector('.ez3-h1') returns whichever happens to come first in
+          DOM ORDER, not the one that names the screen.
+       3. IT IS COPY. Rewording one heading would silently either strand the
+          Back button on the doctor screen or DELETE the doctor's lane — the
+          transcript, the record pill, Generate and Review — with a green gate.
+     The engine publishes the fact itself, so read the fact: state().mode,
+     mirrored onto #mlsEz3Body[data-mls-easy-mode] before any HTML is written.
+     That is the same reader the day-strip module already uses (easyMode(),
+     "Mode is authoritative before the target DOM is rendered. Never use a
+     delayed badge/poll as the reason Staff wins ownership."). The heading
+     survives only as the LAST resort, for an engine build that publishes
+     neither signal — so this is strictly more correct, never less. */
   function onStaffScreen(body) {
-    try { var h = body.querySelector('.ez3-h1'); return !!(h && /staff prep/i.test(h.textContent || '')); } catch (e) { return false; }
+    try {
+      var easy = window.__mlsEasyV32;
+      var st = (easy && typeof easy.state === 'function') ? easy.state() : null;
+      if (st && st.mode === 'staff') return true;
+      if (st && st.mode === 'doctor') return false;
+    } catch (e) {}
+    try {
+      var attr = (body && body.getAttribute) ? body.getAttribute('data-mls-easy-mode') : '';
+      if (attr === 'staff') return true;
+      if (attr === 'doctor') return false;
+    } catch (e2) {}
+    try { var h = body.querySelector('.ez3-h1'); return !!(h && /staff prep/i.test(h.textContent || '')); } catch (e3) { return false; }
   }
   function clickMode(id) { try { var b = $(id); if (b) { b.click(); return true; } } catch (e) {} return false; }
   /* The workspace remains an optional power-user destination. Primary capture,
@@ -7719,11 +7758,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           rec.appendChild(q);
 
           /* The lane lives INSIDE #ez3Wrap before the screen's first action
-             row — its historical visual position. The active engine's own
-             render pass (v3.7.1 setWrapHtml) now detaches and reinserts this
-             exact node synchronously around every innerHTML rewrite, so this
-             creation path only runs when the lane truly does not exist yet. */
-          wrap.insertBefore(rec, row2);
+             row — its historical visual position. The engine's render pass
+             (setWrapHtml) REMOVES every .ez3fl-record before it rewrites
+             #ez3Wrap, so this creation path runs after every engine render.
+
+             visitlane-1.0.0 — INSERT BEFORE A DIRECT CHILD, NEVER A DESCENDANT.
+             THIS LINE WAS THE 2026-08-18 BLOCKER, and it is a plain DOM bug,
+             not a race: `row2` comes from wrap.querySelector('.ez3-row2'),
+             which searches the whole SUBTREE, while insertBefore() requires its
+             reference node to be a DIRECT CHILD of wrap. In every phase the
+             doctor screen had been measured in, the first .ez3-row2 happened to
+             be a top-level row and it worked. In the `note` phase — the exact
+             state where the doctor has a generated note on screen —
+             renderDoctor() emits the note card
+
+                 <div class="ez3-card"> … <div class="ez3-row2">Edit/Regenerate/Copy
+
+             BEFORE any top-level action row, so the first match is nested and
+             insertBefore threw NotFoundError. run()'s catch swallowed it, and
+             from that moment THE WHOLE VISIT LANE WAS GONE and never came back:
+             no transcript, no ✨ Generate, and no "Next: Review & send to
+             Athena" — measured in real Chrome as `.ez3fl-record` absent with
+             #noteBox holding 39 characters, for as long as the phase lasted.
+             (It also aborted the rest of ensure(): the staff-link and stale
+             day-chip cleanups below never ran.)
+             Walking up to the child of wrap that CONTAINS the first action row
+             keeps the historical anchor exactly and cannot throw; a reference
+             of null degrades to an append, which is the same intent. */
+          var anchor = row2;
+          while (anchor && anchor.parentNode !== wrap) anchor = anchor.parentNode;
+          wrap.insertBefore(rec, anchor || null);
           _primaryLane = rec;
           syncTopLane(rec);
         }
@@ -7831,13 +7895,81 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
   }
   function schedule() { if (_deb) return; _deb = setTimeout(function () { _deb = null; run(); }, 150); }
+  /* visitlane-1.0.0 — A DOCTOR SCREEN WITH NO LANE IS NOT A STATE TO DEBOUNCE.
+     MEASURED 2026-08-18 in real Chrome on this shell: the engine repaints
+     #ez3Wrap from an HTML string (setWrapHtml) on its own 700 ms poll, and that
+     repaint takes this lane with it — the transcript, the record pill, ✨
+     Generate and Next: Review. The 150 ms coalesce below then rebuilt it, so
+     .ez3fl-record was ABSENT for 150-180 ms after EVERY engine render, and
+     anything that read the visit room in that window saw a room with no
+     controls at all. That is not theoretical: it is how the where-to-go-next
+     glow ended up marking a node that had been detached, leaving the doctor
+     with zero next steps (tests/1p-nextglow-path-contract.test.js, "expected
+     exactly ONE glowing control, got 0").
+     A MutationObserver callback is a MICROTASK, so re-mounting here puts the
+     lane back before the browser paints and before any later task can observe
+     the hole. The fast path is taken ONLY when ensure() would really mount —
+     doctor mode, and a #ez3Wrap that already has the .ez3-row2 anchor — so the
+     choose screen (which has no anchor and legitimately shows no lane) keeps
+     the 150 ms coalesce it was given for freeze safety, and so does everything
+     else. _fast guards against re-entering through our own writes. */
+  var _fast = false, _fastBlocked = false;
+  function scheduleFromMutation() {
+    if (!_fast) {
+      try {
+        var body = $('mlsEz3Body');
+        var wrapEl = body ? body.querySelector('#ez3Wrap') : null;
+        var anchor = wrapEl ? wrapEl.querySelector('.ez3-row2') : null;
+        var have = !!(body && body.querySelector('.ez3fl-record'));
+        if (have) _fastBlocked = false;
+        if (!_fastBlocked && anchor && !have && !onStaffScreen(body)) {
+          if (_deb) { try { clearTimeout(_deb); } catch (e0) {} _deb = null; }
+          _fast = true;
+          try { run(); } finally { _fast = false; }
+          /* THE VALVE. If the mount did not take, this screen cannot host the
+             lane right now for a reason we do not model, and running ensure()
+             once per mutation with no coalesce would be a hot loop on a doctor's
+             machine. Stand down to the ordinary 150 ms debounce until a lane is
+             seen again; the debounce keeps retrying, just at a sane rate. */
+          if (!body.querySelector('.ez3fl-record')) _fastBlocked = true;
+          return;
+        }
+      } catch (e) {}
+    }
+    schedule();
+  }
+  /* visitlane-1.0.0 — WATCH THE CONTROL THIS LANE READS ITS STATE OUT OF.
+     Every state this lane paints — Pause vs Resume vs nothing, the hint line,
+     whether ✨ Generate is offered, and body.mls-recording, which three other
+     modules stand down on — is derived from recordingNow(), which reads
+     #captureBtn's class and label. Until now the lane only learned that the
+     recorder had changed from a click it had handled itself, or from the 2.5 s
+     safety sweep. Anything that starts or stops capture WITHOUT a click inside
+     #mlsEz3 — the phone engine, dictation, an error path, the engine's own
+     stopCapture, a stop from the advanced workspace — left the pill reading
+     "⏸ Pause recording" and body.mls-recording set for up to two and a half
+     seconds after the recorder had stopped. Measured 2026-08-18: the engine's
+     own phase read 'stopped' while this lane still claimed live. One observer
+     on the one control, re-armed here because the engine can replace it. */
+  var _capObs = null;
+  function watchCapture() {
+    try {
+      var cb = $('captureBtn');
+      if (!cb || cb.__mlsFlCapWatched || typeof MutationObserver !== 'function') return;
+      cb.__mlsFlCapWatched = true;
+      if (!_capObs) _capObs = new MutationObserver(function () { scheduleLaneSync(); });
+      _capObs.observe(cb, { attributes: true, attributeFilter: ['class', 'disabled'],
+        childList: true, characterData: true, subtree: true });
+    } catch (e) {}
+  }
   function run() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { ensure(); } catch (e) {}
+    watchCapture();
     try { var body = $('mlsEz3Body'); if (body && _obs) _obs.observe(body, { childList: true, subtree: true }); } catch (e) {}
   }
   function boot() {
-    try { _obs = new MutationObserver(function () { schedule(); }); } catch (e) {}
+    try { _obs = new MutationObserver(function () { scheduleFromMutation(); }); } catch (e) {}
     run();
     var n = 0; _iv = setInterval(function () { run(); if (++n > 20) clearInterval(_iv); }, 900);
     document.addEventListener('input', laneSignal, true);
@@ -7866,6 +7998,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     installed: true, version: VERSION,
     revert: function () {
       try { if (_obs) _obs.disconnect(); } catch (e) {}
+      try { if (_capObs) { _capObs.disconnect(); _capObs = null; } } catch (e) {}
       try { if (_iv) clearInterval(_iv); } catch (e) {}
       try { if (_laneIv) clearInterval(_laneIv); } catch (e) {}
       try { if (_laneRaf != null) { if (window.cancelAnimationFrame) window.cancelAnimationFrame(_laneRaf); else clearTimeout(_laneRaf); } } catch (e) {}
