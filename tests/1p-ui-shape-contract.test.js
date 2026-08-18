@@ -62,7 +62,11 @@ const BLOCKS = [
   ['<!-- ===== dock-1p-1.1.0', '<!-- ===== end dock-1p-1.1.0'],
   ['<!-- ===== opnote-open-1.1.0', '<!-- ===== end opnote-open-1.1.0'],
   ['<!-- ===== opnote-vocab-1.0.0', '<!-- ===== end opnote-vocab-1.0.0'],
-  ['<!-- ===== opnote-day-2.0.0', '<!-- ===== end opnote-day-2.0.0'],
+  /* PIN MOVED 2026-08-18 (op-notes lane): opnote-day-2.0.0 is REPLACED by
+     opnote-day-3.0.0 on the owner's order — "that LEFT SIDE SELECTOR THING was
+     great, add it back". 2.0.0's single column (a list OR one patient) is the
+     shape he rejected; 3.0.0 is the rail + the pane, always both. */
+  ['<!-- ===== opnote-day-3.0.0', '<!-- ===== end opnote-day-3.0.0'],
   ['<!-- ===== view-hold-1.0.0', '<!-- ===== end view-hold-1.0.0'],
   ['<!-- ===== note-model-1.1.0', '<!-- ===== end note-model-1.1.0']
 ];
@@ -82,7 +86,8 @@ for (const name of SHELLS) {
   /* A superseded version number must not survive anywhere in the shell: two
      copies of one block is the shape that ships a fix and its own regression
      together. */
-  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'note-model-1.0.0', 'opnote-day-1.0.0']) {
+  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'note-model-1.0.0',
+    'opnote-day-1.0.0', 'opnote-day-2.0.0']) {
     eq(src.indexOf('<!-- ===== ' + dead), -1,
       `${name}: the superseded ${dead} block is still present alongside its successor`);
   }
@@ -171,15 +176,37 @@ for (const name of SHELLS) {
   /* -- opnote-day: one primary action, and the button autodraft needs ---
      msl-autodraft refuses when #opPrepGenAllBtn's offsetParent is null, so a
      registry that folds it turns automatic drafting off silently. */
-  const day = src.slice(src.indexOf('<!-- ===== opnote-day-2.0.0'), src.indexOf('<!-- ===== end opnote-day-2.0.0'));
-  ok(day.includes("VERSION = 'opnote-day-2.0.0'"), `${name}: the day-list block lost its version`);
-  for (const never of ['#opPrepGenAllBtn', '#tpfStop', '.modal-x', '#oprBack']) {
+  const day = src.slice(src.indexOf('<!-- ===== opnote-day-3.0.0'), src.indexOf('<!-- ===== end opnote-day-3.0.0'));
+  ok(day.includes("VERSION = 'opnote-day-3.0.0'"), `${name}: the op-note room block lost its version`);
+  /* PIN INVERTED 2026-08-18 (op-notes lane). 1.0.0 and 2.0.0 FOLDED
+     #oprDayRail and this line pinned that fold. The owner has since ruled the
+     other way — "that LEFT SIDE SELECTOR THING was great, add it back" — so
+     the rail is now the selector and folding it is the defect. What 3.0.0
+     folds is the rail's legacy CONTENT (the standing prose, the mode switch,
+     the old day row, the template rail), which is where those ~40 controls
+     actually lived. */
+  for (const never of ['#opPrepGenAllBtn', '#tpfStop', '.modal-x', '#oprBack', '#oprDayRail']) {
     ok(!new RegExp("sel: '" + never.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'").test(day),
       `${name}: opnote-day folds ${never}, which must never be folded`);
   }
-  ok(/\{ sel: '#oprDayRail',\s+levels: \['simple', 'normal'\], rail: true \}/.test(day),
-    `${name}: opnote-day no longer folds the secondary rail, which is 40 of the 46 controls it exists to remove`);
+  for (const folded of ['#opPrepModeRow', '#opPrepDayRow', '#oprTplRail']) {
+    ok(new RegExp("sel: '" + folded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'").test(day),
+      `${name}: opnote-day no longer folds ${folded} — the rail's legacy content is back on top of the patient list`);
+  }
   ok(day.includes("data-mlsopn-more"), `${name}: opnote-day lost its single More disclosure`);
+  /* THE RAIL IS RE-ASSERTED, not assumed: msl-fit collapses #oprPanelProcs to
+     one column below 1100px in calm/guided, which would delete the selector on
+     a 1024-wide laptop. */
+  ok(/#opPrepModal\[data-mls-opnotes-state\] #oprPanelProcs\{\s*\n\s*grid-template-columns:288px minmax\(0,1fr\) !important;/.test(day),
+    `${name}: opnote-day no longer re-asserts the two-pane grid, so msl-fit's 1100px rule deletes the rail`);
+  /* ONE HIGHLIGHT SYSTEM. The block must publish an id and never mark a glow
+     itself — the owner's "it always highlights the wrong box" was two systems
+     disagreeing. */
+  ok(/function glowId\(\)/.test(day), `${name}: opnote-day no longer publishes the one next-step id`);
+  ok(!/setAttribute\(\s*'data-mls-next'|classList\.add\(\s*'msl-next'/.test(day),
+    `${name}: opnote-day marks a glow of its own — there must be exactly one highlight owner (nextglow-1.0.0)`);
+  ok(/__mlsNextGlow[\s\S]{0,120}refresh/.test(day),
+    `${name}: opnote-day no longer tells nextglow-1.0.0 that the room changed, so the glow lags the screen`);
   /* the fold must be released by the disclosure, not re-shown by a second
      rule: display:revert cannot restore an inline display:flex */
   ok(!/\.mlsopn-adv-simple\s*\{\s*display:\s*revert/.test(day),
@@ -402,8 +429,8 @@ for (const name of SHELLS) {
   }
 
   /* the day board's blank counter */
-  const dBody = src.slice(src.indexOf('<!-- ===== opnote-day-2.0.0'),
-    src.indexOf('<!-- ===== end opnote-day-2.0.0'));
+  const dBody = src.slice(src.indexOf('<!-- ===== opnote-day-3.0.0'),
+    src.indexOf('<!-- ===== end opnote-day-3.0.0'));
   const blankLit = /var m = note\.match\((\/[^\n]*?\/gi)\);/.exec(dBody);
   ok(blankLit, 'the day list lost its [[key]] blank counter');
   /* the day switcher's own date guard, executed rather than grepped: a
@@ -556,10 +583,11 @@ function harness() {
       var CTRL = 'button,a[href],input:not([type=hidden]),select,textarea,[role=button],' +
         '[role=menuitem],[role=menuitemradio],[role=menuitemcheckbox],[role=tab]';
       var all = Array.prototype.slice.call(modal.querySelectorAll(CTRL)).filter(visible);
-      /* A PER-PATIENT ROW IS NOT CHROME. opnote-day-2.0.0 puts the day
-         switcher first in the editor and the cards after the Draft-all row, so
-         the cards no longer sit inside #mlsOpDay - they are excluded by what
-         they ARE (a patient card) rather than by where they happen to live. */
+      /* A PER-PATIENT ROW IS NOT CHROME. opnote-day-3.0.0 puts the day
+         switcher and the day's one primary in #mlsOpDay at the top of the LEFT
+         RAIL and the patient buttons in #mlsOpDayList below it, so the buttons
+         do not sit inside #mlsOpDay - they are excluded by what they ARE (a
+         patient button) rather than by where they happen to live. */
       var chrome = all.filter(function (e) {
         if (list && list.contains(e)) return false;
         if (board && board.contains(e)) return false;
@@ -717,7 +745,7 @@ function harness() {
       });
       return out;
     },
-    /* THE DAY, WHEREVER IT IS SHOWN. opnote-day-2.0.0 retires the room's own
+    /* THE DAY, WHEREVER IT IS SHOWN. opnote-day-3.0.0 retires the room's own
        top bar (its <h3> repeated the day the switcher now owns and its
        "< Back" was a second copy of the modal's X), so the day switcher's own
        label is the surface that must carry it. Any of the three counts. */
@@ -875,7 +903,15 @@ async function runtime() {
       const st = await page.evaluate(() => window.__mlsOpDay.status());
       ok(['draft', 'stop', 'review', 'save', 'done'].indexOf(st.primary) >= 0,
         `the day board has no primary action state: ${JSON.stringify(st)}`);
-      ok(st.railFolded, 'the secondary rail is not folded in Simple, so the 40 controls it holds are still on screen');
+      /* PIN INVERTED 2026-08-18 (op-notes lane): this used to assert
+         st.railFolded — that the LEFT COLUMN was gone in Simple. The owner has
+         ruled the other way ("that LEFT SIDE SELECTOR THING was great, add it
+         back"), so the rail must be PRESENT in every mode, and the shell's own
+         Draft-all button must have been re-parented into it (msl-autodraft
+         refuses when its offsetParent is null, so a rail that did not carry it
+         would silently turn automatic drafting off). */
+      ok(st.rail, 'the left-side patient selector is not on screen in Simple');
+      ok(st.railed, 'the shell\'s own Draft-all button is not in the rail, so the room has two primaries or none');
       /* and the ONE disclosure gives every one of them back */
       const opened = await page.evaluate(() => {
         window.__mlsOpDay.setMore(true);
@@ -1075,23 +1111,27 @@ async function runtime() {
       eq(fresh.open, 0, `a freshly opened room already shows ${fresh.open} expanded formatted views`);
 
       /* now generate: this is the moment the pane appears */
-      const after = await page.evaluate(async () => {
+      await page.evaluate(async () => {
         const rows = window._opPrep || [];
         const body = ['PROCEDURE PERFORMED:', 'Lumbar medial branch block', '',
-          'INDICATIONS:', 'Chronic low back pain.', '',
-          'TECHNIQUE:', '- The area was prepped and draped.', '- Fluoroscopic guidance was used.',
-          '', 'FINDINGS:', 'Documented.', '', 'DISPOSITION:', 'Stable.'].join('\n');
+          'INDICATIONS:', 'Chronic low back pain refractory to conservative care.', '',
+          'TECHNIQUE:', '- The area was prepped and draped in the usual sterile fashion.',
+          '- Fluoroscopic guidance was used throughout the procedure.',
+          '- The needle was advanced under direct visualization.', '',
+          'FINDINGS:', 'Documented in full.', '', 'DISPOSITION:', 'Stable, discharged to recovery.'].join('\n');
         rows.forEach((r) => { r.gen = true; r.note = body; });
         opPrepRender();
-        await new Promise((r) => setTimeout(r, 1500));
-        /* MEASURE WHERE THE PANE IS ACTUALLY ON SCREEN. From the day list no
-           note editor is rendered at all, so "no formatted body is visible"
-           would be true whether or not this block works — a vacuous pass.
-           The note surface is the only place the question means anything. */
-        window.__mlsOpDay.openNote(0);
-        await new Promise((r) => setTimeout(r, 600));
-        window.__mlsOpDay.refresh();
-        await new Promise((r) => setTimeout(r, 600));
+      });
+      /* SETTLE, DON'T SNAPSHOT (2026-08-18, op-notes lane). MEASURED: this
+         section read `total: 0` and failed on its own premise. The pane is
+         feat_mls_fixpack_0701's, it attaches only when the note is over 200
+         characters AND looks structured, and only on one of ITS OWN refresh
+         reasons — none of which is "a test just assigned .note". The note is
+         longer now and the sample is nudged the way a doctor nudges it (an
+         input event on the note he is typing in) until the pane exists. If it
+         never appears the suite still says so; it just no longer depends on
+         winning a race. */
+      const readFmt = () => page.evaluate(() => {
         const st = window.__mlsOpDay.status().formatted;
         const shown = Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt'))
           .filter((w) => window.__uiContract.visible(w)).length;
@@ -1099,6 +1139,18 @@ async function runtime() {
           .filter((b) => window.__uiContract.visible(b)).length;
         return { st, shown, bodiesShown };
       });
+      await page.evaluate(() => { window.__mlsOpDay.openNote(0); });
+      await page.waitForTimeout(900);
+      let after = await readFmt();
+      for (let i = 0; i < 16 && (after.shown === 0 || after.st.unmarked > 0); i++) {
+        await page.evaluate(() => {
+          const ta = document.querySelector('#opPrepList > div.opr-cur textarea[id^="opPrepNote_"]');
+          if (ta) ta.dispatchEvent(new Event('input', { bubbles: true }));
+          try { window.__mlsOpDay.refresh(); } catch (e) {}
+        });
+        await page.waitForTimeout(700);
+        after = await readFmt();
+      }
       ok(after.shown > 0,
         `no formatted view is on screen in the note surface, so this section proved nothing (${JSON.stringify(after)})`);
       ok(after.st.total > 0,
