@@ -93,6 +93,18 @@ for (const name of SHELLS) {
   ok(src.indexOf('function _athenaSurfaceNote(') > 0, `${name}: _athenaSurfaceNote must exist`);
   ok(src.indexOf('profileCoverage.sourceEvidence=') > 0, `${name}: _savePatientChart must stamp sourceEvidence`);
   ok(block.indexOf('r.sourceEvidence') > 0, `${name}: the block must READ sourceEvidence off the receipt`);
+  /* THE RE-READ MAY NOT WEAKEN THE IDENTITY GATE. _savePatientChart proves a
+     save with ref.verifiedName / verifiedDob / verifiedMrn; a caller that hands
+     it a bare patient object supplies three empty strings and is refused with
+     identity-proof-mismatch every single time — a button that always fails
+     silently. The one-tap re-read must build its ref through the app's own
+     _athenaHistoryVerifiedRef, which returns null rather than a weakened ref. */
+  ok(block.indexOf('window._athenaHistoryVerifiedRef(target, rd)') > 0,
+    `${name}: the re-read must build its save ref with _athenaHistoryVerifiedRef`);
+  ok(block.indexOf("return { ok: false, reason: 'identity-unproven' }") > 0,
+    `${name}: the re-read must fail closed when identity is not proven`);
+  eq(block.indexOf('_savePatientChart(p,'), -1,
+    `${name}: the re-read must never pass a bare patient object to _savePatientChart`);
   /* Both return paths of the combine must be noted, or a chart with no briefing
      records nothing and the reader silently falls back to "unknown" forever. */
   eq(src.split('return _athenaSurfaceNote(note,').length - 1, 3,

@@ -42760,7 +42760,8 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
      section, the chip goes back to saying so. */
   function canRead() {
     return isFn(window._assistReadChart) && isFn(window._athenaChartTextForParse) &&
-           isFn(window._parsePatientChart) && isFn(window._savePatientChart);
+           isFn(window._parsePatientChart) && isFn(window._savePatientChart) &&
+           isFn(window._athenaHistoryVerifiedRef);
   }
   var _reading = '';
   function readFromAthena(p, onStatus) {
@@ -42769,20 +42770,42 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     if (!canRead()) { say('MLS Assist and a signed-in athenaOne tab are needed for this.'); return Promise.resolve({ ok: false, reason: 'no-bridge' }); }
     if (_reading) return Promise.resolve({ ok: false, reason: 'busy' });
     _reading = str(p.id);
-    var target = { patientId: str(p.id), name: str(p.name), dob: str(p.dob), mrn: str(p.mrn) };
     say('Reading this chart from athenaOne...');
-    return Promise.resolve(safe(function () { return window._assistReadChart(target, say); }, null)).then(function (rd) {
+    /* THE PATIENT OBJECT, not a hand-built target: _assistReadChart takes its
+       own snapshot through _athenaHistoryTargetSnapshot and refuses a name-only
+       target itself. */
+    return Promise.resolve(safe(function () { return window._assistReadChart(p, say); }, null)).then(function (rd) {
       if (!rd) return { ok: false, reason: 'read-failed' };
       var text = safe(function () { return window._athenaChartTextForParse(rd); }, '');
       return Promise.resolve(safe(function () { return window._parsePatientChart(text); }, null)).then(function (chart) {
         if (!chart) return { ok: false, reason: 'parse-failed' };
-        var saved = safe(function () { return window._savePatientChart(p, null, chart) === true; }, false);
+        /* THE THREE-FACTOR GATE, through the app's own builder. Passing the
+           patient object straight to _savePatientChart carries no verifiedName
+           / verifiedDob / verifiedMrn, so _athenaHistoryProofMatches sees three
+           empty strings and refuses every save with identity-proof-mismatch -
+           a button that always fails silently. _athenaHistoryVerifiedRef is the
+           one place that pairs the target with what the chart actually showed,
+           and it returns null rather than a weakened ref when they disagree. */
+        var target = { patientId: str(p.id), name: str(p.name), dob: str(p.dob), mrn: str(p.mrn || p.athenaId) };
+        var saveRef = safe(function () { return window._athenaHistoryVerifiedRef(target, rd); }, null);
+        if (!saveRef) return { ok: false, reason: 'identity-unproven' };
+        /* the ref is frozen; carry the request id on a copy, as the pull does */
+        var bound = {}; for (var k in saveRef) { if (Object.prototype.hasOwnProperty.call(saveRef, k)) bound[k] = saveRef[k]; }
+        bound.requestId = str(rd.requestId);
+        try { Object.freeze(bound); } catch (eFrz) {}
+        var saved = safe(function () { return window._savePatientChart(bound, null, chart) === true; }, false);
         return { ok: !!saved, reason: saved ? '' : 'save-refused' };
       });
     }).then(function (r) {
       _reading = '';
       safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
-      say(r.ok ? 'Chart re-read from athenaOne.' : 'The chart could not be re-read. Nothing was changed.');
+      /* Name the refusal. "Could not be re-read" for an identity mismatch would
+         invite the doctor to press it again forever; the open Athena chart is a
+         different patient and only they can fix that. */
+      say(r.ok ? 'Chart re-read from athenaOne.'
+        : (r.reason === 'identity-unproven'
+            ? 'The open athenaOne chart did not prove it is this patient. Nothing was changed.'
+            : 'The chart could not be re-read. Nothing was changed.'));
       return r;
     }, function () { _reading = ''; say('The chart could not be re-read. Nothing was changed.'); return { ok: false, reason: 'error' }; });
   }
