@@ -76,7 +76,10 @@ const P1_CONFIG_RELEASE_SUBS = [
    sharedws-1.0.0, advint-1.0.0, dsdiag-1.1.0, diag-account-1.0.0), op notes round 2 + note-model-1.1.0,
    visitowner-1.0.0, pull honesty + day-note budget (pullfix3); /cloned re-derived at cloned-20260817-r4.
    Production and extension baselines ALSO move (below) - same commit. */
-const P1_BASE_COMMIT = '469607c9feb45031e5a8bcf2f2a73184d1d1562c';
+/* Advanced by the 1p train of 2026-08-17 (batch 8): p1-phone-sync-1.0.0 (Worker-timer receive loop + visibility
+   catch-up for the phone recorder; account/token-bound; 'Phone connected · last sync' line); /cloned re-derived at
+   cloned-20260817-r5. Production and extension baselines untouched (they stay at 469607c9). */
+const P1_BASE_COMMIT = '96c5d1d66795102f2ac7a5d0a136cbfb3b3255ad';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
