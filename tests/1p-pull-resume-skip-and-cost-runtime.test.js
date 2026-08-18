@@ -153,13 +153,16 @@ async function testTheBarIsNotAMarker() {
 /* ---------------------------- 3. the cost breakdown is on every receipt -- */
 async function testCostBreakdown() {
   const DAY = '2026-08-17';
-  const h = makeHarness({ day: DAY, today: DAY, rows: 5, noteDelayMs: 62000 });
+  /* dnp2-1.0.0: a 5-row day gets the 60 s floor budget, so 5 reads have to
+     fit inside it for this case to measure the COST BREAKDOWN rather than the
+     budget. 11 s x 5 = 55 s fits. */
+  const h = makeHarness({ day: DAY, today: DAY, rows: 5, noteDelayMs: 11000 });
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
   const cb = receipt.costBreakdown;
   ok(cb, 'the receipt carries no per-row cost breakdown');
   eq(cb.rows, 5, 'the cost breakdown counted the wrong number of rows');
-  eq(cb.todayNoteMs, 5 * 62000, 'the day-note leg cost is not aggregated');
-  eq(cb.perRowTodayNoteMs, 62000, 'the per-row day-note cost is wrong');
+  eq(cb.todayNoteMs, 5 * 11000, 'the day-note leg cost is not aggregated');
+  eq(cb.perRowTodayNoteMs, 11000, 'the per-row day-note cost is wrong');
   eq(typeof cb.chartMs, 'number', 'the chart-read cost is missing');
   eq(typeof cb.parseSaveMs, 'number', 'the parse/save cost is missing');
   eq(cb.visitsMs, 0, 'bodies were OFF but the visits stage reported time');

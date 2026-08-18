@@ -1664,6 +1664,26 @@
         todayNoteFailures: Number(receipt.todayNoteFailures || 0),
         todayNoteReasons: (function () { var oTn = {}; try { Object.keys(receipt.todayNoteReasons || {}).slice(0, 20).forEach(function (kTn) { oTn[String(kTn).slice(0, 80)] = Number(receipt.todayNoteReasons[kTn] || 0); }); } catch (eTn) {} return oTn; })(),
         todayNoteRefused: (function () { var oTr = {}; try { (receipt.patients || []).forEach(function (pTr) { if (pTr && pTr.todayNote === false && pTr.patientId) oTr[String(pTr.patientId)] = String(pTr.todayNoteReason || "unknown").slice(0, 80); }); } catch (eTr) {} return oTr; })(),
+        /* dnrs-1.0.0: WHEN each patient's pulled-day note was last read and
+           saved. This is what makes "a note already saved is never re-opened"
+           an evidence test rather than a marker - a same-day re-pull reads it
+           back, checks the 12 h / same-account-day bar, and skips the open.
+           It MERGES with what a previous pull recorded: a second pull of the
+           same day must not erase the first pull's reads. Bounded (<=40
+           patients/day by construction) and PHI-free: ids and timestamps. */
+        todayNoteReadAt: (function () {
+          var oRa = {};
+          try {
+            var prior = (x.history && x.history.todayNoteReadAt) || {};
+            for (var kP in prior) if (Object.prototype.hasOwnProperty.call(prior, kP) && Number(prior[kP]) > 0) oRa[String(kP)] = Number(prior[kP]);
+            (receipt.patients || []).forEach(function (pRa) {
+              if (!pRa || !pRa.patientId) return;
+              if (pRa.todayNote === true) oRa[String(pRa.patientId)] = Date.now();
+              else if (pRa.todayNote === "already-read" && Number(pRa.todayNoteReadAt || 0) > 0) oRa[String(pRa.patientId)] = Number(pRa.todayNoteReadAt);
+            });
+          } catch (eRa) {}
+          return oRa;
+        })(),
         /* p1-todaynote-deferred-retry-1.0.0: how many rows lost the lease race
            and what the ONE deferred round made of them. Counts only. */
         todayNoteDeferred: (function () { var d = receipt.todayNoteDeferred; if (!d || typeof d !== "object") return null; return { queued: Number(d.queued || 0), attempted: Number(d.attempted || 0), recovered: Number(d.recovered || 0), remaining: Number(d.remaining || 0), reason: String(d.reason || "").slice(0, 40) }; })(),
@@ -4309,8 +4329,81 @@
        actually needed (floor 45 s so nothing gets tighter than today, cap
        150 s so one wedged row can still never own the pull). */
     var DN_ROW_DEADLINE_CAP_MS = 150000;
+    /* ===== dnb2-1.0.0 (only a SUCCESS may raise the ceiling) ================
+       MEASURED on the owner's same-day re-pull 2026-08-17: dnb-1.0.0's ceiling
+       is max(45 s, 2.5 x median) and readStats.daynote was fed by every read
+       that RESOLVED - including a slow REFUSAL. On a machine where the reads
+       are failing that INFLATES the wait instead of shortening it: 19 unread
+       rows x an inflated ceiling = 19 minutes for 6 recovered notes.
+       A deadline is a bet that the NEXT read will finish, so only evidence
+       that reads are finishing may raise it:
+         - base 45 s (dnf-1.0.0's measured-sane default, unchanged);
+         - each consecutive FAILURE takes 10 s off, floor 25 s;
+         - the 150 s cap is reachable only after DN_RAISE_AFTER_OK consecutive
+           SUCCESSFUL reads, and then only as 2.5 x their measured median.
+       The streaks ride the receipt so "the ceiling moved, and why" is a
+       number rather than an opinion. */
+    var DN_ROW_DEADLINE_FLOOR_MS = 25000;
+    var DN_ROW_DEADLINE_STEP_MS = 10000;
+    var DN_RAISE_AFTER_OK = 3;
+    var dnOkStreak = 0, dnFailStreak = 0;
+    /* the ONE expression that decides a day-note read succeeded. It used to be
+       written out at three call sites, which is how two of them could drift. */
+    function tnReadOk(res) {
+      return !!(res && (res.ok === true || typeof res === "number" || res.visits != null));
+    }
+    function tnRecordDayNoteOutcome(ok, ms) {
+      if (ok === true) {
+        dnOkStreak++; dnFailStreak = 0;
+        safe(function () { recordReadMs("daynote", Number(ms || 0)); });
+      } else { dnOkStreak = 0; dnFailStreak++; }
+      safe(function () { receipt.todayNoteOkStreak = dnOkStreak; receipt.todayNoteFailStreak = dnFailStreak; });
+    }
     function tnRowDeadlineMs() {
-      return safe(function () { return adaptiveCeilingMs("daynote", DN_ROW_DEADLINE_MS, DN_ROW_DEADLINE_CAP_MS, DN_ROW_DEADLINE_MS); }, DN_ROW_DEADLINE_MS);
+      return safe(function () {
+        if (dnFailStreak > 0) return Math.max(DN_ROW_DEADLINE_FLOOR_MS, DN_ROW_DEADLINE_MS - (dnFailStreak * DN_ROW_DEADLINE_STEP_MS));
+        if (dnOkStreak >= DN_RAISE_AFTER_OK) return adaptiveCeilingMs("daynote", DN_ROW_DEADLINE_MS, DN_ROW_DEADLINE_CAP_MS, DN_ROW_DEADLINE_MS);
+        return DN_ROW_DEADLINE_MS;
+      }, DN_ROW_DEADLINE_MS);
+    }
+    /* ===== end dnb2-1.0.0 ===== */
+    /* ===== dnp2-1.0.0 (the day-note PASS has a total budget) ================
+       MEASURED 2026-08-17 (owner, /cloned, 24 rows, three athena tabs, the
+       leased one occluded): the fresh pull read 24 histories in ~4 min and
+       then spent 943 s on the day-note leg (19 of 24 unread); the same-day
+       re-pull skipped every history as verified-today and STILL spent ~19 min
+       on the 19 unread rows, for 6 recovered. Done arrived at 20 minutes.
+       A per-row bound cannot fix that - 19 rows x 60 s IS 19 minutes with
+       every row inside its own deadline. So the PASS gets ONE frozen budget
+       for the whole pull (the inline legs and the tail pass share it): 10 s a
+       row, never under a minute, never over four. When it is spent the
+       remaining rows are handed to the background backfill IMMEDIATELY with an
+       honest code - they are not read, and they are not failures. */
+    var DN_PASS_MS_PER_ROW = 10000;
+    var DN_PASS_MIN_MS = 60000;
+    var DN_PASS_MAX_MS = 240000;
+    var DN_PASS_MIN_ROW_MS = 5000;   /* a row never gets a deadline below this */
+    var dnPassBudgetFrozenMs = 0, dnPassSpentMs = 0;
+    function dnPassBudget() {
+      if (!dnPassBudgetFrozenMs) {
+        var n = Math.max(1, (Array.isArray(rows) ? rows.length : 0) || 1);
+        dnPassBudgetFrozenMs = Math.max(DN_PASS_MIN_MS, Math.min(DN_PASS_MAX_MS, n * DN_PASS_MS_PER_ROW));
+        safe(function () { receipt.todayNotePassBudgetMs = dnPassBudgetFrozenMs; });
+      }
+      return dnPassBudgetFrozenMs;
+    }
+    function dnPassLeftMs() { return Math.max(0, dnPassBudget() - dnPassSpentMs); }
+    function dnPassExhausted() { return dnPassLeftMs() <= 0; }
+    /* ===== end dnp2-1.0.0 ===== */
+    /* dnrs-1.0.0: "report chartOpens per pull" (owner deliverable 4). Every
+       athena chart open this batch causes goes through one of exactly two
+       doors: this wrapper (the history/visits legs) and tnBoundedRead (the
+       day-note leg). Counting them at the door is the only count that cannot
+       drift from what the tab actually did. The call is delegated verbatim so
+       `this` is still window at the inner call. */
+    function dnReadChart(target, say, opts) {
+      safe(function () { receipt.chartOpensHistory = Number(receipt.chartOpensHistory || 0) + 1; });
+      return window._assistReadChart(target, say, opts);
     }
     function tnDayApplicable(day) {
       var d = normDate(day || "") || "";
@@ -4318,16 +4411,44 @@
       if (dayNoteFuture(d)) return { ok: false, future: true, reason: "future-day" }; /* fd-1.0.0 */
       return { ok: true, future: false, reason: "" };
     }
-    function tnBoundedRead(vp, p, day) {
+    function tnBoundedRead(vp, p, day, opts) {
       var budget = tnRowDeadlineMs();
+      /* dnb2-1.0.0: the machine's own per-row bet, BEFORE the pass clip below.
+         Recorded as a bounded trace of integers so "successes raised it,
+         failures lowered it" is readable off the receipt rather than inferred
+         from the single last value the clip may have overwritten. */
+      var ceiling = budget;
+      safe(function () {
+        receipt.todayNoteRowCeilingMs = ceiling;
+        receipt.todayNoteCeilings = receipt.todayNoteCeilings || [];
+        if (receipt.todayNoteCeilings.length < 60) receipt.todayNoteCeilings.push(ceiling);
+      });
+      /* dnp2-1.0.0: the LAST row may not spend four minutes proving the pass
+         is over. A row's own deadline is clipped to what the pass has left.
+         The background backfill (opts.offPass) runs after the pull's Done and
+         is deliberately NOT charged to the pull's budget. */
+      if (!(opts && opts.offPass === true)) {
+        var left = dnPassLeftMs();
+        budget = Math.max(DN_PASS_MIN_ROW_MS, Math.min(budget, left));
+      }
       var startedAt = Date.now(), at = startedAt + budget;
       safe(function () { receipt.todayNoteBudgetMs = budget; });
+      /* dnrs-1.0.0: every scoped day-note read is ONE athena chart open (the
+         reader re-verifies the surface through _assistReadChart before it
+         reads). Counting them here is the only honest source for "how many
+         charts did this pull open". */
+      safe(function () { receipt.chartOpensDayNote = Number(receipt.chartOpensDayNote || 0) + 1; });
       return boundedUntil(
         Promise.resolve().then(function () { return vp.runForPatient(p, function () {}, { onlyDate: String(day) }); }),
         at, "pulled-day-note-deadline-exceeded").then(function (res) {
-          /* only a read that FINISHED tells us what this machine costs */
-          safe(function () { recordReadMs("daynote", Date.now() - startedAt); });
+          /* dnb2-1.0.0: only a read that FINISHED **AND SUCCEEDED** tells us
+             what this machine costs. A slow refusal used to feed the median
+             and raise everyone else's wait. */
+          tnRecordDayNoteOutcome(tnReadOk(res), Date.now() - startedAt);
           return res;
+        }, function (err) {
+          tnRecordDayNoteOutcome(false, Date.now() - startedAt);
+          throw err;
         });
     }
     /* records the per-row cost of the day-note leg so "the day-note leg is
@@ -4338,11 +4459,61 @@
       receipt.todayNoteMsTotal = Number(receipt.todayNoteMsTotal || 0) + Number(ms || 0);
       receipt.todayNoteAttempts = Number(receipt.todayNoteAttempts || 0) + 1;
       if (Number(ms || 0) > Number(receipt.todayNoteMsMax || 0)) receipt.todayNoteMsMax = Number(ms || 0);
+      /* dnp2-1.0.0: EVERY millisecond the pull spends on the day-note lane is
+         charged to the one pass budget, wherever it was spent. */
+      dnPassSpentMs += Number(ms || 0);
+      safe(function () { receipt.todayNotePassSpentMs = dnPassSpentMs; receipt.todayNotePassLeftMs = dnPassLeftMs(); });
       if (outcome === "skipped") {
         receipt.todayNoteSkipped = Number(receipt.todayNoteSkipped || 0) + 1;
         if (entry.todayNoteSkipped === "future-day") receipt.todayNoteSkippedFutureDay = Number(receipt.todayNoteSkippedFutureDay || 0) + 1; /* fd-1.0.0 */
         if (entry.todayNoteSkipped === "not-yet-seen") receipt.todayNoteSkippedNotYet = Number(receipt.todayNoteSkippedNotYet || 0) + 1; /* tny-1.0.0 */
+        if (entry.todayNoteSkipped === "already-read") receipt.todayNoteSkippedAlreadyRead = Number(receipt.todayNoteSkippedAlreadyRead || 0) + 1; /* dnrs-1.0.0 */
       }
+    }
+    /* ===== dnrs-1.0.0 (a note this account day already saved is never re-opened) =====
+       Owner deliverable 4, measured shape: the same-day re-pull skipped every
+       HISTORY as verified-today (instant, rsk-1.0.0) and then opened a chart
+       for the day-note of every row - including the five whose notes the first
+       pull had already read and saved. A note this account day already read
+       and stored is the one read that is provably redundant, so it earns the
+       same bar rsk-1.0.0 uses for charts, applied to the note column: the day
+       ledger recorded it read, the record was written within 12 h, and on the
+       SAME account day. `window.__mlsP1SkipReadDayNotes = false` turns it off
+       for a live A/B. */
+    function dnSkipReadEnabled() {
+      return safe(function () { return window.__mlsP1SkipReadDayNotes !== false; }, true);
+    }
+    function dnAlreadyReadToday(day, patientId) {
+      if (!dnSkipReadEnabled() || !day || !patientId) return null;
+      return safe(function () {
+        var x = readIndex(day), h = x && x.history;
+        if (!h) return null;
+        var at = Number((h.todayNoteReadAt || {})[String(patientId)] || 0);
+        if (!(at > 0)) return null;
+        if (Date.now() - at > 12 * 3600 * 1000) return null;
+        if (accountDayFromInstant(at) !== acctTodayKey()) return null;
+        return { at: at };
+      }, null);
+    }
+    function tnStampAlreadyRead(entry, at) {
+      if (!entry) return;
+      entry.todayNote = "already-read";
+      entry.todayNoteReason = "";
+      entry.todayNoteSkipped = "already-read";
+      entry.todayNoteReadAt = Number(at || 0);
+      tnStamp(entry, 0, "skipped");
+    }
+    /* ===== end dnrs-1.0.0 ===== */
+    /* dnp2-1.0.0: the pass budget is spent. This row is HANDED OVER - not read
+       and not failed - and goes to the background backfill immediately. */
+    function tnStampHandedOff(entry, day) {
+      if (!entry) return;
+      entry.todayNote = false;
+      entry.todayNoteReason = "day-note-pass-budget-exhausted";
+      entry.todayNoteHandedOff = true;
+      tnStamp(entry, 0, "handed-off");
+      safe(function () { receipt.todayNoteHandedOff = Number(receipt.todayNoteHandedOff || 0) + 1; });
+      tnDeferRow(entry, day, true);
     }
     /* ===== end dnf-1.0.0 ===== */
     /* ===== tny-1.0.0 (TODAY's not-yet-seen appointments are not failures) =====
@@ -4399,6 +4570,30 @@
       if (now < 0) return true;                     /* cannot prove it - read it */
       return now >= mins;
     }
+    /* ===== dnb2-1.0.0 (ONE retry, and only after observable progress) ======
+       Owner deliverable 1. dnd2-1.0.0 made every TIMING refusal deferrable,
+       which is right, but it made them ALL deferrable: a row whose chart never
+       opened bought a second full-length wait on no evidence at all, and on
+       the measured machine that is where the minutes went. A retry is only
+       worth the doctor's clock when the FIRST attempt got somewhere:
+         (a) chart-open    - this pull's own verified chart read for this row
+                             landed moments earlier, so the tab really was on
+                             this patient; or
+         (b) encounter-index - the reader came back holding an index/receipt,
+                             so it reached the encounter surface.
+       Anything else is deferred ONLY when the pass budget handed it over
+       (tnStampHandedOff), which is a queue decision, not a retry bet.
+       Codes only - no name, DOB or MRN can reach these strings. */
+    function tnProgressCode(entry, res) {
+      if (entry && entry.dayNoteChartOpen === true) return "chart-open";
+      var r = (res && typeof res === "object") ? res : null;
+      if (r) {
+        if (Number(r.expected || 0) > 0 || Number(r.indexCount || 0) > 0 || Number(r.visitCount || 0) > 0) return "encounter-index";
+        var rec = (r.receipt && typeof r.receipt === "object") ? r.receipt : null;
+        if (rec && (Number(rec.expected || 0) > 0 || Number(rec.parsed || 0) > 0 || rec.indexComplete === true)) return "encounter-index";
+      }
+      return "";
+    }
     function tnStampNotYet(entry, from) {
       if (!entry) return;
       entry.todayNote = "not-yet";
@@ -4412,6 +4607,9 @@
     function tnColumn(entry) {
       if (!entry) return "";
       if (entry.todayNote === true) return "read";
+      /* dnrs-1.0.0: the note IS on file - this pull simply did not need to
+         re-open the chart to put it there. The doctor's column says read. */
+      if (entry.todayNote === "already-read") return "read";
       if (entry.todayNote === "not-yet") return "not-yet";
       if (entry.todayNote === "future-day") return "future-day";
       /* dnw-1.0.0 (owner 2026-08-17: "comments like this would scare a user"):
@@ -4612,6 +4810,12 @@
     var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, presenceRequested: __historyRetryForeground === true, presenceAssisted: false, presenceFrontedReads: 0, presenceQuietReads: 0, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
     if (historyBatchRunning) {
       rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy")); });
+      /* p1-busy-click-1.0.0 (extended to the batch door, 2026-08-17): a
+         refusal to START is not a pull's verdict. The managed wrapper already
+         marks its stub; this door did not, so a surface reading the receipt
+         could still paint "the pull did not return a verified completion
+         receipt" over a healthy pull running in this tab or another one. */
+      receipt.busyInFlight = true; receipt.gate = "history-batch-busy";
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy"; return receipt;
     }
     /* 2026-07-28 cross-tab refusal: a pull running in ANOTHER tab owns the
@@ -4620,6 +4824,7 @@
        refusal reuses the busy lane so every caller already handles it. */
     if (safe(function () { return window.__mlsPullShieldForeign && window.__mlsPullShieldForeign(); }, false)) {
       rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy-other-tab")); });
+      receipt.busyInFlight = true; receipt.gate = "history-batch-busy-other-tab"; /* p1-busy-click-1.0.0 */
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy-other-tab"; return receipt;
     }
     safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
@@ -4821,7 +5026,7 @@
         try {
           var reChartDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 110000);
           var reReadStartedAt = Date.now();
-          var rdRetry = await boundedUntil(window._assistReadChart(overlap.args.target, function () {}, { requestId: overlap.args.requestId + "-r2chart", deadlineAt: reChartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), reChartDeadlineAt, "chart-read-deadline-exceeded");
+          var rdRetry = await boundedUntil(dnReadChart(overlap.args.target, function () {}, { requestId: overlap.args.requestId + "-r2chart", deadlineAt: reChartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), reChartDeadlineAt, "chart-read-deadline-exceeded");
           stageMs.chart += Date.now() - __rpChartT0;
           __rpParseT0 = Date.now();
           var reParseDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 120000);
@@ -4936,7 +5141,7 @@
             var chartReadStartedAt = chartAttempt > 1 ? Date.now() : patientReadStartedAt;
             var chartRequestId = patientRequestId + "-chart" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
             var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + ((chartAttempt === 1 && !sweepDepth) ? adaptiveCeilingMs('chart', 45000, 180000, 90000) : 180000));
-            rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), chartDeadlineAt, "chart-read-deadline-exceeded");
+            rd = await boundedUntil(dnReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), chartDeadlineAt, "chart-read-deadline-exceeded");
             stageMs.chart += Date.now() - __chartT0;
             recordReadMs('chart', Date.now() - __chartT0);
             /* dnf2-1.0.0: this read just opened and VERIFIED the tab-of-record,
@@ -5074,7 +5279,7 @@
                 one.deadlineAt = patientDeadlineAt;
                 try {
                   var trReopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 100000);
-                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-trreopen" + visitsAttempt, deadlineAt: trReopenDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), trReopenDeadlineAt, "chart-reopen-deadline-exceeded");
+                  await boundedUntil(dnReadChart(target, function () {}, { requestId: patientRequestId + "-trreopen" + visitsAttempt, deadlineAt: trReopenDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), trReopenDeadlineAt, "chart-reopen-deadline-exceeded");
                 } catch (trReopenErr) {}
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
@@ -5152,7 +5357,7 @@
                 one.visitsChartReopened = true;
                 try {
                   var reopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 80000);
-                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-reopen" + visitsAttempt, deadlineAt: reopenDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), reopenDeadlineAt, "chart-reopen-deadline-exceeded");
+                  await boundedUntil(dnReadChart(target, function () {}, { requestId: patientRequestId + "-reopen" + visitsAttempt, deadlineAt: reopenDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), reopenDeadlineAt, "chart-reopen-deadline-exceeded");
                 } catch (reopenErr) {}
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
@@ -5267,6 +5472,11 @@
           /* tny-1.0.0: TODAY, but this patient's slot has not arrived yet.
              Nothing to read, nothing failed, and the 45 s bound is not spent. */
           else if (dnGate.ok && !tnApptPassed(dnDay, row)) { tnStampNotYet(one, "time"); }
+          /* dnrs-1.0.0: this account day already read and saved this note. */
+          else if (dnGate.ok && dnAlreadyReadToday(dnDay, one.patientId)) { tnStampAlreadyRead(one, (dnAlreadyReadToday(dnDay, one.patientId) || {}).at); }
+          /* dnp2-1.0.0: the pass budget is gone - hand the row over now rather
+             than spend another deadline discovering the same thing. */
+          else if (dnGate.ok && dnPassExhausted()) { tnStampHandedOff(one, dnDay); }
           else if (!(dnVp && typeof dnVp.runForPatient === "function" && dnP)) { one.todayNote = false; one.todayNoteReason = dnGate.ok ? "reader-unavailable" : dnGate.reason; }
           else {
             if (todayNoteExtOk === null) {
@@ -5284,13 +5494,21 @@
               try { ppCurrent(String(one.name || "").split(" ")[0] + " \u2014 saving the pulled day's note"); } catch (eDnCur) {}
               safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
               var dnT0 = Date.now(); /* dnf-1.0.0: measure it, never guess */
+              /* dnb2-1.0.0: THIS pull's own verified chart read for this row
+                 landed a moment ago (the `rd` gate above) - that is the
+                 observable progress a retry is allowed to bet on. */
+              one.dayNoteChartOpen = true;
+              one.todayNoteAttempts = Number(one.todayNoteAttempts || 0) + 1;
+              var dnProgress = "";
               try {
                 var dnRes = await tnBoundedRead(dnVp, dnP, dnDay); /* dnf-1.0.0 */
-                one.todayNote = !!(dnRes && (dnRes.ok === true || typeof dnRes === "number" || dnRes.visits != null));
+                one.todayNote = tnReadOk(dnRes);
+                dnProgress = tnProgressCode(one, dnRes);
                 tnStamp(one, Date.now() - dnT0, one.todayNote ? "read" : "refused");
                 if (!one.todayNote) one.todayNoteReason = String((dnRes && dnRes.reason) || "scoped-read-unverified").slice(0, 80);
               } catch (eDnRun) {
                 one.todayNote = false; one.todayNoteReason = String((eDnRun && eDnRun.message) || eDnRun).slice(0, 80);
+                dnProgress = tnProgressCode(one, null);
                 tnStamp(one, Date.now() - dnT0, "refused");
                 /* timeout-class failures mean the runner may still be driving
                    the tab: trip the fuse so no later INLINE attempt races the
@@ -5303,8 +5521,12 @@
               if (one.todayNote === false && dnDay === acctTodayKey() && TNY_NO_ENCOUNTER.test(String(one.todayNoteReason || ""))) tnStampNotYet(one, "receipt");
               /* p1-todaynote-deferred-retry-1.0.0: a pull-in-flight refusal
                  lost to the lease this pull is still holding. Defer, do not
-                 fail: the row is re-run once the lease is released. */
-              if (one.todayNote !== true && one.todayNote !== "not-yet" && tnIsDeferrable(one.todayNoteReason)) tnDeferRow(one, dnDay);
+                 fail: the row is re-run once the lease is released.
+                 dnb2-1.0.0 adds the progress condition - see tnProgressCode. */
+              if (one.todayNote !== true && one.todayNote !== "not-yet" && tnIsDeferrable(one.todayNoteReason)) {
+                if (dnProgress) { one.todayNoteProgress = dnProgress; tnDeferRow(one, dnDay); }
+                else safe(function () { one.todayNoteNoProgress = true; receipt.todayNoteNoProgress = Number(receipt.todayNoteNoProgress || 0) + 1; });
+              }
             }
           }
           /* qol-1.3 parity: an unread pulled-day note is VISIBLE on the row -
@@ -5347,7 +5569,7 @@
           var __dChartT0 = Date.now(), __dParseT0 = 0;
           try {
             var pRetryChartDeadlineAt = Math.min(pRetryDeadlineAt, Date.now() + 110000);
-            var rdRetry = await boundedUntil(window._assistReadChart(pEntry.target, function () {}, { requestId: pOne.requestId + "-chart-d2", deadlineAt: pRetryChartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), pRetryChartDeadlineAt, "chart-read-deadline-exceeded");
+            var rdRetry = await boundedUntil(dnReadChart(pEntry.target, function () {}, { requestId: pOne.requestId + "-chart-d2", deadlineAt: pRetryChartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), pRetryChartDeadlineAt, "chart-read-deadline-exceeded");
             pEntry.stageMs.chart += Date.now() - __dChartT0;
             __dParseT0 = Date.now();
             var pRetryParseDeadlineAt = Math.min(pRetryDeadlineAt, Date.now() + 120000);
@@ -5407,19 +5629,37 @@
        not-yet and future-day are counted as their own outcomes and are NEVER
        failures - a failure is a note that should exist and could not be read. */
     function tnAggregate() {
-      var tnF = 0, tnR = {}, tnRead = 0, tnNotYet = 0, tnFuture = 0;
+      var tnF = 0, tnR = {}, tnRead = 0, tnNotYet = 0, tnFuture = 0, tnAlready = 0, tnQueuedNow = 0, tnCodes = {};
       (receipt.patients || []).forEach(function (p) {
         if (!p) return;
         if (p.todayNote === true) { tnRead++; return; }
+        /* dnrs-1.0.0: read earlier TODAY and still on file - a read, and the
+           reason this pull did not need to open the chart again. */
+        if (p.todayNote === "already-read") { tnRead++; tnAlready++; return; }
         if (p.todayNote === "not-yet") { tnNotYet++; return; }
         if (p.todayNote === "future-day") { tnFuture++; return; }
-        if (p.todayNote === false) { tnF++; var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1; }
+        if (p.todayNote === false) {
+          tnF++;
+          var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1;
+          /* dnbf-1.0.0: the same census in a CLOSED code vocabulary, which is
+             what a surface may safely render. */
+          var kC = tnReasonCode(p.todayNoteReason); tnCodes[kC] = (tnCodes[kC] || 0) + 1;
+          /* dnp2-1.0.0 honest counts: a row waiting on the background backfill
+             has not failed - it has not finished. Reported separately so no
+             surface has to guess. */
+          if (p.todayNoteDeferred === true) tnQueuedNow++;
+        }
       });
       receipt.todayNoteFailures = tnF; receipt.todayNoteReasons = tnR;
+      receipt.todayNoteReasonCodes = tnCodes;
       receipt.todayNoteRead = tnRead;
+      receipt.todayNoteAlreadyRead = tnAlready;
       receipt.todayNoteNotYet = tnNotYet;
       receipt.todayNoteFutureDay = tnFuture;
-      return { failed: tnF, read: tnRead, notYet: tnNotYet, future: tnFuture, reasons: tnR };
+      receipt.todayNoteQueued = tnQueuedNow;
+      receipt.todayNoteUnreadFinal = Math.max(0, tnF - tnQueuedNow);
+      return { failed: tnF, read: tnRead, notYet: tnNotYet, future: tnFuture, alreadyRead: tnAlready,
+        queued: tnQueuedNow, unreadFinal: receipt.todayNoteUnreadFinal, reasons: tnR, codes: tnCodes };
     }
     function tnBatchDay() {
       var day = "";
@@ -5436,12 +5676,17 @@
       safe(function () {
         receipt.todayNoteDeferred = {
           queued: Number((receipt.todayNoteDeferred && receipt.todayNoteDeferred.queued) || 0),
+          rows: Number((summary && summary.rows) || 0),          /* dnbf-1.0.0 */
           attempted: Number((summary && summary.attempted) || 0),
           recovered: Number((summary && summary.recovered) || 0),
           remaining: Number(receipt.todayNoteFailures || 0),
           reason: String((summary && summary.reason) || "deferred-round"),
           at: Date.now()
         };
+        /* dnbf-1.0.0: the PHI-free backfill receipt the dialog lane renders -
+           reason CODES and counts, plus how many times the "open your
+           athenaOne" verdict was disproved by the presence verb. */
+        receipt.todayNoteBackfill = (summary && summary.backfill) || tnBackfillReceipt();
       });
       safe(function () {
         var sDv = ppState();
@@ -5456,13 +5701,23 @@
       });
       safe(function () { var day = tnBatchDay(); if (day) recordHistoryVerdict(day, receipt, rows.length); });
     }
-    function tnDeferRow(entry, day) {
+    function tnDeferRow(entry, day, force) {
       if (!entry || !day || sweepDepth) return false;
       var pid = String(entry.patientId || "");
       if (!pid) return false;
       var queued = tnQueueDeferred({
-        patientId: pid, name: String(entry.name || ""), day: String(day),
+        /* dnbf-1.0.0: NO NAME rides the queue. The backfill's receipt is
+           reason codes and counts, and the cheapest way to keep it that way is
+           for the name never to be there in the first place. */
+        patientId: pid, day: String(day),
+        code: tnReasonCode(force === true ? "day-note-pass-budget-exhausted" : entry.todayNoteReason),
         settleDay: tnSettleDay,
+        /* dnbf-1.0.0: the round needs to know WHY the last turn refused (to
+           choose backoff vs presence-probe vs stop) and needs to be able to
+           put the row back into "retrying" before it tries again. Both are
+           read-only views of this row - no clinical text, no name. */
+        reasonOf: function () { return String(entry.todayNoteReason || ""); },
+        retrying: function () { entry.todayNoteDeferred = true; safe(function () { tnEmitDayNoteColumn(entry); }); },
         attempt: function () {
           var vp = safe(function () { return window.__mlsVisitSavePref; }, null);
           var p = safe(function () { return findStorePatient(pid); }, null);
@@ -5471,8 +5726,10 @@
             safe(function () { tnEmitDayNoteColumn(entry); });
             return Promise.resolve(false);
           }
-          return tnBoundedRead(vp, p, String(day)).then(function (res) { /* dnf-1.0.0 */
-            var ok = !!(res && (res.ok === true || typeof res === "number" || res.visits != null));
+          /* offPass: the backfill runs AFTER the pull's Done, so its reads are
+             not charged to (and not clipped by) the pull's pass budget. */
+          return tnBoundedRead(vp, p, String(day), { offPass: true }).then(function (res) { /* dnf-1.0.0 */
+            var ok = tnReadOk(res);
             entry.todayNote = ok;
             /* dnw-1.0.0: the retry has had its turn - this row is no longer
                "retrying", it is read or it is honestly unread. */
@@ -5562,6 +5819,20 @@
         t.perRowTodayNoteMs = t.rows ? Math.round(t.todayNoteMs / t.rows) : 0;
         t.skippedVerifiedToday = Number(receipt.chartsSkippedVerifiedToday || 0);
         receipt.costBreakdown = t;
+      });
+      /* dnrs-1.0.0 (owner deliverable 4): CHART OPENS PER PULL, counted at the
+         two doors that cause them. The measured defect was 2N - one open for
+         the history and a second for the day note - so this number is the one
+         that says whether a change actually cost the tab less. */
+      safe(function () {
+        var hOpens = Number(receipt.chartOpensHistory || 0), dOpens = Number(receipt.chartOpensDayNote || 0);
+        receipt.chartOpens = {
+          history: hOpens, dayNote: dOpens, total: hOpens + dOpens,
+          rows: Number((receipt.patients || []).length || 0),
+          perRow: (receipt.patients || []).length ? Math.round(((hOpens + dOpens) / receipt.patients.length) * 100) / 100 : 0,
+          skippedVerifiedToday: Number(receipt.chartsSkippedVerifiedToday || 0),
+          skippedNoteAlreadyRead: Number(receipt.todayNoteSkippedAlreadyRead || 0)
+        };
       });
       receipt.storeCensus = storedContentCensus(rows, unresolved);
       receipt.storeDelta = censusDelta(receipt.storeCensusBefore, receipt.storeCensus);
@@ -5715,7 +5986,51 @@
          sat there grinding. ppCurrent is never number-parsed (safe from the
          si-1.9.4 bar regex), so narrate the pass live. */
       var tnTotal = 0; try { for (var tnc = 0; tnc < receipt.patients.length; tnc++) { if (receipt.patients[tnc] && receipt.patients[tnc].visitsSkipped === true && receipt.patients[tnc].todayNote == null && tnDayApplicable(todayNoteDayById[String(receipt.patients[tnc].patientId || "")] || "").ok) tnTotal++; } } catch (eTnc) {} var tnIdx = 0; /* dnf-1.0.0 */
-      for (var tn = 0; tn < receipt.patients.length; tn++) {
+      /* ===== dnpri-1.0.0 (the notes that EXIST are read first) ==============
+         Owner deliverable 5. The schedule row the extension hands the engine
+         carries NO status column - background.js strips "arrived / checked in
+         / checked out" as grid noise (the STOP and reason-scrub lists) before
+         a row is ever built, so `seen` is not a field the engine can read
+         today. The signal that DOES reach it is the appointment TIME, and it
+         answers the same question: a slot that finished hours ago has a note,
+         a slot ten minutes old often does not, and a slot that has not arrived
+         is skipped without a read at all (tny-1.0.0). The pass therefore walks
+         EARLIEST-PASSED FIRST, so a spent pass budget (dnp2-1.0.0) costs the
+         rows least likely to have a note to read.
+         If a future extension DOES supply a status the field wins outright:
+         checked-out/seen/completed sorts ahead of checked-in, which sorts
+         ahead of an unknown status. Fail-open - an unreadable status is just
+         "unknown" and falls back to the clock. */
+      function tnSeenRank(row) {
+        var st = String((row && (row.status || row.apptStatus || row.appointmentStatus)) || "").trim().toLowerCase();
+        if (!st) return 2;
+        if (/checked ?out|check-?out|completed|complete|seen|closed|discharged/.test(st)) return 0;
+        if (/checked ?in|check-?in|arrived|roomed|in ?room|intake|ready/.test(st)) return 1;
+        return 3;
+      }
+      var tnOrder = [];
+      try {
+        for (var tnO = 0; tnO < receipt.patients.length; tnO++) tnOrder.push(tnO);
+        tnOrder.sort(function (a, b) {
+          var pa = receipt.patients[a], pb = receipt.patients[b];
+          var ra = todayNoteRowById[String((pa && pa.patientId) || "")] || null;
+          var rb = todayNoteRowById[String((pb && pb.patientId) || "")] || null;
+          var sa = tnSeenRank(ra), sb = tnSeenRank(rb);
+          if (sa !== sb) return sa - sb;
+          /* an unknown time sorts LAST, never first: it is the one row we
+             cannot say has been seen. */
+          var ma = tnRowMinutes(ra), mb = tnRowMinutes(rb);
+          if (ma < 0 && mb < 0) return a - b;
+          if (ma < 0) return 1;
+          if (mb < 0) return -1;
+          if (ma !== mb) return ma - mb;
+          return a - b;
+        });
+        receipt.todayNotePassOrdered = true;
+      } catch (eTnOrd) { tnOrder = []; for (var tnF = 0; tnF < receipt.patients.length; tnF++) tnOrder.push(tnF); }
+      /* ===== end dnpri-1.0.0 ===== */
+      for (var tnQ = 0; tnQ < tnOrder.length; tnQ++) {
+        var tn = tnOrder[tnQ];
         var oneTn = receipt.patients[tn];
         if (!oneTn || oneTn.visitsSkipped !== true) continue;
         var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
@@ -5737,6 +6052,14 @@
         if (tnGate.future) { oneTn.todayNote = "future-day"; oneTn.todayNoteReason = "future-day"; oneTn.todayNoteSkipped = "future-day"; tnStamp(oneTn, 0, "skipped"); continue; } /* fd-1.0.0 */
         /* tny-1.0.0: TODAY and the slot has not arrived - skip, do not fail. */
         if (tnGate.ok && !tnApptPassed(tnDay, tnRow)) { tnStampNotYet(oneTn, "time"); continue; }
+        /* dnrs-1.0.0: this account day already read and saved this note - the
+           one chart open that is provably redundant. */
+        var tnAlready = tnGate.ok ? dnAlreadyReadToday(tnDay, tnId) : null;
+        if (tnAlready) { tnStampAlreadyRead(oneTn, tnAlready.at); tnEmitDayNoteColumn(oneTn); continue; }
+        /* dnp2-1.0.0: the pass budget is spent. Every remaining row is handed
+           to the background backfill NOW, with an honest code, so Done arrives
+           at history time + the budget instead of twenty minutes. */
+        if (tnGate.ok && dnPassExhausted()) { tnStampHandedOff(oneTn, tnDay); tnEmitDayNoteColumn(oneTn); continue; }
         var tnP = (tnGate.ok && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;
         if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnGate.ok ? "reader-unavailable" : tnGate.reason; tnEmitDayNoteColumn(oneTn); continue; }
         if (todayNoteExtOk === null) {
@@ -5753,18 +6076,25 @@
         }
         if (!todayNoteExtOk) { oneTn.todayNote = false; oneTn.todayNoteReason = "extension-predates-scoped-read"; tnEmitDayNoteColumn(oneTn); continue; }
         var tnT0 = Date.now(); /* dnf-1.0.0 */
+        var tnProgress = "";
+        oneTn.todayNoteAttempts = Number(oneTn.todayNoteAttempts || 0) + 1; /* dnrs-1.0.0: at most ONE per pull */
         try {
           var tnRes = await tnBoundedRead(vpToday, tnP, tnDay); /* dnf-1.0.0 */
-          oneTn.todayNote = !!(tnRes && (tnRes.ok === true || typeof tnRes === "number" || tnRes.visits != null));
+          oneTn.todayNote = tnReadOk(tnRes);
+          tnProgress = tnProgressCode(oneTn, tnRes); /* dnb2-1.0.0 */
           tnStamp(oneTn, Date.now() - tnT0, oneTn.todayNote ? "read" : "refused");
           if (!oneTn.todayNote) oneTn.todayNoteReason = String((tnRes && tnRes.reason) || "scoped-read-unverified").slice(0, 80);
-        } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); tnStamp(oneTn, Date.now() - tnT0, "refused"); }
+        } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); tnProgress = tnProgressCode(oneTn, null); tnStamp(oneTn, Date.now() - tnT0, "refused"); }
         /* tny-1.0.0: an index with no verified encounter for TODAY's date is a
            visit that has not happened yet, not a failed read. */
         if (oneTn.todayNote === false && tnDay === acctTodayKey() && TNY_NO_ENCOUNTER.test(String(oneTn.todayNoteReason || ""))) tnStampNotYet(oneTn, "receipt");
         /* p1-todaynote-deferred-retry-1.0.0: same deferral in the tail pass -
-           this pass also runs inside the pull, so it loses the same race. */
-        if (oneTn.todayNote !== true && oneTn.todayNote !== "not-yet" && tnIsDeferrable(oneTn.todayNoteReason)) tnDeferRow(oneTn, tnDay);
+           this pass also runs inside the pull, so it loses the same race.
+           dnb2-1.0.0: and only when the attempt made observable progress. */
+        if (oneTn.todayNote !== true && oneTn.todayNote !== "not-yet" && tnIsDeferrable(oneTn.todayNoteReason)) {
+          if (tnProgress) { oneTn.todayNoteProgress = tnProgress; tnDeferRow(oneTn, tnDay); }
+          else safe(function () { oneTn.todayNoteNoProgress = true; receipt.todayNoteNoProgress = Number(receipt.todayNoteNoProgress || 0) + 1; });
+        }
         /* qol-1.3 / deliverable 3: the day-note outcome is VISIBLE, but as its
            own column - it can no longer flip a saved history row to failed. */
         tnEmitDayNoteColumn(oneTn);
@@ -5983,6 +6313,70 @@
      that the normal reader would not have written. */
   var TN_DEFER_DELAY_MS = 1200;
   var TN_DEFER_LEASE_WAITS = 5;
+  /* ===== dnbf-1.0.0 (the backfill re-checks presence before it blames the doctor) =====
+     MEASURED 2026-08-17 on the owner's re-pull: the footer read
+       "Visit backfill: <name> - open-failed: Open your signed-in athenaOne in
+        another tab, then try again"
+     WHILE THREE signed-in athenaOne tabs were open. p1-athena-presence-1.0.0
+     already proved the cure for the pull's NAV leg - a missed 1.2-1.5 s ping
+     is a busy renderer, not an absent athena - and the background note
+     backfill never got it.
+
+     Three things change here, all bounded:
+      (a) a no-athena-tab-class refusal asks the LEASE-FREE presence verb
+          (mlsAthenaPresence) before it stands. If athena is proven present the
+          verdict is FALSE and the row is retried after a backoff; only a
+          presence answer of "absent" lets the sign-in wording stand.
+      (b) transient refusals get a SECOND attempt with backoff (2 s, 6 s), so
+          the round is at most TN_BACKFILL_ROUNDS deep and at most
+          TN_BACKFILL_ATTEMPTS per row - never a busy loop.
+      (c) the receipt is a CLOSED VOCABULARY of reason codes plus counts. No
+          name reaches the queue at all (tnDeferRow stopped carrying one), so
+          a surface can render this receipt verbatim and stay PHI-free. */
+  var TN_BACKFILL_ROUNDS = 2;
+  var TN_BACKFILL_ATTEMPTS = 2;
+  var TN_BACKFILL_WAITS = [2000, 6000];
+  var TN_NO_TAB_REASON = /no-athena-tab|no athenaone tab|open your signed-in athenaone|open-failed|not responding|unreachable/i;
+  /* the CLOSED code vocabulary. Anything unrecognised becomes "other" - a
+     receipt can therefore never carry a free-text reader message. */
+  var TN_REASON_CODES = ["pass-budget-exhausted", "no-athena-tab", "pull-in-flight", "deadline",
+    "surface-race", "no-encounter", "safety-stop", "extension-too-old", "reader-unavailable", "other", "unknown"];
+  function tnReasonCode(reason) {
+    var r = String(reason || "");
+    if (!r) return "unknown";
+    if (/day-note-pass-budget-exhausted/i.test(r)) return "pass-budget-exhausted";
+    if (/pull-in-flight/i.test(r)) return "pull-in-flight";
+    if (TN_NO_TAB_REASON.test(r)) return "no-athena-tab";
+    if (/extension-predates-scoped-read/i.test(r)) return "extension-too-old";
+    if (/reader-unavailable/i.test(r)) return "reader-unavailable";
+    if (/encounter index without verified full detail|no-encounter-for-date|encounter-index-empty|no-visits-for-date/i.test(r)) return "no-encounter";
+    if (/safety stop|identifies a different patient|cannot all be verified/i.test(r)) return "safety-stop";
+    if (/different patient/i.test(r)) return "surface-race";
+    if (/deadline|timed out|timeout/i.test(r)) return "deadline";
+    return "other";
+  }
+  function tnIsNoTabReason(reason) { return TN_NO_TAB_REASON.test(String(reason || "")); }
+  /* the backfill's PHI-free receipt. Counts and codes only, by construction. */
+  var _tnBackfill = { queued: 0, attempted: 0, recovered: 0, remaining: 0, rounds: 0,
+    presenceChecks: 0, presenceVerified: 0, presenceAbsent: 0, presenceUnknown: 0,
+    retriedAfterPresence: 0, backoffWaits: 0, codes: {}, at: 0, reason: "" };
+  function tnBackfillReceipt() {
+    var codes = {};
+    for (var k in _tnBackfill.codes) if (Object.prototype.hasOwnProperty.call(_tnBackfill.codes, k)) codes[k] = Number(_tnBackfill.codes[k] || 0);
+    return { queued: Number(_tnBackfill.queued || 0), attempted: Number(_tnBackfill.attempted || 0),
+      recovered: Number(_tnBackfill.recovered || 0), remaining: Number(_tnBackfill.remaining || 0),
+      rounds: Number(_tnBackfill.rounds || 0), presenceChecks: Number(_tnBackfill.presenceChecks || 0),
+      presenceVerified: Number(_tnBackfill.presenceVerified || 0), presenceAbsent: Number(_tnBackfill.presenceAbsent || 0),
+      presenceUnknown: Number(_tnBackfill.presenceUnknown || 0), retriedAfterPresence: Number(_tnBackfill.retriedAfterPresence || 0),
+      backoffWaits: Number(_tnBackfill.backoffWaits || 0), codes: codes,
+      reason: String(_tnBackfill.reason || "").slice(0, 40), at: Number(_tnBackfill.at || 0) };
+  }
+  function tnBackfillCount(code) {
+    var c = String(code || "unknown");
+    if (TN_REASON_CODES.indexOf(c) < 0) c = "other";
+    _tnBackfill.codes[c] = Number(_tnBackfill.codes[c] || 0) + 1;
+  }
+  /* ===== end dnbf-1.0.0 (state) ===== */
   var _tnDefer = { queue: [], timer: null, running: false, waits: 0 };
   /* ===== dnd2-1.0.0 (a TIMING refusal earns the deferred round) ============
      MEASURED 2026-08-17 (owner's /cloned pull, 24 patients, occluded athena):
@@ -6023,8 +6417,14 @@
     for (var i = 0; i < _tnDefer.queue.length; i++) {
       if (_tnDefer.queue[i].patientId === String(item.patientId) && _tnDefer.queue[i].day === String(item.day || "")) return false;
     }
-    _tnDefer.queue.push({ patientId: String(item.patientId), name: String(item.name || ""), day: String(item.day || ""),
+    /* dnbf-1.0.0: no NAME on the queue - the backfill's receipt is codes and
+       counts, and the cheapest guarantee is that the name is never present. */
+    _tnDefer.queue.push({ patientId: String(item.patientId), day: String(item.day || ""),
+      code: String(item.code || "unknown"),
+      reasonOf: isFn(item.reasonOf) ? item.reasonOf : null,
+      retrying: isFn(item.retrying) ? item.retrying : null,
       attempt: item.attempt, settleDay: isFn(item.settleDay) ? item.settleDay : null, attempts: 0 });
+    safe(function () { _tnBackfill.queued = Number(_tnBackfill.queued || 0) + 1; _tnBackfill.at = Date.now(); });
     return true;
   }
   /* stp-2.0.0: STOP drops the deferred today-note queue and disarms its timer.
@@ -6068,21 +6468,77 @@
     _tnDefer.running = true;
     var batch = _tnDefer.queue.splice(0, _tnDefer.queue.length);
     var recovered = 0, attempted = 0;
+    /* ===== dnbf-1.0.0 (the round: presence re-check + bounded backoff) ======
+       One row's turn. It runs its attempt; if the refusal is a no-athena-tab
+       class the LEASE-FREE presence verb decides whether that verdict is even
+       true, and a proven-present athena earns a backoff retry instead of the
+       "open your signed-in athenaOne" advice the owner watched be false. */
+    function tnWait(ms) {
+      return new Promise(function (res) {
+        safe(function () { _tnBackfill.backoffWaits = Number(_tnBackfill.backoffWaits || 0) + 1; });
+        setTimeout(res, Number(ms) > 0 ? Number(ms) : 0);
+      });
+    }
+    function tnRowTurn(item, round) {
+      if (item.attempts >= TN_BACKFILL_ATTEMPTS) return Promise.resolve(false);
+      item.attempts++;
+      attempted++;
+      safe(function () { _tnBackfill.attempted = Number(_tnBackfill.attempted || 0) + 1; });
+      return Promise.resolve().then(function () { return item.attempt(); }).then(function (ok) {
+        if (ok === true) {
+          recovered++;
+          safe(function () { _tnBackfill.recovered = Number(_tnBackfill.recovered || 0) + 1; });
+          return true;
+        }
+        var reason = safe(function () { return item.reasonOf ? String(item.reasonOf() || "") : ""; }, "");
+        var code = tnReasonCode(reason);
+        item.code = code;
+        safe(function () { tnBackfillCount(code); });
+        /* the retry decision. Only a TRANSIENT class earns another turn, and a
+           no-athena-tab class must first be DISPROVED by the presence verb. */
+        if (item.attempts >= TN_BACKFILL_ATTEMPTS || round >= TN_BACKFILL_ROUNDS) return false;
+        if (tnIsNoTabReason(reason)) {
+          safe(function () { _tnBackfill.presenceChecks = Number(_tnBackfill.presenceChecks || 0) + 1; });
+          return p1PresenceProbe(3500).then(function (presence) {
+            var open = !!(presence && presence.athenaOpen === true);
+            var known = !!(presence && typeof presence === "object");
+            if (!known) { safe(function () { _tnBackfill.presenceUnknown = Number(_tnBackfill.presenceUnknown || 0) + 1; }); return false; }
+            if (!open) { safe(function () { _tnBackfill.presenceAbsent = Number(_tnBackfill.presenceAbsent || 0) + 1; }); return false; }
+            /* THE FALSE FOOTER: athena is there. Retry, do not accuse. */
+            safe(function () {
+              _tnBackfill.presenceVerified = Number(_tnBackfill.presenceVerified || 0) + 1;
+              _tnBackfill.retriedAfterPresence = Number(_tnBackfill.retriedAfterPresence || 0) + 1;
+            });
+            safe(function () { if (item.retrying) item.retrying(); });
+            return tnWait(TN_BACKFILL_WAITS[Math.min(item.attempts - 1, TN_BACKFILL_WAITS.length - 1)])
+              .then(function () { return tnRowTurn(item, round + 1); });
+          }, function () { return false; });
+        }
+        if (!tnIsDeferrable(reason)) return false;
+        safe(function () { if (item.retrying) item.retrying(); });
+        return tnWait(TN_BACKFILL_WAITS[Math.min(item.attempts - 1, TN_BACKFILL_WAITS.length - 1)])
+          .then(function () { return tnRowTurn(item, round + 1); });
+      }, function () { return false; });
+    }
     var chain = Promise.resolve();
     batch.forEach(function (item) {
-      chain = chain.then(function () {
-        if (item.attempts >= 1) return null;      /* exactly ONE deferred attempt per row */
-        item.attempts++;
-        attempted++;
-        return Promise.resolve().then(function () { return item.attempt(); }).then(function (ok) {
-          if (ok === true) recovered++;
-        }, function () {});
-      });
+      chain = chain.then(function () { return tnRowTurn(item, 1); });
     });
     return chain.then(function () {
       var settled = [];
       batch.forEach(function (d) { if (d.settleDay && settled.indexOf(d.settleDay) < 0) settled.push(d.settleDay); });
-      var summary = { attempted: attempted, recovered: recovered, remaining: attempted - recovered, reason: "deferred-round" };
+      /* dnbf-1.0.0: `attempted` counts ATTEMPTS (a transient refusal now earns
+         one backoff retry), `rows` counts ROWS. Conflating them is how a
+         receipt starts reporting more rows than the day has. */
+      var summary = { rows: batch.length, attempted: attempted, recovered: recovered,
+        remaining: batch.length - recovered, reason: "deferred-round" };
+      safe(function () {
+        _tnBackfill.rounds = Number(_tnBackfill.rounds || 0) + 1;
+        _tnBackfill.remaining = Math.max(0, Number(_tnBackfill.queued || 0) - Number(_tnBackfill.recovered || 0));
+        _tnBackfill.reason = "deferred-round";
+        _tnBackfill.at = Date.now();
+      });
+      summary.backfill = tnBackfillReceipt();
       settled.forEach(function (fn) { safe(function () { fn(summary); }); });
       _tnDefer.running = false;
       return summary;
@@ -8568,9 +9024,16 @@
     _todayNoteDeferred: function () {
       return { queued: _tnDefer.queue.length, running: _tnDefer.running === true, waits: Number(_tnDefer.waits || 0),
         armed: _tnDefer.timer != null, athenaFree: tnAthenaFree(),
-        rows: _tnDefer.queue.map(function (q) { return { patientId: q.patientId, day: q.day, attempts: Number(q.attempts || 0) }; }) };
+        /* dnbf-1.0.0: the PHI-free backfill receipt, for the dialog lane. */
+        backfill: tnBackfillReceipt(),
+        rows: _tnDefer.queue.map(function (q) { return { patientId: q.patientId, day: q.day, attempts: Number(q.attempts || 0), code: String(q.code || "unknown") }; }) };
     },
     _runDeferredTodayNotes: runDeferredTodayNoteRound,
+    /* dnbf-1.0.0: the backfill receipt on its own, and the closed code
+       vocabulary a surface may render. Both read-only. */
+    _todayNoteBackfillReceipt: tnBackfillReceipt,
+    _todayNoteReasonCodes: function () { return TN_REASON_CODES.slice(); },
+    _todayNoteReasonCode: tnReasonCode,
     _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,
     resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },

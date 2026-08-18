@@ -152,7 +152,11 @@ async function testNotYetByAppointmentTime() {
     parseResult: () => ({ problems: 'p', meds: 'm', summary: 's' }),
     /* rows 0-3 at 09:00-12:00 (past), rows 4-7 at 15:00-18:00 (not yet) */
     rowTime: i => (i < 4 ? String(9 + i).padStart(2, '0') + ':00' : String(15 + (i - 4)).padStart(2, '0') + ':00'),
-    noteDelayMs: 61000 /* every read that DOES happen is expensive - so we can measure the saving */
+    /* dnp2-1.0.0: the pass budget for an 8-row day is 80 s, so the per-read
+       cost has to fit inside it or this fixture stops measuring tny-1.0.0 and
+       starts measuring the budget (which testDayNoteCostIsMeasured owns).
+       9 s x 8 = 72 s fits; the saving being measured is unchanged in kind. */
+    noteDelayMs: 9000
   });
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
 
@@ -165,7 +169,7 @@ async function testNotYetByAppointmentTime() {
   eq(receipt.patients.filter(p => p.complete === true).length, 8, 'a not-yet row was not counted as a saved history');
 
   /* MEASURED SAVING: 4 rows x 61 s of day-note reads did not happen. */
-  eq(receipt.todayNoteMsTotal, 4 * 61000,
+  eq(receipt.todayNoteMsTotal, 4 * 9000,
     'the day-note leg spent ' + receipt.todayNoteMsTotal + ' ms; four not-yet rows should have cost zero');
 
   /* A/B CONTROL with no times on the rows: every row is read, so the saving
@@ -174,7 +178,7 @@ async function testNotYetByAppointmentTime() {
     day: DAY, today: DAY, rows: 8, startAt: AT_1352_ET,
     chartCoverage: true,
     parseResult: () => ({ problems: 'p', meds: 'm', summary: 's' }),
-    noteDelayMs: 61000
+    noteDelayMs: 9000
   });
   const r2 = await h2.api._runHistoryBatch(h2.rows, [], h2.onStatus);
   eq(h2.noteCalls.length, 8, 'the A/B control did not read all eight - the measurement is meaningless');
@@ -248,7 +252,7 @@ async function main() {
   await testNotYetByReaderReceipt();
   await testNoResweepOfSavedRows();
   await flush(5);
-  console.log('PASS 1p-daynote-column-and-not-yet: ' + checks + ' checks - a stored history is a SAVED row whatever the pulled-day note did (8/8 saved, 0 in retry, panel ok=8 where the live defect showed 0), the note verdict lives in its own read/not-yet/unread column, TODAY\'s appointments that have not happened yet are not-yet rather than failures by BOTH detectors (time and the reader\'s own no-encounter receipt, each proved against an A/B control and against a PAST day that still fails honestly), 4 of 8 day-note reads and 244 s are provably not spent, and no saved row is ever re-opened or left re-checking');
+  console.log('PASS 1p-daynote-column-and-not-yet: ' + checks + ' checks - a stored history is a SAVED row whatever the pulled-day note did (8/8 saved, 0 in retry, panel ok=8 where the live defect showed 0), the note verdict lives in its own read/not-yet/unread column, TODAY\'s appointments that have not happened yet are not-yet rather than failures by BOTH detectors (time and the reader\'s own no-encounter receipt, each proved against an A/B control and against a PAST day that still fails honestly), 4 of 8 day-note reads and 36 s are provably not spent, and no saved row is ever re-opened or left re-checking');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-daynote-column-and-not-yet did not finish')); process.exit(1); }, 90000);

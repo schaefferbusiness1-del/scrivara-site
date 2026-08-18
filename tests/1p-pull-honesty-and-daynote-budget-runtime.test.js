@@ -52,24 +52,48 @@ function ok(v, m) { assert.ok(v, m); checks++; }
 function eq(a, b, m) { assert.strictEqual(a, b, m); checks++; }
 
 /* ---------------------------------------------------------- causal control --
- * origin/main's copy of the two files, on disk, so the same fixtures can be
- * run against the engine that shipped the defect. If git cannot produce them
- * the control cases are SKIPPED LOUDLY rather than silently passing. */
+ * The copy of the two files that shipped the defect, on disk, so the same
+ * fixtures can be run against the engine that had it. If git cannot produce
+ * them the control cases are SKIPPED LOUDLY rather than silently passing.
+ *
+ * 2026-08-17 (pullspeed2): this used to read `origin/main`, which was correct
+ * only until pullfix3 LANDED on main. Once it did, the "before" copy carried
+ * the fix and every control assertion inverted - the suite hard-failed with
+ * "CAUSAL CONTROL BROKEN: origin/main already repainted the checkbox" while
+ * nothing was actually wrong. A control has to name the state it is a control
+ * FOR, so it is now the PARENT of the commit that introduced these blocks,
+ * looked up by content (git log -S) rather than pinned to a moving branch.
+ * If the lookup fails, or the copy it finds already contains the marker, the
+ * control is skipped loudly - never asserted against. */
 const CONTROL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'p1-pullfix-control-'));
 let CONTROL_IMPORTER = '';
 let CONTROL_CONNECT = '';
-try {
-  const impo = execFileSync('git', ['show', 'origin/main:1p-feat_mls_schedimport_exact.js'],
-    { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  CONTROL_IMPORTER = path.join(CONTROL_DIR, 'control-importer.js');
-  fs.writeFileSync(CONTROL_IMPORTER, impo);
-  const conn = execFileSync('git', ['show', 'origin/main:1p-mls-connect.js'],
+function preFixRef(marker, file) {
+  const log = execFileSync('git', ['log', '--format=%H', '-S' + marker, '--', file],
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).trim().split(/\r?\n/).filter(Boolean);
+  if (!log.length) throw new Error('no commit introduces ' + marker + ' in ' + file);
+  return log[log.length - 1] + '~1';          /* the parent of the FIRST one */
+}
+function controlCopy(marker, file, outName) {
+  const ref = preFixRef(marker, file);
+  const src = execFileSync('git', ['show', ref + ':' + file],
     { cwd: ROOT, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
-  CONTROL_CONNECT = path.join(CONTROL_DIR, 'control-connect.js');
-  fs.writeFileSync(CONTROL_CONNECT, conn);
-} catch (eCtl) {
-  CONTROL_IMPORTER = ''; CONTROL_CONNECT = '';
-  console.log('NOTE: origin/main control unavailable (' + String((eCtl && eCtl.message) || eCtl).slice(0, 80) + ')');
+  if (src.indexOf(marker) >= 0) throw new Error('control copy at ' + ref + ' already contains ' + marker);
+  const out = path.join(CONTROL_DIR, outName);
+  fs.writeFileSync(out, src);
+  return out;
+}
+try {
+  CONTROL_IMPORTER = controlCopy('p1-resume-honesty-1.0.0', '1p-feat_mls_schedimport_exact.js', 'control-importer.js');
+} catch (eCtlI) {
+  CONTROL_IMPORTER = '';
+  console.log('NOTE: importer causal control unavailable (' + String((eCtlI && eCtlI.message) || eCtlI).slice(0, 100) + ')');
+}
+try {
+  CONTROL_CONNECT = controlCopy('p1-visitpref-broadcast-1.0.0', '1p-mls-connect.js', 'control-connect.js');
+} catch (eCtlC) {
+  CONTROL_CONNECT = '';
+  console.log('NOTE: connect causal control unavailable (' + String((eCtlC && eCtlC.message) || eCtlC).slice(0, 100) + ')');
 }
 
 /* ============================================================ 1  STATIC ==== */
@@ -511,7 +535,13 @@ async function dayNoteRun() {
   /* run the round with athena free */
   recovering.setLeaseBusy(false);
   const summary = await recovering.api._runDeferredTodayNotes();
-  eq(Number(summary && summary.attempted), 3, 'the deferred round did not attempt all three rows');
+  /* dnbf-1.0.0 splits the two counts the old assertion conflated: `rows` is
+     rows, `attempted` is attempts - and the one row that keeps refusing a
+     TRANSIENT reason now earns exactly one backoff retry, so 3 rows cost 4
+     attempts. Both are asserted so neither can drift. */
+  eq(Number(summary && summary.rows), 3, 'the deferred round did not take all three rows');
+  eq(Number(summary && summary.attempted), 4,
+    'the backoff retry did not happen (or happened more than once): ' + (summary && summary.attempted));
   eq(Number(summary && summary.recovered), 2, 'the deferred round did not recover the two readable rows');
   eq(Number(receipt.todayNoteFailures || 0), 1,
     'the receipt still counts recovered rows as failures - a fixed row must never keep showing the failure');
@@ -529,17 +559,43 @@ async function dayNoteRun() {
   const recovered = after.filter(r => String(r.dn || '') === 'read');
   eq(recovered.length, 2, 'the recovered rows were not re-stamped as read (' + recovered.length + ')');
 
-  /* ---- dnb-1.0.0: the budget is measured, not assumed --------------------- */
+  /* ---- dnb-1.0.0 / dnb2-1.0.0: the budget is measured, and only SUCCESS
+     raises it ----------------------------------------------------------------
+     dnb-1.0.0 raised the ceiling off the median of every read that RESOLVED,
+     refusals included, so the owner's failing machine talked itself into a
+     150 s wait per row. The contract is now two-sided and both sides are
+     measured here off receipt.todayNoteCeilings (the per-row bet BEFORE the
+     pass clip, so this case tests dnb2 and not dnp2). */
   const slow = makeHarness({
-    day: DN_DAY, today: '2026-08-17', rows: 3, scheduleBorn: false, chartCoverage: true,
+    day: DN_DAY, today: '2026-08-17', rows: 12, scheduleBorn: false, chartCoverage: true,
     noteDelayMs: 30000
   });
   const slowReceipt = await slow.api._runHistoryBatch(slow.rows, [], slow.onStatus, {});
   ok(Number(slowReceipt.todayNoteMsMax || 0) >= 30000,
     'the per-row day-note cost is not measured (todayNoteMsMax=' + slowReceipt.todayNoteMsMax + ')');
-  ok(Number(slowReceipt.todayNoteBudgetMs || 0) > 45000,
-    'a machine that provably needs 30 s per note kept the flat 45 s budget (' + slowReceipt.todayNoteBudgetMs + ')');
-  ok(Number(slowReceipt.todayNoteBudgetMs || 0) <= 150000, 'the day-note budget escaped its cap');
+  const upCeil = slowReceipt.todayNoteCeilings || [];
+  ok(upCeil.length >= 4, 'the ceiling trace is missing (' + JSON.stringify(upCeil) + ')');
+  eq(upCeil.slice(0, 3).join(','), '45000,45000,45000',
+    'the first three reads did not use the sane 45 s ceiling: ' + JSON.stringify(upCeil.slice(0, 3)));
+  eq(upCeil[3], 75000,
+    'three consecutive SUCCESSFUL 30 s reads did not raise the ceiling to 2.5x the median (' + upCeil[3] + ')');
+  ok(upCeil.every(v => v <= 150000), 'the day-note ceiling escaped its cap: ' + JSON.stringify(upCeil));
+
+  /* the other direction, which is the defect the owner measured: a machine
+     where the reads are FAILING must have its wait shortened, never inflated.
+     Zero delay isolates dnb2 from the dnp2 pass budget. */
+  const failing = makeHarness({
+    day: DN_DAY, today: '2026-08-17', rows: 6, scheduleBorn: false, chartCoverage: true,
+    noteDelayMs: 0,
+    noteResult: () => ({ ok: false, reason: 'pulled-day-note-deadline-exceeded' })
+  });
+  const failReceipt = await failing.api._runHistoryBatch(failing.rows, [], failing.onStatus, {});
+  const downCeil = failReceipt.todayNoteCeilings || [];
+  ok(downCeil.length >= 4, 'the failing-machine ceiling trace is missing');
+  eq(downCeil.slice(0, 4).join(','), '45000,35000,25000,25000',
+    'failures did not walk the ceiling DOWN to the 25 s floor: ' + JSON.stringify(downCeil.slice(0, 4)));
+  ok(downCeil.every(v => v <= 45000),
+    'a machine whose day-note reads are all failing INFLATED its own wait: ' + JSON.stringify(downCeil));
 
   /* ---- dnf2-1.0.0: the day-note read stays IN THE SAME VISIT -------------
      The owner's live pull: history 24/24 in ~4 min, then a SECOND pass that
