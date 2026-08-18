@@ -52005,5 +52005,149 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 })();
 </script>
 <!-- ===== end tools-tips-1.0.0 ============================================ -->
+<!-- ===== caldata-1.0.0 — the month grid gets the width, the phone gets a
+     month it can read, and a tapped day is on screen
+     CLUNKY AUDIT items 34, 36 and 37. (33 and 35 are fixed in the renderers
+     themselves — see the caldata-1.0.0 comments at _calCompactTime,
+     _calRenderWeek and calSetMode.)
+
+     HOW THIS WAS MEASURED. The two previous lanes reported items 33–38 as
+     unreachable because "seeding window._calAppts and calling renderCalendar()
+     rendered 0 chips". That is not reproducible. `_calAppts` is declared with
+     `var` at the top level of this shell's single inline script, so it IS
+     window._calAppts, and renderCalendar() reads it directly. What the earlier
+     probes actually hit is that a) navigating to the calendar calls
+     loadCalendar(), which on a signed-out hosted session writes "Sign in to
+     see the calendar." over the grid and returns before rendering, and b)
+     twenty-eight appointments seeded onto ONE day produce five chips and a
+     "+23 more", not twenty-eight. Seed a spread month, or hand loadCalendar()
+     an /api/appointments body, and the chips are there.
+
+     MEASURED at 1280x800 with 126 appointments (six on every weekday of
+     August 2026) applied through loadCalendar():
+
+       #calGrid              730px of a 1280px window, day cells 97px
+       month chips           105 of 105 clipped, clientWidth 81px against
+                             scrollWidth 111–151px
+       with the day panel    #calGrid 421px, cells 53px, chips 35–37px
+       phone 390x844         #calGrid 301px, cells 36px, chips 20px wide
+       phone, tap a day      #calDayPanel top = 1754px in an 844px viewport,
+                             position:static, window.scrollY unchanged — the
+                             only feedback a tap gives is the cell outline
+
+     ITEM 34 AND THE RAIL. .cx-rail is a TRACK in .cx-main's grid, not a
+     floated sidebar: an earlier lane hid it and measured #calGrid at 238px,
+     DOWN from 812, because removing the child collapses the column
+     assignment. That revert stands and the clunky-calendar differential guard
+     that pins it stays green — this block never hides the rail, it only makes
+     its track narrower, which can only give the grid room. -->
+<style id="mlsCalDataCss">
+/* --- 34: the rail keeps its track; the track stops being 288px.
+   Above cxStyle's own 980px breakpoint only. Specificity (0,1,2) beats
+   feat_mls_calendar_exact.js's (0,1,1) whichever order they land in, so no
+   !important is needed and a later cx rebuild cannot silently win. */
+@media (min-width:981px){
+  html #calendarView .cx-main{ grid-template-columns:236px minmax(0,1fr); gap:14px; }
+}
+/* --- 33: in Day view the hour timeline IS the agenda. The shared uxpack chip
+   strip repeats the same six appointments directly above it (measured: every
+   name twice in #calendarView). It stands down in Day view only; in month and
+   week view it still adds what those grids cannot show. */
+html #calendarView[data-cal-mode="day"] #mlsUx1DayChips{ display:none !important; }
+/* --- 38: "More calendar tools" opened 47 more controls, and 33 of them were
+   ONE thing: the rail's mini-month (31 day buttons + two arrows) - a second
+   month grid disclosed directly beside the real one. MEASURED at 1280x800,
+   month mode: 9 controls -> 56 on pressing the disclosure, 49 of them under
+   40px.
+
+   The mini-month is a duplicate ONLY in month mode. In day and week mode it
+   is the only month picker on the screen and stays exactly as reachable as
+   feat_mls_calm_views.js makes it - this rule is keyed to the mode attribute
+   published by renderCalendar, so "More" still discloses it there. That
+   module's fold contract is untouched: its own rule
+   (body.mls-cv:not(.mls-cv-open-calendar) ...) has higher specificity and
+   still owns the closed state; this only adds the month-mode case, which is
+   the case where the disclosure was revealing a copy of what is already on
+   screen. */
+html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !important; }
+/* --- 36: a 36px column of 20px chips is not a month anyone can read or tap.
+   Below 600px the month becomes what it can actually be at that width — a
+   picker: the day number and the count badge the renderer already draws, with
+   the whole cell as one target. The names are not lost, they are one tap away
+   in the day panel, which item 37 below now brings on screen. */
+@media (max-width:600px){
+  html #calendarView #calGrid [draggable="true"][onclick*="calApptPeek("]:not([data-appt]){ display:none !important; }
+  html #calendarView #calGrid [onclick*="stopPropagation"][onclick*="calOpenDay("]{ display:none !important; }
+  html #calendarView #calGrid > div > div[onclick^="calOpenDay"]{ min-height:52px !important; padding:5px 4px !important; }
+}
+</style>
+<script>
+/* caldata-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsCalData) return;
+  var VERSION = 'caldata-1.0.0';
+  var NARROW = 600, scrolls = 0;
+
+  function panelIntoView() {
+    try {
+      if (window.innerWidth > NARROW) return;
+      var p = document.getElementById('calDayPanel');
+      if (!p) return;
+      var cs = window.getComputedStyle(p);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      var top = p.getBoundingClientRect().top;
+      /* Only when it is genuinely off screen. A panel already in view must
+         never be yanked under the doctor's thumb. */
+      if (top <= window.innerHeight - 80) return;
+      if (typeof p.scrollIntoView === 'function') { p.scrollIntoView({ block: 'start', behavior: 'auto' }); scrolls++; }
+    } catch (e) {}
+  }
+
+  /* Additive wrapper. feat_mls_calendar_exact.js and feat_mls_caldedupe_render.js
+     both wrap calOpenDay as well; whichever order the wrappers end up in, each
+     calls through, so this runs after the panel has been written either way.
+     The idempotence stamp lives on the WRAPPER, which is what the next pass
+     reads — putting it on the original is how a "wrap once" guard silently
+     wraps twice. */
+  function wrap() {
+    try {
+      var cur = window.calOpenDay;
+      if (typeof cur !== 'function' || cur.__caldataWrapped) return false;
+      var w = function () {
+        var r = cur.apply(this, arguments);
+        try { setTimeout(panelIntoView, 0); } catch (e) {}
+        return r;
+      };
+      w.__caldataWrapped = true;
+      w.__caldataInner = cur;
+      window.calOpenDay = w;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function arm() {
+    wrap();
+    /* Bounded re-arm: a module that REPLACES calOpenDay outright (rather than
+       wrapping it) drops this one, and those loaders are deferred. Bounded, so
+       it cannot become a permanent timer. */
+    var n = 0, t = setInterval(function () { wrap(); if (++n > 20) clearInterval(t); }, 600);
+    [300, 900, 2000, 4000].forEach(function (ms) { setTimeout(wrap, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsCalData = { version: VERSION, wrap: wrap, panelIntoView: panelIntoView,
+    scrolls: function () { return scrolls; },
+    revert: function () {
+      try {
+        var s = document.getElementById('mlsCalDataCss'); if (s) s.disabled = true;
+        var c = window.calOpenDay;
+        if (c && c.__caldataWrapped && c.__caldataInner) window.calOpenDay = c.__caldataInner;
+      } catch (e) {}
+      return true;
+    } };
+})();
+</script>
+<!-- ===== end caldata-1.0.0 =============================================== -->
 </body>
 </html>

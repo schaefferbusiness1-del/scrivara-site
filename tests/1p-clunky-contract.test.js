@@ -45,7 +45,10 @@ const BLOCKS = [
   'clunky2-rooms-1.0.0',
   'clunky2-visitnote-1.0.0',
   /* open-items lane (2026-08-18): items 45 and 46, the first-run surfaces. */
-  'firstrun-1p-1.0.0'
+  'firstrun-1p-1.0.0',
+  /* caldata lane (2026-08-18): the calendar items 33-38 the first two lanes
+     reported as unreachable. */
+  'caldata-1.0.0'
 ];
 
 /* ============================================================ PART 1: static */
@@ -211,7 +214,95 @@ function harness() {
       try { renderPatients(); } catch (e) {}
       return out;
     },
-    nav: function (id) { try { var b = document.getElementById(id); if (b) b.click(); } catch (e) {} }
+    nav: function (id) { try { var b = document.getElementById(id); if (b) b.click(); } catch (e) {} },
+
+    /* ===== caldata-1.0.0: THE CALENDAR GRID'S REAL DATA SOURCE ==========
+       Two lanes reported CLUNKY 33-38 unreachable because "seeding
+       window._calAppts and calling renderCalendar() rendered 0 chips". That
+       is not what happens. `_calAppts` is declared with `var` at the top level
+       of the shell's single inline script, so it IS window._calAppts and
+       renderCalendar() reads it directly. Two other things defeat a naive
+       seed, and both are avoided here:
+
+         1. Opening the calendar calls loadCalendar(), and on a signed-out
+            HOSTED session (which the harness is - backendMode() is true over
+            http and bkToken() is empty) it writes "Sign in to see the
+            calendar." into #calGrid and RETURNS before rendering. So a seed
+            applied before navigating is overwritten on screen. Give it a
+            token and answer /api/appointments and it takes the normal path -
+            `_calAppts = d.appointments` - which is the authoritative source.
+         2. Twenty-eight appointments on ONE day are five chips and a
+            "+23 more", not twenty-eight. A month must be SPREAD to be
+            measurable.
+
+       This seeds six appointments on every weekday of August 2026 through
+       loadCalendar()'s own path, so what is measured afterwards is what a
+       real signed-in calendar renders. */
+    seedCalendarMonth: function () {
+      var FIRST = ['Ada', 'Bo', 'Cy', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lu', 'Max',
+        'Nia', 'Oz', 'Pia', 'Quin', 'Rae', 'Sid', 'Tex', 'Uma', 'Val', 'Wes', 'Xan', 'Yas', 'Zed', 'Ann', 'Ben'];
+      var LAST = ['Sample', 'Synthetic', 'Placeholder', 'Testcase'];
+      var STATUS = ['booked', 'arrived', 'roomed', 'completed'];
+      var rows = [], id = 9000, n = 0;
+      for (var d = 1; d <= 31; d++) {
+        var dow = new Date(2026, 7, d).getDay();
+        if (dow === 0 || dow === 6) continue;
+        for (var k = 0; k < 6; k++) {
+          var hh = 8 + k, half = (n % 2) ? '30' : '00';
+          var key = '2026-08-' + (d < 10 ? '0' + d : String(d));
+          var hs = (hh < 10 ? '0' + hh : String(hh));
+          rows.push({ id: ++id,
+            name: FIRST[n % FIRST.length] + ' ' + LAST[Math.floor(n / FIRST.length) % LAST.length],
+            patient_external_id: String(900000 + (n % 60)),
+            appt_date: key, start_at: key + 'T' + hs + ':' + half + ':00',
+            end_at: key + 'T' + hs + ':' + (half === '30' ? '55' : '25') + ':00',
+            reason: PROCS[n % PROCS.length], status: STATUS[n % STATUS.length],
+            provider: 'Sample Provider, MD', room: 'R' + (n % 4) });
+          n++;
+        }
+      }
+      try { sessionStorage.setItem('sf_bk_token', 'harness-token'); } catch (e) {}
+      if (!window.__clunkyCalFetch) {
+        var of = window.fetch.bind(window);
+        window.fetch = function (u, o) {
+          var s = String((u && u.url) || u || '');
+          if (/\/api\/appointments(\?|$)/.test(s)) {
+            return Promise.resolve(new Response(JSON.stringify({ appointments: window.__clunkyCalRows, me: {} }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }));
+          }
+          if (/\/api\/providers/.test(s)) {
+            return Promise.resolve(new Response(JSON.stringify({ providers: [] }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return of(u, o);
+        };
+        window.__clunkyCalFetch = true;
+      }
+      window.__clunkyCalRows = rows;
+      window._calMode = 'month'; window._calYear = 2026; window._calMonth = 7;
+      window._calRefDate = '2026-08-17';
+      var g = document.getElementById('calGrid'); if (g) { try { g._mlsSig = null; } catch (e) {} }
+      return window.loadCalendar().then(function (r) {
+        return { applied: !!(r && r.applied), count: r ? r.count : 0, rows: rows.length };
+      });
+    },
+    /* Every appointment chip the three grids draw. Month and day use
+       calApptPeek, week uses calChipOpen, day and week also carry data-appt -
+       so the three selectors overlap and the list must be de-duplicated. */
+    calChips: function () {
+      var g = document.getElementById('calGrid'); if (!g) return [];
+      var set = [];
+      var push = function (n) { if (set.indexOf(n) < 0) set.push(n); };
+      Array.prototype.slice.call(g.querySelectorAll('[data-appt]')).forEach(push);
+      Array.prototype.slice.call(g.querySelectorAll('[onclick]')).forEach(function (n) {
+        var oc = n.getAttribute('onclick') || '';
+        if (/calApptPeek\(|calChipOpen\(/.test(oc)) push(n);
+      });
+      return set.filter(visible);
+    },
+    calClipped: function () {
+      return window.__clunky.calChips().filter(function (c) { return c.scrollWidth > c.clientWidth + 1; }).length;
+    }
   };
 }
 
@@ -570,6 +661,94 @@ async function runtime() {
     ok(dock.ask && (dock.ask.w >= 90 || dock.ask.ph.length <= 3),
       `the side-rail finder is ${dock.ask && dock.ask.w}px wide with placeholder "${dock.ask && dock.ask.ph}" - it renders as "Asl" (CLUNKY 40)`);
     ok(dock.ask && dock.ask.aria, 'the dock finder lost its accessible name when it became an icon (CLUNKY 40)');
+
+    /* ============ the finder's label never renders as a mid-string slice ===
+     * OWNER, 2026-08-18: the bottom finder painted a clipped FRAGMENT of its
+     * placeholder ("r an actio" - the middle of "Find a patient, a screen or
+     * an action") plus the tools nub below it.
+     *
+     * MEASURED at HEAD, 1366x900, every laid-out dock state and all three
+     * sides: the label needs 254px, the box offers 148px at rest and 226px
+     * focused, and text-overflow computed `clip` - so the placeholder was cut
+     * mid-glyph everywhere, with no ellipsis. The old rule chose the label
+     * from one magic number (`width >= 90`) as though 90px could show a 254px
+     * sentence, and the companion CSS centred it for any left/right dock,
+     * which is what turns a clipped label into a MIDDLE-of-string slice.
+     *
+     * The label is now measured in the box's own font. Both rail states are
+     * pinned here: the 46px collapsed rail (icon) and the words state. */
+    const find = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const read = () => {
+        const a = document.getElementById('mlsDockAsk');
+        if (!a) return { present: false };
+        const cs = getComputedStyle(a);
+        const r = a.getBoundingClientRect();
+        const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+        const avail = Math.round(a.clientWidth - pad);
+        const ph = a.placeholder || '';
+        const c = document.createElement('canvas').getContext('2d');
+        c.font = [cs.fontStyle, cs.fontWeight, cs.fontSize, cs.fontFamily].join(' ');
+        const need = Math.round(c.measureText(ph).width);
+        return { present: true, w: Math.round(r.width), ph, phLen: ph.length,
+          state: a.getAttribute('data-mls-clunky-ask'),
+          align: cs.textAlign, ellipsis: cs.textOverflow,
+          avail, need, clipped: need > avail + 1,
+          /* the owner's signature: words, clipped, and centred - which throws
+             away BOTH ends and leaves the middle of the sentence */
+          midSlice: ph.length > 6 && need > avail + 1 && cs.textAlign === 'center' };
+      };
+      const settle = async (side) => {
+        document.body.setAttribute('data-mls-dock', side);
+        await sleep(300);
+        try { window.__mlsClunkyDock.pass(); } catch (e) {}
+        await sleep(250);
+        return read();
+      };
+      const out = { rail: await settle('left'), bottom: await settle('bottom') };
+      const a = document.getElementById('mlsDockAsk');
+      if (a) { a.focus(); await sleep(500); try { window.__mlsClunkyDock.pass(); } catch (e) {} await sleep(200); }
+      out.focused = read();
+      if (a) a.blur();
+      const n = document.getElementById('mlsDockNub');
+      if (n) {
+        const nr = n.getBoundingClientRect();
+        const ncs = getComputedStyle(n);
+        out.nub = { present: true, w: Math.round(nr.width), h: Math.round(nr.height),
+          shown: nr.width > 0 && nr.height > 0 && ncs.display !== 'none' && ncs.visibility !== 'hidden' };
+      } else out.nub = { present: false };
+      await settle('left');
+      return out;
+    });
+    measured.dockFind = find;
+
+    /* NO STATE MAY EVER PAINT A MID-STRING SLICE. */
+    for (const [name, s] of [['side rail', find.rail], ['bottom bar', find.bottom], ['focused', find.focused]]) {
+      if (!s.present) continue;
+      ok(!s.midSlice,
+        `${name}: the finder paints a clipped, centred placeholder - the doctor sees the MIDDLE of "${s.ph}" (${s.need}px of label in ${s.avail}px, align ${s.align}) (owner 2026-08-18)`);
+      ok(s.state === 'icon' || s.align === 'left',
+        `${name}: the finder shows words but is centred (align ${s.align}), so clipping takes both ends instead of the tail (owner 2026-08-18)`);
+      ok(s.state === 'icon' || s.ellipsis === 'ellipsis',
+        `${name}: the finder shows words with text-overflow ${s.ellipsis} - a clipped label is cut mid-glyph with no ellipsis (owner 2026-08-18)`);
+    }
+    /* An icon-sized box shows an ICON, with no fragment of a word in it. */
+    if (find.rail.present && find.rail.w < 90) {
+      eq(find.rail.state, 'icon',
+        `the ${find.rail.w}px collapsed rail shows "${find.rail.ph}" instead of an icon (CLUNKY 40)`);
+      ok(find.rail.phLen <= 2 && !find.rail.clipped,
+        `the collapsed rail's placeholder "${find.rail.ph}" is ${find.rail.need}px in a ${find.rail.avail}px box (CLUNKY 40)`);
+    }
+    /* A box with room for words says what it is for. */
+    if (find.focused.present && find.focused.avail >= 90) {
+      eq(find.focused.state, 'full',
+        `the focused finder is ${find.focused.avail}px wide but still shows "${find.focused.ph}" (owner 2026-08-18)`);
+    }
+    /* The nub is a real affordance or it is not there at all. */
+    if (find.nub.present && find.nub.shown) {
+      ok(find.nub.w >= 44 && find.nub.h >= 44,
+        `the dock nub is ${find.nub.w}x${find.nub.h} - below the 44x44 a thumb needs for the menu it opens (owner 2026-08-18)`);
+    }
     ok(dock.rightNow && !(dock.rightNow.segs > 0 && /Nothing to do here yet/.test(dock.rightNow.text)),
       `the right-now bar shows ${dock.rightNow && dock.rightNow.segs} tabs AND "Nothing to do here yet" (CLUNKY 73, 123)`);
     ok(dock.tools && dock.tools.bottom <= dock.tools.viewport,
@@ -707,6 +886,210 @@ async function runtime() {
       `the day's numbers went away with the card instead of moving to one line (got "${cal.line}") (CLUNKY 112)`);
     ok(cal.gridW && cal.gridW.on >= cal.gridW.off - 2,
       `this block's stylesheet NARROWS #calGrid: ${cal.gridW.off}px without it, ${cal.gridW.on}px with it - a crowding fix that spends its clearance somewhere invisible (CLUNKY 34 guard)`);
+
+    /* ================================= CALENDAR / caldata-1.0.0 ======== */
+    /* CLUNKY 33, 34, 35 - the items two lanes reported unreachable. See
+       __clunky.seedCalendarMonth for why "seeding _calAppts rendered 0 chips"
+       was a measurement artefact and what the real data source is.
+
+       MEASURED at HEAD (1280x800, this seeded month): month 105 of 105 chips
+       clipped at clientWidth 81px against scrollWidth 111-151px reading
+       "8:00 AM Ada Sa..."; week 30 of 30 clipped in 90px lanes; Day view
+       showing every patient twice (the uxpack chip strip AND the hour
+       timeline) with #calGrid squeezed to 421px by the day panel it opened
+       over itself. */
+    const seedCal = await page.evaluate(() => window.__clunky.seedCalendarMonth());
+    measured.calSeed = seedCal;
+    eq(seedCal.applied, true,
+      'loadCalendar() did not apply the seeded month - the calendar is not reading /api/appointments any more');
+    eq(seedCal.count, seedCal.rows,
+      `loadCalendar applied ${seedCal.count} of ${seedCal.rows} seeded appointments`);
+
+    /* The two label helpers are EXECUTED, never grepped. A regex that lost a
+       backslash in transport still reads correctly in the source - that is
+       exactly how four shipped /1p regexes died with a green gate. */
+    const helpers = await page.evaluate(() => ({
+      times: ['8:00 AM', '9:30 AM', '1:00 PM', '12:15 PM', '', 'time not recorded']
+        .map((s) => window._calCompactTime(s)),
+      names: ['Ada Sample', 'Bo Van Der Berg', 'Cher', '', '  Dee   Sample  ']
+        .map((s) => window._calShortWho(s))
+    }));
+    measured.calHelpers = helpers;
+    eq(helpers.times.join('|'), '8a|9:30a|1p|12:15p||time not recorded',
+      `_calCompactTime no longer compacts the clock (got ${JSON.stringify(helpers.times)}) - an eaten backslash in its regex would look exactly like this (CLUNKY 34/35)`);
+    eq(helpers.names.join('|'), 'Ada S.|Bo B.|Cher||Dee S.',
+      `_calShortWho no longer shortens the name (got ${JSON.stringify(helpers.names)}) (CLUNKY 34/35)`);
+
+    const calx = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      const gw = () => { const n = document.getElementById('calGrid'); return n ? Math.round(n.getBoundingClientRect().width) : null; };
+      const out = {};
+
+      window.calSetMode('month'); await sleep(800);
+      out.month = { chips: C.calChips().length, clipped: C.calClipped(), gridW: gw(),
+        sample: C.calChips().slice(0, 3).map((c) => (c.textContent || '').trim()) };
+
+      /* DIFFERENTIAL, the same shape as the CLUNKY 34 guard above: this
+         block's stylesheet narrows the RAIL's track, so it may only ever give
+         #calGrid room. Measured with the sheet on and off on the same page.
+
+         THE DAY PANEL MUST BE HELD SHUT FOR BOTH READS. #calSplitWrap becomes
+         a two-column grid whenever #calDayPanel is displayed, which moves
+         #calGrid by ~400px - two orders of magnitude more than the rail track
+         this differential is trying to measure. The first version of this
+         check read 870px "on" and 470px "off" and PASSED, but the 400px was
+         the panel opening between the two reads, not the stylesheet. Both
+         reads now force the panel shut first and the panel state is returned
+         so a silent drift cannot fake the verdict again. Something on this
+         screen re-opens the panel on its own tick, so the pair is RETRIED
+         until both reads agree on the layout rather than forced once and
+         trusted. */
+      const panelOpen = () => window.__clunky.shown('#calDayPanel');
+      const css = document.getElementById('mlsCalDataCss');
+      out.tries = 0;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        out.tries++;
+        const p = document.getElementById('calDayPanel');
+        if (p) p.style.display = 'none';
+        await sleep(400);
+        const onPanel = panelOpen();
+        const onW = gw();
+        if (css) css.disabled = true;
+        if (p) p.style.display = 'none';
+        await sleep(400);
+        const offPanel = panelOpen();
+        const offW = gw();
+        if (css) css.disabled = false;
+        await sleep(300);
+        out.panelOn = onPanel; out.panelOff = offPanel;
+        out.gridOn = onW; out.gridOff = offW;
+        if (onPanel === offPanel) break;
+      }
+      if (!css) { out.gridOff = out.gridOn; out.panelOff = out.panelOn; }
+
+      window._calRefDate = '2026-08-17'; window.calSetMode('week'); await sleep(800);
+      out.week = { chips: C.calChips().length, clipped: C.calClipped(),
+        sample: C.calChips().slice(0, 3).map((c) => (c.textContent || '').trim()) };
+
+      window._calRefDate = '2026-08-17'; window.calSetMode('day'); await sleep(800);
+      const t = (document.getElementById('calendarView') || {}).innerText || '';
+      const day = (window._calAppts || []).filter((a) => a.appt_date === '2026-08-17');
+      out.day = { chips: C.calChips().length, rows: day.length, gridW: gw(),
+        panelShown: C.shown('#calDayPanel'),
+        modeAttr: (document.getElementById('calendarView') || {}).getAttribute
+          ? document.getElementById('calendarView').getAttribute('data-cal-mode') : null,
+        maxCopies: day.reduce((m, a) => Math.max(m, t.split(a.name).length - 1), 0) };
+
+      window.calSetMode('month'); await sleep(400);
+      return out;
+    });
+    measured.caldata = calx;
+
+    /* The seed must actually reach the grid, or every assertion below is
+       vacuous - which is precisely how this item stayed "open" twice. */
+    ok(calx.month.chips > 40,
+      `the seeded month rendered only ${calx.month.chips} chips - the grid is not reading the appointments and the CLUNKY 34/35 checks would pass vacuously`);
+    eq(calx.month.clipped, 0,
+      `${calx.month.clipped} of ${calx.month.chips} month chips are still clipped (e.g. ${JSON.stringify(calx.month.sample)}) - the month is unreadable again (CLUNKY 34)`);
+    /* The differential is only evidence if both reads saw the same layout. */
+    eq(calx.panelOn, calx.panelOff,
+      `the CLUNKY 34 differential read #calGrid in two different layouts after ${calx.tries} attempts (day panel visible on:${calx.panelOn} off:${calx.panelOff}) - the ~400px two-column split would swamp the rail track this is measuring`);
+    ok(calx.gridOn >= calx.gridOff - 2,
+      `caldata's stylesheet NARROWS #calGrid: ${calx.gridOff}px without it, ${calx.gridOn}px with it - the rail is a layout track and this fix must only ever give the grid room (CLUNKY 34 guard)`);
+    ok(calx.gridOn > calx.gridOff,
+      `caldata's stylesheet gives #calGrid no width at all (${calx.gridOff}px -> ${calx.gridOn}px): item 34's whole claim is that the rail's track can be narrower`);
+
+    ok(calx.week.chips > 10,
+      `week view rendered only ${calx.week.chips} chips - the CLUNKY 35 check would pass vacuously`);
+    eq(calx.week.clipped, 0,
+      `${calx.week.clipped} of ${calx.week.chips} week chips are clipped (e.g. ${JSON.stringify(calx.week.sample)}) - the surname is being sliced in the lane again (CLUNKY 35)`);
+
+    ok(!calx.day.panelShown,
+      `Day view opened the right-hand day panel over its own hour timeline again, squeezing #calGrid to ${calx.day.gridW}px (CLUNKY 33)`);
+    eq(calx.day.modeAttr, 'day',
+      'renderCalendar no longer publishes data-cal-mode on #calendarView, so the rule that stands the duplicate day-chip strip down cannot match (CLUNKY 33)');
+    eq(calx.day.maxCopies, 1,
+      `a Day-view patient is on screen ${calx.day.maxCopies} times over ${calx.day.rows} appointments - the timeline is repeating what another strip already said (CLUNKY 33)`);
+
+    /* ============================ CLUNKY 38: More calendar tools ======= */
+    /* MEASURED at HEAD, month mode: pressing "More calendar tools" took
+       #calendarView from 9 to 56 visible controls, 49 of them under 40px -
+       and 33 of those 47 were ONE thing, the rail's mini-month (31 day
+       buttons + two arrows), a second month grid disclosed beside the real
+       one.
+
+       THE FOLD CONTRACT IS NOT WEAKENED. feat_mls_calm_views.js's promise is
+       that everything it folds has a route back IN THE SAME VIEW. The
+       mini-month keeps that route in day and week mode, where it is the only
+       month picker on screen; it is suppressed only in MONTH mode, where the
+       thing being disclosed is a copy of the grid already on screen. Both are
+       measured below - hidden in month, and really there AND clickable in day
+       and week. */
+    const more = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      const discl = () => Array.prototype.slice.call(
+        document.querySelectorAll('#calendarView button,#calendarView [role=button]'))
+        .find((b) => /more calendar tools/i.test(b.textContent || ''));
+      const miniState = () => {
+        const el = document.querySelector('#calendarView .cx-card.cx-mini');
+        if (!el) return { present: false, shown: false, days: 0 };
+        const days = Array.prototype.slice.call(el.querySelectorAll('.cx-mini-day')).filter(C.visible);
+        return { present: true, shown: C.visible(el), days: days.length,
+          clickable: days.length ? !!days[0].onclick : false };
+      };
+      const openMore = async () => {
+        const b = discl();
+        if (!b) return false;
+        if (/^hide/i.test((b.textContent || '').trim())) return true;   /* already open */
+        b.click(); await sleep(900);
+        return true;
+      };
+
+      const out = {};
+      /* --- month --- */
+      window.calSetMode('month'); await sleep(700);
+      out.beforeCtrls = C.ctrls('#calendarView').length;
+      out.hasDisclosure = !!discl();
+      out.opened = await openMore();
+      /* Counted off the ELEMENTS, not off C.ctrls()'s label strings: mapping
+         a label back to a node matches the wrong one whenever two controls
+         share a label, which is exactly what a duplicate-heavy panel has. */
+      const CTRL = 'button,a[href],input:not([type=hidden]),select,textarea,[role=button],[role=tab],[role=menuitem]';
+      const afterEls = Array.prototype.slice.call(document.querySelectorAll('#calendarView ' + CTRL)).filter(C.visible);
+      out.afterCtrls = afterEls.length;
+      out.afterUnder40 = afterEls.filter((e) => e.getBoundingClientRect().height < 40).length;
+      out.month = miniState();
+
+      /* --- day and week: the route back must still work --- */
+      window._calRefDate = '2026-08-17'; window.calSetMode('day'); await sleep(700);
+      await openMore();
+      out.day = miniState();
+      window.calSetMode('week'); await sleep(700);
+      await openMore();
+      out.week = miniState();
+
+      window.calSetMode('month'); await sleep(500);
+      return out;
+    });
+    measured.calMore = more;
+    ok(more.hasDisclosure,
+      'the "More calendar tools" disclosure is not on the calendar, so the CLUNKY 38 checks would pass vacuously');
+    ok(more.month.present,
+      'the rail mini-month is gone from the DOM entirely - CLUNKY 38 hides it in month mode, it must never be deleted');
+    ok(!more.month.shown,
+      `"More calendar tools" still discloses the rail's mini-month in MONTH mode (${more.month.days} day buttons) beside the month grid it copies (CLUNKY 38)`);
+    ok(more.afterCtrls < 30,
+      `"More calendar tools" opens ${more.afterCtrls} visible controls in month mode (was 56 at HEAD, 33 of them the duplicate mini-month) (CLUNKY 38)`);
+    /* The route back, both directions - a fold with a dead disclosure is the
+       defect feat_mls_calm_views.js exists to prevent. */
+    ok(more.day.shown && more.day.days >= 28,
+      `day mode: "More" no longer reveals a usable mini-month (shown ${more.day.shown}, ${more.day.days} day buttons) - the fold's route back is dead (CLUNKY 38)`);
+    ok(more.day.clickable,
+      'day mode: the disclosed mini-month day cells lost their click handler (CLUNKY 38)');
+    ok(more.week.shown && more.week.days >= 28,
+      `week mode: "More" no longer reveals a usable mini-month (shown ${more.week.shown}, ${more.week.days} day buttons) (CLUNKY 38)`);
 
     /* ================================================================== */
     /* ============ clunky2 lane (2026-08-18) =========================== */
@@ -1269,6 +1652,53 @@ async function runtime() {
     ok(!narrow.today, 'phone: the date chip did not stand down, so the header row has no slack (CLUNKY 6)');
     ok(narrow.docOverflow <= 0, `phone: the document scrolls sideways by ${narrow.docOverflow}px after the header change`);
     ok(narrow.rowOverflow <= 1, `phone: #mlsRdTop overflows by ${narrow.rowOverflow}px after the header change`);
+
+    /* ================== caldata-1.0.0 at 390x844: CLUNKY 36 and 37 ===== */
+    /* MEASURED at HEAD on this viewport with the same seeded month:
+     *   #calGrid   301px wide, day cells 36px, 105 chips at clientWidth 20px
+     *              reading "8..", "9..", "+7 m... ->" - nothing legible and
+     *              nothing reliably tappable
+     *   tap a day  #calDayPanel top = 1754px in an 844px viewport,
+     *              position:static, window.scrollY unchanged: the only
+     *              feedback a tap gives is the cell outline
+     * At 390px a chip cannot be made readable, so the month becomes what it
+     * can be - a picker with the day number and the count badge the renderer
+     * already draws - and the tap it invites now lands somewhere visible. */
+    const calPhone = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      C.nav('nav_calendar'); await sleep(1600);
+      const seeded = await C.seedCalendarMonth();
+      window.calSetMode('month'); await sleep(900);
+      const grid = document.getElementById('calGrid');
+      const cell = grid ? grid.querySelector(':scope > div > div[onclick^="calOpenDay"]') : null;
+      const out = {
+        seeded: seeded.count,
+        chips: C.calChips().length,
+        gridH: grid ? Math.round(grid.getBoundingClientRect().height) : null,
+        cellH: cell ? Math.round(cell.getBoundingClientRect().height) : null,
+        badges: grid ? grid.querySelectorAll('span[style*="border-radius:999px"]').length : 0
+      };
+      const y0 = window.scrollY;
+      window.calOpenDay('2026-08-17');
+      await sleep(1400);
+      const p = document.getElementById('calDayPanel');
+      const r = p ? p.getBoundingClientRect() : null;
+      out.panelShown = C.shown('#calDayPanel');
+      out.panelTop = r ? Math.round(r.top) : null;
+      out.scrolled = window.scrollY !== y0;
+      out.vh = window.innerHeight;
+      return out;
+    });
+    measured.calPhone = calPhone;
+    ok(calPhone.seeded > 100,
+      `phone: only ${calPhone.seeded} appointments were applied - the CLUNKY 36/37 checks would pass vacuously`);
+    eq(calPhone.chips, 0,
+      `phone: the month still draws ${calPhone.chips} appointment chips at this width, where they measured 20px wide and read "8.." (CLUNKY 36)`);
+    ok(calPhone.cellH >= 44,
+      `phone: a month day cell is ${calPhone.cellH}px tall - below the 44px a thumb needs, and it is now the only target in the cell (CLUNKY 36)`);
+    ok(calPhone.panelShown && calPhone.panelTop !== null && calPhone.panelTop < calPhone.vh,
+      `phone: tapping a day left #calDayPanel at top ${calPhone.panelTop}px in a ${calPhone.vh}px viewport (shown ${calPhone.panelShown}, scrolled ${calPhone.scrolled}) - the tap still has no visible answer (CLUNKY 37)`);
 
     /* ============================ clunky2, at 390x844 ================== */
     /* MEASURED at HEAD on this viewport:
