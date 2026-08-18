@@ -146,7 +146,33 @@
     if (!label || !button) return;
     var name = safe(function () { return button.querySelector('.nm'); }, null) || button;
     setDirectText(name, label);
-    setAttr(button, 'title', label + ' — ' + DETAILS[mode]);
+    /* THE SHELL OWNS NATIVE TOOLTIPS, so this must not write one.
+       1pScribeFlow's _stripOneTitle converts EVERY title into data-tip and
+       removes the title, driven by a document-wide MutationObserver, so that
+       the browser's native tooltip never stacks on top of the app's own. A
+       title written here is therefore removed again within the same frame,
+       and because setAttr() re-reads getAttribute('title') - which is now
+       null - the next reconcile writes it back. That is a ping-pong, not a
+       label.
+
+       MEASURED on the op-note rail, ten opPrepRender() calls, three mode
+       buttons: 57 setAttribute('title') from here and 57
+       removeAttribute('title') from _stripOneTitle, with no user action and
+       nothing about the buttons changing. It is the dominant half of the
+       .opr-tplmode churn the opnotes4 lane reported.
+
+       So follow the tooltip rather than fight for it. While a native title is
+       still on the button - which is the case on a bare page, and for the one
+       frame after the room rebuilds the rail - keep it in step. Once the
+       shell has taken it away, data-tip is the live copy and THAT is what is
+       kept current; setAttr's own equality check then makes every later
+       reconcile a no-op. The doctor sees the same text either way, through
+       the same renderer. */
+    var tip = label + ' — ' + DETAILS[mode];
+    var hasTitle = safe(function () { return button.hasAttribute('title'); }, false);
+    var hasTip = safe(function () { return button.hasAttribute('data-tip'); }, false);
+    if (hasTitle) setAttr(button, 'title', tip);
+    if (hasTip || !hasTitle) setAttr(button, 'data-tip', tip);
   }
   function relabelRedoButton(button) {
     var mode = clean(button && button.getAttribute && button.getAttribute('data-oprredo')).toLowerCase();
