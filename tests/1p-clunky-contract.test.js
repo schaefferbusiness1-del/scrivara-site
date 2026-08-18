@@ -35,7 +35,8 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
    existence + lane-neutrality checks as its neighbours. */
 const BLOCKS = [
   'clunky-header-1.0.0',
-  'clunky-settings-1.0.0'
+  'clunky-settings-1.0.0',
+  'clunky-staffprep-1.0.0'
 ];
 
 /* ============================================================ PART 1: static */
@@ -102,12 +103,25 @@ function harness() {
     'Radiofrequency ablation, lumbar facet', 'Sacroiliac joint injection'];
   var DAY = '2026-08-17';
 
+  /* THE INSTRUMENT LIES FIRST. Chrome keeps layout boxes for the subtree of a
+     CLOSED <details> - its ::details-content is content-visibility:hidden - so
+     a rect-only visibility test reports folded-away cards as visible. It
+     called two provably closed folds open during this work. Anything inside a
+     closed <details> is not on the doctor's screen, and is excluded here. */
+  function inClosedDetails(el) {
+    for (var p = el; p && p !== document.documentElement; p = p.parentElement) {
+      var par = p.parentElement;
+      if (par && par.tagName === 'DETAILS' && !par.open && p.tagName !== 'SUMMARY') return true;
+    }
+    return false;
+  }
   function visible(el) {
     if (!el) return false;
     var r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
     var cs = getComputedStyle(el);
-    return !(cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0');
+    if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') return false;
+    return !inClosedDetails(el);
   }
   function rect(el) {
     if (!el) return null;
@@ -395,6 +409,68 @@ async function runtime() {
     eq(set.connectedClaims.length, 0,
       'the Account tab still claims a live connection that the Advanced tab denies (CLUNKY 74)');
     ok(set.gbpTabs <= 1, `Google Business is configured in ${set.gbpTabs} different tabs (CLUNKY 132)`);
+
+    /* ==================================================== STAFF PREP ===== */
+    const staff = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      C.nav('nav_visit');
+      await sleep(1000);
+      window.dispatchEvent(new CustomEvent('mls:menu-staff-prep-request',
+        { detail: { source: 'mls-topbar-menu', requestId: 'clunky-contract' } }));
+      await sleep(2500);
+      const vis = (n) => n && C.visible(n);
+      const out = {};
+      out.onStaff = !!document.querySelector('.ez3-pull');
+      /* 11: exactly ONE primary control per job state. At idle that is Start
+         (plus the separate "Pull today only"); Resume/Pause/Retry/Cancel must
+         all be hidden, and the tint stylesheet's display:inline-flex
+         !important must not be able to force them back. */
+      out.row2 = Array.prototype.slice.call(document.querySelectorAll('.ez3-pull .ez3-row2 button'))
+        .filter(vis).map((b) => b.id || (b.textContent || '').trim().slice(0, 22));
+      /* 84: how many ways to pull are on one screen. */
+      out.pulls = Array.prototype.slice.call(document.querySelectorAll('#mlsEz3 button, #mlsEz3 a[href]'))
+        .filter(vis).filter((b) => /\bpull\b/i.test(b.textContent || ''))
+        .map((b) => b.id || (b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 26));
+      /* 88: an empty log is not a grey slab. */
+      const lg = document.getElementById('ez3PullLog');
+      out.logShown = vis(lg);
+      out.logText = lg ? (lg.textContent || '').trim() : '';
+      /* 89: unselected range tabs are not pale enough to read as disabled. */
+      out.segColors = Array.prototype.slice.call(document.querySelectorAll('#ez3Seg button'))
+        .filter(vis).filter((b) => !b.classList.contains('on'))
+        .map((b) => getComputedStyle(b).color);
+      /* 141: the doctor's step rail is not above a front-desk screen. */
+      out.stages = vis(document.getElementById('mlsStages'));
+      out.title = (function () { const t = document.getElementById('mlsRdTitle'); return t ? (t.textContent || '').trim() : ''; })();
+      /* 86 / 87: no instruction that points at a control that is not there. */
+      const all = (document.getElementById('mlsEz3') || document).innerText || '';
+      out.deadPointers = ['Choose a provider in Staff Prep first', 'guards on', 'schedule parse timeout',
+        'The provider reader could not establish an account-owned request']
+        .filter((k) => all.indexOf(k) >= 0);
+      out.busy = C.busy('#mlsEz3');
+      /* 12: the status line is derived from the job manifest, not frozen. */
+      out.statusOwner = !!(window.__mlsClunkyStaff && window.__mlsClunkyStaff.passes() > 0);
+      return out;
+    });
+    measured.staffprep = { row2: staff.row2, pulls: staff.pulls, busy: staff.busy, title: staff.title };
+    ok(staff.onStaff, 'the Staff Prep pull card did not render, so nothing below was measured');
+    ok(staff.row2.length <= 2,
+      `Staff Prep shows ${staff.row2.length} job buttons at idle (${staff.row2.join(', ')}) - the doctor cannot tell which to press (CLUNKY 11)`);
+    ok(staff.row2.indexOf('ez3PullStart') >= 0, 'Staff Prep lost its Start control at idle (CLUNKY 11)');
+    ok(staff.pulls.length <= 4,
+      `${staff.pulls.length} ways to pull on one screen: ${staff.pulls.join(', ')} (CLUNKY 84)`);
+    ok(!staff.logShown || staff.logText.length > 0,
+      'the pull log is an empty grey slab in the middle of the card (CLUNKY 88)');
+    for (const c of staff.segColors) {
+      ok(c !== 'rgb(220, 231, 251)',
+        `an unselected range tab computes ${c} - pale enough to read as disabled when it is not (CLUNKY 89)`);
+    }
+    ok(!staff.stages, 'the doctor Prep-Record-Review-Sign-Send rail is showing above the front-desk screen (CLUNKY 141)');
+    eq(staff.title, 'Staff prep', `the header says "${staff.title}" while Staff Prep is on screen (CLUNKY 141)`);
+    eq(staff.deadPointers.length, 0,
+      `Staff Prep still says: ${staff.deadPointers.join(' | ')} (CLUNKY 85, 86, 87)`);
+    ok(staff.statusOwner, 'the staff-prep status line has no owner, so it cannot follow the job (CLUNKY 12)');
     await page.close();
 
     /* ------------------------------------------------------------ 390x844 */

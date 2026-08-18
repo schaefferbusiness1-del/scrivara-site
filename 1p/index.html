@@ -45252,5 +45252,340 @@ html #settingsModal input[type=file][disabled]{
 })();
 </script>
 <!-- ===== end clunky-settings-1.0.0 ===================================== -->
+<!-- ===== clunky-staffprep-1.0.0 — one job, one control, one honest sentence
+     CLUNKY AUDIT items 11 and 13 (sev 3), 84, 85, 86, 87, 88, 89 (sev 2),
+     141 (sev 1), and the observable half of 12 and 14.
+
+     THE SEV-3 WAS A ONE-LINE CSS DEFECT, AND THE PANEL WAS NEVER WRONG.
+     The pull card already has a complete state machine: pCounts() sets
+     display on Start / Resume / Pause / Retry / Cancel from the saved
+     manifest, and the markup ships Resume, Pause and Retry with an inline
+     style="display:none". MEASURED at idle, all six were on screen at
+     397/559/739/836/397/496. The reason is one declaration in the workspace's
+     own tint stylesheet:
+
+       #mlsEz3 .ez3-row2 .ez3-sm{ ... display:inline-flex !important; ... }
+
+     An author !important beats an inline style, so every button the state
+     machine hid was forced back on. The rule wants width/flex/alignment; the
+     `display` half of it silently overrode the only thing that decided which
+     control the doctor should press. Rather than edit that stylesheet (the
+     visit lane owns the ez3 workspace this week), the inline hide is restored
+     for exactly the buttons that carry it.
+
+     WHAT ELSE WAS MEASURED, Staff Prep at idle, 1366x900:
+       * six visible ways to pull — Start month pull, Resume month pull, Pull
+         today only, Start 2026 year pull, Pull this day (schedule + charts),
+         Pull day histories — on one screen (item 84).
+       * #ez3PullLog: a 686x110 grey slab with an EMPTY log in every state
+         (item 88).
+       * #ez3Seg: unselected tabs computed rgb(220,231,251) on a near-white
+         tint — pale enough to read as disabled, though none of them is
+         (item 89).
+       * #mlsP1YearStatus said "Choose a provider in Staff Prep first" while
+         #ez3PullFor, six inches above it, read "Your athenaOne view
+         (default)" (item 86).
+       * #ez3sStatus "🛡 guards on"; #mlsPadNote a 67px explainer (item 87).
+       * the header still said "Visit" and the doctor's
+         Prep·Record·Review·Sign·Send rail was above a front-desk screen
+         (item 141).
+
+     ONE SOURCE FOR STATE. Everything below that claims to know what the job
+     is doing reads window.__mlsP1RangeJobs.state() — the same manifest the
+     panel's own pCounts() reads. Nothing here invents a status. -->
+<style id="mlsClunkyStaffCss">
+/* --- 11: an inline hide must win. The tint stylesheet's
+   `display:inline-flex !important` outranks an inline style, so the state
+   machine's decision is restored for the buttons it actually hid. */
+html #mlsEz3 .ez3-row2 .ez3-sm[style*="display:none"],
+html #mlsEz3 .ez3-row2 .ez3-sm[style*="display: none"]{ display:none !important; }
+
+/* --- 89: an unselected tab is not a disabled tab. */
+html #mlsEz3 .ez3-seg button:not(.on),
+html #mlsEz3 #ez3Seg button:not(.on){
+  color:var(--ink, #1A211C) !important;
+  border:1px solid var(--line, #D9D6CD) !important;
+  opacity:1 !important;
+}
+html #mlsEz3 .ez3-seg button:not(.on):hover{ background:var(--soft, #F4F2EC) !important; }
+
+/* --- 88: an empty log is not a 110px hole in the card. */
+html #mlsEz3 #ez3PullLog[data-mls-clunky-empty="1"]{ display:none !important; }
+#mlsClunkyPullLine{
+  margin:6px 0 2px; font:600 13px/1.45 var(--sans, system-ui, sans-serif); color:var(--ink, #1A211C);
+}
+#mlsClunkyPullLine[hidden]{ display:none; }
+
+/* --- 13: the bar never paints complete while a day is unresolved. */
+html #mlsEz3 #ez3PullBar[data-mls-clunky-attention="1"]{
+  background:linear-gradient(90deg, var(--brand, #2E6A4B) 0 var(--mls-clunky-done, 0%), #E0A33A var(--mls-clunky-done, 0%) 100%) !important;
+}
+
+/* --- 84: one disclosure for the other ways to pull. */
+#mlsClunkyPullMore{ margin:14px 0 4px; }
+#mlsClunkyPullMore > summary{
+  cursor:pointer; padding:8px 0; font:700 13.5px/1.3 var(--sans, system-ui, sans-serif); color:var(--ink, #1A211C);
+}
+#mlsClunkyPullMore > summary .note{ font-weight:400; }
+#mlsClunkyPullMoreBody{ margin-top:10px; border-left:3px solid var(--line, #D9D6CD); padding-left:12px; }
+
+/* --- 141: the doctor's step rail is not part of a front-desk screen. */
+html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
+</style>
+<script>
+/* clunky-staffprep-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyStaff) return;
+  var VERSION = 'clunky-staffprep-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function q(s, r) { try { return (r || document).querySelector(s); } catch (e) { return null; } }
+  function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function shown(n) {
+    if (!n) return false;
+    var r = n.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var cs = getComputedStyle(n);
+    return !(cs.display === 'none' || cs.visibility === 'hidden');
+  }
+  function onStaff() { return !!q('.ez3-pull'); }
+
+  /* ---- the one source of job state ----------------------------------- */
+  function state() {
+    try {
+      var api = window.__mlsP1RangeJobs;
+      if (!api || api.installed !== true || typeof api.state !== 'function') return null;
+      return api.state();
+    } catch (e) { return null; }
+  }
+  function tally(st) {
+    if (!st) return null;
+    var months = st.months || {}, total = 0, done = 0, attn = 0;
+    Object.keys(months).forEach(function (k) {
+      var m = months[k] || {}, days = m.days || {};
+      Object.keys(days).forEach(function (d) {
+        total++;
+        var v = String((days[d] && days[d].status) || days[d] || '');
+        if (v === 'complete' || v === 'verified' || v === 'empty') done++;
+        else if (v === 'failed' || v === 'attention' || v === 'needs-attention') attn++;
+      });
+    });
+    if (!total && st.summary) {
+      total = Number(st.summary.total || 0); done = Number(st.summary.complete || 0);
+      attn = Number(st.summary.needsAttention || 0);
+    }
+    return { total: total, done: done, attn: attn };
+  }
+
+  /* ---- 12: the status line says what the job is doing ----------------- */
+  var READY = 'Ready — 1) pick the month · 2) press Start. MLS pulls the schedule and files every visit automatically.';
+  var SAYS = {
+    running: 'Running — MLS is reading the schedule and filing every visit. You can leave this screen.',
+    pending: 'Starting…',
+    paused: 'Paused. Press Resume to carry on from where it stopped.',
+    'waiting-login': 'athenaOne signed you out. Sign in again, then press Resume.',
+    'waiting-retry': 'Finished, with days still to retry.',
+    'needs-attention': 'Finished, with days that still need attention — press Retry.',
+    'account-changed': 'A different account signed in. Press Resume to carry on.',
+    'storage-failed': 'This computer could not save the last day. Press Resume to try again.',
+    complete: 'Done — every day in this month is saved.',
+    cancelled: 'Cancelled. Days already saved stay saved.'
+  };
+  function statusLine() {
+    var conn = el('ez3PullConn');
+    if (!conn) return;
+    var st = state();
+    var want = READY;
+    if (st && st.status) {
+      var t = tally(st), base = SAYS[String(st.status)] || READY;
+      if (t && t.total) base += ' ' + t.done + ' of ' + t.total + ' days saved' + (t.attn ? ' · ' + t.attn + ' need attention' : '') + '.';
+      want = base;
+    }
+    if (conn.getAttribute('data-mls-clunky-said') !== want) {
+      conn.textContent = want;
+      conn.setAttribute('data-mls-clunky-said', want);
+    }
+  }
+
+  /* ---- 13: the bar is filled by verified days only -------------------- */
+  function bar() {
+    var b = el('ez3PullBar'), lbl = el('ez3PullBarLbl');
+    var st = state(), t = tally(st);
+    if (!b || !t || !t.total) { if (b) b.removeAttribute('data-mls-clunky-attention'); return; }
+    var donePct = Math.max(0, Math.min(100, Math.round((t.done / t.total) * 100)));
+    b.style.setProperty('--mls-clunky-done', donePct + '%');
+    if (t.attn > 0) {
+      b.setAttribute('data-mls-clunky-attention', '1');
+      /* never paint the whole bar while a day is unresolved */
+      b.style.width = Math.min(99, donePct + Math.round((t.attn / t.total) * 100)) + '%';
+    } else {
+      b.removeAttribute('data-mls-clunky-attention');
+    }
+    if (lbl) {
+      var want = t.done + ' of ' + t.total + ' days saved' + (t.attn ? ' · ' + t.attn + ' need attention' : '');
+      if (txt(lbl) !== want) lbl.textContent = want;
+    }
+  }
+
+  /* ---- 88: hide the empty log, surface its last line ------------------ */
+  function log() {
+    var l = el('ez3PullLog');
+    if (!l) return;
+    var lines = qa('div', l);
+    var empty = lines.length === 0 && !txt(l);
+    l.setAttribute('data-mls-clunky-empty', empty ? '1' : '0');
+    var line = el('mlsClunkyPullLine');
+    if (!line) {
+      line = document.createElement('p');
+      line.id = 'mlsClunkyPullLine';
+      if (l.parentNode) l.parentNode.insertBefore(line, l);
+    }
+    if (empty) { line.hidden = true; return; }
+    var last = lines.length ? txt(lines[lines.length - 1]) : txt(l);
+    /* the log's own lines are "HH:MM:SS  message"; the doctor needs the message */
+    var msg = last.replace(/^\d{1,2}:\d{2}(:\d{2})?\s+/, '');
+    line.hidden = !msg;
+    if (msg && txt(line) !== msg) line.textContent = msg;
+  }
+
+  /* ---- 84 / 14: one place for the other ways to pull ------------------ */
+  function more() {
+    /* ONLY the year card. "Pull this day (schedule + charts)" is #mlsPadRow,
+       mounted into .ez3-card.ez3-pull by a shared module another lane owns
+       this week; moving it risks that module re-mounting a second copy. It
+       stays where it is and is reported, not touched. */
+    var year = el('mlsP1YearPull');
+    var anchor = year;
+    if (!anchor || !anchor.parentNode) return;
+    var fold = el('mlsClunkyPullMore');
+    if (!fold) {
+      fold = document.createElement('details');
+      fold.id = 'mlsClunkyPullMore';
+      var sum = document.createElement('summary');
+      sum.innerHTML = 'Other ways to pull <span class="note">— a whole year, month by month</span>';
+      fold.appendChild(sum);
+      var body = document.createElement('div');
+      body.id = 'mlsClunkyPullMoreBody';
+      fold.appendChild(body);
+      anchor.parentNode.insertBefore(fold, anchor);
+    }
+    var body2 = el('mlsClunkyPullMoreBody');
+    if (!body2) return;
+    if (year && year.parentNode !== body2) { try { body2.appendChild(year); } catch (e) {} }
+    /* 14: while the month panel already owns a job, the year card must not
+       print a second copy of it with a second Pause/Resume/Cancel. */
+    var st = state();
+    var monthJob = !!(st && String(st.kind || '') === 'month');
+    ['mlsP1YearStatus', 'mlsP1YearPause', 'mlsP1YearResume', 'mlsP1YearCancel'].forEach(function (id) {
+      var n = el(id); if (!n) return;
+      var hide = monthJob;
+      if (hide && n.getAttribute('data-mls-clunky-hid') !== '1') { n.setAttribute('data-mls-clunky-hid', '1'); n.style.display = 'none'; }
+      if (!hide && n.getAttribute('data-mls-clunky-hid') === '1') { n.removeAttribute('data-mls-clunky-hid'); n.style.display = ''; }
+    });
+  }
+
+  /* ---- 85 / 86 / 87: plain words, and no instruction that points at a
+         control the doctor cannot see -------------------------------- */
+  var WORDS = [
+    ['The provider reader could not establish an account-owned request.',
+      'MLS Assist is not answering on this computer. Open athenaOne in a tab, then press Start again.'],
+    ['Choose a provider in Staff Prep first.',
+      'Uses the same doctor as the month pull above.'],
+    ['(set with the Provider selector above)', 'Change this with the Doctor picker at the top of this card.'],
+    ['🛡 guards on', 'Safety checks are on'],
+    ['guards on', 'Safety checks are on'],
+    ['schedule parse timeout', 'the schedule did not finish loading'],
+    ['verified empty', 'checked — no patients that day'],
+    ['saved checkpoint', 'the last day it saved']
+  ];
+  function words() {
+    var root = q('#mlsEz3');
+    if (!root) return;
+    WORDS.forEach(function (pair) {
+      qa('#mlsEz3 .ez3-status, #mlsEz3 .nowl, #mlsEz3 .nowl2, #mlsEz3 .p1yr-status, #mlsEz3 label, #mlsEz3 p, #mlsEz3 span')
+        .forEach(function (n) {
+          if (n.children && n.children.length) return;      /* leaf text only */
+          var t = txt(n);
+          if (!t || t.indexOf(pair[0]) < 0) return;
+          var next = t.split(pair[0]).join(pair[1]);
+          if (next !== t) n.textContent = next;
+        });
+    });
+    /* 87: a 496-character explainer becomes one sentence plus a "?" */
+    var note = el('mlsPadNote');
+    if (note && !note.getAttribute('data-mls-clunky-fold') && txt(note).length > 180) {
+      var full = txt(note);
+      var first = full.split('. ')[0] + '.';
+      note.setAttribute('data-mls-clunky-fold', '1');
+      note.textContent = '';
+      var short = document.createElement('span');
+      short.textContent = first + ' ';
+      var d = document.createElement('details');
+      d.style.display = 'inline';
+      var s = document.createElement('summary');
+      s.style.cssText = 'display:inline;cursor:pointer;color:var(--brand,#2E6A4B);font-weight:700';
+      s.textContent = 'What else does this do?';
+      var p = document.createElement('div');
+      p.textContent = full;
+      d.appendChild(s); d.appendChild(p);
+      note.appendChild(short); note.appendChild(d);
+    }
+  }
+
+  /* ---- 141: this is not the doctor's Visit screen --------------------- */
+  function room() {
+    var on = onStaff();
+    try {
+      if (on) document.body.setAttribute('data-mls-staffprep', '1');
+      else document.body.removeAttribute('data-mls-staffprep');
+    } catch (e) {}
+    var title = el('mlsRdTitle');
+    if (!title) return;
+    if (on) {
+      if (txt(title) !== 'Staff prep') { title.setAttribute('data-mls-clunky-was', txt(title)); title.textContent = 'Staff prep'; }
+    } else if (title.getAttribute('data-mls-clunky-was')) {
+      title.textContent = title.getAttribute('data-mls-clunky-was');
+      title.removeAttribute('data-mls-clunky-was');
+    }
+  }
+
+  function pass() {
+    if (!onStaff()) { room(); return; }
+    passes++;
+    statusLine(); bar(); log(); more(); words(); room();
+  }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      var host = el('visitView') || document.body;
+      if (host) obs.observe(host, { childList: true, subtree: true });
+    } catch (e) {}
+    setInterval(pass, 1500);
+    [300, 900, 2000, 4000].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyStaff = {
+    version: VERSION, pass: pass, passes: function () { return passes; }, state: state, tally: function () { return tally(state()); },
+    revert: function () {
+      try {
+        var s = el('mlsClunkyStaffCss'); if (s) s.disabled = true;
+        var f = el('mlsClunkyPullMore');
+        if (f && f.parentNode) {
+          qa('#mlsClunkyPullMoreBody > *', f).forEach(function (c) { f.parentNode.insertBefore(c, f); });
+          f.parentNode.removeChild(f);
+        }
+        qa('[data-mls-clunky-hid="1"]').forEach(function (n) { n.style.display = ''; n.removeAttribute('data-mls-clunky-hid'); });
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end clunky-staffprep-1.0.0 ==================================== -->
 </body>
 </html>
