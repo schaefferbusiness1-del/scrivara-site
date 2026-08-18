@@ -42515,7 +42515,10 @@ body.pvr-on #mlsCopyVisitsBar{gap:8px;margin:8px 0 2px}
 body.pvr-on #mlsCopyVisitsBar .mls-cv-btn{background:transparent!important;color:var(--brand,#2E6A4B)!important;
   border:1px solid var(--line,#dfe6e1)!important;font-weight:600!important;box-shadow:none!important;filter:none!important}
 body.pvr-on #mlsCopyVisitsBar .mls-cv-btn:hover{background:var(--soft,#EAF1EC)!important}
-body.pvr-on #mlsCopyVisitsBar #mlsEaseAddVisit{display:none!important}
+/* ...but only while the empty state is on screen offering its own "Add a
+   visit". On a chart that already has visits the empty state is gone, and the
+   bar's button is then the ONLY way to add one. */
+body.pvr-on.pvr-empty #mlsCopyVisitsBar #mlsEaseAddVisit{display:none!important}
 /* The timeline, collapsed to the latest three. */
 body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
 #mlsVisitHistoryExt .pvr-showall{margin:8px 0 2px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
@@ -42863,9 +42866,16 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
   function dedupeEmpty() {
     var sec = document.getElementById('mlsVisitHistoryExt');
     if (!sec) return;
+    var timelineEmpty = !!sec.querySelector('.mlsxh-empty');
+    /* Recorded FIRST, and unconditionally: feat_source_clarity is a separate
+       module that may not be present, and an early return on its absence used
+       to leave pvr-empty stuck on from the last empty chart - which then hid
+       the only "Add a visit" on every chart that HAS visits. */
+    if (document.body && document.body.classList.contains('pvr-empty') !== timelineEmpty) {
+      document.body.classList.toggle('pvr-empty', timelineEmpty);
+    }
     var sum = sec.querySelector('.mls-src-summary');
     if (!sum) return;
-    var timelineEmpty = !!sec.querySelector('.mlsxh-empty');
     var onlyHeadline = sum.children.length === 1 && !!sum.querySelector('.mls-src-headline');
     var dup = timelineEmpty && onlyHeadline;
     if (sum.classList.contains('pvr-dup-empty') !== dup) sum.classList.toggle('pvr-dup-empty', dup);
@@ -42960,7 +42970,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     safe(function () { if (deb) clearTimeout(deb); }); deb = null;
     safe(function () { if (obs) obs.disconnect(); }); obs = null; obsTarget = null;
     safe(function () { if (svObs) svObs.disconnect(); }); svObs = null;
-    safe(function () { if (document.body) document.body.classList.remove('pvr-on'); });
+    safe(function () { if (document.body) { document.body.classList.remove('pvr-on'); document.body.classList.remove('pvr-empty'); } });
     safe(function () {
       var sec = document.getElementById('mlsVisitHistoryExt');
       if (!sec) return;

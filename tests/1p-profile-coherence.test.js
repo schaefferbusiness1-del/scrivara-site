@@ -337,6 +337,47 @@ function harness() {
       }
       return null;
     },
+    /* Making the copy controls read as ONE secondary action must not take the
+       only "Add a visit" with it: on a chart that already has visits the empty
+       state is gone, and the copy bar's button is then the only one there is. */
+    /* Measures the CSS DECISION rather than a button count: feat_ease and the
+       copy bar are conditional modules that may not be present in a harness,
+       and "0 buttons because the module never loaded" would look identical to
+       "0 buttons because this lane hid the last one". The decision is the part
+       this lane owns and the part that can regress. */
+    addPaths: function () {
+      var empty = !!document.querySelector('#mlsVisitHistoryExt .mlsxh-empty');
+      var bodyEmpty = !!(document.body && document.body.classList.contains('pvr-empty'));
+      var bar = document.getElementById('mlsCopyVisitsBar');
+      if (!bar) { bar = document.createElement('div'); bar.id = 'mlsCopyVisitsBar';
+        var pc = document.getElementById('profileCard'); if (pc) pc.appendChild(bar); }
+      /* a stand-in carrying the exact id the rule targets, so the CSS decision
+         is measurable even when feat_ease did not load in this harness */
+      var ease = document.getElementById('mlsEaseAddVisit');
+      if (!ease && bar) { ease = document.createElement('button'); ease.id = 'mlsEaseAddVisit'; ease.textContent = '➕ Add a visit'; bar.appendChild(ease); }
+      var why = [];
+      try {
+        for (var s = 0; s < document.styleSheets.length; s++) {
+          var rs; try { rs = document.styleSheets[s].cssRules; } catch (e) { continue; }
+          if (!rs) continue;
+          for (var r = 0; r < rs.length; r++) {
+            var rule = rs[r];
+            if (!rule.selectorText || !rule.style || String(rule.style.display || '') !== 'none') continue;
+            try { if (ease && ease.matches(rule.selectorText)) why.push(rule.selectorText); } catch (e2) {}
+          }
+        }
+      } catch (e3) {}
+      /* Only THIS lane's rule is this lane's business. Another module already
+         hides profile-card extras in visit-focus mode
+         ("body.mls-vfocus:not(.vf-ptmore) #patientsView #profileCard .mls-moved"),
+         so a raw display test measures that module and would fail here for a
+         reason nothing in this lane can fix. */
+      var mine = 0;
+      for (var w = 0; w < why.length; w++) if (why[w].indexOf('pvr-empty') >= 0) mine++;
+      return { empty: empty, bodyEmpty: bodyEmpty, why: why, pvrHides: mine > 0,
+               inDoc: !!(ease && document.contains(ease)),
+               easeHidden: ease ? (getComputedStyle(ease).display === 'none') : null };
+    },
     emptyStates: function () {
       var host = document.getElementById('mlsVisitHistoryExt') || document.getElementById('profileCard');
       if (!host) return -1;
@@ -555,6 +596,25 @@ async function runtime() {
     const empties = await page.evaluate(() => window.__pvr.emptyStates());
     measured.emptyStates = empties;
     eq(empties, 1, `an empty chart shows ${empties} "No visits yet" empty states, must be exactly 1`);
+
+    /* On an EMPTY chart the empty state owns the actions, so the bar's
+       duplicate "Add a visit" steps aside. */
+    const addEmpty = await page.evaluate(() => window.__pvr.addPaths());
+    measured.addOnEmpty = addEmpty;
+    eq(addEmpty.empty, true, 'an empty chart must be showing the timeline empty state');
+    eq(addEmpty.bodyEmpty, true, 'the block did not record that the empty state is on screen');
+    eq(addEmpty.pvrHides, true, 'with the empty state offering its own, this lane should stand the bar duplicate down');
+    /* On a chart that HAS visits the empty state is gone, so the bar's button
+       is the ONLY way to add one — quieting the copy controls may not take it. */
+    await page.evaluate(() => window.__pvr.open('syn-five'));
+    await page.waitForTimeout(1600);
+    await page.evaluate(() => window.__pvr.expand());
+    await page.waitForTimeout(1200);
+    const addFull = await page.evaluate(() => window.__pvr.addPaths());
+    measured.addOnFull = addFull;
+    eq(addFull.empty, false, 'a 5-visit chart must not be showing an empty state');
+    eq(addFull.bodyEmpty, false, 'the block still thinks the empty state is on screen');
+    eq(addFull.pvrHides, false, 'a chart with visits lost its only "Add a visit" control to this lane');
 
     /* -- 5. THE CAUSAL CONTROL ------------------------------------------- */
     await page.evaluate(() => window.__pvr.open('syn-split'));
