@@ -53,6 +53,16 @@ const tests = [
   '1p-visitflow-transcript-contract.test.js',
   '1p-uimap-dockspace-contract.test.js',
   '1p-quietnotify-contract.test.js',
+  /* The Patients-room PROFILE, 2026-08-17. Four readers answered "how many
+     visits" with four rules over three stores, so one chart truthfully showed
+     0, 1 and 3 at once; the strip printed a bare em-dash for "Athena says
+     none", "the pull could not read that section" and "never pulled" alike;
+     two modules rendered "No visits yet" one under the other; and the save
+     banner put a patient's NAME over a different patient's open chart. Drives
+     the real shell in real Chrome, and runs the reverted block as its own
+     causal control so a green result cannot come from a block that does
+     nothing. */
+  '1p-profile-coherence.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */
