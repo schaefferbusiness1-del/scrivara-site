@@ -49941,7 +49941,15 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     var picked = false, i;
     for (i = 0; i < rs.length; i++) if (rs[i].checked) picked = true;
     var go = el('mlsAthenaUnifiedGo');
-    var locked = /verified read-only/i.test(txt(el('mlsAthenaUnifiedContext'))) ||
+    /* THE ANCHOR HAS TO BE TIGHT, and this is the same trap the module fell
+       into, mirrored. The sheet's FIRST paint reads 'Exact Athena encounter:
+       being verified read-only now.' - which contains the words 'verified
+       read-only'. Only the LOCKED render writes them with no colon and no
+       'being' between: 'Exact Athena encounter verified read-only'. The
+       structural half needs no prose at all: the sheet puts
+       data-mls-athena-action on Confirm only after validatedUnifiedProbe has
+       accepted a complete matching identity and one exact encounter. */
+    var locked = /encounter verified read-only/i.test(txt(el('mlsAthenaUnifiedContext'))) ||
       !!(go && go.getAttribute('data-mls-athena-action'));
     var st = statusList();
     var ran = st.indexOf('verified') >= 0 || st.indexOf('rehearsed') >= 0;
@@ -50188,7 +50196,9 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     try { check(); } catch (e) {}
     try {
       mo = new MutationObserver(schedule);
-      var host = el() ? (document.getElementById('oprDayRail') || document.body) : document.body;
+      /* #oprDayRail is static markup in this shell, so the observer is scoped
+         to the one subtree that can produce #oprTplMode - never the document. */
+      var host = document.getElementById('oprDayRail') || document.body;
       if (host) mo.observe(host, { childList: true, subtree: true });
     } catch (e2) {}
     try { iv = setInterval(function () { try { check(); } catch (e) {} }, 2000); } catch (e3) {}
@@ -50295,5 +50305,129 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 })();
 </script>
 <!-- ===== end residue-notice-1.0.0 ====================================== -->
+<!-- ===== residue-settings-1.0.0 - the retired Settings skin cannot come back after the dialog is open
+     RESIDUE PACK item 10, "a late stylesheet blanks the Settings dialog".
+     TWO LANES CLOSED THIS AS UNREPRODUCIBLE ON THE STATED GROUND THAT
+     "feat_mls_settings_exact.js self-skips off staging". IT DOES NOT.
+
+     isStaging() has two ways to be true, and the connect bundle (mls-connect.js
+     and every lane copy of it) deliberately arranges the second one: it appends a type="text/plain" script whose src
+     is the data: URL "data:,mls-connect.staging.js" (a marker that executes
+     nothing) precisely so the fourteen *_exact modules activate off staging.
+     Its own comment calls it "MLS prod-enable". So stx-2.0.0 is ENABLED here.
+     What the two lanes actually measured was the module never arriving:
+     its loader is scheduled through window.__mlsDeferAsset ||
+     requestIdleCallback, and an idle callback never fires in a
+     non-compositing tab, so window.__mlsStx was absent - a missing module,
+     not a skipped one.
+
+     MEASURED, /1p shell at 1366x900, Settings open, stx force-loaded:
+
+                                       before #stxStyle   after
+       own-text characters in the card       1,267          160
+       visible nodes in the card                61           32
+       top of the active section             y=154        y=885
+       card box                                   y 16..884 (both)
+       .modal scrollHeight                     1,033        2,531
+
+     The active section moves 731px, past the bottom of a card that does not
+     scroll to it: the doctor is looking at an empty 1120x868 dialog.
+
+     THE COLLISION, exactly. feat_athena_tooltip_dedupe.js (cs-2.0.0) owns the
+     Settings workspace on this lane: a two-pane grid whose LEFT 238px column
+     is the sticky tab rail (#settingsTabBar{grid-column:1;grid-row:1/span 80})
+     and whose content goes right (.modal>*{grid-column:2} - no !important).
+     stx-2.0.0 is an OLDER redesign of the same dialog with the rail on the
+     RIGHT, and it writes .modal>.set-section{grid-column:1!important}. An
+     !important declaration beats a plain one whatever the specificity, so
+     every section is yanked into the rail's own column, and because the rail
+     spans 80 rows and is 868px tall the sections are placed below it.
+
+     THIS IS NOT A NEW FIX. cs-2.0.0 already retires stx - "single-owner",
+     its words - by calling window.__mlsStx.revert() and removing #stxStyle.
+     But it does so INSIDE reconcileSettings(), which runs when Settings opens
+     or closes. A stylesheet injected AFTER that pass (the idle load can land
+     seconds late, and stx re-runs build() on a 1s interval seven times) is
+     never seen by it, and nothing else re-triggers a reconcile. That timing
+     window is the whole defect.
+
+     So this block hoists the retirement cs-2.0.0 already performs out of the
+     reconcile pass and onto the arrival of the stylesheet itself, watching
+     document.head only. It changes no styling of its own, and it keeps
+     cs-2.0.0's documented fallback intact: stx is retired ONLY while the
+     clean workspace is actually present (#settingsModal.mls-settings-clean).
+     If that organiser is ever absent, stx remains the fallback skin exactly
+     as its author intended.
+
+     tests/e2e/run-e2e.js:484 already asserts the end state this restores:
+     assert(out.stxGone, 'legacy stx skin still active alongside the clean
+     workspace'). window.__mlsResidueSettings.revert() stops the watcher. -->
+<script>
+/* residue-settings-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsResidueSettings) return;
+  var VERSION = 'residue-settings-1.0.0';
+  var retired = 0, seen = 0, mo = null, iv = 0, off = false;
+
+  function byId(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function cleanWorkspaceOwns() {
+    var m = byId('settingsModal');
+    return !!(m && m.classList && m.classList.contains('mls-settings-clean'));
+  }
+  /* the retirement cs-2.0.0 performs, character for character */
+  function sweep() {
+    if (off) return;
+    var style = byId('stxStyle');
+    if (!style) return;
+    seen++;
+    if (!cleanWorkspaceOwns()) return;
+    try {
+      if (window.__mlsStx && window.__mlsStx.installed && typeof window.__mlsStx.revert === 'function') window.__mlsStx.revert();
+    } catch (e) {}
+    try { var again = byId('stxStyle'); if (again) again.remove(); } catch (e2) {}
+    retired++;
+  }
+  function arm() {
+    try { sweep(); } catch (e) {}
+    try {
+      mo = new MutationObserver(function () { try { sweep(); } catch (e) {} });
+      /* head only: #stxStyle is appended to document.head, and this is the
+         one place in the app that has to be watched for it. */
+      if (document.head) mo.observe(document.head, { childList: true });
+    } catch (e2) {}
+    /* stx re-runs build() once a second for six more seconds after it lands,
+       and the clean workspace may not have claimed the modal on the first
+       arrival, so a slow sweep backs the observer up without watching the
+       document. */
+    try { iv = setInterval(function () { try { sweep(); } catch (e) {} }, 1000); } catch (e3) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsResidueSettings = {
+    version: VERSION,
+    sweep: sweep,
+    retired: function () { return retired; },
+    seen: function () { return seen; },
+    cleanWorkspaceOwns: cleanWorkspaceOwns,
+    /* the same escape hatch stx itself publishes, so a reverted watcher can be
+       put back without a reload - and so the suite can measure the defect and
+       the fix in one page. */
+    reapply: function () {
+      off = false;
+      if (!mo && !iv) arm(); else sweep();
+      return true;
+    },
+    revert: function () {
+      off = true;
+      try { if (mo) mo.disconnect(); } catch (e) {}
+      try { if (iv) clearInterval(iv); } catch (e2) {}
+      mo = null; iv = 0;
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end residue-settings-1.0.0 ==================================== -->
 </body>
 </html>
