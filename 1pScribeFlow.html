@@ -4723,7 +4723,14 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="keyok" id="keyOk">✔ Key saved on this device.</p>
     </div>
     <div class="field" id="backendNotice" style="display:none">
-      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Connected to your clinic's MLS server.</b> AI note generation is ready — no API key needed on this device. Your key stays securely on the server.</p>
+      <!-- CLUNKY 74: this box used to open with "Connected to your clinic's
+           MLS server" while the Advanced tab, in the same session, said "MLS
+           cloud backend  not connected". Both were true of different things:
+           this one is about how AI is CONFIGURED for the account, the other
+           about whether the server answered a health check just now. Only one
+           of them may use the word "connected", and it is the one that
+           actually asks. -->
+      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Your clinic's MLS server handles AI for this account.</b> No API key is needed on this device — your key stays securely on the server. The Advanced tab shows whether that server is reachable right now.</p>
     </div>
     <div class="field" id="redeemField" style="display:none">
       <label for="redeemInputSettings">Access code</label>
@@ -9326,6 +9333,15 @@ function openSettings(){
   document.getElementById('docSpec').value=getSpec();
   document.getElementById('keyOk').className=getKey()?'keyok show':'keyok';
   const idleSel=document.getElementById('idleMins'); if(idleSel) idleSel.value=(getIdleMins()===0?'off':String(getIdleMins()));
+  /* CLUNKY 131. MEASURED: with swEnabled() === false, the shared-computer
+     checkbox rendered CHECKED and its note read the ON text - "locks the
+     screen after 15 quiet minutes" - directly above a dropdown correctly
+     showing 30. The field is painted once when it is built, before the
+     shared-workstation state settles, and nothing re-read it afterwards;
+     calling the module's own sync here corrected the checkbox to false and
+     the note to the OFF text in the same probe. The number was never the
+     defect - the whole field was stale. */
+  try{ if(typeof swSyncSettingsField==='function') swSyncSettingsField(); }catch(e){}
   const dc=document.getElementById('defaultComment'); if(dc) dc.value=getDefaultComment();
   // QoL settings (MLS)
   const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
@@ -46489,5 +46505,1425 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
 })();
 </script>
 <!-- ===== end pvr-1.0.0 ================================================= -->
+<!-- ===== clunky-header-1.0.0 — the date and mode chips stop hiding under the bar
+     CLUNKY AUDIT items 6 (sev 3), 20, 83, 107, 140 and the unverified
+     "day and mode chips float over the Copilot/Analysis cards".
+
+     MEASURED at HEAD, 1366x900, on Patients / Visit / Calendar / AI Studio:
+       #mslToday  fixed  z 940  rect 1237,14 96x40
+       #mslChip   fixed  z 941  rect 1247,62 86x32
+       #appHeader sticky z 6000 rect 236,0 1115x87
+     document.elementFromPoint at the CENTRE of #mslChipBtn returned
+     #appHeader on all four screens — the mode switch was not clickable
+     anywhere, at any width, and the date chip was a sliver behind the bar.
+
+     WHY NOT JUST RAISE THE Z-INDEX. Because that is the next collision: at
+     375 and 768 the same two chips already land on #mlsRdNewBtn, so lifting
+     them above the header would trade an invisible control for a covered
+     one, and on the phone they also sit over the sign-in card (#83) and over
+     Staff Prep's segmented tabs (#140). A floating layer over a sticky bar
+     has nowhere left to go.
+
+     SO THEY STOP FLOATING. Both chips move into the redesign header's own
+     top row (#mlsRdTop, right before #mlsRdMenuSlot) and become ordinary
+     in-flow items. Nothing can cover them because they are inside the thing
+     that was covering them; they disappear with the header on the sign-in
+     screen because #appHeader lives inside #appScreen; and they cannot float
+     over any room, because they no longer float.
+
+     THE ROOM THEY NEED. #mlsRdTop at 375 measured rail 44 + back 44 +
+     title 160 + menu 44 with ~43px of slack, so the date chip (a label, not
+     a control) stands down below 760px and the title becomes shrinkable —
+     the mode chip is the one that must survive, because it is the control.
+
+     If the redesign header is not on the page (classic layout, ?ui=classic)
+     nothing moves and the chips keep their old fixed position. -->
+<style id="mlsClunkyHeaderCss">
+html.mls-clunky-hdr #mslToday,
+html.mls-clunky-hdr #mslChip{
+  position:static !important;
+  top:auto !important; right:auto !important; bottom:auto !important; left:auto !important;
+  z-index:auto !important;
+  flex:0 0 auto;
+}
+/* the menu still hangs off the chip, so the chip owns a containing block */
+html.mls-clunky-hdr #mslChip{
+  position:relative !important;
+  flex-direction:row; align-items:center;
+}
+html.mls-clunky-hdr #mslChipMenu{
+  position:absolute; top:calc(100% + 8px); right:0; z-index:9500;
+}
+/* CLUNKY item 55 — "the mode menu stretches almost the whole screen wide and
+   the taskbar choices are crammed into one long horizontal line."
+   CAUSE, read off dock-1p-1.1.0's ensureRows(): #dockChipRows is a plain DIV
+   appended to a column-flex menu, so its five <button> children (inline-block)
+   lay out in ONE inline row and drag the menu out to 874px at 1280. The menu
+   itself has a min-width and no max. Both halves fixed here, additively, so
+   the dock block keeps its own bytes. */
+#mslChipMenu{ max-width:min(300px, calc(100vw - 24px)); box-sizing:border-box; }
+#dockChipRows{ display:flex; flex-direction:column; gap:2px; }
+#dockChipRows .mslChipItem{ width:100%; }
+/* the header title yields first — it is the only elastic thing in the row */
+html.mls-clunky-hdr #mlsRdTitle{
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+html.mls-clunky-hdr #mslToday{ padding:4px 10px; }
+@media (max-width:760px){
+  html.mls-clunky-hdr #mslToday{ display:none !important; }
+  html.mls-clunky-hdr #mslChipBtn{ padding:4px 9px; font-size:11.5px; }
+}
+</style>
+<script>
+/* clunky-header-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyHeader) return;
+  var VERSION = 'clunky-header-1.0.0';
+  var moves = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+
+  /* One mount pass. Returns true when both chips are where they belong (or
+     when there is nothing to mount into, which is a legitimate steady state
+     on the classic layout). */
+  function mount() {
+    var top = el('mlsRdTop');
+    if (!top) return false;
+    var slot = el('mlsRdMenuSlot');
+    var host = (slot && slot.parentNode === top) ? slot : top;
+    var today = el('mslToday');
+    var chip = el('mslChip');
+    /* Order inside the right-hand slot: date, mode, then whatever the header
+       already put there (+ New, the ⋯ menu, the user chip). The slot is the
+       node that carries the row's `margin-left:auto`, so mounting INSIDE it
+       is what keeps the chips right-aligned; mounting before it measured
+       x=577 in a 1366 header — adrift in the middle of the bar.
+
+       THE ARRANGEMENT IS CHECKED WHOLE, not node by node. A per-node "is this
+       one first?" test is unstable: moving A to the front makes B not-first,
+       the observer fires, B goes to the front, and the two chips trade places
+       forever. */
+    var want = [];
+    if (today) want.push(today);
+    if (chip) want.push(chip);
+    if (!want.length) return false;
+    var settled = true, cur = host.firstChild;
+    for (var i = 0; i < want.length; i++) {
+      if (cur !== want[i]) { settled = false; break; }
+      cur = cur.nextSibling;
+    }
+    if (settled) return true;
+    var did = false;
+    try {
+      for (var j = want.length - 1; j >= 0; j--) { host.insertBefore(want[j], host.firstChild); }
+      did = true; moves++;
+    } catch (e) {}
+    try { document.documentElement.classList.add('mls-clunky-hdr'); } catch (e) {}
+    return did || !!(today && chip);
+  }
+
+  function arm() {
+    mount();
+    /* The redesign module rebuilds #mlsRdTop on some view changes, and the
+       two chips are created by their own blocks on their own schedule, so
+       one pass at boot proves nothing. Watch the header and re-mount. */
+    try {
+      var obs = new MutationObserver(function () { mount(); });
+      var hdr = el('appHeader');
+      if (hdr) obs.observe(hdr, { childList: true, subtree: true });
+      if (document.body) obs.observe(document.body, { childList: true });
+    } catch (e) {}
+    [120, 400, 1200, 3000, 6000].forEach(function (ms) { setTimeout(mount, ms); });
+    try { window.addEventListener('focus', mount, false); } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm);
+  else arm();
+
+  window.__mlsClunkyHeader = {
+    version: VERSION,
+    mount: mount,
+    moves: function () { return moves; },
+    revert: function () {
+      try {
+        document.documentElement.classList.remove('mls-clunky-hdr');
+        ['mslToday', 'mslChip'].forEach(function (id) {
+          var n = el(id); if (n && document.body) document.body.appendChild(n);
+        });
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end clunky-header-1.0.0 ======================================= -->
+<!-- ===== clunky-settings-1.0.0 — the Settings dialog stops arguing with itself
+     CLUNKY AUDIT items 75, 76, 77, 79, 80, 82, 133, 134, 135, 136, 137.
+
+     MEASURED at HEAD, 1366x900, the dialog opened on a seeded 28-patient day:
+       * "⚙️ Settings" rendered TWICE — the modal's own <h3> and the rail head
+         the settings-clean pass inserts above the tab list (both visible).
+       * scrolled 300px, the round × (1151,29 34x34) sat INSIDE the sticky
+         search row (387,17 816x66) — a 34x34 overlap, i.e. on the input.
+       * the footer changed shape by tab: tabs 0–5 showed [Save changes,
+         Cancel]; Integrations and Advanced HID Save and relabelled the ghost
+         to "Done", so on exactly the two tabs with the most switches the
+         doctor is given no way to tell whether anything was saved.
+       * Integrations: 55 visible controls, 4,050px of scroll, with
+         #athApiSettingsCard (380px of "Exact redirect URI" / "client
+         credentials and refresh tokens") and #schedApiCard (369px of
+         "GET /fhir/Appointment?_lastUpdated=gt<last sync>") open by default.
+       * THREE download controls for one file: #extDlBtn "Download MLS Assist
+         v3.0.63 (.zip)", "Download MLS Assist (latest)", "Direct package
+         (v3.0.63 ZIP)".
+       * Display carried two dropdowns that both read as "where navigation
+         lives": "Navigation layout (this device)" and "Navigation bar".
+       * Practice: #googleBusinessUrl 178x22 among 770x38 siblings, and
+         #clinicLogoInput rendered as a live green Choose File button while
+         `disabled` was true, with nothing on screen saying why.
+
+     WHAT THIS BLOCK DOES NOT DO. It deletes no control and no handler. The
+     vendor cards move into one closed disclosure and keep their ids, their
+     wiring and their place in the DOM order; the duplicate download links are
+     hidden, not removed, so the module that owns them keeps working. -->
+<style id="mlsClunkySettingsCss">
+/* --- 135: one title. The rail head is decorative (it is already hidden on
+       phones by the settings-clean pass); the <h3> is the dialog's accessible
+       title and its sticky header, so the rail head is the one that goes. */
+html #settingsModal .mls-set-rail-head{ display:none !important; }
+
+/* --- 137: the sticky search row keeps its hands off the round ×.
+   The settings-clean pass sets `padding:14px 0 12px !important` from
+   `#settingsModal.mls-settings-clean .mls-set-search-row` (one id, two
+   classes), so a rule with one id and one class loses even with !important.
+   Matched class-for-class, plus html, to out-specify it. */
+html #settingsModal.mls-settings-clean .mls-set-search-row,
+html #settingsModal .mls-set-search-row{ padding-right:56px !important; }
+
+/* --- 134: the Google link field is a field like its neighbours. */
+html #settingsModal #googleBusinessUrl{
+  width:100% !important; box-sizing:border-box !important; min-height:38px !important;
+}
+/* --- 134: a control that cannot be used must not look like one that can. */
+html #settingsModal input[type=file][disabled]{
+  opacity:.55 !important; cursor:not-allowed !important; filter:grayscale(1);
+}
+.mlsClunkyWhy{
+  display:block; margin:4px 0 0; font:600 12px/1.4 var(--sans, system-ui, sans-serif);
+  color:var(--muted, #79837C);
+}
+/* --- 76/79/80: the vendor fold reads as one line until it is opened. */
+#mlsClunkySetVendor{ margin:12px 0 4px; }
+#mlsClunkySetVendor > summary{
+  cursor:pointer; padding:8px 0; font:700 13.5px/1.3 var(--sans, system-ui, sans-serif);
+  color:var(--ink, #1A211C); list-style:revert;
+}
+#mlsClunkySetVendor > summary .note{ font-weight:400; }
+#mlsClunkySetVendor > .mlsClunkySetVendorBody{
+  margin-top:10px; border-left:3px solid var(--line, #D9D6CD); padding-left:12px;
+}
+/* --- 133: no desktop-Chrome download offer on a phone. */
+.mlsClunkyPhoneOnly{ display:none; }
+@media (max-width:600px){
+  html #settingsModal .mlsClunkyDesktopOnly{ display:none !important; }
+  html #settingsModal .mlsClunkyPhoneOnly{ display:block; }
+}
+</style>
+<script>
+/* clunky-settings-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkySettings) return;
+  var VERSION = 'clunky-settings-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function q(sel, root) { try { return (root || document).querySelector(sel); } catch (e) { return null; } }
+  function qa(sel, root) { try { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); } catch (e) { return []; } }
+  function txt(node) { return ((node && (node.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function open() { var m = el('settingsModal'); return !!(m && m.classList.contains('show')); }
+
+  /* ---- 136: ONE FOOTER, EVERY TAB ------------------------------------
+     The settings-clean pass calls its own updateSettingsFooter() on every
+     group change and hides the primary on legal/integrations/advanced. That
+     is not a saving distinction the doctor can see — saveSettings() is one
+     function over the whole dialog — so the shape is normalised back. The
+     correction is idempotent, so the observer that triggers it settles after
+     exactly one write. */
+  function footer() {
+    var row = q('#settingsModal .modal > .row');
+    if (!row) return;
+    var primary = q('.btn-primary', row), ghost = q('.btn-ghost', row);
+    if (primary && primary.style.display === 'none') primary.style.display = '';
+    if (ghost && txt(ghost) === 'Done') ghost.textContent = 'Cancel';
+  }
+
+  /* ---- 75: two dropdowns, two different jobs, two different names ----- */
+  function names() {
+    var sel = el('qolDockSide');
+    var field = sel && sel.closest ? sel.closest('.field') : null;
+    var label = field ? q('label', field) : null;
+    if (label && txt(label) === 'Navigation bar') label.textContent = 'Taskbar (quick buttons) position';
+  }
+
+  /* ---- 82: reopening on a right-hand tab must show that tab ----------- */
+  function revealActiveTab() {
+    var bar = el('settingsTabBar'); if (!bar) return;
+    var on = q('.set-tab.on', bar); if (!on) return;
+    var br = bar.getBoundingClientRect(), r = on.getBoundingClientRect();
+    if (r.left < br.left - 1 || r.right > br.right + 1 || r.top < br.top - 1 || r.bottom > br.bottom + 1) {
+      try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+    }
+  }
+
+  /* ---- 76 / 79 / 80: one disclosure for the vendor cards -------------- */
+  function vendor() {
+    var host = el('athApiSettingsCard') || el('schedApiCard');
+    if (!host || !host.parentNode) return;
+    var fold = el('mlsClunkySetVendor');
+    if (!fold) {
+      fold = document.createElement('details');
+      fold.id = 'mlsClunkySetVendor';
+      var sum = document.createElement('summary');
+      sum.innerHTML = 'For your IT or scheduling vendor ' +
+        '<span class="note">— direct Athena and scheduling connections. Most practices never open this: MLS talks to athenaOne through MLS Assist.</span>';
+      fold.appendChild(sum);
+      var body = document.createElement('div');
+      body.className = 'mlsClunkySetVendorBody';
+      fold.appendChild(body);
+      host.parentNode.insertBefore(fold, host);
+    }
+    var body2 = q('.mlsClunkySetVendorBody', fold);
+    if (!body2) return;
+    ['athApiSettingsCard', 'schedApiCard'].forEach(function (id) {
+      var card = el(id);
+      if (card && card.parentNode !== body2) { try { body2.appendChild(card); } catch (e) {} }
+    });
+  }
+
+  /* ---- 77 / 133: one download control, and none of it on a phone ------ */
+  function downloads() {
+    var sec = el('extensionDownloadSettings');
+    if (!sec) return;
+    var keep = el('extDlBtn');
+    var seen = 0;
+    qa('button,a[href]', document.getElementById('settingsModal') || document).forEach(function (c) {
+      var t = txt(c);
+      if (!/download mls assist|direct package/i.test(t)) return;
+      if (keep && c === keep) { seen++; return; }
+      if (c.getAttribute('data-mls-clunky-dupe') === '1') return;
+      c.setAttribute('data-mls-clunky-dupe', '1');
+      c.style.display = 'none';
+    });
+    if (keep && !keep.classList.contains('mlsClunkyDesktopOnly')) keep.classList.add('mlsClunkyDesktopOnly');
+    if (!el('mlsClunkyPhoneNote')) {
+      var p = document.createElement('p');
+      p.id = 'mlsClunkyPhoneNote';
+      p.className = 'note mlsClunkyPhoneOnly';
+      p.textContent = 'MLS Assist is a Chrome add-on for the office computer that runs athenaOne. Set it up there — there is nothing to install on this phone.';
+      if (keep && keep.parentNode) keep.parentNode.insertBefore(p, keep.nextSibling);
+    }
+    return seen;
+  }
+
+  /* ---- 134 and the rest of the room: a greyed control says WHY --------
+     A disabled control with no reason is the single most repeated complaint
+     in this room, so it is answered once, by a table, rather than per card. */
+  var WHY = {
+    clinicLogoInput: 'Your practice logo on the letterhead is part of the Premium plan.'
+  };
+  function reasons() {
+    Object.keys(WHY).forEach(function (id) {
+      var c = el(id); if (!c) return;
+      var want = c.disabled;
+      var note = el('why_' + id);
+      if (want && !note) {
+        note = document.createElement('span');
+        note.id = 'why_' + id;
+        note.className = 'mlsClunkyWhy';
+        note.textContent = WHY[id];
+        if (c.parentNode) c.parentNode.insertBefore(note, c.nextSibling);
+      } else if (!want && note && note.parentNode) {
+        note.parentNode.removeChild(note);
+      }
+    });
+  }
+
+  function pass() {
+    if (!open()) return;
+    passes++;
+    footer(); names(); vendor(); downloads(); reasons(); revealActiveTab();
+  }
+
+  function arm() {
+    var m = el('settingsModal');
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (m) obs.observe(m, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    } catch (e) {}
+    [200, 700, 1600, 3200].forEach(function (ms) { setTimeout(pass, ms); });
+    try { document.addEventListener('click', function () { setTimeout(pass, 60); setTimeout(pass, 400); }, true); } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkySettings = {
+    version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () {
+      try {
+        var s = el('mlsClunkySettingsCss'); if (s) s.disabled = true;
+        qa('[data-mls-clunky-dupe="1"]').forEach(function (c) { c.style.display = ''; c.removeAttribute('data-mls-clunky-dupe'); });
+        var f = el('mlsClunkySetVendor');
+        if (f && f.parentNode) {
+          qa('.mlsClunkySetVendorBody > *', f).forEach(function (c) { f.parentNode.insertBefore(c, f); });
+          f.parentNode.removeChild(f);
+        }
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end clunky-settings-1.0.0 ===================================== -->
+<!-- ===== clunky-staffprep-1.0.0 — one job, one control, one honest sentence
+     CLUNKY AUDIT items 11 and 13 (sev 3), 84, 85, 86, 87, 88, 89 (sev 2),
+     141 (sev 1), and the observable half of 12 and 14.
+
+     THE SEV-3 WAS A ONE-LINE CSS DEFECT, AND THE PANEL WAS NEVER WRONG.
+     The pull card already has a complete state machine: pCounts() sets
+     display on Start / Resume / Pause / Retry / Cancel from the saved
+     manifest, and the markup ships Resume, Pause and Retry with an inline
+     style="display:none". MEASURED at idle, all six were on screen at
+     397/559/739/836/397/496. The reason is one declaration in the workspace's
+     own tint stylesheet:
+
+       #mlsEz3 .ez3-row2 .ez3-sm{ ... display:inline-flex !important; ... }
+
+     An author !important beats an inline style, so every button the state
+     machine hid was forced back on. The rule wants width/flex/alignment; the
+     `display` half of it silently overrode the only thing that decided which
+     control the doctor should press. Rather than edit that stylesheet (the
+     visit lane owns the ez3 workspace this week), the inline hide is restored
+     for exactly the buttons that carry it.
+
+     WHAT ELSE WAS MEASURED, Staff Prep at idle, 1366x900:
+       * six visible ways to pull — Start month pull, Resume month pull, Pull
+         today only, Start 2026 year pull, Pull this day (schedule + charts),
+         Pull day histories — on one screen (item 84).
+       * #ez3PullLog: a 686x110 grey slab with an EMPTY log in every state
+         (item 88).
+       * #ez3Seg: unselected tabs computed rgb(220,231,251) on a near-white
+         tint — pale enough to read as disabled, though none of them is
+         (item 89).
+       * #mlsP1YearStatus said "Choose a provider in Staff Prep first" while
+         #ez3PullFor, six inches above it, read "Your athenaOne view
+         (default)" (item 86).
+       * #ez3sStatus "🛡 guards on"; #mlsPadNote a 67px explainer (item 87).
+       * the header still said "Visit" and the doctor's
+         Prep·Record·Review·Sign·Send rail was above a front-desk screen
+         (item 141).
+
+     ONE SOURCE FOR STATE. Everything below that claims to know what the job
+     is doing reads window.__mlsP1RangeJobs.state() — the same manifest the
+     panel's own pCounts() reads. Nothing here invents a status. -->
+<style id="mlsClunkyStaffCss">
+/* --- 11: an inline hide must win. The tint stylesheet's
+   `display:inline-flex !important` outranks an inline style, so the state
+   machine's decision is restored for the buttons it actually hid. */
+html #mlsEz3 .ez3-row2 .ez3-sm[style*="display:none"],
+html #mlsEz3 .ez3-row2 .ez3-sm[style*="display: none"]{ display:none !important; }
+
+/* --- 89: an unselected tab is not a disabled tab. */
+html #mlsEz3 .ez3-seg button:not(.on),
+html #mlsEz3 #ez3Seg button:not(.on){
+  color:var(--ink, #1A211C) !important;
+  border:1px solid var(--line, #D9D6CD) !important;
+  opacity:1 !important;
+}
+html #mlsEz3 .ez3-seg button:not(.on):hover{ background:var(--soft, #F4F2EC) !important; }
+
+/* --- 88: an empty log is not a 110px hole in the card. */
+html #mlsEz3 #ez3PullLog[data-mls-clunky-empty="1"]{ display:none !important; }
+#mlsClunkyPullLine{
+  margin:6px 0 2px; font:600 13px/1.45 var(--sans, system-ui, sans-serif); color:var(--ink, #1A211C);
+}
+#mlsClunkyPullLine[hidden]{ display:none; }
+
+/* --- 13: the bar never paints complete while a day is unresolved. */
+html #mlsEz3 #ez3PullBar[data-mls-clunky-attention="1"]{
+  background:linear-gradient(90deg, var(--brand, #2E6A4B) 0 var(--mls-clunky-done, 0%), #E0A33A var(--mls-clunky-done, 0%) 100%) !important;
+}
+
+/* --- 84: one disclosure for the other ways to pull. */
+#mlsClunkyPullMore{ margin:14px 0 4px; }
+#mlsClunkyPullMore > summary{
+  cursor:pointer; padding:8px 0; font:700 13.5px/1.3 var(--sans, system-ui, sans-serif); color:var(--ink, #1A211C);
+}
+#mlsClunkyPullMore > summary .note{ font-weight:400; }
+#mlsClunkyPullMoreBody{ margin-top:10px; border-left:3px solid var(--line, #D9D6CD); padding-left:12px; }
+
+/* --- 141: the doctor's step rail is not part of a front-desk screen. */
+html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
+</style>
+<script>
+/* clunky-staffprep-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyStaff) return;
+  var VERSION = 'clunky-staffprep-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function q(s, r) { try { return (r || document).querySelector(s); } catch (e) { return null; } }
+  function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function shown(n) {
+    if (!n) return false;
+    var r = n.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var cs = getComputedStyle(n);
+    return !(cs.display === 'none' || cs.visibility === 'hidden');
+  }
+  function onStaff() { return !!q('.ez3-pull'); }
+
+  /* ---- the one source of job state ----------------------------------- */
+  function state() {
+    try {
+      var api = window.__mlsP1RangeJobs;
+      if (!api || api.installed !== true || typeof api.state !== 'function') return null;
+      return api.state();
+    } catch (e) { return null; }
+  }
+  function tally(st) {
+    if (!st) return null;
+    var months = st.months || {}, total = 0, done = 0, attn = 0;
+    Object.keys(months).forEach(function (k) {
+      var m = months[k] || {}, days = m.days || {};
+      Object.keys(days).forEach(function (d) {
+        total++;
+        var v = String((days[d] && days[d].status) || days[d] || '');
+        if (v === 'complete' || v === 'verified' || v === 'empty') done++;
+        else if (v === 'failed' || v === 'attention' || v === 'needs-attention') attn++;
+      });
+    });
+    if (!total && st.summary) {
+      total = Number(st.summary.total || 0); done = Number(st.summary.complete || 0);
+      attn = Number(st.summary.needsAttention || 0);
+    }
+    return { total: total, done: done, attn: attn };
+  }
+
+  /* ---- 12: the status line says what the job is doing ----------------- */
+  var READY = 'Ready — 1) pick the month · 2) press Start. MLS pulls the schedule and files every visit automatically.';
+  var SAYS = {
+    running: 'Running — MLS is reading the schedule and filing every visit. You can leave this screen.',
+    pending: 'Starting…',
+    paused: 'Paused. Press Resume to carry on from where it stopped.',
+    'waiting-login': 'athenaOne signed you out. Sign in again, then press Resume.',
+    'waiting-retry': 'Finished, with days still to retry.',
+    'needs-attention': 'Finished, with days that still need attention — press Retry.',
+    'account-changed': 'A different account signed in. Press Resume to carry on.',
+    'storage-failed': 'This computer could not save the last day. Press Resume to try again.',
+    complete: 'Done — every day in this month is saved.',
+    cancelled: 'Cancelled. Days already saved stay saved.'
+  };
+  function statusLine() {
+    var conn = el('ez3PullConn');
+    if (!conn) return;
+    var st = state();
+    var want = READY;
+    if (st && st.status) {
+      var t = tally(st), base = SAYS[String(st.status)] || READY;
+      if (t && t.total) base += ' ' + t.done + ' of ' + t.total + ' days saved' + (t.attn ? ' · ' + t.attn + ' need attention' : '') + '.';
+      want = base;
+    }
+    if (conn.getAttribute('data-mls-clunky-said') !== want) {
+      conn.textContent = want;
+      conn.setAttribute('data-mls-clunky-said', want);
+    }
+  }
+
+  /* ---- 13: the bar is filled by verified days only -------------------- */
+  function bar() {
+    var b = el('ez3PullBar'), lbl = el('ez3PullBarLbl');
+    var st = state(), t = tally(st);
+    if (!b || !t || !t.total) { if (b) b.removeAttribute('data-mls-clunky-attention'); return; }
+    var donePct = Math.max(0, Math.min(100, Math.round((t.done / t.total) * 100)));
+    b.style.setProperty('--mls-clunky-done', donePct + '%');
+    if (t.attn > 0) {
+      b.setAttribute('data-mls-clunky-attention', '1');
+      /* never paint the whole bar while a day is unresolved */
+      b.style.width = Math.min(99, donePct + Math.round((t.attn / t.total) * 100)) + '%';
+    } else {
+      b.removeAttribute('data-mls-clunky-attention');
+    }
+    if (lbl) {
+      var want = t.done + ' of ' + t.total + ' days saved' + (t.attn ? ' · ' + t.attn + ' need attention' : '');
+      if (txt(lbl) !== want) lbl.textContent = want;
+    }
+  }
+
+  /* ---- 88: hide the empty log, surface its last line ------------------ */
+  function log() {
+    var l = el('ez3PullLog');
+    if (!l) return;
+    var lines = qa('div', l);
+    var empty = lines.length === 0 && !txt(l);
+    l.setAttribute('data-mls-clunky-empty', empty ? '1' : '0');
+    var line = el('mlsClunkyPullLine');
+    if (!line) {
+      line = document.createElement('p');
+      line.id = 'mlsClunkyPullLine';
+      if (l.parentNode) l.parentNode.insertBefore(line, l);
+    }
+    if (empty) { line.hidden = true; return; }
+    var last = lines.length ? txt(lines[lines.length - 1]) : txt(l);
+    /* the log's own lines are "HH:MM:SS  message"; the doctor needs the message */
+    var msg = last.replace(/^\d{1,2}:\d{2}(:\d{2})?\s+/, '');
+    line.hidden = !msg;
+    if (msg && txt(line) !== msg) line.textContent = msg;
+  }
+
+  /* ---- 84 / 14: one place for the other ways to pull ------------------ */
+  function more() {
+    /* ONLY the year card. "Pull this day (schedule + charts)" is #mlsPadRow,
+       mounted into .ez3-card.ez3-pull by a shared module another lane owns
+       this week; moving it risks that module re-mounting a second copy. It
+       stays where it is and is reported, not touched. */
+    var year = el('mlsP1YearPull');
+    var anchor = year;
+    if (!anchor || !anchor.parentNode) return;
+    var fold = el('mlsClunkyPullMore');
+    if (!fold) {
+      fold = document.createElement('details');
+      fold.id = 'mlsClunkyPullMore';
+      var sum = document.createElement('summary');
+      sum.innerHTML = 'Other ways to pull <span class="note">— a whole year, month by month</span>';
+      fold.appendChild(sum);
+      var body = document.createElement('div');
+      body.id = 'mlsClunkyPullMoreBody';
+      fold.appendChild(body);
+      anchor.parentNode.insertBefore(fold, anchor);
+    }
+    var body2 = el('mlsClunkyPullMoreBody');
+    if (!body2) return;
+    if (year && year.parentNode !== body2) { try { body2.appendChild(year); } catch (e) {} }
+    /* 14: while the month panel already owns a job, the year card must not
+       print a second copy of it with a second Pause/Resume/Cancel. */
+    var st = state();
+    var monthJob = !!(st && String(st.kind || '') === 'month');
+    ['mlsP1YearStatus', 'mlsP1YearPause', 'mlsP1YearResume', 'mlsP1YearCancel'].forEach(function (id) {
+      var n = el(id); if (!n) return;
+      var hide = monthJob;
+      if (hide && n.getAttribute('data-mls-clunky-hid') !== '1') { n.setAttribute('data-mls-clunky-hid', '1'); n.style.display = 'none'; }
+      if (!hide && n.getAttribute('data-mls-clunky-hid') === '1') { n.removeAttribute('data-mls-clunky-hid'); n.style.display = ''; }
+    });
+  }
+
+  /* ---- 85 / 86 / 87: plain words, and no instruction that points at a
+         control the doctor cannot see -------------------------------- */
+  var WORDS = [
+    ['The provider reader could not establish an account-owned request.',
+      'MLS Assist is not answering on this computer. Open athenaOne in a tab, then press Start again.'],
+    ['Choose a provider in Staff Prep first.',
+      'Uses the same doctor as the month pull above.'],
+    ['(set with the Provider selector above)', 'Change this with the Doctor picker at the top of this card.'],
+    ['🛡 guards on', 'Safety checks are on'],
+    ['guards on', 'Safety checks are on'],
+    ['schedule parse timeout', 'the schedule did not finish loading'],
+    ['verified empty', 'checked — no patients that day'],
+    ['saved checkpoint', 'the last day it saved']
+  ];
+  function words() {
+    var root = q('#mlsEz3');
+    if (!root) return;
+    WORDS.forEach(function (pair) {
+      qa('#mlsEz3 .ez3-status, #mlsEz3 .nowl, #mlsEz3 .nowl2, #mlsEz3 .p1yr-status, #mlsEz3 label, #mlsEz3 p, #mlsEz3 span')
+        .forEach(function (n) {
+          if (n.children && n.children.length) return;      /* leaf text only */
+          var t = txt(n);
+          if (!t || t.indexOf(pair[0]) < 0) return;
+          var next = t.split(pair[0]).join(pair[1]);
+          if (next !== t) n.textContent = next;
+        });
+    });
+    /* 87: a 496-character explainer becomes one sentence plus a "?" */
+    var note = el('mlsPadNote');
+    if (note && !note.getAttribute('data-mls-clunky-fold') && txt(note).length > 180) {
+      var full = txt(note);
+      var first = full.split('. ')[0] + '.';
+      note.setAttribute('data-mls-clunky-fold', '1');
+      note.textContent = '';
+      var short = document.createElement('span');
+      short.textContent = first + ' ';
+      var d = document.createElement('details');
+      d.style.display = 'inline';
+      var s = document.createElement('summary');
+      s.style.cssText = 'display:inline;cursor:pointer;color:var(--brand,#2E6A4B);font-weight:700';
+      s.textContent = 'What else does this do?';
+      var p = document.createElement('div');
+      p.textContent = full;
+      d.appendChild(s); d.appendChild(p);
+      note.appendChild(short); note.appendChild(d);
+    }
+  }
+
+  /* ---- 141: this is not the doctor's Visit screen --------------------- */
+  function room() {
+    var on = onStaff();
+    try {
+      if (on) document.body.setAttribute('data-mls-staffprep', '1');
+      else document.body.removeAttribute('data-mls-staffprep');
+    } catch (e) {}
+    var title = el('mlsRdTitle');
+    if (!title) return;
+    if (on) {
+      if (txt(title) !== 'Staff prep') { title.setAttribute('data-mls-clunky-was', txt(title)); title.textContent = 'Staff prep'; }
+    } else if (title.getAttribute('data-mls-clunky-was')) {
+      title.textContent = title.getAttribute('data-mls-clunky-was');
+      title.removeAttribute('data-mls-clunky-was');
+    }
+  }
+
+  function pass() {
+    if (!onStaff()) { room(); return; }
+    passes++;
+    statusLine(); bar(); log(); more(); words(); room();
+  }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      var host = el('visitView') || document.body;
+      if (host) obs.observe(host, { childList: true, subtree: true });
+    } catch (e) {}
+    setInterval(pass, 1500);
+    [300, 900, 2000, 4000].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyStaff = {
+    version: VERSION, pass: pass, passes: function () { return passes; }, state: state, tally: function () { return tally(state()); },
+    revert: function () {
+      try {
+        var s = el('mlsClunkyStaffCss'); if (s) s.disabled = true;
+        var f = el('mlsClunkyPullMore');
+        if (f && f.parentNode) {
+          qa('#mlsClunkyPullMoreBody > *', f).forEach(function (c) { f.parentNode.insertBefore(c, f); });
+          f.parentNode.removeChild(f);
+        }
+        qa('[data-mls-clunky-hid="1"]').forEach(function (n) { n.style.display = ''; n.removeAttribute('data-mls-clunky-hid'); });
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end clunky-staffprep-1.0.0 ==================================== -->
+<!-- ===== clunky-dock-1.0.0 — the taskbar stops covering its own menu
+     CLUNKY AUDIT items 39, 40, 43, 73, 116, 123, 143, 144.
+
+     MEASURED at HEAD, 1366x900, dock on the left rail, Patients:
+       #mlsDock            18,246 102x409
+       #mlsToolsMenu       10,246 560x677  z 930  bottom 923 in a 900px view
+       overlap(menu, dock) 102x409  — the menu opens ON the taskbar, so the
+                           taskbar's words bleed through it (item 143)
+       overlap(nub, menu)  44x44   — the ⋮ nub sits on the menu it opened
+       36 text nodes inside the menu computed under 12px (item 144)
+       #mlsDockAsk         46x34 with placeholder "Ask or find anything" —
+                           five characters render, and it reads "Asl" (item 40)
+       #mlsRightNow        155,109 1170x57, segments "Patients ·" / "History ·"
+                           AND a .note reading "Nothing to do here yet", on a
+                           screen holding 28 patients and 12 booked appointments
+                           (items 73, 123)
+
+     ITEM 39 IS A NAMING PROBLEM, NOT A COUNT. The dock's three "AI" entries
+     are not three assistants: AI Studio is a destination, Copilot is the
+     assistant, and the box is a finder. It was called "Ask or find anything",
+     which is what an assistant would be called, so it read as a second one.
+     It is named for what it does instead — the control, its handler and its
+     results list are untouched. -->
+<style id="mlsClunkyDockCss">
+/* --- 43 / 143: the menu opens BESIDE the dock, never on it, and it fits. */
+html body[data-mls-dock="left"] #mlsToolsMenu{
+  left:calc(var(--mls-dock-clear-left, 0px) + 10px) !important;
+  right:auto !important;
+}
+html body[data-mls-dock="right"] #mlsToolsMenu{
+  right:calc(var(--mls-dock-clear-right, 0px) + 10px) !important;
+  left:auto !important;
+}
+html #mlsToolsMenu{
+  z-index:9500 !important;
+  max-height:calc(100vh - var(--mls-dock-clear-bottom, 0px) - 24px) !important;
+  overflow-y:auto !important;
+  overscroll-behavior:contain;
+  background:var(--card, #fff) !important;
+}
+/* --- 144: nothing in a menu a doctor reads is under 13px. The menu's own
+   rules set .rn/.gh sizes with !important, so this has to as well. */
+html #mlsToolsMenu, html #mlsToolsMenu *{ font-size:max(13px, 1em) !important; }
+html #mlsToolsMenu .gh{ font-size:13px !important; }
+@media (max-width:600px){
+  html #mlsToolsMenu{
+    top:calc(var(--mls-header-h, 88px) + 8px) !important;
+    max-height:calc(100vh - var(--mls-header-h, 88px) - var(--mls-dock-clear-bottom, 0px) - 24px) !important;
+  }
+}
+/* --- 40: a 46px box is an icon, so it looks like one. */
+html body[data-mls-dock="left"] #mlsDockAsk,
+html body[data-mls-dock="right"] #mlsDockAsk{
+  text-align:center;
+  font-size:15px;
+}
+html body[data-mls-dock="left"] #mlsDockAsk:focus,
+html body[data-mls-dock="right"] #mlsDockAsk:focus{ text-align:left; font-size:13px; }
+/* --- 73 / 123: a bar with tabs does not also say it has nothing to say. */
+html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
+</style>
+<script>
+/* clunky-dock-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyDock) return;
+  var VERSION = 'clunky-dock-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function side() { try { return document.body.getAttribute('data-mls-dock') || 'bottom'; } catch (e) { return 'bottom'; } }
+
+  /* ---- 39 / 40: the finder is named for what it does ------------------ */
+  var FIND = 'Find a patient, a screen or an action';
+  function ask() {
+    var a = el('mlsDockAsk');
+    if (!a) return;
+    if (a.getAttribute('aria-label') !== 'Find') a.setAttribute('aria-label', 'Find');
+    var rail = side() === 'left' || side() === 'right';
+    var wide = a.getBoundingClientRect().width >= 90;
+    var want = (rail && !wide && document.activeElement !== a) ? '🔎' : FIND;
+    if (a.placeholder !== want) a.placeholder = want;
+    if (!a.getAttribute('data-mls-clunky-wired')) {
+      a.setAttribute('data-mls-clunky-wired', '1');
+      a.addEventListener('focus', function () { a.placeholder = FIND; }, false);
+      a.addEventListener('blur', function () { setTimeout(ask, 20); }, false);
+    }
+  }
+
+  /* ---- 73 / 123: the right-now bar stops contradicting the screen ----- */
+  function rightNow() {
+    var bar = el('mlsRightNow');
+    if (!bar) return;
+    var segs = qa('.segbtn', bar).length;
+    bar.setAttribute('data-mls-clunky-hasnav', segs > 0 ? '1' : '0');
+  }
+
+  /* ---- 116: one name for hiding the taskbar --------------------------- */
+  var HIDE_NAME = 'Hide it until I need it';
+  function names() {
+    var cb = el('qolDockAutoHide');
+    var field = cb && cb.closest ? cb.closest('.field, label') : null;
+    var label = field ? (field.tagName === 'LABEL' ? field : field.querySelector('label')) : null;
+    if (!label) return;
+    var span = label.querySelector('span') || label;
+    if (span !== cb && txt(span) && txt(span) !== HIDE_NAME && /hide/i.test(txt(span))) span.textContent = HIDE_NAME;
+  }
+
+  /* ---- 43: the menu ends on screen, whatever its top turns out to be.
+     A CSS max-height cannot know the top the menu was opened at: measured,
+     the menu was 703px tall starting at y=231 in a 900px viewport, so a
+     `max-height:calc(100vh - 24px)` (876px) clamped nothing and "Log out"
+     stayed off the bottom of the screen. This clamps from the real top. */
+  function fitMenu() {
+    ['mlsToolsMenu', 'mlsDockNubMenu'].forEach(function (id) {
+      var m = el(id);
+      if (!m) return;
+      var r = m.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) { m.style.removeProperty('max-height'); return; }
+      var room = Math.max(160, Math.round(window.innerHeight - r.top - 16));
+      var want = room + 'px';
+      /* the menu's own sheet sets max-height with !important, so this must
+         too - a plain inline value measured no change at all */
+      if (m.style.getPropertyValue('max-height') !== want) {
+        m.style.setProperty('max-height', want, 'important');
+        m.style.setProperty('overflow-y', 'auto', 'important');
+      }
+    });
+  }
+
+  function pass() { passes++; ask(); rightNow(); names(); fitMenu(); }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-mls-dock', 'class'] });
+    } catch (e) {}
+    setInterval(pass, 2000);
+    [250, 800, 1800, 3600].forEach(function (ms) { setTimeout(pass, ms); });
+    try { window.addEventListener('resize', pass, false); } catch (e) {}
+    /* a menu is opened by a click, and it must fit on the frame after it,
+       not up to two seconds later */
+    try {
+      document.addEventListener('click', function () {
+        setTimeout(fitMenu, 0); setTimeout(fitMenu, 90); setTimeout(fitMenu, 320);
+      }, true);
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyDock = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () { var s = el('mlsClunkyDockCss'); if (s) s.disabled = true; return true; } };
+})();
+</script>
+<!-- ===== end clunky-dock-1.0.0 ========================================= -->
+<!-- ===== clunky-notice-1.0.0 — a notice never lands on the work
+     CLUNKY AUDIT items 15 (sev 3), 81, 94, 95, 96, 97, and the standing
+     property behind 108, 125, 145 and 146.
+
+     quietnotify-1.0.0 already moved the one remaining toast into the dock's
+     reserved band and sent everything else to the tray. THREE THINGS IT DID
+     NOT DO, measured at HEAD:
+
+       * AN ERROR TOAST IS THE SAME COLOUR AS A SUCCESS TOAST. Measured:
+         toast('probe ok') and toast('probe failed to save','err') BOTH
+         compute background rgb(32,64,52) — feat_mls_redesign.js:319 sets
+         `body.mls-redesign .toast{background:#204034}` with no severity
+         exemption, so the doctor cannot tell good news from bad at a glance
+         (item 95).
+       * THE FLOATING CARDS ARE NOT PART OF THAT LAYER. #mlsUpgradeReadyNotice
+         is bottom-anchored at 0 and lands exactly on the dock (item 15);
+         #mlsSignInPrompt does the same on the phone (item 97);
+         #mlsGetPhoneCard and #mlsKbdHint float over an open Settings dialog
+         and over the Tools menu (items 81, 144). All four are given the same
+         reserved band the toast uses, and the two promos stand down entirely
+         while a dialog or a menu is open — a promotion is never more
+         important than the thing the doctor opened.
+       * A CHIP WITH THREE INSTRUCTIONS AND NO BUTTON. #mlsQuotaChip has 0
+         controls and tells the doctor to "keep this tab open, check available
+         storage, then retry the last action" (item 94).
+
+     ITEM 96 IS A WORDING FIX WITH A REAL CONSEQUENCE. When the note is not
+     empty the update bar explains why it cannot reload and still labels its
+     button "Reload update", which cannot work; the button now says what it
+     does. -->
+<style id="mlsClunkyNoticeCss">
+/* --- 95: severity is visible. Out-specifies body.mls-redesign .toast. */
+html body.mls-redesign #toast.toast.err,
+html body #toast.toast.err,
+html body.mls-redesign .toast.err,
+html body .toast.err{
+  background:#7E2B21 !important;
+  border-left:4px solid #F0A79A !important;
+}
+html body.mls-redesign #toast.toast.warn,
+html body #toast.toast.warn,
+html body.mls-redesign .toast.warn,
+html body .toast.warn{
+  background:#7A5312 !important;
+  border-left:4px solid #F3CE86 !important;
+}
+
+/* --- 15 / 97: a banner sits ABOVE the dock's reserved band, never on it. */
+html body #mlsUpgradeReadyNotice,
+html body #mlsSignInPrompt,
+html body #mlsQuotaChip{
+  bottom:calc(var(--mls-dock-clear-bottom, 0px) + 14px) !important;
+  left:calc(var(--mls-dock-clear-left, 0px) + 14px) !important;
+  right:calc(var(--mls-dock-clear-right, 0px) + 14px) !important;
+  max-width:calc(100vw - var(--mls-dock-clear-left, 0px) - var(--mls-dock-clear-right, 0px) - 28px) !important;
+}
+
+/* --- 81: a promotion stands down while a dialog or a menu is open. */
+html body[data-mls-clunky-modal="1"] #mlsGetPhoneCard,
+html body[data-mls-clunky-modal="1"] #mlsKbdHint,
+html body[data-mls-clunky-modal="1"] #mlsA2hsCard,
+html body[data-mls-clunky-menu="1"] #mlsGetPhoneCard,
+html body[data-mls-clunky-menu="1"] #mlsKbdHint,
+html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
+/* a keyboard hint on a device with no keyboard is never useful */
+@media (max-width:600px){ html body #mlsKbdHint{ display:none !important; } }
+
+/* --- 94: the chip carries its own way out. */
+#mlsQuotaChipAct{
+  margin-left:10px; padding:5px 11px; border-radius:999px; cursor:pointer;
+  border:1px solid currentColor; background:transparent; color:inherit;
+  font:700 12px/1.15 var(--sans, system-ui, sans-serif);
+}
+</style>
+<script>
+/* clunky-notice-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyNotice) return;
+  var VERSION = 'clunky-notice-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function qa(s) { try { return Array.prototype.slice.call(document.querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function vis(n) {
+    if (!n) return false;
+    var r = n.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var cs = getComputedStyle(n);
+    return !(cs.display === 'none' || cs.visibility === 'hidden');
+  }
+
+  /* ---- 81: is anything the doctor opened on screen right now? --------- */
+  function context() {
+    var modal = qa('.modal-bg.show').some(vis);
+    var menu = ['mlsToolsMenu', 'mlsDockNubMenu', 'mslChipMenu', 'mlsRdNewMenu'].some(function (id) { return vis(el(id)); });
+    try {
+      if (modal) document.body.setAttribute('data-mls-clunky-modal', '1');
+      else document.body.removeAttribute('data-mls-clunky-modal');
+      if (menu) document.body.setAttribute('data-mls-clunky-menu', '1');
+      else document.body.removeAttribute('data-mls-clunky-menu');
+    } catch (e) {}
+  }
+
+  /* ---- 94: one action on the storage chip ---------------------------- */
+  function quota() {
+    var chip = el('mlsQuotaChip');
+    if (!chip || !vis(chip)) return;
+    if (el('mlsQuotaChipAct')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'mlsQuotaChipAct';
+    b.textContent = 'Free up space';
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      /* the app's own storage/diagnostics surface, whichever of the two the
+         build has - never a new one, and never a destructive default */
+      try {
+        if (typeof window.openStorageDiagnostics === 'function') { window.openStorageDiagnostics(); return; }
+        if (typeof window.mlsOpenDiagnostics === 'function') { window.mlsOpenDiagnostics(); return; }
+        if (typeof window.openSettings === 'function') window.openSettings();
+      } catch (e) {}
+    }, false);
+    chip.appendChild(b);
+  }
+
+  /* ---- 96: the update bar's button says what it will do -------------- */
+  function upgrade() {
+    var note = el('mlsUpgradeReadyNotice');
+    if (!note || !vis(note)) return;
+    var btn = el('mlsUpgradeReadyNoticeButton');
+    if (!btn) return;
+    var body = txt(note);
+    /* the shell only refuses when there is unsaved clinical text */
+    var blocked = /is not empty/i.test(body);
+    if (blocked) {
+      if (txt(btn) !== 'Remind me later') btn.textContent = 'Remind me later';
+      var line = el('mlsClunkyUpdLine');
+      if (!line) {
+        line = document.createElement('div');
+        line.id = 'mlsClunkyUpdLine';
+        line.style.cssText = 'margin:2px 0 6px;font:600 13px/1.4 var(--sans,system-ui,sans-serif)';
+        if (btn.parentNode) btn.parentNode.insertBefore(line, btn);
+      }
+      var want = 'Update ready — it will apply after this note is saved.';
+      if (txt(line) !== want) line.textContent = want;
+    }
+  }
+
+  function pass() { passes++; context(); quota(); upgrade(); }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    } catch (e) {}
+    setInterval(pass, 1200);
+    [200, 700, 1600, 3200].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyNotice = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () { var s = el('mlsClunkyNoticeCss'); if (s) s.disabled = true; return true; } };
+})();
+</script>
+<!-- ===== end clunky-notice-1.0.0 ======================================= -->
+<!-- ===== clunky-athena-1.0.0 — the send-to-Athena sheet stops contradicting itself
+     CLUNKY AUDIT items 2 and 3 (sev 3), 21, 22, 23, 24, 26, 27 (sev 2), 109.
+
+     THE SHEET ITSELF IS NOT THIS BLOCK'S FILE. The write-flow module that
+     renders it is owned by another running session, so every fix below is an
+     overlay on the DOM it produces: no id, no handler and no manifest field
+     changes, and window.__mlsClunkyAthena.revert() puts the sheet back.
+
+     MEASURED at HEAD with the sheet opened on a seeded patient (1366x900):
+       #mlsAthenaUnifiedSafety 338,531 676x79 reading "Nothing has changed
+         yet." — and it goes on reading that after a receipt lands, which is
+         item 2: the doctor is told nothing happened directly above the line
+         that says the note was written and VERIFIED.
+       #mlsAthenaUnifiedProbe 338,460 "Checking the exact chart read-only"
+         with #mlsAthenaUnifiedGo at 429,661 — in the refused state the audit
+         measured the status and its fix buttons BELOW the sticky footer, so
+         the doctor saw a grey Confirm and no reason (item 3).
+       visible sheet text still carried "manifest" and "auto-chain" (item 26).
+
+     THE RULES, all derived from what the sheet itself publishes:
+       * a receipt exists  => the "nothing has changed yet" box is replaced by
+         what actually happened, and the footer stops offering a verb it has
+         already performed (items 2, 22).
+       * Confirm is disabled => the status line and its fix strip are brought
+         to the doctor, never left below the fold (item 3).
+       * the sheet opens => every disclosure in it starts closed, and the
+         manual/blocked drawer carries its count in its summary (item 21).
+       * the fix strip exists => it always carries "Check Athena again", which
+         re-opens the same review with the same options, and "Copy error
+         report" is a quiet link rather than a fifth equal button (23, 24). -->
+<style id="mlsClunkyAthenaCss">
+/* --- 3: the reason for a disabled Confirm travels with the Confirm. */
+#mlsAthenaUnifiedConfirm [data-mls-clunky-why="1"]{
+  position:sticky; bottom:0; z-index:6;
+  background:var(--card, #fff);
+  padding:8px 0 6px; margin:0;
+  box-shadow:0 -8px 14px -12px rgba(20,33,28,.35);
+}
+/* --- 24: one recovery button; the diagnostics link is quiet. */
+#mlsAthenaUnifiedFix [data-mls-clunky-quiet="1"]{
+  background:transparent !important; border:0 !important;
+  color:var(--muted, #79837C) !important;
+  font-weight:600 !important; text-decoration:underline; padding:6px 4px !important;
+  box-shadow:none !important;
+}
+/* --- 109: four action cards lay out 2x2, never three plus an orphan. */
+@media (min-width:700px){
+  #mlsAthenaUnifiedConfirm [role="radiogroup"]{ display:flex; flex-wrap:wrap; gap:12px; }
+  #mlsAthenaUnifiedConfirm [role="radiogroup"] > section{
+    flex:1 1 calc(50% - 12px) !important; min-width:calc(50% - 12px) !important; max-width:100% !important;
+  }
+}
+/* --- 27: on a phone the footer names the action it will run. */
+#mlsClunkyAthenaFooterLine{
+  font:700 12.5px/1.3 var(--sans, system-ui, sans-serif); color:var(--muted, #79837C);
+  margin:0 0 6px;
+}
+#mlsClunkyAthenaFooterLine[hidden]{ display:none; }
+</style>
+<script>
+/* clunky-athena-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyAthena) return;
+  var VERSION = 'clunky-athena-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function sheet() { return el('mlsAthenaUnifiedConfirm'); }
+  function vis(n) {
+    if (!n) return false;
+    var r = n.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var cs = getComputedStyle(n);
+    return !(cs.display === 'none' || cs.visibility === 'hidden');
+  }
+
+  /* ---- 2 / 22: a receipt has landed, so stop saying nothing happened ---- */
+  function receipts() {
+    var rec = el('mlsAthenaUnifiedReceipt');
+    var safety = el('mlsAthenaUnifiedSafety');
+    var go = el('mlsAthenaUnifiedGo');
+    var landed = !!(rec && txt(rec));
+    if (safety) {
+      if (landed) {
+        if (!safety.getAttribute('data-mls-clunky-was')) safety.setAttribute('data-mls-clunky-was', safety.innerHTML);
+        var done = /VERIFIED|verified/.test(txt(rec));
+        var want = done
+          ? 'Written and verified in Athena. Nothing else has been sent — pick the next step below if you want one.'
+          : 'Some of this has already run — see what happened, just below.';
+        if (safety.getAttribute('data-mls-clunky-said') !== want) {
+          safety.textContent = want;
+          safety.setAttribute('data-mls-clunky-said', want);
+        }
+      } else if (safety.getAttribute('data-mls-clunky-was')) {
+        safety.innerHTML = safety.getAttribute('data-mls-clunky-was');
+        safety.removeAttribute('data-mls-clunky-was');
+        safety.removeAttribute('data-mls-clunky-said');
+      }
+    }
+    /* 22: the grey button must not still name a verb it already performed. */
+    if (go && landed && go.disabled) {
+      if (!go.getAttribute('data-mls-clunky-was')) go.setAttribute('data-mls-clunky-was', txt(go));
+      if (txt(go) !== 'Done') go.textContent = 'Done';
+    } else if (go && go.getAttribute('data-mls-clunky-was') && !landed) {
+      go.textContent = go.getAttribute('data-mls-clunky-was');
+      go.removeAttribute('data-mls-clunky-was');
+    }
+  }
+
+  /* ---- 3: a grey Confirm is never shown without its reason ------------- */
+  function why() {
+    var go = el('mlsAthenaUnifiedGo');
+    var probe = el('mlsAthenaUnifiedProbe');
+    var fix = el('mlsAthenaUnifiedFix');
+    if (!go || !probe) return;
+    var blocked = !!go.disabled;
+    [probe, fix].forEach(function (n) {
+      if (!n) return;
+      if (blocked) n.setAttribute('data-mls-clunky-why', '1');
+      else n.removeAttribute('data-mls-clunky-why');
+    });
+    if (!blocked) return;
+    /* sticky is not enough when the status is far above the fold: bring it. */
+    var r = probe.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) {
+      try { probe.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+    }
+  }
+
+  /* ---- 21: every disclosure in the sheet opens closed ------------------ */
+  function folds() {
+    var s = sheet();
+    if (!s) return;
+    qa('details', s).forEach(function (d) {
+      if (d.getAttribute('data-mls-clunky-seen') === '1') return;
+      d.setAttribute('data-mls-clunky-seen', '1');
+      if (!d.open) return;
+      /* the drawer keeps its count where the doctor can read it shut */
+      var sum = d.querySelector('summary');
+      if (sum && !/\(\d+\)/.test(txt(sum))) {
+        var n = qa('li,section,tr,.wf-row', d).length;
+        if (n) sum.textContent = txt(sum) + ' (' + n + ')';
+      }
+      d.open = false;
+    });
+  }
+
+  /* ---- 23 / 24: the fix strip always offers the one thing to try ------- */
+  function fixStrip() {
+    var fix = el('mlsAthenaUnifiedFix');
+    if (!fix || !vis(fix)) return;
+    qa('button,a', fix).forEach(function (b) {
+      if (/copy error report/i.test(txt(b))) b.setAttribute('data-mls-clunky-quiet', '1');
+    });
+    if (el('mlsClunkyAthenaRecheck')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'mlsClunkyAthenaRecheck';
+    b.className = 'btn-ghost';
+    b.textContent = 'Check Athena again';
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      try {
+        var wf = window.__mlsWriteFlow;
+        var st = wf && wf.diagnostics && wf.diagnostics.state ? wf.diagnostics.state() : null;
+        var opts = (st && (st.reopenOpts || st.sourceOpts)) || {};
+        if (wf && typeof wf.openUnifiedConfirmation === 'function') wf.openUnifiedConfirmation(opts);
+      } catch (e) {}
+    }, false);
+    fix.insertBefore(b, fix.firstChild);
+  }
+
+  /* ---- 26: the doctor's half of the sheet loses the engineering words -- */
+  var WORDS = [
+    ['manifest', 'this review'],
+    ['auto-chain', 'run the next step automatically'],
+    ['catalog-bound', 'matched to your order list'],
+    ['MLS patient ID', 'MLS record number'],
+    ['payload', 'what will be sent']
+  ];
+  /* Text nodes, not elements. A first attempt rewrote only childless
+     elements and MEASURED no change at all: "manifest" and "auto-chain" both
+     live in text nodes that sit beside <b> and <span> children, so the
+     element-level pass never saw them. */
+  function words() {
+    var s = sheet();
+    if (!s || !document.createTreeWalker) return;
+    var w = document.createTreeWalker(s, NodeFilter.SHOW_TEXT, null), n;
+    while ((n = w.nextNode())) {
+      var p = n.parentElement;
+      if (!p) continue;
+      var tag = p.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') continue;
+      var v = n.nodeValue;
+      if (!v || !v.trim()) continue;
+      var next = v;
+      for (var i = 0; i < WORDS.length; i++) {
+        if (next.indexOf(WORDS[i][0]) >= 0) next = next.split(WORDS[i][0]).join(WORDS[i][1]);
+      }
+      if (next !== v) n.nodeValue = next;
+    }
+  }
+
+  /* ---- 27: the sticky footer names the action it will run -------------- */
+  function footerLine() {
+    var go = el('mlsAthenaUnifiedGo');
+    if (!go || !go.parentNode) return;
+    var line = el('mlsClunkyAthenaFooterLine');
+    if (!line) {
+      line = document.createElement('p');
+      line.id = 'mlsClunkyAthenaFooterLine';
+      go.parentNode.insertBefore(line, go.parentNode.firstChild);
+    }
+    var picked = qa('input[name="mlsAthenaUnifiedAction"]').filter(function (r) { return r.checked; })[0];
+    var label = '';
+    if (picked) {
+      var lab = picked.closest ? picked.closest('label,section') : null;
+      label = lab ? txt(lab).slice(0, 48) : String(picked.value || '');
+    }
+    var probe = el('mlsAthenaUnifiedProbe');
+    var mark = probe && /verified/i.test(txt(probe)) ? ' · ✓ verified' : '';
+    var want = label ? (label + mark) : '';
+    line.hidden = !want;
+    if (want && txt(line) !== want) line.textContent = want;
+  }
+
+  function pass() {
+    if (!sheet()) return;
+    passes++;
+    folds(); receipts(); why(); fixStrip(); words(); footerLine();
+  }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'class', 'open'] });
+    } catch (e) {}
+    setInterval(pass, 1200);
+    [200, 700, 1600].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyAthena = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () {
+      try {
+        var s = el('mlsClunkyAthenaCss'); if (s) s.disabled = true;
+        var b = el('mlsClunkyAthenaRecheck'); if (b && b.parentNode) b.parentNode.removeChild(b);
+        var l = el('mlsClunkyAthenaFooterLine'); if (l && l.parentNode) l.parentNode.removeChild(l);
+        var safety = el('mlsAthenaUnifiedSafety');
+        if (safety && safety.getAttribute('data-mls-clunky-was')) safety.innerHTML = safety.getAttribute('data-mls-clunky-was');
+      } catch (e) {}
+      return true;
+    } };
+})();
+</script>
+<!-- ===== end clunky-athena-1.0.0 ======================================= -->
+<!-- ===== clunky-calendar-1.0.0 — one line instead of a 250px card
+     CLUNKY AUDIT items 112 and 113. Item 34 was ATTEMPTED and reverted — see
+     the note in the stylesheet below.
+
+     MEASURED at HEAD, 1366x900, Calendar:
+       .cx-rail     155,182 288x614   — a sticky left column
+       .cx-glance   155,547 288x250   — "DAY AT A GLANCE · Booked 0 · Arrived
+                                        0 · Roomed 0 · Completed 0 · Total
+                                        booked 0", i.e. the same four numbers
+                                        the colour legend above the grid
+                                        already spells out (item 112)
+       #calGrid     812px wide of a 1366px window — the reason every month
+                    chip clips to "8:00 AM Q…" (item 34)
+
+     THE GLANCE CARD IS NOT DELETED. Its numbers move into one line in the
+     calendar's own header, where they cost 24px instead of 250, and the card
+     is hidden rather than removed so the module that fills it keeps working
+     and revert() brings it straight back.
+
+     WHAT THIS DOES NOT CLAIM. Items 33, 35, 36, 37 and 38 need a seeded day
+     with appointments in the rendered month; on an empty month the chips this
+     lane would have to measure do not exist. They are reported, not fixed. -->
+<style id="mlsClunkyCalCss">
+/* --- 112: the day's numbers cost one line, not a 250px card. */
+html #calendarView .cx-glance[data-mls-clunky-folded="1"]{ display:none !important; }
+#mlsClunkyCalLine{
+  display:flex; gap:14px; align-items:baseline; flex-wrap:wrap;
+  margin:0 0 10px; padding:6px 0;
+  font:700 13px/1.35 var(--sans, system-ui, sans-serif); color:var(--ink, #1A211C);
+}
+#mlsClunkyCalLine .q{ color:var(--muted, #79837C); font-weight:600; }
+#mlsClunkyCalLine[hidden]{ display:none; }
+
+/* --- 34 IS NOT FIXED HERE, AND THE ATTEMPT IS RECORDED BECAUSE IT MADE
+   THINGS WORSE. Hiding .cx-rail below 1200px to give #calGrid the width
+   MEASURED #calGrid at 238px at a 1150px window — down from 812px at 1366 —
+   because the rail is a track in the calendar's own layout, not a floated
+   sidebar, and removing the child collapses the grid's column assignment.
+   A crowding fix that spends its clearance somewhere invisible is the defect
+   it was meant to cure, so the rule is gone and item 34 is reported open. */
+
+/* --- 113: a day-panel row is one line and the whole row is the target. */
+html #calDayPanel .cx-dayrow,
+html #calDayPanel [class*="row"]{
+  display:flex; align-items:center; gap:10px; min-height:44px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+html #calDayPanel a,
+html #calDayPanel button{ min-height:44px; }
+</style>
+<script>
+/* clunky-calendar-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyCal) return;
+  var VERSION = 'clunky-calendar-1.0.0';
+  var passes = 0;
+
+  function q(s, r) { try { return (r || document).querySelector(s); } catch (e) { return null; } }
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+
+  /* Read the glance card's own numbers rather than recomputing them: the
+     module that fills it is the authority on what "booked" means today. */
+  function numbers(card) {
+    var out = [];
+    try {
+      var t = txt(card);
+      ['Booked', 'Arrived', 'Roomed', 'Completed'].forEach(function (k) {
+        var i = t.indexOf(k);
+        if (i < 0) return;
+        var m = t.slice(i + k.length).match(/\d+/);
+        if (m) out.push([k, m[0]]);
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  function pass() {
+    var view = el('calendarView');
+    if (!view) return;
+    passes++;
+    var card = q('.cx-glance', view);
+    var line = el('mlsClunkyCalLine');
+    if (!card) { if (line) line.hidden = true; return; }
+    var nums = numbers(card);
+    if (!nums.length) { if (line) line.hidden = true; card.removeAttribute('data-mls-clunky-folded'); return; }
+    if (!line) {
+      line = document.createElement('div');
+      line.id = 'mlsClunkyCalLine';
+      var host = q('#calGrid', view);
+      if (host && host.parentNode) host.parentNode.insertBefore(line, host);
+      else view.insertBefore(line, view.firstChild);
+    }
+    var want = nums.map(function (p) { return p[1] + ' ' + p[0].toLowerCase(); }).join(' · ');
+    if (txt(line) !== want) line.textContent = want;
+    line.hidden = false;
+    card.setAttribute('data-mls-clunky-folded', '1');
+  }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {}
+    setInterval(pass, 1500);
+    [300, 900, 2000, 4000].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyCal = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () {
+      try {
+        var s = el('mlsClunkyCalCss'); if (s) s.disabled = true;
+        var c = q('.cx-glance'); if (c) c.removeAttribute('data-mls-clunky-folded');
+        var l = el('mlsClunkyCalLine'); if (l && l.parentNode) l.parentNode.removeChild(l);
+      } catch (e) {}
+      return true;
+    } };
+})();
+</script>
+<!-- ===== end clunky-calendar-1.0.0 ===================================== -->
 </body>
 </html>
