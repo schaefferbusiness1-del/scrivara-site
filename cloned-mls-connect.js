@@ -4781,6 +4781,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      (sweep boundaries included) and resets only when the pull truly ends. */
   var startedAt = 0, hidden = true, stopped = false;
   var doneDismissed = false; /* dn-1.0: set only by the DONE card's Done button; re-armed when a new run starts */
+  var stopRequested = false; /* clunky2-pull-1.0.0 (CLUNKY 128): survives Hide → show, cleared when the run ends */
 
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
@@ -4817,6 +4818,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'body.theme-dark #' + PANEL + ' .pp-wait{color:var(--muted)}',
       '#' + PANEL + ' .pp-note{font-size:11.5px;color:#8A8F86;margin-top:12px}',
       '#' + PANEL + ' .pp-btn{margin-top:14px;background:#fff;color:#1A211C;border:1px solid #D9D6CD;border-radius:10px;padding:9px 14px;font:600 12.5px system-ui;cursor:pointer}',
+      /* ===== clunky2-pull-1.0.0 (CLUNKY 70, 71, 127, 129) =====
+         70: "Stop pull" shipped its colour INLINE as #ffb4a6 — a dark-theme
+         tint painted on the panel's white card. Measured on the running
+         panel: rgb(255,180,166) on rgb(255,255,255), about 1.7:1, on the one
+         control that stops a running pull. The border was already the right
+         red; the text now uses it, and the pale tint is kept for the theme it
+         was drawn for. Stated here rather than inline so the dark rule can
+         win without !important.
+         71: the phase caption above the big number, so ONE number is on
+         screen during the day-note phase instead of two that disagree.
+         127: the clause wall moves behind a fold; the meta row keeps two
+         numbers.
+         129: at phone width the 3-cell row stops fighting for one line, and
+         the list is allowed the height a phone actually has. */
+      '#' + PANEL + ' #mlsPullProgStop{border-color:#b3452f;color:#8C3524}',
+      'body.theme-dark #' + PANEL + ' #mlsPullProgStop{color:#ffb4a6}',
+      '#' + PANEL + ' .pp-phase{font-size:12.5px;color:#79837C;letter-spacing:.01em;margin-bottom:1px}',
+      '#' + PANEL + ' .pp-more{margin-top:6px;font-size:12px;color:#79837C}',
+      '#' + PANEL + ' .pp-more summary{cursor:pointer;color:#5A6B60}',
+      'body.theme-dark #' + PANEL + ' .pp-more summary{color:var(--muted)}',
+      '@media (max-width:520px){#' + PANEL + ' .pp-row{display:block;padding:8px 10px}',
+      '#' + PANEL + ' .pp-row>span{display:block}',
+      '#' + PANEL + ' .pp-row>span+span{margin-top:2px}',
+      '#' + PANEL + ' .pp-rows{max-height:46vh}}',
+      /* ===== end clunky2-pull-1.0.0 (css) ===== */
       /* b940: the panel speaks the page's motion + theme vocabularies. */
       '#' + PANEL + ' .ppc{animation:mlsLoadIn var(--mls-dur-3,300ms) var(--mls-ease-out,ease-out)}',
       '@media (prefers-reduced-motion: reduce){#' + PANEL + ' .ppc{animation:none}}',
@@ -4856,6 +4882,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (eFb) {}
     if (!n) n = (S.done || 0) + '/' + (S.total || 0);
     var t = 'Pulling ' + n + ' \u2014 show details';
+    /* ===== clunky2-pull-1.0.0 (CLUNKY 71) =====
+       While the day-note phase runs, every history is already done, so
+       "Pulling 23/23" is a finished count riding on an unfinished pull. The
+       pill counts the phase that is actually moving. */
+    try {
+      var ph = S.phase && String(S.phase.kind || '') === 'day-notes' ? S.phase : null;
+      if (ph) t = 'Today\u2019s notes ' + Number(ph.done || 0) + '/' + Number(ph.total || 0) + ' \u2014 show details';
+    } catch (ePh) {}
+    /* ===== end clunky2-pull-1.0.0 (pill) ===== */
     if (f.textContent !== t) f.textContent = t;
   }
 
@@ -4963,13 +4998,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     p.innerHTML = '<div class="ppc">' +
       '<h3>&#128218; Pulling patient histories from athenaOne</h3>' +
       '<div class="pp-sub">MLS is opening each scheduled patient&#8217;s chart, reading it, and filing it. Each chart usually takes about 15-30 seconds; a busy day can run a few minutes. You can keep working - this keeps going on its own.</div>' +
+      '<div class="pp-phase" data-pp="phase" style="display:none"></div>' +
       '<div class="pp-big"><span data-pp="done">0</span> <span style="font-size:16px;color:#B9CEC2">of <span data-pp="total">0</span></span></div>' +
       '<div class="pp-track"><div class="pp-fill" style="width:0%"></div></div>' +
       '<div class="pp-meta"><span data-pp="pct">0% complete</span><span data-pp="tally"></span><span data-pp="elapsed"></span></div>' +
-      '<div class="pp-cur"><b>Now reading:</b> <span data-pp="current">&#8230;</span></div>' +
+      '<details class="pp-more" data-pp="more" style="display:none"><summary data-pp="moreSum">What these numbers mean</summary><div data-pp="tallyMore"></div></details>' +
+      '<div class="pp-cur"><b data-pp="curLbl">Now reading:</b> <span data-pp="current">&#8230;</span></div>' +
       '<div class="pp-rows" data-pp="rows" style="display:none"></div>' +
       '<div class="pp-note">athenaOne is being driven in its own tab and may flicker &#8212; that&#8217;s normal. MLS brings you back here when the pull finishes. Nothing is ever written to a chart during a pull.</div>' +
-      '<button type="button" class="pp-btn" id="mlsPullProgStop" style="margin-right:8px;border-color:#b3452f;color:#ffb4a6">Stop pull</button>' +
+      '<button type="button" class="pp-btn" id="mlsPullProgStop" style="margin-right:8px">Stop pull</button>' +
+      '<button type="button" class="pp-btn" id="mlsPullProgRetry" style="margin-right:8px;display:none">↻ Retry failed histories</button>' +
       '<button type="button" class="pp-btn" id="mlsPullProgHide">Hide (keep pulling)</button>' +
       '</div>';
     p.__ppBuilt = 1;
@@ -4982,13 +5020,43 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var sb = document.getElementById('mlsPullProgStop');
     if (sb) sb.onclick = function () {
       try { if (window.__mlsSI && typeof window.__mlsSI.stopPull === 'function') window.__mlsSI.stopPull(); else window.__mlsPullStopRequested = true; } catch (e) { window.__mlsPullStopRequested = true; }
+      /* ===== clunky2-pull-1.0.0 (CLUNKY 128) =====
+         The old handler relabelled ONLY itself, so the card kept offering
+         "Hide (keep pulling)" and kept saying "this keeps going on its own"
+         about a pull the doctor had just stopped. The request is state, not a
+         label: render() re-applies it every tick, so it also survives Hide →
+         show, which rebuilds the card from scratch. */
+      stopRequested = true;
       sb.disabled = true; sb.textContent = 'Stopping after this chart…';
+      try { render(); } catch (eR) {}
+      /* ===== end clunky2-pull-1.0.0 (stop) ===== */
     };
+    /* ===== clunky2-pull-1.0.0 (CLUNKY 72) =====
+       The DONE card's note named "Retry failed histories" while the card's
+       only button was Done. The control it names is the day strip's
+       #mlsDsRetryHistoryBtn, so the card now carries a button that presses
+       that one - and renderDone only names it when it is really there. */
+    var rb = document.getElementById('mlsPullProgRetry');
+    if (rb) rb.onclick = function () {
+      var target = document.getElementById('mlsDsRetryHistoryBtn');
+      if (!target) return;
+      doneDismissed = true;
+      try { render(); } catch (eR2) {}
+      try { target.click(); } catch (eC) {}
+    };
+    /* ===== end clunky2-pull-1.0.0 (retry) ===== */
     return p;
   }
   function setText(p, key, val) {
     var el = p.querySelector('[data-pp="' + key + '"]');
     if (el && el.textContent !== val) el.textContent = val;
+  }
+  /* ===== clunky2-pull-1.0.0: show/hide a data-pp node without a second helper */
+  function setShown(p, key, on) {
+    var el = p.querySelector('[data-pp="' + key + '"]');
+    if (!el) return;
+    var want = on ? '' : 'none';
+    if (el.style.display !== want) el.style.display = want;
   }
   function render() {
     var S = state();
@@ -5006,6 +5074,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
       doneDismissed = false;
+      stopRequested = false; /* clunky2-pull-1.0.0: the request dies with the run it stopped */
       return;
     }
     if (doneDismissed) doneDismissed = false; /* dn-1.0: a NEW run re-arms the DONE card */
@@ -5027,8 +5096,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var heldForDayNotes = (pct >= 100 && S && S.phase && String(S.phase.kind || '') === 'day-notes' && S.running === true);
     if (heldForDayNotes) pct = 99;
     var p = buildPanel();
-    setText(p, 'done', String(done));
-    setText(p, 'total', String(total));
+    /* ===== clunky2-pull-1.0.0 (CLUNKY 71) =====
+       MEASURED on this panel with a seeded day-note phase: the big number
+       read "23 of 23", the pill read "Pulling 23/23", the bar was held at 99%
+       and a THIRD count, "reading today's notes 7 of 23", ran underneath.
+       Three numbers, one of them finished, for one unfinished pull.
+       While the phase runs the headline IS the phase: a caption names it and
+       the big number counts it, so the moving number is the one in the
+       largest type. The histories total is not lost - it is the "N saved"
+       tally directly below, which is what the doctor asks about afterwards. */
+    var dnPhaseHead = (S && S.phase && String(S.phase.kind || '') === 'day-notes') ? S.phase : null;
+    setText(p, 'phase', dnPhaseHead ? '→ Today’s notes' : '');
+    setShown(p, 'phase', !!dnPhaseHead);
+    setText(p, 'done', String(dnPhaseHead ? Number(dnPhaseHead.done || 0) : done));
+    setText(p, 'total', String(dnPhaseHead ? Number(dnPhaseHead.total || 0) : total));
+    /* ===== end clunky2-pull-1.0.0 (headline) ===== */
     var fill = p.querySelector('.pp-fill');
     if (fill) { var w = pct + '%'; if (fill.style.width !== w) fill.style.width = w; }
     /* uimap-1.0.0: a bar that sits at 99% saying "99% complete" and never moves
@@ -5049,17 +5131,48 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        beside it, never inside the failure count. */
     var dnUnreadLive = 0, dnRetryLive = 0;
     try { (S.rows || []).forEach(function (r) { var d = String((r && r.dn) || ''); if (d.indexOf('unread:') === 0) dnUnreadLive++; else if (d.indexOf('retrying:') === 0) dnRetryLive++; }); } catch (eDn) {}
-    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
-    /* ===== end dv3-1.0.0 ===== */
+    /* ===== clunky2-pull-1.0.0 (CLUNKY 127) =====
+       MEASURED on a seeded 23-patient run: this one line rendered as SIX
+       clauses separated by middots, ending "... \u00B7 14 re-checking". It is all
+       true and none of it is readable at a glance. The meta row now carries
+       the two numbers the doctor acts on - how many landed, how many need
+       him - and the clause wall keeps every word behind a closed fold. The
+       long line is unchanged apart from its address, so nothing is lost and
+       the wording other suites pin still ships. */
+    var detailLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : '');
+    var needAttention = failed + dnUnreadLive;
+    setText(p, 'tally', '\u2713 ' + ok + ' saved' + (needAttention ? ' \u00B7 \u26A0 ' + needAttention + ' need attention' : ''));
+    var hasMore = detailLine.indexOf('\u00B7') >= 0;
+    setText(p, 'tallyMore', detailLine);
+    setShown(p, 'more', hasMore);
+    /* ===== end clunky2-pull-1.0.0 (tally) / end dv3-1.0.0 ===== */
     setText(p, 'elapsed', mmss(Date.now() - startedAt) + ' elapsed');
+    /* ===== clunky2-pull-1.0.0 (CLUNKY 128) =====
+       Re-applied every tick so the stopping state survives a Hide \u2192 show
+       rebuild, and so nothing on the card says "keep pulling" about a pull
+       the doctor stopped. */
+    if (stopRequested) {
+      var sbR = document.getElementById('mlsPullProgStop');
+      if (sbR) { sbR.disabled = true; if (sbR.textContent !== 'Stopping after this chart\u2026') sbR.textContent = 'Stopping after this chart\u2026'; }
+      var hbR = document.getElementById('mlsPullProgHide');
+      if (hbR && hbR.textContent !== 'Hide') hbR.textContent = 'Hide';
+      var subR = p.querySelector('.pp-sub');
+      var stopSub = 'Finishing the current chart, then stopping. Everything already read stays saved.';
+      if (subR && subR.textContent !== stopSub) subR.textContent = stopSub;
+    }
+    /* ===== end clunky2-pull-1.0.0 (stopping) ===== */
     /* ===== dnp-1.0.0 (the bar does not claim 100% while a phase is running) ==
        Owner 2026-08-17: the bar read 100% and "18 saved \u00B7 5 not saved" while
        "saving the pulled day's note (7 of 23)" was still going. The engine now
        publishes that pass as state.phase; while it is set the bar is held one
        notch short and the phase's own counts are shown under it. */
     var dnPhase = (S && S.phase && String(S.phase.kind || '') === 'day-notes') ? S.phase : null;
+    /* clunky2-pull-1.0.0 (CLUNKY 71): the counts moved to the headline, so the
+       box says WHAT is happening and is labelled for it - "Now reading:
+       reading today's notes 7 of 23" was the third printing of one fact. */
+    setText(p, 'curLbl', dnPhase ? 'Now:' : 'Now reading:');
     setText(p, 'current', dnPhase
-      ? ('reading today\u2019s notes ' + Number(dnPhase.done || 0) + ' of ' + Number(dnPhase.total || 0))
+      ? 'reading today\u2019s notes'
       : String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
     var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + dnRetryLive + '|' + dnUnreadLive + '|' + ((S.rows || []).length);
@@ -5095,7 +5208,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
       try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
       try { var curLbl = p.querySelector('.pp-cur b'); if (curLbl) curLbl.textContent = 'Result:'; } catch (eCur) {}
-      try { var noteD = p.querySelector('.pp-note'); if (noteD) noteD.textContent = failed ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" re-reads only those charts.' : 'Everything the day asked for was read and saved.'; } catch (eNote) {}
+      /* ===== clunky2-pull-1.0.0 (CLUNKY 72) =====
+         MEASURED on the finished card: the note said '"Retry failed
+         histories" re-reads only those charts' while the card's ONLY control
+         was Done, and pressing Done removed the pill and the panel together -
+         the results and the named recovery both gone in one click.
+         The control it names is real: #mlsDsRetryHistoryBtn on the Visit day
+         strip. So the card carries a button that presses that one, and the
+         sentence names it ONLY when the strip is actually mounted. A note may
+         not name a control the doctor cannot see. */
+      try {
+        var canRetry = failed > 0 && !!document.getElementById('mlsDsRetryHistoryBtn');
+        var rbD = document.getElementById('mlsPullProgRetry');
+        if (rbD) rbD.style.display = canRetry ? '' : 'none';
+        var noteD = p.querySelector('.pp-note');
+        if (noteD) noteD.textContent = !failed
+          ? 'Everything the day asked for was read and saved.'
+          : (canRetry
+            ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" below re-reads only those charts.'
+            : 'Rows marked \u26A0 carry their reason. Open the Visit screen and pull the day again to re-read only those charts.');
+      } catch (eNote) {}
+      /* ===== end clunky2-pull-1.0.0 (retry) ===== */
       try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
       try { var hbD = document.getElementById('mlsPullProgHide'); if (hbD) { hbD.textContent = 'Done'; hbD.onclick = function () { doneDismissed = true; render(); }; } } catch (eHb) {}
     }
@@ -5118,9 +5251,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var fillD = p.querySelector('.pp-fill');
     if (fillD) { var wD = (total ? Math.round(((S.done || 0) / total) * 100) : 100) + '%'; if (fillD.style.width !== wD) fillD.style.width = wD; }
     setText(p, 'pct', 'Done');
-    setText(p, 'tally', doneLine);
+    /* ===== clunky2-pull-1.0.0 (CLUNKY 71, 127) =====
+       MEASURED on the finished card: [data-pp="tally"] and [data-pp="current"]
+       held the SAME sentence, printed once at y≈264 and again at y≈355. The
+       result belongs in the Result box; the meta row keeps the two numbers.
+       The phase caption is cleared here too - a finished pull has no phase. */
+    setText(p, 'phase', '');
+    setShown(p, 'phase', false);
+    var attnD = failed + (dv ? Number(dv.tnFailed || 0) : 0);
+    setText(p, 'tally', '✓ ' + ok + ' saved' + (attnD ? ' · ⚠ ' + attnD + ' need attention' : ''));
+    setText(p, 'tallyMore', doneLine);
+    setShown(p, 'more', doneLine.indexOf('·') >= 0);
     setText(p, 'elapsed', mmss(Math.max(0, (S.finishedAt || Date.now()) - startedAt)) + ' total');
     setText(p, 'current', doneLine);
+    /* ===== end clunky2-pull-1.0.0 (done line) ===== */
     var rowsElD = p.querySelector('[data-pp="rows"]');
     if (rowsElD && !p.__ppDoneRows) { p.__ppDoneRows = 1; var htmlD = rowsHtml(S); rowsElD.style.display = htmlD ? '' : 'none'; rowsElD.innerHTML = htmlD; }
   }
@@ -37176,7 +37320,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'cloned-20260818-r10';
+  window.__MLS_AV = window.__MLS_AV || 'cloned-20260818-r11';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -37519,7 +37663,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='cloned-20260818-r10';
+  var MLS_APP_BUILD='cloned-20260818-r11';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38471,7 +38615,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
     function render(q){
       var list=ensure(); q=(q||'').trim().toLowerCase();
-      var rows = !q ? list.slice() : list.filter(function(p){ return (p.name||'').toLowerCase().indexOf(q)>=0 || (p.dob||'').toLowerCase().indexOf(q)>=0; });
+      /* ===== clunky2-picker-1.0.0 (CLUNKY 67) =====
+         MEASURED at HEAD: clicking into the search box - typing nothing -
+         dropped a 1120x320 dark panel headed "28 pulled patients · pick one"
+         straight over the 28-row patient list underneath. The same people,
+         twice, in two different styles, one of them counting appointments
+         where the roster counts visits. Clearing the box did it again.
+         An autocomplete with an empty query is not a completion of anything,
+         so it opens on the second typed character and never on bare focus. */
+      if (q.length < 2) { hide(); return; }
+      var rows = list.filter(function(p){ return (p.name||'').toLowerCase().indexOf(q)>=0 || (p.dob||'').toLowerCase().indexOf(q)>=0; });
       rows.sort(function(a,b){ return (b.last||'').localeCompare(a.last||''); });
       rows=rows.slice(0,14);
       if(!rows.length){ dd.innerHTML='<div style="padding:12px 14px;opacity:.6">No pulled patient matches — the app will search normally.</div>'; dd.style.display='block'; return; }
