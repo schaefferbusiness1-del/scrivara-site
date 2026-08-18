@@ -302,13 +302,36 @@ function harness(days) {
        perfectly positioned and still sit under a fixed chip that paints over
        it, so this asks document.elementFromPoint at the point each control
        would actually be pressed. */
+    /* SCROLLED OUT OF ITS OWN SCROLLER IS NOT COVERED. A control below the
+       fold of a scrolling container still has a laid-out rect at that
+       position, so document.elementFromPoint there returns whatever the NEXT
+       surface paints — and a naive probe reports every row below the fold as
+       "painted over". MEASURED: at 768x1024 the rail is a 389px top strip with
+       17 patients in it, and rows 9-16 were scored as occluded by #mlsOpnPick
+       and #oprEditor while being perfectly reachable with one scroll. A
+       control is only occluded if its own scrollers do NOT clip it there. */
+    clippedByScroller: function (e, r) {
+      var n = e.parentNode;
+      while (n && n.nodeType === 1 && n !== document.body) {
+        var cs = getComputedStyle(n);
+        if (/auto|scroll|hidden/.test(cs.overflowY) || /auto|scroll|hidden/.test(cs.overflowX)) {
+          var sr = n.getBoundingClientRect();
+          if (r.bottom <= sr.top + 1 || r.top >= sr.bottom - 1 ||
+              r.right <= sr.left + 1 || r.left >= sr.right - 1) return true;
+        }
+        n = n.parentNode;
+      }
+      return false;
+    },
     occluded: function () {
       var modal = document.getElementById('opPrepModal');
       var out = [];
       if (!modal) return out;
+      var self = this;
       modal.querySelectorAll('button,input,select,textarea,a[href]').forEach(function (e) {
         if (!visible(e)) return;
         var r = e.getBoundingClientRect();
+        if (self.clippedByScroller(e, r)) return;
         var x = Math.round(r.left + r.width / 2);
         var y = Math.round(r.top + Math.min(r.height / 2, 12));
         if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return;
