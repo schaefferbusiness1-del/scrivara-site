@@ -50515,5 +50515,177 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 })();
 </script>
 <!-- ===== end residue-settings-1.0.0 ==================================== -->
+<!-- ===== tools-tips-1.0.0 - every Tools-menu control says what it does
+     OWNER, 2026-08-18: "if I hover over a button it should give more info
+     about it."
+
+     The Tools menu is assembled by several different modules, each appending
+     its own row, so four rows already carried a data-tip and three did not.
+     MEASURED at 1366x900 with the bundle loaded, #mlsTbMenuPanel holds seven
+     controls:
+
+       mlsTourMenuItemV2   How-To Guide            had a tip
+       mlsPayReportMenuItem Pay Reports            NO TIP
+       mlsNavRow_recs      Recommendations         had a tip
+       (no id)             Reviews & reputation    had a tip
+       mlsObtMenuRow       Guided tour / How-to    NO TIP
+       mlsEhMenuRow        Extension health        NO TIP
+       mlsRlMenuRow        Use on your phone       had a tip
+
+     data-tip IS THE BUBBLE, and title must never be used for it. The shell's
+     own tooltip system (initTooltips) renders [data-tip] in #mlsTip after a
+     550ms hover, and it converts any native title into data-tip and removes
+     the title precisely so the browser's own tooltip can never stack a second
+     bubble on the same control. So this block writes data-tip only, and
+     actively clears a title from any row that has both.
+
+     THE COPY IS NOT INVENTED. Each line was written from what that button's
+     handler actually does, read in the source:
+       Pay Reports    -> window.__mlsComp.open(). The app's own description of
+                         that surface: it "estimates what the month looks like
+                         from documented visits and codes - including pending
+                         visits - and can export the estimate detail and fee
+                         schedule to Excel."
+       Guided tour    -> openTour(), the step-by-step walkthrough of the app.
+       Extension health -> openSettings(), then scrolls #mlsEhCard into view -
+                         the MLS Assist connection check inside Settings.
+     Rows that already had a tip are left exactly as their owners wrote them;
+     this block never overwrites someone else's words.
+
+     window.__mlsToolsTips.revert() removes every tip this block added. -->
+<script>
+/* tools-tips-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsToolsTips) return;
+  var VERSION = 'tools-tips-1.0.0';
+  var MARK = 'data-mls-toolstip';
+  var added = 0, cleared = 0, passes = 0, observers = [], iv = 0, timer = 0;
+
+  /* by element id where there is one; the text key is the fallback for rows
+     their owners append without an id. */
+  var BY_ID = {
+    mlsPayReportMenuItem: 'Estimate pay for the month from documented visits and codes, including pending visits.',
+    mlsObtMenuRow: 'Start the step-by-step guided tour of the main screens.',
+    mlsEhMenuRow: 'Open Settings and jump to the MLS Assist connection check.'
+  };
+  var BY_TEXT = {
+    'pay reports': BY_ID.mlsPayReportMenuItem,
+    'guided tour / how-to': BY_ID.mlsObtMenuRow,
+    'extension health': BY_ID.mlsEhMenuRow,
+    'how-to guide': 'Open step-by-step help for using MLS.',
+    'settings': 'Open Settings: practice details, integrations and preferences.',
+    /* The dock's Tools menu. HANDLER-VERIFIED rows are marked; the rest are a
+       precise restatement of where the control goes, which is what a doctor
+       needs on hover and is the most that can be claimed without reading each
+       owner module. No line asserts an outcome the button does not perform. */
+    'dictate': 'Start dictation and turn speech into note text.',
+    'mls assistant': 'Open the MLS Assistant to ask questions about your work in MLS.',
+    'prep op notes': 'Open the Prep Op Notes room to draft the day operative notes.', /* verified: opPrep room */
+    'schedule': 'Open the schedule for the selected day.',
+    'pre-visit intake forms': 'Open the pre-visit intake forms.',
+    'pull activity': 'See what recent Athena pulls did, day by day.',
+    'legal / ime workspace': 'Open the read-only Legal / IME draft workspace for the active patient.', /* verified */
+    'verify saved data': 'Check that work saved in MLS is really stored on this device.',
+    'share / export': 'Share or export what is saved in MLS.',
+    'export everything for emr': 'Export all saved data in a form another EMR can import.',
+    'full visit notes': 'Open the full captured visit notes.'
+  };
+
+  /* TWO menus, and the doctor calls the first one Tools. #mlsToolsMenu is the
+     dock's Tools menu; #mlsTbMenuPanel is the top-bar Menu. Both are lists of
+     controls a doctor hovers, so both are covered. */
+  var HOSTS = ['mlsToolsMenu', 'mlsTbMenuPanel'];
+  function panels() {
+    var out = [], i, n;
+    for (i = 0; i < HOSTS.length; i++) {
+      try { n = document.getElementById(HOSTS[i]); } catch (e) { n = null; }
+      if (n) out.push(n);
+    }
+    try { var alt = document.querySelector('.tb-menu-panel'); if (alt && out.indexOf(alt) < 0) out.push(alt); } catch (e2) {}
+    return out;
+  }
+  function panel() { return panels()[0] || null; }
+  function controls(host) {
+    try { return Array.prototype.slice.call(host.querySelectorAll('button, .mlsTbItem, a[href], [role="menuitem"]')); }
+    catch (e) { return []; }
+  }
+  function keyOf(el) {
+    /* strip emoji and any other non-ASCII decoration so the key is the
+       words the doctor reads; a raw unicode range in a sweep constant is the
+       latin1-writer trap this repo has already paid for once. */
+    var t = ((el && el.textContent) || '').replace(/[^ -~]/g, '');
+    return t.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+  function pass() {
+    var hosts = panels();
+    if (!hosts.length) return;
+    passes++;
+    var list = [], i, h;
+    for (h = 0; h < hosts.length; h++) { wire(hosts[h]); list = list.concat(controls(hosts[h])); }
+    for (i = 0; i < list.length; i++) {
+      var el = list[i];
+      var tip = el.getAttribute('data-tip');
+      if (!tip || !String(tip).trim()) {
+        var want = BY_ID[el.id] || BY_TEXT[keyOf(el)] || '';
+        if (want) {
+          el.setAttribute('data-tip', want);
+          el.setAttribute(MARK, '1');
+          added++;
+        }
+      }
+      /* NEVER TWO BUBBLES. A native title would be rendered by the browser on
+         top of the app's own #mlsTip; initTooltips folds one into the other on
+         hover, and this makes it true before the doctor ever hovers. */
+      if (el.getAttribute('data-tip') && el.getAttribute('title')) {
+        el.removeAttribute('title');
+        cleared++;
+      }
+    }
+  }
+  function schedule() { if (timer) return; timer = setTimeout(function () { timer = 0; pass(); }, 80); }
+  var wiredSet = [];
+  function wire(host) {
+    if (wiredSet.indexOf(host) >= 0) return;
+    wiredSet.push(host);
+    try {
+      /* scoped to the menu: its rows arrive late and from several owners */
+      var m = new MutationObserver(schedule);
+      m.observe(host, { childList: true, subtree: true });
+      observers.push(m);
+    } catch (e) {}
+  }
+  function arm() {
+    try { iv = setInterval(pass, 2000); } catch (e) {}
+    [400, 1200, 2500].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsToolsTips = {
+    version: VERSION,
+    pass: pass,
+    added: function () { return added; },
+    cleared: function () { return cleared; },
+    passes: function () { return passes; },
+    tips: function () { var o = {}, k; for (k in BY_ID) if (Object.prototype.hasOwnProperty.call(BY_ID, k)) o[k] = BY_ID[k]; return o; },
+    revert: function () {
+      observers.forEach(function (m) { try { m.disconnect(); } catch (e) {} });
+      observers = []; wiredSet = [];
+      try { if (iv) clearInterval(iv); } catch (e2) {}
+      try { if (timer) clearTimeout(timer); } catch (e3) {}
+      iv = 0; timer = 0;
+      try {
+        panels().forEach(function (host) {
+          controls(host).forEach(function (el) {
+            if (el.getAttribute(MARK) === '1') { el.removeAttribute('data-tip'); el.removeAttribute(MARK); }
+          });
+        });
+      } catch (e4) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end tools-tips-1.0.0 ============================================ -->
 </body>
 </html>

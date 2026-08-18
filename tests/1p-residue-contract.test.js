@@ -44,7 +44,7 @@ const step = (name) => console.log('residue: ' + name);
 function ok(value, message) { assert.ok(value, message); checks++; }
 function eq(actual, expected, message) { assert.strictEqual(actual, expected, message); checks++; }
 
-const BLOCKS = ['residue-athena-1.0.0', 'residue-oprperf-1.0.0', 'residue-notice-1.0.0', 'residue-settings-1.0.0'];
+const BLOCKS = ['residue-athena-1.0.0', 'residue-oprperf-1.0.0', 'residue-notice-1.0.0', 'residue-settings-1.0.0', 'tools-tips-1.0.0'];
 
 /* ========================================================= PART 1A: static */
 
@@ -293,7 +293,19 @@ async function boot(page, port) {
     try { window.__mlsDeferAsset = function (fn) { return setTimeout(fn, 0); }; } catch (e) {}
   });
   await page.evaluate(fakeExtension);
-  await page.waitForTimeout(600);
+  /* THE DOCK IS NOT THERE UNLESS THE CALM SHELL IS MADE TO LOAD. Its loader
+     schedules feat_mls_calm_shell.js through __mlsDeferAsset ||
+     requestIdleCallback, which never fires in a non-compositing tab, so
+     #mlsDock and its Tools menu are simply absent and any assertion about
+     them would pass vacuously. Same two steps 1p-clunky-contract uses. */
+  await page.evaluate(() => {
+    try { if (window.__mlsP1CalmDock && typeof window.__mlsP1CalmDock.ensure === 'function') window.__mlsP1CalmDock.ensure(); } catch (e) {}
+  });
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => {
+    try { if (window.__mlsCalmShell && typeof window.__mlsCalmShell.boot === 'function') window.__mlsCalmShell.boot(); } catch (e) {}
+  });
+  await page.waitForTimeout(1200);
 }
 
 async function runtime() {
@@ -790,6 +802,81 @@ async function runtime() {
     eq(perf.realChangeLanded, true, 'the guard swallowed a DIFFERENT markup string - it is not a coalescer, it is a mute');
     eq(perf.identicalDropped, true, 'the guard passed an identical string through');
     eq(perf.restoredButtons, 3, 'the room could not rebuild its three buttons through the guard');
+
+    step('2F tools menu hover tips');
+    /* ===================================== OWNER: Tools menu hover info ====
+     * "if I hover over a button it should give more info about it."
+     * The bubble is the app's own #mlsTip, driven by [data-tip]; a native
+     * title is the wrong carrier because the browser would paint a SECOND
+     * bubble over it, which is exactly why initTooltips converts titles away. */
+    const tools = await withDeadline(page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const out = {};
+      /* THE TOOLS MENU IS THE DOCK'S, not the top bar's. #mlsToolsMenu is what
+         the doctor calls Tools (1p-clunky-contract measures the same one);
+         #mlsTbMenuPanel is the top-bar Menu. Open it the way the dock does -
+         forcing a popup's display gives the panel a box but leaves its rows at
+         zero height, which is how the first attempt measured nothing. */
+      const opener = Array.prototype.slice.call(document.querySelectorAll('#mlsDock button'))
+        .filter((b) => /tools/i.test(b.textContent || ''))[0];
+      out.openerFound = !!opener;
+      if (opener) { opener.click(); await sleep(800); }
+      const panel = document.getElementById('mlsToolsMenu');
+      out.panel = !!panel;
+      if (!panel) return out;
+      window.__mlsToolsTips.pass();
+      await sleep(250);
+      const items = Array.prototype.slice.call(panel.querySelectorAll('button, .mlsTbItem, a[href], [role="menuitem"]'));
+      out.count = items.length;
+      out.rows = items.map((e) => ({
+        id: e.id || '', text: (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+        tip: e.getAttribute('data-tip') || '', title: e.getAttribute('title') || ''
+      }));
+      out.missing = out.rows.filter((r) => !r.tip).map((r) => r.text || r.id);
+      out.double = out.rows.filter((r) => r.tip && r.title).map((r) => r.text || r.id);
+      out.added = window.__mlsToolsTips.added();
+
+      /* the bubble itself, on the BOTTOM-MOST control - the one with the least
+         room beneath it, and therefore the one whose tip can escape. */
+      let bottom = null, bottomY = -1;
+      items.forEach((e) => { const b = e.getBoundingClientRect(); if (b.height > 0 && b.bottom > bottomY) { bottomY = b.bottom; bottom = e; } });
+      out.bottomText = bottom ? (bottom.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+      if (bottom) {
+        bottom.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        await sleep(900); /* the shell waits 550ms before showing a tip */
+        const tip = document.getElementById('mlsTip');
+        if (tip && getComputedStyle(tip).display !== 'none') {
+          const t = tip.getBoundingClientRect();
+          out.bubble = { text: (tip.textContent || '').trim().slice(0, 60), x: Math.round(t.x), y: Math.round(t.y),
+            w: Math.round(t.width), h: Math.round(t.height),
+            inViewport: t.left >= 0 && t.top >= 0 && t.right <= window.innerWidth && t.bottom <= window.innerHeight };
+        } else { out.bubble = null; }
+      }
+      /* revert must put back exactly what it took, and nothing else */
+      out.tipsBeforeRevert = out.rows.filter((r) => r.tip).length;
+      window.__mlsToolsTips.revert();
+      await sleep(150);
+      out.tipsAfterRevert = items.filter((e) => !!e.getAttribute('data-tip')).length;
+      return out;
+    }), 90000, 'the Tools menu tips');
+
+    measured.tools = { count: tools.count, added: tools.added, missing: tools.missing,
+      double: tools.double, bottomText: tools.bottomText, bubble: tools.bubble };
+    ok(tools.openerFound, 'no Tools button in the dock - the menu could not be opened the way a doctor opens it');
+    ok(tools.panel, 'the Tools menu panel never mounted, so nothing about the hover tips was measured');
+    ok(tools.count >= 5, `the Tools menu holds ${tools.count} controls - too few to be the real menu`);
+    eq((tools.missing || []).length, 0,
+      `${(tools.missing || []).length} Tools-menu controls still say nothing on hover: ${(tools.missing || []).join(', ')}`);
+    eq((tools.double || []).length, 0,
+      `${(tools.double || []).length} Tools-menu controls carry BOTH data-tip and title - two bubbles on one control: ${(tools.double || []).join(', ')}`);
+    ok(tools.added >= 1, 'the block added no tips at all, so its table no longer matches the menu');
+    ok(tools.bubble, `hovering the bottom-most control ("${tools.bottomText}") produced no #mlsTip bubble`);
+    ok(tools.bubble.text.length > 0, 'the bubble rendered empty');
+    eq(tools.bubble.inViewport, true,
+      `the bubble for the bottom-most control renders outside the viewport: ${JSON.stringify(tools.bubble)}`);
+    ok(tools.tipsAfterRevert < tools.tipsBeforeRevert, 'revert() removed none of the tips this block added');
+    ok(tools.tipsAfterRevert >= tools.tipsBeforeRevert - tools.added,
+      'revert() removed tips this block did not add - it is deleting another owner\'s words');
 
     await page.close();
 
