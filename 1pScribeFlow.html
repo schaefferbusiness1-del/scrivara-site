@@ -42472,6 +42472,18 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 #mlsNgTag[data-shown="1"]{ display:inline-flex; }
+/* AN INLINE LINK THAT IS THE NEXT STEP BECOMES A BUTTON. Owner: "Open in
+   History →" must be BIG and glowing. It ships as a bare inline <a> inside a
+   sentence, so a halo alone would ring a line of text. Scoped to
+   [data-mls-next="1"], so it can only ever affect the ONE control that is
+   currently the next step, and it reverts the moment the glow moves. */
+a[data-mls-next="1"]{
+  display:inline-flex !important; align-items:center; gap:6px;
+  margin:8px 4px 4px 0; padding:11px 18px !important;
+  font:800 14px/1.2 var(--sans, system-ui, sans-serif) !important;
+  color:#fff !important; background:var(--mls-ng-ring, #2E6A4B) !important;
+  border-radius:var(--r-ctl, 11px); text-decoration:none !important;
+}
 #mlsNgTag .mlsNgWhy{
   font-weight:600; letter-spacing:0; opacity:.92;
   white-space:normal; max-width:210px;
@@ -42602,6 +42614,16 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     {
       id: 'opnotes', host: '#opPrepModal', modal: true,
       states: [
+        /* FILL-IN-THE-BLANKS IS DONE. Owner, 2026-08-17: once the note is
+           saved, "Open in History →" is the next step and must be big and
+           glowing. It is a bare inline <a> with no id inside the room's own
+           saved-message, so it is matched on the shell literal in its onclick
+           — the one stable thing about it — rather than by adding an id to
+           op-note code another lane is rebuilding right now. */
+        { steps: [
+            { sel: '#opPrepModal a[onclick*="showView(\'history\')"]',
+              reason: 'Read the note you just saved' }
+          ] },
         { steps: [
             { sel: '#opPrepGenAllBtn', unblock: '#oprTabTpls',
               reason: 'Draft every op note this day needs',
