@@ -13,7 +13,17 @@ const AUTOMATED_PROOF_FILES = new Set([
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
      ratios against adult anthropometry, cross-checked against the module's own
      report so the instrument cannot agree with itself. */
-  '1p-avatar-adult-proportions-proof.js'
+  '1p-avatar-adult-proportions-proof.js',
+  /* avfit-1.0.0 (2026-08-17): how many of the fourteen appearance controls a
+     REAL webcam frame can supply — the owner's "5 of 14, always", measured at
+     640x480 and 1280x720 with the head 15-35% of frame height, before and
+     after the face-aware re-crop, with the 12-pixel-face canary. */
+  '1p-avatar-capture-readability-proof.js',
+  /* avfit-1.1.0 (2026-08-17): the owner's own room. A warm wall passes the skin
+     window, merges with his face and takes the read to 0-1 of 14; this proves
+     the merge, proves the colour-independent locator recovers it, and keeps the
+     wall-only and 12-pixel-face negatives refusing. */
+  '1p-avatar-warm-wall-proof.js'
 ]);
 
 const tests = [
@@ -186,6 +196,35 @@ const tests = [
          fake transcript to prove the check-in reaches the encounter exactly ONCE. */
   '1p-avatar-adult-proportions-proof.js',
   '1p-avatar-intake-and-animation-runtime.test.js',
+  /* avfit-1.0.0, 2026-08-17. Owner, holding the Set up screen: "No animated
+     traits changed · 5 of 14 details were readable ... this is unacceptable and
+     always happens. And also when you take a picture it goes to 'My photo' —
+     that's not ok, it should stay on avatar. And also once you're done, these
+     things don't stop."
+       - capture-readability-proof MEASURES the thing no existing harness varied:
+         how much of a real 16:9 webcam frame the doctor's head occupies. It
+         reproduces "5 of 14" exactly, shows the total refusal at head 15%, and
+         proves the face-aware re-crop, the never-upscale floor and the canary.
+       - capture-fit pins the three parts that follow from it — the crop's three
+         refusals, the honest partial application (with the whole-read gate
+         untouched and `applies` still false), the fact that the Face style
+         select now has exactly ONE assignment in the whole file, and the step
+         machine that publishes data-mls-avatar-state / -next for the glow lane. */
+  '1p-avatar-capture-readability-proof.js',
+  /* …and warm-wall is the one that matches the room he is actually in: owner,
+     2026-08-17, "ALSO THIS FACE TO AVATAR IS STILL A NIGHTMARE AND NEEDS A LOT
+     OF WORK", over a capture taken against his own warm-toned wall. Measured on
+     the pre-fix build: 0 or 1 of 14, because the face finder segments by SKIN
+     COLOUR and a magnolia wall is skin-coloured. */
+  '1p-avatar-warm-wall-proof.js',
+  '1p-avatar-capture-fit.test.js',
+  /* …and setup-flow drives the owner's actual screen: real module, real Setup
+     form, a portrait that really reads five of fourteen, the real Match button,
+     and then it reads what he was looking at — the five applied and labelled,
+     the nine named as defaults, no "match" claim, the Face style select still
+     on Animated character (the UNTOUCHED case, which is the one that used to
+     flip), and the form pointing at the next control. */
+  '1p-avatar-setup-flow-runtime.test.js',
   '1p-one-template-upload-and-month-range.test.js',
   '1p-template-mode-adapter-runtime.test.js',
   '1p-rangejobs-runtime.test.js',

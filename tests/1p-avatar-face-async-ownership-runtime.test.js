@@ -229,9 +229,20 @@ function serve() {
     await page.waitForFunction(() => window.__mlsAvatar.lastMatchReceipt && window.__mlsAvatar.lastMatchReceipt.wholeReadRefusal === true);
     eq(await page.inputValue('#mlsAvLook_skin'), '#dda77f', 'weak combined evidence changed skin');
     eq(await page.inputValue('#mlsAvLook_hair'), '#332116', 'weak combined evidence changed hair');
-    eq(await page.inputValue('#mlsAvFaceMode'), 'photo', 'weak combined evidence left a generic character presented as the match');
-    ok(/real photo remains the patient-facing face/i.test(await page.locator('#mlsAvLookNote').textContent()),
-      'weak combined refusal does not say that the real photo remains');
+    /* This session's saved config chose My photo deliberately (faceMode:'photo'
+       at the top of this file), so the refusal must leave it exactly there.
+       ⛔ avfit-1.0.0 changed what the SENTENCE says, by owner order 2026-08-17:
+       the refusal used to promise "your real photo remains the patient-facing
+       face" while ALSO forcing an untouched select to 'photo', which is how a
+       doctor who never chose photo mode kept ending up in it. Nothing writes
+       that select now, so the sentence names whichever face is really selected
+       and says the control is the only thing that moves it. */
+    eq(await page.inputValue('#mlsAvFaceMode'), 'photo', 'a deliberate My photo choice did not survive an incomplete match');
+    const weakNote = await page.locator('#mlsAvLookNote').textContent();
+    ok(/Your photo stays the patient-facing face/i.test(weakNote),
+      'the refusal does not name the face that is actually selected: ' + weakNote);
+    ok(/Face style only ever changes when you change it/i.test(weakNote),
+      'the refusal does not tell the doctor that nothing moved his Face style');
 
     /* Removing the photo while a model read is pending invalidates that model
        response and leaves the previous receipt untouched. */
