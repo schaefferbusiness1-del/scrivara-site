@@ -1281,6 +1281,8 @@ async function runtime() {
           if (okNow) break;
           const pass = await page.evaluate(async () => {
             try { window.__mlsSimpleLayer.refresh(); } catch (e) {}
+            /* the glow's owner is nextglow-1.0.0 (msl retired) - re-trigger it too */
+            try { window.__mlsNextGlow && window.__mlsNextGlow.refresh && window.__mlsNextGlow.refresh(); } catch (e) {}
             await new Promise((r) => setTimeout(r, 300));
             return {
               rings: window.__uiContract.rings(),

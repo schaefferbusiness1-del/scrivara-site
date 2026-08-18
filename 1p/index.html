@@ -43746,7 +43746,13 @@ a[data-mls-next="1"]{
        are shown and the first match wins. */
     {
       id: 'studio', host: '#studioView',
-      states: [{ steps: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn'],
+      /* 2026-08-18: in calm mode the Copilot input is hidden and the ladder
+         ended with NOTHING lit on AI Studio / Analysis (the analysis entry never
+         runs because this host matched first). Fall through to the Analysis
+         controls, then to any primary button in the room. */
+      states: [{ steps: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn',
+        '#t7AxRefresh', '#anaBaselineRefresh', '#anaOutcomesRefresh',
+        '#studioView .btn-primary', '#studioView button'],
         why: 'Ask about this visit or your practice' }]
     },
     {
