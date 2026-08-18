@@ -42546,6 +42546,8 @@ a[data-mls-next="1"]{
 
   var VERSION = 'nextglow-1.0.0';
   var ATTR = 'data-mls-next';
+  /* The nodes visitState() reads its answer OUT OF — see watch(). */
+  var STATE_SOURCES = ['captureBtn', 'statusBadge'];
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function el(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -43005,18 +43007,38 @@ a[data-mls-next="1"]{
   /* ---------------- marking ------------------------------------------- */
 
   var _last = { room: '', id: '', why: '' };
+  /* The node that currently carries the attribute, so the invariant below can
+     ask about IT rather than re-deriving the whole ladder every pass. */
+  var _marked = null;
 
-  function clearAll() {
-    var prev = safe(function () { return document.querySelectorAll('[' + ATTR + ']'); }, []);
-    for (var i = 0; i < prev.length; i++) safe(function () { prev[i].removeAttribute(ATTR); });
+  function sweepStale() {
     /* msl-1.0.0's class is retired; sweep any that a hot reload left behind so
        there is provably ONE owner of the glow. */
     var stale = safe(function () { return document.querySelectorAll('.msl-next'); }, []);
     for (var j = 0; j < stale.length; j++) safe(function () { stale[j].classList.remove('msl-next'); });
   }
 
+  function clearAll() {
+    var prev = safe(function () { return document.querySelectorAll('[' + ATTR + ']'); }, []);
+    for (var i = 0; i < prev.length; i++) safe(function () { prev[i].removeAttribute(ATTR); });
+    sweepStale();
+  }
+
   function mark() {
     var hit = pick();
+    /* SAME CONTROL, STILL LIT: reposition the tag and leave the attribute
+       alone. Removing and re-adding it restarts the 2.2 s pulse from zero and
+       re-commits style on the control — invisible when this ran only on the
+       doctor's own clicks, but it now also runs on the standing invariant
+       below, and a halo that restarts its animation on a timer reads as a
+       flicker. The resolve itself is unchanged. */
+    if (hit.el && hit.el === _marked &&
+        safe(function () { return _marked.isConnected && _marked.getAttribute(ATTR) === '1'; }, false)) {
+      sweepStale();
+      paintTag(hit.el, hit.why);
+      _last = { room: hit.room, id: hit.el.id || '', why: hit.why || '' };
+      return _last;
+    }
     clearAll();
     if (hit.el) {
       safe(function () { hit.el.setAttribute(ATTR, '1'); });
@@ -43024,8 +43046,95 @@ a[data-mls-next="1"]{
     } else {
       paintTag(null, '');
     }
+    _marked = hit.el || null;
+    armOnMarked();
     _last = { room: hit.room, id: (hit.el && hit.el.id) || '', why: hit.why || '' };
     return _last;
+  }
+
+  /* WATCH THE ONE CONTROL THIS BLOCK IS POINTING AT. Two things end a glow and
+     neither of them is an event this block used to hear:
+       · the control is HIDDEN OR DISABLED where it stands (the visit lane
+         writes `hidden` on its own record pill the instant a note exists), and
+       · the control, or any box it sits in, is REPLACED (the Easy engine
+         rebuilds #ez3Wrap from an HTML string, taking the whole lane with it).
+     So: attributes on the marked node, and childList on it AND on every
+     ancestor up to <body> — the exact, bounded set of places from which it can
+     be removed. Re-armed only when the marked node CHANGES, and it observes
+     nothing this block itself writes (data-mls-next is deliberately not in the
+     attribute filter), so it cannot feed itself. This is what makes the
+     recovery immediate; keep() below is the backstop for anything neither the
+     observer nor an event can see. */
+  var _mo = null;
+  function armOnMarked() {
+    safe(function () { if (_mo) _mo.disconnect(); });
+    if (!_marked) return;
+    safe(function () {
+      if (!_mo) _mo = new MutationObserver(refresh);
+      _mo.observe(_marked, { attributes: true,
+        attributeFilter: ['hidden', 'disabled', 'aria-disabled', 'style', 'class'] });
+      var n = _marked, hops = 0;
+      while (n && n.nodeType === 1 && hops++ < 24) {
+        _mo.observe(n, { childList: true });
+        if (n === document.body) break;
+        n = n.parentNode;
+      }
+    });
+  }
+
+  /* ---------------- THE INVARIANT IS CONTINUOUS ------------------------
+     MEASURED 2026-08-18 in real Chrome, Visit room. The glow was resolved on
+     EVENTS — click, input, change, a view container's style attribute, one
+     childList observer on <body> with no subtree, and a re-arm interval that
+     stops after 20 passes (~18 s from boot). The screen it points at is rebuilt
+     by code that fires none of those:
+
+       · the Easy engine repaints #ez3Wrap from an HTML string on its own 700 ms
+         poll (mls-connect, setWrapHtml), and that repaint DESTROYS the
+         visit flow lane. The lane comes back as a NEW node. The node this block
+         marked is by then detached, so [data-mls-next="1"] matches NOTHING and
+         the doctor is left with no next step at all — measured as
+         "expected exactly ONE glowing control, got 0" with .ez3fl-record absent
+         from the DOM.
+       · the lane reveals #ez3flGen / #ez3flReview and hides its record pill by
+         writing `hidden` on its OWN children, on its own cadence (a frame, then
+         250 ms, then 900 ms, then a 2.5 s sweep). The single 420 ms follow-up
+         can land before any of that, and then nothing ever looks again: the
+         glow stays on .ez3fl-recbtn, which the lane has since hidden — measured
+         as "glow on '' (a control with no id), expected ez3flGen", with the lit
+         control reporting visible:false.
+
+     Both failures are the SAME mistake: treating "exactly one VISIBLE, ENABLED
+     control glows" as a property of one resolve instead of a property that is
+     MAINTAINED. So it is maintained. In the steady state this costs one
+     isConnected + one rect + one computed style on the ONE marked node and
+     changes nothing; it re-resolves only when that node has stopped being a
+     legal answer. It is deliberately NOT bounded — the bounded re-arm expiring
+     is half of why this went unnoticed — and it stands down while the tab is
+     hidden, with a refresh on the way back so a doctor returning to the tab
+     never finds the guidance frozen on what the app was doing when they left. */
+  function healthy() {
+    if (!_marked) return false;
+    if (!safe(function () { return _marked.isConnected; }, false)) return false;
+    if (safe(function () { return _marked.getAttribute(ATTR); }, '') !== '1') return false;
+    return eligible(_marked);
+  }
+  /* A control can still be perfectly visible and enabled and no longer be the
+     RIGHT one: the note arrives from the generator, which writes #noteBox.value
+     directly and fires nothing at all, and the answer moves from "generate" to
+     "review" while the old control sits there looking healthy. So the backstop
+     also carries the cheapest honest signature of what the ladder branches on.
+     No layout is read here — ids, values and one classList. */
+  var _sig = '';
+  function stateSig() {
+    return currentRoomId() + '|' + safe(visitState, '') + '|' + activePatientId();
+  }
+  function keep() {
+    if (safe(function () { return document.visibilityState === 'hidden'; }, false)) return;
+    var s = safe(stateSig, '');
+    if (s !== _sig) { _sig = s; refresh(); return; }
+    if (healthy()) return;
+    refresh();
   }
 
   /* ---------------- scheduling ---------------------------------------- */
@@ -43063,6 +43172,25 @@ a[data-mls-next="1"]{
         });
       }
     }
+    /* THE STATE SOURCES, not only the rooms. visitState() branches on the
+       recorder's own control and on the sign badge, and BOTH change their class
+       or their text with no event of any kind — the engine writes them
+       directly. Watching only the containers therefore missed the single most
+       important transition in the app: the doctor stopping the recording.
+       Measured 2026-08-18: with the engine's own phase already 'stopped', this
+       block still believed the state was "recording" and kept the glow on
+       "Pause recording" instead of moving it to ✨ Generate one note. Two O(1)
+       observers on the two nodes the state is actually read from. */
+    for (var v = 0; v < STATE_SOURCES.length; v++) {
+      var se = el(STATE_SOURCES[v]);
+      if (!se || se.__mlsNgSrc) continue;
+      se.__mlsNgSrc = true;
+      safe(function () {
+        new MutationObserver(refresh).observe(se, { attributes: true,
+          attributeFilter: ['class', 'disabled', 'hidden'],
+          childList: true, characterData: true, subtree: true });
+      });
+    }
     if (watch.__events) return;
     watch.__events = 1;
     ['mls:view-changed', 'mls:ui-ready', 'mls:active-patient-changed'].forEach(function (n) {
@@ -43098,6 +43226,18 @@ a[data-mls-next="1"]{
       refresh();
       if (++n > 20) clearInterval(iv);
     }, 900);
+    /* The standing invariant (see keep()). Unbounded on purpose, and cheap:
+       it re-resolves ONLY when the marked control has stopped being a legal
+       answer. 800 ms is slower than the engine's own 700 ms repaint poll, so
+       it never races a render it could not have seen. */
+    if (!watch.__keep) {
+      watch.__keep = setInterval(keep, 800);
+      safe(function () {
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') refresh();
+        }, false);
+      });
+    }
   }
 
   window.__mlsNextGlow = {
@@ -43130,7 +43270,10 @@ a[data-mls-next="1"]{
     paths: PATHS,
     visitState: visitState,
     revert: function () {
+      safe(function () { if (watch.__keep) { clearInterval(watch.__keep); watch.__keep = 0; } });
+      safe(function () { if (_mo) { _mo.disconnect(); _mo = null; } });
       clearAll();
+      _marked = null;
       var t = el('mlsNgTag');
       if (t && t.parentNode) t.parentNode.removeChild(t);
       var css = el('mlsNextGlowCss');

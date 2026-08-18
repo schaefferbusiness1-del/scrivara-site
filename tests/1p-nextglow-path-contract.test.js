@@ -127,11 +127,25 @@ function harness() {
     'Gus Sample', 'Hal Sample', 'Ivy Sample', 'Jo Sample', 'Kit Sample', 'Lu Sample'];
   const PROCS = ['Lumbar medial branch block', 'Right L4-L5 transforaminal epidural steroid injection',
     'Radiofrequency ablation, lumbar facet', 'Sacroiliac joint injection'];
-  const d = new Date();
-  const DAY = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  /* THE DAY THIS SUITE SEEDS IS THE APP'S OWN TODAY, NOT THE MACHINE'S.
+     2026-08-18: the synthetic schedule was dated from `new Date()` in the test
+     process, while every surface under test asks _acctTodayKey() — which
+     resolves the date in the PRACTICE time zone (America/New_York by default),
+     not the runner's. On any machine whose local date differs from the
+     account's — and on this one for the hour on either side of midnight — the
+     roster lands on a day the Visit room does not consider today, which
+     silently changes which screen is being measured. Reading the app's own
+     answer removes the whole class: the suite and the app cannot disagree
+     about what day it is, at any hour. The local fallback is only for a shell
+     that has not defined it, and DAY is asserted against the app below. */
+  const local = new Date();
+  const DAY = (typeof window._acctTodayKey === 'function' && /^\d{4}-\d{2}-\d{2}$/.test(String(window._acctTodayKey() || '')))
+    ? String(window._acctTodayKey())
+    : (local.getFullYear() + '-' + String(local.getMonth() + 1).padStart(2, '0') + '-' + String(local.getDate()).padStart(2, '0'));
 
   window.__ngT = {
     DAY,
+    appToday() { try { return String(window._acctTodayKey()); } catch (e) { return ''; } },
     seed() {
       const out = {};
       try {
@@ -257,6 +271,13 @@ async function runtime() {
     await page.evaluate(harness);
     const seeded = await page.evaluate(() => window.__ngT.seed());
     eq(seeded.patients, 12, 'the synthetic roster did not land');
+    /* The day is PINNED to the app's own account-local today. If these ever
+       disagree the suite is measuring a room that thinks the schedule is for
+       another day, and every "the glow is on the wrong control" failure below
+       would be a lie about the glow. Fail here instead, saying so. */
+    const dayPin = await page.evaluate(() => ({ seeded: window.__ngT.DAY, app: window.__ngT.appToday() }));
+    eq(dayPin.seeded, dayPin.app,
+      `the seeded day (${dayPin.seeded}) is not the app's own today (${dayPin.app}) — the Visit room is being measured on a day it does not consider today`);
 
     eq(await page.evaluate(() => window.__mlsNextGlow.version), 'nextglow-1.0.0',
       'nextglow-1.0.0 did not install on the running page');

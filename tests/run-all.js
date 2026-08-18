@@ -40,6 +40,11 @@ const tests = [
      Chrome with a synthetic 28-patient day. */
   '1p-ui-shape-contract.test.js',
   '1p-nextglow-path-contract.test.js',
+  /* The doctor's visit lane leaves the screen for a REAL Staff-prep workspace
+     and for nothing else — not a heading that says "Staff prep", not the
+     engine's own repaint, and not the note phase, where its mount used to
+     throw NotFoundError and take the whole working surface with it. */
+  '1p-visit-lane-survives-contract.test.js',
   '1p-visitflow-transcript-contract.test.js',
   '1p-uimap-dockspace-contract.test.js',
   '1p-quietnotify-contract.test.js',
