@@ -100,6 +100,13 @@ const tests = [
      BEFORE it asserts anything about the fix. It also pins why the Settings
      rebuild (feat_mls_settings_exact.js) can never activate on /1p. */
   '1p-residue-contract.test.js',
+  /* Owner 2026-08-18, "make it so it would work in theory if I did do it":
+     the five things a real YEAR pull has to survive - one day-stepping path,
+     a resume that re-derives from the ledger, a session expiry that pauses
+     instead of burning days, the full-notes flag reaching every leg, and a
+     storage ceiling that pauses with the truth. Drives the real range engine
+     in a VM against a fake importer; no browser, no athenaOne, no PHI. */
+  '1p-range-year-readiness.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */
