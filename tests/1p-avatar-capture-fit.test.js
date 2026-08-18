@@ -405,6 +405,43 @@ ok(/FACE_MATCH_FIELDS\.forEach\(function \(k\) \{\s*\n\s*var on = got\.indexOf\(
 lookApi.FIELDS.forEach(k => ok(new RegExp('\\b' + k + ':').test(between(source, 'var FACE_KNOB_SAID = {', 'function faceKnobLabel')),
   k + ' has no English name, so the applied list would print a code name'));
 
+/* ---- 2b. THE DENOMINATOR IS EXPLAINED, NOT CHANGED --------------------- */
+
+const unreadApi = new Function(
+  between(source, 'var FACE_KNOB_SAID = {', 'var faceLiveCanvas') +
+  '\nreturn { sentence: faceUnreadSentence, onlyIfVisible: faceKnobOnlyIfVisible,' +
+  '  LIST: FACE_KNOB_ONLY_IF_VISIBLE, label: faceKnobLabel };')();
+
+/* ⛔ THE ARITHMETIC IS UNTOUCHED. Both terms of the gate, and the fixed
+   fourteen-control denominator, are asserted in section 0 above; this section
+   only proves the doctor is told which of the unread ones are not failures. */
+eq(unreadApi.LIST.length, 5, 'the only-if-visible set changed size without the measurement changing');
+['faceShape', 'beard', 'glasses', 'hairline', 'browCol'].forEach(k =>
+  ok(unreadApi.onlyIfVisible(k), k + ' is claimable only when present, but is counted as a plain failure'));
+['skin', 'hair', 'hairStyle', 'eyes', 'brows', 'lips', 'nose', 'eyeSet', 'shirt'].forEach(k =>
+  ok(!unreadApi.onlyIfVisible(k),
+    k + ' was excused as "only if visible" — it IS readable from an ordinary photo, so excusing it hides a real failure'));
+/* the five really are the ones the reader never volunteers */
+ok(/look\.faceShape = sVal;\s*\n\s*found\.push/.test(source),
+  'faceShape is claimed into `derived` now, so the sentence calling it never-volunteered is wrong');
+['beard', 'glasses', 'hairline', 'browCol'].forEach(k =>
+  ok(!new RegExp("derived\\.push\\('" + k + "'\\)[\\s\\S]{0,120}absent|" +
+    "look\\." + k + " = (?:'none'|false|'full'|'')[^;]*;\\s*derived\\.push").test(source),
+    k + ' is now pushed into `derived` for an ABSENCE — the one claim this matcher has always refused'));
+
+{
+  const said = unreadApi.sentence(['faceShape', 'beard', 'glasses', 'hairline', 'browCol', 'eyes', 'nose']);
+  ok(/5 \(/.test(said), 'the sentence does not count the only-if-visible controls: ' + said);
+  ok(/only ever confirmed when the feature is visible/.test(said), 'the sentence does not explain itself');
+  ['face shape', 'facial hair', 'glasses', 'hairline', 'brow colour'].forEach(n =>
+    ok(said.indexOf(n) >= 0, 'the sentence does not name ' + n));
+  ok(said.indexOf('eye colour') < 0 && said.indexOf('nose shape') < 0,
+    'a genuinely failed read was excused as only-if-visible: ' + said);
+}
+eq(unreadApi.sentence(['eyes', 'nose', 'brows']), '',
+  'a read whose every failure was real still gets the excusing sentence appended');
+eq(unreadApi.sentence([]), '', 'a complete read gets an explanation of nothing');
+
 /* ---- 3. THE FACE STYLE IS NEVER WRITTEN IMPLICITLY --------------------- */
 
 const modeApi = new Function(

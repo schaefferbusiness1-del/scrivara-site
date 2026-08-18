@@ -6266,6 +6266,44 @@
     browCol: 'brow colour', lips: 'lip shape', nose: 'nose shape', eyeSet: 'eye spacing',
     hairline: 'hairline', faceShape: 'face shape', shirt: 'top colour' };
   function faceKnobLabel(knob) { return FACE_KNOB_SAID[knob] || String(knob || ''); }
+  /* ===== avfit-1.2.0 — WHY "OF FOURTEEN" WAS NEVER AN HONEST DENOMINATOR ====
+     Owner: "5 of 14 ... this is unacceptable and always happens."
+     Measured (tests/1p-avatar-capture-readability-proof.js): FIVE of the
+     fourteen entries in the ledger are claimable only in the minority case, or
+     never.
+       faceShape — computed and deliberately NEVER claimed. The reader's own
+                   comment says the photo cannot support a shape verdict at the
+                   distances that matter, so it reports it and stays out of
+                   `derived`.
+       beard     — pushed only for 'beard' or 'stubble'. A clean-shaven jaw is
+       glasses   — pushed only for true.            measured but never claimed:
+       hairline  — pushed only for 'receding'.      this file does not let the
+       browCol   — pushed only when the brows       ledger claim an ABSENCE, and
+                   differ from the hair.            that rule is load-bearing.
+     So a clean-shaven doctor with no glasses, a full hairline and brows the
+     colour of his hair CANNOT score above nine of fourteen however good the
+     photograph is — and the product was telling him nine had failed.
+     ⛔ THE FIX IS THE SENTENCE, NOT THE ARITHMETIC. The receipt still counts
+     fourteen and `faceMatchDecision` still reads `examined >= 10 && claimed >= 6`
+     — untouched, and pinned by three suites. What changes is that the doctor is
+     told WHICH of the unread ones are unread because the photo failed, and
+     which are simply never volunteered.
+     ⛔ AND IT IS NOT A LICENCE TO CLAIM THEM. Turning "I did not see a beard"
+     into `beard: 'none'` is the absence claim the matcher has always refused,
+     and it needs positive-evidence margins measured on REAL annotated
+     photographs — not on the synthetic fixtures in this tree. Flagged for the
+     lead; deliberately not done here. ===== */
+  var FACE_KNOB_ONLY_IF_VISIBLE = ['faceShape', 'beard', 'glasses', 'hairline', 'browCol'];
+  function faceKnobOnlyIfVisible(knob) { return FACE_KNOB_ONLY_IF_VISIBLE.indexOf(knob) >= 0; }
+  /* the sentence, from the list of knobs this read did NOT claim. '' when every
+     unread control really was a failure to read — then the plain count is the
+     whole truth and adding to it would be noise. */
+  function faceUnreadSentence(unclaimed) {
+    var quiet = (unclaimed || []).filter(faceKnobOnlyIfVisible);
+    if (!quiet.length) return '';
+    return ' Of those, ' + quiet.length + ' (' + quiet.map(faceKnobLabel).join(', ') +
+      ') are only ever confirmed when the feature is visible in the photo, so they stay on your own setting.';
+  }
   var faceLiveCanvas = null;
   function faceLiveMeasure(video) {
     if (!faceLiveCanvas) faceLiveCanvas = document.createElement('canvas');
@@ -7795,10 +7833,14 @@
         partialBox.textContent = '';
         FACE_MATCH_FIELDS.forEach(function (k) {
           var on = got.indexOf(k) >= 0;
-          var line = make('div', on ? 'on' : '',
-            (on ? '✓ ' : '· ') + faceKnobLabel(k) +
-            (on ? ' — from your photo' : (missed.indexOf(k) >= 0 ? ' — not readable' : ' — your setting')));
-          partialBox.appendChild(line);
+          /* avfit-1.2.0 — THREE OUTCOMES, NOT TWO. "not readable" and "this is
+             never volunteered from a photo" are different facts and the doctor
+             acts on them differently: one says retake, the other says set it
+             yourself. Lumping them made nine failures out of four. */
+          var why = on ? ' — from your photo'
+            : (faceKnobOnlyIfVisible(k) ? ' — only set by hand unless it is visible'
+              : (missed.indexOf(k) >= 0 ? ' — not readable, retake' : ' — your setting'));
+          partialBox.appendChild(make('div', on ? 'on' : '', (on ? '✓ ' : '· ') + faceKnobLabel(k) + why));
         });
         var retakeRow = make('div', 'mlsAvActions');
         retakeRow.style.cssText = 'grid-column:1/-1;margin-top:6px';
@@ -7980,8 +8022,9 @@
             if (partial.partial) {
               why = 'Applied ' + applied.length + ' of ' + (decision.examined || FACE_MATCH_FIELDS.length) +
                 ' (' + applied.map(faceKnobLabel).join(', ') + '). ' +
-                partial.skipped.length + ' could not be read — retake in better light to refine. ' +
-                'This is a partial read, not a match, so the rest are left at their defaults.' +
+                partial.skipped.length + ' could not be read — retake in better light to refine.' +
+                faceUnreadSentence(partial.skipped) +
+                ' This is a partial read, not a match, so the rest are left at their defaults.' +
                 (modelUnavailable ? ' The second read was unavailable.' : '') +
                 (modelUnsure && modelUnsure.length ? (' The second read was unsure about ' + modelUnsure.join(', ') + '.') : '');
             } else {
@@ -8023,8 +8066,10 @@
           setLookBadges(pixelKnobs, aiKnobs);
           lookApply();
           var rct = combined && combined.receipt;
+          var unreadNow = FACE_MATCH_FIELDS.filter(function (k) { return allObserved.indexOf(k) < 0; });
           var counts = rct ? ('Matched ' + rct.claimed + ' of ' + rct.examined +
-            ' appearance details; ' + rct.refused + ' stayed unchanged.') : 'Matched the reliable appearance details.';
+            ' appearance details; ' + rct.refused + ' stayed unchanged.' + faceUnreadSentence(unreadNow))
+            : 'Matched the reliable appearance details.';
           var note = counts + (aiKnobs.length ? (' The second read confirmed ' + aiKnobs.join(', ') + '.') : '') +
             (modelRefused.length ? (' It refused ' + modelRefused.length + ' unsafe claim' + (modelRefused.length === 1 ? '' : 's') + '.') : '') +
             (modelUnsure && modelUnsure.length ? (' It was unsure about ' + modelUnsure.join(', ') + ', so those stayed unchanged.') : '');

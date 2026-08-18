@@ -235,6 +235,18 @@ const PORTRAIT = function () {
   ok(/Applied 5 of 14/.test(after.note), 'the result does not say how much was applied: "' + after.note + '"');
   ok(/skin tone/.test(after.note), 'the result does not NAME the traits it applied');
   ok(/9 could not be read/.test(after.note), 'the result does not say how much could not be read');
+  /* avfit-1.2.0 — AND WHICH OF THE NINE ARE NOT A FAILURE AT ALL. Five of the
+     fourteen are only ever confirmed when the feature is visible (face shape is
+     never claimed; facial hair, glasses, hairline and brow colour only when
+     present), so reporting nine flat failures overstated the damage by five. */
+  ok(/only ever confirmed when the feature is visible/.test(after.note),
+    'the result still counts the never-volunteered controls as failures: ' + after.note);
+  ['face shape', 'facial hair', 'glasses', 'hairline', 'brow colour'].forEach(name =>
+    ok(after.note.indexOf(name) >= 0, 'the result does not name ' + name + ' among the only-if-visible controls'));
+  ok(/only set by hand unless it is visible/.test(after.ledgerText),
+    'the ledger lumps "never volunteered" in with "not readable"');
+  ok(/not readable, retake/.test(after.ledgerText),
+    'the ledger no longer tells the doctor which controls a retake would actually fix');
   ok(/retake in better light/.test(after.note), 'the result does not tell the doctor what to do');
   ok(/not a match/.test(after.note), 'a partial application is presented without saying it is not a match');
   ok(!/all character settings stayed unchanged/.test(after.note),

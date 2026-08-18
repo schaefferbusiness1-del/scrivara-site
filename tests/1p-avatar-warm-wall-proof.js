@@ -150,7 +150,18 @@ const FIXTURE = function () {
       hasFaceDetector: typeof window.FaceDetector,
       rows: cases.map(([name, o, kind]) => {
         const square = window.__wallFrame(o);
-        return { name, kind, fit: owner.captureFit(square) };
+        const fit = owner.captureFit(square);
+        /* THE QUESTION THE OWNER IS ACTUALLY ASKING: after the crop, does this
+           read clear the UNCHANGED whole-read gate — i.e. does he get a
+           completed match rather than the partial he was shown? Judged by the
+           shipped rule, not by a copy of it. */
+        const got = fit.after.derived || [];
+        fit.wholeGate = {
+          claimed: got.length,
+          hasIdentityPalette: got.indexOf('skin') >= 0 && got.indexOf('hair') >= 0,
+          applies: got.length >= 6 && got.indexOf('skin') >= 0 && got.indexOf('hair') >= 0
+        };
+        return { name, kind, fit: fit };
       })
     };
   });
@@ -167,6 +178,7 @@ const FIXTURE = function () {
     console.log('  ' + r.name.padEnd(26) +
       (b.claimed + '/14 f=' + b.faceFrac.toFixed(2)).padEnd(16) +
       (a.claimed + '/14 f=' + a.faceFrac.toFixed(2)).padEnd(16) +
+      (r.fit.wholeGate.applies ? 'MATCH  ' : '       ') +
       (r.fit.located ? ('found, contrast ' + r.fit.locateContrast + (r.fit.fitted ? (' · ' + r.fit.planWhy) : ' · no crop kept'))
         : ('refused — ' + r.fit.locateWhy)));
   });
@@ -198,6 +210,15 @@ const FIXTURE = function () {
       r.fit.after.derived.join(', ') + ')');
     ok(r.fit.after.derived.indexOf('skin') >= 0,
       r.name + ' — skin is still unreadable after the crop, so partial application would refuse');
+    /* THE HEADLINE. On the ordinary indoor frame the doctor should now get a
+       COMPLETED match, not the partial one he was shown — and it clears the
+       gate that has not moved: six claims including the skin/hair identity
+       pair. If this ever regresses to partial, the partial path is still
+       honest, but the owner's complaint is back. */
+    ok(r.fit.wholeGate.applies,
+      r.name + ' — after the crop this still does NOT clear the unchanged whole-read gate (' +
+      r.fit.wholeGate.claimed + ' claims, identity palette ' + r.fit.wholeGate.hasIdentityPalette +
+      '), so the doctor still sees an incomplete match in his own room');
   });
 
   /* ---- 3. ⛔ THE NEGATIVE CONTROLS ------------------------------------- */
