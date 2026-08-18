@@ -109,6 +109,14 @@ const tests = [
      storage ceiling that pauses with the truth. Drives the real range engine
      in a VM against a fake importer; no browser, no athenaOne, no PHI. */
   '1p-range-year-readiness.test.js',
+  /* The four Calendar pull-surface defects the owner reported on 2026-08-18:
+     a future day's rows reading like failures, the hero's verdict printing a
+     paragraph of reconciliation prose, a violet progress bar with its caption
+     painted on the fill, and the hero re-targeting itself to today in the
+     middle of a pull for another day. Drives the real shell in real Chrome,
+     with the automatic post-pull jump that causes the last one proved live
+     before it is proved stopped. */
+  '1p-calendar-pull-surface.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */
