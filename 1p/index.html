@@ -44856,5 +44856,158 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 })();
 </script>
 <!-- ===== end dockcal-1.0.0 ============================================== -->
+<!-- ===== clunky-header-1.0.0 — the date and mode chips stop hiding under the bar
+     CLUNKY AUDIT items 6 (sev 3), 20, 83, 107, 140 and the unverified
+     "day and mode chips float over the Copilot/Analysis cards".
+
+     MEASURED at HEAD, 1366x900, on Patients / Visit / Calendar / AI Studio:
+       #mslToday  fixed  z 940  rect 1237,14 96x40
+       #mslChip   fixed  z 941  rect 1247,62 86x32
+       #appHeader sticky z 6000 rect 236,0 1115x87
+     document.elementFromPoint at the CENTRE of #mslChipBtn returned
+     #appHeader on all four screens — the mode switch was not clickable
+     anywhere, at any width, and the date chip was a sliver behind the bar.
+
+     WHY NOT JUST RAISE THE Z-INDEX. Because that is the next collision: at
+     375 and 768 the same two chips already land on #mlsRdNewBtn, so lifting
+     them above the header would trade an invisible control for a covered
+     one, and on the phone they also sit over the sign-in card (#83) and over
+     Staff Prep's segmented tabs (#140). A floating layer over a sticky bar
+     has nowhere left to go.
+
+     SO THEY STOP FLOATING. Both chips move into the redesign header's own
+     top row (#mlsRdTop, right before #mlsRdMenuSlot) and become ordinary
+     in-flow items. Nothing can cover them because they are inside the thing
+     that was covering them; they disappear with the header on the sign-in
+     screen because #appHeader lives inside #appScreen; and they cannot float
+     over any room, because they no longer float.
+
+     THE ROOM THEY NEED. #mlsRdTop at 375 measured rail 44 + back 44 +
+     title 160 + menu 44 with ~43px of slack, so the date chip (a label, not
+     a control) stands down below 760px and the title becomes shrinkable —
+     the mode chip is the one that must survive, because it is the control.
+
+     If the redesign header is not on the page (classic layout, ?ui=classic)
+     nothing moves and the chips keep their old fixed position. -->
+<style id="mlsClunkyHeaderCss">
+html.mls-clunky-hdr #mslToday,
+html.mls-clunky-hdr #mslChip{
+  position:static !important;
+  top:auto !important; right:auto !important; bottom:auto !important; left:auto !important;
+  z-index:auto !important;
+  flex:0 0 auto;
+}
+/* the menu still hangs off the chip, so the chip owns a containing block */
+html.mls-clunky-hdr #mslChip{
+  position:relative !important;
+  flex-direction:row; align-items:center;
+}
+html.mls-clunky-hdr #mslChipMenu{
+  position:absolute; top:calc(100% + 8px); right:0; z-index:9500;
+}
+/* CLUNKY item 55 — "the mode menu stretches almost the whole screen wide and
+   the taskbar choices are crammed into one long horizontal line."
+   CAUSE, read off dock-1p-1.1.0's ensureRows(): #dockChipRows is a plain DIV
+   appended to a column-flex menu, so its five <button> children (inline-block)
+   lay out in ONE inline row and drag the menu out to 874px at 1280. The menu
+   itself has a min-width and no max. Both halves fixed here, additively, so
+   the dock block keeps its own bytes. */
+#mslChipMenu{ max-width:min(300px, calc(100vw - 24px)); box-sizing:border-box; }
+#dockChipRows{ display:flex; flex-direction:column; gap:2px; }
+#dockChipRows .mslChipItem{ width:100%; }
+/* the header title yields first — it is the only elastic thing in the row */
+html.mls-clunky-hdr #mlsRdTitle{
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+html.mls-clunky-hdr #mslToday{ padding:4px 10px; }
+@media (max-width:760px){
+  html.mls-clunky-hdr #mslToday{ display:none !important; }
+  html.mls-clunky-hdr #mslChipBtn{ padding:4px 9px; font-size:11.5px; }
+}
+</style>
+<script>
+/* clunky-header-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyHeader) return;
+  var VERSION = 'clunky-header-1.0.0';
+  var moves = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+
+  /* One mount pass. Returns true when both chips are where they belong (or
+     when there is nothing to mount into, which is a legitimate steady state
+     on the classic layout). */
+  function mount() {
+    var top = el('mlsRdTop');
+    if (!top) return false;
+    var slot = el('mlsRdMenuSlot');
+    var host = (slot && slot.parentNode === top) ? slot : top;
+    var today = el('mslToday');
+    var chip = el('mslChip');
+    /* Order inside the right-hand slot: date, mode, then whatever the header
+       already put there (+ New, the ⋯ menu, the user chip). The slot is the
+       node that carries the row's `margin-left:auto`, so mounting INSIDE it
+       is what keeps the chips right-aligned; mounting before it measured
+       x=577 in a 1366 header — adrift in the middle of the bar.
+
+       THE ARRANGEMENT IS CHECKED WHOLE, not node by node. A per-node "is this
+       one first?" test is unstable: moving A to the front makes B not-first,
+       the observer fires, B goes to the front, and the two chips trade places
+       forever. */
+    var want = [];
+    if (today) want.push(today);
+    if (chip) want.push(chip);
+    if (!want.length) return false;
+    var settled = true, cur = host.firstChild;
+    for (var i = 0; i < want.length; i++) {
+      if (cur !== want[i]) { settled = false; break; }
+      cur = cur.nextSibling;
+    }
+    if (settled) return true;
+    var did = false;
+    try {
+      for (var j = want.length - 1; j >= 0; j--) { host.insertBefore(want[j], host.firstChild); }
+      did = true; moves++;
+    } catch (e) {}
+    try { document.documentElement.classList.add('mls-clunky-hdr'); } catch (e) {}
+    return did || !!(today && chip);
+  }
+
+  function arm() {
+    mount();
+    /* The redesign module rebuilds #mlsRdTop on some view changes, and the
+       two chips are created by their own blocks on their own schedule, so
+       one pass at boot proves nothing. Watch the header and re-mount. */
+    try {
+      var obs = new MutationObserver(function () { mount(); });
+      var hdr = el('appHeader');
+      if (hdr) obs.observe(hdr, { childList: true, subtree: true });
+      if (document.body) obs.observe(document.body, { childList: true });
+    } catch (e) {}
+    [120, 400, 1200, 3000, 6000].forEach(function (ms) { setTimeout(mount, ms); });
+    try { window.addEventListener('focus', mount, false); } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm);
+  else arm();
+
+  window.__mlsClunkyHeader = {
+    version: VERSION,
+    mount: mount,
+    moves: function () { return moves; },
+    revert: function () {
+      try {
+        document.documentElement.classList.remove('mls-clunky-hdr');
+        ['mslToday', 'mslChip'].forEach(function (id) {
+          var n = el(id); if (n && document.body) document.body.appendChild(n);
+        });
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end clunky-header-1.0.0 ======================================= -->
 </body>
 </html>

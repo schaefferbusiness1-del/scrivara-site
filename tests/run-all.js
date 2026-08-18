@@ -43,6 +43,13 @@ const tests = [
   '1p-visitflow-transcript-contract.test.js',
   '1p-uimap-dockspace-contract.test.js',
   '1p-quietnotify-contract.test.js',
+  /* The 2026-08-17/18 clunky audit's 148 confirmed defects, as properties:
+     the mode/date chips reachable rather than under the header bar, one
+     state-driven primary control per Staff Prep job state, the calendar's
+     name-first chips, Settings' one footer and one title, the pull card's
+     honest bar, and the notice layer that never lands on the dock. Drives the
+     real shell in real Chrome with a synthetic 28-patient day. */
+  '1p-clunky-contract.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */
