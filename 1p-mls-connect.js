@@ -4978,11 +4978,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            not a warning. Only a row whose retry is spent says it could not be
            read, and it says nothing was lost. */
         var dnRetrying = dnRaw.indexOf('retrying:') === 0;
+        /* ===== fdw-1.0.0 (a future day is not a failure, and must not read
+           like one) =====
+           OWNER 2026-08-18, watching a pull of TOMORROW: he read the per-row
+           "day not here yet" as the day-note DEFECT coming back. fd-1.0.0's
+           semantics were already right - the row is stamped "future-day",
+           counted in todayNoteSkippedFutureDay, and never in
+           todayNoteFailures - so nothing about the stamp, the receipt or the
+           skip changes here. Only the SENTENCE changes, because "not here"
+           and "not read" are the two phrases every failing row on this panel
+           uses, and a calm state that borrows a failure's words is read as a
+           failure. It now says what is true and what was kept. */
         var dnWhy = dnRaw === 'read' ? 'note saved'
           : dnRaw === 'not-yet' ? 'not seen yet'
-          : dnRaw === 'future-day' ? 'day not here yet'
+          : dnRaw === 'future-day' ? 'visit hasn’t happened yet — nothing to read (chart saved)'
           : dnRetrying ? 'today’s note not read yet — retrying'
           : 'today’s note not read this time (chart saved)';
+        /* ===== end fdw-1.0.0 ===== */
         var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day' || dnRetrying) ? 'pp-wait' : 'pp-bad');
         var dnTitle = (dnRaw.indexOf('unread:') === 0 || dnRetrying) ? ' title="' + esc(dnRaw.slice(dnRetrying ? 9 : 7, 207)) + '"' : '';
         dnCell = '<span class="' + dnCls + '"' + dnTitle + ' style="opacity:.8">' + esc(dnWhy) + '</span>';
@@ -5243,6 +5255,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        sit BESIDE the saved count, never inside the failure count. */
     if (dv && Number(dv.summaryPending || 0) > 0) doneLine += ' \u00B7 ' + dv.summaryPending + ' summar' + (Number(dv.summaryPending) === 1 ? 'y' : 'ies') + ' pending';
     if (dv && Number(dv.tnNotYet || 0) > 0) doneLine += ' \u00B7 ' + dv.tnNotYet + ' not seen yet';
+    /* ===== fdw-1.0.0: the Result line states the future day ONCE =====
+       fd-1.0.0 already skips the note leg for a day that has not happened
+       (dayVerdict.tnFuture counts those rows). Said once here, as a fact
+       about the DAY rather than N repetitions of a per-row absence, so the
+       one place a doctor looks for the verdict explains every calm row
+       underneath it. It is never a count of failures: tnFailed is a separate
+       clause and stays exactly as it was. */
+    if (dv && Number(dv.tnFuture || 0) > 0) doneLine += ' \u00B7 notes: this day is in the future';
+    /* ===== end fdw-1.0.0 ===== */
     if (dv && Number(dv.tnFailed || 0) > 0) doneLine += ' \u00B7 ' + dv.tnFailed + ' pulled-day note' + (Number(dv.tnFailed) === 1 ? '' : 's') + ' not read yet';
     /* ===== end cap-1.0.0 + tny-1.0.0 ===== */
     if (dv && dv.complete === true) doneLine += ' \u2014 everything verified';
@@ -49499,7 +49520,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (!bar) {
           bar = document.createElement('div'); bar.id = 'mlsDsPullBar';
           bar.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
-          bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+          bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#3B7C5A);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
           stat.parentNode.insertBefore(bar, stat.nextSibling);
         }
         var fill = bar.firstElementChild;
@@ -49816,7 +49837,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (!bar) {
             bar = document.createElement('div'); bar.id = 'mlsDsPullBar';
             bar.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
-            bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+            bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#3B7C5A);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
             rstat.parentNode.insertBefore(bar, rstat.nextSibling);
           }
           var fill = bar.firstElementChild;
@@ -49902,7 +49923,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (!bar) {
             bar = document.createElement('div'); bar.id = 'mlsDsPullBar';
             bar.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
-            bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+            bar.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#3B7C5A);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
             stat.parentNode.insertBefore(bar, stat.nextSibling);
           }
           var fill = bar.firstElementChild;
@@ -54817,7 +54838,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!b) {
       b = document.createElement('div'); b.id = BAR_ID;
       b.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
-      b.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+      b.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#3B7C5A);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
     }
     try { if (anchor && anchor.parentNode && b.previousSibling !== anchor) anchor.parentNode.insertBefore(b, anchor.nextSibling); } catch (e) {}
     return b;
@@ -54852,6 +54873,104 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     s.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#1c5a3c' : '#33424e');
     if (msg) paintBar(s, msg); else hideBar();
   }
+
+  /* ===== calmreceipt-1.0.0 - one sentence on screen, the ledger one click in
+     ==========================================================================
+     OWNER 2026-08-18, on the screen a calendar-hero pull leaves behind:
+
+       "Wed, Aug 19 is ready - 19 appointments reconciled, history read for 19
+        of 19 as the reader counted it. Chart content in MLS: 19 of 19
+        patients. 19 of 19 stored records changed during this pull.
+        [expected 19 - found 19 - resolved 19 (3 new) - unresolved 0]"
+
+     Every clause of that is load-bearing and was added because a pull once
+     reported success while the store gained nothing (b940), so NOTHING here is
+     deleted, shortened, re-worded or recomputed. classifyPullResult still
+     produces the exact same string; it moves, verbatim and complete, into a
+     CLOSED <details> called "Details", and the line the doctor reads first is
+     one plain sentence.
+
+     THE HEADLINE IS DERIVED FROM THE RECEIPT, NOT FROM THE PROSE. It reads
+     "all N patients pulled and verified" ONLY when the receipt says every one
+     of the four things the long sentence can report is clean: every scheduled
+     row has a complete history, the store census measured content for every
+     one of them, and no pulled-day note failed. Any other shape says
+     "D of N ... Open Details for the rest", so the fold can never hide a
+     shortfall behind a rosier summary. A message that is not a
+     "<day> is ready -" verdict (a refusal, an empty day, a busy click) is not
+     folded at all and prints exactly as it does today. */
+  function verdictParts(msg, result) {
+    var text = String(msg == null ? '' : msg);
+    var m = text.match(/^([\s\S]{1,80}? is ready)\s*—\s*[\s\S]+$/);
+    if (!m) return null;
+    var prefix = m[1];
+    var r = (result && typeof result === 'object') ? result : {};
+    var sr = r.scheduleReceipt || {}, hr = r.historyReceipt || {};
+    var rows = Number(sr.parsedCount != null ? sr.parsedCount : (sr.mergedRows != null ? sr.mergedRows : 0));
+    /* the provider-unknown census verdict: a schedule, no history leg */
+    if (r.appointmentCensusOnly === true) {
+      var cen = r.appointmentCensusReceipt || {};
+      var cRows = Number(cen.rowCount != null ? cen.rowCount : rows);
+      if (!(cRows > 0)) return null;
+      return { head: prefix + ' — all ' + cRows + ' appointment' + (cRows === 1 ? '' : 's') + ' are in MLS.', full: text };
+    }
+    if (!(rows > 0)) return null;
+    if (hr.requested == null) {
+      return { head: prefix + ' — all ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' are in MLS.', full: text };
+    }
+    var done = 0;
+    try { done = (hr.patients || []).filter(function (p) { return p && p.complete === true; }).length; } catch (eD) { done = 0; }
+    var census = hr.storeCensus || null;
+    var clean = (done === rows);
+    if (census) {
+      if (census.measured !== true) clean = false;                       /* an unmeasured store is not a verified one */
+      else if (Number(census.targets || 0) > Number(census.withContent || 0)) clean = false;
+    }
+    if (Number(hr.todayNoteFailures || 0) > 0) clean = false;
+    if (clean) return { head: prefix + ' — all ' + rows + ' patient' + (rows === 1 ? '' : 's') + ' pulled and verified.', full: text };
+    return { head: prefix + ' — ' + done + ' of ' + rows + ' patient' + (rows === 1 ? '' : 's') + ' pulled and verified. Open Details for the rest.', full: text };
+  }
+  var VERDICT_CSS_ID = 'mlsCvVerdictCss';
+  function verdictCss() {
+    if (document.getElementById(VERDICT_CSS_ID)) return;
+    var st = document.createElement('style');
+    st.id = VERDICT_CSS_ID;
+    st.textContent = [
+      '#' + STATUS_ID + ' .cvv-head{font:700 13.5px/1.45 system-ui,sans-serif}',
+      '#' + STATUS_ID + ' .cvv-more{margin-top:7px}',
+      '#' + STATUS_ID + ' .cvv-more>summary{cursor:pointer;font:600 12px/1.5 system-ui,sans-serif;color:#41606d}',
+      '#' + STATUS_ID + ' .cvv-body{margin-top:5px;font:500 12px/1.55 system-ui,sans-serif;color:#41606d;word-break:break-word}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(st);
+  }
+  /* Returns the parts it painted (so the toast can say the same one sentence),
+     or null when it fell through to the unchanged plain paint. */
+  function paintVerdict(el, msg, kind, result) {
+    var parts = safe(function () { return verdictParts(msg, result); }, null);
+    if (!parts) { paint(el, msg, kind); return null; }
+    var s = statusEl(el);
+    verdictCss();
+    s.style.display = 'block';
+    s.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#1c5a3c' : '#33424e');
+    while (s.firstChild) s.removeChild(s.firstChild);
+    var head = document.createElement('div');
+    head.className = 'cvv-head';
+    head.textContent = parts.head;
+    var det = document.createElement('details');
+    det.className = 'cvv-more';
+    var sum = document.createElement('summary');
+    sum.textContent = 'Details';
+    var body = document.createElement('div');
+    body.className = 'cvv-body';
+    body.textContent = parts.full;   /* VERBATIM. Never re-worded, never trimmed. */
+    det.appendChild(sum);
+    det.appendChild(body);
+    s.appendChild(head);
+    s.appendChild(det);
+    paintBar(s, msg);                /* the bar behaves exactly as it did before */
+    return parts;
+  }
+  /* ===== end calmreceipt-1.0.0 ===== */
   function clearDiag() {
     try { var b = document.getElementById(DIAG_ID); if (b && b.parentNode) b.parentNode.removeChild(b); } catch (e) {}
   }
@@ -54943,6 +55062,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var mySerial = ++sessionSerial;
     if (!isAutoRetry) { autoRetryCount = 0; clearDiag(); }
     var day = targetDay();
+    /* ===== calday-1.0.0 (the hero may not change day under a running pull) ===
+       Two publications, both read by the caldaysel block below:
+         __mlsCalPullDay  - the day this pull is for, while it runs.
+         __mlsCalUserDayAt - the "a human chose a day" stamp that
+           feat_mls_datalink_exact.js's focusCalDay() already honours for five
+           minutes. Pressing a button that NAMES a day is exactly that choice,
+           and without the stamp datalink's post-pull jump re-targeted the
+           calendar at TODAY mid-pull (see caldaysel-1.0.0). */
+    try { window.__mlsCalPullDay = day; } catch (ePd) {}
+    try { window.__mlsCalUserDayAt = Date.now(); } catch (eUd) {}
+    /* ===== end calday-1.0.0 ===== */
     try { el.disabled = true; } catch (e) {}
     paint(el, isAutoRetry ? ('Re-reading ' + day + ' automatically…') : ('Starting the Athena pull for ' + day + '…'), '');
     var onStatus = function (m) { if (mySerial !== sessionSerial) return; if (!barStartedAt) barStartedAt = Date.now(); paint(el, String(m || ''), ''); };
@@ -54972,6 +55102,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     busy = false;
+    /* calday-1.0.0: the run is genuinely over here (the transient-retry branch
+       above returns without reaching this line, so a re-read keeps the pin). */
+    try { window.__mlsCalPullDay = ''; } catch (ePd2) {}
     try { el.disabled = false; } catch (e) {}
     /* p1-busy-click-1.0.0: the hero button shares the engine with the Visit
        strip. A refusal to START must not paint an error verdict or offer an
@@ -54984,8 +55117,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     var outcome = classify(result, day);
-    paint(el, outcome.message, outcome.ok ? 'ok' : 'err');
-    try { if (isFn(window.toast)) window.toast(outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}
+    /* calmreceipt-1.0.0: one sentence on screen, the whole receipt one click
+       in. paintVerdict falls back to the byte-identical plain paint for any
+       message that is not a "<day> is ready —" verdict. */
+    var vParts = paintVerdict(el, outcome.message, outcome.ok ? 'ok' : 'err', result);
+    try { if (isFn(window.toast)) window.toast(vParts ? vParts.head : outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}
     if (!outcome.ok) armDiag(el, result, day); else clearDiag();
     try { if (isFn(window.loadCalendar)) window.loadCalendar(); } catch (e) {}
   }
@@ -55008,6 +55144,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     run: runHeroPull,
     _calendarChipProviderScope: calendarChipProviderScope,
     _classify: classify,
+    _verdictParts: verdictParts,      /* calmreceipt-1.0.0 contract-test seam */
+    _paintVerdict: paintVerdict,      /* calmreceipt-1.0.0 contract-test seam */
+    _targetDay: targetDay,            /* calday-1.0.0 contract-test seam */
+    /* calday-1.0.0: the day of the pull IN FLIGHT, or ''. Deliberately the
+       published global rather than the local `busy` latch - runHeroPull writes
+       it at entry and settle() clears it at the one exit that is really the
+       end of the run, so the two can never disagree, and a caller outside this
+       IIFE can read the same truth. */
+    pullingDay: function () { return String(safe(function () { return window.__mlsCalPullDay || ''; }, '')); },
+    busy: function () { return busy; },
     revert: function () {
       try { document.removeEventListener('click', onHeroClickCapture, true); } catch (e) {}
       clearDiag();
@@ -55016,3 +55162,379 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
   };
 })();
+
+/* ===== calmbar-1.0.0 - the pull bar is green, and its caption is off the fill
+   ==========================================================================
+   OWNER 2026-08-18, on the Calendar screen during a pull: the progress bar
+   painted a blue->purple gradient with its caption ("Histories 19/19 - 6m 3s")
+   sitting in white, centre-aligned, ON TOP of the fill.
+
+   TWO defects, one block.
+
+   (1) THE COLOUR. Four painters in this file build the same bar
+       (#mlsDsPullBar x3 and #mlsCvHeroBar, deliberately self-contained copies
+       so one lane's missing element cannot blank another's bar) and every one
+       of them hard-codes linear-gradient(90deg,#2E6A4B,#7A5CC0) - brand green
+       running into #7A5CC0, a violet that appears nowhere in this app's
+       palette except the premium pills. The pull panel's own bar (.pp-fill,
+       same file) has always used #2E6A4B -> #3B7C5A. That is the app's calm
+       green and it is what all four now use.
+
+   (2) THE CAPTION. Centre-aligned white text inside a partially filled track
+       is legible only while the bar is nearly full. MEASURED on the rendered
+       bar: at 2 of 19 the fill is 11% wide and the centred caption sits almost
+       entirely on the UNFILLED track (#E3ECE7) - white on #E3ECE7 is 1.28:1,
+       which is not text, it is a rumour. The caption moves out of the track
+       into its own left-aligned line directly above it, where it is dark ink
+       on the card at every percentage.
+
+   HOW, AND WHY IT IS DONE THIS WAY. The four painters keep writing their text
+   into the fill exactly as they do today, because that string is also the
+   INPUT to pullface-1.0.0's one-bar phase observer in the shell, which reads
+   fill.textContent, maps the phase onto a segment of the whole pull, and
+   writes it back. Re-plumbing four painters and an observer onto a new node is
+   four chances to drop a bar. Instead the fill's own text is made invisible
+   (font-size:0, and the bar is aria-hidden so a screen reader is not read a
+   zero-size duplicate of the status line beside it) and mirrored, unchanged,
+   into a caption element inserted before the bar. Every existing writer and
+   reader still sees exactly the string it wrote.
+
+   Reverse: window.__mlsCalmBar.revert(). ================================== */
+(function () {
+  'use strict';
+  if (window.__mlsCalmBar && window.__mlsCalmBar.installed) return;
+  var VERSION = 'calmbar-1.0.0';
+  var CSS_ID = 'mlsCalmBarCss';
+  var BARS = ['mlsDsPullBar', 'mlsCvHeroBar'];
+  var FILL = 'linear-gradient(90deg,#2E6A4B,#3B7C5A)';
+  var INK = '#33424e';
+  var api = { installed: true, version: VERSION, mirrors: 0, caps: 0, fill: FILL, ink: INK };
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function capId(id) { return id + 'Cap'; }
+
+  function css() {
+    if (document.getElementById(CSS_ID)) return;
+    var st = document.createElement('style');
+    st.id = CSS_ID;
+    st.textContent = [
+      /* The fill is written with an INLINE background by four painters, so an
+         inline declaration has to be beaten: !important, deliberately. */
+      '#mlsDsPullBar>div,#mlsCvHeroBar>div{background:' + FILL + '!important;',
+      '  font-size:0!important;line-height:0!important;color:transparent!important}',
+      '.mls-calmbar-cap{flex-basis:100%;width:100%;display:none;margin:2px 0 3px;',
+      '  text-align:left;font:600 11.5px/1.45 system-ui,sans-serif;color:' + INK + '}',
+      '.mls-calmbar-cap[data-on="1"]{display:block}'
+    ].join('\n');
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function capFor(bar) {
+    var c = document.getElementById(capId(bar.id));
+    if (!c) {
+      c = document.createElement('div');
+      c.id = capId(bar.id);
+      c.className = 'mls-calmbar-cap';
+      api.caps++;
+    }
+    /* Always directly above its own bar: the painters re-insert the bar when
+       their host is rebuilt, and a caption stranded beside a different node is
+       a caption for nothing. */
+    safe(function () { if (bar.parentNode && bar.previousSibling !== c) bar.parentNode.insertBefore(c, bar); });
+    return c;
+  }
+
+  function mirror(bar) {
+    if (!bar) return false;
+    var fill = bar.firstElementChild;
+    if (!fill) return false;
+    if (bar.getAttribute('aria-hidden') !== 'true') bar.setAttribute('aria-hidden', 'true');
+    var shown = bar.style.display !== 'none';
+    var text = String(fill.textContent || '');
+    var c = capFor(bar);
+    var want = (shown && text) ? '1' : '0';
+    if (c.getAttribute('data-on') !== want) c.setAttribute('data-on', want);
+    if (c.textContent !== text) { c.textContent = text; api.mirrors++; }
+    return true;
+  }
+
+  function sweep() {
+    css();
+    for (var i = 0; i < BARS.length; i++) {
+      (function (id) { safe(function () { mirror(document.getElementById(id)); }); })(BARS[i]);
+    }
+  }
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never rAF: a pull runs with this tab behind athenaOne and
+       rAF does not fire in a non-compositing tab - the caption would freeze on
+       whatever number was on screen when the tab went behind. */
+    setTimeout(function () { queued = false; safe(sweep); }, 0);
+  }
+
+  function watch() {
+    for (var i = 0; i < BARS.length; i++) {
+      var b = document.getElementById(BARS[i]);
+      if (!b || b.__mlsCalmBarWatched) continue;
+      b.__mlsCalmBarWatched = true;
+      (function (node) {
+        safe(function () {
+          new MutationObserver(refresh).observe(node, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style'] });
+        });
+      })(b);
+    }
+  }
+
+  function boot() {
+    css();
+    watch();
+    refresh();
+    /* These two nodes are created and destroyed inside a pull that runs for
+       minutes, so this keeps running for the life of the tab - two
+       getElementById calls and change-guarded writes, not a scan. */
+    setInterval(function () { watch(); refresh(); }, 700);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+
+  api.sweep = sweep;
+  api.report = function () {
+    var out = { version: VERSION, bars: [] };
+    for (var i = 0; i < BARS.length; i++) {
+      var b = document.getElementById(BARS[i]);
+      if (!b) continue;
+      var c = document.getElementById(capId(BARS[i]));
+      out.bars.push({
+        id: BARS[i], shown: b.style.display !== 'none',
+        fillText: String((b.firstElementChild && b.firstElementChild.textContent) || ''),
+        capText: c ? String(c.textContent || '') : null,
+        capOn: !!(c && c.getAttribute('data-on') === '1')
+      });
+    }
+    return out;
+  };
+  api.revert = function () {
+    safe(function () { var s = document.getElementById(CSS_ID); if (s && s.parentNode) s.parentNode.removeChild(s); });
+    for (var i = 0; i < BARS.length; i++) {
+      (function (id) {
+        safe(function () { var c = document.getElementById(id + 'Cap'); if (c && c.parentNode) c.parentNode.removeChild(c); });
+        safe(function () { var b = document.getElementById(id); if (b) b.removeAttribute('aria-hidden'); });
+      })(BARS[i]);
+    }
+    api.installed = false;
+    return true;
+  };
+  window.__mlsCalmBar = api;
+})();
+/* ===== end calmbar-1.0.0 ================================================= */
+
+/* ===== caldaysel-1.0.0 - the hero offers the day that is OPEN, and a running
+   pull owns its day ========================================================
+   DEFECT 4, watched live by the lead 2026-08-18: with the Aug 19 day panel
+   open and the Aug 19 pull RUNNING, the Calendar hero re-labelled itself
+   "Pull Tuesday, Aug 18" in the middle of the pull.
+
+   THE MECHANISM, read out of the frozen files rather than guessed:
+     - the hero's label is built by feat_mls_calm_views.js mountPrimary() from
+       window._calRefDate (its calRefDate(), :222), so whatever moves
+       _calRefDate moves the hero - and chp-1.0.0's targetDay() above
+       dispatches the pull on that same global;
+     - feat_mls_datalink_exact.js wraps pullScheduleViaAssist, loadCalendar and
+       _importPulledSchedule (PULL_FNS, :339) and 900 ms + 2400 ms after any of
+       them fires runs syncAll("pull", true) -> focusCalDay(pulledDate());
+     - pulledDate() (:115) returns TODAY whenever today has any appointment at
+       all. It is not the day that was pulled - it is "today, if today is
+       busy";
+     - focusCalDay then writes window._calRefDate = today and re-opens today's
+       panel. Its only brake is window.__mlsCalUserDayAt, a five-minute
+       "a human chose this day" stamp - and the only thing in the whole app
+       that stamped it was calm-views' "Jump to it" button. Clicking a day CELL
+       to open its panel did not stamp it, and neither did pressing the hero.
+
+   So the schedule import inside the Aug 19 pull re-entered the calendar, the
+   automatic jump resolved to Aug 18 because Aug 18 had appointments, and the
+   hero followed it - mid-pull.
+
+   WHAT THIS PINS, in the two halves the contract asks for:
+     A. THE OPEN PANEL OWNS THE HERO. While #calDayPanel is displayed on day D,
+        _calRefDate is re-asserted to D before every repaint, so the hero
+        offers the day the doctor is looking at. Closing the panel (calToday,
+        calJump and - since CLUNKY 33 - calSetMode all hide it) releases this
+        immediately, so day and week navigation are untouched.
+     B. A RUNNING PULL OWNS ITS DAY. While chp-1.0.0 reports a pull in flight
+        for day X, _calRefDate is re-asserted to X, and the pull start stamps
+        __mlsCalUserDayAt so datalink's automatic jump stands down exactly the
+        way it already does for the Jump button. A deliberate click on a day
+        NAVIGATION control (the ones whose own onclick names calOpenDay /
+        calSetMode / calPrev / calNext / calToday / calJump / _calRefDate=)
+        releases the pin: the doctor out-ranks the machine, which is the
+        standing law on this surface, and the hero is disabled for the whole
+        pull anyway.
+
+   Nothing here starts, stops, re-targets or re-orders a pull, and it reads no
+   receipt. It writes one date string and one timestamp.
+   Reverse: window.__mlsCalDaySel.revert(). ================================ */
+(function () {
+  'use strict';
+  if (window.__mlsCalDaySel && window.__mlsCalDaySel.installed) return;
+  var VERSION = 'caldaysel-1.0.0';
+  var KEY = /^\d{4}-\d{2}-\d{2}$/;
+  var HERO_ID = 'mlsCvNxt_calendar';
+  var NAV_ONCLICK = /calOpenDay\(|calSetMode\(|calPrev\(|calNext\(|calToday\(|calJump\(|_calRefDate\s*=/;
+  var api = { installed: true, version: VERSION, pins: 0, stamps: 0, wraps: 0, reopens: 0, lastPin: '' };
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function key(v) { var s = String(v == null ? '' : v); return KEY.test(s) ? s : ''; }
+
+  function pullDay() {
+    return safe(function () {
+      var h = window.__mlsCalHeroPull;
+      return (h && typeof h.pullingDay === 'function') ? key(h.pullingDay()) : '';
+    }, '');
+  }
+  function panelDay() {
+    return safe(function () {
+      var p = document.getElementById('calDayPanel');
+      if (!p) return '';
+      /* getComputedStyle, not style.display: the panel is also hidden by a
+         stylesheet at some widths, and a rect read would force layout inside
+         the repaint this runs in front of. */
+      var cs = window.getComputedStyle(p);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return '';
+      return key(window._calSelDay);
+    }, '');
+  }
+
+  var userNavAt = 0, pinFrom = 0, seenPullDay = '';
+  function trackPull() {
+    var d = pullDay();
+    if (!d) { seenPullDay = ''; pinFrom = 0; return ''; }
+    if (d !== seenPullDay) { seenPullDay = d; pinFrom = Date.now(); }
+    return d;
+  }
+  /* The day the hero must offer right now, or '' for "leave it alone". */
+  function wantDay() {
+    var p = trackPull();
+    if (p && userNavAt <= pinFrom) return p;
+    return panelDay();
+  }
+  function pin() {
+    var want = wantDay();
+    if (!want) return false;
+    if (key(safe(function () { return window._calRefDate; }, '')) === want) return false;
+    safe(function () { window._calRefDate = want; });
+    api.pins++; api.lastPin = want;
+    /* calm-views repaints the hero only when one of ITS observers fires, and a
+       pin can land without any DOM mutation behind it. Its own reconcile() is
+       a debounced, single-flight dirty flag that writes nothing when nothing
+       changed, so poking it is the cheap, in-contract way to make the label
+       follow the day it now names. */
+    safe(function () {
+      var cv = window.__mlsCalmViews;
+      if (cv && typeof cv.reconcile === 'function') cv.reconcile('calendar', false);
+    });
+    return true;
+  }
+
+  /* A day-navigation click is the doctor choosing a day. It both releases the
+     pull pin and sets the stamp datalink's focusCalDay already honours, so the
+     automatic "jump to today" cannot repaint over a day he just chose. */
+  function onNavClick(ev) {
+    try {
+      var t = ev && ev.target;
+      if (!t || !t.closest) return;
+      if (!t.closest('#calendarView')) return;
+      if (t.closest('#' + HERO_ID)) return;           /* the pull button is not a day choice */
+      var owner = t.closest('[onclick]');
+      if (!owner || !NAV_ONCLICK.test(String(owner.getAttribute('onclick') || ''))) return;
+      userNavAt = Date.now();
+      safe(function () { window.__mlsCalUserDayAt = userNavAt; });
+      api.stamps++;
+    } catch (e) {}
+  }
+  try { document.addEventListener('click', onNavClick, true); } catch (eL) {}
+
+  /* Wrap renderCalendar so the pin lands BEFORE the grid is drawn: every
+     painter in the shell and in feat_mls_calendar_exact.js goes through it,
+     and _calRenderDay reads _calRefDate while it runs. The stamp lives on the
+     WRAPPER, which is what the next arm pass reads - putting it on the
+     original is how a "wrap once" guard silently wraps twice. */
+  function wrapRender() {
+    var cur = safe(function () { return window.renderCalendar; }, null);
+    if (typeof cur !== 'function' || cur.__calDaySelWrapped) return false;
+    var w = function () { safe(pin); return cur.apply(this, arguments); };
+    w.__calDaySelWrapped = true;
+    w.__calDaySelInner = cur;
+    safe(function () { window.renderCalendar = w; });
+    api.wraps++;
+    return true;
+  }
+  /* Opening a day IS choosing it, so the panel's day becomes the hero's day
+     the moment the panel is written, without waiting for the next repaint.
+     AND: pinning _calRefDate alone would have created the mirror-image of the
+     defect - datalink re-opening TODAY's panel under a hero still labelled for
+     the pulled day. When a pinned day is in force and something re-opened a
+     different one, the pinned day is re-opened, once, guarded against
+     re-entry. A doctor's own day click is not affected: onNavClick runs in the
+     capture phase, so userNavAt is already newer than pinFrom by the time the
+     cell's inline onclick calls calOpenDay, and wantDay() has stood down. */
+  var reopening = false;
+  function wrapOpen() {
+    var cur = safe(function () { return window.calOpenDay; }, null);
+    if (typeof cur !== 'function' || cur.__calDaySelWrapped) return false;
+    var w = function () {
+      var r = cur.apply(this, arguments);
+      if (!reopening) {
+        var want = safe(wantDay, '');
+        if (want && key(safe(function () { return window._calSelDay; }, '')) !== want) {
+          reopening = true;
+          try { cur.call(window, want); api.reopens++; } catch (eRo) {} finally { reopening = false; }
+        }
+      }
+      safe(pin);
+      return r;
+    };
+    w.__calDaySelWrapped = true;
+    w.__calDaySelInner = cur;
+    safe(function () { window.calOpenDay = w; });
+    api.wraps++;
+    return true;
+  }
+  function arm() { wrapRender(); wrapOpen(); }
+
+  function boot() {
+    arm();
+    /* Bounded re-arm: several deferred modules REPLACE these globals outright
+       rather than wrapping them. Bounded, so it cannot become a permanent
+       timer. */
+    var n = 0, t = setInterval(function () { arm(); if (++n > 20) clearInterval(t); }, 600);
+    [300, 900, 2000, 4000].forEach(function (ms) { setTimeout(arm, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+
+  api.pin = pin;
+  api._wantDay = wantDay;
+  api.report = function () {
+    return {
+      version: VERSION, pins: api.pins, stamps: api.stamps, reopens: api.reopens,
+      pullDay: pullDay(), panelDay: panelDay(), want: wantDay(),
+      refDate: String(safe(function () { return window._calRefDate; }, '') || ''),
+      userDayAt: Number(safe(function () { return window.__mlsCalUserDayAt; }, 0) || 0),
+      renderWrapped: !!safe(function () { return window.renderCalendar && window.renderCalendar.__calDaySelWrapped; }, false),
+      openWrapped: !!safe(function () { return window.calOpenDay && window.calOpenDay.__calDaySelWrapped; }, false)
+    };
+  };
+  api.revert = function () {
+    try { document.removeEventListener('click', onNavClick, true); } catch (eR) {}
+    safe(function () { var r = window.renderCalendar; if (r && r.__calDaySelWrapped && r.__calDaySelInner) window.renderCalendar = r.__calDaySelInner; });
+    safe(function () { var o = window.calOpenDay; if (o && o.__calDaySelWrapped && o.__calDaySelInner) window.calOpenDay = o.__calDaySelInner; });
+    api.installed = false;
+    return true;
+  };
+  window.__mlsCalDaySel = api;
+})();
+/* ===== end caldaysel-1.0.0 =============================================== */
