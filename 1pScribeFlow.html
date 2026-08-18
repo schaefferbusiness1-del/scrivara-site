@@ -39763,7 +39763,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      revert pointer and belongs to the wrapper that made it.
 
      Plus two wakes that are not human - window 'load', and a MutationObserver
-     on the two nodes the loader appends module <script> tags to - so the very
+     on the two nodes the loader appends module script tags to - so the very
      first programmatic open of a session is already covered.
 
      WHY THE CALL-TIME RE-CHECK DOES NOT ADOPT IN PLACE. If a call reaches this
@@ -39780,7 +39780,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   var base = window.openOpPrep;       /* the REAL shell function, never re-wrapped */
   var inside = false;                 /* true while the deferred pass is running */
   var BUSY = 'mls-opnote-busy';
-  var watcher = null;                 /* the late-<script> MutationObserver */
+  var watcher = null;                 /* the late-script MutationObserver */
 
   var css = document.createElement('style');
   css.id = 'mlsOpNoteOpenCss';
