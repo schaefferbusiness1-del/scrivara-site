@@ -1328,6 +1328,204 @@ async function runtime() {
       'phone: the pull row lost cells - stacking must not delete the verdict (CLUNKY 129 guard)');
     await page.close();
 
+    /* ================================================== OPEN ITEM A (op notes)
+     * THE PROGRAMMATIC OPEN MUST LAND ON THE DAY ON SCREEN.
+     *
+     * Owner, 2026-08-16: "when u click draft op notes on a day it should draft
+     * the op notes for the day the visit screen is on or the calendar is on."
+     * _opContextDay() implements that. feat_mls_opnote_prep.js (shared, not
+     * this lane's to edit) wraps openOpPrep and, when it is called with no day,
+     * substitutes nextProcedureDay(today) - which starts at i=1, so it is
+     * always TOMORROW or later.
+     *
+     * Whichever of the two wrappers is OUTERMOST decides. A press was already
+     * safe: opnote-open re-adopts synchronously in the pointerdown capture
+     * phase. A call from script - Copilot, a deep link, an automated draft on
+     * arrival - has no press to ride on, and MEASURED at opnote-open-1.1.0 in
+     * this harness it got the wrong day every time:
+     *     _opPrepDay 2026-08-19 / _opContextDay() 2026-08-18, 28 rows headed
+     *     "Wednesday, August 19, 2026", outermost() false.
+     *
+     * This page therefore never receives a pointer event before the call. If a
+     * future change makes the block lose the outermost slot again, day and
+     * context day part company here and this fails.
+     */
+    const opPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    opPage.on('pageerror', (e) => pageErrors.push(String(e.message).slice(0, 160)));
+    await boot(opPage, port);
+    /* Book the synthetic roster on TODAY, TOMORROW and the day after, so
+       "the day on screen" and "the next procedure day" are different real days
+       and both have rows. Local date parts, never toISOString: the machine
+       clock is Eastern and a UTC key is the previous day after 8pm. */
+    const opSeed = await opPage.evaluate(() => {
+      const key = (off) => {
+        const d = new Date(); d.setDate(d.getDate() + off);
+        if (typeof window._opDayKey === 'function') return window._opDayKey(d);
+        return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+      };
+      const names = (window.getPatients ? getPatients() : []).map((p) => p.name);
+      const appts = [];
+      [0, 1, 2].forEach((off) => {
+        const day = key(off);
+        names.forEach((n, i) => appts.push({ id: 'op-' + off + '-' + i, name: n, patientId: 'syn-' + i,
+          appt_date: day, start_at: day + 'T0' + (8 + (i % 8)) + ':00:00',
+          reason: 'Lumbar medial branch block', providerName: 'Sample Provider, MD' }));
+      });
+      window._calAppts = appts;
+      return { appts: appts.length, today: key(0), tomorrow: key(1) };
+    });
+    ok(opSeed.appts >= 84, `the three-day synthetic book did not land (${opSeed.appts} appointments)`);
+    /* 200ms after the loaders have settled, and NOT one pointer event. */
+    await opPage.waitForTimeout(200);
+    const opAuto = await opPage.evaluate(async () => {
+      const api = window.__mlsOpNoteOpen || {};
+      const before = {
+        version: api.version || '',
+        outermost: typeof api.outermost === 'function' ? api.outermost() : null,
+        stamps: typeof api.stamps === 'function' ? api.stamps() : [],
+        ctx: (function () { try { return _opContextDay(); } catch (e) { return 'ERR'; } })()
+      };
+      window._opPrepDay = null; window._opPrep = [];
+      window.openOpPrep();                       /* PROGRAMMATIC. No press. */
+      await new Promise((r) => setTimeout(r, 1500));
+      const m = document.getElementById('opPrepModal');
+      return Object.assign(before, {
+        day: window._opPrepDay || '',
+        rows: (window._opPrep || []).length,
+        dateStr: (window._opPrep && window._opPrep[0] && window._opPrep[0].dateStr) || '',
+        shown: !!(m && m.classList.contains('show')),
+        stillBusy: !!(m && m.classList.contains('mls-opnote-busy'))
+      });
+    });
+    measured.opnoteAutoOpen = opAuto;
+    eq(opAuto.version, 'opnote-open-1.2.0', 'the op-note open block is not the version this assertion was measured against');
+    ok(opAuto.outermost === true,
+      'a later module wrapped openOpPrep and the /1p yield is not outermost, so a programmatic open takes that module\'s day (OPEN ITEM A)');
+    ok(opAuto.stamps.indexOf('__opnpWrapped') >= 0,
+      `the "already wrapped" stamps were not carried (${opAuto.stamps.join(',')}), so feat_mls_opnote_prep re-wraps every 500ms and wins the race again (OPEN ITEM A)`);
+    eq(opAuto.day, opAuto.ctx,
+      `a programmatic openOpPrep() opened ${opAuto.day} while the day on screen is ${opAuto.ctx} (OPEN ITEM A)`);
+    ok(opAuto.day !== opSeed.tomorrow,
+      `a programmatic openOpPrep() opened TOMORROW (${opAuto.day}) - feat_mls_opnote_prep's nextProcedureDay default beat _opContextDay again (OPEN ITEM A)`);
+    ok(opAuto.rows >= 28, `the programmatic open built ${opAuto.rows} rows for a fully booked day (OPEN ITEM A)`);
+    ok(opAuto.shown, 'the programmatic open did not show the room');
+    eq(opAuto.stillBusy, false, 'the deferred pass never finished, so the room stayed on "Reading your schedule…"');
+
+    /* THE HUMAN PATH MUST BE UNCHANGED. Same page, a real press, same call. */
+    await opPage.evaluate(() => {
+      const m = document.getElementById('opPrepModal'); if (m) m.classList.remove('show');
+      window._opPrepDay = null; window._opPrep = [];
+    });
+    await opPage.mouse.move(6, 6);
+    await opPage.mouse.down();
+    await opPage.mouse.up();
+    await opPage.waitForTimeout(200);
+    const opHuman = await opPage.evaluate(async () => {
+      const pre = !!(window.__mlsOpNoteOpen && window.__mlsOpNoteOpen.outermost());
+      window.openOpPrep();
+      await new Promise((r) => setTimeout(r, 1500));
+      return { pre: pre, day: window._opPrepDay || '', rows: (window._opPrep || []).length,
+        ctx: (function () { try { return _opContextDay(); } catch (e) { return 'ERR'; } })() };
+    });
+    measured.opnoteHumanOpen = opHuman;
+    ok(opHuman.pre === true, 'after a real press the /1p yield is not outermost (OPEN ITEM A regression guard)');
+    eq(opHuman.day, opHuman.ctx, `the human path opened ${opHuman.day} for a screen showing ${opHuman.ctx} (OPEN ITEM A regression guard)`);
+    eq(opHuman.day, opAuto.day, 'the press path and the programmatic path now disagree about the day (OPEN ITEM A)');
+    ok(opHuman.rows >= 28, `the human path built ${opHuman.rows} rows (OPEN ITEM A regression guard)`);
+    await opPage.close();
+
+    /* ============================================== CLUNKY 41: THE DOCK ON TOP
+     * "With the bar on top I get four stacked strips ... and the first patient
+     * only appears at the very bottom edge."
+     *
+     * MEASURED at HEAD, 1280x600, 28 synthetic patients, dock on top through
+     * the dock picker's own API:
+     *     #appHeader 0..87 · #mlsDock 99..159 (60px) · #appWrap padding 112px
+     *     · #mlsRightNow 199..256 · first .pt-item at y=547 of 600.
+     * The same page with the dock at the BOTTOM put that row at y=457.
+     *
+     * THE OWNER OF THE OFFSET THE FIX LOG COULD NOT FIND. The stylesheet says
+     * top:88px; the dock rests at 99, and in the audit's state at 173. Neither
+     * is a stray 86px: feat_mls_calm_shell.js's topDockOffset() writes an
+     * INLINE top on #mlsDock equal to max(18, #appHeader.bottom + 12,
+     * #mlsCtxBar.bottom + 12) - a measured clearance below whatever sticky
+     * surface is really up there, recomputed on every syncDock(). 88px is only
+     * its stylesheet fallback. So the dock's position is correct and the
+     * defect is downstream of it: the page's own reservation for the dock is a
+     * flat 112px that matches neither where the dock rests nor how tall
+     * dockspace's short-screen rule has made it.
+     *
+     * The assertion is deliberately two-sided - the trap here is that a
+     * legibility fix creates the next collision, so "content is higher" is
+     * only allowed together with "content still clears the dock". */
+    const dockPage = await browser.newPage({ viewport: { width: 1280, height: 600 } });
+    dockPage.on('pageerror', (e) => pageErrors.push(String(e.message).slice(0, 160)));
+    await boot(dockPage, port);
+    await dockPage.evaluate(() => window.__clunky.nav('nav_patients'));
+    await dockPage.waitForTimeout(1200);
+    const dockSides = {};
+    for (const side of ['bottom', 'top']) {
+      await dockPage.evaluate((s) => {
+        try {
+          const api = window.__mlsDockP1 || window.__mlsDock1p;
+          if (api && typeof api.side === 'function') { api.side(s); return; }
+        } catch (e) {}
+        if (s === 'bottom') document.body.removeAttribute('data-mls-dock');
+        else document.body.setAttribute('data-mls-dock', s);
+      }, side);
+      await dockPage.waitForTimeout(1500);
+      dockSides[side] = await dockPage.evaluate(() => {
+        const R = (sel) => { const e = document.querySelector(sel); if (!e) return null;
+          const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: Math.round(r.height) }; };
+        const w = document.getElementById('appWrap');
+        const g = (window.__mlsDockSpace && window.__mlsDockSpace.geometry) ? window.__mlsDockSpace.geometry() : {};
+        /* the same arithmetic feat_mls_calm_shell.js's topDockOffset() does,
+           re-derived here so the assertion names an owner rather than a number */
+        const want = ['appHeader', 'mlsCtxBar'].reduce((acc, id) => {
+          const e = document.getElementById(id); if (!e) return acc;
+          const cs = getComputedStyle(e), r = e.getBoundingClientRect();
+          if (!/sticky|fixed/.test(cs.position)) return acc;
+          if (r.height < 2 || cs.display === 'none' || cs.visibility === 'hidden') return acc;
+          return Math.max(acc, Math.round(r.bottom) + 12);
+        }, 18);
+        return {
+          band: document.documentElement.getAttribute('data-mls-dock-band') || '',
+          header: R('#appHeader'), dock: R('#mlsDock'), rightNow: R('#mlsRightNow'),
+          ctxBar: R('#mlsCtxBar'),
+          firstRow: R('#ptList .pt-item'), rows: document.querySelectorAll('#ptList .pt-item').length,
+          pad: w ? Math.round(parseFloat(getComputedStyle(w).paddingTop) || 0) : null,
+          contentTop: g.wrapContentTop == null ? null : g.wrapContentTop,
+          inlineTop: (document.getElementById('mlsDock') || { style: {} }).style.top || '',
+          wantTop: want,
+          thickness: g.thickness || 0
+        };
+      });
+    }
+    measured.dock41 = dockSides;
+    const top41 = dockSides.top, bot41 = dockSides.bottom;
+    ok(top41.rows >= 28, `the patient list did not render for the dock=top measurement (${top41.rows} rows)`);
+    eq(top41.band, 'top', `the dock never reached the top band (band=${top41.band}) so nothing below was measured (CLUNKY 41)`);
+    eq(top41.dock && top41.dock.y, top41.wantTop,
+      `the top dock rests at y=${top41.dock && top41.dock.y}; topDockOffset() (feat_mls_calm_shell.js: max(18, header.bottom+12, ctxBar.bottom+12)) says ${top41.wantTop}. A THIRD owner is moving the dock (CLUNKY 41)`);
+    ok(top41.dock.y >= top41.header.h,
+      `the top dock rests at y=${top41.dock.y}, inside the ${top41.header.h}px header it is supposed to clear (CLUNKY 41)`);
+    ok(top41.pad < 112,
+      `#appWrap still reserves ${top41.pad}px for a ${top41.dock.h}px dock on a 600px screen (CLUNKY 41)`);
+    ok(top41.contentTop >= top41.dock.y + top41.dock.h,
+      `#appWrap content starts at ${top41.contentTop} under a dock ending at ${top41.dock.y + top41.dock.h} — the reservation went too far (CLUNKY 41 collision guard)`);
+    ok(top41.firstRow && top41.firstRow.y < 600,
+      `the first patient row is at y=${top41.firstRow && top41.firstRow.y} in a 600px viewport — off the bottom of the screen (CLUNKY 41)`);
+    /* the reservation this fix gives back is #appWrap padding, so it moves the
+       first row by exactly (112 - pad) px. In THIS harness: 481 -> 453. */
+    ok(top41.firstRow.y <= 530,
+      `the first patient row is at y=${top41.firstRow.y} with a ${top41.pad}px reservation (CLUNKY 41)`);
+    /* the top dock must not cost more than the dock's own height over a bottom
+       dock - that difference is all that is left to pay for putting it there */
+    ok(top41.firstRow.y - bot41.firstRow.y <= top41.dock.h + 4,
+      `the top dock pushes the first patient row ${top41.firstRow.y - bot41.firstRow.y}px lower than a bottom dock does, for a dock only ${top41.dock.h}px tall (CLUNKY 41)`);
+    eq(bot41.pad, 22, `the bottom dock's #appWrap reservation changed to ${bot41.pad}px — the top-dock rule is leaking into the other positions (CLUNKY 41 guard)`);
+    await dockPage.close();
+
     ok(pageErrors.length === 0, 'the page threw: ' + pageErrors.slice(0, 3).join(' | '));
   } finally {
     await browser.close();

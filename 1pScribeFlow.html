@@ -39694,7 +39694,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 }
 </style>
 <!-- ===== end msl-fit-1.1.0 ============================================ -->
-<!-- ===== opnote-open-1.1.0 — the room appears when you press the button ===
+<!-- ===== opnote-open-1.2.0 — the room appears when you press the button ===
      Owner: "a big complaint of the UI is that it's very clunky."
 
      MEASURED (real Chrome, 28 synthetic patients, 1366x900): pressing Prep Op
@@ -39719,7 +39719,59 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 
      The day is set synchronously, before the yield, because callers read
      window._opPrepDay right after calling this. Only the expensive render is
-     deferred. -->
+     deferred.
+
+     1.2.0 — THE DAY WAS RIGHT FOR A PRESS AND WRONG FOR A PROGRAMMATIC OPEN.
+     Every re-adoption wake in 1.1.0 was HUMAN (pointerdown / mousedown /
+     touchstart / click / keydown) plus four boot timers. A caller that opens
+     the room WITHOUT a press - Copilot, a deep link, an automated draft-all on
+     arrival - therefore arrived while some other module's wrapper was
+     outermost, and that wrapper's own default day won.
+
+     MEASURED in this worktree, real Chrome, 28 synthetic patients booked on
+     today AND on the next two days, openOpPrep() called from script with no
+     pointer event ever dispatched:
+        window._opPrepDay = 2026-08-19   (tomorrow)
+        _opContextDay()   = 2026-08-18   (the day on screen)
+        window.openOpPrep = function () { var r = orig.apply(this, arguments);
+                                          kickTicks(); return r; }
+     and the same call after one real pointerdown gave 2026-08-18. So the
+     owner's 2026-08-16 rule ("draft the day the visit screen or the calendar
+     is on") held for a press and silently did not hold for a script.
+
+     WHY MORE TIMERS COULD NOT FIX IT. The modules do not wrap once. Measured
+     over a 60s boot: window.openOpPrep changed owner SIXTEEN times, alternating
+     between two wrappers, and the last change landed 1,443ms AFTER the last
+     module script finished loading. feat_mls_opnote_prep.js runs
+     `setInterval(ensureWrapped, 500)` for 40 ticks - twenty seconds of re-wraps
+     - and its wrap() re-wraps anything that is not already stamped
+     `__opnpWrapped`; feat_mls_opnote_fill.js re-runs wrapOpeners() from its own
+     document-mutation tick and re-wraps anything not stamped `__onfKick`. Every
+     time this block took the outermost slot back, they took it again within
+     half a second. No bounded set of settle points can win that race, and a
+     standing poll is exactly what 1.1.0 refused to add.
+
+     WHAT ACTUALLY FIXES IT: CARRY THE "ALREADY WRAPPED" STAMPS. When
+     stayOutermost() adopts a chain, that chain already contains those modules'
+     wrappers - so the stamp they are looking for is TRUE of the function this
+     block is about to install. Copying their own idempotence flags onto the
+     wrapper is not a disguise, it is the fact: their behaviour still runs, once,
+     from inside `original`. This is the same idiom feat_mls_opnote_daybrain.js
+     already ships on opPrepGenerateOne ("carry both markers so neither module
+     re-wraps on top of this and re-enters the base twice"). Only NON-FUNCTION
+     `__`-prefixed own properties are carried: a function-valued one is a
+     revert pointer and belongs to the wrapper that made it.
+
+     Plus two wakes that are not human - window 'load', and a MutationObserver
+     on the two nodes the loader appends module <script> tags to - so the very
+     first programmatic open of a session is already covered.
+
+     WHY THE CALL-TIME RE-CHECK DOES NOT ADOPT IN PLACE. If a call reaches this
+     function THROUGH someone else's wrapper, that wrapper has already run its
+     pre-work and will run its post-work when we return. Adopting it as
+     `original` at that moment and then calling it would run the whole outer
+     chain a second time inside this one call. The check therefore schedules the
+     adoption for the next macrotask and leaves the call it is in alone. -->
 <script>
 (function () {
   if (typeof window.openOpPrep !== 'function' || window.__mlsOpNoteOpen) return;
@@ -39728,6 +39780,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   var base = window.openOpPrep;       /* the REAL shell function, never re-wrapped */
   var inside = false;                 /* true while the deferred pass is running */
   var BUSY = 'mls-opnote-busy';
+  var watcher = null;                 /* the late-<script> MutationObserver */
 
   var css = document.createElement('style');
   css.id = 'mlsOpNoteOpenCss';
@@ -39762,6 +39815,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
        undefined forever). Inside the deferred pass we ARE the real work, so
        call the untouched base directly and synchronously. */
     if (inside) return base.call(window, dayKey);
+    /* 1.2.0: this call came in through a wrapper that installed after the last
+       adoption. Take the slot back for the NEXT call - never in place, see the
+       header. Two property reads when there is nothing to do. */
+    if (window.openOpPrep !== defer) setTimeout(stayOutermost, 0);
     var modal = document.getElementById('opPrepModal');
     /* Callers read window._opPrepDay immediately after this returns, so the
        day is decided here, synchronously, exactly as the original does. */
@@ -39820,24 +39877,103 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      SYNCHRONOUSLY in the capture phase, which runs before the button's own
      handler, and on pointerdown as well so a press is already covered before
      the click event exists. The check is two property reads. */
+  function carryStamps(fn) {
+    /* 1.2.0 — see the header. A module stamps its wrapper with its own
+       "already wrapped" flag and refuses to wrap anything carrying it. Once we
+       adopt that wrapper as `original`, the statement the flag makes is true of
+       us, so we carry it and the module stops re-wrapping every half second.
+       Function-valued stamps are revert pointers - never carried. */
+    var names;
+    try { names = Object.getOwnPropertyNames(fn); } catch (e) { return; }
+    for (var i = 0; i < names.length; i++) {
+      var k = names[i];
+      if (k.slice(0, 2) !== '__') continue;
+      if (Object.prototype.hasOwnProperty.call(defer, k)) continue;
+      var v;
+      try { v = fn[k]; } catch (e2) { continue; }
+      if (typeof v === 'function') continue;
+      try { defer[k] = v; } catch (e3) {}
+    }
+  }
   function stayOutermost() {
     var fn = window.openOpPrep;
     if (typeof fn !== 'function' || fn.__mlsDeferOpen) return false;
     original = fn;            /* whatever chain now exists, deferred whole */
+    carryStamps(fn);
     window.openOpPrep = defer;
     return true;
   }
-  [400, 1500, 4000, 9000].forEach(function (ms) { setTimeout(stayOutermost, ms); });
   ['pointerdown', 'mousedown', 'touchstart', 'click', 'keydown'].forEach(function (name) {
     try { document.addEventListener(name, stayOutermost, true); } catch (e) {}
   });
 
+  /* 1.2.0 — THE BURST THAT LETS THE STAMPS CONVERGE, AND WHY IT REPLACED THE
+     FOUR SETTLE POINTS 1.1.0 USED. One adoption can only carry the stamps of
+     the ONE wrapper that is outermost at that instant, so four modules need up
+     to four rounds. MEASURED with 1.1.0's [400, 1500, 4000, 9000] plus the new
+     load and <script> wakes: the block sat un-adopted from 6.1s to 16.7s - a
+     ten-second hole in which a programmatic open still got tomorrow - because
+     the wrap that took the slot came from feat_mls_opnote_prep.js's own
+     setInterval(ensureWrapped, 500) after a deferred module arrived, and
+     nothing in the DOM signals that.
+
+     So this mirrors the loop it is racing: every 500ms, for 60s, then stop.
+     That is 120 ticks of TWO PROPERTY READS each when there is nothing to do,
+     and once the stamps have converged there is nothing to do ever again -
+     measured convergence in this worktree: all four stamps by 17.1s, and the
+     wrapper identity never changed after that. It is bounded, it ends, and it
+     outlives every re-wrap loop measured here (the longest is 20s). */
+  var settleFrom = Date.now();
+  var settle = setInterval(function () {
+    stayOutermost();
+    if (Date.now() - settleFrom > 60000) { clearInterval(settle); settle = null; }
+  }, 500);
+  setTimeout(stayOutermost, 0);
+
+  /* 1.2.0 — THE WAKES THAT DO NOT NEED A DOCTOR. */
+  function wake() { stayOutermost(); setTimeout(stayOutermost, 0); }
+  try { window.addEventListener('load', wake, true); } catch (e) {}
+  if (document.readyState === 'complete') setTimeout(wake, 0);
+  try {
+    /* childList on head and body ONLY, never subtree: the module loader
+       appends every feature <script> to one of those two nodes, and a
+       subtree observer would fire on every row the app renders. */
+    watcher = new MutationObserver(function (records) {
+      for (var i = 0; i < records.length; i++) {
+        var added = records[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          var n = added[j];
+          if (!n || n.nodeName !== 'SCRIPT') continue;
+          wake();
+          try { n.addEventListener('load', wake); } catch (e2) {}
+          return;
+        }
+      }
+    });
+    var watch = function (node) { if (node) { try { watcher.observe(node, { childList: true }); } catch (e3) {} } };
+    watch(document.head); watch(document.body);
+    if (!document.body) {
+      document.addEventListener('DOMContentLoaded', function () { watch(document.body); wake(); });
+    }
+  } catch (e) {}
+
   window.__mlsOpNoteOpen = {
-    version: 'opnote-open-1.1.0',
+    version: 'opnote-open-1.2.0',
     installed: true,
     outermost: function () { return window.openOpPrep === defer; },
+    adopt: function () { return stayOutermost(); },
+    stamps: function () {
+      var out = [];
+      try {
+        Object.getOwnPropertyNames(defer).forEach(function (k) { if (k.slice(0, 2) === '__') out.push(k); });
+      } catch (e) {}
+      return out;
+    },
     revert: function () {
       window.openOpPrep = base;
+      if (settle) { clearInterval(settle); settle = null; }
+      if (watcher) { try { watcher.disconnect(); } catch (e0) {} watcher = null; }
+      try { window.removeEventListener('load', wake, true); } catch (e1) {}
       var h = document.getElementById('mlsOpNoteOpening'); if (h && h.parentNode) h.parentNode.removeChild(h);
       if (css.parentNode) css.parentNode.removeChild(css);
       try { delete window.__mlsOpNoteOpen; } catch (e) { window.__mlsOpNoteOpen = null; }
@@ -39846,7 +39982,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   };
 })();
 </script>
-<!-- ===== end opnote-open-1.1.0 ======================================== -->
+<!-- ===== end opnote-open-1.2.0 ======================================== -->
 <!-- ===== opnote-vocab-1.0.0 — the day-brain learns the rest of surgery ===
      FINDING-A, handed back by the previous UI lane and reproduced here.
 
@@ -44621,7 +44757,7 @@ body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:n
 })();
 </script>
 <!-- ===== end visitflow-1.0.0 =========================================== -->
-<!-- ===== dockspace-1.0.0 — the room switcher owns its own layer =========
+<!-- ===== dockspace-1.1.0 — the room switcher owns its own layer =========
      OWNER, 2026-08-17 ~21:55Z: "at different aspect ratios and sizes of screen,
      the tab selector on the bottom — or it can be at the top or the left or the
      right depending on its position — things get in the way of it, and it looks
@@ -44678,7 +44814,37 @@ body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:n
      IT NEVER CHANGES THE DOCK'S POSITION OR PREFERENCE. dock-1p-1.1.0 still
      owns the picker; this block only measures where the dock ended up and
      keeps everything else out of its way. If the dock is not installed, every
-     variable stays 0px and nothing on the page moves. -->
+     variable stays 0px and nothing on the page moves.
+
+     1.1.0 — THE DIET IN (6) SHRANK THE DOCK AND NOTHING SHRANK ITS RESERVATION.
+     Audit item 41: "with the bar on top I get four stacked strips... and the
+     first patient only appears at the very bottom edge."
+
+     feat_mls_calm_shell.js (shared, not this lane's to edit) reserves a FLAT
+     `body[data-mls-dock="top"] #appWrap{padding-top:112px !important}`. That
+     constant was sized for an 85px dock. Section (6) of THIS block then put the
+     dock on a diet on short screens - @media (max-height:700px) trims its
+     padding - and the reservation never followed.
+
+     MEASURED, real Chrome, 1280x600, dock on top, 28 synthetic patients:
+        #appHeader   0..87      (sticky, in flow, so #appWrap starts at y=87)
+        #mlsDock     88..148    60px tall, position:fixed, computed top:88px
+        needed       148 + 12 gap - 87 = 73px of #appWrap padding
+        reserved     112px      -> 39px of a 600px screen reserved for nothing
+        #mlsRightNow 199..256, first .pt-item at y=547 of 600
+     The same page with the dock at the bottom put that row at y=457.
+
+     (The fix log recorded "#mlsDock renders at 173" and looked for an 86px
+     offset with another owner. There is none: 173 is the dock's BOTTOM edge on
+     a viewport taller than 700px, where the dock is 85px tall - and 173-87 is
+     exactly the 86px of #appWrap the dock really covers there. The computed
+     `top` is 88px, which is what feat_mls_calm_shell.js says it is.)
+
+     So the reservation is published from the same measurement everything else
+     here is published from, and it is CAPPED at the shell's own 112px: this
+     block can only ever give space back, never take more. If the dock is
+     missing, collapsed, or on another side, the variable holds 112px and the
+     shell's rule stands untouched. -->
 <style id="mlsDockSpaceCss">
 :root{
   --mls-dock-thickness:0px;
@@ -44686,6 +44852,8 @@ body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:n
   --mls-dock-clear-bottom:0px;
   --mls-dock-clear-left:0px;
   --mls-dock-clear-right:0px;
+  /* the shell's own constant, so this is a no-op until the dock is measured */
+  --mls-dock-pad-top:112px;
 }
 
 /* ---- (1) NOTIFICATIONS ------------------------------------------------
@@ -44801,16 +44969,29 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
   html[data-mls-dock-band="bottom"] #mlsDock{ padding-top:4px !important; padding-bottom:4px !important; }
   #mlsDock > button{ padding-top:6px !important; padding-bottom:5px !important; }
 }
+
+/* ---- (7) THE PAGE'S OWN TOP RESERVATION (1.1.0) ----------------------
+   See the header. The shell reserves a flat 112px for a top dock; this
+   replaces it with the reservation the dock actually needs, published by the
+   controller and never larger than 112px. Written as a variable with the
+   shell's constant as its own fallback, so a controller that never ran, a
+   revert, or a browser that drops the custom property all land back on
+   today's behaviour rather than on zero clearance.
+   !important for the same measured reason the shell needed it. */
+html[data-mls-dock-band="top"] body[data-mls-dock="top"] #appWrap{
+  padding-top:var(--mls-dock-pad-top,112px) !important;
+}
 </style>
 <script>
-/* dockspace-1.0.0 controller: measure the dock, publish the band. */
+/* dockspace-1.1.0 controller: measure the dock, publish the band. */
 (function () {
   'use strict';
   if (window.__mlsDockSpace) return;
 
-  var VERSION = 'dockspace-1.0.0';
+  var VERSION = 'dockspace-1.1.0';
   var GAP = 12;                      /* breathing room outside the dock */
   var SIDES = ['top', 'bottom', 'left', 'right'];
+  var SHELL_PAD_TOP = 112;           /* feat_mls_calm_shell.js's own constant */
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function root() { return document.documentElement; }
@@ -44842,6 +45023,27 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
     safe(function () { root().removeAttribute('data-mls-dock-band'); });
     s.setProperty('--mls-dock-thickness', '0px');
     for (var i = 0; i < SIDES.length; i++) s.setProperty('--mls-dock-clear-' + SIDES[i], '0px');
+    s.setProperty('--mls-dock-pad-top', SHELL_PAD_TOP + 'px');
+  }
+
+  /* 1.1.0 — HOW MUCH #appWrap PADDING A TOP DOCK REALLY NEEDS.
+     #appWrap's BORDER-BOX top does not move when its own padding changes, so
+     `dock bottom + GAP - that top` cannot feed back on itself. It is taken in
+     DOCUMENT space (rect + scroll) because a fixed dock keeps its viewport
+     coordinates while a scrolled #appWrap does not, and a scroll-dependent
+     reservation would grow every time the doctor scrolled.
+     Capped at the shell's own constant: this may hand space back, never take
+     more, so the worst case is exactly today's layout. */
+  function padTopFor(dockRect) {
+    var wrap = safe(function () { return document.getElementById('appWrap'); }, null);
+    if (!wrap) return SHELL_PAD_TOP;
+    var wr = safe(function () { return wrap.getBoundingClientRect(); }, null);
+    if (!wr) return SHELL_PAD_TOP;
+    var scroll = (window.pageYOffset || document.documentElement.scrollTop || 0);
+    var wrapTop = wr.top + scroll;
+    var need = Math.round(dockRect.bottom + scroll + GAP - wrapTop);
+    if (!isFinite(need)) return SHELL_PAD_TOP;
+    return Math.max(0, Math.min(SHELL_PAD_TOP, need));
   }
 
   var _last = '';
@@ -44861,7 +45063,9 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
     else if (band === 'left') vals.left = Math.round(r.right + GAP);
     else vals.right = Math.round((vw - r.left) + GAP);
 
-    var sig = band + '|' + Math.round(thickness) + '|' + vals.top + '|' + vals.bottom + '|' + vals.left + '|' + vals.right;
+    var padTop = (band === 'top') ? padTopFor(r) : SHELL_PAD_TOP;
+
+    var sig = band + '|' + Math.round(thickness) + '|' + vals.top + '|' + vals.bottom + '|' + vals.left + '|' + vals.right + '|' + padTop;
     /* An unconditional style write costs a whole-document recalc, so this only
        writes on change — but "no change" must be checked against the DOM, not
        only against the last value this function computed. MEASURED: clearing
@@ -44871,6 +45075,17 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
        rule that depends on them became a no-op. Cheap to be sure. */
     var live = safe(function () { return root().getAttribute('data-mls-dock-band'); }, null);
     if (sig === _last && live === band) return sig;
+    /* 1.1.0 — THE BAND CHANGES THE DOCK'S OWN SIZE, SO THE FIRST MEASUREMENT
+       IS ALWAYS OF THE OLD DOCK. Section (6)'s short-screen diet is keyed on
+       html[data-mls-dock-band], which does not exist until this line writes it.
+       MEASURED at 1280x600: the dock was 81px tall when sync() read it and 60px
+       one frame after the attribute landed, so thickness stayed 81px and every
+       clearance was 21px too generous for the rest of the session - no
+       mutation fires for a media-query-driven size change, so nothing ever
+       corrected it. One follow-up pass, and only when the band actually
+       changed: the second pass computes the same signature and returns before
+       it can schedule a third. */
+    var bandChanged = (live !== band);
     _last = sig;
     var s = root().style;
     safe(function () { root().setAttribute('data-mls-dock-band', band); });
@@ -44878,6 +45093,8 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
     for (var i = 0; i < SIDES.length; i++) {
       s.setProperty('--mls-dock-clear-' + SIDES[i], vals[SIDES[i]] + 'px');
     }
+    s.setProperty('--mls-dock-pad-top', padTop + 'px');
+    if (bandChanged) safe(function () { setTimeout(refresh, 0); });
     return sig;
   }
 
@@ -44954,7 +45171,16 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
         && dr.right <= (window.innerWidth || 0) + 1 && dr.bottom <= (window.innerHeight || 0) + 1,
       overflowX: Math.max(0, d.scrollWidth - d.clientWidth),
       overflowY: Math.max(0, d.scrollHeight - d.clientHeight),
-      thickness: parseFloat(getComputedStyle(root()).getPropertyValue('--mls-dock-thickness')) || 0
+      thickness: parseFloat(getComputedStyle(root()).getPropertyValue('--mls-dock-thickness')) || 0,
+      /* 1.1.0: what the page reserved for it, and whether the page's first
+         content actually clears it. Reported here so the suite reads the same
+         rects the runtime does. */
+      padTop: parseFloat(getComputedStyle(root()).getPropertyValue('--mls-dock-pad-top')) || 0,
+      wrapContentTop: safe(function () {
+        var w = document.getElementById('appWrap');
+        if (!w) return null;
+        return Math.round(w.getBoundingClientRect().top + (parseFloat(getComputedStyle(w).paddingTop) || 0));
+      }, null)
     };
   }
 
@@ -45016,7 +45242,7 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
   else boot();
 })();
 </script>
-<!-- ===== end dockspace-1.0.0 =========================================== -->
+<!-- ===== end dockspace-1.1.0 =========================================== -->
 <!-- ===== uimap-1.0.0 — the confusing places named in the map, fixed ======
      Owner 2026-08-17: "there are continuity errors and glitches… things that
      are complex all over the site and bad UI everywhere… map out all bad UI and
