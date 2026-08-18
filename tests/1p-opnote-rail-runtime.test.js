@@ -838,9 +838,15 @@ async function runtime() {
         expanded: (document.getElementById('mlsOpnFmt') || {}).getAttribute('aria-expanded')
       };
     });
+    /* SETTLE ON BOTH FACTS, not just the first. The fixpack attaches the
+       wrappers on its own cadence and the room takes them in hand on its next
+       (coalesced) paint — sampling the instant a wrapper EXISTS reads it
+       before that paint and scores every one of them as unmarked. */
     let fmt = await readFmt();
-    for (let i = 0; i < 12 && fmt.withWrap.length === 0; i++) {
+    for (let i = 0; i < 16 && (fmt.withWrap.length === 0 || fmt.st.unmarked > 0); i++) {
       await page.waitForTimeout(700);
+      await page.evaluate(() => { try { window.__mlsOpDay.refresh(); } catch (e) {} });
+      await page.waitForTimeout(300);
       fmt = await readFmt();
     }
     ok(fmt.withWrap.length > 0,
