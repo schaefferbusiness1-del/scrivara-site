@@ -126,6 +126,50 @@ for (const name of SHELLS) {
     'the e2e suite no longer asserts the legacy stx skin is gone - re-argue the fix for item 10');
 }
 
+/* ===== PART 1C: item 25 - the two halves PART 2B cannot open a sheet for ===
+ *
+ * PART 2B measures the lock on a sign row it injects into a real (unbound)
+ * card, because opening a BOUND review stalls this harness's renderer. Two
+ * things therefore have to be pinned against the write-flow's own source
+ * instead, or the fixture could drift into measuring nothing:
+ *
+ *   1. the MARKUP a ready row really emits - every selector the overlay and
+ *      the fixture depend on;
+ *   2. the REFUSAL itself - that selecting Sign & Save with no verified note
+ *      write is turned away, before any bridge call.
+ */
+{
+  const flow = read('1p-feat_mls_writeflow.js');
+
+  /* 1: the ready-row markup the overlay hooks into */
+  ok(/function unifiedReadyRowHtml\(/.test(flow), 'unifiedReadyRowHtml is gone - the ready-row shape moved');
+  const readyRow = flow.slice(flow.indexOf('function unifiedReadyRowHtml('), flow.indexOf('function unifiedManualRowHtml('));
+  ok(/data-manifest-row="/.test(readyRow), 'a ready row no longer carries data-manifest-row - the overlay cannot find the sign row');
+  ok(/<input type="radio" name="mlsAthenaUnifiedAction"/.test(readyRow),
+    'a ready row no longer carries the mlsAthenaUnifiedAction radio - "offered as selectable" would be untrue');
+  ok(/data-mls-ready-tick="/.test(readyRow), 'the ready tick the lock chip anchors beside is gone');
+  ok(/<label /.test(readyRow) && /<b style=/.test(readyRow),
+    'the ready row no longer wraps its title in a label/<b> - the lock chip and reason line would land in the wrong place');
+  /* a BLOCKED row must keep having no radio - that is what makes an UNBOUND
+     sheet have zero selectable rows, which PART 2A depends on */
+  const blockedRow = flow.slice(flow.indexOf('function unifiedBlockedRowHtml('), flow.indexOf('function unifiedBlockedRowHtml(') + 900);
+  ok(!/name="mlsAthenaUnifiedAction"/.test(blockedRow),
+    'a BLOCKED row now renders a radio - an unbound sheet would no longer have zero selectable rows and PART 2A is measuring something else');
+
+  /* 2: the refusal item 25 is about, before any bridge call */
+  ok(/row\.action === 'sign_encounter' && \(!priorWrite \|\| !priorWrite\.noteWriteProof\)/.test(flow),
+    'the sign-encounter precondition is gone from probeUnifiedRow - item 25 must be re-derived');
+  ok(/Write the reviewed note to this encounter first/.test(flow),
+    'the refusal text item 25 names is gone from the write flow');
+  /* and the precondition must still be checked BEFORE the bridge call, which
+     is what makes it "always refuses" rather than "sometimes times out" */
+  const probeFn = flow.slice(flow.indexOf('function probeUnifiedRow('));
+  const refusalAt = probeFn.indexOf('Write the reviewed note to this encounter first');
+  const bridgeAt = probeFn.indexOf("bridge('mlsAppAthenaActionV2'");
+  ok(refusalAt > 0 && bridgeAt > 0 && refusalAt < bridgeAt,
+    'the Sign & Save precondition is no longer checked before the Athena bridge call - the refusal is no longer immediate');
+}
+
 /* ============================================================ PART 2: runtime */
 
 const MIME = {
@@ -171,23 +215,50 @@ function withDeadline(promise, ms, label) {
   ]);
 }
 
-/* THE BRIDGE HAS TO BE ANSWERED. bridge() short-circuits only the Athena
-   verbs on a localhost host (syntheticLocalRuntime); mlsAppSearchOpenPatient,
-   mlsAppGotoDate and mlsExtHealth still post a message and then wait out a
-   150s timeout each. This answers them the way a real MLS Assist would, so the
-   fixture measures the sheet rather than a stack of dead deadlines. It cannot
-   change what is under test: no Athena request reaches it. */
+/* THE BRIDGE HAS TO BE ANSWERED, AND THE OPEN HAS TO BE ANSWERED "NO".
+ *
+ * bridge() short-circuits only the Athena verbs on a localhost host
+ * (syntheticLocalRuntime); mlsAppSearchOpenPatient, mlsAppGotoDate and
+ * mlsExtHealth still post a message and wait out a 150s timeout each. So the
+ * bridge must be answered - but WHAT it is answered with decides whether this
+ * fixture terminates, and the first version of it did not:
+ *
+ *   1p-feat_mls_writeflow.js:1801-1805 - when the read-only probe is refused,
+ *   the flow auto-attempts to open the chart, and if that open SUCCEEDS it
+ *   re-probes 1500ms later. There is no attempt counter on that path. On a
+ *   localhost host the probe is refused instantly and unconditionally
+ *   (synthetic-local-only), so answering the open with ok:true produces
+ *   refuse -> open -> re-probe -> refuse, once every 1.5s, forever, appending
+ *   a receipt each cycle. Answering it ok:true is what an extension would
+ *   really say, and it is exactly wrong here.
+ *
+ * A synthetic host has no athenaOne tab, so the honest answer is the one the
+ * VM harness in 1p-athena-write-readiness-and-probe-only.test.js already
+ * uses: the exact appointment row could not be opened. The flow then shows
+ * its recheck button and STOPS, which is the state item 25 is measured in.
+ * No Athena request reaches this responder either way.
+ *
+ * This is a characterisation, not a fix: the unbounded re-probe belongs to
+ * the write-flow module another session owns, and the ~8.5-minute renderer
+ * crash on a bound review is being investigated there, not here. */
 function fakeExtension() {
   window.addEventListener('message', function (ev) {
     var m = ev && ev.data;
     if (!m || m.source !== 'mls-app') return;
     var reply = null;
-    if (m.type === 'mlsAppSearchOpenPatient') reply = { type: 'mlsAppSearchOpenResult', resp: { ok: true, opened: true, via: 'appointment-id' } };
-    else if (m.type === 'mlsAppGotoDate') reply = { type: 'mlsAppGotoDateResult', resp: { ok: true, supported: true, via: 'weekstrip', schedDate: m.date } };
-    else if (m.type === 'mlsExtHealth') reply = { type: 'mlsExtHealthResult', resp: { ok: true, version: '3.0.62', versionName: '3.0.62+synthetic', athena: { tabs: 1, discarded: 0 } } };
+    if (m.type === 'mlsAppSearchOpenPatient') {
+      reply = { type: 'mlsAppSearchOpenResult', resp: { ok: false, opened: false, reason: 'appointment-id-not-found',
+        error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.' } };
+    } else if (m.type === 'mlsAppGotoDate') {
+      reply = { type: 'mlsAppGotoDateResult', resp: { ok: false, supported: true, via: 'weekstrip',
+        error: 'No athenaOne tab is open in this synthetic fixture.' } };
+    } else if (m.type === 'mlsExtHealth') {
+      reply = { type: 'mlsExtHealthResult', resp: { ok: true, version: '3.0.62', versionName: '3.0.62+synthetic', athena: { tabs: 0, discarded: 0 } } };
+    }
     if (!reply) return;
     window.postMessage({ source: 'mls-ext', type: reply.type, requestId: m.requestId, resp: reply.resp }, '*');
   }, false);
+  /* a counter, so a fixture that silently stops answering is visible */
   window.__mlsResidueFakeExt = true;
 }
 
@@ -433,76 +504,161 @@ async function runtime() {
     ok(rendered.unboundHint !== rendered.allHint, 'the unbound hint is the same sentence as the completed one');
 
     step('2B sign and save');
-    /* ===================================================== 2B: item 25 ==== */
+    /* ===================================================== 2B: item 25 ====
+     * THE BOUND REVIEW CANNOT BE OPENED IN THIS HARNESS, and that is a
+     * characterisation, not a workaround. Measured three times: opening a
+     * review whose expectedContext IS bound stalls the renderer and ends in
+     * "Target crashed" at ~8.5 minutes. It reproduced with this lane's own
+     * overlay REVERTED and with NO capability flags set, so neither is the
+     * cause. The mechanism, read out of the write-flow:
+     *
+     *   bridge() (1p-feat_mls_writeflow.js:118-121) short-circuits EVERY
+     *   mlsAppAthenaAction on a localhost host, so the read-only probe is
+     *   refused instantly and unconditionally; and on a refused probe the
+     *   flow auto-opens the chart and, if that open succeeds, re-probes
+     *   1500ms later (:1801-1805) with no attempt counter on that path.
+     *
+     * That file belongs to another session and the stall is the lead's
+     * investigation, so this suite STOPS at naming it: it does not open a
+     * bound review at all, and every write-flow page step carries a named
+     * deadline so a future stall reports itself in 120s instead of eating a
+     * 15-minute run.
+     *
+     * What is still measured here, and how:
+     *   OFFERED  - buildUnifiedManifest() is pure: it builds the manifest and
+     *              touches no DOM and no bridge, so it proves the sign row is
+     *              handed out as capability 'ready' without opening anything.
+     *   REFUSES  - pinned in PART 1 against the write-flow's own source.
+     *   THE FIX  - measured on a REAL card with a REAL live state: the
+     *              UNBOUND review opens safely (2A drove it), so the sign row
+     *              markup is injected into that open card. The markup shape
+     *              is not invented - PART 1 pins every selector this depends
+     *              on against the write-flow source, so the fixture cannot
+     *              quietly drift away from the real sheet. */
     const sign = await withDeadline(page.evaluate(async ([pt, note, bound]) => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const out = {};
-      /* a capable MLS Assist is what turns sign-encounter into a READY row */
+
+      /* ---- OFFERED: the manifest, with no sheet and no bridge ---------- */
       window.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
-      const manifest = window.__mlsWriteFlow.openUnifiedConfirmation({
+      const capable = window.__mlsWriteFlow.buildUnifiedManifest({
         patient: pt, sections: [{ key: 'note', text: note }], expectedContext: bound
       });
+      const capableSign = (capable && capable.rows || []).filter((r) => r.id === 'sign-encounter')[0] || null;
+      out.signCapability = capableSign ? capableSign.capability : '(no sign row)';
+      out.signAction = capableSign ? capableSign.action : '';
+      out.noteCapability = ((capable && capable.rows || []).filter((r) => r.id === 'write-note')[0] || {}).capability || '';
+
+      /* and without a capable extension it is not offered as ready at all */
+      window.__mlsExtensionCapabilities = null;
+      const older = window.__mlsWriteFlow.buildUnifiedManifest({
+        patient: pt, sections: [{ key: 'note', text: note }], expectedContext: bound
+      });
+      const olderSign = (older && older.rows || []).filter((r) => r.id === 'sign-encounter')[0] || null;
+      out.olderSignCapability = olderSign ? olderSign.capability : '(no sign row)';
+
+      /* ---- THE FIX, on the UNBOUND card (safe to open) ------------------ */
+      window._calAppts = [];
+      window.__mlsWriteFlow.openUnifiedConfirmation({ patient: pt, sections: [{ key: 'note', text: note }] });
       await sleep(900);
-      const rows = (manifest && manifest.rows || []);
-      const signRow = rows.filter((r) => r.id === 'sign-encounter')[0] || null;
-      out.signCapability = signRow ? signRow.capability : '(no sign row)';
       const card = document.getElementById('mlsAthenaUnifiedConfirm');
       out.opened = !!card;
       if (!card) return out;
+
+      /* THE CARD ALREADY HAS A SIGN ROW, and it is the other kind. With no
+         capable extension the manifest still adds sign-encounter, as
+         capability 'manual' - rendered by unifiedManualRowHtml, which carries
+         NO radio because there is nothing to select. The overlay must leave
+         that one alone: a manual row already prints its own reason in the
+         open, so a LOCKED chip on it would be a second voice saying the same
+         thing. Measured here before it is removed, then removed so the card
+         holds exactly one sign row, the way a bound sheet does. */
+      const manual = card.querySelector('section[data-manifest-row="sign-encounter"]');
+      out.manualRowPresent = !!manual;
+      out.manualRowHasRadio = !!(manual && manual.querySelector('input[name="mlsAthenaUnifiedAction"]'));
+      window.__mlsResidueAthena.pass();
+      await sleep(200);
+      out.manualRowLocked = manual ? manual.getAttribute('data-mls-residue-locked') : 'no-row';
+      out.manualRowChip = !!(manual && manual.querySelector('[data-mls-residue-lock="1"]'));
+      if (manual && manual.parentNode) manual.parentNode.removeChild(manual);
+
+      /* the ready-row markup, in the shape unifiedReadyRowHtml emits */
+      const host = document.createElement('div');
+      host.setAttribute('role', 'radiogroup');
+      host.innerHTML =
+        '<section data-manifest-row="sign-encounter">' +
+        '<label><input type="radio" name="mlsAthenaUnifiedAction" value="sign-encounter" aria-label="Select Sign and Save in Athena for Athena review">' +
+        '<span><span><b>Sign &amp; Save in Athena</b>' +
+        '<span data-mls-ready-tick="sign-encounter" style="display:none">&#10003; Athena verified</span></span>' +
+        '<span>After MLS verifies this exact reviewed note was written to this exact encounter, your one-click confirm clicks that verified Sign &amp; Save control.</span>' +
+        '</span></label></section>';
+      card.appendChild(host);
       const section = card.querySelector('section[data-manifest-row="sign-encounter"]');
       out.sectionPresent = !!section;
       out.signRadio = !!(section && section.querySelector('input[name="mlsAthenaUnifiedAction"]'));
 
-      /* THE DEFECT: selecting it refuses immediately, before any bridge call. */
+      out.verifiedBefore = window.__mlsResidueAthena.noteWriteVerified();
       window.__mlsResidueAthena.pass();
-      await sleep(150);
+      await sleep(200);
       out.lockedBefore = section ? section.getAttribute('data-mls-residue-locked') : null;
       out.lockChip = !!(section && section.querySelector('[data-mls-residue-lock="1"]'));
       out.lockWhy = section ? ((section.querySelector('.mls-residue-lockwhy') || {}).textContent || '') : '';
-      out.verifiedBefore = window.__mlsResidueAthena.noteWriteVerified();
 
-      const radio = section && section.querySelector('input[name="mlsAthenaUnifiedAction"]');
-      if (radio) {
-        radio.checked = true;
-        radio.dispatchEvent(new Event('change', { bubbles: true }));
-        await sleep(400);
-      }
-      out.refusal = (document.getElementById('mlsAthenaUnifiedProbe').textContent || '').replace(/\s+/g, ' ').trim();
+      /* idempotence: an unchanged row must not grow a second chip per pass */
+      window.__mlsResidueAthena.pass();
+      window.__mlsResidueAthena.pass();
+      await sleep(200);
+      out.chipCount = section ? section.querySelectorAll('[data-mls-residue-lock="1"]').length : -1;
+      out.whyCount = section ? section.querySelectorAll('.mls-residue-lockwhy').length : -1;
 
-      /* THE OTHER SIDE. Seed a verified note-write receipt into the write
-         flow's OWN live state object - the same shape resultToUnifiedReceipt
-         writes - because a real verified write cannot happen here: bridge()
-         short-circuits every mlsAppAthenaAction on 127.0.0.1
-         (syntheticLocalRuntime), by design. */
+      /* ---- THE OTHER SIDE: a verified note write, in the flow's own state
+         object. Seeded rather than performed, because bridge() refuses every
+         Athena action on this host by design so no real write can happen -
+         but the SHAPE is the flow's own (resultToUnifiedReceipt writes
+         status:'verified' under the row id). */
       const st = window.__mlsWriteFlow.diagnostics.state();
       out.stateLive = !!st;
       if (st) st.receipts['write-note'] = { status: 'verified', message: 'synthetic fixture receipt' };
       out.verifiedAfter = window.__mlsResidueAthena.noteWriteVerified();
       window.__mlsResidueAthena.pass();
-      await sleep(150);
+      await sleep(200);
       out.lockedAfter = section ? section.getAttribute('data-mls-residue-locked') : null;
       out.lockChipAfter = !!(section && section.querySelector('[data-mls-residue-lock="1"]'));
+
+      try { host.remove(); } catch (e) {}
       try { window.__mlsWriteFlow.closeUnifiedConfirmation(); } catch (e) {}
       window.__mlsExtensionCapabilities = null;
       return out;
-    }, [PATIENT, NOTE, BOUND]), 120000, 'the BOUND review (item 25)');
+    }, [PATIENT, NOTE, BOUND]), 120000, 'the sign-and-save lock (item 25)');
 
     measured.sign = sign;
-    ok(sign.opened, 'the bound review sheet did not open, so item 25 was not measured');
+    /* OFFERED */
     eq(sign.signCapability, 'ready',
       `with a capable extension the sign row is "${sign.signCapability}" - item 25's premise (offered as ready) is gone`);
-    ok(sign.sectionPresent, 'the sign-encounter row did not render in the sheet');
-    eq(sign.signRadio, true, 'the sign-encounter row carries no radio - it is not being offered, so item 25 is not being measured');
-    ok(/Write the reviewed note to this encounter first/.test(sign.refusal),
-      `selecting Sign & Save did not produce the refusal item 25 is about; the status read "${sign.refusal.slice(0, 90)}"`);
+    eq(sign.signAction, 'sign_encounter', 'the ready sign row carries no sign_encounter action');
+    eq(sign.noteCapability, 'ready',
+      'the bound fixture did not produce a ready note row, so "offered beside the note write" is not being measured');
+    ok(sign.olderSignCapability !== 'ready',
+      `without a capable extension the sign row is still "${sign.olderSignCapability}" - the capability gate is not what makes it selectable`);
+    /* THE FIX */
+    ok(sign.opened, 'the unbound card did not open, so the lock could not be measured on a real card');
+    /* the MANUAL sign row is left alone - the overlay speaks only where the
+       doctor could otherwise click and be refused */
+    eq(sign.manualRowPresent, true, 'the review no longer renders a sign row at all without a capable extension');
+    eq(sign.manualRowHasRadio, false, 'the MANUAL sign row now carries a radio - it would be selectable and refusable');
+    eq(sign.manualRowLocked, null, 'the overlay locked a MANUAL sign row, which already prints its own reason (RESIDUE 25)');
+    eq(sign.manualRowChip, false, 'the overlay put a LOCKED chip on a MANUAL sign row - a second voice for the same fact');
+    ok(sign.sectionPresent && sign.signRadio, 'the sign-row fixture did not mount with its radio');
     eq(sign.verifiedBefore, false, 'a fresh review already reports a verified note write - the lock predicate is broken');
     eq(sign.lockedBefore, '1',
       'Sign & Save is offered with no sign that it cannot run yet - the doctor can only find out by clicking (RESIDUE 25)');
     ok(sign.lockChip, 'the sign row carries no LOCKED marker (RESIDUE 25)');
     ok(/unlocks only after/.test(sign.lockWhy) && /Write the note first/.test(sign.lockWhy),
       `the lock does not say what unlocks it: "${sign.lockWhy.slice(0, 80)}" (RESIDUE 25)`);
+    eq(sign.chipCount, 1, `three passes over an unchanged row left ${sign.chipCount} LOCKED chips`);
+    eq(sign.whyCount, 1, `three passes over an unchanged row left ${sign.whyCount} reason lines`);
     eq(sign.stateLive, true, 'the write flow exposed no live state object, so the unlock side could not be driven');
-    eq(sign.verifiedAfter, true, 'the lock predicate ignores a verified note-write receipt in the write flow\'s own state');
+    eq(sign.verifiedAfter, true, 'the lock predicate ignores a verified note-write receipt in the write flow own state');
     eq(sign.lockedAfter, null, 'the lock stayed on after a verified note write - it would outlive its own reason (RESIDUE 25)');
     eq(sign.lockChipAfter, false, 'the LOCKED chip stayed on after a verified note write (RESIDUE 25)');
 
@@ -543,15 +699,19 @@ async function runtime() {
          issues exactly 78 re-renders and the elapsed time is REPORTED rather
          than assumed. */
       async function measure(renders) {
-        let records = 0, titled = 0;
+        let records = 0, titled = 0, added = 0;
         const mo = new MutationObserver((list) => {
           list.forEach((m) => {
             records++;
-            Array.prototype.slice.call(m.addedNodes || []).forEach((n) => {
-              if (n.nodeType !== 1) return;
-              if (n.getAttribute && n.getAttribute('title')) titled++;
-              if (n.querySelectorAll) titled += Array.prototype.slice.call(n.querySelectorAll('[title]')).length;
-            });
+            /* THE FIELD REPORT'S OWN UNIT. A title update on .opr-tplmode is
+               an ATTRIBUTE mutation, and the writer is not the room: the room
+               emits three buttons each carrying title="<label> - <hint>", and
+               feat_athena_tooltip_dedupe.js then REMOVES all three, because
+               that same text is already visible inside the button. So every
+               unguarded rebuild costs three title mutations, and 78 rebuilds
+               cost 234 - the number the opnotes4 lane reported, exactly. */
+            if (m.type === 'attributes' && m.attributeName === 'title') titled++;
+            added += Array.prototype.slice.call(m.addedNodes || []).filter((n) => n.nodeType === 1).length;
           });
         });
         mo.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ['title'] });
@@ -563,7 +723,7 @@ async function runtime() {
         const ms = Date.now() - t0;
         await new Promise((r) => setTimeout(r, 300));
         mo.disconnect();
-        return { records, titled, renders, ms };
+        return { records, titled, added, renders, ms };
       }
 
       /* BEFORE: the guard off, 78 re-renders - the count the opnotes4 lane
@@ -572,9 +732,18 @@ async function runtime() {
       out.guardOffInstalled = window.__mlsResidueOprPerf.installed();
       out.before = await measure(78);
 
-      /* AFTER: the same driver, same count, guard back on. */
+      /* AFTER: the same driver, same count, guard back on.
+         ONE PRIMING RENDER FIRST, and it is not a fudge. A freshly installed
+         guard has no record of what the rail last held, so its first write
+         must go through - that is the whole point of a guard that compares
+         rather than mutes. Measuring from a cold guard would charge the
+         steady state for the one write that re-installing it costs. The
+         priming render is outside the window; the 78 measured after it are
+         the state the doctor actually works in. */
       window.__mlsResidueOprPerf.check();
       out.guardOnInstalled = window.__mlsResidueOprPerf.installed();
+      try { opPrepRender(); } catch (e) {}
+      await sleep(300);
       const skipped0 = window.__mlsResidueOprPerf.skipped();
       out.after = await measure(78);
       out.skippedDelta = window.__mlsResidueOprPerf.skipped() - skipped0;
@@ -595,15 +764,27 @@ async function runtime() {
     measured.perf = perf;
     ok(perf.boxPresent, `#oprTplMode never rendered (${perf.openErr || perf.renderErr || 'no error reported'}), so the churn could not be measured`);
     eq(perf.buttons, 3, `#oprTplMode holds ${perf.buttons} mode buttons, expected the module's three`);
-    eq(perf.titles, 3, `${perf.titles} of the mode buttons carry a title attribute, expected 3`);
+    /* AT REST THE TITLES ARE GONE, and that is the other half of the churn.
+       The room writes title="<label> - <hint>" on all three buttons;
+       feat_athena_tooltip_dedupe.js strips all three straight back off,
+       because that text is already visible inside the button. Neither module
+       is wrong on its own - together they mean every unguarded rebuild pays
+       three title mutations. If titles ever survive at rest, the churn has a
+       different shape and the numbers below must be re-derived. */
+    eq(perf.titles, 0,
+      `${perf.titles} titles survive on the mode buttons at rest - the tooltip dedupe no longer strips them and this measurement must be re-derived`);
     eq(perf.guardOffInstalled, false, 'revert() left the guard on, so the BEFORE number is not a before');
     eq(perf.guardOnInstalled, true, 'the guard did not re-install, so the AFTER number is not an after');
     ok(perf.before.titled >= 200,
-      `the unguarded room wrote only ${perf.before.titled} titles over 78 re-renders - the churn did not reproduce, so the AFTER number proves nothing`);
+      `the unguarded room took only ${perf.before.titled} title mutations over 78 re-renders - the churn the opnotes4 lane measured did not reproduce, so the AFTER number proves nothing`);
+    ok(perf.before.added >= 200,
+      `the unguarded rail re-created only ${perf.before.added} nodes over 78 re-renders - the rebuild did not reproduce`);
     eq(perf.after.titled, 0,
-      `the guarded room still wrote ${perf.after.titled} identical titles over 78 re-renders (was ${perf.before.titled})`);
+      `the guarded room still took ${perf.after.titled} title mutations over 78 re-renders (was ${perf.before.titled})`);
     eq(perf.after.records, 0,
       `the guarded rail still took ${perf.after.records} mutation records over 78 re-renders (was ${perf.before.records})`);
+    eq(perf.after.added, 0,
+      `the guarded rail still re-created ${perf.after.added} nodes over 78 re-renders (was ${perf.before.added})`);
     ok(perf.skippedDelta >= 70,
       `the guard only dropped ${perf.skippedDelta} identical writes out of 78 re-renders`);
     eq(perf.realChangeLanded, true, 'the guard swallowed a DIFFERENT markup string - it is not a coalescer, it is a mute');
@@ -674,13 +855,24 @@ async function runtime() {
       `with the fix off the shelf sits at y=${shelf.reverted.top} after a 900px scroll - it was expected to be above the viewport (RESIDUE 69 baseline)`);
     eq(shelf.reverted.inView, false, 'with the fix off the notice was still in view, so item 69 does not reproduce here');
 
-    /* and with it on */
-    eq(shelf.scrolled.position, 'sticky',
-      `after the fix the shelf computes position:${shelf.scrolled.position} - sticky did not apply (an overflow ancestor would do this)`);
+    /* and with it on.
+       THE COMPUTED VALUE IS NOT THE ASSERTION. Sticky was tried first and
+       measured dead here: html and body both compute overflow "hidden auto",
+       so a sticky child binds to a box that never scrolls internally and
+       travels with the content anyway - computed position read 'sticky' while
+       the shelf sat at y=-741 after a 900px scroll. A suite that checked only
+       the computed value would have called that a fix. So the position is
+       checked AND where the box actually landed is checked. */
+    eq(shelf.scrolled.position, 'fixed',
+      `after the fix the shelf computes position:${shelf.scrolled.position} - the rule did not apply`);
     eq(shelf.scrolled.inView, true,
       `after a 900px scroll the notice is at y=${shelf.scrolled.top}, off screen (RESIDUE 69)`);
     ok(shelf.scrolled.top >= 0 && shelf.scrolled.top < 844,
-      `the sticky notice landed at y=${shelf.scrolled.top} on an 844px screen`);
+      `the notice landed at y=${shelf.scrolled.top} on an 844px screen`);
+    /* it must clear the header furniture rather than sit on top of it - the
+       whole reason the shell publishes this anchor */
+    ok(shelf.scrolled.top >= 40,
+      `the notice landed at y=${shelf.scrolled.top}, on top of the header instead of below it (RESIDUE 69)`);
     eq(shelf.restored.inView, true, 'the fix did not come back when its stylesheet was re-enabled');
 
     await page.close();

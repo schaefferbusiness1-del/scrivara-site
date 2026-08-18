@@ -50137,10 +50137,31 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      the room rewrites the same three buttons - each with its own title
      attribute - over and over while nothing about them changes.
 
-     ROOT CAUSE, found in feat_mls_opnote_room.js (PRODUCTION - not this
-     block's file). buildRails() runs after EVERY opPrepRender, and
-     opPrepRender runs on nearly every control in that room. buildRails() calls
-     four builders. Two of them already carry the b944 guard:
+     THE CHURN HAS TWO HALVES, and the handover named neither correctly. It
+     was passed on as "feat_mls_opnote_room.js writes 234 title updates per
+     8 s". Instrumenting setAttribute/removeAttribute for title on
+     .opr-tplmode over ten opPrepRender() calls and reading the stacks gives:
+
+       102 title mutations, of which 114 records split as
+        57x SET     relabelModeButton (the lane's template-mode adapter)
+        57x REMOVE  _stripOneTitle    (this shell's own tooltip converter)
+        10x childList rebuilds of #oprTplMode (the room)
+
+     So the DOMINANT half was a ping-pong between the lane's own adapter and
+     this shell, and it is fixed at its source in that adapter, not here.
+     What remains for this block is the second half, below - and it is real:
+     ten renders tore the rail down and reparsed it ten times.
+
+     Measured, ten renders, three buttons - title mutations:
+       102  as shipped
+        60  adapter fixed, rail rebuild still unguarded
+         6  adapter fixed + this block (all six from the one write a freshly
+            installed guard must let through; steady state is 0)
+
+     SECOND HALF, in feat_mls_opnote_room.js (PRODUCTION - not this block's
+     file). buildRails() runs after EVERY opPrepRender, and opPrepRender runs
+     on nearly every control in that room. buildRails() calls four builders.
+     Two of them already carry the b944 guard:
 
        buildNav      if (nav.__oprHtml !== h) { nav.innerHTML = h; ... }
        buildTplRail  var changed = (rail.__oprHtml !== h); if (changed) {...}
@@ -50284,24 +50305,47 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      rendered that same distance above the screen, and the app appears to have
      said nothing at all.
 
-     THE FIX is one line of CSS and no JavaScript: the shelf becomes sticky at
+     THE FIX is one line of CSS and no JavaScript: the shelf is positioned at
      the offset the shell already measures and publishes for exactly this
      purpose. --mls-notice-top is written by mlsSyncNoticeAnchor() from the
      real bottom of #appHeader / #mlsCtxBar (and collapses to the viewport top
      while a modal is open), and toast() calls it before every notice, so the
-     shelf pins directly below the same furniture the fixed toast would have
-     cleared. At scroll 0 nothing moves - the shelf is exactly where it always
-     was, below the patient bar - and the design intent recorded above
-     mlsMobileNoticeShelf() ("visible without covering date, patient, or
-     recording controls") is what makes sticky the right primitive rather than
-     fixed: sticky cannot leave its own box until the page scrolls past it.
+     notice sits directly below the same furniture the fixed toast clears.
+
+     STICKY WAS TRIED FIRST AND MEASURED DEAD. It is the primitive the design
+     intent above mlsMobileNoticeShelf() asks for - "visible without covering
+     date, patient, or recording controls" - because a sticky box cannot leave
+     its own flow position until the page scrolls past it. It does not work
+     here, and the reason is structural rather than a specificity accident:
+
+       html  computed overflow: hidden auto, height 399
+       body  computed overflow: hidden auto, height 399
+
+     A sticky element is bounded by its nearest scrollable ancestor, not by
+     the viewport. With overflow on both html and body the shelf binds to a
+     box that never scrolls internally, so it simply travels with the content.
+     Measured at 390x844 after scrolling 900px: computed position IS 'sticky'
+     and the shelf is still at y=-741, i.e. off the top of the screen. A test
+     that only asserted the computed value would have called that a fix.
+
+     So the shelf is FIXED, which is what the shell's own .toast already is
+     everywhere outside this shelf, using the same anchor variable. The cost
+     is that it overlays rather than displaces; at scroll 0 it lands on the
+     same line it occupied in flow, so what the doctor sees at rest is
+     unchanged, and --mls-notice-top keeps it clear of the header and the
+     patient banner exactly as it does for every other notice in the app.
 
      z-index 9330 sits under .modal-bg (9400), so a modal still covers it. -->
 <style id="mlsResidueNoticeCss">
 @media (max-width:760px){
   body.mls-redesign #mlsMobileNoticeShelf.mls-mobile-notice-active{
-    position:sticky !important;
+    position:fixed !important;
     top:var(--mls-notice-top, 92px) !important;
+    left:12px !important;
+    right:12px !important;
+    width:auto !important;
+    max-width:none !important;
+    margin:0 !important;
     z-index:9330 !important;
   }
 }
