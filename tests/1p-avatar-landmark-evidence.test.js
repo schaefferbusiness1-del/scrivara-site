@@ -18,7 +18,8 @@
  *
  *   PART 1  the bundle itself — exact bytes, exact digests, the size budget, the
  *           licence notices, and the two CSP edits (both /1p twins carry
- *           'wasm-unsafe-eval'; production ScribeFlow.html and /cloned do not).
+ *           'wasm-unsafe-eval'; production ScribeFlow.html and its staging
+ *           snapshot do not, and never may).
  *   PART 2  THE EXECUTING PROOF — real Chrome, the real module, the real model
  *           loaded from 1p-avatar-model/ over http, driven across nine
  *           synthetic sitters. It prints the per-fixture table and asserts the
@@ -123,12 +124,25 @@ function cspOf(rel) {
 /* WHY /1p CARRIES IT AND PRODUCTION DOES NOT.
    Instantiating a WebAssembly module counts as script execution under CSP, so
    the bundled tfjs wasm backend cannot start without 'wasm-unsafe-eval' in
-   script-src. Only /1p runs it: the avatar landmark reader is a /1p fork
-   (1p-feat_mls_avatar.js), production's ScribeFlow.html loads no wasm at all,
-   and /cloned is DERIVED from /1p but has not been promoted this feature. So
-   the source expression is granted exactly where the capability is used and
-   nowhere else — production keeps the strictly narrower policy it has always
-   had, and this test is what stops the expression drifting into it. */
+   script-src. /1p runs it — the avatar landmark reader is a /1p fork,
+   1p-feat_mls_avatar.js. Production's ScribeFlow.html loads no wasm at all and
+   keeps the strictly narrower policy it has always had. This test is what stops
+   the expression drifting into it.
+
+   ⛔ /cloned IS NOT ON THE "MUST NOT" LIST, AND THAT IS A MEASUREMENT, NOT AN
+   OVERSIGHT. /cloned is DERIVED from /1p by scripts/derive-cloned-from-1p.js,
+   which copies 1pScribeFlow.html to cloned/index.html and substitutes only the
+   lane identity (marker, fork asset names, bundle loader, build token). The CSP
+   is not one of those substitutions, so the moment the lead re-derives,
+   cloned/index.html carries 'wasm-unsafe-eval' too — measured: `derive-cloned
+   --check` reports DRIFTED on cloned/index.html and cloned-feat_mls_avatar.js
+   against this commit. Asserting /cloned must NOT have it would therefore be
+   TRUE today and FALSE the moment the lane is re-derived, which is a test that
+   fails for the lead instead of for the author. That inheritance is correct —
+   /cloned is the release-candidate lane and takes /1p file-for-file — but it is
+   the lead's decision to make knowingly, so it is written down here and in the
+   handover rather than pinned. Production and staging are the lines that are
+   pinned, because those are the ones that must never move. */
 for (const twin of ['1pScribeFlow.html', '1p/index.html']) {
   const csp = cspOf(twin);
   ok(/script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'\s*;/.test(csp),
@@ -138,7 +152,7 @@ for (const twin of ['1pScribeFlow.html', '1p/index.html']) {
   ok(/object-src 'none'/.test(csp) && /worker-src 'self' blob:/.test(csp),
     `${twin} lost an unrelated CSP directive while the wasm expression was added`);
 }
-for (const strict of ['ScribeFlow.html', 'ScribeFlow-staging.html', 'cloned/index.html']) {
+for (const strict of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
   ok(!/wasm-unsafe-eval/.test(cspOf(strict)),
     `${strict} must NOT carry 'wasm-unsafe-eval' — it runs no wasm, and widening it here would widen production`);
 }
