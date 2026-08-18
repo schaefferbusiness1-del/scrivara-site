@@ -224,30 +224,35 @@ const FIXTURE = function () {
   });
   console.log('');
 
-  /* ---- 1. THE FAR FRAMINGS — WHAT THE CROP CAN AND CANNOT DO ------------
-     ⛔ MEASURED, AND IT LIMITS THE FIX: at head 15% of frame height the wide
-     reader finds NO FACE AT ALL, so there is no box to crop to and the
-     re-crop cannot run. A blind zoom ladder would run — and would then hand a
-     28-pixel head to a reader that describes it, which is exactly
-     [[face-matcher-measured-a-12-pixel-face]]. So the cure for this framing is
-     not algorithmic: it is the LIVE GUIDE, which now names the target the
-     shutter is graded on and tells him to move closer BEFORE he presses it.
-     This asserts that honest chain, not a rescue that does not exist. */
+  /* ---- 1. THE FAR FRAMINGS ---------------------------------------------
+     At head 15% of frame height — a doctor sitting back from the laptop lid —
+     the whole-frame reader finds NO FACE AT ALL: 0 of 14 at both frame sizes.
+     ⛔ THE FIRST VERSION OF THIS SECTION ASSERTED THAT NOTHING COULD BE DONE
+     ABOUT IT, and it was right about the mechanism it had: a crop derived from
+     the READER'S box cannot run when the reader has no box. avfit-1.1.0 locates
+     the face by STRUCTURE instead, which needs no box and no colour, so these
+     two are now rescued — and the record of the earlier limit stays here
+     because it is the reason the locator exists. */
   const far = out.rows.filter(r => /head 15%/.test(r.name));
   eq(far.length, 2, 'the two far-framing fixtures are missing from the sweep');
   far.forEach(r => {
     eq(r.fit.before.claimed, 0,
       r.name + ' — the fixture no longer reproduces the total refusal, so nothing below proves anything');
-    eq(r.fit.fitted, false,
-      r.name + ' — a frame with no findable face was cropped anyway, on a box that does not exist');
-    eq(r.fit.after.claimed, 0,
-      r.name + ' — a frame with no findable face is described anyway: ' + r.fit.after.derived.join(', '));
-    eq(r.fit.after.fit.ready, false, r.name + ' — the framing guide calls an unreadable frame ready');
-    ok(/oval/i.test(r.fit.after.fit.say),
-      r.name + ' — the guide does not point the doctor at the oval it draws; it said "' + r.fit.after.fit.say + '"');
-    ok(/closer|fill/i.test(r.fit.after.fit.say),
-      r.name + ' — the guide never tells the doctor to move closer, which is the only thing that fixes this framing');
+    ok(r.fit.located, r.name + ' — the structure locator found nothing: ' + r.fit.locateWhy);
+    ok(r.fit.fitted, r.name + ' — no candidate crop was kept: ' + r.fit.why);
+    ok(r.fit.after.claimed >= 5,
+      r.name + ' — after the crop it reads only ' + r.fit.after.claimed + ' of 14; a doctor sitting back still gets nothing');
+    ok(r.fit.after.faceFrac >= 0.30,
+      r.name + ' — the crop left the face at ' + r.fit.after.faceFrac + ' of the grid');
   });
+  /* …and the guide still tells him to move closer, because a crop is a repair
+     and a well-framed shot is better than a repaired one. */
+  const guide = out.rows.filter(r => /head 15%/.test(r.name))[0];
+  eq(guide.fit.before.fit.ready, false, 'the framing guide calls an unreadable whole frame ready');
+  ok(/oval/i.test(guide.fit.before.fit.say),
+    'the guide does not point the doctor at the oval it draws; it said "' + guide.fit.before.fit.say + '"');
+  ok(/closer|fill/i.test(guide.fit.before.fit.say),
+    'the guide never tells the doctor to move closer');
 
   /* THE FRAMINGS THE CROP DOES RESCUE — the ordinary 22% laptop distance. */
   const midRange = out.rows.filter(r => /head 22%/.test(r.name));
@@ -283,6 +288,8 @@ const FIXTURE = function () {
   const wall = out.rows.filter(r => /beige wall/.test(r.name))[0];
   ok(wall, 'the confidently-wrong wall canary is missing');
   eq(wall.fit.fitted, false, 'a picture of a wall was cropped as though it contained a face');
+  eq(wall.fit.located && wall.fit.after.claimed > 0, false,
+    'the structure locator turned a beige wall into a face');
   eq(wall.fit.after.claimed, 0,
     'a beige wall was described as a person: ' + wall.fit.after.derived.join(', '));
   eq(wall.fit.before.claimed, 0,

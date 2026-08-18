@@ -18,7 +18,12 @@ const AUTOMATED_PROOF_FILES = new Set([
      REAL webcam frame can supply — the owner's "5 of 14, always", measured at
      640x480 and 1280x720 with the head 15-35% of frame height, before and
      after the face-aware re-crop, with the 12-pixel-face canary. */
-  '1p-avatar-capture-readability-proof.js'
+  '1p-avatar-capture-readability-proof.js',
+  /* avfit-1.1.0 (2026-08-17): the owner's own room. A warm wall passes the skin
+     window, merges with his face and takes the read to 0-1 of 14; this proves
+     the merge, proves the colour-independent locator recovers it, and keeps the
+     wall-only and 12-pixel-face negatives refusing. */
+  '1p-avatar-warm-wall-proof.js'
 ]);
 
 const tests = [
@@ -187,6 +192,12 @@ const tests = [
          select now has exactly ONE assignment in the whole file, and the step
          machine that publishes data-mls-avatar-state / -next for the glow lane. */
   '1p-avatar-capture-readability-proof.js',
+  /* …and warm-wall is the one that matches the room he is actually in: owner,
+     2026-08-17, "ALSO THIS FACE TO AVATAR IS STILL A NIGHTMARE AND NEEDS A LOT
+     OF WORK", over a capture taken against his own warm-toned wall. Measured on
+     the pre-fix build: 0 or 1 of 14, because the face finder segments by SKIN
+     COLOUR and a magnolia wall is skin-coloured. */
+  '1p-avatar-warm-wall-proof.js',
   '1p-avatar-capture-fit.test.js',
   /* …and setup-flow drives the owner's actual screen: real module, real Setup
      form, a portrait that really reads five of fourteen, the real Match button,

@@ -302,7 +302,13 @@ const settle = () => new Promise(r => setImmediate(r));
     eq(cam.state(), 'live', 'three consecutive lit frames did not prove the feed');
     eq(cam.feed().matcherAllowed, true, 'the matcher is still gagged on a proven feed');
     eq(cam.snap().disabled, false, 'the shutter never opens on a proven feed');
-    ok(/8 of 14/.test(cam.status()), 'the live guide stopped reporting the matcher ledger on a proven feed: ' + cam.status());
+    /* avfit-1.1.0 (owner, 2026-08-17): the viewfinder line no longer carries
+       "N of 14". A doctor lining up a shot cannot act on a count, and the line
+       he complained about was this one reading the reader's diagnosis aloud.
+       The ledger itself is unchanged and still one row per control, which is
+       what the next assertion checks — the count moved, it did not vanish. */
+    ok(/Face found/.test(cam.status()), 'the live guide stopped saying a face was found on a proven feed: ' + cam.status());
+    ok(!/of 14/.test(cam.status()), 'the viewfinder line carries the matcher count again: ' + cam.status());
     ok(/Skin/.test(cam.list()), 'the per-control ledger never appears on a proven feed');
     eq(cam.seen.playCalls >= 1, true, 'playback was assumed rather than asked for');
   }

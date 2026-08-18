@@ -94,7 +94,20 @@ const located = { look: { hairStyle: 'long' }, derived: ['hairStyle'],
 const portraitVerdict = verdict(located, { exposure: 132, sharp: 4.8 });
 eq(portraitVerdict.ready, true, '44/256 skin-mask width wrongly rejects a clear located portrait');
 eq(portraitVerdict.matchLimited, true, 'the weak trait read is not disclosed as limited');
-ok(/leave the character unchanged/.test(portraitVerdict.matchWhy), 'limited match guidance overclaims the character');
+/* ⛔ avfit-1.0.0/1.1.0 reversed what this sentence may promise. It used to say
+   the matcher "will leave the character unchanged", which was the whole-or-
+   nothing rule; an incomplete read now applies the traits it really measured
+   (facePartialDecision) and labels them, so promising no change would be a lie
+   told before the shot. What it must NOT do is overclaim: it may not call the
+   coming read a match, and it must still name the thing the doctor can fix. */
+/* "match more of it" is a verb about what is still to come; "a match" /
+   "matched" would be a claim about a read that has not happened. */
+ok(!/\ba match\b|\bmatched\b|match complete/i.test(portraitVerdict.matchWhy),
+  'the limited-match hint claims a completed match before the shot: ' + portraitVerdict.matchWhy);
+ok(!/leave the character unchanged/.test(portraitVerdict.matchWhy),
+  'the hint still promises nothing will change, which partial application makes false');
+ok(/oval|closer|more of your face/i.test(portraitVerdict.matchWhy),
+  'the limited-match hint no longer names anything the doctor can act on: ' + portraitVerdict.matchWhy);
 const backgroundVerdict = verdict(null, { exposure: 132, sharp: 20 });
 eq(backgroundVerdict.ready, false, 'a sharp background with no face geometry is accepted as a portrait');
 const unprovedLook = verdict({ look: { skin: '#f0c8a0' }, derived: ['skin'], receipt: strongRead.receipt },

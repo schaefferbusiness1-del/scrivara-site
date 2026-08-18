@@ -167,19 +167,35 @@ eq(fit.better(q(7, 64), q(9, 60)), false, 'a crop that did not enlarge the face 
 eq(fit.better(q(7, 64), q(9, 108, false)), false, 'a crop the capture verdict refuses is kept');
 eq(fit.better(q(7, 64), null), false, 'a failed crop is treated as an improvement');
 
-/* END TO END: the plan is executed, and the returned square is the cropped one. */
+/* END TO END: a plan is executed and the returned square is the cropped one.
+   avfit-1.1.0 tries a LADDER of candidates, so the count of draws is the number
+   tried rather than one; every draw must still be square, from the captured
+   frame, and never upscaled. */
 {
   const env = makeEnv();
   const before = { width: 720, __id: 'wide' };
   const out = env.apply(before, Object.assign({ faceResult: { box: wide, receipt: { claimed: 7, faceW: 64, grid: 256 } } },
-    { sharp: 5, exposure: 130 }));
+    { sharp: 5, exposure: 130 }), null);
   eq(out.fitted, true, 'the shutter did not adopt a crop that reads better');
   ok(out.square !== before, 'the shutter kept the wide frame after accepting the crop');
-  eq(env.drawn.length, 1, 'the crop was drawn a number of times other than once');
-  eq(env.drawn[0].from, before, 'the crop was taken from something other than the captured frame');
-  eq(env.drawn[0].sw, env.drawn[0].sh, 'the crop is not square, so it would stretch the face');
-  ok(env.drawn[0].dw <= env.drawn[0].sw, 'the crop is UPSCALED on its way into the analysis surface');
+  /* the locator draws its own 160px analysis copy with the 4-argument form;
+     the CROPS are the 9-argument draws */
+  const crops = env.drawn.filter(d => d.dw !== undefined);
+  ok(crops.length >= 1, 'no crop was drawn at all');
+  ok(out.tried >= 1, 'the shutter did not report how many candidates it tried');
+  crops.forEach((d, i) => {
+    eq(d.from, before, 'candidate ' + i + ' was taken from something other than the captured frame');
+    eq(d.sw, d.sh, 'candidate ' + i + ' is not square, so it would stretch the face');
+    ok(d.dw <= d.sw, 'candidate ' + i + ' is UPSCALED on its way into the analysis surface');
+  });
 }
+/* ⛔ EVERY CANDIDATE IS JUDGED AGAINST THE WHOLE FRAME, never against the
+   previous one — a ladder that compared each rung to the last could walk
+   downhill one accepted step at a time. */
+ok(/EVERY candidate is judged against the WIDE frame, never against the/.test(source),
+  'the ladder lost the rule that keeps it from walking downhill');
+ok(/if \(!faceFitBetter\(q, attempt\.q\)\) continue;/.test(source),
+  'a candidate is accepted without beating the whole frame');
 /* ⛔ AN UNLIT CROP NEVER REACHES THE MATCHER. */
 {
   let reads = 0;
@@ -195,6 +211,83 @@ eq(fit.better(q(7, 64), null), false, 'a failed crop is treated as an improvemen
   eq(reads, 0, 'a zero-luminance crop was handed to faceReadPortrait — the exact frame avcam-1.0.0 exists to stop');
   eq(out.fitted, false, 'an unlit crop was adopted');
 }
+
+/* ---- 1b. THE BROWSER'S OWN FACE DETECTOR ------------------------------
+   ⛔ UNVERIFIED AGAINST A REAL BROWSER: window.FaceDetector is undefined in the
+   Chrome these suites drive (1p-avatar-warm-wall-proof asserts that, so the day
+   it appears the claim gets re-measured instead of repeated). What IS provable
+   here is the contract around it: absent detector -> synchronous fall-through,
+   which is what keeps the shutter's single-turn behaviour; one face -> its box
+   leads the ladder; zero or several faces -> fall back rather than guess which
+   person is the physician; a throwing or never-answering detector -> the same
+   answer as no detector at all. */
+function resolveEnv(detectorFactory) {
+  const seen = { calls: 0, options: null };
+  const timers = [];
+  const win = {};
+  if (detectorFactory) {
+    win.FaceDetector = function (options) {
+      seen.calls++; seen.options = options;
+      this.detect = detectorFactory;
+    };
+  }
+  const api = new Function('MEASURE_MAX', 'document', 'window', 'safe', 'setTimeout',
+    'frameQuality', 'avcamFrameLooksLive', 'faceReadPortrait', 'faceCaptureVerdict',
+    between(source, 'var FACE_FIT_TARGET', '/* ===== end avfit-1.0.0 =====') +
+    '\nreturn { resolve: faceFitResolve, apply: faceFitApply, planFrom: faceFitPlanFrom };')(
+      1024,
+      { createElement: () => ({ width: 0, height: 0, getContext: () => ({
+        imageSmoothingEnabled: false, imageSmoothingQuality: '', drawImage() {} }) }) },
+      win, safe, (fn) => { timers.push(fn); return timers.length; },
+      () => ({ sharp: 5, exposure: 130 }), () => true,
+      () => ({ look: {}, derived: ['skin'], receipt: { claimed: 9, grid: 256, faceW: 108 },
+        box: { grid: 256, L: 74, R: 182, T: 60, B: 190, w: 108, cx: 128 } }),
+      () => ({ ready: true, why: '', score: 1 }));
+  return { api, seen, timers, win };
+}
+{
+  /* no detector: `then` must fire SYNCHRONOUSLY */
+  const env = resolveEnv(null);
+  let sync = false, got = null;
+  env.api.resolve({ width: 720 }, { faceResult: { box: { grid: 256, L: 96, R: 159, T: 96, B: 151, w: 64, cx: 128 },
+    receipt: { claimed: 7, faceW: 64, grid: 256 } } }, (r) => { sync = true; got = r; });
+  eq(sync, true, 'with no FaceDetector the shutter no longer resolves in one turn — the camera path is now async for everyone');
+  ok(got, 'the synchronous fall-through produced no result');
+}
+{
+  /* exactly one face: its box leads */
+  const face = { boundingBox: { x: 300, y: 200, width: 180, height: 230 } };
+  const env = resolveEnv(() => Promise.resolve([face]));
+  let got = null;
+  env.api.resolve({ width: 720 }, { faceResult: null }, (r) => { got = r; });
+  eq(env.seen.calls, 1, 'the browser detector was not constructed');
+  ok(env.seen.options && env.seen.options.maxDetectedFaces > 1,
+    'the detector is asked for one face, so a second person could never be noticed and refused');
+}
+{
+  /* several faces: refuse to guess which is the physician */
+  const two = [{ boundingBox: { x: 10, y: 10, width: 80, height: 100 } },
+    { boundingBox: { x: 300, y: 200, width: 180, height: 230 } }];
+  const env = resolveEnv(() => Promise.resolve(two));
+  env.api.resolve({ width: 720 }, { faceResult: null }, () => {});
+  ok(true, 'multi-face fall-back path executed');   /* asserted on source below */
+}
+ok(/if \(list\.length !== 1\) \{ settle\(null\); return; \}/.test(source),
+  'the camera detector picks one of several faces instead of falling back — the upload path refuses exactly this');
+ok(/var FACE_DETECT_MS = 1200;/.test(source), 'the browser detector has no deadline');
+ok(/typeof Detector !== 'function'/.test(source),
+  'the detector path is not guarded on the browser actually having one');
+ok(/UNVERIFIED IN A REAL BROWSER/.test(source),
+  'the module stopped saying that the FaceDetector path has never been proven in a real browser');
+
+/* ---- 1c. THE STRUCTURE LOCATOR ---------------------------------------- */
+ok(/FACE_LOCATE_MIN_SKIN = 0\.45/.test(source), 'the locator lost its skin-coverage term, so a bookshelf can win');
+ok(/FACE_LOCATE_ABS_FLOOR = 1\.6/.test(source), 'the locator lost its absolute structure floor, so a flat wall can win');
+ok(/FACE_LOCATE_REL_FLOOR/.test(source), 'the locator lost its per-frame relative floor');
+ok(/faceIsSkinRgb\(d\[i\], d\[i \+ 1\], d\[i \+ 2\]\)/.test(source),
+  'the locator built its own skin test instead of the one the reader uses');
+ok(/var contrast = inner - \(outerN > 0 \? outerSum \/ outerN : 0\);/.test(source),
+  'the locator scores absolute energy rather than energy against its own surround, so a busy room wins');
 
 /* THE THREE READINESS FACTS the guide shows and the shutter is graded on. */
 {

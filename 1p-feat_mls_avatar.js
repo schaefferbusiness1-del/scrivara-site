@@ -5944,7 +5944,19 @@
     if (q.exposure <= DEAD_FEED_EXPOSURE) why = 'The camera picture went black — restart the camera. This is not a lighting problem.';
     else if (q.exposure < 45) why = 'The picture is too dark — turn a light on, or face a window.';
     else if (q.exposure > 225) why = 'The picture is washed out — move the bright light behind you out of shot.';
-    else if (!hasFace) why = (res && res.found && res.found[0]) || 'No face found yet — centre your face in the frame.';
+    /* ⛔ avfit-1.1.0 — THE GUIDE STOPPED READING THE DIAGNOSIS ALOUD.
+       Owner, 2026-08-17, with a screenshot of the camera step: the line under
+       his own face read "your face outline runs from one edge of the picture to
+       the other, which means a background close to skin colour is merging with
+       your face — nothing measured from that outline would really be you.
+       Retake against a plainer or cooler-coloured background…" That paragraph
+       is TRUE and it is the reader's internal diagnosis; printing it at a
+       doctor mid-shot tells him his face is not his face and gives him four
+       things to fix. The reasons still exist, still ride `found`, and still
+       reach the per-control ledger after the match. The live line is one calm
+       instruction, and the three readiness facts beside it (faceFitReport) say
+       which one to act on. */
+    else if (!hasFace) why = 'Centre your face in the oval and move a little closer.';
     else if (q.sharp < 2.2) why = 'The picture is blurred — hold still, and give the camera a moment to focus.';
     /* A ready face always outranks an unusable frame.  The lower terms only
        choose among frames in the same evidence class. */
@@ -5956,7 +5968,7 @@
     return { ready: ready, why: why, score: score,
       matchLimited: ready && (!hasSkin || faceRatio < 0.34),
       matchWhy: ready && (!hasSkin || faceRatio < 0.34)
-        ? 'Portrait ready. The optional animated-trait matcher could not read enough of the face reliably, so it will leave the character unchanged.' : '' };
+        ? 'Portrait ready — a bit more of your face in the oval would let the character match more of it.' : '' };
   }
   /* BEST OF SEVERAL FRAMES, not whichever frame the tap landed on. A single grab
      catches a blink, a turn, or the frame the autofocus was still working on. */
@@ -6367,12 +6379,10 @@
         ui.fit.className = 'mlsAvLiveFit' + (fit.ready ? ' on' : '');
       }
     }
-    if (res && res.receipt) {
-      line = 'Portrait found — optional match sees ' + res.receipt.claimed + ' of ' + res.receipt.examined + ' details' +
-        (ready ? ' — portrait ready, snap when ready' : '');
-    } else {
-      line = 'Looking for your face…';
-    }
+    /* avfit-1.1.0: a short status, with the three readiness facts on their own
+       line below it. The count belongs to the RESULT, not to the viewfinder —
+       a doctor lining up a shot cannot act on "6 of 14". */
+    line = (res && res.receipt) ? (ready ? 'Face found — snap when you are ready' : 'Face found') : 'Looking for your face…';
     var verdict = faceCaptureVerdict(res, q);
     var nudge = verdict.why || verdict.matchWhy;
     if (nudge) line += ' · ' + nudge;
@@ -6525,26 +6535,211 @@
           : (!big ? 'Move closer — fill the oval' : (!eyes ? 'Look at the camera — both eyes need to be visible' : 'Framing looks good')))
     };
   }
-  /* WHERE TO CROP, in the source square's own pixels. Null means "do not". */
-  function faceFitPlan(square, res) {
-    var b = (res && res.box) || null;
-    var grid = Number(b && b.grid) || 0;
+  /* ===== avfit-1.1.0 — FINDING THE FACE WITHOUT ASKING WHAT COLOUR IT IS ====
+     Owner, 2026-08-17, over a screenshot of the capture step against his own
+     warm-toned room wall: "ALSO THIS FACE TO AVATAR IS STILL A NIGHTMARE AND
+     NEEDS A LOT OF WORK."
+
+     He is right, and the root cause is the one his screenshot names: the face
+     finder is a SKIN-COLOUR blob segmentation, so anything warm — a magnolia
+     wall, wood panelling, a tan door — falls inside the same YCbCr window as
+     his face, merges with it into one component, and the "face outline" becomes
+     the room. MEASURED on this build, synthetic 1280x720 frames with the head
+     25% of frame height (scratchpad/warmwall.js):
+
+         plain cool wall   6 of 14   box 52/256 wide
+         WARM wall         1 of 14   box L144..R255, T64..B255 — the wall
+         WARM wall + wood  0 of 14   box touches every edge
+         WARM wall, head 30%   0 of 14 — "79% of this picture reads as
+                                         skin-coloured, so I cannot tell your
+                                         face from the room behind it"
+
+     So on the ordinary indoor frame the number is not five of fourteen. It is
+     zero or one. Everything downstream — the crop, the samplers, the partial
+     application — is measuring a wall.
+
+     THE FIX IS TO LOCATE THE FACE BY SOMETHING THAT IS NOT ITS COLOUR.
+       1. `window.FaceDetector` (Chrome's Shape Detection API) when the browser
+          has it — a real detector, used first. ⛔ NOT PROVEN HERE: it is
+          `undefined` in the Chrome this suite drives, so the code path is
+          written, guarded and unit-tested against a fake, and its real-browser
+          behaviour is UNVERIFIED. Said plainly rather than implied.
+       2. Otherwise `faceFitLocate` below: a face is a small region of
+          CONCENTRATED STRUCTURE (brows, eyes, nostrils, lips, the hair
+          boundary) sitting inside skin-coloured pixels. A warm wall has the
+          colour and no structure; a bookshelf has structure and, mostly, not
+          the colour. Neither term alone works and the product does.
+          Measured on the negative controls: a warm wall with no face in it
+          scores contrast 0.02 against a floor of 1.60 and REFUSES; a cool wall
+          refuses for want of skin coverage.
+       3. Then several candidate crops are drawn from that anchor and EACH IS
+          RE-READ. The crop is kept only if the reader claims more than it did
+          on the wide frame. That is what makes an imperfect locator safe: it
+          cannot make the answer worse, only better, and the sweep that chose
+          the ladder shows why it is needed — the same fixture reads 0 of 14 at
+          one crop and 7 at the next.
+
+     MEASURED AFTER (same fixtures, tests/1p-avatar-warm-wall-proof.js):
+         WARM wall h25   1 -> 7 of 14
+         WARM wall h30   0 -> 7 of 14
+         WARM + wood     0 -> 7 of 14
+         WARM wall h18   0 -> 7 of 14
+         WARM off-centre 1 -> 7 of 14
+     ⛔ Still 7, not 10: five of the fourteen controls are claimable only when
+     the feature is PRESENT or (faceShape) never, so ten is not reachable from
+     the pixel path without claiming an absence. See the header of
+     tests/1p-avatar-capture-readability-proof.js. ===== */
+  var FACE_LOCATE_GRID = 160;        /* the locate grid; independent of the reader's 128/256 */
+  var FACE_LOCATE_MIN_SKIN = 0.45;   /* a face is mostly skin-coloured, even under a cast */
+  var FACE_LOCATE_ABS_FLOOR = 1.6;   /* absolute structure floor: a flat wall scores ~0.02 */
+  var FACE_LOCATE_REL_FLOOR = 0.35;  /* …and it must stand out from THIS frame's own energy */
+  function faceFitLocate(canvas) {
+    return safe(function () {
+      var G = FACE_LOCATE_GRID;
+      var c = document.createElement('canvas'); c.width = G; c.height = G;
+      var x = c.getContext('2d');
+      x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+      x.drawImage(canvas, 0, 0, G, G);
+      var d = x.getImageData(0, 0, G, G).data;
+      var grey = new Float64Array(G * G), skin = new Float64Array(G * G);
+      var i, j;
+      for (i = 0, j = 0; i < d.length; i += 4, j++) {
+        grey[j] = (d[i] * 3 + d[i + 1] * 4 + d[i + 2]) / 8;
+        skin[j] = faceIsSkinRgb(d[i], d[i + 1], d[i + 2]) ? 1 : 0;
+      }
+      var en = new Float64Array(G * G), yy, xx, k;
+      for (yy = 1; yy < G - 1; yy++) {
+        for (xx = 1; xx < G - 1; xx++) {
+          k = yy * G + xx;
+          en[k] = Math.abs(grey[k + 1] - grey[k]) + Math.abs(grey[k + G] - grey[k]);
+        }
+      }
+      function integral(srcArr) {
+        var I = new Float64Array((G + 1) * (G + 1)), yy2, xx2, run;
+        for (yy2 = 0; yy2 < G; yy2++) {
+          run = 0;
+          for (xx2 = 0; xx2 < G; xx2++) {
+            run += srcArr[yy2 * G + xx2];
+            I[(yy2 + 1) * (G + 1) + (xx2 + 1)] = I[yy2 * (G + 1) + (xx2 + 1)] + run;
+          }
+        }
+        return I;
+      }
+      var Ien = integral(en), Isk = integral(skin);
+      function areaSum(I, x0, y0, x1, y1) {
+        x0 = Math.max(0, x0); y0 = Math.max(0, y0);
+        x1 = Math.min(G, x1); y1 = Math.min(G, y1);
+        if (x1 <= x0 || y1 <= y0) return 0;
+        var W = G + 1;
+        return I[y1 * W + x1] - I[y0 * W + x1] - I[y1 * W + x0] + I[y0 * W + x0];
+      }
+      function areaMean(I, x0, y0, x1, y1) {
+        var ax0 = Math.max(0, x0), ay0 = Math.max(0, y0);
+        var ax1 = Math.min(G, x1), ay1 = Math.min(G, y1);
+        var n = (ax1 - ax0) * (ay1 - ay0);
+        return n > 0 ? areaSum(I, x0, y0, x1, y1) / n : 0;
+      }
+      var frameEn = areaMean(Ien, 0, 0, G, G);
+      var best = null, sc, wh, ww, step, y0, x0;
+      for (sc = 0.16; sc <= 0.72; sc *= 1.16) {
+        wh = Math.round(G * sc); ww = Math.round(wh * 0.76);
+        if (wh < 8 || ww < 6) continue;
+        step = Math.max(2, Math.round(wh / 8));
+        for (y0 = 0; y0 + wh <= G; y0 += step) {
+          for (x0 = 0; x0 + ww <= G; x0 += step) {
+            var x1 = x0 + ww, y1 = y0 + wh;
+            var sk = areaMean(Isk, x0, y0, x1, y1);
+            if (sk < FACE_LOCATE_MIN_SKIN) continue;
+            var inner = areaMean(Ien, x0, y0, x1, y1);
+            var mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+            var ox0 = Math.round(mx - ww * 0.95), ox1 = Math.round(mx + ww * 0.95);
+            var oy0 = Math.round(my - wh * 0.95), oy1 = Math.round(my + wh * 0.95);
+            var outerSum = areaSum(Ien, ox0, oy0, ox1, oy1) - areaSum(Ien, x0, y0, x1, y1);
+            var outerN = (Math.min(G, ox1) - Math.max(0, ox0)) * (Math.min(G, oy1) - Math.max(0, oy0)) - ww * wh;
+            var contrast = inner - (outerN > 0 ? outerSum / outerN : 0);
+            var score = contrast * Math.min(1, sk / 0.72);
+            if (!best || score > best.score) {
+              best = { x0: x0, y0: y0, x1: x1, y1: y1, sk: sk, contrast: contrast, score: score };
+            }
+          }
+        }
+      }
+      if (!best) return { box: null, grid: G, frameEn: frameEn, why: 'nothing skin-coloured enough to be a face' };
+      var floor = Math.max(FACE_LOCATE_ABS_FLOOR, frameEn * FACE_LOCATE_REL_FLOOR);
+      if (best.contrast < floor) {
+        return { box: null, grid: G, frameEn: frameEn, best: best,
+          why: 'nothing in this picture stands out from the wall behind it' };
+      }
+      return { box: best, grid: G, frameEn: frameEn, why: '' };
+    }, { box: null, grid: FACE_LOCATE_GRID, frameEn: 0, why: 'the locator could not run' });
+  }
+  /* WHERE TO CROP, in the source square's own pixels. Null means "do not".
+     `box` is in `grid` units, whatever produced it. */
+  function faceFitPlanFrom(square, box, grid, spanW, spanH, centreY) {
     var side0 = Number(square && square.width) || 0;
-    if (!grid || !side0) return null;
-    var boxW = Math.max(0, Number(b.w || (b.R - b.L)));
-    var boxH = Math.max(0, Number(b.B) - Number(b.T));
+    if (!grid || !side0 || !box) return null;
+    var boxW = Math.max(0, Number(box.w));
+    var boxH = Math.max(0, Number(box.h));
     if (boxW <= 0 || boxH <= 0) return null;
-    if (boxW / grid >= FACE_FIT_TARGET) return null;      /* already filling the frame */
     var scale = side0 / grid;
-    var want = Math.round(Math.max(boxW * scale * FACE_FIT_WIDTH_SPAN, boxH * scale * FACE_FIT_HEIGHT_SPAN));
+    var want = Math.round(Math.max(boxW * scale * spanW, boxH * scale * spanH));
     var side = Math.min(side0, want);
     if (side < FACE_FIT_MIN_SRC) return null;             /* ⛔ never upscale a small face */
     if (side >= side0) return null;                       /* nothing to gain */
-    var cx = (isFinite(Number(b.cx)) ? Number(b.cx) : (Number(b.L) + Number(b.R)) / 2) * scale;
-    var cy = ((Number(b.T) + Number(b.B)) / 2) * scale;
+    var cx = Number(box.cx) * scale;
+    var cy = Number(box.cy) * scale;
     var sx = Math.round(Math.max(0, Math.min(side0 - side, cx - side / 2)));
-    var sy = Math.round(Math.max(0, Math.min(side0 - side, cy - side * FACE_FIT_CENTRE_Y)));
+    var sy = Math.round(Math.max(0, Math.min(side0 - side, cy - side * centreY)));
     return { sx: sx, sy: sy, side: side, out: Math.min(MEASURE_MAX, side) };
+  }
+  function faceFitPlan(square, res) {
+    var b = (res && res.box) || null;
+    var grid = Number(b && b.grid) || 0;
+    if (!grid) return null;
+    var boxW = Math.max(0, Number(b.w || (b.R - b.L)));
+    if (boxW / grid >= FACE_FIT_TARGET) return null;      /* already filling the frame */
+    return faceFitPlanFrom(square, {
+      w: boxW, h: Math.max(0, Number(b.B) - Number(b.T)),
+      cx: isFinite(Number(b.cx)) ? Number(b.cx) : (Number(b.L) + Number(b.R)) / 2,
+      cy: (Number(b.T) + Number(b.B)) / 2
+    }, grid, FACE_FIT_WIDTH_SPAN, FACE_FIT_HEIGHT_SPAN, FACE_FIT_CENTRE_Y);
+  }
+  /* THE CANDIDATE LADDER. The locator finds the FEATURE BAND (brows to mouth),
+     not the head, and the crop that turns that band into a readable portrait is
+     not a single arithmetic step — the sweep that produced these five pairs read
+     0 of 14 at some and 7 at others on the SAME fixture. So the ladder is tried
+     and the reader adjudicates. Ordered by how often each won the sweep. */
+  var FACE_FIT_LADDER = [[3.0, 0.40], [3.6, 0.40], [3.0, 0.25], [4.4, 0.25], [3.6, 0.10]];
+  function faceFitCandidates(square, q) {
+    var plans = [], seen = {};
+    function add(plan, why) {
+      if (!plan) return;
+      var key = plan.sx + ':' + plan.sy + ':' + plan.side;
+      if (seen[key]) return;
+      seen[key] = true;
+      plan.why = why;
+      plans.push(plan);
+    }
+    /* 1. the reader's own box, when it is credible */
+    add(faceFitPlan(square, q && q.faceResult), 'the reader\'s own face box');
+    /* 2. the structure anchor */
+    var loc = faceFitLocate(square);
+    if (loc && loc.box) {
+      var side0 = Number(square && square.width) || 0;
+      var k = side0 / loc.grid;
+      var wcx = (loc.box.x0 + loc.box.x1) / 2 * k;
+      var wcy = (loc.box.y0 + loc.box.y1) / 2 * k;
+      var ww = (loc.box.x1 - loc.box.x0) * k;
+      FACE_FIT_LADDER.forEach(function (rung) {
+        var side = Math.min(side0, Math.round(ww * rung[0]));
+        if (side < FACE_FIT_MIN_SRC || side >= side0) return;
+        var sx = Math.round(Math.max(0, Math.min(side0 - side, wcx - side / 2)));
+        var sy = Math.round(Math.max(0, Math.min(side0 - side, wcy + side * rung[1] - side / 2)));
+        add({ sx: sx, sy: sy, side: side, out: Math.min(MEASURE_MAX, side) },
+          'the structure anchor at ' + rung[0] + '/' + rung[1]);
+      });
+    }
+    return { plans: plans, located: !!(loc && loc.box), locateWhy: (loc && loc.why) || '' };
   }
   /* THE CROP MUST PAY FOR ITSELF — ready, and no fewer claims than before. */
   function faceFitBetter(before, after) {
@@ -6557,9 +6752,10 @@
     }
     return claims(after) >= claims(before) && frac(after) > frac(before);
   }
-  function faceFitApply(square, q) {
-    var plan = faceFitPlan(square, q && q.faceResult);
-    if (!plan) return { square: square, q: q, fitted: false, why: 'no crop plan' };
+  /* DRAW ONE CANDIDATE AND READ IT. Null when it could not be drawn or the
+     surface has no light in it — the shutter's own rule, so no zero-luminance
+     frame ever reaches the matcher. */
+  function faceFitTry(square, plan) {
     var cropped = safe(function () {
       var canvas = document.createElement('canvas');
       canvas.width = plan.out; canvas.height = plan.out;
@@ -6569,15 +6765,82 @@
       ctx.drawImage(square, plan.sx, plan.sy, plan.side, plan.side, 0, 0, plan.out, plan.out);
       return canvas;
     }, null);
-    if (!cropped) return { square: square, q: q, fitted: false, why: 'the crop could not be drawn' };
+    if (!cropped) return null;
     var q2 = frameQuality(cropped);
-    /* the shutter's own rule: an unlit surface never reaches the matcher */
-    if (!avcamFrameLooksLive(q2)) return { square: square, q: q, fitted: false, why: 'the crop had no light in it' };
+    if (!avcamFrameLooksLive(q2)) return null;
     q2.faceLit = true;
     q2.faceResult = safe(function () { return faceReadPortrait(cropped); }, null);
     q2.faceVerdict = faceCaptureVerdict(q2.faceResult, q2);
-    if (!faceFitBetter(q, q2)) return { square: square, q: q, fitted: false, why: 'the crop read no better' };
-    return { square: cropped, q: q2, fitted: true, why: '', plan: plan };
+    return { canvas: cropped, q: q2, plan: plan };
+  }
+  function faceFitApply(square, q, detected) {
+    var found = faceFitCandidates(square, q);
+    var plans = found.plans;
+    /* a real detector's box, when the browser has one, goes to the FRONT */
+    if (detected && detected.w > 0) {
+      var lead = faceFitPlanFrom(square, detected, detected.grid || Number(square && square.width) || 0,
+        FACE_FIT_WIDTH_SPAN, FACE_FIT_HEIGHT_SPAN, FACE_FIT_CENTRE_Y);
+      if (lead) { lead.why = 'the browser face detector'; plans = [lead].concat(plans); }
+    }
+    if (!plans.length) {
+      return { square: square, q: q, fitted: false,
+        why: found.located ? 'no crop plan' : (found.locateWhy || 'no crop plan') };
+    }
+    var best = null;
+    for (var i = 0; i < plans.length; i++) {
+      var attempt = faceFitTry(square, plans[i]);
+      if (!attempt) continue;
+      /* ⛔ EVERY candidate is judged against the WIDE frame, never against the
+         previous candidate: a ladder that compared each rung to the last could
+         walk downhill one accepted step at a time. */
+      if (!faceFitBetter(q, attempt.q)) continue;
+      if (!best || faceFitBetter(best.q, attempt.q)) best = attempt;
+    }
+    if (!best) {
+      return { square: square, q: q, fitted: false,
+        why: found.located ? 'no crop read better than the whole frame' : (found.locateWhy || 'the crop read no better') };
+    }
+    return { square: best.canvas, q: best.q, fitted: true, why: '', plan: best.plan, tried: plans.length };
+  }
+  /* THE REAL DETECTOR FIRST, WHEN THE BROWSER HAS ONE.
+     ⛔ UNVERIFIED IN A REAL BROWSER: `window.FaceDetector` is undefined in the
+     Chrome these suites drive, so this path is written, guarded and unit-tested
+     against a fake detector only. It is deliberately shaped so that a browser
+     WITHOUT it behaves exactly as if this function did not exist: `then` is
+     called SYNCHRONOUSLY on that path, which is what keeps the shutter's
+     existing single-turn contract (and the camera harness that depends on it)
+     unchanged. A detector that throws, answers late, or answers with nothing
+     falls through to the same synchronous result. */
+  var FACE_DETECT_MS = 1200;
+  function faceFitResolve(square, q, then) {
+    var Detector = safe(function () { return window.FaceDetector; }, null);
+    if (typeof Detector !== 'function') { then(faceFitApply(square, q, null)); return; }
+    var settled = false;
+    function settle(box) {
+      if (settled) return;
+      settled = true;
+      then(faceFitApply(square, q, box));
+    }
+    safe(function () {
+      var timer = setTimeout(function () { settle(null); }, FACE_DETECT_MS);
+      if (typeof faceCaptureTimers !== 'undefined') faceCaptureTimers.push(timer);
+    });
+    var run = safe(function () {
+      return new Detector({ fastMode: true, maxDetectedFaces: 4 }).detect(square);
+    }, null);
+    if (!run || typeof run.then !== 'function') { settle(null); return; }
+    run.then(function (faces) {
+      var list = (faces || []).filter(function (f) { return f && f.boundingBox && f.boundingBox.width > 0; });
+      /* MORE THAN ONE FACE IS NOT THE DOCTOR. The upload path already refuses a
+         multi-face image rather than guessing which person is the physician;
+         the camera gets the same rule, and falls back to the anchor rather than
+         picking one. */
+      if (list.length !== 1) { settle(null); return; }
+      var bb = list[0].boundingBox;
+      settle({ w: Number(bb.width) || 0, h: Number(bb.height) || 0,
+        cx: Number(bb.x) + Number(bb.width) / 2, cy: Number(bb.y) + Number(bb.height) / 2,
+        grid: Number(square && square.width) || 0 });
+    }, function () { settle(null); });
   }
   /* ===== end avfit-1.0.0 ===== */
   /* ---- end live capture view ---- */
@@ -7081,12 +7344,15 @@
             }, function (bestCanvas, q) {
               if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
               var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
-              /* avfit-1.0.0: the shutter's best frame is re-cropped around the
-                 face it found, with hair and forehead margin, exactly as an
-                 upload already is. Refuses to upscale, refuses a crop that
-                 reads no better, and never hands an unlit surface to the
-                 matcher — see faceFitApply. */
-              var fitted = faceFitApply(bestCanvas, q);
+              /* avfit-1.1.0: the shutter's best frame is re-cropped around the
+                 face — located by the browser's own detector when it has one,
+                 otherwise by structure rather than by skin colour, which is
+                 what a warm wall defeats. Every candidate is re-read and only a
+                 crop that reads BETTER is kept; nothing upscales; no unlit
+                 surface reaches the matcher. `then` runs synchronously when the
+                 browser has no FaceDetector, so this stays one turn. */
+              faceFitResolve(bestCanvas, q, function (fitted) {
+              if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
               bestCanvas = fitted.square; q = fitted.q;
               stopCamera(); camHost.innerHTML = '';
               acceptPortrait({
@@ -7106,6 +7372,7 @@
                     ' Your Animated character stays the patient-facing face — this photo feeds its traits. Save to keep both.' +
                     (verdict.matchLimited ? ' The read may be partial: whatever it can measure will be applied and labelled, and the rest left at their defaults.' : '');
                 }
+              });
               });
             });
           });
@@ -13050,9 +13317,16 @@ function kioskLine(kind, text) {
           fit: faceFitReport(res, q) };
       }
       var q0 = look(canvas);
-      var fitted = faceFitApply(canvas, q0);
+      var located = faceFitLocate(canvas);
+      var fitted = faceFitApply(canvas, q0, null);
       return { fitted: fitted.fitted === true,
         why: fitted.why || '',
+        located: !!(located && located.box),
+        locateWhy: (located && located.why) || '',
+        locateContrast: located && located.box ? Math.round(located.box.contrast * 100) / 100 : 0,
+        locateSkin: located && located.box ? Math.round(located.box.sk * 100) / 100 : 0,
+        tried: Number(fitted.tried) || 0,
+        planWhy: (fitted.plan && fitted.plan.why) || '',
         plan: fitted.plan || null,
         srcPx: Number(canvas.width) || 0,
         outPx: Number(fitted.square && fitted.square.width) || 0,
