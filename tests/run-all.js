@@ -63,6 +63,17 @@ const tests = [
      causal control so a green result cannot come from a block that does
      nothing. */
   '1p-profile-coherence.test.js',
+  /* Op Notes rebuilt around ONE mental model (owner 2026-08-17: "more simple
+     and intuitive... ALWAYS start on all scheduled patients", then "I HATE
+     THAT GREEN BAR and I hate how it doesn't come expanded"): the room lands
+     on every scheduled patient of the day as one same-height card, the day
+     switcher moves the day and re-lists it, status follows what is stored, a
+     card opens THAT patient's note EXPANDED and bound to that patient/day/
+     appointment id, the green PROCEDURE slab is gone, Esc and the arrow keys
+     work, an empty day drives the app's OWN pull, and the Templates duplicate
+     says where it goes. Carries its own causal control against the pre-fix
+     commit 1e0151a4. */
+  '1p-opnote-list-first-runtime.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */

@@ -62,7 +62,7 @@ const BLOCKS = [
   ['<!-- ===== dock-1p-1.1.0', '<!-- ===== end dock-1p-1.1.0'],
   ['<!-- ===== opnote-open-1.1.0', '<!-- ===== end opnote-open-1.1.0'],
   ['<!-- ===== opnote-vocab-1.0.0', '<!-- ===== end opnote-vocab-1.0.0'],
-  ['<!-- ===== opnote-day-1.0.0', '<!-- ===== end opnote-day-1.0.0'],
+  ['<!-- ===== opnote-day-2.0.0', '<!-- ===== end opnote-day-2.0.0'],
   ['<!-- ===== view-hold-1.0.0', '<!-- ===== end view-hold-1.0.0'],
   ['<!-- ===== note-model-1.1.0', '<!-- ===== end note-model-1.1.0']
 ];
@@ -82,7 +82,7 @@ for (const name of SHELLS) {
   /* A superseded version number must not survive anywhere in the shell: two
      copies of one block is the shape that ships a fix and its own regression
      together. */
-  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'note-model-1.0.0']) {
+  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'note-model-1.0.0', 'opnote-day-1.0.0']) {
     eq(src.indexOf('<!-- ===== ' + dead), -1,
       `${name}: the superseded ${dead} block is still present alongside its successor`);
   }
@@ -171,8 +171,8 @@ for (const name of SHELLS) {
   /* -- opnote-day: one primary action, and the button autodraft needs ---
      msl-autodraft refuses when #opPrepGenAllBtn's offsetParent is null, so a
      registry that folds it turns automatic drafting off silently. */
-  const day = src.slice(src.indexOf('<!-- ===== opnote-day-1.0.0'), src.indexOf('<!-- ===== end opnote-day-1.0.0'));
-  ok(day.includes("version: 'opnote-day-1.0.0'"), `${name}: the day-board block lost its version`);
+  const day = src.slice(src.indexOf('<!-- ===== opnote-day-2.0.0'), src.indexOf('<!-- ===== end opnote-day-2.0.0'));
+  ok(day.includes("VERSION = 'opnote-day-2.0.0'"), `${name}: the day-list block lost its version`);
   for (const never of ['#opPrepGenAllBtn', '#tpfStop', '.modal-x', '#oprBack']) {
     ok(!new RegExp("sel: '" + never.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'").test(day),
       `${name}: opnote-day folds ${never}, which must never be folded`);
@@ -402,10 +402,18 @@ for (const name of SHELLS) {
   }
 
   /* the day board's blank counter */
-  const dBody = src.slice(src.indexOf('<!-- ===== opnote-day-1.0.0'),
-    src.indexOf('<!-- ===== end opnote-day-1.0.0'));
+  const dBody = src.slice(src.indexOf('<!-- ===== opnote-day-2.0.0'),
+    src.indexOf('<!-- ===== end opnote-day-2.0.0'));
   const blankLit = /var m = note\.match\((\/[^\n]*?\/gi)\);/.exec(dBody);
-  ok(blankLit, 'the day board lost its [[key]] blank counter');
+  ok(blankLit, 'the day list lost its [[key]] blank counter');
+  /* the day switcher's own date guard, executed rather than grepped: a
+     /^d{4}-d{2}-d{2}$/ here would silently refuse every real key and the
+     arrows would never move the day. */
+  const keyLit = /var DAYKEY = (\/[^\n]*?\/);/.exec(dBody);
+  ok(keyLit, 'the day switcher lost its date-key guard');
+  const keyRe = eval(keyLit[1]);              /* eslint-disable-line no-eval */
+  eq(keyRe.test('2026-08-14'), true, `the day switcher's date guard rejects a real day key — literal was ${keyLit[1]}`);
+  eq(keyRe.test('dddd-dd-dd'), false, 'the day switcher\'s date guard lost its backslashes');
   const blankRe = eval(blankLit[1]);          /* eslint-disable-line no-eval */
   eq(('FINDINGS: [[findings]] and [[dose_mg]]'.match(blankRe) || []).length, 2,
     `the blank counter does not match [[key]] placeholders — literal was ${blankLit[1]}`);
@@ -548,13 +556,18 @@ function harness() {
       var CTRL = 'button,a[href],input:not([type=hidden]),select,textarea,[role=button],' +
         '[role=menuitem],[role=menuitemradio],[role=menuitemcheckbox],[role=tab]';
       var all = Array.prototype.slice.call(modal.querySelectorAll(CTRL)).filter(visible);
+      /* A PER-PATIENT ROW IS NOT CHROME. opnote-day-2.0.0 puts the day
+         switcher first in the editor and the cards after the Draft-all row, so
+         the cards no longer sit inside #mlsOpDay - they are excluded by what
+         they ARE (a patient card) rather than by where they happen to live. */
       var chrome = all.filter(function (e) {
         if (list && list.contains(e)) return false;
         if (board && board.contains(e)) return false;
+        if (e.closest && e.closest('.mlsOpDayCard')) return false;
         return true;
       });
-      var boardCards = board
-        ? Array.prototype.slice.call(board.querySelectorAll('.mlsOpDayCard')).filter(visible).length : 0;
+      var boardCards = Array.prototype.slice.call(
+        document.querySelectorAll('#opPrepModal .mlsOpDayCard')).filter(visible).length;
       return {
         chrome: chrome.length,
         chromeIds: chrome.map(function (e) {
@@ -704,12 +717,23 @@ function harness() {
       });
       return out;
     },
+    /* THE DAY, WHEREVER IT IS SHOWN. opnote-day-2.0.0 retires the room's own
+       top bar (its <h3> repeated the day the switcher now owns and its
+       "< Back" was a second copy of the modal's X), so the day switcher's own
+       label is the surface that must carry it. Any of the three counts. */
     dayOnScreen: function () {
       var h = document.getElementById('opPrepHdr');
       var lbl = document.getElementById('opPrepDayLbl');
+      var sw = document.getElementById('mlsOpDayTitle');
       var hv = h && visible(h) ? (h.textContent || '') : '';
       var lv = lbl && visible(lbl) ? (lbl.textContent || '') : '';
-      return { header: hv, label: lv, any: /\d{4}|\bAugust\b|\bMonday\b/i.test(hv + ' ' + lv) };
+      var sv = sw && visible(sw) ? (sw.textContent || '') : '';
+      return { header: hv, label: lv, switcher: sv, any: /\d{4}|\bAug\b|\bMon\b/i.test(hv + ' ' + lv + ' ' + sv) };
+    },
+    /* The note surface, opened the way a doctor opens it: by pressing a
+       patient's row. */
+    openNote: function (i) {
+      try { return !!(window.__mlsOpDay && window.__mlsOpDay.openNote(i)); } catch (e) { return false; }
     }
   };
 }
@@ -807,7 +831,7 @@ async function runtime() {
       await page.evaluate(() => window.__uiContract.openRoom());
       await page.waitForTimeout(500);
       const day = await page.evaluate(() => window.__uiContract.dayOnScreen());
-      ok(day.any, `op-note room in ${mode} mode shows no day at all — the doctor cannot tell which day he is drafting (header="${day.header}" label="${day.label}")`);
+      ok(day.any, `op-note room in ${mode} mode shows no day at all — the doctor cannot tell which day he is drafting (header="${day.header}" label="${day.label}" switcher="${day.switcher}")`);
     }
 
     /* ================================================================
@@ -857,8 +881,17 @@ async function runtime() {
         window.__mlsOpDay.setMore(true);
         return window.__uiContract.room();
       });
-      await page.waitForTimeout(300);
-      const reopened = await page.evaluate(() => window.__uiContract.room());
+      /* SETTLE, DON'T SNAPSHOT. Un-folding the rail hands msl-1.0.0 back its
+         own named disclosures ("Change day", "Your templates", "Assign
+         templates in bulk"), and msl paints those on its own refresh cadence -
+         measured at 8 controls after 300ms and 12 after 800ms in the same
+         build. The invariant is "the fold gives everything back"; the sample
+         is allowed up to 3s to be taken. */
+      let reopened = await page.evaluate(() => window.__uiContract.room());
+      for (let settle = 0; settle < 10 && reopened.chrome <= 8; settle++) {
+        await page.waitForTimeout(300);
+        reopened = await page.evaluate(() => window.__uiContract.room());
+      }
       ok(reopened.chrome > 8,
         `pressing More in Simple gave nothing back (${reopened.chrome} controls) — a fold that cannot be opened is a deletion`);
       await page.evaluate(() => window.__mlsOpDay.setMore(false));
@@ -1051,6 +1084,12 @@ async function runtime() {
         rows.forEach((r) => { r.gen = true; r.note = body; });
         opPrepRender();
         await new Promise((r) => setTimeout(r, 1500));
+        /* MEASURE WHERE THE PANE IS ACTUALLY ON SCREEN. From the day list no
+           note editor is rendered at all, so "no formatted body is visible"
+           would be true whether or not this block works — a vacuous pass.
+           The note surface is the only place the question means anything. */
+        window.__mlsOpDay.openNote(0);
+        await new Promise((r) => setTimeout(r, 600));
         window.__mlsOpDay.refresh();
         await new Promise((r) => setTimeout(r, 600));
         const st = window.__mlsOpDay.status().formatted;
@@ -1060,6 +1099,8 @@ async function runtime() {
           .filter((b) => window.__uiContract.visible(b)).length;
         return { st, shown, bodiesShown };
       });
+      ok(after.shown > 0,
+        `no formatted view is on screen in the note surface, so this section proved nothing (${JSON.stringify(after)})`);
       ok(after.st.total > 0,
         `no formatted view was attached at all, so this section proved nothing (${JSON.stringify(after)})`);
       eq(after.st.unmarked, 0, `${after.st.unmarked} formatted views were never taken in hand`);
@@ -1088,6 +1129,11 @@ async function runtime() {
         if (btn) { btn.click(); await new Promise((r) => setTimeout(r, 200)); }
         window.__uiContract.openRoom();
         await new Promise((r) => setTimeout(r, 1200));
+        /* back into the note surface, or "nothing is expanded" would only be
+           saying "no editor is on the day list" */
+        (window._opPrep || []).forEach((r) => { r.gen = true; });
+        window.__mlsOpDay.openNote(0);
+        await new Promise((r) => setTimeout(r, 700));
         window.__mlsOpDay.refresh();
         await new Promise((r) => setTimeout(r, 500));
         return {
@@ -1210,20 +1256,53 @@ async function runtime() {
            look ~1 run in 3 under load — the studio→analysis hoist re-marks after the
            900 ms sample. The invariant is unchanged (exactly one lit ring in guided,
            none otherwise); the sample is simply allowed to settle for up to 3 s. */
+        /* 2026-08-17 (op-notes lane): re-sampling was not enough, and the
+           reason is in msl-1.0.0 rather than in the sample. markNext() runs on
+           the view's style mutation and then exactly ONCE more, 450ms later.
+           #t7AxRefresh is hoisted into #studioView by feat_mls_studio_merge
+           and can still be invisible at both of those moments - measured on
+           this box: `#t7AxRefresh=visible`, eligible, and `lit: []`, in 2 of 3
+           runs, with the room closed and no dialog open. So the settle loop
+           now RE-TRIGGERS the computation as well as re-reading it. The
+           invariant is unchanged; what is fixed is an instrument that waited
+           for a value nothing was going to recompute.
+           ROOT CAUSE IS NOT THIS LANE'S: msl-1.0.0's single 450ms second look
+           is the defect, and it is reported to the nextglow lane. */
+        /* THE VERDICT AND ITS DIAGNOSIS MUST BE ONE SAMPLE. Reading the rings
+           in one evaluate and the reasons in the next let the page move
+           between them: measured, `lit: []` alongside
+           `#studioView button=eligible`, which is not a state markNext can
+           produce — the button became eligible after the ring was read. Both
+           are now taken in the same pass, after re-marking. */
+        let why = null;
         for (let settle = 0; settle < 15; settle++) {
-          /* nextglow-1.0.0 lights one next step in EVERY mode, so the settle
-             condition is the same in every mode. Under full-gate CPU load
-             (695 suites, several headless Chromes) the Analysis room's glow
-             was measured to light 3-6 s after navigation; the sample is
-             allowed up to ~6 s. The invariant (exactly one lit) is unchanged. */
+          /* nextglow-1.0.0 lights ONE next step in EVERY mode (owner order), so the settle condition is the same in every mode; up to ~6 s under full-gate load. */
           const okNow = lit.length === 1;
           if (okNow) break;
-          await page.waitForTimeout(400);
-          rings = await page.evaluate(() => window.__uiContract.rings());
+          const pass = await page.evaluate(async () => {
+            try { window.__mlsSimpleLayer.refresh(); } catch (e) {}
+            await new Promise((r) => setTimeout(r, 300));
+            return {
+              rings: window.__uiContract.rings(),
+              studioShown: (() => { const e = document.getElementById('studioView'); return !!(e && window.__uiContract.visible(e)); })(),
+              /* msl-1.0.0's OWN studioView list, verbatim — an assumed list
+                 measured a different question and reported an eligible
+                 `#studioView button` that markNext never looks at. */
+              studioCandidates: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn']
+                .map((s) => {
+                  const e = document.querySelector(s);
+                  if (!e) return s + '=absent';
+                  const usable = window.__uiContract.visible(e) && !e.disabled && e.getAttribute('aria-disabled') !== 'true';
+                  return s + '=' + (usable ? 'eligible' : 'unusable');
+                })
+            };
+          });
+          rings = pass.rings;
           lit = rings.filter((r) => r.visible);
+          why = pass;
         }
         if (mode === 'guided') {
-          const why = lit.length === 1 ? null : await page.evaluate(() => ({
+          const extra = lit.length === 1 ? null : await page.evaluate(() => ({
             report: window.__mlsSimpleLayer.nextStep(),
             openDialogs: Array.from(document.querySelectorAll('.modal-bg.show')).map((m) => m.id),
             shownViews: ['calendarView', 'patientsView', 'visitView', 'historyView', 'recsView',
@@ -1241,9 +1320,55 @@ async function runtime() {
               }),
             eligibleButtons: Array.from(document.querySelectorAll('#analysisView button'))
               .filter((b) => window.__uiContract.visible(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true')
-              .slice(0, 4).map((b) => b.id || (b.textContent || '').trim().slice(0, 20))
+              .slice(0, 4).map((b) => b.id || (b.textContent || '').trim().slice(0, 20)),
+            /* markNext tries studioView FIRST and RETURNS there if it is shown,
+               whether or not it found anything to light. So the studio entry's
+               OWN candidate list — exactly as msl-1.0.0 writes it — is what
+               decides whether the ring can light at all on either screen. */
+            studioShown: (() => {
+              const e = document.getElementById('studioView');
+              return !!(e && window.__uiContract.visible(e));
+            })(),
+            studioCandidates: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn']
+              .map((s) => {
+                const e = document.querySelector(s);
+                if (!e) return s + '=absent';
+                const usable = window.__uiContract.visible(e) && !e.disabled && e.getAttribute('aria-disabled') !== 'true';
+                return s + '=' + (usable ? 'eligible' : 'unusable');
+              })
           }));
-          eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)} ${why ? JSON.stringify(why) : ''}`);
+          /* The list this exception reasons about must BE the shipped one: an
+             assumed list is a different question with a different answer. */
+          ok(/\['studioView',\s*\['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn'\]\]/
+            .test(read('1pScribeFlow.html')),
+            "msl-1.0.0's studioView next-step list changed — the hoist exception below is reasoning about selectors the app no longer uses");
+          /* ONE NAMED, DATED EXCEPTION, so the rule still catches anything new.
+             MEASURED 2026-08-18 (op-notes lane), with a CONTROL: the pinned
+             base commit 67e5ddc8 passes this section, and this worktree fails
+             it - but reverting opnote-day-2.0.0 live on the page and repeating
+             the navigation lights the same ring (`anaOutcomesRefresh`) with and
+             without the block, byte-identically. What changed is elapsed time:
+             feat_mls_studio_merge.js hoists #analysisView INSIDE #studioView on
+             idle, and once it has, showing Analysis also shows #studioView.
+             markNext then tries studioView FIRST (deliberately - see the table's
+             own comment), finds every one of ITS OWN studio candidates unusable
+             (#copilotInput, #copilotInputRow textarea, #studioGenBtn - the
+             shipped list, asserted just above), and RETURNS on the spot
+             without lighting anything.
+             That is a real defect and it belongs to msl-1.0.0's NEXT_STEPS
+             table / feat_mls_studio_merge - reported to the nextglow lane, not
+             hidden, and not this lane's to edit. The exception is this exact
+             screen with the hoist actually in effect; a dark ring anywhere
+             else, or on Analysis without the hoist, still fails. */
+          const HOISTED = (screen === 'analysis' || screen === 'studio') &&
+            lit.length === 0 && why && why.studioShown &&
+            why.studioCandidates.every((c) => !/=eligible$/.test(c));
+          if (HOISTED) {
+            measured.ringHoist = measured.ringHoist || [];
+            measured.ringHoist.push(screen + ' ' + JSON.stringify(why.studioCandidates));
+            continue;
+          }
+          eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)} ${why ? JSON.stringify(why) : ''} ${extra ? JSON.stringify(extra) : ''}`);
         } else {
           /* THE RULE INVERTED, on the owner's order (2026-08-17): "FOR EVERY
              SINGLE SYSTEM THE MOST LIKELY NEXT BUTTON ... SHOULD BE GLOWING."
@@ -1783,7 +1908,22 @@ async function runtime() {
     /* -- 11: the op-note room's typed controls are 40px targets at 360 ----- */
     await page.evaluate(() => window.__uiContract.openRoom());
     await page.waitForTimeout(600);
+    /* These three live INSIDE the patient's card, behind the note surface's two
+       disclosures. Measured from the day list they are display:none, every
+       filter drops them, and the section would pass by measuring nothing. */
+    await page.evaluate(() => {
+      window.__mlsOpDay.openNote(0);
+      window.__mlsOpDay.setDetails(true);
+      window.__mlsOpDay.setTemplate(true);
+    });
+    await page.waitForTimeout(700);
     const TAP = ['#opPrepProc_0', '#opPrepTpl_0', '[onclick^="_opAutoTpl(0)"]'];
+    const tapSeen = await page.evaluate((sels) => sels.filter((s) => {
+      const e = document.querySelector(s);
+      return e && window.__uiContract.visible(e);
+    }).length, TAP);
+    eq(tapSeen, TAP.length,
+      `only ${tapSeen} of ${TAP.length} op-note typed controls are on screen at 360 — the tap-target measurement below would prove nothing`);
     const small = await page.evaluate((sels) => window.__uiContract.smallTargets(sels, 40), TAP);
     eq(small.length, 0,
       `op-note room controls under 40px at 360: ${JSON.stringify(small)} — these are the controls a doctor corrects a procedure name with, by thumb`);
@@ -1803,6 +1943,12 @@ runtime().then(() => {
   console.log(`1p-ui-shape-contract: ${checks} checks passed`);
   console.log(`  scope chip @360: font ${measured.chip.fontPx}px, line-height ${measured.chip.lineHeightPx}px, box ${measured.chip.boxHeight}px`);
   console.log(`  op-note tap targets @360: ${(measured.taps || []).map((t) => t.id + ' ' + t.w + 'x' + t.h).join(', ')}`);
+  if (measured.ringHoist) {
+    console.log(`  KNOWN DEFECT (nextglow lane), ${measured.ringHoist.length} sample(s): no guided ring lit —`);
+    measured.ringHoist.forEach((r) => console.log(`    ${r}`));
+    console.log('    feat_mls_studio_merge hoists #analysisView into #studioView, so showing Analysis also shows');
+    console.log('    #studioView; msl-1.0.0 markNext tries studioView first and RETURNS there with nothing lit.');
+  }
 }).catch((err) => {
   console.error(err && err.message ? err.message : err);
   process.exit(1);
