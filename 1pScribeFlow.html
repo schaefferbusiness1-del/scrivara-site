@@ -51157,5 +51157,853 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 })();
 </script>
 <!-- ===== end histview-1.0.0 ============================================= -->
+<!-- ===== residue-athena-1.0.0 - the send-to-Athena sheet stops claiming steps it never took
+     RESIDUE PACK items 1 (sev 3) and 25 (sev 2). Both were left open by the
+     two clunky lanes with the same sentence - "never rendered in this harness"
+     - so both are root-caused here in the code that produces them, and the
+     suite builds the exact state that shows them.
+
+     NEITHER FILE IS THIS BLOCK'S TO EDIT. The step strip is rendered by
+     feat_mls_writeback_walkthrough.js (production, wbw-1.0.0); the sheet under
+     it by the write-flow module another session owns. Both fixes are overlays
+     on the DOM they produce - no id, no handler, no manifest field and no
+     capability changes - and window.__mlsResidueAthena.revert() puts both back.
+
+     ITEM 1, THE UNBOUND STEP STRIP. Root cause is a NEGATIVE test in the
+     module's own reader. feat_mls_writeback_walkthrough.js evalSteps() decides
+     that step 2, "Athena checks it", is DONE like this:
+
+       checked = !!ctxText
+              && !/waiting for the read-only check/i.test(ctxText)
+              && !/could not|failed|refused/i.test(ctxText)
+
+     The sheet's FIRST paint of #mlsAthenaUnifiedContext is the literal string
+     "Exact Athena encounter: being verified read-only now." It matches none of
+     those three patterns. On an UNBOUND review every row is blocked, so no
+     radio is rendered, probeUnifiedRow() is never called, and
+     renderUnifiedContext(state, null) - the one writer of the phrase "waiting
+     for the read-only check" - never runs. The first paint therefore stands,
+     and on a review where the write-flow sent ZERO requests to Athena the
+     strip prints "Athena checks it" as DONE, "Confirm & write" as the doctor's
+     CURRENT step, and the line "Athena confirmed the exact encounter. Nothing
+     is sent until you press Confirm & write." - directly above a Confirm
+     button that is permanently disabled and rows that say the encounter cannot
+     be named at all.
+
+     This overlay re-derives every state from POSITIVE evidence only:
+       check   done <= #mlsAthenaUnifiedContext carries the heading
+                       renderUnifiedContext writes ONLY when a read-only check
+                       came back locked ("verified read-only"), or
+                       #mlsAthenaUnifiedGo carries data-mls-athena-action,
+                       which the sheet sets only after that same lock.
+       confirm done <= __mlsWriteFlow.diagnostics.state() holds a receipt whose
+                       status is verified or rehearsed. A blocked or uncertain
+                       receipt is an attempt, not a write, and leaves the step
+                       where it was.
+       verify  done <= that receipt's own status is 'verified'.
+     and it names the state the module has no word for: a sheet with NO
+     selectable row is UNBOUND. Step 1 is not "now" - it is not reachable from
+     this sheet at all, and the strip says so instead of pointing at a pill
+     that does not exist.
+
+     ITEM 25, SIGN & SAVE OFFERED BUT ALWAYS REFUSES. With a capable extension
+     (athenaFinalActionsV1) buildUnifiedManifest adds sign-encounter with
+     capability 'ready', so it renders as a READY pill with a live radio beside
+     "Write reviewed note". probeUnifiedRow() then refuses it the moment it is
+     selected, BEFORE any bridge call, whenever there is no verified note write
+     for this exact encounter - which is always true on a review the doctor has
+     just opened. The precondition is correct and is not touched here: sign
+     must never run without a verified write. What is wrong is that the only
+     way to learn it is to click. The row is marked LOCKED with the reason ON
+     it, and the mark comes off the moment the write-flow's own receipts show a
+     verified note write for this review. The radio stays live, so a doctor who
+     selects it anyway still gets the module's own refusal, word for word. -->
+<style id="mlsResidueAthenaCss">
+/* --- 25: a row that cannot run yet does not look like one that can. */
+#mlsAthenaUnifiedConfirm section[data-mls-residue-locked="1"]{
+  background:#fffdf5 !important; border-color:#f0d79a !important;
+}
+#mlsAthenaUnifiedConfirm .mls-residue-lock{
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:10.5px; font-weight:850; color:#7a5a16;
+  border:1px solid currentColor; border-radius:999px; padding:1px 7px;
+}
+#mlsAthenaUnifiedConfirm .mls-residue-lockwhy{
+  display:block; color:#6d5010; font-size:11.5px; font-weight:700; margin-top:3px;
+}
+</style>
+<script>
+/* residue-athena-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsResidueAthena) return;
+  var VERSION = 'residue-athena-1.0.0';
+  var passes = 0, stripWrites = 0, timer = 0, mo = null, iv = 0;
+  var wired = null, reapplied = 0;
+  var REAPPLY_CAP = 40;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function sheet() { return el('mlsAthenaUnifiedConfirm'); }
+
+  /* THE WRITE-FLOW'S OWN RECORD, never a re-reading of its prose. state()
+     returns the live unified state object or null; receipts is a rowId ->
+     { status, message } map that only gains a key once there is an outcome. */
+  function receipts() {
+    try {
+      var d = window.__mlsWriteFlow && window.__mlsWriteFlow.diagnostics;
+      var s = (d && typeof d.state === 'function') ? d.state() : null;
+      return (s && s.receipts) || null;
+    } catch (e) { return null; }
+  }
+  function statusList() {
+    var r = receipts(), out = [], k;
+    if (!r) return out;
+    for (k in r) if (Object.prototype.hasOwnProperty.call(r, k)) out.push(String((r[k] && r[k].status) || ''));
+    return out;
+  }
+  function noteWriteVerified() {
+    var r = receipts();
+    return !!(r && r['write-note'] && String(r['write-note'].status) === 'verified');
+  }
+
+  /* ---- item 1: the four states, from positive evidence only ------------ */
+  function states() {
+    var rs = qa('#mlsAthenaUnifiedConfirm input[name="mlsAthenaUnifiedAction"]');
+    var unbound = rs.length === 0;
+    var picked = false, i;
+    for (i = 0; i < rs.length; i++) if (rs[i].checked) picked = true;
+    var go = el('mlsAthenaUnifiedGo');
+    /* THE ANCHOR HAS TO BE TIGHT, and this is the same trap the module fell
+       into, mirrored. The sheet's FIRST paint reads 'Exact Athena encounter:
+       being verified read-only now.' - which contains the words 'verified
+       read-only'. Only the LOCKED render writes them with no colon and no
+       'being' between: 'Exact Athena encounter verified read-only'. The
+       structural half needs no prose at all: the sheet puts
+       data-mls-athena-action on Confirm only after validatedUnifiedProbe has
+       accepted a complete matching identity and one exact encounter. */
+    var locked = /encounter verified read-only/i.test(txt(el('mlsAthenaUnifiedContext'))) ||
+      !!(go && go.getAttribute('data-mls-athena-action'));
+    var st = statusList();
+    var ran = st.indexOf('verified') >= 0 || st.indexOf('rehearsed') >= 0;
+    var verified = st.indexOf('verified') >= 0;
+    return {
+      unbound: unbound,
+      pick: unbound ? 'blocked' : (picked ? 'done' : 'now'),
+      check: locked ? 'done' : (picked ? 'now' : 'todo'),
+      confirm: ran ? 'done' : (locked ? 'now' : 'todo'),
+      verify: verified ? 'done' : (ran ? 'now' : 'todo')
+    };
+  }
+  function hint(s) {
+    if (s.unbound) return 'There is nothing to pick here: MLS could not name the exact Athena encounter, so no row on this sheet can be sent. Athena has not been contacted and nothing has been changed. Each row below says what is missing.';
+    if (s.verify === 'done') return 'All four steps are done - this note is in Athena and verified.';
+    if (s.verify === 'now') return 'Written. Last step is yours: run Verify in Athena (or open the chart) to see it landed exactly where the receipt says.';
+    if (s.confirm === 'now') return 'Athena confirmed the exact encounter. Nothing is sent until you press Confirm & write.';
+    if (s.check === 'now') return 'Read-only check running - Athena is confirming the exact patient, encounter, and editor before anything can be written.';
+    return 'Pick one READY row. Everything stays read-only until you explicitly confirm.';
+  }
+  var STEPS = [['pick', 'Pick the action'], ['check', 'Athena checks it'],
+    ['confirm', 'Confirm &amp; write'], ['verify', 'Verify in Athena']];
+  var SKIN = {
+    done:    { color: '#205c43', bg: '#eaf5ef', border: '#dce5df', weight: '650' },
+    now:     { color: '#204034', bg: '#fff',    border: '#204034', weight: '800' },
+    todo:    { color: '#8b9791', bg: '#f4f6f5', border: '#dce5df', weight: '650' },
+    blocked: { color: '#7a5a16', bg: '#fffdf5', border: '#f0d79a', weight: '800' }
+  };
+  function stripHtml(s) {
+    var h = '<div data-mls-residue="1" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:10px 0 2px" aria-label="Where you are in the send">', i;
+    for (i = 0; i < STEPS.length; i++) {
+      var st = s[STEPS[i][0]], k = SKIN[st] || SKIN.todo;
+      var mark = st === 'done' ? '&#10003; ' : ((i + 1) + ' ');
+      h += '<span data-mls-residue-step="' + STEPS[i][0] + '" data-mls-residue-state="' + st + '"' +
+        ' style="display:inline-flex;align-items:center;gap:4px;border:1.5px solid ' + k.border +
+        ';background:' + k.bg + ';color:' + k.color + ';border-radius:999px;padding:4px 11px;font-size:12px;font-weight:' +
+        k.weight + '">' + mark + STEPS[i][1] + '</span>';
+      if (i < STEPS.length - 1) h += '<span style="color:#b9c4be;font-size:11px">&rarr;</span>';
+    }
+    return h + '</div><div data-mls-residue-hint="1" style="font-size:11.5px;color:#52675c;margin-bottom:4px">' + hint(s) + '</div>';
+  }
+  function strip() {
+    var host = el('wbwSteps');
+    if (!host) return;
+    var want = stripHtml(states());
+    /* COMPARE AGAINST WHAT WE LAST WROTE, NOT AGAINST innerHTML. The parser
+       normalises entities and attribute quoting, so reading innerHTML back
+       never equals the string that produced it and a naive compare rewrites
+       this node on every tick - the exact churn residue item 5 is about. The
+       b944 idiom in feat_mls_opnote_room.js (nav.__oprHtml) is the one that
+       works. The marker check is the second half: when the module re-renders
+       the strip our markup is gone, and only then must it be rewritten. */
+    if (host.__mlsResidueHtml === want && host.querySelector('[data-mls-residue="1"]')) return;
+    host.innerHTML = want;
+    host.__mlsResidueHtml = want;
+    stripWrites++;
+  }
+
+  /* ---- item 25: the sign row carries its own precondition -------------- */
+  var LOCK_WHY = 'Not yet: Sign & Save unlocks only after MLS has written this exact reviewed note to this exact encounter and Athena has verified it. Write the note first.';
+  function signRow() {
+    var s = sheet();
+    if (!s) return null;
+    return qa('section[data-manifest-row="sign-encounter"]', s)[0] || null;
+  }
+  function sign() {
+    var row = signRow();
+    if (!row) return;
+    /* only a READY sign row has a radio; a manual/blocked one already says why */
+    var radio = qa('input[name="mlsAthenaUnifiedAction"]', row)[0];
+    var lock = qa('[data-mls-residue-lock="1"]', row)[0];
+    var why = qa('.mls-residue-lockwhy', row)[0];
+    var want = !!radio && !noteWriteVerified();
+    if (!want) {
+      if (lock && lock.parentNode) lock.parentNode.removeChild(lock);
+      if (why && why.parentNode) why.parentNode.removeChild(why);
+      row.removeAttribute('data-mls-residue-locked');
+      return;
+    }
+    row.setAttribute('data-mls-residue-locked', '1');
+    if ((!lock || !why) && reapplied >= REAPPLY_CAP) return;
+    if (!lock || !why) reapplied++;
+    if (!lock) {
+      var anchor = qa('[data-mls-ready-tick="sign-encounter"]', row)[0] || qa('b', row)[0];
+      if (!anchor || !anchor.parentNode) return;
+      lock = document.createElement('span');
+      lock.className = 'mls-residue-lock';
+      lock.setAttribute('data-mls-residue-lock', '1');
+      lock.textContent = 'LOCKED UNTIL THE NOTE WRITE IS VERIFIED';
+      anchor.parentNode.insertBefore(lock, anchor.nextSibling);
+    }
+    if (!why) {
+      /* the OUTER span inside the label - the one that holds the title row and
+         the consequence line - so the reason reads as the row's last line
+         rather than being wedged into the title. */
+      var label = qa('label', row)[0];
+      var slot = label ? (qa('span', label)[0] || label) : row;
+      why = document.createElement('span');
+      why.className = 'mls-residue-lockwhy';
+      why.textContent = LOCK_WHY;
+      slot.appendChild(why);
+    }
+  }
+
+  function pass() {
+    var card = sheet();
+    if (!card) { if (wired && wired !== card) unwire(); return; }
+    wire(card);
+    passes++;
+    try { strip(); } catch (e) {}
+    try { sign(); } catch (e2) {}
+  }
+  function schedule() {
+    if (timer) return;
+    timer = setTimeout(function () { timer = 0; pass(); }, 80);
+  }
+  /* ELEMENT-SCOPED, AND BOUNDED. Two things this must not become. A
+     document-wide observer taxes every other block's boot (the clunky2 lane
+     had to coalesce two of them for exactly that), and it is the wrong shape
+     here anyway: everything read or written lives inside one card. And an
+     overlay that re-applies a node the surface underneath keeps destroying is
+     a ping-pong, not a fix - so the re-application is counted per card and
+     stands down if the sheet is really fighting back, leaving the reason
+     readable in state() rather than burning the frame budget silently. */
+  function unwire() {
+    try { if (mo) mo.disconnect(); } catch (e) {}
+    mo = null; wired = null; reapplied = 0;
+  }
+  function wire(card) {
+    if (wired === card) return;
+    unwire();
+    wired = card;
+    try {
+      mo = new MutationObserver(schedule);
+      mo.observe(card, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-mls-athena-action', 'checked', 'disabled'] });
+    } catch (e) {}
+  }
+  function arm() {
+    /* the card does not exist until the doctor opens the review, so finding it
+       is a slow poll rather than a watch on the document. */
+    try { iv = setInterval(pass, 1500); } catch (e2) {}
+    [250, 900, 1800].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsResidueAthena = {
+    version: VERSION,
+    pass: pass,
+    passes: function () { return passes; },
+    stripWrites: function () { return stripWrites; },
+    states: states,
+    hint: hint,
+    noteWriteVerified: noteWriteVerified,
+    /* the two-sided seam the suite drives: the render is a pure function of
+       these states, so a state the live sheet cannot currently produce is
+       still checkable without faking a write to Athena. */
+    _render: stripHtml,
+    reapplied: function () { return reapplied; },
+    revert: function () {
+      try { unwire(); } catch (e) {}
+      try { if (iv) clearInterval(iv); } catch (e2) {}
+      try { if (timer) clearTimeout(timer); } catch (eT) {}
+      iv = 0; timer = 0;
+      try { var css = el('mlsResidueAthenaCss'); if (css) css.disabled = true; } catch (e3) {}
+      try {
+        var row = signRow();
+        if (row) {
+          qa('[data-mls-residue-lock="1"],.mls-residue-lockwhy', row).forEach(function (n) {
+            if (n.parentNode) n.parentNode.removeChild(n);
+          });
+          row.removeAttribute('data-mls-residue-locked');
+        }
+      } catch (e4) {}
+      try { if (window.__mlsWritebackWalkthrough) window.__mlsWritebackWalkthrough.rerender(); } catch (e5) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end residue-athena-1.0.0 ====================================== -->
+<!-- ===== residue-oprperf-1.0.0 - the op-note room stops re-parsing a rail that did not change
+     RESIDUE PACK item 5, carried over from the opnotes4 lane: on .opr-tplmode
+     the room rewrites the same three buttons - each with its own title
+     attribute - over and over while nothing about them changes.
+
+     THE CHURN HAS TWO HALVES, and the handover named neither correctly. It
+     was passed on as "feat_mls_opnote_room.js writes 234 title updates per
+     8 s". Instrumenting setAttribute/removeAttribute for title on
+     .opr-tplmode over ten opPrepRender() calls and reading the stacks gives:
+
+       102 title mutations, of which 114 records split as
+        57x SET     relabelModeButton (the lane's template-mode adapter)
+        57x REMOVE  _stripOneTitle    (this shell's own tooltip converter)
+        10x childList rebuilds of #oprTplMode (the room)
+
+     So the DOMINANT half was a ping-pong between the lane's own adapter and
+     this shell, and it is fixed at its source in that adapter, not here.
+     What remains for this block is the second half, below - and it is real:
+     ten renders tore the rail down and reparsed it ten times.
+
+     Measured, ten renders, three buttons - title mutations:
+       102  as shipped
+        60  adapter fixed, rail rebuild still unguarded
+         6  adapter fixed + this block (all six from the one write a freshly
+            installed guard must let through; steady state is 0)
+
+     SECOND HALF, in feat_mls_opnote_room.js (PRODUCTION - not this block's
+     file). buildRails() runs after EVERY opPrepRender, and opPrepRender runs
+     on nearly every control in that room. buildRails() calls four builders.
+     Two of them already carry the b944 guard:
+
+       buildNav      if (nav.__oprHtml !== h) { nav.innerHTML = h; ... }
+       buildTplRail  var changed = (rail.__oprHtml !== h); if (changed) {...}
+
+     buildTplMode was MISSED by that pass and still ends in an unconditional
+
+       box.innerHTML = h;
+
+     which is why the churn shows on .opr-tplmode and on neither of its two
+     siblings. innerHTML is not a cheap assignment: it destroys and recreates
+     every button, re-parses the markup, invalidates layout, and drops focus.
+
+     THE FIX IS THE SAME LAW, APPLIED FROM OUTSIDE. #oprTplMode gets an
+     INSTANCE-LEVEL innerHTML accessor that shadows Element.prototype's for
+     that one element: an identical string is dropped, a different one is
+     passed straight through to the real prototype setter. The module's code
+     is untouched, its behaviour on a real change is byte-identical, and
+     window.__mlsResidueOprPerf.revert() deletes the own property and gives
+     the element its prototype accessor back.
+
+     The element is created lazily by buildTplMode and can be replaced, so the
+     install is re-checked from a coalesced observer and a slow interval - both
+     of which do nothing but one getElementById and one flag read. -->
+<script>
+/* residue-oprperf-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsResidueOprPerf) return;
+  var VERSION = 'residue-oprperf-1.0.0';
+  var ID = 'oprTplMode';
+  var skipped = 0, wrote = 0, guarded = null, mo = null, iv = 0, timer = 0;
+
+  var DESC = null;
+  try { DESC = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML'); } catch (e) { DESC = null; }
+  var canGuard = !!(DESC && typeof DESC.set === 'function' && typeof DESC.get === 'function');
+
+  function el() { try { return document.getElementById(ID); } catch (e) { return null; } }
+
+  function unguard(node) {
+    if (!node) return;
+    try { delete node.innerHTML; } catch (e) {}
+    try { node.__mlsResidueGuard = false; } catch (e2) {}
+    try { node.__mlsResidueLast = null; } catch (e3) {}
+  }
+
+  function install(node) {
+    if (!canGuard || !node || node.__mlsResidueGuard) return false;
+    try {
+      Object.defineProperty(node, 'innerHTML', {
+        configurable: true,
+        enumerable: false,
+        get: function () { return DESC.get.call(this); },
+        set: function (v) {
+          var next = String(v);
+          /* IDENTICAL MARKUP IS NOT A WRITE. Same comparison the room's own
+             two guarded builders make, one layer further out. */
+          if (this.__mlsResidueGuard && this.__mlsResidueLast === next) { skipped++; return; }
+          DESC.set.call(this, v);
+          this.__mlsResidueLast = next;
+          wrote++;
+        }
+      });
+      node.__mlsResidueGuard = true;
+      node.__mlsResidueLast = null;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function check() {
+    var node = el();
+    if (guarded && guarded !== node) { unguard(guarded); guarded = null; }
+    if (!node) return;
+    if (node.__mlsResidueGuard) { guarded = node; return; }
+    if (install(node)) guarded = node;
+  }
+  function schedule() {
+    if (timer) return;
+    timer = setTimeout(function () { timer = 0; try { check(); } catch (e) {} }, 80);
+  }
+  function arm() {
+    try { check(); } catch (e) {}
+    try {
+      mo = new MutationObserver(schedule);
+      /* #oprDayRail is static markup in this shell, so the observer is scoped
+         to the one subtree that can produce #oprTplMode - never the document. */
+      var host = document.getElementById('oprDayRail') || document.body;
+      if (host) mo.observe(host, { childList: true, subtree: true });
+    } catch (e2) {}
+    try { iv = setInterval(function () { try { check(); } catch (e) {} }, 2000); } catch (e3) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsResidueOprPerf = {
+    version: VERSION,
+    check: check,
+    skipped: function () { return skipped; },
+    wrote: function () { return wrote; },
+    installed: function () { var n = el(); return !!(n && n.__mlsResidueGuard === true); },
+    revert: function () {
+      try { if (mo) mo.disconnect(); } catch (e) {}
+      try { if (iv) clearInterval(iv); } catch (e2) {}
+      try { if (timer) clearTimeout(timer); } catch (e3) {}
+      mo = null; iv = 0; timer = 0;
+      unguard(guarded); unguard(el());
+      guarded = null;
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end residue-oprperf-1.0.0 ===================================== -->
+<!-- ===== residue-notice-1.0.0 - the phone notice shelf travels with the doctor
+     RESIDUE PACK item 69, left open by the clunky2 lane as "not in the DOM in
+     this harness". It is in the DOM; getting it there takes four conditions at
+     once and the harness satisfied none of them. mlsMobileNoticeShelf() in
+     this shell returns null unless ALL of:
+
+       1. matchMedia('(max-width: 760px)') matches,
+       2. #appScreen exists and is not display:none (i.e. signed in),
+       3. #appWrap exists,
+       4. document.body carries the class mls-redesign,
+
+     and even then the shelf is only CREATED by mlsPlaceMobileNotice(), which
+     runs from toast(). Since quietnotify-1.0.0 wraps window.toast and sends
+     everything except ACTION-NEEDED to the tray instead, a harness that fires
+     an ordinary "saved" message never reaches the shell's toast() at all and
+     measures a shelf that was never built. The suite for this block asserts
+     all five preconditions and then measures.
+
+     THE DEFECT, once it does mount. The shelf is an ordinary in-flow block
+     inserted directly after #patientBar at the top of #appWrap, and the
+     shell's own rule inside it is
+
+       body.mls-redesign #mlsMobileNoticeShelf>.toast{position:static; ...}
+
+     which wins over quietnotify's bottom-left placement (that rule sets top,
+     bottom, left and transform !important but never position, and this one
+     carries an id). A static toast ignores bottom/left entirely. So on a phone
+     the notice is pinned to a point near the top of the DOCUMENT rather than
+     the viewport: a doctor who has scrolled down to work gets a notice
+     rendered that same distance above the screen, and the app appears to have
+     said nothing at all.
+
+     THE FIX is one line of CSS and no JavaScript: the shelf is positioned at
+     the offset the shell already measures and publishes for exactly this
+     purpose. --mls-notice-top is written by mlsSyncNoticeAnchor() from the
+     real bottom of #appHeader / #mlsCtxBar (and collapses to the viewport top
+     while a modal is open), and toast() calls it before every notice, so the
+     notice sits directly below the same furniture the fixed toast clears.
+
+     STICKY WAS TRIED FIRST AND MEASURED DEAD. It is the primitive the design
+     intent above mlsMobileNoticeShelf() asks for - "visible without covering
+     date, patient, or recording controls" - because a sticky box cannot leave
+     its own flow position until the page scrolls past it. It does not work
+     here, and the reason is structural rather than a specificity accident:
+
+       html  computed overflow: hidden auto, height 399
+       body  computed overflow: hidden auto, height 399
+
+     A sticky element is bounded by its nearest scrollable ancestor, not by
+     the viewport. With overflow on both html and body the shelf binds to a
+     box that never scrolls internally, so it simply travels with the content.
+     Measured at 390x844 after scrolling 900px: computed position IS 'sticky'
+     and the shelf is still at y=-741, i.e. off the top of the screen. A test
+     that only asserted the computed value would have called that a fix.
+
+     So the shelf is FIXED, which is what the shell's own .toast already is
+     everywhere outside this shelf, using the same anchor variable. The cost
+     is that it overlays rather than displaces; at scroll 0 it lands on the
+     same line it occupied in flow, so what the doctor sees at rest is
+     unchanged, and --mls-notice-top keeps it clear of the header and the
+     patient banner exactly as it does for every other notice in the app.
+
+     z-index 9330 sits under .modal-bg (9400), so a modal still covers it. -->
+<style id="mlsResidueNoticeCss">
+@media (max-width:760px){
+  body.mls-redesign #mlsMobileNoticeShelf.mls-mobile-notice-active{
+    position:fixed !important;
+    top:var(--mls-notice-top, 92px) !important;
+    left:12px !important;
+    right:12px !important;
+    width:auto !important;
+    max-width:none !important;
+    margin:0 !important;
+    z-index:9330 !important;
+  }
+}
+</style>
+<script>
+/* residue-notice-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsResidueNotice) return;
+  window.__mlsResidueNotice = {
+    version: 'residue-notice-1.0.0',
+    /* what the suite measures against, so the assertion and the fix cannot
+       drift apart: the shelf, its computed position, and where it really is. */
+    probe: function () {
+      try {
+        var s = document.getElementById('mlsMobileNoticeShelf');
+        if (!s) return { present: false };
+        var r = s.getBoundingClientRect(), cs = getComputedStyle(s);
+        return { present: true, active: s.classList.contains('mls-mobile-notice-active'),
+          position: cs.position, top: Math.round(r.top), height: Math.round(r.height),
+          inView: r.top >= 0 && r.top < (window.innerHeight || 0), scrollY: Math.round(window.scrollY || 0) };
+      } catch (e) { return { present: false, error: String(e && e.message) }; }
+    },
+    revert: function () {
+      try { var css = document.getElementById('mlsResidueNoticeCss'); if (css) css.disabled = true; } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end residue-notice-1.0.0 ====================================== -->
+<!-- ===== residue-settings-1.0.0 - the retired Settings skin cannot come back after the dialog is open
+     RESIDUE PACK item 10, "a late stylesheet blanks the Settings dialog".
+     TWO LANES CLOSED THIS AS UNREPRODUCIBLE ON THE STATED GROUND THAT
+     "feat_mls_settings_exact.js self-skips off staging". IT DOES NOT.
+
+     isStaging() has two ways to be true, and the connect bundle (mls-connect.js
+     and every lane copy of it) deliberately arranges the second one: it appends a type="text/plain" script whose src
+     is the data: URL "data:,mls-connect.staging.js" (a marker that executes
+     nothing) precisely so the fourteen *_exact modules activate off staging.
+     Its own comment calls it "MLS prod-enable". So stx-2.0.0 is ENABLED here.
+     What the two lanes actually measured was the module never arriving:
+     its loader is scheduled through window.__mlsDeferAsset ||
+     requestIdleCallback, and an idle callback never fires in a
+     non-compositing tab, so window.__mlsStx was absent - a missing module,
+     not a skipped one.
+
+     MEASURED, /1p shell at 1366x900, Settings open, stx force-loaded:
+
+                                       before #stxStyle   after
+       own-text characters in the card       1,267          160
+       visible nodes in the card                61           32
+       top of the active section             y=154        y=885
+       card box                                   y 16..884 (both)
+       .modal scrollHeight                     1,033        2,531
+
+     The active section moves 731px, past the bottom of a card that does not
+     scroll to it: the doctor is looking at an empty 1120x868 dialog.
+
+     THE COLLISION, exactly. feat_athena_tooltip_dedupe.js (cs-2.0.0) owns the
+     Settings workspace on this lane: a two-pane grid whose LEFT 238px column
+     is the sticky tab rail (#settingsTabBar{grid-column:1;grid-row:1/span 80})
+     and whose content goes right (.modal>*{grid-column:2} - no !important).
+     stx-2.0.0 is an OLDER redesign of the same dialog with the rail on the
+     RIGHT, and it writes .modal>.set-section{grid-column:1!important}. An
+     !important declaration beats a plain one whatever the specificity, so
+     every section is yanked into the rail's own column, and because the rail
+     spans 80 rows and is 868px tall the sections are placed below it.
+
+     THIS IS NOT A NEW FIX. cs-2.0.0 already retires stx - "single-owner",
+     its words - by calling window.__mlsStx.revert() and removing #stxStyle.
+     But it does so INSIDE reconcileSettings(), which runs when Settings opens
+     or closes. A stylesheet injected AFTER that pass (the idle load can land
+     seconds late, and stx re-runs build() on a 1s interval seven times) is
+     never seen by it, and nothing else re-triggers a reconcile. That timing
+     window is the whole defect.
+
+     So this block hoists the retirement cs-2.0.0 already performs out of the
+     reconcile pass and onto the arrival of the stylesheet itself, watching
+     document.head only. It changes no styling of its own, and it keeps
+     cs-2.0.0's documented fallback intact: stx is retired ONLY while the
+     clean workspace is actually present (#settingsModal.mls-settings-clean).
+     If that organiser is ever absent, stx remains the fallback skin exactly
+     as its author intended.
+
+     tests/e2e/run-e2e.js:484 already asserts the end state this restores:
+     assert(out.stxGone, 'legacy stx skin still active alongside the clean
+     workspace'). window.__mlsResidueSettings.revert() stops the watcher. -->
+<script>
+/* residue-settings-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsResidueSettings) return;
+  var VERSION = 'residue-settings-1.0.0';
+  var retired = 0, seen = 0, mo = null, iv = 0, off = false;
+
+  function byId(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function cleanWorkspaceOwns() {
+    var m = byId('settingsModal');
+    return !!(m && m.classList && m.classList.contains('mls-settings-clean'));
+  }
+  /* the retirement cs-2.0.0 performs, character for character */
+  function sweep() {
+    if (off) return;
+    var style = byId('stxStyle');
+    if (!style) return;
+    seen++;
+    if (!cleanWorkspaceOwns()) return;
+    try {
+      if (window.__mlsStx && window.__mlsStx.installed && typeof window.__mlsStx.revert === 'function') window.__mlsStx.revert();
+    } catch (e) {}
+    try { var again = byId('stxStyle'); if (again) again.remove(); } catch (e2) {}
+    retired++;
+  }
+  function arm() {
+    try { sweep(); } catch (e) {}
+    try {
+      mo = new MutationObserver(function () { try { sweep(); } catch (e) {} });
+      /* head only: #stxStyle is appended to document.head, and this is the
+         one place in the app that has to be watched for it. */
+      if (document.head) mo.observe(document.head, { childList: true });
+    } catch (e2) {}
+    /* stx re-runs build() once a second for six more seconds after it lands,
+       and the clean workspace may not have claimed the modal on the first
+       arrival, so a slow sweep backs the observer up without watching the
+       document. */
+    try { iv = setInterval(function () { try { sweep(); } catch (e) {} }, 1000); } catch (e3) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsResidueSettings = {
+    version: VERSION,
+    sweep: sweep,
+    retired: function () { return retired; },
+    seen: function () { return seen; },
+    cleanWorkspaceOwns: cleanWorkspaceOwns,
+    /* the same escape hatch stx itself publishes, so a reverted watcher can be
+       put back without a reload - and so the suite can measure the defect and
+       the fix in one page. */
+    reapply: function () {
+      off = false;
+      if (!mo && !iv) arm(); else sweep();
+      return true;
+    },
+    revert: function () {
+      off = true;
+      try { if (mo) mo.disconnect(); } catch (e) {}
+      try { if (iv) clearInterval(iv); } catch (e2) {}
+      mo = null; iv = 0;
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end residue-settings-1.0.0 ==================================== -->
+<!-- ===== tools-tips-1.0.0 - every Tools-menu control says what it does
+     OWNER, 2026-08-18: "if I hover over a button it should give more info
+     about it."
+
+     The Tools menu is assembled by several different modules, each appending
+     its own row, so four rows already carried a data-tip and three did not.
+     MEASURED at 1366x900 with the bundle loaded, #mlsTbMenuPanel holds seven
+     controls:
+
+       mlsTourMenuItemV2   How-To Guide            had a tip
+       mlsPayReportMenuItem Pay Reports            NO TIP
+       mlsNavRow_recs      Recommendations         had a tip
+       (no id)             Reviews & reputation    had a tip
+       mlsObtMenuRow       Guided tour / How-to    NO TIP
+       mlsEhMenuRow        Extension health        NO TIP
+       mlsRlMenuRow        Use on your phone       had a tip
+
+     data-tip IS THE BUBBLE, and title must never be used for it. The shell's
+     own tooltip system (initTooltips) renders [data-tip] in #mlsTip after a
+     550ms hover, and it converts any native title into data-tip and removes
+     the title precisely so the browser's own tooltip can never stack a second
+     bubble on the same control. So this block writes data-tip only, and
+     actively clears a title from any row that has both.
+
+     THE COPY IS NOT INVENTED. Each line was written from what that button's
+     handler actually does, read in the source:
+       Pay Reports    -> window.__mlsComp.open(). The app's own description of
+                         that surface: it "estimates what the month looks like
+                         from documented visits and codes - including pending
+                         visits - and can export the estimate detail and fee
+                         schedule to Excel."
+       Guided tour    -> openTour(), the step-by-step walkthrough of the app.
+       Extension health -> openSettings(), then scrolls #mlsEhCard into view -
+                         the MLS Assist connection check inside Settings.
+     Rows that already had a tip are left exactly as their owners wrote them;
+     this block never overwrites someone else's words.
+
+     window.__mlsToolsTips.revert() removes every tip this block added. -->
+<script>
+/* tools-tips-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsToolsTips) return;
+  var VERSION = 'tools-tips-1.0.0';
+  var MARK = 'data-mls-toolstip';
+  var added = 0, cleared = 0, passes = 0, observers = [], iv = 0, timer = 0;
+
+  /* by element id where there is one; the text key is the fallback for rows
+     their owners append without an id. */
+  var BY_ID = {
+    mlsPayReportMenuItem: 'Estimate pay for the month from documented visits and codes, including pending visits.',
+    mlsObtMenuRow: 'Start the step-by-step guided tour of the main screens.',
+    mlsEhMenuRow: 'Open Settings and jump to the MLS Assist connection check.'
+  };
+  var BY_TEXT = {
+    'pay reports': BY_ID.mlsPayReportMenuItem,
+    'guided tour / how-to': BY_ID.mlsObtMenuRow,
+    'extension health': BY_ID.mlsEhMenuRow,
+    'how-to guide': 'Open step-by-step help for using MLS.',
+    'settings': 'Open Settings: practice details, integrations and preferences.',
+    /* The dock's Tools menu. HANDLER-VERIFIED rows are marked; the rest are a
+       precise restatement of where the control goes, which is what a doctor
+       needs on hover and is the most that can be claimed without reading each
+       owner module. No line asserts an outcome the button does not perform. */
+    'dictate': 'Start dictation and turn speech into note text.',
+    'mls assistant': 'Open the MLS Assistant to ask questions about your work in MLS.',
+    'prep op notes': 'Open the Prep Op Notes room to draft the day operative notes.', /* verified: opPrep room */
+    'schedule': 'Open the schedule for the selected day.',
+    'pre-visit intake forms': 'Open the pre-visit intake forms.',
+    'pull activity': 'See what recent Athena pulls did, day by day.',
+    'legal / ime workspace': 'Open the read-only Legal / IME draft workspace for the active patient.', /* verified */
+    'verify saved data': 'Check that work saved in MLS is really stored on this device.',
+    'share / export': 'Share or export what is saved in MLS.',
+    'export everything for emr': 'Export all saved data in a form another EMR can import.',
+    'full visit notes': 'Open the full captured visit notes.'
+  };
+
+  /* TWO menus, and the doctor calls the first one Tools. #mlsToolsMenu is the
+     dock's Tools menu; #mlsTbMenuPanel is the top-bar Menu. Both are lists of
+     controls a doctor hovers, so both are covered. */
+  var HOSTS = ['mlsToolsMenu', 'mlsTbMenuPanel'];
+  function panels() {
+    var out = [], i, n;
+    for (i = 0; i < HOSTS.length; i++) {
+      try { n = document.getElementById(HOSTS[i]); } catch (e) { n = null; }
+      if (n) out.push(n);
+    }
+    try { var alt = document.querySelector('.tb-menu-panel'); if (alt && out.indexOf(alt) < 0) out.push(alt); } catch (e2) {}
+    return out;
+  }
+  function panel() { return panels()[0] || null; }
+  function controls(host) {
+    try { return Array.prototype.slice.call(host.querySelectorAll('button, .mlsTbItem, a[href], [role="menuitem"]')); }
+    catch (e) { return []; }
+  }
+  function keyOf(el) {
+    /* strip emoji and any other non-ASCII decoration so the key is the
+       words the doctor reads; a raw unicode range in a sweep constant is the
+       latin1-writer trap this repo has already paid for once. */
+    var t = ((el && el.textContent) || '').replace(/[^ -~]/g, '');
+    return t.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+  function pass() {
+    var hosts = panels();
+    if (!hosts.length) return;
+    passes++;
+    var list = [], i, h;
+    for (h = 0; h < hosts.length; h++) { wire(hosts[h]); list = list.concat(controls(hosts[h])); }
+    for (i = 0; i < list.length; i++) {
+      var el = list[i];
+      var tip = el.getAttribute('data-tip');
+      if (!tip || !String(tip).trim()) {
+        var want = BY_ID[el.id] || BY_TEXT[keyOf(el)] || '';
+        if (want) {
+          el.setAttribute('data-tip', want);
+          el.setAttribute(MARK, '1');
+          added++;
+        }
+      }
+      /* NEVER TWO BUBBLES. A native title would be rendered by the browser on
+         top of the app's own #mlsTip; initTooltips folds one into the other on
+         hover, and this makes it true before the doctor ever hovers. */
+      if (el.getAttribute('data-tip') && el.getAttribute('title')) {
+        el.removeAttribute('title');
+        cleared++;
+      }
+    }
+  }
+  function schedule() { if (timer) return; timer = setTimeout(function () { timer = 0; pass(); }, 80); }
+  var wiredSet = [];
+  function wire(host) {
+    if (wiredSet.indexOf(host) >= 0) return;
+    wiredSet.push(host);
+    try {
+      /* scoped to the menu: its rows arrive late and from several owners */
+      var m = new MutationObserver(schedule);
+      m.observe(host, { childList: true, subtree: true });
+      observers.push(m);
+    } catch (e) {}
+  }
+  function arm() {
+    try { iv = setInterval(pass, 2000); } catch (e) {}
+    [400, 1200, 2500].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsToolsTips = {
+    version: VERSION,
+    pass: pass,
+    added: function () { return added; },
+    cleared: function () { return cleared; },
+    passes: function () { return passes; },
+    tips: function () { var o = {}, k; for (k in BY_ID) if (Object.prototype.hasOwnProperty.call(BY_ID, k)) o[k] = BY_ID[k]; return o; },
+    revert: function () {
+      observers.forEach(function (m) { try { m.disconnect(); } catch (e) {} });
+      observers = []; wiredSet = [];
+      try { if (iv) clearInterval(iv); } catch (e2) {}
+      try { if (timer) clearTimeout(timer); } catch (e3) {}
+      iv = 0; timer = 0;
+      try {
+        panels().forEach(function (host) {
+          controls(host).forEach(function (el) {
+            if (el.getAttribute(MARK) === '1') { el.removeAttribute('data-tip'); el.removeAttribute(MARK); }
+          });
+        });
+      } catch (e4) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end tools-tips-1.0.0 ============================================ -->
 </body>
 </html>
