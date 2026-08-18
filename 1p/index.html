@@ -49921,6 +49921,8 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
   if (window.__mlsResidueAthena) return;
   var VERSION = 'residue-athena-1.0.0';
   var passes = 0, stripWrites = 0, timer = 0, mo = null, iv = 0;
+  var wired = null, reapplied = 0;
+  var REAPPLY_CAP = 40;
 
   function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
@@ -50044,6 +50046,8 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
       return;
     }
     row.setAttribute('data-mls-residue-locked', '1');
+    if ((!lock || !why) && reapplied >= REAPPLY_CAP) return;
+    if (!lock || !why) reapplied++;
     if (!lock) {
       var anchor = qa('[data-mls-ready-tick="sign-encounter"]', row)[0] || qa('b', row)[0];
       if (!anchor || !anchor.parentNode) return;
@@ -50067,7 +50071,9 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
   }
 
   function pass() {
-    if (!sheet()) return;
+    var card = sheet();
+    if (!card) { if (wired && wired !== card) unwire(); return; }
+    wire(card);
     passes++;
     try { strip(); } catch (e) {}
     try { sign(); } catch (e2) {}
@@ -50076,11 +50082,30 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     if (timer) return;
     timer = setTimeout(function () { timer = 0; pass(); }, 80);
   }
-  function arm() {
+  /* ELEMENT-SCOPED, AND BOUNDED. Two things this must not become. A
+     document-wide observer taxes every other block's boot (the clunky2 lane
+     had to coalesce two of them for exactly that), and it is the wrong shape
+     here anyway: everything read or written lives inside one card. And an
+     overlay that re-applies a node the surface underneath keeps destroying is
+     a ping-pong, not a fix - so the re-application is counted per card and
+     stands down if the sheet is really fighting back, leaving the reason
+     readable in state() rather than burning the frame budget silently. */
+  function unwire() {
+    try { if (mo) mo.disconnect(); } catch (e) {}
+    mo = null; wired = null; reapplied = 0;
+  }
+  function wire(card) {
+    if (wired === card) return;
+    unwire();
+    wired = card;
     try {
       mo = new MutationObserver(schedule);
-      if (document.body) mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-mls-athena-action', 'checked', 'disabled'] });
+      mo.observe(card, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-mls-athena-action', 'checked', 'disabled'] });
     } catch (e) {}
+  }
+  function arm() {
+    /* the card does not exist until the doctor opens the review, so finding it
+       is a slow poll rather than a watch on the document. */
     try { iv = setInterval(pass, 1500); } catch (e2) {}
     [250, 900, 1800].forEach(function (ms) { setTimeout(pass, ms); });
   }
@@ -50098,9 +50123,12 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
        these states, so a state the live sheet cannot currently produce is
        still checkable without faking a write to Athena. */
     _render: stripHtml,
+    reapplied: function () { return reapplied; },
     revert: function () {
-      try { if (mo) mo.disconnect(); } catch (e) {}
+      try { unwire(); } catch (e) {}
       try { if (iv) clearInterval(iv); } catch (e2) {}
+      try { if (timer) clearTimeout(timer); } catch (eT) {}
+      iv = 0; timer = 0;
       try { var css = el('mlsResidueAthenaCss'); if (css) css.disabled = true; } catch (e3) {}
       try {
         var row = signRow();
