@@ -52984,9 +52984,12 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
     reads.push({ at: Date.now(), type: d.type, vbf: (d.__vbf === 1 || d.__vbf === true) });
     if (reads.length > 12) reads.shift();
   }
+  /* A read that arrived AFTER the job ended cannot be what the job was: the
+     window closes at finishedAt, and only its opening carries a tolerance for
+     the message that created the job. */
   function readInWindow(job) {
     var from = (Number(job.startedAt) || 0) - 1500;
-    var to = (Number(job.finishedAt) || Date.now()) + 1500;
+    var to = (Number(job.finishedAt) || Date.now());
     for (var i = reads.length - 1; i >= 0; i--) {
       if (reads[i].at >= from && reads[i].at <= to) return reads[i];
     }
