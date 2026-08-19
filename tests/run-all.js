@@ -231,6 +231,19 @@ const tests = [
      (op-table allowlist plus a postMessage spy that must stay empty), and each
      production legalpack function ported back into the fork. */
   '1p-legal-bind-report-flow.test.js',
+  /* p1-legal-undated-1.0.0 / p1-legal-readstop-1.0.0 / p1-legal-taps-1.0.0.
+     The other Legal suites drive the module through a hand-built DOM in a vm,
+     which cannot answer "does the flow work". This one boots the real /1p
+     shell in headless Chrome, opens the workspace from the dock Tools row and
+     presses every control through to a byte-checked Word file. It was written
+     against three defects it MEASURED at HEAD in that same browser: five
+     chronology rows reading "Dec 31, 1969"; a day read with no EMR tab that
+     held the room for 90,058 ms with Compile / Generate / file-drop all
+     disabled and no way out, then claimed it had "refreshed" the patient
+     list; and sixteen buttons at 38px against the app's own 40px floor.
+     It waits out the abandoned read on purpose (~100 s), so it is one of the
+     slower suites in the gate. */
+  '1p-legal-e2e-press.test.js',
   '1p-marketing-identity-runtime.test.js',
   '1p-marketing-loader-runtime.test.js',
   '1p-marketing-workspace-runtime.test.js',

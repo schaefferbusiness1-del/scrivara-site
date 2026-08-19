@@ -706,6 +706,18 @@ async function runtime() {
     for (let i = 1; i < tableDates.length; i++) {
       ok(tableDates[i - 1] <= tableDates[i], `the chronology table is not in date order: ${JSON.stringify(tableDates)}`);
     }
+    /* p1-legal-undated-1.0.0. This suite MEASURED the defect for weeks without
+       asserting it: the fixture's MLS note carries date:'2026-01-15' and
+       updated:5, the legal pack dated it by `updated`, and new Date(5) is five
+       milliseconds after the Unix epoch — so the first row of this very table
+       read "1969-12-31". A date this table cannot support is now a defect
+       here, where it was first visible. */
+    eq(tableDates.filter((d) => d < '1990-01-01').length, 0,
+      `an epoch date reached the chronology table: ${JSON.stringify(tableDates)}`);
+    ok(tableDates.indexOf('2026-01-15') >= 0,
+      `the MLS note was not dated by its own documented date: ${JSON.stringify(tableDates)}`);
+    ok(!/1969|Dec 31, 1969|December 31, 1969/.test(text),
+      'an epoch date reached the exported report');
     /* The legal guards this lane must not have touched, and the on-screen
        chronology's collapse, are only measurable through a real overlay - which
        needs the signed-in clinical session this harness deliberately does not

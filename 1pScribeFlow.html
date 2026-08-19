@@ -52639,6 +52639,14 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     'schedule': 'Open the schedule for the selected day.',
     'pre-visit intake forms': 'Open the pre-visit intake forms.',
     'pull activity': 'See what recent Athena pulls did, day by day.',
+    /* MEASURED 2026-08-18: this row is CONDITIONAL - the calm shell resolves it
+       by matching /staff prep/i inside #mlsTbMenuPanel, so it is in the menu on
+       some sessions and absent on others, and on the sessions where it appears
+       it was the ONE Tools entry with no hover explainer while every other row
+       had one. Its handler is onMenuStaffPrepRequest, which calls
+       setEasyMode('staff','staff') - so the tip claims a screen switch and
+       nothing more. */
+    'staff prep': 'Switch to the Staff prep screen for explicit day and month Athena schedule pulls.', /* verified: setEasyMode('staff','staff') */
     'legal / ime workspace': 'Open the read-only Legal / IME draft workspace for the active patient.', /* verified */
     'verify saved data': 'Check that work saved in MLS is really stored on this device.',
     'share / export': 'Share or export what is saved in MLS.',
