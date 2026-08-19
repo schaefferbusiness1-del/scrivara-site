@@ -23640,7 +23640,44 @@ async function pullPatientChartViaAssist(btn, opts){
   try{if(!lm||typeof lm.claim!=='function'){toast('The preview Athena reader is still loading. Retry in a moment.','err');return false;}directLeaseToken=lm.claim('p1-direct-chart',110000)||'';if(!directLeaseToken){toast('Another Athena read or schedule pull is active. Wait for it to finish, then retry.','err');return false;}directTouch=setInterval(function(){try{lm.touch(directLeaseToken);}catch(_){}},25000);if(typeof lm.ready==='function'&&await lm.ready(directLeaseToken)!==true){releaseDirect();toast('Another MLS tab owns the Athena reader. Wait for it to finish, then retry.','err');return false;}}catch(eLease){releaseDirect();return false;}
   var requested=(opts.patientId||opts.name)?opts:((typeof activePatient==='function'&&activePatient())||null);
   var pullTarget=_athenaHistoryTargetSnapshot(requested,true);
-  if(!pullTarget){ releaseDirect(); try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
+  if(!pullTarget){
+    releaseDirect();
+    /* idask-1.0.0 (owner live, 2026-08-18: a brand-new name-only record made
+       every pull refuse into the tray — "says it pulls but doesn't save").
+       A name-only record CANNOT safely match a chart (that law stands), but
+       the refusal now opens a door INSTEAD of a dead end: type the DOB (and/or
+       MRN) exactly as the athena chart shows it, one click saves it onto this
+       record and re-runs this same pull. The banner-match verification
+       downstream still fail-closes on a typo — a wrong entry can never
+       attach the wrong chart, it just refuses honestly. */
+    try{
+      var apx=(typeof activePatient==='function'&&activePatient())||null;
+      var sx=document.getElementById('pullChartStatus');
+      if(apx&&(apx.id||apx.patientId)&&sx&&!String(apx.dob||'').trim()&&!String(apx.mrn||apx.athenaId||'').trim()){
+        sx.style.display='block'; sx.style.color='#6f5a20';
+        sx.innerHTML='This record has no DOB or MRN, so no chart can be safely matched. Enter them from the athena chart banner: '+
+          '<span style="display:inline-flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center">'+
+          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:7px;font-size:12px">'+
+          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:7px;font-size:12px">'+
+          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:8px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
+        var goB=document.getElementById('idaskGo');
+        if(goB) goB.onclick=function(){
+          try{
+            var dv=String((document.getElementById('idaskDob')||{}).value||'').trim();
+            var mv=String((document.getElementById('idaskMrn')||{}).value||'').trim().replace(/[^0-9]/g,'');
+            if(!/^\d{1,2}\/\d{1,2}\/(19|20)\d{2}$/.test(dv)&&!/^\d{5,10}$/.test(mv)){ sx.style.color='#9f2d2d'; sx.appendChild(document.createTextNode(' — enter a full DOB (mm/dd/yyyy) or a 5-10 digit MRN.')); return; }
+            var all=(typeof getPatients==='function'&&getPatients())||[];
+            var pid=String(apx.id||apx.patientId||'');
+            for(var qi=0;qi<all.length;qi++){ if(String(all[qi].id||all[qi].patientId||'')===pid){ if(dv)all[qi].dob=dv; if(mv){all[qi].mrn=mv;all[qi].athenaId=mv;} break; } }
+            if(typeof savePatients==='function') savePatients(all);
+            sx.style.color='#52675c'; sx.textContent='Saved — matching the chart now…';
+            setTimeout(function(){ try{ pullPatientChartViaAssist(btn); }catch(e2){} }, 400);
+          }catch(e1){ sx.style.color='#9f2d2d'; sx.textContent='Could not save the identity — edit the patient profile instead.'; }
+        };
+        return false;
+      }
+    }catch(eAsk){}
+    try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
   // Make this patient the active one so the pulled chart attaches to them + the UI follows.
   try{ if(typeof setActivePtId==='function' && (typeof getActivePtId!=='function' || getActivePtId()!==pullTarget.patientId)){ setActivePtId(pullTarget.patientId); if(typeof renderProfile==='function') renderProfile(); if(typeof renderPatientBar==='function') renderPatientBar(); if(typeof renderPatients==='function') renderPatients(); } }catch(e){}
   var orig = btn ? btn.innerHTML : '';
@@ -52718,6 +52755,27 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 })();
 </script>
 <!-- ===== end tools-tips-1.0.0 ============================================ -->
+<!-- ===== calfallback-calm-1.0.0 — the all-providers day list stops shouting ===
+     Owner, 2026-08-18 ("wtf is this — fix this stuff"): the day-panel
+     fallback (feat_mls_fixpack_0701.js, production, untouchable) paints every
+     appointment as a full-width dark-green gradient slab with white bold
+     text — a wall of banners. Its styles are INLINE, so this override wins
+     with !important: calm card rows, dark text, a thin brand accent. The
+     module's behavior (when it mounts, what it lists) is unchanged. -->
+<style id="mlsCalFallbackCalmCss">
+  #mlsFpDayFallback > div[style]{
+    background:var(--card,#fff) !important;
+    color:var(--ink,#1c2b24) !important;
+    font-weight:600 !important;
+    border:1px solid var(--line,#E4E1D8) !important;
+    border-left:3px solid #2E6A4B !important;
+    border-radius:8px !important;
+  }
+  #mlsFpDayFallback > div[style] > span{ opacity:1 !important; }
+  #mlsFpDayFallback > div[style] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
+  #mlsFpDayFallback > div[style] > span:last-child{ color:#6a7d74 !important; }
+</style>
+<!-- ===== end calfallback-calm-1.0.0 ======================================= -->
 <!-- ===== caldata-1.0.0 — the month grid gets the width, the phone gets a
      month it can read, and a tapped day is on screen
      CLUNKY AUDIT items 34, 36 and 37. (33 and 35 are fixed in the renderers
