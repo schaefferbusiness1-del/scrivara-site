@@ -707,7 +707,10 @@ function makeRuntime(options = {}) {
     const lookRe = /byId\('(mlsP1Legal[A-Za-z0-9]*)'\)/g;
     while ((hit = lookRe.exec(source)) !== null) looked.add(hit[1]);
     /* ids painted later by a renderer, not by the one-time shell */
-    const RENDERED_LATER = ['mlsP1LegalChange', 'mlsP1LegalRosterSearch', 'mlsP1LegalRosterResults', 'mlsP1LegalReadDay'];
+    /* p1-legal-readlive-1.0.0: the live read line is painted by renderReadOps,
+       like the day box beside it — always present, shown only while a read is
+       running, so this drift guard can still see it. */
+    const RENDERED_LATER = ['mlsP1LegalChange', 'mlsP1LegalRosterSearch', 'mlsP1LegalRosterResults', 'mlsP1LegalReadDay', 'mlsP1LegalReadLive'];
     deep([...looked].filter(id => !painted.has(id) && RENDERED_LATER.indexOf(id) < 0).sort(), [],
       'the module looks up a control the shell markup never renders');
     deep([...painted].filter(id => !Object.prototype.hasOwnProperty.call(UI_IDS, id) &&
@@ -716,7 +719,7 @@ function makeRuntime(options = {}) {
       'the shell renders a control this fixture never supplies, so its wiring is untested');
     RENDERED_LATER.forEach(id => {
       const host = id === 'mlsP1LegalChange' ? r.ids.mlsP1LegalBanner
-        : (id === 'mlsP1LegalReadDay' ? r.ids.mlsP1LegalReadOps : r.ids.mlsP1LegalRoster);
+        : ((id === 'mlsP1LegalReadDay' || id === 'mlsP1LegalReadLive') ? r.ids.mlsP1LegalReadOps : r.ids.mlsP1LegalRoster);
       ok(host.innerHTML.indexOf('id="' + id + '"') >= 0, 'the renderer never paints ' + id);
     });
   }
@@ -1067,6 +1070,57 @@ function makeRuntime(options = {}) {
     eq(r.ids.mlsP1LegalGenerate.disabled, false, 'a stopped read re-disabled Generate when it finally answered');
     eq(r.ids.mlsP1LegalStatus.textContent, stoppedText, 'a stopped read wrote a receipt over the room it was let go of');
     eq(r.api.stopRead(), false, 'Stop the read claimed to stop a read that was not running');
+  }
+  /* ==========================================================================
+     p1-legal-readlive-1.0.0 - THE LIVE LINE IS WHERE THE DOCTOR IS LOOKING
+
+     MEASURED at HEAD: runReadOp's onStatus routed every progress line the
+     delegate emits into setStatus, which writes #mlsP1LegalStatus. That node
+     lives inside the GENERATE disclosure card, and autoExpandedFor() opens that
+     card only at stage 'report-picked'. A read started at stage 'bound' - which
+     is every read a doctor runs before picking a report type - narrated into a
+     collapsed element for its entire duration. The settled verdict showed; the
+     minutes in between showed nothing.
+     ======================================================================== */
+  {
+    let say = null, release = null;
+    const r = makeRuntime({ readers: { __mlsSI: { dayPull: (opts) => { say = opts && opts.onStatus; return new Promise(res => { release = res; }); } } } });
+    r.api.open();                       /* deliberately NOT report-picked */
+    r.api.runReadOp('day', {});
+    await flush();
+    /* the slot is painted where the doctor is looking - beside the control */
+    ok(/id="mlsP1LegalReadLive"/.test(r.ids.mlsP1LegalReadOps.innerHTML),
+      'the read-ops block renders no live line');
+    ok(r.api.readLive().text.length > 0, 'the live line is blank while a read runs');
+    ok(/elapsed/.test(r.api.readLive().text), 'the live line carries no elapsed stamp');
+
+    /* the delegate's own words must land AT the control, not only in the
+       collapsed status card */
+    ok(typeof say === 'function', 'the day op was handed no onStatus to narrate through');
+    say('Reading verified history 3 of 14…');
+    ok(/Reading verified history 3 of 14/.test(r.api.readLive().text),
+      'the live step never reached the read-ops block: ' + r.api.readLive().text);
+    ok(/Reading verified history 3 of 14/.test(r.ids.mlsP1LegalStatus.textContent),
+      'the existing status line must keep saying it too');
+
+    /* the stall verdict, at the threshold the module publishes */
+    eq(r.api.readLive().stallMs, 60000, 'the stall threshold moved');
+    ok(!/no new step/.test(r.api.readLive().text), 'a fresh read must not read as stalled');
+    r.api._readLiveBackdate(61000);
+    const stalled = r.api.readLive().text;
+    ok(/no new step for 1m 1s/.test(stalled), 'a 60s silence produced no stall verdict: ' + stalled);
+    ok(/may be stuck/.test(stalled), 'the stall verdict does not name the likely cause');
+    ok(/[Nn]othing has been written to the EMR/.test(stalled), 'the stall verdict does not say nothing was written');
+    ok(/Stop the read/.test(stalled), 'the stall verdict does not point at the way out');
+    /* a real step clears it */
+    say('Reading verified history 4 of 14…');
+    ok(!/no new step/.test(r.api.readLive().text), 'fresh progress did not clear the stall verdict');
+
+    /* a stopped read stops narrating here too */
+    eq(r.api.stopRead(), true, 'the read did not stop');
+    eq(r.api.readLive().text, '', 'a stopped read left its live line on screen');
+    release({ ok: true }); await flush();
+    eq(r.api.readLive().text, '', 'an abandoned read narrated into the live line after it was let go');
   }
   {
     /* THE RECEIPT IS MEASURED. A day read that brings no patient must say so,
