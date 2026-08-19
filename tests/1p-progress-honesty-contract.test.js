@@ -397,6 +397,45 @@ async function runtime() {
     ok(!/Leave exactly one signed-in/.test(bodyWhy), `the overlay blamed the doctor's Athena tab for a healthy read: "${bodyWhy}"`);
     measured.bodyWhy = bodyWhy;
 
+    /* ---- §7 the explanation fits every width, in both themes ----------- */
+    const widths = {};
+    for (const w of [320, 360, 768, 1280, 2560]) {
+      await page.setViewportSize({ width: w, height: 820 });
+      await page.waitForTimeout(220);
+      await page.evaluate(() => window.__phT.repaint());
+      await page.waitForTimeout(180);
+      widths[w] = await page.evaluate(() => {
+        const p = document.getElementById('mlsPsPanel');
+        const why = p && p.querySelector('.ps-why');
+        const r = p ? p.getBoundingClientRect() : null;
+        return {
+          panelW: r ? Math.round(r.width) : -1,
+          panelRight: r ? Math.round(r.right) : -1,
+          vw: window.innerWidth,
+          whyClipped: why ? (why.scrollWidth > why.clientWidth + 1) : null,
+          docOverflow: document.documentElement.scrollWidth - window.innerWidth
+        };
+      });
+      const m = widths[w];
+      ok(m.panelRight <= m.vw, `@${w}: the progress panel runs off the right edge (${m.panelRight} > ${m.vw})`);
+      ok(m.docOverflow <= 0, `@${w}: the page gained horizontal overflow (${m.docOverflow}px)`);
+      if (m.whyClipped !== null) ok(m.whyClipped === false, `@${w}: the explanation line is clipped instead of wrapping`);
+    }
+    await page.setViewportSize({ width: 1366, height: 900 });
+    const dark = await page.evaluate(() => {
+      document.body.classList.add('theme-dark');
+      window.__mlsPsHonest.pass();
+      const p = document.getElementById('mlsPsPanel');
+      const li = p.querySelector('.ps-stages li.ps-notdone') || p.querySelector('.ps-stages li');
+      const why = p.querySelector('.ps-why');
+      const out = { li: getComputedStyle(li).color, why: why ? getComputedStyle(why).color : '', bg: getComputedStyle(p).backgroundColor };
+      document.body.classList.remove('theme-dark');
+      return out;
+    });
+    ok(dark.li !== 'rgb(146, 64, 14)', 'the dark theme kept the light-mode amber on a dark panel');
+    measured.widths = widths;
+    measured.dark = dark;
+
     const fatal = pageErrors.filter((e) => !/ResizeObserver|Non-Error promise/i.test(e));
     eq(fatal.length, 0, `page errors: ${JSON.stringify(fatal.slice(0, 4))}`);
   } finally {
