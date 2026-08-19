@@ -220,6 +220,11 @@ function harness(opts) {
   section.appendChild(lead);
   nodes.set('mlsHxSection', section);
 
+  /* A realm where the sibling renderer never loaded at all — the only honest
+     way to test degradation, because a control already mounted while it WAS
+     present is correct to stay put. */
+  if (opts.noRenderer) delete sandbox.window.__mlsEncView;
+
   vm.runInContext(CV_SRC, ctx, { filename: 'cvfull-1.0.0' });
 
   const api = sandbox.window.__mlsCvFull;
@@ -375,6 +380,18 @@ async function main() {
   const h = harness({ entries: [] });
   ok(h.api._test.mount() === false, 'an empty chart must not grow a copy control');
   ok(!h.section.querySelector('#' + h.api._test.btnId), 'and no button may appear');
+}
+{
+  /* The renderer is another module's, so its absence must degrade, never
+     throw and never half-mount. (And the handle is proved to EXIST in the
+     normal case above — a feature-detect that is always false would other-
+     wise grade a typo as a pass.) */
+  const h = harness({ noRenderer: true });
+  ok(h.api._test.view() === null, 'no renderer means no view');
+  ok(!h.section.querySelector('#' + h.api._test.wrapId), 'and nothing was mounted at load');
+  ok(h.api._test.mount() === false, 'no renderer means no control');
+  ok(h.api.copy() === false, 'no renderer means no claim of a copy');
+  ok(h.clip.writes.length === 0, 'and nothing reaches the clipboard');
 }
 {
   /* revert puts the room back */
