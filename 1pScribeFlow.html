@@ -54842,10 +54842,19 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
   function mount(){
     var host = byId('ptPullAthenaBtn');
     if (!host) return;
+    /* pullone-1.0.0 parks the shell's one status line (#pullChartStatus)
+       DIRECTLY beside whichever control was pressed, and the owner contract
+       pins that adjacency. Anchoring the door at host.nextSibling made the
+       two modules fight over one DOM slot: every park displaced the door,
+       every remount displaced the status line. The door therefore anchors
+       AFTER the status line whenever it is glued to the button. */
+    var anchor = host;
+    var st = byId('pullChartStatus');
+    if (st && st.previousElementSibling === host) anchor = st;
     /* The surface recycles itself: a repaint recreates the button while an
        old door node persists detached. Re-mount whenever adjacency is lost. */
     var old = byId('mlsPullDoor');
-    if (old) { if (host.nextSibling === old) return; try { old.remove(); } catch (eOld) {} }
+    if (old) { if (anchor.nextSibling === old) return; try { old.remove(); } catch (eOld) {} }
     /* t9pullbutton owns the button's title/description surface (its weld
        split clears the old 268-char explainer) - the door adds no second
        writer to that attribute. Two modules must not fight over one attr. */
@@ -54857,7 +54866,7 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
       '<input id="pdDob" placeholder="DOB mm/dd/yyyy" aria-label="Date of birth">'+
       '<button type="button" id="pdGo">Pull this patient in</button></span>'+
       '<div id="pdSay"></div>';
-    if (host.parentNode) host.parentNode.insertBefore(wrap, host.nextSibling);
+    if (anchor.parentNode) anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
     byId('mlsPullDoorOpen').onclick = function(){ var f=byId('mlsPullDoorForm'); f.classList.toggle('pd-open'); if (f.classList.contains('pd-open')) { try { byId('pdName').focus(); } catch (e1) {} } };
     byId('pdGo').onclick = go;
   }
