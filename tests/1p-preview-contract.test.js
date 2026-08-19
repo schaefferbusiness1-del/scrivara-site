@@ -113,7 +113,11 @@ const P1_CONFIG_RELEASE_SUBS = [
    Fields box static; cloned r14) + junkscrub-1.0.0 (cloned r15) + opnote-day-3.0.1 rail Templates button (cloned r16)
    + awb-1.0.0 (booking-row appointment-id fallback in the writeflow fork; cloned r17). Extension/production
    baselines stay at the 3.0.64 release commit. */
-const P1_BASE_COMMIT = '1c0e971f7b6b70e38f60284b7e82e4ec752e0476'; /* tip viewport containment: place() Y clamp + tipAvoid candidate-0 clamp (owner screenshot 2026-08-19) */
+/* Advanced by the AUTHORIZED extension release train 3.0.72 (2026-08-19): the
+   Settings cards in both twins moved to 3.0.72 and the 1p loader token moved
+   to chk3072 (scripts/sweep-3072.js), on top of the tip viewport containment
+   fix (1c0e971f). */
+const P1_BASE_COMMIT = '17dab7d4b2de617511ccdd65a97c81c2071cf6d3'; /* sweep-3072 + cloned r25 derive */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
@@ -122,7 +126,17 @@ const P1_BASE_COMMIT = '1c0e971f7b6b70e38f60284b7e82e4ec752e0476'; /* tip viewpo
    resilience - rendered-strip preference, missed-ping re-check, empty week strip -> recovery
    ladder, athenaTabs on goto/schedule/presence replies; digest fb803aca..., zip c71a6375... -
    documented in scripts/sweep-3063.js. Nothing about writing moved. */
-const EXTENSION_BASE_COMMIT = 'c2f36e923e56134bda8b541b2716669a5958393b';
+/* Advanced by the AUTHORIZED extension release train 3.0.72 (2026-08-19), the
+   3.0.65->3.0.72 chain live-proven on the owner's install: keep-alive alarm +
+   athena's own heartbeat (ka-3066/3069), athena-tab-or-nothing capture
+   (cap-3067), foreground reads for the bodies walk (fgo-3070), read watchdog
+   releasing the single-flight slot (wdog-3071), nickname/legal identity bridge
+   inside verified walks + VERB A self-detect (wa/alias/detect-3072), remote-arm
+   verb for phone-confirmed note writes (ra-3072, pong capability
+   phoneConfirmedWriteV1). Digest 5de12655..., zip a1dca473... - documented in
+   scripts/sweep-3072.js and the 2026-08-19 evidence artifact. Only write_note/
+   save_draft can be remotely armed; the write-safety contract did not move. */
+const EXTENSION_BASE_COMMIT = '17dab7d4b2de617511ccdd65a97c81c2071cf6d3';
 /* Advanced by the SAME extension release train, for the pin lines ONLY: the
    production Settings card version strings + release notes (ScribeFlow.html,
    ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
@@ -138,7 +152,12 @@ const EXTENSION_BASE_COMMIT = 'c2f36e923e56134bda8b541b2716669a5958393b';
    version strings + release notes, get-extension/_config/inventory pins, feat_mls_checker.js
    SERVER_EXT_VERSION + its chk3063 loader token in mls-connect.js/-staging.js - exactly what
    every prior extension release moved. No production behaviour changed. */
-const PRODUCTION_BASE_COMMIT = 'c2f36e923e56134bda8b541b2716669a5958393b';
+/* Advanced by the SAME 3.0.72 release train, for the pin lines ONLY: production
+   Settings card version strings + release notes, get-extension/_config/inventory
+   pins, feat_mls_checker.js SERVER_EXT_VERSION + its chk3072 loader token in
+   mls-connect.js/-staging.js - exactly what every prior extension release moved.
+   No production behaviour changed. */
+const PRODUCTION_BASE_COMMIT = '17dab7d4b2de617511ccdd65a97c81c2071cf6d3';
 
 const P1_FILES = [
   '1pScribeFlow.html',
