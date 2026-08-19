@@ -54829,5 +54829,80 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
 })();
 </script>
 <!-- ===== end pshonest-1.0.0 ============================================== -->
+<!-- ===== pulldoor-1.0.0 - type a name and DOB, MLS pulls that patient in ==
+     Owner 2026-08-19: "have that button ask for a name and date of birth and
+     we will pull that patient in for you." The door runs the PROVEN pull
+     (pullPatientChartViaAssist: opens the chart in athena itself, verifies
+     the banner, fail-closes on mismatch) on a record it finds or creates
+     through the same store path idask uses. No new pull plumbing. -->
+<style id="mlsPullDoorCss">
+  #mlsPullDoor{margin:6px 0 2px}
+  #mlsPullDoorOpen{background:none;border:0;padding:4px 2px;color:#2f6a4f;font-size:13px;cursor:pointer;text-decoration:underline;min-height:40px}
+  #mlsPullDoorForm{display:none;gap:7px;flex-wrap:wrap;align-items:center;margin-top:4px}
+  #mlsPullDoorForm.pd-open{display:inline-flex}
+  #mlsPullDoorForm input{padding:8px 10px;border:1px solid var(--line,#c9d6d0);border-radius:8px;font-size:13px;min-height:40px;box-sizing:border-box}
+  #pdName{width:200px} #pdDob{width:150px}
+  #pdGo{padding:8px 14px;border:0;border-radius:9px;background:#205c43;color:#fff;font-weight:700;font-size:13px;cursor:pointer;min-height:40px}
+  #pdGo[disabled]{opacity:.65;cursor:default}
+  #pdSay{display:none;margin-top:5px;font-size:12.5px;color:#52675c}
+</style>
+<script>
+(function(){
+  'use strict';
+  if (window.__mlsPullDoor) return;
+  function byId(i){ return document.getElementById(i); }
+  function say(m, bad){ var s=byId('pdSay'); if(!s) return; s.style.display='block'; s.style.color=bad?'#9f2d2d':'#52675c'; s.textContent=m; }
+  function normName(n){ return String(n||'').toLowerCase().replace(/[^a-z]/g,''); }
+  function mount(){
+    var host = byId('ptPullAthenaBtn');
+    if (!host) return;
+    /* The surface recycles itself: a repaint recreates the button while an
+       old door node persists detached. Re-mount whenever adjacency is lost. */
+    var old = byId('mlsPullDoor');
+    if (old) { if (host.nextSibling === old) return; try { old.remove(); } catch (eOld) {} }
+    /* t9pullbutton owns the button's title/description surface (its weld
+       split clears the old 268-char explainer) - the door adds no second
+       writer to that attribute. Two modules must not fight over one attr. */
+    var wrap = document.createElement('div');
+    wrap.id = 'mlsPullDoor';
+    wrap.innerHTML = '<button type="button" id="mlsPullDoorOpen">Or type a name and date of birth - MLS pulls that patient in</button>'+
+      '<span id="mlsPullDoorForm">'+
+      '<input id="pdName" placeholder="Patient name" aria-label="Patient name">'+
+      '<input id="pdDob" placeholder="DOB mm/dd/yyyy" aria-label="Date of birth">'+
+      '<button type="button" id="pdGo">Pull this patient in</button></span>'+
+      '<div id="pdSay"></div>';
+    if (host.parentNode) host.parentNode.insertBefore(wrap, host.nextSibling);
+    byId('mlsPullDoorOpen').onclick = function(){ var f=byId('mlsPullDoorForm'); f.classList.toggle('pd-open'); if (f.classList.contains('pd-open')) { try { byId('pdName').focus(); } catch (e1) {} } };
+    byId('pdGo').onclick = go;
+  }
+  function go(){
+    var nm = String((byId('pdName')||{}).value||'').trim();
+    var dv = String((byId('pdDob')||{}).value||'').trim();
+    if (nm.replace(/[^A-Za-z]/g,'').length < 3) { say('Type the patient\u2019s name first.', true); return; }
+    if (!/^\d{1,2}\/\d{1,2}\/(19|20)\d{2}$/.test(dv)) { say('Type the date of birth as mm/dd/yyyy.', true); return; }
+    /* pulldoor v2 (t10write's measurement): the proven machinery ALREADY does
+       find-or-create + its own identity gate when handed {name, dob} - one
+       creation site, no store writes here. Local DOB-conflict veto stays. */
+    var conflict = null;
+    try {
+      var all0 = (typeof getPatients==='function' && getPatients()) || [];
+      for (var i0=0;i0<all0.length;i0++){ if (normName(all0[i0].name)===normName(nm) && String(all0[i0].dob||'').trim() && normDob(all0[i0].dob)!==normDob(dv)) { conflict = all0[i0]; break; } }
+    } catch (eC0) {}
+    if (conflict) { say('A patient named '+nm+' already exists with a different date of birth. Open their profile to check before pulling.', true); return; }
+    say('Pulling '+nm+'\u2019s chart from athena\u2026');
+    var g = byId('pdGo'); if (g) { g.disabled = true; g.textContent = '\u2026 pulling'; }
+    Promise.resolve().then(function(){ return (typeof pullPatientChartViaAssist==='function') ? pullPatientChartViaAssist(g, { name: nm, dob: dv }) : Promise.reject(new Error('pull unavailable')); })
+      .then(function(okv){ if (g) { g.disabled=false; g.textContent='Pull this patient in'; } if (okv===true) say('Done - '+nm+'\u2019s chart is in.'); })
+      .catch(function(err){ if (g) { g.disabled=false; g.textContent='Pull this patient in'; } say(String((err&&err.message)||'The pull could not run. Check the athena tab is signed in and retry.'), true); });
+  }
+  function normDob(d){ var m=String(d||'').match(/(\d{1,4})\D(\d{1,2})\D(\d{1,4})/); if(!m) return String(d||'').replace(/\D/g,''); var a=+m[1],b=+m[2],c=+m[3]; if (a>31) return a+'-'+p2(b)+'-'+p2(c); return c+'-'+p2(a)+'-'+p2(b); }
+  function p2(n){ return (n<10?'0':'')+n; }
+  window.__mlsPullDoor = { version: 'pulldoor-1.0.0', mount: mount, go: go, normDob: normDob };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+  try { new MutationObserver(function(){ mount(); }).observe(document.body, { childList: true, subtree: false }); } catch (eMo) {}
+})();
+</script>
+<!-- ===== end pulldoor-1.0.0 ============================================== -->
 </body>
 </html>
