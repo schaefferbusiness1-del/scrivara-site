@@ -503,13 +503,32 @@ const clonedConfigBlock = [
   '  # Jekyll treats those broadly enough to reopen unrelated files.',
   '  - "cloned/index.html"'
 ].join('\n');
+/* The /wyzant product page (2026-08-19) is a THIRD authorized traversal block in
+   this shared file, allowed by the same rule as the two above: one reviewed,
+   literal set of lines, so every other byte of _config.yml is still compared
+   against the frozen baseline. Unlike those two it is not a lane of this app at
+   all — it is a marketing page for a separate desktop product that shares no
+   code, loads no script and registers no service worker (asserted in
+   tests/public-publication-boundary.test.js). It can therefore never affect the
+   1p or production runtimes this contract exists to freeze. */
+const wyzantConfigBlock = [
+  '',
+  '',
+  '  # 2026-08-19 — /wyzant, the product page for Wyzant Local. A SEPARATE product',
+  '  # from the clinical platform: a standalone Windows app, no shared code, no app',
+  '  # script, no service worker. It is published from this repo only because the',
+  '  # domain is here. Exact nested path, for the same reason the two above are:',
+  '  # a bare "wyzant" basename would reopen unrelated files.',
+  '  - "wyzant/index.html"'
+].join('\n');
 const currentConfig = read('_config.yml').replace(/\r\n/g, '\n');
+assert.strictEqual((currentConfig.match(/  - "wyzant\/index\.html"/g) || []).length, 1, 'exact /wyzant product-page include must appear once');
 assert.strictEqual((currentConfig.match(/  - "1p\/legal\/index\.html"/g) || []).length, 1, 'exact FREE Legal showcase include must appear once');
 assert.strictEqual((currentConfig.match(/  - "1p\/marketing\/index\.html"/g) || []).length, 1, 'exact FREE Marketing showcase include must appear once');
 assert.strictEqual((currentConfig.match(/  - "cloned\/index\.html"/g) || []).length, 1, 'exact /cloned live-route include must appear once');
 const baseConfigText = P1_CONFIG_RELEASE_SUBS.reduce((text, [from, to]) => text.split(from).join(to), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'));
-assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, ''), baseConfigText,
-  '_config.yml changed beyond the exact reviewed 1p showcase and /cloned traversal blocks (and the two 3.0.62 release literals)');
+assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, '').replace(wyzantConfigBlock, ''), baseConfigText,
+  '_config.yml changed beyond the exact reviewed 1p showcase, /cloned and /wyzant traversal blocks (and the two 3.0.62 release literals)');
 
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');
