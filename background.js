@@ -4098,7 +4098,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       let emrTab = null;
       const su = (sender && sender.tab && sender.tab.url) || '';
       if (sender && sender.tab && /^https?:/.test(su) && !isMls(su)) emrTab = sender.tab;
-      if (!emrTab) { const tabs = await chrome.tabs.query({}); emrTab = await mlsPickAthenaTab(tabs, { athenaOnly: true }); if (!emrTab) { const c = tabs.filter(t => /^https?:/.test(t.url || '') && !isMls(t.url || '') && !/athena/i.test(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); emrTab = c[0]; } } /* v1.90 */
+      /* cap-3067: athena tab or NOTHING here too - the same v1.90 most-recent-tab fallback class as the capture verb. */
+      if (!emrTab) { const tabs = await chrome.tabs.query({}); emrTab = await mlsPickAthenaTab(tabs, { athenaOnly: true }); }
       if (!emrTab) return sendResponse({ ok: false, error: 'No EMR/chart tab is open. Open the patient encounter in athenaOne, then try again.' });
       let results = [];
       /* v2.9.14 (Codex E3 classification): PROBE mode is read-only — one bounded
@@ -8713,8 +8714,14 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
     (async () => {
       try {
         const tabs = await chrome.tabs.query({});
-        const tab = (await mlsPickAthenaTab(tabs, { athenaOnly: true })) || (function () { const c = tabs.filter(t => /^https?:/.test(t.url || '') && !/mlsscribe\.com|athena/i.test(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); return c[0]; })(); /* v1.90 */
-        if (!tab) return sendResponse({ error: 'No EMR tab is open. Open the patient in your EMR in another tab, then try again.' });
+        /* cap-3067 (3.0.67): athena tab or NOTHING. The v1.90 fallback
+           (most-recently-used non-mlsscribe tab) could try to READ WHATEVER
+           THE DOCTOR LAST LOOKED AT - measured live 2026-08-19: it went for a
+           chatgpt.com tab and only the host-permission wall stopped it. A
+           capture that cannot find a signed-in athenaOne tab refuses in
+           words; it never touches any other tab. */
+        const tab = await mlsPickAthenaTab(tabs, { athenaOnly: true });
+        if (!tab) return sendResponse({ error: 'No signed-in athenaOne tab was found. Open your patient in athenaOne (finish signing in if it is on the sign-in screen), then press this again.' });
         let pageText = '';
         try {
           /* cap-3065 (3.0.65): athenaOne is a FRAMESET and its chart/briefing
