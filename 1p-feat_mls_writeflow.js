@@ -2466,10 +2466,26 @@
       .map(function (x) { return x.replace(/^[\s\-•*\d.)]+/, '').trim(); })
       .filter(function (x) { return x.length >= WFX_MIN_TERM && !WFX_NEGATION.test(x); });
   }
-  /* The first substantial word is the term we can honestly look for. */
+  /* The first substantial word is the term we can honestly look for — unless
+     that word is a CATEGORY or a qualifier rather than a substance. "Other:
+     see chart" would otherwise flag every note containing the word "other",
+     and a screen that cries wolf on a patient-safety surface gets ignored
+     exactly when it is right. Skip those and take the next real word. */
+  var WFX_NOT_A_SUBSTANCE = {
+    other: 1, others: 1, misc: 1, miscellaneous: 1, various: 1, multiple: 1, several: 1,
+    unknown: 1, unspecified: 1, patient: 1, reports: 1, reported: 1, history: 1,
+    drug: 1, drugs: 1, medication: 1, medications: 1, medicine: 1, medicines: 1,
+    allergy: 1, allergies: 1, allergic: 1, reaction: 1, reactions: 1, intolerance: 1,
+    seasonal: 1, environmental: 1, food: 1, foods: 1, contact: 1, chart: 1, note: 1,
+    active: 1, chronic: 1, acute: 1, mild: 1, moderate: 1, severe: 1, daily: 1, other1: 1
+  };
   function wfxHeadTerm(entry) {
-    var m = /[A-Za-z][A-Za-z0-9\-]{3,}/.exec(S(entry));
-    return m ? m[0].toLowerCase() : '';
+    var words = S(entry).match(/[A-Za-z][A-Za-z0-9\-]{3,}/g) || [];
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i].toLowerCase();
+      if (!WFX_NOT_A_SUBSTANCE[w]) return w;
+    }
+    return '';
   }
   function wfxFacts(patient) {
     var out = [];

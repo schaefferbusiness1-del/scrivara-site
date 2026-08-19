@@ -238,6 +238,20 @@ function probeReply(requestId, over) {
     /* a recorded ABSENCE is not a fact to collide with */
     ok(wf.bindCure.fidelity.factList('NKDA').length === 0, 'a recorded absence is below the relevance floor');
     ok(wf.bindCure.fidelity.factList('No known drug allergies').length === 0, 'a negation is not a pulled fact');
+
+    /* A SCREEN THAT CRIES WOLF GETS IGNORED. A category or qualifier is not a
+       substance, so it must never be the term this screen matches on. */
+    const catchAll = Object.assign({}, PATIENT, { allergies: 'Other: see chart' });
+    ok(wf.bindCure.fidelity.contradictions(manifest, catchAll).length === 0,
+      '"Other: see chart" must not collide with every note containing the word "other"');
+    const category = Object.assign({}, PATIENT, { allergies: 'Seasonal and environmental allergies' });
+    ok(wf.bindCure.fidelity.contradictions(manifest, category).length === 0,
+      'a category line must not be matched as if it named a drug');
+    /* but a substance BEHIND a qualifier is still found */
+    const behind = Object.assign({}, PATIENT, { allergies: 'Severe reaction: warfarin' });
+    const behindHits = wf.bindCure.fidelity.contradictions(manifest, behind);
+    ok(behindHits.length === 1 && behindHits[0].term === 'warfarin',
+      'skipping a qualifier must not skip the drug behind it (got ' + JSON.stringify(behindHits.map(f => f.term)) + ')');
   }
 
   /* ================= W4 — COMPLETENESS TALLY ========================== */
