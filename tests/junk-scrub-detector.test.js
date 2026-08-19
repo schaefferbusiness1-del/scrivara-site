@@ -280,8 +280,9 @@ for (const [v, want, name] of SCOPE) {
 }
 
 /* ============================ PART 5  THE CONTROL: why not _stripPageDebris  */
-/* If this part ever fails, the shared display cleaner has been fixed and the
-   comment in the shell block explaining why it is not reused is now wrong. */
+/* If this part fails, the shared display cleaner has REGRESSED and is eating
+   clinical text again. It is no longer a "why not reuse it" note - it is a
+   patient-safety pin. See c6-1.0.0 below. */
 {
   function stubEl() { return { style: {}, setAttribute() {}, getAttribute() { return null; }, appendChild() {}, remove() {}, addEventListener() {}, querySelectorAll() { return []; }, querySelector() { return null; } }; }
   const win = {};
@@ -302,13 +303,22 @@ for (const [v, want, name] of SCOPE) {
 
   const WINDOW_SENTENCE = NEAR_MISS[0][1];
   const JOTTER_SENTENCE = NEAR_MISS[3][1];
-  /* the control: the shared cleaner LOSES this clinical text ... */
-  ok(strip(WINDOW_SENTENCE) !== WINDOW_SENTENCE,
-    'CONTROL BROKEN: _stripPageDebris no longer mangles "fell through a window." — re-read the shell block comment');
-  ok(strip(WINDOW_SENTENCE).indexOf('Laceration to right forearm') < 0,
-    'CONTROL BROKEN: _stripPageDebris no longer deletes the injury site — re-read the shell block comment');
-  ok(strip(JOTTER_SENTENCE) !== JOTTER_SENTENCE,
-    'CONTROL BROKEN: _stripPageDebris no longer mangles the "Jotter pad" sentence');
+  /* c6-1.0.0 (2026-08-18) - THIS CONTROL USED TO RUN THE OTHER WAY.
+       It asserted that the shared display cleaner STILL destroyed this clinical
+       text, to prove the near-miss set was not vacuous. That defect is fixed:
+       _DEBRIS_START now requires an identifier character after a code marker
+       (so the ordinary English "...fell through a window." no longer enters
+       code mode) and "Jotter" must carry an equals. Measured before the fix:
+       "fell through a window. Laceration to right forearm, 4 cm, repaired"
+       came back as "fell through a cm, repaired", and short trailing clauses
+       ("No allergies.", "Recheck in 7 days.") were deleted outright.
+       Both cleaners must now KEEP the text, and both must still drop the junk. */
+    eq(strip(WINDOW_SENTENCE), WINDOW_SENTENCE,
+      'REGRESSION: _stripPageDebris is mangling "fell through a window." again');
+    ok(strip(WINDOW_SENTENCE).indexOf('Laceration to right forearm') >= 0,
+      'REGRESSION: _stripPageDebris is deleting the injury site again');
+    eq(strip(JOTTER_SENTENCE), JOTTER_SENTENCE,
+      'REGRESSION: _stripPageDebris is mangling the "Jotter pad" sentence again');
   /* ... and junkscrub does not. Same inputs, both cleaners, one run. */
   eq(J.scrub(WINDOW_SENTENCE).text, WINDOW_SENTENCE, 'junkscrub lost the same clinical text the shared cleaner loses');
   eq(J.scrub(JOTTER_SENTENCE).text, JOTTER_SENTENCE, 'junkscrub lost the Jotter sentence');
