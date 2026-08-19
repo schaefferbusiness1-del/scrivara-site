@@ -152,7 +152,7 @@ function makeRuntime(options = {}) {
   let activeId = Object.prototype.hasOwnProperty.call(options, 'activeId') ? options.activeId : 'A';
   let epoch = 1;
   const pendingAi = [];
-  const notes = {
+  const notes = options.notes || {
     A: [{ patientId: 'A', updated: 4, signed: true, provider: 'M Synthetic, DO',
       coding: { icd: [{ code: 'M51.36', desc: 'Other intervertebral disc degeneration, lumbar region' }] },
       soap: 'S:\nPain.\nA:\nLumbar strain.\nPLAN:\nContinue therapy. Follow-up in 4 weeks. MRI reviewed.\nO:\nNormal gait.' }]
@@ -616,7 +616,22 @@ function makeRuntime(options = {}) {
     eq(r.api.runSections('ime').length, 14, 'an empty questions box still added a questions section');
     r.ids.mlsP1LegalQuestions.value = '1. Is the lumbar injury related to the documented event?';
     eq(r.api.runSections('ime').length, 15, 'supplied questions did not add their own IME section');
-    ok(/ANSWERS TO THE QUESTIONS ASKED/.test(r.api.runSections('ime')[14][0]), 'the questions section is not named for what it does');
+    /* p1-legal-counsel-order-1.0.0: pinned BY NUMBER, not by index. The
+       section is called XIII-A because it belongs after XIII; it used to be
+       appended, so the generated report printed XIII, XIV, XIII-A, XV. */
+    {
+      const heads = r.api.runSections('ime').map(s => s[0]);
+      ok(/ANSWERS TO THE QUESTIONS ASKED/.test(heads[13]), 'the questions section is not named for what it does: ' + heads[13]);
+      eq(heads.indexOf('XIII-A. ANSWERS TO THE QUESTIONS ASKED'), heads.findIndex(h => /^XIII\./.test(h)) + 1,
+        'XIII-A is not immediately after XIII: ' + JSON.stringify(heads));
+      ok(heads.indexOf('XIII-A. ANSWERS TO THE QUESTIONS ASKED') < heads.indexOf('XIV. OPINIONS'),
+        'XIII-A still prints after XIV: ' + JSON.stringify(heads));
+      /* the narrative type ends at XIII, where "after XIII" and "appended"
+         are the same place - it must not move */
+      const nHeads = r.api.runSections('narrative').map(s => s[0]);
+      eq(nHeads[nHeads.length - 1], 'XIII-A. ANSWERS TO THE QUESTIONS ASKED',
+        'the narrative questions section moved: ' + JSON.stringify(nHeads.slice(-3)));
+    }
     eq(r.api.runSections('narrative').length, 14, 'supplied questions did not add their own narrative section');
     eq(r.api.runSections('records').length, 5, 'the records summary invented a questions section');
     eq(r.api.runSections('chronology').length, 0, 'the deterministic chronology report gained AI sections');
@@ -922,9 +937,175 @@ function makeRuntime(options = {}) {
     ok(!/IsSafari/.test(r.ids.mlsP1LegalChronology.innerHTML), 'Show cleaned did not go back to the cleaned text');
   }
 
+  /* ==========================================================================
+     p1-legal-undated-1.0.0 - AN UNDATED ENTRY SAYS UNDATED, NEVER 1969
+
+     MEASURED at HEAD in the real overlay (headless Chrome, synthetic chart):
+     FIVE chronology rows read "Dec 31, 1969", the AT A GLANCE table printed
+     "1969-12-31", and the exported .txt carried "Wednesday, December 31,
+     1969". Cause: a note's only timestamp was a small number, and
+     new Date(5) is five milliseconds after the Unix epoch - 1969-12-31
+     anywhere west of Greenwich. A chronology a court reads must never invent
+     a date. Executed here rather than grepped for.
+     ======================================================================== */
+  {
+    /* Every shape that used to produce an epoch date, and every shape that
+       must still date correctly, through the SAME ymd() the workspace uses. */
+    const dated = [
+      { id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A',
+        visits: [
+          { date: 0, type: 'Zero stamp', detail: 'A zero timestamp is a missing one.' },
+          { date: 5, type: 'Tiny stamp', detail: 'Five milliseconds after the epoch is not a date.' },
+          { date: 1755500000, type: 'Seconds not millis', detail: 'A seconds-based stamp must not print as 1970.' },
+          { date: '2026', type: 'Bare year', detail: 'A year alone is not a day.' },
+          { date: '', type: 'Empty', detail: 'Nothing at all.' },
+          /* and the ones that MUST keep their date */
+          { date: '2026-02-11', type: 'ISO dated', detail: 'Documented.' },
+          { date: '3/4/2026', type: 'US dated', detail: 'Documented.' },
+          { date: 'Jan 5 1985', type: 'Old prose date', detail: 'A genuinely old outside record.' },
+          { date: Date.UTC(2026, 6, 1) + 43200000, type: 'Real epoch millis', detail: 'A real Date.now() stamp.' }
+        ] }
+    ];
+    const r = makeRuntime({ patients: dated, notes: { A: [] } });
+    r.api.open();
+    const model = r.api.buildModel(JSON.parse(JSON.stringify(dated[0])),
+      { patientId: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A' });
+    const byType = {};
+    model.items.forEach(item => { byType[item.title] = item.date; });
+    ['Zero stamp', 'Tiny stamp', 'Seconds not millis', 'Bare year', 'Empty'].forEach(type => {
+      eq(byType[type], '', 'an undated entry ("' + type + '") was given the date ' + byType[type]);
+    });
+    eq(byType['ISO dated'], '2026-02-11', 'a documented ISO date was lost');
+    eq(byType['US dated'], '2026-03-04', 'a documented US date was lost');
+    eq(byType['Old prose date'], '1985-01-05',
+      'a genuinely old prose date was refused by the epoch guard - the guard is too wide');
+    eq(byType['Real epoch millis'], '2026-07-01', 'a real Date.now() stamp was refused by the epoch guard');
+
+    /* And what the doctor actually READS: no 1969/1970 on screen or in either
+       export, and the undated rows say so in a word. */
+    r.api.toggleCard('chronology', true);
+    const painted = r.ids.mlsP1LegalChronology.innerHTML;
+    const text = r.api.chronologyText();
+    [['the rendered chronology', painted], ['the exported chronology', text]].forEach(([where, blob]) => {
+      ok(!/1969/.test(blob), 'an epoch date (1969) reached ' + where);
+      ok(!/1970-01-0|Jan 1, 1970|January 1, 1970/.test(blob), 'an epoch date (1970) reached ' + where);
+    });
+    ok(/Undated/.test(painted), 'an undated row does not say "Undated" on screen');
+    ok(/\(undated\)|Undated|Date not documented/.test(text), 'an undated row does not say so in the export');
+  }
+  {
+    /* The date an encounter HAPPENED beats the date its row was last EDITED.
+       The old code read `updated || created` only, so a note carrying its own
+       service date was filed under whatever its modification stamp said. */
+    const r = makeRuntime({
+      notes: { A: [
+        { patientId: 'A', date: '2026-05-18', updated: 5, signed: true, provider: 'M Synthetic, DO',
+          soap: 'A:\nDocumented service date.\nPLAN:\nFollow-up in 3 months.' },
+        { patientId: 'A', visitDate: '2026-06-02', created: 7, signed: true, provider: 'M Synthetic, DO',
+          soap: 'A:\nOp-note visitDate.' },
+        { patientId: 'A', updated: 0, signed: false, provider: 'M Synthetic, DO',
+          soap: 'A:\nNo date of any kind.' }
+      ] }
+    });
+    r.api.open();
+    const dates = r.api.buildModel(
+      { id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [] },
+      { patientId: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A' })
+      .items.filter(i => i.category === 'visit').map(i => i.date).sort();
+    deep(dates, ['', '2026-05-18', '2026-06-02'],
+      'a note was not dated by its own documented service date: ' + JSON.stringify(dates));
+  }
+
+  /* ==========================================================================
+     p1-legal-readstop-1.0.0 - THE READ IS ESCAPABLE, AND ITS RECEIPT IS TRUE
+
+     MEASURED at HEAD in the real overlay with no EMR tab and no Assist:
+     "Pull a day of the schedule" held the workspace for 90,058 ms (timed)
+     with Compile history, Generate report and Choose local files ALL
+     disabled and no control of any kind that would let go - then settled
+     claiming the read "finished. The patient list above was refreshed from
+     this account's roster", for a read that brought back nothing.
+     ======================================================================== */
+  {
+    let release = null, dayRuns = 0;
+    const r = makeRuntime({ readers: { __mlsSI: { dayPull: () => { dayRuns++; return new Promise(res => { release = res; }); } } } });
+    r.api.open(); r.api.pickReport('ime');
+    r.api.runReadOp('day', {});
+    await flush();
+    eq(dayRuns, 1, 'the read did not start');
+    eq(r.api.state().reading, 'day', 'a running read is not reported');
+    eq(r.ids.mlsP1LegalCompile.disabled, true, 'Compile stayed live during a read');
+    eq(r.ids.mlsP1LegalGenerate.disabled, true, 'Generate stayed live during a read');
+    /* the way out is RENDERED, not just callable */
+    ok(/data-read-stop="day"/.test(r.ids.mlsP1LegalReadOps.innerHTML),
+      'a running read renders no "Stop the read" control - the workspace is wedged for as long as the reader hangs');
+    ok(/Stop the read/.test(r.ids.mlsP1LegalReadOps.innerHTML), 'the stop control is not named in words');
+    /* and the room says WHY it went quiet */
+    ok(/wait while a read runs/.test(r.ids.mlsP1LegalReadOps.innerHTML),
+      'the room does not say why Compile and Generate went quiet');
+
+    eq(r.api.stopRead(), true, 'Stop the read did not stop the read');
+    eq(r.api.state().reading, '', 'Stop the read left the read slot held');
+    eq(r.ids.mlsP1LegalCompile.disabled, false, 'Compile stayed disabled after the read was stopped');
+    eq(r.ids.mlsP1LegalGenerate.disabled, false, 'Generate stayed disabled after the read was stopped');
+    ok(/was stopped/.test(r.ids.mlsP1LegalStatus.textContent), 'stopping the read said nothing');
+    ok(!/data-read-stop=/.test(r.ids.mlsP1LegalReadOps.innerHTML), 'the Stop control outlived the read it stopped');
+
+    /* THE OWNERSHIP BOUNDARY: the abandoned read comes back late and owns
+       nothing. It must not re-disable the room, and it must not write a
+       receipt over the one the clinician is reading. */
+    const stoppedText = r.ids.mlsP1LegalStatus.textContent;
+    release({ ok: true }); await flush();
+    eq(r.api.state().reading, '', 'a stopped read re-took the read slot when it finally answered');
+    eq(r.ids.mlsP1LegalGenerate.disabled, false, 'a stopped read re-disabled Generate when it finally answered');
+    eq(r.ids.mlsP1LegalStatus.textContent, stoppedText, 'a stopped read wrote a receipt over the room it was let go of');
+    eq(r.api.stopRead(), false, 'Stop the read claimed to stop a read that was not running');
+  }
+  {
+    /* THE RECEIPT IS MEASURED. A day read that brings no patient must say so,
+       and must never claim the list was "refreshed". */
+    const r = makeRuntime({ readers: { __mlsSI: { dayPull: () => Promise.resolve({ ok: true }) } } });
+    r.api.open();
+    eq(await r.api.runReadOp('day', {}), true, 'the day read did not complete');
+    const said = r.ids.mlsP1LegalStatus.textContent;
+    ok(/no patient arrived/.test(said), 'a day read that brought nothing claimed otherwise: ' + said);
+    ok(/nothing was faked/i.test(said), 'a barren read did not say plainly that nothing was read');
+    ok(!/list above was refreshed/.test(said), 'a barren read still claims the patient list was refreshed');
+  }
+  {
+    /* ...and one that DOES bring a patient counts it, rather than asserting. */
+    const arriving = [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [] }];
+    let list = arriving.slice();
+    const r = makeRuntime({
+      patients: arriving,
+      readers: { __mlsSI: { dayPull: () => { list = list.concat([{ id: 'D', name: 'Synthetic Delta', dob: '07/08/1988', mrn: 'TEST-D', visits: [] }]); return Promise.resolve({ ok: true }); } } }
+    });
+    r.window.getPatients = () => list.slice();
+    r.api.open();
+    eq(await r.api.runReadOp('day', {}), true, 'the day read did not complete');
+    ok(/1 patient arrived/.test(r.ids.mlsP1LegalStatus.textContent),
+      'a day read that brought a patient did not count it: ' + r.ids.mlsP1LegalStatus.textContent);
+  }
+  {
+    /* A chart re-read is measured on the compiled entry count, the same way. */
+    const r = makeRuntime({ readers: { pullPatientChartViaAssist: () => Promise.resolve(true) } });
+    r.api.open();
+    eq(await r.api.runReadOp('chart'), true, 'the chart read did not complete');
+    const said = r.ids.mlsP1LegalStatus.textContent;
+    ok(/documented entries/.test(said), 'a chart read did not report a measured entry count: ' + said);
+    ok(/unchanged at \d+ documented entries/.test(said), 'an unchanged chart read did not say it was unchanged: ' + said);
+    ok(/nothing was faked/i.test(said), 'an unchanged chart read did not say plainly that nothing new was read');
+  }
+
+  /* The tap-target floor is NOT asserted here: this fixture has no layout, so
+     a CSS grep would be a claim rather than a measurement. It is measured for
+     real, in headless Chrome at all five widths, by
+     tests/1p-legal-e2e-press.test.js. */
+
   /* the delimited blocks stay delimited, so promotion is a copy not a diff */
   ['p1-legal-restore-2.0.0', 'p1-legal-bind-2.0.0', 'p1-legal-reports-2.0.0',
-    'p1-legal-scrub-1.0.0', 'p1-legal-stepper-1.0.0'].forEach(name => {
+    'p1-legal-scrub-1.0.0', 'p1-legal-stepper-1.0.0', 'p1-legal-undated-1.0.0',
+    'p1-legal-readstop-1.0.0', 'p1-legal-counsel-order-1.0.0'].forEach(name => {
     const a = source.indexOf('/* ===== ' + name + ' =');
     const b = source.indexOf('/* ===== end ' + name + ' ===== */');
     ok(a >= 0 && b > a, 'the ' + name + ' block is missing or unclosed');

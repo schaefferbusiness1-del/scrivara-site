@@ -71,7 +71,12 @@
     expanded: {},          /* p1-legal-stepper-1.0.0: card key -> disclosed */
     rawOpen: {},           /* chronology row index -> raw body shown */
     athenaOp: '',          /* the read op currently running, '' when idle */
-    athenaNote: ''         /* last honest receipt from an Athena read */
+    athenaNote: '',        /* last honest receipt from an Athena read */
+    /* p1-legal-readstop-1.0.0: a read seq, so a read the clinician STOPPED can
+       never settle over the workspace it was let go of. Incremented on every
+       start and on every stop; a settle whose token no longer matches is
+       dropped. The block itself is at runReadOp. */
+    athenaSeq: 0
   };
 
   function isFn(value) { return typeof value === 'function'; }
@@ -186,6 +191,28 @@
     var d = new Date();
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
+  /* ===== p1-legal-undated-1.0.0 ==========================================
+     An undated entry says "undated". It used to say "Dec 31, 1969".
+
+     MEASURED at HEAD, in the real overlay on a synthetic chart: FIVE rows of
+     the painted chronology read "Dec 31, 1969", the AT A GLANCE table printed
+     "1969-12-31", and the exported .txt carried "Wednesday, December 31,
+     1969". The cause is this function's last resort: a note whose only
+     timestamp was a small number reached `new Date(5)`, which is five
+     milliseconds after the Unix epoch and lands on the 31st of December 1969
+     anywhere west of Greenwich. A chronology that a court reads must never
+     invent a date, and 1969 is exactly the kind of invented date a reader
+     cannot tell from a real one.
+
+     A bare number here is an epoch-MILLISECOND stamp, so it is only believed
+     when it is a plausible one. The floor is 1990-01-01: no row this product
+     can hold predates it, every genuine Date.now() clears it by decades, and
+     a stamp accidentally recorded in SECONDS (~1.7e9) falls below it and is
+     correctly refused rather than printed as 1970. A genuinely old record is
+     unaffected - it arrives as text ("1985-01-05", "1/5/1985", "Jan 5 1985")
+     and is dated by the branches above, or by Date parsing of a real date
+     string, neither of which this guard touches. ===== */
+  var EPOCH_FLOOR_MS = Date.UTC(1990, 0, 1);
   function ymd(value) {
     try {
       if (value == null || value === '') return '';
@@ -196,10 +223,28 @@
         var year = m[3].length === 2 ? ((+m[3] > 40 ? '19' : '20') + m[3]) : m[3];
         return year + '-' + pad2(m[1]) + '-' + pad2(m[2]);
       }
+      if (/^-?\d+(?:\.\d+)?$/.test(s)) {
+        var stamp = Number(s);
+        if (!isFinite(stamp) || stamp < EPOCH_FLOOR_MS) return '';
+      }
       var d = new Date(value);
       return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
     } catch (e) { return ''; }
   }
+  /* p1-legal-undated-1.0.0: the date an encounter HAPPENED, in the app's own
+     order of preference - pvr-1.0.0's resolver dates a note by
+     `n.date || n.note_date || n.created_at || n.created` and the op-note
+     writer stores `visitDate`. This used to read `updated || created` only,
+     which dated an encounter by when the row was last EDITED and threw the
+     note's own documented service date away: the probe note carried
+     date:'2026-05-18' and was filed under 1969. The modification stamps stay
+     as the last resort so a note that has nothing else still dates. */
+  function noteWhen(note) {
+    if (!note) return '';
+    return note.date || note.note_date || note.visitDate || note.noteDate ||
+      note.created_at || note.created || note.updated || '';
+  }
+  /* ===== end p1-legal-undated-1.0.0 ===== */
   function niceDate(value) {
     if (!value) return 'Undated';
     try {
@@ -282,7 +327,9 @@
     state.stage = 'unbound';
     state.reportType = '';
     state.snapshot = null; state.snapshotSig = ''; state.snapshotAt = 0;
-    state.rebindIntent = null; state.athenaOp = ''; state.athenaNote = '';
+    /* p1-legal-readstop-1.0.0: bump the read seq too — a read started for the
+       OLD patient must never settle a receipt into the room after the switch. */
+    state.rebindIntent = null; state.athenaOp = ''; state.athenaNote = ''; state.athenaSeq++;
     /* clunky2-legal-1.0.0 (CLUNKY 54): same fail-closed behaviour, said in
        plain words, with the next step offered instead of described. */
     renderNoPatient('You switched patients, so this draft was closed. Nothing was saved from it — a report is only ever built for the one chart it is bound to.', true);
@@ -632,7 +679,7 @@
     notesFor(patientSnapshot).forEach(function (note) {
       if (!rowMatchesBinding(note, binding) || note.isDraft) return;
       var body = String(note.soap || note.text || '').trim();
-      var when = note.updated || note.created;
+      var when = noteWhen(note); /* p1-legal-undated-1.0.0 */
       var isOp = RE_OPMARK.test(body.slice(0, 900));
       addItem(items, { date: when, category: isOp ? 'procedure' : 'visit',
         title: (isOp ? 'Procedure / operative note' : 'Visit note') + (note.signed ? ' (signed)' : ' (unsigned)'),
@@ -1043,9 +1090,25 @@
     var report = reportTypeFor(key) || reportTypeFor('ime');
     var list = sectionsFor(report.key);
     var questions = String((byId('mlsP1LegalQuestions') || {}).value || '').trim();
-    if (report.counsel && questions) list = list.concat([COUNSEL_SECTION]);
+    /* ===== p1-legal-counsel-order-1.0.0 ==================================
+       MEASURED 2026-08-18 in the generated Word file: the numbered heads came
+       out I, II, ... XIII, XIV, XIII-A, XV. The counsel section is NUMBERED
+       XIII-A precisely because it belongs immediately after XIII, and a
+       report that goes to a lawyer with its own numbering out of order is
+       the kind of thing the reader notices before the medicine. It is placed
+       by its number now, not appended: after the section whose head begins
+       "XIII.", and only appended when there is no such section (the
+       narrative type ends at XIII, where after-XIII and appended are the
+       same place, so that type is unchanged). ===== */
+    if (report.counsel && questions) {
+      var at = -1;
+      for (var i = 0; i < list.length; i++) { if (/^XIII\./.test(list[i][0])) { at = i; break; } }
+      if (at < 0) list = list.concat([COUNSEL_SECTION]);
+      else { list = list.slice(); list.splice(at + 1, 0, COUNSEL_SECTION); }
+    }
     return list;
   }
+  /* ===== end p1-legal-counsel-order-1.0.0 ===== */
   function pickReportType(key) {
     var report = reportTypeFor(key);
     if (!report) return false;
@@ -1504,6 +1567,42 @@
     if (!Object.prototype.hasOwnProperty.call(ATHENA_READ_OPS, key)) return false;
     try { return !!ATHENA_READ_OPS[key].resolve(); } catch (e) { return false; }
   }
+  /* ===== p1-legal-readstop-1.0.0 =========================================
+     MEASURED at HEAD, in the real overlay with no EMR tab and no Assist
+     connection: pressing "Pull a day of the schedule" held the workspace for
+     NINETY SECONDS (90,058 ms, timed) during which Compile history, Generate
+     report and Choose local files were ALL disabled, both read buttons were
+     disabled, the pressed one read "Reading…", and there was no control of
+     any kind that would let go. Then it settled saying the read "finished.
+     The patient list above was refreshed from this account's roster." —
+     a success receipt for a read that brought back nothing at all.
+
+     Two things are wrong there and both are fixed here.
+
+     1. THE ROOM MUST BE ESCAPABLE. The mutual exclusion between a read and
+        the rest of the flow is kept — a chart re-read re-compiles the frozen
+        snapshot, so letting it race a draft would be worse — but an
+        exclusion with no exit is a wedge. "Stop the read" is a real control:
+        it releases the workspace immediately, and the seq token means the
+        abandoned read can never settle over the room afterwards.
+
+     2. A RECEIPT MUST BE MEASURED, NOT ASSERTED. What the day read is FOR is
+        patients arriving in this account, so the receipt counts them, before
+        and after, and says plainly when the answer is none. A chart re-read
+        is measured the same way on the compiled entry count. Neither one is
+        allowed to claim a refresh it cannot show.
+     ====================================================================== */
+  function stopReadOp() {
+    if (!state.athenaOp) return false;
+    var stopped = ATHENA_READ_OPS[state.athenaOp];
+    state.athenaSeq++;
+    state.athenaOp = '';
+    state.athenaNote = (stopped ? stopped.label : 'The read') + ' was stopped. Nothing was written to the EMR, ' +
+      'nothing was changed in this account, and this workspace is free again — a late answer from the stopped read is ignored.';
+    renderReadOps(); updateControls();
+    setStatus(state.athenaNote, false);
+    return true;
+  }
   /* One gateway. A key that is not an own property of the table above never
      resolves a delegate, so no unlisted operation can be invoked from here. */
   function runReadOp(key, input) {
@@ -1524,27 +1623,53 @@
       setStatus(state.athenaNote, true); renderReadOps();
       return Promise.resolve(false);
     }
+    /* p1-legal-readstop-1.0.0: what the read is measured against, taken
+       BEFORE it starts so the receipt is a delta and not a claim. */
+    var token = ++state.athenaSeq;
+    var rosterBefore = rosterPatients().length;
+    var itemsBefore = state.model ? state.model.items.length : 0;
     state.athenaOp = key; state.athenaNote = ''; renderReadOps(); updateControls();
-    setStatus(op.label + ' — reading. This reads only; nothing is written to the EMR.', false);
-    var onStatus = function (message) { setStatus(op.label + ' — ' + clean(message), false); };
+    setStatus(op.label + ' — reading. This reads only; nothing is written to the EMR. ' +
+      'The rest of this workspace waits until the read finishes; press "Stop the read" to take it back.', false);
+    var onStatus = function (message) {
+      if (state.athenaSeq !== token) return; /* a stopped read does not narrate */
+      setStatus(op.label + ' — ' + clean(message), false);
+    };
     function settle(okText, errText, error) {
+      /* The ownership boundary: a read the clinician stopped, or a second
+         read started after it, owns nothing here. */
+      if (state.athenaSeq !== token) return !error;
       state.athenaOp = '';
       state.athenaNote = error ? (errText + ' ' + (clean(error && error.message) || 'the read did not complete')) : okText;
       renderReadOps(); renderRoster(); updateControls();
       setStatus(state.athenaNote, !!error);
       return !error;
     }
+    /* The honest receipt: what actually arrived, counted. */
+    function receipt() {
+      if (key === 'chart') {
+        var itemsAfter = state.model ? state.model.items.length : 0;
+        if (itemsAfter > itemsBefore) return op.label + ' finished: the chronology re-compiled from ' + itemsBefore + ' to ' + itemsAfter + ' documented entries.';
+        if (itemsAfter < itemsBefore) return op.label + ' finished: the chronology re-compiled from ' + itemsBefore + ' to ' + itemsAfter + ' documented entries — fewer than before. Check the chart before you rely on this compilation.';
+        return op.label + ' finished, and the chronology is unchanged at ' + itemsAfter + ' documented entries. Nothing new was read. If the EMR tab is not open and signed in, or MLS Assist is not connected, this read cannot reach a chart — nothing was faked.';
+      }
+      var added = rosterPatients().length - rosterBefore;
+      if (added > 0) return op.label + ' finished: ' + added + ' patient' + (added === 1 ? '' : 's') + ' arrived in this account’s list.';
+      return op.label + ' finished, and no patient arrived in this account’s list. Nothing new was read. If the EMR tab is not open and signed in, or MLS Assist is not connected, this read cannot reach a schedule — nothing was faked.';
+    }
     var work;
     try { work = run(op.args(input || {}, onStatus)); } catch (e) {
       return Promise.resolve(settle('', 'The read could not start:', e));
     }
     return Promise.resolve(work).then(function () {
+      if (state.athenaSeq !== token) return false;
       if (key === 'chart' && state.bound && bindingCurrent(state.bound)) compileHistory();
-      return settle(op.label + ' finished. The patient list above was refreshed from this account’s roster.', '', null);
+      return settle(receipt(), '', null);
     }, function (error) {
       return settle('', 'The read stopped:', error || new Error('the read did not complete'));
     });
   }
+  /* ===== end p1-legal-readstop-1.0.0 ===== */
   /* ===== end p1-legal-bind-2.0.0 ===== */
 
   function downloadText(filename, text) {
@@ -1623,7 +1748,7 @@
     '#' + ROOT_ID + ' .p1l-what>summary{cursor:pointer;color:#596a62;font-size:12.5px;font-weight:600;list-style:revert}',
     '#' + ROOT_ID + ' .p1l-what>p{margin:6px 0 0}',
     '#' + ROOT_ID + ' #mlsClunkyLegalLhWarn{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
-    '#' + ROOT_ID + ' #mlsClunkyLegalLhSettings{min-height:38px;padding:6px 12px}',
+    '#' + ROOT_ID + ' #mlsClunkyLegalLhSettings{min-height:40px;padding:6px 12px}',
     /* ===== end clunky2-legal-1.0.0 (css) ===== */
     '#' + ROOT_ID + ' button{min-height:42px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:10px;padding:8px 13px;font-weight:700;cursor:pointer}',
     '#' + ROOT_ID + ' button.primary{background:#2e6a4b;color:#fff;border-color:#2e6a4b}',
@@ -1679,18 +1804,23 @@
        unmistakable emphasis. The glow lane can override this by class. */
     '#' + ROOT_ID + ' .p1l-nextctl{background:#2e6a4b!important;color:#fff!important;border-color:#2e6a4b!important;box-shadow:0 0 0 4px rgba(46,106,75,.18)}',
     '#' + ROOT_ID + ' input.p1l-nextctl,#' + ROOT_ID + ' textarea.p1l-nextctl{background:#fff!important;color:#183a2f!important;border-color:#2e6a4b!important;border-width:2px}',
-    /* collapse-by-default disclosure */
-    '#' + ROOT_ID + ' .p1l-disclose{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;padding:0;min-height:38px;font:750 15px/1.3 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
+    /* collapse-by-default disclosure.
+       p1-legal-taps-1.0.0: 38px measured on sixteen of this room's buttons at
+       every one of the five widths, against the app's own stated standard of
+       40px on the short side (1p-ui-shape-contract item 11). Two pixels, but
+       a card head and a chronology row head are the two things a doctor taps
+       most in here, and they were the only controls in the room below it. */
+    '#' + ROOT_ID + ' .p1l-disclose{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;padding:0;min-height:40px;font:750 15px/1.3 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
     '#' + ROOT_ID + ' .p1l-disclose .sum{font-weight:400;font-size:13px;color:#5c7a68;flex:1;min-width:0}',
     '#' + ROOT_ID + ' .p1l-disclose .cue{flex:0 0 auto;font-size:13px;font-weight:700;color:#2e6a4b}',
     '#' + ROOT_ID + ' .p1l-body[hidden]{display:none}',
     '#' + ROOT_ID + ' .p1l-row{border-left:3px solid #c7d9ce;margin:6px 0;background:#fafbf9}',
-    '#' + ROOT_ID + ' .p1l-rowhead{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;min-height:38px;font:650 13.5px/1.35 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
+    '#' + ROOT_ID + ' .p1l-rowhead{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;min-height:40px;font:650 13.5px/1.35 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
     '#' + ROOT_ID + ' .p1l-rowhead .meta{font-weight:400;color:#5c7a68;font-size:12.5px}',
     '#' + ROOT_ID + ' .p1l-rowbody{padding:0 10px 9px}',
     '#' + ROOT_ID + ' .p1l-rowbody pre{white-space:pre-wrap;max-height:220px;overflow:auto;font:12px/1.45 ui-monospace,monospace;margin:0}',
     '#' + ROOT_ID + ' .p1l-scrub{font-size:12px;color:#8a5a1a;background:#fff8e8;border:1px solid #ead6a8;border-radius:8px;padding:5px 8px;margin:0 0 6px}',
-    '#' + ROOT_ID + ' .p1l-raw{min-height:30px;padding:3px 9px;font-size:12px;margin-top:6px}',
+    '#' + ROOT_ID + ' .p1l-raw{min-height:40px;padding:6px 11px;font-size:12px;margin-top:6px}',
     '@media(max-width:820px){#' + ROOT_ID + ' .p1l-grid{grid-template-columns:1fr}#' + ROOT_ID + ' .p1l-card.wide{grid-column:auto}#' + ROOT_ID + ' .p1l-shell{padding:18px 13px 70px}#' + ROOT_ID + ' .p1l-bindname{font-size:21px}}'
   ].join('\n');
 
@@ -1831,9 +1961,9 @@
     var pending = Object.keys(state.imports).map(function (id) { return state.imports[id]; });
     node.innerHTML = pending.map(function (task) {
       return '<div class="p1l-source"><b>' + esc(task.name) + '</b> · ' + (task.started ? 'reading locally…' : 'queued for local reading…') +
-        ' <button type="button" data-cancel-import="' + esc(task.id) + '" style="min-height:30px;padding:3px 8px;float:right">Cancel file</button></div>';
+        ' <button type="button" data-cancel-import="' + esc(task.id) + '" style="min-height:40px;padding:6px 11px;float:right">Cancel file</button></div>';
     }).join('') + state.sources.map(function (source, index) {
-      return '<div class="p1l-source"><b>' + esc(source.name) + '</b> · ' + (source.error ? '<span style="color:#9a3d29">' + esc(source.error) + '</span>' : (source.truncated ? ('first ' + MAX_LOCAL_TEXT_CHARS.toLocaleString() + ' of ' + source.chars.toLocaleString() + ' local characters kept for this draft') : source.chars.toLocaleString() + ' local characters read')) + ' <button type="button" data-remove-source="' + index + '" style="min-height:30px;padding:3px 8px;float:right">Remove</button></div>';
+      return '<div class="p1l-source"><b>' + esc(source.name) + '</b> · ' + (source.error ? '<span style="color:#9a3d29">' + esc(source.error) + '</span>' : (source.truncated ? ('first ' + MAX_LOCAL_TEXT_CHARS.toLocaleString() + ' of ' + source.chars.toLocaleString() + ' local characters kept for this draft') : source.chars.toLocaleString() + ' local characters read')) + ' <button type="button" data-remove-source="' + index + '" style="min-height:40px;padding:6px 11px;float:right">Remove</button></div>';
     }).join('');
     Array.prototype.forEach.call(node.querySelectorAll('button[data-cancel-import]'), function (button) {
       button.addEventListener('click', function () { cancelImport(button.getAttribute('data-cancel-import')); });
@@ -1918,9 +2048,17 @@
           (key === 'day' ? '<label style="display:block;margin-top:7px">Day to read <input id="mlsP1LegalReadDay" type="text" placeholder="YYYY-MM-DD; blank reads today"></label>' : '') +
           '<div class="p1l-actions"><button type="button" data-read-op="' + esc(key) + '"' +
           (available && !busy ? '' : ' disabled') + '>' + (running ? 'Reading…' : esc(op.label)) + '</button>' +
+          /* p1-legal-readstop-1.0.0: the way out of a read that is not coming
+             back. Rendered ONLY on the op that is actually running, so there
+             is never a second Stop pointing at nothing. */
+          (running ? '<button type="button" id="mlsP1LegalReadStop" data-read-stop="' + esc(key) + '">Stop the read</button>' : '') +
           (available ? '' : '<span style="color:#8a5a1a;font-size:12.5px;align-self:center">Unavailable in this session — ' + esc(op.needs) + ' is not loaded.</span>') +
           '</div></div>';
       }).join('') +
+      /* p1-legal-readstop-1.0.0: say WHY the rest of the room went quiet.
+         A doctor who presses Compile and gets nothing needs the reason on
+         screen, not an inference from four greyed-out buttons. */
+      (busy ? '<p class="p1l-explain">Compile history, Generate and local files wait while a read runs, so a chart cannot change underneath a report you are part-way through. Press “Stop the read” to take the workspace back; nothing read so far is written to the EMR either way.</p>' : '') +
       (state.athenaNote ? '<p class="p1l-explain">' + esc(state.athenaNote) + '</p>' : '') + '</div>';
     var dateBox = byId('mlsP1LegalReadDay'); if (dateBox) dateBox.value = typedDate;
     Array.prototype.forEach.call(node.querySelectorAll('button[data-read-op]'), function (button) {
@@ -1928,6 +2066,9 @@
         var box = byId('mlsP1LegalReadDay');
         runReadOp(button.getAttribute('data-read-op'), { date: box ? clean(box.value) : '' });
       });
+    });
+    Array.prototype.forEach.call(node.querySelectorAll('button[data-read-stop]'), function (button) {
+      button.addEventListener('click', function () { stopReadOp(); });
     });
     return true;
   }
@@ -2236,6 +2377,7 @@
     state.athenaOp = ''; state.athenaNote = '';
     /* p1-legal-stepper-1.0.0: a fresh open always starts collapsed. */
     state.expanded = {}; state.rawOpen = {};
+    state.athenaSeq++; /* p1-legal-readstop-1.0.0: a read from the previous open owns nothing here */
     var root = document.createElement('div'); root.id = ROOT_ID; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'mlsP1LegalTitle'); root.innerHTML = shellHtml();
     root.addEventListener('keydown', onDialogKeydown);
     (document.body || document.documentElement).appendChild(root);
@@ -2344,6 +2486,9 @@
       }) : [];
     },
     runReadOp: function (key, input) { return apiCurrent() ? runReadOp(key, input) : Promise.resolve(false); },
+    /* p1-legal-readstop-1.0.0: the SAME mutation the "Stop the read" button
+       drives, so what a test drives is what a click does. */
+    stopRead: function () { return apiCurrent() ? stopReadOp() : false; },
     snapshotDrifted: function () { return apiCurrent() && snapshotDrifted(); },
     /* p1-legal-restore-2.0.0: the restored production extractors, exposed so
        each one is EXECUTED by a test rather than grepped for. */
