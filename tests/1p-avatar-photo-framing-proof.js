@@ -133,7 +133,10 @@ assert.ok(source.includes('var picked = faceAwareSquareFromImage(img, MEASURE_MA
   'upload UI does not use the face-aware result');
 assert.ok(/more than one possible face/.test(source) && /face-aware crop at/.test(source),
   'calm ambiguity refusal or honest crop provenance is missing');
-const photoMotion = between(source, 'function makePhotoFace(mount, dataUrl, altText)', '/* =========================================================================');
+/* The boundary is the function NAME, not its signature: this slice broke on
+   p1-photo-fallback-1.0.0 when the helper gained an opt-in fallback argument,
+   which is not a change this proof has any opinion about. */
+const photoMotion = between(source, 'function makePhotoFace(', '/* =========================================================================');
 assert.ok(photoMotion.includes('pulse * 0.007') && photoMotion.includes('190 + Math.random() * 80'),
   'exact-photo voice motion is no longer deliberately subtle');
 assert.ok(!photoMotion.includes('pulse * 0.018') && !photoMotion.includes("rotate(-.7deg)"),

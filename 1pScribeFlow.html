@@ -1293,7 +1293,15 @@
   .team-doc .dmeta{font-size:12px;color:var(--muted)}
   .pt-item.active{border-color:var(--brand);background:#eaf3ff;box-shadow:0 0 0 2px rgba(31,122,224,.15)}
   .pt-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(120deg,#2E6A4B,#2E6A4B);
-    color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex-shrink:0}
+    color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex-shrink:0;position:relative;overflow:hidden}
+  /* p1-photo-fallback-1.0.0 — THE INITIALS ARE THE FLOOR, NOT THE ALTERNATIVE.
+     The photograph used to be a background-image, and the initials were
+     replaced by an empty string whenever one was set. A portrait that failed
+     to decode therefore left a plain green disc with nothing in it, and
+     nothing on the row said whose chart it was. The initials are now always
+     in the DOM and the photograph lies over them; a photograph that cannot be
+     decoded removes itself and they are simply there. */
+  .pt-avatar>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
   .pt-main{flex:1;min-width:0}
   .pt-main .t{font-weight:700;font-size:16px;color:var(--ink)}
   .pt-main .s{font-size:13px;color:var(--muted);margin-top:2px}
@@ -19004,7 +19012,7 @@ function _ptItemHtml(p, activeId){
   if(noteCount) chips+='<span style="'+chip+'">'+noteCount+' note'+(noteCount===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
   return `<div class="pt-item ${isActive?'active':''}" data-patient-id="${esc(p.id)}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart">
-      <div class="pt-avatar"${p.photo?` style="background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent"`:''}>${p.photo?'':esc(ptInitials(p.name))}</div>
+      <div class="pt-avatar">${esc(ptInitials(p.name))}${p.photo?`<img src="${esc(p.photo)}" alt="" onerror="this.remove()">`:''}</div>
       <div class="pt-main" style="min-width:0">
         <div class="t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(p.name)}${isActive?'<span class="pt-active-badge" style="font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px">ACTIVE</span>':''}</div>
         ${demo?`<div class="s" style="margin-top:1px">${esc(demo)}</div>`:''}

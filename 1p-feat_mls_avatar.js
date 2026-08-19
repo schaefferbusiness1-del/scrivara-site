@@ -3969,12 +3969,25 @@
        active stays active - including an explicit 'photo' the doctor chose. */
     return currentMode === 'photo' ? 'photo' : 'drawn';
   }
-  function makePhotoFace(mount, dataUrl, altText) {
+  /* p1-photo-fallback-1.0.0 — A PREFIX IS NOT A DECODE.
+     `faceValidPhoto` tests the STRING ("data:image/…"), which is all a cheap
+     synchronous check can do; it cannot know whether the bytes decode. An
+     empty-payload or truncated portrait passes it and then fails in the
+     decoder — and nothing was listening. The <img> stayed in the
+     patient-facing circle as the browser's broken-image glyph, with no way
+     back, because the two mount sites both replace the drawn face BEFORE the
+     photograph has proved it can be shown. There is no `onerror` on any
+     avatar image anywhere in this file; this is the first.
+     `onUnusable` is OPT-IN (the a-flag-on-a-shared-helper law): a caller that
+     passes nothing gets exactly the controller it always got. It fires at
+     most once, and it fires only for a decode failure — never for a portrait
+     the caller itself replaced, because `destroy()` marks the controller dead
+     first. */
+  function makePhotoFace(mount, dataUrl, altText, onUnusable) {
     if (!mount || !faceValidPhoto(dataUrl)) return null;
     mount.innerHTML = '';
     var img = document.createElement('img');
     img.alt = altText || '';
-    img.src = dataUrl;
     img.style.cssText = 'width:100%;height:100%;object-fit:cover;transform-origin:50% 58%;transition:transform .24s cubic-bezier(.2,.7,.3,1),filter .3s ease';
     mount.appendChild(img);
     var dead = false, cycling = false, timer = 0, gestureTimer = 0, moodNow = 'idle';
@@ -4038,6 +4051,20 @@
     var ctl = { mood: mood, talk: talk, talkCycle: talkCycle,
       retint: function () {}, nod: nod, shake: curious, curious: curious,
       gaze: function () {}, destroy: destroy, node: img };
+    /* ⛔ THE HANDLER IS ATTACHED BEFORE `src` IS ASSIGNED, and both happen
+       after `dead` and `destroy` exist. An image load is dispatched from a
+       task, so nothing here can fire while this function is still running —
+       but ordering the two this way means the guarantee does not depend on
+       that, and the pin in 1p-avatar-photo-fallback-runtime asserts the
+       order rather than the timing. */
+    if (typeof onUnusable === 'function') {
+      img.addEventListener('error', function () {
+        if (dead) return;
+        destroy();
+        safe(function () { onUnusable(); });
+      }, false);
+    }
+    img.src = dataUrl;
     mood('idle');
     return ctl;
   }
@@ -8127,20 +8154,43 @@
       lookStage.style.cssText = 'width:132px;height:132px;border-radius:999px;overflow:hidden;background:radial-gradient(circle at 50% 38%,#fff,#f2f4ef);border:3px solid #fff;box-shadow:0 8px 24px rgba(32,64,52,.16);flex:0 0 auto';
       var lookGrid = make('div', '');
       lookGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1;min-width:220px';
+      /* p1-photo-fallback-1.0.0 — the exact portrait string that failed to
+         decode in this preview, so Setup shows the doctor the same drawn
+         fallback the kiosk would show a patient rather than a broken glyph,
+         and SAYS WHICH of the two reasons it is. */
+      var lookPhotoUnusable = '';
       function shownFaceImage() {
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         return faceValidPhoto(shown) ? shown : '';
+      }
+      /* ⛔ RENDERING ONLY, AND THE DISTINCTION IS LOAD-BEARING. `shownFaceImage`
+         also names the match transaction (the ownership comparison further
+         down asks "is the portrait on screen still the one this pending read
+         belongs to?"). Answering '' there because the bytes would not DECODE
+         would make every in-flight match look stale and silently discard it.
+         Decodability is a question about drawing, so only the preview asks. */
+      function displayableFaceImage() {
+        var shown = shownFaceImage();
+        return lookPhotoUnusable && lookPhotoUnusable === String(shown) ? '' : shown;
       }
       function renderPatientPreview() {
         if (!lookStage || !faceModeSelect) return;
         if (lookCtl) safe(function () { lookCtl.destroy(); });
         lookCtl = null;
-        var portrait = shownFaceImage();
+        var portrait = displayableFaceImage();
         if (faceModeSelect.value === 'photo' && portrait) {
           lookStage.setAttribute('data-face-preview-kind', 'photo');
-          lookCtl = makePhotoFace(lookStage, portrait, 'Your patient-facing portrait');
+          lookCtl = makePhotoFace(lookStage, portrait, 'Your patient-facing portrait', function () {
+            lookPhotoUnusable = String(portrait);
+            renderPatientPreview();
+          });
         } else {
-          lookStage.setAttribute('data-face-preview-kind', faceModeSelect.value === 'photo' ? 'photo-fallback' : 'animated');
+          /* ⛔ "photo-fallback" means NO PORTRAIT YET and its copy says so.
+             A portrait that exists and cannot be decoded is a different fact
+             and must not borrow those words — the doctor would be told to
+             take a photo he can see he already took. */
+          lookStage.setAttribute('data-face-preview-kind', faceModeSelect.value !== 'photo' ? 'animated'
+            : (lookPhotoUnusable ? 'photo-unreadable' : 'photo-fallback'));
           lookCtl = makeFace(lookStage, lookQuarantine.length ? faceLookSafe(FACE_LOOK) : lookNow);
         }
         if (moodBtn) moodBtn.textContent = faceModeSelect.value === 'photo' && portrait
@@ -10664,7 +10714,13 @@ function kioskLine(kind, text) {
        the gate, and only a real payload resolves the unknown state */
     if (av && typeof av.exitPinSet === 'boolean') kiosk.pinSet = av.exitPinSet === true;
     var hasPhoto = av && faceValidPhoto(av.faceImage);
-    if (hasPhoto && av.faceMode === 'photo') {
+    /* p1-photo-fallback-1.0.0 — a portrait that failed to DECODE is not a
+       portrait. It is remembered BY VALUE, so the same unusable bytes are
+       never mounted a second time (which would flash a broken glyph at the
+       patient on every identity update) while a genuinely new portrait is
+       still tried on its own merits. */
+    var photoUsable = hasPhoto && kiosk.photoUnusable !== String(av.faceImage);
+    if (photoUsable && av.faceMode === 'photo') {
       /* The doctor chose THEIR real portrait. Use the same bounded portrait
          controller Setup previews, so speech/listening state stays connected
          without drawing fake mouth landmarks over a still image. */
@@ -10672,7 +10728,29 @@ function kioskLine(kind, text) {
         kiosk.photoFace = true;
         if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
         var mount = gid('mlsAvKioskFace');
-        if (mount) kiosk.face = makePhotoFace(mount, av.faceImage, '');
+        var photoReceipt = { session: sessionReceipt(), generation: kiosk.generation | 0,
+          portrait: String(av.faceImage) };
+        if (mount) kiosk.face = makePhotoFace(mount, av.faceImage, '', function () {
+          /* ⛔ THE DRAWN FACE IS THE FALLBACK, AND IT IS A DELIBERATE ONE —
+             the illustrated clinician composed for this exact circle
+             (av-6.0.1), wearing whatever appearance the doctor saved. What
+             the patient must never meet is the browser's broken-image glyph
+             or an empty white disc, and before this both were reachable and
+             permanent: photoFace latched true at the top of this branch and
+             only openKiosk cleared it, so a portrait that failed to decode
+             held the surface for the whole encounter. */
+          if (!sessionReceiptCurrent(photoReceipt.session) || !kiosk.open ||
+              (kiosk.generation | 0) !== photoReceipt.generation) return;
+          kiosk.photoUnusable = photoReceipt.portrait;
+          kiosk.photoFace = false;
+          kiosk.face = null;
+          var back = gid('mlsAvKioskFace');
+          if (back) kiosk.face = makeFace(back, kiosk.look || faceLookSafe(av.faceLook));
+        });
+        /* Nothing to mount into, or no controller: do not latch a face that
+           was never drawn. An empty circle that can never be refilled is the
+           other half of the same defect. */
+        if (!kiosk.face) kiosk.photoFace = false;
       }
     } else if (av && av.faceLook && !kiosk.tinted) {
       /* drawn mode: the doctor's SAVED appearance wins — colours, hair cut,
@@ -12949,6 +13027,9 @@ function kioskLine(kind, text) {
     kiosk.pinProbeBusy = false; kiosk.pinUnlockBusy = false;
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.tintPortrait = ''; kiosk.completed = false; kiosk.silent = 0;
+    /* A new check-in re-earns the portrait: a decode that failed once on a
+       cold cache must not condemn the doctor's photograph forever. */
+    kiosk.photoUnusable = '';
     kiosk.finishTries = 0; kiosk.heard = false;
     /* NOTHING HAS BEEN SAID TO *THIS* PATIENT YET. kioskTurn uses this to mark
        the opening line as a greeting so it is delivered as a welcome rather
