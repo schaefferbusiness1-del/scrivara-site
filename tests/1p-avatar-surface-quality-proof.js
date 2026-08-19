@@ -76,6 +76,13 @@ const SURFACES = [
     from: ['1p-feat_mls_avatar.js', 'width:72px;height:72px;border-radius:999px;overflow:hidden'] },
   { key: 'chip-44', label: 'Patient list chip', px: 44, round: true,
     from: ['1p/index.html', '.pt-avatar{width:44px;height:44px;border-radius:50%'] },
+  /* ⛔ THE SAME CHIP SHIPS AT TWO DIAMETERS. Under `@media (max-width:600px)`
+     the one-line phone row shrinks it to 36px, and a smaller circle is a
+     HARDER crop, not an easier one — it is the size at which a composition
+     stops surviving first. Measuring only the desktop 44 would have graded a
+     surface the doctor does not have on his phone. */
+  { key: 'chip-36', label: 'Patient list chip (phone)', px: 36, round: true,
+    from: ['1p/index.html', '#ptList .pt-item .pt-avatar{ width:36px; height:36px; font-size:14px; }'] },
   { key: 'intake-48', label: 'Intake inbox tile', px: 48, round: false, radius: 10,
     from: ['1p/index.html', '.ik-inbox-face{position:relative;overflow:hidden;width:48px;height:48px;border-radius:10px'] }
 ];
@@ -86,6 +93,27 @@ SURFACES.forEach(s => {
   ok(src.includes(s.from[1]),
     s.key + ': the shipped source no longer contains "' + s.from[1] + '" — this proof is measuring a size that is not shipped');
 });
+
+/* ---------------------------------------------------------------------------
+   THE SURFACE THAT IS DELIBERATELY ABSENT FROM THE TABLE ABOVE.
+   The calendar appointment chip was named as an avatar surface and MEASURED NOT
+   TO BE ONE: the chip template is text only — `_calShortWho` plus a compact
+   time — so there is no portrait on it to crop, clip or fall back from. That is
+   a finding, not an omission, and it is worth exactly one guard: if a portrait
+   is ever added to that chip it becomes the SMALLEST avatar surface in the
+   product (the chip is 10px type in a ~15px-tall box) and it would inherit this
+   whole class of defect unmeasured. This fails the moment that happens and says
+   where to add it.
+   -------------------------------------------------------------------------- */
+(function calendarChipCarriesNoPortrait() {
+  const src = fs.readFileSync(path.join(ROOT, '1p/index.html'), 'utf8');
+  const line = src.split(/\r?\n/).filter(l => l.indexOf('data-appt="1"') >= 0)[0] || '';
+  ok(line, 'the calendar appointment chip template was not found — this guard is measuring nothing');
+  ok(line.indexOf('<img') < 0 && line.indexOf('pt-avatar') < 0 && line.indexOf('.photo') < 0,
+    'the calendar appointment chip now renders a PORTRAIT. It was text-only when this proof was ' +
+    'written, which is why it is not in SURFACES. Add it to the table with its real shipped size ' +
+    'and let the crown/head/hair floors grade it — [[judged-in-a-square-shipped-into-a-circle]]');
+})();
 
 /* ---------------------------------------------------------------------------
    THE FIXTURE. Four reserved marker colours, chosen far apart in RGB so the

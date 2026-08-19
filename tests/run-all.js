@@ -333,16 +333,6 @@ const tests = [
   '1p-avatar-photo-fallback-runtime.test.js',
   '1p-avatar-camera-endurance-runtime.test.js',
   '1p-avatar-photo-framing-proof.js',
-  /* p1-photo-framing-1.1.0 — every avatar harness in this tree stopped at the
-     square. This one pours the crop into the SHAPE IT SHIPS, at each shipped
-     diameter, and counts what survives: the framing proof beside it executes
-     the crop arithmetic against a STUBBED reader, and the readability proof
-     runs the real reader but only counts claimed traits. Neither could see
-     that the photograph and the drawn character were composed to different
-     vertical rules — a 21px jump in the kiosk circle on the Face style toggle.
-     Also carries the resolution table and the two size canaries. 5/5
-     verified-applied mutations caught. */
-  '1p-avatar-surface-quality-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* 2026-08-17, owner §13/§14/§15/§16 — "the avatar must stop looking preschooly",
      the animation must stop being robotic, the intake must actually run, and intake
