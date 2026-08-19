@@ -8901,6 +8901,79 @@ try { chrome.runtime.onInstalled.addListener(scheduleBackupAlarm); } catch (e) {
 scheduleBackupAlarm();
 
 // ===========================================================================
+// ka-3066 (3.0.66): KEEP ATHENA ALIVE. Owner order 2026-08-18: "have the
+// extension keep Athena alive". athenaOne idles a session out and prior live
+// measurement showed background/automated reads do NOT refresh its idle
+// timer, so every few minutes this does three real things in every SIGNED-IN
+// athena tab (loginish tabs are never touched):
+//   1) dispatches synthetic user-activity events in EVERY frame - idle
+//      trackers listen for DOM activity (mousemove/scroll);
+//   2) if athena's own "session about to expire" warning is on screen,
+//      clicks its visible continue/stay button - THEIR handler makes the
+//      server-side extension call. Text-guarded twice (session + expiry
+//      wording in the same container) so no other dialog is ever clicked;
+//   3) top frame only: a credentialed same-origin HEAD ping so the server
+//      sees a request. Best-effort; harmless when server-side idle ignores it.
+// Never navigates, never types, never clicks anything but the guarded
+// continue button. Default ON; kill switch: chrome.storage.local
+// mlsKeepAlive {enabled:false}. Alarm-driven so a sleeping MV3 worker still
+// wakes to run it.
+// ===========================================================================
+const KA_KEY = 'mlsKeepAlive';
+function kaGetCfg() { return new Promise(function (r) { chrome.storage.local.get([KA_KEY], function (c) { r(Object.assign({ enabled: true, periodMin: 3 }, (c && c[KA_KEY]) || {})); }); }); }
+function kaFrameTouch() {
+  try {
+    try { document.dispatchEvent(new Event('mousemove', { bubbles: true })); } catch (e1) {}
+    try { document.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (e2) {}
+    try { if (document.body) document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 3, clientY: 3 })); } catch (e3) {}
+    var hit = null;
+    try {
+      var hosts = document.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"],.lightbox,.modal,.dialog,.popup');
+      for (var h = 0; h < hosts.length && !hit; h++) {
+        var host = hosts[h];
+        var tx = String(host.textContent || '').slice(0, 600);
+        if (!(/session/i.test(tx) && /(expire|expiring|time[ -]?out|timed out|inactivity|inactive)/i.test(tx))) continue;
+        var btns = host.querySelectorAll('button,input[type="button"],input[type="submit"],a');
+        for (var k = 0; k < btns.length; k++) {
+          var b = btns[k];
+          var bl = String(b.textContent || b.value || '');
+          if (!/(continue|stay|keep|extend|remain|yes|ok)/i.test(bl)) continue;
+          if (/(log ?out|sign ?out|end|leave|no)/i.test(bl)) continue;
+          var vis = false;
+          try { vis = !!(b.offsetParent || (b.getClientRects && b.getClientRects().length)); } catch (e4) {}
+          if (!vis) continue;
+          hit = b; break;
+        }
+      }
+    } catch (e5) {}
+    if (hit) { try { hit.click(); } catch (e6) {} }
+    if (window === window.top) { try { fetch(String(window.location.href), { method: 'HEAD', credentials: 'include', cache: 'no-store' }).then(function () {}, function () {}); } catch (e7) {} }
+    return hit ? 'ka-clicked-continue' : 'ka-touched';
+  } catch (e) { return 'ka-error'; }
+}
+async function kaTick() {
+  try {
+    var cfg = await kaGetCfg();
+    if (!cfg.enabled) return;
+    var tabs = [];
+    try { tabs = await chrome.tabs.query({ url: 'https://athenanet.athenahealth.com/*' }); } catch (eQ) { return; }
+    for (var ti = 0; ti < (tabs || []).length; ti++) {
+      var t = tabs[ti];
+      if (!t || t.id == null || t.discarded) continue;
+      try { if (mlsAthIsLoginish(t)) continue; } catch (eL) {}
+      try {
+        var rs = await chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, func: kaFrameTouch });
+        var clicked = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-clicked-continue'; });
+        if (clicked) { try { console.log('[MLS ka-3066] clicked athena continue-session button in tab', t.id); } catch (eC) {} }
+      } catch (eX) {}
+    }
+    try { chrome.storage.local.set({ mlsKeepAliveLastTick: Date.now() }, function () {}); } catch (eS) {}
+  } catch (e) {}
+}
+try { chrome.alarms.create('mlsKaTick', { periodInMinutes: 3, delayInMinutes: 1 }); } catch (e) {}
+try { chrome.alarms.onAlarm.addListener(function (a) { if (a && a.name === 'mlsKaTick') kaTick(); }); } catch (e) {}
+
+// ===========================================================================
 // csr-1.0 (3.0.39): CONTENT-SCRIPT RE-INJECTION ON INSTALL/UPDATE. Chrome
 // never re-injects declared content scripts into tabs that were already open
 // when the extension reloaded or updated, so every open MLS/athenaOne tab kept
