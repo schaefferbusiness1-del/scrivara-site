@@ -52525,8 +52525,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (no) {
       no.addEventListener('click', function () {
         phcClose();
-        phsendSet('idle', 'Not sent. The note is still here.');
+        /* cancelSend() sets its own status line synchronously, so it has to run
+           BEFORE this one or it overwrites it - and its generic line (or the
+           empty one it uses when there is no active job on this device) is
+           exactly the silence a doctor who just pressed Cancel must not get. */
         api.cancelSend();
+        phsendSet('idle', 'Not sent. The note is still here.');
       });
     }
   }

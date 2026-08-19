@@ -743,7 +743,10 @@ const STAGE_FETCH = (extra) => (url, init) => {
   await flush();
   h.standUpSheet('pv_1');
   h.ctx.__wf.opts.onProbe({ ok: true, context: { patientName: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' } });
-  h.advance(5000); await flush(); await flush();
+  /* past the slow keep-alive interval: the progress poster throttles to one
+     post per 3s, so the onProbe line is swallowed and the first sentence the
+     phone actually receives after it is the keep-alive beat. */
+  h.advance(101000); await flush(); await flush();
 
   eq(h.posted.filter((r) => /\/stage$/.test(r.url)).length, 0,
     'without the capability the office computer must NOT stage anything for the phone');
@@ -752,6 +755,8 @@ const STAGE_FETCH = (extra) => (url, init) => {
   const beats = h.posted.filter((r) => /\/progress$/.test(r.url));
   ok(/confirmation on this computer/.test(String(beats[beats.length - 1].init.body)),
     'without the capability the doctor is still told to confirm at the computer');
+  ok(!/on your phone/.test(beats.map((b) => String(b.init.body)).join(' ')),
+    'without the capability nothing must ever point the doctor at his phone');
   // and it still completes the old way
   h.tearDownSheet();
   h.ctx.__wf.opts.onResult({ ok: true, verified: true }, { context: { encounterId: 'e1', visitDate: '2026-08-19' }, verifiedWrite: true });
@@ -1072,7 +1077,16 @@ function allText(el) {
   const phoneUi = read('feat_mls_phone_ui.js');
   const INTERACTIVE = ['ph3-primary', 'ph3-secondary', 'ph3-dot', 'ph3-pill', 'ph3-arrow',
     'ph3-today', 'ph3-row', 'ph3-item', 'ph3-nx', 'ph3-find'];
-  const sizeOf = (src, cls) => {
+  /* Both stylesheets are written as JS string FRAGMENTS - the phone module as
+     an array ('...', '...') and the overlay as a concatenation ('...' + '...').
+     A declaration therefore routinely straddles a fragment boundary, e.g.
+        '#mlsPh3 .ph3-primary{display:flex;...width:100%;',
+        'min-height:56px;border:0;...'
+     so the joins must be closed up before any property can be read. Without
+     this the parser silently reports 0 for a control that declares 56. */
+  const joinFragments = (s) => s.replace(/'\s*,\s*\n\s*'/g, '').replace(/'\s*\+\s*\n\s*'/g, '');
+  const sizeOf = (rawSrc, cls) => {
+    const src = joinFragments(rawSrc);
     const rx = new RegExp('\\.' + cls + '\\{([^}]*)', 'g');
     let best = 0, seen = false;
     let m;
