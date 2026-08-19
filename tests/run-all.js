@@ -317,6 +317,15 @@ const tests = [
   '1p-avatar-face-lifecycle-runtime.test.js',
   '1p-avatar-photo-truth-runtime.test.js',
   '1p-avatar-face-to-photo-runtime.test.js',
+  /* p1-photo-fallback-1.0.0 — faceValidPhoto tests a STRING PREFIX, so a
+     truncated or empty-payload portrait passed the gate and then failed in the
+     decoder with nothing listening: the browser's broken-image glyph held the
+     patient-facing circle for the whole encounter. This EXECUTES the fallback
+     (handler registered before src, fires once, never after the caller's own
+     destroy, opt-in per the shared-helper law), the kiosk latch semantics, and
+     the patient chip whose initials are now the floor rather than the
+     alternative. 13/13 verified-applied mutations are caught. */
+  '1p-avatar-photo-fallback-runtime.test.js',
   '1p-avatar-camera-endurance-runtime.test.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
