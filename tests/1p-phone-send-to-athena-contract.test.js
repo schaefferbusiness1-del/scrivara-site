@@ -223,8 +223,11 @@ function harness(opts) {
     state: () => ({ screen: opts.screen || 'visit', mounted: opts.mounted !== false, menu: false })
   };
   ctx.window.__mlsEasyV32 = {
+    /* the REAL shape of snapshot().active (1p-mls-connect.js remote.snapshot):
+       { id, name, dob, time } - and that id is the APPOINTMENT id. No mrn, no
+       patientId. The harness must not invent fields the engine does not send. */
     remote: { snapshot: () => opts.snapshot === undefined
-      ? { active: { name: 'Synthetic Test', dob: '1980-01-01', mrn: '55501', id: 'appt-1' }, phase: 'note', noteLen: 24, day: '2026-08-18' }
+      ? { active: { id: 'appt-1', name: 'Synthetic Test', dob: '1980-01-01', time: '9:00 AM' }, phase: 'note', noteLen: 24, day: '2026-08-18' }
       : opts.snapshot }
   };
   ctx.window.__mlsDeviceRole = { effectiveRole: () => opts.role || 'office', deviceId: 'dev_office', deviceNoun: () => 'phone' };
@@ -576,6 +579,37 @@ async function main() {
   // not a phone at all
   const h = harness({ phone: false });
   eq(h.api.phsendVisible(), false, 'the send bar must never appear where there is no phone UI');
+}
+
+/* ---- B10: pressing the real button sends the real identity, and NEVER
+        smuggles an appointment id in as a patient id. snapshot().active.id is
+        an APPOINTMENT id; the two namespaces are different, and letting one
+        stand in for the other is how a note resolves against a stranger's
+        record. -------------------------------------------------------------*/
+{
+  const h = harness({
+    fetch: (url, init) => {
+      if (/presence/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, online: true, ext: true, officeId: 'dev_office' }) };
+      if (/\/api\/relay\/jobs$/.test(url) && init.method === 'POST') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, id: 'rj_btn' }) };
+      return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_btn', status: 'queued' } }) };
+    }
+  });
+  h.api.phsendMount();
+  const bar = h.els.get('mlsPh3').children.filter((c) => c.id === 'mlsPhSendBar')[0];
+  bar.querySelector('.phsend-go').click();
+  await flush(); await flush();
+
+  const post = h.posted.filter((r) => /\/api\/relay\/jobs$/.test(r.url) && r.init.method === 'POST')[0];
+  ok(post, 'pressing the button must queue a job');
+  const body = JSON.parse(post.init.body);
+  eq(body.kind, 'sendNote', 'the button queues a sendNote');
+  eq(body.payload.patient.name, 'Synthetic Test', 'the open patient travels');
+  eq(body.payload.patient.dob, '1980-01-01', 'the DOB travels as the second factor');
+  eq(body.payload.patient.patientId, '',
+    'the APPOINTMENT id must never travel as a patient id - different namespaces, wrong-chart risk');
+  eq(body.payload.apptId, 'appt-1', 'the appointment id travels in its own field');
+  eq(body.payload.noteText, 'Reviewed note body.', 'the drafted note text travels');
+  eq(body.payload.action, 'write_note', 'the button asks for a note write, never a final action');
 }
 
 } /* end main */

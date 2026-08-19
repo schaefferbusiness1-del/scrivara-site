@@ -51999,10 +51999,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var sn = null;
       try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e3) {}
       var a = (sn && sn.active) || {};
+      /* snapshot().active is { id, name, dob, time } and that `id` is the
+         APPOINTMENT id, not a patient id. They are different namespaces, so it
+         travels as apptId ONLY - feeding it in as patientId would let an
+         appointment id collide with some other patient's record id and resolve
+         the wrong chart. Identity here is name + DOB; the MRN third factor is
+         read off the live chart by the write flow's own probe. */
       api.sendNoteToAthena({
         action: 'write_note',
         noteText: phsendNoteText(),
-        patient: { name: a.name || '', dob: a.dob || '', mrn: a.mrn || a.athenaId || '', patientId: a.patientId || a.id || '' },
+        patient: { name: a.name || '', dob: a.dob || '', mrn: '', patientId: '' },
         apptId: a.id || '',
         visitDay: (sn && sn.day) || ''
       });
