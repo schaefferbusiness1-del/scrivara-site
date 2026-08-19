@@ -8717,8 +8717,35 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         if (!tab) return sendResponse({ error: 'No EMR tab is open. Open the patient in your EMR in another tab, then try again.' });
         let pageText = '';
         try {
-          const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => (document.body && document.body.innerText || '').slice(0, 20000) });
-          pageText = (r && r.result) || '';
+          /* cap-3065 (3.0.65): athenaOne is a FRAMESET and its chart/briefing
+             views render inside SHADOW ROOTS. The old read was the TOP frame's
+             flat innerText - about 7 characters of frameset - so the backend
+             never saw a chart and answered 'no patient identity found'. All
+             frames + shadow descent, richest frames first, same 20k budget
+             the /api/assist/extract contract expects. */
+          const rs = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => {
+            try {
+              var out = [], n = 0;
+              (function coll(root, depth) {
+                if (depth > 28 || n > 24000) return;
+                var kids = root.childNodes || [];
+                for (var i2 = 0; i2 < kids.length; i2++) {
+                  if (n > 24000) return;
+                  var nd = kids[i2];
+                  if (nd.nodeType === 3) { var t2 = String(nd.nodeValue || '').replace(/\s+/g, ' ').trim(); if (t2) { out.push(t2); n += t2.length; } }
+                  else if (nd.nodeType === 1) {
+                    var tg = (nd.tagName || '').toLowerCase();
+                    if (tg === 'script' || tg === 'style' || tg === 'noscript') continue;
+                    try { if (nd.shadowRoot) coll(nd.shadowRoot, depth + 1); else coll(nd, depth + 1); } catch (e2) {}
+                  }
+                }
+              })(document.body || document.documentElement, 0);
+              return out.join('\n');
+            } catch (e3) { return ''; }
+          } });
+          const frameTexts = (rs || []).map(r2 => String((r2 && r2.result) || '')).filter(t3 => t3.trim().length > 40);
+          frameTexts.sort((a2, b2) => b2.length - a2.length);
+          pageText = frameTexts.join('\n\n').slice(0, 20000);
         } catch (e) { return sendResponse({ error: 'Could not read the EMR tab (' + e.message + ').' }); }
         if (!pageText.trim()) return sendResponse({ error: 'The EMR tab had no readable text.' });
         const res = await callBackend('/api/assist/extract', { pageText, url: tab.url });
