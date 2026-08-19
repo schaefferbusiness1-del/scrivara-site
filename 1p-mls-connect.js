@@ -22890,6 +22890,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     pCounts();
     return st;
   }
+  /* ===== ez3repaint-1.0.0 - ONE STATE MACHINE, REACHABLE FROM THE SCREEN ===
+     p1RangePaint IS the panel's decision about which of Start / Resume /
+     Pause / Retry / Cancel the doctor should see, and it is a closure. The
+     panel runs it on mount (p1RangeAdopt) and whenever THIS tab drives the
+     job, but a job whose state changes out of band - another tab, a boot
+     resume, a session boundary - leaves the open panel showing the previous
+     answer with nothing to correct it.
+
+     MEASURED: with a month job PAUSED at 0 of 18 days and Staff Prep on
+     screen, the panel showed only "Start month pull" and the sentence
+     "Nothing pulled yet this session." for 11s and 299 ticks, while the
+     progress label two lines above already read "0 of 18 days saved". Leaving
+     the screen and coming back fixed it - so the state was right and only the
+     repaint was missing.
+
+     Rather than copy the rule into a second place (the shell's staffjobsync
+     block would then be a second source of truth about a job), the panel's
+     own painter is published and the screen calls it. Returns the manifest it
+     painted, or null when there is no saved job to paint.
+
+     IT MUST ADOPT FIRST. p1RangePaint ends in pCounts(), and pCounts opens
+     with `if (!P) return;` — so the whole durable-control branch (Start /
+     Resume / Pause / Retry / Cancel from the SAVED manifest) is unreachable
+     while this tab has no in-tab pull object. That is exactly the case here:
+     the doctor opened Staff Prep before any job existed, so mount adopted
+     nothing, and a job that appeared afterwards could never reach the
+     buttons. MEASURED: publishing the painter alone moved the receipt line
+     but left [ez3PullStart] over a paused job for the full 11s. p1RangeAdopt
+     is the function written for this — it is what a re-open runs — so a
+     repaint that finds no P adopts the saved job the same way and then
+     paints. It is a no-op when a job is already running in this tab. */
+  window.__mlsEz3RangeRepaint = function () {
+    return safe(function () {
+      var adopted = false;
+      if (!P) { p1RangeAdopt(); adopted = !!P; }
+      var st = p1RangePaint();
+      /* render() writes "Nothing pulled yet this session." only for the
+         no-job case (`P ? "" : ...`). Once a saved job has been adopted that
+         sentence is stale, and it would sit directly above a Resume button.
+         A re-open leaves this line empty for the same job, so match it — and
+         only ever replace that one exact default, never a real message. */
+      if (adopted && st) {
+        var now = $('ez3PullNow');
+        if (now && now.textContent === 'Nothing pulled yet this session.') now.textContent = '';
+      }
+      return st;
+    }, null);
+  };
+  /* ===== end ez3repaint-1.0.0 ============================================ */
+
   /* A job the boot resumed - or one this tab just asked for, whose manifest is
      still being written behind the account lock - still has to paint here. The
      grace ticks cover that admission gap; once the job is seen running the

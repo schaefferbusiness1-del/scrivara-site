@@ -301,12 +301,12 @@
 <link rel="icon" type="image/png" href="icon-192.png">
 <script src="vendor_qrcode.js?v=b430"></script>
 <!-- ===== navgesture-1.0.0 — "has a human touched this page yet?" ============
-     One timestamp, armed at parse time, read by the tab-memory restore in
-     1p-mls-connect.js (tabmem-standdown-1.0.0). That restore fires 800ms after
+     One timestamp, armed at parse time, read by the tab-memory restore
+     (tabmem-standdown-1.0.0) in the connect bundle. That restore fires 800ms after
      the load event and used to overwrite the tab the doctor had just pressed —
      measured: a real click on #nav_calendar at +976ms was reversed at +1298ms.
-     The restore needs to know whether a human has acted, and it loads far too
-     late to see a press that happened during boot, so the flag is set HERE.
+     The restore needs to know whether a human has acted, and its own file
+     loads far too late to see a press made during boot, so the flag is HERE.
      Listeners are capture-phase and passive; they set one number and nothing
      else, so no view, control or handler anywhere can be affected by them. -->
 <script>(function(){try{if(window.__mlsUserActedArmed)return;window.__mlsUserActedArmed=1;var m=function(e){try{if(!e||e.isTrusted===false)return;if(!window.__mlsUserActed)window.__mlsUserActed=Date.now();}catch(x){}};['pointerdown','mousedown','touchstart','keydown'].forEach(function(t){try{document.addEventListener(t,m,{capture:true,passive:true});}catch(x){try{document.addEventListener(t,m,true);}catch(y){}}});}catch(e){}})();</script>
@@ -49752,7 +49752,14 @@ html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
     ['guards on', 'Safety checks are on'],
     ['schedule parse timeout', 'the schedule did not finish loading'],
     ['verified empty', 'checked — no patients that day'],
-    ['saved checkpoint', 'the last day it saved']
+    /* staffjobsync-1.0.0: this pair used to search for 'saved checkpoint'
+       alone, and every sentence that carries the phrase writes it as "from
+       THE saved checkpoint" — so the rewrite produced "Resume continues from
+       the the last day it saved." Measured on the paused-job status line.
+       The article is part of the phrase being replaced, in all five places
+       that write it (three in the range-job engine, two in the connect
+       bundle). */
+    ['the saved checkpoint', 'the last day it saved']
   ];
   function words() {
     var root = q('#mlsEz3');
@@ -49849,6 +49856,72 @@ html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
 })();
 </script>
 <!-- ===== end clunky-staffprep-1.0.0 ==================================== -->
+<!-- ===== staffjobsync-1.0.0 — the control on screen matches the job on disk ===
+     THE DEFECT, MEASURED. Staff Prep adopts the saved range job when it
+     MOUNTS (p1RangeAdopt) and repaints whenever this tab drives the job, but
+     nothing re-reads the manifest while the panel simply sits there. A job
+     that changes state out of band — another tab, a boot resume, a session
+     boundary — leaves the open panel showing the previous answer.
+
+     With a month job PAUSED at 0 of 18 days and Staff Prep on screen:
+       buttons        [ez3PullStart]              for 11s / 299 ticks
+       #ez3PullNow    "Nothing pulled yet this session."
+       #ez3PullBarLbl "0 of 18 days saved"        (the bar already knew)
+     Leaving the screen and returning gave [ez3PullResume, ez3PullCancel] —
+     so the manifest was right the whole time and only the repaint was gone.
+     Pressing "Start month pull" is precisely what the durable job exists to
+     stop the doctor from doing to a job that is only paused.
+
+     THIS BLOCK ADDS NO SECOND OPINION. It never decides which button belongs
+     on screen; it watches the manifest for a change and calls the panel's own
+     painter (window.__mlsEz3RangeRepaint, published by ez3repaint-1.0.0 in
+     the connect bundle) when there is one. No change, no DOM write — the
+     tick is a read. -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'staffjobsync-1.0.0';
+  if (window.__mlsStaffJobSync) return;
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function onStaff() { return !!document.querySelector('.ez3-pull'); }
+  function sig() {
+    var st = safe(function () {
+      var api = window.__mlsP1RangeJobs;
+      return api && typeof api.state === 'function' ? api.state() : null;
+    }, null);
+    if (!st) return '';
+    /* Everything the panel's control rule reads, and nothing else: a
+       different job, a different phase, or different progress. */
+    return [st.jobId, st.status, st.kind, st.target, st.currentMonth,
+      safe(function () { return Object.keys(st.months || {}).length; }, 0),
+      safe(function () { return st.doneDays == null ? '' : st.doneDays; }, '')].join('|');
+  }
+  var last = null, repaints = 0, ticks = 0;
+  function tick() {
+    ticks++;
+    if (!onStaff()) { last = null; return false; }
+    var s = sig();
+    if (last === null) { last = s; return false; }   /* mount already painted it */
+    if (s === last) return false;
+    last = s;
+    if (typeof window.__mlsEz3RangeRepaint !== 'function') return false;
+    repaints++;
+    safe(function () { window.__mlsEz3RangeRepaint(); });
+    return true;
+  }
+  /* A plain interval, never a frame or idle callback: neither of those fires
+     in a hidden or non-compositing tab, and a doctor who leaves this tab open
+     on Staff Prep while a second tab runs the job is the exact case this
+     exists for. */
+  var iv = setInterval(tick, 900);
+  window.__mlsStaffJobSync = {
+    version: VERSION, tick: tick, sig: sig,
+    repaints: function () { return repaints; }, ticks: function () { return ticks; },
+    revert: function () { try { clearInterval(iv); } catch (e) {} return true; }
+  };
+})();
+</script>
+<!-- ===== end staffjobsync-1.0.0 ========================================= -->
 <!-- ===== clunky-dock-1.0.0 — the taskbar stops covering its own menu
      CLUNKY AUDIT items 39, 40, 43, 73, 116, 123, 143, 144.
 
@@ -52774,17 +52847,28 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      with !important: calm card rows, dark text, a thin brand accent. The
      module's behavior (when it mounts, what it lists) is unchanged. -->
 <style id="mlsCalFallbackCalmCss">
-  #mlsFpDayFallback > div[style]{
+  /* calfallback-calm-1.0.1: the selector was `> div[style]`, which is EVERY
+     child — and the box opens with two of them that are not appointments: the
+     "Wednesday, August 19 — 6 appointments (all providers)" heading and the
+     sentence under it explaining why the list is unsplit. MEASURED with the
+     fallback actually mounted (6 appointments, 8 matched children): both were
+     being painted as appointment cards, each with its own brand accent bar,
+     and the heading was pulled from font-weight 800 down to 600. Only the
+     rows carry the gradient this block exists to overrule, so only the rows
+     are addressed; the two heading lines are left exactly as the module
+     wrote them. */
+  #mlsFpDayFallback > div[style*="linear-gradient"]{
     background:var(--card,#fff) !important;
+    background-image:none !important;
     color:var(--ink,#1c2b24) !important;
     font-weight:600 !important;
     border:1px solid var(--line,#E4E1D8) !important;
     border-left:3px solid #2E6A4B !important;
     border-radius:8px !important;
   }
-  #mlsFpDayFallback > div[style] > span{ opacity:1 !important; }
-  #mlsFpDayFallback > div[style] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
-  #mlsFpDayFallback > div[style] > span:last-child{ color:#6a7d74 !important; }
+  #mlsFpDayFallback > div[style*="linear-gradient"] > span{ opacity:1 !important; }
+  #mlsFpDayFallback > div[style*="linear-gradient"] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
+  #mlsFpDayFallback > div[style*="linear-gradient"] > span:last-child{ color:#6a7d74 !important; }
 </style>
 <!-- ===== end calfallback-calm-1.0.0 ======================================= -->
 <!-- ===== caldata-1.0.0 — the month grid gets the width, the phone gets a
