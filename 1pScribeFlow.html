@@ -52685,6 +52685,27 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 })();
 </script>
 <!-- ===== end tools-tips-1.0.0 ============================================ -->
+<!-- ===== calfallback-calm-1.0.0 — the all-providers day list stops shouting ===
+     Owner, 2026-08-18 ("wtf is this — fix this stuff"): the day-panel
+     fallback (feat_mls_fixpack_0701.js, production, untouchable) paints every
+     appointment as a full-width dark-green gradient slab with white bold
+     text — a wall of banners. Its styles are INLINE, so this override wins
+     with !important: calm card rows, dark text, a thin brand accent. The
+     module's behavior (when it mounts, what it lists) is unchanged. -->
+<style id="mlsCalFallbackCalmCss">
+  #mlsFpDayFallback > div[style]{
+    background:var(--card,#fff) !important;
+    color:var(--ink,#1c2b24) !important;
+    font-weight:600 !important;
+    border:1px solid var(--line,#E4E1D8) !important;
+    border-left:3px solid #2E6A4B !important;
+    border-radius:8px !important;
+  }
+  #mlsFpDayFallback > div[style] > span{ opacity:1 !important; }
+  #mlsFpDayFallback > div[style] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
+  #mlsFpDayFallback > div[style] > span:last-child{ color:#6a7d74 !important; }
+</style>
+<!-- ===== end calfallback-calm-1.0.0 ======================================= -->
 <!-- ===== caldata-1.0.0 — the month grid gets the width, the phone gets a
      month it can read, and a tapped day is on screen
      CLUNKY AUDIT items 34, 36 and 37. (33 and 35 are fixed in the renderers
