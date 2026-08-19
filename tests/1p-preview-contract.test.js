@@ -113,7 +113,7 @@ const P1_CONFIG_RELEASE_SUBS = [
    Fields box static; cloned r14) + junkscrub-1.0.0 (cloned r15) + opnote-day-3.0.1 rail Templates button (cloned r16)
    + awb-1.0.0 (booking-row appointment-id fallback in the writeflow fork; cloned r17). Extension/production
    baselines stay at the 3.0.64 release commit. */
-const P1_BASE_COMMIT = '46f1400b20f6b7333b7b35d51e4dcf5c088bdc86'; /* r24 train: t8 live result card + t9 pull-verb truth + label-pin moves + r24 derive */
+const P1_BASE_COMMIT = '1c0e971f7b6b70e38f60284b7e82e4ec752e0476'; /* tip viewport containment: place() Y clamp + tipAvoid candidate-0 clamp (owner screenshot 2026-08-19) */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
