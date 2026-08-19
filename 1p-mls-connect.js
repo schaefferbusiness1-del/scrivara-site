@@ -51607,9 +51607,427 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} res({ ok: false, error: 'chart read timed out' }); } }, 110000);
     });
   }
+  /* ===== phsend-1.0.0 (2026-08-18, phone lane) =============================
+   * "Record the visit on the phone, then send the note to Athena from the
+   * phone." The recording and the drafting already work on the phone. This is
+   * the third leg.
+   *
+   * WHAT THIS CAN AND CANNOT DO - read this before changing anything here.
+   * MLS Assist arms an Athena mutation ONLY from a real, freshly trusted click
+   * on the exact confirm button (content.js ATHENA_ACTION_V2_CLICK_GATE:
+   * `if (!ev || ev.isTrusted !== true) return;`, arm is single-use and lives
+   * 20 s). Page scripts cannot manufacture Event.isTrusted. A relayed job
+   * running on the office computer therefore CANNOT execute the write, and
+   * this module does not try - it would be defeated by the extension anyway,
+   * and the attempt is exactly the shape of a bypass.
+   *
+   * So the phone's button does everything up TO the human's press:
+   *   phone            queues a sendNote job (reviewed note + exact identity)
+   *   office computer  resolves the patient, runs the READ-ONLY Athena probe
+   *                    through the SAME startAthenaAction path the on-screen
+   *                    button uses, and stages the confirmation sheet
+   *   a human there    presses Confirm - the authorization, unchanged
+   *   phone            receives the receipt and says SENT or why not
+   * The doctor's walk to the computer becomes one press instead of redriving
+   * the whole visit. The phone never claims a write the office computer did
+   * not report; "staged" and "sent" are different words on purpose.
+   *
+   * Everything degrades honestly and silently when a half is missing: an
+   * MLS server without the sendNote kind (not yet deployed), no office
+   * computer online, no extension there, no write flow loaded.
+   * ========================================================================*/
+  var PHSEND_ACTIONS = { write_note: 1, save_draft: 1 };
+  /* beats must outrun the server's 150 s lost-silence window while a human
+     decides; the whole wait must finish inside the 15 min job TTL */
+  var PHSEND_BEAT_MS = 100000;
+  var PHSEND_CONFIRM_WAIT_MS = 9 * 60 * 1000;
+  api.sendActions = PHSEND_ACTIONS;
+
+  function phsendHash(s) {
+    var h = 5381, i = 0, t = String(s == null ? '' : s);
+    for (i = 0; i < t.length; i++) { h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; }
+    return h.toString(36);
+  }
+  function phsendNorm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function phsendDob(s) {
+    var m = /(\d{4})-(\d{2})-(\d{2})/.exec(String(s == null ? '' : s));
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    var u = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(String(s == null ? '' : s));
+    if (u) return u[3] + '-' + ('0' + u[1]).slice(-2) + '-' + ('0' + u[2]).slice(-2);
+    return '';
+  }
+  /* IDENTITY. The phone names the patient; this computer must agree it is the
+     same person before opening anything in a chart. Name alone NEVER resolves
+     - "exact name equality never matches an EMR" is a standing law here, and a
+     name-only match is how a note lands in a stranger's chart. DOB is the
+     minimum second factor; the MRN third factor is then enforced against the
+     live chart by the write flow's own read-only probe, which this does not
+     replace and must never pre-empt. */
+  function phsendResolvePatient(sent) {
+    sent = sent || {};
+    var name = String(sent.name || '').trim();
+    var dob = phsendDob(sent.dob);
+    var mrn = String(sent.mrn || '').trim();
+    var pid = String(sent.patientId || '').trim();
+    if (!name) return { ok: false, error: 'The phone did not name a patient. Nothing was opened in Athena.' };
+    if (!dob && !mrn) {
+      return { ok: false, error: 'That patient record has only a name - no date of birth and no MRN. MLS will not match a chart on a name alone, so nothing was opened in Athena. Add a DOB or MRN to the patient in MLS and send again.' };
+    }
+    var list = [];
+    try { if (typeof window.patients !== 'undefined' && Object.prototype.toString.call(window.patients) === '[object Array]') list = window.patients; } catch (e) {}
+    var wantName = phsendNorm(name), hit = null, ambiguous = false;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i]; if (!p) continue;
+      var idMatch = pid && String(p.id || p.patientId || '').trim() === pid;
+      var nameMatch = phsendNorm(p.name) === wantName;
+      var dobMatch = dob && phsendDob(p.dob) === dob;
+      var mrnMatch = mrn && String(p.mrn || p.athenaId || '').trim() === mrn;
+      if (idMatch || (nameMatch && (dobMatch || mrnMatch))) {
+        if (hit && hit !== p) { ambiguous = true; break; }
+        hit = p;
+      }
+    }
+    if (ambiguous) return { ok: false, error: 'More than one MLS patient matches what the phone sent. MLS will not guess between charts - nothing was opened in Athena.' };
+    /* No local row is not fatal: the phone may hold a record this tab has not
+       loaded. Carry the phone's own tuple forward and let the read-only probe
+       be the arbiter, exactly as it is for a locally-started action. */
+    var use = hit || {};
+    return { ok: true, patient: {
+      name: String(use.name || name).trim(),
+      dob: phsendDob(use.dob) || dob,
+      mrn: String(use.mrn || use.athenaId || mrn || '').trim(),
+      patientId: String(use.id || use.patientId || pid || '').trim()
+    }, matchedLocal: !!hit };
+  }
+
+  /* THE OFFICE COMPUTER'S HALF. */
+  function runSendNote(job) {
+    return new Promise(function (res) {
+      var pl = job.payload || {};
+      var action = String(pl.action || '');
+      var settled = false;
+      function finish(out) { if (settled) return; settled = true; res(out); }
+
+      /* the runner's own allowlist - the server refuses final actions too, but
+         a client that trusts the server is the weaker half of a PHI boundary */
+      if (!Object.prototype.hasOwnProperty.call(PHSEND_ACTIONS, action)) {
+        finish({ ok: false, error: 'This computer relays only a reviewed note write or a draft save. "' + action + '" was refused and nothing was opened in Athena.' });
+        return;
+      }
+      var noteText = String(pl.noteText || '').trim();
+      if (!noteText) { finish({ ok: false, error: 'The phone sent no reviewed note text. Nothing was opened in Athena.' }); return; }
+
+      var wf = window.__mlsWriteFlow;
+      if (!wf || typeof wf.startAthenaAction !== 'function') {
+        finish({ ok: false, error: 'The Athena write flow has not loaded on this computer. Open MLS here and let it finish loading, then send again.' });
+        return;
+      }
+      if (!api.extPresent()) {
+        finish({ ok: false, error: 'MLS Assist is not answering on this computer, so Athena cannot be checked. Reload the extension there and send again.' });
+        return;
+      }
+      var resolved = phsendResolvePatient(pl.patient);
+      if (!resolved.ok) { finish({ ok: false, error: resolved.error }); return; }
+
+      var beat = makeProgressPoster(job.id);
+      var beatIv = null, watchIv = null, startedAt = Date.now(), sawSheet = false;
+      function stopTimers() {
+        try { if (beatIv) clearInterval(beatIv); } catch (e) {}
+        try { if (watchIv) clearInterval(watchIv); } catch (e2) {}
+        beatIv = null; watchIv = null;
+      }
+      function say(note) { try { beat.post(note); } catch (e) {} }
+
+      lb(true, 'Your phone sent a note - checking the chart in Athena...');
+      say('Checking the chart in Athena (read-only)...');
+
+      var opts = {
+        patient: resolved.patient,
+        sections: [{ key: 'note', text: noteText }],
+        autoOpen: true,
+        receiptSessionId: 'phsend-' + String(job.id || ''),
+        onProbe: function () {
+          sawSheet = true;
+          say('Chart verified. Waiting for your confirmation on this computer.');
+        },
+        onResult: function (resp, meta) {
+          stopTimers();
+          resp = resp || {}; meta = meta || {};
+          var ctx = meta.context || {};
+          if (resp.__timeout) {
+            finish({ ok: false, error: 'Athena did not answer this computer in time. The outcome is uncertain - check the open encounter there before sending again.' });
+            return;
+          }
+          var confirmed = resp.ok === true;
+          finish({
+            ok: confirmed,
+            data: confirmed ? {
+              staged: true, confirmed: true, action: action,
+              encounterId: String(ctx.encounterId || ''),
+              visitDate: String(ctx.visitDate || ''),
+              provider: String(ctx.provider || ''),
+              verifiedWrite: !!meta.verifiedWrite
+            } : null,
+            error: confirmed ? null : (String(resp.error || resp.message || '') || 'Athena did not confirm the note was written. Nothing is marked complete.')
+          });
+        }
+      };
+
+      var startedOk = true;
+      try { wf.startAthenaAction(action, opts); } catch (e) { startedOk = false; }
+      if (!startedOk) {
+        stopTimers(); lb(false);
+        finish({ ok: false, error: 'This computer could not start the Athena check. Nothing was opened.' });
+        return;
+      }
+      toast('A note arrived from your phone - confirm it to send it to Athena.', '');
+
+      /* keep the job alive while a human decides, and notice the two ways this
+         ends without an onResult: the sheet closed (Cancel), or nobody came. */
+      beatIv = setInterval(function () {
+        if (settled) { stopTimers(); return; }
+        if (beat.canceled()) {
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'The phone stopped waiting. Nothing was sent to Athena from here.' });
+          return;
+        }
+        say('Waiting for your confirmation on this computer.');
+      }, PHSEND_BEAT_MS);
+
+      watchIv = setInterval(function () {
+        if (settled) { stopTimers(); return; }
+        var open = null;
+        try { open = document.getElementById('mlsAthenaActionConfirm'); } catch (e) {}
+        if (open) { sawSheet = true; return; }
+        /* the sheet was up and is gone with no result = somebody closed it */
+        if (sawSheet) {
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'The confirmation was closed on this computer without sending. Nothing was written to Athena.' });
+          return;
+        }
+        if (Date.now() - startedAt > PHSEND_CONFIRM_WAIT_MS) {
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'Nobody confirmed on this computer within nine minutes, so nothing was sent. The note is safe in MLS - send it again when you are at the computer.' });
+        }
+      }, 2000);
+    }).then(function (out) { try { lb(false); } catch (e) {} return out; });
+  }
+  api.runSendNote = runSendNote;
+
+  /* THE PHONE'S HALF. */
+  var PHSEND_ACTIVE_KEY = 'mlsPhSendActive';
+  var phsendState = { status: 'idle', line: '', jobId: '', at: 0 };
+  api.sendState = function () { return { status: phsendState.status, line: phsendState.line, jobId: phsendState.jobId }; };
+  function phsendSet(status, line, jobId) {
+    phsendState.status = status; phsendState.line = line || '';
+    if (jobId !== undefined) phsendState.jobId = jobId || '';
+    phsendState.at = Date.now();
+    try { phsendPaint(); } catch (e) {}
+  }
+  function phsendReadActive() {
+    try { var v = JSON.parse(sessionStorage.getItem(PHSEND_ACTIVE_KEY) || 'null'); return (v && v.id && Date.now() - Number(v.at || 0) < 12 * 60 * 1000) ? v : null; } catch (e) { return null; }
+  }
+  function phsendWriteActive(v) { try { if (v) sessionStorage.setItem(PHSEND_ACTIVE_KEY, JSON.stringify(v)); else sessionStorage.removeItem(PHSEND_ACTIVE_KEY); } catch (e) {} }
+
+  function phsendPollJob(id, officeWho) {
+    var who = officeWho || 'your office computer';
+    var tries = 0, queuedPolls = 0;
+    var pi = setInterval(function () {
+      tries++;
+      if (tries > 264) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', 'No answer from ' + who + '. Nothing was sent - the note is still here.'); return; }
+      fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
+        .then(function (r) { if (r && r.status === 404) return { gone: true }; return r && r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (s && s.gone) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', 'That request expired before ' + who + ' finished. Nothing was sent - send again.'); return; }
+          var job = s && s.job; if (!job) return;
+          if (job.status === 'queued') {
+            queuedPolls++;
+            if (queuedPolls > 12) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', who + ' never picked this up. Make sure MLS is open there, then send again. Nothing was sent.'); return; }
+            phsendSet('queued', 'Waiting for ' + who + ' to pick it up...');
+            return;
+          }
+          if (job.status === 'taken') {
+            var note = job.progress && job.progress.note;
+            phsendSet('working', note ? (who + ': ' + note) : (who + ' is checking the chart...'));
+            return;
+          }
+          if (job.status === 'lost') { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', (job.result && job.result.error) || (who + ' stopped responding. Nothing was sent.')); return; }
+          if (job.status === 'canceled') { clearInterval(pi); phsendWriteActive(null); phsendSet('idle', 'Stopped waiting. Nothing was sent to Athena.'); return; }
+          if (job.status === 'done') {
+            clearInterval(pi); phsendWriteActive(null);
+            var r0 = job.result || {};
+            if (r0.ok === true && r0.data && r0.data.confirmed === true) {
+              var whenWhere = [];
+              if (r0.data.visitDate) whenWhere.push(String(r0.data.visitDate));
+              if (r0.data.provider) whenWhere.push(String(r0.data.provider));
+              phsendSet('sent', 'SENT - confirmed on ' + who + (whenWhere.length ? ' (' + whenWhere.join(', ') + ')' : '') + '.');
+            } else {
+              phsendSet('failed', String(r0.error || 'Nothing was sent to Athena.'));
+            }
+          }
+        })
+        .catch(function () {});
+    }, 2500);
+  }
+
+  api.sendNoteToAthena = function (o) {
+    o = o || {};
+    if (!authed()) { phsendSet('failed', 'Sign in first - nothing was sent.'); return Promise.resolve(false); }
+    var noteText = String(o.noteText || '').trim();
+    if (!noteText) { phsendSet('failed', 'There is no note to send yet.'); return Promise.resolve(false); }
+    var action = Object.prototype.hasOwnProperty.call(PHSEND_ACTIONS, String(o.action || '')) ? String(o.action) : 'write_note';
+    phsendSet('queued', 'Checking that your office computer is awake...', '');
+    return fetch(base() + '/api/relay/presence', { headers: H() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (p) {
+        var who = (p && p.officeName) ? ('"' + p.officeName + '"') : 'your office computer';
+        if (p && p.ok && !(p.online && p.ext)) {
+          phsendSet('failed', who + ' is not answering right now. Open MLS there with MLS Assist installed, then send again. Nothing was sent.');
+          return false;
+        }
+        var body = {
+          kind: 'sendNote',
+          payload: { action: action, noteText: noteText, patient: o.patient || null, apptId: String(o.apptId || ''), visitDay: String(o.visitDay || '') },
+          requestId: 'phsend-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          dedupeKey: 'sendNote|' + phsendHash(String((o.patient && o.patient.name) || '') + '|' + String(o.apptId || '') + '|' + noteText)
+        };
+        if (p && p.officeId) body.targetDeviceId = p.officeId;
+        phsendSet('queued', 'Sending to ' + who + '...');
+        return fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify(body) })
+          .then(function (r) {
+            if (r && r.status === 400) {
+              /* FEATURE DETECT: an MLS server that predates the sendNote kind
+                 refuses it here. Say so plainly instead of spinning - and do
+                 not pretend the note went anywhere. */
+              return r.json().then(function (j) { return { reject: String((j && j.error) || '') }; }, function () { return { reject: 'refused' }; });
+            }
+            return r && r.ok ? r.json() : null;
+          })
+          .then(function (j) {
+            if (j && j.reject !== undefined) {
+              phsendSet('unavailable', /unsupported job kind/i.test(j.reject)
+                ? 'This MLS server cannot take notes from a phone yet. Nothing was sent - the note is safe here.'
+                : ('Refused: ' + j.reject + ' Nothing was sent.'));
+              return false;
+            }
+            if (!j || !j.ok || !j.id) { phsendSet('failed', 'Could not reach the MLS server. Nothing was sent.'); return false; }
+            phsendWriteActive({ id: j.id, at: Date.now() });
+            phsendSet('queued', 'Waiting for ' + who + ' to pick it up...', j.id);
+            phsendPollJob(j.id, who);
+            /* "dispatched is not done": prove a moment later that this really
+               is in flight rather than leaving a hopeful sentence on screen. */
+            setTimeout(function () {
+              if (phsendState.jobId !== j.id && phsendState.status === 'queued') {
+                phsendSet('failed', 'The send did not start. Nothing was sent - try again.');
+              }
+            }, 1500);
+            return true;
+          })
+          .catch(function () { phsendSet('failed', 'Could not reach the MLS server. Nothing was sent.'); return false; });
+      });
+  };
+  api.cancelSend = function () {
+    var a = phsendReadActive();
+    phsendWriteActive(null);
+    if (!a) { phsendSet('idle', ''); return Promise.resolve(false); }
+    phsendSet('idle', 'Stopped waiting. Nothing was sent to Athena.');
+    return fetch(base() + '/api/relay/jobs/' + encodeURIComponent(a.id) + '/cancel', { method: 'POST', headers: H() })
+      .then(function () { return true; }, function () { return true; });
+  };
+
+  /* THE BUTTON. It lives OUTSIDE the phone's repainted region on purpose: the
+     phone rebuilds #mlsPh3Act's innerHTML on every repaint, so a control
+     injected into it is destroyed on the next tick and its listener with it.
+     This bar is a sibling of the action bar, rebuilt only when the phone frame
+     itself is remounted. */
+  function phsendPhone() { try { return window.__mlsPhoneUI; } catch (e) { return null; } }
+  function phsendVisible() {
+    var ph = phsendPhone();
+    if (!ph || !ph.installed || typeof ph.state !== 'function') return false;
+    var st = null; try { st = ph.state(); } catch (e) { return false; }
+    if (!st || !st.mounted || st.screen !== 'visit') return false;
+    var sn = null;
+    try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e2) { sn = null; }
+    if (!sn || !sn.active) return false;
+    return String(sn.phase || '') === 'note' || Number(sn.noteLen || 0) > 0;
+  }
+  function phsendNoteText() {
+    try { var el = document.getElementById('noteBox'); return el ? String(el.value || '') : ''; } catch (e) { return ''; }
+  }
+  function phsendPaint() {
+    var bar = null; try { bar = document.getElementById('mlsPhSendBar'); } catch (e) {}
+    if (!bar) return;
+    var show = phsendVisible();
+    bar.style.display = show ? 'block' : 'none';
+    if (!show) return;
+    var busy = phsendState.status === 'queued' || phsendState.status === 'working';
+    var line = phsendState.line || 'The note stays in MLS until your office computer confirms it.';
+    var lineEl = bar.querySelector('.phsend-line');
+    var btnEl = bar.querySelector('.phsend-go');
+    if (lineEl) {
+      lineEl.textContent = line;
+      lineEl.style.color = phsendState.status === 'sent' ? '#205c43'
+        : (phsendState.status === 'failed' || phsendState.status === 'unavailable') ? '#9f2d2d' : '#55605A';
+    }
+    if (btnEl) {
+      btnEl.textContent = busy ? 'Stop waiting' : (phsendState.status === 'sent' ? 'Send again' : 'Send to Athena');
+      btnEl.disabled = false;
+    }
+  }
+  function phsendMount() {
+    var ph = phsendPhone();
+    if (!ph || !ph.installed) return;
+    var act = null, frame = null;
+    try { act = document.getElementById('mlsPh3Act'); frame = document.getElementById('mlsPh3'); } catch (e) {}
+    if (!act || !frame) return;
+    var existing = null; try { existing = document.getElementById('mlsPhSendBar'); } catch (e2) {}
+    if (existing && existing.parentNode === frame) { phsendPaint(); return; }
+    var bar = document.createElement('div');
+    bar.id = 'mlsPhSendBar';
+    bar.setAttribute('data-phsend', 'phsend-1.0.0');
+    bar.style.cssText = 'flex:none;background:#fff;border-top:1px solid #E4E9E6;padding:9px 12px calc(9px + env(safe-area-inset-bottom));display:none;font:13px/1.4 system-ui';
+    var line = document.createElement('p');
+    line.className = 'phsend-line';
+    line.style.cssText = 'margin:0 0 7px;text-align:center;font-weight:600;font-size:12px;color:#55605A';
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'phsend-go';
+    go.style.cssText = 'width:100%;min-height:46px;border:0;border-radius:12px;background:#204034;color:#fff;font-weight:800;font-size:16px;cursor:pointer';
+    go.addEventListener('click', function () {
+      if (phsendState.status === 'queued' || phsendState.status === 'working') { api.cancelSend(); return; }
+      var sn = null;
+      try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e3) {}
+      var a = (sn && sn.active) || {};
+      api.sendNoteToAthena({
+        action: 'write_note',
+        noteText: phsendNoteText(),
+        patient: { name: a.name || '', dob: a.dob || '', mrn: a.mrn || a.athenaId || '', patientId: a.patientId || a.id || '' },
+        apptId: a.id || '',
+        visitDay: (sn && sn.day) || ''
+      });
+    });
+    bar.appendChild(line); bar.appendChild(go);
+    if (act.nextSibling) frame.insertBefore(bar, act.nextSibling); else frame.appendChild(bar);
+    phsendPaint();
+  }
+  api.phsendMount = phsendMount;
+  api.phsendVisible = phsendVisible;
+  /* One timer, and only while a phone frame exists. A remount rebuilds the
+     frame, so re-check rather than binding to a node that can vanish. */
+  var phsendIv = setInterval(function () { try { phsendMount(); } catch (e) {} }, 1200);
+  setTimeout(function () { try { phsendMount(); } catch (e) {} }, 2500);
+  /* resume a send that was in flight when the phone was reloaded */
+  setTimeout(function () {
+    var a = phsendReadActive();
+    if (a && a.id) { phsendSet('working', 'Picking up where this left off...', a.id); phsendPollJob(a.id, 'your office computer'); }
+  }, 3500);
+
+  /* ===== end phsend-1.0.0 ================================================= */
+
   /* rl-2.0.0/pdp-1.0.0: the OFFICE computer executes phone jobs; a SECONDARY
      computer also runs the agent but polls targetedOnly=1, so it can only
-     take jobs the doctor explicitly aimed at it via the pull-device picker 
+     take jobs the doctor explicitly aimed at it via the pull-device picker
      it can never grab an untargeted job meant for the office machine (wrong
      Athena session, wrong place). No role module / no role chosen yet =
      legacy behavior so pre-registry accounts don't regress. */
@@ -51653,7 +52071,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            future server-side regression becomes a real disclosure instead of a
            refusal. Refuse first, announce second — the old order toasted
            "running it here" before deciding what "it" was. */
-        var RELAY_RUNNERS = { pullDay: runPullDay, pullChart: runPullChart };
+        /* phsend-1.0.0 adds sendNote: it STAGES a note write for the human at
+           this computer to confirm. It never executes one - see the block
+           above. Final actions are not here and never will be. */
+        var RELAY_RUNNERS = { pullDay: runPullDay, pullChart: runPullChart, sendNote: runSendNote };
         var relayRunner = Object.prototype.hasOwnProperty.call(RELAY_RUNNERS, job.kind)
           ? RELAY_RUNNERS[job.kind] : null;
         if (typeof relayRunner !== 'function') {
@@ -51663,7 +52084,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return;
         }
         api.agentRuns++;
-        lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : 'read a chart…'));
+        lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : job.kind === 'sendNote' ? 'get a note ready to send to Athena…' : 'read a chart…'));
         toast('📱 Phone request received — running it here (' + job.kind + ').', '');
         var run = relayRunner(job);
         run.then(function (out) {

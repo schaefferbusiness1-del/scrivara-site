@@ -1204,6 +1204,7 @@ const tests = [
      receive loop that fixes it -- Worker timer, visibility catch-up, account
      binding, re-auth resume, backoff, and a sentence for every failure class. */
   '1p-phone-sync-receive-loop-runtime.test.js',
+  '1p-phone-send-to-athena-contract.test.js',
   /* The old product name reached seven surfaces across four lanes. This sweeps
      the reviewed publication inventory rather than a hand-list, and asserts the
      three lowercase infrastructure names are UNTOUCHED — renaming the live API
