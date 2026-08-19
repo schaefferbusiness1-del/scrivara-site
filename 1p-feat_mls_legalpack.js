@@ -1592,13 +1592,20 @@
         is measured the same way on the compiled entry count. Neither one is
         allowed to claim a refresh it cannot show.
      ====================================================================== */
+  /* What this says has to be exactly what it does. Stopping DETACHES this
+     workspace from the read; it does not reach into the app's reader and
+     cancel it, because that reader has no cancel to call. So the wording
+     claims the detach and nothing else - an earlier draft of this line said
+     "nothing was changed in this account", which would be false the moment a
+     background day pull did finish and upsert the patients it found. */
   function stopReadOp() {
     if (!state.athenaOp) return false;
     var stopped = ATHENA_READ_OPS[state.athenaOp];
     state.athenaSeq++;
     state.athenaOp = '';
-    state.athenaNote = (stopped ? stopped.label : 'The read') + ' was stopped. Nothing was written to the EMR, ' +
-      'nothing was changed in this account, and this workspace is free again — a late answer from the stopped read is ignored.';
+    state.athenaNote = (stopped ? stopped.label : 'The read') + ' was stopped here: this workspace is free again and ' +
+      'will ignore a late answer from it. The read itself is the app’s own read-only reader — it writes nothing to the ' +
+      'EMR, and if it does finish in the background, anything it brings in simply appears in the patient list above.';
     renderReadOps(); updateControls();
     setStatus(state.athenaNote, false);
     return true;
@@ -2058,7 +2065,7 @@
       /* p1-legal-readstop-1.0.0: say WHY the rest of the room went quiet.
          A doctor who presses Compile and gets nothing needs the reason on
          screen, not an inference from four greyed-out buttons. */
-      (busy ? '<p class="p1l-explain">Compile history, Generate and local files wait while a read runs, so a chart cannot change underneath a report you are part-way through. Press “Stop the read” to take the workspace back; nothing read so far is written to the EMR either way.</p>' : '') +
+      (busy ? '<p class="p1l-explain">Compile history, Generate and local files wait while a read runs, so a chart cannot change underneath a report you are part-way through. Press “Stop the read” to take the workspace back — that releases this room; the app’s own read-only reader may still finish in the background, and it writes nothing to the EMR either way.</p>' : '') +
       (state.athenaNote ? '<p class="p1l-explain">' + esc(state.athenaNote) + '</p>' : '') + '</div>';
     var dateBox = byId('mlsP1LegalReadDay'); if (dateBox) dateBox.value = typedDate;
     Array.prototype.forEach.call(node.querySelectorAll('button[data-read-op]'), function (button) {
