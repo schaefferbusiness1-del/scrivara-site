@@ -170,6 +170,50 @@ async function runtime() {
     const restored = await page.evaluate(() => ({ disabled: document.getElementById('pdGo').disabled, label: document.getElementById('pdGo').textContent }));
     ok(!restored.disabled && /pull this patient in/i.test(restored.label), 'go button restored after the pull');
 
+    /* ---- autoswitch-1.0.0: the whoever-button aligns the selection ---- */
+    const asw = await page.evaluate(async () => {
+      // answer the block's capture posts like the extension would
+      window.addEventListener('message', (e) => {
+        if (e.data && e.data.source === 'mls-app' && e.data.type === 'mlsAppCapture') {
+          window.postMessage({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { ok: true, captured: window.__aswCaptured } }, '*');
+        }
+      });
+      const all = getPatients();
+      all.push({ id: 'asw-target', name: 'Autoswitch Target', dob: '05/06/1970', mrn: '7777777', visits: [] });
+      all.push({ id: 'asw-other', name: 'Autoswitch Other', dob: '01/01/1950', mrn: '1111111', visits: [] });
+      savePatients(all);
+      window.__mlsAutoSwitch.arm();
+      let origCalls = 0;
+      window.pullPatientFromAthenaPrompt.__mlsAutoSwitch || (() => { throw new Error('not armed'); })();
+      // grab the wrapped fn's inner orig by replacing the global BENEATH the wrapper:
+      // instead, count via a sentinel: re-arm over a fresh orig
+      window.pullPatientFromAthenaPrompt = function () { origCalls++; };
+      window.__mlsAutoSwitch.arm(); // wraps the sentinel
+      const out = {};
+      // case 1: wrong selection, capture matches an existing record by MRN
+      setActivePtId('asw-other');
+      window.__aswCaptured = { name: 'Autoswitch Target', dob: '1970-05-06', mrn: '#7777777' };
+      await window.pullPatientFromAthenaPrompt(null);
+      out.case1 = { active: String(getActivePtId()), origCalls };
+      // case 2: wrong selection, capture matches NOBODY -> selection cleared
+      setActivePtId('asw-other');
+      window.__aswCaptured = { name: 'Total Stranger', dob: '1980-09-09', mrn: '#9999999' };
+      await window.pullPatientFromAthenaPrompt(null);
+      out.case2 = { active: String(getActivePtId()), origCalls };
+      // case 3: selection already matches -> untouched
+      setActivePtId('asw-target');
+      window.__aswCaptured = { name: 'Autoswitch Target', dob: '05/06/1970', mrn: '7777777' };
+      await window.pullPatientFromAthenaPrompt(null);
+      out.case3 = { active: String(getActivePtId()), origCalls };
+      return out;
+    });
+    eq(asw.case1.active, 'asw-target', 'wrong selection auto-switched to the MRN match');
+    eq(asw.case1.origCalls, 1, 'original flow ran after the switch');
+    ok(asw.case2.active === 'null' || asw.case2.active === '' || asw.case2.active === 'undefined', `unknown open patient cleared the selection for the add-new path (active=${asw.case2.active})`);
+    eq(asw.case2.origCalls, 2, 'original flow ran after the clear');
+    eq(asw.case3.active, 'asw-target', 'matching selection left untouched');
+    eq(asw.case3.origCalls, 3, 'original flow ran straight through');
+
     eq(errs.length, 0, `no page errors (got ${JSON.stringify(errs.slice(0, 3))})`);
   } finally {
     await browser.close();

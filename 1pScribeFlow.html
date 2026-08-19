@@ -54890,5 +54890,74 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
 })();
 </script>
 <!-- ===== end pulldoor-1.0.0 ============================================== -->
+<!-- ===== autoswitch-1.0.0 - the whoever-button aligns the selection itself =
+     Owner 2026-08-19 on the mix refusal: "this is an unacceptable bug." The
+     button named "Pull the patient open in athena" now captures the open
+     chart identity FIRST, switches the MLS selection to the matching record
+     (MRN, then name+DOB) or clears it for the add-new path, THEN runs the
+     original flow. Saves still verify identity downstream - the switch can
+     never attach the wrong chart, it only stops the selection from gating
+     a button whose whole job is "whoever is open". -->
+<script>
+(function(){
+  'use strict';
+  if (window.__mlsAutoSwitch) return;
+  function nrm(s){ return String(s||'').toLowerCase().replace(/[^a-z]/g,''); }
+  function nrmDob(d){ var m=String(d||'').match(/(\d{1,4})\D(\d{1,2})\D(\d{1,4})/); if(!m) return String(d||'').replace(/\D/g,''); var a=+m[1],b=+m[2],c=+m[3]; function p2(n){return (n<10?'0':'')+n;} if (a>31) return a+'-'+p2(b)+'-'+p2(c); return c+'-'+p2(a)+'-'+p2(b); }
+  function capture(){
+    return new Promise(function(resolve){
+      var t=setTimeout(function(){ resolve(null); }, 25000);
+      function onR(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppCaptureResult'){ clearTimeout(t); window.removeEventListener('message',onR); var r=e.data.resp||e.data; resolve((r&&r.captured)||null); } }
+      window.addEventListener('message',onR);
+      try { window.postMessage({source:'mls-app',type:'mlsAppCapture'},'*'); } catch(e0){ clearTimeout(t); resolve(null); }
+    });
+  }
+  function say(m){ try { var s=document.getElementById('pullChartStatus'); if(s){ s.style.display='block'; s.style.color='#52675c'; s.textContent=m; } } catch(e){} try{ if (typeof toast==='function') toast(m,''); }catch(e2){} }
+  function arm(){
+    var orig = window.pullPatientFromAthenaPrompt;
+    if (typeof orig !== 'function' || orig.__mlsAutoSwitch) return;
+    function aligned(btn){
+      var self = this, args = arguments;
+      say('Checking who is open in your athena tab\u2026');
+      return capture().then(function(cap){
+        try {
+          if (cap && (cap.name || cap.mrn)) {
+            var capMrn = String(cap.mrn||'').replace(/[^0-9]/g,'');
+            var capName = nrm(cap.name), capDob = nrmDob(cap.dob);
+            var act = (typeof activePatient==='function' && activePatient()) || null;
+            var actMrn = act ? String(act.mrn||act.athenaId||'').replace(/[^0-9]/g,'') : '';
+            var actMatches = act && ((capMrn && actMrn && capMrn===actMrn) || (nrm(act.name)===capName && nrmDob(act.dob)===capDob));
+            if (!actMatches) {
+              var all = (typeof getPatients==='function' && getPatients()) || [];
+              var match = null;
+              for (var i=0;i<all.length;i++){ var pm=String(all[i].mrn||all[i].athenaId||'').replace(/[^0-9]/g,''); if (capMrn && pm && pm===capMrn) { match=all[i]; break; } }
+              if (!match && capName) { for (var j=0;j<all.length;j++){ if (nrm(all[j].name)===capName && nrmDob(all[j].dob)===capDob) { match=all[j]; break; } } }
+              if (match) {
+                try { if (typeof setActivePtId==='function') setActivePtId(String(match.id||match.patientId)); if (typeof renderProfile==='function') renderProfile(); if (typeof renderPatients==='function') renderPatients(); } catch(eSw){}
+                say('Switched to '+(match.name||cap.name)+' - pulling their chart\u2026');
+              } else if (act) {
+                /* setActivePtId ignores null by design - the app clears
+                   through deselectPatient(), same as the X chip. */
+                try { if (typeof deselectPatient==='function') deselectPatient(); else if (typeof setActivePtId==='function') setActivePtId(null); } catch(eCl){}
+                say(cap.name+' is open in athena and not in MLS yet - adding them and pulling\u2026');
+              }
+            }
+          }
+        } catch(eAl){}
+        return orig.apply(self, args);
+      });
+    }
+    aligned.__mlsAutoSwitch = true;
+    aligned.__mlsAutoWrapped = orig.__mlsAutoWrapped;
+    window.pullPatientFromAthenaPrompt = aligned;
+  }
+  window.__mlsAutoSwitch = { version: 'autoswitch-1.0.0', arm: arm, _capture: capture, _nrmDob: nrmDob };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arm, 800); });
+  else setTimeout(arm, 800);
+  /* the autopull module re-wraps late; re-arm on a short bounded retry */
+  var tries = 0; var tmr = setInterval(function(){ tries++; try { arm(); } catch(e){} if (tries > 20) clearInterval(tmr); }, 1500);
+})();
+</script>
+<!-- ===== end autoswitch-1.0.0 ============================================ -->
 </body>
 </html>
