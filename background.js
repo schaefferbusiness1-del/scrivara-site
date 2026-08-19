@@ -11728,7 +11728,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             thisRead = runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId, msg.deadlineAt);
           }
           activeAllVisitsPromise = thisRead;
+          /* wdog-3071: the read can hang inside one await (deadlines are only
+             checked between steps), leaking the single-flight slot until the
+             worker dies - measured live 2026-08-19: 40+ min of already-running
+             refusals. Force an honest finish at deadlineAt+30s; the late inner
+             result finds the slot already cleared and is discarded. */
+          var __wdogFinished = false;
+          var __wdogMs = Math.max(30000, Number(msg.deadlineAt || (Date.now() + 195000)) - Date.now() + 30000);
+          var __wdogTimer = setTimeout(function () {
+            try {
+              if (activeAllVisitsPromise === thisRead && !__wdogFinished) {
+                finish({ ok: false, reason: 'read-watchdog-fired', requestId: transportRequestId,
+                  readerVersion: '2.9.22-visits-r4-two-stage', visits: [], retryable: true,
+                  receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, watchdog: true },
+                  error: 'The history read stopped responding and MLS released it (watchdog). Nothing partial was saved. Press the pull again.' });
+              }
+            } catch (eWd) {}
+          }, __wdogMs);
           function finish(value) {
+            try { clearTimeout(__wdogTimer); } catch (eWc) {}
+            if (__wdogFinished) return; __wdogFinished = true;
             /* Clear single-flight ownership before responding. Cleanup is
                registered immediately after sendResponse returns and is never
                awaited by this completed read. */
