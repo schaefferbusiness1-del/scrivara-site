@@ -223,8 +223,12 @@
         var year = m[3].length === 2 ? ((+m[3] > 40 ? '19' : '20') + m[3]) : m[3];
         return year + '-' + pad2(m[1]) + '-' + pad2(m[2]);
       }
-      if (/^-?\d+(?:\.\d+)?$/.test(s)) {
-        var stamp = Number(s);
+      /* Anything Date would COERCE TO A NUMBER goes through the epoch floor,
+         which is why a boolean is named here: new Date(true) coerces to 1 and
+         lands on the same 1969-12-31 this block exists to stop. A real date
+         string never enters this branch - it has no numeric-only form. */
+      if (typeof value === 'number' || typeof value === 'boolean' || /^-?\d+(?:\.\d+)?$/.test(s)) {
+        var stamp = Number(value);
         if (!isFinite(stamp) || stamp < EPOCH_FLOOR_MS) return '';
       }
       var d = new Date(value);

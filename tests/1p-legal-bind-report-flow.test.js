@@ -959,6 +959,12 @@ function makeRuntime(options = {}) {
           { date: 1755500000, type: 'Seconds not millis', detail: 'A seconds-based stamp must not print as 1970.' },
           { date: '2026', type: 'Bare year', detail: 'A year alone is not a day.' },
           { date: '', type: 'Empty', detail: 'Nothing at all.' },
+          /* No body below may contain an epoch year as TEXT: the scan further
+             down looks for one anywhere in the rendered and exported bytes,
+             and a fixture that says the year out loud fails its own check. */
+          { date: true, type: 'Boolean', detail: 'A boolean coerces to 1 and lands on the epoch.' },
+          { date: NaN, type: 'NaN', detail: 'Not a number, and not a date either.' },
+          { date: [0], type: 'Array of zero', detail: 'Coerces to a zero string and then to the epoch.' },
           /* and the ones that MUST keep their date */
           { date: '2026-02-11', type: 'ISO dated', detail: 'Documented.' },
           { date: '3/4/2026', type: 'US dated', detail: 'Documented.' },
@@ -972,7 +978,8 @@ function makeRuntime(options = {}) {
       { patientId: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A' });
     const byType = {};
     model.items.forEach(item => { byType[item.title] = item.date; });
-    ['Zero stamp', 'Tiny stamp', 'Seconds not millis', 'Bare year', 'Empty'].forEach(type => {
+    ['Zero stamp', 'Tiny stamp', 'Seconds not millis', 'Bare year', 'Empty',
+      'Boolean', 'NaN', 'Array of zero'].forEach(type => {
       eq(byType[type], '', 'an undated entry ("' + type + '") was given the date ' + byType[type]);
     });
     eq(byType['ISO dated'], '2026-02-11', 'a documented ISO date was lost');
