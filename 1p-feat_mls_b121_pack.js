@@ -2939,6 +2939,127 @@
   }
   /* ===== end p1-backfill-footer-1.0.0 ===================================== */
 
+  /* ===== p1-backfill-progress-1.0.0 — the top-up says what it is ==========
+   * Owner, 2026-08-18: the progress widget showed "Pulling patient history ·
+   * Done · 15s · repeated 2 times · ✓✓✓ · No charts were read."
+   *
+   * MEASURED CAUSE (reproduced from this module's own traffic): this backfill
+   * auto-starts on the falling edge of every pull — no user press — and posts
+   * one mlsAppReadVisits per patient. The shared progress observer
+   * (feat_mls_progress_stages.js) treats any such post as a chart-history pull,
+   * counts no charts, and 15s later completes a job that claims three stages of
+   * per-chart work nobody did. The doctor never learned that a visit-LIST
+   * top-up was what actually ran.
+   *
+   * This block gives the run its OWN named job in the shared progress store
+   * (feat_mls_loading_calm's public API — no second store, no second widget),
+   * with real counts and an honest ending, so the panel can show the truth and
+   * the presentation half (pshonest-1.0.0 in the shells) can recognise the
+   * manufactured card as a duplicate of it.
+   *
+   * It also ends the silence when the auto-start finds NOTHING to do: that
+   * verdict is recorded on STATE and offered to the quiet activity tray
+   * through bfQuiet, which refuses anything that is not an outcome/info line.
+   *
+   * PHI: counts only. No patient name is ever put in the job — the same rule
+   * p1-backfill-footer-1.0.0 established for persistent chrome.
+   * Fail-open: with no progress store present every call here is a no-op. */
+  var bpJob = null, bpBase = null;
+  /* STATE's tallies are cumulative for the life of the tab, so every number
+     this job reports is a DELTA against the moment its own run started. */
+  function bpSnap() {
+    return { done: STATE.done, ok: STATE.ok, failed: STATE.failed, transient: STATE.transient, added: STATE.visitsAdded };
+  }
+  function bpDelta() {
+    var b = bpBase || { done: 0, ok: 0, failed: 0, transient: 0, added: 0 };
+    return {
+      done: Math.max(0, STATE.done - b.done), ok: Math.max(0, STATE.ok - b.ok),
+      failed: Math.max(0, STATE.failed - b.failed), transient: Math.max(0, STATE.transient - b.transient),
+      added: Math.max(0, STATE.visitsAdded - b.added)
+    };
+  }
+  function bpApi() {
+    try {
+      var l = window.__mlsLoadingCalm;
+      return (l && l.installed === true && typeof l.start === 'function') ? l : null;
+    } catch (e) { return null; }
+  }
+  function bpStart(total) {
+    if (bpJob) return bpJob;
+    bpBase = bpSnap();
+    var api = bpApi();
+    if (!api) return null;
+    try {
+      bpJob = api.start({
+        key: 'visits:backfill', kind: 'visits_backfill',
+        label: 'Filling in missing visit lists',
+        stages: ['Opening each patient in Athena', 'Reading their visit list', 'Filing new visits'],
+        total: Math.max(0, Number(total) || 0),
+        timeoutMs: 45 * 60000, replace: true, cancelable: false
+      });
+    } catch (e) { bpJob = null; }
+    return bpJob;
+  }
+  function bpStage(name, operation) {
+    if (!bpJob) return;
+    try { bpJob.stage(name, { operation: S(operation).slice(0, 160) }); } catch (e) {}
+  }
+  function bpProgress(done, total, operation) {
+    if (!bpJob) return;
+    try { bpJob.progress(Math.max(0, done), Math.max(0, total), S(operation).slice(0, 160)); } catch (e) {}
+  }
+  /* One sentence, built from what this run actually did. */
+  function bpEndText() {
+    var d = bpDelta();
+    var read = d.ok + d.failed + d.transient;
+    var added = d.added;
+    var lists = read + ' visit list' + (read === 1 ? '' : 's');
+    if (STATE.stopped && STATE.stopReason === 'no-ext') {
+      return 'MLS Assist did not answer, so nothing was read. The queue is kept and runs again after the next pull.';
+    }
+    if (STATE.stopped && STATE.stopReason === 'athena-session-lost') {
+      return 'Athena signed out part-way through. Read ' + lists + ' before stopping; sign back in and pull again.';
+    }
+    if (STATE.stopped && STATE.stopReason === 'extension-not-answering') {
+      return 'MLS Assist stopped answering after ' + lists + '. The rest stay in the queue.';
+    }
+    if (STATE.stopped) {
+      return 'Stopped after ' + lists + ' (' + S(STATE.stopReason || 'stopped') + '). ' + added + ' visit' + (added === 1 ? '' : 's') + ' filed.';
+    }
+    if (d.failed || d.transient) {
+      return 'Read ' + d.ok + ' of ' + read + ' visit lists — ' + added + ' visit' + (added === 1 ? '' : 's') +
+        ' filed; ' + (d.failed + d.transient) + ' could not be read.';
+    }
+    if (!added) return 'Checked ' + lists + ' — everything was already on file.';
+    return 'Read ' + lists + ' — ' + added + ' new visit' + (added === 1 ? '' : 's') + ' filed.';
+  }
+  function bpEnd() {
+    if (!bpJob) return '';
+    var text = bpEndText(), d = bpDelta();
+    try {
+      if (STATE.stopped && STATE.stopReason === 'no-ext') bpJob.fail({ message: text });
+      else if (STATE.stopped || d.failed || d.transient) bpJob.partial(text, d.ok);
+      else bpJob.complete(text);
+    } catch (e) {}
+    bpJob = null; bpBase = null;
+    return text;
+  }
+  /* The auto-start that finds nothing must not be silent. */
+  function bpEdgeVerdict(added, runState) {
+    var rows = (runState && runState.rows) ? runState.rows.length : 0;
+    if (added > 0) {
+      STATE.lastAutoVerdict = { at: Date.now(), queued: added, reason: 'queued', rows: rows };
+      return STATE.lastAutoVerdict;
+    }
+    var reason = rows ? 'all-already-have-visits' : 'pull-returned-no-patients';
+    STATE.lastAutoVerdict = { at: Date.now(), queued: 0, reason: reason, rows: rows };
+    STATE.lastAutoVerdict.said = bfQuiet(rows
+      ? 'Visit top-up: nothing to do - every patient in that pull already has visits on file.'
+      : 'Visit top-up: nothing to do - that pull returned no patients to check.');
+    return STATE.lastAutoVerdict;
+  }
+  /* ===== end p1-backfill-progress-1.0.0 ================================== */
+
   /* ---------------------------- extension ping ---------------------------- */
   function pingExt() {
     return new Promise(function (resolve) {
@@ -3192,6 +3313,10 @@
       STATE.running = true;
       say('Visit backfill: ' + STATE.queue.length + ' patient' + (STATE.queue.length === 1 ? '' : 's') + ' queued (fewer than ' + CFG.minVisits + ' visits on file).');
       statusLine(STATE.queue.length + ' queued');
+      /* p1-backfill-progress-1.0.0: this run owns a named job from here on */
+      var bpPlanned = STATE.queue.length;
+      bpStart(bpPlanned);
+      bpStage('Opening each patient in Athena', 'Checking MLS Assist is answering');
       var pong = await pingExt();
       if (!pong) {
         stop('no-ext');
@@ -3203,6 +3328,8 @@
         var item = STATE.queue.shift();
         STATE.current = item.name;
         statusLine('reading ' + item.name + ' (' + STATE.queue.length + ' left)');
+        /* p1-backfill-progress-1.0.0: counts only, never the name */
+        bpStage('Reading their visit list', 'Visit list ' + (bpDelta().done + 1) + ' of ' + Math.max(bpPlanned, bpDelta().done + 1 + STATE.queue.length));
         var row;
         try { row = await backfillOne(item); }
         catch (e) { row = { name: item.name, key: item.key, ok: false, added: 0, skipped: 0, reason: 'error:' + ((e && e.message) || e), definitive: false }; }
@@ -3259,11 +3386,18 @@
           if (SESSION_LOST.test(row.reason)) stop('athena-session-lost');
         }
         statusLine(row.name + ' - ' + (row.ok ? ('+' + row.added + ' visit' + (row.added === 1 ? '' : 's') + (row.skipped ? ' (' + row.skipped + ' already on file)' : '')) : row.reason));
+        /* p1-backfill-progress-1.0.0: real counts, no invented total */
+        bpProgress(bpDelta().done, Math.max(bpPlanned, bpDelta().done + STATE.queue.length),
+          bpDelta().added ? (bpDelta().added + ' visit' + (bpDelta().added === 1 ? '' : 's') + ' filed so far') : '');
+        if (bpDelta().added) bpStage('Filing new visits', bpDelta().added + ' visit' + (bpDelta().added === 1 ? '' : 's') + ' filed so far');
         try { if (window.__mlsVisitUI && window.__mlsVisitUI.render) window.__mlsVisitUI.render(true); } catch (e) {}
         try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
         await wait(CFG.paceMs);
       }
       STATE.running = false; STATE.current = ''; _pumping = false;
+      /* p1-backfill-progress-1.0.0: the run's own honest ending, before the
+         legacy engineering lines below */
+      STATE.lastProgressText = bpEnd();
       var tail = STATE.stopped ? ('stopped (' + STATE.stopReason + ')') : 'finished';
       statusLine(tail + ' - ' + STATE.ok + ' ok, ' + STATE.failed + ' failed, ' + STATE.transient + ' retryable, ' + STATE.visitsAdded + ' visits added');
       say('Visit backfill ' + tail + ': ' + STATE.ok + ' ok, ' + STATE.failed + ' failed, ' + STATE.visitsAdded + ' visit' + (STATE.visitsAdded === 1 ? '' : 's') + ' added. Summaries stay click-driven (no AI spend).');
@@ -3359,7 +3493,13 @@
       var now = !!st.running;
       if (was && !now) {
         STATE.lastEdgeAt = Date.now();
+        /* p1-backfill-progress-1.0.0: an auto-start that finds nothing must
+           say so instead of running silently to no effect. Measured off the
+           queue itself (enqueueFromRun's own line is kept byte-for-byte, and
+           the pump it kicks cannot shift a patient before its first await). */
+        var bpQueueWas = STATE.queue.length;
         try { enqueueFromRun((st.rows || []).slice()); } catch (e) {}
+        try { bpEdgeVerdict(Math.max(0, STATE.queue.length - bpQueueWas), st); } catch (e2) {}
       }
       was = now;
     }
@@ -3392,6 +3532,14 @@
     _ingestVisits: ingestVisits,
     _bridgeVisits: bridgeVisits,
     _anyPullRunning: anyPullRunning,
+    /* ===== p1-backfill-progress-1.0.0: the named job and the empty-verdict,
+       exported so a suite can EXECUTE them rather than grep for them. ===== */
+    progressText: bpEndText,
+    autoVerdict: function () { return STATE.lastAutoVerdict || null; },
+    _bpStart: bpStart,
+    _bpEnd: bpEnd,
+    _bpEdgeVerdict: bpEdgeVerdict,
+    /* ===== end p1-backfill-progress-1.0.0 ===== */
     /* ===== p1-backfill-footer-1.0.0: the PHI-free receipt, the copyable raw
        diagnostics, and the pieces a suite must EXECUTE rather than grep. ===== */
     footerText: bfFootText,

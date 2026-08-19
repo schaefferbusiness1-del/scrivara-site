@@ -53405,5 +53405,238 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
 })();
 </script>
 <!-- ===== end pullone-1.0.0 ================================================ -->
+<!-- ===== pshonest-1.0.0 — a checkmark must mean work that happened ========
+     Owner, 2026-08-18, from his own screenshot of the progress widget:
+
+       Pulling patient history · Done · 15s · repeated 2 times
+       ✓ Opening charts in Athena  ✓ Reading each chart  ✓ Analyzing pulled history
+       No charts were read.
+
+     REPRODUCED IN THIS LANE from the app's own traffic, byte for byte
+     including "15s" and "repeated 2 times" (tests/1p-progress-honesty-contract
+     replays it): the visit-list top-up in the b121 pack auto-starts on the
+     falling edge of EVERY pull (its own watcher, no user press) and posts
+     one mlsAppReadVisits per patient. feat_mls_progress_stages.js — SHARED
+     production, untouchable from this lane — turns any such post into a
+     "history:pull" job, and nothing else in that flow is observable to it, so
+     12s of quiet plus a 3s grace end the job at current 0, stageIndex 0,
+     status completed. Its renderer then paints a ✓ on EVERY stage from the
+     status alone:
+
+         var doneAll = !ACTIVE_STATUS[j.status] && (j.status === 'completed');
+
+     Three claims of work that measurably did not happen, under an honest
+     subtitle that says so. This block is the PRESENTATION half of the fix and
+     changes only what the panel paints:
+
+       1. a terminal count-bearing job whose own count is 0 renders its stages
+          NOT done (○, amber) instead of ✓. Production's subtitle is untouched.
+       2. that card gains ONE line naming what really ran and what to do.
+       3. when the honest "Filling in missing visit lists" job (the source half,
+          p1-backfill-progress-1.0.0 in the fork) covers the same window, the
+          manufactured card is a duplicate of it and is hidden — one activity,
+          one card.
+
+     A count > 0 is never touched: a pull that really read charts keeps its ✓.
+     Fail-open — no store, no panel, or a card that matches no job and this
+     block changes nothing. ES5, additive, reversible. -->
+<style id="mlsPsHonestCss">
+  /* (1,2,1) beats the module's own (1,1,1) base rule whichever order they land in */
+  #mlsPsPanel .ps-stages li.ps-notdone{ color:#92400E; }
+  #mlsPsPanel .ps-stages li.ps-notdone .ps-mk{ color:#B98900; }
+  #mlsPsPanel .ps-why{ margin-top:5px; color:#92400E; font-weight:600; line-height:1.45; }
+  #mlsPsPanel .ps-job[data-mls-dupe="1"]{ display:none; }
+  body.theme-dark #mlsPsPanel .ps-stages li.ps-notdone{ color:#E8B44A; }
+  body.theme-dark #mlsPsPanel .ps-stages li.ps-notdone .ps-mk{ color:#E8B44A; }
+  body.theme-dark #mlsPsPanel .ps-why{ color:#E8B44A; }
+</style>
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'pshonest-1.0.0';
+  try { if (window.__mlsPsHonest) return; } catch (e0) { return; }
+
+  var PANEL_ID = 'mlsPsPanel';
+  var TERMINAL = { completed: 1, partial: 1, failed: 1, canceled: 1, timed_out: 1 };
+  /* Only flows whose stages describe PER-ITEM work, where a zero count proves
+     the item work did not happen. A schedule read with zero appointments still
+     really read the day, so schedule_pull is deliberately NOT here. */
+  var COUNT_BEARING = { history_pull: 1 };
+  var applied = 0, dupes = 0, passes = 0, busy = false, timer = 0, enabled = true;
+  var observers = [];
+  var reads = [];   /* read-only bridge evidence: when a visit-LIST read ran */
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function lb() {
+    var l = safe(function () { return window.__mlsLoadingCalm; }, null);
+    return (l && l.installed && typeof l.snapshot === 'function') ? l : null;
+  }
+  function txt(node) { return node ? String(node.textContent || '') : ''; }
+
+  /* The same bridge the progress module listens to, read only: nothing here
+     posts, answers, or rewrites a message. */
+  function onMessage(ev) {
+    var d = ev && ev.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.source !== 'mls-app') return;
+    if (d.type !== 'mlsAppReadVisits' && d.type !== 'mlsAppReadAllVisits') return;
+    reads.push({ at: Date.now(), type: d.type, vbf: (d.__vbf === 1 || d.__vbf === true) });
+    if (reads.length > 12) reads.shift();
+  }
+  /* A read that arrived AFTER the job ended cannot be what the job was: the
+     window closes at finishedAt, and only its opening carries a tolerance for
+     the message that created the job. */
+  function readInWindow(job) {
+    var from = (Number(job.startedAt) || 0) - 1500;
+    var to = (Number(job.finishedAt) || Date.now());
+    for (var i = reads.length - 1; i >= 0; i--) {
+      if (reads[i].at >= from && reads[i].at <= to) return reads[i];
+    }
+    return null;
+  }
+  function overlaps(a, b) {
+    var a0 = Number(a.startedAt) || 0, a1 = Number(a.finishedAt) || Date.now();
+    var b0 = Number(b.startedAt) || 0, b1 = Number(b.finishedAt) || Date.now();
+    return a0 <= b1 && b0 <= a1;
+  }
+  /* A card's identity is exactly the module's own grouping signature:
+     label | status | message. Same signature = same numbers, so a grouped
+     card can never be matched to a job with a different count. */
+  function jobForCard(row, jobs) {
+    var label = txt(row.querySelector('.ps-label'));
+    var chip = row.querySelector('.ps-chipst');
+    var m = chip ? String(chip.className || '').match(/ps-chipst\s+([A-Za-z_]+)/) : null;
+    var status = m ? m[1] : '';
+    var msg = txt(row.querySelector('.ps-msg'));
+    if (!label || !status) return null;
+    for (var i = 0; i < jobs.length; i++) {
+      var j = jobs[i];
+      if (String(j.status || '') !== status) continue;
+      if (String(j.label || j.kind || 'Working') !== label) continue;
+      if (String(j.message || '') !== msg) continue;
+      return j;
+    }
+    return null;
+  }
+  /* Say what the bridge actually showed, and never blame the doctor's Athena
+     tab for a job that was simply not a chart pull. */
+  function whyText(job) {
+    var ev = readInWindow(job);
+    if (ev && ev.vbf) {
+      return 'No chart pull ran here. This was the background visit-list top-up, which reads one patient’s list of visits and never opens a chart. To read charts, use “Pull day histories”.';
+    }
+    if (ev && ev.type === 'mlsAppReadAllVisits') {
+      return 'This followed a pull’s visit-body reads. No chart was opened for it, so there is nothing here to count — the pull’s own card carries that result.';
+    }
+    if (ev) {
+      return 'This read a patient’s visit list, not their charts — nothing was opened or analyzed.';
+    }
+    return 'Nothing was read. Leave exactly one signed-in athenaOne tab open on the schedule, then start the pull again.';
+  }
+
+  function pass() {
+    if (busy || !enabled) return 0;
+    var panel = document.getElementById(PANEL_ID);
+    if (!panel) return 0;
+    var api = lb(); if (!api) return 0;
+    var jobs = safe(function () { return api.snapshot(); }, []) || [];
+    if (!jobs.length) return 0;
+    var honest = [], i;
+    for (i = 0; i < jobs.length; i++) if (String(jobs[i].kind) === 'visits_backfill') honest.push(jobs[i]);
+    var touched = 0;
+    busy = true;
+    try {
+      var rows = panel.querySelectorAll('.ps-job');
+      for (i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var job = jobForCard(row, jobs);
+        if (!job || !TERMINAL[job.status] || !COUNT_BEARING[job.kind]) continue;
+        if ((Number(job.current) || 0) > 0) continue;   /* real work: leave every ✓ alone */
+        var dupe = false, k;
+        for (k = 0; k < honest.length; k++) { if (overlaps(job, honest[k])) { dupe = true; break; } }
+        if (dupe) {
+          if (row.getAttribute('data-mls-dupe') !== '1') { row.setAttribute('data-mls-dupe', '1'); dupes++; touched++; }
+          continue;
+        }
+        var lis = row.querySelectorAll('.ps-stages li'), changed = false;
+        for (k = 0; k < lis.length; k++) {
+          var li = lis[k], mk = li.querySelector('.ps-mk');
+          if (mk && mk.textContent !== '○') { mk.textContent = '○'; changed = true; }
+          if (li.className !== 'ps-notdone') { li.className = 'ps-notdone'; changed = true; }
+        }
+        if (!row.querySelector('.ps-why')) {
+          var why = document.createElement('div');
+          why.className = 'ps-why';
+          why.textContent = whyText(job);
+          row.appendChild(why);
+          changed = true;
+        }
+        if (changed) { applied++; touched++; }
+      }
+      passes++;
+    } catch (e) {} finally { busy = false; }
+    return touched;
+  }
+
+  function schedule() { if (timer) return; timer = setTimeout(function () { timer = 0; pass(); }, 60); }
+  function watchPanel() {
+    var panel = document.getElementById(PANEL_ID);
+    if (!panel || panel.__mlsPsHonest) return false;
+    panel.__mlsPsHonest = 1;
+    var mo = safe(function () {
+      var m = new MutationObserver(function () { if (!busy) schedule(); });
+      m.observe(panel, { childList: true, subtree: true });
+      return m;
+    }, null);
+    if (mo) observers.push(mo);
+    schedule();
+    return true;
+  }
+  function arm() {
+    watchPanel();
+    /* the panel is created lazily, the first time the doctor opens it */
+    var host = document.body || document.documentElement;
+    var mo = safe(function () {
+      var m = new MutationObserver(function () { watchPanel(); });
+      m.observe(host, { childList: true });
+      return m;
+    }, null);
+    if (mo) observers.push(mo);
+    [400, 1200, 2600].forEach(function (ms) { setTimeout(watchPanel, ms); });
+  }
+  try { window.addEventListener('message', onMessage, false); } catch (e1) {}
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsPsHonest = {
+    version: VERSION,
+    pass: pass,
+    applied: function () { return applied; },
+    dupesHidden: function () { return dupes; },
+    passes: function () { return passes; },
+    enabled: function () { return enabled; },
+    setEnabled: function (v) { enabled = !!v; if (enabled) schedule(); return enabled; },
+    _reads: function () { return reads.slice(); },
+    _why: whyText,
+    revert: function () {
+      for (var i = 0; i < observers.length; i++) safe(function () { observers[i].disconnect(); });
+      observers = [];
+      enabled = false;
+      safe(function () { window.removeEventListener('message', onMessage, false); });
+      safe(function () { if (timer) clearTimeout(timer); }); timer = 0;
+      safe(function () { var s = document.getElementById('mlsPsHonestCss'); if (s) s.disabled = true; });
+      safe(function () {
+        var panel = document.getElementById(PANEL_ID); if (!panel) return;
+        var w = panel.querySelectorAll('.ps-why'), k;
+        for (k = w.length - 1; k >= 0; k--) w[k].parentNode.removeChild(w[k]);
+        var d = panel.querySelectorAll('.ps-job[data-mls-dupe]');
+        for (k = 0; k < d.length; k++) d[k].removeAttribute('data-mls-dupe');
+      });
+      try { delete window.__mlsPsHonest; } catch (e) { window.__mlsPsHonest = undefined; }
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end pshonest-1.0.0 ============================================== -->
 </body>
 </html>
