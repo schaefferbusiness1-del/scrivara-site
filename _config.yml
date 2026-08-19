@@ -172,6 +172,13 @@ include:
   # Exact nested path. Do not include a bare "cloned" directory basename here:
   # Jekyll treats those broadly enough to reopen unrelated files.
   - "cloned/index.html"
+
+  # 2026-08-19 — /wyzant, the product page for Wyzant Local. A SEPARATE product
+  # from the clinical platform: a standalone Windows app, no shared code, no app
+  # script, no service worker. It is published from this repo only because the
+  # domain is here. Exact nested path, for the same reason the two above are:
+  # a bare "wyzant" basename would reopen unrelated files.
+  - "wyzant/index.html"
   - "terms.html"
 
   # Minimum reviewed phone-recorder runtime. The recorder HTML is above; these

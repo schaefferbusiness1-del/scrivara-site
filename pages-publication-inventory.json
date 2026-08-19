@@ -377,6 +377,7 @@
     "vendor/pdf-6.1.200.min.mjs",
     "vendor/pdf.worker-6.1.200.min.mjs",
     "vendor/xlsx.full-0.20.3.min.js",
-    "vendor_qrcode.js"
+    "vendor_qrcode.js",
+    "wyzant/index.html"
   ]
 }

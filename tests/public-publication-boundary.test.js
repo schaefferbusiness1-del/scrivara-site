@@ -74,6 +74,16 @@ const CLONED_LIVE_HTML = [
   'cloned/index.html'
 ];
 
+/* The /wyzant product page (2026-08-19). A marketing page for Wyzant Local, a
+   SEPARATE desktop product that shares no code with the clinical app: it loads
+   no app script, registers no service worker, and links to nothing in the
+   production runtime. Classified on its own for the same reason as the two
+   lists above — it must never widen PUBLIC_HTML/ASSETS, and therefore never
+   widen the production service-worker allowlist, on its own behalf. */
+const WYZANT_HTML = [
+  'wyzant/index.html'
+];
+
 /* Derived 1:1 from P1_PREVIEW_ASSETS below. Jekyll publishes .js by default
    (only HTML/ZIP/BIN/staging-JS and named modules are excluded), so — exactly
    like the 1p forks — these need an inventory entry and no include line. */
@@ -285,6 +295,7 @@ assert(/^\d+(?:\.\d+){1,3}$/.test(String(extensionRelease.version || '')), 'publ
 const vendorTraversalIncludes = ['vendor', ...PUBLIC_VENDOR_ASSETS.map((rel) => path.posix.basename(rel))];
 const p1TraversalIncludes = ['1p/legal/index.html', '1p/marketing/index.html'];
 const clonedTraversalIncludes = ['cloned/index.html'];
+const wyzantTraversalIncludes = [...WYZANT_HTML];
 /* Owner directive 2026-07-20: the exact stamped 3.0.22 release ships publicly;
  * its bytes are digest-pinned below. Candidates stay excluded. */
 const RELEASED_PACKAGE = 'MLS_Assist_v3.0.64.zip';
@@ -296,7 +307,7 @@ const RELEASED_PACKAGE = 'MLS_Assist_v3.0.64.zip';
    across three production deploys. Its bytes are digest-asserted EQUAL to the
    zip below, so this widens the published surface by zero new content. */
 const RELEASED_PACKAGE_MIRROR = 'MLS_Assist_v3.0.64.bin';
-const expectedIncludes = [...PUBLIC_HTML, ...P1_PREVIEW_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, ...p1TraversalIncludes, ...clonedTraversalIncludes, RELEASED_PACKAGE, RELEASED_PACKAGE_MIRROR, 'CNAME'];
+const expectedIncludes = [...PUBLIC_HTML, ...P1_PREVIEW_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, ...p1TraversalIncludes, ...clonedTraversalIncludes, ...wyzantTraversalIncludes, RELEASED_PACKAGE, RELEASED_PACKAGE_MIRROR, 'CNAME'];
 assert.deepStrictEqual(sorted(includes), sorted(expectedIncludes), 'Jekyll include allowlist must exactly match reviewed public HTML/assets, the digest-pinned released package, and CNAME');
 
 const diskHtml = fs.readdirSync(root).filter((name) => /\.html$/i.test(name));
@@ -424,6 +435,19 @@ for (const page of CLONED_LIVE_HTML) {
   assert(includeSet.has(path.posix.basename(page)), `cloned live page basename is not explicitly allowlisted for publication: ${page}`);
   assert(includeSet.has(page), `cloned live page lacks its exact nested publication include: ${page}`);
   assert(inventorySet.has(page), `cloned live page is absent from the generated-site publication inventory: ${page}`);
+}
+for (const page of WYZANT_HTML) {
+  assert(!PUBLIC_HTML.includes(page), `wyzant product page leaked into the production navigation allowlist: ${page}`);
+  assert(fs.existsSync(path.join(root, page)), `wyzant product page is missing: ${page}`);
+  assert(includeSet.has(path.posix.basename(page)), `wyzant product page basename is not explicitly allowlisted for publication: ${page}`);
+  assert(includeSet.has(page), `wyzant product page lacks its exact nested publication include: ${page}`);
+  assert(inventorySet.has(page), `wyzant product page is absent from the generated-site publication inventory: ${page}`);
+  /* It is a separate product, so it must not reach into the clinical runtime.
+     A stray <script src="mls-connect.js"> here would put app code on a page
+     that never registers a service worker to manage it. */
+  const html = read(page);
+  assert(!/<script[^>]+src=/i.test(html), `wyzant product page must load no external script: ${page}`);
+  assert(!/serviceWorker/i.test(html), `wyzant product page must not register a service worker: ${page}`);
 }
 for (const asset of CLONED_ASSETS) {
   assert(!PUBLIC_ASSETS.includes(asset), `cloned runtime asset leaked into the production runtime allowlist: ${asset}`);

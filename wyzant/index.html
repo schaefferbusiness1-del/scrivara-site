@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!-- Deliberately not indexed. This page advertises automating a third-party
+     platform, and it sits on the domain of a medical company; leaving it out of
+     search keeps the two apart. Change to "index,follow" if that is wanted. -->
+<meta name="robots" content="noindex,nofollow">
+<title>Wyzant Local — the tutoring job board, applied to for you</title>
+<meta name="description" content="A Windows app that reads the Wyzant job board, screens it, prices each posting and writes the application. The model runs on your own PC or your own API key.">
+<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/icon-16.png">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<style>
+/* Palette and type borrowed from the MLS Scribe "Editorial Calm" system so this
+   page reads as part of the same estate, without claiming to be that product. */
+:root{
+  --paper:#FBFAF7; --alt:#F4F2EC; --card:#FFFFFF;
+  --line:#E7E5DD; --line-soft:#E4E1D8;
+  --ink:#1A211C; --ink2:#55605A; --muted:#636B66;
+  --deep:#204034; --green:#2E6A4B; --green-mid:#3B7C5A; --mint:#8FD8BE;
+  --wash:#EAF1EE; --wash2:#F6FBF8;
+  --warn-t:#B07636; --warn-b:#FCF8EF; --warn-l:#EADCC2;
+  --bad-t:#B23B3B; --bad-b:#FBF1EF;
+  --serif:'Newsreader',Georgia,serif;
+  --sans:'Public Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:ui-monospace,'Cascadia Code',Consolas,monospace;
+  --sh-card:0 1px 2px rgba(20,33,28,.04);
+  --sh-btn:0 8px 20px -8px rgba(32,64,52,.6);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px}
+h1,h2,h3{margin:0}
+a{color:var(--green)}
+section{padding:64px 0;border-top:1px solid var(--line)}
+section:first-of-type{border-top:none}
+.eyebrow{display:block;font-size:12px;font-weight:700;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--green);margin-bottom:12px}
+h2.d{font-family:var(--serif);font-weight:500;font-size:31px;line-height:1.15;
+  letter-spacing:-.015em}
+p{margin:0}
+p+p{margin-top:14px}
+.lede{font-size:17px;color:var(--ink2);max-width:640px;margin-top:14px}
+
+/* header */
+header.site{background:#FCFBF8;border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:10}
+header .nav{display:flex;align-items:center;gap:16px;height:62px}
+.brand{display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink)}
+.brand .mk{display:inline-flex;width:28px;height:28px;border-radius:8px;
+  background:var(--deep);align-items:center;justify-content:center}
+.brand b{font-size:17px;letter-spacing:-.01em}
+.brand .sub{font-size:12px;color:var(--muted);font-weight:400}
+header .spacer{margin-left:auto}
+header .back{font-size:14px;color:var(--ink2);text-decoration:none}
+header .back:hover{color:var(--green)}
+
+/* hero */
+.hero{padding:64px 0 56px}
+.hero h1{font-family:var(--serif);font-weight:500;font-size:46px;line-height:1.08;
+  letter-spacing:-.02em;max-width:760px}
+.hero .lede{font-size:18px;margin-top:18px}
+.pillrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
+.pill{font-size:12.5px;font-weight:600;color:var(--deep);background:var(--wash);
+  border:1px solid #D6E4DD;border-radius:999px;padding:5px 12px}
+
+/* notice */
+.notice{background:var(--warn-b);border:1px solid var(--warn-l);border-left:4px solid #C79A4E;
+  border-radius:12px;padding:20px 22px;margin-top:32px}
+.notice h3{font-size:15px;font-weight:700;color:var(--warn-t);margin-bottom:8px}
+.notice p{font-size:14.5px;color:#6D5A3A}
+
+/* cards + tables */
+.grid{display:grid;gap:14px;margin-top:34px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:20px 22px;box-shadow:var(--sh-card)}
+.card h3{font-size:15.5px;font-weight:700;margin-bottom:7px}
+.card p{font-size:14.5px;color:var(--ink2)}
+table{width:100%;border-collapse:collapse;margin-top:26px;font-size:14.5px}
+th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line-soft);
+  vertical-align:top}
+th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  font-weight:700;border-bottom:1px solid var(--line)}
+td.who{white-space:nowrap;font-weight:600}
+.by-code{color:var(--deep)}
+.by-model{color:#7659BA}
+.tblwrap{overflow-x:auto}
+
+/* flow */
+.flow{margin-top:30px;background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:22px;box-shadow:var(--sh-card);overflow-x:auto}
+.flow pre{margin:0;font-family:var(--mono);font-size:13px;line-height:1.75;
+  color:var(--ink2);white-space:pre}
+
+/* lists */
+ul.ticks{margin:22px 0 0;padding:0;list-style:none}
+ul.ticks li{position:relative;padding-left:26px;margin-bottom:11px;font-size:15px;
+  color:var(--ink2)}
+ul.ticks li:before{content:"";position:absolute;left:4px;top:8px;width:8px;height:8px;
+  border-radius:50%;background:var(--mint);border:1px solid #6FC4A6}
+ul.ticks li b{color:var(--ink);font-weight:600}
+ul.nots li:before{background:#F0D6D2;border-color:#D9A6A0}
+
+/* cta */
+.cta{background:var(--wash2);border:1px solid #D6E4DD;border-radius:16px;
+  padding:34px;margin-top:8px;text-align:center}
+.cta h2{font-family:var(--serif);font-weight:500;font-size:27px;letter-spacing:-.015em}
+.cta p{margin-top:12px;color:var(--ink2);max-width:520px;margin-left:auto;margin-right:auto}
+.btn{display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+  font-weight:600;border-radius:11px;font-size:15.5px;padding:14px 26px;margin-top:22px;
+  background:linear-gradient(135deg,var(--green) 0%,var(--deep) 82%);color:#fff;
+  box-shadow:var(--sh-btn);transition:background .2s ease}
+.btn:hover{background:linear-gradient(135deg,var(--green-mid) 0%,#28503f 82%)}
+
+footer{border-top:1px solid var(--line);padding:34px 0 46px;background:#FCFBF8}
+footer p{font-size:13.5px;color:var(--muted)}
+footer .links{margin-top:12px;display:flex;flex-wrap:wrap;gap:16px}
+footer .links a{font-size:13.5px;text-decoration:none}
+footer .links a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:6px}
+
+@media(max-width:620px){
+  .hero h1{font-size:34px}
+  h2.d{font-size:25px}
+  section{padding:48px 0}
+}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <span class="mk"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13h4l2-6 3 11 2.4-7 1.6 3H21" stroke="#8FD8BE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <b>Wyzant Local</b>
+    </a>
+    <span class="spacer"></span>
+    <a class="back" href="/">&larr; MLS Scribe</a>
+  </div>
+</header>
+
+<div class="wrap hero">
+  <h1>The tutoring job board, screened and applied to while you get on with your day.</h1>
+  <p class="lede">A Windows app that reads the Wyzant job board, decides which postings are
+  worth answering, prices each one, writes the application and submits it. It runs unattended
+  on a timer. The model can run <b>entirely on your own PC</b> &mdash; free, private, no key
+  &mdash; or on <b>your own API key</b>.</p>
+  <div class="pillrow">
+    <span class="pill">Runs on your own GPU</span>
+    <span class="pill">No account, no subscription to us</span>
+    <span class="pill">Starts in dry run</span>
+    <span class="pill">Windows + Chrome</span>
+  </div>
+
+  <div class="notice">
+    <h3>Read this before anything else</h3>
+    <p>Automating job applications is very likely against Wyzant&rsquo;s Terms of Service, and
+    accounts that do it can be suspended. That is a decision for whoever runs it, and the
+    consequences land on their account &mdash; not ours. This is stated here for the same
+    reason it is the first thing in the manual: you should be able to decide against it
+    before you install anything.</p>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">How it works</span>
+    <h2 class="d">Three pieces, all of them on your machine.</h2>
+    <p class="lede">There is no cloud service in the middle. The only thing that leaves your
+    PC is the job application itself, and that goes to Wyzant from inside the Chrome you are
+    already signed into.</p>
+
+    <div class="flow"><pre>  Wyzant Local.cmd            the app window
+        |
+        v
+  Node server (127.0.0.1:7788)  &lt;---&gt;  a model
+        |                                Ollama on this PC    (free, no key)
+        |                                Claude               (your API key)
+        |                                any OpenAI-style API  (your API key)
+        v
+  Chrome extension "Wyzant Local Bridge"
+        |
+        v
+  wyzant.com, using the session you are already signed into</pre></div>
+
+    <ul class="ticks">
+      <li><b>Your API key never leaves the PC</b> and is never displayed back in the window,
+      even to you.</li>
+      <li><b>It starts in dry run.</b> It reads, screens, prices and writes, then stops without
+      submitting. Watch a few. When the messages look like something you would send, switch
+      to live.</li>
+      <li><b>Unattended is a real mode.</b> Tick on a timer, resume after a reboot, start
+      hidden at logon. Open the window when you feel like watching.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">The design decision that matters</span>
+    <h2 class="d">The model is not trusted with anything that has to be right every time.</h2>
+    <p class="lede">Screening, skipping and pricing are lists and arithmetic, so they are code.
+    A list cannot hallucinate. The model is asked for the two things that genuinely need
+    judgement, and both are checked afterwards.</p>
+
+    <div class="tblwrap">
+    <table>
+      <thead><tr><th>Decision</th><th>Decided by</th></tr></thead>
+      <tbody>
+        <tr><td>Is the subject one you actually take</td><td class="who by-code">code</td></tr>
+        <tr><td>Is it a skip &mdash; wrong level, agency posting, a subject you are not cleared for</td><td class="who by-code">code</td></tr>
+        <tr><td>Is it a partial-subject fit, where the whole posting should be skipped</td><td class="who by-code">code</td></tr>
+        <tr><td>Have we already applied to this job</td><td class="who by-code">code</td></tr>
+        <tr><td>Which rate band the posting falls in</td><td class="who by-code">code</td></tr>
+        <tr><td>The exact rate inside that band</td><td class="who by-model">model, then clamped</td></tr>
+        <tr><td>The message text</td><td class="who by-model">model, then validated</td></tr>
+        <tr><td>Length, plain ASCII, no money talk, no credential boasting, the days and hours you allow, no invented subject, correct grammar</td><td class="who by-code">code</td></tr>
+        <tr><td>Fetch the posting, build the form, submit</td><td class="who by-code">code</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <p class="lede" style="margin-top:26px">A message that breaks a rule is handed back to the
+    model <i>with the exact complaint</i> and rewritten, up to a configured number of attempts.
+    After that the posting is skipped. A skipped posting costs nothing; a bad application goes
+    to a real person.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Guards</span>
+    <h2 class="d">Every one of these exists because something went wrong once.</h2>
+    <div class="grid g2">
+      <div class="card">
+        <h3>Priced off the posting, never the form</h3>
+        <p>The application form carries a suggested rate that simply mirrors your profile. It
+        has read the same number against four different postings. The bid comes from the
+        posting&rsquo;s own recommendation instead.</p>
+      </div>
+      <div class="card">
+        <h3>Fetch and submit are one call</h3>
+        <p>Splitting them lost a real application once &mdash; the form token dies in the gap.
+        They stay fused.</p>
+      </div>
+      <div class="card">
+        <h3>The job id must match</h3>
+        <p>If the form that comes back is not for the posting we meant to answer, it aborts
+        rather than submitting to the wrong one.</p>
+      </div>
+      <div class="card">
+        <h3>The duplicate guard is the job id</h3>
+        <p>Not a running count. Two runs can overlap, so a count that moved may have been
+        moved by something else.</p>
+      </div>
+      <div class="card">
+        <h3>Subject drift is rejected</h3>
+        <p>The model once answered a general chemistry posting with &ldquo;organic chemistry
+        mechanisms.&rdquo; A course it names must appear in the posting.</p>
+      </div>
+      <div class="card">
+        <h3>A bad setting reports itself</h3>
+        <p>A rate band outside the hard floor or ceiling is flagged when you save it, because
+        the hard limits win and the edit would otherwise look accepted and do nothing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="eyebrow">Scope</span>
+    <h2 class="d">What it does not do.</h2>
+    <p class="lede">It reads the board and applies. That is the whole job.</p>
+    <ul class="ticks nots">
+      <li>It does not touch your inbox or answer messages.</li>
+      <li>It does not book lessons.</li>
+      <li>It does not send follow-ups.</li>
+      <li>It does not edit your profile or your rates.</li>
+    </ul>
+    <p class="lede" style="margin-top:24px">You need Windows, Chrome, and either
+    <a href="https://ollama.com">Ollama</a> with a model pulled locally, or an API key you
+    already pay for. There is a self-test you can run that checks the whole chain and touches
+    nothing on wyzant.com.</p>
+  </div>
+</section>
+
+<section style="border-top:none;padding-top:8px">
+  <div class="wrap">
+    <div class="cta">
+      <h2>Interested?</h2>
+      <p>It ships as the app, the Chrome bridge and the manual. Tell me a bit about how you
+      tutor and which subjects you are cleared for, and I will tell you whether it is a fit.</p>
+      <a class="btn" href="mailto:michael@mlsscribe.com?subject=Wyzant%20Local">Email michael@mlsscribe.com</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>Wyzant Local is a standalone desktop tool. It is not affiliated with, endorsed by, or
+    connected to Wyzant, and &ldquo;Wyzant&rdquo; is used here only to describe what the tool
+    reads. It is a separate product from the MLS Scribe clinical platform on this domain.</p>
+    <div class="links">
+      <a href="/">MLS Scribe</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="/terms.html">Terms</a>
+      <a href="mailto:michael@mlsscribe.com">Contact</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
