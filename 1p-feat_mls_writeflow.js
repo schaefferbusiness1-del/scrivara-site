@@ -2121,7 +2121,7 @@
     try {
       if (!row || row.capability !== 'blocked') return false;
       if (S(row.reason).indexOf(WFBIND_IDENTITY_BLOCK) === 0) return false;
-      if (!/appointment ID|appointment id|not bound|exact visit/i.test(S(row.reason))) return false;
+      if (!/appointment id|not bound|exact visit/i.test(S(row.reason))) return false;
       if (p1VisitBound(manifest && manifest.visit)) return false;
       return wfbindCandidateDays(manifest).length > 0;
     } catch (e) { return false; }
