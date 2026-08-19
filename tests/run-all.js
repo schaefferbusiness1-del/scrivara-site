@@ -295,6 +295,7 @@ const tests = [
      report, the read-only goto/open/re-check ladder, PROBE ONLY end to end
      with ONE enforcement point, and the op note -> review hand-off. */
   '1p-athena-write-readiness-and-probe-only.test.js',
+  '1p-write-fidelity-contract.test.js',
   '1p-writeflow-bind-cure.test.js',
   '1p-writeflow-booking-row-fallback.test.js',
   '1p-writeflow-stale-review-rebind.test.js',
