@@ -56,6 +56,12 @@ const tests = [
      throw NotFoundError and take the whole working surface with it. */
   '1p-visit-lane-survives-contract.test.js',
   '1p-visitflow-transcript-contract.test.js',
+  /* The progress widget stops claiming work it did not do (owner screenshot,
+     2026-08-18: "Pulling patient history · ✓✓✓ · No charts were read"). The
+     manufactured card is reproduced from the app's own bridge traffic, the
+     baseline defect is measured with the block disabled on the same page, and
+     a pull that really read charts keeps every ✓. */
+  '1p-progress-honesty-contract.test.js',
   '1p-uimap-dockspace-contract.test.js',
   '1p-quietnotify-contract.test.js',
   /* The Patients-room PROFILE, 2026-08-17. Four readers answered "how many
