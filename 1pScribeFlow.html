@@ -54832,5 +54832,214 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
 })();
 </script>
 <!-- ===== end pshonest-1.0.0 ============================================== -->
+<!-- ===== cvfull-1.0.0 — "copy every visit" must mean the notes, not the gist =
+     Owner, 2026-08-19: "copy every visit from athenaOne must take EVERY
+     VISIT's full text, not just the summary."
+
+     MEASURED FIRST, because the control he names does something else entirely.
+     "Copy every visit from athenaOne" (feat_visits.js:2400, unforked, not this
+     lane's to edit) is an IMPORTER, not a clipboard control — it contains no
+     clipboard code at all. Its primary path already refuses anything less than
+     full bodies (feat_visits.js:2354 demands receipt.bodyComplete AND
+     receipt.fullDetail), so the note text really is pulled and really is
+     stored. What happens NEXT is where the summary took over: the import ends
+     in summarizeAll(), and every encounter card then renders v.aiSummary
+     (feat_visits.js:1969). The only route out to the full text was the
+     per-encounter "Copy" button — one visit, one press, fifteen times for a
+     patient with fifteen visits. A doctor who presses "copy every visit" and
+     gets fifteen one-line gists is reading exactly what the product did.
+
+     So this is the copy that button was mistaken for, and it is COMPOSED, not
+     reinvented: the records come from histview's forPatient(), which is
+     pvr-1.0.0's ONE resolver; each body comes from textBlock(rec,{source:true}),
+     the very builder the single-visit copy already uses; the glance table is
+     chronTable(). Nothing here re-reads a store, re-counts a visit, or invents
+     a fifth reading of what a visit is.
+
+     It also refuses to overstate itself. An encounter whose body never landed
+     is indexOnly; one whose text did not survive cleaning is illegible; one
+     that parsed to nothing is empty. All three are COUNTED and NAMED, in the
+     copied text and in the status line (W4: an omission is only honest when it
+     is visible). "Copied 15 encounters — 15 with the full note" is a claim
+     this module can prove; "copied every visit" is not, so it is never
+     printed.
+     ===================================================================== -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'cvfull-1.0.0';
+  var off = false, obs = null, lastCopy = null;
+  var BTN_ID = 'hxCopyAll', SAY_ID = 'hxCopyAllSay', WRAP_ID = 'hxCopyAllRow';
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function enc() { return safe(function () { return window.__mlsEncView || null; }, null); }
+  function activeP() { return safe(function () { return (typeof activePatient === 'function' && activePatient()) || null; }, null); }
+  /* The ONE resolver, through the room that already owns these records. */
+  function viewNow() {
+    var api = enc(), p = activeP();
+    if (!api || !p || typeof api.forPatient !== 'function') return null;
+    var v = safe(function () { return api.forPatient(p); }, null);
+    return (v && v.ok) ? v : null;
+  }
+  /* Four honest grades. Everything that is not 'full' must be said out loud. */
+  function grade(rec) {
+    if (!rec) return 'empty';
+    if (rec.indexOnly) return 'indexOnly';
+    if (rec.illegible) return 'illegible';
+    return (rec.sections && rec.sections.length) ? 'full' : 'empty';
+  }
+  function tally(recs) {
+    var t = { total: recs.length, full: 0, indexOnly: 0, illegible: 0, empty: 0 };
+    for (var i = 0; i < recs.length; i++) t[grade(recs[i])]++;
+    return t;
+  }
+  function gaps(t) {
+    var bits = [];
+    if (t.indexOnly) bits.push(t.indexOnly + ' index only (athenaOne stored no note text for ' + (t.indexOnly === 1 ? 'it' : 'them') + ')');
+    if (t.illegible) bits.push(t.illegible + ' not legible after cleaning');
+    if (t.empty) bits.push(t.empty + ' with no documented text');
+    return bits;
+  }
+  function tallyLine(t) {
+    var bits = [t.full + ' with the full note'].concat(gaps(t));
+    return t.total + ' encounter' + (t.total === 1 ? '' : 's') + ' — ' + bits.join(', ') + '.';
+  }
+  function oldestFirst(a, b) {
+    if (a.date && b.date) return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0);
+    if (a.date) return -1; if (b.date) return 1; return 0;
+  }
+  function compose(v, patientName) {
+    var api = enc(); if (!api || !v) return null;
+    var recs = (v.records || []).slice().sort(oldestFirst);
+    var t = tally(recs), lines = [], i;
+    lines.push(S(patientName) + ' — every encounter on this chart');
+    lines.push(tallyLine(t));
+    lines.push('');
+    if (recs.length && typeof api.chronTable === 'function') {
+      lines.push('AT A GLANCE');
+      lines.push(S(safe(function () { return api.chronTable(recs); }, '')));
+      lines.push('');
+    }
+    for (i = 0; i < recs.length; i++) {
+      lines.push(S(safe(function () { return api.textBlock(recs[i], { source: true }); }, '')));
+      lines.push('');
+    }
+    var missing = gaps(t);
+    if (missing.length) {
+      lines.push('Where a note is missing above it is missing from the record, not from this copy: ' +
+        missing.join(', ') + '. Each of those encounters still shows its date, type and provider, ' +
+        'and the stored records are unchanged.');
+    }
+    return { text: lines.join('\n').replace(/\n{3,}/g, '\n\n'), tally: t, count: recs.length };
+  }
+  function say(msg) {
+    var el = byId(SAY_ID); if (el) el.textContent = S(msg);
+  }
+  /* Same two-path write the single-visit copy uses, for the same reason. */
+  function toClipboard(text, done) {
+    var fell = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      var okc = safe(function () { return document.execCommand('copy'); }, false);
+      safe(function () { ta.parentNode.removeChild(ta); });
+      done(okc === true);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      safe(function () {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, fell);
+      }, fell);
+    } else fell();
+  }
+  function press() {
+    var v = viewNow();
+    if (!v || !v.records.length) { say('There are no encounters on this chart to copy.'); return false; }
+    var p = activeP();
+    var built = compose(v, (p && p.name) || 'This patient');
+    if (!built || !built.text) { say('MLS could not build the copy. Nothing was changed.'); return false; }
+    lastCopy = built;
+    /* The status line stays PHI-free — same rule the single-visit copy keeps. */
+    toClipboard(built.text, function (ok) {
+      if (!ok) { say('This browser would not let MLS copy it.'); return; }
+      var bits = gaps(built.tally);
+      say('Copied ' + built.tally.total + ' encounter' + (built.tally.total === 1 ? '' : 's') + ' — ' +
+        built.tally.full + ' with the full note' + (bits.length ? ', ' + bits.join(', ') : '') + '.');
+    });
+    return true;
+  }
+  function mount() {
+    if (off) return false;
+    var host = byId('mlsHxSection');
+    if (!host || host.hidden) return false;
+    if (host.querySelector('#' + WRAP_ID)) return true; /* stops the observer recursing */
+    var v = viewNow();
+    if (!v || !v.records.length) return false;
+    var wrap = document.createElement('div');
+    wrap.id = WRAP_ID;
+    wrap.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 9px';
+    var b = document.createElement('button');
+    b.type = 'button'; b.id = BTN_ID;
+    b.textContent = 'Copy all ' + v.records.length + ' encounter' + (v.records.length === 1 ? '' : 's') + ' — full notes';
+    b.title = 'Puts every encounter on this chart on the clipboard with its FULL note text, not the one-line summaries. ' +
+      'Any encounter with no stored note text is counted and named in the copy, never silently dropped.';
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:8px;background:#205c43;color:#fff;' +
+      'font-weight:700;font-size:12px;cursor:pointer';
+    b.addEventListener('click', function () { safe(press); }, false);
+    var s = document.createElement('span');
+    s.id = SAY_ID;
+    s.setAttribute('role', 'status');
+    s.setAttribute('aria-live', 'polite');
+    s.style.cssText = 'font-size:12px;color:#52675c';
+    wrap.appendChild(b); wrap.appendChild(s);
+    var lead = host.querySelector('.hx-lead');
+    if (lead && lead.parentNode === host && lead.nextSibling) host.insertBefore(wrap, lead.nextSibling);
+    else if (lead && lead.parentNode === host) host.appendChild(wrap);
+    else host.appendChild(wrap);
+    return true;
+  }
+  function arm() {
+    safe(mount);
+    var host = byId('mlsHxSection');
+    if (host && typeof MutationObserver === 'function') {
+      obs = new MutationObserver(function () { if (!off) safe(mount); });
+      safe(function () { obs.observe(host, { childList: true }); });
+    }
+    /* The room can be built after this script runs, and it replaces its own
+       innerHTML on every repaint, so an observer bound to a node that does not
+       exist yet would never fire. A slow heartbeat re-binds it. */
+    safe(function () {
+      setInterval(function () {
+        if (off) return;
+        var h = byId('mlsHxSection');
+        if (!h) return;
+        if (!obs && typeof MutationObserver === 'function') {
+          obs = new MutationObserver(function () { if (!off) safe(mount); });
+          safe(function () { obs.observe(h, { childList: true }); });
+        }
+        safe(mount);
+      }, 1500);
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  window.__mlsCvFull = {
+    installed: true, version: VERSION,
+    copy: press,
+    last: function () { return lastCopy; },
+    _test: { compose: compose, tally: tally, tallyLine: tallyLine, gaps: gaps, grade: grade,
+             mount: mount, press: press, view: viewNow, btnId: BTN_ID, sayId: SAY_ID, wrapId: WRAP_ID },
+    revert: function () {
+      off = true;
+      safe(function () { if (obs) obs.disconnect(); });
+      obs = null;
+      var w = byId(WRAP_ID);
+      if (w && w.parentNode) safe(function () { w.parentNode.removeChild(w); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end cvfull-1.0.0 ================================================= -->
 </body>
 </html>
