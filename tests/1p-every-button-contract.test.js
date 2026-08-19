@@ -21,6 +21,13 @@
    failure carrying the control's id, its label, and the surface it was found
    on. The dead list must print empty or this suite fails and prints all of it.
 
+   TWO KINDS OF CONTROL, TWO CONTRACTS. The rule above is for ACTION controls -
+   buttons, tabs, disclosures, anything clicked. A VALUE control (a field, a
+   dropdown, a checkbox) is judged on whether it HELD what was put into it,
+   because a field that waits for Save is supposed to change nothing when you
+   touch it. MEASURED: judging both the same way reported the new-appointment
+   Duration dropdown as dead when it was behaving exactly as designed.
+
    THIS SUITE IS NOT ABOUT ANY ONE LANE. It is the standing law: a future lane
    that ships a dead button breaks this, loudly, by name.
 
@@ -250,7 +257,14 @@ function harness() {
     });
   } catch (e) { W.errs.push('nav-hook:' + String(e && e.message).slice(0, 60)); }
   window.addEventListener('hashchange', function () { W.navs++; });
-  window.addEventListener('error', function (e) { W.errs.push(String((e && e.message) || '').slice(0, 140)); });
+  /* The stack, not just the message: "Maximum call stack size exceeded" names
+     no culprit, and the first frames are the difference between a defect in the
+     app and a defect in this harness. */
+  window.addEventListener('error', function (e) {
+    var st = '';
+    try { st = (e && e.error && e.error.stack) ? String(e.error.stack).split('\n').slice(0, 7).join(' | ') : ''; } catch (x) {}
+    W.errs.push(String((e && e.message) || '').slice(0, 120) + (st ? ' @@ ' + st.slice(0, 420) : ''));
+  });
   /* A link that really navigates, a form that really posts, or a blob download
      takes the page out from under the walk and every control after it reports
      dead. All three ARE the control working, so all three are counted and then
@@ -326,6 +340,15 @@ function harness() {
       if (!id) return false;
       return window.__eb.openModals().indexOf(id) >= 0;
     },
+    /* What a value control is holding now. A field is judged on whether it TOOK
+       what was put in it, not on whether the page moved - see judge(). */
+    probeUsed: function () { return W.probe == null ? '' : String(W.probe); },
+    valueOf: function (sel) {
+      var el = document.querySelector(sel);
+      if (!el) return null;
+      if (el.type === 'checkbox' || el.type === 'radio') return 'checked:' + String(!!el.checked);
+      return String(el.value == null ? '' : el.value);
+    },
     bootGateUp: function () {
       var g = document.getElementById('sfGateLoading');
       return !!(g && visible(g)) || document.documentElement.classList.contains('mls-secure-loading');
@@ -400,14 +423,37 @@ function harness() {
         if (tag === 'input' && (el.type === 'checkbox' || el.type === 'radio')) { el.click(); return 'toggled'; }
         if (tag === 'input' && el.type === 'file') return 'file';
         if (tag === 'select') {
-          var next = Array.prototype.slice.call(el.options).filter(function (o) { return o.value !== el.value; })[0];
+          var opts = Array.prototype.slice.call(el.options).filter(function (o) { return o.value !== el.value; });
+          /* Prefer an option that actually carries a value: a "None" row with
+             value="" would otherwise read as a field that refused to hold it. */
+          var next = opts.filter(function (o) { return o.value !== ''; })[0] || opts[0];
           if (!next) return 'one-option';
           el.value = next.value;
+          W.probe = next.value;
           el.dispatchEvent(new Event('change', { bubbles: true }));
           return 'changed';
         }
         if (tag === 'input' || tag === 'textarea') {
-          el.focus(); el.value = 'EBPROBE';
+          /* A PROBE THE FIELD CAN LEGALLY HOLD. MEASURED: typing 'EBPROBE'
+             into every field reported THIRTEEN date, time, month and number
+             inputs as refusing their value - calJump, cpFrom, calNewDate,
+             mlsEpV_heightIn, sbv2AgeMin and the rest. The browser was right to
+             refuse it; a date input cannot hold a word. The harness was asking
+             them for something no user could type either. */
+          var probe = 'EBPROBE';
+          var ty = (el.type || '').toLowerCase();
+          if (ty === 'number' || ty === 'range') probe = '7';
+          else if (ty === 'date') probe = '2026-08-19';
+          else if (ty === 'month') probe = '2026-08';
+          else if (ty === 'week') probe = '2026-W34';
+          else if (ty === 'time') probe = '09:30';
+          else if (ty === 'datetime-local') probe = '2026-08-19T09:30';
+          else if (ty === 'email') probe = 'probe@example.test';
+          else if (ty === 'url') probe = 'https://example.test';
+          else if (ty === 'tel') probe = '5551234567';
+          else if (ty === 'color') probe = '#336699';
+          W.probe = probe;
+          el.focus(); el.value = probe;
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
           /* .blur() alone does not run an onblur handler when the element was
@@ -667,9 +713,29 @@ async function judge(page, c, amb, surfaceLabel) {
     if (ev2.any) { r = r2; ev = ev2; }
     await page.evaluate((keys) => window.__eb.setAmbient(keys), Array.from(amb));
   }
+  /* ACTION OR VALUE, AND THEY ARE NOT JUDGED THE SAME WAY.
+
+     MEASURED: #calNewDur - the Duration <select> in the new-appointment dialog
+     - was reported dead. It is not. Setting it fires change, nothing else
+     happens, and nothing SHOULD: the field is read when Save is pressed. A
+     field that waits for Save is supposed to change nothing when you touch it,
+     so demanding a visible reaction from one is demanding a defect.
+
+     This is the same line the Settings inventory already drew
+     (tests/1p-settings-redesign-contract.test.js), and it is drawn here for the
+     same reason. An ACTION control - a button, a tab, a disclosure, anything
+     clicked - must answer. A VALUE control must simply HOLD what was put into
+     it; that is its whole job, and it is asserted separately below. */
+  const kind = /^(typed|changed|toggled|one-option)$/.test(r.did) ? 'value' : 'action';
+  let took = null;
+  if (kind === 'value' && r.did !== 'one-option') {
+    const v = await page.evaluate((s) => window.__eb.valueOf(s), c.sel);
+    const probe = await page.evaluate(() => window.__eb.probeUsed());
+    took = (v !== null && v !== '') && (r.did !== 'typed' || v === probe);
+  }
   return {
     surface: surfaceLabel, sel: c.sel, id: c.id, label: c.label, tag: c.tag,
-    did: r.did, how: ev.how, alive: ev.any, secondTry,
+    did: r.did, kind, took, how: ev.how, alive: ev.any, secondTry,
     said: (r.w.lastAsk || '').slice(0, 70), errs: r.errs
   };
 }
@@ -917,13 +983,28 @@ async function runtime() {
     eq(threw.length, 0, `pressing these controls threw: ${JSON.stringify(threw.slice(0, 10).map((c) => (c.id || c.label) + ' [' + c.surface + '] :: ' + (c.errs || []).join('|')))}`);
 
     /* ---- THE LAW -------------------------------------------------------- */
-    const dead = inventory.filter((c) => !c.alive);
+    const actions = inventory.filter((c) => c.kind === 'action');
+    const values = inventory.filter((c) => c.kind === 'value');
+    const dead = actions.filter((c) => !c.alive);
+    measured.actionControls = actions.length;
+    measured.valueControls = values.length;
     measured.dead = dead.length;
-    measured.aliveBy = inventory.reduce((a, c) => { a[c.how] = (a[c.how] || 0) + 1; return a; }, {});
+    measured.aliveBy = actions.reduce((a, c) => { a[c.how] = (a[c.how] || 0) + 1; return a; }, {});
     measured.rescuedBySecondPress = inventory.filter((c) => c.secondTry && c.alive).length;
+    ok(actions.length >= 150, `only ${actions.length} action controls were pressed; the walk is not exercising the shell`);
     eq(dead.length, 0,
       'THESE CONTROLS ARE ON THE SCREEN AND PRESSING THEM DID NOTHING OBSERVABLE ANYWHERE IN THE DOCUMENT:\n'
       + dead.map((c) => `    ${c.id || '(no id)'}  "${c.label}"  <${c.tag}>  on ${c.surface}  [${c.sel}]`).join('\n'));
+
+    /* A value control is held to its own promise instead: it must keep what was
+       put into it. A dropdown with nothing else to choose is excluded and
+       named - that is a property of this harness's data, not of the control. */
+    const refused = values.filter((c) => c.took === false);
+    measured.valuesRefused = refused.length;
+    measured.oneOptionSelects = values.filter((c) => c.did === 'one-option').map((c) => c.id || c.label).slice(0, 12);
+    eq(refused.length, 0,
+      'THESE FIELDS WOULD NOT HOLD WHAT WAS PUT INTO THEM:\n'
+      + refused.map((c) => `    ${c.id || '(no id)'}  "${c.label}"  <${c.tag}>  on ${c.surface}`).join('\n'));
 
     /* ---- the costly controls, each on its own fresh boot ----------------- */
     const costlyResults = [];

@@ -54567,8 +54567,9 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
 
   var off = false;
   var live = [];
-  var armed = {};
+  var armedNow = [];
   var pressed = null;
+  var pressClear = null;
   /* Work registers its canceller in its own synchronous prologue - i.e. BEFORE
      it has suspended, so before begin() has made a token for it. Hold it here
      and let begin() claim it. */
@@ -54745,8 +54746,21 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
     wrapped.__mlsBusyAll = true;
     wrapped.__mlsBusyAllOrig = fn;
     var ok = safe(function () { window[name] = wrapped; return window[name] === wrapped; }, false);
-    if (ok) { armed[name] = 1; stats.armed++; }
+    if (ok) { armedNow.push({ n: name, prev: fn }); stats.armed++; }
     return ok;
+  }
+
+  /* Hand every global back exactly as it was found - see onClickCapture. */
+  function restoreOne(a) {
+    safe(function () {
+      /* only ever take back what is still ours */
+      var cur = window[a.n];
+      if (cur && cur.__mlsBusyAll) window[a.n] = a.prev;
+    });
+  }
+  function disarmAll() {
+    for (var i = armedNow.length - 1; i >= 0; i--) restoreOne(armedNow[i]);
+    armedNow.length = 0;
   }
 
   function controlFrom(t) {
@@ -54772,6 +54786,31 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
     }
     pressed = el;
     pendingCancel = null;
+    /* ATTRIBUTION MUST NOT OUTLIVE THE CLICK THAT MADE IT, AND NEITHER MAY THE
+       WRAP. MEASURED twice, both times as damage this block did on its own:
+
+         1p-ui-shape-contract went red. A handler armed by one click stayed
+         armed, so a LATER PROGRAMMATIC call to that global - another module, a
+         timer, a harness calling openOpPrep() directly - still saw the last
+         clicked element in `pressed` and painted the busy state onto it. An
+         unrelated control was disabled, and the double-fire guard then ate
+         real clicks on it until the cap.
+
+         Clicking a day in the calendar month grid died with "Maximum call
+         stack size exceeded". feat_mls_caldedupe_render.js and
+         1p-mls-connect.js BOTH wrap calOpenDay, each capturing whatever the
+         global held when its pass ran; a third wrapper left standing in that
+         chain lets it close into a loop, recursing w -> w -> w between the two
+         files. The shell alone never does this and this block alone never does
+         it - the block PLUS somebody else's re-wrap does, which is why it
+         surfaced intermittently and only after a walk had clicked enough.
+
+       An inline onclick runs synchronously inside this dispatch, so clearing
+       and disarming on the very next task keeps every genuine press, drops
+       every stale attribution, and leaves nothing of ours in anyone else's
+       wrap chain. */
+    if (pressClear) clearTimeout(pressClear);
+    pressClear = setTimeout(function () { pressed = null; pendingCancel = null; disarmAll(); }, 0);
     var a = S(el.getAttribute('onclick'));
     var m;
     NAME_RE.lastIndex = 0;
@@ -54805,14 +54844,7 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
       off = true;
       safe(function () { document.removeEventListener('click', onClickCapture, true); });
       while (live.length) end(live[0]);
-      for (var n in armed) {
-        if (!Object.prototype.hasOwnProperty.call(armed, n)) continue;
-        safe(function () {
-          var w = window[n];
-          if (w && w.__mlsBusyAll && w.__mlsBusyAllOrig) window[n] = w.__mlsBusyAllOrig;
-        });
-      }
-      armed = {};
+      disarmAll();
       safe(function () {
         var c = document.getElementById('busyallCss');
         if (c && c.parentNode) c.parentNode.removeChild(c);
