@@ -503,6 +503,40 @@ const measured = {};
     }
     await page.setViewportSize({ width: 1366, height: 900 });
 
+    /* --------------------------------------------------------------------
+       10. THE LAST CONTROL: Change, and the roster it opens. Kept for the end
+           because re-binding is fail-closed and discards the draft above.
+       -------------------------------------------------------------------- */
+    measured.change = await page.evaluate(() => {
+      const before = !!document.getElementById('mlsP1LegalRosterSearch');
+      const b = document.getElementById('mlsP1LegalChange');
+      if (!b) return { button: false };
+      b.click();
+      const box = document.getElementById('mlsP1LegalRosterSearch');
+      if (box) { box.value = 'Bea'; box.dispatchEvent(new Event('input', { bubbles: true })); }
+      const results = document.getElementById('mlsP1LegalRosterResults');
+      return { button: true, searchBefore: before, search: !!box,
+        placeholder: box ? box.getAttribute('placeholder') : '',
+        hits: results ? [].map.call(results.querySelectorAll('[data-bind-id]'), (n) => n.getAttribute('data-bind-id')) : [],
+        label: results ? String(results.textContent || '').slice(0, 60) : '' };
+    });
+    ok(measured.change.button, 'the bound header has no Change control');
+    ok(measured.change.search, 'Change opened no way to search this account');
+    ok(/Search this account by name, DOB or MRN/.test(measured.change.placeholder),
+      'the roster search does not say what it searches: ' + JSON.stringify(measured.change.placeholder));
+    deep(measured.change.hits, ['lg-2'],
+      'searching the roster for a patient on file returned ' + JSON.stringify(measured.change.hits));
+    /* A search that matches nobody must say so rather than show an empty box. */
+    measured.noMatch = await page.evaluate(() => {
+      const box = document.getElementById('mlsP1LegalRosterSearch');
+      box.value = 'Zzzznotapatient'; box.dispatchEvent(new Event('input', { bubbles: true }));
+      const results = document.getElementById('mlsP1LegalRosterResults');
+      return String((results && results.textContent) || '');
+    });
+    ok(/No patient in this account matches/.test(measured.noMatch),
+      'an empty roster search said nothing: ' + JSON.stringify(measured.noMatch.slice(0, 80)));
+    ok(/nothing is guessed/.test(measured.noMatch), 'the empty roster result does not say it guessed nothing');
+
     /* -------------------------------------------------------------------- */
     deep(pageErrors, [], 'the page threw while the workspace was being driven');
     measured.pageErrors = pageErrors.length;
@@ -517,7 +551,7 @@ const measured = {};
     readStop: { reading: measured.reading, afterStop: measured.afterStop, after100s: measured.after100s.gates },
     chronRows: measured.chronRows,
     draftChars: measured.draft.length, sections: measured.sectionOrder.length,
-    word: measured.word, widths: measured.widths, pageErrors: measured.pageErrors
+    word: measured.word, change: measured.change, widths: measured.widths, pageErrors: measured.pageErrors
   }));
   console.log('PASS 1p-legal-e2e-press: ' + checks + ' checks — the Legal / IME workspace driven end to end in a real ' +
     'browser: opened from the dock Tools row, every control pressed, an EMR read started AND stopped (with the ' +
