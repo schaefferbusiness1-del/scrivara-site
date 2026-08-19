@@ -14384,10 +14384,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
       var head = document.createElement('p');
       head.className = 'set-head';
-      head.textContent = '🎛️ MLS Controls';
+      /* t2settings-1.0.0: this panel is five display switches, and while its
+         heading said "MLS Controls" the organizer's classifier filed it under
+         its own group and drew a whole "Advanced" tab for it — the one word
+         that tells a front-desk reader to stay out, over the voice button and
+         birthday chips. The heading is the classifier's only input, so naming
+         the panel what it actually is puts it on the Display tab and retires
+         the Advanced tab. Nothing is hidden and no id changes. */
+      head.textContent = '🎛️ More display options';
       var desc = document.createElement('p');
       desc.className = 'set-desc';
-      desc.textContent = 'Optional extras for this browser: the voice button, quick-pick count, birthday chips, the legacy guided-visit view, and your MLS Assist extension version.';
+      desc.textContent = 'Optional extras for this browser: the voice button, how many quick-pick patients to show, birthday chips, and which MLS Assist version this browser is running.';
       rc.insertBefore(desc, rc.firstChild);
       rc.insertBefore(head, rc.firstChild);
 
@@ -34351,16 +34358,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { k:'booking link patient scheduling share', name:'Patient booking link', where:'Patients workspace -> scheduling tools', how:'Generate the practice booking link and share it with patients.', route:'view:patients' },
     { k:'marketing reputation review google post ads listing', name:'Free Marketing workspace', where:'Tools -> Marketing', how:'Build local, editable practice listing, privacy-safe review reply, neutral campaign, and ads-budget drafts. Copy or download them; nothing publishes, sends, connects, or spends.', route:'reach:reviews' },
     { k:'settings account access api key name specialty', name:'Account and access settings', where:'Settings -> Account & security -> Account & access', how:'Manage account identity and AI access in the first Settings section.', route:'settings:account' },
-    { k:'practice provider credentials npi clinic address phone logo', name:'Practice and provider settings', where:'Settings -> Practice & provider', how:'Manage the provider identity and practice details used on generated documents.', route:'settings:practice' },
+    { k:'practice provider credentials npi clinic address phone logo', name:'Practice and provider settings', where:'Settings -> Your practice & letterhead', how:'Manage the provider identity and practice details used on generated documents.', route:'settings:practice' },
     { k:'note defaults format model comment style', name:'Note defaults', where:'Settings -> Notes & AI -> Note defaults', how:'Set the default note format, model, comment, and documentation style.', route:'settings:notes' },
     { k:'ai personalization preferences instructions', name:'AI personalization', where:'Settings -> Notes & AI -> AI personalization', how:'Control the instructions and defaults used when MLS drafts clinical work.', route:'settings:notes' },
     { k:'billing codes icd cpt hcpcs code table upload practice coding', name:'Practice billing codes (ICD-10 / CPT)', where:'Settings -> Notes & AI -> Practice billing codes', how:'Upload or paste your practice’s diagnosis→ICD-10 and procedure→CPT table. When set, every place MLS drafts or fills codes (notes, template fills, op-notes, studies) uses your exact codes; with no table the AI fills its best current standard code.', route:'settings:notes' },
     { k:'display theme text size compact layout', name:'Display settings', where:'Settings -> Display', how:'Change theme, text size, and layout density.', route:'settings:display' },
     { k:'provider preferences signature followup intake questions', name:'Provider preferences', where:'Settings -> Notes & AI -> Provider preferences', how:'Set signature, follow-up, and patient-intake preferences.', route:'settings:notes' },
-    { k:'features toggles enable disable', name:'Feature settings', where:'Settings -> Features & navigation -> Features', how:'Turn optional app behavior on or off from the single Features section.', route:'settings:features' },
-    { k:'app tabs navigation enable calendar analysis admin', name:'App tab settings', where:'Settings -> Features & navigation -> App tabs', how:'Choose which released advanced navigation tabs are visible.', route:'settings:features' },
+    { k:'features toggles enable disable', name:'Feature settings', where:'Settings -> Extra tools & tabs -> Features', how:'Turn optional app behavior on or off from the single Features section.', route:'settings:features' },
+    { k:'app tabs navigation enable calendar analysis admin', name:'App tab settings', where:'Settings -> Extra tools & tabs -> App tabs', how:'Choose which released advanced navigation tabs are visible.', route:'settings:features' },
     { k:'security privacy password change two factor 2fa logout idle', name:'Security and privacy', where:'Settings -> Account & security -> Security & privacy', how:'Change password, manage two-factor authentication, logout confirmation, and idle timeout.', route:'settings:account', common:true },
-    { k:'integrations emr athena connect api', name:'EMR integrations', where:'Settings -> Integrations (or Visit -> Connect to EMR)', how:'Review connection status and EMR integration options in one place.', route:'settings:integrations' },
+    { k:'integrations emr athena connect api', name:'EMR integrations', where:'Settings -> Connections & integrations (or Visit -> Connect to EMR)', how:'Review connection status and EMR integration options in one place.', route:'settings:integrations' },
     { k:'analysis reports productivity outcomes metrics', name:'Practice analysis', where:'Analysis tab - appears automatically for clinician accounts; there is no user toggle', how:'Review the available analysis cards with the displayed data scope.', route:'view:analysis' },
     { k:'phone microphone qr mobile recording', name:'Phone microphone', where:'Visit easy recorder -> phone microphone option', how:'Open the QR code, scan it with the phone, and keep recording bound to the same patient visit.', route:'view:visit' },
     { k:'dot phrases shortcuts normal exam ros precautions', name:'Dot phrases', where:'Visit easy recorder -> transcript -> Dot phrases', how:'Insert or manage reusable phrases while recording or editing the transcript.', route:'view:visit' },
@@ -34697,9 +34704,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var MAP = [
     { k: 'voice copilot microphone talk', name: '🎙️ MLS Copilot Voice', where: 'Bottom-left button', how: 'Tap it and just talk — "start a visit for Adam", "generate the note". Red pulse = listening. It no longer opens the chat panel; it acts directly.' },
     { k: 'assistant chat help ask', name: 'MLS Assistant', where: 'Bottom-left "MLS Assistant" button', how: 'One assistant for everything: schedule questions, patient loads, athena status. Has its own 🎤 inside.' },
-    { k: 'google business profile reputation reviews listing', name: '🌟 Google Business Profile', where: 'Settings → MLS Controls → Reputation', how: 'Connect YOUR Google account, MLS drafts the listing from your practice data, you approve each change before anything publishes.' },
-    { k: 'settings controls toggles preferences', name: '🎛 MLS Controls', where: 'Settings (gear) → MLS Controls', how: 'Every new feature has a switch here: voice, tunnel mode, birthdays, quick-pick size, friendly errors.' },
-    { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown/hidden in MLS Controls.' },
+    { k: 'google business profile reputation reviews listing', name: '🌟 Google Business Profile', where: 'Settings → What you see → More display options', how: 'Connect YOUR Google account, MLS drafts the listing from your practice data, you approve each change before anything publishes.' },
+    { k: 'settings controls toggles preferences', name: '🎛 More display options', where: 'Settings (gear) → What you see', how: 'Every new feature has a switch here: voice, tunnel mode, birthdays, quick-pick size, friendly errors.' },
+    { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown or hidden under Settings -> What you see.' },
     { k: 'guide tour how to help', name: '📖 How-to guide + tour', where: 'Top bar ❓ Help / Menu → How-To Guide', how: 'The one current guide; the spotlight tour walks the real UI.' },
     { k: 'qr phone mobile record', name: '📱 Phone recording', where: 'Patient page — phone mic button', how: 'Click it to SHOW the QR; scan with your phone to record there (crash-proof, auto-retry).' },
     { k: 'send athena writeback emr sign billing save', name: 'Review Athena actions', where: 'Visit flow step 4 / Athena review', how: 'See every destination. The reviewed note write and Save Draft each require an exact-encounter check and separate confirmation. Billing, orders, prescriptions, signature, attestation, and claim submission are review-only here and are completed by you in Athena.' },
@@ -34716,7 +34723,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var ql = q.toLowerCase();
         var hit = MAP.find(function (m2) { return m2.k.split(' ').some(function (w) { return ql.indexOf(w) >= 0; }); });
         if (hit) return hit.name + ' — ' + hit.where + '. ' + hit.how;
-        return 'New in MLS: ' + MAP.map(function (m2) { return m2.name; }).join(' · ') + '. Ask me about any of them, or open Settings → 🎛 MLS Controls.';
+        return 'New in MLS: ' + MAP.map(function (m2) { return m2.name; }).join(' · ') + '. Ask me about any of them, or open Settings → What you see.';
       });
     }
   } catch (e) {}
@@ -52929,8 +52936,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<p class="set-desc" style="margin:2px 0 10px;color:#79837C">Separate from the question above, because it is a separate question. <b>Automatic</b> gives a phone the simple layout and a computer the full one. Choose a side to override that on this device only — useful for previewing the phone screens from your desk, or for using the whole workspace on a tablet.</p>' +
         '<div style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 4px">' +
         '<button type="button" id="mlsDrRename" style="' + segBtnCss() + '">✎ Rename this device</button>' +
-        '<button type="button" id="mlsDrRefresh" style="' + segBtnCss() + '">↻ Refresh</button>' +
+        /* t2settings-1.0.0: this and the API-key list's "↻ Refresh" sat on the
+           same tab under the same name. Each says what it refreshes. */
+        '<button type="button" id="mlsDrRefresh" aria-label="Refresh your devices" style="' + segBtnCss() + '">↻ Refresh devices</button>' +
         '</div>' +
+        /* t2settings-1.0.0: ↻ Refresh sent a heartbeat and re-drew the same
+           rows, so on a machine whose devices had not changed — the normal
+           case — pressing it produced no observable difference anywhere in the
+           document and read as a dead button. It always did work; it never
+           said so. This line is the receipt, and it is true whatever the
+           refresh finds. */
+        '<p class="set-desc" id="mlsDrChecked" role="status" aria-live="polite" style="margin:4px 0 0;color:#79837C"></p>' +
         '<p class="set-desc" style="margin:10px 0 4px;color:#1A211C;font-weight:600">Your devices</p>' +
         '<div id="mlsDrRows"></div>';
       host.appendChild(card);
@@ -52962,7 +52978,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var n = await window.mlsPrompt('Name this device (shown to your other devices):', api.name());
         if (n != null && api.setName(n)) { toast('Device renamed.', 'ok'); renderPanelRows(); }
       });
-      $('mlsDrRefresh').addEventListener('click', function () { heartbeat(); renderPanelRows(); });
+      $('mlsDrRefresh').addEventListener('click', function () {
+        heartbeat(); renderPanelRows();
+        try {
+          var when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+          var said = 'Checked just now, at ' + when + '. Anything below that has not changed is up to date.';
+          var stamp = $('mlsDrChecked');
+          if (stamp) stamp.textContent = said;
+          /* The stamp alone is not enough: MEASURED, this whole card can lay
+             out at zero height inside the scrolling pane, and then the receipt
+             is written where nobody can read it — which is how the button read
+             as dead in the first place. The toast is rendered above everything
+             and cannot be scrolled past. */
+          if (typeof window.toast === 'function') window.toast('Devices checked at ' + when + '.', 'ok');
+        } catch (e) {}
+      });
       renderPanelRows();
     } catch (e) {}
   }

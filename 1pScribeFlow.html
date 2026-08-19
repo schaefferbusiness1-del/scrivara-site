@@ -5379,7 +5379,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div style="margin-top:8px">
             <div class="row tight">
               <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="genApiKey()">＋ Generate API key</button>
-              <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()">↻ Refresh</button>
+              <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()" aria-label="Refresh the API key list">↻ Refresh keys</button>
             </div>
             <div id="newApiKeyBox" style="display:none;margin-top:10px">
               <label>Your new key — copy it now</label>
@@ -8557,7 +8557,11 @@ function renderDocPrefs(){
   }
   list.innerHTML=arr.map((p,i)=>
     '<div class="docpref-item"><span>'+esc(p)+'</span>'+
-    '<button type="button" class="docpref-x" title="Remove" onclick="removeDocPref('+i+')">×</button></div>'
+    /* t2settings-1.0.0: every one of these read "×" and nothing else, so a
+       list of five preferences offered five controls with the same name and no
+       way — by ear or by screen reader — to tell which removed which. The
+       preference itself is the name. */
+    '<button type="button" class="docpref-x" title="Remove" aria-label="Remove preference: '+esc(p)+'" onclick="removeDocPref('+i+')">×</button></div>'
   ).join('');
 }
 /* Build the PROVIDER PREFERENCES block injected into AI system prompts.
@@ -49480,6 +49484,369 @@ html #settingsModal input[type=file][disabled]{
 })();
 </script>
 <!-- ===== end clunky-settings-1.0.0 ===================================== -->
+<!-- ===== t2settings-1.0.0 — the Settings redesign (owner order, 2026-08-18)
+     "everything needs to be simple for anyone to do... fix up and redo the
+     entire Settings UI it's awful" and "if it's on the program it should work
+     — if it's there and doesn't work, make it work."
+
+     MEASURED at HEAD, 1366x900, headless Chrome, every visible control on
+     every tab pressed once from a cleared store: 108 controls, 8 tabs.
+
+       * EIGHT tabs, named in the product's vocabulary rather than a clinic's:
+         "Features & navigation", "Integrations", "Advanced". "Advanced" held
+         five switches about the voice button, birthday chips and how many
+         quick-pick patients to show — display preferences, filed under the one
+         word that tells a front-desk reader to stay out. Nothing else was
+         there: the tab existed because one runtime-built panel called itself
+         "MLS Controls".
+       * THE FOOTER READS "Save changes | Cancel" ON EVERY TAB, AND CANCEL IS
+         A LIE ON 22 OF THE 108 CONTROLS. Measured: touching #navLayoutSel,
+         #qolMslMode, #qolDockSide, #qolDockAutoHide, #qolPtLayout,
+         #qolGroupProc, #mlsShowPerformanceTools, an App-tabs checkbox,
+         #athenaFollowToggle, #setPullVisitBodies, #mlsPcTgl, a device-role or
+         layout button, any of the five controls panel switches, #swSharedToggle
+         or #defaultComment writes localStorage BEFORE Save is pressed, and
+         Cancel puts none of them back. The other 29 value controls do wait for
+         Save, exactly as the footer promises. Two save models, one footer, and
+         no way to tell which one you are looking at.
+       * TWO disclosures in the same pane both claiming to be the advanced one:
+         #advIntegrations ("Advanced integrations — setup steps, connecting
+         other systems, and bulk import") and #mlsClunkySetVendor ("For your IT
+         or scheduling vendor"). A reader looking for the setup steps guesses.
+       * FOUR routes to one install page in one pane, plus two headings that
+         both open "🔌 MLS Assist".
+       * The check-in avatar tab renders FOUR controls and all four are the
+         footer. Its pane holds "Opening your avatar setup…" and, when the
+         configuration request never answers, it holds that sentence for ever.
+         It never says it failed and offers nothing to press.
+       * #mlsRlCopy copies the setup link and says nothing, so the only way to
+         learn whether it worked is to paste somewhere else.
+
+     WHAT THIS BLOCK DOES NOT DO. It deletes no control, no id and no handler.
+     The Advanced tab is retired by RENAMING one section heading so the
+     organizer's own classifier files it under Display — never by hiding a
+     section, which is how a setting becomes unreachable with no error anywhere
+     (settings-every-section-reachable). Duplicate links are hidden, not
+     removed. The two save models are NOT unified — that is surgery on modules
+     this lane does not own — they are LABELLED, so the footer stops lying. -->
+<style id="mlsT2SettingsCss">
+/* The one thing a reader needs to know about a control that has already taken
+   effect. Deliberately quiet: it is an answer, not an alarm. */
+.mlsT2Now{
+  display:inline-block; margin-left:8px; vertical-align:middle;
+  font:700 10.5px/1.5 var(--sans, system-ui, sans-serif); letter-spacing:.2px;
+  color:#2E6A4B; background:#EDF6F1; border:1px solid #CFE6DA;
+  border-radius:999px; padding:1px 8px; white-space:nowrap;
+}
+html body.theme-dark .mlsT2Now{ color:#B9E3CD; background:#1F2A24; border-color:#31463A; }
+/* The footer sentence, in the footer, where the reader is deciding whether
+   Cancel will undo what they just did. */
+#mlsT2FootNote{
+  display:block; width:100%; order:-1; margin:0 0 8px;
+  font:400 12px/1.45 var(--sans, system-ui, sans-serif); color:var(--muted,#55605A);
+}
+html #settingsModal .modal > .row{ flex-wrap:wrap; }
+/* The vendor cards, now one level inside the single Advanced disclosure. */
+html #settingsModal #advIntegrations #mlsClunkySetVendor{ margin-top:14px; }
+/* The avatar pane's honest ending. */
+#mlsT2AvatarStall{ margin:8px 0 0; }
+#mlsT2AvatarStall .mlsT2Retry{ margin-top:8px; }
+</style>
+<script>
+/* t2settings-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsT2Settings) return;
+  var VERSION = 't2settings-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function q(sel, root) { try { return (root || document).querySelector(sel); } catch (e) { return null; } }
+  function qa(sel, root) { try { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); } catch (e) { return []; } }
+  function txt(node) { return ((node && (node.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function isOpen() { var m = el('settingsModal'); return !!(m && m.classList.contains('show')); }
+
+  /* ---- 1: SEVEN TABS, IN WORDS A CLINIC USES -------------------------
+     The organizer files a section by its heading text and labels the rail from
+     its own table. The heading is the honest lever — a heading that matches
+     none of its patterns is silently unreachable — so the runtime controls
+     panel is renamed to a heading that says what it holds, and the Advanced
+     tab stops existing because nothing is filed there any more. The rail
+     labels are then rewritten in place. The organizer rebuilds the rail only
+     when the NUMBER of groups changes and fires an event after every
+     reconcile, so this settles after one write per open. */
+  var LABELS = {
+    account: 'Account & security',
+    practice: 'Your practice & letterhead',
+    notes: 'Notes & AI',
+    avatar: 'Check-in avatar',
+    display: 'What you see',
+    features: 'Extra tools & tabs',
+    integrations: 'Connections & integrations'
+  };
+  function railNames() {
+    qa('#settingsTabBar [data-mls-settings-group]').forEach(function (tab) {
+      var want = LABELS[tab.getAttribute('data-mls-settings-group')];
+      if (!want) return;
+      var lb = q('.mls-set-lb', tab);
+      if (lb) { if (txt(lb) !== want) lb.textContent = want; }
+      else if (txt(tab) !== want) tab.textContent = want;
+    });
+  }
+  /* The runtime-built controls panel is a display panel. Renaming its heading
+     is what moves it; nothing is hidden and no id changes. */
+  function controlsHeading() {
+    var rc = el('r44Controls'); if (!rc) return;
+    var head = q('.set-head', rc);
+    if (head && /MLS Controls/i.test(txt(head))) head.textContent = '🎛️ More display options';
+    var desc = q('.set-desc', rc);
+    if (desc && /legacy guided-visit view/i.test(txt(desc))) {
+      desc.textContent = 'Optional extras for this browser: the voice button, how many quick-pick patients to show, birthday chips, and which MLS Assist version this browser is running.';
+    }
+  }
+
+  /* ---- 2: THE FOOTER STOPS LYING -------------------------------------
+     Measured 2026-08-18: every control named here wrote localStorage on change,
+     before Save. This list is a LABEL, not the proof. The suite re-presses
+     every control in the dialog and fails if a control writes on change without
+     the mark, or carries the mark without writing — so the list cannot rot
+     quietly the way a hand-kept list does. */
+  /* noteModelSel joined this list because the SUITE measured it, not because
+     anyone remembered: it is disabled on a standard account, so it reads as
+     inert, but note-model-1.1.0 writes noteModel AND the human-choice flag the
+     moment it changes — so on the Premium account where it is live, Cancel
+     never put the model back. */
+  var NOW_IDS = ['swSharedToggle', 'navLayoutSel', 'qolMslMode', 'qolDockSide', 'qolDockAutoHide',
+    'qolPtLayout', 'qolGroupProc', 'mlsShowPerformanceTools', 'athenaFollowToggle',
+    'setPullVisitBodies', 'mlsPcTgl', 'r44cVoiceSA', 'r44cVoice', 'r44cBday', 'r44cErr',
+    'r44cQp', 'defaultComment', 'noteModelSel'];
+  var NOW_HOSTS = ['#navFeatToggles', '#mlsDrCard'];
+  var NOW_WORDS = 'Applies right away';
+
+  function chipInto(host) {
+    if (!host || q('.mlsT2Now', host)) return;
+    var chip = document.createElement('span');
+    chip.className = 'mlsT2Now';
+    chip.textContent = NOW_WORDS;
+    var label = q('label', host);
+    if (label) label.appendChild(chip); else host.insertBefore(chip, host.firstChild);
+  }
+  function appliesNow() {
+    NOW_IDS.forEach(function (id) {
+      var c = el(id); if (!c) return;
+      chipInto((c.closest ? c.closest('.field') : null) || c.parentNode);
+    });
+    NOW_HOSTS.forEach(function (sel) {
+      var host = q(sel); if (!host) return;
+      var field = (host.classList && host.classList.contains('field')) ? host
+        : ((host.closest ? host.closest('.field') : null) || host);
+      chipInto(field);
+    });
+  }
+  function footNote() {
+    var row = q('#settingsModal .modal > .row'); if (!row) return;
+    var note = el('mlsT2FootNote');
+    if (!note) {
+      note = document.createElement('span');
+      note.id = 'mlsT2FootNote';
+      note.textContent = 'Save changes stores everything on this screen. Anything marked "' + NOW_WORDS +
+        '" has already taken effect, so Cancel will not undo those.';
+      row.insertBefore(note, row.firstChild);
+    } else if (note.parentNode !== row) row.insertBefore(note, row.firstChild);
+  }
+
+  /* ---- 3: ONE ADVANCED AREA ------------------------------------------
+     Two folds each called themselves the advanced one. The vendor fold moves
+     INSIDE "Advanced integrations", so the pane offers exactly one thing to
+     open and every in-app sentence that already says "Integrations → Advanced
+     integrations" stays true. #mlsClunkySetVendor keeps its id, stays closed,
+     and still holds both API cards. */
+  function oneAdvanced() {
+    var fold = el('mlsClunkySetVendor'); if (!fold) return;
+    var sum = q(':scope > summary', fold);
+    if (sum && !/^For your IT/.test(txt(sum))) { /* left as the owner block wrote it */ }
+    var adv = el('advIntegrations'); if (!adv) return;
+    var inner = q(':scope > div', adv); if (!inner) return;
+    if (fold.parentNode !== inner) { try { inner.appendChild(fold); } catch (e) {} }
+  }
+
+  /* ---- 4: ONE ROUTE TO THE INSTALL PAGE, ONE HEADING THAT NAMES IT ----
+     The link text is left exactly as written: each one sits mid-sentence, and
+     rewriting an anchor in place is how a sentence starts reading as nonsense.
+     The first is kept, the rest are hidden. */
+  function extRoutes() {
+    var modal = el('settingsModal'); if (!modal) return;
+    var kept = false;
+    qa('a[href]', modal).forEach(function (a) {
+      if (!/get-extension/i.test(a.getAttribute('href') || '')) return;
+      if (a.id === 'extDlBtn') return;
+      if (!kept && a.getAttribute('data-mls-t2-extdupe') !== '1'
+        && a.getAttribute('data-mls-clunky-dupe') !== '1') { kept = true; return; }
+      if (a.getAttribute('data-mls-t2-extdupe') === '1') return;
+      a.setAttribute('data-mls-t2-extdupe', '1');
+      a.style.setProperty('display', 'none', 'important');
+    });
+    /* Two headings began "🔌 MLS Assist". Exactly one thing is called the
+       extension; the other names the job it does. */
+    qa('label', modal).forEach(function (l) {
+      if (/MLS Assist\s*[-–—]\s*your athenaOne connection/i.test(txt(l))) {
+        l.textContent = 'How MLS talks to athenaOne';
+      }
+    });
+  }
+
+  /* ---- 5: THE AVATAR PANE ENDS IN WORDS ------------------------------
+     The host is filled by the avatar module once its configuration answers.
+     When it never answers the pane held "Opening your avatar setup…" for ever.
+     A surface that cannot finish must say so and offer the way to try again. */
+  var avatarSince = 0;
+  function avatarStall() {
+    var host = el('mlsAvSettingsHost');
+    if (!host) return;
+    var waiting = /Opening your avatar setup/i.test(txt(host));
+    if (!waiting) {
+      avatarSince = 0;
+      var gone = el('mlsT2AvatarStall');
+      if (gone && gone.parentNode) gone.parentNode.removeChild(gone);
+      return;
+    }
+    if (!avatarSince) { avatarSince = Date.now(); return; }
+    if (Date.now() - avatarSince < 9000) return;
+    if (el('mlsT2AvatarStall')) return;
+    var box = document.createElement('div');
+    box.id = 'mlsT2AvatarStall';
+    var p = document.createElement('p');
+    p.className = 'note';
+    p.textContent = 'Your check-in avatar settings did not load. They come from MLS, so this needs a connection — if you are offline or signed out, sign in and open Settings again.';
+    box.appendChild(p);
+    var retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn-ghost mlsT2Retry';
+    retry.textContent = 'Try loading the avatar settings again';
+    retry.addEventListener('click', function () {
+      avatarSince = 0;
+      var b = el('mlsT2AvatarStall');
+      if (b && b.parentNode) b.parentNode.removeChild(b);
+      try { window.dispatchEvent(new CustomEvent('mls:settings-reconciled', { detail: { open: true } })); } catch (e) {}
+      try { if (typeof window.openSettings === 'function') window.openSettings(); } catch (e) {}
+    });
+    box.appendChild(retry);
+    host.appendChild(box);
+  }
+
+  /* ---- 6: A COPY THAT SAYS IT COPIED ---------------------------------- */
+  /* Delegated at the document, not bound to the node: the device card is
+     re-rendered on a 1.6s interval, and a listener attached to the button was
+     thrown away with it — the button went on copying the link and going on
+     saying nothing. */
+  function copySays(ev) {
+    var b = ev && ev.target && ev.target.closest ? ev.target.closest('#mlsRlCopy') : null;
+    if (!b) return;
+    var was = txt(b);
+    if (was === 'Copied ✓') return;
+    b.setAttribute('data-mls-t2-copied', '1');
+    b.textContent = 'Copied ✓';
+    setTimeout(function () {
+      var now = el('mlsRlCopy');
+      if (now && txt(now) === 'Copied ✓') now.textContent = was;
+    }, 1800);
+  }
+
+  /* ---- 6b: A REMOVE THAT WOULD REMOVE NOTHING ------------------------
+     The intake editor rebuilds an empty row the instant the last one goes, so
+     pressing × on a single empty row removed a row and put an identical one
+     back: measurably nothing, from a control that looks like it does something.
+     It is offered only when there is something to remove. */
+  function intakeRemove() {
+    var editor = el('mlsIntakeQuestionEditor'); if (!editor) return;
+    var rows = qa('.mls-intake-row', editor);
+    rows.forEach(function (row) {
+      var btn = q('.mls-intake-remove', row); if (!btn) return;
+      var input = q('input', row);
+      var pointless = (rows.length === 1) && !String((input && input.value) || '').trim();
+      var hidden = btn.style.display === 'none';
+      if (pointless !== hidden) btn.style.display = pointless ? 'none' : '';
+    });
+  }
+
+  /* ---- 6c: A PULL BUTTON WHOSE ONLY ANSWER IS OFF SCREEN -------------
+     captureFromEMR() writes every word it has - 'Looking for MLS Assist...',
+     the not-responding line, the result - into #emrPullStatus, and nowhere
+     else. MEASURED: that status line, and the whole #emrPullBox around it, can
+     lay out at zero height inside the scrolling pane, so pressing the button
+     changed not one character anywhere the doctor could see. The handler was
+     always right; its answer had no audience. Every line it writes is repeated
+     as a toast, which is rendered above everything and cannot be scrolled
+     past. The text is the handler's own - nothing new is claimed here. */
+  function emrPullSpeaks(ev) {
+    var b = ev && ev.target && ev.target.closest ? ev.target.closest('#emrPullBox button') : null;
+    if (!b) return;
+    var st = el('emrPullStatus'); if (!st) return;
+    var said = '';
+    function say() {
+      var now = txt(st);
+      if (!now || now === said) return;
+      said = now;
+      try { if (typeof window.toast === 'function') window.toast(now, /could not|isn|not responding/i.test(now) ? 'err' : 'ok'); } catch (e) {}
+    }
+    var obs = null;
+    try { obs = new MutationObserver(say); obs.observe(st, { childList: true, characterData: true, subtree: true }); } catch (e) {}
+    /* the first line is written synchronously by the handler, before an
+       observer armed on this same click can ever see it */
+    setTimeout(say, 40);
+    setTimeout(function () { try { if (obs) obs.disconnect(); } catch (e) {} }, 15000);
+  }
+
+  /* ---- 7: THE LETTERHEAD IS NAMED WHERE IT LIVES ---------------------- */
+  function letterhead() {
+    var f = el('practiceName');
+    var sec = f && f.closest ? f.closest('.set-section') : null;
+    var desc = sec ? q('.set-desc', sec) : null;
+    if (!desc || /letterhead/i.test(txt(desc))) return;
+    desc.textContent = 'Your clinic and provider details. This is your letterhead: it prints at the top of reports and legal letters, and booking, patient messages and printed notes all use the same details.';
+  }
+
+  function pass() {
+    if (!isOpen()) return;
+    passes++;
+    controlsHeading(); railNames(); appliesNow(); footNote();
+    oneAdvanced(); extRoutes(); avatarStall(); intakeRemove(); letterhead();
+  }
+
+  function arm() {
+    try { window.addEventListener('mls:settings-reconciled', function () { pass(); }); } catch (e) {}
+    try {
+      var m = el('settingsModal');
+      if (m) new MutationObserver(function () { pass(); })
+        .observe(m, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    } catch (e) {}
+    [300, 900, 1800, 3600, 9200].forEach(function (ms) { setTimeout(pass, ms); });
+    try { setInterval(function () { if (isOpen()) avatarStall(); }, 2500); } catch (e) {}
+    try { document.addEventListener('click', copySays, true); } catch (e) {}
+    try { document.addEventListener('click', emrPullSpeaks, true); } catch (e) {}
+    try { document.addEventListener('click', function () { setTimeout(pass, 80); setTimeout(pass, 500); }, true); } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsT2Settings = {
+    version: VERSION, pass: pass, passes: function () { return passes; },
+    labels: LABELS, appliesNowIds: NOW_IDS, appliesNowWords: NOW_WORDS,
+    revert: function () {
+      try {
+        var s = el('mlsT2SettingsCss'); if (s) s.disabled = true;
+        qa('.mlsT2Now').forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
+        var n = el('mlsT2FootNote'); if (n && n.parentNode) n.parentNode.removeChild(n);
+        qa('[data-mls-t2-extdupe="1"]').forEach(function (a) {
+          a.style.removeProperty('display'); a.removeAttribute('data-mls-t2-extdupe');
+        });
+        var b = el('mlsT2AvatarStall'); if (b && b.parentNode) b.parentNode.removeChild(b);
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end t2settings-1.0.0 ========================================== -->
 <!-- ===== clunky-staffprep-1.0.0 — one job, one control, one honest sentence
      CLUNKY AUDIT items 11 and 13 (sev 3), 84, 85, 86, 87, 88, 89 (sev 2),
      141 (sev 1), and the observable half of 12 and 14.
