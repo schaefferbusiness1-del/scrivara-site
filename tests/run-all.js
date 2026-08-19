@@ -86,6 +86,12 @@ const tests = [
      selected patient's note. */
   '1p-opnote-rail-runtime.test.js',
   '1p-opnote-storm-perf.test.js',
+  /* A way HOME out of the full-screen room, and a room where every control is
+     a real target at every width — including the measured reason a Home button
+     mounted in the app header can never work (#appHeader carries a
+     backdrop-filter, so it is both the containing block for position:fixed and
+     a stacking context BELOW the room's own z-index). */
+  '1p-opnote-home-and-reach.test.js',
   /* The 2026-08-17/18 clunky audit's 148 confirmed defects, as properties:
      the mode/date chips reachable rather than under the header bar, one
      state-driven primary control per Staff Prep job state, the calendar's
