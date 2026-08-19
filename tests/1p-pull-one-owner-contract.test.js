@@ -106,12 +106,24 @@ function statics() {
     .replace("route:'/1p/'", "route:'/1pScribeFlow.html'");
   eq(canon(read('1p/index.html')) === read('1pScribeFlow.html'), true, 'the two /1p shells are not twins');
 
-  /* LANE NEUTRALITY */
-  for (const prod of ['ScribeFlow.html', 'mls-connect.js', 'cloned/index.html', 'cloned-mls-connect.js']) {
+  /* LANE NEUTRALITY — production only. The lane-era version of this guard also
+     required cloned/* to be clean, which was true exactly until the r23 derive
+     ran: /cloned is DERIVED from /1p, so a correct integration PROMOTES these
+     blocks into it (cloned-lane-contract owns that parity). Production proper
+     must stay clean forever. */
+  for (const prod of ['ScribeFlow.html', 'mls-connect.js']) {
     const src = read(prod);
     for (const token of ['idread-1.0.0', 'pullone-1.0.0', 'pvrPullOne', '_athenaHistoryDobSame']) {
       ok(src.indexOf(token) < 0, `${prod} carries ${token} — this lane reached production`);
     }
+  }
+  {
+    const shell = read('cloned/index.html');
+    for (const token of ['idread-1.0.0', 'pullone-1.0.0']) {
+      ok(shell.indexOf(token) >= 0, `cloned/index.html is missing ${token} — the derive did not promote this lane's shell blocks`);
+    }
+    ok(read('cloned-mls-connect.js').indexOf('pvrPullOne') >= 0,
+      'cloned-mls-connect.js is missing pvrPullOne — the derive did not promote this lane\'s connect change');
   }
 
   /* THE TWO CONTROLS FOR THE OVERLAY. Both are production modules this lane may
