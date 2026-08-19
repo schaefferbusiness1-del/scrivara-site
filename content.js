@@ -120,6 +120,64 @@
     }
   } catch (e) {}
   /* ATHENA_ACTION_V2_CLICK_GATE_END */
+  /* ra-3072: remote arm for the phone-confirmed write lane. The page may ask
+     to arm the SAME single-use, 20s action gesture the physical click path
+     sets - and only for write_note|save_draft, with the previewHash the
+     owner confirmed on the phone bound into the gesture. Everything else
+     refuses with a named reason. The four-layer sign/order/billing block is
+     not touched by this verb in any way. */
+  window.addEventListener('message', function (event) {
+    if (event.source !== window) return;
+    var data = event.data;
+    if (!data || typeof data !== 'object') return;
+    if (data.source !== 'mls-app') return;
+    if (data.type !== 'mlsAppAthenaRemoteArmV1') return;
+
+    var requestId = String(data.requestId || '');
+    var action = String(data.action || '');
+    var previewHash = String(data.previewHash || '');
+    var relayJobId = String(data.relayJobId || '');
+    var originDeviceId = String(data.originDeviceId || '');
+
+    function reply(resp) {
+      window.postMessage({
+        source: 'mls-ext',
+        type: 'mlsAppAthenaRemoteArmV1Result',
+        requestId: requestId,
+        resp: resp
+      }, window.location.origin);
+    }
+
+    if (!requestId) {
+      reply({ ok: false, armed: false, reason: 'missing-request-id' });
+      return;
+    }
+
+    if (action !== 'write_note' && action !== 'save_draft') {
+      reply({ ok: false, armed: false, reason: 'action-not-remote-armable' });
+      return;
+    }
+
+    if (!previewHash) {
+      reply({ ok: false, armed: false, reason: 'missing-preview-hash' });
+      return;
+    }
+
+    _mlsAthenaActionGesture = {
+      action: action,
+      until: Date.now() + 20000,
+      serial: _mlsGestureSerial(),
+      previewHash: previewHash.slice(0, 160),
+      rowHash: '',
+      clientOrderId: '',
+      remote: {
+        relayJobId: relayJobId.slice(0, 80),
+        originDeviceId: originDeviceId.slice(0, 80)
+      }
+    };
+
+    reply({ ok: true, armed: true });
+  }, false);
   function mlsStr(v, max) { return (typeof v === 'string') ? v.slice(0, max || 100000) : ''; }
   function mlsLoopbackOrigin(origin) {
     try {
@@ -154,7 +212,7 @@
       reply({ source: 'mls-ext', type: 'mlsBridgeBlocked', requestId: mlsStr(d.requestId || d.id, 100), resp: { ok: false, blocked: true, reason: 'loopback-synthetic-only' } });
       return;
     }
-    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true } }); return; }
+    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true } }); return; }
     if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { chrome.runtime.sendMessage({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
     if (d.type === 'mlsAppCapture') {
       try {
@@ -1738,7 +1796,7 @@
        background echoes this exact id. */
     post(origin, 'mlsAppVisitsProgress', pendingMeta(pending, { id: requestId, requestId: requestId, message: 'MLS Assist accepted the history request...' }));
     try {
-      chrome.runtime.sendMessage(pendingMeta(pending, { type: 'mlsAppAllVisitsRequest', foregroundOk: d.foregroundOk === true, foregroundBatchStart: d.foregroundBatchStart === true, hint: d.hint || {}, requestId: requestId, deadlineAt: deadlineAt }), function (res) {
+      chrome.runtime.sendMessage(pendingMeta(pending, { type: 'mlsAppAllVisitsRequest', foregroundOk: d.foregroundOk === true, foregroundBatchStart: d.foregroundBatchStart === true, initiator: String(d.initiator || '').slice(0, 40), background: d.background === true, hint: d.hint || {}, requestId: requestId, deadlineAt: deadlineAt }), function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         var target = finishPending(requestId);
         if (!target) return;

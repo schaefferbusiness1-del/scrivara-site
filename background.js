@@ -4098,7 +4098,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       let emrTab = null;
       const su = (sender && sender.tab && sender.tab.url) || '';
       if (sender && sender.tab && /^https?:/.test(su) && !isMls(su)) emrTab = sender.tab;
-      if (!emrTab) { const tabs = await chrome.tabs.query({}); emrTab = await mlsPickAthenaTab(tabs, { athenaOnly: true }); if (!emrTab) { const c = tabs.filter(t => /^https?:/.test(t.url || '') && !isMls(t.url || '') && !/athena/i.test(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); emrTab = c[0]; } } /* v1.90 */
+      /* cap-3067: athena tab or NOTHING here too - the same v1.90 most-recent-tab fallback class as the capture verb. */
+      if (!emrTab) { const tabs = await chrome.tabs.query({}); emrTab = await mlsPickAthenaTab(tabs, { athenaOnly: true }); }
       if (!emrTab) return sendResponse({ ok: false, error: 'No EMR/chart tab is open. Open the patient encounter in athenaOne, then try again.' });
       let results = [];
       /* v2.9.14 (Codex E3 classification): PROBE mode is read-only — one bounded
@@ -8713,12 +8714,45 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
     (async () => {
       try {
         const tabs = await chrome.tabs.query({});
-        const tab = (await mlsPickAthenaTab(tabs, { athenaOnly: true })) || (function () { const c = tabs.filter(t => /^https?:/.test(t.url || '') && !/mlsscribe\.com|athena/i.test(t.url || '')); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); return c[0]; })(); /* v1.90 */
-        if (!tab) return sendResponse({ error: 'No EMR tab is open. Open the patient in your EMR in another tab, then try again.' });
+        /* cap-3067 (3.0.67): athena tab or NOTHING. The v1.90 fallback
+           (most-recently-used non-mlsscribe tab) could try to READ WHATEVER
+           THE DOCTOR LAST LOOKED AT - measured live 2026-08-19: it went for a
+           chatgpt.com tab and only the host-permission wall stopped it. A
+           capture that cannot find a signed-in athenaOne tab refuses in
+           words; it never touches any other tab. */
+        const tab = await mlsPickAthenaTab(tabs, { athenaOnly: true });
+        if (!tab) return sendResponse({ error: 'No signed-in athenaOne tab was found. Open your patient in athenaOne (finish signing in if it is on the sign-in screen), then press this again.' });
         let pageText = '';
         try {
-          const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => (document.body && document.body.innerText || '').slice(0, 20000) });
-          pageText = (r && r.result) || '';
+          /* cap-3065 (3.0.65): athenaOne is a FRAMESET and its chart/briefing
+             views render inside SHADOW ROOTS. The old read was the TOP frame's
+             flat innerText - about 7 characters of frameset - so the backend
+             never saw a chart and answered 'no patient identity found'. All
+             frames + shadow descent, richest frames first, same 20k budget
+             the /api/assist/extract contract expects. */
+          const rs = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: () => {
+            try {
+              var out = [], n = 0;
+              (function coll(root, depth) {
+                if (depth > 28 || n > 24000) return;
+                var kids = root.childNodes || [];
+                for (var i2 = 0; i2 < kids.length; i2++) {
+                  if (n > 24000) return;
+                  var nd = kids[i2];
+                  if (nd.nodeType === 3) { var t2 = String(nd.nodeValue || '').replace(/\s+/g, ' ').trim(); if (t2) { out.push(t2); n += t2.length; } }
+                  else if (nd.nodeType === 1) {
+                    var tg = (nd.tagName || '').toLowerCase();
+                    if (tg === 'script' || tg === 'style' || tg === 'noscript') continue;
+                    try { if (nd.shadowRoot) coll(nd.shadowRoot, depth + 1); else coll(nd, depth + 1); } catch (e2) {}
+                  }
+                }
+              })(document.body || document.documentElement, 0);
+              return out.join('\n');
+            } catch (e3) { return ''; }
+          } });
+          const frameTexts = (rs || []).map(r2 => String((r2 && r2.result) || '')).filter(t3 => t3.trim().length > 40);
+          frameTexts.sort((a2, b2) => b2.length - a2.length);
+          pageText = frameTexts.join('\n\n').slice(0, 20000);
         } catch (e) { return sendResponse({ error: 'Could not read the EMR tab (' + e.message + ').' }); }
         if (!pageText.trim()) return sendResponse({ error: 'The EMR tab had no readable text.' });
         const res = await callBackend('/api/assist/extract', { pageText, url: tab.url });
@@ -8872,6 +8906,113 @@ try { chrome.alarms.onAlarm.addListener(a => { if (a && a.name === 'mlsNightlyBa
 try { chrome.runtime.onStartup.addListener(scheduleBackupAlarm); } catch (e) {}
 try { chrome.runtime.onInstalled.addListener(scheduleBackupAlarm); } catch (e) {}
 scheduleBackupAlarm();
+
+// ===========================================================================
+// ka-3066 (3.0.66): KEEP ATHENA ALIVE. Owner order 2026-08-18: "have the
+// extension keep Athena alive". athenaOne idles a session out and prior live
+// measurement showed background/automated reads do NOT refresh its idle
+// timer, so every few minutes this does three real things in every SIGNED-IN
+// athena tab (loginish tabs are never touched):
+//   1) dispatches synthetic user-activity events in EVERY frame - idle
+//      trackers listen for DOM activity (mousemove/scroll);
+//   2) if athena's own "session about to expire" warning is on screen,
+//      clicks its visible continue/stay button - THEIR handler makes the
+//      server-side extension call. Text-guarded twice (session + expiry
+//      wording in the same container) so no other dialog is ever clicked;
+//   3) top frame only: a credentialed same-origin HEAD ping so the server
+//      sees a request. Best-effort; harmless when server-side idle ignores it.
+// Never navigates, never types, never clicks anything but the guarded
+// continue button. Default ON; kill switch: chrome.storage.local
+// mlsKeepAlive {enabled:false}. Alarm-driven so a sleeping MV3 worker still
+// wakes to run it.
+// ===========================================================================
+const KA_KEY = 'mlsKeepAlive';
+function kaGetCfg() { return new Promise(function (r) { chrome.storage.local.get([KA_KEY], function (c) { r(Object.assign({ enabled: true, periodMin: 3 }, (c && c[KA_KEY]) || {})); }); }); }
+function kaFrameTouch() {
+  try {
+    try { document.dispatchEvent(new Event('mousemove', { bubbles: true })); } catch (e1) {}
+    try { document.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (e2) {}
+    try { if (document.body) document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 3, clientY: 3 })); } catch (e3) {}
+    var hit = null;
+    try {
+      /* ka-2 (3.0.68): collect dialog hosts through SHADOW ROOTS too - the v1
+         light-DOM query missed athena's shadow-rendered expiry dialog, so the
+         session died with the backstop blind (owner-reported logouts,
+         2026-08-19). Bounded walk, same class as the cap-3065 reader. */
+      var hosts = [];
+      (function kaColl(root, depth) {
+        if (depth > 24 || hosts.length > 40) return;
+        try {
+          var found = root.querySelectorAll ? root.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"],.lightbox,.modal,.dialog,.popup') : [];
+          for (var fi = 0; fi < found.length && hosts.length <= 40; fi++) hosts.push(found[fi]);
+          var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+          for (var ai = 0; ai < all.length; ai++) { var el0 = all[ai]; if (el0.shadowRoot) kaColl(el0.shadowRoot, depth + 1); }
+        } catch (eW) {}
+      })(document, 0);
+      for (var h = 0; h < hosts.length && !hit; h++) {
+        var host = hosts[h];
+        var tx = String(host.textContent || '').slice(0, 600);
+        if (!(/session/i.test(tx) && /(expire|expiring|time[ -]?out|timed out|inactivity|inactive)/i.test(tx))) continue;
+        var btns = host.querySelectorAll('button,input[type="button"],input[type="submit"],a');
+        for (var k = 0; k < btns.length; k++) {
+          var b = btns[k];
+          var bl = String(b.textContent || b.value || '');
+          if (!/(continue|stay|keep|extend|remain|yes|ok)/i.test(bl)) continue;
+          if (/(log ?out|sign ?out|end|leave|no)/i.test(bl)) continue;
+          var vis = false;
+          try { vis = !!(b.offsetParent || (b.getClientRects && b.getClientRects().length)); } catch (e4) {}
+          if (!vis) continue;
+          hit = b; break;
+        }
+      }
+    } catch (e5) {}
+    if (hit) { try { hit.click(); } catch (e6) {} }
+    /* ka-3 (3.0.69): athena's own session heartbeat. Their frontend pings
+       /{practice}/6/ax/login/ping; we make the same call with the page's own
+       cookies. The practice id is the first path segment of the current URL.
+       Returns 'ka-signedout' when the answer is not the signed-in 'OK', so
+       the background can stamp the sign-out for the app to announce. */
+    var kaPing = null;
+    if (window === window.top) {
+      try {
+        var kaSeg = String(window.location.pathname).match(/^\/(\d+)\//);
+        var kaUrl = kaSeg ? ('/' + kaSeg[1] + '/6/ax/login/ping') : null;
+        if (kaUrl) {
+          kaPing = fetch(kaUrl, { credentials: 'include', cache: 'no-store', redirect: 'follow' })
+            .then(function (r0) { return r0.text().then(function (b0) { return (r0.ok && /^OK\b/.test(String(b0).trim())) ? 'ok' : 'signedout'; }); })
+            .catch(function () { return 'unknown'; });
+        }
+      } catch (e8) {}
+      try { fetch(String(window.location.href), { method: 'HEAD', credentials: 'include', cache: 'no-store' }).then(function () {}, function () {}); } catch (e7) {}
+    }
+    if (kaPing) { return kaPing.then(function (v0) { return (v0 === 'signedout') ? 'ka-signedout' : (hit ? 'ka-clicked-continue' : 'ka-touched'); }); }
+    return hit ? 'ka-clicked-continue' : 'ka-touched';
+  } catch (e) { return 'ka-error'; }
+}
+async function kaTick() {
+  try {
+    var cfg = await kaGetCfg();
+    if (!cfg.enabled) return;
+    var tabs = [];
+    try { tabs = await chrome.tabs.query({ url: 'https://athenanet.athenahealth.com/*' }); } catch (eQ) { return; }
+    for (var ti = 0; ti < (tabs || []).length; ti++) {
+      var t = tabs[ti];
+      if (!t || t.id == null || t.discarded) continue;
+      try { if (mlsAthIsLoginish(t)) continue; } catch (eL) {}
+      try {
+        var rs = await chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, func: kaFrameTouch });
+        var clicked = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-clicked-continue'; });
+        if (clicked) { try { console.log('[MLS ka-3066] clicked athena continue-session button in tab', t.id); } catch (eC) {} }
+        var kaOut = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-signedout'; });
+        if (kaOut) { try { chrome.storage.local.set({ mlsAthenaSignedOutAt: Date.now() }, function () {}); console.log('[MLS ka-3] athena session reads SIGNED OUT in tab', t.id); } catch (eS2) {} }
+        else { try { chrome.storage.local.remove('mlsAthenaSignedOutAt', function () {}); } catch (eS3) {} }
+      } catch (eX) {}
+    }
+    try { chrome.storage.local.set({ mlsKeepAliveLastTick: Date.now() }, function () {}); } catch (eS) {}
+  } catch (e) {}
+}
+try { chrome.alarms.create('mlsKaTick', { periodInMinutes: 3, delayInMinutes: 1 }); } catch (e) {}
+try { chrome.alarms.onAlarm.addListener(function (a) { if (a && a.name === 'mlsKaTick') kaTick(); }); } catch (e) {}
 
 // ===========================================================================
 // csr-1.0 (3.0.39): CONTENT-SCRIPT RE-INJECTION ON INSTALL/UPDATE. Chrome
@@ -10415,6 +10556,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
     try { return Object.freeze(out); } catch (e) { return out; }
   }
+  /* wa-3072: one walk-scoped alias record, reset when the AllVisits mutex is
+     taken. Armed by ANY verified frame in the walk; consulted only when the
+     caller's frozen anchors (DOB+MRN) equal the arming walk's. Lets a later
+     frame that shows the LEGAL name (Thoma) pass for a nickname record (Tom)
+     on exact DOB + exact surname, inside an already-verified chart walk. */
+  var __mlsWalkAliasRec = null;
   function visitIdentityGate(frozen, live) {
     frozen = frozen || {}; live = live || {};
     function words(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }); }
@@ -10427,8 +10574,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     function id(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
     var wantName = words(frozen.name), haveName = words(live.name);
+    /* alias-3071: a verified chart's own (legal) name, adopted by the walk
+       after the MRN/DOB-anchored pre-gate passed. Never set from an
+       unverified source. */
+    var wantAlias = words(frozen.nameAlias);
     var wantDob = dob(frozen.dob), haveDob = dob(live.dob);
     var wantMrn = id(frozen.mrn), haveMrn = id(live.mrn);
+    var __waRec = __mlsWalkAliasRec;
+    var __waOk = !!(__waRec && __waRec.dob === wantDob && __waRec.mrn === wantMrn); /* wa-3072 */
+    if (!wantAlias.length && __waOk && __waRec.name) wantAlias = words(__waRec.name);
     if (wantName.length < 2 || (!wantDob && !wantMrn)) return { ok: false, reason: 'identity-hint-incomplete' };
     if (haveName.length < 2) return { ok: false, reason: 'same-frame-name-missing' };
     var have = {}; haveName.forEach(function (w) { have[w] = 1; });
@@ -10448,6 +10602,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     var hits = 0; wantName.forEach(function (w) { if (wantTokenOk(w)) hits++; });
     var nameOk = hits >= 2 && wantTokenOk(wantName[0]) && wantTokenOk(wantName[wantName.length - 1]);
+    if (!nameOk && wantAlias.length >= 2) {
+      var aHits = 0; wantAlias.forEach(function (w) { if (wantTokenOk(w)) aHits++; });
+      if (aHits >= 2 && wantTokenOk(wantAlias[0]) && wantTokenOk(wantAlias[wantAlias.length - 1])) nameOk = true; /* alias-3071 */
+    }
+    if (!nameOk && __waOk && wantDob && haveDob && wantDob === haveDob && wantName.length >= 2 && haveName.length >= 2) {
+      /* wa-3072 acceptance: exact DOB + exact surname token inside a walk that
+         already verified this chart. Covers nickname-vs-legal given names
+         (Tom/Thoma, Bill/William) that no prefix rule can bridge. The single
+         theoretical residue - same-surname same-DOB twins swapped in MID-walk
+         by outside navigation - is far narrower than the prior failure (every
+         nickname record refused entirely), and the doctor-moved latch plus
+         per-visit encounter bindings still stand. The frame's full name is
+         adopted as the walk alias so remaining frames pass by full match. */
+      if (have[wantName[wantName.length - 1]] === 1) {
+        nameOk = true;
+        try { if (!__waRec.name) __waRec.name = String(live.name || ''); } catch (eWa72) {}
+      }
+    }
     /* 3.0.2 (owner directive): the stable athena patient id is the PRIMARY
        identity when both sides carry it. Live 2026-07-21: v26.3 FL encounter
        frames can render a stale or reformatted patient label while the id is
@@ -10458,6 +10630,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (wantMrn && haveMrn) {
       if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
       if (wantDob && haveDob && wantDob !== haveDob) return { ok: false, reason: 'same-frame-dob-mismatch' };
+      try {
+        if (!__waOk) __mlsWalkAliasRec = __waRec = { dob: wantDob, mrn: wantMrn, name: '' }; /* wa-3072 arm */
+        if (!nameOk && live.name && !__waRec.name) __waRec.name = String(live.name); /* MRN-verified legal-name sighting */
+      } catch (eWaA) {}
       return { ok: true, reason: 'mrn' + (wantDob && haveDob ? '+dob' : '') + (nameOk ? '+name' : '+stale-name') };
     }
     if (!nameOk) return { ok: false, reason: 'same-frame-name-mismatch' };
@@ -10471,6 +10647,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
     }
     if (wantMrn && haveMrn && wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
+    try { if (!__waOk) __mlsWalkAliasRec = { dob: wantDob, mrn: wantMrn, name: '' }; } catch (eWaB) {} /* wa-3072 arm */
     return { ok: true, reason: 'name+' + (wantDob ? 'dob' : 'mrn') };
   }
   function realVisit(v, minLen) {
@@ -10662,7 +10839,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         preGateSeen = pgIdentity;
         var pgGate = visitIdentityGate(frozenHint, pgIdentity);
         preGateWhy = pgGate.reason || '';
-        if (pgGate.ok || preGateWhy === 'identity-hint-incomplete') { preGateOk = true; break; }
+        if (pgGate.ok || preGateWhy === 'identity-hint-incomplete') {
+          try {
+            if (pgGate.ok && pgIdentity && pgIdentity.name) {
+              /* alias-3072: adopt the verified chart's own name as an alternate
+                 want-name (nickname vs legal record name). alias-3071 assigned
+                 onto the FROZEN hint - a silent no-op - so it never reached the
+                 gate; the hint is REBUILT frozen here instead. */
+              frozenHint = Object.freeze({ name: frozenHint.name, dob: frozenHint.dob, mrn: frozenHint.mrn, onlyDate: frozenHint.onlyDate || '', nameAlias: String(pgIdentity.name) });
+            } else if (!pgGate.ok && pgIdentity && pgIdentity.name && (pgIdentity.dob || pgIdentity.mrn)) {
+              /* detect-3072: the whoever-is-open verb sends NO identity hint by
+                 design (live 2026-08-19: the empty hint reached the list gate,
+                 died as identity-hint-incomplete, and the site rendered a FALSE
+                 'different patient open' warning). Adopt the open chart's own
+                 strongest identity (banner-weighted bestResult) as the frozen
+                 anchor: every downstream mix gate now protects the DETECTED
+                 patient. A banner with neither DOB nor MRN stays incomplete and
+                 fails closed with an honest message at the list gate. */
+              frozenHint = Object.freeze({ name: String(pgIdentity.name || ''), dob: String(pgIdentity.dob || ''), mrn: String(pgIdentity.mrn || ''), onlyDate: frozenHint.onlyDate || '', nameAlias: '' });
+            }
+          } catch (eAd72) {}
+          preGateOk = true; break;
+        }
         await sleep(3000);
         touchVisitLease();
       }
@@ -11018,7 +11216,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ok: false, reason: gate.reason, identity: identity, visits: [], diag: diag,
           enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: total, selector: (enumRes && enumRes.selector) || '' },
           receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, identityVerified: false, axRrWaitMs: (typeof rrWait === 'number' ? rrWait : 0), axRrRecovered: (typeof rrRecovered === 'boolean' ? rrRecovered : false) },
-          error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
+          error: (String(gate.reason || '') === 'identity-hint-incomplete') ? 'Could not read a clear patient identity (name plus DOB or MRN) from the open athenaOne chart header, so nothing was read. Open the patient chart fully and retry.' : 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
         };
       }
 
@@ -11532,6 +11730,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     var appTabId = sender && sender.tab && sender.tab.id;
     var transportRequestId = String(msg.requestId || '').slice(0, 100);
     if (msg.foregroundBatchStart === true) __mlsFgDoctorMoved = false; /* fg-1.2: a new user-initiated batch re-earns the assist */
+    /* fgo-3070: a single-patient read that is not part of a schedule batch
+       and not declared background IS the doctor's own fresh press (the
+       whoever-is-open button). It earns front-for-read: without visibility,
+       athena never renders the visit list and the read starves behind one
+       frozen status line (owner-reproduced 3x, 2026-08-19). Schedule-batch
+       requests carry initiator:'schedule-batch' (forwarded by content.js as
+       of this build) and keep fg-1.2's exact behavior. */
+    if (msg.foregroundOk !== true && msg.background !== true && String(msg.initiator || '') !== 'schedule-batch') {
+      msg.foregroundOk = true;
+      __mlsFgDoctorMoved = false;
+    }
     if (activeAllVisitsPromise) {
       sendResponse({
         ok: false, reason: 'busy', requestId: transportRequestId, readerVersion: '2.9.22-visits-r4-two-stage', visits: [],
@@ -11542,6 +11751,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     var startup = { pending: true, requestId: transportRequestId };
     activeAllVisitsPromise = startup;
+    __mlsWalkAliasRec = null; /* wa-3072: fresh walk, fresh alias */
     try {
       loadVisitsCfgBound(1500).then(function (cfg) {
         if (activeAllVisitsPromise !== startup) return;
@@ -11576,7 +11786,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             thisRead = runAllVisits(appTabId, msg.hint || {}, cfg, transportRequestId, msg.deadlineAt);
           }
           activeAllVisitsPromise = thisRead;
+          /* wdog-3071: the read can hang inside one await (deadlines are only
+             checked between steps), leaking the single-flight slot until the
+             worker dies - measured live 2026-08-19: 40+ min of already-running
+             refusals. Force an honest finish at deadlineAt+30s; the late inner
+             result finds the slot already cleared and is discarded. */
+          var __wdogFinished = false;
+          var __wdogMs = Math.max(30000, Number(msg.deadlineAt || (Date.now() + 195000)) - Date.now() + 30000);
+          var __wdogTimer = setTimeout(function () {
+            try {
+              if (activeAllVisitsPromise === thisRead && !__wdogFinished) {
+                finish({ ok: false, reason: 'read-watchdog-fired', requestId: transportRequestId,
+                  readerVersion: '2.9.22-visits-r4-two-stage', visits: [], retryable: true,
+                  receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, watchdog: true },
+                  error: 'The history read stopped responding and MLS released it (watchdog). Nothing partial was saved. Press the pull again.' });
+              }
+            } catch (eWd) {}
+          }, __wdogMs);
           function finish(value) {
+            try { clearTimeout(__wdogTimer); } catch (eWc) {}
+            if (__wdogFinished) return; __wdogFinished = true;
             /* Clear single-flight ownership before responding. Cleanup is
                registered immediately after sendResponse returns and is never
                awaited by this completed read. */
