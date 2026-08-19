@@ -1618,6 +1618,10 @@
     var host = wfdxFixHost(); if (!host || !state || state.closed) return;
     host.innerHTML = '';
     var manifest = state.manifest, visit = manifest.visit || {}, day = wfdxDayKey(visit.visitDate);
+    /* wfbind-1.0.0: when the sheet failed closed for a MISSING BINDING, the cure
+       leads. This strip renders even with zero ready rows (renderUnifiedConfirmation
+       calls it with an empty rowId), which is exactly the owner's screenshot. */
+    try { wfbindOfferCure(state, host); } catch (eCure) {}
     if (day && S(rowId).trim()) {
       host.appendChild(wfdxButton('Open this patient’s encounter in athenaOne',
         'Read-only: sends athenaOne’s Day view to ' + day + ', clicks this exact appointment row, then re-runs the read-only check. Nothing is written.',
@@ -2004,6 +2008,246 @@
       return true;
     } catch (e) { return false; }
   }
+  /* ===== wfbind-1.0.0 (2026-08-19) =========================================
+     THE CURE ON THE SHEET ITSELF.
+
+     Owner 2026-08-19, with a screenshot of a confirm sheet whose three rows all
+     read CANNOT SEND ("The exact visit needs its date, provider, and
+     appointment ID (or a bound encounter ID and URL). MLS will not guess an
+     encounter.", footer "this review has no expected day - no appointment id is
+     bound to this encounter"): "all these cannot sends need to become can sends
+     and that confirm and send to athena thing needs to be ungrayed out and
+     work."
+
+     srr-1.0.0 already rebinds an open sheet the moment SOMEONE ELSE'S pull
+     lands. It cannot help the screenshot case, because nothing is pulling: the
+     doctor is looking at a dead sheet whose only documented cure is to abandon
+     it, run a day pull by hand, and rebuild the review from scratch.
+
+     This block puts that cure ON the sheet as one press. It runs exactly the
+     machinery the doctor would have run by hand, in order, and re-verifies:
+       1. name the DAY (see wfbindCandidateDays - never a clock read),
+       2. mlsAppGotoDate -> athenaOne's own Day view, read-only, CONFIRMED by
+          reading back the day it actually painted,
+       3. the account's normal schedule pull for that painted day,
+       4. poll the LOCAL resolver until the day ledger (or the booking row,
+          awb-1.0.0) can name this exact appointment, then rebuild through the
+          SAME reopen path srr-1.0.0 and "Check Athena again" use - a manifest
+          is never mutated in place,
+       5. the rebuilt sheet runs the ordinary read-only probe as always.
+
+     IT CANNOT WEAKEN THE GATE. It never assigns a visit field, never invents an
+     appointment id, and never marks a row ready. Everything it does is re-run
+     the pull and re-ask expectedVisitContext, whose answer is unchanged law. An
+     unbindable visit - no MLS appointment for this patient on that day, an
+     identity mismatch, a day athenaOne will not paint, a ledger that still
+     cannot name one exact appointment - stays CANNOT SEND with the reason
+     named, and the live probe remains the fail-closed arbiter afterwards.
+
+     THE DAY IS NEVER GUESSED. opvs-1.0.0 records what a clock read costs: a
+     historical note bound itself to whichever appointment sat nearest TODAY.
+     Candidate days therefore come only from THIS exact patient's own MLS
+     schedule rows. Exactly one candidate is one press; several are offered as
+     named days for the doctor to choose between; none is an honest refusal.
+     ======================================================================== */
+  var WFBIND_LABEL = 'Bind this visit to its Athena appointment — re-pulls this day';
+  var WFBIND_POLL_MS = 5000, WFBIND_POLL_TICKS = 36;   /* 3 minutes, bounded */
+  var wfbindLast = null;
+  /* A pull already in flight (this tab or another) must not be stomped: the
+     schedule importer keeps its own lease and busy stamp. */
+  function wfbindPullBusy() {
+    try {
+      var now = Date.now();
+      var lease = window.__mlsSchedulePullLease;
+      if (lease && Number(lease.at) && (now - Number(lease.at)) < 60000) return true;
+      var busyAt = Number(window.__mlsPullBusyAt || 0);
+      if (busyAt && (now - busyAt) < 60000) return true;
+    } catch (e) {}
+    return false;
+  }
+  /* Days this patient could have been seen on, from the MLS schedule ONLY. */
+  function wfbindCandidateDays(manifest) {
+    var out = [], seen = {};
+    try {
+      var visit = (manifest && manifest.visit) || {};
+      var pinned = wfdxDayKey(visit.visitDate);
+      if (pinned) return [pinned];
+      var pid = S(manifest && manifest.patient && manifest.patient.patientId).trim();
+      if (!pid) return [];
+      calendarRows().forEach(function (a) {
+        if (!a || S(a.patient_external_id || a.patientId || '').trim() !== pid) return;
+        var d = wfdxDayKey(visitDay(a.day_local || a.appt_date || a.start_at));
+        if (!d || seen[d]) return;
+        seen[d] = 1; out.push(d);
+      });
+      out.sort();
+    } catch (e) {}
+    return out;
+  }
+  /* Is THIS row blocked by exactly the thing a re-pull can cure? A missing
+     identity (no MLS patient id, no Athena name/DOB/MRN) is NOT curable by a
+     pull and must never advertise a cure; nor is a row with no candidate day. */
+  var WFBIND_IDENTITY_BLOCK = 'An immutable local patient ID';
+  function wfbindCurableRow(manifest, row) {
+    try {
+      if (!row || row.capability !== 'blocked') return false;
+      if (S(row.reason).indexOf(WFBIND_IDENTITY_BLOCK) === 0) return false;
+      if (!/appointment ID|appointment id|not bound|exact visit/i.test(S(row.reason))) return false;
+      if (p1VisitBound(manifest && manifest.visit)) return false;
+      return wfbindCandidateDays(manifest).length > 0;
+    } catch (e) { return false; }
+  }
+  /* A detached reopen option set that names ONE day. Never mutates the source. */
+  function wfbindOptsForDay(state, day) {
+    var base = state && state.reopenOpts;
+    if (!base || !wfdxDayKey(day)) return null;
+    var o = {}, k;
+    for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) o[k] = base[k];
+    var ctx = {}, c0 = base.expectedContext || {};
+    for (k in c0) if (Object.prototype.hasOwnProperty.call(c0, k)) ctx[k] = c0[k];
+    ctx.visitDate = day;
+    o.expectedContext = ctx;
+    return o;
+  }
+  /* The ONLY test of success: the ordinary resolver can now name the exact
+     Athena appointment for this exact patient on that day. */
+  function wfbindResolvedOpts(state, day) {
+    try {
+      var o = wfbindOptsForDay(state, day);
+      if (!o) return null;
+      var fresh = expectedVisitContext(state.manifest.patient, o);
+      return (fresh && S(fresh.appointmentId).trim()) ? o : null;
+    } catch (e) { return null; }
+  }
+  function wfbindFinish(btn, label) {
+    if (!btn) return;
+    try { btn.disabled = false; btn.textContent = label; } catch (e) {}
+  }
+  function wfbindPoll(state, day, btn, label, generation) {
+    var ticks = 0;
+    var timer = setInterval(function () {
+      try {
+        ticks++;
+        if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { clearInterval(timer); wfbindFinish(btn, label); return; }
+        var resolved = wfbindResolvedOpts(state, day);
+        if (!resolved) {
+          if (ticks < WFBIND_POLL_TICKS) return;
+          clearInterval(timer); wfbindFinish(btn, label);
+          unifiedStatus(state, 'The day pull for ' + day + ' finished, but MLS still cannot name one exact Athena appointment for this patient on that day. This review stays unsendable and nothing was written. Check that ' + day + ' is the right day and that this patient is on athenaOne’s schedule for it.', 'err');
+          wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: false, reason: 'unresolved-after-pull', expectedDay: day, appointmentIdPresent: false });
+          return;
+        }
+        clearInterval(timer); wfbindFinish(btn, label);
+        wfbindLast = { day: day, at: Date.now() };
+        wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: true, expectedDay: day, appointmentIdPresent: true });
+        unifiedStatus(state, 'The day pull named this exact Athena appointment — rebinding this review now. Nothing was sent.', 'ok');
+        openUnifiedConfirmation(resolved);
+      } catch (eTick) { try { clearInterval(timer); } catch (e2) {} wfbindFinish(btn, label); }
+    }, WFBIND_POLL_MS);
+    return timer;
+  }
+  function wfbindRun(state, day, btn) {
+    if (!state || state.closed || state.running || unifiedAthenaState !== state) return false;
+    day = wfdxDayKey(day);
+    if (!day) return false;
+    var label = btn ? S(btn.textContent) : '';
+    var generation = state.probeGeneration;
+    /* Already resolvable locally? Then no Athena read is needed at all. */
+    var already = wfbindResolvedOpts(state, day);
+    if (already) {
+      unifiedStatus(state, 'This day is already imported and names this exact appointment — rebinding this review now. Nothing was sent.', 'ok');
+      wfbindLast = { day: day, at: Date.now() };
+      openUnifiedConfirmation(already);
+      return true;
+    }
+    if (wfbindPullBusy()) {
+      unifiedStatus(state, 'A schedule pull is already running. Let it finish — this review rebinds itself the moment the day is named. Nothing was sent.', '');
+      return false;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = 'Binding — re-pulling ' + day + '…'; }
+    wfbindNavigateAndPull(day, function (msg, kind) { unifiedStatus(state, msg, kind || ''); }).then(function (res) {
+      res = res || { ok: false, message: 'The day re-pull did not report a result. Nothing was changed.' };
+      if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { wfbindFinish(btn, label); return; }
+      if (res.ok !== true) { wfbindFinish(btn, label); unifiedStatus(state, res.message, 'err'); return; }
+      wfbindPoll(state, day, btn, label, generation);
+    });
+    return true;
+  }
+  /* Steps 2-3 of the cure, shared by the confirm sheet and by the visit-screen
+     banner in 1p-mls-connect.js: send athenaOne's own Day view to this exact
+     day, CONFIRM the day it actually painted, then start the account's normal
+     schedule pull for it. Reads Athena; writes nothing. Resolves
+     {ok:true} once the pull has been STARTED for a confirmed day - the caller
+     owns the wait, because only the caller knows what "bound" means for it. */
+  function wfbindNavigateAndPull(day, say) {
+    day = wfdxDayKey(day);
+    function tell(msg, kind) { try { if (typeof say === 'function') say(msg, kind); } catch (e) {} }
+    if (!day) return Promise.resolve({ ok: false, message: 'MLS has no exact day to re-pull, so nothing was pulled and nothing was written.' });
+    if (wfbindPullBusy()) return Promise.resolve({ ok: false, message: 'A schedule pull is already running. Let it finish, then try again. Nothing was changed.' });
+    tell('Sending athenaOne’s Day view to ' + day + ' and re-pulling that day so MLS can name this exact appointment. This is a read of Athena — nothing is written…', '');
+    return bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000).then(function (nav) {
+      nav = nav || {};
+      var observed = wfdxDayKey(nav.schedDate);
+      if (observed) { wfdx.observedDay = observed; wfdx.observedDayAt = Date.now(); }
+      wfdxNote({ verb: 'mlsAppGotoDate', stage: 'bind-cure', ok: nav.ok === true, timeout: nav.__timeout === true,
+        reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed, appointmentIdPresent: false });
+      if (nav.ok !== true) {
+        return { ok: false, message: 'athenaOne could not be sent to ' + day + '.' + (observed && observed !== day ? ' Its Day view is on ' + observed + '.' : '') +
+          ' Open athenaOne’s Day view on ' + day + ' yourself and pull that day, then check again. Nothing was changed.' };
+      }
+      /* Never pull a day athenaOne did not actually paint. */
+      if (observed && observed !== day) {
+        return { ok: false, message: 'athenaOne reported it is on ' + observed + ', not ' + day + '. MLS will not pull a day it cannot confirm, so nothing was pulled and nothing was written.' };
+      }
+      wfdx.observedDay = day; wfdx.observedDayAt = Date.now();
+      var pull = null;
+      try { pull = window.pullScheduleViaAssist; } catch (eP) {}
+      if (typeof pull !== 'function') {
+        return { ok: false, message: 'athenaOne is on ' + day + ', but this build exposes no schedule pull to run. Pull ' + day + ' from the schedule screen, then check again. Nothing was changed.' };
+      }
+      /* The day-probe inside the pull wrapper compares against TODAY and would
+         stop a deliberate historical pull with a modal. We have already proven
+         the painted day by reading it back, which is the stronger check. */
+      try { pull.__skipProbe = true; } catch (eSkip) {}
+      try { pull(); } catch (ePull) {
+        return { ok: false, message: 'The schedule pull for ' + day + ' could not be started. Make sure athenaOne is open on Calendar > View Calendar for ' + day + ', then try again. Nothing was changed.' };
+      }
+      tell('Pulling athenaOne’s schedule for ' + day + ' read-only. This rebinds itself the moment the exact appointment is named — nothing is sent…', '');
+      return { ok: true, message: '', day: day };
+    }, function () {
+      return { ok: false, message: 'The read-only day navigation could not be started. Nothing was changed.' };
+    });
+  }
+  /* The strip control(s). One candidate day is one press; several are named. */
+  function wfbindOfferCure(state, host) {
+    if (!state || state.closed || !host) return false;
+    var manifest = state.manifest, visit = manifest.visit || {};
+    if (p1VisitBound(visit)) return false;
+    var days = wfbindCandidateDays(manifest);
+    if (!days.length) return false;
+    if (days.length === 1) {
+      var one = wfbindButton(WFBIND_LABEL,
+        'Sends athenaOne’s Day view to ' + days[0] + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.',
+        function (btn) { wfbindRun(state, days[0], btn); });
+      one.setAttribute('data-mls-bind-cure', days[0]);
+      host.appendChild(one);
+      return true;
+    }
+    days.slice(0, 8).forEach(function (day) {
+      var b = wfbindButton('Bind to ' + day + ' — re-pulls this day',
+        'This review names no day. ' + day + ' is one of this patient’s own scheduled days. MLS re-pulls it read-only and re-checks the exact appointment; it will not choose a day for you.',
+        function (btn) { wfbindRun(state, day, btn); });
+      b.setAttribute('data-mls-bind-cure', day);
+      host.appendChild(b);
+    });
+    return true;
+  }
+  function wfbindButton(label, title, onClick) {
+    var btn = wfdxButton(label, title, onClick);
+    try { btn.style.cssText = 'border:1px solid #204034;background:#204034;color:#fff;border-radius:8px;padding:7px 12px;font:800 12px inherit;cursor:pointer'; } catch (e) {}
+    return btn;
+  }
+  /* ===== end wfbind-1.0.0 ================================================= */
   function renderUnifiedOrderSummary(orderRows, manifest) {
     if (!orderRows.length) return '';
     var items = orderRows.map(function (row) {
@@ -2143,6 +2387,12 @@
       '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#8b2525">' + esc(row.label) + '</b>' +
       '<span style="font-size:10.5px;font-weight:850;color:#8b2525;border:1px solid currentColor;border-radius:999px;padding:1px 7px">CANNOT SEND</span></div>' +
       (row.reason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px">' + esc(row.reason) + '</div>' : '') +
+      /* wfbind-1.0.0: a row blocked ONLY for the missing appointment binding has
+         a one-press cure on this same sheet. Say so where the doctor is reading
+         the refusal, instead of leaving the strip to be discovered. */
+      (wfbindCurableRow(manifest, row)
+        ? '<div data-mls-bind-hint="' + esc(row.id) + '" style="font-size:12px;color:#204034;margin-top:5px;font-weight:700">Fixable here: press &ldquo;' + esc(WFBIND_LABEL) + '&rdquo; above. MLS re-pulls the day and re-checks this exact appointment; nothing is written.</div>'
+        : '') +
       '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Consequence:</b> ' + esc(row.consequence) + '</div>' +
       unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + '</section>';
   }
@@ -3032,6 +3282,16 @@
       reason: wfdxReason, errorClass: wfdxErrorClass, health: wfdxHealth,
       probeOnly: probeOnlyActive, probeOnlyBanner: PROBE_ONLY_BANNER,
       state: function () { return unifiedAthenaState; } },
+    /* wfbind-1.0.0 test + support seam (read-only; run() is the same call the
+       sheet's own control makes). */
+    bindCure: { v: 'wfbind-1.0.0', label: WFBIND_LABEL,
+      candidateDays: wfbindCandidateDays, curableRow: wfbindCurableRow,
+      optsForDay: wfbindOptsForDay, resolvedOpts: wfbindResolvedOpts, pullBusy: wfbindPullBusy,
+      run: function (day) { return wfbindRun(unifiedAthenaState, day, null); },
+      /* The visit-screen banner's cure uses this same navigate + confirm-day +
+         pull; it owns its own definition of "bound" and its own wait. */
+      pullDay: function (day, say) { return wfbindNavigateAndPull(day, say); },
+      last: function () { return wfbindLast; } },
     revert: revert
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

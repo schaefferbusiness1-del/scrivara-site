@@ -42217,8 +42217,40 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     var save = cardBtn(card, 'opPrepSave(');
     if (!save) return null;
-    return { label: '💾 Save to ' + (S(row.appt && row.appt.name) || 'the chart') + '’s chart',
-      run: function () { save.click(); setTimeout(refresh, 350); }, able: true };
+    /* ===== opnsend-1.0.0 (owner 2026-08-19: "including op notes btw they
+       should be able to put right into athena to") ==========================
+       A finished op note reached Athena in TWO presses - Save, then Send - and
+       the send control only existed after the save had already landed. One
+       press now does both, through the SAME two functions in the SAME order:
+       opPrepSave() (canonical blank-token completeness, exact patient identity,
+       verified read-back, and opvs-1.0.0's day/provider/appointment stamp) and
+       then pushHistoryNoteToAthena(), which opens the ordinary write confirm
+       sheet - identity, previewHash, per-action human confirm, all unchanged.
+
+       NOTHING IS WEAKENED, and nothing is assumed:
+         - the blanks branch ABOVE returns first, so a note with any unresolved
+           placeholder never reaches this branch at all;
+         - the push runs only if filedRecord() can SEE a saved, non-draft record
+           after the save (a failed or quota-refused save simply does not send,
+           and the room's own message says why);
+         - pushHistoryNoteToAthena re-checks isDraft and blank tokens itself.
+       An op note send stages the note TEXT only: write_note / save_draft. It
+       never signs and never places an order - those rows are governed by the
+       sheet's own capability gates exactly as they are for a visit note. */
+    var canPush = typeof window.pushHistoryNoteToAthena === 'function';
+    return { label: canPush ? '🚀 Save & send to Athena' : ('💾 Save to ' + (S(row.appt && row.appt.name) || 'the chart') + '’s chart'),
+      run: function () {
+        save.click();
+        setTimeout(function () {
+          refresh();
+          if (!canPush) return;
+          /* Verify the save landed and is NOT a draft before sending. */
+          var rec2 = filedRecord(rows()[sel]);
+          if (!rec2) return;
+          try { window.pushHistoryNoteToAthena(rec2.id); } catch (e) {}
+        }, 350);
+      }, able: true };
+    /* ===== end opnsend-1.0.0 ============================================== */
   }
   function runNotePrimary() {
     var plan = notePlan();

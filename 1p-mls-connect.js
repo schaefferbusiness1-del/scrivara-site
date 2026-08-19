@@ -20900,6 +20900,78 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             : 'This row is missing its exact Athena appointment ID. The note stays in MLS — re-pull this day before using Athena verification or send.'));
     } catch (e) {}
   }
+  /* ===== wfbindbar-1.0.0 (owner 2026-08-19) ===============================
+     The owner read "The visit opened, but MLS could not prove its exact Athena
+     appointment binding. Re-pull this day before using Athena verification or
+     send." and called it unacceptable: the banner names a cure and then makes
+     the doctor go perform it somewhere else.
+
+     This carries the SAME one-press cure the confirm sheet now has. It reuses
+     writeflow's implementation (__mlsWriteFlow.bindCure.pullDay: send
+     athenaOne's own Day view to this exact day, CONFIRM the day it painted,
+     then run the account's normal schedule pull) and then re-checks the binding
+     through the UNCHANGED installScheduledVisitBinding + exactScheduledBinding-
+     Matches pair. It cannot bind anything by itself: if the re-pull does not
+     produce an agreeing exact binding, the warning stays and says so. */
+  var bindCureTimer = null;
+  function bindCureDay() { return safe(function () { return apptDay(S.appt); }, ''); }
+  function bindCureApi() {
+    return safe(function () {
+      var wf = window.__mlsWriteFlow;
+      return (wf && wf.bindCure && typeof wf.bindCure.pullDay === 'function') ? wf.bindCure : null;
+    }, null);
+  }
+  /* Offer the cure only where a day re-pull is the actual missing evidence. */
+  function bindCureOffered() {
+    if (!S.appt || S.appt._pt) return false;
+    if (!bindCureDay() || !String(S.appt.provider || '').trim()) return false;
+    if (safe(function () { return exactScheduledBindingMatches(S.appt); }, false)) return false;
+    return !!bindCureApi();
+  }
+  /* The schedule row object is replaced wholesale by a pull; never re-check a
+     stale reference. */
+  function bindCureFreshRow(a) {
+    return safe(function () {
+      var id = String((a && a.id) || '');
+      if (!id) return a;
+      var rows = window._calAppts || [];
+      for (var i = 0; i < rows.length; i++) if (String(rows[i] && rows[i].id) === id) return rows[i];
+      return a;
+    }, a);
+  }
+  function bindCureBound(a) {
+    return safe(function () {
+      var fresh = bindCureFreshRow(a);
+      return installScheduledVisitBinding(fresh) && exactScheduledBindingMatches(fresh);
+    }, false);
+  }
+  function bindCureRun(btn) {
+    var a = S.appt, day = bindCureDay(), api = bindCureApi();
+    if (!a || !day || !api || bindCureTimer) return;
+    var idle = btn ? String(btn.textContent) : '';
+    function restore() { if (btn) { try { btn.disabled = false; btn.textContent = idle; } catch (e) {} } }
+    if (btn) { try { btn.disabled = true; btn.textContent = 'Re-pulling ' + day + '…'; } catch (e) {} }
+    api.pullDay(day, function (msg) { try { toast(msg); } catch (e) {} }).then(function (res) {
+      res = res || { ok: false, message: 'The day re-pull did not report a result. Nothing was changed.' };
+      if (res.ok !== true) { restore(); try { toast(res.message, 'err'); } catch (e) {} return; }
+      var ticks = 0;
+      bindCureTimer = setInterval(function () {
+        ticks++;
+        if (bindCureBound(a)) {
+          clearInterval(bindCureTimer); bindCureTimer = null; restore();
+          S.appt = bindCureFreshRow(a);
+          S.lastWarn = '';
+          try { toast('This visit is bound to its exact Athena appointment. Athena verification and send are available.', 'ok'); } catch (e) {}
+          render(); return;
+        }
+        if (ticks >= 36) {
+          clearInterval(bindCureTimer); bindCureTimer = null; restore();
+          try { toast('The re-pull of ' + day + ' finished, but MLS still cannot prove this row’s exact Athena appointment binding. Athena verification and send stay off for this visit; recording, the note and history are unaffected.', 'err'); } catch (e) {}
+        }
+      }, 5000);
+    }, function () { restore(); });
+  }
+  /* ===== end wfbindbar-1.0.0 ============================================= */
   function fmtTimer() {
     var s = Math.max(0, Math.floor((Date.now() - S.recStart) / 1000));
     return pad2(Math.floor(s / 60)) + ':' + pad2(s % 60);
@@ -21932,7 +22004,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += quickStripHtml();
     if (S.lastWarn) {
       var calmNotice = /^(?:Athena appointment not linked|Unscheduled visit)\b/.test(S.lastWarn);
-      h += '<div class="' + (calmNotice ? 'ez3-infobar' : 'ez3-warnbar') + '" role="status">' + (calmNotice ? '' : '⚠️ ') + esc(S.lastWarn) + '</div>';
+      /* wfbindbar-1.0.0: a warning whose stated cure is "re-pull this day"
+         carries that cure as a button, instead of sending the doctor away. */
+      var bindCureHere = /re-pull this day/i.test(S.lastWarn) && bindCureOffered();
+      h += '<div class="' + (calmNotice ? 'ez3-infobar' : 'ez3-warnbar') + '" role="status">' + (calmNotice ? '' : '⚠️ ') + esc(S.lastWarn) +
+        (bindCureHere ? '<button type="button" class="ez3-sm" id="ez3BindNow" title="Sends athenaOne’s Day view to ' + esc(bindCureDay()) + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.">🔗 Bind this visit — re-pull this day</button>' : '') +
+        '</div>';
     }
     h += '<div class="ez3-card">' +
       '<div class="ez3-pt">' + esc(nm) + '</div>' +
@@ -22074,6 +22151,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       render();
     });
     on('ez3StartActive', function () { var pA = null; try { pA = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (eA2) {} if (pA) lockAndStartPatient(pA); });
+    on('ez3BindNow', function (btn) { bindCureRun(btn); }); /* wfbindbar-1.0.0 */
     on('ez3Rec', function () { if (!S.appt) { toast('Pick a patient first.'); return; } lockAndStart(S.appt, { record: true }); });
     on('ez3Rec2', function () { if (!requireExactScheduledBinding(S.appt, 'recording')) return; var c = captureBtn(); if (c) { c.click(); setTimeout(render, 400); } });
     on('ez3Stop', stopRecordingOnly);
