@@ -4882,6 +4882,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (eFb) {}
     if (!n) n = (S.done || 0) + '/' + (S.total || 0);
     var t = 'Pulling ' + n + ' \u2014 show details';
+    /* pullzero-1.0.0: "Pulling 0/0" is a count of nothing. Say what is true. */
+    if ((Number(S.total) || 0) === 0 && !(S.phase && S.phase.kind)) t = 'Checking this day \u2014 show details';
     /* ===== clunky2-pull-1.0.0 (CLUNKY 71) =====
        While the day-note phase runs, every history is already done, so
        "Pulling 23/23" is a finished count riding on an unfinished pull. The
@@ -5070,9 +5072,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var want = on ? '' : 'none';
     if (el.style.display !== want) el.style.display = want;
   }
+  /* ===== pullzero-1.0.0 — a pull with nothing to read still has to say so ===
+     MEASURED in this lane's harness: with zero history targets the engine
+     still calls ppStart(0, 0), so this panel's own poll sees running:true with
+     total 0 and paints the pill "Pulling 0/0 — show details"; when the engine
+     releases, rows is empty, the DONE branch below is skipped on
+     `(S.rows||[]).length`, and pill and panel are simply removed. The doctor
+     pressed Pull, watched a 0/0 pill flash, and was told nothing at all.
+     This block keeps the count honest while it runs and gives that run the
+     same closing verdict every other run gets. It changes no engine state. */
+  var watchedMaxTotal = 0;
   function render() {
     var S = state();
     var running = !!(S && S.running);
+    if (running) watchedMaxTotal = Math.max(watchedMaxTotal, Number(S.total) || 0);
     if (!running) {
       /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
          done"): the run THIS panel watched (startedAt>0) paints ONE honest
@@ -5081,10 +5094,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          engine has already released), and no "keep pulling" framing remains
          on the card. A tab that never watched a run keeps the old clean
          removal; the Done click resets to that same state. */
-      if (startedAt > 0 && S && (S.rows || []).length && !doneDismissed) { renderDone(S); return; }
+      /* pullzero-1.0.0: a watched run that had nothing to read gets the same
+         closing card as any other, instead of disappearing without a word. */
+      if (startedAt > 0 && S && ((S.rows || []).length || watchedMaxTotal === 0) && !doneDismissed) { renderDone(S); return; }
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
+      watchedMaxTotal = 0; /* pullzero-1.0.0: the next run measures itself */
       doneDismissed = false;
       stopRequested = false; /* clunky2-pull-1.0.0: the request dies with the run it stopped */
       return;
@@ -5204,10 +5220,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function renderDone(S) {
     css();
     var ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0, total = S.total || 0;
+    /* pullzero-1.0.0: this run had no chart to read at all \u2014 say that, rather
+       than reporting "\u2713 0 histories saved" as if zero were a result. */
+    var zeroDay = (total === 0 && !(S.rows || []).length);
     if (hidden) {
       ensureFab(true);
       var fD = document.getElementById(FAB);
-      if (fD) { var tD = 'Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'; if (fD.textContent !== tD) fD.textContent = tD; }
+      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'); if (fD.textContent !== tD) fD.textContent = tD; }
       var phD = document.getElementById(PANEL); if (phD) phD.remove();
       return;
     }
@@ -5217,8 +5236,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;
-      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
-      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
+      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = zeroDay ? '\u2705 Done \u2014 there was no chart to read' : '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
+      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = zeroDay
+        ? 'No chart on this day was eligible to read, so nothing was opened in athenaOne. The schedule itself is unaffected.'
+        : 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
       try { var curLbl = p.querySelector('.pp-cur b'); if (curLbl) curLbl.textContent = 'Result:'; } catch (eCur) {}
       /* ===== clunky2-pull-1.0.0 (CLUNKY 72) =====
          MEASURED on the finished card: the note said '"Retry failed
@@ -5234,11 +5255,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var rbD = document.getElementById('mlsPullProgRetry');
         if (rbD) rbD.style.display = canRetry ? '' : 'none';
         var noteD = p.querySelector('.pp-note');
-        if (noteD) noteD.textContent = !failed
+        if (noteD) noteD.textContent = zeroDay
+          ? 'Nothing here needs fixing unless you expected charts. If you did: check the day has patients, that each carries a DOB or MRN, and that one signed-in athenaOne tab is open — then pull the day again.'
+          : (!failed
           ? 'Everything the day asked for was read and saved.'
           : (canRetry
             ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" below re-reads only those charts.'
-            : 'Rows marked \u26A0 carry their reason. Open the Visit screen and pull the day again to re-read only those charts.');
+            : 'Rows marked \u26A0 carry their reason. Open the Visit screen and pull the day again to re-read only those charts.'));
       } catch (eNote) {}
       /* ===== end clunky2-pull-1.0.0 (retry) ===== */
       try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
@@ -5248,6 +5271,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        not saved WHERE, and what does he do about it. The reason is already on
        every row underneath, so the summary says to look there. */
     var doneLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : ''); /* dv3-1.0.0 */
+    /* pullzero-1.0.0: zero is not a tally, it is the whole story */
+    if (zeroDay) doneLine = 'No chart histories were read \u2014 this day had none to read.';
     /* ===== cap-1.0.0 + tny-1.0.0 (the DONE card says all four things) =====
        "saved \u00B7 summaries pending N" is the honest wording for a day whose
        charts landed while the backend AI was unavailable; "not seen yet" is
@@ -5280,7 +5305,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     setText(p, 'phase', '');
     setShown(p, 'phase', false);
     var attnD = failed + (dv ? Number(dv.tnFailed || 0) : 0);
-    setText(p, 'tally', '✓ ' + ok + ' saved' + (attnD ? ' · ⚠ ' + attnD + ' need attention' : ''));
+    setText(p, 'tally', zeroDay ? 'Nothing to read' : ('✓ ' + ok + ' saved' + (attnD ? ' · ⚠ ' + attnD + ' need attention' : '')));
     setText(p, 'tallyMore', doneLine);
     setShown(p, 'more', doneLine.indexOf('·') >= 0);
     setText(p, 'elapsed', mmss(Math.max(0, (S.finishedAt || Date.now()) - startedAt)) + ' total');

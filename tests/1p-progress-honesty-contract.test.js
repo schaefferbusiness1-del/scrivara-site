@@ -333,7 +333,49 @@ async function runtime() {
       `a pull with no patients must be named as such; measured "${noRows.reason}"`);
     measured.autoVerdict = verdict.v;
 
-    /* ---- §5 the block owns no idle timers and leaves a clean page ------ */
+    /* ---- §5 a pull with nothing to read still says so ------------------
+       MEASURED before pullzero-1.0.0: with zero history targets the engine
+       still calls ppStart(0, 0), the pill read "Pulling 0/0 — show details",
+       and when the engine released, pill and panel were removed with no
+       verdict at all. Driven here through the engine's own state object,
+       which is exactly what the panel polls. */
+    ok(await page.evaluate(() => !!window.__mlsPullProgress), '__mlsPullProgress is not on the page');
+    await page.evaluate(() => {
+      window.__mlsDayHistoryPull = window.__mlsDayHistoryPull || {};
+      window.__mlsDayHistoryPull.state = { running: true, total: 0, done: 0, ok: 0, failed: 0, current: '', rows: [] };
+    });
+    await page.waitForTimeout(1400);   /* the panel's own 900ms poll */
+    const zeroPill = await page.evaluate(() => {
+      const f = document.getElementById('mlsPullProgFab');
+      return f ? String(f.textContent || '') : '';
+    });
+    ok(/Checking this day/.test(zeroPill), `a 0-target pull still counts nothing: pill reads "${zeroPill}"`);
+    ok(!/0\/0/.test(zeroPill), `the pill still shows a count of nothing: "${zeroPill}"`);
+    await page.evaluate(() => { const f = document.getElementById('mlsPullProgFab'); if (f) f.click(); });
+    await page.evaluate(() => { window.__mlsDayHistoryPull.state.running = false; window.__mlsDayHistoryPull.state.finishedAt = Date.now(); });
+    await page.waitForTimeout(1400);
+    const zeroDone = await page.evaluate(() => {
+      const p = document.getElementById('mlsPullProgPanel');
+      if (!p) return null;
+      const g = (k) => { const el = p.querySelector('[data-pp="' + k + '"]'); return el ? String(el.textContent || '') : ''; };
+      return {
+        h3: (p.querySelector('h3') || {}).textContent || '',
+        sub: (p.querySelector('.pp-sub') || {}).textContent || '',
+        note: (p.querySelector('.pp-note') || {}).textContent || '',
+        tally: g('tally'), current: g('current'),
+        stopShown: (document.getElementById('mlsPullProgStop') || {}).style ? document.getElementById('mlsPullProgStop').style.display : '?'
+      };
+    });
+    ok(zeroDone, 'the 0-target pull ended with no card at all — the doctor is told nothing');
+    ok(/no chart to read/i.test(zeroDone.h3), `the closing card must name the outcome; measured "${zeroDone.h3}"`);
+    ok(/No chart histories were read/.test(zeroDone.current), `the result line still reports a tally of nothing: "${zeroDone.current}"`);
+    eq(zeroDone.tally, 'Nothing to read', `the summary chip still says "${zeroDone.tally}"`);
+    ok(/pull the day again/.test(zeroDone.note), `the closing card must say what to check; measured "${zeroDone.note}"`);
+    eq(zeroDone.stopShown, 'none', 'the finished zero-day card still offers Stop');
+    measured.zeroDay = { pill: zeroPill, card: zeroDone };
+    await page.evaluate(() => { try { delete window.__mlsDayHistoryPull.state; } catch (e) {} });
+
+    /* ---- §6 the block owns no idle timers and leaves a clean page ------ */
     const idle = await page.evaluate(() => ({ passes: window.__mlsPsHonest.passes(), applied: window.__mlsPsHonest.applied(), dupes: window.__mlsPsHonest.dupesHidden() }));
     ok(idle.applied >= 1, 'the overlay never applied anything — it is not running');
     ok(idle.dupes >= 1, 'the duplicate rule never fired');
