@@ -20130,7 +20130,15 @@ function _opPreviewHtml(proc, name, dateStr){
 /* Remove DUPLICATE saved templates (same name + same text), keep the first, persist. */
 function dedupeSavedTemplates(announce){
   try{
-    var list=(typeof getTemplates==='function'?getTemplates():[])||[]; if(list.length<2) return list;
+    var list=(typeof getTemplates==='function'?getTemplates():[])||[];
+    /* 1p, 2026-08-18 (op-notes press test): PRESSED, IT SAID NOTHING. `announce`
+       is the flag that means "a doctor clicked this", and the only branch that
+       ever spoke was the one where something was deleted — so on a clean
+       library (or one holding fewer than two templates) the button was
+       indistinguishable from a dead control. Every internal caller passes no
+       announce and is untouched; nothing about what counts as a duplicate
+       changes. */
+    if(list.length<2){ if(announce){ try{ toast(list.length?'Nothing to remove — you have one template.':'Nothing to remove — you have no templates yet.',''); }catch(e0){} } return list; }
     var seen={}, out=[];
     /* 2026-07-29: the key used to be name + text.slice(0,400). Two different
        operative-note templates that share a name and a >400-char standard
@@ -20141,6 +20149,7 @@ function dedupeSavedTemplates(announce){
     list.forEach(function(t){ if(!t) return; var k=String(t.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'||'+String(t.text||'').replace(/\s+/g,' ').trim().toLowerCase(); if(!seen[k]){ seen[k]=1; out.push(t); } });
     var removed=list.length-out.length;
     if(removed>0){ setTemplates(out); if(announce){ try{ toast('Removed '+removed+' duplicate template'+(removed===1?'':'s')+'.','ok'); }catch(e){} } }
+    else if(announce){ try{ toast('No duplicates — all '+list.length+' templates are different from each other.','ok'); }catch(e1){} }
     return out;
   }catch(e){ return (typeof getTemplates==='function'?getTemplates():[])||[]; }
 }
