@@ -248,7 +248,10 @@ async function runtime() {
       const s = document.getElementById('appScreen'); if (s) s.style.display = '';
       window.__mlsHarnessAccountEmail = 'dockspace-harness@mlsscribe.test';
       try { if (window.__mlsP1CalmDock && window.__mlsP1CalmDock.ensure) window.__mlsP1CalmDock.ensure(); } catch (e) {}
-      try { if (window.__mlsCalmShell && window.__mlsCalmShell.renderNow) window.__mlsCalmShell.renderNow(); } catch (e) {}
+      /* The shell exports `render:` — there has never been a `renderNow` key,
+         so the old guarded call was a silent no-op and this suite was grading
+         boot-timing luck. Found 2026-08-19 chasing the visitflow flake. */
+      try { if (window.__mlsCalmShell && window.__mlsCalmShell.render) window.__mlsCalmShell.render(); } catch (e) {}
     });
     await page.evaluate(harness);
     /* The dock is idle-scheduled behind requiresFoundation and can be absent for

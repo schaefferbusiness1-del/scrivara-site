@@ -146,23 +146,18 @@ function harness() {
       try { e.dispatchEvent(new Event('input', { bubbles: true })); } catch (x) {}
       return true;
     },
-    /* Force the SHARED rule this fix narrows to actually run its pass.
-       renderNow() is synchronous by design (rAF never fires in a
-       non-compositing tab), which is why the calm shell exposes it. */
+    /* Force the SHARED rule this fix narrows to actually run its pass. The
+       shell's synchronous pass is exported as `render:` (rAF never fires in a
+       non-compositing tab, which is why it exists) — there has NEVER been a
+       `renderNow` key, so this suite's original guarded call was a silent
+       no-op and the A/B graded boot-timing luck: it passed only when one of
+       the shell's own boot timers happened to run a pass after the transcript
+       count line rendered. The r23 merge shifted that phase and the "flake"
+       surfaced. Measured 2026-08-19: on a failing run the class was absent,
+       raw and normalized text both matched, DOM static for 4s with zero
+       mutations, and calling the REAL export marked it instantly. */
     calmPass() {
-      /* Two passes, not one. The ez3 engine rebuilds the transcript meta line
-         ("0 words captured") about once a second; a single calm pass can land
-         during that rebuild frame, see no count text, and leave the box
-         unmarked. In production the calm shell re-evaluates on every observer
-         pass (its own comment: "Re-evaluated every pass, so the first captured
-         word brings it straight back"), so the miss self-heals within a frame.
-         This harness has exactly ONE pass - renderNow, exposed because rAF
-         never fires headless - so give it the second pass production always
-         gets. MEASURED 2026-08-19 (probe v4, merged r23 tree): failing run =
-         {matches:true, clsBefore:false, clsAfter2nd:true, sameNode:true,
-         active:true} - same node, same text, second pass marks it. */
-      try { if (window.__mlsCalmShell && window.__mlsCalmShell.renderNow) window.__mlsCalmShell.renderNow(); } catch (e) {}
-      try { if (window.__mlsCalmShell && window.__mlsCalmShell.renderNow) window.__mlsCalmShell.renderNow(); } catch (e) {}
+      try { if (window.__mlsCalmShell && window.__mlsCalmShell.render) window.__mlsCalmShell.render(); } catch (e) {}
       const w = document.querySelector('.ez3fl-transcript');
       const box = document.getElementById('ez3flTranscript');
       const cs = w ? getComputedStyle(w) : null;
@@ -222,6 +217,25 @@ async function runtime() {
     /* ---- 1. THE CAUSAL A/B ---------------------------------------- */
     await page.evaluate(() => window.__vfT.cssOff(true));
     await page.waitForTimeout(400);
+    /* PRECONDITION, polled: the A/B below is meaningful only once the
+       transcript's count line ("0 words captured") exists — a transcript with
+       no count text is one the calm shell deliberately does NOT hide (it
+       cannot confirm emptiness). Poll for the precondition with a REAL render
+       each iteration and refuse to grade if it never arrives. (Two wrong
+       diagnoses are recorded here on purpose: "mid-rebuild frame" — impossible
+       single-threaded — and "engine tick raced the fixed waits" — the actual
+       cause was that this suite's render call named a key the shell never
+       exported, see calmPass above.) */
+    let cntReady = false;
+    for (let ci = 0; ci < 20 && !cntReady; ci++) {
+      cntReady = await page.evaluate(() => {
+        try { if (window.__mlsCalmShell && window.__mlsCalmShell.render) window.__mlsCalmShell.render(); } catch (e) {}
+        const w = document.querySelector('.ez3fl-transcript');
+        return /(?:^|\D)0\s*words/i.test(String((w && w.textContent) || ''));
+      });
+      if (!cntReady) await page.waitForTimeout(250);
+    }
+    ok(cntReady, 'INSTRUMENT NOT READY: the transcript count line never rendered within 5s - the A/B below would prove nothing');
     const base = await page.evaluate(() => window.__vfT.calmPass());
     await page.evaluate(() => window.__vfT.cssOff(false));
     await page.waitForTimeout(500);
