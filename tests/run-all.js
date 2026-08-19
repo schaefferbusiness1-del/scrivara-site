@@ -331,6 +331,15 @@ const tests = [
      the patient chip whose initials are now the floor rather than the
      alternative. 13/13 verified-applied mutations are caught. */
   '1p-avatar-photo-fallback-runtime.test.js',
+  /* The initials are the FLOOR of every avatar surface, and FOUR independent
+     generators produce them in four scopes. ptInitials took the SECOND token
+     while the other three took the LAST, so "Maria Elena Vasquez" was ME in
+     the patient list and MV in quick-find, the pinned face and the context
+     bar — one chart labelled two ways on one screen. This EXECUTES all four
+     against one table and fails the moment they stop agreeing, which is the
+     right guard for four copies that must match: a refactor here could break
+     three surfaces at once. 5/5 verified-applied mutations caught. */
+  '1p-avatar-initials-agreement.test.js',
   '1p-avatar-camera-endurance-runtime.test.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',

@@ -12900,7 +12900,21 @@ async function purgeAthenaImportedPatients(){
 function ptInitials(name){
   const parts=String(name||'?').replace(/[^A-Za-z0-9 .]/g,'').trim().split(/[\s.]+/).filter(Boolean);
   if(!parts.length) return '?';
-  return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase();
+  /* p1-photo-fallback-1.1.0 -- FOUR GENERATORS, ONE PATIENT, TWO ANSWERS.
+     The initials are the FLOOR of every avatar surface, so they are what a
+     doctor sees whenever a photograph is missing or will not decode -- and
+     this one took the SECOND token while _qfInitials, _patientInitials and
+     the context bar's own initials() all take the LAST. 'Maria Elena
+     Vasquez' was ME in the patient list and MV in quick-find, the pinned
+     face and the context bar: one chart, labelled two ways, on one screen.
+     First + surname is the convention and three of the four already did it,
+     so this one moves. The punctuation strip stays -- it is the most robust
+     of the four. Agreement is pinned by 1p-avatar-initials-agreement, which
+     EXECUTES all four against one table rather than trusting them to stay
+     in step. */
+  const a=parts[0][0]||'';
+  const b=parts.length>1?(parts[parts.length-1][0]||''):'';
+  return (a+b).toUpperCase()||'?';
 }
 /* b377 perf: patientNotes was a full-store scan per call — renderPatients calls
    it once per row (150 rows × every note in the account). Index notes by
@@ -36990,9 +37004,9 @@ function _ptGroupSort(mode){
   }
   function initials(name){
     name = String(name||'').trim();
-    if (!name) return '-';
+    if (!name) return '?';   /* p1-photo-fallback-1.1.0: one floor, four generators */
     var parts = name.split(/\s+/).filter(Boolean);
-    return ((parts[0]||'')[0]||'').concat((parts.length>1?(parts[parts.length-1][0]||''):'')).toUpperCase() || '-';
+    return ((parts[0]||'')[0]||'').concat((parts.length>1?(parts[parts.length-1][0]||''):'')).toUpperCase() || '?';
   }
   function ageFromDob(dob){
     if (!dob) return '';
