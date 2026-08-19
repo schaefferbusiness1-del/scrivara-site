@@ -789,6 +789,20 @@ function installUi(runtime) {
   ok(!/<form\b|<input\b|<textarea\b|\bfetch\s*\(|<script\b/i.test(showcase), 'showcase accepts input or runs code');
   ok(showcase.includes('/1p/?tool=legal'), 'showcase does not route to the isolated preview workspace');
   ok(/No public PHI intake, payments, lawyer messaging, signing, delivery, chart filing, or Athena write/.test(showcase), 'showcase does not state the held boundaries');
+  /* p1-legal-pagecount-1.0.0 (2026-08-19 press-pass): the showcase claimed
+     "Thirteen sections" while SECTIONS had carried fourteen since
+     p1-legal-letterhead-1.0.0 added XIV. OPINIONS. A page that miscounts the
+     product is a defect, not a wording preference — so the number is now READ
+     off the module instead of being trusted, and this drifts loudly next time. */
+  {
+    const NUMBER_WORDS = { 12: 'Twelve', 13: 'Thirteen', 14: 'Fourteen', 15: 'Fifteen', 16: 'Sixteen' };
+    const sectionsBlock = source.slice(source.indexOf('var SECTIONS = ['), source.indexOf('var RECORDS_SECTIONS'));
+    const realCount = (sectionsBlock.match(/^\s*\['[IVX]+\./gm) || []).length;
+    ok(realCount === 14, 'the section engine no longer has 14 sections (counted ' + realCount + ') — update the showcase page with it');
+    const claimed = NUMBER_WORDS[realCount];
+    ok(showcase.indexOf(claimed + ' sections remain editable and unsigned') > 0,
+      'the showcase page does not state the real section count (' + realCount + ' = "' + claimed + '")');
+  }
 
   console.log('PASS 1p Legal / IME workspace runtime (' + checks + ' assertions)');
 })().catch(error => { console.error(error && error.stack ? error.stack : error); process.exit(1); });
