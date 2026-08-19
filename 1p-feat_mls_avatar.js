@@ -6466,7 +6466,35 @@
 
     var chosen = clusters[0].best;
     var finalX = Math.max(0, Math.min(spanX, clusters[0].cx - side * 0.50));
-    var finalY = Math.max(0, Math.min(spanY, clusters[0].cy - side * 0.44));
+    /* p1-photo-framing-1.1.0 — THE PHOTOGRAPH AND THE DRAWN CHARACTER ARE THE
+       SAME CONTROL, AND THEY WERE COMPOSED TO DIFFERENT VERTICAL RULES.
+       "My photo" and "Animated character" are two states of one toggle mounted
+       into one circle, and the doctor flips between them while looking at it.
+       Measured in the shipped 302px kiosk circle with one instrument
+       (1p-avatar-surface-quality-proof, section 7): the drawn clinician starts
+       its head 0.205 down the circle; an uploaded photograph started its head
+       at 0.160. That is a 21px jump on the toggle — and 0.160 sits in the band
+       of the drawn build the owner rejected on sight (0.140), not the one he
+       accepted (0.236). [[judged-in-a-square-shipped-into-a-circle]]
+
+       CROWN_TARGET is where the TOP OF THE HEAD lands, and that is the
+       quantity the memory recorded for both the accepted and the rejected
+       build. Anchoring the box CENTRE instead was measured and rejected here:
+       the crown then drifts with box height, which ranges 0.533-0.604 across
+       the sweep, and the crown gap came out anywhere from 0.120 to 0.199. The
+       crown is what a person looks at, so the crown is what gets anchored.
+       ⛔ Still built on the CLUSTER CENTROID, which is averaged over every
+       credible window; a single window's T is exactly the estimator
+       [[the-face-box-swallowed-the-hair]] records running to the top of the
+       frame. The half-height comes from the chosen window's own box, so a
+       photograph the reader saw poorly moves the crop less, not more.
+       ⛔ A source whose head is already near the top has no pixels above it to
+       give: finalY clamps at 0 and cannot reach the target. That is a limit of
+       the photograph. The alternative is upscaling or letterboxing, and this
+       path has never invented a pixel. */
+    var CROWN_TARGET = 0.205;
+    var chosenBh = Number(clusters[0].best && clusters[0].best.bh) || 0.56;
+    var finalY = Math.max(0, Math.min(spanY, clusters[0].cy - side * (CROWN_TARGET + chosenBh / 2)));
     if (Math.abs(finalX - chosen.plan.x) > 1 || Math.abs(finalY - chosen.plan.y) > 1) {
       var reframed = analyse({ x: finalX, y: finalY, label: 'face-aware' });
       if (reframed && credible.indexOf(reframed) >= 0) {
@@ -7569,14 +7597,28 @@
     if (faceValidPhoto(pendingHi) && facePhotoMatches(pendingPortrait, shownPortrait)) return pendingHi;
     return faceHiRead(shownPortrait);
   }
+  /* p1-photo-fallback-1.1.0 — THE THIRD MOUNT. p1-photo-fallback-1.0.0 gave the
+     kiosk and the Setup preview a decode-failure fallback and MISSED this one,
+     which is the 72px circle beside the Face row in Setup and Settings. It
+     already has the right fallback for a missing portrait — the drawn
+     character, deliberately never a bare emoji — and the only thing it lacked
+     was any way to find out that the bytes did not decode. Same prefix test,
+     same blind spot: a truncated portrait put the browser's broken-image glyph
+     in a 72px circle and left it there.
+     ⛔ The handler is attached BEFORE `src`, for the reason recorded on
+     makePhotoFace: a cached failure can dispatch early, and ordering the two
+     this way means the guarantee never rests on task timing. */
   function facePreviewNode(dataUrl, look) {
     var wrap = make('div', '');
     wrap.style.cssText = 'width:72px;height:72px;border-radius:999px;overflow:hidden;border:2px solid #E7E5DD;background:#F4F2EC;display:flex;align-items:center;justify-content:center;font-size:34px';
+    function drawn() { wrap.innerHTML = faceSvg(look || null); } /* the drawn character, never a bare emoji */
     if (dataUrl && String(dataUrl).indexOf('data:image/') === 0) {
-      var img = document.createElement('img'); img.alt = ''; img.src = dataUrl;
+      var img = document.createElement('img'); img.alt = '';
       img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      img.addEventListener('error', function () { safe(drawn); }, false);
       wrap.appendChild(img);
-    } else wrap.innerHTML = faceSvg(look || null); /* the drawn character, never a bare emoji */
+      img.src = dataUrl;
+    } else drawn();
     return wrap;
   }
 
@@ -13957,6 +13999,7 @@ function kioskLine(kind, text) {
     dormant.lookProportions = function () { return null; };   /* avlook-1.0.0 */
     dormant.deriveLookFromPhoto = function () { return false; };
     dormant.captureFit = function () { return null; };   /* avfit-1.0.0 */
+    dormant.photoFrame = function () { return null; };   /* avframe-1.0.0 */
     dormant.landmarkStatus = function () { return null; };   /* avml-1.0.0 */
     dormant.landmarkRead = function () { return false; };    /* avml-1.0.0 */
     dormant.voiceGate = function () { return { ready: false, why: 'no authenticated session', echoFinalsRefused: 0 }; };
@@ -14075,6 +14118,44 @@ function kioskLine(kind, text) {
         after: receiptOf(fitted.q) };
     };
     /* ===== end avfit-1.0.0 ===== */
+    /* ===== avframe-1.0.0 — THE UPLOAD CROP, DRIVABLE, WITH THE REAL READER.
+       The framing proof beside this one executes faceAwareSquareFromImage
+       against a STUBBED faceReadPortrait that returns a perfect box, so the
+       crop ARITHMETIC is proven and the crop's behaviour on real pixels never
+       was. This runs the shipped chain end to end — real detector, real
+       clustering, real re-frame — and then reports where the face landed IN
+       THE SQUARE THAT SHIPS, which is the number every surface downstream
+       inherits and the one no harness has ever read.
+
+       ⛔ It returns NUMBERS plus the live canvas it just made. The canvas is
+       an in-page handle for a harness that needs to render the crop into the
+       shape it ships (judged-in-a-square-shipped-into-a-circle); it is never
+       serialised, never stored and never sent anywhere, exactly like the node
+       faceDemo hands back. Pure with respect to the doctor: it touches no
+       look, no mode, no storage. ===== */
+    owner.photoFrame = function (source) {
+      if (!owned() || !source) return null;
+      var picked = safe(function () { return faceAwareSquareFromImage(source, MEASURE_MAX); }, null);
+      if (!picked) return null;
+      var res = picked.square ? safe(function () { return faceReadPortrait(picked.square); }, null) : null;
+      var b = (res && res.box) || null;
+      var grid = Number(b && b.grid) || 0;
+      /* The box in FRACTIONS of the shipped square. A grid-relative box is
+         only comparable to itself; a fraction is comparable to a circle. */
+      function frac(v) { return grid ? Math.round((Number(v) / grid) * 10000) / 10000 : 0; }
+      return {
+        why: picked.why || '',
+        meta: picked.meta || null,
+        outPx: Number(picked.square && picked.square.width) || 0,
+        ready: !!(picked.q && picked.q.faceVerdict && picked.q.faceVerdict.ready),
+        derived: (res && res.derived) ? res.derived.slice() : [],
+        box: b ? { grid: grid, L: frac(b.L), R: frac(b.R), T: frac(b.T), B: frac(b.B),
+          cx: frac(isFinite(Number(b.cx)) ? b.cx : (Number(b.L) + Number(b.R)) / 2),
+          w: frac(Math.max(Number(b.w) || 0, Number(b.R) - Number(b.L))) } : null,
+        square: picked.square || null
+      };
+    };
+    /* ===== end avframe-1.0.0 ===== */
     /* ===== avml-1.0.0 — the landmark read, drivable without a camera =========
        Same shape as captureFit and for the same reason: the proof must run the
        REAL reader on real pixels, not a re-implementation. `landmarkRead` runs

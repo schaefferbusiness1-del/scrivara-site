@@ -23,7 +23,12 @@ const AUTOMATED_PROOF_FILES = new Set([
      window, merges with his face and takes the read to 0-1 of 14; this proves
      the merge, proves the colour-independent locator recovers it, and keeps the
      wall-only and 12-pixel-face negatives refusing. */
-  '1p-avatar-warm-wall-proof.js'
+  '1p-avatar-warm-wall-proof.js',
+  /* t12avatar (2026-08-19): the first harness that asks what the portrait looks
+     like AFTER the shipped mask — crown gap, head height and surviving garment
+     per surface, at each surface's real diameter, plus the drawn face and the
+     photograph measured with ONE instrument in the SAME 302px circle. */
+  '1p-avatar-surface-quality-proof.js'
 ]);
 
 const tests = [
@@ -328,6 +333,16 @@ const tests = [
   '1p-avatar-photo-fallback-runtime.test.js',
   '1p-avatar-camera-endurance-runtime.test.js',
   '1p-avatar-photo-framing-proof.js',
+  /* p1-photo-framing-1.1.0 — every avatar harness in this tree stopped at the
+     square. This one pours the crop into the SHAPE IT SHIPS, at each shipped
+     diameter, and counts what survives: the framing proof beside it executes
+     the crop arithmetic against a STUBBED reader, and the readability proof
+     runs the real reader but only counts claimed traits. Neither could see
+     that the photograph and the drawn character were composed to different
+     vertical rules — a 21px jump in the kiosk circle on the Face style toggle.
+     Also carries the resolution table and the two size canaries. 5/5
+     verified-applied mutations caught. */
+  '1p-avatar-surface-quality-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* 2026-08-17, owner §13/§14/§15/§16 — "the avatar must stop looking preschooly",
      the animation must stop being robotic, the intake must actually run, and intake
@@ -363,6 +378,18 @@ const tests = [
      the pre-fix build: 0 or 1 of 14, because the face finder segments by SKIN
      COLOUR and a magnolia wall is skin-coloured. */
   '1p-avatar-warm-wall-proof.js',
+  /* t12avatar, 2026-08-19. Every avatar harness above stops at the SQUARE.
+     [[judged-in-a-square-shipped-into-a-circle]] is the standing record of what
+     that costs: a portrait composed for a rectangle went into a round hole, the
+     pin written that day measured CLIPPING and passed on BOTH arms, and the
+     owner rejected the build on sight. This measures the three fractions that
+     actually discriminated — crown gap, head height, surviving garment — inside
+     each shipped mask at its shipped diameter, carries the 12-pixel-face canary,
+     proves a corrupt data: URL really does raise `error` in real Chrome (the
+     event every decode fallback in the module rests on), and rasterises the
+     DRAWN face and the PHOTOGRAPH into the same 302px circle so the head cannot
+     jump when the doctor toggles Face style. */
+  '1p-avatar-surface-quality-proof.js',
   '1p-avatar-capture-fit.test.js',
   /* avml-1.0.0 — the bundled on-device face landmark model, and the honest
      ABSENCES it makes claimable (no glasses / no beard / hairline visible),

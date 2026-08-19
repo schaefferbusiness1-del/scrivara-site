@@ -1302,6 +1302,17 @@
      in the DOM and the photograph lies over them; a photograph that cannot be
      decoded removes itself and they are simply there. */
   .pt-avatar>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
+  /* p1-photo-fallback-1.1.0 -- THE INTAKE INBOX TILE USED TO RENDER NOTHING.
+     A pre-visit intake card with no self-photo emitted an empty string, so the
+     row simply had no tile and the cards did not line up; a photo that failed
+     to decode left a broken glyph, because this img had no onerror either.
+     Same rule as .pt-avatar: the initials are the floor and the photograph
+     lies over them. It is a 10px rounded square, not a circle, because that is
+     the shape this card has always shipped. */
+  .ik-inbox-face{position:relative;overflow:hidden;width:48px;height:48px;border-radius:10px;
+    flex:0 0 auto;border:1px solid var(--line);background:linear-gradient(120deg,#2E6A4B,#2E6A4B);
+    color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px}
+  .ik-inbox-face>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
   .pt-main{flex:1;min-width:0}
   .pt-main .t{font-weight:700;font-size:16px;color:var(--ink)}
   .pt-main .s{font-size:13px;color:var(--muted);margin-top:2px}
@@ -18773,7 +18784,8 @@ function renderPendingIntakes(items){
     else if(m && m.ambiguous){ matchTxt='⚠️ Several charts share this name + DOB — review manually'; action='<button class="btn-ghost" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\'\')">Create new chart</button>'; }
     else { matchTxt='No existing chart found — a new one will be created'; action='<button class="btn-green" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\'\')">Create &amp; attach</button>'; }
     html+='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:#fff;display:flex;gap:12px;align-items:flex-start">'
-      +(x.photo?('<img '+'src='+'"'+x.photo+'" alt="" style="width:48px;height:48px;border-radius:10px;object-fit:cover;flex:0 0 auto;border:1px solid var(--line)">'):'')
+      +'<div class="ik-inbox-face" aria-hidden="true">'+esc(ptInitials(x.name||''))
+        +(x.photo?('<img '+'src='+'"'+esc(x.photo)+'" alt="" onerror="this.remove()">'):'')+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-weight:700">'+esc(x.name||'(no name given)')+(x.dob?(' · '+esc(x.dob)):'')+'</div>'
       +'<div style="font-size:13px;color:var(--muted);margin:2px 0 6px">'+esc(String(x.chief||'').slice(0,150))+(x.pain!=null?(' · pain '+x.pain+'/10'):'')+'</div>'
       +'<div style="font-size:12.5px;color:var(--brand-dk);margin-bottom:8px">'+matchTxt+'</div>'
