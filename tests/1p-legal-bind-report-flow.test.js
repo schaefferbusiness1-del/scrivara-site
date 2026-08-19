@@ -108,7 +108,7 @@ const UI_IDS = {
   mlsP1LegalChronology: 'div', mlsP1LegalDrop: 'button', mlsP1LegalFile: 'input',
   mlsP1LegalSources: 'div', mlsP1LegalDoi: 'input', mlsP1LegalQuestions: 'textarea',
   mlsP1LegalGenerate: 'button', mlsP1LegalCancel: 'button', mlsP1LegalStatus: 'div',
-  mlsP1LegalDraftCopy: 'button', mlsP1LegalDraftDownload: 'button', mlsP1LegalDraftPrint: 'button',
+  mlsP1LegalDraftCopy: 'button', mlsP1LegalDraftDownload: 'button', mlsP1LegalDraftWord: 'button' /* wdoc-1.0.0 */, mlsP1LegalDraftPrint: 'button',
   mlsP1LegalDraft: 'textarea', mlsP1LegalLetterheadEmail: 'input', mlsP1LegalLetterheadPreview: 'pre',
   /* p1-legal-flow-2.0.0 / p1-legal-bind-2.0.0 */
   mlsP1LegalBanner: 'div', mlsP1LegalRoster: 'div', mlsP1LegalReadOps: 'div',
