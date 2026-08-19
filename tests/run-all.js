@@ -186,6 +186,12 @@ const tests = [
   '1p-todaynote-deferred-retry-runtime.test.js',
   '1p-todaynote-disown-handover.test.js',
   '1p-notes-idle-catchup-runtime.test.js',
+  /* lcd-1.0.0 (owner 2026-08-19: "as the things in orange get pulled in the
+     background they should turn to green"). The notes-idle engine above files
+     the receipts; this suite proves they reach the OPEN result card - the row
+     flips in place on its own appointment identity and day, a receipt for
+     another day flips nothing, and the header tally recounts. */
+  '1p-live-result-card-runtime.test.js',
   '1p-capture-before-ai-runtime.test.js',
   '1p-day-note-day-and-future-runtime.test.js',
   '1p-daynote-column-and-not-yet-runtime.test.js',

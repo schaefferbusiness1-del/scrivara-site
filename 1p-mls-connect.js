@@ -5233,6 +5233,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     ensureFab(false);
     var p = buildPanel();
     var dv = S.dayVerdict || null;
+    /* ===== lcd-1.0.0 (the open result card is LIVE) =========================
+       OWNER 2026-08-19, verbatim: "as the things in orange get pulled in the
+       background they should turn to green."
+       This card was painted ONCE and then frozen. Two separate freezes:
+         - the rows list was keyed on p.__ppDoneRows, a one-shot, so an
+           in-place note re-stamp (dnw-1.0.0 does exactly that, and the
+           notes-idle engine now does it too) changed the DATA under a DOM
+           that never looked again;
+         - the note tally was read straight off the engine's dayVerdict STAMP,
+           taken at the instant the pull ended, so it kept reporting notes that
+           had since been read.
+       The doctor therefore watched orange cells - and a count - for notes that
+       were already saved.
+       THE COUNT IS EVIDENCE, NOT A RECOUNT. It subtracts only recoveries that
+       are proven on the rows themselves (dnLive, set by the engine only when
+       it flips a cell it owns from orange to green), so it can never rise
+       above the engine's own number and can never invent one. Recounting the
+       whole column from the rows would have been shorter and would have
+       silently read 0 on any run whose rows never carried a note column.
+       It is row state, not panel state, so it survives Hide -> show: a card
+       reopened later shows the SETTLED count, not the count at first paint. */
+    var dnRecovered = 0;
+    try {
+      var recLatest = {};
+      (S.rows || []).forEach(function (r) { if (r) recLatest[r.k || r.name] = r; });
+      Object.keys(recLatest).forEach(function (rk) {
+        var rr = recLatest[rk];
+        if (rr && rr.dnLive === 1 && String(rr.dn || '') === 'read') dnRecovered++;
+      });
+    } catch (eRec) {}
+    var dvTnFailed = Math.max(0, (dv ? Number(dv.tnFailed || 0) : 0) - dnRecovered);
+    /* ===== end lcd-1.0.0 (live count) ===== */
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;
@@ -5289,7 +5321,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        clause and stays exactly as it was. */
     if (dv && Number(dv.tnFuture || 0) > 0) doneLine += ' \u00B7 notes: this day is in the future';
     /* ===== end fdw-1.0.0 ===== */
-    if (dv && Number(dv.tnFailed || 0) > 0) doneLine += ' \u00B7 ' + dv.tnFailed + ' pulled-day note' + (Number(dv.tnFailed) === 1 ? '' : 's') + ' not read yet';
+    if (dvTnFailed > 0) doneLine += ' \u00B7 ' + dvTnFailed + ' pulled-day note' + (dvTnFailed === 1 ? '' : 's') + ' not read yet'; /* lcd-1.0.0: dvTnFailed, not the frozen stamp */
     /* ===== end cap-1.0.0 + tny-1.0.0 ===== */
     if (dv && dv.complete === true) doneLine += ' \u2014 everything verified';
     setText(p, 'done', String(S.done || 0));
@@ -5304,7 +5336,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        The phase caption is cleared here too - a finished pull has no phase. */
     setText(p, 'phase', '');
     setShown(p, 'phase', false);
-    var attnD = failed + (dv ? Number(dv.tnFailed || 0) : 0);
+    var attnD = failed + dvTnFailed; /* lcd-1.0.0 */
     setText(p, 'tally', zeroDay ? 'Nothing to read' : ('✓ ' + ok + ' saved' + (attnD ? ' · ⚠ ' + attnD + ' need attention' : '')));
     setText(p, 'tallyMore', doneLine);
     setShown(p, 'more', doneLine.indexOf('·') >= 0);
@@ -5312,7 +5344,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     setText(p, 'current', doneLine);
     /* ===== end clunky2-pull-1.0.0 (done line) ===== */
     var rowsElD = p.querySelector('[data-pp="rows"]');
-    if (rowsElD && !p.__ppDoneRows) { p.__ppDoneRows = 1; var htmlD = rowsHtml(S); rowsElD.style.display = htmlD ? '' : 'none'; rowsElD.innerHTML = htmlD; }
+    /* ===== lcd-1.0.0 (rows repaint on DATA change, not once) ================
+       Was `if (rowsElD && !p.__ppDoneRows)` - a one-shot. The same guarded,
+       signature-gated discipline render() already uses while the pull runs:
+       an unchanged card computes a string and writes NOTHING, so the b940
+       node-identity rule and the once-only entrance still hold, and a note
+       cell that turns green repaints within one 900 ms tick. */
+    if (rowsElD) {
+      var sigD = '';
+      try {
+        var seenD = {}, orderD = [];
+        (S.rows || []).forEach(function (r) { if (!r) return; var dk = r.k || r.name; if (!(dk in seenD)) orderD.push(dk); seenD[dk] = r; });
+        /* JSON, not a delimiter char: a name or a reason could contain any
+           separator, and a file constant must stay ASCII (a non-ASCII literal
+           in this repo became a raw control byte once already). */
+        sigD = JSON.stringify(orderD.map(function (dk) {
+          var rr = seenD[dk];
+          return [dk, rr.ok === true ? 1 : 0, String(rr.dn || ''), rr.sp === true ? 1 : 0, rr.cs === true ? 1 : 0, String(rr.reason || '')];
+        }));
+      } catch (eSigD) { sigD = 'len:' + (S.rows || []).length; }
+      if (p.__ppDoneRowsSig !== sigD) {
+        p.__ppDoneRowsSig = sigD;
+        p.__ppDoneRows = 1; /* dn-1.0's marker kept: the terminal rows have been painted at least once */
+        var htmlD = rowsHtml(S);
+        var wantD = htmlD ? '' : 'none';
+        if (rowsElD.style.display !== wantD) rowsElD.style.display = wantD;
+        if (rowsElD.innerHTML !== htmlD) rowsElD.innerHTML = htmlD;
+      }
+    }
+    /* ===== end lcd-1.0.0 (live rows) ===== */
   }
   api._renderDone = renderDone; /* dn-1.0: contract-test seam; not used by the app */
 
