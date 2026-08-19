@@ -54,7 +54,7 @@ const tests = [
      and for nothing else — not a heading that says "Staff prep", not the
      engine's own repaint, and not the note phase, where its mount used to
      throw NotFoundError and take the whole working surface with it. */
-PLACEHOLDER_NEVERlane-survives-contract.test.js',
+  '1p-visit-lane-survives-contract.test.js',
   '1p-visitflow-transcript-contract.test.js',
   /* The progress widget stops claiming work it did not do (owner screenshot,
      2026-08-18: "Pulling patient history · ✓✓✓ · No charts were read"). The
@@ -396,7 +396,7 @@ PLACEHOLDER_NEVERlane-survives-contract.test.js',
      A's EMR block, ICD/CPT chips, patient handout and lastEMR in place, so
      noteRecordFromState() stamped B's id onto A's chart data. Carries its own
      causal control against origin/main's shell bytes. */
-PLACEHOLDER_NEVERowner-isolation-runtime.test.js',
+  '1p-visit-owner-isolation-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   /* b1026's pdr-1.0.0 provider Day render fix was never ported to the fork, so

@@ -758,7 +758,13 @@ async function runtime() {
     checks++;
     await page.waitForTimeout(600);
     const go2 = await page.evaluate(() => (document.getElementById('mlsOpnGo') || {}).textContent || '');
-    ok(/Save to/.test(go2), `after a clean draft the one action is "${go2}", not Save`);
+    /* opnsend-1.0.0 (owner 2026-08-19, "including op notes btw they should be
+       able to put right into athena to"): a finished op note used to need two
+       presses — Save, then a Send control that only existed once the save had
+       landed. The one action now saves AND opens the ordinary Athena confirm
+       sheet, so the label promises both. The save half is unchanged and is
+       still proven by step (d) below. */
+    ok(/Save & send to Athena/.test(go2), `after a clean draft the one action is "${go2}", not Save & send`);
 
     /* THE NOTE COMES EXPANDED, AND THE GREEN BAR IS GONE ------------- */
     let open7 = await page.evaluate(() => ({
@@ -1123,7 +1129,7 @@ async function runtime() {
     await glowIs('mlsOpnGo', 'patient selected, no note yet');
     eq(await page.evaluate(() => (document.getElementById('mlsOpnGo') || {}).textContent || ''),
       '✨ Draft this op note', 'the glowing control on an undrafted patient is not the Draft action');
-    /* c) drafted and unsaved -> Save to chart */
+    /* c) drafted and unsaved -> Save & send to Athena (opnsend-1.0.0) */
     await page.evaluate(async () => {
       const r = (window._opPrep || [])[0];
       r.gen = true; r._genPass = true; r.note = 'PROCEDURE: Lumbar medial branch block\nFINDINGS: documented';
@@ -1133,8 +1139,8 @@ async function runtime() {
     });
     await page.waitForTimeout(900);
     await glowIs('mlsOpnGo', 'note drafted, not yet in the chart');
-    ok(/Save to/.test(await page.evaluate(() => (document.getElementById('mlsOpnGo') || {}).textContent || '')),
-      'the glowing control on a finished draft is not Save');
+    ok(/Save & send to Athena/.test(await page.evaluate(() => (document.getElementById('mlsOpnGo') || {}).textContent || '')),
+      'the glowing control on a finished draft is not Save & send');
     /* d) saved -> the BIG "Open in History", through the app's OWN save */
     const saved = await page.evaluate(async () => {
       document.getElementById('mlsOpnGo').click();
