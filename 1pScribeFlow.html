@@ -42948,9 +42948,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      button at the card's top-left covers x 12..56, y 10..54, and
      #mlsOpnPrevDay ("yesterday") sits at x 14..58, y 39..83 — the same
      collision class as "the ✕ painted over the next-day arrow, so the doctor
-     pressing tomorrow would have closed the room". #mlsOpDayTitle takes a
-     52px left inset and a 44px floor, which puts the whole day-switcher row
-     below the button instead of under it.
+     pressing tomorrow would have closed the room". #mlsOpDayHead takes a 52px
+     left inset, so the button sits BESIDE both of its rows; see the stylesheet
+     for why the lane is horizontal and not vertical (a vertical one cost three
+     patient rows at 768x1024).
 
      HOME IS THE BOOT TAB, CLICKED — never showView('visit'). MEASURED on the
      real nav: nav_visit's onclick is
@@ -42986,13 +42987,25 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpHome[data-mls-home="here"]{ opacity:.6; }
 #mlsOpHome[data-mls-home="here"]:hover{ opacity:1; }
 
-/* THE RESERVED LANE. 52px = the button's 44 plus the 8px it is inset by, and a
-   44px floor on the title row so the day switcher underneath is never covered.
-   MEASURED at 1440x900: #mlsOpDayHead 261x70 -> 261x94, and the stepper's row
-   moves from y 39..83 to y 63..107 — clear of the button's 10..54. */
-#opPrepModal #mlsOpDayTitle{
-  padding-left:52px; min-height:44px; display:flex; align-items:center;
-}
+/* THE RESERVED LANE IS HORIZONTAL, AND THAT CHOICE WAS FORCED BY A MEASUREMENT.
+   52px = the button's 44 plus the 8px it is inset by.
+
+   The first version reserved it VERTICALLY instead — padding-left plus a 44px
+   floor on #mlsOpDayTitle, which grew #mlsOpDayHead from 70px to 94px. It is
+   the day head, so it is inside the rail, and below 900px the rail is a strip
+   capped at 38vh. MEASURED at 768x1024: three patient rows (mlsOpnRow6..8, all
+   at y=380) fell out of the capped strip and were painted over by #oprEditor —
+   the exact failure 1p-opnote-rail-runtime's own obstruction check exists to
+   catch, caused by a control that was supposed to make the room easier.
+
+   Padding the HEAD costs no height at all: the button sits BESIDE both of the
+   head's rows rather than above one of them, and the title, the stepper, the
+   picker and Today all start one lane in. The only place it pinches is the
+   288px rail, where Today's cell drops to ~59px against a ~68px intrinsic
+   width — so Today's own horizontal padding comes down to match, which is the
+   whole cost, in one place, on the one control that can afford it. */
+#opPrepModal #mlsOpDayHead{ padding-left:52px; }
+#opPrepModal #mlsOpnToday{ padding-left:9px; padding-right:9px; }
 /* The Templates panel brings the room's own top bar back, and it starts at the
    same corner. Same lane, same reason. */
 #opPrepModal[data-mls-opnotes-state="templates"] .opr-top{ padding-left:52px; }
@@ -43163,7 +43176,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
            the Templates panel, where the rail is display:none and there is no
            stepper to clear at all. A vacuous false reads as a defect. */
         clearsStepper: !pr || pr.width <= 0 || (pr.top >= r.bottom - 1 || pr.left >= r.right - 1),
-        titleLane: (function () { var t = el('mlsOpDayTitle'); if (!t) return ''; try { return getComputedStyle(t).paddingLeft; } catch (e3) { return ''; } })(),
+        titleLane: (function () { var t = el('mlsOpDayHead'); if (!t) return ''; try { return getComputedStyle(t).paddingLeft; } catch (e3) { return ''; } })(),
         /* proof this block never touched the header's title */
         rdTitle: (function () { var t = el('mlsRdTitle'); return t ? S(t.textContent).trim().slice(0, 40) : ''; })()
       };
