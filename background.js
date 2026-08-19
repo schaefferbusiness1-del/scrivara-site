@@ -8967,7 +8967,25 @@ function kaFrameTouch() {
       }
     } catch (e5) {}
     if (hit) { try { hit.click(); } catch (e6) {} }
-    if (window === window.top) { try { fetch(String(window.location.href), { method: 'HEAD', credentials: 'include', cache: 'no-store' }).then(function () {}, function () {}); } catch (e7) {} }
+    /* ka-3 (3.0.69): athena's own session heartbeat. Their frontend pings
+       /{practice}/6/ax/login/ping; we make the same call with the page's own
+       cookies. The practice id is the first path segment of the current URL.
+       Returns 'ka-signedout' when the answer is not the signed-in 'OK', so
+       the background can stamp the sign-out for the app to announce. */
+    var kaPing = null;
+    if (window === window.top) {
+      try {
+        var kaSeg = String(window.location.pathname).match(/^\/(\d+)\//);
+        var kaUrl = kaSeg ? ('/' + kaSeg[1] + '/6/ax/login/ping') : null;
+        if (kaUrl) {
+          kaPing = fetch(kaUrl, { credentials: 'include', cache: 'no-store', redirect: 'follow' })
+            .then(function (r0) { return r0.text().then(function (b0) { return (r0.ok && /^OK\b/.test(String(b0).trim())) ? 'ok' : 'signedout'; }); })
+            .catch(function () { return 'unknown'; });
+        }
+      } catch (e8) {}
+      try { fetch(String(window.location.href), { method: 'HEAD', credentials: 'include', cache: 'no-store' }).then(function () {}, function () {}); } catch (e7) {}
+    }
+    if (kaPing) { return kaPing.then(function (v0) { return (v0 === 'signedout') ? 'ka-signedout' : (hit ? 'ka-clicked-continue' : 'ka-touched'); }); }
     return hit ? 'ka-clicked-continue' : 'ka-touched';
   } catch (e) { return 'ka-error'; }
 }
@@ -8985,6 +9003,9 @@ async function kaTick() {
         var rs = await chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, func: kaFrameTouch });
         var clicked = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-clicked-continue'; });
         if (clicked) { try { console.log('[MLS ka-3066] clicked athena continue-session button in tab', t.id); } catch (eC) {} }
+        var kaOut = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-signedout'; });
+        if (kaOut) { try { chrome.storage.local.set({ mlsAthenaSignedOutAt: Date.now() }, function () {}); console.log('[MLS ka-3] athena session reads SIGNED OUT in tab', t.id); } catch (eS2) {} }
+        else { try { chrome.storage.local.remove('mlsAthenaSignedOutAt', function () {}); } catch (eS3) {} }
       } catch (eX) {}
     }
     try { chrome.storage.local.set({ mlsKeepAliveLastTick: Date.now() }, function () {}); } catch (eS) {}
