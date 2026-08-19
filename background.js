@@ -10568,6 +10568,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     function id(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
     var wantName = words(frozen.name), haveName = words(live.name);
+    /* alias-3071: a verified chart's own (legal) name, adopted by the walk
+       after the MRN/DOB-anchored pre-gate passed. Never set from an
+       unverified source. */
+    var wantAlias = words(frozen.nameAlias);
     var wantDob = dob(frozen.dob), haveDob = dob(live.dob);
     var wantMrn = id(frozen.mrn), haveMrn = id(live.mrn);
     if (wantName.length < 2 || (!wantDob && !wantMrn)) return { ok: false, reason: 'identity-hint-incomplete' };
@@ -10589,6 +10593,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     var hits = 0; wantName.forEach(function (w) { if (wantTokenOk(w)) hits++; });
     var nameOk = hits >= 2 && wantTokenOk(wantName[0]) && wantTokenOk(wantName[wantName.length - 1]);
+    if (!nameOk && wantAlias.length >= 2) {
+      var aHits = 0; wantAlias.forEach(function (w) { if (wantTokenOk(w)) aHits++; });
+      if (aHits >= 2 && wantTokenOk(wantAlias[0]) && wantTokenOk(wantAlias[wantAlias.length - 1])) nameOk = true; /* alias-3071 */
+    }
     /* 3.0.2 (owner directive): the stable athena patient id is the PRIMARY
        identity when both sides carry it. Live 2026-07-21: v26.3 FL encounter
        frames can render a stale or reformatted patient label while the id is
@@ -10803,7 +10811,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         preGateSeen = pgIdentity;
         var pgGate = visitIdentityGate(frozenHint, pgIdentity);
         preGateWhy = pgGate.reason || '';
-        if (pgGate.ok || preGateWhy === 'identity-hint-incomplete') { preGateOk = true; break; }
+        if (pgGate.ok || preGateWhy === 'identity-hint-incomplete') {
+          /* alias-3071: the chart just proved itself (MRN/DOB-anchored) - adopt
+             its own name for the per-encounter frames, which drop the MRN and
+             would otherwise refuse a nickname record on the name alone. */
+          try { if (pgGate.ok && pgIdentity && pgIdentity.name) frozenHint.nameAlias = String(pgIdentity.name); } catch (eAl71) {}
+          preGateOk = true; break;
+        }
         await sleep(3000);
         touchVisitLease();
       }
