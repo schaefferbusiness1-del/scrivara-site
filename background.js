@@ -11673,6 +11673,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     var appTabId = sender && sender.tab && sender.tab.id;
     var transportRequestId = String(msg.requestId || '').slice(0, 100);
     if (msg.foregroundBatchStart === true) __mlsFgDoctorMoved = false; /* fg-1.2: a new user-initiated batch re-earns the assist */
+    /* fgo-3070: a single-patient read that is not part of a schedule batch
+       and not declared background IS the doctor's own fresh press (the
+       whoever-is-open button). It earns front-for-read: without visibility,
+       athena never renders the visit list and the read starves behind one
+       frozen status line (owner-reproduced 3x, 2026-08-19). Schedule-batch
+       requests carry initiator:'schedule-batch' (forwarded by content.js as
+       of this build) and keep fg-1.2's exact behavior. */
+    if (msg.foregroundOk !== true && msg.background !== true && String(msg.initiator || '') !== 'schedule-batch') {
+      msg.foregroundOk = true;
+      __mlsFgDoctorMoved = false;
+    }
     if (activeAllVisitsPromise) {
       sendResponse({
         ok: false, reason: 'busy', requestId: transportRequestId, readerVersion: '2.9.22-visits-r4-two-stage', visits: [],
