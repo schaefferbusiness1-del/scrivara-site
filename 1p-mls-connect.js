@@ -52162,16 +52162,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }, remote ? 4000 : PHSEND_BEAT_MS);
 
       watchIv = setInterval(function () {
-        if (settled || pressing) { if (settled) stopTimers(); return; }
-        var open = null;
-        try { open = document.getElementById('mlsAthenaActionConfirm'); } catch (e) {}
-        if (open) { sawSheet = true; return; }
-        /* the sheet was up and is gone with no result = somebody closed it */
-        if (sawSheet) {
-          stopTimers(); lb(false);
-          finish({ ok: false, error: 'The confirmation was closed on this computer without sending. Nothing was written to Athena.' });
-          return;
+        if (settled) { stopTimers(); return; }
+        /* The closed-sheet check is skipped while WE are pressing the sheet -
+           our own press closes it, and that is a success in flight, not an
+           abandonment. */
+        if (!pressing) {
+          var open = null;
+          try { open = document.getElementById('mlsAthenaActionConfirm'); } catch (e) {}
+          if (open) {
+            sawSheet = true;
+          } else if (sawSheet) {
+            /* it was up and is gone with no result = somebody closed it */
+            stopTimers(); lb(false);
+            finish({ ok: false, error: 'The confirmation was closed on this computer without sending. Nothing was written to Athena.' });
+            return;
+          }
         }
+        /* The deadline is checked on EVERY tick, including while the sheet is
+           still standing and while a press is in flight. It used to sit behind
+           the `sheet is open` early return, which meant the one case it exists
+           for - the sheet up and nobody coming - was the one case it could
+           never fire in, and the job ran to the server's TTL instead of
+           telling the doctor anything. */
         if (Date.now() - startedAt > PHSEND_CONFIRM_WAIT_MS) {
           stopTimers(); lb(false);
           finish({ ok: false, error: 'Nobody confirmed on ' + where() + ' within nine minutes, so nothing was sent. The note is safe in MLS - send it again when you are ready.' });

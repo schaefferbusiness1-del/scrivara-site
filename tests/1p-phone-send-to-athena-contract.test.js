@@ -467,15 +467,29 @@ async function main() {
   ok(/closed on this computer without sending/i.test(out.error), 'says the sheet was closed');
   ok(/[Nn]othing was written/.test(out.error), 'says nothing was written');
 
-  // (b) nobody ever came
+  // (b) nobody ever came - WITH THE SHEET STILL STANDING, which is the real
+  // shape of this case: showActionConfirm always builds the overlay, so a
+  // deadline that only runs when the sheet is absent can never fire in the
+  // one situation it exists for. (It did not, until phclean-1.0.0.)
   h = harness({});
   p = h.api.runSendNote({ id: 'jt', payload: { action: 'write_note', noteText: 'n', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
   await flush();
+  h.standUpSheet('pv_t');
+  h.ctx.__wf.opts.onProbe({ ok: true, context: {} });
   h.advance(10 * 60 * 1000); await flush();
   out = await p;
-  eq(out.ok, false, 'an unconfirmed send must fail, not hang forever');
+  eq(out.ok, false, 'an unconfirmed send must fail even with the sheet still up, not hang forever');
   ok(/[Nn]obody confirmed/i.test(out.error), 'says nobody confirmed');
   ok(/note is safe in MLS/i.test(out.error), 'reassures the doctor the note is not lost');
+  h.tearDownSheet();
+
+  // (b2) and with NO sheet ever painted it still deadlines
+  h = harness({});
+  p = h.api.runSendNote({ id: 'jt2', payload: { action: 'write_note', noteText: 'n', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
+  await flush();
+  h.advance(10 * 60 * 1000); await flush();
+  out = await p;
+  eq(out.ok, false, 'the deadline also holds when the sheet never appeared');
 
   // (c) Athena never answered after the confirm
   h = harness({});
