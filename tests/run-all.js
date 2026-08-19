@@ -109,6 +109,15 @@ const tests = [
      honest bar, and the notice layer that never lands on the dock. Drives the
      real shell in real Chrome with a synthetic 28-patient day. */
   '1p-clunky-contract.test.js',
+  /* The site-wide busy-state contract (busyall-1.0.0), from the owner's rule of
+     2026-08-19: "all buttons should have a loading", and the long read that sat
+     on a static label for six minutes. Presses every async control surface in
+     the booted shell with a controlled stub and requires each one to say it is
+     working AT ITS OWN SURFACE inside 150ms, to refuse a second fire, and to be
+     restored exactly as it was; work past ten seconds must also show a moving
+     elapsed stamp. Ends by reverting the block and proving the same control
+     goes silent, so a green run cannot be the app's own busy states. */
+  '1p-busy-contract-runtime.test.js',
   /* The Settings redesign (t2settings-1.0.0) and its every-control-pressed
      inventory: seven tabs in clinic words, every section reachable from exactly
      one of them, and every visible control in the dialog actually pressed in
