@@ -54295,6 +54295,170 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
 })();
 </script>
 <!-- ===== end pullone-1.0.0 ================================================ -->
+<!-- ===== xpdoor-1.0.0 — a safety stop must open a door, not end the road ==
+     Owner 2026-08-19, reading the live refusal: "this warning it gave is very
+     clunky it should be a better system."
+
+     The refusal is CORRECT and is not touched here: when athenaOne has patient
+     B open and MLS is on patient A, the extension refuses to read a single
+     encounter body and MLS saves nothing. That guard stays exactly as it is.
+
+     What was clunky is what came next. The message told the doctor to go find
+     (or create) that same patient somewhere else, come back, and press again —
+     a scavenger hunt whose answer MLS already had. The extension returns the
+     live chart identity ON the safety stop (background.js returns
+     {ok:false, identity, error}); feat_visits' driveRequest turns that reply
+     into an Error and keeps only the message, so the name was thrown away one
+     layer below the refusal that needed it.
+
+     This block observes the reply that is ALREADY flowing to this page — no
+     new Athena traffic, no second read, nothing sent — and turns the refusal
+     into one button: "Switch to <Name> here and pull their chart".
+
+     THE FAIL-CLOSED FLOOR IS UNCHANGED, and this block is deliberately
+     stricter than the auto-pull resolver it borrows from:
+       - an MRN that matches a record with a DIFFERENT date of birth  -> REFUSE
+       - an MRN or name+DOB that matches MORE THAN ONE record         -> REFUSE
+       - a matching record carrying a DIFFERENT MRN                   -> REFUSE
+       - a chart with no DOB and no MRN                               -> REFUSE
+     (__mlsAthenaAutoPull.resolvePatient CREATES a record on an ambiguous MRN;
+     this door refuses instead, and only delegates creation when there is
+     genuinely no candidate at all.)
+     The switch is VERIFIED before the pull re-runs: if the active patient did
+     not actually become the intended one, nothing is pulled.
+     ==================================================================== -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'xpdoor-1.0.0';
+  var off = false, captured = null, obs = null, DOOR_ID = 'xpDoorSwitch';
+  var MISMATCH = /DIFFERENT patient open than the one selected here/i;
+  var SAFETY = /did not match the frozen MLS patient/i;
+  var FRESH_MS = 120000;
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function autoPull() { return safe(function () { return window.__mlsAthenaAutoPull || null; }, null); }
+  function digits(v) { return S(v).replace(/[^0-9]/g, ''); }
+  function statusEl() { return byId('pullChartStatus'); }
+  /* READ-ONLY observation of a reply already addressed to this page. */
+  function onMsg(ev) {
+    if (off) return;
+    var d = ev && ev.data;
+    if (!d || d.type !== 'mlsAppAllVisitsResult' || d.ok !== false) return;
+    if (!SAFETY.test(S(d.error))) return;
+    var id = d.identity || {};
+    if (!S(id.name).trim()) return;
+    captured = { name: S(id.name).trim(), dob: S(id.dob).trim(), mrn: S(id.mrn || id.athenaId).trim(), at: Date.now() };
+  }
+  function fresh() { return (captured && (Date.now() - captured.at) < FRESH_MS) ? captured : null; }
+  function say(msg, color) {
+    var el = statusEl(); if (!el) return;
+    el.style.display = 'block'; el.style.color = color || '#6f5a20'; el.textContent = msg;
+  }
+  /* Stricter than the auto resolver: every ambiguity is a refusal. */
+  function match(idn) {
+    var a = autoPull();
+    var pts = safe(function () { return (typeof getPatients === 'function' ? getPatients() : []) || []; }, []);
+    var namesMatch = function (x, y) { return (a && a.namesMatch) ? a.namesMatch(x, y) : (S(x).trim().toLowerCase() === S(y).trim().toLowerCase()); };
+    var normDob = function (x) { return (a && a.normDob) ? a.normDob(x) : digits(x); };
+    var cm = digits(idn.mrn), cd = normDob(idn.dob);
+    if (!cm && !cd) return { kind: 'conflict', why: 'athenaOne did not report a date of birth or an MRN for that chart, so no record here can be matched safely' };
+    if (cm) {
+      var hits = pts.filter(function (p) { return p && digits(p.athenaId || p.mrn) === cm; });
+      if (hits.length > 1) return { kind: 'conflict', why: 'more than one record here carries MRN ' + idn.mrn };
+      if (hits.length === 1) {
+        var p = hits[0], pd = normDob(p.dob);
+        if (pd && cd && pd !== cd) return { kind: 'conflict', why: 'the record here with MRN ' + idn.mrn + ' has a different date of birth' };
+        if (!namesMatch(p.name, idn.name) && !(pd && cd && pd === cd)) return { kind: 'conflict', why: 'the record here with MRN ' + idn.mrn + ' is under a different name' };
+        return { kind: 'match', patient: p };
+      }
+    }
+    if (cd) {
+      var nh = pts.filter(function (p) { return p && namesMatch(p.name, idn.name) && normDob(p.dob) === cd; });
+      if (nh.length > 1) return { kind: 'conflict', why: 'more than one record here matches that name and date of birth' };
+      if (nh.length === 1) {
+        var q = nh[0], qm = digits(q.athenaId || q.mrn);
+        if (qm && cm && qm !== cm) return { kind: 'conflict', why: 'the matching record here carries a different MRN' };
+        return { kind: 'match', patient: q };
+      }
+    }
+    return { kind: 'new' };
+  }
+  function press() {
+    var idn = fresh();
+    if (!idn) { say('MLS no longer has the identity athenaOne reported. Press Pull from Athena again. Nothing was changed.', '#9f2d2d'); return; }
+    var m = match(idn);
+    if (m.kind === 'conflict') {
+      say('MLS will not switch automatically: ' + m.why + '. Open the Patients list and pick or correct the right record yourself. Nothing was changed and nothing was saved.', '#9f2d2d');
+      return;
+    }
+    var p = m.patient || null;
+    if (m.kind === 'new') {
+      var a = autoPull();
+      if (!a || typeof a.resolvePatient !== 'function') { say('MLS cannot add ' + idn.name + ' on this build. Add them in the Patients list, then pull again. Nothing was changed.', '#9f2d2d'); return; }
+      var r = safe(function () { return a.resolvePatient({ name: idn.name, dob: idn.dob, mrn: idn.mrn, athenaId: idn.mrn }); }, null);
+      p = (r && r.patient) || null;
+      if (!p || !p.id) { say('MLS could not add ' + idn.name + ' here, so nothing was pulled and nothing was changed.', '#9f2d2d'); return; }
+    }
+    safe(function () { if (typeof setActivePtId === 'function') setActivePtId(p.id); });
+    safe(function () { if (typeof renderProfile === 'function') renderProfile(); });
+    safe(function () { if (typeof renderPatientBar === 'function') renderPatientBar(); });
+    safe(function () { if (typeof renderPatients === 'function') renderPatients(); });
+    /* Verify the switch actually happened before re-running the pull. */
+    var now = safe(function () { return (typeof activePatient === 'function' && activePatient()) || null; }, null);
+    if (!now || String(now.id || '') !== String(p.id || '')) {
+      say('MLS could not make ' + idn.name + ' the selected patient here, so nothing was pulled. Pick them in the Patients list and try again.', '#9f2d2d');
+      return;
+    }
+    say((m.kind === 'new' ? 'Added ' : 'Switched to ') + idn.name + ' here — pulling their chart from athenaOne now…', '#52675c');
+    setTimeout(function () {
+      safe(function () { if (typeof window.pullPatientFromAthenaPrompt === 'function') window.pullPatientFromAthenaPrompt(byId('ptPullAthenaBtn') || null); });
+    }, 350);
+  }
+  function offerDoor() {
+    if (off) return;
+    var el = statusEl(); if (!el) return;
+    if (!MISMATCH.test(S(el.textContent))) return;
+    if (el.querySelector('#' + DOOR_ID)) return;
+    var idn = fresh(); if (!idn) return;
+    var wrap = document.createElement('span');
+    wrap.style.cssText = 'display:inline-flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center';
+    var b = document.createElement('button');
+    b.type = 'button'; b.id = DOOR_ID;
+    b.textContent = 'Switch to ' + idn.name + ' here and pull their chart';
+    b.title = 'Selects (or adds) ' + idn.name + ' in MLS from the identity athenaOne reported, re-verifies it, then re-runs this same read-only pull. A conflicting record refuses instead.';
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:8px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer';
+    b.addEventListener('click', function () { press(); }, false);
+    wrap.appendChild(b);
+    el.appendChild(document.createElement('br'));
+    el.appendChild(wrap);
+  }
+  function arm() {
+    safe(function () { window.addEventListener('message', onMsg, false); });
+    var el = statusEl();
+    if (el && typeof MutationObserver === 'function') {
+      obs = new MutationObserver(function () { if (!off) safe(offerDoor); });
+      safe(function () { obs.observe(el, { childList: true, characterData: true, subtree: true }); });
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  window.__mlsXpDoor = {
+    installed: true, version: VERSION,
+    captured: function () { return fresh(); },
+    _test: { onMsg: onMsg, match: match, offerDoor: offerDoor, press: press, doorId: DOOR_ID },
+    revert: function () {
+      off = true;
+      safe(function () { window.removeEventListener('message', onMsg, false); });
+      safe(function () { if (obs) obs.disconnect(); });
+      var el = statusEl(), b = el && el.querySelector('#' + DOOR_ID);
+      if (b && b.parentNode) safe(function () { b.parentNode.remove(); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end xpdoor-1.0.0 ================================================= -->
 <!-- ===== pshonest-1.0.0 — a checkmark must mean work that happened ========
      Owner, 2026-08-18, from his own screenshot of the progress widget:
 
