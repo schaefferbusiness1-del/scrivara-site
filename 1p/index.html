@@ -20130,7 +20130,15 @@ function _opPreviewHtml(proc, name, dateStr){
 /* Remove DUPLICATE saved templates (same name + same text), keep the first, persist. */
 function dedupeSavedTemplates(announce){
   try{
-    var list=(typeof getTemplates==='function'?getTemplates():[])||[]; if(list.length<2) return list;
+    var list=(typeof getTemplates==='function'?getTemplates():[])||[];
+    /* 1p, 2026-08-18 (op-notes press test): PRESSED, IT SAID NOTHING. `announce`
+       is the flag that means "a doctor clicked this", and the only branch that
+       ever spoke was the one where something was deleted — so on a clean
+       library (or one holding fewer than two templates) the button was
+       indistinguishable from a dead control. Every internal caller passes no
+       announce and is untouched; nothing about what counts as a duplicate
+       changes. */
+    if(list.length<2){ if(announce){ try{ toast(list.length?'Nothing to remove — you have one template.':'Nothing to remove — you have no templates yet.',''); }catch(e0){} } return list; }
     var seen={}, out=[];
     /* 2026-07-29: the key used to be name + text.slice(0,400). Two different
        operative-note templates that share a name and a >400-char standard
@@ -20141,6 +20149,7 @@ function dedupeSavedTemplates(announce){
     list.forEach(function(t){ if(!t) return; var k=String(t.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'||'+String(t.text||'').replace(/\s+/g,' ').trim().toLowerCase(); if(!seen[k]){ seen[k]=1; out.push(t); } });
     var removed=list.length-out.length;
     if(removed>0){ setTemplates(out); if(announce){ try{ toast('Removed '+removed+' duplicate template'+(removed===1?'':'s')+'.','ok'); }catch(e){} } }
+    else if(announce){ try{ toast('No duplicates — all '+list.length+' templates are different from each other.','ok'); }catch(e1){} }
     return out;
   }catch(e){ return (typeof getTemplates==='function'?getTemplates():[])||[]; }
 }
@@ -43041,6 +43050,398 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 })();
 </script>
 <!-- ===== end opnote-day-4.0.0 ========================================= -->
+<!-- ===== opnote-home-1.0.0 — one press home, from inside a full-screen room ==
+     Owner: the op-note room is the only surface in the app you cannot leave
+     towards anything. Its ✕ closes it back onto whatever screen you came from,
+     and #mlsOpnBack goes back to the day inside the room. Neither of those is
+     "take me home".
+
+     WHERE THIS BUTTON CANNOT LIVE, AND IT WAS MEASURED RATHER THAN ASSUMED.
+     The obvious mount is the app header, next to the burger and the Back
+     arrow. It cannot work there, and the reason is one computed property on
+     one node:
+
+       #appHeader.mlsRdHdr  →  backdrop-filter: saturate(1.8) blur(20px)
+                               z-index: 6000 / position: sticky
+
+     feat_mls_redesign.js writes that inside an @supports guard (its own
+     "IT FAILS SAFE, TWICE" block). A backdrop-filter does two things a
+     z-index cannot argue with:
+
+       1. It makes the header the CONTAINING BLOCK for every position:fixed
+          descendant. MEASURED at 1440x900: a fixed button in #mlsRdTop with
+          `left:8px` painted at x=244 — the header's own left edge, past the
+          236px nav rail — not at x=8. At 900px and below the rail goes
+          off-canvas, the header starts at 0, and the offset vanishes: a lane
+          that only checked phone widths would call it fixed and be wrong.
+       2. It makes the header a STACKING CONTEXT at z-index 6000. #opPrepModal
+          is position:fixed, z-index 9400, at BODY level. 6000 < 9400, so every
+          descendant of the header paints UNDER the room no matter what z-index
+          it carries. MEASURED with two identical buttons at five widths:
+          elementFromPoint at the header-mounted one's centre returned
+          #mlsOpDayTitle (the room) at 1440 and the body-mounted twin at every
+          other width — never itself. The body-mounted twin returned itself,
+          44x44, at 1440 / 900 / 768 / 390 / 360.
+
+     That is the third hiding mechanism a previous attempt hit: not the
+     data-mlsrd-hid stamping (feat_mls_redesign.js:145, which only reaches
+     DIRECT children of #appHeader) and not the #mlsRdTop mount — a property
+     no id-registry or z-index bid can see.
+
+     SO THE BUTTON LIVES IN THE ROOM. It is a direct child of #opPrepModal,
+     position:absolute, exactly mirroring the room's own ✕ (`.modal-x`, which
+     is absolute at top:10px right:12px and resolves against this same modal —
+     MEASURED at 1368,10 on a 1425px viewport and at 288,10 on a 345px one).
+     Nothing can cover it, because it is inside the thing that would have
+     covered it; it survives every room state including Templates, where the
+     rail itself is display:none; and there is no fixed-position measurement
+     loop to keep in sync with a scrolling rail.
+
+     THE LANE IS RESERVED, because the alternative is the defect the room
+     already documented once. MEASURED at 390x844 before reserving: a 44x44
+     button at the card's top-left covers x 12..56, y 10..54, and
+     #mlsOpnPrevDay ("yesterday") sits at x 14..58, y 39..83 — the same
+     collision class as "the ✕ painted over the next-day arrow, so the doctor
+     pressing tomorrow would have closed the room". #mlsOpDayHead takes a 52px
+     left inset, so the button sits BESIDE both of its rows; see the stylesheet
+     for why the lane is horizontal and not vertical (a vertical one cost three
+     patient rows at 768x1024).
+
+     HOME IS THE BOOT TAB, CLICKED — never showView('visit'). MEASURED on the
+     real nav: nav_visit's onclick is
+     `showView('visit');try{var b=document.getElementById('ez3Mode…` — the tab
+     does wiring past the view change, and calling showView directly skips it.
+     The tab that was `.on` when the app finished booting IS home; it is
+     captured once and frozen, so a doctor who has walked to History does not
+     teach this button that History is home.
+
+     QUIET, NEVER DISABLED. When the boot tab is already the tab that is on,
+     the button dims — but it still presses, and pressing it still closes the
+     room and lands on that tab. A greyed-out control here would be a second
+     dead primary, which is the exact thing opnote-day-4.0.0 exists to remove.
+
+     IT NEVER WRITES #mlsRdTitle. The header's title is feat_mls_redesign's
+     syncTitle(), which derives it from the dock and the nav; a second writer
+     would make the two disagree. -->
+<style id="mlsOpHomeCss">
+#mlsOpHome{
+  position:absolute; left:12px; top:10px; z-index:3;
+  width:44px; height:44px; min-width:44px; min-height:44px; padding:0; margin:0;
+  display:none; align-items:center; justify-content:center;
+  box-sizing:border-box; cursor:pointer;
+  font:700 18px/1 var(--sans); color:var(--ink);
+  background:var(--card,#fff); border:1px solid var(--line,#D9D6CD);
+  border-radius:var(--r-ctl,10px);
+}
+/* on screen exactly while the room is */
+#opPrepModal.show #mlsOpHome{ display:flex; }
+#mlsOpHome:hover{ border-color:var(--brand,#2E6A4B); background:var(--soft); }
+#mlsOpHome:focus-visible{ outline:2px solid var(--brand,#2E6A4B); outline-offset:2px; }
+/* QUIET, NOT DISABLED: it still presses, and it still goes there. */
+#mlsOpHome[data-mls-home="here"]{ opacity:.6; }
+#mlsOpHome[data-mls-home="here"]:hover{ opacity:1; }
+
+/* THE RESERVED LANE IS HORIZONTAL, AND THAT CHOICE WAS FORCED BY A MEASUREMENT.
+   52px = the button's 44 plus the 8px it is inset by.
+
+   The first version reserved it VERTICALLY instead — padding-left plus a 44px
+   floor on #mlsOpDayTitle, which grew #mlsOpDayHead from 70px to 94px. It is
+   the day head, so it is inside the rail, and below 900px the rail is a strip
+   capped at 38vh. MEASURED at 768x1024: three patient rows (mlsOpnRow6..8, all
+   at y=380) fell out of the capped strip and were painted over by #oprEditor —
+   the exact failure 1p-opnote-rail-runtime's own obstruction check exists to
+   catch, caused by a control that was supposed to make the room easier.
+
+   Padding the HEAD costs no height at all: the button sits BESIDE both of the
+   head's rows rather than above one of them, and the title, the stepper, the
+   picker and Today all start one lane in. The only place it pinches is the
+   288px rail, where Today's cell drops to ~59px against a ~68px intrinsic
+   width — so Today's own horizontal padding comes down to match, which is the
+   whole cost, in one place, on the one control that can afford it. */
+#opPrepModal #mlsOpDayHead{ padding-left:52px; }
+#opPrepModal #mlsOpnToday{ padding-left:9px; padding-right:9px; }
+/* The Templates panel brings the room's own top bar back, and it starts at the
+   same corner. Same lane, same reason. */
+#opPrepModal[data-mls-opnotes-state="templates"] .opr-top{ padding-left:52px; }
+@media print{ #mlsOpHome{ display:none !important; } }
+</style>
+<script>
+(function () {
+  var VERSION = 'opnote-home-1.0.0';
+  var ID = 'mlsOpHome';
+  var bootId = '', bootTab = null, frozen = false;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(v) { return v == null ? '' : String(v); }
+  function modal() { return el('opPrepModal'); }
+  function roomOpen() { var m = modal(); return !!(m && m.classList && m.classList.contains('show')); }
+  function onTab() { try { return document.querySelector('.mainnav .navtab.on'); } catch (e) { return null; } }
+
+  /* ---- 1. WHAT HOME IS -------------------------------------------------
+     The tab that was marked .on when the app finished booting. Captured the
+     FIRST time one exists and then frozen: this button must not follow the
+     doctor around. The id is kept as well as the node, because the nav is
+     rebuilt by several modules and the node identity does not survive that —
+     the id does. */
+  function learn() {
+    if (frozen) return;
+    var t = onTab();
+    if (!t) return;
+    bootTab = t; bootId = S(t.id); frozen = true;
+  }
+  function tab() {
+    if (bootId) { var again = el(bootId); if (again) return again; }
+    if (bootTab && document.contains(bootTab)) return bootTab;
+    /* nothing was ever marked: the first tab that can navigate is the honest
+       fallback, and it is still a real control the app owns. */
+    try {
+      var all = document.querySelectorAll('.mainnav .navtab'), i;
+      for (i = 0; i < all.length; i++) { if (S(all[i].getAttribute('onclick'))) return all[i]; }
+    } catch (e) {}
+    return null;
+  }
+  function here() {
+    var t = tab(), n = onTab();
+    return !!(t && n && t === n);
+  }
+
+  /* ---- 2. GOING THERE --------------------------------------------------
+     The room is closed through the app's own closeOpPrep (its ✕ is the same
+     call), and then the TAB is clicked. Never showView: nav_visit's own
+     onclick carries wiring past the view change. */
+  function go() {
+    var did = false;
+    try { if (typeof window.closeOpPrep === 'function') { window.closeOpPrep(); did = true; } } catch (e) {}
+    if (!did) {
+      var x = null;
+      try { x = modal() && modal().querySelector('.modal-x'); } catch (e1) {}
+      if (x) { try { x.click(); } catch (e2) {} }
+    }
+    var t = tab();
+    if (t) { try { t.click(); return true; } catch (e3) {} }
+    try { if (typeof window.showView === 'function') { window.showView('visit'); return true; } } catch (e4) {}
+    return false;
+  }
+
+  /* ---- 3. THE NODE -----------------------------------------------------
+     Built once and re-parented only when it is actually missing. Inserting a
+     child into #opPrepModal is a childList record the ROOM's own observer
+     reads, so doing it on every pass would feed that block a repaint per pass
+     — the self-feeding loop its markOne() note measures at 3,113 mutations a
+     second. One insert, then attributes only, and attributes only when they
+     change. */
+  function ensure() {
+    var m = modal();
+    if (!m) return null;
+    var b = el(ID);
+    if (!b) {
+      b = document.createElement('button');
+      b.type = 'button'; b.id = ID;
+      b.textContent = '⌂';
+      b.setAttribute('aria-label', 'Home — leave op notes and go back to the main screen');
+      b.setAttribute('title', 'Home — leave op notes and go back to the main screen');
+      b.addEventListener('click', function () { go(); }, false);
+    }
+    if (b.parentNode !== m) { try { m.insertBefore(b, m.firstChild); } catch (e) { return null; } }
+    return b;
+  }
+  function sync() {
+    learn();
+    var b = ensure();
+    if (!b) return false;
+    var want = here() ? 'here' : 'away';
+    if (b.getAttribute('data-mls-home') !== want) b.setAttribute('data-mls-home', want);
+    var t = tab();
+    var word = 'Home';
+    var lbl = t
+      ? ('Home — ' + S(t.textContent).replace(/\s+/g, ' ').replace(/\s*\d+\s*$/, '').replace(/^[^A-Za-z0-9]+/, '').trim() +
+         (here() ? ' (already there)' : ''))
+      : 'Home';
+    if (b.getAttribute('aria-label') !== lbl) { b.setAttribute('aria-label', lbl); b.setAttribute('title', lbl); }
+    if (S(b.textContent) !== '⌂') b.textContent = '⌂';
+    void word;
+    return true;
+  }
+
+  /* ---- 4. WHEN TO LOOK -------------------------------------------------
+     Cheap signals only: the room's own .show, the nav's own class, and the
+     app's view event. setTimeout, never rAF — a hidden tab never fires rAF and
+     this button would then never appear (the shell's own local-harness note).
+     No subtree observer anywhere: this block writes attributes on a node
+     inside #opPrepModal, and a subtree watcher here would read its own writes
+     back. */
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () { queued = false; sync(); }, 60);
+  }
+  function watch() {
+    var m = modal();
+    if (m && !m.__mlsOpHomeWatched) {
+      m.__mlsOpHomeWatched = true;
+      try { new MutationObserver(refresh).observe(m, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+    }
+    var nav = null;
+    try { nav = document.querySelector('.mainnav'); } catch (e1) {}
+    if (nav && !nav.__mlsOpHomeWatched) {
+      nav.__mlsOpHomeWatched = true;
+      try { new MutationObserver(refresh).observe(nav, { attributes: true, attributeFilter: ['class'], subtree: true }); } catch (e2) {}
+    }
+  }
+
+  window.__mlsOpHome = {
+    version: VERSION,
+    go: go,
+    homeTab: function () { var t = tab(); return t ? (t.id || S(t.textContent).trim()) : ''; },
+    here: here,
+    refresh: refresh,
+    /* Counted, not claimed: where the button is, how big it is, whether the
+       room is what answers a click at its centre, and whether the lane under
+       it is actually clear. */
+    status: function () {
+      var b = el(ID), m = modal();
+      var r = null, cs = null;
+      if (b) { try { r = b.getBoundingClientRect(); cs = getComputedStyle(b); } catch (e) {} }
+      var prev = el('mlsOpnPrevDay'), pr = null;
+      if (prev) { try { pr = prev.getBoundingClientRect(); } catch (e1) {} }
+      var top = '';
+      if (r && r.width > 0) {
+        try {
+          var n = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+          top = n ? (n.id || S(n.className).slice(0, 30) || n.tagName) : '';
+        } catch (e2) { top = ''; }
+      }
+      return {
+        version: VERSION,
+        mounted: !!(b && m && b.parentNode === m),
+        open: roomOpen(),
+        w: r ? Math.round(r.width) : 0, h: r ? Math.round(r.height) : 0,
+        x: r ? Math.round(r.left) : 0, y: r ? Math.round(r.top) : 0,
+        display: cs ? cs.display : '', visibility: cs ? cs.visibility : '',
+        disabled: !!(b && b.disabled),
+        quiet: !!(b && b.getAttribute('data-mls-home') === 'here'),
+        homeTab: (function () { var t = tab(); return t ? (t.id || '') : ''; })(),
+        onTab: (function () { var t = onTab(); return t ? (t.id || '') : ''; })(),
+        /* the button is the thing a click at its own centre reaches */
+        topAtCentre: top,
+        /* the day switcher must not be under it */
+        /* TRUE when nothing of the day switcher is under the button — including
+           the Templates panel, where the rail is display:none and there is no
+           stepper to clear at all. A vacuous false reads as a defect. */
+        clearsStepper: !pr || pr.width <= 0 || (pr.top >= r.bottom - 1 || pr.left >= r.right - 1),
+        titleLane: (function () { var t = el('mlsOpDayHead'); if (!t) return ''; try { return getComputedStyle(t).paddingLeft; } catch (e3) { return ''; } })(),
+        /* proof this block never touched the header's title */
+        rdTitle: (function () { var t = el('mlsRdTitle'); return t ? S(t.textContent).trim().slice(0, 40) : ''; })()
+      };
+    },
+    revert: function () {
+      var b = el(ID);
+      if (b && b.parentNode) b.parentNode.removeChild(b);
+      var t = el('mlsOpDayTitle');
+      void t;
+      return true;
+    }
+  };
+
+  function boot() { learn(); watch(); refresh(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  ['mls:ui-ready', 'mls:view-changed'].forEach(function (name) {
+    try { window.addEventListener(name, function () { boot(); }, false); } catch (e) {}
+  });
+  /* A bounded ladder for the boot tab: the nav is marked by the app's own
+     first render, which can land after this script and after DOMContentLoaded.
+     It stops the moment a tab is captured, and after 20s regardless. */
+  (function ladder(n) {
+    if (frozen || n > 80) { return; }
+    setTimeout(function () { learn(); watch(); if (!frozen || n < 4) refresh(); ladder(n + 1); }, 250);
+  })(0);
+})();
+</script>
+<!-- ===== end opnote-home-1.0.0 ======================================== -->
+<!-- ===== opnote-reach-1.0.0 — every control in the room is a real target, at
+     every width, not only on a phone =================================
+     Owner's rule for this pass: "if it's on the program it should work — if
+     it's there and doesn't work, make it work."
+
+     PRESS-TESTED, ONE CLICK AT A TIME, on the real room (list / one note /
+     blanks waiting / details+template open / empty day / More open) at 1440,
+     1280, 1024, 768 and 390. Every control the room's own block owns does
+     something and says so: the arrows, the picker, Today, Draft-all, the
+     Templates hop, Back, the primary in each of its five shapes, Copy (toast
+     "Op note copied.", with execCommand copy=true), Open in History (closes
+     the room and lands on the chart), Pull this day, the three disclosures,
+     and the day-brain's fold. The controls that appeared to answer nothing
+     turned out to be answering correctly: "Add" with an empty box flashes
+     "Type something first" on its own face, "Use every time" with no value
+     toasts "Choose or type the answer first", and PDF exports (toast "Saved
+     OpNote_<name>_<date>.pdf"). Nothing in the room needed removing.
+
+     WHAT THE PRESS TEST DID FIND IS REACH. ph-tap-1.0.0's 44px floor is
+     written under @media (max-width:760px), so it lifts these controls on a
+     phone and leaves them alone on the laptop the owner actually operates
+     from. MEASURED at 1440x900, note surface, one draft with two blanks:
+
+       .onf-mic (the per-field mic)              40x28
+       "Use every time" (per field)             127x28
+       .onf-accept ("Looks right - save...")    307x32
+       .mlsop-pdf (the PDF button)               73x34
+       .mls-opaddword input ("Text to add...")  497x29
+       .mls-opaddword button ("Add")             48x27
+       .onf-fillbox input (per field)           201x27
+
+     Seven controls under every touch floor there is, all on the one surface
+     where a doctor answers a blank in an operative note - and one of them
+     (.onf-mic, 40x28) is the control the glow was pointed at before
+     nextglow-1.1.0 moved it, which is the defect the owner photographed.
+
+     SIZE ONLY, AND ONLY INSIDE THE ROOM. feat_mls_opnote_fill.js,
+     mls-opnote-pro.js and the connect file's word-adder are not this lane's
+     to edit and no behaviour of theirs is touched: this is min-height and the
+     box model, scoped under #opPrepModal so nothing on any other screen
+     moves. Specificity beats each module's own rule by one id, so nothing
+     here needs !important.
+
+     40px, not 44px, and the reason is the room's own precedent: the block
+     above sizes #opdbFold and the two dictation buttons to exactly 40 with
+     the same argument ("this is size only"). One floor, one room. -->
+<style id="mlsOpReachCss">
+#opPrepModal .onf-fillbox button,
+#opPrepModal .onf-fillbox .onf-mic,
+#opPrepModal .onf-fillbox .onf-accept{
+  min-height:40px; box-sizing:border-box;
+  display:inline-flex; align-items:center;
+}
+/* the per-field mic is the one control that was short in BOTH directions:
+   MEASURED 40x28 before, 28x40 after the height floor alone. */
+#opPrepModal .onf-fillbox .onf-mic{ min-width:40px; justify-content:center; }
+/* !important on THIS pair only, and it is the one place it is needed.
+   feat_mls_opnote_templates_ui.js ships
+     body.<its own class> #opPrepModal .onf-fillbox input,
+     body.<its own class> #opPrepModal .onf-fillbox select
+       { font-size:13.5px !important; min-height:38px; padding:9px 12px !important;
+         border-radius:10px !important; max-width:460px; }
+   which is (1 id, 2 classes, 2 elements) against this rule's (1,2,1) — so a
+   plain min-height here loses, and it loses INTERMITTENTLY, because that class
+   is only on the body once its own module has run. MEASURED both ways in one
+   afternoon: 201x40 on a fresh room (rule applied) and 460x38 after the app had
+   been navigated (rule outranked). An intermittent floor is worse than none —
+   it is a floor that passes its own test. Size only; the font, padding, radius
+   and max-width that rule sets are all left exactly as they are. */
+#opPrepModal .onf-fillbox input:not([type="hidden"]),
+#opPrepModal .onf-fillbox select{
+  min-height:40px !important; box-sizing:border-box;
+}
+#opPrepModal .mlsop-pdf{
+  min-height:40px; box-sizing:border-box;
+}
+#opPrepModal .mls-opaddword input,
+#opPrepModal .mls-opaddword button{
+  min-height:40px; box-sizing:border-box;
+}
+</style>
+<!-- ===== end opnote-reach-1.0.0 ====================================== -->
 <!-- ===== dock-1p-1.1.0 — the taskbar stops covering the work ==========
      Owner: "that task bar getting in the way of everything. It needs to be
      better and smarter made."
