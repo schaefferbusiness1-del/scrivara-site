@@ -10556,6 +10556,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
     try { return Object.freeze(out); } catch (e) { return out; }
   }
+  /* wa-3072: one walk-scoped alias record, reset when the AllVisits mutex is
+     taken. Armed by ANY verified frame in the walk; consulted only when the
+     caller's frozen anchors (DOB+MRN) equal the arming walk's. Lets a later
+     frame that shows the LEGAL name (Thoma) pass for a nickname record (Tom)
+     on exact DOB + exact surname, inside an already-verified chart walk. */
+  var __mlsWalkAliasRec = null;
   function visitIdentityGate(frozen, live) {
     frozen = frozen || {}; live = live || {};
     function words(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }); }
@@ -10574,6 +10580,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     var wantAlias = words(frozen.nameAlias);
     var wantDob = dob(frozen.dob), haveDob = dob(live.dob);
     var wantMrn = id(frozen.mrn), haveMrn = id(live.mrn);
+    var __waRec = __mlsWalkAliasRec;
+    var __waOk = !!(__waRec && __waRec.dob === wantDob && __waRec.mrn === wantMrn); /* wa-3072 */
+    if (!wantAlias.length && __waOk && __waRec.name) wantAlias = words(__waRec.name);
     if (wantName.length < 2 || (!wantDob && !wantMrn)) return { ok: false, reason: 'identity-hint-incomplete' };
     if (haveName.length < 2) return { ok: false, reason: 'same-frame-name-missing' };
     var have = {}; haveName.forEach(function (w) { have[w] = 1; });
@@ -10597,6 +10606,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var aHits = 0; wantAlias.forEach(function (w) { if (wantTokenOk(w)) aHits++; });
       if (aHits >= 2 && wantTokenOk(wantAlias[0]) && wantTokenOk(wantAlias[wantAlias.length - 1])) nameOk = true; /* alias-3071 */
     }
+    if (!nameOk && __waOk && wantDob && haveDob && wantDob === haveDob && wantName.length >= 2 && haveName.length >= 2) {
+      /* wa-3072 acceptance: exact DOB + exact surname token inside a walk that
+         already verified this chart. Covers nickname-vs-legal given names
+         (Tom/Thoma, Bill/William) that no prefix rule can bridge. The single
+         theoretical residue - same-surname same-DOB twins swapped in MID-walk
+         by outside navigation - is far narrower than the prior failure (every
+         nickname record refused entirely), and the doctor-moved latch plus
+         per-visit encounter bindings still stand. The frame's full name is
+         adopted as the walk alias so remaining frames pass by full match. */
+      if (have[wantName[wantName.length - 1]] === 1) {
+        nameOk = true;
+        try { if (!__waRec.name) __waRec.name = String(live.name || ''); } catch (eWa72) {}
+      }
+    }
     /* 3.0.2 (owner directive): the stable athena patient id is the PRIMARY
        identity when both sides carry it. Live 2026-07-21: v26.3 FL encounter
        frames can render a stale or reformatted patient label while the id is
@@ -10607,6 +10630,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (wantMrn && haveMrn) {
       if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
       if (wantDob && haveDob && wantDob !== haveDob) return { ok: false, reason: 'same-frame-dob-mismatch' };
+      try {
+        if (!__waOk) __mlsWalkAliasRec = __waRec = { dob: wantDob, mrn: wantMrn, name: '' }; /* wa-3072 arm */
+        if (!nameOk && live.name && !__waRec.name) __waRec.name = String(live.name); /* MRN-verified legal-name sighting */
+      } catch (eWaA) {}
       return { ok: true, reason: 'mrn' + (wantDob && haveDob ? '+dob' : '') + (nameOk ? '+name' : '+stale-name') };
     }
     if (!nameOk) return { ok: false, reason: 'same-frame-name-mismatch' };
@@ -10620,6 +10647,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
     }
     if (wantMrn && haveMrn && wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
+    try { if (!__waOk) __mlsWalkAliasRec = { dob: wantDob, mrn: wantMrn, name: '' }; } catch (eWaB) {} /* wa-3072 arm */
     return { ok: true, reason: 'name+' + (wantDob ? 'dob' : 'mrn') };
   }
   function realVisit(v, minLen) {
@@ -10812,10 +10840,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var pgGate = visitIdentityGate(frozenHint, pgIdentity);
         preGateWhy = pgGate.reason || '';
         if (pgGate.ok || preGateWhy === 'identity-hint-incomplete') {
-          /* alias-3071: the chart just proved itself (MRN/DOB-anchored) - adopt
-             its own name for the per-encounter frames, which drop the MRN and
-             would otherwise refuse a nickname record on the name alone. */
-          try { if (pgGate.ok && pgIdentity && pgIdentity.name) frozenHint.nameAlias = String(pgIdentity.name); } catch (eAl71) {}
+          try {
+            if (pgGate.ok && pgIdentity && pgIdentity.name) {
+              /* alias-3072: adopt the verified chart's own name as an alternate
+                 want-name (nickname vs legal record name). alias-3071 assigned
+                 onto the FROZEN hint - a silent no-op - so it never reached the
+                 gate; the hint is REBUILT frozen here instead. */
+              frozenHint = Object.freeze({ name: frozenHint.name, dob: frozenHint.dob, mrn: frozenHint.mrn, onlyDate: frozenHint.onlyDate || '', nameAlias: String(pgIdentity.name) });
+            } else if (!pgGate.ok && pgIdentity && pgIdentity.name && (pgIdentity.dob || pgIdentity.mrn)) {
+              /* detect-3072: the whoever-is-open verb sends NO identity hint by
+                 design (live 2026-08-19: the empty hint reached the list gate,
+                 died as identity-hint-incomplete, and the site rendered a FALSE
+                 'different patient open' warning). Adopt the open chart's own
+                 strongest identity (banner-weighted bestResult) as the frozen
+                 anchor: every downstream mix gate now protects the DETECTED
+                 patient. A banner with neither DOB nor MRN stays incomplete and
+                 fails closed with an honest message at the list gate. */
+              frozenHint = Object.freeze({ name: String(pgIdentity.name || ''), dob: String(pgIdentity.dob || ''), mrn: String(pgIdentity.mrn || ''), onlyDate: frozenHint.onlyDate || '', nameAlias: '' });
+            }
+          } catch (eAd72) {}
           preGateOk = true; break;
         }
         await sleep(3000);
@@ -11173,7 +11216,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ok: false, reason: gate.reason, identity: identity, visits: [], diag: diag,
           enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: total, selector: (enumRes && enumRes.selector) || '' },
           receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, identityVerified: false, axRrWaitMs: (typeof rrWait === 'number' ? rrWait : 0), axRrRecovered: (typeof rrRecovered === 'boolean' ? rrRecovered : false) },
-          error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
+          error: (String(gate.reason || '') === 'identity-hint-incomplete') ? 'Could not read a clear patient identity (name plus DOB or MRN) from the open athenaOne chart header, so nothing was read. Open the patient chart fully and retry.' : 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
         };
       }
 
@@ -11708,6 +11751,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     var startup = { pending: true, requestId: transportRequestId };
     activeAllVisitsPromise = startup;
+    __mlsWalkAliasRec = null; /* wa-3072: fresh walk, fresh alias */
     try {
       loadVisitsCfgBound(1500).then(function (cfg) {
         if (activeAllVisitsPromise !== startup) return;
