@@ -4882,6 +4882,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (eFb) {}
     if (!n) n = (S.done || 0) + '/' + (S.total || 0);
     var t = 'Pulling ' + n + ' \u2014 show details';
+    /* pullzero-1.0.0: "Pulling 0/0" is a count of nothing. Say what is true. */
+    if ((Number(S.total) || 0) === 0 && !(S.phase && S.phase.kind)) t = 'Checking this day \u2014 show details';
     /* ===== clunky2-pull-1.0.0 (CLUNKY 71) =====
        While the day-note phase runs, every history is already done, so
        "Pulling 23/23" is a finished count riding on an unfinished pull. The
@@ -5070,9 +5072,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var want = on ? '' : 'none';
     if (el.style.display !== want) el.style.display = want;
   }
+  /* ===== pullzero-1.0.0 — a pull with nothing to read still has to say so ===
+     MEASURED in this lane's harness: with zero history targets the engine
+     still calls ppStart(0, 0), so this panel's own poll sees running:true with
+     total 0 and paints the pill "Pulling 0/0 — show details"; when the engine
+     releases, rows is empty, the DONE branch below is skipped on
+     `(S.rows||[]).length`, and pill and panel are simply removed. The doctor
+     pressed Pull, watched a 0/0 pill flash, and was told nothing at all.
+     This block keeps the count honest while it runs and gives that run the
+     same closing verdict every other run gets. It changes no engine state. */
+  var watchedMaxTotal = 0;
   function render() {
     var S = state();
     var running = !!(S && S.running);
+    if (running) watchedMaxTotal = Math.max(watchedMaxTotal, Number(S.total) || 0);
     if (!running) {
       /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
          done"): the run THIS panel watched (startedAt>0) paints ONE honest
@@ -5081,10 +5094,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          engine has already released), and no "keep pulling" framing remains
          on the card. A tab that never watched a run keeps the old clean
          removal; the Done click resets to that same state. */
-      if (startedAt > 0 && S && (S.rows || []).length && !doneDismissed) { renderDone(S); return; }
+      /* pullzero-1.0.0: a watched run that had nothing to read gets the same
+         closing card as any other, instead of disappearing without a word. */
+      if (startedAt > 0 && S && ((S.rows || []).length || watchedMaxTotal === 0) && !doneDismissed) { renderDone(S); return; }
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
+      watchedMaxTotal = 0; /* pullzero-1.0.0: the next run measures itself */
       doneDismissed = false;
       stopRequested = false; /* clunky2-pull-1.0.0: the request dies with the run it stopped */
       return;
@@ -5204,10 +5220,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function renderDone(S) {
     css();
     var ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0, total = S.total || 0;
+    /* pullzero-1.0.0: this run had no chart to read at all \u2014 say that, rather
+       than reporting "\u2713 0 histories saved" as if zero were a result. */
+    var zeroDay = (total === 0 && !(S.rows || []).length);
     if (hidden) {
       ensureFab(true);
       var fD = document.getElementById(FAB);
-      if (fD) { var tD = 'Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'; if (fD.textContent !== tD) fD.textContent = tD; }
+      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'); if (fD.textContent !== tD) fD.textContent = tD; }
       var phD = document.getElementById(PANEL); if (phD) phD.remove();
       return;
     }
@@ -5217,8 +5236,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;
-      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
-      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
+      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = zeroDay ? '\u2705 Done \u2014 there was no chart to read' : '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
+      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = zeroDay
+        ? 'No chart on this day was eligible to read, so nothing was opened in athenaOne. The schedule itself is unaffected.'
+        : 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
       try { var curLbl = p.querySelector('.pp-cur b'); if (curLbl) curLbl.textContent = 'Result:'; } catch (eCur) {}
       /* ===== clunky2-pull-1.0.0 (CLUNKY 72) =====
          MEASURED on the finished card: the note said '"Retry failed
@@ -5234,11 +5255,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var rbD = document.getElementById('mlsPullProgRetry');
         if (rbD) rbD.style.display = canRetry ? '' : 'none';
         var noteD = p.querySelector('.pp-note');
-        if (noteD) noteD.textContent = !failed
+        if (noteD) noteD.textContent = zeroDay
+          ? 'Nothing here needs fixing unless you expected charts. If you did: check the day has patients, that each carries a DOB or MRN, and that one signed-in athenaOne tab is open — then pull the day again.'
+          : (!failed
           ? 'Everything the day asked for was read and saved.'
           : (canRetry
             ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" below re-reads only those charts.'
-            : 'Rows marked \u26A0 carry their reason. Open the Visit screen and pull the day again to re-read only those charts.');
+            : 'Rows marked \u26A0 carry their reason. Open the Visit screen and pull the day again to re-read only those charts.'));
       } catch (eNote) {}
       /* ===== end clunky2-pull-1.0.0 (retry) ===== */
       try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
@@ -5248,6 +5271,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        not saved WHERE, and what does he do about it. The reason is already on
        every row underneath, so the summary says to look there. */
     var doneLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : ''); /* dv3-1.0.0 */
+    /* pullzero-1.0.0: zero is not a tally, it is the whole story */
+    if (zeroDay) doneLine = 'No chart histories were read \u2014 this day had none to read.';
     /* ===== cap-1.0.0 + tny-1.0.0 (the DONE card says all four things) =====
        "saved \u00B7 summaries pending N" is the honest wording for a day whose
        charts landed while the backend AI was unavailable; "not seen yet" is
@@ -5280,7 +5305,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     setText(p, 'phase', '');
     setShown(p, 'phase', false);
     var attnD = failed + (dv ? Number(dv.tnFailed || 0) : 0);
-    setText(p, 'tally', '✓ ' + ok + ' saved' + (attnD ? ' · ⚠ ' + attnD + ' need attention' : ''));
+    setText(p, 'tally', zeroDay ? 'Nothing to read' : ('✓ ' + ok + ' saved' + (attnD ? ' · ⚠ ' + attnD + ' need attention' : '')));
     setText(p, 'tallyMore', doneLine);
     setShown(p, 'more', doneLine.indexOf('·') >= 0);
     setText(p, 'elapsed', mmss(Math.max(0, (S.finishedAt || Date.now()) - startedAt)) + ' total');
@@ -14384,10 +14409,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
       var head = document.createElement('p');
       head.className = 'set-head';
-      head.textContent = '🎛️ MLS Controls';
+      /* t2settings-1.0.0: this panel is five display switches, and while its
+         heading said "MLS Controls" the organizer's classifier filed it under
+         its own group and drew a whole "Advanced" tab for it — the one word
+         that tells a front-desk reader to stay out, over the voice button and
+         birthday chips. The heading is the classifier's only input, so naming
+         the panel what it actually is puts it on the Display tab and retires
+         the Advanced tab. Nothing is hidden and no id changes. */
+      head.textContent = '🎛️ More display options';
       var desc = document.createElement('p');
       desc.className = 'set-desc';
-      desc.textContent = 'Optional extras for this browser: the voice button, quick-pick count, birthday chips, the legacy guided-visit view, and your MLS Assist extension version.';
+      desc.textContent = 'Optional extras for this browser: the voice button, how many quick-pick patients to show, birthday chips, and which MLS Assist version this browser is running.';
       rc.insertBefore(desc, rc.firstChild);
       rc.insertBefore(head, rc.firstChild);
 
@@ -22890,6 +22922,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     pCounts();
     return st;
   }
+  /* ===== ez3repaint-1.0.0 - ONE STATE MACHINE, REACHABLE FROM THE SCREEN ===
+     p1RangePaint IS the panel's decision about which of Start / Resume /
+     Pause / Retry / Cancel the doctor should see, and it is a closure. The
+     panel runs it on mount (p1RangeAdopt) and whenever THIS tab drives the
+     job, but a job whose state changes out of band - another tab, a boot
+     resume, a session boundary - leaves the open panel showing the previous
+     answer with nothing to correct it.
+
+     MEASURED: with a month job PAUSED at 0 of 18 days and Staff Prep on
+     screen, the panel showed only "Start month pull" and the sentence
+     "Nothing pulled yet this session." for 11s and 299 ticks, while the
+     progress label two lines above already read "0 of 18 days saved". Leaving
+     the screen and coming back fixed it - so the state was right and only the
+     repaint was missing.
+
+     Rather than copy the rule into a second place (the shell's staffjobsync
+     block would then be a second source of truth about a job), the panel's
+     own painter is published and the screen calls it. Returns the manifest it
+     painted, or null when there is no saved job to paint.
+
+     IT MUST ADOPT FIRST. p1RangePaint ends in pCounts(), and pCounts opens
+     with `if (!P) return;` — so the whole durable-control branch (Start /
+     Resume / Pause / Retry / Cancel from the SAVED manifest) is unreachable
+     while this tab has no in-tab pull object. That is exactly the case here:
+     the doctor opened Staff Prep before any job existed, so mount adopted
+     nothing, and a job that appeared afterwards could never reach the
+     buttons. MEASURED: publishing the painter alone moved the receipt line
+     but left [ez3PullStart] over a paused job for the full 11s. p1RangeAdopt
+     is the function written for this — it is what a re-open runs — so a
+     repaint that finds no P adopts the saved job the same way and then
+     paints. It is a no-op when a job is already running in this tab. */
+  window.__mlsEz3RangeRepaint = function () {
+    return safe(function () {
+      var adopted = false;
+      if (!P) { p1RangeAdopt(); adopted = !!P; }
+      var st = p1RangePaint();
+      /* render() writes "Nothing pulled yet this session." only for the
+         no-job case (`P ? "" : ...`). Once a saved job has been adopted that
+         sentence is stale, and it would sit directly above a Resume button.
+         A re-open leaves this line empty for the same job, so match it — and
+         only ever replace that one exact default, never a real message. */
+      if (adopted && st) {
+        var now = $('ez3PullNow');
+        if (now && now.textContent === 'Nothing pulled yet this session.') now.textContent = '';
+      }
+      return st;
+    }, null);
+  };
+  /* ===== end ez3repaint-1.0.0 ============================================ */
+
   /* A job the boot resumed - or one this tab just asked for, whose manifest is
      still being written behind the account lock - still has to paint here. The
      grace ticks cover that admission gap; once the job is seen running the
@@ -23404,11 +23486,41 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       cancelPullRun();
     });
     on('ez3sPullToday', pullTodayProxy);
+    /* ===== apicheck-says-1.0.0 - A CHECK THAT FINISHES SAYS WHAT IT FOUND ===
+       "Check Athena API connection" cleared its own note the moment the check
+       resolved (`athenaApiPrepNote = ''`), so #ez3sAthenaApiStatus fell back
+       to "Selected range: 2026-08-18" - exactly what it read BEFORE the
+       press. MEASURED: the button was pressed on a running Staff Prep and
+       nothing anywhere on the page changed; the 'Checking...' flash resolved
+       inside 200ms and left no trace. And updateAthenaStatus RESOLVES on
+       failure too (it catches and returns an unavailable state), so the
+       silent branch was the one a failed check took as well - the doctor
+       pressed a check, it failed, and the screen told them nothing.
+
+       The verdict is read from the state the check itself returned, in the
+       Settings card's own words for the connected case, and the detail is
+       left where it already lives. Nothing about the check changes. */
     on('ez3sAthenaApiCheck', function () {
       if (!isFn(window.updateAthenaStatus)) { athenaApiPrepNote = 'Athena API status is unavailable.'; render(); return; }
       athenaApiPrepNote = 'Checking the hosted read-only connection…'; render();
-      Promise.resolve(window.updateAthenaStatus('staff-click')).then(function () { athenaApiPrepNote = ''; render(); }, function (err) { athenaApiPrepNote = String(err && err.message || err || 'Athena API status is unavailable.'); render(); });
+      Promise.resolve(window.updateAthenaStatus('staff-click')).then(function (state) {
+        var st = state || safe(function () { return window.mlsAthenaApiGetState(); }, null);
+        if (!st) athenaApiPrepNote = 'The check finished but returned no status. Settings → Integrations has the detail.';
+        else if (st.connected) athenaApiPrepNote = 'Connected — verified read-only Athena API schedule access.';
+        else {
+          /* The server's error text is not guaranteed to end a sentence -
+             "Failed to fetch" ran straight into the next one. */
+          var why = String(st.error || 'the hosted Athena API is not available for schedule reads');
+          if (!/[.!?]$/.test(why)) why += '.';
+          athenaApiPrepNote = 'Not connected — ' + why + ' MLS Assist is unaffected. Settings → Integrations has the detail.';
+        }
+        render();
+      }, function (err) {
+        athenaApiPrepNote = String(err && err.message || err || 'Athena API status is unavailable.');
+        render();
+      });
     });
+    /* ===== end apicheck-says-1.0.0 ======================================= */
     on('ez3sAthenaApiPull', pullStaffScheduleThroughAthenaApi);
     on('ez3sProv', function () { var c = $('mlsProvChip'); if (c) handOff(function () { c.click(); }, 'Pick the doctor in the app’s picker.'); else toast('Provider picker not found.'); });
     on('ez3sPrep', openPrep);
@@ -34351,16 +34463,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { k:'booking link patient scheduling share', name:'Patient booking link', where:'Patients workspace -> scheduling tools', how:'Generate the practice booking link and share it with patients.', route:'view:patients' },
     { k:'marketing reputation review google post ads listing', name:'Free Marketing workspace', where:'Tools -> Marketing', how:'Build local, editable practice listing, privacy-safe review reply, neutral campaign, and ads-budget drafts. Copy or download them; nothing publishes, sends, connects, or spends.', route:'reach:reviews' },
     { k:'settings account access api key name specialty', name:'Account and access settings', where:'Settings -> Account & security -> Account & access', how:'Manage account identity and AI access in the first Settings section.', route:'settings:account' },
-    { k:'practice provider credentials npi clinic address phone logo', name:'Practice and provider settings', where:'Settings -> Practice & provider', how:'Manage the provider identity and practice details used on generated documents.', route:'settings:practice' },
+    { k:'practice provider credentials npi clinic address phone logo', name:'Practice and provider settings', where:'Settings -> Your practice & letterhead', how:'Manage the provider identity and practice details used on generated documents.', route:'settings:practice' },
     { k:'note defaults format model comment style', name:'Note defaults', where:'Settings -> Notes & AI -> Note defaults', how:'Set the default note format, model, comment, and documentation style.', route:'settings:notes' },
     { k:'ai personalization preferences instructions', name:'AI personalization', where:'Settings -> Notes & AI -> AI personalization', how:'Control the instructions and defaults used when MLS drafts clinical work.', route:'settings:notes' },
     { k:'billing codes icd cpt hcpcs code table upload practice coding', name:'Practice billing codes (ICD-10 / CPT)', where:'Settings -> Notes & AI -> Practice billing codes', how:'Upload or paste your practice’s diagnosis→ICD-10 and procedure→CPT table. When set, every place MLS drafts or fills codes (notes, template fills, op-notes, studies) uses your exact codes; with no table the AI fills its best current standard code.', route:'settings:notes' },
     { k:'display theme text size compact layout', name:'Display settings', where:'Settings -> Display', how:'Change theme, text size, and layout density.', route:'settings:display' },
     { k:'provider preferences signature followup intake questions', name:'Provider preferences', where:'Settings -> Notes & AI -> Provider preferences', how:'Set signature, follow-up, and patient-intake preferences.', route:'settings:notes' },
-    { k:'features toggles enable disable', name:'Feature settings', where:'Settings -> Features & navigation -> Features', how:'Turn optional app behavior on or off from the single Features section.', route:'settings:features' },
-    { k:'app tabs navigation enable calendar analysis admin', name:'App tab settings', where:'Settings -> Features & navigation -> App tabs', how:'Choose which released advanced navigation tabs are visible.', route:'settings:features' },
+    { k:'features toggles enable disable', name:'Feature settings', where:'Settings -> Extra tools & tabs -> Features', how:'Turn optional app behavior on or off from the single Features section.', route:'settings:features' },
+    { k:'app tabs navigation enable calendar analysis admin', name:'App tab settings', where:'Settings -> Extra tools & tabs -> App tabs', how:'Choose which released advanced navigation tabs are visible.', route:'settings:features' },
     { k:'security privacy password change two factor 2fa logout idle', name:'Security and privacy', where:'Settings -> Account & security -> Security & privacy', how:'Change password, manage two-factor authentication, logout confirmation, and idle timeout.', route:'settings:account', common:true },
-    { k:'integrations emr athena connect api', name:'EMR integrations', where:'Settings -> Integrations (or Visit -> Connect to EMR)', how:'Review connection status and EMR integration options in one place.', route:'settings:integrations' },
+    { k:'integrations emr athena connect api', name:'EMR integrations', where:'Settings -> Connections & integrations (or Visit -> Connect to EMR)', how:'Review connection status and EMR integration options in one place.', route:'settings:integrations' },
     { k:'analysis reports productivity outcomes metrics', name:'Practice analysis', where:'Analysis tab - appears automatically for clinician accounts; there is no user toggle', how:'Review the available analysis cards with the displayed data scope.', route:'view:analysis' },
     { k:'phone microphone qr mobile recording', name:'Phone microphone', where:'Visit easy recorder -> phone microphone option', how:'Open the QR code, scan it with the phone, and keep recording bound to the same patient visit.', route:'view:visit' },
     { k:'dot phrases shortcuts normal exam ros precautions', name:'Dot phrases', where:'Visit easy recorder -> transcript -> Dot phrases', how:'Insert or manage reusable phrases while recording or editing the transcript.', route:'view:visit' },
@@ -34697,9 +34809,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var MAP = [
     { k: 'voice copilot microphone talk', name: '🎙️ MLS Copilot Voice', where: 'Bottom-left button', how: 'Tap it and just talk — "start a visit for Adam", "generate the note". Red pulse = listening. It no longer opens the chat panel; it acts directly.' },
     { k: 'assistant chat help ask', name: 'MLS Assistant', where: 'Bottom-left "MLS Assistant" button', how: 'One assistant for everything: schedule questions, patient loads, athena status. Has its own 🎤 inside.' },
-    { k: 'google business profile reputation reviews listing', name: '🌟 Google Business Profile', where: 'Settings → MLS Controls → Reputation', how: 'Connect YOUR Google account, MLS drafts the listing from your practice data, you approve each change before anything publishes.' },
-    { k: 'settings controls toggles preferences', name: '🎛 MLS Controls', where: 'Settings (gear) → MLS Controls', how: 'Every new feature has a switch here: voice, tunnel mode, birthdays, quick-pick size, friendly errors.' },
-    { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown/hidden in MLS Controls.' },
+    { k: 'google business profile reputation reviews listing', name: '🌟 Google Business Profile', where: 'Settings → What you see → More display options', how: 'Connect YOUR Google account, MLS drafts the listing from your practice data, you approve each change before anything publishes.' },
+    { k: 'settings controls toggles preferences', name: '🎛 More display options', where: 'Settings (gear) → What you see', how: 'Every new feature has a switch here: voice, tunnel mode, birthdays, quick-pick size, friendly errors.' },
+    { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown or hidden under Settings -> What you see.' },
     { k: 'guide tour how to help', name: '📖 How-to guide + tour', where: 'Top bar ❓ Help / Menu → How-To Guide', how: 'The one current guide; the spotlight tour walks the real UI.' },
     { k: 'qr phone mobile record', name: '📱 Phone recording', where: 'Patient page — phone mic button', how: 'Click it to SHOW the QR; scan with your phone to record there (crash-proof, auto-retry).' },
     { k: 'send athena writeback emr sign billing save', name: 'Review Athena actions', where: 'Visit flow step 4 / Athena review', how: 'See every destination. The reviewed note write and Save Draft each require an exact-encounter check and separate confirmation. Billing, orders, prescriptions, signature, attestation, and claim submission are review-only here and are completed by you in Athena.' },
@@ -34716,7 +34828,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var ql = q.toLowerCase();
         var hit = MAP.find(function (m2) { return m2.k.split(' ').some(function (w) { return ql.indexOf(w) >= 0; }); });
         if (hit) return hit.name + ' — ' + hit.where + '. ' + hit.how;
-        return 'New in MLS: ' + MAP.map(function (m2) { return m2.name; }).join(' · ') + '. Ask me about any of them, or open Settings → 🎛 MLS Controls.';
+        return 'New in MLS: ' + MAP.map(function (m2) { return m2.name; }).join(' · ') + '. Ask me about any of them, or open Settings → What you see.';
       });
     }
   } catch (e) {}
@@ -37404,7 +37516,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'cloned-20260818-r22';
+  window.__MLS_AV = window.__MLS_AV || 'cloned-20260819-r23';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -37747,7 +37859,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='cloned-20260818-r22';
+  var MLS_APP_BUILD='cloned-20260819-r23';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44829,19 +44941,61 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     recordIv = setInterval(function(){ var v = currentView(); if (v && v !== last){ last = v; store(v); } }, 1000);
   }
 
+  /* ===== tabmem-standdown-1.0.0 - THE REMEMBERED TAB LOSES TO THE LIVE ONE ===
+     THE MEASURED DEFECT (the owner's "calendar is broken", the view-bounce).
+     restore() fires 800ms after the load event, and its only guard was
+     `saved !== currentView()` - which is TRUE precisely when the doctor has
+     just navigated somewhere else. So a doctor who pressed Calendar while the
+     app was still settling was silently thrown back to the remembered tab a
+     fraction of a second later. MEASURED in the local harness, 3 runs of 3 and
+     a 4-case control (scratch p6/p7): saved=visit, a real click on #nav_calendar
+     at +976ms put .navtab.on=calendar at +1096ms, and restore put it back to
+     visit at +1298ms - 202ms after the press, and the doctor stayed on Visit for
+     the remaining 3s of the trace. On a real signed-in boot the load event is
+     later, which is why it was reported as a bounce about three seconds in.
+
+     THE RULE: route memory only places you where nothing else has. The moment a
+     human touches the app, memory has lost its claim. Two independent stand-down
+     signals, because one alone has a hole:
+       - a trusted user gesture ANYWHERE since the page began (navgesture-1.0.0
+         in the shell arms this at parse time, so a press BEFORE this file even
+         loads is still seen);
+       - the active tab moved between arming and restoring (covers programmatic
+         routes - a deep link, datalink's post-pull focusCalDay - that arrive in
+         the same window).
+     Restoring is still the default: with no gesture and no movement it behaves
+     exactly as before. Measured control (scratch p7): saved=calendar with no
+     press still restores patients->calendar at +1330ms. */
+  var armView = currentView();
+  function userActed(){
+    return safe(function(){ return !!window.__mlsUserActed; }, false);
+  }
+  function standDownReason(){
+    if (userActed()) return 'the doctor has already used the app';
+    var now = currentView();
+    if (now && armView && now !== armView) return 'the view moved to ' + now + ' on its own';
+    return '';
+  }
+
   // RESTORE once on load, after the app's own initial showView() has run.
-  var done = false;
+  var done = false, standDown = '';
   function restore(){
     if (done) return; done = true;
-    if (saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
+    standDown = standDownReason();
+    if (!standDown && saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
       safe(function(){ window.showView(saved); });
     }
-    setTimeout(startRecording, 200); // begin recording only after the restore settles
+    /* A stood-down restore must not throw away the tab the doctor chose: start
+       recording at once so the tab they are actually on is what gets saved. */
+    setTimeout(startRecording, standDown ? 0 : 200);
   }
   if (document.readyState === 'complete') setTimeout(restore, 800);
   else window.addEventListener('load', function(){ setTimeout(restore, 800); });
 
-  window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY };
+  window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY,
+    _armView: function(){ return armView; }, _standDown: function(){ return standDown; },
+    _userActed: userActed };
+  /* ===== end tabmem-standdown-1.0.0 ===================================== */
 })();
 
 /* ===== MLS premium-feature logo badges (additive, isolated IIFE) ===== */
@@ -51107,7 +51261,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#pf2Quick .qk{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#79837C;margin:0 0 3px;}',
     '#pf2Quick .qv{font-size:12.5px;line-height:1.4;color:#1A211C;max-height:76px;overflow:auto;white-space:pre-line;overflow-wrap:anywhere;}',
     '#pf2ExpandAll{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:7px 14px;border:1px solid #D9DFD9;border-radius:999px;background:#fff;font:700 12.5px system-ui;color:#204034;cursor:pointer;}',
-    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled){display:none!important;}',
+    /* pullone-1.0.0: the strip's ONE pull control must survive the collapse -
+       the strip is the surface the doctor reads (the card ships COLLAPSED), so
+       hiding the control that fills it would put the only pull behind Expand. */
+    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled):not(#pvrPullOne){display:none!important;}',
     '#profileCard.pf2-collapsed #pf2SumExtra > *{display:none!important;}',
     '.pf2-sec.open .pf2-b{display:block;}',
     '.pf2-b > *{margin-top:8px !important;}',
@@ -51320,31 +51477,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        actually fix. The button calls the app's OWN read-only single-patient
        chart reader - it reads, it never writes to Athena, and if the section
        still cannot be seen the chip goes straight back to saying so. */
+    /* pullone-1.0.0 (owner, 2026-08-18: "these need to go; the main one should
+       work"). MEASURED on one cold chart before this change: FIVE per-field
+       "Read from Athena" buttons (Problems, Medications, Allergies, Vitals,
+       Visits) rendered at once, each starting its own read, beside the header's
+       own pull button and the unpulled-notice's - seven controls for one job.
+       The chips still say exactly what is missing and why; the pull is ONE
+       control for the whole chart, because one chart is what a pull reads. */
     q.innerHTML = boxes.map(function (b) {
       var f = b[1] || {};
       return '<div class="qb pvr-chip' + (f.quiet ? ' is-quiet' : '') + '" data-pvr-key="' + esc2(b[0]) + '"' +
         (f.state ? (' data-pvr-state="' + esc2(f.state) + '"') : '') +
         (f.detail ? (' title="' + esc2(f.detail) + '"') : '') + '>' +
         '<div class="qk">' + b[0] + '</div><div class="qv">' + esc2(f.text) + '</div>' +
-        (f.read ? '<button type="button" class="pvr-read">Read from Athena</button>' : '') +
         '</div>';
     }).join('');
-    if (!q.__pvrWired) {
-      q.__pvrWired = 1;
-      q.addEventListener('click', function (ev) {
-        var t = ev && ev.target;
-        if (!t || !t.classList || !t.classList.contains('pvr-read')) return;
-        var cur = null; try { cur = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) {}
-        if (!cur) return;
-        var cf = null; try { cf = window.__mlsChartField; } catch (e2) {}
-        if (!cf || typeof cf.read !== 'function') return;
-        t.disabled = true;
-        var was = t.textContent;
-        cf.read(cur, function (m) { try { t.textContent = String(m || was).slice(0, 60); } catch (e3) {} }).then(function () {
-          try { q.setAttribute('data-sig', ''); } catch (e4) {}
-          try { schedulePatientEnsure(); } catch (e5) {}
-        }, function () { t.disabled = false; t.textContent = was; });
-      });
+    var anyRead = false;
+    for (var bi = 0; bi < boxes.length; bi++) { if (boxes[bi][1] && boxes[bi][1].read) { anyRead = true; break; } }
+    var one = $('pvrPullOne');
+    if (!anyRead) { if (one && one.parentElement) one.parentElement.removeChild(one); }
+    else {
+      if (!one) {
+        one = document.createElement('button');
+        one.id = 'pvrPullOne'; one.type = 'button'; one.className = 'pvr-read pvr-read-one';
+        one.addEventListener('click', function () {
+          var cur = null; try { cur = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) {}
+          if (!cur) return;
+          var cf = null; try { cf = window.__mlsChartField; } catch (e2) {}
+          if (!cf || typeof cf.read !== 'function') return;
+          var was = one.textContent;
+          one.disabled = true;
+          /* the third argument is the button itself: pullone-1.0.0 parks the
+             shell's one status line beside whichever control was pressed. */
+          Promise.resolve(cf.read(cur, function () {}, one)).then(function () {
+            one.disabled = false; one.textContent = was;
+            try { q.setAttribute('data-sig', ''); } catch (e4) {}
+            try { schedulePatientEnsure(); } catch (e5) {}
+          }, function () { one.disabled = false; one.textContent = was; });
+        });
+      }
+      one.textContent = '📥 Pull chart from Athena';
+      one.title = 'Reads this patient’s chart in your signed-in athenaOne tab and fills the empty sections above.';
+      if (one.parentElement !== q.parentElement || one.previousSibling !== q) {
+        if (q.nextSibling) q.parentElement.insertBefore(one, q.nextSibling); else q.parentElement.appendChild(one);
+      }
     }
   }
   function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -51607,9 +51783,433 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} res({ ok: false, error: 'chart read timed out' }); } }, 110000);
     });
   }
+  /* ===== phsend-1.0.0 (2026-08-18, phone lane) =============================
+   * "Record the visit on the phone, then send the note to Athena from the
+   * phone." The recording and the drafting already work on the phone. This is
+   * the third leg.
+   *
+   * WHAT THIS CAN AND CANNOT DO - read this before changing anything here.
+   * MLS Assist arms an Athena mutation ONLY from a real, freshly trusted click
+   * on the exact confirm button (content.js ATHENA_ACTION_V2_CLICK_GATE:
+   * `if (!ev || ev.isTrusted !== true) return;`, arm is single-use and lives
+   * 20 s). Page scripts cannot manufacture Event.isTrusted. A relayed job
+   * running on the office computer therefore CANNOT execute the write, and
+   * this module does not try - it would be defeated by the extension anyway,
+   * and the attempt is exactly the shape of a bypass.
+   *
+   * So the phone's button does everything up TO the human's press:
+   *   phone            queues a sendNote job (reviewed note + exact identity)
+   *   office computer  resolves the patient, runs the READ-ONLY Athena probe
+   *                    through the SAME startAthenaAction path the on-screen
+   *                    button uses, and stages the confirmation sheet
+   *   a human there    presses Confirm - the authorization, unchanged
+   *   phone            receives the receipt and says SENT or why not
+   * The doctor's walk to the computer becomes one press instead of redriving
+   * the whole visit. The phone never claims a write the office computer did
+   * not report; "staged" and "sent" are different words on purpose.
+   *
+   * Everything degrades honestly and silently when a half is missing: an
+   * MLS server without the sendNote kind (not yet deployed), no office
+   * computer online, no extension there, no write flow loaded.
+   * ========================================================================*/
+  var PHSEND_ACTIONS = { write_note: 1, save_draft: 1 };
+  /* beats must outrun the server's 150 s lost-silence window while a human
+     decides; the whole wait must finish inside the 15 min job TTL */
+  var PHSEND_BEAT_MS = 100000;
+  var PHSEND_CONFIRM_WAIT_MS = 9 * 60 * 1000;
+  api.sendActions = PHSEND_ACTIONS;
+
+  function phsendHash(s) {
+    var h = 5381, i = 0, t = String(s == null ? '' : s);
+    for (i = 0; i < t.length; i++) { h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; }
+    return h.toString(36);
+  }
+  function phsendNorm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function phsendDob(s) {
+    var m = /(\d{4})-(\d{2})-(\d{2})/.exec(String(s == null ? '' : s));
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    var u = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(String(s == null ? '' : s));
+    if (u) return u[3] + '-' + ('0' + u[1]).slice(-2) + '-' + ('0' + u[2]).slice(-2);
+    return '';
+  }
+  /* IDENTITY. The phone names the patient; this computer must agree it is the
+     same person before opening anything in a chart. Name alone NEVER resolves
+     - "exact name equality never matches an EMR" is a standing law here, and a
+     name-only match is how a note lands in a stranger's chart. DOB is the
+     minimum second factor; the MRN third factor is then enforced against the
+     live chart by the write flow's own read-only probe, which this does not
+     replace and must never pre-empt. */
+  function phsendResolvePatient(sent) {
+    sent = sent || {};
+    var name = String(sent.name || '').trim();
+    var dob = phsendDob(sent.dob);
+    var mrn = String(sent.mrn || '').trim();
+    var pid = String(sent.patientId || '').trim();
+    if (!name) return { ok: false, error: 'The phone did not name a patient. Nothing was opened in Athena.' };
+    if (!dob && !mrn) {
+      return { ok: false, error: 'That patient record has only a name - no date of birth and no MRN. MLS will not match a chart on a name alone, so nothing was opened in Athena. Add a DOB or MRN to the patient in MLS and send again.' };
+    }
+    var list = [];
+    try { if (typeof window.patients !== 'undefined' && Object.prototype.toString.call(window.patients) === '[object Array]') list = window.patients; } catch (e) {}
+    var wantName = phsendNorm(name), hit = null, ambiguous = false;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i]; if (!p) continue;
+      var idMatch = pid && String(p.id || p.patientId || '').trim() === pid;
+      var nameMatch = phsendNorm(p.name) === wantName;
+      var dobMatch = dob && phsendDob(p.dob) === dob;
+      var mrnMatch = mrn && String(p.mrn || p.athenaId || '').trim() === mrn;
+      if (idMatch || (nameMatch && (dobMatch || mrnMatch))) {
+        if (hit && hit !== p) { ambiguous = true; break; }
+        hit = p;
+      }
+    }
+    if (ambiguous) return { ok: false, error: 'More than one MLS patient matches what the phone sent. MLS will not guess between charts - nothing was opened in Athena.' };
+    /* No local row is not fatal: the phone may hold a record this tab has not
+       loaded. Carry the phone's own tuple forward and let the read-only probe
+       be the arbiter, exactly as it is for a locally-started action. */
+    var use = hit || {};
+    return { ok: true, patient: {
+      name: String(use.name || name).trim(),
+      dob: phsendDob(use.dob) || dob,
+      mrn: String(use.mrn || use.athenaId || mrn || '').trim(),
+      patientId: String(use.id || use.patientId || pid || '').trim()
+    }, matchedLocal: !!hit };
+  }
+
+  /* THE OFFICE COMPUTER'S HALF. */
+  function runSendNote(job) {
+    return new Promise(function (res) {
+      var pl = job.payload || {};
+      var action = String(pl.action || '');
+      var settled = false;
+      function finish(out) { if (settled) return; settled = true; res(out); }
+
+      /* the runner's own allowlist - the server refuses final actions too, but
+         a client that trusts the server is the weaker half of a PHI boundary */
+      if (!Object.prototype.hasOwnProperty.call(PHSEND_ACTIONS, action)) {
+        finish({ ok: false, error: 'This computer relays only a reviewed note write or a draft save. "' + action + '" was refused and nothing was opened in Athena.' });
+        return;
+      }
+      var noteText = String(pl.noteText || '').trim();
+      if (!noteText) { finish({ ok: false, error: 'The phone sent no reviewed note text. Nothing was opened in Athena.' }); return; }
+
+      var wf = window.__mlsWriteFlow;
+      if (!wf || typeof wf.startAthenaAction !== 'function') {
+        finish({ ok: false, error: 'The Athena write flow has not loaded on this computer. Open MLS here and let it finish loading, then send again.' });
+        return;
+      }
+      if (!api.extPresent()) {
+        finish({ ok: false, error: 'MLS Assist is not answering on this computer, so Athena cannot be checked. Reload the extension there and send again.' });
+        return;
+      }
+      var resolved = phsendResolvePatient(pl.patient);
+      if (!resolved.ok) { finish({ ok: false, error: resolved.error }); return; }
+
+      var beat = makeProgressPoster(job.id);
+      var beatIv = null, watchIv = null, startedAt = Date.now(), sawSheet = false;
+      function stopTimers() {
+        try { if (beatIv) clearInterval(beatIv); } catch (e) {}
+        try { if (watchIv) clearInterval(watchIv); } catch (e2) {}
+        beatIv = null; watchIv = null;
+      }
+      function say(note) { try { beat.post(note); } catch (e) {} }
+
+      lb(true, 'Your phone sent a note - checking the chart in Athena...');
+      say('Checking the chart in Athena (read-only)...');
+
+      var opts = {
+        patient: resolved.patient,
+        sections: [{ key: 'note', text: noteText }],
+        autoOpen: true,
+        receiptSessionId: 'phsend-' + String(job.id || ''),
+        onProbe: function () {
+          sawSheet = true;
+          say('Chart verified. Waiting for your confirmation on this computer.');
+        },
+        onResult: function (resp, meta) {
+          stopTimers();
+          resp = resp || {}; meta = meta || {};
+          var ctx = meta.context || {};
+          if (resp.__timeout) {
+            finish({ ok: false, error: 'Athena did not answer this computer in time. The outcome is uncertain - check the open encounter there before sending again.' });
+            return;
+          }
+          var confirmed = resp.ok === true;
+          finish({
+            ok: confirmed,
+            data: confirmed ? {
+              staged: true, confirmed: true, action: action,
+              encounterId: String(ctx.encounterId || ''),
+              visitDate: String(ctx.visitDate || ''),
+              provider: String(ctx.provider || ''),
+              verifiedWrite: !!meta.verifiedWrite
+            } : null,
+            error: confirmed ? null : (String(resp.error || resp.message || '') || 'Athena did not confirm the note was written. Nothing is marked complete.')
+          });
+        }
+      };
+
+      var startedOk = true;
+      try { wf.startAthenaAction(action, opts); } catch (e) { startedOk = false; }
+      if (!startedOk) {
+        stopTimers(); lb(false);
+        finish({ ok: false, error: 'This computer could not start the Athena check. Nothing was opened.' });
+        return;
+      }
+      toast('A note arrived from your phone - confirm it to send it to Athena.', '');
+
+      /* keep the job alive while a human decides, and notice the two ways this
+         ends without an onResult: the sheet closed (Cancel), or nobody came. */
+      beatIv = setInterval(function () {
+        if (settled) { stopTimers(); return; }
+        if (beat.canceled()) {
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'The phone stopped waiting. Nothing was sent to Athena from here.' });
+          return;
+        }
+        say('Waiting for your confirmation on this computer.');
+      }, PHSEND_BEAT_MS);
+
+      watchIv = setInterval(function () {
+        if (settled) { stopTimers(); return; }
+        var open = null;
+        try { open = document.getElementById('mlsAthenaActionConfirm'); } catch (e) {}
+        if (open) { sawSheet = true; return; }
+        /* the sheet was up and is gone with no result = somebody closed it */
+        if (sawSheet) {
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'The confirmation was closed on this computer without sending. Nothing was written to Athena.' });
+          return;
+        }
+        if (Date.now() - startedAt > PHSEND_CONFIRM_WAIT_MS) {
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'Nobody confirmed on this computer within nine minutes, so nothing was sent. The note is safe in MLS - send it again when you are at the computer.' });
+        }
+      }, 2000);
+    }).then(function (out) { try { lb(false); } catch (e) {} return out; });
+  }
+  api.runSendNote = runSendNote;
+
+  /* THE PHONE'S HALF. */
+  var PHSEND_ACTIVE_KEY = 'mlsPhSendActive';
+  var phsendState = { status: 'idle', line: '', jobId: '', at: 0 };
+  api.sendState = function () { return { status: phsendState.status, line: phsendState.line, jobId: phsendState.jobId }; };
+  function phsendSet(status, line, jobId) {
+    phsendState.status = status; phsendState.line = line || '';
+    if (jobId !== undefined) phsendState.jobId = jobId || '';
+    phsendState.at = Date.now();
+    try { phsendPaint(); } catch (e) {}
+  }
+  function phsendReadActive() {
+    try { var v = JSON.parse(sessionStorage.getItem(PHSEND_ACTIVE_KEY) || 'null'); return (v && v.id && Date.now() - Number(v.at || 0) < 12 * 60 * 1000) ? v : null; } catch (e) { return null; }
+  }
+  function phsendWriteActive(v) { try { if (v) sessionStorage.setItem(PHSEND_ACTIVE_KEY, JSON.stringify(v)); else sessionStorage.removeItem(PHSEND_ACTIVE_KEY); } catch (e) {} }
+
+  function phsendPollJob(id, officeWho) {
+    var who = officeWho || 'your office computer';
+    var tries = 0, queuedPolls = 0;
+    var pi = setInterval(function () {
+      tries++;
+      if (tries > 264) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', 'No answer from ' + who + '. Nothing was sent - the note is still here.'); return; }
+      fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
+        .then(function (r) { if (r && r.status === 404) return { gone: true }; return r && r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (s && s.gone) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', 'That request expired before ' + who + ' finished. Nothing was sent - send again.'); return; }
+          var job = s && s.job; if (!job) return;
+          if (job.status === 'queued') {
+            queuedPolls++;
+            if (queuedPolls > 12) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', who + ' never picked this up. Make sure MLS is open there, then send again. Nothing was sent.'); return; }
+            phsendSet('queued', 'Waiting for ' + who + ' to pick it up...');
+            return;
+          }
+          if (job.status === 'taken') {
+            var note = job.progress && job.progress.note;
+            phsendSet('working', note ? (who + ': ' + note) : (who + ' is checking the chart...'));
+            return;
+          }
+          if (job.status === 'lost') { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', (job.result && job.result.error) || (who + ' stopped responding. Nothing was sent.')); return; }
+          if (job.status === 'canceled') { clearInterval(pi); phsendWriteActive(null); phsendSet('idle', 'Stopped waiting. Nothing was sent to Athena.'); return; }
+          if (job.status === 'done') {
+            clearInterval(pi); phsendWriteActive(null);
+            var r0 = job.result || {};
+            if (r0.ok === true && r0.data && r0.data.confirmed === true) {
+              var whenWhere = [];
+              if (r0.data.visitDate) whenWhere.push(String(r0.data.visitDate));
+              if (r0.data.provider) whenWhere.push(String(r0.data.provider));
+              phsendSet('sent', 'SENT - confirmed on ' + who + (whenWhere.length ? ' (' + whenWhere.join(', ') + ')' : '') + '.');
+            } else {
+              phsendSet('failed', String(r0.error || 'Nothing was sent to Athena.'));
+            }
+          }
+        })
+        .catch(function () {});
+    }, 2500);
+  }
+
+  api.sendNoteToAthena = function (o) {
+    o = o || {};
+    if (!authed()) { phsendSet('failed', 'Sign in first - nothing was sent.'); return Promise.resolve(false); }
+    var noteText = String(o.noteText || '').trim();
+    if (!noteText) { phsendSet('failed', 'There is no note to send yet.'); return Promise.resolve(false); }
+    var action = Object.prototype.hasOwnProperty.call(PHSEND_ACTIONS, String(o.action || '')) ? String(o.action) : 'write_note';
+    phsendSet('queued', 'Checking that your office computer is awake...', '');
+    return fetch(base() + '/api/relay/presence', { headers: H() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (p) {
+        var who = (p && p.officeName) ? ('"' + p.officeName + '"') : 'your office computer';
+        if (p && p.ok && !(p.online && p.ext)) {
+          phsendSet('failed', who + ' is not answering right now. Open MLS there with MLS Assist installed, then send again. Nothing was sent.');
+          return false;
+        }
+        var body = {
+          kind: 'sendNote',
+          payload: { action: action, noteText: noteText, patient: o.patient || null, apptId: String(o.apptId || ''), visitDay: String(o.visitDay || '') },
+          requestId: 'phsend-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          dedupeKey: 'sendNote|' + phsendHash(String((o.patient && o.patient.name) || '') + '|' + String(o.apptId || '') + '|' + noteText)
+        };
+        if (p && p.officeId) body.targetDeviceId = p.officeId;
+        phsendSet('queued', 'Sending to ' + who + '...');
+        return fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify(body) })
+          .then(function (r) {
+            if (r && r.status === 400) {
+              /* FEATURE DETECT: an MLS server that predates the sendNote kind
+                 refuses it here. Say so plainly instead of spinning - and do
+                 not pretend the note went anywhere. */
+              return r.json().then(function (j) { return { reject: String((j && j.error) || '') }; }, function () { return { reject: 'refused' }; });
+            }
+            return r && r.ok ? r.json() : null;
+          })
+          .then(function (j) {
+            if (j && j.reject !== undefined) {
+              phsendSet('unavailable', /unsupported job kind/i.test(j.reject)
+                ? 'This MLS server cannot take notes from a phone yet. Nothing was sent - the note is safe here.'
+                : ('Refused: ' + j.reject + ' Nothing was sent.'));
+              return false;
+            }
+            if (!j || !j.ok || !j.id) { phsendSet('failed', 'Could not reach the MLS server. Nothing was sent.'); return false; }
+            phsendWriteActive({ id: j.id, at: Date.now() });
+            phsendSet('queued', 'Waiting for ' + who + ' to pick it up...', j.id);
+            phsendPollJob(j.id, who);
+            /* "dispatched is not done": prove a moment later that this really
+               is in flight rather than leaving a hopeful sentence on screen. */
+            setTimeout(function () {
+              if (phsendState.jobId !== j.id && phsendState.status === 'queued') {
+                phsendSet('failed', 'The send did not start. Nothing was sent - try again.');
+              }
+            }, 1500);
+            return true;
+          })
+          .catch(function () { phsendSet('failed', 'Could not reach the MLS server. Nothing was sent.'); return false; });
+      });
+  };
+  api.cancelSend = function () {
+    var a = phsendReadActive();
+    phsendWriteActive(null);
+    if (!a) { phsendSet('idle', ''); return Promise.resolve(false); }
+    phsendSet('idle', 'Stopped waiting. Nothing was sent to Athena.');
+    return fetch(base() + '/api/relay/jobs/' + encodeURIComponent(a.id) + '/cancel', { method: 'POST', headers: H() })
+      .then(function () { return true; }, function () { return true; });
+  };
+
+  /* THE BUTTON. It lives OUTSIDE the phone's repainted region on purpose: the
+     phone rebuilds #mlsPh3Act's innerHTML on every repaint, so a control
+     injected into it is destroyed on the next tick and its listener with it.
+     This bar is a sibling of the action bar, rebuilt only when the phone frame
+     itself is remounted. */
+  function phsendPhone() { try { return window.__mlsPhoneUI; } catch (e) { return null; } }
+  function phsendVisible() {
+    var ph = phsendPhone();
+    if (!ph || !ph.installed || typeof ph.state !== 'function') return false;
+    var st = null; try { st = ph.state(); } catch (e) { return false; }
+    if (!st || !st.mounted || st.screen !== 'visit') return false;
+    var sn = null;
+    try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e2) { sn = null; }
+    if (!sn || !sn.active) return false;
+    return String(sn.phase || '') === 'note' || Number(sn.noteLen || 0) > 0;
+  }
+  function phsendNoteText() {
+    try { var el = document.getElementById('noteBox'); return el ? String(el.value || '') : ''; } catch (e) { return ''; }
+  }
+  function phsendPaint() {
+    var bar = null; try { bar = document.getElementById('mlsPhSendBar'); } catch (e) {}
+    if (!bar) return;
+    var show = phsendVisible();
+    bar.style.display = show ? 'block' : 'none';
+    if (!show) return;
+    var busy = phsendState.status === 'queued' || phsendState.status === 'working';
+    var line = phsendState.line || 'The note stays in MLS until your office computer confirms it.';
+    var lineEl = bar.querySelector('.phsend-line');
+    var btnEl = bar.querySelector('.phsend-go');
+    if (lineEl) {
+      lineEl.textContent = line;
+      lineEl.style.color = phsendState.status === 'sent' ? '#205c43'
+        : (phsendState.status === 'failed' || phsendState.status === 'unavailable') ? '#9f2d2d' : '#55605A';
+    }
+    if (btnEl) {
+      btnEl.textContent = busy ? 'Stop waiting' : (phsendState.status === 'sent' ? 'Send again' : 'Send to Athena');
+      btnEl.disabled = false;
+    }
+  }
+  function phsendMount() {
+    var ph = phsendPhone();
+    if (!ph || !ph.installed) return;
+    var act = null, frame = null;
+    try { act = document.getElementById('mlsPh3Act'); frame = document.getElementById('mlsPh3'); } catch (e) {}
+    if (!act || !frame) return;
+    var existing = null; try { existing = document.getElementById('mlsPhSendBar'); } catch (e2) {}
+    if (existing && existing.parentNode === frame) { phsendPaint(); return; }
+    var bar = document.createElement('div');
+    bar.id = 'mlsPhSendBar';
+    bar.setAttribute('data-phsend', 'phsend-1.0.0');
+    bar.style.cssText = 'flex:none;background:#fff;border-top:1px solid #E4E9E6;padding:9px 12px calc(9px + env(safe-area-inset-bottom));display:none;font:13px/1.4 system-ui';
+    var line = document.createElement('p');
+    line.className = 'phsend-line';
+    line.style.cssText = 'margin:0 0 7px;text-align:center;font-weight:600;font-size:12px;color:#55605A';
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'phsend-go';
+    go.style.cssText = 'width:100%;min-height:46px;border:0;border-radius:12px;background:#204034;color:#fff;font-weight:800;font-size:16px;cursor:pointer';
+    go.addEventListener('click', function () {
+      if (phsendState.status === 'queued' || phsendState.status === 'working') { api.cancelSend(); return; }
+      var sn = null;
+      try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e3) {}
+      var a = (sn && sn.active) || {};
+      /* snapshot().active is { id, name, dob, time } and that `id` is the
+         APPOINTMENT id, not a patient id. They are different namespaces, so it
+         travels as apptId ONLY - feeding it in as patientId would let an
+         appointment id collide with some other patient's record id and resolve
+         the wrong chart. Identity here is name + DOB; the MRN third factor is
+         read off the live chart by the write flow's own probe. */
+      api.sendNoteToAthena({
+        action: 'write_note',
+        noteText: phsendNoteText(),
+        patient: { name: a.name || '', dob: a.dob || '', mrn: '', patientId: '' },
+        apptId: a.id || '',
+        visitDay: (sn && sn.day) || ''
+      });
+    });
+    bar.appendChild(line); bar.appendChild(go);
+    if (act.nextSibling) frame.insertBefore(bar, act.nextSibling); else frame.appendChild(bar);
+    phsendPaint();
+  }
+  api.phsendMount = phsendMount;
+  api.phsendVisible = phsendVisible;
+  /* One timer, and only while a phone frame exists. A remount rebuilds the
+     frame, so re-check rather than binding to a node that can vanish. */
+  var phsendIv = setInterval(function () { try { phsendMount(); } catch (e) {} }, 1200);
+  setTimeout(function () { try { phsendMount(); } catch (e) {} }, 2500);
+  /* resume a send that was in flight when the phone was reloaded */
+  setTimeout(function () {
+    var a = phsendReadActive();
+    if (a && a.id) { phsendSet('working', 'Picking up where this left off...', a.id); phsendPollJob(a.id, 'your office computer'); }
+  }, 3500);
+
+  /* ===== end phsend-1.0.0 ================================================= */
+
   /* rl-2.0.0/pdp-1.0.0: the OFFICE computer executes phone jobs; a SECONDARY
      computer also runs the agent but polls targetedOnly=1, so it can only
-     take jobs the doctor explicitly aimed at it via the pull-device picker 
+     take jobs the doctor explicitly aimed at it via the pull-device picker
      it can never grab an untargeted job meant for the office machine (wrong
      Athena session, wrong place). No role module / no role chosen yet =
      legacy behavior so pre-registry accounts don't regress. */
@@ -51653,7 +52253,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            future server-side regression becomes a real disclosure instead of a
            refusal. Refuse first, announce second — the old order toasted
            "running it here" before deciding what "it" was. */
-        var RELAY_RUNNERS = { pullDay: runPullDay, pullChart: runPullChart };
+        /* phsend-1.0.0 adds sendNote: it STAGES a note write for the human at
+           this computer to confirm. It never executes one - see the block
+           above. Final actions are not here and never will be. */
+        var RELAY_RUNNERS = { pullDay: runPullDay, pullChart: runPullChart, sendNote: runSendNote };
         var relayRunner = Object.prototype.hasOwnProperty.call(RELAY_RUNNERS, job.kind)
           ? RELAY_RUNNERS[job.kind] : null;
         if (typeof relayRunner !== 'function') {
@@ -51663,7 +52266,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return;
         }
         api.agentRuns++;
-        lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : 'read a chart…'));
+        lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : job.kind === 'sendNote' ? 'get a note ready to send to Athena…' : 'read a chart…'));
         toast('📱 Phone request received — running it here (' + job.kind + ').', '');
         var run = relayRunner(job);
         run.then(function (out) {
@@ -52929,8 +53532,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<p class="set-desc" style="margin:2px 0 10px;color:#79837C">Separate from the question above, because it is a separate question. <b>Automatic</b> gives a phone the simple layout and a computer the full one. Choose a side to override that on this device only — useful for previewing the phone screens from your desk, or for using the whole workspace on a tablet.</p>' +
         '<div style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 4px">' +
         '<button type="button" id="mlsDrRename" style="' + segBtnCss() + '">✎ Rename this device</button>' +
-        '<button type="button" id="mlsDrRefresh" style="' + segBtnCss() + '">↻ Refresh</button>' +
+        /* t2settings-1.0.0: this and the API-key list's "↻ Refresh" sat on the
+           same tab under the same name. Each says what it refreshes. */
+        '<button type="button" id="mlsDrRefresh" aria-label="Refresh your devices" style="' + segBtnCss() + '">↻ Refresh devices</button>' +
         '</div>' +
+        /* t2settings-1.0.0: ↻ Refresh sent a heartbeat and re-drew the same
+           rows, so on a machine whose devices had not changed — the normal
+           case — pressing it produced no observable difference anywhere in the
+           document and read as a dead button. It always did work; it never
+           said so. This line is the receipt, and it is true whatever the
+           refresh finds. */
+        '<p class="set-desc" id="mlsDrChecked" role="status" aria-live="polite" style="margin:4px 0 0;color:#79837C"></p>' +
         '<p class="set-desc" style="margin:10px 0 4px;color:#1A211C;font-weight:600">Your devices</p>' +
         '<div id="mlsDrRows"></div>';
       host.appendChild(card);
@@ -52962,7 +53574,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var n = await window.mlsPrompt('Name this device (shown to your other devices):', api.name());
         if (n != null && api.setName(n)) { toast('Device renamed.', 'ok'); renderPanelRows(); }
       });
-      $('mlsDrRefresh').addEventListener('click', function () { heartbeat(); renderPanelRows(); });
+      $('mlsDrRefresh').addEventListener('click', function () {
+        heartbeat(); renderPanelRows();
+        try {
+          var when = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+          var said = 'Checked just now, at ' + when + '. Anything below that has not changed is up to date.';
+          var stamp = $('mlsDrChecked');
+          if (stamp) stamp.textContent = said;
+          /* The stamp alone is not enough: MEASURED, this whole card can lay
+             out at zero height inside the scrolling pane, and then the receipt
+             is written where nobody can read it — which is how the button read
+             as dead in the first place. The toast is rendered above everything
+             and cannot be scrolled past. */
+          if (typeof window.toast === 'function') window.toast('Devices checked at ' + when + '.', 'ok');
+        } catch (e) {}
+      });
       renderPanelRows();
     } catch (e) {}
   }

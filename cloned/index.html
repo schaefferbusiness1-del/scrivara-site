@@ -300,6 +300,17 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <script src="vendor_qrcode.js?v=b430"></script>
+<!-- ===== navgesture-1.0.0 — "has a human touched this page yet?" ============
+     One timestamp, armed at parse time, read by the tab-memory restore
+     (tabmem-standdown-1.0.0) in the connect bundle. That restore fires 800ms after
+     the load event and used to overwrite the tab the doctor had just pressed —
+     measured: a real click on #nav_calendar at +976ms was reversed at +1298ms.
+     The restore needs to know whether a human has acted, and its own file
+     loads far too late to see a press made during boot, so the flag is HERE.
+     Listeners are capture-phase and passive; they set one number and nothing
+     else, so no view, control or handler anywhere can be affected by them. -->
+<script>(function(){try{if(window.__mlsUserActedArmed)return;window.__mlsUserActedArmed=1;var m=function(e){try{if(!e||e.isTrusted===false)return;if(!window.__mlsUserActed)window.__mlsUserActed=Date.now();}catch(x){}};['pointerdown','mousedown','touchstart','keydown'].forEach(function(t){try{document.addEventListener(t,m,{capture:true,passive:true});}catch(x){try{document.addEventListener(t,m,true);}catch(y){}}});}catch(e){}})();</script>
+<!-- ===== end navgesture-1.0.0 ========================================== -->
 <script>(function(){var p=window.__MLS_PUBLIC_PREVIEW;if(p&&p.enabled===true)return;try{var l=document.createElement('link');l.rel='preconnect';l.href='https://scrivara-backend.onrender.com';l.crossOrigin='anonymous';document.head.appendChild(l);}catch(e){}if('serviceWorker' in navigator){window.addEventListener('load',function(){Promise.reject(new Error('cloned lane: service worker deliberately not registered')).catch(function(){});});var reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(reloaded)return;reloaded=true;location.reload();});}})();</script>
 <style>/* fonts.css inlined (b392): removes the only render-blocking request; url()s rebased to fonts/ — the standalone fonts/fonts.css stays for all other pages. */
 /* vietnamese */
@@ -5393,7 +5404,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div style="margin-top:8px">
             <div class="row tight">
               <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="genApiKey()">＋ Generate API key</button>
-              <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()">↻ Refresh</button>
+              <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()" aria-label="Refresh the API key list">↻ Refresh keys</button>
             </div>
             <div id="newApiKeyBox" style="display:none;margin-top:10px">
               <label>Your new key — copy it now</label>
@@ -8571,7 +8582,11 @@ function renderDocPrefs(){
   }
   list.innerHTML=arr.map((p,i)=>
     '<div class="docpref-item"><span>'+esc(p)+'</span>'+
-    '<button type="button" class="docpref-x" title="Remove" onclick="removeDocPref('+i+')">×</button></div>'
+    /* t2settings-1.0.0: every one of these read "×" and nothing else, so a
+       list of five preferences offered five controls with the same name and no
+       way — by ear or by screen reader — to tell which removed which. The
+       preference itself is the name. */
+    '<button type="button" class="docpref-x" title="Remove" aria-label="Remove preference: '+esc(p)+'" onclick="removeDocPref('+i+')">×</button></div>'
   ).join('');
 }
 /* Build the PROVIDER PREFERENCES block injected into AI system prompts.
@@ -20130,7 +20145,15 @@ function _opPreviewHtml(proc, name, dateStr){
 /* Remove DUPLICATE saved templates (same name + same text), keep the first, persist. */
 function dedupeSavedTemplates(announce){
   try{
-    var list=(typeof getTemplates==='function'?getTemplates():[])||[]; if(list.length<2) return list;
+    var list=(typeof getTemplates==='function'?getTemplates():[])||[];
+    /* 1p, 2026-08-18 (op-notes press test): PRESSED, IT SAID NOTHING. `announce`
+       is the flag that means "a doctor clicked this", and the only branch that
+       ever spoke was the one where something was deleted — so on a clean
+       library (or one holding fewer than two templates) the button was
+       indistinguishable from a dead control. Every internal caller passes no
+       announce and is untouched; nothing about what counts as a duplicate
+       changes. */
+    if(list.length<2){ if(announce){ try{ toast(list.length?'Nothing to remove — you have one template.':'Nothing to remove — you have no templates yet.',''); }catch(e0){} } return list; }
     var seen={}, out=[];
     /* 2026-07-29: the key used to be name + text.slice(0,400). Two different
        operative-note templates that share a name and a >400-char standard
@@ -20141,6 +20164,7 @@ function dedupeSavedTemplates(announce){
     list.forEach(function(t){ if(!t) return; var k=String(t.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'||'+String(t.text||'').replace(/\s+/g,' ').trim().toLowerCase(); if(!seen[k]){ seen[k]=1; out.push(t); } });
     var removed=list.length-out.length;
     if(removed>0){ setTemplates(out); if(announce){ try{ toast('Removed '+removed+' duplicate template'+(removed===1?'':'s')+'.','ok'); }catch(e){} } }
+    else if(announce){ try{ toast('No duplicates — all '+list.length+' templates are different from each other.','ok'); }catch(e1){} }
     return out;
   }catch(e){ return (typeof getTemplates==='function'?getTemplates():[])||[]; }
 }
@@ -23327,6 +23351,119 @@ function _assistReadAthenaTab(onStatus){
    an async read, and only when DOB/MRN makes that resolution unique. */
 function _athenaHistoryDigits(v){ return String(v||'').replace(/\D/g,''); }
 function _athenaHistoryName(v){ return String(v||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+/* ===== idread-1.0.0 — the identity guard READS a name and a date the way athena prints them ==
+   Owner, 2026-08-18: the cross-patient safety stop "keeps happening" on charts
+   that ARE the same patient.
+
+   MEASURED in the local harness on this exact shell, with the guard as the only
+   thing under test (tests/1p-pull-one-owner-contract.test.js reproduces every row,
+   and executes the pre-fix rule beside it as the causal control):
+
+     stored DOB      athena banner DOB   before   why
+     --------------- ------------------- -------- ----------------------------
+     1962-03-04      03/04/1962          REFUSE   digit-order, not the date
+     1962-03-04      3/4/1962            REFUSE   digit-order + padding
+     03/04/1962      3/4/1962            REFUSE   padding alone
+     03/04/1962      March 4, 1962       REFUSE   month name unreadable
+     03/04/1962      04/03/1962          REFUSE   a genuinely different date
+     03/04/1962      ''                  REFUSE   no proof at all
+
+   _athenaHistoryDigits strips every non-digit and compares the RUN, so
+   "1962-03-04" reads as 19620304 and "03/04/1962" reads as 03041962 - the same
+   birthday, two strings that can never be equal. This is not a rare spelling:
+   #ptDob's own placeholder says "e.g. 1980-05-14", the pre-visit intake's DOB
+   field is <input type="date"> (which can only produce yyyy-mm-dd), and
+   athenaOne's chart banner prints mm/dd/yyyy. A record created either of those
+   two ways can therefore NEVER prove identity against its own athena chart.
+
+   The same class on the name side: a reader that lands on textContent instead
+   of innerText returns the banner name with no separator between its parts
+   ("AdaSample" for "Ada Sample"), and an ALL-CAPS banner leaves no camel
+   boundary to split on either. Measured before: VETO on the same patient.
+
+   WHAT CHANGES IS THE READING, NEVER THE REQUIREMENT. Both helpers below are
+   strictly ADDITIVE - every pair the old code accepted is still accepted, and a
+   pair is newly accepted only when the two strings denote the SAME date, or when
+   a run-together name re-segments into the OTHER name's own tokens with the
+   whole run consumed and each token used once. Two different dates still differ;
+   a name whose tokens are not in the other name still cannot be matched; an
+   absent DOB still proves nothing. The three-factor rule (name echo + DOB or MRN
+   equality) is untouched.
+
+   No regex here carries an escape a shell transport could eat, and the suite
+   EXECUTES every one of them rather than grepping for their source. */
+var _ATHENA_DOB_MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12,
+  january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+function _athenaHistoryDobKey(v){
+  var s=String(v==null?'':v).trim(); if(!s) return '';
+  var pad=function(n){ n=String(n); return n.length>1?n:('0'+n); };
+  var ok=function(y,m,d){ y=+y; m=+m; d=+d;
+    return (y>=1870&&y<=2200&&m>=1&&m<=12&&d>=1&&d<=31)?(String(y)+pad(m)+pad(d)):''; };
+  var iso=s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(iso){ var kiso=ok(iso[1],iso[2],iso[3]); if(kiso) return kiso; }
+  var us=s.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+  if(us){ var kus=ok(us[3],us[1],us[2]); if(kus) return kus; }
+  var lo=s.toLowerCase();
+  var mn=lo.match(/([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/);
+  if(mn&&_ATHENA_DOB_MONTHS[mn[1]]){ var kmn=ok(mn[3],_ATHENA_DOB_MONTHS[mn[1]],mn[2]); if(kmn) return kmn; }
+  var dm=lo.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})\.?,?\s+(\d{4})/);
+  if(dm&&_ATHENA_DOB_MONTHS[dm[2]]){ var kdm=ok(dm[3],_ATHENA_DOB_MONTHS[dm[2]],dm[1]); if(kdm) return kdm; }
+  var run=_athenaHistoryDigits(s);
+  if(run.length===8){
+    var kA=ok(run.slice(0,4),run.slice(4,6),run.slice(6,8)); if(kA) return kA;
+    var kB=ok(run.slice(4,8),run.slice(0,2),run.slice(2,4)); if(kB) return kB;
+  }
+  return '';
+}
+/* TRUE only when both sides carry a date AND it is the same date. The pre-idread
+   raw-digit equality is kept whole as the first test, so this can only ever add. */
+function _athenaHistoryDobSame(a,b){
+  var x=_athenaHistoryDigits(a), y=_athenaHistoryDigits(b);
+  if(!x||!y) return false;
+  if(x===y) return true;
+  var ka=_athenaHistoryDobKey(a), kb=_athenaHistoryDobKey(b);
+  return !!(ka&&kb&&ka===kb);
+}
+function _athenaHistoryNameCamel(v){ return String(v==null?'':v).replace(/([a-z0-9])([A-Z])/g,'$1 $2'); }
+/* Segment ONE run-together token using the other name's tokens as the whole
+   dictionary. The entire run must be consumed and each dictionary word may be
+   used once, so "annsmith" against "ann cubbage reilly" yields nothing and stays
+   a mismatch, while "adasample" against "ada sample" yields ["ada","sample"]. */
+function _athenaHistoryNameSegment(run, dict){
+  var words=[],seen={},i;
+  for(i=0;i<dict.length;i++){ var d=dict[i]; if(d&&d.length>1&&!seen[d]){ seen[d]=1; words.push(d); } }
+  if(!words.length) return null;
+  var used={}, best=null;
+  (function walk(rest, acc){
+    if(best) return;
+    if(!rest.length){ if(acc.length>1) best=acc.slice(); return; }
+    for(var k=0;k<words.length;k++){
+      if(used[k]) continue;
+      if(rest.indexOf(words[k])!==0) continue;
+      used[k]=1; acc.push(words[k]);
+      walk(rest.slice(words[k].length), acc);
+      acc.pop(); used[k]=0;
+      if(best) return;
+    }
+  })(run, []);
+  return best;
+}
+function _athenaHistoryNameUnrun(tokens, dict){
+  var out=[], moved=false;
+  for(var i=0;i<tokens.length;i++){
+    var t=tokens[i];
+    var parts=(t.length>=6)?_athenaHistoryNameSegment(t,dict):null;
+    if(parts&&parts.length>1){ moved=true; out=out.concat(parts); }
+    else out.push(t);
+  }
+  return moved?out:tokens;
+}
+function _athenaHistoryNameTokensCover(A,B){
+  function tokOk(a,b){ return a===b||(a.length>=4&&b.length>=4&&(a.indexOf(b)===0||b.indexOf(a)===0))||(a.length===1&&a===b.charAt(0))||(b.length===1&&b===a.charAt(0)); }
+  function covered(X,Y){ return X.every(function(x){ return Y.some(function(y){ return tokOk(x,y); }); }); }
+  return covered(A,B)||covered(B,A);
+}
+/* ===== end idread-1.0.0 ===== */
 function _athenaHistoryNameCompatible(seen, want){
   var s=_athenaHistoryName(seen), w=_athenaHistoryName(want);
   if(!s||!w) return true; /* an absent echo never vetoes; the DOB/MRN equality proof below still decides */
@@ -23335,10 +23472,15 @@ function _athenaHistoryNameCompatible(seen, want){
      "ann cubbage reilly"). Accept when every token on one side matches a token
      on the other by exact text, a >=4-char prefix, or a single-letter initial.
      This relaxes ONLY the name echo; DOB/MRN equality still proves identity. */
-  var st=s.split(' '), wt=w.split(' ');
-  function tokOk(a,b){ return a===b||(a.length>=4&&b.length>=4&&(a.indexOf(b)===0||b.indexOf(a)===0))||(a.length===1&&a===b.charAt(0))||(b.length===1&&b===a.charAt(0)); }
-  function covered(A,B){ return A.every(function(x){ return B.some(function(y){ return tokOk(x,y); }); }); }
-  return covered(st,wt)||covered(wt,st);
+  if(_athenaHistoryNameTokensCover(s.split(' '),w.split(' '))) return true;
+  /* idread-1.0.0: retried, never replaced. Camel boundaries first (a textContent
+     read of "Ada Sample"), then dictionary re-segmentation (an ALL-CAPS run).
+     Both run only after the rule above has already declined, so no pair that
+     used to be compatible can stop being compatible here. */
+  var s2=_athenaHistoryName(_athenaHistoryNameCamel(seen)), w2=_athenaHistoryName(_athenaHistoryNameCamel(want));
+  if((s2!==s||w2!==w)&&_athenaHistoryNameTokensCover(s2.split(' '),w2.split(' '))) return true;
+  var sa=s2.split(' '), wa=w2.split(' ');
+  return _athenaHistoryNameTokensCover(_athenaHistoryNameUnrun(sa,wa),_athenaHistoryNameUnrun(wa,sa));
 }
 function _athenaHistoryTargetSnapshot(ref, allowCreate){
   ref=(ref&&typeof ref==='object')?ref:{name:String(ref||'')};
@@ -23352,7 +23494,7 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
     matches=pts.filter(function(x){return String(x&&x.id||'')===targetId;});
   }else if(wantName){
     matches=pts.filter(function(x){return _athenaHistoryName(x&&x.name)===_athenaHistoryName(wantName);});
-    if(wantDob){ var dd=_athenaHistoryDigits(wantDob); matches=matches.filter(function(x){return dd&&_athenaHistoryDigits(x&&x.dob)===dd;}); }
+    if(wantDob){ matches=matches.filter(function(x){return _athenaHistoryDobSame(x&&x.dob,wantDob);}); } /* idread-1.0.0: same birthday, any spelling */
     if(wantMrn){ var mm=_athenaHistoryDigits(wantMrn); matches=matches.filter(function(x){return mm&&_athenaHistoryDigits((x&&x.mrn)||(x&&x.athenaId))===mm;}); }
   }
   if(matches.length>1) return null;
@@ -23363,7 +23505,7 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
   }
   if(!p||!p.id) return null;
   if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)) return null;
-  if(wantDob&&p.dob&&_athenaHistoryDigits(wantDob)!==_athenaHistoryDigits(p.dob)) return null;
+  if(wantDob&&p.dob&&!_athenaHistoryDobSame(wantDob,p.dob)) return null; /* idread-1.0.0 */
   if(wantMrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(wantMrn)!==_athenaHistoryDigits(p.mrn||p.athenaId)) return null;
   var appointmentId=String(ref.appointmentId||ref.athenaAppointmentId||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);
   var scheduleDate=/^\d{4}-\d{2}-\d{2}$/.test(String(ref.scheduleDate||ref.date||''))?String(ref.scheduleDate||ref.date):'';
@@ -23377,7 +23519,7 @@ function _athenaHistoryTargetStillExact(target){
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var p=pts.find(function(x){return String(x&&x.id||'')===String(target.patientId);});
   if(!p||_athenaHistoryName(p.name)!==_athenaHistoryName(target.name)) return false;
-  if(target.dob&&p.dob&&_athenaHistoryDigits(p.dob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(target.dob&&p.dob&&!_athenaHistoryDobSame(p.dob,target.dob)) return false; /* idread-1.0.0 */
   if(target.mrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(p.mrn||p.athenaId)!==_athenaHistoryDigits(target.mrn)) return false;
   return true;
 }
@@ -23388,9 +23530,9 @@ function _athenaHistoryProofMatches(target, observed){
   var seenDob=String(observed.chartDob||observed.dob||'').trim();
   var seenMrn=String(observed.chartMrn||observed.mrn||'').trim();
   if(seenName&&!_athenaHistoryNameCompatible(seenName,target.name)) return false;
-  if(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(seenDob&&target.dob&&!_athenaHistoryDobSame(seenDob,target.dob)) return false; /* idread-1.0.0 */
   if(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)!==_athenaHistoryDigits(target.mrn)) return false;
-  var dobProof=!!(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)===_athenaHistoryDigits(target.dob));
+  var dobProof=_athenaHistoryDobSame(seenDob,target.dob); /* idread-1.0.0: still a proof, still both sides present */
   var mrnProof=!!(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)===_athenaHistoryDigits(target.mrn));
   return dobProof||mrnProof;
 }
@@ -23503,10 +23645,17 @@ function _assistReadChart(patientRef, onStatus){
       var proofOk=false;
       if(candidateRead){
         var idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
-        var seenName=String(observed.chartName||'').trim(),seenDob=_athenaHistoryDigits(observed.chartDob),wantDob=_athenaHistoryDigits(target.dob),seenId=idKey(observed.chartMrn),wantId=idKey(target.mrn);
-        proofOk=!!seenName&&_athenaHistoryNameCompatible(seenName,target.name)&&!!wantDob&&seenDob===wantDob&&(!wantId||(!!seenId&&seenId===wantId));
+        var seenName=String(observed.chartName||'').trim(),wantDob=_athenaHistoryDigits(target.dob),seenId=idKey(observed.chartMrn),wantId=idKey(target.mrn);
+        /* idread-1.0.0: the same date in two spellings is one date. */
+        proofOk=!!seenName&&_athenaHistoryNameCompatible(seenName,target.name)&&!!wantDob&&_athenaHistoryDobSame(observed.chartDob,target.dob)&&(!wantId||(!!seenId&&seenId===wantId));
       }else proofOk=_athenaHistoryProofMatches(target,observed);
-      if(!proofOk){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
+      /* pullone-1.0.0: the stop is unchanged; the sentence now says what the
+         doctor can do about it. "Did not return matching DOB/MRN proof" named a
+         mechanism, and the other cross-patient message in this app pointed at an
+         in-athena green panel that mounts nowhere on athenaOne v26.7 ax views.
+         Both causes - a different chart open, and a chart whose banner did not
+         render - are covered honestly by one instruction. */
+      if(!proofOk){ reject(new Error('The chart open in athenaOne did not prove it is this patient — its name, date of birth or MRN did not match, so MLS stopped and charts can never mix. Open that patient’s chart in athenaOne, or select (or add) that same patient here, then pull again. Nothing was saved.')); return; }
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
       var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000&&Number(rawReceipt.capturedAt||0)<=deadlineAt);
       var receiptFrames=!!(rawReceipt&&Number(rawReceipt.expectedClinicalFrames||0)>=1&&Number(rawReceipt.readClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.boundClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.unboundClinicalFrames||0)===0&&Number(rawReceipt.oversizeClinicalFrames||0)===0&&Number(rawReceipt.unreadFrames||0)===0&&Number(rawReceipt.omittedForCap||0)===0);
@@ -23701,7 +23850,8 @@ async function pullPatientChartViaAssist(btn, opts){
       if(btn){ btn.disabled=false; btn.innerHTML=orig; } releaseDirect(); return false;
     }
     var saveRef=_athenaHistoryVerifiedRef(pullTarget,rd);
-    if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient changed or could not be re-verified before save, so the history was discarded. Nothing was saved.');
+    /* pullone-1.0.0: same stop, actionable words. */
+    if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient could not be re-verified against the chart just read, so nothing was saved. Check that the same patient is selected here and open in athenaOne, then pull again.');
     try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
     say('✅ Saved '+pullTarget.name+'’s Athena history to their MLS chart — it’s on your account now.','ok','step 3 of 3');
@@ -23855,7 +24005,7 @@ function _athenaNewPatientVerifiedRef(candidate,observed){
   var seenName=clean(observed.chartName||observed.name,200),seenDob=clean(observed.chartDob||observed.dob,20),seenId=clean(observed.chartMrn||observed.mrn||observed.athenaId,80);
   if(!name||!requestId||requestId!==observedRequestId)return null;
   if(!_athenaHistoryNameCompatible(seenName,name))return null;
-  if(dob&&(!seenDob||_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(dob)))return null;
+  if(dob&&!_athenaHistoryDobSame(seenDob,dob))return null; /* idread-1.0.0 */
   if(athenaId&&(!seenId||!idKey(seenId)||idKey(seenId)!==idKey(athenaId)))return null;
   if(!athenaId&&(!dob||!seenDob))return null;
   var pts=(typeof getPatients==='function'?getPatients():[])||[],nk=_athenaHistoryName(name),dk=_athenaHistoryDigits(dob),ik=idKey(athenaId);
@@ -23863,7 +24013,10 @@ function _athenaNewPatientVerifiedRef(candidate,observed){
     if(!p)return false;
     var pk=idKey(p.athenaId||p.athenaPatientId||p.mrn);
     if(ik&&pk&&ik===pk)return true;
-    return !!(nk&&dk&&_athenaHistoryName(p.name)===nk&&_athenaHistoryDigits(p.dob)===dk);
+    /* idread-1.0.0: a collision test may only get MORE sensitive. An existing
+       record whose DOB is stored ISO used to escape this check against a
+       mm/dd/yyyy candidate and a duplicate person was created. */
+    return !!(nk&&dk&&_athenaHistoryName(p.name)===nk&&_athenaHistoryDobSame(p.dob,dob));
   });
   if(collision)return null;
   var cohort=clean(candidate.cohort||candidate.studyLabel,120);
@@ -23889,9 +24042,11 @@ function _savePatientChart(name, appt, chart){
   if(!p&&creating){
     var np=ref.newPatient,idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
     var nk=_athenaHistoryName(np.name),dk=_athenaHistoryDigits(np.dob),ik=idKey(np.athenaId||np.mrn);
-    var collided=pts.some(function(x){if(!x)return false;var xk=idKey(x.athenaId||x.athenaPatientId||x.mrn);return String(x.id||'')===targetId||(ik&&xk&&ik===xk)||(nk&&dk&&_athenaHistoryName(x.name)===nk&&_athenaHistoryDigits(x.dob)===dk);});
+    /* idread-1.0.0 on both lines: the collision test only gets more sensitive,
+       and the DOB proof stops failing on a birthday spelled two ways. */
+    var collided=pts.some(function(x){if(!x)return false;var xk=idKey(x.athenaId||x.athenaPatientId||x.mrn);return String(x.id||'')===targetId||(ik&&xk&&ik===xk)||(nk&&dk&&_athenaHistoryName(x.name)===nk&&_athenaHistoryDobSame(x.dob,np.dob));});
     var exactName=_athenaHistoryNameCompatible(ref.verifiedName,np.name);
-    var exactDob=!np.dob||(_athenaHistoryDigits(ref.verifiedDob)&&_athenaHistoryDigits(ref.verifiedDob)===dk);
+    var exactDob=!np.dob||_athenaHistoryDobSame(ref.verifiedDob,np.dob);
     var exactId=!ik||(idKey(ref.verifiedMrn)&&idKey(ref.verifiedMrn)===ik);
     if(collided||!exactName||!exactDob||!exactId||(!ik&&!dk))return _chartSaveRefused('verified-create-refused',{collision:!!collided,exactName:exactName,exactDob:exactDob,exactId:exactId});
     p=Object.assign({},np);
@@ -24035,7 +24190,7 @@ function _hasImportedHistory(ref){
     var targetId=String(obj.patientId||obj.id||'').trim(); if(!targetId)return false;
     var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null; if(!p)return false;
     if(obj.name&&_athenaHistoryName(obj.name)!==_athenaHistoryName(p.name))return false;
-    if(obj.dob&&p.dob&&_athenaHistoryDigits(obj.dob)!==_athenaHistoryDigits(p.dob))return false;
+    if(obj.dob&&p.dob&&!_athenaHistoryDobSame(obj.dob,p.dob))return false; /* idread-1.0.0 */
     if((obj.mrn||obj.athenaId)&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(obj.mrn||obj.athenaId)!==_athenaHistoryDigits(p.mrn||p.athenaId))return false;
     if(p && (String(p.athenaChartSnapshot||'').trim() || /Pulled from Athena/i.test(p.summary||''))) return true;
     return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patientId||'')===String(p.id||'') && n.cc==='Athena chart import'; });
@@ -37128,7 +37283,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes clone requests only. */
-  var CLONED_BUILD='cloned-20260818-r22';
+  var CLONED_BUILD='cloned-20260819-r23';
   window.__MLS_CLONED=Object.freeze({enabled:true,route:'/cloned/',build:CLONED_BUILD});
   window.__MLS_AV=CLONED_BUILD;
   var CRITICAL=[
@@ -42910,6 +43065,398 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 })();
 </script>
 <!-- ===== end opnote-day-4.0.0 ========================================= -->
+<!-- ===== opnote-home-1.0.0 — one press home, from inside a full-screen room ==
+     Owner: the op-note room is the only surface in the app you cannot leave
+     towards anything. Its ✕ closes it back onto whatever screen you came from,
+     and #mlsOpnBack goes back to the day inside the room. Neither of those is
+     "take me home".
+
+     WHERE THIS BUTTON CANNOT LIVE, AND IT WAS MEASURED RATHER THAN ASSUMED.
+     The obvious mount is the app header, next to the burger and the Back
+     arrow. It cannot work there, and the reason is one computed property on
+     one node:
+
+       #appHeader.mlsRdHdr  →  backdrop-filter: saturate(1.8) blur(20px)
+                               z-index: 6000 / position: sticky
+
+     feat_mls_redesign.js writes that inside an @supports guard (its own
+     "IT FAILS SAFE, TWICE" block). A backdrop-filter does two things a
+     z-index cannot argue with:
+
+       1. It makes the header the CONTAINING BLOCK for every position:fixed
+          descendant. MEASURED at 1440x900: a fixed button in #mlsRdTop with
+          `left:8px` painted at x=244 — the header's own left edge, past the
+          236px nav rail — not at x=8. At 900px and below the rail goes
+          off-canvas, the header starts at 0, and the offset vanishes: a lane
+          that only checked phone widths would call it fixed and be wrong.
+       2. It makes the header a STACKING CONTEXT at z-index 6000. #opPrepModal
+          is position:fixed, z-index 9400, at BODY level. 6000 < 9400, so every
+          descendant of the header paints UNDER the room no matter what z-index
+          it carries. MEASURED with two identical buttons at five widths:
+          elementFromPoint at the header-mounted one's centre returned
+          #mlsOpDayTitle (the room) at 1440 and the body-mounted twin at every
+          other width — never itself. The body-mounted twin returned itself,
+          44x44, at 1440 / 900 / 768 / 390 / 360.
+
+     That is the third hiding mechanism a previous attempt hit: not the
+     data-mlsrd-hid stamping (feat_mls_redesign.js:145, which only reaches
+     DIRECT children of #appHeader) and not the #mlsRdTop mount — a property
+     no id-registry or z-index bid can see.
+
+     SO THE BUTTON LIVES IN THE ROOM. It is a direct child of #opPrepModal,
+     position:absolute, exactly mirroring the room's own ✕ (`.modal-x`, which
+     is absolute at top:10px right:12px and resolves against this same modal —
+     MEASURED at 1368,10 on a 1425px viewport and at 288,10 on a 345px one).
+     Nothing can cover it, because it is inside the thing that would have
+     covered it; it survives every room state including Templates, where the
+     rail itself is display:none; and there is no fixed-position measurement
+     loop to keep in sync with a scrolling rail.
+
+     THE LANE IS RESERVED, because the alternative is the defect the room
+     already documented once. MEASURED at 390x844 before reserving: a 44x44
+     button at the card's top-left covers x 12..56, y 10..54, and
+     #mlsOpnPrevDay ("yesterday") sits at x 14..58, y 39..83 — the same
+     collision class as "the ✕ painted over the next-day arrow, so the doctor
+     pressing tomorrow would have closed the room". #mlsOpDayHead takes a 52px
+     left inset, so the button sits BESIDE both of its rows; see the stylesheet
+     for why the lane is horizontal and not vertical (a vertical one cost three
+     patient rows at 768x1024).
+
+     HOME IS THE BOOT TAB, CLICKED — never showView('visit'). MEASURED on the
+     real nav: nav_visit's onclick is
+     `showView('visit');try{var b=document.getElementById('ez3Mode…` — the tab
+     does wiring past the view change, and calling showView directly skips it.
+     The tab that was `.on` when the app finished booting IS home; it is
+     captured once and frozen, so a doctor who has walked to History does not
+     teach this button that History is home.
+
+     QUIET, NEVER DISABLED. When the boot tab is already the tab that is on,
+     the button dims — but it still presses, and pressing it still closes the
+     room and lands on that tab. A greyed-out control here would be a second
+     dead primary, which is the exact thing opnote-day-4.0.0 exists to remove.
+
+     IT NEVER WRITES #mlsRdTitle. The header's title is feat_mls_redesign's
+     syncTitle(), which derives it from the dock and the nav; a second writer
+     would make the two disagree. -->
+<style id="mlsOpHomeCss">
+#mlsOpHome{
+  position:absolute; left:12px; top:10px; z-index:3;
+  width:44px; height:44px; min-width:44px; min-height:44px; padding:0; margin:0;
+  display:none; align-items:center; justify-content:center;
+  box-sizing:border-box; cursor:pointer;
+  font:700 18px/1 var(--sans); color:var(--ink);
+  background:var(--card,#fff); border:1px solid var(--line,#D9D6CD);
+  border-radius:var(--r-ctl,10px);
+}
+/* on screen exactly while the room is */
+#opPrepModal.show #mlsOpHome{ display:flex; }
+#mlsOpHome:hover{ border-color:var(--brand,#2E6A4B); background:var(--soft); }
+#mlsOpHome:focus-visible{ outline:2px solid var(--brand,#2E6A4B); outline-offset:2px; }
+/* QUIET, NOT DISABLED: it still presses, and it still goes there. */
+#mlsOpHome[data-mls-home="here"]{ opacity:.6; }
+#mlsOpHome[data-mls-home="here"]:hover{ opacity:1; }
+
+/* THE RESERVED LANE IS HORIZONTAL, AND THAT CHOICE WAS FORCED BY A MEASUREMENT.
+   52px = the button's 44 plus the 8px it is inset by.
+
+   The first version reserved it VERTICALLY instead — padding-left plus a 44px
+   floor on #mlsOpDayTitle, which grew #mlsOpDayHead from 70px to 94px. It is
+   the day head, so it is inside the rail, and below 900px the rail is a strip
+   capped at 38vh. MEASURED at 768x1024: three patient rows (mlsOpnRow6..8, all
+   at y=380) fell out of the capped strip and were painted over by #oprEditor —
+   the exact failure 1p-opnote-rail-runtime's own obstruction check exists to
+   catch, caused by a control that was supposed to make the room easier.
+
+   Padding the HEAD costs no height at all: the button sits BESIDE both of the
+   head's rows rather than above one of them, and the title, the stepper, the
+   picker and Today all start one lane in. The only place it pinches is the
+   288px rail, where Today's cell drops to ~59px against a ~68px intrinsic
+   width — so Today's own horizontal padding comes down to match, which is the
+   whole cost, in one place, on the one control that can afford it. */
+#opPrepModal #mlsOpDayHead{ padding-left:52px; }
+#opPrepModal #mlsOpnToday{ padding-left:9px; padding-right:9px; }
+/* The Templates panel brings the room's own top bar back, and it starts at the
+   same corner. Same lane, same reason. */
+#opPrepModal[data-mls-opnotes-state="templates"] .opr-top{ padding-left:52px; }
+@media print{ #mlsOpHome{ display:none !important; } }
+</style>
+<script>
+(function () {
+  var VERSION = 'opnote-home-1.0.0';
+  var ID = 'mlsOpHome';
+  var bootId = '', bootTab = null, frozen = false;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function S(v) { return v == null ? '' : String(v); }
+  function modal() { return el('opPrepModal'); }
+  function roomOpen() { var m = modal(); return !!(m && m.classList && m.classList.contains('show')); }
+  function onTab() { try { return document.querySelector('.mainnav .navtab.on'); } catch (e) { return null; } }
+
+  /* ---- 1. WHAT HOME IS -------------------------------------------------
+     The tab that was marked .on when the app finished booting. Captured the
+     FIRST time one exists and then frozen: this button must not follow the
+     doctor around. The id is kept as well as the node, because the nav is
+     rebuilt by several modules and the node identity does not survive that —
+     the id does. */
+  function learn() {
+    if (frozen) return;
+    var t = onTab();
+    if (!t) return;
+    bootTab = t; bootId = S(t.id); frozen = true;
+  }
+  function tab() {
+    if (bootId) { var again = el(bootId); if (again) return again; }
+    if (bootTab && document.contains(bootTab)) return bootTab;
+    /* nothing was ever marked: the first tab that can navigate is the honest
+       fallback, and it is still a real control the app owns. */
+    try {
+      var all = document.querySelectorAll('.mainnav .navtab'), i;
+      for (i = 0; i < all.length; i++) { if (S(all[i].getAttribute('onclick'))) return all[i]; }
+    } catch (e) {}
+    return null;
+  }
+  function here() {
+    var t = tab(), n = onTab();
+    return !!(t && n && t === n);
+  }
+
+  /* ---- 2. GOING THERE --------------------------------------------------
+     The room is closed through the app's own closeOpPrep (its ✕ is the same
+     call), and then the TAB is clicked. Never showView: nav_visit's own
+     onclick carries wiring past the view change. */
+  function go() {
+    var did = false;
+    try { if (typeof window.closeOpPrep === 'function') { window.closeOpPrep(); did = true; } } catch (e) {}
+    if (!did) {
+      var x = null;
+      try { x = modal() && modal().querySelector('.modal-x'); } catch (e1) {}
+      if (x) { try { x.click(); } catch (e2) {} }
+    }
+    var t = tab();
+    if (t) { try { t.click(); return true; } catch (e3) {} }
+    try { if (typeof window.showView === 'function') { window.showView('visit'); return true; } } catch (e4) {}
+    return false;
+  }
+
+  /* ---- 3. THE NODE -----------------------------------------------------
+     Built once and re-parented only when it is actually missing. Inserting a
+     child into #opPrepModal is a childList record the ROOM's own observer
+     reads, so doing it on every pass would feed that block a repaint per pass
+     — the self-feeding loop its markOne() note measures at 3,113 mutations a
+     second. One insert, then attributes only, and attributes only when they
+     change. */
+  function ensure() {
+    var m = modal();
+    if (!m) return null;
+    var b = el(ID);
+    if (!b) {
+      b = document.createElement('button');
+      b.type = 'button'; b.id = ID;
+      b.textContent = '⌂';
+      b.setAttribute('aria-label', 'Home — leave op notes and go back to the main screen');
+      b.setAttribute('title', 'Home — leave op notes and go back to the main screen');
+      b.addEventListener('click', function () { go(); }, false);
+    }
+    if (b.parentNode !== m) { try { m.insertBefore(b, m.firstChild); } catch (e) { return null; } }
+    return b;
+  }
+  function sync() {
+    learn();
+    var b = ensure();
+    if (!b) return false;
+    var want = here() ? 'here' : 'away';
+    if (b.getAttribute('data-mls-home') !== want) b.setAttribute('data-mls-home', want);
+    var t = tab();
+    var word = 'Home';
+    var lbl = t
+      ? ('Home — ' + S(t.textContent).replace(/\s+/g, ' ').replace(/\s*\d+\s*$/, '').replace(/^[^A-Za-z0-9]+/, '').trim() +
+         (here() ? ' (already there)' : ''))
+      : 'Home';
+    if (b.getAttribute('aria-label') !== lbl) { b.setAttribute('aria-label', lbl); b.setAttribute('title', lbl); }
+    if (S(b.textContent) !== '⌂') b.textContent = '⌂';
+    void word;
+    return true;
+  }
+
+  /* ---- 4. WHEN TO LOOK -------------------------------------------------
+     Cheap signals only: the room's own .show, the nav's own class, and the
+     app's view event. setTimeout, never rAF — a hidden tab never fires rAF and
+     this button would then never appear (the shell's own local-harness note).
+     No subtree observer anywhere: this block writes attributes on a node
+     inside #opPrepModal, and a subtree watcher here would read its own writes
+     back. */
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () { queued = false; sync(); }, 60);
+  }
+  function watch() {
+    var m = modal();
+    if (m && !m.__mlsOpHomeWatched) {
+      m.__mlsOpHomeWatched = true;
+      try { new MutationObserver(refresh).observe(m, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+    }
+    var nav = null;
+    try { nav = document.querySelector('.mainnav'); } catch (e1) {}
+    if (nav && !nav.__mlsOpHomeWatched) {
+      nav.__mlsOpHomeWatched = true;
+      try { new MutationObserver(refresh).observe(nav, { attributes: true, attributeFilter: ['class'], subtree: true }); } catch (e2) {}
+    }
+  }
+
+  window.__mlsOpHome = {
+    version: VERSION,
+    go: go,
+    homeTab: function () { var t = tab(); return t ? (t.id || S(t.textContent).trim()) : ''; },
+    here: here,
+    refresh: refresh,
+    /* Counted, not claimed: where the button is, how big it is, whether the
+       room is what answers a click at its centre, and whether the lane under
+       it is actually clear. */
+    status: function () {
+      var b = el(ID), m = modal();
+      var r = null, cs = null;
+      if (b) { try { r = b.getBoundingClientRect(); cs = getComputedStyle(b); } catch (e) {} }
+      var prev = el('mlsOpnPrevDay'), pr = null;
+      if (prev) { try { pr = prev.getBoundingClientRect(); } catch (e1) {} }
+      var top = '';
+      if (r && r.width > 0) {
+        try {
+          var n = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+          top = n ? (n.id || S(n.className).slice(0, 30) || n.tagName) : '';
+        } catch (e2) { top = ''; }
+      }
+      return {
+        version: VERSION,
+        mounted: !!(b && m && b.parentNode === m),
+        open: roomOpen(),
+        w: r ? Math.round(r.width) : 0, h: r ? Math.round(r.height) : 0,
+        x: r ? Math.round(r.left) : 0, y: r ? Math.round(r.top) : 0,
+        display: cs ? cs.display : '', visibility: cs ? cs.visibility : '',
+        disabled: !!(b && b.disabled),
+        quiet: !!(b && b.getAttribute('data-mls-home') === 'here'),
+        homeTab: (function () { var t = tab(); return t ? (t.id || '') : ''; })(),
+        onTab: (function () { var t = onTab(); return t ? (t.id || '') : ''; })(),
+        /* the button is the thing a click at its own centre reaches */
+        topAtCentre: top,
+        /* the day switcher must not be under it */
+        /* TRUE when nothing of the day switcher is under the button — including
+           the Templates panel, where the rail is display:none and there is no
+           stepper to clear at all. A vacuous false reads as a defect. */
+        clearsStepper: !pr || pr.width <= 0 || (pr.top >= r.bottom - 1 || pr.left >= r.right - 1),
+        titleLane: (function () { var t = el('mlsOpDayHead'); if (!t) return ''; try { return getComputedStyle(t).paddingLeft; } catch (e3) { return ''; } })(),
+        /* proof this block never touched the header's title */
+        rdTitle: (function () { var t = el('mlsRdTitle'); return t ? S(t.textContent).trim().slice(0, 40) : ''; })()
+      };
+    },
+    revert: function () {
+      var b = el(ID);
+      if (b && b.parentNode) b.parentNode.removeChild(b);
+      var t = el('mlsOpDayTitle');
+      void t;
+      return true;
+    }
+  };
+
+  function boot() { learn(); watch(); refresh(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  ['mls:ui-ready', 'mls:view-changed'].forEach(function (name) {
+    try { window.addEventListener(name, function () { boot(); }, false); } catch (e) {}
+  });
+  /* A bounded ladder for the boot tab: the nav is marked by the app's own
+     first render, which can land after this script and after DOMContentLoaded.
+     It stops the moment a tab is captured, and after 20s regardless. */
+  (function ladder(n) {
+    if (frozen || n > 80) { return; }
+    setTimeout(function () { learn(); watch(); if (!frozen || n < 4) refresh(); ladder(n + 1); }, 250);
+  })(0);
+})();
+</script>
+<!-- ===== end opnote-home-1.0.0 ======================================== -->
+<!-- ===== opnote-reach-1.0.0 — every control in the room is a real target, at
+     every width, not only on a phone =================================
+     Owner's rule for this pass: "if it's on the program it should work — if
+     it's there and doesn't work, make it work."
+
+     PRESS-TESTED, ONE CLICK AT A TIME, on the real room (list / one note /
+     blanks waiting / details+template open / empty day / More open) at 1440,
+     1280, 1024, 768 and 390. Every control the room's own block owns does
+     something and says so: the arrows, the picker, Today, Draft-all, the
+     Templates hop, Back, the primary in each of its five shapes, Copy (toast
+     "Op note copied.", with execCommand copy=true), Open in History (closes
+     the room and lands on the chart), Pull this day, the three disclosures,
+     and the day-brain's fold. The controls that appeared to answer nothing
+     turned out to be answering correctly: "Add" with an empty box flashes
+     "Type something first" on its own face, "Use every time" with no value
+     toasts "Choose or type the answer first", and PDF exports (toast "Saved
+     OpNote_<name>_<date>.pdf"). Nothing in the room needed removing.
+
+     WHAT THE PRESS TEST DID FIND IS REACH. ph-tap-1.0.0's 44px floor is
+     written under @media (max-width:760px), so it lifts these controls on a
+     phone and leaves them alone on the laptop the owner actually operates
+     from. MEASURED at 1440x900, note surface, one draft with two blanks:
+
+       .onf-mic (the per-field mic)              40x28
+       "Use every time" (per field)             127x28
+       .onf-accept ("Looks right - save...")    307x32
+       .mlsop-pdf (the PDF button)               73x34
+       .mls-opaddword input ("Text to add...")  497x29
+       .mls-opaddword button ("Add")             48x27
+       .onf-fillbox input (per field)           201x27
+
+     Seven controls under every touch floor there is, all on the one surface
+     where a doctor answers a blank in an operative note - and one of them
+     (.onf-mic, 40x28) is the control the glow was pointed at before
+     nextglow-1.1.0 moved it, which is the defect the owner photographed.
+
+     SIZE ONLY, AND ONLY INSIDE THE ROOM. feat_mls_opnote_fill.js,
+     mls-opnote-pro.js and the connect file's word-adder are not this lane's
+     to edit and no behaviour of theirs is touched: this is min-height and the
+     box model, scoped under #opPrepModal so nothing on any other screen
+     moves. Specificity beats each module's own rule by one id, so nothing
+     here needs !important.
+
+     40px, not 44px, and the reason is the room's own precedent: the block
+     above sizes #opdbFold and the two dictation buttons to exactly 40 with
+     the same argument ("this is size only"). One floor, one room. -->
+<style id="mlsOpReachCss">
+#opPrepModal .onf-fillbox button,
+#opPrepModal .onf-fillbox .onf-mic,
+#opPrepModal .onf-fillbox .onf-accept{
+  min-height:40px; box-sizing:border-box;
+  display:inline-flex; align-items:center;
+}
+/* the per-field mic is the one control that was short in BOTH directions:
+   MEASURED 40x28 before, 28x40 after the height floor alone. */
+#opPrepModal .onf-fillbox .onf-mic{ min-width:40px; justify-content:center; }
+/* !important on THIS pair only, and it is the one place it is needed.
+   feat_mls_opnote_templates_ui.js ships
+     body.<its own class> #opPrepModal .onf-fillbox input,
+     body.<its own class> #opPrepModal .onf-fillbox select
+       { font-size:13.5px !important; min-height:38px; padding:9px 12px !important;
+         border-radius:10px !important; max-width:460px; }
+   which is (1 id, 2 classes, 2 elements) against this rule's (1,2,1) — so a
+   plain min-height here loses, and it loses INTERMITTENTLY, because that class
+   is only on the body once its own module has run. MEASURED both ways in one
+   afternoon: 201x40 on a fresh room (rule applied) and 460x38 after the app had
+   been navigated (rule outranked). An intermittent floor is worse than none —
+   it is a floor that passes its own test. Size only; the font, padding, radius
+   and max-width that rule sets are all left exactly as they are. */
+#opPrepModal .onf-fillbox input:not([type="hidden"]),
+#opPrepModal .onf-fillbox select{
+  min-height:40px !important; box-sizing:border-box;
+}
+#opPrepModal .mlsop-pdf{
+  min-height:40px; box-sizing:border-box;
+}
+#opPrepModal .mls-opaddword input,
+#opPrepModal .mls-opaddword button{
+  min-height:40px; box-sizing:border-box;
+}
+</style>
+<!-- ===== end opnote-reach-1.0.0 ====================================== -->
 <!-- ===== dock-1p-1.1.0 — the taskbar stops covering the work ==========
      Owner: "that task bar getting in the way of everything. It needs to be
      better and smarter made."
@@ -48476,6 +49023,14 @@ function __mlsJunkScrubRepull(day) {
   color:var(--brand,#2E6A4B);background:transparent;border-radius:999px;padding:4px 11px;cursor:pointer;min-height:28px}
 #pf2Quick .qb.pvr-chip .pvr-read:hover{background:var(--soft,#EAF1EC)}
 #pf2Quick .qb.pvr-chip .pvr-read[disabled]{opacity:.55;cursor:default}
+/* pullone-1.0.0: the strip's ONE pull control. The per-chip buttons above are no
+   longer rendered (cloned-mls-connect.js), so this is the only control the strip
+   offers and it pulls the whole chart, which is what a pull reads. */
+#profileCard #pvrPullOne{display:block;margin:9px 0 2px;font-size:12.5px;font-weight:700;
+  border:1px solid var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);background:transparent;
+  border-radius:999px;padding:9px 16px;cursor:pointer;min-height:40px}
+#profileCard #pvrPullOne:hover{background:var(--soft,#EAF1EC)}
+#profileCard #pvrPullOne[disabled]{opacity:.55;cursor:default}
 /* One empty state: the timeline owns it, so the source-clarity headline that
    repeats it is hidden — the rest of that summary (the per-source counts) is
    untouched and still shows the moment there is anything to count. */
@@ -49494,6 +50049,369 @@ html #settingsModal input[type=file][disabled]{
 })();
 </script>
 <!-- ===== end clunky-settings-1.0.0 ===================================== -->
+<!-- ===== t2settings-1.0.0 — the Settings redesign (owner order, 2026-08-18)
+     "everything needs to be simple for anyone to do... fix up and redo the
+     entire Settings UI it's awful" and "if it's on the program it should work
+     — if it's there and doesn't work, make it work."
+
+     MEASURED at HEAD, 1366x900, headless Chrome, every visible control on
+     every tab pressed once from a cleared store: 108 controls, 8 tabs.
+
+       * EIGHT tabs, named in the product's vocabulary rather than a clinic's:
+         "Features & navigation", "Integrations", "Advanced". "Advanced" held
+         five switches about the voice button, birthday chips and how many
+         quick-pick patients to show — display preferences, filed under the one
+         word that tells a front-desk reader to stay out. Nothing else was
+         there: the tab existed because one runtime-built panel called itself
+         "MLS Controls".
+       * THE FOOTER READS "Save changes | Cancel" ON EVERY TAB, AND CANCEL IS
+         A LIE ON 22 OF THE 108 CONTROLS. Measured: touching #navLayoutSel,
+         #qolMslMode, #qolDockSide, #qolDockAutoHide, #qolPtLayout,
+         #qolGroupProc, #mlsShowPerformanceTools, an App-tabs checkbox,
+         #athenaFollowToggle, #setPullVisitBodies, #mlsPcTgl, a device-role or
+         layout button, any of the five controls panel switches, #swSharedToggle
+         or #defaultComment writes localStorage BEFORE Save is pressed, and
+         Cancel puts none of them back. The other 29 value controls do wait for
+         Save, exactly as the footer promises. Two save models, one footer, and
+         no way to tell which one you are looking at.
+       * TWO disclosures in the same pane both claiming to be the advanced one:
+         #advIntegrations ("Advanced integrations — setup steps, connecting
+         other systems, and bulk import") and #mlsClunkySetVendor ("For your IT
+         or scheduling vendor"). A reader looking for the setup steps guesses.
+       * FOUR routes to one install page in one pane, plus two headings that
+         both open "🔌 MLS Assist".
+       * The check-in avatar tab renders FOUR controls and all four are the
+         footer. Its pane holds "Opening your avatar setup…" and, when the
+         configuration request never answers, it holds that sentence for ever.
+         It never says it failed and offers nothing to press.
+       * #mlsRlCopy copies the setup link and says nothing, so the only way to
+         learn whether it worked is to paste somewhere else.
+
+     WHAT THIS BLOCK DOES NOT DO. It deletes no control, no id and no handler.
+     The Advanced tab is retired by RENAMING one section heading so the
+     organizer's own classifier files it under Display — never by hiding a
+     section, which is how a setting becomes unreachable with no error anywhere
+     (settings-every-section-reachable). Duplicate links are hidden, not
+     removed. The two save models are NOT unified — that is surgery on modules
+     this lane does not own — they are LABELLED, so the footer stops lying. -->
+<style id="mlsT2SettingsCss">
+/* The one thing a reader needs to know about a control that has already taken
+   effect. Deliberately quiet: it is an answer, not an alarm. */
+.mlsT2Now{
+  display:inline-block; margin-left:8px; vertical-align:middle;
+  font:700 10.5px/1.5 var(--sans, system-ui, sans-serif); letter-spacing:.2px;
+  color:#2E6A4B; background:#EDF6F1; border:1px solid #CFE6DA;
+  border-radius:999px; padding:1px 8px; white-space:nowrap;
+}
+html body.theme-dark .mlsT2Now{ color:#B9E3CD; background:#1F2A24; border-color:#31463A; }
+/* The footer sentence, in the footer, where the reader is deciding whether
+   Cancel will undo what they just did. */
+#mlsT2FootNote{
+  display:block; width:100%; order:-1; margin:0 0 8px;
+  font:400 12px/1.45 var(--sans, system-ui, sans-serif); color:var(--muted,#55605A);
+}
+html #settingsModal .modal > .row{ flex-wrap:wrap; }
+/* The vendor cards, now one level inside the single Advanced disclosure. */
+html #settingsModal #advIntegrations #mlsClunkySetVendor{ margin-top:14px; }
+/* The avatar pane's honest ending. */
+#mlsT2AvatarStall{ margin:8px 0 0; }
+#mlsT2AvatarStall .mlsT2Retry{ margin-top:8px; }
+</style>
+<script>
+/* t2settings-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsT2Settings) return;
+  var VERSION = 't2settings-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function q(sel, root) { try { return (root || document).querySelector(sel); } catch (e) { return null; } }
+  function qa(sel, root) { try { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); } catch (e) { return []; } }
+  function txt(node) { return ((node && (node.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function isOpen() { var m = el('settingsModal'); return !!(m && m.classList.contains('show')); }
+
+  /* ---- 1: SEVEN TABS, IN WORDS A CLINIC USES -------------------------
+     The organizer files a section by its heading text and labels the rail from
+     its own table. The heading is the honest lever — a heading that matches
+     none of its patterns is silently unreachable — so the runtime controls
+     panel is renamed to a heading that says what it holds, and the Advanced
+     tab stops existing because nothing is filed there any more. The rail
+     labels are then rewritten in place. The organizer rebuilds the rail only
+     when the NUMBER of groups changes and fires an event after every
+     reconcile, so this settles after one write per open. */
+  var LABELS = {
+    account: 'Account & security',
+    practice: 'Your practice & letterhead',
+    notes: 'Notes & AI',
+    avatar: 'Check-in avatar',
+    display: 'What you see',
+    features: 'Extra tools & tabs',
+    integrations: 'Connections & integrations'
+  };
+  function railNames() {
+    qa('#settingsTabBar [data-mls-settings-group]').forEach(function (tab) {
+      var want = LABELS[tab.getAttribute('data-mls-settings-group')];
+      if (!want) return;
+      var lb = q('.mls-set-lb', tab);
+      if (lb) { if (txt(lb) !== want) lb.textContent = want; }
+      else if (txt(tab) !== want) tab.textContent = want;
+    });
+  }
+  /* The runtime-built controls panel is a display panel. Renaming its heading
+     is what moves it; nothing is hidden and no id changes. */
+  function controlsHeading() {
+    var rc = el('r44Controls'); if (!rc) return;
+    var head = q('.set-head', rc);
+    if (head && /MLS Controls/i.test(txt(head))) head.textContent = '🎛️ More display options';
+    var desc = q('.set-desc', rc);
+    if (desc && /legacy guided-visit view/i.test(txt(desc))) {
+      desc.textContent = 'Optional extras for this browser: the voice button, how many quick-pick patients to show, birthday chips, and which MLS Assist version this browser is running.';
+    }
+  }
+
+  /* ---- 2: THE FOOTER STOPS LYING -------------------------------------
+     Measured 2026-08-18: every control named here wrote localStorage on change,
+     before Save. This list is a LABEL, not the proof. The suite re-presses
+     every control in the dialog and fails if a control writes on change without
+     the mark, or carries the mark without writing — so the list cannot rot
+     quietly the way a hand-kept list does. */
+  /* noteModelSel joined this list because the SUITE measured it, not because
+     anyone remembered: it is disabled on a standard account, so it reads as
+     inert, but note-model-1.1.0 writes noteModel AND the human-choice flag the
+     moment it changes — so on the Premium account where it is live, Cancel
+     never put the model back. */
+  var NOW_IDS = ['swSharedToggle', 'navLayoutSel', 'qolMslMode', 'qolDockSide', 'qolDockAutoHide',
+    'qolPtLayout', 'qolGroupProc', 'mlsShowPerformanceTools', 'athenaFollowToggle',
+    'setPullVisitBodies', 'mlsPcTgl', 'r44cVoiceSA', 'r44cVoice', 'r44cBday', 'r44cErr',
+    'r44cQp', 'defaultComment', 'noteModelSel'];
+  var NOW_HOSTS = ['#navFeatToggles', '#mlsDrCard'];
+  var NOW_WORDS = 'Applies right away';
+
+  function chipInto(host) {
+    if (!host || q('.mlsT2Now', host)) return;
+    var chip = document.createElement('span');
+    chip.className = 'mlsT2Now';
+    chip.textContent = NOW_WORDS;
+    var label = q('label', host);
+    if (label) label.appendChild(chip); else host.insertBefore(chip, host.firstChild);
+  }
+  function appliesNow() {
+    NOW_IDS.forEach(function (id) {
+      var c = el(id); if (!c) return;
+      chipInto((c.closest ? c.closest('.field') : null) || c.parentNode);
+    });
+    NOW_HOSTS.forEach(function (sel) {
+      var host = q(sel); if (!host) return;
+      var field = (host.classList && host.classList.contains('field')) ? host
+        : ((host.closest ? host.closest('.field') : null) || host);
+      chipInto(field);
+    });
+  }
+  function footNote() {
+    var row = q('#settingsModal .modal > .row'); if (!row) return;
+    var note = el('mlsT2FootNote');
+    if (!note) {
+      note = document.createElement('span');
+      note.id = 'mlsT2FootNote';
+      note.textContent = 'Save changes stores everything on this screen. Anything marked "' + NOW_WORDS +
+        '" has already taken effect, so Cancel will not undo those.';
+      row.insertBefore(note, row.firstChild);
+    } else if (note.parentNode !== row) row.insertBefore(note, row.firstChild);
+  }
+
+  /* ---- 3: ONE ADVANCED AREA ------------------------------------------
+     Two folds each called themselves the advanced one. The vendor fold moves
+     INSIDE "Advanced integrations", so the pane offers exactly one thing to
+     open and every in-app sentence that already says "Integrations → Advanced
+     integrations" stays true. #mlsClunkySetVendor keeps its id, stays closed,
+     and still holds both API cards. */
+  function oneAdvanced() {
+    var fold = el('mlsClunkySetVendor'); if (!fold) return;
+    var sum = q(':scope > summary', fold);
+    if (sum && !/^For your IT/.test(txt(sum))) { /* left as the owner block wrote it */ }
+    var adv = el('advIntegrations'); if (!adv) return;
+    var inner = q(':scope > div', adv); if (!inner) return;
+    if (fold.parentNode !== inner) { try { inner.appendChild(fold); } catch (e) {} }
+  }
+
+  /* ---- 4: ONE ROUTE TO THE INSTALL PAGE, ONE HEADING THAT NAMES IT ----
+     The link text is left exactly as written: each one sits mid-sentence, and
+     rewriting an anchor in place is how a sentence starts reading as nonsense.
+     The first is kept, the rest are hidden. */
+  function extRoutes() {
+    var modal = el('settingsModal'); if (!modal) return;
+    var kept = false;
+    qa('a[href]', modal).forEach(function (a) {
+      if (!/get-extension/i.test(a.getAttribute('href') || '')) return;
+      if (a.id === 'extDlBtn') return;
+      if (!kept && a.getAttribute('data-mls-t2-extdupe') !== '1'
+        && a.getAttribute('data-mls-clunky-dupe') !== '1') { kept = true; return; }
+      if (a.getAttribute('data-mls-t2-extdupe') === '1') return;
+      a.setAttribute('data-mls-t2-extdupe', '1');
+      a.style.setProperty('display', 'none', 'important');
+    });
+    /* Two headings began "🔌 MLS Assist". Exactly one thing is called the
+       extension; the other names the job it does. */
+    qa('label', modal).forEach(function (l) {
+      if (/MLS Assist\s*[-–—]\s*your athenaOne connection/i.test(txt(l))) {
+        l.textContent = 'How MLS talks to athenaOne';
+      }
+    });
+  }
+
+  /* ---- 5: THE AVATAR PANE ENDS IN WORDS ------------------------------
+     The host is filled by the avatar module once its configuration answers.
+     When it never answers the pane held "Opening your avatar setup…" for ever.
+     A surface that cannot finish must say so and offer the way to try again. */
+  var avatarSince = 0;
+  function avatarStall() {
+    var host = el('mlsAvSettingsHost');
+    if (!host) return;
+    var waiting = /Opening your avatar setup/i.test(txt(host));
+    if (!waiting) {
+      avatarSince = 0;
+      var gone = el('mlsT2AvatarStall');
+      if (gone && gone.parentNode) gone.parentNode.removeChild(gone);
+      return;
+    }
+    if (!avatarSince) { avatarSince = Date.now(); return; }
+    if (Date.now() - avatarSince < 9000) return;
+    if (el('mlsT2AvatarStall')) return;
+    var box = document.createElement('div');
+    box.id = 'mlsT2AvatarStall';
+    var p = document.createElement('p');
+    p.className = 'note';
+    p.textContent = 'Your check-in avatar settings did not load. They come from MLS, so this needs a connection — if you are offline or signed out, sign in and open Settings again.';
+    box.appendChild(p);
+    var retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn-ghost mlsT2Retry';
+    retry.textContent = 'Try loading the avatar settings again';
+    retry.addEventListener('click', function () {
+      avatarSince = 0;
+      var b = el('mlsT2AvatarStall');
+      if (b && b.parentNode) b.parentNode.removeChild(b);
+      try { window.dispatchEvent(new CustomEvent('mls:settings-reconciled', { detail: { open: true } })); } catch (e) {}
+      try { if (typeof window.openSettings === 'function') window.openSettings(); } catch (e) {}
+    });
+    box.appendChild(retry);
+    host.appendChild(box);
+  }
+
+  /* ---- 6: A COPY THAT SAYS IT COPIED ---------------------------------- */
+  /* Delegated at the document, not bound to the node: the device card is
+     re-rendered on a 1.6s interval, and a listener attached to the button was
+     thrown away with it — the button went on copying the link and going on
+     saying nothing. */
+  function copySays(ev) {
+    var b = ev && ev.target && ev.target.closest ? ev.target.closest('#mlsRlCopy') : null;
+    if (!b) return;
+    var was = txt(b);
+    if (was === 'Copied ✓') return;
+    b.setAttribute('data-mls-t2-copied', '1');
+    b.textContent = 'Copied ✓';
+    setTimeout(function () {
+      var now = el('mlsRlCopy');
+      if (now && txt(now) === 'Copied ✓') now.textContent = was;
+    }, 1800);
+  }
+
+  /* ---- 6b: A REMOVE THAT WOULD REMOVE NOTHING ------------------------
+     The intake editor rebuilds an empty row the instant the last one goes, so
+     pressing × on a single empty row removed a row and put an identical one
+     back: measurably nothing, from a control that looks like it does something.
+     It is offered only when there is something to remove. */
+  function intakeRemove() {
+    var editor = el('mlsIntakeQuestionEditor'); if (!editor) return;
+    var rows = qa('.mls-intake-row', editor);
+    rows.forEach(function (row) {
+      var btn = q('.mls-intake-remove', row); if (!btn) return;
+      var input = q('input', row);
+      var pointless = (rows.length === 1) && !String((input && input.value) || '').trim();
+      var hidden = btn.style.display === 'none';
+      if (pointless !== hidden) btn.style.display = pointless ? 'none' : '';
+    });
+  }
+
+  /* ---- 6c: A PULL BUTTON WHOSE ONLY ANSWER IS OFF SCREEN -------------
+     captureFromEMR() writes every word it has - 'Looking for MLS Assist...',
+     the not-responding line, the result - into #emrPullStatus, and nowhere
+     else. MEASURED: that status line, and the whole #emrPullBox around it, can
+     lay out at zero height inside the scrolling pane, so pressing the button
+     changed not one character anywhere the doctor could see. The handler was
+     always right; its answer had no audience. Every line it writes is repeated
+     as a toast, which is rendered above everything and cannot be scrolled
+     past. The text is the handler's own - nothing new is claimed here. */
+  function emrPullSpeaks(ev) {
+    var b = ev && ev.target && ev.target.closest ? ev.target.closest('#emrPullBox button') : null;
+    if (!b) return;
+    var st = el('emrPullStatus'); if (!st) return;
+    var said = '';
+    function say() {
+      var now = txt(st);
+      if (!now || now === said) return;
+      said = now;
+      try { if (typeof window.toast === 'function') window.toast(now, /could not|isn|not responding/i.test(now) ? 'err' : 'ok'); } catch (e) {}
+    }
+    var obs = null;
+    try { obs = new MutationObserver(say); obs.observe(st, { childList: true, characterData: true, subtree: true }); } catch (e) {}
+    /* the first line is written synchronously by the handler, before an
+       observer armed on this same click can ever see it */
+    setTimeout(say, 40);
+    setTimeout(function () { try { if (obs) obs.disconnect(); } catch (e) {} }, 15000);
+  }
+
+  /* ---- 7: THE LETTERHEAD IS NAMED WHERE IT LIVES ---------------------- */
+  function letterhead() {
+    var f = el('practiceName');
+    var sec = f && f.closest ? f.closest('.set-section') : null;
+    var desc = sec ? q('.set-desc', sec) : null;
+    if (!desc || /letterhead/i.test(txt(desc))) return;
+    desc.textContent = 'Your clinic and provider details. This is your letterhead: it prints at the top of reports and legal letters, and booking, patient messages and printed notes all use the same details.';
+  }
+
+  function pass() {
+    if (!isOpen()) return;
+    passes++;
+    controlsHeading(); railNames(); appliesNow(); footNote();
+    oneAdvanced(); extRoutes(); avatarStall(); intakeRemove(); letterhead();
+  }
+
+  function arm() {
+    try { window.addEventListener('mls:settings-reconciled', function () { pass(); }); } catch (e) {}
+    try {
+      var m = el('settingsModal');
+      if (m) new MutationObserver(function () { pass(); })
+        .observe(m, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    } catch (e) {}
+    [300, 900, 1800, 3600, 9200].forEach(function (ms) { setTimeout(pass, ms); });
+    try { setInterval(function () { if (isOpen()) avatarStall(); }, 2500); } catch (e) {}
+    try { document.addEventListener('click', copySays, true); } catch (e) {}
+    try { document.addEventListener('click', emrPullSpeaks, true); } catch (e) {}
+    try { document.addEventListener('click', function () { setTimeout(pass, 80); setTimeout(pass, 500); }, true); } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsT2Settings = {
+    version: VERSION, pass: pass, passes: function () { return passes; },
+    labels: LABELS, appliesNowIds: NOW_IDS, appliesNowWords: NOW_WORDS,
+    revert: function () {
+      try {
+        var s = el('mlsT2SettingsCss'); if (s) s.disabled = true;
+        qa('.mlsT2Now').forEach(function (c) { if (c.parentNode) c.parentNode.removeChild(c); });
+        var n = el('mlsT2FootNote'); if (n && n.parentNode) n.parentNode.removeChild(n);
+        qa('[data-mls-t2-extdupe="1"]').forEach(function (a) {
+          a.style.removeProperty('display'); a.removeAttribute('data-mls-t2-extdupe');
+        });
+        var b = el('mlsT2AvatarStall'); if (b && b.parentNode) b.parentNode.removeChild(b);
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end t2settings-1.0.0 ========================================== -->
 <!-- ===== clunky-staffprep-1.0.0 — one job, one control, one honest sentence
      CLUNKY AUDIT items 11 and 13 (sev 3), 84, 85, 86, 87, 88, 89 (sev 2),
      141 (sev 1), and the observable half of 12 and 14.
@@ -49741,7 +50659,14 @@ html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
     ['guards on', 'Safety checks are on'],
     ['schedule parse timeout', 'the schedule did not finish loading'],
     ['verified empty', 'checked — no patients that day'],
-    ['saved checkpoint', 'the last day it saved']
+    /* staffjobsync-1.0.0: this pair used to search for 'saved checkpoint'
+       alone, and every sentence that carries the phrase writes it as "from
+       THE saved checkpoint" — so the rewrite produced "Resume continues from
+       the the last day it saved." Measured on the paused-job status line.
+       The article is part of the phrase being replaced, in all five places
+       that write it (three in the range-job engine, two in the connect
+       bundle). */
+    ['the saved checkpoint', 'the last day it saved']
   ];
   function words() {
     var root = q('#mlsEz3');
@@ -49838,6 +50763,72 @@ html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
 })();
 </script>
 <!-- ===== end clunky-staffprep-1.0.0 ==================================== -->
+<!-- ===== staffjobsync-1.0.0 — the control on screen matches the job on disk ===
+     THE DEFECT, MEASURED. Staff Prep adopts the saved range job when it
+     MOUNTS (p1RangeAdopt) and repaints whenever this tab drives the job, but
+     nothing re-reads the manifest while the panel simply sits there. A job
+     that changes state out of band — another tab, a boot resume, a session
+     boundary — leaves the open panel showing the previous answer.
+
+     With a month job PAUSED at 0 of 18 days and Staff Prep on screen:
+       buttons        [ez3PullStart]              for 11s / 299 ticks
+       #ez3PullNow    "Nothing pulled yet this session."
+       #ez3PullBarLbl "0 of 18 days saved"        (the bar already knew)
+     Leaving the screen and returning gave [ez3PullResume, ez3PullCancel] —
+     so the manifest was right the whole time and only the repaint was gone.
+     Pressing "Start month pull" is precisely what the durable job exists to
+     stop the doctor from doing to a job that is only paused.
+
+     THIS BLOCK ADDS NO SECOND OPINION. It never decides which button belongs
+     on screen; it watches the manifest for a change and calls the panel's own
+     painter (window.__mlsEz3RangeRepaint, published by ez3repaint-1.0.0 in
+     the connect bundle) when there is one. No change, no DOM write — the
+     tick is a read. -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'staffjobsync-1.0.0';
+  if (window.__mlsStaffJobSync) return;
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function onStaff() { return !!document.querySelector('.ez3-pull'); }
+  function sig() {
+    var st = safe(function () {
+      var api = window.__mlsP1RangeJobs;
+      return api && typeof api.state === 'function' ? api.state() : null;
+    }, null);
+    if (!st) return '';
+    /* Everything the panel's control rule reads, and nothing else: a
+       different job, a different phase, or different progress. */
+    return [st.jobId, st.status, st.kind, st.target, st.currentMonth,
+      safe(function () { return Object.keys(st.months || {}).length; }, 0),
+      safe(function () { return st.doneDays == null ? '' : st.doneDays; }, '')].join('|');
+  }
+  var last = null, repaints = 0, ticks = 0;
+  function tick() {
+    ticks++;
+    if (!onStaff()) { last = null; return false; }
+    var s = sig();
+    if (last === null) { last = s; return false; }   /* mount already painted it */
+    if (s === last) return false;
+    last = s;
+    if (typeof window.__mlsEz3RangeRepaint !== 'function') return false;
+    repaints++;
+    safe(function () { window.__mlsEz3RangeRepaint(); });
+    return true;
+  }
+  /* A plain interval, never a frame or idle callback: neither of those fires
+     in a hidden or non-compositing tab, and a doctor who leaves this tab open
+     on Staff Prep while a second tab runs the job is the exact case this
+     exists for. */
+  var iv = setInterval(tick, 900);
+  window.__mlsStaffJobSync = {
+    version: VERSION, tick: tick, sig: sig,
+    repaints: function () { return repaints; }, ticks: function () { return ticks; },
+    revert: function () { try { clearInterval(iv); } catch (e) {} return true; }
+  };
+})();
+</script>
+<!-- ===== end staffjobsync-1.0.0 ========================================= -->
 <!-- ===== clunky-dock-1.0.0 — the taskbar stops covering its own menu
      CLUNKY AUDIT items 39, 40, 43, 73, 116, 123, 143, 144.
 
@@ -51570,7 +52561,11 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     var body = bodyHtml(record);
     var acts = '<div class="hx-acts"><button type="button" class="hx-btn" data-hx-copy="' + esc(record.key) + '">📋 Copy</button>';
     if (record.indexOnly || record.illegible) {
-      acts += '<button type="button" class="hx-btn hx-go" data-hx-read="' + esc(record.key) + '">📥 Read from Athena</button>';
+      /* pullone-1.0.0: one verb everywhere. This routes through
+         __mlsChartField.read, which now delegates to the app's own
+         pullPatientChartViaAssist, so it is the same engine and the same status
+         line as the header button. */
+      acts += '<button type="button" class="hx-btn hx-go" data-hx-read="' + esc(record.key) + '">📥 Pull chart from Athena</button>';
     }
     acts += '</div>';
     return '<div class="hx-card" data-hx-key="' + esc(record.key) + '"' +
@@ -52653,6 +53648,14 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     'schedule': 'Open the schedule for the selected day.',
     'pre-visit intake forms': 'Open the pre-visit intake forms.',
     'pull activity': 'See what recent Athena pulls did, day by day.',
+    /* MEASURED 2026-08-18: this row is CONDITIONAL - the calm shell resolves it
+       by matching /staff prep/i inside #mlsTbMenuPanel, so it is in the menu on
+       some sessions and absent on others, and on the sessions where it appears
+       it was the ONE Tools entry with no hover explainer while every other row
+       had one. Its handler is onMenuStaffPrepRequest, which calls
+       setEasyMode('staff','staff') - so the tip claims a screen switch and
+       nothing more. */
+    'staff prep': 'Switch to the Staff prep screen for explicit day and month Athena schedule pulls.', /* verified: setEasyMode('staff','staff') */
     'legal / ime workspace': 'Open the read-only Legal / IME draft workspace for the active patient.', /* verified */
     'verify saved data': 'Check that work saved in MLS is really stored on this device.',
     'share / export': 'Share or export what is saved in MLS.',
@@ -52763,17 +53766,28 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      with !important: calm card rows, dark text, a thin brand accent. The
      module's behavior (when it mounts, what it lists) is unchanged. -->
 <style id="mlsCalFallbackCalmCss">
-  #mlsFpDayFallback > div[style]{
+  /* calfallback-calm-1.0.1: the selector was `> div[style]`, which is EVERY
+     child — and the box opens with two of them that are not appointments: the
+     "Wednesday, August 19 — 6 appointments (all providers)" heading and the
+     sentence under it explaining why the list is unsplit. MEASURED with the
+     fallback actually mounted (6 appointments, 8 matched children): both were
+     being painted as appointment cards, each with its own brand accent bar,
+     and the heading was pulled from font-weight 800 down to 600. Only the
+     rows carry the gradient this block exists to overrule, so only the rows
+     are addressed; the two heading lines are left exactly as the module
+     wrote them. */
+  #mlsFpDayFallback > div[style*="linear-gradient"]{
     background:var(--card,#fff) !important;
+    background-image:none !important;
     color:var(--ink,#1c2b24) !important;
     font-weight:600 !important;
     border:1px solid var(--line,#E4E1D8) !important;
     border-left:3px solid #2E6A4B !important;
     border-radius:8px !important;
   }
-  #mlsFpDayFallback > div[style] > span{ opacity:1 !important; }
-  #mlsFpDayFallback > div[style] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
-  #mlsFpDayFallback > div[style] > span:last-child{ color:#6a7d74 !important; }
+  #mlsFpDayFallback > div[style*="linear-gradient"] > span{ opacity:1 !important; }
+  #mlsFpDayFallback > div[style*="linear-gradient"] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
+  #mlsFpDayFallback > div[style*="linear-gradient"] > span:last-child{ color:#6a7d74 !important; }
 </style>
 <!-- ===== end calfallback-calm-1.0.0 ======================================= -->
 <!-- ===== caldata-1.0.0 — the month grid gets the width, the phone gets a
@@ -52920,5 +53934,572 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
 })();
 </script>
 <!-- ===== end caldata-1.0.0 =============================================== -->
+<!-- ===== pullone-1.0.0 — ONE pull, where you pressed it, and it lands on the chart ==
+     Owner, 2026-08-18, on the Patients screen: "these need to go; the main one
+     should work", and "if it's on the program it should work".
+
+     MEASURED on this shell in the local harness before this block (no login, no
+     PHI, synthetic names; tests/1p-pull-one-owner-contract.test.js reproduces
+     every number):
+
+       1. #ptPullAthenaBtn ("Pull from Athena", the Patients screen) says
+          NOTHING. feat_athena_autopull answers into #mlsAutoPullChip, and
+          feat_athena_ux_unify ships
+            #mlsAutoPullChip,.mlsac-toast{display:none !important;}
+          together with a mirror that is dead by construction: its pass() only
+          folds a duplicate when getComputedStyle(n).display !== 'none', which
+          its own rule has just made impossible. Measured after a real press:
+          chip present, textContent "Detecting the patient open in your athenaOne
+          tab", computed display 'none', zero visible surfaces carrying it. The
+          toast goes to the quiet tray. The doctor presses and sees nothing.
+
+       2. #profUnpulledPull and #pullChartBtn share ONE status line,
+          #pullChartStatus, and that node lives inside #historyView. Pressing
+          the Patients-screen copy of the button therefore paints the whole
+          three-step progress report into a display:none view.
+
+       3. FIVE per-field "Read from Athena" buttons render on one cold chart
+          (Problems, Medications, Allergies, Vitals, Visits), each starting its
+          own read, beside a sixth control that pulls the same chart.
+
+     WHAT THIS BLOCK DOES. It does not add a pull; it gives the ones already
+     there a single owner, a single voice, and a destination:
+
+       a. ONE VOICE, AT THE BUTTON. #pullChartStatus is re-parented next to
+          whichever pull control was pressed, so the step counter is beside the
+          doctor's finger instead of inside another view. It is the same node
+          the shell already writes to - no second status surface, no text
+          matching.
+
+       b. THE SUPPRESSED CHIP IS MIRRORED INTO IT. An observer copies
+          #mlsAutoPullChip's text into that one line. feat_athena_ux_unify's
+          suppression is left exactly as it is (restoring the floating chip
+          would restore the duplicate surface it was written to remove).
+
+       c. THE DEAD POINTER GOES. That chip's cross-patient message ends "Or use
+          the green MLS panel inside Athena ('Pull history')". Measured on
+          athenaOne v26.7 ax views tonight: that panel mounts NOWHERE, so the
+          advice sends the doctor to a control that does not exist. The mirror
+          drops that sentence and keeps the advice that works - select or add
+          the same patient here, then pull. The guard itself is untouched: the
+          stop still stops, it just stops saying something untrue.
+
+       d. ONE PULL CONTROL, NOT SIX. window.__mlsChartField.read - the verb
+          behind every per-field button and behind the encounter cards'
+          "Read from Athena" - now delegates to the app's own
+          pullPatientChartViaAssist, so there is exactly one engine, one
+          identity gate and one status line. cloned-mls-connect.js stops drawing a
+          button per chip and draws one for the strip.
+
+       e. IT LANDS ON WHAT WAS PULLED. On a true return, the Patients room is
+          shown, the pulled patient is active, the clinical section is opened
+          and the profile card is scrolled to. Before this, a successful pull
+          from the History screen left the doctor looking at a visit list that
+          contains none of the problems, medications or allergies just saved.
+
+     Additive and reversible: window.__mlsPullOne.revert() unwraps the pull,
+     disconnects the observer and puts #pullChartStatus back where it was. No
+     shared feat_*.js is edited. -->
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsPullOne && window.__mlsPullOne.installed) return;
+  var VERSION = 'pullone-1.0.0';
+  /* THE OFF SWITCH IS A FLAG, NOT AN UNWRAP. Measured while writing the contract
+     suite: cloned-mls-connect.js's own pull wrapper installs AFTER this block, so the
+     chain reads other(mine(original)) and reassigning window.pullPatientChartViaAssist
+     back to the original cannot remove this block from it - the outer wrapper
+     still holds a direct reference. Worse, reading .__pullOne off the outer
+     function returns false, so an unwrap that did nothing LOOKED like a clean
+     revert. Every effect below is gated on this flag instead, so revert() is
+     true whoever else is in the chain. */
+  var off = false;
+
+  function byId(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+
+  /* ---------------------------------------------------------------- a. ONE VOICE
+     The shell already owns exactly one status line for the chart pull. Park it
+     beside the control that was pressed rather than inventing a second one. */
+  var statusHome = null, statusNext = null, statusEl = null;
+  function rememberHome() {
+    var el = byId('pullChartStatus') || statusEl;
+    if (el) statusEl = el;
+    if (el && el.parentNode && !statusHome) { statusHome = el.parentNode; statusNext = el.nextSibling; }
+    return el;
+  }
+  function moveStatusTo(btn) {
+    var el = rememberHome();
+    if (off || !el || !btn || !btn.parentNode) return el;
+    if (el.previousSibling === btn) return el;
+    try { btn.parentNode.insertBefore(el, btn.nextSibling); } catch (e) {}
+    return el;
+  }
+  /* MEASURED after the first version of this block: #profUnpulledPull lives
+     inside the #profUnpulled notice, and renderProfile REMOVES that notice the
+     moment the chart has content - taking the re-parented status line out of the
+     document with it, so a pull that had just succeeded ended in silence. The
+     node reference is kept, and a detached line is re-attached before it speaks. */
+  function reattach() {
+    var el = byId('pullChartStatus') || statusEl;
+    if (!el) return null;
+    statusEl = el;
+    if (document.documentElement.contains(el)) return el;
+    var host = byId('ptPullAthenaBtn') || byId('pullChartBtn');
+    if (host && host.parentNode) { try { host.parentNode.insertBefore(el, host.nextSibling); return el; } catch (e) {} }
+    if (statusHome && document.documentElement.contains(statusHome)) { try { statusHome.insertBefore(el, statusNext); } catch (e2) {} }
+    return el;
+  }
+  function saySomething(text, kind) {
+    var el = reattach();
+    if (!el) return false;
+    el.style.display = 'block';
+    el.style.color = kind === 'err' ? '#9f2d2d' : (kind === 'ok' ? '#205c43' : '#52675c');
+    el.textContent = S(text);
+    return true;
+  }
+
+  /* -------------------------------------------------------- c. THE DEAD POINTER
+     Keyed on the distinctive phrase rather than the whole sentence, because a
+     whole-sentence match is a match that silently stops matching. The contract
+     suite asserts BOTH halves: that feat_athena_autopull.js still ships the
+     phrase (otherwise this rewrite is measuring nothing) and that nothing this
+     block renders contains it. */
+  var DEAD_POINTER = 'green MLS panel';
+  var WORKING_ADVICE = 'Select or add that same patient here, then pull again. Nothing was saved.';
+  function calmMismatch(text) {
+    var t = S(text);
+    if (t.indexOf(DEAD_POINTER) < 0) return t;
+    var cut = t.indexOf('Or use the ');
+    if (cut < 0) cut = t.indexOf(DEAD_POINTER);
+    var head = t.slice(0, cut).replace(/\s+$/, '');
+    var low = head.toLowerCase();
+    /* keep whatever working advice the shipped sentence already carried, and
+       never let the rewrite drop "nothing was saved" - that half is the part a
+       doctor needs most. */
+    if (low.indexOf('then click again') < 0 && low.indexOf('select') < 0) head = (head ? head + ' ' : '') + WORKING_ADVICE;
+    if (head.toLowerCase().indexOf('nothing was saved') < 0) head = (head ? head + ' ' : '') + 'Nothing was saved.';
+    return head;
+  }
+
+  /* ------------------------------------------- b. MIRROR THE SILENCED SURFACES
+     feat_athena_ux_unify suppresses BOTH of these with one rule
+     ("#mlsAutoPullChip,.mlsac-toast{display:none !important;}") and mirrors
+     neither, because its fold pass is gated on the very display it just set to
+     none. Measured: pressing "Copy every visit from athenaOne" on the profile
+     changed nothing visible either. Their text still updates - only their
+     display is dead - so reading it is enough. */
+  var SILENCED = ['#mlsAutoPullChip', '.mlsac-toast'];
+  var watched = [], lastMirrored = '';
+  function mirrorFrom(node) {
+    if (off || !node) return;
+    var raw = S(node.textContent).replace(/\s+/g, ' ').trim();
+    if (!raw || raw === lastMirrored) return;
+    lastMirrored = raw;
+    saySomething(calmMismatch(raw), /^⚠/.test(raw) ? 'err' : '');
+  }
+  function watchChip() {
+    for (var i = 0; i < SILENCED.length; i++) {
+      var n = safe(function () { return document.querySelector(SILENCED[i]); }, null);
+      if (!n) continue;
+      var known = false;
+      for (var k = 0; k < watched.length; k++) { if (watched[k].node === n) { known = true; break; } }
+      if (known) continue;
+      (function (node) {
+        var mo = new MutationObserver(function () { safe(function () { mirrorFrom(node); }); });
+        mo.observe(node, { childList: true, characterData: true, subtree: true });
+        watched.push({ node: node, obs: mo });
+        mirrorFrom(node);
+      })(n);
+    }
+  }
+
+  /* ------------------------------------------------------- e. LAND ON THE CHART */
+  function openPulledChart(patientId) {
+    var id = S(patientId);
+    if (!id) id = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '');
+    if (!id) return false;
+    safe(function () { if (isFn(window.setActivePtId)) window.setActivePtId(id); });
+    safe(function () { if (isFn(window.showView)) window.showView('patients'); });
+    safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
+    safe(function () { if (isFn(window.renderPatients)) window.renderPatients(); });
+    /* Open the clinical sections for THIS landing only. The doctor's saved
+       mls_pf2_collapsed preference is never rewritten - the seven-tile strip
+       that carries problems, medications, allergies and vitals renders even
+       while the card is collapsed, so the pulled data is on screen either way. */
+    function openSections() {
+      var pc = byId('profileCard');
+      if (!pc) return;
+      safe(function () { pc.classList.remove('pf2-collapsed'); });
+      safe(function () {
+        var secs = pc.querySelectorAll('.pf2-sec, .mls-fold');
+        for (var i = 0; i < secs.length; i++) { secs[i].classList.add('open'); secs[i].classList.add('mls-open'); }
+      });
+    }
+    openSections();
+    /* setTimeout, never rAF: rAF never fires in a non-compositing tab and both
+       the re-open and the scroll would silently never happen. */
+    setTimeout(function () { safe(openSections); safe(function () { var pc = byId('profileCard'); if (pc) pc.scrollIntoView({ block: 'start' }); }); }, 120);
+    safe(function () { document.body.setAttribute('data-p1-pull-landed', id); });
+    return true;
+  }
+
+  /* ------------------------------------------------------------- THE ONE WRAPPER */
+  function wrapPull() {
+    var fn = window.pullPatientChartViaAssist;
+    if (!isFn(fn) || fn.__pullOne) return false;
+    var wrapped = function (btn, opts) {
+      rememberHome();
+      moveStatusTo(btn);
+      watchChip();
+      var before = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '');
+      var out;
+      try { out = fn.apply(this, arguments); } catch (e) { throw e; }
+      return Promise.resolve(out).then(function (r) {
+        var el = byId('pullChartStatus') || statusEl;
+        var outcome = el ? S(el.textContent) : '';
+        if (r === true && !off) {
+          var id = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '') || before;
+          openPulledChart(id);
+          /* Say the outcome again in the room the doctor was just moved to. The
+             line is the shell's own; this only re-parks it and repeats the last
+             sentence the pull wrote, so nothing is invented. */
+          moveStatusTo(byId('ptPullAthenaBtn'));
+          if (outcome) saySomething(outcome, 'ok');
+        }
+        return r;
+      });
+    };
+    wrapped.__pullOne = true;
+    wrapped.__pullOneInner = fn;
+    window.pullPatientChartViaAssist = wrapped;
+    return true;
+  }
+
+  /* -------------------------------------------- d. ONE ENGINE BEHIND EVERY BUTTON
+     __mlsChartField.read is what the per-field chips and the encounter cards
+     call. Point it at the app's own pull so there is one identity gate and one
+     status line, and so a doctor who presses any of them gets the same three
+     steps in the same place. The pvr resolver's four states are untouched. */
+  function unifyFieldRead() {
+    var cf = window.__mlsChartField;
+    if (!cf || !isFn(cf.read) || cf.__pullOne) return false;
+    var orig = cf.read;
+    cf.__pullOneReadOrig = orig;
+    cf.read = function (p, onStatus, btn) {
+      if (!isFn(window.pullPatientChartViaAssist)) return orig.apply(this, arguments);
+      var say = isFn(onStatus) ? onStatus : function () {};
+      say('Pulling this chart from athenaOne...');
+      return Promise.resolve(safe(function () { return window.pullPatientChartViaAssist(btn || null, {}); }, false))
+        .then(function (ok) {
+          say(ok === true ? 'Chart pulled from athenaOne.' : 'The chart was not pulled. Nothing was changed.');
+          return { ok: ok === true, reason: ok === true ? '' : 'pull-refused' };
+        });
+    };
+    cf.__pullOne = true;
+    return true;
+  }
+
+  /* --------------------------------------- PARK THE LINE AT WHATEVER WAS PRESSED
+     Only pullPatientChartViaAssist passes through the wrapper above.
+     #ptPullAthenaBtn goes to feat_athena_autopull's own engine, and the copy-bar
+     button to feat_ease's, so a wrapper alone leaves those two answering into a
+     status line that is still sitting inside the hidden History view - measured:
+     the mirrored text arrived and was invisible. A capture-phase click listener
+     parks the line first, whichever engine the control belongs to. */
+  var PULL_IDS = { ptPullAthenaBtn: 1, pullChartBtn: 1, profUnpulledPull: 1, pvrPullOne: 1, ezPull: 1, ezPullAlt: 1 };
+  var PULL_TEXT = /pull (?:this |the )?(?:chart|history|patient)?\s*from athena|pull from athena|read from athena|copy every visit from athenaone/i;
+  function onPullClick(e) {
+    var t = e && e.target;
+    for (var hops = 0; t && t !== document && hops < 6; hops++, t = t.parentNode) {
+      if (t.nodeType !== 1) continue;
+      var hit = PULL_IDS[t.id] === 1 ||
+        (t.tagName === 'BUTTON' && PULL_TEXT.test(S(t.textContent).replace(/\s+/g, ' ')));
+      if (!hit) continue;
+      moveStatusTo(t);
+      watchChip();
+      return;
+    }
+  }
+  var clickWired = false;
+  function wireClicks() {
+    if (clickWired) return;
+    clickWired = true;
+    safe(function () { document.addEventListener('click', onPullClick, true); });
+  }
+
+  function arm() {
+    if (off) return;
+    wrapPull();
+    unifyFieldRead();
+    watchChip();
+    wireClicks();
+  }
+
+  /* setTimeout / setInterval only - requestAnimationFrame never fires in a
+     non-compositing tab and this block would never arm there. The interval is
+     permanent rather than bounded because the surfaces it watches are created
+     lazily, mid-pull, minutes after boot; every call early-returns once armed. */
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  var iv = setInterval(function () { safe(arm); }, 1200);
+
+  window.__mlsPullOne = {
+    installed: true, version: VERSION,
+    calmMismatch: calmMismatch, deadPointer: DEAD_POINTER, workingAdvice: WORKING_ADVICE,
+    moveStatusTo: moveStatusTo, openPulledChart: openPulledChart, mirrorFrom: mirrorFrom, watchChip: watchChip, arm: arm,
+    isOff: function () { return off; },
+    revert: function () {
+      off = true;
+      safe(function () { clearInterval(iv); });
+      safe(function () { for (var i = 0; i < watched.length; i++) { try { watched[i].obs.disconnect(); } catch (e) {} } }); watched = [];
+      var f = window.pullPatientChartViaAssist;
+      if (f && f.__pullOne && f.__pullOneInner) window.pullPatientChartViaAssist = f.__pullOneInner;
+      var cf = window.__mlsChartField;
+      if (cf && cf.__pullOne && cf.__pullOneReadOrig) { cf.read = cf.__pullOneReadOrig; cf.__pullOne = false; }
+      safe(function () { document.removeEventListener('click', onPullClick, true); }); clickWired = false;
+      var el = byId('pullChartStatus');
+      if (el && statusHome) safe(function () { statusHome.insertBefore(el, statusNext); });
+      safe(function () { document.body.removeAttribute('data-p1-pull-landed'); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end pullone-1.0.0 ================================================ -->
+<!-- ===== pshonest-1.0.0 — a checkmark must mean work that happened ========
+     Owner, 2026-08-18, from his own screenshot of the progress widget:
+
+       Pulling patient history · Done · 15s · repeated 2 times
+       ✓ Opening charts in Athena  ✓ Reading each chart  ✓ Analyzing pulled history
+       No charts were read.
+
+     REPRODUCED IN THIS LANE from the app's own traffic, byte for byte
+     including "15s" and "repeated 2 times" (tests/1p-progress-honesty-contract
+     replays it): the visit-list top-up in the b121 pack auto-starts on the
+     falling edge of EVERY pull (its own watcher, no user press) and posts
+     one mlsAppReadVisits per patient. feat_mls_progress_stages.js — SHARED
+     production, untouchable from this lane — turns any such post into a
+     "history:pull" job, and nothing else in that flow is observable to it, so
+     12s of quiet plus a 3s grace end the job at current 0, stageIndex 0,
+     status completed. Its renderer then paints a ✓ on EVERY stage from the
+     status alone:
+
+         var doneAll = !ACTIVE_STATUS[j.status] && (j.status === 'completed');
+
+     Three claims of work that measurably did not happen, under an honest
+     subtitle that says so. This block is the PRESENTATION half of the fix and
+     changes only what the panel paints:
+
+       1. a terminal count-bearing job whose own count is 0 renders its stages
+          NOT done (○, amber) instead of ✓. Production's subtitle is untouched.
+       2. that card gains ONE line naming what really ran and what to do.
+       3. when the honest "Filling in missing visit lists" job (the source half,
+          p1-backfill-progress-1.0.0 in the fork) covers the same window, the
+          manufactured card is a duplicate of it and is hidden — one activity,
+          one card.
+
+     A count > 0 is never touched: a pull that really read charts keeps its ✓.
+     Fail-open — no store, no panel, or a card that matches no job and this
+     block changes nothing. ES5, additive, reversible. -->
+<style id="mlsPsHonestCss">
+  /* (1,2,1) beats the module's own (1,1,1) base rule whichever order they land in */
+  #mlsPsPanel .ps-stages li.ps-notdone{ color:#92400E; }
+  #mlsPsPanel .ps-stages li.ps-notdone .ps-mk{ color:#B98900; }
+  #mlsPsPanel .ps-why{ margin-top:5px; color:#92400E; font-weight:600; line-height:1.45; }
+  #mlsPsPanel .ps-job[data-mls-dupe="1"]{ display:none; }
+  body.theme-dark #mlsPsPanel .ps-stages li.ps-notdone{ color:#E8B44A; }
+  body.theme-dark #mlsPsPanel .ps-stages li.ps-notdone .ps-mk{ color:#E8B44A; }
+  body.theme-dark #mlsPsPanel .ps-why{ color:#E8B44A; }
+</style>
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'pshonest-1.0.0';
+  try { if (window.__mlsPsHonest) return; } catch (e0) { return; }
+
+  var PANEL_ID = 'mlsPsPanel';
+  var TERMINAL = { completed: 1, partial: 1, failed: 1, canceled: 1, timed_out: 1 };
+  /* Only flows whose stages describe PER-ITEM work, where a zero count proves
+     the item work did not happen. A schedule read with zero appointments still
+     really read the day, so schedule_pull is deliberately NOT here. */
+  var COUNT_BEARING = { history_pull: 1 };
+  var applied = 0, dupes = 0, passes = 0, busy = false, timer = 0, enabled = true;
+  var observers = [];
+  var reads = [];   /* read-only bridge evidence: when a visit-LIST read ran */
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function lb() {
+    var l = safe(function () { return window.__mlsLoadingCalm; }, null);
+    return (l && l.installed && typeof l.snapshot === 'function') ? l : null;
+  }
+  function txt(node) { return node ? String(node.textContent || '') : ''; }
+
+  /* The same bridge the progress module listens to, read only: nothing here
+     posts, answers, or rewrites a message. */
+  function onMessage(ev) {
+    var d = ev && ev.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.source !== 'mls-app') return;
+    if (d.type !== 'mlsAppReadVisits' && d.type !== 'mlsAppReadAllVisits') return;
+    reads.push({ at: Date.now(), type: d.type, vbf: (d.__vbf === 1 || d.__vbf === true) });
+    if (reads.length > 12) reads.shift();
+  }
+  /* A read that arrived AFTER the job ended cannot be what the job was: the
+     window closes at finishedAt, and only its opening carries a tolerance for
+     the message that created the job. */
+  function readInWindow(job) {
+    var from = (Number(job.startedAt) || 0) - 1500;
+    var to = (Number(job.finishedAt) || Date.now());
+    for (var i = reads.length - 1; i >= 0; i--) {
+      if (reads[i].at >= from && reads[i].at <= to) return reads[i];
+    }
+    return null;
+  }
+  function overlaps(a, b) {
+    var a0 = Number(a.startedAt) || 0, a1 = Number(a.finishedAt) || Date.now();
+    var b0 = Number(b.startedAt) || 0, b1 = Number(b.finishedAt) || Date.now();
+    return a0 <= b1 && b0 <= a1;
+  }
+  /* A card's identity is exactly the module's own grouping signature:
+     label | status | message. Same signature = same numbers, so a grouped
+     card can never be matched to a job with a different count. */
+  function jobForCard(row, jobs) {
+    var label = txt(row.querySelector('.ps-label'));
+    var chip = row.querySelector('.ps-chipst');
+    var m = chip ? String(chip.className || '').match(/ps-chipst\s+([A-Za-z_]+)/) : null;
+    var status = m ? m[1] : '';
+    var msg = txt(row.querySelector('.ps-msg'));
+    if (!label || !status) return null;
+    for (var i = 0; i < jobs.length; i++) {
+      var j = jobs[i];
+      if (String(j.status || '') !== status) continue;
+      if (String(j.label || j.kind || 'Working') !== label) continue;
+      if (String(j.message || '') !== msg) continue;
+      return j;
+    }
+    return null;
+  }
+  /* Say what the bridge actually showed, and never blame the doctor's Athena
+     tab for a job that was simply not a chart pull. */
+  function whyText(job) {
+    var ev = readInWindow(job);
+    if (ev && ev.vbf) {
+      return 'No chart pull ran here. This was the background visit-list top-up, which reads one patient’s list of visits and never opens a chart. To read charts, use “Pull day histories”.';
+    }
+    if (ev && ev.type === 'mlsAppReadAllVisits') {
+      return 'This followed a pull’s visit-body reads. No chart was opened for it, so there is nothing here to count — the pull’s own card carries that result.';
+    }
+    if (ev) {
+      return 'This read a patient’s visit list, not their charts — nothing was opened or analyzed.';
+    }
+    return 'Nothing was read. Leave exactly one signed-in athenaOne tab open on the schedule, then start the pull again.';
+  }
+
+  function pass() {
+    if (busy || !enabled) return 0;
+    var panel = document.getElementById(PANEL_ID);
+    if (!panel) return 0;
+    var api = lb(); if (!api) return 0;
+    var jobs = safe(function () { return api.snapshot(); }, []) || [];
+    if (!jobs.length) return 0;
+    var honest = [], i;
+    for (i = 0; i < jobs.length; i++) if (String(jobs[i].kind) === 'visits_backfill') honest.push(jobs[i]);
+    var touched = 0;
+    busy = true;
+    try {
+      var rows = panel.querySelectorAll('.ps-job');
+      for (i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var job = jobForCard(row, jobs);
+        if (!job || !TERMINAL[job.status] || !COUNT_BEARING[job.kind]) continue;
+        if ((Number(job.current) || 0) > 0) continue;   /* real work: leave every ✓ alone */
+        var dupe = false, k;
+        for (k = 0; k < honest.length; k++) { if (overlaps(job, honest[k])) { dupe = true; break; } }
+        if (dupe) {
+          if (row.getAttribute('data-mls-dupe') !== '1') { row.setAttribute('data-mls-dupe', '1'); dupes++; touched++; }
+          continue;
+        }
+        var lis = row.querySelectorAll('.ps-stages li'), changed = false;
+        for (k = 0; k < lis.length; k++) {
+          var li = lis[k], mk = li.querySelector('.ps-mk');
+          if (mk && mk.textContent !== '○') { mk.textContent = '○'; changed = true; }
+          if (li.className !== 'ps-notdone') { li.className = 'ps-notdone'; changed = true; }
+        }
+        if (!row.querySelector('.ps-why')) {
+          var why = document.createElement('div');
+          why.className = 'ps-why';
+          why.textContent = whyText(job);
+          row.appendChild(why);
+          changed = true;
+        }
+        if (changed) { applied++; touched++; }
+      }
+      passes++;
+    } catch (e) {} finally { busy = false; }
+    return touched;
+  }
+
+  function schedule() { if (timer) return; timer = setTimeout(function () { timer = 0; pass(); }, 60); }
+  function watchPanel() {
+    var panel = document.getElementById(PANEL_ID);
+    if (!panel || panel.__mlsPsHonest) return false;
+    panel.__mlsPsHonest = 1;
+    var mo = safe(function () {
+      var m = new MutationObserver(function () { if (!busy) schedule(); });
+      m.observe(panel, { childList: true, subtree: true });
+      return m;
+    }, null);
+    if (mo) observers.push(mo);
+    schedule();
+    return true;
+  }
+  function arm() {
+    watchPanel();
+    /* the panel is created lazily, the first time the doctor opens it */
+    var host = document.body || document.documentElement;
+    var mo = safe(function () {
+      var m = new MutationObserver(function () { watchPanel(); });
+      m.observe(host, { childList: true });
+      return m;
+    }, null);
+    if (mo) observers.push(mo);
+    [400, 1200, 2600].forEach(function (ms) { setTimeout(watchPanel, ms); });
+  }
+  try { window.addEventListener('message', onMessage, false); } catch (e1) {}
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsPsHonest = {
+    version: VERSION,
+    pass: pass,
+    applied: function () { return applied; },
+    dupesHidden: function () { return dupes; },
+    passes: function () { return passes; },
+    enabled: function () { return enabled; },
+    setEnabled: function (v) { enabled = !!v; if (enabled) schedule(); return enabled; },
+    _reads: function () { return reads.slice(); },
+    _why: whyText,
+    revert: function () {
+      for (var i = 0; i < observers.length; i++) safe(function () { observers[i].disconnect(); });
+      observers = [];
+      enabled = false;
+      safe(function () { window.removeEventListener('message', onMessage, false); });
+      safe(function () { if (timer) clearTimeout(timer); }); timer = 0;
+      safe(function () { var s = document.getElementById('mlsPsHonestCss'); if (s) s.disabled = true; });
+      safe(function () {
+        var panel = document.getElementById(PANEL_ID); if (!panel) return;
+        var w = panel.querySelectorAll('.ps-why'), k;
+        for (k = w.length - 1; k >= 0; k--) w[k].parentNode.removeChild(w[k]);
+        var d = panel.querySelectorAll('.ps-job[data-mls-dupe]');
+        for (k = 0; k < d.length; k++) d[k].removeAttribute('data-mls-dupe');
+      });
+      try { delete window.__mlsPsHonest; } catch (e) { window.__mlsPsHonest = undefined; }
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end pshonest-1.0.0 ============================================== -->
 </body>
 </html>
