@@ -109,6 +109,12 @@ const tests = [
      honest bar, and the notice layer that never lands on the dock. Drives the
      real shell in real Chrome with a synthetic 28-patient day. */
   '1p-clunky-contract.test.js',
+  /* The Settings redesign (t2settings-1.0.0) and its every-control-pressed
+     inventory: seven tabs in clinic words, every section reachable from exactly
+     one of them, and every visible control in the dialog actually pressed in
+     real Chrome — so a control that stops working, or a footer that promises
+     Cancel over a setting that already committed, fails here. */
+  '1p-settings-redesign-contract.test.js',
   /* The residue of that audit: the four items two lanes in a row closed as
      "never rendered in this harness" plus the op-note rail's write churn.
      Each one needed a state the previous probes never built - an UNBOUND

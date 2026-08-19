@@ -427,7 +427,14 @@ async function runtime() {
         out.foot[(tabs[i].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 16)] = btns.join('|');
       }
       /* 76 / 79 / 80: the vendor cards are behind ONE closed disclosure. */
-      for (const t of tabs) { if (/Integrations/.test(t.textContent || '')) { t.click(); break; } }
+      /* BY GROUP KEY, NOT BY LABEL. t2settings-1.0.0 renamed this tab to
+         "Connections & integrations" on the owner's order to redo Settings in
+         clinic words, and /Integrations/ stopped matching it. The measurement
+         below still passed — but only because the footer-shape loop above
+         happens to leave the LAST tab selected, and this is the last tab. An
+         assertion that passes by accident of ordering is not an assertion.
+         data-mls-settings-group is the organizer's own stable key. */
+      for (const t of tabs) { if (t.getAttribute('data-mls-settings-group') === 'integrations') { t.click(); break; } }
       await sleep(1100);
       const fold = document.getElementById('mlsClunkySetVendor');
       out.fold = fold ? {
@@ -1583,7 +1590,14 @@ async function runtime() {
       try { openSettings(); } catch (e) {}
       await sleep(1400);
       const tabs = Array.prototype.slice.call(document.querySelectorAll('#settingsTabBar .set-tab'));
-      for (const t of tabs) { if (/Integrations/.test(t.textContent || '')) { t.click(); break; } }
+      /* BY GROUP KEY, NOT BY LABEL. t2settings-1.0.0 renamed this tab to
+         "Connections & integrations" on the owner's order to redo Settings in
+         clinic words, and /Integrations/ stopped matching it. The measurement
+         below still passed — but only because the footer-shape loop above
+         happens to leave the LAST tab selected, and this is the last tab. An
+         assertion that passes by accident of ordering is not an assertion.
+         data-mls-settings-group is the organizer's own stable key. */
+      for (const t of tabs) { if (t.getAttribute('data-mls-settings-group') === 'integrations') { t.click(); break; } }
       await sleep(1200);
       out.upd = (function () {
         const shown = Array.prototype.slice.call(document.querySelectorAll('#settingsModal .set-section'))
