@@ -259,7 +259,13 @@ const measured = {};
     ok(measured.toolsRow.legal[0].tip.length > 10,
       'the Legal row has no hover explainer: ' + JSON.stringify(measured.toolsRow.legal[0].tip));
     deep(measured.toolsRow.duplicates, [], 'the Tools menu lists the same entry twice');
-    deep(measured.toolsRow.untipped, [], 'Tools entries ship with no hover explainer: ' + JSON.stringify(measured.toolsRow.untipped));
+    /* Every row a doctor can hover explains itself. A row added later without
+       one fails here: give it a line in the tools-tips-1.0.0 BY_TEXT table in
+       BOTH /1p shells, keyed on the row's words in lower case, and claim only
+       what its handler actually does. */
+    deep(measured.toolsRow.untipped, [],
+      'Tools entries ship with no hover explainer (add them to tools-tips-1.0.0 BY_TEXT in both /1p shells): ' +
+      JSON.stringify(measured.toolsRow.untipped));
 
     measured.viaRow = await page.evaluate(() => {
       const row = document.querySelector('#mlsToolsMenu [data-mls-legal-tools]');
