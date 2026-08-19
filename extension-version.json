@@ -1,5 +1,5 @@
 {
-  "version": "3.0.64",
+  "version": "3.0.72",
   "minChrome": 116,
-  "notes": "v3.0.64 - Chart reads keep their pace while the athenaOne tab is in the background: every step that waits inside Athena now runs at normal speed even when that tab is hidden, so the day's visit notes finish alongside the histories instead of timing out. Nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+."
+  "notes": "v3.0.72 - The one-patient pull works from its button: MLS detects whoever is open in your athenaOne tab on its own (no more false different-patient stops), recognizes a chart whose legal name differs from the nickname on file without weakening any identity check, keeps reading at full speed while the athenaOne tab is in the background, and releases a stuck read instead of refusing forever. The extension also keeps your athenaOne session alive using athena's own heartbeat, never reads any tab that is not athenaOne, and can accept a phone-confirmed instruction to prepare a note write - still only notes and drafts, and still confirmed by you. Everything from earlier releases remains. Requires Chrome 116+."
 }
