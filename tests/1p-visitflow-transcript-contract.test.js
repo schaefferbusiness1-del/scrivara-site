@@ -150,6 +150,18 @@ function harness() {
        renderNow() is synchronous by design (rAF never fires in a
        non-compositing tab), which is why the calm shell exposes it. */
     calmPass() {
+      /* Two passes, not one. The ez3 engine rebuilds the transcript meta line
+         ("0 words captured") about once a second; a single calm pass can land
+         during that rebuild frame, see no count text, and leave the box
+         unmarked. In production the calm shell re-evaluates on every observer
+         pass (its own comment: "Re-evaluated every pass, so the first captured
+         word brings it straight back"), so the miss self-heals within a frame.
+         This harness has exactly ONE pass - renderNow, exposed because rAF
+         never fires headless - so give it the second pass production always
+         gets. MEASURED 2026-08-19 (probe v4, merged r23 tree): failing run =
+         {matches:true, clsBefore:false, clsAfter2nd:true, sameNode:true,
+         active:true} - same node, same text, second pass marks it. */
+      try { if (window.__mlsCalmShell && window.__mlsCalmShell.renderNow) window.__mlsCalmShell.renderNow(); } catch (e) {}
       try { if (window.__mlsCalmShell && window.__mlsCalmShell.renderNow) window.__mlsCalmShell.renderNow(); } catch (e) {}
       const w = document.querySelector('.ez3fl-transcript');
       const box = document.getElementById('ez3flTranscript');
