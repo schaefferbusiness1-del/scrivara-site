@@ -14,4 +14,5 @@
   <url><loc>https://mlsscribe.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
   <url><loc>https://mlsscribe.com/privacy.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
   <url><loc>https://mlsscribe.com/assist-privacy.html</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
+  <url><loc>https://mlsscribe.com/wyzant/</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
 </urlset>

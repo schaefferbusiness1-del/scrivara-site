@@ -4,12 +4,39 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<!-- Deliberately not indexed. This page advertises automating a third-party
-     platform, and it sits on the domain of a medical company; leaving it out of
-     search keeps the two apart. Change to "index,follow" if that is wanted. -->
-<meta name="robots" content="noindex,nofollow">
-<title>Wyzant Local — the tutoring job board, applied to for you</title>
-<meta name="description" content="A Windows app that reads the Wyzant job board, screens it, prices each posting and writes the application. The model runs on your own PC or your own API key.">
+<!-- Indexable by owner decision 2026-08-19. He was shown the tradeoff first: this
+     page is publicly searchable by Wyzant and by clinical customers of the same
+     domain, and it describes automating a third-party platform. He accepted it.
+     Because it is indexable it is also listed in sitemap.xml - the sitemap's own
+     comment explains why listing a noindex page is worse than omitting it. -->
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://mlsscribe.com/wyzant/">
+<title>Wyzant Local — apply to tutoring jobs automatically | Windows app</title>
+<meta name="description" content="A Windows app that reads the Wyzant job board, screens every posting, prices it, writes the application and submits it. Runs unattended. The model runs on your own PC for free, or on your own API key.">
+
+<!-- Shared links (Discord, Reddit, DMs) render as a card rather than a bare URL.
+     This is where most of this page's traffic will come from. -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mlsscribe.com/wyzant/">
+<meta property="og:title" content="Wyzant Local — the tutoring job board, applied to for you">
+<meta property="og:description" content="Reads the board, screens it, prices each posting, writes the application, submits it. Unattended. The model runs on your own PC — free and private — or on your own API key.">
+<meta property="og:site_name" content="Wyzant Local">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Wyzant Local — the tutoring job board, applied to for you">
+<meta name="twitter:description" content="Reads the board, screens it, prices each posting, writes the application, submits it. Runs on your own PC.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Wyzant Local",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Windows",
+  "url": "https://mlsscribe.com/wyzant/",
+  "description": "A Windows app that reads the Wyzant job board, screens every posting, prices it, writes the application and submits it. Runs unattended. The model runs locally or on the buyer's own API key.",
+  "offers": { "@type": "Offer", "price": "149", "priceCurrency": "USD" }
+}
+</script>
 <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/icon-16.png">
 <link rel="stylesheet" href="/fonts/fonts.css">
@@ -117,6 +144,24 @@ ul.nots li:before{background:#F0D6D2;border-color:#D9A6A0}
   background:linear-gradient(135deg,var(--green) 0%,var(--deep) 82%);color:#fff;
   box-shadow:var(--sh-btn);transition:background .2s ease}
 .btn:hover{background:linear-gradient(135deg,var(--green-mid) 0%,#28503f 82%)}
+
+/* inquiry form */
+#inq{max-width:520px;margin:24px auto 0;text-align:left}
+.frow{display:flex;gap:12px;flex-wrap:wrap}
+.frow .f{flex:1 1 200px}
+.f{display:block;margin-bottom:13px}
+.f span{display:block;font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:5px}
+.f input,.f textarea{
+  width:100%;background:#fff;border:1px solid #D6E4DD;border-radius:10px;
+  padding:10px 12px;font:inherit;font-size:15px;color:var(--ink);resize:vertical}
+.f input:focus,.f textarea:focus{outline:none;border-color:var(--green)}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+#inq .btn{margin-top:6px;width:100%;justify-content:center;border:none;cursor:pointer;font-family:inherit}
+#inq .btn[disabled]{opacity:.6;cursor:default}
+.inqmsg{margin-top:12px;font-size:14px;min-height:20px}
+.inqmsg.ok{color:var(--green)}
+.inqmsg.bad{color:#B23B3B}
+.alt{margin-top:18px;font-size:13.5px;color:var(--muted)}
 
 footer{border-top:1px solid var(--line);padding:34px 0 46px;background:#FCFBF8}
 footer p{font-size:13.5px;color:var(--muted)}
@@ -326,7 +371,34 @@ footer .links a:hover{text-decoration:underline}
       <h2>Interested?</h2>
       <p>Tell me which subjects you are cleared for and roughly how you tutor, and I will tell
       you whether it is a fit before you pay anything.</p>
-      <a class="btn" href="mailto:michael@mlsscribe.com?subject=Wyzant%20Local%20%E2%80%94%20%24149">Email michael@mlsscribe.com</a>
+
+      <form id="inq" novalidate>
+        <div class="frow">
+          <label class="f">
+            <span>Your name</span>
+            <input name="name" required maxlength="80" autocomplete="name">
+          </label>
+          <label class="f">
+            <span>Email</span>
+            <input name="email" type="email" required maxlength="120" autocomplete="email">
+          </label>
+        </div>
+        <label class="f">
+          <span>What do you tutor, and where are you stuck?</span>
+          <textarea name="message" rows="4" maxlength="1500"
+                    placeholder="e.g. I'm approved for chemistry and algebra on Wyzant, applying by hand a few times a day and losing the good postings."></textarea>
+        </label>
+        <!-- Bots fill every field they can see. A human never sees this one, so
+             anything arriving with it filled is discarded server-side. Cheaper
+             and less hostile than a CAPTCHA. -->
+        <div class="hp" aria-hidden="true">
+          <label>Company <input name="company" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <button class="btn" type="submit" id="inqGo">Send</button>
+        <p id="inqMsg" class="inqmsg" role="status" aria-live="polite"></p>
+      </form>
+
+      <p class="alt">Or email <a href="mailto:michael@mlsscribe.com?subject=Wyzant%20Local">michael@mlsscribe.com</a> directly.</p>
     </div>
   </div>
 </section>
@@ -345,5 +417,61 @@ footer .links a:hover{text-decoration:underline}
   </div>
 </footer>
 
+<script>
+/* Inquiry submit. Inline on purpose: this page loads no external script, and
+ * tests/public-publication-boundary.test.js asserts that, so it stays that way.
+ *
+ * FAILS VISIBLY, NEVER SILENTLY. If the endpoint is down, not yet deployed, or
+ * blocked, the visitor is told to email instead and their typed message is left
+ * in the box. A contact form that swallows an inquiry is worse than no form -
+ * the sender believes they got through and never follows up. */
+(function () {
+  var ENDPOINT = 'https://scrivara-backend.onrender.com/api/inquiry';
+  var EMAIL = 'michael@mlsscribe.com';
+  var form = document.getElementById('inq');
+  var btn = document.getElementById('inqGo');
+  var msg = document.getElementById('inqMsg');
+  if (!form) return;
+
+  function say(text, cls) { msg.textContent = text; msg.className = 'inqmsg ' + (cls || ''); }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var d = new FormData(form);
+    var name = (d.get('name') || '').toString().trim();
+    var email = (d.get('email') || '').toString().trim();
+    var message = (d.get('message') || '').toString().trim();
+
+    if (!name || !email) { say('Please give a name and an email so I can reply.', 'bad'); return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { say('That email address does not look right.', 'bad'); return; }
+
+    btn.disabled = true;
+    say('Sending…');
+
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 15000);
+
+    fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product: 'wyzant_local', name: name, email: email, message: message,
+        company: (d.get('company') || '').toString(),
+        page: location.href, ref: document.referrer || null
+      }),
+      signal: ctrl.signal
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      form.reset();
+      say('Got it — I will reply to ' + email + '.', 'ok');
+    }).catch(function () {
+      /* Do NOT clear the form here: their words are still in the box, so the
+         fallback costs them a copy-paste rather than retyping it. */
+      say('That did not go through. Please email ' + EMAIL + ' instead — your message is still in the box.', 'bad');
+      btn.disabled = false;
+    }).then(function () { clearTimeout(timer); });
+  });
+})();
+</script>
 </body>
 </html>
