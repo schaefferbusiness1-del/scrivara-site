@@ -74,6 +74,18 @@ const dayBlock = block(
   '1p-feat_mls_schedimport_exact.js lcd day/flip block'
 );
 ok(/function tnEntryDay\(/.test(dayBlock), 'the row-day resolver tnEntryDay is missing');
+/* The day must reach the LIVE emit path too, not only the re-stamp path -
+   otherwise rows settled during the pull carry no day and can never flip. */
+ok(/dn: col, dnDay: tnEntryDay\(entry\)/.test(SI),
+  'tnEmitDayNoteColumn does not carry the row day, so rows settled during the pull can never be matched to a receipt');
+/* AND the day is not a NEW derivation: it resolves through batchRowDay /
+   tnBatchDay, the two resolvers dnd-1.0.0 already proves carry the pulled day
+   onto every retry and sweep row. A second, independent notion of "the day"
+   here is exactly how two surfaces start disagreeing about one pull. */
+ok(/d = batchRowDay\(r\)/.test(dayBlock) && /return d \|\| tnBatchDay\(\)/.test(dayBlock),
+  'tnEntryDay derives the day itself instead of reusing the resolvers dnd-1.0.0 pins');
+ok(/_mlsTargetPatientId \|\| r\.patient_external_id/.test(dayBlock),
+  'tnEntryDay matches a batch row by something other than the patient-id fields the batch itself keys on');
 ok(/hit\.dnd = day/.test(dayBlock), 'the note column is never stamped with its own day, so nothing can prove a receipt belongs to a row');
 ok(/wasOrange && col === "read"/.test(dayBlock), 'the flip marker is not conditioned on an actual orange->green transition');
 /* the OLD value has to be read BEFORE the overwrite or the marker is a lie */
