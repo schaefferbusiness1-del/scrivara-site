@@ -139,6 +139,21 @@ const tests = [
      with the automatic post-pull jump that causes the last one proved live
      before it is proved stopped. */
   '1p-calendar-pull-surface.test.js',
+  /* "The calendar is broken" — the view-bounce, root-caused. The session
+     tab-memory restored the remembered tab 800ms after load, guarded only by
+     "the remembered tab is not the one on screen", which is TRUE exactly when
+     the doctor has just navigated. Measured: a press that reached Calendar at
+     +1096ms was reversed at +1298ms. navgesture-1.0.0 (both shells) +
+     tabmem-standdown-1.0.0 (connect) stand the restore down; this pins the
+     stand-down AND the restore it must not delete. */
+  '1p-calendar-view-bounce.test.js',
+  /* The Calendar screen and the Staff Prep job card, press-tested end to end
+     ("if it's on the program it should work"), at five widths. Pins three
+     defects found doing it: the day-list calm override painted its own two
+     heading lines as appointment cards; a PAUSED month job left the open
+     panel offering only "Start month pull" for 11s and 299 ticks; and the
+     plain-words pass produced "from the the last day it saved". */
+  '1p-calendar-territory.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */

@@ -22922,6 +22922,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     pCounts();
     return st;
   }
+  /* ===== ez3repaint-1.0.0 - ONE STATE MACHINE, REACHABLE FROM THE SCREEN ===
+     p1RangePaint IS the panel's decision about which of Start / Resume /
+     Pause / Retry / Cancel the doctor should see, and it is a closure. The
+     panel runs it on mount (p1RangeAdopt) and whenever THIS tab drives the
+     job, but a job whose state changes out of band - another tab, a boot
+     resume, a session boundary - leaves the open panel showing the previous
+     answer with nothing to correct it.
+
+     MEASURED: with a month job PAUSED at 0 of 18 days and Staff Prep on
+     screen, the panel showed only "Start month pull" and the sentence
+     "Nothing pulled yet this session." for 11s and 299 ticks, while the
+     progress label two lines above already read "0 of 18 days saved". Leaving
+     the screen and coming back fixed it - so the state was right and only the
+     repaint was missing.
+
+     Rather than copy the rule into a second place (the shell's staffjobsync
+     block would then be a second source of truth about a job), the panel's
+     own painter is published and the screen calls it. Returns the manifest it
+     painted, or null when there is no saved job to paint.
+
+     IT MUST ADOPT FIRST. p1RangePaint ends in pCounts(), and pCounts opens
+     with `if (!P) return;` — so the whole durable-control branch (Start /
+     Resume / Pause / Retry / Cancel from the SAVED manifest) is unreachable
+     while this tab has no in-tab pull object. That is exactly the case here:
+     the doctor opened Staff Prep before any job existed, so mount adopted
+     nothing, and a job that appeared afterwards could never reach the
+     buttons. MEASURED: publishing the painter alone moved the receipt line
+     but left [ez3PullStart] over a paused job for the full 11s. p1RangeAdopt
+     is the function written for this — it is what a re-open runs — so a
+     repaint that finds no P adopts the saved job the same way and then
+     paints. It is a no-op when a job is already running in this tab. */
+  window.__mlsEz3RangeRepaint = function () {
+    return safe(function () {
+      var adopted = false;
+      if (!P) { p1RangeAdopt(); adopted = !!P; }
+      var st = p1RangePaint();
+      /* render() writes "Nothing pulled yet this session." only for the
+         no-job case (`P ? "" : ...`). Once a saved job has been adopted that
+         sentence is stale, and it would sit directly above a Resume button.
+         A re-open leaves this line empty for the same job, so match it — and
+         only ever replace that one exact default, never a real message. */
+      if (adopted && st) {
+        var now = $('ez3PullNow');
+        if (now && now.textContent === 'Nothing pulled yet this session.') now.textContent = '';
+      }
+      return st;
+    }, null);
+  };
+  /* ===== end ez3repaint-1.0.0 ============================================ */
+
   /* A job the boot resumed - or one this tab just asked for, whose manifest is
      still being written behind the account lock - still has to paint here. The
      grace ticks cover that admission gap; once the job is seen running the
@@ -23436,11 +23486,41 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       cancelPullRun();
     });
     on('ez3sPullToday', pullTodayProxy);
+    /* ===== apicheck-says-1.0.0 - A CHECK THAT FINISHES SAYS WHAT IT FOUND ===
+       "Check Athena API connection" cleared its own note the moment the check
+       resolved (`athenaApiPrepNote = ''`), so #ez3sAthenaApiStatus fell back
+       to "Selected range: 2026-08-18" - exactly what it read BEFORE the
+       press. MEASURED: the button was pressed on a running Staff Prep and
+       nothing anywhere on the page changed; the 'Checking...' flash resolved
+       inside 200ms and left no trace. And updateAthenaStatus RESOLVES on
+       failure too (it catches and returns an unavailable state), so the
+       silent branch was the one a failed check took as well - the doctor
+       pressed a check, it failed, and the screen told them nothing.
+
+       The verdict is read from the state the check itself returned, in the
+       Settings card's own words for the connected case, and the detail is
+       left where it already lives. Nothing about the check changes. */
     on('ez3sAthenaApiCheck', function () {
       if (!isFn(window.updateAthenaStatus)) { athenaApiPrepNote = 'Athena API status is unavailable.'; render(); return; }
       athenaApiPrepNote = 'Checking the hosted read-only connection…'; render();
-      Promise.resolve(window.updateAthenaStatus('staff-click')).then(function () { athenaApiPrepNote = ''; render(); }, function (err) { athenaApiPrepNote = String(err && err.message || err || 'Athena API status is unavailable.'); render(); });
+      Promise.resolve(window.updateAthenaStatus('staff-click')).then(function (state) {
+        var st = state || safe(function () { return window.mlsAthenaApiGetState(); }, null);
+        if (!st) athenaApiPrepNote = 'The check finished but returned no status. Settings → Integrations has the detail.';
+        else if (st.connected) athenaApiPrepNote = 'Connected — verified read-only Athena API schedule access.';
+        else {
+          /* The server's error text is not guaranteed to end a sentence -
+             "Failed to fetch" ran straight into the next one. */
+          var why = String(st.error || 'the hosted Athena API is not available for schedule reads');
+          if (!/[.!?]$/.test(why)) why += '.';
+          athenaApiPrepNote = 'Not connected — ' + why + ' MLS Assist is unaffected. Settings → Integrations has the detail.';
+        }
+        render();
+      }, function (err) {
+        athenaApiPrepNote = String(err && err.message || err || 'Athena API status is unavailable.');
+        render();
+      });
     });
+    /* ===== end apicheck-says-1.0.0 ======================================= */
     on('ez3sAthenaApiPull', pullStaffScheduleThroughAthenaApi);
     on('ez3sProv', function () { var c = $('mlsProvChip'); if (c) handOff(function () { c.click(); }, 'Pick the doctor in the app’s picker.'); else toast('Provider picker not found.'); });
     on('ez3sPrep', openPrep);
@@ -44861,19 +44941,61 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     recordIv = setInterval(function(){ var v = currentView(); if (v && v !== last){ last = v; store(v); } }, 1000);
   }
 
+  /* ===== tabmem-standdown-1.0.0 - THE REMEMBERED TAB LOSES TO THE LIVE ONE ===
+     THE MEASURED DEFECT (the owner's "calendar is broken", the view-bounce).
+     restore() fires 800ms after the load event, and its only guard was
+     `saved !== currentView()` - which is TRUE precisely when the doctor has
+     just navigated somewhere else. So a doctor who pressed Calendar while the
+     app was still settling was silently thrown back to the remembered tab a
+     fraction of a second later. MEASURED in the local harness, 3 runs of 3 and
+     a 4-case control (scratch p6/p7): saved=visit, a real click on #nav_calendar
+     at +976ms put .navtab.on=calendar at +1096ms, and restore put it back to
+     visit at +1298ms - 202ms after the press, and the doctor stayed on Visit for
+     the remaining 3s of the trace. On a real signed-in boot the load event is
+     later, which is why it was reported as a bounce about three seconds in.
+
+     THE RULE: route memory only places you where nothing else has. The moment a
+     human touches the app, memory has lost its claim. Two independent stand-down
+     signals, because one alone has a hole:
+       - a trusted user gesture ANYWHERE since the page began (navgesture-1.0.0
+         in the shell arms this at parse time, so a press BEFORE this file even
+         loads is still seen);
+       - the active tab moved between arming and restoring (covers programmatic
+         routes - a deep link, datalink's post-pull focusCalDay - that arrive in
+         the same window).
+     Restoring is still the default: with no gesture and no movement it behaves
+     exactly as before. Measured control (scratch p7): saved=calendar with no
+     press still restores patients->calendar at +1330ms. */
+  var armView = currentView();
+  function userActed(){
+    return safe(function(){ return !!window.__mlsUserActed; }, false);
+  }
+  function standDownReason(){
+    if (userActed()) return 'the doctor has already used the app';
+    var now = currentView();
+    if (now && armView && now !== armView) return 'the view moved to ' + now + ' on its own';
+    return '';
+  }
+
   // RESTORE once on load, after the app's own initial showView() has run.
-  var done = false;
+  var done = false, standDown = '';
   function restore(){
     if (done) return; done = true;
-    if (saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
+    standDown = standDownReason();
+    if (!standDown && saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
       safe(function(){ window.showView(saved); });
     }
-    setTimeout(startRecording, 200); // begin recording only after the restore settles
+    /* A stood-down restore must not throw away the tab the doctor chose: start
+       recording at once so the tab they are actually on is what gets saved. */
+    setTimeout(startRecording, standDown ? 0 : 200);
   }
   if (document.readyState === 'complete') setTimeout(restore, 800);
   else window.addEventListener('load', function(){ setTimeout(restore, 800); });
 
-  window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY };
+  window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY,
+    _armView: function(){ return armView; }, _standDown: function(){ return standDown; },
+    _userActed: userActed };
+  /* ===== end tabmem-standdown-1.0.0 ===================================== */
 })();
 
 /* ===== MLS premium-feature logo badges (additive, isolated IIFE) ===== */
