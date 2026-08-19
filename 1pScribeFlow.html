@@ -54459,6 +54459,146 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
 })();
 </script>
 <!-- ===== end xpdoor-1.0.0 ================================================= -->
+<!-- ===== pulsee-1.0.0 — a long read must show it is alive =================
+     Owner 2026-08-19, watching a live pull: "if Maria's chart is running and
+     this is no indicator that is so bad."
+
+     Measured on r23: pressing Pull from Athena paints ONE line — "Reading every
+     encounter from athenaOne… (read-only)" — and leaves it there for five-plus
+     minutes. Between the emit that writes it (background.js:10676) and the next
+     one sit the encounter opens, two hydration sleeps and a 48-pass enumerate
+     grind at 3.5s each: minutes of dead air with nothing to distinguish working
+     from wedged.
+
+     The numbers were never missing. The extension emits
+     mlsAppVisitsProgress with n and total, content.js relays both to this page,
+     and feat_visits hands the whole event to its callback — where
+     feat_athena_autopull keeps only the message string. Separately,
+     feat_visits_counter_guard rewrites every counter-bearing MESSAGE to one
+     neutral sentence (it does not touch n/total). So the page has had the count
+     all along and threw it away twice.
+
+     This block observes those events — it emits nothing, sends nothing, and
+     never re-dispatches a progress event (the absolute-deadline contract
+     forbids one escaping after settlement) — and renders three things the
+     doctor did not have:
+       1. a live count, "encounter 3 of 17", read from n/total, not the message;
+       2. elapsed time and time-since-last-progress, both computed from
+          timestamps rather than counted ticks, so a throttled background tab
+          cannot inflate them;
+       3. an honest STALL verdict after 60s with no progress.
+
+     The Stop control ABANDONS; it does not cancel. There is no cancel verb on
+     this bridge for the all-visits read (searched: no mlsAppCancel/Stop/Abort),
+     so the only truthful stop is legalpack's readstop model: bump a sequence
+     token, stop narrating, stop owning the answer, and SAY that athenaOne's own
+     read may still finish. It deliberately does NOT set
+     __mlsPullStopRequested — that flag belongs to the day engines and setting
+     it here would stop an unrelated schedule pull.
+     ==================================================================== -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'pulsee-1.0.0';
+  var off = false, seq = 0, run = null, iv = null, TICKER_ID = 'mlsPullTicker', STOP_ID = 'mlsPullStopRead';
+  var STALL_MS = 60000;
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function num(v) { var n = Number(v); return (isFinite(n) && n >= 0) ? n : null; }
+  function secs(ms) {
+    var t = Math.max(0, Math.round(ms / 1000));
+    if (t < 60) return t + 's';
+    var m = Math.floor(t / 60);
+    return m + 'm ' + (t % 60) + 's';
+  }
+  /* The ticker is its OWN node, a sibling of #pullChartStatus: say() owns that
+     line's textContent outright and would wipe anything parented inside it. */
+  function ticker() {
+    var status = byId('pullChartStatus'); if (!status) return null;
+    var el = byId(TICKER_ID);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = TICKER_ID;
+      el.setAttribute('role', 'status');
+      el.style.cssText = 'display:none;font-size:12px;line-height:1.45;margin-top:5px;color:#52675c';
+    }
+    if (el.previousSibling !== status && status.parentNode) {
+      safe(function () { status.parentNode.insertBefore(el, status.nextSibling); });
+    }
+    return el;
+  }
+  function paint() {
+    if (off || !run) return;
+    var el = ticker(); if (!el) return;
+    var now = Date.now(), since = now - run.lastAt, stalled = since >= STALL_MS;
+    var head = (run.total && run.n != null)
+      ? ('Reading encounter ' + Math.min(run.n + 1, run.total) + ' of ' + run.total)
+      : 'Indexing this chart’s encounters — no count yet';
+    var line = head + ' · ' + secs(now - run.startedAt) + ' elapsed';
+    if (stalled) line += ' · no new progress for ' + secs(since) + ' — athenaOne may be stuck. Nothing has been written either way.';
+    el.style.display = 'block';
+    el.style.color = stalled ? '#9f2d2d' : '#52675c';
+    el.textContent = line + ' ';
+    var stop = document.createElement('button');
+    stop.type = 'button'; stop.id = STOP_ID;
+    stop.textContent = 'Stop waiting on this read';
+    stop.title = 'Lets go of this read: MLS stops narrating it and will ignore its answer. It cannot cancel athenaOne’s own read, which may still finish in the background. Nothing is written to Athena either way.';
+    stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer';
+    stop.addEventListener('click', function () { stopWaiting(); }, false);
+    el.appendChild(stop);
+  }
+  function start() {
+    seq++; run = { seq: seq, startedAt: Date.now(), lastAt: Date.now(), n: null, total: null };
+    if (iv) safe(function () { clearInterval(iv); });
+    iv = setInterval(function () { if (!off && run) paint(); }, 1000);
+  }
+  function settle(msg, color) {
+    if (iv) { safe(function () { clearInterval(iv); }); iv = null; }
+    run = null;
+    var el = byId(TICKER_ID); if (!el) return;
+    if (msg) { el.style.display = 'block'; el.style.color = color || '#52675c'; el.textContent = msg; }
+    else el.style.display = 'none';
+  }
+  function stopWaiting() {
+    if (!run) return;
+    seq++; /* the abandoned read owns nothing from here on */
+    settle('You stopped waiting on this read. MLS has let it go and will ignore its answer. athenaOne’s own read may still finish on its own — nothing was written to Athena, and nothing was saved here.', '#6f5a20');
+  }
+  function onMsg(ev) {
+    if (off) return;
+    var d = ev && ev.data; if (!d || !d.type) return;
+    if (d.type === 'mlsAppVisitsProgress' || d.type === 'mlsAppSearchProgress') {
+      if (!run) start();
+      /* n/total come off the EVENT, never off the message text: the counter
+         guard rewrites the message and leaves these untouched. */
+      var n = num(d.n), t = num(d.total);
+      if (t != null && t > 0) run.total = t;
+      if (n != null) run.n = n;
+      run.lastAt = Date.now();
+      paint();
+      return;
+    }
+    if (d.type === 'mlsAppAllVisitsResult') { settle('', ''); return; }
+  }
+  function arm() { safe(function () { window.addEventListener('message', onMsg, false); }); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  window.__mlsPullSee = {
+    installed: true, version: VERSION, stallMs: STALL_MS,
+    state: function () { return run ? { seq: run.seq, n: run.n, total: run.total, startedAt: run.startedAt, lastAt: run.lastAt } : null; },
+    _test: { onMsg: onMsg, paint: paint, stopWaiting: stopWaiting, tickerId: TICKER_ID, stopId: STOP_ID, secs: secs },
+    revert: function () {
+      off = true;
+      safe(function () { window.removeEventListener('message', onMsg, false); });
+      if (iv) safe(function () { clearInterval(iv); });
+      iv = null; run = null;
+      var el = byId(TICKER_ID); if (el && el.parentNode) safe(function () { el.parentNode.removeChild(el); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end pulsee-1.0.0 ================================================= -->
 <!-- ===== pshonest-1.0.0 — a checkmark must mean work that happened ========
      Owner, 2026-08-18, from his own screenshot of the progress widget:
 

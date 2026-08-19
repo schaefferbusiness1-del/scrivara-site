@@ -296,6 +296,7 @@ const tests = [
      with ONE enforcement point, and the op note -> review hand-off. */
   '1p-athena-write-readiness-and-probe-only.test.js',
   '1p-cross-patient-door.test.js',
+  '1p-long-read-progress.test.js',
   '1p-single-pull-visit-accounting.test.js',
   '1p-write-fidelity-contract.test.js',
   '1p-writeflow-bind-cure.test.js',
