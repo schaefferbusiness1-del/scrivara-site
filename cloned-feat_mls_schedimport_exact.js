@@ -1367,7 +1367,7 @@
     return censusListHasContent(p.bmi);
   }
   /* ===== cap-1.0.0 (a captured chart is content, even before the AI runs) =====
-     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260819-r23, ext
+     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260819-r24, ext
      3.0.62, TODAY, bodies OFF, 16 rows): 9 rows read their chart out of athena
      successfully and then died on "502 Upstream request failed" - the BACKEND
      AI (aiCallRaw -> /api/complete, called by _parsePatientChart) was down
@@ -4255,8 +4255,8 @@
     function ppTally(s){ try{ /* ppt-2.0 (owner 2026-08-09, watching day 9: "2 saved · 19 skipped"): the tally counted settle EVENTS, so a chart that failed three re-check passes then cleared counted 3 into "skipped" and 1 into "saved" forever. CHART-LEVEL truth: latest state per chart key wins; done = distinct charts seen (monotonic - the bar never moves backward, si-1.9.4). */ var latest={}; for(var ti=0;ti<s.rows.length;ti++){ var tr=s.rows[ti]; latest[tr.k||tr.name]=tr; } var tks=Object.keys(latest); var tok=0,tfail=0,tcs=0; for(var tj=0;tj<tks.length;tj++){ var tl=latest[tks[tj]]; if(tl.ok===true) tok++; else if(tl.pending!==true){ tfail++; if(tl.cs===true) tcs++; } } s.ok=tok; s.failed=tfail; s.chartOnly=tcs; s.done=tks.length; if((s.total||0)<tks.length) s.total=tks.length; }catch(e){} }
     function ppStart(total,base){ var s=ppState(); if(!s) return; if(base>0){ s.running=true; if(total>s.total) s.total=total; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.current=''; s.rows=[]; s.runId='r'+Date.now().toString(36); /* srr-1.2: rows accumulate across sub-batches by the si-1.9.4 no-reset law - the runId lets readers slice the CURRENT run without resetting anything (the 22-rows-on-a-20-chart-day trap, 2026-08-08) */ }
     function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
-    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ if(extra.sp===true) r.sp=true; /* cap-1.0.0 */ if(extra.dn) r.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
-    function ppResolve(rowRef,ok,reason,extra){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); if(extra){ if(extra.sp===true) rowRef.sp=true; /* cap-1.0.0 */ if(extra.chartSaved===true) rowRef.cs=true; if(extra.dn) rowRef.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ } ppTally(s); }
+    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ if(extra.sp===true) r.sp=true; /* cap-1.0.0 */ if(extra.dn) r.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ if(extra.dnDay) r.dnd=String(extra.dnDay).slice(0,10); /* lcd-1.0.0: the note column's OWN day, so a receipt that lands later can prove it belongs to THIS row */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
+    function ppResolve(rowRef,ok,reason,extra){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); if(extra){ if(extra.sp===true) rowRef.sp=true; /* cap-1.0.0 */ if(extra.chartSaved===true) rowRef.cs=true; if(extra.dn) rowRef.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ if(extra.dnDay) rowRef.dnd=String(extra.dnDay).slice(0,10); /* lcd-1.0.0 */ } ppTally(s); }
     function ppEnd(){ var s=ppState(); if(s){ s.finishedAt=Date.now(); s.running=false; s.current=''; s.phase=null; } } /* dn-1.0: the DONE card freezes its clock on finishedAt */
     /* ===== dnp-1.0.0 (the day-note pass gets its OWN phase) =================
        Owner 2026-08-17: the bar sat at 100% with "18 saved · 5 not saved"
@@ -4611,6 +4611,34 @@
        Re-stamping mutates the row that is already on the card, in place: it
        adds no row, moves no saved/failed tally (the day-note lane stays
        verdict-neutral, dv3-1.0.0), and touches only the note cell. */
+    /* ===== lcd-1.0.0 (the open result card is LIVE) =========================
+       OWNER 2026-08-19, verbatim: "as the things in orange get pulled in the
+       background they should turn to green."
+       dnw-1.0.0 above already re-stamps the note cell in place, so the DATA
+       half of this was half-built. Two things were missing and the card stayed
+       a dead snapshot anyway:
+         (a) the row carried no DAY. Without one, anything arriving later could
+             only guess which row a receipt belonged to - and "the next orange
+             row" is exactly the positional attribution that is never safe on a
+             list of patients.
+         (b) the notes-idle engine - the thing that actually reads the leftover
+             notes in the background - never touched these rows at all. It
+             pinned its own line and stopped. That half is niRestampCard(), in
+             the notes-idle block below.
+       This function supplies (a), and marks a cell that has genuinely FLIPPED
+       from orange to green (dnLive) so the card's tally can subtract a PROVEN
+       recovery rather than recount and risk inventing one. */
+    function tnEntryDay(entry) {
+      var pid = String((entry && entry.patientId) || ""), d = "";
+      if (pid) {
+        for (var i = 0; i < rows.length && !d; i++) {
+          var r = rows[i];
+          var rid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || "");
+          if (rid && rid === pid) d = batchRowDay(r);
+        }
+      }
+      return d || tnBatchDay() || "";
+    }
     function ppRestampDayNote(entry) {
       var s = ppState();
       if (!s || !entry) return false;
@@ -4623,9 +4651,16 @@
         if (pid ? String(r.pid || "") === pid : String(r.name || "") === nm) { hit = r; break; }
       }
       if (!hit) return false;
+      /* lcd-1.0.0: read the OLD value before overwriting it - the flip is the
+         thing being recorded, not the destination. */
+      var wasOrange = String(hit.dn || "").indexOf("unread:") === 0 || String(hit.dn || "").indexOf("retrying:") === 0;
       hit.dn = col;
+      var day = tnEntryDay(entry);
+      if (day) hit.dnd = day;
+      if (wasOrange && col === "read") { hit.dnLive = 1; hit.dnLiveAt = Date.now(); }
       return true;
     }
+    /* ===== end lcd-1.0.0 (row day + flip marker) ===== */
     function tnEmitDayNoteColumn(entry) {
       if (!entry || !entry.name || typeof ppSettle !== "function") return;
       var col = tnColumn(entry);
@@ -4636,7 +4671,7 @@
         ppSettle(entry.name, entry.complete === true,
           entry.complete === true ? (entry.summaryPending === true ? "saved · summary pending" : "") : ((entry.reason || "") + historyDiagSuffix(entry)),
           false,
-          { pid: entry.patientId, sp: entry.summaryPending === true, dn: col,
+          { pid: entry.patientId, sp: entry.summaryPending === true, dn: col, dnDay: tnEntryDay(entry), /* lcd-1.0.0 */
             chartSaved: ((entry.organized === true && entry.dobVerified === true) || entry.captureSaved === true) && !entry.storageFailure });
       });
     }
@@ -7133,7 +7168,61 @@
     if (c.gaveUp) bits.push(c.gaveUp + " could not be read (" + niPlain(_ni.lastCode) + ")");
     return "Visit notes for " + niDayLabel(day) + ": " + bits.join(", ");
   }
+  /* ===== lcd-1.0.0 (a background read reaches the OPEN result card) ========
+     OWNER 2026-08-19: "as the things in orange get pulled in the background
+     they should turn to green."
+     MEASURED GAP: a successful idle read set row.s = "read" and called
+     niSurface(), which pinned a line and toasted - and never touched
+     window.__mlsDayHistoryPull.state.rows, which is the array the finished
+     pull card paints. So the doctor sat watching an orange "today's note not
+     read this time" cell about a note that was already on file.
+     THE IDENTITY LAW, one clause at a time, because every one of them is the
+     difference between a live card and a wrong card:
+       - a card row is found by its OWN patientId. Never by position, never
+         "the next orange row" - the card shows FIRST NAMES, so two rows can
+         look identical and be different people.
+       - it must also match that row's OWN day (r.dnd, stamped where the
+         column is emitted). This is what makes a day switch safe: a receipt
+         for Tuesday cannot flip a card showing Monday.
+       - a row with NO day stamped refuses to flip. Fail closed - an unproven
+         match is not a match.
+       - only an ORANGE cell (unread:/retrying:) flips, and only to "read".
+         Nothing here can turn a green cell back, invent a verdict, or move the
+         saved/failed tally: the day-note lane stays verdict-neutral (dv3).
+       - it refuses entirely while a pull is RUNNING. That pass owns the
+         column and publishes its own truth through ppSettle.
+     NO TIMER IS ADDED. This runs on the notes-idle engine's own tick, which
+     arms with the queue (niKick) and stops itself when the queue drains
+     (niStopTimer) - and the card's repaint rides the panel's existing loop,
+     which only paints while the panel is on screen. */
+  function niRestampCard() {
+    var s = safe(function () { return window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; }, null);
+    if (!s || s.running === true || !s.rows || !s.rows.length) return 0;
+    var flips = 0;
+    for (var i = 0; i < _ni.rows.length; i++) {
+      var q = _ni.rows[i];
+      if (!q || q.s !== "read") continue;          /* "no-note"/"gave-up" are not a saved note */
+      var pid = String(q.p || ""), day = String(q.d || "");
+      if (!pid || !day) continue;
+      /* LAST row wins: ppSettle pushes a new row per settle and the card
+         paints the latest per key, so the latest is the cell on screen. */
+      for (var j = s.rows.length - 1; j >= 0; j--) {
+        var r = s.rows[j];
+        if (!r || String(r.pid || "") !== pid) continue;
+        if (!r.dnd || String(r.dnd) !== day) break;
+        var was = String(r.dn || "");
+        if (was.indexOf("unread:") !== 0 && was.indexOf("retrying:") !== 0) break;
+        r.dn = "read"; r.dnLive = 1; r.dnLiveAt = Date.now();
+        flips++;
+        break;
+      }
+    }
+    if (flips) _ni.cardFlips = Number(_ni.cardFlips || 0) + flips;
+    return flips;
+  }
+  /* ===== end lcd-1.0.0 (receipt -> card bridge) ===== */
   function niSurface() {
+    safe(niRestampCard); /* lcd-1.0.0: before the early return - a card can be open on a day this engine has no line for */
     var day = niDayOf();
     if (!day) return false;
     var c = niCensus(day);
@@ -7168,6 +7257,7 @@
       stopped: _ni.stopped === true, reading: _ni.reading === true,
       idleMs: niIdleMs(), idleThresholdMs: NI_IDLE_MS,
       reads: Number(_ni.reads || 0), ticks: Number(_ni.ticks || 0),
+      cardFlips: Number(_ni.cardFlips || 0), /* lcd-1.0.0: orange note cells this engine turned green on the open result card */
       lastCode: String(_ni.lastCode || ""), lastPlain: _ni.lastCode ? niPlain(_ni.lastCode) : "",
       lastAt: Number(_ni.lastAt || 0), timerKind: niTimerKind(),
       rows: _ni.rows.map(function (r) { return { patientId: r.p, day: r.d, attempts: Number(r.a || 0), code: String(r.c || ""), state: String(r.s || ""), nextAt: Number(r.n || 0) }; }) };
@@ -9728,6 +9818,7 @@
     _notesIdleTick: niTick,
     _notesIdleEnqueue: niEnqueue,
     _notesIdleSyncFromReceipt: niSyncFromReceipt,
+    _notesIdleRestampCard: niRestampCard, /* lcd-1.0.0 contract seam; the app reaches it through niSurface */
     _notesIdleGate: niGate,
     _notesIdleLine: niLine,
     _notesIdleFinalLine: niFinalLine,

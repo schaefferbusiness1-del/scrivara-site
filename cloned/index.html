@@ -3196,7 +3196,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <h2 aria-label="Patients" style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
-        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" title="Opens this patient’s chart in your signed-in Athena tab (read-only) and pulls their name, DOB and past visits into MLS.">📥 Pull from Athena</button>
+        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" aria-label="Pull the patient open in athena" title="Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena.">📥 Pull the patient open in athena</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, scheduling, and import cleanup">⋯ More</button>
         <span id="ptMore" style="display:none;flex-basis:100%;flex-wrap:wrap;gap:8px;margin-top:2px"><button class="btn-ghost" id="ptReceptionBtn" hidden disabled aria-disabled="true" style="display:none;font-size:14px;padding:9px 15px" title="Staff account provisioning is not released">👥 Receptionists unavailable</button>
         <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
@@ -3974,7 +3974,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <h2 aria-label="Visit history" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">📚</span> Visit history
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
-      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" title="Open this patient's chart in your Athena tab, then tap to import their problems, meds, allergies and history into MLS">📥 Pull chart from Athena</button><div id="pullChartStatus" style="display:none;font-size:12px;line-height:1.4;margin-top:6px"></div>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" aria-label="Pull this patient's chart" title="Reads the patient selected here in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.">📥 Pull this patient's chart</button><div id="pullChartStatus" style="display:none;font-size:12px;line-height:1.4;margin-top:6px"></div>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
       <button class="btn-ghost" id="histDedupeBtn" style="display:none;font-size:14px;padding:9px 15px;color:#a12c2c;border-color:#e8b7b7" onclick="cleanupDuplicateNotes(this)" title="Remove duplicate notes — same patient, same note, same day — keeping one of each">🧹 Remove duplicate notes</button>
@@ -15424,7 +15424,7 @@ function calApptPeek(id, ev){
     +(prov?'<div style="font-size:12.5px;margin-top:3px"><span style="color:#8a98a8">Provider:</span> '+esc(prov)+'</div>':'')
     +'<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">'
       +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#2E6A4B;color:#fff;border:0;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
-      +'<button onclick="calPullChartFor('+id+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📥 Pull chart</button>'
+      +'<button onclick="calPullChartFor('+id+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;min-height:40px">📥 Pull this patient&#39;s chart</button>'
       +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
       +'<button onclick="calDraftOpNoteFor('+id+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📝 Draft op note</button>'
     +'</div>';
@@ -15633,7 +15633,7 @@ function calApptInfo(id){
   if(a.status!=='checked_in' && a.status!=='completed' && a.status!=='cancelled'){ h+='<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#127a55;border-color:#bfe6cf;background:#eefaf3" onclick="calCheckIn('+id+')">✅ Check in</button>'; }
   h+='<button class="btn-green" style="font-size:12px;padding:6px 12px" onclick="calStartVisit('+id+')">🎙️ Start visit</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calOpenPatientFor('+id+')">👤 Open patient</button>';
-  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calPullChartFor('+id+')" title="Open this patient and import their chart/history from your Athena tab">📥 Pull chart</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;min-height:40px" onclick="calPullChartFor('+id+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" title="Reads this appointment&#39;s patient in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.">📥 Pull this patient&#39;s chart</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#a12c2c" onclick="calCancelAppt('+id+')">Cancel appt</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#fff;background:#c0392b;border-color:#c0392b" onclick="calDeleteAppt('+id+')">🗑 Delete</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calApptInfo('+id+')">Close</button>';
@@ -15644,14 +15644,20 @@ function calEditAppt(id){ return calApptInfo(id); } // back-compat alias
 /* From a calendar appointment: open that patient, then pull their Athena chart into MLS. */
 /* From a calendar appointment: auto-open THAT patient and pull their Athena chart —
    no need to manually select a patient first. */
-function calPullChartFor(id){
+/* pullverb-1.0.0: btn is forwarded so the control that was pressed shows its
+   own busy state (pullPatientChartViaAssist disables it and swaps its label).
+   Before this it was called with a hard-coded null and the doctor got a toast
+   and nothing at the button. The calendar PEEK removes its own popover below,
+   so that caller legitimately has no surviving control - the day-panel row
+   does, and passes `this`. */
+function calPullChartFor(id, btn){
   var a=((window._calAppts||(typeof _calAppts!=='undefined'?_calAppts:[]))||[]).find(function(x){ return String(x.id)===String(id); });
   if(!a){ try{ toast('Could not find that appointment.','err'); }catch(e){} return; }
   try{ var pk=document.getElementById('calApptPeek'); if(pk) pk.remove(); }catch(e){}
   var nm=(typeof _calLabelOf==='function'?_calLabelOf(a):'')||a.name||'';
   try{ toast('Opening '+(nm||'patient')+' and reading their Athena chart…',''); }catch(e){}
   // Resolve/create the patient + pull — pullPatientChartViaAssist sets them active for us.
-  try{ pullPatientChartViaAssist(null, { patientId:(a.patient_external_id||''), name:nm, dob:(a.dob||''), reason:(a.reason||'') }); }catch(e){}
+  try{ pullPatientChartViaAssist((btn&&btn.isConnected)?btn:null, { patientId:(a.patient_external_id||''), name:nm, dob:(a.dob||''), reason:(a.reason||'') }); }catch(e){}
 }
 // DEFECT 3 (calendar peek -> op note): draft THIS appointment's patient, never
 // whichever patient happens to be active elsewhere in the app. openOpPrepForPatient
@@ -19274,7 +19280,8 @@ function _renderProfUnpulledNotice(p){
       'Problems, medications and allergies below are empty because nothing has been read from Athena for '+who+
       ' — not because they were reviewed and found clear. Anything you type here is yours and is kept.'+
       '<button type="button" id="profUnpulledPull" class="btn-ghost" style="margin-left:10px;font-size:13px;padding:6px 12px" '+
-      'title="Open this patient&#39;s chart in your Athena tab, then import their problems, meds, allergies and history">📥 Pull chart from Athena</button>';
+      'aria-label="Pull this patient&#39;s chart" '+
+      'title="Reads the patient selected here in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.">📥 Pull this patient&#39;s chart</button>';
     if(!el){
       el=document.createElement('div'); el.id='profUnpulled';
       el.setAttribute('role','status');
@@ -36744,7 +36751,14 @@ function initTooltips(){
     _mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['title']});
   }catch(e){}
   function find(t){ var hops=0; while(t && t.nodeType===1 && t!==document.body && hops<6){ var tx=(t.getAttribute('data-tip')||t.getAttribute('title')); if(tx && tx.trim()) return [t,tx.trim()]; t=t.parentNode; hops++; } return null; }
-  function place(el){ var r=el.getBoundingClientRect(); var tw=tip.offsetWidth, th=tip.offsetHeight; var x=r.left+r.width/2-tw/2; var y=r.top-th-8; if(y<6) y=r.bottom+8; x=Math.max(6,Math.min(x,window.innerWidth-tw-6)); tip.style.left=Math.round(x)+'px'; tip.style.top=Math.round(y)+'px'; }
+  function place(el){ var r=el.getBoundingClientRect(); var tw=tip.offsetWidth, th=tip.offsetHeight; var x=r.left+r.width/2-tw/2; var y=r.top-th-8; if(y<6) y=r.bottom+8; x=Math.max(6,Math.min(x,window.innerWidth-tw-6));
+    /* pullverb-1.0.0: when there is no room above, this flipped the bubble to
+       r.bottom+8 and dropped it straight onto the patients search box (measured
+       360x820, scrolled: 227x16 = 3517px of the input covered). The bubble is
+       opaque, so the box under it is unreadable. __mlsTipAvoid re-picks a side
+       that covers no form control; it is a no-op when nothing is in the way. */
+    try{ if(typeof window.__mlsTipAvoid==='function'){ var q=window.__mlsTipAvoid(x,y,tw,th,r); if(q){ x=q.x; y=q.y; } } }catch(e){}
+    tip.style.left=Math.round(x)+'px'; tip.style.top=Math.round(y)+'px'; }
   var hoverTimer=null, hoverOwner=null;
   /* ph-tip-1.0.0: a long-press has JUST opened the tip, so the click that
      inevitably follows the press must not immediately close it again. */
@@ -37283,7 +37297,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes clone requests only. */
-  var CLONED_BUILD='cloned-20260819-r23';
+  var CLONED_BUILD='cloned-20260819-r24';
   window.__MLS_CLONED=Object.freeze({enabled:true,route:'/cloned/',build:CLONED_BUILD});
   window.__MLS_AV=CLONED_BUILD;
   var CRITICAL=[
@@ -52565,7 +52579,10 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
          __mlsChartField.read, which now delegates to the app's own
          pullPatientChartViaAssist, so it is the same engine and the same status
          line as the header button. */
-      acts += '<button type="button" class="hx-btn hx-go" data-hx-read="' + esc(record.key) + '">📥 Pull chart from Athena</button>';
+      /* pullverb-1.0.0: same verb as #pullChartBtn (the SELECTED patient), so
+         it carries the same name - never the toolbar chip's, which pulls
+         whoever is open in athena instead. */
+      acts += '<button type="button" class="hx-btn hx-go" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" data-hx-read="' + esc(record.key) + '">📥 Pull this patient&#39;s chart</button>';
     }
     acts += '</div>';
     return '<div class="hx-card" data-hx-key="' + esc(record.key) + '"' +
@@ -54268,6 +54285,317 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
 })();
 </script>
 <!-- ===== end pullone-1.0.0 ================================================ -->
+<!-- ===== pullverb-1.0.0 — two verbs, two names, and a bubble that never sits on the search box ==
+     Owner, 2026-08-19, from his own screenshot of the Patients screen: "this
+     pull from athena button thats going to pull the patient is messed up and
+     doesnt say what it really is fix that and also put that same button in
+     better places to."
+
+     MEASURED on this shell in the local harness before this block (no login, no
+     PHI, 28 synthetic names; tests/1p-pull-verb-truth-contract.test.js
+     reproduces every number):
+
+       1. TWO DIFFERENT VERBS WORE ONE NAME, AND IT WAS THE WRONG ONE.
+          #ptPullAthenaBtn read "Pull from Athena" and its tooltip read "Opens
+          THIS PATIENT'S chart in your signed-in Athena tab ... and pulls THEIR
+          name, DOB and past visits into MLS" - a description of the selected
+          patient's chart being fetched. Its handler does the opposite
+          direction: the inline onclick calls pullPatientFromAthenaPrompt, and
+          feat_athena_autopull.js:237-242 REPLACES that global with
+          `function (btn) { run(null); }`. run() sends mlsAppReadAllVisits,
+          reads the name+DOB out of WHOEVER IS OPEN in the athenaOne tab, and
+          find-or-CREATES an MLS patient from that identity
+          (feat_athena_autopull.js:176-217). Its own status text says so:
+          "Detecting the patient open in your athenaOne tab".
+          Meanwhile #pullChartBtn, #profUnpulledPull and #pvrPullOne - which
+          really do pull the SELECTED patient - all read "Pull chart from
+          Athena". Three controls, one name; and the odd one out, doing the
+          other verb entirely, was named the most like all of them.
+          The two verbs are now named apart and neither name is borrowed:
+            A  "Pull the patient open in athena"  -> whoever athena has open
+            B  "Pull this patient's chart"        -> the record selected here
+
+       2. THE NAME WAS 268 CHARACTERS LONG. feat_athena_clarity.js (a shared
+          production file, frozen to this lane) appends an always-visible
+          sub-label, a <br> and a READ-ONLY chip INSIDE the button, and then
+          sets title = label + " - " + sub. Measured accessible name at 1280:
+          "Pull from AthenaOpens this patient's chart ... into MLS.READ-ONLY"
+          plus the sentence a second time - 268 characters, with READ-ONLY
+          welded into the middle of it. A screen reader reads the whole essay
+          as the control's name. An explicit aria-label is now the name (an
+          aria-label beats descendant text), the READ-ONLY chip is marked
+          aria-hidden so it stays a VISIBLE affordance without being part of
+          the name, and clarity's sub-label sentence is corrected in place to
+          describe the verb the button actually performs. Nothing is removed
+          from the doctor's screen: the chip and the explanation both remain.
+
+       3. THE SUB-LABEL WAS 0x0 AT EVERY DESKTOP WIDTH. Measured with 28
+          patients: at 360 the sub renders 151x76; at 768/1024/1280/1440 it
+          measures 0x0 while the READ-ONLY chip stays visible. So on a desktop
+          the doctor saw "Pull from Athena" + "READ-ONLY" and no explanation at
+          all, while assistive tech still read all 268 characters. The sentence
+          is given a width it can occupy, so what is announced and what is
+          shown are the same thing.
+
+       4. THE BUBBLE SAT ON THE SEARCH BOX. initTooltips' place() puts the tip
+          above the control and, when there is no room above (y < 6), flips it
+          to r.bottom + 8 - which on the Patients screen is exactly where
+          #ptSearch is. Measured 360x820, scrolled so the toolbar is near the
+          top: tip 27,105 300x72 over input 19,162 235x52 = a 227x16 overlap,
+          3517px of the search box under an opaque bubble. #mlsTip is
+          z-index 2147483600 and the search row has no z-index at all, so no
+          stacking change can help - the bubble is simply in the wrong place.
+          __mlsTipAvoid re-picks a side that covers no form control.
+
+       5. NO BUSY STATE ON THE ONE CONTROL THAT NEEDED IT MOST. The autopull
+          wrapper takes `btn` and throws it away, so #ptPullAthenaBtn never
+          disabled and never changed while a 240-second read ran; its only
+          voice, #mlsAutoPullChip, is display:none !important
+          (feat_athena_ux_unify.js:108). Per the owner's site-wide rule the
+          control now shows its own busy state and releases it on the chip's
+          real terminal line, never on a timer alone.
+
+     PLACEMENT. The audit found the Patients screen already carrying THREE
+     visible pull controls; this block adds NO new control anywhere. It renames
+     what is there, which is the opposite of the duplicate-button disease r23
+     cured. The one-per-surface-per-verb count is asserted by the suite.
+
+     Additive and reversible: window.__mlsPullVerb.revert() restores every
+     byte this block wrote and unhooks the placement helper. No shared feat_*.js
+     is edited. -->
+<style id="mlsPullVerbCss">
+/* The explanation must be able to occupy the width it claims. Measured 0x0 at
+   every width at or above 768 before this rule. clarity's own rule sets
+   max-width:300px on this class, so this only restores a usable minimum. */
+html #ptPullAthenaBtn .mlsac-sub,
+html #pullChartBtn .mlsac-sub,
+html #profUnpulledPull .mlsac-sub{
+  display:block !important; width:auto !important; min-width:0 !important;
+  flex:1 1 100% !important; white-space:normal !important;
+}
+/* 40px tap floor on every pull control, and a calm busy state at the control. */
+html #ptPullAthenaBtn, html #pullChartBtn, html #profUnpulledPull, html #pvrPullOne{
+  min-height:40px;
+}
+html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsPullVerb && window.__mlsPullVerb.installed) return;
+  var VERSION = 'pullverb-1.0.0';
+  var off = false;
+
+  function byId(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function S(v) { return v == null ? '' : String(v); }
+
+  /* ------------------------------------------------------------ THE TWO VERBS
+     One name each. Neither name contains the other, so no doctor and no
+     contract can confuse them, and READ-ONLY is not part of either. */
+  var VERB_A_NAME = 'Pull the patient open in athena';
+  var VERB_A_SUB  = 'Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena.';
+  var VERB_B_NAME = "Pull this patient's chart";
+  var VERB_B_SUB  = 'Reads the patient selected here in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.';
+
+  /* id -> verb. Every entry is a control that ALREADY EXISTS; this block adds
+     none. #pvrPullOne is built by cloned-mls-connect.js and #profUnpulledPull by
+     renderProfile, so both are re-asserted rather than authored here. */
+  var TARGETS = [
+    { id: 'ptPullAthenaBtn', name: VERB_A_NAME, sub: VERB_A_SUB, icon: '📥', verb: 'open-in-athena' },
+    { id: 'pullChartBtn',    name: VERB_B_NAME, sub: VERB_B_SUB, icon: '📥', verb: 'this-patient' },
+    { id: 'profUnpulledPull',name: VERB_B_NAME, sub: VERB_B_SUB, icon: '📥', verb: 'this-patient' },
+    { id: 'pvrPullOne',      name: VERB_B_NAME, sub: VERB_B_SUB, icon: '📥', verb: 'this-patient' }
+  ];
+
+  /* Rewrite ONLY the first real text node, so clarity's appended sub-label,
+     <br> and READ-ONLY chip all survive untouched. Rebuilding textContent
+     would delete the affordance the owner asked to keep. */
+  function setLabelText(btn, text) {
+    var kids = btn.childNodes, i, n;
+    for (i = 0; i < kids.length; i++) {
+      n = kids[i];
+      if (n.nodeType === 3 && S(n.nodeValue).replace(/\s+/g, ' ').trim()) {
+        if (S(n.nodeValue) !== text) n.nodeValue = text;
+        return true;
+      }
+    }
+    /* no text node (a control built entirely from elements): prepend one */
+    try { btn.insertBefore(document.createTextNode(text), btn.firstChild); return true; } catch (e) { return false; }
+  }
+
+  function applyOne(t) {
+    var btn = byId(t.id);
+    if (!btn || off) return false;
+    var label = t.icon + ' ' + t.name;
+    /* NEVER FIGHT THE BUSY STATE. Measured while writing the contract suite:
+       startBusy() swaps the label to "… reading athena", the observer below
+       fired on that very mutation and put the idle name straight back - so the
+       control read as idle for the whole 240-second read. The busy label is
+       owned by startBusy until it releases. */
+    if (btn.getAttribute('aria-busy') !== 'true') setLabelText(btn, label);
+    /* THE NAME. An explicit aria-label wins over descendant text, which is the
+       only way to stop a 268-character weld without deleting the parts that
+       are welded in. */
+    if (btn.getAttribute('aria-label') !== t.name) btn.setAttribute('aria-label', t.name);
+    if (btn.getAttribute('data-mls-pullverb') !== t.verb) btn.setAttribute('data-mls-pullverb', t.verb);
+    /* THE EXPLANATION. clarity writes the wrong sentence for verb A and the
+       shell's tooltip converter reads title into data-tip; keep both honest. */
+    var sub = safe(function () { return btn.querySelector('.mlsac-sub'); }, null);
+    if (sub && S(sub.textContent) !== t.sub) sub.textContent = t.sub;
+    if (btn.getAttribute('data-tip') !== t.sub) btn.setAttribute('data-tip', t.sub);
+    if (btn.hasAttribute('title')) btn.removeAttribute('title');
+    /* THE AFFORDANCE STAYS, THE NAME LOSES IT. */
+    var tag = safe(function () { return btn.querySelector('.mlsac-tag'); }, null);
+    if (tag && tag.getAttribute('aria-hidden') !== 'true') tag.setAttribute('aria-hidden', 'true');
+    return true;
+  }
+
+  function applyAll() { if (off) return; for (var i = 0; i < TARGETS.length; i++) safe(function () { applyOne(TARGETS[i]); }); }
+
+  /* ------------------------------------------------- BUSY STATE AT THE CONTROL
+     Verb A's engine discards the button it is handed, so the control itself has
+     to say it is working. Released by the chip's own terminal line - a timer
+     alone would let a finished pull keep claiming it is running, and a stuck
+     one claim it finished. */
+  var busyBtn = null, busyLabel = '', busyObs = null, busyCap = null;
+  var TERMINAL = /^\s*(?:✓|✔|⚠|✅)/;
+  function clearBusy() {
+    if (busyCap) { clearTimeout(busyCap); busyCap = null; }
+    if (busyObs) { safe(function () { busyObs.disconnect(); }); busyObs = null; }
+    if (!busyBtn) return;
+    var b = busyBtn; busyBtn = null;
+    safe(function () {
+      b.disabled = false;
+      b.removeAttribute('aria-busy');
+      if (busyLabel) setLabelText(b, busyLabel);
+    });
+  }
+  function startBusy(btn) {
+    if (off || !btn || busyBtn) return;
+    busyBtn = btn;
+    busyLabel = '';
+    var kids = btn.childNodes;
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].nodeType === 3 && S(kids[i].nodeValue).replace(/\s+/g, ' ').trim()) { busyLabel = S(kids[i].nodeValue); break; }
+    }
+    safe(function () { btn.setAttribute('aria-busy', 'true'); setLabelText(btn, '… reading athena'); });
+    /* The chip is display:none but its TEXT still updates, which is what
+       pullone-1.0.0 mirrors. Read the same node for the terminal line. */
+    var chip = safe(function () { return document.querySelector('#mlsAutoPullChip'); }, null);
+    if (chip) {
+      busyObs = new MutationObserver(function () {
+        var t = S(chip.textContent).replace(/\s+/g, ' ').trim();
+        if (TERMINAL.test(t)) clearBusy();
+      });
+      safe(function () { busyObs.observe(chip, { childList: true, characterData: true, subtree: true }); });
+    }
+    /* A cap so a control can never be left disabled forever; longer than the
+       driver's own 240s read budget so it cannot pre-empt a real answer. */
+    busyCap = setTimeout(clearBusy, 250000);
+  }
+  function onClick(e) {
+    if (off) return;
+    var t = e && e.target;
+    for (var hops = 0; t && t !== document && hops < 6; hops++, t = t.parentNode) {
+      if (t.nodeType === 1 && t.id === 'ptPullAthenaBtn') { setTimeout(function () { safe(function () { startBusy(t); }); }, 0); return; }
+    }
+  }
+
+  /* ------------------------------------------- THE BUBBLE PICKS A CLEAR SIDE
+     Called from initTooltips' place(). Returns the first candidate position
+     that covers no visible form control; when every side collides it returns
+     the least-bad one, so this can only ever reduce the overlap. */
+  function formRects() {
+    var out = [];
+    var els = safe(function () { return document.querySelectorAll('input:not([type=hidden]),select,textarea'); }, []) || [];
+    for (var i = 0; i < els.length; i++) {
+      var e = els[i], r = safe(function () { return e.getBoundingClientRect(); }, null);
+      if (!r || r.width <= 0 || r.height <= 0) continue;
+      if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) continue;
+      var cs = safe(function () { return getComputedStyle(e); }, null);
+      if (cs && (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0')) continue;
+      out.push(r);
+    }
+    return out;
+  }
+  function areaOver(x, y, w, h, rects) {
+    var a = 0;
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      var ix = Math.max(0, Math.min(x + w, r.right) - Math.max(x, r.left));
+      var iy = Math.max(0, Math.min(y + h, r.bottom) - Math.max(y, r.top));
+      a += ix * iy;
+    }
+    return a;
+  }
+  function clampX(x, w) { return Math.max(6, Math.min(x, window.innerWidth - w - 6)); }
+  function clampY(y, h) { return Math.max(6, Math.min(y, window.innerHeight - h - 6)); }
+  function tipAvoid(x, y, tw, th, anchor) {
+    if (off || !anchor || !(tw > 0) || !(th > 0)) return { x: x, y: y };
+    var rects = formRects();
+    if (!rects.length) return { x: x, y: y };
+    var cx = clampX(anchor.left + anchor.width / 2 - tw / 2, tw);
+    var cands = [
+      { x: x, y: y },                                                   /* whatever place() chose */
+      { x: cx, y: clampY(anchor.top - th - 8, th) },                    /* above */
+      { x: clampX(anchor.right + 8, tw), y: clampY(anchor.top, th) },   /* right */
+      { x: clampX(anchor.left - tw - 8, tw), y: clampY(anchor.top, th) },/* left */
+      { x: cx, y: clampY(anchor.bottom + 8, th) }                       /* below, last resort */
+    ];
+    var best = null;
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      var a = areaOver(c.x, c.y, tw, th, rects);
+      if (a === 0) return c;
+      if (!best || a < best.a) best = { x: c.x, y: c.y, a: a };
+    }
+    return best ? { x: best.x, y: best.y } : { x: x, y: y };
+  }
+
+  /* --------------------------------------------------------------- INSTALL */
+  var mo = null, wired = false;
+  function arm() {
+    if (off) return;
+    applyAll();
+    if (!wired) { wired = true; safe(function () { document.addEventListener('click', onClick, true); }); }
+    if (!mo) {
+      var deb = null;
+      mo = new MutationObserver(function () {
+        if (deb) return;
+        /* setTimeout, never rAF: rAF never fires in a non-compositing tab and
+           the re-assert would silently never run there. */
+        deb = setTimeout(function () { deb = null; safe(applyAll); }, 120);
+      });
+      safe(function () { mo.observe(document.body, { childList: true, subtree: true }); });
+    }
+  }
+  window.__mlsTipAvoid = tipAvoid;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  /* The controls this block renames are created lazily - #pvrPullOne on the
+     profile render, #profUnpulledPull on a cold chart - so the re-assert is
+     permanent. Every call early-returns once the text already matches. */
+  var iv = setInterval(function () { safe(arm); }, 1200);
+
+  window.__mlsPullVerb = {
+    installed: true, version: VERSION,
+    names: { a: VERB_A_NAME, b: VERB_B_NAME }, subs: { a: VERB_A_SUB, b: VERB_B_SUB },
+    targets: TARGETS, applyAll: applyAll, tipAvoid: tipAvoid,
+    startBusy: startBusy, clearBusy: clearBusy,
+    isOff: function () { return off; },
+    revert: function () {
+      off = true;
+      safe(function () { clearInterval(iv); });
+      safe(function () { if (mo) mo.disconnect(); }); mo = null;
+      safe(function () { document.removeEventListener('click', onClick, true); }); wired = false;
+      clearBusy();
+      try { delete window.__mlsTipAvoid; } catch (e) { window.__mlsTipAvoid = null; }
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end pullverb-1.0.0 =============================================== -->
 <!-- ===== pshonest-1.0.0 — a checkmark must mean work that happened ========
      Owner, 2026-08-18, from his own screenshot of the progress widget:
 
