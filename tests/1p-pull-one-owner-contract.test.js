@@ -84,6 +84,19 @@ function statics() {
     /* the guard's DOB comparisons must go through the reader, not raw digits */
     ok(src.indexOf('_athenaHistoryDobSame(seenDob,target.dob)') > 0,
       `${shell}: the identity proof still compares raw DOB digits`);
+    /* EVERY cross-patient sentence this shell can render must name the action
+       that works and none may point at the in-athena green panel. */
+    ok(src.indexOf('did not return matching DOB/MRN proof') < 0,
+      `${shell}: the mismatch message still names a mechanism instead of the next step`);
+    ok(src.indexOf('or select (or add) that same patient here, then pull again') > 0,
+      `${shell}: the mismatch message no longer carries the advice that works`);
+    /* The phrase is allowed exactly once more, inside pullone-1.0.0 itself,
+       where it is the matcher this lane rewrites AWAY. Anywhere else in the
+       shell it would be a message the doctor can actually be shown. */
+    const outside = src.slice(0, src.indexOf('<!-- ===== pullone-1.0.0')) +
+                    src.slice(src.indexOf('<!-- ===== end pullone-1.0.0'));
+    ok(outside.indexOf('green MLS panel') < 0, `${shell}: a shell message advertises the dead in-athena panel`);
+    ok(outside.indexOf('Pull history') < 0, `${shell}: a shell message still names the dead in-athena control`);
   }
 
   /* THE TWINS */

@@ -23625,7 +23625,13 @@ function _assistReadChart(patientRef, onStatus){
         /* idread-1.0.0: the same date in two spellings is one date. */
         proofOk=!!seenName&&_athenaHistoryNameCompatible(seenName,target.name)&&!!wantDob&&_athenaHistoryDobSame(observed.chartDob,target.dob)&&(!wantId||(!!seenId&&seenId===wantId));
       }else proofOk=_athenaHistoryProofMatches(target,observed);
-      if(!proofOk){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
+      /* pullone-1.0.0: the stop is unchanged; the sentence now says what the
+         doctor can do about it. "Did not return matching DOB/MRN proof" named a
+         mechanism, and the other cross-patient message in this app pointed at an
+         in-athena green panel that mounts nowhere on athenaOne v26.7 ax views.
+         Both causes - a different chart open, and a chart whose banner did not
+         render - are covered honestly by one instruction. */
+      if(!proofOk){ reject(new Error('The chart open in athenaOne did not prove it is this patient — its name, date of birth or MRN did not match, so MLS stopped and charts can never mix. Open that patient’s chart in athenaOne, or select (or add) that same patient here, then pull again. Nothing was saved.')); return; }
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
       var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000&&Number(rawReceipt.capturedAt||0)<=deadlineAt);
       var receiptFrames=!!(rawReceipt&&Number(rawReceipt.expectedClinicalFrames||0)>=1&&Number(rawReceipt.readClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.boundClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.unboundClinicalFrames||0)===0&&Number(rawReceipt.oversizeClinicalFrames||0)===0&&Number(rawReceipt.unreadFrames||0)===0&&Number(rawReceipt.omittedForCap||0)===0);
@@ -23820,7 +23826,8 @@ async function pullPatientChartViaAssist(btn, opts){
       if(btn){ btn.disabled=false; btn.innerHTML=orig; } releaseDirect(); return false;
     }
     var saveRef=_athenaHistoryVerifiedRef(pullTarget,rd);
-    if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient changed or could not be re-verified before save, so the history was discarded. Nothing was saved.');
+    /* pullone-1.0.0: same stop, actionable words. */
+    if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient could not be re-verified against the chart just read, so nothing was saved. Check that the same patient is selected here and open in athenaOne, then pull again.');
     try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
     say('✅ Saved '+pullTarget.name+'’s Athena history to their MLS chart — it’s on your account now.','ok','step 3 of 3');
