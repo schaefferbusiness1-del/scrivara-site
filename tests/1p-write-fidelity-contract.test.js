@@ -366,9 +366,24 @@ function probeReply(requestId, over) {
     ok(noteRow2.payload.noteText === noteRow1.payload.noteText,
       'the sections route and the op-note plan route must stage the SAME bytes');
 
-    /* the op-note send path in the shell really does build that exact prefix */
+    /* THE WHOLE OP-NOTE CHAIN, link by link, in the shell that ships it.
+       The textarea IS row.note (opPrepRender binds it both ways), so these four
+       links are the entire distance from what the doctor reads to what MLS
+       stages. Any one of them copying, trimming or re-wrapping the text would
+       break byte fidelity, and none of them may. */
+    ok(/ex\.text=note;/.test(shell),
+      'opPrepSave must store the drafted note verbatim when updating a record');
+    ok(/text:note,\s*kind:'opnote'/.test(shell),
+      'opPrepSave must store the drafted note verbatim when creating a record');
+    ok(/var bundle=String\(n\.text\|\|n\.soap\|\|''\);/.test(shell),
+      'pushHistoryNoteToAthena must read the record text verbatim');
     ok(shell.indexOf("var plan=[{kind:'note', body:'NOTE TEXT:\\n'+bundle}]") > 0,
       'pushHistoryNoteToAthena must still ship the note body under the NOTE TEXT prefix');
+    /* and the room's one-press send runs save THEN push, and only pushes a
+       record it can actually see filed */
+    ok(/🚀 Save & send to Athena/.test(shell), 'the op-note room must offer a one-press save-and-send');
+    ok(/var rec2 = filedRecord\(rows\(\)\[sel\]\);\s*\n\s*if \(!rec2\) return;/.test(shell),
+      'the op-note send must verify the save landed as a NON-DRAFT record before pushing');
     /* execute the fork's real stripper, never a re-typed copy of it */
     const stripper = /^\s*NOTE TEXT\s*:\s*/i;
     ok(src.indexOf(String(stripper).slice(1, -2)) > 0, 'the stripper regex in the fork must be the one this suite executes');
