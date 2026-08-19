@@ -78,6 +78,7 @@ const tests = [
      birthday spelled two ways and a banner name with no separators, and ONE
      pull control that says what it is doing and lands on the chart it pulled. */
   '1p-pull-one-owner-contract.test.js',
+  '1p-pull-verb-truth-contract.test.js',
   '1p-histview-contract.test.js',
   /* Op Notes rebuilt around ONE mental model (owner 2026-08-17: "more simple
      and intuitive... ALWAYS start on all scheduled patients", then "I HATE

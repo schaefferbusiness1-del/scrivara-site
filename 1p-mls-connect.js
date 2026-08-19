@@ -20786,7 +20786,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ? '<button type="button" class="ez3-vchip ok ez3-vopen" id="ez3HistOpen" title="Show the saved visit history for this patient"><span>' + h2.html + '</span></button>'
       : '<div class="ez3-vchip ' + h2.cls + '"><span>' + h2.html + '</span>' +
         (h2.action === 'hist' && S.appt && S.appt.id != null && isFn(window.calPullChartFor)
-          ? '<button type="button" class="ez3-vbtn" id="ez3HistPull">Pull chart</button>' : '') + '</div>');
+          /* pullverb-1.0.0: the Visit room's verb-B control. It pulls the
+             SELECTED patient (calPullChartFor -> pullPatientChartViaAssist),
+             so it carries verb B's one name - "Pull chart" read like the
+             Patients toolbar chip, which pulls whoever is open in athena. This
+             room already had this control; none was added. */
+          ? '<button type="button" class="ez3-vbtn" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" id="ez3HistPull">Pull this patient&#39;s chart</button>' : '') + '</div>');
     return out + '</div>';
   }
   /* #41 (owner: "when I click pull chart here it should work and also give a
@@ -51516,8 +51521,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }, function () { one.disabled = false; one.textContent = was; });
         });
       }
-      one.textContent = '📥 Pull chart from Athena';
-      one.title = 'Reads this patient’s chart in your signed-in athenaOne tab and fills the empty sections above.';
+      /* pullverb-1.0.0: this verb pulls the patient SELECTED HERE. The Patients
+         toolbar's #ptPullAthenaBtn pulls whoever is OPEN IN ATHENA - a
+         different verb - and both used to read "Pull ... from Athena". */
+      one.textContent = "📥 Pull this patient's chart";
+      one.setAttribute('aria-label', "Pull this patient's chart");
+      one.title = 'Reads the patient selected here in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.';
       if (one.parentElement !== q.parentElement || one.previousSibling !== q) {
         if (q.nextSibling) q.parentElement.insertBefore(one, q.nextSibling); else q.parentElement.appendChild(one);
       }
