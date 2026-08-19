@@ -79,6 +79,11 @@ const tests = [
      pull control that says what it is doing and lands on the chart it pulled. */
   '1p-pull-one-owner-contract.test.js',
   '1p-pull-verb-truth-contract.test.js',
+  /* The hover explainer clipped off the bottom of the screen mid-sentence
+     (owner screenshot 2026-08-19): place() never clamped Y and tipAvoid's
+     candidate 0 passed the raw pick through. Executes the real code from all
+     three shells with a fix-removed causal control. */
+  '1p-tip-viewport-containment.test.js',
   '1p-histview-contract.test.js',
   /* Op Notes rebuilt around ONE mental model (owner 2026-08-17: "more simple
      and intuitive... ALWAYS start on all scheduled patients", then "I HATE

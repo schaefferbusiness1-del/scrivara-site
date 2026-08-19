@@ -36738,6 +36738,10 @@ function initTooltips(){
   }catch(e){}
   function find(t){ var hops=0; while(t && t.nodeType===1 && t!==document.body && hops<6){ var tx=(t.getAttribute('data-tip')||t.getAttribute('title')); if(tx && tx.trim()) return [t,tx.trim()]; t=t.parentNode; hops++; } return null; }
   function place(el){ var r=el.getBoundingClientRect(); var tw=tip.offsetWidth, th=tip.offsetHeight; var x=r.left+r.width/2-tw/2; var y=r.top-th-8; if(y<6) y=r.bottom+8; x=Math.max(6,Math.min(x,window.innerWidth-tw-6));
+    /* x was clamped to the viewport but y never was: an anchor near the bottom
+       of the window rendered the bubble half off-screen (owner screenshot
+       2026-08-19, the pull button's explainer clipped mid-sentence). */
+    y=Math.max(6,Math.min(y,window.innerHeight-th-6));
     /* pullverb-1.0.0: when there is no room above, this flipped the bubble to
        r.bottom+8 and dropped it straight onto the patients search box (measured
        360x820, scrolled: 227x16 = 3517px of the input covered). The bubble is
@@ -54523,7 +54527,7 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
     if (!rects.length) return { x: x, y: y };
     var cx = clampX(anchor.left + anchor.width / 2 - tw / 2, tw);
     var cands = [
-      { x: x, y: y },                                                   /* whatever place() chose */
+      { x: clampX(x, tw), y: clampY(y, th) },                            /* place()'s pick, kept on-screen */
       { x: cx, y: clampY(anchor.top - th - 8, th) },                    /* above */
       { x: clampX(anchor.right + 8, tw), y: clampY(anchor.top, th) },   /* right */
       { x: clampX(anchor.left - tw - 8, tw), y: clampY(anchor.top, th) },/* left */
