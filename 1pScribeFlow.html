@@ -286,6 +286,17 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <script src="vendor_qrcode.js?v=b430"></script>
+<!-- ===== navgesture-1.0.0 — "has a human touched this page yet?" ============
+     One timestamp, armed at parse time, read by the tab-memory restore in
+     1p-mls-connect.js (tabmem-standdown-1.0.0). That restore fires 800ms after
+     the load event and used to overwrite the tab the doctor had just pressed —
+     measured: a real click on #nav_calendar at +976ms was reversed at +1298ms.
+     The restore needs to know whether a human has acted, and it loads far too
+     late to see a press that happened during boot, so the flag is set HERE.
+     Listeners are capture-phase and passive; they set one number and nothing
+     else, so no view, control or handler anywhere can be affected by them. -->
+<script>(function(){try{if(window.__mlsUserActedArmed)return;window.__mlsUserActedArmed=1;var m=function(e){try{if(!e||e.isTrusted===false)return;if(!window.__mlsUserActed)window.__mlsUserActed=Date.now();}catch(x){}};['pointerdown','mousedown','touchstart','keydown'].forEach(function(t){try{document.addEventListener(t,m,{capture:true,passive:true});}catch(x){try{document.addEventListener(t,m,true);}catch(y){}}});}catch(e){}})();</script>
+<!-- ===== end navgesture-1.0.0 ========================================== -->
 <script>(function(){var p=window.__MLS_PUBLIC_PREVIEW;if(p&&p.enabled===true)return;try{var l=document.createElement('link');l.rel='preconnect';l.href='https://scrivara-backend.onrender.com';l.crossOrigin='anonymous';document.head.appendChild(l);}catch(e){}if('serviceWorker' in navigator){window.addEventListener('load',function(){Promise.reject(new Error('1p preview: service worker deliberately not registered')).catch(function(){});});var reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(reloaded)return;reloaded=true;location.reload();});}})();</script>
 <style>/* fonts.css inlined (b392): removes the only render-blocking request; url()s rebased to fonts/ — the standalone fonts/fonts.css stays for all other pages. */
 /* vietnamese */

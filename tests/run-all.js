@@ -117,6 +117,14 @@ const tests = [
      with the automatic post-pull jump that causes the last one proved live
      before it is proved stopped. */
   '1p-calendar-pull-surface.test.js',
+  /* "The calendar is broken" — the view-bounce, root-caused. The session
+     tab-memory restored the remembered tab 800ms after load, guarded only by
+     "the remembered tab is not the one on screen", which is TRUE exactly when
+     the doctor has just navigated. Measured: a press that reached Calendar at
+     +1096ms was reversed at +1298ms. navgesture-1.0.0 (both shells) +
+     tabmem-standdown-1.0.0 (connect) stand the restore down; this pins the
+     stand-down AND the restore it must not delete. */
+  '1p-calendar-view-bounce.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */

@@ -44829,19 +44829,61 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     recordIv = setInterval(function(){ var v = currentView(); if (v && v !== last){ last = v; store(v); } }, 1000);
   }
 
+  /* ===== tabmem-standdown-1.0.0 - THE REMEMBERED TAB LOSES TO THE LIVE ONE ===
+     THE MEASURED DEFECT (the owner's "calendar is broken", the view-bounce).
+     restore() fires 800ms after the load event, and its only guard was
+     `saved !== currentView()` - which is TRUE precisely when the doctor has
+     just navigated somewhere else. So a doctor who pressed Calendar while the
+     app was still settling was silently thrown back to the remembered tab a
+     fraction of a second later. MEASURED in the local harness, 3 runs of 3 and
+     a 4-case control (scratch p6/p7): saved=visit, a real click on #nav_calendar
+     at +976ms put .navtab.on=calendar at +1096ms, and restore put it back to
+     visit at +1298ms - 202ms after the press, and the doctor stayed on Visit for
+     the remaining 3s of the trace. On a real signed-in boot the load event is
+     later, which is why it was reported as a bounce about three seconds in.
+
+     THE RULE: route memory only places you where nothing else has. The moment a
+     human touches the app, memory has lost its claim. Two independent stand-down
+     signals, because one alone has a hole:
+       - a trusted user gesture ANYWHERE since the page began (navgesture-1.0.0
+         in the shell arms this at parse time, so a press BEFORE this file even
+         loads is still seen);
+       - the active tab moved between arming and restoring (covers programmatic
+         routes - a deep link, datalink's post-pull focusCalDay - that arrive in
+         the same window).
+     Restoring is still the default: with no gesture and no movement it behaves
+     exactly as before. Measured control (scratch p7): saved=calendar with no
+     press still restores patients->calendar at +1330ms. */
+  var armView = currentView();
+  function userActed(){
+    return safe(function(){ return !!window.__mlsUserActed; }, false);
+  }
+  function standDownReason(){
+    if (userActed()) return 'the doctor has already used the app';
+    var now = currentView();
+    if (now && armView && now !== armView) return 'the view moved to ' + now + ' on its own';
+    return '';
+  }
+
   // RESTORE once on load, after the app's own initial showView() has run.
-  var done = false;
+  var done = false, standDown = '';
   function restore(){
     if (done) return; done = true;
-    if (saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
+    standDown = standDownReason();
+    if (!standDown && saved && VIEWS[saved] && saved !== currentView() && typeof window.showView === 'function') {
       safe(function(){ window.showView(saved); });
     }
-    setTimeout(startRecording, 200); // begin recording only after the restore settles
+    /* A stood-down restore must not throw away the tab the doctor chose: start
+       recording at once so the tab they are actually on is what gets saved. */
+    setTimeout(startRecording, standDown ? 0 : 200);
   }
   if (document.readyState === 'complete') setTimeout(restore, 800);
   else window.addEventListener('load', function(){ setTimeout(restore, 800); });
 
-  window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY };
+  window.__mlsTabMemory = { _current: currentView, _restore: restore, _key: KEY,
+    _armView: function(){ return armView; }, _standDown: function(){ return standDown; },
+    _userActed: userActed };
+  /* ===== end tabmem-standdown-1.0.0 ===================================== */
 })();
 
 /* ===== MLS premium-feature logo badges (additive, isolated IIFE) ===== */
