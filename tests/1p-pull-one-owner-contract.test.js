@@ -415,7 +415,10 @@ async function runtime() {
     eq(strip.perChip, 0, `${strip.perChip} per-field Read-from-Athena buttons still render on one cold chart`);
     eq(strip.one, true, 'the one whole-chart pull control is missing from the strip');
     eq(strip.oneVisible, true, 'the one pull control is on the page but not visible');
-    ok(strip.oneText.indexOf('Pull chart from Athena') >= 0, `the one control says ${JSON.stringify(strip.oneText)}`);
+    /* Pin moved 2026-08-19 with t9pullbutton's deliberate rename: the control's
+       name states its real verb ("this patient's chart", VERB B) so it can never
+       be confused with pull-whoever-is-open (VERB A). */
+    ok(strip.oneText.indexOf("Pull this patient's chart") >= 0, `the one control says ${JSON.stringify(strip.oneText)}`);
 
     /* -- 5. THE BUTTON SPEAKS, WITH ITS CONTROL --------------------------- */
     await page.evaluate(() => window.__t1.pressPtPull());
