@@ -50884,6 +50884,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function activeP() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
   api.enabled = enabled;
   api.setEnabled = setEnabled;
+  /* spv-1.0.0 seam: the one honest account of what a single pull did about
+     visits. Read-only; the leg itself is exposed for suites. */
+  api.visitReceipt = function () { try { return window.__mlsSinglePullVisits || null; } catch (e) { return null; } };
+  api._spv = { visitLeg: function (p, target) { return spvVisitLeg(p, target); }, count: function (p) { return spvVisitCount(p); } };
   api.runForPatient = function (p, onStatus, runOpts) {
     runOpts = runOpts && typeof runOpts === 'object' ? runOpts : null;
     /* 2026-07-28: a DAY-SCOPED read (runOpts.onlyDate) is the fast lane's own
@@ -50913,6 +50917,103 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (old && old.parentElement) { try { old.parentElement.removeChild(old); } catch (eRm) {} }
     } catch (e) {}
   }
+  /* ===== spv-1.0.0 (2026-08-19) — A SINGLE PULL MUST ACCOUNT FOR VISITS =====
+     Measured live on patient 7618711: a single-patient pull landed chart facts
+     (meds, allergies, problems) and one "Athena chart import" encounter, said
+     "Saved X's Athena history to their MLS chart", and TWENTY MINUTES LATER the
+     patient still had zero visits.
+
+     The visit leg had three silent exits and no receipt on any of them:
+       - the "pull full visit notes" preference was off  -> return, say nothing;
+       - the patient record could not be resolved        -> return, say nothing;
+       - the reader returned nothing (cv.run resolves    -> resolved value
+         undefined when busy or unresolved)                 thrown away.
+     All three are indistinguishable from success to the doctor, because the
+     success line had already been printed by the engine and nothing ever
+     revisited it.
+
+     Worse, the b121 visits-backfill can never rescue a single pull: it is
+     edge-triggered on __mlsDayHistoryPull.state.running going true->false,
+     which ONLY the day engines set. A single pull produces no edge, so it is
+     never enqueued — which is why the observed skip reasons were always
+     'all-already-have-visits' / 'pull-returned-no-patients' from day pulls.
+
+     This block does not weaken the preference and does not invent visits. It
+     MEASURES: count before, attempt, count after, and publish one honest
+     receipt at window.__mlsSinglePullVisits that the status line reads. When
+     the read lands nothing and the preference allows it, the patient is
+     explicitly ENQUEUED with the backfill's own runOnce() — the queue a single
+     pull could never reach on its own — and the receipt says "queued", never
+     "saved".
+     ======================================================================== */
+  function spvVisitCount(p) {
+    try {
+      var vm2 = window.__mlsVisitModel;
+      if (vm2 && typeof vm2.getVisits === 'function') return (vm2.getVisits(p) || []).length;
+    } catch (e) {}
+    try { return (p && Array.isArray(p.visits)) ? p.visits.length : 0; } catch (e2) { return 0; }
+  }
+  function spvFresh(id) {
+    try {
+      var ps = (typeof window.getPatients === 'function' ? (window.getPatients() || []) : []);
+      return ps.filter(function (x) { return x && String(x.id || '') === String(id); })[0] || null;
+    } catch (e) { return null; }
+  }
+  function spvPublish(receipt) {
+    try { window.__mlsSinglePullVisits = receipt; } catch (e) {}
+    try { if (receipt && receipt.message) toast(receipt.message, receipt.ok ? 'ok' : ''); } catch (e2) {}
+    return receipt;
+  }
+  /* Enqueue the one patient the falling-edge watcher will never see. */
+  function spvEnqueue(p) {
+    try {
+      var bf = window.__mlsVisitsBackfill;
+      if (!bf || typeof bf.runOnce !== 'function') return false;
+      bf.runOnce([{ name: String(p.name || ''), dob: String(p.dob || ''), athenaId: String(p.athenaId || p.mrn || '') }], { force: true });
+      return true;
+    } catch (e) { return false; }
+  }
+  function spvVisitLeg(p, target) {
+    var who = String((p && p.name) || (target && target.name) || 'this patient');
+    if (!p) {
+      return Promise.resolve(spvPublish({ at: Date.now(), ok: false, reason: 'patient-not-resolved', visitsBefore: 0, visitsAfter: 0, added: 0,
+        message: 'Chart facts were saved, but MLS could not match them to a patient record here, so no prior visit notes were read. Nothing was faked.' }));
+    }
+    var importedOk = false;
+    try { importedOk = typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(target); } catch (e) {}
+    var before = spvVisitCount(p);
+    if (!importedOk) {
+      return Promise.resolve(spvPublish({ at: Date.now(), ok: false, reason: 'chart-import-not-verified', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: before, added: 0,
+        message: 'MLS could not verify this chart import against ' + who + '’s record, so it did not read their prior visits. Nothing was faked.' }));
+    }
+    /* The preference governs the FULL every-visit read, and it is the doctor's
+       to set. It does not license a false success line. */
+    if (!enabled()) {
+      return Promise.resolve(spvPublish({ at: Date.now(), ok: false, reason: 'preference-off', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: before, added: 0,
+        message: 'Saved ' + who + '’s chart facts. Prior visit notes were NOT read — "Pull full visit notes" is off in Settings. Turn it on and pull again to bring their visit history in.' }));
+    }
+    return api.runForPatient(p, function (m) { if (m) toast(m, ''); }).then(function (res) {
+      var fresh = spvFresh(p.id) || p, after = spvVisitCount(fresh), added = Math.max(0, after - before);
+      if (added > 0) {
+        return spvPublish({ at: Date.now(), ok: true, reason: 'read', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: after, added: added,
+          message: 'Saved ' + who + '’s chart facts and ' + added + ' prior visit note' + (added === 1 ? '' : 's') + ' from Athena.' });
+      }
+      if (after > 0) {
+        return spvPublish({ at: Date.now(), ok: true, reason: 'already-present', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: after, added: 0,
+          message: 'Saved ' + who + '’s chart facts. No new visit notes arrived — their ' + after + ' existing visit note' + (after === 1 ? ' was' : 's were') + ' already here.' });
+      }
+      var queued = spvEnqueue(p);
+      return spvPublish({ at: Date.now(), ok: false, reason: (res && res.reason) || 'no-visits-returned', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: after, added: 0, queued: queued,
+        message: 'Saved ' + who + '’s chart facts, but NO prior visit notes came back' +
+          (queued ? ' — their visit history is queued for a retry and will appear when it lands.' : '. Their visit history is still missing; keep athenaOne open on their chart and pull again.') });
+    }, function (e) {
+      var queued = spvEnqueue(p);
+      return spvPublish({ at: Date.now(), ok: false, reason: 'reader-failed', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: before, added: 0, queued: queued,
+        error: String((e && e.message) || e).slice(0, 120),
+        message: 'Saved ' + who + '’s chart facts, but the visit-history read failed' + (queued ? ' — it is queued for a retry.' : '. Their prior visit notes are still missing.') });
+    });
+  }
+  /* ===== end spv-1.0.0 ==================================================== */
   var wrapped = false, origSingle = null;
   function wrapSinglePull() {
     if (wrapped || typeof window.pullPatientChartViaAssist !== 'function') return;
@@ -50933,8 +51034,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return Promise.resolve(origSingle.apply(self, args)).then(function (r) {
         if(r!==true||!target)return r;
         var ps=(typeof window.getPatients==='function'?(window.getPatients()||[]):[]),p=ps.filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
-        if (!enabled() || !p || !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(target))) return r;
-        return api.runForPatient(p, function (m) { if (m) toast(m, ''); }).then(function () { return r; });
+        return spvVisitLeg(p, target).then(function () { return r; }, function () { return r; });
       });
     };
     w.__mlsFullVisitPref = true;

@@ -23854,7 +23854,16 @@ async function pullPatientChartViaAssist(btn, opts){
     if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient could not be re-verified against the chart just read, so nothing was saved. Check that the same patient is selected here and open in athenaOne, then pull again.');
     try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
-    say('✅ Saved '+pullTarget.name+'’s Athena history to their MLS chart — it’s on your account now.','ok','step 3 of 3');
+    /* spv-1.0.0 (2026-08-19): this line used to say "Saved X's Athena history",
+       which a doctor reads as "their prior visit notes are here". They are not:
+       everything above this point reads CHART FACTS (problems, meds, allergies,
+       summary, vitals, the history object) and files ONE 'Athena chart import'
+       encounter. The visit-note read is a separate leg that runs after this
+       function returns and can legitimately land nothing. Measured live on
+       patient 7618711: this line printed and the patient still had zero visits
+       twenty minutes later. Say exactly what was saved; the visit leg publishes
+       its own verdict at window.__mlsSinglePullVisits and says it out loud. */
+    say('✅ Saved '+pullTarget.name+'’s Athena chart facts — problems, medications, allergies and history. Checking for their prior visit notes…','ok','step 3 of 3');
     if(btn){ btn.disabled=false; btn.innerHTML=orig; }
     releaseDirect(); return true;
   }catch(err){
