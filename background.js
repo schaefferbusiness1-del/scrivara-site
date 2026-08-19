@@ -8935,7 +8935,20 @@ function kaFrameTouch() {
     try { if (document.body) document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 3, clientY: 3 })); } catch (e3) {}
     var hit = null;
     try {
-      var hosts = document.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"],.lightbox,.modal,.dialog,.popup');
+      /* ka-2 (3.0.68): collect dialog hosts through SHADOW ROOTS too - the v1
+         light-DOM query missed athena's shadow-rendered expiry dialog, so the
+         session died with the backstop blind (owner-reported logouts,
+         2026-08-19). Bounded walk, same class as the cap-3065 reader. */
+      var hosts = [];
+      (function kaColl(root, depth) {
+        if (depth > 24 || hosts.length > 40) return;
+        try {
+          var found = root.querySelectorAll ? root.querySelectorAll('dialog,[role="dialog"],[role="alertdialog"],.lightbox,.modal,.dialog,.popup') : [];
+          for (var fi = 0; fi < found.length && hosts.length <= 40; fi++) hosts.push(found[fi]);
+          var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+          for (var ai = 0; ai < all.length; ai++) { var el0 = all[ai]; if (el0.shadowRoot) kaColl(el0.shadowRoot, depth + 1); }
+        } catch (eW) {}
+      })(document, 0);
       for (var h = 0; h < hosts.length && !hit; h++) {
         var host = hosts[h];
         var tx = String(host.textContent || '').slice(0, 600);
