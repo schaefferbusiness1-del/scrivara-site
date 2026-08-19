@@ -575,7 +575,9 @@ async function runtime() {
     ok(/Index only — full note not read yet/.test(indexCard.text),
       `the index-only card does not say so in plain words: "${indexCard.text.slice(0, 90)}"`);
     eq(indexCard.read, true, 'the index-only card offers no way to read the note');
-    ok(/Read from Athena/.test(indexCard.text), 'the index-only action is not named');
+    /* pullone-1.0.0 (2026-08-18): one verb for every pull on the chart, so this
+       card says the same thing the header button and the strip control say. */
+    ok(/Pull chart from Athena/.test(indexCard.text), 'the index-only action is not named');
 
     /* -- 4. THE JUNK IS NEVER DUMPED ------------------------------------ */
     const junkRoom = await page.evaluate(() => window.__hx.junkInRoom());
