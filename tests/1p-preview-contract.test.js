@@ -113,7 +113,7 @@ const P1_CONFIG_RELEASE_SUBS = [
    Fields box static; cloned r14) + junkscrub-1.0.0 (cloned r15) + opnote-day-3.0.1 rail Templates button (cloned r16)
    + awb-1.0.0 (booking-row appointment-id fallback in the writeflow fork; cloned r17). Extension/production
    baselines stay at the 3.0.64 release commit. */
-const P1_BASE_COMMIT = '921aa64b884a8a3b39ec242304e8177498ff9dbb'; /* final train + calm fallback + idask (r22) */ /* final train: nih/srr/wdoc/pcs/oprtop + calendar polish (fdw/calmreceipt/calmbar/calday) + dr-1.2.0 day-switch draft binding + r21 derive. Extension/production baselines unchanged. */
+const P1_BASE_COMMIT = '8fc8eaa94ea4f6d7fe840050afd9ab45d777f15f'; /* r23 train: seven territory lanes (t1 idread/pullone, t2 settings redesign, t3 pshonest/backfill/pullzero, t4 opnote home+reach, t5 tab-standdown/staffjobsync, t6 legal epoch/readstop/taps, t7 phone send staging) + r23 derive */ /* final train: nih/srr/wdoc/pcs/oprtop + calendar polish (fdw/calmreceipt/calmbar/calday) + dr-1.2.0 day-switch draft binding + r21 derive. Extension/production baselines unchanged. */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
