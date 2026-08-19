@@ -119,6 +119,20 @@ for (const rel of SHELLS) {
   }
 }
 
+/* a check that finishes says what it found */
+{
+  const a = MC.indexOf('/* ===== apicheck-says-1.0.0');
+  const b = MC.indexOf('/* ===== end apicheck-says-1.0.0');
+  ok(a >= 0 && b > a, '1p-mls-connect.js: the apicheck-says-1.0.0 block is missing or unclosed');
+  const block = MC.slice(a, b);
+  /* THE DEFECT WAS THE SUCCESS BRANCH, not the failure one: it cleared the
+     note, and updateAthenaStatus RESOLVES on failure too. */
+  ok(!/then\(function \(\) \{ athenaApiPrepNote = ''; render\(\); \}/.test(block),
+    'the Athena check still clears its own note when it finishes, so it reports nothing');
+  ok(/st\.connected/.test(block), 'the Athena check does not read the state it was handed');
+  ok(/Not connected — /.test(block), 'the Athena check has no wording for a check that came back negative');
+}
+
 /* the painter is published, and it adopts before it paints */
 {
   const a = MC.indexOf('/* ===== ez3repaint-1.0.0');
@@ -337,11 +351,15 @@ async function runtime() {
       const out = [];
       for (const n of nodes) {
         const id = n.id || (n.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 26);
-        const before = document.body.innerHTML.length;
+        /* Compare the markup ITSELF, not its length. A length delta calls a
+           press silent whenever the page happens to shrink somewhere else by
+           as much as it grew — measured: "✕ Close" hides the day panel, and a
+           concurrent repaint made the two cancel out exactly. */
+        const before = document.body.innerHTML;
         let err = '';
         try { n.click(); } catch (e) { err = String(e.message); }
         await sleep(420);
-        out.push({ id, d: Math.abs(document.body.innerHTML.length - before), err,
+        out.push({ id, d: document.body.innerHTML !== before ? 1 : 0, err,
           disabled: !!n.disabled || n.getAttribute('aria-disabled') === 'true' });
         try { document.querySelectorAll('.modal-bg.show').forEach((m) => m.classList.remove('show')); } catch (e) {}
         try { const p = document.getElementById('calApptPeek'); if (p) p.remove(); } catch (e) {}
@@ -446,6 +464,29 @@ async function runtime() {
     measured.waysToPull = pulls.join(' | ');
     ok(pulls.length <= 4, `${pulls.length} ways to pull on the Staff Prep screen: ${pulls.join(', ')}`);
 
+    /* the Athena check reports its verdict instead of erasing it */
+    const apiCheck = await page.evaluate(async () => {
+      const line = () => String((document.getElementById('ez3sAthenaApiStatus') || {}).textContent || '');
+      const before = line();
+      const b = document.getElementById('ez3sAthenaApiCheck');
+      if (!b) return { missing: true };
+      b.click();
+      await new Promise((r) => setTimeout(r, 2500));
+      return { before, after: line() };
+    });
+    ok(!apiCheck.missing, 'the Athena API check button is not on the Staff Prep screen');
+    measured.apiCheck = apiCheck;
+    ok(apiCheck.after !== apiCheck.before,
+      `"Check Athena API connection" finished and left the line reading exactly what it read before: "${apiCheck.after}"`);
+    ok(/connected/i.test(apiCheck.after),
+      `the Athena check's verdict does not say whether it is connected: "${apiCheck.after}"`);
+    ok(!/^Selected range:/.test(apiCheck.after),
+      `the Athena check fell back to the idle "Selected range" line: "${apiCheck.after}"`);
+    /* the server's error text does not have to end a sentence, and "Failed to
+       fetch MLS Assist is unaffected" is what happens when nobody adds one */
+    ok(!/[a-z] MLS Assist is unaffected/.test(apiCheck.after),
+      `the verdict runs two sentences together: "${apiCheck.after}"`);
+
     const engine = await page.evaluate(() => !!(window.__mlsP1RangeJobs && window.__mlsP1RangeJobs.installed));
     ok(engine, 'the durable range engine is not installed, so the job-card assertions would be vacuous');
 
@@ -500,6 +541,85 @@ async function runtime() {
 
     ok(pageErrors.length === 0, 'the page threw during the run: ' + pageErrors.join(' | '));
     await page.close();
+
+    /* ===== THE DAY THE DOCTOR CLICKS, ON A CLEAN SCREEN =================
+       Its own page on purpose: the press-test above deliberately presses
+       every control, and one of them leaves #mlsCompBody over the grid — so
+       measuring the day cell on that page hit an overlay, not the calendar.
+       (Measured: elementFromPoint returned mlsCompBody at every point in the
+       cell.) A defect probe must not inherit the debris of another probe. */
+    const dp = await browser.newPage({ viewport: { width: 1366, height: 900 } });
+    dp.on('pageerror', (e) => pageErrors.push(String(e.message).slice(0, 160)));
+    await boot(dp, port);
+    await dp.evaluate(() => window.__cal.seedMonth());
+    await dp.evaluate(() => window.__cal.nav('nav_calendar'));
+    await dp.waitForTimeout(1200);
+    /* == THE DAY THE DOCTOR CLICKS SURVIVES THE CALENDAR'S OWN SETTLING ==
+     * feat_mls_datalink_exact.js runs focusCalDay through syncAll twice after
+     * the Calendar is entered (MEASURED at +1071ms and +2561ms), and each pass
+     * drags the selection back to today. caldaysel-1.0.0's capture-phase
+     * onNavClick is what stops it: a click on a control whose own onclick
+     * names calOpenDay stamps window.__mlsCalUserDayAt, which focusCalDay
+     * already honours for five minutes.
+     *
+     * THE INSTRUMENT LIES FIRST, and it lied here: calling calOpenDay()
+     * programmatically fires no click, so onNavClick never runs, the stamp is
+     * never set, and the selection IS dragged back — measured at 4 of 6
+     * delays. That is the probe, not the product. This clicks the cell the way
+     * a doctor does, at +1400ms, inside the window between the two passes. */
+    await dp.evaluate(() => {
+      const q = document.getElementById('calApptPeek'); if (q) q.remove();
+      const p = document.getElementById('calDayPanel'); if (p) { p.innerHTML = ''; p.style.display = 'none'; }
+      window._calSelDay = ''; window.__mlsCalUserDayAt = 0;
+      try { window.calSetMode('month'); } catch (e) {}
+      const cell = Array.prototype.slice.call(document.querySelectorAll('#calGrid [onclick]'))
+        .find((n) => /calOpenDay\('2026-08-21'\)/.test(n.getAttribute('onclick') || ''));
+      if (cell) cell.scrollIntoView({ block: 'center' });
+    });
+    /* 1400ms is deliberate: it sits between datalink's two syncAll passes. */
+    await dp.waitForTimeout(1400);
+    const pin = await dp.evaluate(() => {
+      const cell = Array.prototype.slice.call(document.querySelectorAll('#calGrid [onclick]'))
+        .find((n) => /calOpenDay\('2026-08-21'\)/.test(n.getAttribute('onclick') || ''));
+      if (!cell) return null;
+      const r = cell.getBoundingClientRect();
+      /* RECT COORDINATES ARE NOT CLICK COORDINATES. A sticky header can sit
+         over the top of the cell, and its own appointment chips carry
+         calApptPeek — clicking one of those opens the peek and stamps
+         nothing. Walk the cell for a point that really resolves to the DAY
+         control, and fail loudly if there is none rather than click blind. */
+      const want = (n) => { const o = n && n.closest && n.closest('[onclick]'); return !!(o && /calOpenDay\('2026-08-21'\)/.test(o.getAttribute('onclick') || '')); };
+      const tried = [];
+      for (let fy = 0.12; fy <= 0.95; fy += 0.11) {
+        for (const fx of [0.5, 0.2, 0.8]) {
+          const x = Math.round(r.left + r.width * fx), y = Math.round(r.top + r.height * fy);
+          if (y <= 0 || y >= window.innerHeight) continue;
+          const top = document.elementFromPoint(x, y);
+          if (want(top)) return { x, y, h: Math.round(r.height), hits: true, tried: tried.length };
+          tried.push((top ? (top.id || top.tagName) : 'null') + '@' + x + ',' + y);
+        }
+      }
+      return { h: Math.round(r.height), hits: false, tried: tried.slice(0, 6).join(' ') };
+    });
+    ok(pin && pin.h > 0, 'the Aug 21 day cell could not be found, so the day pin is unmeasured');
+    ok(pin.hits, `no point inside the Aug 21 cell resolves to its own day control (tried ${pin.tried}) — the measurement would be meaningless`);
+    await dp.mouse.click(pin.x, pin.y);
+    await dp.waitForTimeout(4000);
+    const pinned = await dp.evaluate(() => ({
+      sel: window._calSelDay, ref: window._calRefDate,
+      stamped: !!window.__mlsCalUserDayAt,
+      hero: String((document.getElementById('mlsCvNxt_calendar') || {}).innerText || '').split('\n')[0],
+      panel: String((document.querySelector('#calDayPanel div') || {}).textContent || '').slice(0, 34)
+    }));
+    measured.dayPin = pinned;
+    ok(pinned.stamped, 'clicking a day did not stamp __mlsCalUserDayAt, so the automatic jump has no brake');
+    eq(pinned.sel, '2026-08-21', `the day the doctor clicked was dragged to ${pinned.sel} four seconds later`);
+    eq(pinned.ref, '2026-08-21', `the pull target was dragged to ${pinned.ref} four seconds later`);
+    ok(/Aug 21/.test(pinned.hero), `the hero offers "${pinned.hero}" over a day panel the doctor opened on Aug 21`);
+    ok(/August 21/.test(pinned.panel), `the day panel reads "${pinned.panel}" after a click on Aug 21`);
+
+
+    await dp.close();
 
     /* ====================================== FIVE WIDTHS ================ */
     for (const [w, h] of [[360, 780], [390, 844], [768, 1024], [1280, 800], [1440, 900]]) {

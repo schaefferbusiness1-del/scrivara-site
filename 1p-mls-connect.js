@@ -23454,11 +23454,41 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       cancelPullRun();
     });
     on('ez3sPullToday', pullTodayProxy);
+    /* ===== apicheck-says-1.0.0 - A CHECK THAT FINISHES SAYS WHAT IT FOUND ===
+       "Check Athena API connection" cleared its own note the moment the check
+       resolved (`athenaApiPrepNote = ''`), so #ez3sAthenaApiStatus fell back
+       to "Selected range: 2026-08-18" - exactly what it read BEFORE the
+       press. MEASURED: the button was pressed on a running Staff Prep and
+       nothing anywhere on the page changed; the 'Checking...' flash resolved
+       inside 200ms and left no trace. And updateAthenaStatus RESOLVES on
+       failure too (it catches and returns an unavailable state), so the
+       silent branch was the one a failed check took as well - the doctor
+       pressed a check, it failed, and the screen told them nothing.
+
+       The verdict is read from the state the check itself returned, in the
+       Settings card's own words for the connected case, and the detail is
+       left where it already lives. Nothing about the check changes. */
     on('ez3sAthenaApiCheck', function () {
       if (!isFn(window.updateAthenaStatus)) { athenaApiPrepNote = 'Athena API status is unavailable.'; render(); return; }
       athenaApiPrepNote = 'Checking the hosted read-only connection…'; render();
-      Promise.resolve(window.updateAthenaStatus('staff-click')).then(function () { athenaApiPrepNote = ''; render(); }, function (err) { athenaApiPrepNote = String(err && err.message || err || 'Athena API status is unavailable.'); render(); });
+      Promise.resolve(window.updateAthenaStatus('staff-click')).then(function (state) {
+        var st = state || safe(function () { return window.mlsAthenaApiGetState(); }, null);
+        if (!st) athenaApiPrepNote = 'The check finished but returned no status. Settings → Integrations has the detail.';
+        else if (st.connected) athenaApiPrepNote = 'Connected — verified read-only Athena API schedule access.';
+        else {
+          /* The server's error text is not guaranteed to end a sentence -
+             "Failed to fetch" ran straight into the next one. */
+          var why = String(st.error || 'the hosted Athena API is not available for schedule reads');
+          if (!/[.!?]$/.test(why)) why += '.';
+          athenaApiPrepNote = 'Not connected — ' + why + ' MLS Assist is unaffected. Settings → Integrations has the detail.';
+        }
+        render();
+      }, function (err) {
+        athenaApiPrepNote = String(err && err.message || err || 'Athena API status is unavailable.');
+        render();
+      });
     });
+    /* ===== end apicheck-says-1.0.0 ======================================= */
     on('ez3sAthenaApiPull', pullStaffScheduleThroughAthenaApi);
     on('ez3sProv', function () { var c = $('mlsProvChip'); if (c) handOff(function () { c.click(); }, 'Pick the doctor in the app’s picker.'); else toast('Provider picker not found.'); });
     on('ez3sPrep', openPrep);
