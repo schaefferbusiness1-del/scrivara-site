@@ -34172,7 +34172,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        restored 22/22 controls. Its own instruction - install the extension from
        Settings - is impossible to follow on a phone, so there is no upside to
        weigh against that. */
-    try { if (document.body && document.body.classList.contains('mls-phone')) return; } catch (ePh) {}
+    /* phclean-1.0.0 (2026-08-19): THIS GUARD HAD STOPPED FIRING. It tested
+       `mls-phone` only, and the ph3 rebuild REMOVES that class when it mounts
+       (feat_mls_phone_ui.js: `classList.remove('mls-phone')`) and adds
+       `mls-ph3` instead - so from ph3 onward every phone session drew the
+       banner again, over the middle of the screen, exactly as measured above.
+       Removing a class inherits every guard that class was carrying.
+       The class test is kept for the older layer, `mls-ph3` is added for the
+       current one, and the real question is asked last: is the phone app
+       actually mounted? A flag the module owns cannot be broken by the next
+       rename the way these two class names were. */
+    try {
+      var _bd = document.body;
+      if (_bd && (_bd.classList.contains('mls-phone') || _bd.classList.contains('mls-ph3'))) return;
+      var _ph = window.__mlsPhoneUI;
+      if (_ph && _ph.installed && typeof _ph.state === 'function' && _ph.state().mounted) return;
+    } catch (ePh) {}
     if ($('mlsR46VerBanner') || dismissed()) return;
     var b = document.createElement('div');
     b.id = 'mlsR46VerBanner';
@@ -52545,6 +52560,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { act = document.getElementById('mlsPh3Act'); frame = document.getElementById('mlsPh3'); } catch (e) {}
     if (!act || !frame) return;
     var existing = null; try { existing = document.getElementById('mlsPhSendBar'); } catch (e2) {}
+    phcleanStyle();
     if (existing && existing.parentNode === frame) { phsendPaint(); return; }
     var bar = document.createElement('div');
     bar.id = 'mlsPhSendBar';
@@ -52591,6 +52607,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var a = phsendReadActive();
     if (a && a.id) { phsendSet('working', 'Picking up where this left off...', a.id); phsendPollJob(a.id, 'your office computer'); }
   }, 3500);
+
+  /* ===== phclean-1.0.0 (2026-08-19, owner: the phone UI "is kinda old") ====
+   * Measured cleanup of the ph3 phone app.
+   *
+   * The phone module itself (feat_mls_phone_ui.js) has NO 1p fork, so it is the
+   * same bytes production serves and this lane may not edit it. Anything fixed
+   * here is therefore an OVERLAY: additive rules from the file this lane does
+   * own, scoped to #mlsPh3 so they cost a desktop nothing.
+   *
+   * !important is used deliberately and only on the size properties below. The
+   * phone stylesheet is injected by a module that loads AFTER this one, so an
+   * equal-specificity rule would lose the cascade on load order alone - which
+   * is not a thing to leave to chance for a touch target.
+   *
+   * WHAT IS FIXED HERE (measured from the shipped stylesheet):
+   *   .ph3-nx - the dismiss "x" on the phone's message strip, declared
+   *   30x30px. It carries data-act="note-x", so it is a real control sitting
+   *   well under the 40px floor every other surface in this app already meets
+   *   (primary 56, secondary 52, header 46, rows 70, menu items 60). Raised to
+   *   44x44 without changing the glyph, so it looks the same and can be hit.
+   * ======================================================================*/
+  function phcleanStyle() {
+    if (document.getElementById('mlsPhCleanCss')) return;
+    var s = document.createElement('style');
+    s.id = 'mlsPhCleanCss';
+    s.textContent =
+      '#mlsPh3 .ph3-nx{min-width:44px!important;width:44px!important;height:44px!important;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important}';
+    try { (document.head || document.documentElement).appendChild(s); } catch (e) {}
+  }
+  api.phcleanStyle = phcleanStyle;
 
   /* ===== end phsend-1.0.0 ================================================= */
 

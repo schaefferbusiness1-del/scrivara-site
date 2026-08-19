@@ -1019,6 +1019,100 @@ function allText(el) {
     'polling must not stack duplicate confirm sheets');
 }
 
+/* =======================================================================
+ * PART D - phclean-1.0.0: the phone UI cleanup ("its kinda old").
+ * feat_mls_phone_ui.js has no 1p fork, so it is production bytes and this
+ * lane may not edit it. Everything here is either a fix in a file this lane
+ * DOES own, or an overlay scoped to #mlsPh3.
+ * =====================================================================*/
+
+/* ---- D1: the version-nag banner had stopped being kept off the phone ---
+ * This is the defect the ph3 rebuild recorded and then re-introduced: the
+ * banner's ONLY phone guard tested `mls-phone`, and ph3 REMOVES that class
+ * when it mounts. From ph3 onward it drew over the middle of a 375x812
+ * screen at z-index 2147483100 - the same banner whose own comment records
+ * it making 6 of 19 controls unclickable. */
+{
+  const phoneUi = read('feat_mls_phone_ui.js');
+  ok(/classList\.remove\('mls-phone'\)/.test(phoneUi),
+    'precondition: the phone module still removes mls-phone (if this changes, re-check the guard)');
+  ok(/classList\.add\('mls-ph3'\)/.test(phoneUi),
+    'precondition: the phone module still adds mls-ph3');
+
+  const guard = /function banner\(msg, how\) \{([\s\S]*?)if \(\$\('mlsR46VerBanner'\)/.exec(connect);
+  ok(guard, 'the nag banner guard must be locatable');
+  ok(/contains\('mls-phone'\)/.test(guard[1]), 'the old class is still covered');
+  ok(/contains\('mls-ph3'\)/.test(guard[1]), 'the CURRENT phone class must be covered too');
+  ok(/__mlsPhoneUI/.test(guard[1]) && /\.mounted/.test(guard[1]),
+    'the guard must also ask the durable question - is the phone app actually mounted');
+  ok(/inherits every guard that class was carrying/.test(guard[1]),
+    'the reason must be written down so the next rename does not silently do it again');
+}
+
+/* ---- D2: the touch-target floor, measured from the shipped stylesheet --
+ * Declared sizes, not rendered ones - a rendered pass at 375x812 needs a
+ * real browser and is reported separately. This is still a real regression
+ * guard: every interactive ph3 class must declare at least 40px, either in
+ * the phone stylesheet or through the phclean overlay. */
+{
+  const phoneUi = read('feat_mls_phone_ui.js');
+  const INTERACTIVE = ['ph3-primary', 'ph3-secondary', 'ph3-dot', 'ph3-pill', 'ph3-arrow',
+    'ph3-today', 'ph3-row', 'ph3-item', 'ph3-nx', 'ph3-find'];
+  const sizeOf = (src, cls) => {
+    const rx = new RegExp('\\.' + cls + '\\{([^}]*)', 'g');
+    let best = 0, seen = false;
+    let m;
+    while ((m = rx.exec(src))) {
+      seen = true;
+      const body = m[1];
+      const mh = /(?:^|;)\s*min-height:(\d+(?:\.\d+)?)px/.exec(body);
+      const h = /(?:^|;)\s*height:(\d+(?:\.\d+)?)px/.exec(body);
+      const v = Number((mh && mh[1]) || (h && h[1]) || 0);
+      if (v > best) best = v;
+    }
+    return seen ? best : null;
+  };
+  const overlayBlockStart = connect.indexOf('/* ===== phclean-1.0.0 (2026-08-19');
+  ok(overlayBlockStart > 0, 'the phclean overlay block must exist');
+  const overlay = connect.slice(overlayBlockStart, connect.indexOf('/* ===== end phsend-1.0.0 ='));
+
+  const report = [];
+  for (const cls of INTERACTIVE) {
+    const before = sizeOf(phoneUi, cls);
+    const after = sizeOf(overlay, cls) || before;
+    report.push({ cls, before, after });
+    ok(before !== null, `${cls} must exist in the phone stylesheet`);
+    ok(after >= 40, `${cls} must declare at least 40px of touch height (declared ${after})`);
+  }
+  /* the one that was actually under the floor, pinned so it cannot slip back */
+  const nx = report.filter((r) => r.cls === 'ph3-nx')[0];
+  eq(nx.before, 30, 'ph3-nx was 30px in the shipped stylesheet');
+  eq(nx.after, 44, 'ph3-nx must be raised to 44px by the overlay');
+  /* and nothing else was quietly resized */
+  for (const r of report) {
+    if (r.cls === 'ph3-nx') continue;
+    eq(r.after, r.before, `${r.cls} must be left exactly as the phone module declares it`);
+  }
+}
+
+/* ---- D3: the overlay is injected, scoped, and only where it belongs ---- */
+{
+  const h = harness({});
+  h.api.phsendMount();
+  const style = h.ctx.document.getElementById('mlsPhCleanCss');
+  ok(style, 'mounting the phone must inject the cleanup overlay');
+  ok(/#mlsPh3 \.ph3-nx/.test(style.textContent), 'the overlay is scoped to the phone frame');
+  ok(/44px!important/.test(style.textContent),
+    'the size must be !important - the phone stylesheet loads after this one and would otherwise win on order');
+  ok(!/body|html|\*\s*\{/.test(style.textContent), 'the overlay must not reach outside #mlsPh3');
+
+  // injected once, not on every mount tick
+  h.api.phsendMount();
+  h.api.phsendMount();
+  eq(h.els.get('__head').children.filter((c) => c.id === 'mlsPhCleanCss').length, 1,
+    'the overlay must be injected exactly once');
+}
+
 } /* end main */
 
 main().then(function () {
