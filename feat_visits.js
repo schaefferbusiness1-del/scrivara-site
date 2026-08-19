@@ -1204,7 +1204,7 @@
      • <address> NAME, First (id #NNN, dob: MM/DD/YYYY)"). None of that is
      clinical content. Deterministic scrub, applied when text is SUMMARIZED for
      display — the stored raw capture is never modified. */
-  var _DEBRIS_START = /^(window\.|document\.|function$|function\(|var$|new$|Jotter=?$|IsSafari=?$|SVGJotter|VMLJSONToRaphaelJSON|GetStrokesDimensions|PutSketchpad|svgjotter)/i;
+  var _DEBRIS_START = /^(window\.\w|document\.\w|function$|function\(|var$|new$|Jotter=$|IsSafari=?$|SVGJotter|VMLJSONToRaphaelJSON|GetStrokesDimensions|PutSketchpad|svgjotter)/i;
   var _DEBRIS_CODEY = /[{}();=<>[\]]|^['"]|['"][:,]?$|^\d+[,;]?$|^(var|function|new|return|if|else|for|while|this|null|true|false|params)$|params\.|jotter|svgjotter|raphael|\bjson\b|^\/\//i;
   function _stripPageDebris(text) {
     /* The Athena print page's scaffolding is interleaved with the note text,
@@ -1214,7 +1214,7 @@
        plain prose tokens exits code mode with that prose kept. */
     var lines = S(text).split(/\n/).map(function (line) {
       line = line.replace(/\bPrint\b[\s\S]{0,240}?\(id\s*#\d+,\s*dob:\s*\d{1,2}\/\d{1,2}\/\d{2,4}\)[\s.•-]*/g, '');
-      if (!_DEBRIS_START.test(line) && line.search(/window\.|svgjotter|SVGJotter|\bJotter\b|IsSafari|VMLJSON/i) < 0) {
+      if (!_DEBRIS_START.test(line) && line.search(/window\.\w|svgjotter|SVGJotter|\bJotter\s*=|IsSafari|VMLJSON/i) < 0) {
         return line.replace(/\s{2,}/g, ' ').replace(/\s+$/, '');
       }
       var toks = line.split(/\s+/), res = [], buf = [], code = false;
