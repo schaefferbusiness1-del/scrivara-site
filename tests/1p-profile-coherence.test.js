@@ -153,7 +153,9 @@ for (const name of ['ScribeFlow.html', 'mls-connect.js']) {
      rather than one per empty field — five of them rendered at once on a cold
      chart. The requirement pinned here is unchanged: an empty section must be
      one tap from a real read. */
-  ok(conn.indexOf("one.id = 'pvrPullOne'") > 0 && conn.indexOf('Pull chart from Athena') > 0,
+  /* Pin moved 2026-08-19 with t9pullbutton's deliberate rename: the one-tap
+     re-read now names its real verb ("Pull this patient's chart"). */
+  ok(conn.indexOf("one.id = 'pvrPullOne'") > 0 && conn.indexOf("Pull this patient's chart") > 0,
     '1p-mls-connect.js: the strip must offer a one-tap re-read');
   ok(conn.indexOf("class=\"pvr-read\">Read from Athena</button>") < 0,
     '1p-mls-connect.js: the per-field re-read buttons are back');

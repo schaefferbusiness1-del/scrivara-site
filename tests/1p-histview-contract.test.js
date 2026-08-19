@@ -577,7 +577,8 @@ async function runtime() {
     eq(indexCard.read, true, 'the index-only card offers no way to read the note');
     /* pullone-1.0.0 (2026-08-18): one verb for every pull on the chart, so this
        card says the same thing the header button and the strip control say. */
-    ok(/Pull chart from Athena/.test(indexCard.text), 'the index-only action is not named');
+    /* Pin moved 2026-08-19 with t9pullbutton's deliberate rename. */
+    ok(/Pull this patient's chart/.test(indexCard.text), 'the index-only action is not named');
 
     /* -- 4. THE JUNK IS NEVER DUMPED ------------------------------------ */
     const junkRoom = await page.evaluate(() => window.__hx.junkInRoom());

@@ -142,10 +142,19 @@ function statics() {
       const p = path.join(clonedDir, f);
       if (!fs.statSync(p).isFile()) continue;
       if (!/\.(html|js)$/.test(f)) continue;
-      /* /cloned is DERIVED from /1p by scripts/derive-cloned-from-1p.js. This
-         lane never runs the derive, so the block must not be there yet. */
-      eq(fs.readFileSync(p, 'utf8').indexOf('pullverb-1.0.0'), -1,
-        `cloned/${f}: this lane must not hand-edit the derived lane`);
+      /* /cloned is DERIVED from /1p by scripts/derive-cloned-from-1p.js. The
+         lane-era form of this guard required the block to be ABSENT, which was
+         true exactly until the r24 derive ran — a correct integration PROMOTES
+         it (the same inversion pull-one's guard hit at r23). Shell files must
+         now carry the block; non-shell derived files still must not. */
+      const clonedSrc = fs.readFileSync(p, 'utf8');
+      if (f === 'index.html' || f === 'cloned-mls-connect.js') {
+        ok(clonedSrc.indexOf('pullverb-1.0.0') >= 0,
+          `cloned/${f}: the derive did not promote pullverb-1.0.0`);
+      } else {
+        eq(clonedSrc.indexOf('pullverb-1.0.0'), -1,
+          `cloned/${f}: pullverb-1.0.0 leaked into a file the derive should not touch`);
+      }
     }
   }
 }

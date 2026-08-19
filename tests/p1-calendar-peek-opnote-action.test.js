@@ -40,7 +40,9 @@ const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
   assert(peekEnd > peekStart, `${file}: could not bound calApptPeek's body`);
   const peekBody = src.slice(peekStart, peekEnd);
 
-  assert(/Start visit/.test(peekBody) && /Pull chart/.test(peekBody) && /Details/.test(peekBody),
+  /* Pin moved 2026-08-19 with t9pullbutton's deliberate rename: the peek's
+     pull action names its real verb ("Pull this patient's chart"). */
+  assert(/Start visit/.test(peekBody) && /Pull this patient(?:'|&#39;)s chart/.test(peekBody) && /Details/.test(peekBody),
     `${file}: calApptPeek lost one of its original three actions`);
   assert(/calDraftOpNoteFor\(/.test(peekBody),
     `${file}: calApptPeek must wire a fourth action to calDraftOpNoteFor`);
