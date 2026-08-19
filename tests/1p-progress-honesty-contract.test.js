@@ -251,6 +251,21 @@ async function runtime() {
     eq(real.why, '', 'a card with real work must not be given an explanation it does not need');
     measured.realWork = real;
 
+    /* A pull whose chart identities were already cached reads only visit
+       BODIES, and that job also lands with count 0. It must not be told to go
+       check its Athena tab — the read was fine, there was simply nothing for
+       this job to count. */
+    const bodyWhy = await page.evaluate(() => {
+      window.postMessage({ source: 'mls-app', type: 'mlsAppReadAllVisits', name: 'Bo Sample' }, '*');
+      return new Promise((r) => setTimeout(() => {
+        const job = { startedAt: Date.now() - 500, finishedAt: Date.now() + 500 };
+        r(window.__mlsPsHonest._why(job));
+      }, 300));
+    });
+    ok(/visit-body reads/.test(bodyWhy), `a visit-body job must not be blamed on the Athena tab; measured "${bodyWhy}"`);
+    ok(!/Leave exactly one signed-in/.test(bodyWhy), `the overlay blamed the doctor's Athena tab for a healthy read: "${bodyWhy}"`);
+    measured.bodyWhy = bodyWhy;
+
     /* ---- §3 the fork's own honest job, and the duplicate rule ---------- */
     const vbf = await page.evaluate(() => (window.__mlsVisitsBackfill ? window.__mlsVisitsBackfill.version : ''));
     ok(vbf, 'the visit backfill module is not on the page');

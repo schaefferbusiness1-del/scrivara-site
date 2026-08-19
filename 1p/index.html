@@ -52993,8 +52993,9 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
   function onMessage(ev) {
     var d = ev && ev.data;
     if (!d || typeof d !== 'object') return;
-    if (d.source !== 'mls-app' || d.type !== 'mlsAppReadVisits') return;
-    reads.push({ at: Date.now(), vbf: (d.__vbf === 1 || d.__vbf === true) });
+    if (d.source !== 'mls-app') return;
+    if (d.type !== 'mlsAppReadVisits' && d.type !== 'mlsAppReadAllVisits') return;
+    reads.push({ at: Date.now(), type: d.type, vbf: (d.__vbf === 1 || d.__vbf === true) });
     if (reads.length > 12) reads.shift();
   }
   function readInWindow(job) {
@@ -53029,10 +53030,15 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
     }
     return null;
   }
+  /* Say what the bridge actually showed, and never blame the doctor's Athena
+     tab for a job that was simply not a chart pull. */
   function whyText(job) {
     var ev = readInWindow(job);
     if (ev && ev.vbf) {
       return 'No chart pull ran here. This was the background visit-list top-up, which reads one patient’s list of visits and never opens a chart. To read charts, use “Pull day histories”.';
+    }
+    if (ev && ev.type === 'mlsAppReadAllVisits') {
+      return 'This followed a pull’s visit-body reads. No chart was opened for it, so there is nothing here to count — the pull’s own card carries that result.';
     }
     if (ev) {
       return 'This read a patient’s visit list, not their charts — nothing was opened or analyzed.';
