@@ -51107,7 +51107,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#pf2Quick .qk{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#79837C;margin:0 0 3px;}',
     '#pf2Quick .qv{font-size:12.5px;line-height:1.4;color:#1A211C;max-height:76px;overflow:auto;white-space:pre-line;overflow-wrap:anywhere;}',
     '#pf2ExpandAll{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:7px 14px;border:1px solid #D9DFD9;border-radius:999px;background:#fff;font:700 12.5px system-ui;color:#204034;cursor:pointer;}',
-    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled){display:none!important;}',
+    /* pullone-1.0.0: the strip's ONE pull control must survive the collapse -
+       the strip is the surface the doctor reads (the card ships COLLAPSED), so
+       hiding the control that fills it would put the only pull behind Expand. */
+    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled):not(#pvrPullOne){display:none!important;}',
     '#profileCard.pf2-collapsed #pf2SumExtra > *{display:none!important;}',
     '.pf2-sec.open .pf2-b{display:block;}',
     '.pf2-b > *{margin-top:8px !important;}',
@@ -51320,31 +51323,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        actually fix. The button calls the app's OWN read-only single-patient
        chart reader - it reads, it never writes to Athena, and if the section
        still cannot be seen the chip goes straight back to saying so. */
+    /* pullone-1.0.0 (owner, 2026-08-18: "these need to go; the main one should
+       work"). MEASURED on one cold chart before this change: FIVE per-field
+       "Read from Athena" buttons (Problems, Medications, Allergies, Vitals,
+       Visits) rendered at once, each starting its own read, beside the header's
+       own pull button and the unpulled-notice's - seven controls for one job.
+       The chips still say exactly what is missing and why; the pull is ONE
+       control for the whole chart, because one chart is what a pull reads. */
     q.innerHTML = boxes.map(function (b) {
       var f = b[1] || {};
       return '<div class="qb pvr-chip' + (f.quiet ? ' is-quiet' : '') + '" data-pvr-key="' + esc2(b[0]) + '"' +
         (f.state ? (' data-pvr-state="' + esc2(f.state) + '"') : '') +
         (f.detail ? (' title="' + esc2(f.detail) + '"') : '') + '>' +
         '<div class="qk">' + b[0] + '</div><div class="qv">' + esc2(f.text) + '</div>' +
-        (f.read ? '<button type="button" class="pvr-read">Read from Athena</button>' : '') +
         '</div>';
     }).join('');
-    if (!q.__pvrWired) {
-      q.__pvrWired = 1;
-      q.addEventListener('click', function (ev) {
-        var t = ev && ev.target;
-        if (!t || !t.classList || !t.classList.contains('pvr-read')) return;
-        var cur = null; try { cur = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) {}
-        if (!cur) return;
-        var cf = null; try { cf = window.__mlsChartField; } catch (e2) {}
-        if (!cf || typeof cf.read !== 'function') return;
-        t.disabled = true;
-        var was = t.textContent;
-        cf.read(cur, function (m) { try { t.textContent = String(m || was).slice(0, 60); } catch (e3) {} }).then(function () {
-          try { q.setAttribute('data-sig', ''); } catch (e4) {}
-          try { schedulePatientEnsure(); } catch (e5) {}
-        }, function () { t.disabled = false; t.textContent = was; });
-      });
+    var anyRead = false;
+    for (var bi = 0; bi < boxes.length; bi++) { if (boxes[bi][1] && boxes[bi][1].read) { anyRead = true; break; } }
+    var one = $('pvrPullOne');
+    if (!anyRead) { if (one && one.parentElement) one.parentElement.removeChild(one); }
+    else {
+      if (!one) {
+        one = document.createElement('button');
+        one.id = 'pvrPullOne'; one.type = 'button'; one.className = 'pvr-read pvr-read-one';
+        one.addEventListener('click', function () {
+          var cur = null; try { cur = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) {}
+          if (!cur) return;
+          var cf = null; try { cf = window.__mlsChartField; } catch (e2) {}
+          if (!cf || typeof cf.read !== 'function') return;
+          var was = one.textContent;
+          one.disabled = true;
+          /* the third argument is the button itself: pullone-1.0.0 parks the
+             shell's one status line beside whichever control was pressed. */
+          Promise.resolve(cf.read(cur, function () {}, one)).then(function () {
+            one.disabled = false; one.textContent = was;
+            try { q.setAttribute('data-sig', ''); } catch (e4) {}
+            try { schedulePatientEnsure(); } catch (e5) {}
+          }, function () { one.disabled = false; one.textContent = was; });
+        });
+      }
+      one.textContent = '📥 Pull chart from Athena';
+      one.title = 'Reads this patient’s chart in your signed-in athenaOne tab and fills the empty sections above.';
+      if (one.parentElement !== q.parentElement || one.previousSibling !== q) {
+        if (q.nextSibling) q.parentElement.insertBefore(one, q.nextSibling); else q.parentElement.appendChild(one);
+      }
     }
   }
   function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }

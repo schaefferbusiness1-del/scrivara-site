@@ -23327,6 +23327,119 @@ function _assistReadAthenaTab(onStatus){
    an async read, and only when DOB/MRN makes that resolution unique. */
 function _athenaHistoryDigits(v){ return String(v||'').replace(/\D/g,''); }
 function _athenaHistoryName(v){ return String(v||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+/* ===== idread-1.0.0 — the identity guard READS a name and a date the way athena prints them ==
+   Owner, 2026-08-18: the cross-patient safety stop "keeps happening" on charts
+   that ARE the same patient.
+
+   MEASURED in the local harness on this exact shell, with the guard as the only
+   thing under test (tests/1p-pull-one-owner-contract.test.js reproduces every row,
+   and executes the pre-fix rule beside it as the causal control):
+
+     stored DOB      athena banner DOB   before   why
+     --------------- ------------------- -------- ----------------------------
+     1962-03-04      03/04/1962          REFUSE   digit-order, not the date
+     1962-03-04      3/4/1962            REFUSE   digit-order + padding
+     03/04/1962      3/4/1962            REFUSE   padding alone
+     03/04/1962      March 4, 1962       REFUSE   month name unreadable
+     03/04/1962      04/03/1962          REFUSE   a genuinely different date
+     03/04/1962      ''                  REFUSE   no proof at all
+
+   _athenaHistoryDigits strips every non-digit and compares the RUN, so
+   "1962-03-04" reads as 19620304 and "03/04/1962" reads as 03041962 - the same
+   birthday, two strings that can never be equal. This is not a rare spelling:
+   #ptDob's own placeholder says "e.g. 1980-05-14", the pre-visit intake's DOB
+   field is <input type="date"> (which can only produce yyyy-mm-dd), and
+   athenaOne's chart banner prints mm/dd/yyyy. A record created either of those
+   two ways can therefore NEVER prove identity against its own athena chart.
+
+   The same class on the name side: a reader that lands on textContent instead
+   of innerText returns the banner name with no separator between its parts
+   ("AdaSample" for "Ada Sample"), and an ALL-CAPS banner leaves no camel
+   boundary to split on either. Measured before: VETO on the same patient.
+
+   WHAT CHANGES IS THE READING, NEVER THE REQUIREMENT. Both helpers below are
+   strictly ADDITIVE - every pair the old code accepted is still accepted, and a
+   pair is newly accepted only when the two strings denote the SAME date, or when
+   a run-together name re-segments into the OTHER name's own tokens with the
+   whole run consumed and each token used once. Two different dates still differ;
+   a name whose tokens are not in the other name still cannot be matched; an
+   absent DOB still proves nothing. The three-factor rule (name echo + DOB or MRN
+   equality) is untouched.
+
+   No regex here carries an escape a shell transport could eat, and the suite
+   EXECUTES every one of them rather than grepping for their source. */
+var _ATHENA_DOB_MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12,
+  january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+function _athenaHistoryDobKey(v){
+  var s=String(v==null?'':v).trim(); if(!s) return '';
+  var pad=function(n){ n=String(n); return n.length>1?n:('0'+n); };
+  var ok=function(y,m,d){ y=+y; m=+m; d=+d;
+    return (y>=1870&&y<=2200&&m>=1&&m<=12&&d>=1&&d<=31)?(String(y)+pad(m)+pad(d)):''; };
+  var iso=s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(iso){ var kiso=ok(iso[1],iso[2],iso[3]); if(kiso) return kiso; }
+  var us=s.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+  if(us){ var kus=ok(us[3],us[1],us[2]); if(kus) return kus; }
+  var lo=s.toLowerCase();
+  var mn=lo.match(/([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/);
+  if(mn&&_ATHENA_DOB_MONTHS[mn[1]]){ var kmn=ok(mn[3],_ATHENA_DOB_MONTHS[mn[1]],mn[2]); if(kmn) return kmn; }
+  var dm=lo.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})\.?,?\s+(\d{4})/);
+  if(dm&&_ATHENA_DOB_MONTHS[dm[2]]){ var kdm=ok(dm[3],_ATHENA_DOB_MONTHS[dm[2]],dm[1]); if(kdm) return kdm; }
+  var run=_athenaHistoryDigits(s);
+  if(run.length===8){
+    var kA=ok(run.slice(0,4),run.slice(4,6),run.slice(6,8)); if(kA) return kA;
+    var kB=ok(run.slice(4,8),run.slice(0,2),run.slice(2,4)); if(kB) return kB;
+  }
+  return '';
+}
+/* TRUE only when both sides carry a date AND it is the same date. The pre-idread
+   raw-digit equality is kept whole as the first test, so this can only ever add. */
+function _athenaHistoryDobSame(a,b){
+  var x=_athenaHistoryDigits(a), y=_athenaHistoryDigits(b);
+  if(!x||!y) return false;
+  if(x===y) return true;
+  var ka=_athenaHistoryDobKey(a), kb=_athenaHistoryDobKey(b);
+  return !!(ka&&kb&&ka===kb);
+}
+function _athenaHistoryNameCamel(v){ return String(v==null?'':v).replace(/([a-z0-9])([A-Z])/g,'$1 $2'); }
+/* Segment ONE run-together token using the other name's tokens as the whole
+   dictionary. The entire run must be consumed and each dictionary word may be
+   used once, so "annsmith" against "ann cubbage reilly" yields nothing and stays
+   a mismatch, while "adasample" against "ada sample" yields ["ada","sample"]. */
+function _athenaHistoryNameSegment(run, dict){
+  var words=[],seen={},i;
+  for(i=0;i<dict.length;i++){ var d=dict[i]; if(d&&d.length>1&&!seen[d]){ seen[d]=1; words.push(d); } }
+  if(!words.length) return null;
+  var used={}, best=null;
+  (function walk(rest, acc){
+    if(best) return;
+    if(!rest.length){ if(acc.length>1) best=acc.slice(); return; }
+    for(var k=0;k<words.length;k++){
+      if(used[k]) continue;
+      if(rest.indexOf(words[k])!==0) continue;
+      used[k]=1; acc.push(words[k]);
+      walk(rest.slice(words[k].length), acc);
+      acc.pop(); used[k]=0;
+      if(best) return;
+    }
+  })(run, []);
+  return best;
+}
+function _athenaHistoryNameUnrun(tokens, dict){
+  var out=[], moved=false;
+  for(var i=0;i<tokens.length;i++){
+    var t=tokens[i];
+    var parts=(t.length>=6)?_athenaHistoryNameSegment(t,dict):null;
+    if(parts&&parts.length>1){ moved=true; out=out.concat(parts); }
+    else out.push(t);
+  }
+  return moved?out:tokens;
+}
+function _athenaHistoryNameTokensCover(A,B){
+  function tokOk(a,b){ return a===b||(a.length>=4&&b.length>=4&&(a.indexOf(b)===0||b.indexOf(a)===0))||(a.length===1&&a===b.charAt(0))||(b.length===1&&b===a.charAt(0)); }
+  function covered(X,Y){ return X.every(function(x){ return Y.some(function(y){ return tokOk(x,y); }); }); }
+  return covered(A,B)||covered(B,A);
+}
+/* ===== end idread-1.0.0 ===== */
 function _athenaHistoryNameCompatible(seen, want){
   var s=_athenaHistoryName(seen), w=_athenaHistoryName(want);
   if(!s||!w) return true; /* an absent echo never vetoes; the DOB/MRN equality proof below still decides */
@@ -23335,10 +23448,15 @@ function _athenaHistoryNameCompatible(seen, want){
      "ann cubbage reilly"). Accept when every token on one side matches a token
      on the other by exact text, a >=4-char prefix, or a single-letter initial.
      This relaxes ONLY the name echo; DOB/MRN equality still proves identity. */
-  var st=s.split(' '), wt=w.split(' ');
-  function tokOk(a,b){ return a===b||(a.length>=4&&b.length>=4&&(a.indexOf(b)===0||b.indexOf(a)===0))||(a.length===1&&a===b.charAt(0))||(b.length===1&&b===a.charAt(0)); }
-  function covered(A,B){ return A.every(function(x){ return B.some(function(y){ return tokOk(x,y); }); }); }
-  return covered(st,wt)||covered(wt,st);
+  if(_athenaHistoryNameTokensCover(s.split(' '),w.split(' '))) return true;
+  /* idread-1.0.0: retried, never replaced. Camel boundaries first (a textContent
+     read of "Ada Sample"), then dictionary re-segmentation (an ALL-CAPS run).
+     Both run only after the rule above has already declined, so no pair that
+     used to be compatible can stop being compatible here. */
+  var s2=_athenaHistoryName(_athenaHistoryNameCamel(seen)), w2=_athenaHistoryName(_athenaHistoryNameCamel(want));
+  if((s2!==s||w2!==w)&&_athenaHistoryNameTokensCover(s2.split(' '),w2.split(' '))) return true;
+  var sa=s2.split(' '), wa=w2.split(' ');
+  return _athenaHistoryNameTokensCover(_athenaHistoryNameUnrun(sa,wa),_athenaHistoryNameUnrun(wa,sa));
 }
 function _athenaHistoryTargetSnapshot(ref, allowCreate){
   ref=(ref&&typeof ref==='object')?ref:{name:String(ref||'')};
@@ -23352,7 +23470,7 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
     matches=pts.filter(function(x){return String(x&&x.id||'')===targetId;});
   }else if(wantName){
     matches=pts.filter(function(x){return _athenaHistoryName(x&&x.name)===_athenaHistoryName(wantName);});
-    if(wantDob){ var dd=_athenaHistoryDigits(wantDob); matches=matches.filter(function(x){return dd&&_athenaHistoryDigits(x&&x.dob)===dd;}); }
+    if(wantDob){ matches=matches.filter(function(x){return _athenaHistoryDobSame(x&&x.dob,wantDob);}); } /* idread-1.0.0: same birthday, any spelling */
     if(wantMrn){ var mm=_athenaHistoryDigits(wantMrn); matches=matches.filter(function(x){return mm&&_athenaHistoryDigits((x&&x.mrn)||(x&&x.athenaId))===mm;}); }
   }
   if(matches.length>1) return null;
@@ -23363,7 +23481,7 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
   }
   if(!p||!p.id) return null;
   if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)) return null;
-  if(wantDob&&p.dob&&_athenaHistoryDigits(wantDob)!==_athenaHistoryDigits(p.dob)) return null;
+  if(wantDob&&p.dob&&!_athenaHistoryDobSame(wantDob,p.dob)) return null; /* idread-1.0.0 */
   if(wantMrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(wantMrn)!==_athenaHistoryDigits(p.mrn||p.athenaId)) return null;
   var appointmentId=String(ref.appointmentId||ref.athenaAppointmentId||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);
   var scheduleDate=/^\d{4}-\d{2}-\d{2}$/.test(String(ref.scheduleDate||ref.date||''))?String(ref.scheduleDate||ref.date):'';
@@ -23377,7 +23495,7 @@ function _athenaHistoryTargetStillExact(target){
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var p=pts.find(function(x){return String(x&&x.id||'')===String(target.patientId);});
   if(!p||_athenaHistoryName(p.name)!==_athenaHistoryName(target.name)) return false;
-  if(target.dob&&p.dob&&_athenaHistoryDigits(p.dob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(target.dob&&p.dob&&!_athenaHistoryDobSame(p.dob,target.dob)) return false; /* idread-1.0.0 */
   if(target.mrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(p.mrn||p.athenaId)!==_athenaHistoryDigits(target.mrn)) return false;
   return true;
 }
@@ -23388,9 +23506,9 @@ function _athenaHistoryProofMatches(target, observed){
   var seenDob=String(observed.chartDob||observed.dob||'').trim();
   var seenMrn=String(observed.chartMrn||observed.mrn||'').trim();
   if(seenName&&!_athenaHistoryNameCompatible(seenName,target.name)) return false;
-  if(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(seenDob&&target.dob&&!_athenaHistoryDobSame(seenDob,target.dob)) return false; /* idread-1.0.0 */
   if(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)!==_athenaHistoryDigits(target.mrn)) return false;
-  var dobProof=!!(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)===_athenaHistoryDigits(target.dob));
+  var dobProof=_athenaHistoryDobSame(seenDob,target.dob); /* idread-1.0.0: still a proof, still both sides present */
   var mrnProof=!!(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)===_athenaHistoryDigits(target.mrn));
   return dobProof||mrnProof;
 }
@@ -23503,8 +23621,9 @@ function _assistReadChart(patientRef, onStatus){
       var proofOk=false;
       if(candidateRead){
         var idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
-        var seenName=String(observed.chartName||'').trim(),seenDob=_athenaHistoryDigits(observed.chartDob),wantDob=_athenaHistoryDigits(target.dob),seenId=idKey(observed.chartMrn),wantId=idKey(target.mrn);
-        proofOk=!!seenName&&_athenaHistoryNameCompatible(seenName,target.name)&&!!wantDob&&seenDob===wantDob&&(!wantId||(!!seenId&&seenId===wantId));
+        var seenName=String(observed.chartName||'').trim(),wantDob=_athenaHistoryDigits(target.dob),seenId=idKey(observed.chartMrn),wantId=idKey(target.mrn);
+        /* idread-1.0.0: the same date in two spellings is one date. */
+        proofOk=!!seenName&&_athenaHistoryNameCompatible(seenName,target.name)&&!!wantDob&&_athenaHistoryDobSame(observed.chartDob,target.dob)&&(!wantId||(!!seenId&&seenId===wantId));
       }else proofOk=_athenaHistoryProofMatches(target,observed);
       if(!proofOk){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
@@ -23855,7 +23974,7 @@ function _athenaNewPatientVerifiedRef(candidate,observed){
   var seenName=clean(observed.chartName||observed.name,200),seenDob=clean(observed.chartDob||observed.dob,20),seenId=clean(observed.chartMrn||observed.mrn||observed.athenaId,80);
   if(!name||!requestId||requestId!==observedRequestId)return null;
   if(!_athenaHistoryNameCompatible(seenName,name))return null;
-  if(dob&&(!seenDob||_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(dob)))return null;
+  if(dob&&!_athenaHistoryDobSame(seenDob,dob))return null; /* idread-1.0.0 */
   if(athenaId&&(!seenId||!idKey(seenId)||idKey(seenId)!==idKey(athenaId)))return null;
   if(!athenaId&&(!dob||!seenDob))return null;
   var pts=(typeof getPatients==='function'?getPatients():[])||[],nk=_athenaHistoryName(name),dk=_athenaHistoryDigits(dob),ik=idKey(athenaId);
@@ -23863,7 +23982,10 @@ function _athenaNewPatientVerifiedRef(candidate,observed){
     if(!p)return false;
     var pk=idKey(p.athenaId||p.athenaPatientId||p.mrn);
     if(ik&&pk&&ik===pk)return true;
-    return !!(nk&&dk&&_athenaHistoryName(p.name)===nk&&_athenaHistoryDigits(p.dob)===dk);
+    /* idread-1.0.0: a collision test may only get MORE sensitive. An existing
+       record whose DOB is stored ISO used to escape this check against a
+       mm/dd/yyyy candidate and a duplicate person was created. */
+    return !!(nk&&dk&&_athenaHistoryName(p.name)===nk&&_athenaHistoryDobSame(p.dob,dob));
   });
   if(collision)return null;
   var cohort=clean(candidate.cohort||candidate.studyLabel,120);
@@ -23889,9 +24011,11 @@ function _savePatientChart(name, appt, chart){
   if(!p&&creating){
     var np=ref.newPatient,idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
     var nk=_athenaHistoryName(np.name),dk=_athenaHistoryDigits(np.dob),ik=idKey(np.athenaId||np.mrn);
-    var collided=pts.some(function(x){if(!x)return false;var xk=idKey(x.athenaId||x.athenaPatientId||x.mrn);return String(x.id||'')===targetId||(ik&&xk&&ik===xk)||(nk&&dk&&_athenaHistoryName(x.name)===nk&&_athenaHistoryDigits(x.dob)===dk);});
+    /* idread-1.0.0 on both lines: the collision test only gets more sensitive,
+       and the DOB proof stops failing on a birthday spelled two ways. */
+    var collided=pts.some(function(x){if(!x)return false;var xk=idKey(x.athenaId||x.athenaPatientId||x.mrn);return String(x.id||'')===targetId||(ik&&xk&&ik===xk)||(nk&&dk&&_athenaHistoryName(x.name)===nk&&_athenaHistoryDobSame(x.dob,np.dob));});
     var exactName=_athenaHistoryNameCompatible(ref.verifiedName,np.name);
-    var exactDob=!np.dob||(_athenaHistoryDigits(ref.verifiedDob)&&_athenaHistoryDigits(ref.verifiedDob)===dk);
+    var exactDob=!np.dob||_athenaHistoryDobSame(ref.verifiedDob,np.dob);
     var exactId=!ik||(idKey(ref.verifiedMrn)&&idKey(ref.verifiedMrn)===ik);
     if(collided||!exactName||!exactDob||!exactId||(!ik&&!dk))return _chartSaveRefused('verified-create-refused',{collision:!!collided,exactName:exactName,exactDob:exactDob,exactId:exactId});
     p=Object.assign({},np);
@@ -24035,7 +24159,7 @@ function _hasImportedHistory(ref){
     var targetId=String(obj.patientId||obj.id||'').trim(); if(!targetId)return false;
     var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null; if(!p)return false;
     if(obj.name&&_athenaHistoryName(obj.name)!==_athenaHistoryName(p.name))return false;
-    if(obj.dob&&p.dob&&_athenaHistoryDigits(obj.dob)!==_athenaHistoryDigits(p.dob))return false;
+    if(obj.dob&&p.dob&&!_athenaHistoryDobSame(obj.dob,p.dob))return false; /* idread-1.0.0 */
     if((obj.mrn||obj.athenaId)&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(obj.mrn||obj.athenaId)!==_athenaHistoryDigits(p.mrn||p.athenaId))return false;
     if(p && (String(p.athenaChartSnapshot||'').trim() || /Pulled from Athena/i.test(p.summary||''))) return true;
     return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patientId||'')===String(p.id||'') && n.cc==='Athena chart import'; });
@@ -48476,6 +48600,14 @@ function __mlsJunkScrubRepull(day) {
   color:var(--brand,#2E6A4B);background:transparent;border-radius:999px;padding:4px 11px;cursor:pointer;min-height:28px}
 #pf2Quick .qb.pvr-chip .pvr-read:hover{background:var(--soft,#EAF1EC)}
 #pf2Quick .qb.pvr-chip .pvr-read[disabled]{opacity:.55;cursor:default}
+/* pullone-1.0.0: the strip's ONE pull control. The per-chip buttons above are no
+   longer rendered (1p-mls-connect.js), so this is the only control the strip
+   offers and it pulls the whole chart, which is what a pull reads. */
+#profileCard #pvrPullOne{display:block;margin:9px 0 2px;font-size:12.5px;font-weight:700;
+  border:1px solid var(--brand,#2E6A4B);color:var(--brand,#2E6A4B);background:transparent;
+  border-radius:999px;padding:7px 15px;cursor:pointer;min-height:34px}
+#profileCard #pvrPullOne:hover{background:var(--soft,#EAF1EC)}
+#profileCard #pvrPullOne[disabled]{opacity:.55;cursor:default}
 /* One empty state: the timeline owns it, so the source-clarity headline that
    repeats it is hidden — the rest of that summary (the per-source counts) is
    untouched and still shows the moment there is anything to count. */
@@ -51570,7 +51702,11 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     var body = bodyHtml(record);
     var acts = '<div class="hx-acts"><button type="button" class="hx-btn" data-hx-copy="' + esc(record.key) + '">📋 Copy</button>';
     if (record.indexOnly || record.illegible) {
-      acts += '<button type="button" class="hx-btn hx-go" data-hx-read="' + esc(record.key) + '">📥 Read from Athena</button>';
+      /* pullone-1.0.0: one verb everywhere. This routes through
+         __mlsChartField.read, which now delegates to the app's own
+         pullPatientChartViaAssist, so it is the same engine and the same status
+         line as the header button. */
+      acts += '<button type="button" class="hx-btn hx-go" data-hx-read="' + esc(record.key) + '">📥 Pull chart from Athena</button>';
     }
     acts += '</div>';
     return '<div class="hx-card" data-hx-key="' + esc(record.key) + '"' +
@@ -52920,5 +53056,339 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
 })();
 </script>
 <!-- ===== end caldata-1.0.0 =============================================== -->
+<!-- ===== pullone-1.0.0 — ONE pull, where you pressed it, and it lands on the chart ==
+     Owner, 2026-08-18, on the Patients screen: "these need to go; the main one
+     should work", and "if it's on the program it should work".
+
+     MEASURED on this shell in the local harness before this block (no login, no
+     PHI, synthetic names; tests/1p-pull-one-owner-contract.test.js reproduces
+     every number):
+
+       1. #ptPullAthenaBtn ("Pull from Athena", the Patients screen) says
+          NOTHING. feat_athena_autopull answers into #mlsAutoPullChip, and
+          feat_athena_ux_unify ships
+            #mlsAutoPullChip,.mlsac-toast{display:none !important;}
+          together with a mirror that is dead by construction: its pass() only
+          folds a duplicate when getComputedStyle(n).display !== 'none', which
+          its own rule has just made impossible. Measured after a real press:
+          chip present, textContent "Detecting the patient open in your athenaOne
+          tab", computed display 'none', zero visible surfaces carrying it. The
+          toast goes to the quiet tray. The doctor presses and sees nothing.
+
+       2. #profUnpulledPull and #pullChartBtn share ONE status line,
+          #pullChartStatus, and that node lives inside #historyView. Pressing
+          the Patients-screen copy of the button therefore paints the whole
+          three-step progress report into a display:none view.
+
+       3. FIVE per-field "Read from Athena" buttons render on one cold chart
+          (Problems, Medications, Allergies, Vitals, Visits), each starting its
+          own read, beside a sixth control that pulls the same chart.
+
+     WHAT THIS BLOCK DOES. It does not add a pull; it gives the ones already
+     there a single owner, a single voice, and a destination:
+
+       a. ONE VOICE, AT THE BUTTON. #pullChartStatus is re-parented next to
+          whichever pull control was pressed, so the step counter is beside the
+          doctor's finger instead of inside another view. It is the same node
+          the shell already writes to - no second status surface, no text
+          matching.
+
+       b. THE SUPPRESSED CHIP IS MIRRORED INTO IT. An observer copies
+          #mlsAutoPullChip's text into that one line. feat_athena_ux_unify's
+          suppression is left exactly as it is (restoring the floating chip
+          would restore the duplicate surface it was written to remove).
+
+       c. THE DEAD POINTER GOES. That chip's cross-patient message ends "Or use
+          the green MLS panel inside Athena ('Pull history')". Measured on
+          athenaOne v26.7 ax views tonight: that panel mounts NOWHERE, so the
+          advice sends the doctor to a control that does not exist. The mirror
+          drops that sentence and keeps the advice that works - select or add
+          the same patient here, then pull. The guard itself is untouched: the
+          stop still stops, it just stops saying something untrue.
+
+       d. ONE PULL CONTROL, NOT SIX. window.__mlsChartField.read - the verb
+          behind every per-field button and behind the encounter cards'
+          "Read from Athena" - now delegates to the app's own
+          pullPatientChartViaAssist, so there is exactly one engine, one
+          identity gate and one status line. 1p-mls-connect.js stops drawing a
+          button per chip and draws one for the strip.
+
+       e. IT LANDS ON WHAT WAS PULLED. On a true return, the Patients room is
+          shown, the pulled patient is active, the clinical section is opened
+          and the profile card is scrolled to. Before this, a successful pull
+          from the History screen left the doctor looking at a visit list that
+          contains none of the problems, medications or allergies just saved.
+
+     Additive and reversible: window.__mlsPullOne.revert() unwraps the pull,
+     disconnects the observer and puts #pullChartStatus back where it was. No
+     shared feat_*.js is edited. -->
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsPullOne && window.__mlsPullOne.installed) return;
+  var VERSION = 'pullone-1.0.0';
+  /* THE OFF SWITCH IS A FLAG, NOT AN UNWRAP. Measured while writing the contract
+     suite: 1p-mls-connect.js's own pull wrapper installs AFTER this block, so the
+     chain reads other(mine(original)) and reassigning window.pullPatientChartViaAssist
+     back to the original cannot remove this block from it - the outer wrapper
+     still holds a direct reference. Worse, reading .__pullOne off the outer
+     function returns false, so an unwrap that did nothing LOOKED like a clean
+     revert. Every effect below is gated on this flag instead, so revert() is
+     true whoever else is in the chain. */
+  var off = false;
+
+  function byId(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+
+  /* ---------------------------------------------------------------- a. ONE VOICE
+     The shell already owns exactly one status line for the chart pull. Park it
+     beside the control that was pressed rather than inventing a second one. */
+  var statusHome = null, statusNext = null, statusEl = null;
+  function rememberHome() {
+    var el = byId('pullChartStatus') || statusEl;
+    if (el) statusEl = el;
+    if (el && el.parentNode && !statusHome) { statusHome = el.parentNode; statusNext = el.nextSibling; }
+    return el;
+  }
+  function moveStatusTo(btn) {
+    var el = rememberHome();
+    if (off || !el || !btn || !btn.parentNode) return el;
+    if (el.previousSibling === btn) return el;
+    try { btn.parentNode.insertBefore(el, btn.nextSibling); } catch (e) {}
+    return el;
+  }
+  /* MEASURED after the first version of this block: #profUnpulledPull lives
+     inside the #profUnpulled notice, and renderProfile REMOVES that notice the
+     moment the chart has content - taking the re-parented status line out of the
+     document with it, so a pull that had just succeeded ended in silence. The
+     node reference is kept, and a detached line is re-attached before it speaks. */
+  function reattach() {
+    var el = byId('pullChartStatus') || statusEl;
+    if (!el) return null;
+    statusEl = el;
+    if (document.documentElement.contains(el)) return el;
+    var host = byId('ptPullAthenaBtn') || byId('pullChartBtn');
+    if (host && host.parentNode) { try { host.parentNode.insertBefore(el, host.nextSibling); return el; } catch (e) {} }
+    if (statusHome && document.documentElement.contains(statusHome)) { try { statusHome.insertBefore(el, statusNext); } catch (e2) {} }
+    return el;
+  }
+  function saySomething(text, kind) {
+    var el = reattach();
+    if (!el) return false;
+    el.style.display = 'block';
+    el.style.color = kind === 'err' ? '#9f2d2d' : (kind === 'ok' ? '#205c43' : '#52675c');
+    el.textContent = S(text);
+    return true;
+  }
+
+  /* -------------------------------------------------------- c. THE DEAD POINTER
+     Keyed on the distinctive phrase rather than the whole sentence, because a
+     whole-sentence match is a match that silently stops matching. The contract
+     suite asserts BOTH halves: that feat_athena_autopull.js still ships the
+     phrase (otherwise this rewrite is measuring nothing) and that nothing this
+     block renders contains it. */
+  var DEAD_POINTER = 'green MLS panel';
+  var WORKING_ADVICE = 'Select or add that same patient here, then pull again. Nothing was saved.';
+  function calmMismatch(text) {
+    var t = S(text);
+    if (t.indexOf(DEAD_POINTER) < 0) return t;
+    var cut = t.indexOf('Or use the ');
+    if (cut < 0) cut = t.indexOf(DEAD_POINTER);
+    var head = t.slice(0, cut).replace(/\s+$/, '');
+    var low = head.toLowerCase();
+    /* keep whatever working advice the shipped sentence already carried, and
+       never let the rewrite drop "nothing was saved" - that half is the part a
+       doctor needs most. */
+    if (low.indexOf('then click again') < 0 && low.indexOf('select') < 0) head = (head ? head + ' ' : '') + WORKING_ADVICE;
+    if (head.toLowerCase().indexOf('nothing was saved') < 0) head = (head ? head + ' ' : '') + 'Nothing was saved.';
+    return head;
+  }
+
+  /* ------------------------------------------- b. MIRROR THE SILENCED SURFACES
+     feat_athena_ux_unify suppresses BOTH of these with one rule
+     ("#mlsAutoPullChip,.mlsac-toast{display:none !important;}") and mirrors
+     neither, because its fold pass is gated on the very display it just set to
+     none. Measured: pressing "Copy every visit from athenaOne" on the profile
+     changed nothing visible either. Their text still updates - only their
+     display is dead - so reading it is enough. */
+  var SILENCED = ['#mlsAutoPullChip', '.mlsac-toast'];
+  var watched = [], lastMirrored = '';
+  function mirrorFrom(node) {
+    if (off || !node) return;
+    var raw = S(node.textContent).replace(/\s+/g, ' ').trim();
+    if (!raw || raw === lastMirrored) return;
+    lastMirrored = raw;
+    saySomething(calmMismatch(raw), /^⚠/.test(raw) ? 'err' : '');
+  }
+  function watchChip() {
+    for (var i = 0; i < SILENCED.length; i++) {
+      var n = safe(function () { return document.querySelector(SILENCED[i]); }, null);
+      if (!n) continue;
+      var known = false;
+      for (var k = 0; k < watched.length; k++) { if (watched[k].node === n) { known = true; break; } }
+      if (known) continue;
+      (function (node) {
+        var mo = new MutationObserver(function () { safe(function () { mirrorFrom(node); }); });
+        mo.observe(node, { childList: true, characterData: true, subtree: true });
+        watched.push({ node: node, obs: mo });
+        mirrorFrom(node);
+      })(n);
+    }
+  }
+
+  /* ------------------------------------------------------- e. LAND ON THE CHART */
+  function openPulledChart(patientId) {
+    var id = S(patientId);
+    if (!id) id = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '');
+    if (!id) return false;
+    safe(function () { if (isFn(window.setActivePtId)) window.setActivePtId(id); });
+    safe(function () { if (isFn(window.showView)) window.showView('patients'); });
+    safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
+    safe(function () { if (isFn(window.renderPatients)) window.renderPatients(); });
+    /* Open the clinical sections for THIS landing only. The doctor's saved
+       mls_pf2_collapsed preference is never rewritten - the seven-tile strip
+       that carries problems, medications, allergies and vitals renders even
+       while the card is collapsed, so the pulled data is on screen either way. */
+    function openSections() {
+      var pc = byId('profileCard');
+      if (!pc) return;
+      safe(function () { pc.classList.remove('pf2-collapsed'); });
+      safe(function () {
+        var secs = pc.querySelectorAll('.pf2-sec, .mls-fold');
+        for (var i = 0; i < secs.length; i++) { secs[i].classList.add('open'); secs[i].classList.add('mls-open'); }
+      });
+    }
+    openSections();
+    /* setTimeout, never rAF: rAF never fires in a non-compositing tab and both
+       the re-open and the scroll would silently never happen. */
+    setTimeout(function () { safe(openSections); safe(function () { var pc = byId('profileCard'); if (pc) pc.scrollIntoView({ block: 'start' }); }); }, 120);
+    safe(function () { document.body.setAttribute('data-p1-pull-landed', id); });
+    return true;
+  }
+
+  /* ------------------------------------------------------------- THE ONE WRAPPER */
+  function wrapPull() {
+    var fn = window.pullPatientChartViaAssist;
+    if (!isFn(fn) || fn.__pullOne) return false;
+    var wrapped = function (btn, opts) {
+      rememberHome();
+      moveStatusTo(btn);
+      watchChip();
+      var before = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '');
+      var out;
+      try { out = fn.apply(this, arguments); } catch (e) { throw e; }
+      return Promise.resolve(out).then(function (r) {
+        var el = byId('pullChartStatus') || statusEl;
+        var outcome = el ? S(el.textContent) : '';
+        if (r === true && !off) {
+          var id = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '') || before;
+          openPulledChart(id);
+          /* Say the outcome again in the room the doctor was just moved to. The
+             line is the shell's own; this only re-parks it and repeats the last
+             sentence the pull wrote, so nothing is invented. */
+          moveStatusTo(byId('ptPullAthenaBtn'));
+          if (outcome) saySomething(outcome, 'ok');
+        }
+        return r;
+      });
+    };
+    wrapped.__pullOne = true;
+    wrapped.__pullOneInner = fn;
+    window.pullPatientChartViaAssist = wrapped;
+    return true;
+  }
+
+  /* -------------------------------------------- d. ONE ENGINE BEHIND EVERY BUTTON
+     __mlsChartField.read is what the per-field chips and the encounter cards
+     call. Point it at the app's own pull so there is one identity gate and one
+     status line, and so a doctor who presses any of them gets the same three
+     steps in the same place. The pvr resolver's four states are untouched. */
+  function unifyFieldRead() {
+    var cf = window.__mlsChartField;
+    if (!cf || !isFn(cf.read) || cf.__pullOne) return false;
+    var orig = cf.read;
+    cf.__pullOneReadOrig = orig;
+    cf.read = function (p, onStatus, btn) {
+      if (!isFn(window.pullPatientChartViaAssist)) return orig.apply(this, arguments);
+      var say = isFn(onStatus) ? onStatus : function () {};
+      say('Pulling this chart from athenaOne...');
+      return Promise.resolve(safe(function () { return window.pullPatientChartViaAssist(btn || null, {}); }, false))
+        .then(function (ok) {
+          say(ok === true ? 'Chart pulled from athenaOne.' : 'The chart was not pulled. Nothing was changed.');
+          return { ok: ok === true, reason: ok === true ? '' : 'pull-refused' };
+        });
+    };
+    cf.__pullOne = true;
+    return true;
+  }
+
+  /* --------------------------------------- PARK THE LINE AT WHATEVER WAS PRESSED
+     Only pullPatientChartViaAssist passes through the wrapper above.
+     #ptPullAthenaBtn goes to feat_athena_autopull's own engine, and the copy-bar
+     button to feat_ease's, so a wrapper alone leaves those two answering into a
+     status line that is still sitting inside the hidden History view - measured:
+     the mirrored text arrived and was invisible. A capture-phase click listener
+     parks the line first, whichever engine the control belongs to. */
+  var PULL_IDS = { ptPullAthenaBtn: 1, pullChartBtn: 1, profUnpulledPull: 1, pvrPullOne: 1, ezPull: 1, ezPullAlt: 1 };
+  var PULL_TEXT = /pull (?:this |the )?(?:chart|history|patient)?\s*from athena|pull from athena|read from athena|copy every visit from athenaone/i;
+  function onPullClick(e) {
+    var t = e && e.target;
+    for (var hops = 0; t && t !== document && hops < 6; hops++, t = t.parentNode) {
+      if (t.nodeType !== 1) continue;
+      var hit = PULL_IDS[t.id] === 1 ||
+        (t.tagName === 'BUTTON' && PULL_TEXT.test(S(t.textContent).replace(/\s+/g, ' ')));
+      if (!hit) continue;
+      moveStatusTo(t);
+      watchChip();
+      return;
+    }
+  }
+  var clickWired = false;
+  function wireClicks() {
+    if (clickWired) return;
+    clickWired = true;
+    safe(function () { document.addEventListener('click', onPullClick, true); });
+  }
+
+  function arm() {
+    if (off) return;
+    wrapPull();
+    unifyFieldRead();
+    watchChip();
+    wireClicks();
+  }
+
+  /* setTimeout / setInterval only - requestAnimationFrame never fires in a
+     non-compositing tab and this block would never arm there. The interval is
+     permanent rather than bounded because the surfaces it watches are created
+     lazily, mid-pull, minutes after boot; every call early-returns once armed. */
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  var iv = setInterval(function () { safe(arm); }, 1200);
+
+  window.__mlsPullOne = {
+    installed: true, version: VERSION,
+    calmMismatch: calmMismatch, deadPointer: DEAD_POINTER, workingAdvice: WORKING_ADVICE,
+    moveStatusTo: moveStatusTo, openPulledChart: openPulledChart, mirrorFrom: mirrorFrom, watchChip: watchChip, arm: arm,
+    isOff: function () { return off; },
+    revert: function () {
+      off = true;
+      safe(function () { clearInterval(iv); });
+      safe(function () { for (var i = 0; i < watched.length; i++) { try { watched[i].obs.disconnect(); } catch (e) {} } }); watched = [];
+      var f = window.pullPatientChartViaAssist;
+      if (f && f.__pullOne && f.__pullOneInner) window.pullPatientChartViaAssist = f.__pullOneInner;
+      var cf = window.__mlsChartField;
+      if (cf && cf.__pullOne && cf.__pullOneReadOrig) { cf.read = cf.__pullOneReadOrig; cf.__pullOne = false; }
+      safe(function () { document.removeEventListener('click', onPullClick, true); }); clickWired = false;
+      var el = byId('pullChartStatus');
+      if (el && statusHome) safe(function () { statusHome.insertBefore(el, statusNext); });
+      safe(function () { document.body.removeAttribute('data-p1-pull-landed'); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end pullone-1.0.0 ================================================ -->
 </body>
 </html>
