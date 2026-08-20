@@ -9,12 +9,18 @@
  * that fails loudly is safe; one that fails quietly puts a note nowhere and
  * says it is filed.
  *
- * It also pins the boundary: sendNote STAGES a write for a human to confirm at
- * the office computer. It cannot execute one - MLS Assist arms an Athena
- * mutation only from a real trusted click (content.js
- * ATHENA_ACTION_V2_CLICK_GATE) - and this suite proves the runner refuses
- * every final action rather than relying on the server or the extension to be
- * the only refusal.
+ * It also pins the boundary: sendNote STAGES a write for a human to confirm.
+ * It never authorizes one on its own - the authorization is an arm minted by
+ * MLS Assist - and this suite proves the runner refuses every final action
+ * rather than relying on the server or the extension to be the only refusal.
+ *
+ * PART C (phconfirm-1.0.0, 2026-08-19) covers the owner's ruling that the
+ * confirmation must be possible FROM THE PHONE. Two properties carry it:
+ *   - the doctor can only confirm the thing he was actually shown (previewHash
+ *     binding, checked on the server AND on the office computer AND against the
+ *     sheet's own attribute immediately before the press), and
+ *   - without window.__mlsExtensionCapabilities.phoneConfirmedWriteV1 the whole
+ *     path is inert and behaviour is identical to the desktop-confirm flow.
  *
  * Run: node tests/1p-phone-send-to-athena-contract.test.js
  */
@@ -73,10 +79,41 @@ for (const banned of ['sign_encounter', 'place_order', 'stage_billing']) {
    stripper from hiding a missing rationale (a gate that stopped looking), the
    prose requirement is asserted separately below. */
 const blockCode = block.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
-for (const bypass of ['.click(', 'dispatchEvent', 'isTrusted', 'execCommand']) {
+for (const bypass of ['dispatchEvent', 'isTrusted', 'execCommand', 'new Event', 'MouseEvent']) {
   ok(!blockCode.includes(bypass),
-    `the phsend block's CODE must not touch ${bypass} - the clinician's own press is the authorization`);
+    `the phsend block's CODE must not touch ${bypass} - a synthesized event is never the authorization`);
 }
+/* A4c: `.click(` has exactly ONE legitimate call site now - pressing the sheet's
+   own confirm control AFTER MLS Assist has been armed by the extension verb.
+   A NAMED single exception, not a blanket allowance (a blanket one is how a
+   gate stops looking): it must live in phsendPressStagedConfirm, that function
+   must compare the sheet's own data-mls-preview-hash against the hash passed
+   in, and the only caller must be behind the capability check. */
+const clickSites = (blockCode.match(/\.click\(/g) || []).length;
+eq(clickSites, 1, 'exactly one .click( call site may exist in the phsend block');
+const pressFn = /function phsendPressStagedConfirm\(previewHash\) \{([\s\S]*?)\n  \}/.exec(block);
+ok(pressFn, 'the single press must live in the named function phsendPressStagedConfirm');
+ok(pressFn[1].includes('.click()'), 'the press lives inside that function');
+ok(/data-mls-preview-hash/.test(pressFn[1]), 'the press must read the sheet own preview hash');
+ok(/onSheet !== String\(previewHash\)/.test(pressFn[1]),
+  'the press must REFUSE when the sheet drifted off the hash the doctor confirmed');
+ok(/go\.disabled/.test(pressFn[1]), 'the press must not fire at a disabled control');
+/* and the caller is gated on the capability + a successful arm */
+ok(/if \(!remote \|\| !staged \|\| arming \|\| pressing\) return;/.test(block),
+  'the confirm handler must be gated on the capability and the staged state');
+ok(/armed\.ok !== true \|\| armed\.armed !== true/.test(block),
+  'the press must only follow a successful arm from the extension verb');
+
+/* A4d: the extension verb is called exactly as specified to Fable */
+ok(block.includes("type: 'mlsAppAthenaRemoteArmV1'"), 'the verb name must match the spec');
+ok(block.includes("d.type !== 'mlsAppAthenaRemoteArmV1Result'"), 'the reply type must match the spec');
+for (const field of ['requestId', 'action', 'previewHash', 'relayJobId', 'originDeviceId']) {
+  ok(new RegExp(field + ':').test(block), `the arm request must carry ${field}`);
+}
+ok(/String\(d\.requestId \|\| ''\) !== requestId/.test(block),
+  'the arm reply must be correlated by requestId, or two in flight resolve each other');
+ok(/phoneConfirmedWriteV1 === true/.test(block),
+  'the whole path must be gated on the phoneConfirmedWriteV1 capability');
 ok(/isTrusted/.test(block) && /ATHENA_ACTION_V2_CLICK_GATE/.test(block),
   'the block must explain in prose WHY it cannot execute the write, so the next reader does not try');
 ok(/cannot execute|does not try|never claims/i.test(block),
@@ -121,16 +158,50 @@ let relaySrc = connect.slice(relayStart, relayEnd);
 relaySrc = relaySrc.slice(0, relaySrc.lastIndexOf('})();') + 5);
 ok(relaySrc.includes('phsend-1.0.0'), 'the sliced relay module must contain the phsend block');
 
-function makeEl(id) {
+function makeEl(id, tag) {
   const el = {
-    id, style: { cssText: '', display: '' }, children: [], parentNode: null,
+    id, tag: tag || 'div', style: { cssText: '', display: '', width: '' },
+    children: [], parentNode: null,
     textContent: '', type: '', className: '', disabled: false, value: '',
-    nextSibling: null, _listeners: {},
-    setAttribute() {}, getAttribute() { return null; },
+    nextSibling: null, _listeners: {}, _attrs: {}, _html: '',
+    setAttribute(k, v) { this._attrs[k] = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
     appendChild(c) { c.parentNode = this; this.children.push(c); return c; },
     insertBefore(c) { c.parentNode = this; this.children.push(c); return c; },
+    removeChild(c) { const i = this.children.indexOf(c); if (i > -1) this.children.splice(i, 1); c.parentNode = null; return c; },
     addEventListener(t, fn) { (this._listeners[t] = this._listeners[t] || []).push(fn); },
     removeEventListener() {},
+    /* innerHTML is parsed only far enough for these tests: elements carrying an
+       id, their class, and their text. That is what the confirm sheet builds. */
+    set innerHTML(v) {
+      this._html = String(v);
+      this.children.length = 0;
+      const rx = /<(span|button|div|p)\b([^>]*)>([\s\S]*?)<\/\1>/g;
+      let m;
+      while ((m = rx.exec(String(v)))) {
+        const attrs = m[2] || '';
+        const idM = /\bid="([^"]+)"/.exec(attrs);
+        const clsM = /\bclass="([^"]+)"/.exec(attrs);
+        const child = makeEl(idM ? idM[1] : '', m[1]);
+        if (clsM) child.className = clsM[1];
+        const inner = m[3];
+        child.textContent = inner.replace(/<[^>]*>/g, '');
+        for (const am of attrs.matchAll(/([a-z-]+)="([^"]*)"/g)) child._attrs[am[1]] = am[2];
+        /* nested id-bearing spans inside a button must be findable too */
+        const nest = /<span\b([^>]*)>([\s\S]*?)<\/span>/g;
+        let nm;
+        while ((nm = nest.exec(inner))) {
+          const nidM = /\bid="([^"]+)"/.exec(nm[1] || '');
+          const nclsM = /\bclass="([^"]+)"/.exec(nm[1] || '');
+          const sub = makeEl(nidM ? nidM[1] : '', 'span');
+          if (nclsM) sub.className = nclsM[1];
+          sub.textContent = nm[2].replace(/<[^>]*>/g, '');
+          child.appendChild(sub);
+        }
+        this.appendChild(child);
+      }
+    },
+    get innerHTML() { return this._html; },
     querySelector(sel) {
       const cls = sel.replace('.', '');
       const walk = (n) => {
@@ -142,7 +213,8 @@ function makeEl(id) {
       };
       return walk(this);
     },
-    click() { (this._listeners.click || []).forEach((f) => f({})); }
+    click() { this._clicks = (this._clicks || 0) + 1; (this._listeners.click || []).forEach((f) => f({})); },
+    fire(type, ev) { (this._listeners[type] || []).forEach((f) => f(ev || {})); }
   };
   return el;
 }
@@ -152,7 +224,7 @@ function harness(opts) {
   const timers = new Map();
   let nextId = 1, now = Date.now();
   const els = new Map();
-  ['mlsPh3', 'mlsPh3Act', 'noteBox'].forEach((id) => els.set(id, makeEl(id)));
+  ['mlsPh3', 'mlsPh3Act', 'noteBox', '__body', '__head'].forEach((id) => els.set(id, makeEl(id)));
   els.get('noteBox').value = opts.noteText === undefined ? 'Reviewed note body.' : opts.noteText;
   const posted = [];
   const ctx = {
@@ -199,15 +271,26 @@ function harness(opts) {
         for (const root of els.values()) { const hit = walk(root); if (hit) return hit; }
         return null;
       },
-      createElement: (t) => makeEl(''),
+      createElement: (t) => makeEl('', t),
       addEventListener() {}, removeEventListener() {}
     }
   };
+  ctx.document.body = els.get('__body');
+  ctx.document.head = els.get('__head');
+  ctx.document.documentElement = els.get('__body');
   ctx.window = ctx;
   ctx.self = ctx;
-  ctx.window.addEventListener = () => {};
-  ctx.window.removeEventListener = () => {};
-  ctx.window.postMessage = () => {};
+  /* the extension capability that gates the whole phone-confirm path */
+  if (opts.capable) ctx.window.__mlsExtensionCapabilities = { phoneConfirmedWriteV1: true };
+  /* real window message plumbing: the remote-arm verb is a postMessage
+     round-trip, so the harness must be able to hear the request and answer it */
+  const winListeners = [];
+  const sentMessages = [];
+  ctx.window.addEventListener = (t, fn) => { if (t === 'message') winListeners.push(fn); };
+  ctx.window.removeEventListener = (t, fn) => { const i = winListeners.indexOf(fn); if (i > -1) winListeners.splice(i, 1); };
+  ctx.window.postMessage = (m) => { sentMessages.push(m); };
+  ctx.__sent = sentMessages;
+  ctx.__reply = (data) => { winListeners.slice().forEach((f) => { try { f({ data }); } catch (e) {} }); };
   ctx.window.bkBase = () => 'https://api.test';
   ctx.window.bkToken = () => (opts.authed === false ? '' : 'tok');
   ctx.window.backendMode = () => opts.authed !== false;
@@ -242,6 +325,19 @@ function harness(opts) {
     api: ctx.window.__mlsRelayLink,
     posted,
     els,
+    sent: ctx.__sent,
+    reply: ctx.__reply,
+    /* stand up the desktop confirmation sheet the write flow would have built,
+       carrying the same preview-hash attribute showActionConfirm sets */
+    standUpSheet(previewHash) {
+      els.set('mlsAthenaActionConfirm', makeEl('mlsAthenaActionConfirm'));
+      const go = makeEl('mlsAthenaActionGo', 'button');
+      go.setAttribute('data-mls-preview-hash', previewHash);
+      go.setAttribute('data-mls-athena-action', 'write_note');
+      els.set('mlsAthenaActionGo', go);
+      return go;
+    },
+    tearDownSheet() { els.delete('mlsAthenaActionConfirm'); els.delete('mlsAthenaActionGo'); },
     advance(ms) {
       const target = now + ms;
       let guard = 0;
@@ -371,15 +467,29 @@ async function main() {
   ok(/closed on this computer without sending/i.test(out.error), 'says the sheet was closed');
   ok(/[Nn]othing was written/.test(out.error), 'says nothing was written');
 
-  // (b) nobody ever came
+  // (b) nobody ever came - WITH THE SHEET STILL STANDING, which is the real
+  // shape of this case: showActionConfirm always builds the overlay, so a
+  // deadline that only runs when the sheet is absent can never fire in the
+  // one situation it exists for. (It did not, until phclean-1.0.0.)
   h = harness({});
   p = h.api.runSendNote({ id: 'jt', payload: { action: 'write_note', noteText: 'n', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
   await flush();
+  h.standUpSheet('pv_t');
+  h.ctx.__wf.opts.onProbe({ ok: true, context: {} });
   h.advance(10 * 60 * 1000); await flush();
   out = await p;
-  eq(out.ok, false, 'an unconfirmed send must fail, not hang forever');
+  eq(out.ok, false, 'an unconfirmed send must fail even with the sheet still up, not hang forever');
   ok(/[Nn]obody confirmed/i.test(out.error), 'says nobody confirmed');
   ok(/note is safe in MLS/i.test(out.error), 'reassures the doctor the note is not lost');
+  h.tearDownSheet();
+
+  // (b2) and with NO sheet ever painted it still deadlines
+  h = harness({});
+  p = h.api.runSendNote({ id: 'jt2', payload: { action: 'write_note', noteText: 'n', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
+  await flush();
+  h.advance(10 * 60 * 1000); await flush();
+  out = await p;
+  eq(out.ok, false, 'the deadline also holds when the sheet never appeared');
 
   // (c) Athena never answered after the confirm
   h = harness({});
@@ -612,11 +722,430 @@ async function main() {
   eq(body.payload.action, 'write_note', 'the button asks for a note write, never a final action');
 }
 
+/* =======================================================================
+ * PART C - phconfirm-1.0.0: confirming from the phone.
+ * The owner asked for the press to move to the phone. The extension verb
+ * makes that legitimate; these prove it stays safe, and that WITHOUT the
+ * capability nothing about yesterday's behaviour changes.
+ * =====================================================================*/
+
+const STAGE_FETCH = (extra) => (url, init) => {
+  if (/presence/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, online: true, ext: true, officeId: 'dev_office', officeName: 'Front desk' }) };
+  if (/\/stage$/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, status: 'taken' }) };
+  if (/\/progress$/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve(Object.assign({ ok: true, status: 'taken' }, extra && extra.progress ? extra.progress() : {})) };
+  return { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) };
+};
+
+/* ---- C1: NO CAPABILITY = yesterday's flow, unchanged ------------------ */
+{
+  const h = harness({ fetch: STAGE_FETCH() });      // capable: false
+  const p = h.api.runSendNote({ id: 'jn', payload: { action: 'write_note', noteText: 'Note body.', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
+  await flush();
+  h.standUpSheet('pv_1');
+  h.ctx.__wf.opts.onProbe({ ok: true, context: { patientName: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' } });
+  /* past the slow keep-alive interval: the progress poster throttles to one
+     post per 3s, so the onProbe line is swallowed and the first sentence the
+     phone actually receives after it is the keep-alive beat. */
+  h.advance(101000); await flush(); await flush();
+
+  eq(h.posted.filter((r) => /\/stage$/.test(r.url)).length, 0,
+    'without the capability the office computer must NOT stage anything for the phone');
+  eq(h.sent.filter((m) => m && m.type === 'mlsAppAthenaRemoteArmV1').length, 0,
+    'without the capability the arm verb is never sent');
+  const beats = h.posted.filter((r) => /\/progress$/.test(r.url));
+  ok(/confirmation on this computer/.test(String(beats[beats.length - 1].init.body)),
+    'without the capability the doctor is still told to confirm at the computer');
+  ok(!/on your phone/.test(beats.map((b) => String(b.init.body)).join(' ')),
+    'without the capability nothing must ever point the doctor at his phone');
+  // and it still completes the old way
+  h.tearDownSheet();
+  h.ctx.__wf.opts.onResult({ ok: true, verified: true }, { context: { encounterId: 'e1', visitDate: '2026-08-19' }, verifiedWrite: true });
+  const out = await p;
+  eq(out.ok, true, 'the desktop-confirm path still succeeds unchanged');
+}
+
+/* ---- C2: WITH the capability the office computer stages for the phone -- */
+{
+  const h = harness({ capable: true, fetch: STAGE_FETCH() });
+  h.api.runSendNote({ id: 'js', payload: { action: 'write_note', noteText: 'Note body.', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
+  await flush();
+  h.standUpSheet('pv_abc');
+  h.ctx.__wf.opts.onProbe({ ok: true, context: {
+    patientName: 'Synthetic Test', dob: '1980-01-01', mrn: '55501',
+    visitDate: '2026-08-19', provider: 'Dr Synthetic', encounterId: 'enc-77'
+  } });
+  await flush(); await flush();
+
+  const stage = h.posted.filter((r) => /\/stage$/.test(r.url))[0];
+  ok(stage, 'the office computer must stage the sheet for the phone');
+  const sb = JSON.parse(stage.init.body);
+  eq(sb.previewHash, 'pv_abc', 'the stage carries the sheet OWN preview hash, read off the confirm control');
+  eq(sb.identity.name, 'Synthetic Test', 'the stage carries the identity ATHENA reported');
+  eq(sb.identity.dob, '1980-01-01', 'the stage carries the DOB Athena reported');
+  eq(sb.identity.mrn, '55501', 'the stage carries the MRN Athena reported - the third factor');
+  eq(sb.encounter.date, '2026-08-19', 'the stage carries the encounter date');
+  eq(sb.encounter.provider, 'Dr Synthetic', 'the stage carries the provider');
+  eq(sb.encounter.id, 'enc-77', 'the stage carries the encounter id');
+  eq(sb.action, 'write_note', 'the stage names the action');
+}
+
+/* ---- C3: THE HASH BINDING. An altered note must be refused ------------- */
+{
+  const h = harness({ capable: true, fetch: STAGE_FETCH({ progress: () => ({ phoneConfirm: { previewHash: 'pv_SOMETHING_ELSE', at: Date.now() } }) }) });
+  const p = h.api.runSendNote({ id: 'jd', payload: { action: 'write_note', noteText: 'Note body.', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
+  await flush();
+  h.standUpSheet('pv_abc');
+  h.ctx.__wf.opts.onProbe({ ok: true, context: { patientName: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' } });
+  await flush(); await flush();
+  h.advance(9000); await flush(); await flush();
+
+  const out = await p;
+  eq(out.ok, false, 'a confirmation that does not match the staged hash must NOT write');
+  ok(/no longer matches/i.test(out.error), 'the refusal says the confirmation drifted');
+  ok(/nothing was written/i.test(out.error), 'the refusal says nothing was written');
+  eq(h.sent.filter((m) => m && m.type === 'mlsAppAthenaRemoteArmV1').length, 0,
+    'a drifted confirmation must never even reach the arm verb');
+}
+
+/* ---- C4: the happy remote path - arm, then press the SAME sheet -------- */
+{
+  const h = harness({ capable: true, fetch: STAGE_FETCH({ progress: () => ({ phoneConfirm: { previewHash: 'pv_abc', at: Date.now() } }) }) });
+  const p = h.api.runSendNote({ id: 'jok', payload: { action: 'write_note', noteText: 'Note body.', patient: { name: 'Synthetic Test', dob: '1980-01-01' }, originDeviceId: 'dev_phone_9' } });
+  await flush();
+  const go = h.standUpSheet('pv_abc');
+  h.ctx.__wf.opts.onProbe({ ok: true, context: { patientName: 'Synthetic Test', dob: '1980-01-01', mrn: '55501', visitDate: '2026-08-19', provider: 'Dr Synthetic', encounterId: 'enc-77' } });
+  await flush(); await flush();
+  h.advance(9000); await flush(); await flush();
+
+  const arm = h.sent.filter((m) => m && m.type === 'mlsAppAthenaRemoteArmV1')[0];
+  ok(arm, 'a matching confirmation must send the arm verb');
+  eq(arm.source, 'mls-app', 'the arm goes out on the app bridge');
+  eq(arm.action, 'write_note', 'the arm names the non-final action');
+  eq(arm.previewHash, 'pv_abc', 'the arm is bound to the hash the doctor confirmed');
+  eq(arm.relayJobId, 'jok', 'the arm names the relay job');
+  eq(arm.originDeviceId, 'dev_phone_9', 'the arm names the device that confirmed');
+  ok(arm.requestId, 'the arm carries a correlation id');
+
+  // nothing is pressed until the extension answers
+  eq(go._clicks || 0, 0, 'the sheet control must NOT be pressed before the extension answers the arm');
+
+  h.reply({ source: 'mls-ext', type: 'mlsAppAthenaRemoteArmV1Result', requestId: arm.requestId, resp: { ok: true, armed: true } });
+  await flush(); await flush();
+
+  eq(go._clicks || 0, 1, 'once armed, the sheet OWN confirm control is pressed exactly once');
+  h.tearDownSheet();
+  h.ctx.__wf.opts.onResult({ ok: true, verified: true }, { context: { encounterId: 'enc-77', visitDate: '2026-08-19', provider: 'Dr Synthetic' }, verifiedWrite: true });
+  const out = await p;
+  eq(out.ok, true, 'a phone-confirmed write reports ok');
+  eq(out.data.confirmed, true, 'the receipt records the confirmation');
+  eq(out.data.encounterId, 'enc-77', 'the receipt names the encounter written');
+}
+
+/* ---- C5: the extension refusing the arm must fail honestly ------------- */
+{
+  for (const [resp, re] of [
+    [{ ok: false, reason: 'stale-hash' }, /would not accept/i],
+    [{ ok: true, armed: false, reason: 'refused' }, /would not accept/i]
+  ]) {
+    const h = harness({ capable: true, fetch: STAGE_FETCH({ progress: () => ({ phoneConfirm: { previewHash: 'pv_abc', at: Date.now() } }) }) });
+    const p = h.api.runSendNote({ id: 'jz', payload: { action: 'write_note', noteText: 'N.', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
+    await flush();
+    h.standUpSheet('pv_abc');
+    h.ctx.__wf.opts.onProbe({ ok: true, context: { patientName: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' } });
+    await flush(); await flush();
+    h.advance(9000); await flush(); await flush();
+    const arm = h.sent.filter((m) => m && m.type === 'mlsAppAthenaRemoteArmV1')[0];
+    h.reply({ source: 'mls-ext', type: 'mlsAppAthenaRemoteArmV1Result', requestId: arm.requestId, resp });
+    await flush(); await flush();
+    const out = await p;
+    eq(out.ok, false, 'a refused arm must not write');
+    ok(re.test(out.error), 'the refusal is explained');
+    ok(/[Nn]othing was written/.test(out.error), 'the refusal says nothing was written');
+    ok(/office computer instead/.test(out.error), 'the doctor is told what to do instead');
+  }
+}
+
+/* ---- C6: a sheet that drifted must not be pressed even after an arm ---- */
+{
+  const h = harness({ capable: true, fetch: STAGE_FETCH({ progress: () => ({ phoneConfirm: { previewHash: 'pv_abc', at: Date.now() } }) }) });
+  const p = h.api.runSendNote({ id: 'jdr', payload: { action: 'write_note', noteText: 'N.', patient: { name: 'Synthetic Test', dob: '1980-01-01' } } });
+  await flush();
+  h.standUpSheet('pv_abc');
+  h.ctx.__wf.opts.onProbe({ ok: true, context: { patientName: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' } });
+  await flush(); await flush();
+  h.advance(9000); await flush(); await flush();
+  const arm = h.sent.filter((m) => m && m.type === 'mlsAppAthenaRemoteArmV1')[0];
+  /* between the arm and the press the sheet is rebuilt for a different note */
+  h.els.get('mlsAthenaActionGo').setAttribute('data-mls-preview-hash', 'pv_DIFFERENT');
+  h.reply({ source: 'mls-ext', type: 'mlsAppAthenaRemoteArmV1Result', requestId: arm.requestId, resp: { ok: true, armed: true } });
+  await flush(); await flush();
+  const out = await p;
+  eq(out.ok, false, 'a sheet that changed under the arm must not be pressed');
+  ok(/could not complete/i.test(out.error), 'the failure is explained');
+  ok(/[Nn]othing was written/.test(out.error), 'and says nothing was written');
+}
+
+/* ---- C7: THE PHONE CONFIRM SHEET ------------------------------------- */
+const STAGE = {
+  previewHash: 'pv_abc',
+  identity: { name: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' },
+  encounter: { date: '2026-08-19', provider: 'Dr Synthetic', id: 'enc-77' }
+};
+const LONG_NOTE = Array.from({ length: 60 }, (_, i) => 'Line ' + (i + 1) + ' of the reviewed note.').join('\n');
+
+function sheetOf(h) {
+  return h.els.get('__body').children.filter((c) => c.id === 'mlsPhConfirm')[0] || null;
+}
+function allText(el) {
+  let out = el.textContent || '';
+  for (const c of el.children) out += ' ' + allText(c);
+  return out;
+}
+
+{
+  const h = harness({ capable: true });
+  h.api.openConfirmSheet('j1', STAGE, LONG_NOTE);
+  const sheet = sheetOf(h);
+  ok(sheet, 'the confirm sheet must mount on the phone');
+  eq(sheet.getAttribute('role'), 'dialog', 'the sheet is a dialog');
+  eq(sheet.getAttribute('aria-modal'), 'true', 'the sheet is modal');
+
+  const txt = allText(sheet);
+  /* FULL IDENTITY - all three factors, visible */
+  ok(/Synthetic Test/.test(txt), 'the sheet shows the patient name Athena reported');
+  ok(/1980-01-01/.test(txt), 'the sheet shows the DOB');
+  ok(/55501/.test(txt), 'the sheet shows the MRN');
+  ok(/2026-08-19/.test(txt), 'the sheet shows the encounter date');
+  ok(/Dr Synthetic/.test(txt), 'the sheet shows the provider');
+
+  /* THE NOTE IS VERBATIM AND COMPLETE */
+  const noteEl = h.ctx.document.getElementById('mlsPhConfirmNote');
+  ok(noteEl, 'the sheet has a note panel');
+  eq(noteEl.textContent, LONG_NOTE, 'the note must be shown EXACTLY and in full - never truncated');
+  ok(noteEl.textContent.includes('Line 60 of'), 'the last line of a long note is present');
+
+  /* it must say what it will and will not do */
+  ok(/does not sign it/i.test(txt), 'the sheet says it does not sign');
+  ok(/place any order/i.test(txt), 'the sheet says it places no order');
+
+  /* THE CONFIRM IS DELIBERATE and names the patient */
+  const goEl = h.ctx.document.getElementById('mlsPhConfirmGo');
+  ok(goEl, 'the sheet has a confirm control');
+  ok(/Hold to send/.test(goEl.textContent + ' ' + allText(goEl)), 'the control asks for a HOLD, not a tap');
+  ok(/Synthetic Test/.test(allText(goEl)), 'the confirm control names the patient');
+  ok(/Hold/.test(String(goEl.getAttribute('aria-label'))), 'the control describes the hold to screen readers');
+  ok(h.ctx.document.getElementById('mlsPhConfirmNo'), 'the sheet offers Cancel');
+  eq(h.api.confirmState().hash, 'pv_abc', 'the sheet is bound to the staged hash');
+}
+
+/* ---- C8: a short hold must NOT confirm; a full hold must -------------- */
+{
+  const h = harness({ capable: true, fetch: (url, init) => {
+    if (/\/confirm$/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, confirmed: true }) };
+    return { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) };
+  } });
+  h.api.openConfirmSheet('j2', STAGE, 'Note body.');
+  const goEl = h.ctx.document.getElementById('mlsPhConfirmGo');
+
+  // press and release well short of the hold time
+  goEl.fire('pointerdown', {});
+  h.advance(400);
+  goEl.fire('pointerup', {});
+  h.advance(3000); await flush();
+  eq(h.posted.filter((r) => /\/confirm$/.test(r.url)).length, 0,
+    'releasing early must NOT confirm - that is the whole point of a hold');
+  ok(sheetOf(h), 'the sheet stays open after an aborted hold');
+
+  // a full hold confirms exactly once
+  goEl.fire('pointerdown', {});
+  h.advance(1500); await flush(); await flush();
+  const confirms = h.posted.filter((r) => /\/confirm$/.test(r.url));
+  eq(confirms.length, 1, 'a completed hold confirms exactly once');
+  eq(JSON.parse(confirms[0].init.body).previewHash, 'pv_abc',
+    'the confirmation names the hash the doctor was shown');
+  eq(sheetOf(h), null, 'the sheet closes once confirmed');
+  eq(h.api.sendState().status, 'working', 'the phone then waits for the write');
+}
+
+/* ---- C9: Cancel must not confirm ------------------------------------- */
+{
+  const h = harness({ capable: true });
+  h.api.openConfirmSheet('j3', STAGE, 'Note body.');
+  h.ctx.document.getElementById('mlsPhConfirmNo').click();
+  await flush();
+  eq(h.posted.filter((r) => /\/confirm$/.test(r.url)).length, 0, 'Cancel must never confirm');
+  eq(sheetOf(h), null, 'Cancel closes the sheet');
+  ok(/Not sent/.test(h.api.sendState().line), 'Cancel says plainly that nothing was sent');
+}
+
+/* ---- C10: a server refusal of the confirmation is reported honestly ---- */
+{
+  const h = harness({ capable: true, fetch: (url) => {
+    if (/\/confirm$/.test(url)) return { ok: false, status: 409, json: () => Promise.resolve({ error: 'that confirmation does not match what was staged - the note or the patient changed, so nothing was confirmed' }) };
+    return { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) };
+  } });
+  h.api.openConfirmSheet('j4', STAGE, 'Note body.');
+  await h.api.sendConfirmNow('j4', 'pv_abc');
+  await flush();
+  eq(h.api.sendState().status, 'failed', 'a refused confirmation must show as failed');
+  ok(/does not match what was staged/.test(h.api.sendState().line), 'the server reason reaches the doctor');
+  eq(sheetOf(h), null, 'the sheet closes rather than inviting a second doomed hold');
+}
+
+/* ---- C11: a reloaded phone cannot confirm a note it can no longer show - */
+{
+  const h = harness({ capable: true });
+  h.api.openConfirmSheet('j5', STAGE, '');   // note text lost to a reload
+  const goEl = h.ctx.document.getElementById('mlsPhConfirmGo');
+  eq(goEl.disabled, true, 'with no note text to show, the confirm control must stand down');
+  const noteEl = h.ctx.document.getElementById('mlsPhConfirmNote');
+  ok(/no longer holds the exact note/i.test(noteEl.textContent), 'it says why it cannot confirm');
+  ok(/office computer instead/i.test(noteEl.textContent), 'it names the way forward');
+  goEl.fire('pointerdown', {});
+  h.advance(2000); await flush();
+  eq(h.posted.filter((r) => /\/confirm$/.test(r.url)).length, 0,
+    'a stood-down control must not confirm even if pressed');
+}
+
+/* ---- C12: the poll opens the sheet when the desktop stages ------------- */
+{
+  let staged = false;
+  const h = harness({ capable: true, fetch: (url, init) => {
+    if (/presence/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, online: true, ext: true, officeId: 'dev_office' }) };
+    if (/\/api\/relay\/jobs$/.test(url) && init.method === 'POST') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, id: 'rj_c' }) };
+    if (/\/api\/relay\/jobs\/rj_c$/.test(url)) {
+      return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: staged
+        ? { id: 'rj_c', status: 'taken', stage: STAGE }
+        : { id: 'rj_c', status: 'taken' } }) };
+    }
+    return { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) };
+  } });
+  await h.api.sendNoteToAthena({ action: 'write_note', noteText: LONG_NOTE, patient: { name: 'Synthetic Test', dob: '1980-01-01' } });
+  await flush(); await flush();
+  h.advance(3000); await flush(); await flush();
+  eq(sheetOf(h), null, 'no sheet before the desktop stages one');
+
+  staged = true;
+  h.advance(3000); await flush(); await flush();
+  ok(sheetOf(h), 'the phone opens the confirm sheet as soon as the desktop stages it');
+  eq(h.api.sendState().status, 'confirm', 'the phone reports that it is waiting on the doctor');
+  eq(h.ctx.document.getElementById('mlsPhConfirmNote').textContent, LONG_NOTE,
+    'the sheet shows the exact note this phone sent, in full');
+
+  /* and it does not reopen a second sheet on every poll */
+  h.advance(6000); await flush(); await flush();
+  eq(h.els.get('__body').children.filter((c) => c.id === 'mlsPhConfirm').length, 1,
+    'polling must not stack duplicate confirm sheets');
+}
+
+/* =======================================================================
+ * PART D - phclean-1.0.0: the phone UI cleanup ("its kinda old").
+ * feat_mls_phone_ui.js has no 1p fork, so it is production bytes and this
+ * lane may not edit it. Everything here is either a fix in a file this lane
+ * DOES own, or an overlay scoped to #mlsPh3.
+ * =====================================================================*/
+
+/* ---- D1: the version-nag banner had stopped being kept off the phone ---
+ * This is the defect the ph3 rebuild recorded and then re-introduced: the
+ * banner's ONLY phone guard tested `mls-phone`, and ph3 REMOVES that class
+ * when it mounts. From ph3 onward it drew over the middle of a 375x812
+ * screen at z-index 2147483100 - the same banner whose own comment records
+ * it making 6 of 19 controls unclickable. */
+{
+  const phoneUi = read('feat_mls_phone_ui.js');
+  ok(/classList\.remove\('mls-phone'\)/.test(phoneUi),
+    'precondition: the phone module still removes mls-phone (if this changes, re-check the guard)');
+  ok(/classList\.add\('mls-ph3'\)/.test(phoneUi),
+    'precondition: the phone module still adds mls-ph3');
+
+  const guard = /function banner\(msg, how\) \{([\s\S]*?)if \(\$\('mlsR46VerBanner'\)/.exec(connect);
+  ok(guard, 'the nag banner guard must be locatable');
+  ok(/contains\('mls-phone'\)/.test(guard[1]), 'the old class is still covered');
+  ok(/contains\('mls-ph3'\)/.test(guard[1]), 'the CURRENT phone class must be covered too');
+  ok(/__mlsPhoneUI/.test(guard[1]) && /\.mounted/.test(guard[1]),
+    'the guard must also ask the durable question - is the phone app actually mounted');
+  ok(/inherits every guard that class was carrying/.test(guard[1]),
+    'the reason must be written down so the next rename does not silently do it again');
+}
+
+/* ---- D2: the touch-target floor, measured from the shipped stylesheet --
+ * Declared sizes, not rendered ones - a rendered pass at 375x812 needs a
+ * real browser and is reported separately. This is still a real regression
+ * guard: every interactive ph3 class must declare at least 40px, either in
+ * the phone stylesheet or through the phclean overlay. */
+{
+  const phoneUi = read('feat_mls_phone_ui.js');
+  const INTERACTIVE = ['ph3-primary', 'ph3-secondary', 'ph3-dot', 'ph3-pill', 'ph3-arrow',
+    'ph3-today', 'ph3-row', 'ph3-item', 'ph3-nx', 'ph3-find'];
+  /* Both stylesheets are written as JS string FRAGMENTS - the phone module as
+     an array ('...', '...') and the overlay as a concatenation ('...' + '...').
+     A declaration therefore routinely straddles a fragment boundary, e.g.
+        '#mlsPh3 .ph3-primary{display:flex;...width:100%;',
+        'min-height:56px;border:0;...'
+     so the joins must be closed up before any property can be read. Without
+     this the parser silently reports 0 for a control that declares 56. */
+  const joinFragments = (s) => s.replace(/'\s*,\s*\n\s*'/g, '').replace(/'\s*\+\s*\n\s*'/g, '');
+  const sizeOf = (rawSrc, cls) => {
+    const src = joinFragments(rawSrc);
+    const rx = new RegExp('\\.' + cls + '\\{([^}]*)', 'g');
+    let best = 0, seen = false;
+    let m;
+    while ((m = rx.exec(src))) {
+      seen = true;
+      const body = m[1];
+      const mh = /(?:^|;)\s*min-height:(\d+(?:\.\d+)?)px/.exec(body);
+      const h = /(?:^|;)\s*height:(\d+(?:\.\d+)?)px/.exec(body);
+      const v = Number((mh && mh[1]) || (h && h[1]) || 0);
+      if (v > best) best = v;
+    }
+    return seen ? best : null;
+  };
+  const overlayBlockStart = connect.indexOf('/* ===== phclean-1.0.0 (2026-08-19');
+  ok(overlayBlockStart > 0, 'the phclean overlay block must exist');
+  const overlay = connect.slice(overlayBlockStart, connect.indexOf('/* ===== end phsend-1.0.0 ='));
+
+  const report = [];
+  for (const cls of INTERACTIVE) {
+    const before = sizeOf(phoneUi, cls);
+    const after = sizeOf(overlay, cls) || before;
+    report.push({ cls, before, after });
+    ok(before !== null, `${cls} must exist in the phone stylesheet`);
+    ok(after >= 40, `${cls} must declare at least 40px of touch height (declared ${after})`);
+  }
+  /* the one that was actually under the floor, pinned so it cannot slip back */
+  const nx = report.filter((r) => r.cls === 'ph3-nx')[0];
+  eq(nx.before, 30, 'ph3-nx was 30px in the shipped stylesheet');
+  eq(nx.after, 44, 'ph3-nx must be raised to 44px by the overlay');
+  /* and nothing else was quietly resized */
+  for (const r of report) {
+    if (r.cls === 'ph3-nx') continue;
+    eq(r.after, r.before, `${r.cls} must be left exactly as the phone module declares it`);
+  }
+}
+
+/* ---- D3: the overlay is injected, scoped, and only where it belongs ---- */
+{
+  const h = harness({});
+  h.api.phsendMount();
+  const style = h.ctx.document.getElementById('mlsPhCleanCss');
+  ok(style, 'mounting the phone must inject the cleanup overlay');
+  ok(/#mlsPh3 \.ph3-nx/.test(style.textContent), 'the overlay is scoped to the phone frame');
+  ok(/44px!important/.test(style.textContent),
+    'the size must be !important - the phone stylesheet loads after this one and would otherwise win on order');
+  ok(!/body|html|\*\s*\{/.test(style.textContent), 'the overlay must not reach outside #mlsPh3');
+
+  // injected once, not on every mount tick
+  h.api.phsendMount();
+  h.api.phsendMount();
+  eq(h.els.get('__head').children.filter((c) => c.id === 'mlsPhCleanCss').length, 1,
+    'the overlay must be injected exactly once');
+}
+
 } /* end main */
 
 main().then(function () {
   console.log('PASS 1p phone send-to-athena (phsend-1.0.0): ' + checks +
-    ' checks - final actions refused at the runner, no trusted-click bypass, shared production files untouched, identity law (name-only never resolves, ambiguity refused), real startAthenaAction staging, human-confirm beats, closed-sheet + nobody-came + timeout + refusal all fail honestly, phone lifecycle queued->working->SENT, old-server/offline/signed-out/lost/expired degraded modes, button placement and repaint survival');
+    ' checks - final actions refused at the runner, one NAMED armed press and no other click, shared production files untouched, identity law (name-only never resolves, ambiguity refused), real startAthenaAction staging, human-confirm beats, closed-sheet + nobody-came + timeout + refusal all fail honestly, phone lifecycle queued->working->SENT, old-server/offline/signed-out/lost/expired degraded modes, button placement and repaint survival; phconfirm: no-capability path byte-identical, stage carries Athena-reported identity, drifted hash never arms, arm verb per spec then one press, refused arm honest, sheet shows name+DOB+MRN+encounter+provider and the note in full, short hold does not confirm, Cancel does not confirm, reloaded phone stands the control down');
 }, function (err) {
   console.error(err && err.stack ? err.stack : err);
   process.exit(1);

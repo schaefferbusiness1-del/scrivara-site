@@ -34315,7 +34315,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        restored 22/22 controls. Its own instruction - install the extension from
        Settings - is impossible to follow on a phone, so there is no upside to
        weigh against that. */
-    try { if (document.body && document.body.classList.contains('mls-phone')) return; } catch (ePh) {}
+    /* phclean-1.0.0 (2026-08-19): THIS GUARD HAD STOPPED FIRING. It tested
+       `mls-phone` only, and the ph3 rebuild REMOVES that class when it mounts
+       (feat_mls_phone_ui.js: `classList.remove('mls-phone')`) and adds
+       `mls-ph3` instead - so from ph3 onward every phone session drew the
+       banner again, over the middle of the screen, exactly as measured above.
+       Removing a class inherits every guard that class was carrying.
+       The class test is kept for the older layer, `mls-ph3` is added for the
+       current one, and the real question is asked last: is the phone app
+       actually mounted? A flag the module owns cannot be broken by the next
+       rename the way these two class names were. */
+    try {
+      var _bd = document.body;
+      if (_bd && (_bd.classList.contains('mls-phone') || _bd.classList.contains('mls-ph3'))) return;
+      var _ph = window.__mlsPhoneUI;
+      if (_ph && _ph.installed && typeof _ph.state === 'function' && _ph.state().mounted) return;
+    } catch (ePh) {}
     if ($('mlsR46VerBanner') || dismissed()) return;
     var b = document.createElement('div');
     b.id = 'mlsR46VerBanner';
@@ -51931,9 +51946,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      per-patient status ("Reading verified history 3 of 7..."), and learns of a
      cancel via the response without a second polling channel. */
   function makeProgressPoster(jobId) {
-    var lastAt = 0, canceled = false;
+    var lastAt = 0, canceled = false, phoneConfirm = null;
     return {
       canceled: function () { return canceled; },
+      /* phconfirm-1.0.0: the doctor's answer from his phone rides back on the
+         beat's own response, exactly as a cancel already does - no second
+         polling channel. Pull jobs never carry one, so this is inert for them. */
+      confirmed: function () { return phoneConfirm; },
       post: function (note) {
         var now = Date.now();
         if (now - lastAt < 3000) return;
@@ -51941,7 +51960,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         fetch(base() + '/api/relay/jobs/' + encodeURIComponent(jobId) + '/progress', {
           method: 'POST', headers: H(), body: JSON.stringify({ note: String(note || '').slice(0, 200) })
         }).then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (j) { if (j && (j.status === 'canceled' || j.status === 'lost')) canceled = true; })
+          .then(function (j) {
+            if (j && (j.status === 'canceled' || j.status === 'lost')) canceled = true;
+            if (j && j.phoneConfirm && j.phoneConfirm.previewHash) phoneConfirm = j.phoneConfirm;
+          })
           .catch(function () {});
       }
     };
@@ -52123,6 +52145,85 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }, matchedLocal: !!hit };
   }
 
+  /* ===== phconfirm-1.0.0 (2026-08-19, owner ruling: "yes want the confirm to
+   * be possible from the phone") ==========================================
+   * The August 18 build stopped one step short on purpose: MLS Assist arms an
+   * Athena mutation only from a real trusted click, so the doctor had to press
+   * Confirm at the office computer. The owner has now asked for that press to
+   * happen on the phone, and Fable is shipping the extension verb that makes
+   * it legitimate (3.0.68, mlsAppAthenaRemoteArmV1).
+   *
+   * WHAT CHANGED, AND WHAT DID NOT. The authorization is still an explicit,
+   * single-use arm minted by the extension and bound to ONE previewHash. What
+   * moved is only WHERE the doctor stands when he gives it. Everything else -
+   * the read-only probe, the three-factor chart identity check, the locked
+   * encounter context, the verified-write receipt - runs exactly as before,
+   * because this drives the SAME confirmation sheet rather than a second copy
+   * of it. The desktop sheet still appears, so anyone at that computer can see
+   * precisely what is being written.
+   *
+   * WITHOUT the capability nothing here runs and the flow is byte-identical
+   * to the staged-desktop-confirm behaviour that shipped yesterday.
+   * ======================================================================*/
+  function phsendRemoteCapable() {
+    try { return window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.phoneConfirmedWriteV1 === true; } catch (e) { return false; }
+  }
+  /* the verb, exactly as specified to Fable: correlated by requestId, action
+     limited to the two non-final ones, and bound to the previewHash + job. */
+  function phsendRemoteArm(o) {
+    return new Promise(function (resolve) {
+      o = o || {};
+      if (!Object.prototype.hasOwnProperty.call(PHSEND_ACTIONS, String(o.action || ''))) {
+        resolve({ ok: false, reason: 'action-not-relayable' }); return;
+      }
+      if (!String(o.previewHash || '').trim()) { resolve({ ok: false, reason: 'no-preview-hash' }); return; }
+      var requestId = 'phra-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      var done = false;
+      function h(ev) {
+        var d = ev && ev.data;
+        if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppAthenaRemoteArmV1Result') return;
+        if (String(d.requestId || '') !== requestId) return;
+        if (done) return; done = true;
+        try { window.removeEventListener('message', h); } catch (e) {}
+        resolve(d.resp || d);
+      }
+      try { window.addEventListener('message', h, false); } catch (e) {}
+      try {
+        window.postMessage({
+          source: 'mls-app', from: 'mls-app', type: 'mlsAppAthenaRemoteArmV1',
+          requestId: requestId, action: String(o.action), previewHash: String(o.previewHash),
+          relayJobId: String(o.relayJobId || ''), originDeviceId: String(o.originDeviceId || '')
+        }, '*');
+      } catch (e2) {
+        done = true; try { window.removeEventListener('message', h); } catch (e3) {}
+        resolve({ ok: false, reason: 'bridge-unavailable' }); return;
+      }
+      setTimeout(function () {
+        if (done) return; done = true;
+        try { window.removeEventListener('message', h); } catch (e) {}
+        resolve({ ok: false, reason: 'no-answer' });
+      }, 15000);
+    });
+  }
+  /* Press the sheet's OWN confirm control once the extension has been armed.
+     This is deliberately not a second write path: the button carries the
+     locked patient, locked encounter and one-use token that showActionConfirm
+     already verified, so pressing it runs the identical bridge execute the
+     clinician's own finger would. The press is not the authorization - the
+     arm is - which is why this is unreachable without phoneConfirmedWriteV1
+     and a matching previewHash. */
+  function phsendPressStagedConfirm(previewHash) {
+    var go = null;
+    try { go = document.getElementById('mlsAthenaActionGo'); } catch (e) { return false; }
+    if (!go || go.disabled) return false;
+    var onSheet = '';
+    try { onSheet = String(go.getAttribute('data-mls-preview-hash') || ''); } catch (e2) { onSheet = ''; }
+    /* last line of defence: never press a sheet that drifted off the hash the
+       doctor actually confirmed on his phone */
+    if (!onSheet || onSheet !== String(previewHash)) return false;
+    try { go.click(); return true; } catch (e3) { return false; }
+  }
+
   /* THE OFFICE COMPUTER'S HALF. */
   function runSendNote(job) {
     return new Promise(function (res) {
@@ -52153,13 +52254,67 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!resolved.ok) { finish({ ok: false, error: resolved.error }); return; }
 
       var beat = makeProgressPoster(job.id);
+      /* the ONE switch. Absent capability = yesterday's flow, unchanged. */
+      var remote = phsendRemoteCapable();
       var beatIv = null, watchIv = null, startedAt = Date.now(), sawSheet = false;
+      var stagedHash = '', staged = false, pressing = false, arming = false, stageTries = 0;
       function stopTimers() {
         try { if (beatIv) clearInterval(beatIv); } catch (e) {}
         try { if (watchIv) clearInterval(watchIv); } catch (e2) {}
         beatIv = null; watchIv = null;
       }
       function say(note) { try { beat.post(note); } catch (e) {} }
+      function where() { return remote ? 'your phone' : 'this computer'; }
+
+      /* Put in front of the doctor's phone exactly what this computer just read
+         out of Athena, plus the hash that binds this note to this chart. The
+         phone renders the sheet from THIS - never from what it sent - so the
+         identity he confirms is the identity Athena actually reported. */
+      function stageForPhone(probe) {
+        var go = null;
+        try { go = document.getElementById('mlsAthenaActionGo'); } catch (e) {}
+        var hash = '';
+        try { hash = go ? String(go.getAttribute('data-mls-preview-hash') || '') : ''; } catch (e2) {}
+        if (!hash) {
+          /* the sheet has not painted yet - try again shortly, bounded */
+          if (++stageTries > 40) {
+            stopTimers(); lb(false);
+            finish({ ok: false, error: 'This computer verified the chart but could not prepare the confirmation. Nothing was written to Athena.' });
+            return;
+          }
+          setTimeout(function () { if (!settled) stageForPhone(probe); }, 250);
+          return;
+        }
+        var ctx = (probe && probe.context) || {};
+        stagedHash = hash;
+        fetch(base() + '/api/relay/jobs/' + encodeURIComponent(job.id) + '/stage', {
+          method: 'POST', headers: H(), body: JSON.stringify({
+            previewHash: hash, action: action,
+            identity: {
+              name: String(ctx.patientName || ctx.name || ''),
+              dob: String(ctx.dob || ctx.patientDob || ''),
+              mrn: String(ctx.mrn || ctx.patientMrn || ctx.chartMrn || '')
+            },
+            encounter: {
+              date: String(ctx.visitDate || ctx.encounterDate || ctx.date || ''),
+              provider: String(ctx.provider || ctx.providerName || ''),
+              id: String(ctx.encounterId || ctx.visitId || ctx.id || '')
+            }
+          })
+        }).then(function (r) { return r && r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (!j || !j.ok) {
+              /* an MLS server without the handshake cannot carry a phone
+                 confirm - fall back rather than strand the doctor */
+              remote = false;
+              say('Chart verified. Waiting for your confirmation on this computer.');
+              return;
+            }
+            staged = true;
+            say('Chart verified. Waiting for your confirmation on your phone.');
+          })
+          .catch(function () { remote = false; });
+      }
 
       lb(true, 'Your phone sent a note - checking the chart in Athena...');
       say('Checking the chart in Athena (read-only)...');
@@ -52169,8 +52324,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         sections: [{ key: 'note', text: noteText }],
         autoOpen: true,
         receiptSessionId: 'phsend-' + String(job.id || ''),
-        onProbe: function () {
+        onProbe: function (probe) {
           sawSheet = true;
+          if (remote) { stageForPhone(probe); return; }
           say('Chart verified. Waiting for your confirmation on this computer.');
         },
         onResult: function (resp, meta) {
@@ -52203,10 +52359,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         finish({ ok: false, error: 'This computer could not start the Athena check. Nothing was opened.' });
         return;
       }
-      toast('A note arrived from your phone - confirm it to send it to Athena.', '');
+      toast(remote
+        ? 'A note arrived from your phone - confirm it there and it will be written here.'
+        : 'A note arrived from your phone - confirm it to send it to Athena.', '');
 
       /* keep the job alive while a human decides, and notice the two ways this
          ends without an onResult: the sheet closed (Cancel), or nobody came. */
+      /* When the doctor confirms on his phone the answer arrives on this beat's
+         own response, so the beat runs fast enough to act on it. Without the
+         capability the interval is the slow keep-alive it always was. */
       beatIv = setInterval(function () {
         if (settled) { stopTimers(); return; }
         if (beat.canceled()) {
@@ -52214,23 +52375,65 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           finish({ ok: false, error: 'The phone stopped waiting. Nothing was sent to Athena from here.' });
           return;
         }
-        say('Waiting for your confirmation on this computer.');
-      }, PHSEND_BEAT_MS);
+        say(remote && staged ? 'Waiting for your confirmation on your phone.' : 'Waiting for your confirmation on this computer.');
+        if (!remote || !staged || arming || pressing) return;
+        var pc = beat.confirmed();
+        if (!pc) return;
+        /* THE BINDING, checked here as well as on the server. If the sheet on
+           this computer no longer matches the hash the doctor confirmed on his
+           phone, he did not read what would be written - refuse. */
+        if (String(pc.previewHash || '') !== stagedHash) {
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'What you confirmed on your phone no longer matches what this computer is holding, so nothing was written. Send the note again.' });
+          return;
+        }
+        arming = true;
+        say('Confirmed on your phone - writing to Athena.');
+        phsendRemoteArm({
+          action: action, previewHash: stagedHash,
+          relayJobId: String(job.id || ''), originDeviceId: String((job.payload && job.payload.originDeviceId) || '')
+        }).then(function (armed) {
+          if (settled) return;
+          if (!armed || armed.ok !== true || armed.armed !== true) {
+            stopTimers(); lb(false);
+            finish({ ok: false, error: 'MLS Assist would not accept the confirmation from your phone (' + String((armed && armed.reason) || 'refused') + '). Nothing was written to Athena - confirm at the office computer instead.' });
+            return;
+          }
+          pressing = true;
+          if (!phsendPressStagedConfirm(stagedHash)) {
+            stopTimers(); lb(false);
+            finish({ ok: false, error: 'This computer could not complete the confirmation it prepared. Nothing was written to Athena.' });
+          }
+          /* success now arrives through onResult, exactly as a desk press */
+        });
+      }, remote ? 4000 : PHSEND_BEAT_MS);
 
       watchIv = setInterval(function () {
         if (settled) { stopTimers(); return; }
-        var open = null;
-        try { open = document.getElementById('mlsAthenaActionConfirm'); } catch (e) {}
-        if (open) { sawSheet = true; return; }
-        /* the sheet was up and is gone with no result = somebody closed it */
-        if (sawSheet) {
-          stopTimers(); lb(false);
-          finish({ ok: false, error: 'The confirmation was closed on this computer without sending. Nothing was written to Athena.' });
-          return;
+        /* The closed-sheet check is skipped while WE are pressing the sheet -
+           our own press closes it, and that is a success in flight, not an
+           abandonment. */
+        if (!pressing) {
+          var open = null;
+          try { open = document.getElementById('mlsAthenaActionConfirm'); } catch (e) {}
+          if (open) {
+            sawSheet = true;
+          } else if (sawSheet) {
+            /* it was up and is gone with no result = somebody closed it */
+            stopTimers(); lb(false);
+            finish({ ok: false, error: 'The confirmation was closed on this computer without sending. Nothing was written to Athena.' });
+            return;
+          }
         }
+        /* The deadline is checked on EVERY tick, including while the sheet is
+           still standing and while a press is in flight. It used to sit behind
+           the `sheet is open` early return, which meant the one case it exists
+           for - the sheet up and nobody coming - was the one case it could
+           never fire in, and the job ran to the server's TTL instead of
+           telling the doctor anything. */
         if (Date.now() - startedAt > PHSEND_CONFIRM_WAIT_MS) {
           stopTimers(); lb(false);
-          finish({ ok: false, error: 'Nobody confirmed on this computer within nine minutes, so nothing was sent. The note is safe in MLS - send it again when you are at the computer.' });
+          finish({ ok: false, error: 'Nobody confirmed on ' + where() + ' within nine minutes, so nothing was sent. The note is safe in MLS - send it again when you are ready.' });
         }
       }, 2000);
     }).then(function (out) { try { lb(false); } catch (e) {} return out; });
@@ -52239,7 +52442,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* THE PHONE'S HALF. */
   var PHSEND_ACTIVE_KEY = 'mlsPhSendActive';
-  var phsendState = { status: 'idle', line: '', jobId: '', at: 0 };
+  var phsendState = { status: 'idle', line: '', jobId: '', at: 0, noteSent: '' };
   api.sendState = function () { return { status: phsendState.status, line: phsendState.line, jobId: phsendState.jobId }; };
   function phsendSet(status, line, jobId) {
     phsendState.status = status; phsendState.line = line || '';
@@ -52257,27 +52460,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var tries = 0, queuedPolls = 0;
     var pi = setInterval(function () {
       tries++;
-      if (tries > 264) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', 'No answer from ' + who + '. Nothing was sent - the note is still here.'); return; }
+      if (tries > 264) { clearInterval(pi); phsendWriteActive(null); phcClose(); phsendSet('failed', 'No answer from ' + who + '. Nothing was sent - the note is still here.'); return; }
       fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
         .then(function (r) { if (r && r.status === 404) return { gone: true }; return r && r.ok ? r.json() : null; })
         .then(function (s) {
-          if (s && s.gone) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', 'That request expired before ' + who + ' finished. Nothing was sent - send again.'); return; }
+          if (s && s.gone) { clearInterval(pi); phsendWriteActive(null); phcClose(); phsendSet('failed', 'That request expired before ' + who + ' finished. Nothing was sent - send again.'); return; }
           var job = s && s.job; if (!job) return;
           if (job.status === 'queued') {
             queuedPolls++;
-            if (queuedPolls > 12) { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', who + ' never picked this up. Make sure MLS is open there, then send again. Nothing was sent.'); return; }
+            if (queuedPolls > 12) { clearInterval(pi); phsendWriteActive(null); phcClose(); phsendSet('failed', who + ' never picked this up. Make sure MLS is open there, then send again. Nothing was sent.'); return; }
             phsendSet('queued', 'Waiting for ' + who + ' to pick it up...');
             return;
           }
           if (job.status === 'taken') {
+            /* phconfirm-1.0.0: the office computer has verified the chart and
+               put the sheet up for THIS phone. Show it, once, and leave it up
+               until the doctor answers. Everything rendered comes from the
+               stage - what Athena reported - except the note body, which is
+               read live from this phone so it is verbatim and never persisted. */
+            var stage = job.stage;
+            var answered = !!(job.phoneConfirm && job.phoneConfirm.previewHash);
+            if (stage && stage.previewHash && !answered) {
+              phcOpen(id, stage, phsendState.noteSent);
+              phsendSet('confirm', 'Read the note and confirm on this ' + devNoun() + '.');
+              return;
+            }
+            if (answered) { phcClose(); }
             var note = job.progress && job.progress.note;
             phsendSet('working', note ? (who + ': ' + note) : (who + ' is checking the chart...'));
             return;
           }
-          if (job.status === 'lost') { clearInterval(pi); phsendWriteActive(null); phsendSet('failed', (job.result && job.result.error) || (who + ' stopped responding. Nothing was sent.')); return; }
-          if (job.status === 'canceled') { clearInterval(pi); phsendWriteActive(null); phsendSet('idle', 'Stopped waiting. Nothing was sent to Athena.'); return; }
+          if (job.status === 'lost') { clearInterval(pi); phsendWriteActive(null); phcClose(); phsendSet('failed', (job.result && job.result.error) || (who + ' stopped responding. Nothing was sent.')); return; }
+          if (job.status === 'canceled') { clearInterval(pi); phsendWriteActive(null); phcClose(); phsendSet('idle', 'Stopped waiting. Nothing was sent to Athena.'); return; }
           if (job.status === 'done') {
-            clearInterval(pi); phsendWriteActive(null);
+            clearInterval(pi); phsendWriteActive(null); phcClose();
             var r0 = job.result || {};
             if (r0.ok === true && r0.data && r0.data.confirmed === true) {
               var whenWhere = [];
@@ -52298,6 +52514,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!authed()) { phsendSet('failed', 'Sign in first - nothing was sent.'); return Promise.resolve(false); }
     var noteText = String(o.noteText || '').trim();
     if (!noteText) { phsendSet('failed', 'There is no note to send yet.'); return Promise.resolve(false); }
+    /* hold the exact bytes that were sent, in memory only. The confirm sheet
+       renders THESE - reading the live note box again could show the doctor
+       different text from the one the previewHash binds. Never persisted: the
+       phone keeps no PHI at rest. */
+    phsendState.noteSent = noteText;
     var action = Object.prototype.hasOwnProperty.call(PHSEND_ACTIONS, String(o.action || '')) ? String(o.action) : 'write_note';
     phsendSet('queued', 'Checking that your office computer is awake...', '');
     return fetch(base() + '/api/relay/presence', { headers: H() })
@@ -52365,6 +52586,203 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      This bar is a sibling of the action bar, rebuilt only when the phone frame
      itself is remounted. */
   function phsendPhone() { try { return window.__mlsPhoneUI; } catch (e) { return null; } }
+  /* ===== the phone's confirm sheet (phconfirm-1.0.0) =====================
+   * This is the surface the owner asked for: the doctor reads the chart the
+   * office computer actually found, reads the exact note that will be written,
+   * and gives a deliberate confirmation - all on the phone.
+   *
+   * Three rules it is built around:
+   *  1. EVERYTHING SHOWN COMES FROM THE STAGE, not from what this phone sent.
+   *     The identity is what Athena reported to the office computer; showing
+   *     the phone's own copy back to the doctor would prove nothing.
+   *  2. THE NOTE IS NEVER TRUNCATED. It scrolls. A doctor cannot confirm text
+   *     he was only shown the beginning of.
+   *  3. THE CONFIRMATION IS DELIBERATE. A hold, not a tap, and the button
+   *     carries the patient's name - so a stray touch next to Cancel, or a
+   *     confirmation aimed at the previous patient, cannot happen.
+   * z-index sits above the version-nag banner (2147483100), which has form
+   * covered phone controls before, and below the desktop's own Athena confirm.
+   * ======================================================================*/
+  var PHC_HOLD_MS = 1200;
+  var phcState = { jobId: '', hash: '', name: '', holding: 0, held: false };
+  api.confirmHoldMs = function () { return PHC_HOLD_MS; };
+  api.confirmState = function () { return { jobId: phcState.jobId, hash: phcState.hash, open: !!document.getElementById('mlsPhConfirm') }; };
+
+  function phcStyle() {
+    if (document.getElementById('mlsPhConfirmCss')) return;
+    var s = document.createElement('style');
+    s.id = 'mlsPhConfirmCss';
+    s.textContent =
+      '#mlsPhConfirm{position:fixed;inset:0;z-index:2147483400;display:flex;align-items:flex-end;' +
+      'background:rgba(10,25,50,.55);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}' +
+      '#mlsPhConfirm .phc-card{background:#fff;color:#18211D;width:100%;max-height:94vh;display:flex;flex-direction:column;' +
+      'border-radius:18px 18px 0 0;padding:16px 15px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -12px 40px rgba(8,22,50,.35)}' +
+      '#mlsPhConfirm .phc-h{margin:0 0 3px;font-size:19px;font-weight:800;color:#1B3A2E}' +
+      '#mlsPhConfirm .phc-sub{margin:0 0 11px;font-size:12.5px;color:#5C6862}' +
+      '#mlsPhConfirm .phc-idy{display:grid;grid-template-columns:88px 1fr;gap:5px 10px;background:#F4F8F6;' +
+      'border:1px solid #DCE7E1;border-radius:12px;padding:11px 12px;margin:0 0 11px;font-size:13.5px}' +
+      '#mlsPhConfirm .phc-k{color:#5C6862}' +
+      '#mlsPhConfirm .phc-v{font-weight:700;overflow-wrap:anywhere}' +
+      '#mlsPhConfirm .phc-nl{margin:0 2px 5px;font-size:12.5px;font-weight:700;color:#5C6862}' +
+      '#mlsPhConfirm .phc-note{flex:1 1 auto;min-height:110px;overflow:auto;-webkit-overflow-scrolling:touch;' +
+      'white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;border:1px solid #DCE7E1;border-radius:12px;' +
+      'padding:11px 12px;margin:0 0 11px;font-size:14px;color:#18211D}' +
+      '#mlsPhConfirm .phc-warn{margin:0 0 11px;padding:9px 11px;border-radius:10px;background:#FFF6E3;' +
+      'border:1px solid #EFD9A4;color:#6A5117;font-size:12.5px}' +
+      '#mlsPhConfirm .phc-hold{position:relative;overflow:hidden;width:100%;min-height:52px;border:0;border-radius:13px;' +
+      'background:#1B3A2E;color:#fff;font-weight:800;font-size:16px;cursor:pointer;touch-action:none;' +
+      '-webkit-user-select:none;user-select:none;margin:0 0 8px}' +
+      '#mlsPhConfirm .phc-fill{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(255,255,255,.26);' +
+      'transition:width 60ms linear;pointer-events:none}' +
+      '#mlsPhConfirm .phc-lbl{position:relative;z-index:1;padding:0 10px}' +
+      '#mlsPhConfirm .phc-cancel{width:100%;min-height:46px;border:1px solid #D3DBD7;background:#fff;color:#2A3A32;' +
+      'border-radius:13px;font-weight:700;font-size:15px;cursor:pointer}' +
+      '@media (prefers-color-scheme:dark){' +
+      '#mlsPhConfirm .phc-card{background:#131A17;color:#E8EEEB}' +
+      '#mlsPhConfirm .phc-h{color:#8FD6B4}' +
+      '#mlsPhConfirm .phc-sub,#mlsPhConfirm .phc-k,#mlsPhConfirm .phc-nl{color:#9BA9A2}' +
+      '#mlsPhConfirm .phc-idy{background:#18211D;border-color:#2C3A33}' +
+      '#mlsPhConfirm .phc-note{background:#0F1512;border-color:#2C3A33;color:#E8EEEB}' +
+      '#mlsPhConfirm .phc-warn{background:#2A2417;border-color:#4A3F1F;color:#E7D6A4}' +
+      '#mlsPhConfirm .phc-hold{background:#2E7D5B}' +
+      '#mlsPhConfirm .phc-cancel{background:#18211D;border-color:#2C3A33;color:#E8EEEB}}';
+    try { (document.head || document.documentElement).appendChild(s); } catch (e) {}
+  }
+
+  function phcClose() {
+    phcState.jobId = ''; phcState.hash = ''; phcState.holding = 0; phcState.held = false;
+    var el = null; try { el = document.getElementById('mlsPhConfirm'); } catch (e) {}
+    if (el && el.parentNode) { try { el.parentNode.removeChild(el); } catch (e2) {} }
+  }
+  api.closeConfirm = phcClose;
+
+  /* the actual confirmation: bind the doctor's answer to the exact hash he was
+     shown. Exposed so tests can drive it without simulating a physical hold. */
+  api.sendConfirmNow = function (jobId, previewHash) {
+    if (!jobId || !previewHash) return Promise.resolve(false);
+    return fetch(base() + '/api/relay/jobs/' + encodeURIComponent(jobId) + '/confirm', {
+      method: 'POST', headers: H(), body: JSON.stringify({ previewHash: String(previewHash) })
+    }).then(function (r) { return r && r.ok ? r.json() : r.json().then(function (j) { return { bad: j }; }, function () { return { bad: {} }; }); })
+      .then(function (j) {
+        if (j && j.bad) {
+          phcClose();
+          phsendSet('failed', String((j.bad && j.bad.error) || 'That confirmation was refused. Nothing was sent.'));
+          return false;
+        }
+        phcClose();
+        phsendSet('working', 'Confirmed - writing to Athena...');
+        return true;
+      })
+      .catch(function () { phcClose(); phsendSet('failed', 'Could not reach the MLS server to confirm. Nothing was sent.'); return false; });
+  };
+
+  function phcOpen(jobId, stage, noteText) {
+    if (phcState.jobId === jobId && document.getElementById('mlsPhConfirm')) return;
+    phcClose();
+    phcStyle();
+    var idy = (stage && stage.identity) || {};
+    var enc = (stage && stage.encounter) || {};
+    var name = String(idy.name || 'this patient');
+    phcState.jobId = jobId; phcState.hash = String(stage && stage.previewHash || ''); phcState.name = name;
+
+    var ov = document.createElement('div');
+    ov.id = 'mlsPhConfirm';
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.setAttribute('aria-label', 'Confirm sending this note to Athena');
+    var card = document.createElement('div');
+    card.className = 'phc-card';
+
+    function row(k, v) {
+      return '<span class="phc-k">' + esc(k) + '</span><span class="phc-v">' + esc(v || 'not reported') + '</span>';
+    }
+    card.innerHTML =
+      '<p class="phc-h">Send this note to Athena?</p>' +
+      '<p class="phc-sub">Your office computer checked Athena and found this chart.</p>' +
+      '<div class="phc-idy">' +
+        row('Patient', idy.name) + row('DOB', idy.dob) + row('MRN', idy.mrn) +
+        row('Encounter', enc.date) + row('Provider', enc.provider) +
+      '</div>' +
+      '<p class="phc-nl">The exact note that will be written</p>' +
+      '<div class="phc-note" id="mlsPhConfirmNote" tabindex="0"></div>' +
+      '<p class="phc-warn">This writes the note into the encounter above. It does not sign it, bill it, or place any order.</p>' +
+      '<button type="button" class="phc-hold" id="mlsPhConfirmGo" aria-label="Hold to send this note for ' + esc(name) + '">' +
+        '<span class="phc-fill" id="mlsPhConfirmFill"></span>' +
+        '<span class="phc-lbl" id="mlsPhConfirmLbl">Hold to send the note for ' + esc(name) + '</span>' +
+      '</button>' +
+      '<button type="button" class="phc-cancel" id="mlsPhConfirmNo">Cancel</button>';
+    ov.appendChild(card);
+    try { (document.body || document.documentElement).appendChild(ov); } catch (e) {}
+
+    /* textContent, never innerHTML: a note is clinical text, not markup, and
+       the whole point of this screen is that it shows the note verbatim. */
+    var noteEl = null; try { noteEl = document.getElementById('mlsPhConfirmNote'); } catch (e2) {}
+    var haveNote = !!String(noteText || '').trim();
+    if (noteEl) noteEl.textContent = haveNote ? String(noteText) : '';
+
+    var go = null, fill = null, lbl = null, no = null;
+    try {
+      go = document.getElementById('mlsPhConfirmGo');
+      fill = document.getElementById('mlsPhConfirmFill');
+      lbl = document.getElementById('mlsPhConfirmLbl');
+      no = document.getElementById('mlsPhConfirmNo');
+    } catch (e3) {}
+
+    var holdTimer = null, holdStart = 0, fired = false;
+    function paintFill(pct) { if (fill) { try { fill.style.width = Math.max(0, Math.min(100, pct)) + '%'; } catch (e) {} } }
+    function endHold(complete) {
+      try { if (holdTimer) clearInterval(holdTimer); } catch (e) {}
+      holdTimer = null; holdStart = 0;
+      if (!complete) { paintFill(0); if (lbl) lbl.textContent = 'Hold to send the note for ' + name; }
+    }
+    function startHold() {
+      if (fired) return;
+      holdStart = Date.now();
+      if (lbl) lbl.textContent = 'Keep holding...';
+      holdTimer = setInterval(function () {
+        var pct = ((Date.now() - holdStart) / PHC_HOLD_MS) * 100;
+        paintFill(pct);
+        if (pct >= 100) {
+          fired = true; phcState.held = true;
+          endHold(true);
+          if (lbl) lbl.textContent = 'Sending...';
+          if (go) go.disabled = true;
+          api.sendConfirmNow(phcState.jobId, phcState.hash);
+        }
+      }, 60);
+    }
+    /* A doctor cannot confirm a note this device can no longer show him. That
+       happens after a reload mid-send: the job is alive on the server but the
+       exact sent bytes lived only in memory. Say so and stand the control
+       down rather than asking him to approve a blank panel. */
+    if (!haveNote) {
+      if (noteEl) noteEl.textContent = 'This ' + devNoun() + ' was reloaded and no longer holds the exact note that was sent, so it cannot show you what you would be approving. Confirm at the office computer instead, or cancel and send again.';
+      if (go) { go.disabled = true; }
+      if (lbl) lbl.textContent = 'Cannot confirm here';
+    }
+    if (go && haveNote) {
+      go.addEventListener('pointerdown', function (ev) { try { ev.preventDefault(); } catch (e) {} startHold(); });
+      go.addEventListener('pointerup', function () { endHold(false); });
+      go.addEventListener('pointercancel', function () { endHold(false); });
+      go.addEventListener('pointerleave', function () { endHold(false); });
+      /* keyboard equivalent, so the control is not touch-only */
+      go.addEventListener('keydown', function (ev) { if (ev && (ev.key === ' ' || ev.key === 'Enter') && !holdTimer) startHold(); });
+      go.addEventListener('keyup', function () { endHold(false); });
+    }
+    if (no) {
+      no.addEventListener('click', function () {
+        phcClose();
+        /* cancelSend() sets its own status line synchronously, so it has to run
+           BEFORE this one or it overwrites it - and its generic line (or the
+           empty one it uses when there is no active job on this device) is
+           exactly the silence a doctor who just pressed Cancel must not get. */
+        api.cancelSend();
+        phsendSet('idle', 'Not sent. The note is still here.');
+      });
+    }
+  }
+  api.openConfirmSheet = phcOpen;
+
   function phsendVisible() {
     var ph = phsendPhone();
     if (!ph || !ph.installed || typeof ph.state !== 'function') return false;
@@ -52384,7 +52802,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var show = phsendVisible();
     bar.style.display = show ? 'block' : 'none';
     if (!show) return;
-    var busy = phsendState.status === 'queued' || phsendState.status === 'working';
+    var busy = phsendState.status === 'queued' || phsendState.status === 'working' || phsendState.status === 'confirm';
     var line = phsendState.line || 'The note stays in MLS until your office computer confirms it.';
     var lineEl = bar.querySelector('.phsend-line');
     var btnEl = bar.querySelector('.phsend-go');
@@ -52405,6 +52823,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { act = document.getElementById('mlsPh3Act'); frame = document.getElementById('mlsPh3'); } catch (e) {}
     if (!act || !frame) return;
     var existing = null; try { existing = document.getElementById('mlsPhSendBar'); } catch (e2) {}
+    phcleanStyle();
     if (existing && existing.parentNode === frame) { phsendPaint(); return; }
     var bar = document.createElement('div');
     bar.id = 'mlsPhSendBar';
@@ -52418,7 +52837,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     go.className = 'phsend-go';
     go.style.cssText = 'width:100%;min-height:46px;border:0;border-radius:12px;background:#204034;color:#fff;font-weight:800;font-size:16px;cursor:pointer';
     go.addEventListener('click', function () {
-      if (phsendState.status === 'queued' || phsendState.status === 'working') { api.cancelSend(); return; }
+      if (phsendState.status === 'queued' || phsendState.status === 'working' || phsendState.status === 'confirm') { phcClose(); api.cancelSend(); return; }
       var sn = null;
       try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e3) {}
       var a = (sn && sn.active) || {};
@@ -52451,6 +52870,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var a = phsendReadActive();
     if (a && a.id) { phsendSet('working', 'Picking up where this left off...', a.id); phsendPollJob(a.id, 'your office computer'); }
   }, 3500);
+
+  /* ===== phclean-1.0.0 (2026-08-19, owner: the phone UI "is kinda old") ====
+   * Measured cleanup of the ph3 phone app.
+   *
+   * The phone module itself (feat_mls_phone_ui.js) has NO 1p fork, so it is the
+   * same bytes production serves and this lane may not edit it. Anything fixed
+   * here is therefore an OVERLAY: additive rules from the file this lane does
+   * own, scoped to #mlsPh3 so they cost a desktop nothing.
+   *
+   * !important is used deliberately and only on the size properties below. The
+   * phone stylesheet is injected by a module that loads AFTER this one, so an
+   * equal-specificity rule would lose the cascade on load order alone - which
+   * is not a thing to leave to chance for a touch target.
+   *
+   * WHAT IS FIXED HERE (measured from the shipped stylesheet):
+   *   .ph3-nx - the dismiss "x" on the phone's message strip, declared
+   *   30x30px. It carries data-act="note-x", so it is a real control sitting
+   *   well under the 40px floor every other surface in this app already meets
+   *   (primary 56, secondary 52, header 46, rows 70, menu items 60). Raised to
+   *   44x44 without changing the glyph, so it looks the same and can be hit.
+   * ======================================================================*/
+  function phcleanStyle() {
+    if (document.getElementById('mlsPhCleanCss')) return;
+    var s = document.createElement('style');
+    s.id = 'mlsPhCleanCss';
+    s.textContent =
+      '#mlsPh3 .ph3-nx{min-width:44px!important;width:44px!important;height:44px!important;' +
+      'display:flex!important;align-items:center!important;justify-content:center!important}';
+    try { (document.head || document.documentElement).appendChild(s); } catch (e) {}
+  }
+  api.phcleanStyle = phcleanStyle;
 
   /* ===== end phsend-1.0.0 ================================================= */
 
