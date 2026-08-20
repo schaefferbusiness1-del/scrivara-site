@@ -52,6 +52,11 @@
     run: null,
     bound: null,
     model: null,
+    /* legal-luna-1.0.0: the per-draft model ask. Luna by default (owner:
+       "keep luna just for the reports"); 'gpt-4o' when the doctor picks the
+       faster option. Sent as the cascade head; the backend allowlist is the
+       ceiling either way. */
+    aiModel: 'gpt-5.6-luna',
     providerFilter: null,
     sources: [],
     imports: {},
@@ -1143,24 +1148,81 @@
       'Use ONLY the supplied documented record and locally extracted files. Never fabricate a finding, date, diagnosis, imaging result, causation opinion, impairment, restriction, or record reviewed. Put any unsupported needed fact in [brackets]. ' +
       'This is an unsigned DRAFT for clinician verification, not legal advice and not a final report.';
   }
+  /* legal-trunc-1.0.0 (owner 2026-08-20): the old truncation was a blunt
+     slice(0, MAX) over the whole context - a long record lost its NEWEST
+     material (the tail) and the AI never saw the timeline it was cut from.
+     Now, when the record exceeds the budget:
+       - the binding, date-of-injury and questions are NEVER cut;
+       - procedures and imaging keep their full bodies (they anchor causation
+         and necessity);
+       - visits/notes keep full bodies NEWEST-FIRST while budget remains; the
+         OLDEST routine bodies shorten to one-line timeline stubs, so the AI
+         still sees every event's date and title even when a body is omitted;
+       - locally extracted file texts are trimmed proportionally only after
+         all routine bodies are already stubs;
+     and the notice states exactly how many of how many bodies were shortened.
+     The on-screen chronology and every export remain UNCAPPED as before. */
   function draftContext() {
-    var lines = ['EXACT ACTIVE PATIENT BINDING', 'Name: ' + (state.bound.name || '[not documented]'),
-      'DOB: ' + (state.bound.dob || '[not documented]'), 'MRN: ' + (state.bound.mrn || '[not documented]'),
-      '', chronologyText()];
+    var head = ['EXACT ACTIVE PATIENT BINDING', 'Name: ' + (state.bound.name || '[not documented]'),
+      'DOB: ' + (state.bound.dob || '[not documented]'), 'MRN: ' + (state.bound.mrn || '[not documented]')];
     var doi = clean((byId('mlsP1LegalDoi') || {}).value);
     var questions = String((byId('mlsP1LegalQuestions') || {}).value || '').trim();
-    if (doi) lines.push('\nUSER-ENTERED DATE OF INJURY / ONSET (verify against record):\n' + doi);
-    if (questions) lines.push('\nQUESTIONS TO ADDRESS AS DRAFTING CONTEXT:\n' + questions);
-    state.sources.forEach(function (source) {
-      if (source.text) lines.push('\nLOCALLY EXTRACTED FILE TEXT (raw file bytes stay in the browser): ' + source.name + '\n' + source.text);
+    if (doi) head.push('\nUSER-ENTERED DATE OF INJURY / ONSET (verify against record):\n' + doi);
+    if (questions) head.push('\nQUESTIONS TO ADDRESS AS DRAFTING CONTEXT:\n' + questions);
+    var headText = head.join('\n');
+
+    var items = filteredItems();
+    function itemLine(item) { return (item.date || 'Undated') + ' · ' + item.title + ' · ' + item.provider; }
+    function fullBlock(item) { return itemLine(item) + '\n' + String(item.display || item.body || '').trim(); }
+    function stubBlock(item) { return itemLine(item) + ' [body omitted for length - present in the full chronology]'; }
+    var protectedSet = {};
+    items.forEach(function (item, idx) { if (item.category === 'procedure' || item.category === 'imaging') protectedSet[idx] = true; });
+    var blocks = items.map(function (item, idx) { return { idx: idx, full: fullBlock(item), stub: stubBlock(item), useFull: true, protectedBody: !!protectedSet[idx], date: String(item.date || '') }; });
+    var files = state.sources.filter(function (s) { return s.text; }).map(function (s) {
+      return { name: s.name, text: s.text };
     });
-    var context = lines.join('\n');
-    var originalChars = context.length, truncated = originalChars > MAX_AI_CONTEXT_CHARS;
-    if (truncated) {
-      context = context.slice(0, MAX_AI_CONTEXT_CHARS) +
-        '\n\n[INPUT CONTEXT TRUNCATED AT THE PREVIEW LIMIT. Verify this draft against the full chronology and every original local record.]';
+    function totalChars() {
+      var n = headText.length;
+      blocks.forEach(function (b) { n += (b.useFull ? b.full : b.stub).length + 2; });
+      files.forEach(function (f) { n += f.text.length + f.name.length + 80; });
+      return n;
     }
-    return { text: context, truncated: truncated, originalChars: originalChars, includedChars: Math.min(originalChars, MAX_AI_CONTEXT_CHARS) };
+    var originalChars = totalChars();
+    var shortened = 0, filesTrimmed = false;
+    if (originalChars > MAX_AI_CONTEXT_CHARS) {
+      /* oldest unprotected bodies stub first (blank dates count as oldest) */
+      var order = blocks.filter(function (b) { return !b.protectedBody; })
+        .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+      for (var k = 0; k < order.length && totalChars() > MAX_AI_CONTEXT_CHARS; k++) {
+        if (!order[k].useFull) continue;
+        order[k].useFull = false; shortened++;
+      }
+      if (totalChars() > MAX_AI_CONTEXT_CHARS && files.length) {
+        filesTrimmed = true;
+        var over = totalChars() - MAX_AI_CONTEXT_CHARS;
+        var fileTotal = files.reduce(function (n, f) { return n + f.text.length; }, 0) || 1;
+        files.forEach(function (f) {
+          var cut = Math.ceil(over * (f.text.length / fileTotal));
+          if (cut > 0 && f.text.length > 400) f.text = f.text.slice(0, Math.max(400, f.text.length - cut)) + '\n[FILE TEXT TRIMMED FOR LENGTH - full text remains in the workspace]';
+        });
+      }
+    }
+    var lines = [headText, '', 'CHRONOLOGY FOR DRAFTING (' + items.length + ' entries' + (shortened ? '; ' + shortened + ' older routine bodies shortened to timeline stubs' : '') + '):'];
+    blocks.forEach(function (b) { lines.push('', b.useFull ? b.full : b.stub); });
+    files.forEach(function (f) { lines.push('\nLOCALLY EXTRACTED FILE TEXT (raw file bytes stay in the browser): ' + f.name + '\n' + f.text); });
+    var context = lines.join('\n');
+    var truncated = shortened > 0 || filesTrimmed;
+    if (context.length > MAX_AI_CONTEXT_CHARS) {
+      /* last resort - protected bodies alone exceed the budget */
+      truncated = true;
+      context = context.slice(0, MAX_AI_CONTEXT_CHARS);
+    }
+    if (truncated) {
+      context += '\n\n[LONG RECORD: ' + shortened + ' of ' + items.length + ' entry bodies were shortened to dated timeline stubs' +
+        (filesTrimmed ? ' and attached file text was trimmed' : '') +
+        '. Procedures, imaging and the newest visits kept full text. Verify this draft against the full chronology and every original local record.]';
+    }
+    return { text: context, truncated: truncated, originalChars: originalChars, includedChars: Math.min(context.length, MAX_AI_CONTEXT_CHARS), shortened: shortened, totalItems: items.length };
   }
   function finishOwnedRun(run) {
     if (state.run !== run) return false;
@@ -1189,7 +1251,7 @@
       var raw;
       try {
         raw = window.aiCallRaw(draftSystem(section[0], section[1]), context + '\n\nWrite only ' + section[0] + '.',
-          isFn(window.getKey) ? window.getKey() : '', { freeform: true, legal: true, signal: controller.signal });
+          isFn(window.getKey) ? window.getKey() : '', { freeform: true, legal: true, signal: controller.signal, model: state.aiModel || '' });
       } catch (error) { finish(false, error); return; }
       Promise.resolve(raw).then(function (value) { finish(true, value); }, function (error) { finish(false, error); });
     });
@@ -1239,8 +1301,10 @@
       'MEDICAL-LEGAL / IME WORKSPACE DRAFT', 'Report type: ' + report.label,
       'Patient: ' + (binding.name || '[not documented]'),
       'Date: ' + new Date().toLocaleDateString(), 'UNSIGNED DRAFT - verify every statement before use'];
-    if (contextReceipt.truncated) output.push('IMPORTANT SOURCE-LIMIT NOTICE: Only the first ' + contextReceipt.includedChars.toLocaleString() +
-      ' of ' + contextReceipt.originalChars.toLocaleString() + ' compiled context characters were supplied to AI. Verify every section against the full chronology and every original local record; later records may be absent from this draft.');
+    if (contextReceipt.truncated) output.push('IMPORTANT SOURCE-LIMIT NOTICE: this record exceeded the AI context budget (' +
+      contextReceipt.originalChars.toLocaleString() + ' compiled characters). ' +
+      (contextReceipt.shortened ? contextReceipt.shortened + ' of ' + contextReceipt.totalItems + ' older routine entry bodies were supplied as dated timeline stubs; procedures, imaging and the newest visits kept full text. ' : '') +
+      'Verify every section against the full chronology and every original local record.');
     state.run = run; state.generating = true; updateControls();
     run.wholeTimer = setTimeout(function () {
       if (!runSlotOwned(run)) return;
@@ -1256,6 +1320,10 @@
         return callAiForRun(run, section, index, context);
       }).then(function (part) {
         if (!runOwned(run)) throw abortError('stale-run', 'Draft run is no longer current.');
+        /* legal-luna-1.0.0: record the model the backend SAYS served this
+           section (its cascade can fall back) - the disclosure is built from
+           these receipts, never from the ask. */
+        try { var served = String(window.__mlsLastAiModel || ''); if (served) { run.modelsUsed = run.modelsUsed || {}; run.modelsUsed[served] = (run.modelsUsed[served] || 0) + 1; } } catch (eMd) {}
         part = String(part || '').replace(/^```\w*\s*/, '').replace(/```\s*$/, '').trim();
         output.push(section[0] + '\n' + (part || '[No draft text returned; clinician must complete this section.]'));
       });
@@ -1265,6 +1333,18 @@
       /* p1-legal-letterhead-1.0.0: the attestation is written here, not by the
          model - a closing certainty statement and a signature line must say
          exactly what they say, every time. */
+      /* legal-luna-1.0.0: name the model(s) that ACTUALLY wrote the sections,
+         from the per-section receipts. If the ask was Luna and the cascade
+         fell back, this line is where the doctor learns it. */
+      try {
+        var mu = run.modelsUsed || {}, muNames = Object.keys(mu);
+        if (muNames.length) {
+          var askName = state.aiModel || 'gpt-5.6-luna';
+          var line = 'AI model used: ' + muNames.map(function (m) { return m + ' (' + mu[m] + ' section' + (mu[m] === 1 ? '' : 's') + ')'; }).join(', ');
+          if (muNames.length === 1 && muNames[0] !== askName) line += ' - NOTE: this differs from the model you selected (' + askName + '); it was unavailable and the standard fallback served.';
+          output.splice(1, 0, line);
+        }
+      } catch (eMu) {}
       output.push(attestationBlock());
       state.draft = output.join('\n\n');
       var box = byId('mlsP1LegalDraft');
@@ -1986,6 +2066,10 @@
         '<label>Date of injury / onset <input id="mlsP1LegalDoi" type="text" placeholder="Only if known; the draft must reconcile it with the record"></label>' +
         '<label style="display:block;margin-top:10px">Questions to address <textarea id="mlsP1LegalQuestions" placeholder="Optional questions. Unsupported answers must stay bracketed or undeterminable."></textarea></label>' +
         '<fieldset id="mlsP1LegalLetterhead" style="margin-top:12px;border:1px solid #d7ddd8;border-radius:10px;padding:10px 12px"><legend style="font-weight:750;font-size:13px;padding:0 4px">Letterhead</legend><p style="margin:2px 0 8px">Printed at the top of the report and above the signature line. Practice name, provider name, credentials, NPI, address and phone come from Settings; change them there.</p><pre id="mlsP1LegalLetterheadPreview" style="white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#fafbf8;border:1px solid #e4e8e4;border-radius:8px;padding:8px;margin:0 0 8px"></pre><label>Contact email for the letterhead <input id="mlsP1LegalLetterheadEmail" type="email" autocomplete="off" placeholder="Optional; saved for this account on this device"></label></fieldset>' +
+        '<div id="mlsP1LegalModelAsk" style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:750;font-size:13px">Draft with:</span>' +
+        '<button type="button" id="mlsP1LegalModelLuna" aria-pressed="true" style="border:2px solid #2E6A4B;background:#EAF4EE;color:#204034;border-radius:9px;padding:6px 12px;font-weight:700;cursor:pointer">✨ Luna (GPT-5.6) — strongest, recommended for reports</button>' +
+        '<button type="button" id="mlsP1LegalModelFast" aria-pressed="false" style="border:1px solid #d7ddd8;background:#fff;color:#204034;border-radius:9px;padding:6px 12px;cursor:pointer">⚡ Faster model (GPT-4o)</button>' +
+        '<span id="mlsP1LegalModelNote" style="font-size:12px;color:#5c6b60;flex-basis:100%">The finished draft names the model that actually wrote each section.</span></div>' +
         '<div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalGenerate">Generate report</button><button type="button" id="mlsP1LegalCancel" disabled>Cancel current generation</button></div>' +
         '<div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div>' +
         '<div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div>') +
@@ -2341,6 +2425,25 @@
     on('mlsP1LegalChronDownload', 'click', function () { exportIfCurrent(chronologyText, function (text) { downloadText('MLS_1p_Legal_Chronology_' + todayYmd() + '.txt', text); }); });
     on('mlsP1LegalChronPrint', 'click', function () { exportIfCurrent(chronologyText, function (text) { printText('Read-only medical-legal chronology', text); }); });
     on('mlsP1LegalGenerate', 'click', function () { if (!state.model && !compileHistory()) return; generateDraft(); });
+    /* legal-luna-1.0.0 (owner 2026-08-20: ask at generate time, in the legal
+       view). Luna is the default - it is the owner's standing rule for reports
+       - and the choice is a visible toggle the doctor answers before or at the
+       moment of generating. The FINISHED draft reports the model that actually
+       served (the backend cascade can fall back), so the ask can never lie. */
+    function paintModelAsk() {
+      var luna = byId('mlsP1LegalModelLuna'), fast = byId('mlsP1LegalModelFast');
+      if (!luna || !fast) return;
+      var isLuna = state.aiModel !== 'gpt-4o';
+      luna.setAttribute('aria-pressed', isLuna ? 'true' : 'false');
+      fast.setAttribute('aria-pressed', isLuna ? 'false' : 'true');
+      luna.style.border = isLuna ? '2px solid #2E6A4B' : '1px solid #d7ddd8';
+      luna.style.background = isLuna ? '#EAF4EE' : '#fff';
+      fast.style.border = isLuna ? '1px solid #d7ddd8' : '2px solid #2E6A4B';
+      fast.style.background = isLuna ? '#fff' : '#EAF4EE';
+    }
+    on('mlsP1LegalModelLuna', 'click', function () { state.aiModel = 'gpt-5.6-luna'; paintModelAsk(); setStatus('This draft will run on Luna (GPT-5.6) — the strongest report model.', false); });
+    on('mlsP1LegalModelFast', 'click', function () { state.aiModel = 'gpt-4o'; paintModelAsk(); setStatus('This draft will run on the faster model (GPT-4o). Luna remains one click away.', false); });
+    paintModelAsk();
     on('mlsP1LegalCancel', 'click', function () { cancelGeneration('Generation canceled. Any late response is blocked; the current inputs remain editable.'); });
     on('mlsP1LegalDraftCopy', 'click', function () { exportDraft(function (text) { copyText(text, 'Draft'); }); });
     on('mlsP1LegalDraftDownload', 'click', function () { exportDraft(function (text) { downloadText('MLS_1p_Legal_IME_DRAFT_' + todayYmd() + '.txt', text); }); });

@@ -26086,7 +26086,7 @@ async function aiCallRaw(sys,user,key,opts){
       const r=await fetch(bkBase()+'/api/complete',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-        body:JSON.stringify({system:sys,user:user, legal:!!opts.legal, maxTokens:opts.maxTokens||undefined}),
+        body:JSON.stringify({system:sys,user:user, legal:!!opts.legal, maxTokens:opts.maxTokens||undefined, model:opts.model||undefined}),
         signal:opts.signal
       });
       if(r.status===401){ handle401(); throw new Error('401 unauthorized'); }
@@ -26114,6 +26114,10 @@ async function aiCallRaw(sys,user,key,opts){
         /* ===== end cap-1.0.0 ===== */
       }
       const d=await r.json();
+      /* legal-luna-1.0.0: the backend answers with the model that ACTUALLY
+         served (its cascade can fall back). Stash it as a receipt so the
+         caller can tell the doctor the truth instead of assuming the ask. */
+      try{ window.__mlsLastAiModel=String((d&&d.model)||''); }catch(e){}
       return String((d&&d.content)||'').trim();
     }
     const res=await fetch(bkBase()+'/api/generate',{
@@ -54513,6 +54517,14 @@ html #ptPullAthenaBtn, html #pullChartBtn, html #profUnpulledPull, html #pvrPull
   min-height:40px;
 }
 html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
+/* pv-tips-1.1 (owner screenshot 2026-08-20: the same sentence painted three
+   times). These controls show their explanation INLINE (the rule above made
+   the sub visible), so the below-button hover pop that cardtips_mlsac builds
+   from that same sentence is a duplicate here. Scoped suppression only - on
+   cards whose sub stays hidden the pop remains the one explainer. */
+html #ptPullAthenaBtn .mlsactip-pop,
+html #pullChartBtn .mlsactip-pop,
+html #profUnpulledPull .mlsactip-pop{ display:none !important; }
 </style>
 <script>
 (function () {
@@ -54578,7 +54590,12 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
        shell's tooltip converter reads title into data-tip; keep both honest. */
     var sub = safe(function () { return btn.querySelector('.mlsac-sub'); }, null);
     if (sub && S(sub.textContent) !== t.sub) sub.textContent = t.sub;
-    if (btn.getAttribute('data-tip') !== t.sub) btn.setAttribute('data-tip', t.sub);
+    /* pv-tips-1.1: the sentence is already ON SCREEN in the sub above. Feeding
+       it to data-tip made the universal #mlsTip bubble repeat it on hover, and
+       the dedupe module's one-shot stash loses that write war forever. The
+       re-assert pass now keeps the carriers CLEAR - no bubble renderer has
+       anything to say for a control that explains itself inline. */
+    if (btn.hasAttribute('data-tip')) btn.removeAttribute('data-tip');
     if (btn.hasAttribute('title')) btn.removeAttribute('title');
     /* THE AFFORDANCE STAYS, THE NAME LOSES IT. */
     var tag = safe(function () { return btn.querySelector('.mlsac-tag'); }, null);

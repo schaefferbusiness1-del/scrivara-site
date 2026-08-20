@@ -291,23 +291,74 @@ function harness() {
       for (var i = 0; i < out.length; i++) { if (!seen[out[i]]) { seen[out[i]] = 1; uniq.push(out[i]); } }
       return uniq;
     },
-    /* Show the bubble for the pull chip WITHOUT depending on a real mouse:
-       the engine's own listener is a mouseover handler, so dispatch one and
-       let its 550ms intent timer run. */
+    /* Show the bubble WITHOUT depending on a real mouse: the engine's own
+       listener is a mouseover handler, so dispatch one and let its 550ms
+       intent timer run. pv-tips-1.1 re-anchored this sweep from the pull
+       button (now deliberately TIPLESS - its words live in the inline sub) to
+       #ptNewBtn, the nearest control that legitimately owns a seeded data-tip
+       beside the search box, so the layering claim stays measurable. */
+    /* pv-tips-1.1: the layering sweep's anchor is a SYNTHETIC probe pinned
+       just under the search box - the exact geometry the (now tipless) pull
+       button used to supply. A product control's position can drift with any
+       layout change; the probe pins the collision case deterministically, so
+       both arms of the tipAvoid measurement stay meaningful forever. */
+    ensureProbe: function () {
+      var inp = document.getElementById('ptSearch');
+      if (!inp) return 'NO-SEARCH';
+      var b = document.getElementById('t9TipProbe');
+      if (!b) {
+        b = document.createElement('button');
+        b.id = 't9TipProbe'; b.type = 'button'; b.textContent = 'probe';
+        b.setAttribute('data-tip', 'Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena. (layering probe - sized like the real sentence)');
+        b.style.cssText = 'position:fixed;width:180px;height:36px;opacity:.01;z-index:1;';
+        document.body.appendChild(b);
+      }
+      /* reposition EVERY call - the search box moves with viewport and scroll.
+         90px below the box = the pull button's real offset: near enough that
+         place()'s default above-the-anchor bubble reaches the box (the control
+         arm's collision), far enough that a re-picked side can clear it. */
+      var r = inp.getBoundingClientRect();
+      b.style.left = Math.round(r.left) + 'px';
+      b.style.top = Math.round(r.bottom + 90) + 'px';
+      return 'ok';
+    },
+    removeProbe: function () { var b = document.getElementById('t9TipProbe'); if (b) b.remove(); return true; },
     hoverChip: function () {
-      var b = document.getElementById('ptPullAthenaBtn');
-      if (!b) return 'MISSING';
+      if (window.__t9.ensureProbe() !== 'ok') return 'NO-PROBE';
+      var b = document.getElementById('t9TipProbe');
       var r = b.getBoundingClientRect();
       b.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true,
         clientX: Math.round(r.left + r.width / 2), clientY: Math.round(r.top + r.height / 2) }));
       return 'ok';
     },
     unhover: function () {
-      var b = document.getElementById('ptPullAthenaBtn');
+      var b = document.getElementById('t9TipProbe');
       if (b) b.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true }));
       var t = document.getElementById('mlsTip');
       if (t) t.style.display = 'none';
       return true;
+    },
+    /* pv-tips-1.1: the anti-triple probe. Hover the pull button, give the
+       550ms intent timer room, and report every surface that could repeat
+       the sentence: the universal bubble, the below-button pop, the carriers. */
+    tripleProbe: function () {
+      var b = document.getElementById('ptPullAthenaBtn');
+      if (!b) return { missing: true };
+      var r = b.getBoundingClientRect();
+      b.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true,
+        clientX: Math.round(r.left + r.width / 2), clientY: Math.round(r.top + r.height / 2) }));
+      return new Promise(function (res) { setTimeout(function () {
+        var t = document.getElementById('mlsTip');
+        var tShown = !!(t && t.style.display !== 'none' && t.getBoundingClientRect().width > 0);
+        var pop = b.querySelector('.mlsactip-pop');
+        var popDisplay = pop ? getComputedStyle(pop).display : 'absent';
+        var sub = b.querySelector('.mlsac-sub');
+        var subShown = !!(sub && sub.getBoundingClientRect().height > 0);
+        b.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, cancelable: true }));
+        if (t) t.style.display = 'none';
+        res({ tipShown: tShown, popDisplay: popDisplay, subShown: subShown,
+          dataTip: b.getAttribute('data-tip') || '', title: b.getAttribute('title') || '' });
+      }, 850); });
     },
     tipVsSearch: function () {
       var t = document.getElementById('mlsTip');
@@ -529,6 +580,23 @@ async function runtime() {
     /* put it back */
     await page.evaluate(() => window.__t9.setAvoid(true));
     eq(await page.evaluate(() => window.__t9.setAvoid(true)), 'function', 'the helper was not restored');
+    await page.evaluate(() => window.__t9.removeProbe());
+
+    /* -- 5b. pv-tips-1.1: ONE SURFACE OWNS THE WORDS --------------------- */
+    /* Owner screenshot 2026-08-20: the same sentence painted three times -
+       the inline sub plus TWO hover bubbles (#mlsTip above, .mlsactip-pop
+       below). The contract: the sub stays visible; hovering the button
+       renders NO bubble; the carriers that feed the universal bubble stay
+       clear even against clarity's re-weld and the converter observer. */
+    const triple = await page.evaluate(() => window.__t9.tripleProbe());
+    measured.tripleProbe = triple;
+    eq(triple.missing, undefined, 'anti-triple probe: the pull button is missing');
+    eq(triple.subShown, true, 'anti-triple: the inline explanation vanished - the words must stay on screen');
+    eq(triple.tipShown, false, 'anti-triple: the universal #mlsTip bubble still repeats the sentence on hover');
+    ok(triple.popDisplay === 'none' || triple.popDisplay === 'absent',
+      `anti-triple: the below-button pop still renders (display: ${triple.popDisplay})`);
+    eq(triple.dataTip, '', `anti-triple: data-tip re-grew on the pull button: ${JSON.stringify(triple.dataTip.slice(0, 60))}`);
+    eq(triple.title, '', `anti-triple: title re-grew on the pull button: ${JSON.stringify(triple.title.slice(0, 60))}`);
 
     /* -- 4. THE EXPLANATION IS VISIBLE WHERE IT IS ANNOUNCED ------------- */
     const subs = {};
