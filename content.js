@@ -179,6 +179,26 @@
     reply({ ok: true, armed: true });
   }, false);
   function mlsStr(v, max) { return (typeof v === 'string') ? v.slice(0, max || 100000) : ''; }
+  /* rr-3076: one retry on a dead-worker relay. Measured 2026-08-19: the MV3
+     worker's idle-kill makes the FIRST sendMessage after a quiet minute
+     answer nothing (callback fires with lastError, resp undefined) while the
+     identical second call succeeds - so buttons randomly failed once.
+     READ-class verbs only: a write/action verb must never auto-retry, a
+     dead-worker double-send there risks double execution. */
+  function mlsRelayRetry(req, cb) {
+    var done = false;
+    function finish(resp) { if (done) return; done = true; try { cb(resp); } catch (e) {} }
+    function once(last) {
+      try {
+        chrome.runtime.sendMessage(req, function (resp) {
+          var dead = chrome.runtime.lastError || resp == null;
+          if (dead && !last) { setTimeout(function () { once(true); }, 300); return; }
+          finish(resp);
+        });
+      } catch (e) { if (!last) { setTimeout(function () { once(true); }, 300); } else { finish(null); } }
+    }
+    once(false);
+  }
   function mlsLoopbackOrigin(origin) {
     try {
       var u = new URL(String(origin || ''));
@@ -213,11 +233,11 @@
       return;
     }
     if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true } }); return; }
-    if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { chrome.runtime.sendMessage({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
+    if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { mlsRelayRetry({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
     if (d.type === 'mlsAppCapture') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppCaptureRequest' }, function (resp) {
-          reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: resp || { error: 'no response' } });
+        mlsRelayRetry({ type: 'mlsAppCaptureRequest' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', requestId: mlsStr(d.requestId || d.id, 100), resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { error: 'extension error' } }); }
     }
@@ -272,7 +292,7 @@
         scheduleTimer = setTimeout(function () {
           finishSchedule({ ok: false, reason: 'schedule-relay-deadline-exceeded', error: 'The schedule read did not finish before its immutable request deadline.' });
         }, Math.max(0, scheduleGuard.deadlineAt - Date.now()));
-        chrome.runtime.sendMessage({ type: 'mlsAppScheduleRequest', id: scheduleGuard.requestId, requestId: scheduleGuard.requestId, deadlineAt: scheduleGuard.deadlineAt }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAppScheduleRequest', id: scheduleGuard.requestId, requestId: scheduleGuard.requestId, deadlineAt: scheduleGuard.deadlineAt }, function (resp) {
           var runtimeErr = chrome.runtime.lastError;
           if (Date.now() >= scheduleGuard.deadlineAt) {
             finishSchedule({ ok: false, reason: 'schedule-relay-deadline-exceeded', error: 'The schedule read returned after its immutable request deadline.' });
@@ -302,7 +322,7 @@
         gotoTimer = setTimeout(function () {
           finishGoto({ ok: false, supported: true, reason: 'goto-date-relay-deadline-exceeded', error: 'Date navigation did not finish before its immutable request deadline.' });
         }, Math.max(0, gotoGuard.deadlineAt - Date.now()));
-        chrome.runtime.sendMessage({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe, id: gotoGuard.requestId, requestId: gotoGuard.requestId, deadlineAt: gotoGuard.deadlineAt }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe, id: gotoGuard.requestId, requestId: gotoGuard.requestId, deadlineAt: gotoGuard.deadlineAt }, function (resp) {
           var runtimeErr = chrome.runtime.lastError;
           if (Date.now() >= gotoGuard.deadlineAt) {
             finishGoto({ ok: false, supported: true, reason: 'goto-date-relay-deadline-exceeded', error: 'Date navigation returned after its immutable request deadline.' });
@@ -317,7 +337,7 @@
     // between patients (each patient's schedule row must be on screen to open the chart).
     if (d.type === 'mlsAppGoHome') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppGoHomeRequest' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAppGoHomeRequest' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: { error: 'extension error' } }); }
@@ -328,7 +348,7 @@
     /* 3.0.47: lease-free athena presence relay (app checklist probe). */
     if (d.type === 'mlsAthenaPresence') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAthenaPresenceRequest' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAthenaPresenceRequest' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: { error: 'extension error' } }); }
@@ -336,7 +356,7 @@
     }
     if (d.type === 'mlsNameShadowState') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsNameShadowStateRequest' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsNameShadowStateRequest' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsNameShadowStateResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsNameShadowStateResult', resp: { error: 'extension error' } }); }
@@ -362,7 +382,7 @@
     // No DOM access, no PHI — used to VERIFY the doctor was returned to MLS.
     if (d.type === 'mlsFgState') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsFgState' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsFgState' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsFgStateResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsFgStateResult', resp: { error: 'extension error' } }); }
@@ -370,7 +390,7 @@
     // vdc-1.0.0: PHI-safe visits DOM census (structure only - no patient text).
     if (d.type === 'mlsVisitsCensus') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsVisitsCensusRequest' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsVisitsCensusRequest' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsVisitsCensusResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsVisitsCensusResult', resp: { error: 'extension error' } }); }
@@ -378,7 +398,7 @@
     // v1.77: read-only identity diagnostic (initials + scores only, no PHI).
     if (d.type === 'mlsIdDiag') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsIdDiag' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsIdDiag' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsIdDiagResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsIdDiagResult', resp: { error: 'extension error' } }); }
@@ -389,7 +409,7 @@
     // exposure class identical to mlsAppReadChart, behind the same origin gate.
     if (d.type === 'mlsAppChartIdentity') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAssistChartIdentity' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAssistChartIdentity' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAppChartIdentityResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartIdentityResult', resp: { error: 'extension error' } }); }
@@ -446,7 +466,7 @@
            findpatient Chart opener before the reader settles the exact chart.
            A generic visible-name click lands on Athena's exam-prep surface. */
         if (chartPatient) {
-          chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, appointmentId: chartAppointmentId, bootstrapIdentity: chartBootstrapIdentity, scheduleDate: chartScheduleDate, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
+          mlsRelayRetry({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, appointmentId: chartAppointmentId, bootstrapIdentity: chartBootstrapIdentity, scheduleDate: chartScheduleDate, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
             var openErr = chrome.runtime.lastError;
             if (openErr || !opened || !opened.opened) {
               finishChart({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient chart.' });
@@ -509,7 +529,7 @@
                that state; recover ONCE through the already-proven, DOB-gated
                patient opener, then repeat the identity-gated read. */
             if (canOpen && visitPatient && /^(wrong-chart|unverified|unverified-patient)$/.test(String(resp.reason || ''))) {
-              chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob, mrn: visitAthenaId }, function (opened) {
+              mlsRelayRetry({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob, mrn: visitAthenaId }, function (opened) {
                 var openErr = chrome.runtime.lastError;
                 if (openErr || !opened || !opened.opened) {
                   finishVisits({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient before reading history.' });
@@ -519,7 +539,7 @@
                    reports navigation. Run the established read-chart settle leg
                    before touching Visits; the visits driver still re-verifies the
                    requested name+DOB/MRN immediately before its rail click. */
-                chrome.runtime.sendMessage({ type: 'mlsAppChartRequest', patient: visitPatient, patientDob: visitDob, patientMrn: visitAthenaId, preopened: true }, function (chartReady) {
+                mlsRelayRetry({ type: 'mlsAppChartRequest', patient: visitPatient, patientDob: visitDob, patientMrn: visitAthenaId, preopened: true }, function (chartReady) {
                   var chartErr = chrome.runtime.lastError;
                   if (chartErr || !chartReady || !chartReady.ok) {
                     finishVisits({ ok: false, reason: (chartReady && chartReady.reason) || 'chart-not-ready', error: (chartErr && chartErr.message) || (chartReady && chartReady.error) || 'The requested chart opened, but its identity banner did not become ready.' });
@@ -543,7 +563,7 @@
     // the richest table frame plus a capped concat of the top frames. It never writes anything.
     if (d.type === 'mlsAppReadReport') {
       try {
-        chrome.runtime.sendMessage({ type: 'mlsAppReportRequest' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAppReportRequest' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAppReportResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReportResult', resp: { error: 'extension error' } }); }
@@ -1245,7 +1265,7 @@
     const pageText = ((document.body && document.body.innerText) || '').trim().slice(0, 20000);
     if (!pageText) { log('Nothing readable on this page to capture.'); return; }
     const btn = $('#mls-cap'); btn.disabled = true; btn.textContent = '… capturing chart';
-    chrome.runtime.sendMessage({ type: 'mlsAssistExtract', pageText, url: location.href }, (resp) => {
+    mlsRelayRetry({ type: 'mlsAssistExtract', pageText, url: location.href }, (resp) => {
       btn.disabled = false; btn.textContent = '📋 Capture whole chart → MLS';
       if (!resp) { log('No response (extension reloaded?).'); return; }
       if (resp.ok) { log('✓ Captured ' + (resp.patient || 'patient') + ' + ' + (resp.visits || 0) + ' prior visit(s) into MLS.'); return; }
@@ -1981,7 +2001,7 @@
           }
         } catch (e1) {}
       }
-      chrome.runtime.sendMessage({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, appointmentId: String(d.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40), bootstrapIdentity: d.bootstrapIdentity === true, scheduleDate: /^\d{4}-\d{2}-\d{2}$/.test(String(d.scheduleDate || '')) ? String(d.scheduleDate) : '', noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
+      mlsRelayRetry({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, appointmentId: String(d.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40), bootstrapIdentity: d.bootstrapIdentity === true, scheduleDate: /^\d{4}-\d{2}-\d{2}$/.test(String(d.scheduleDate || '')) ? String(d.scheduleDate) : '', noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         if (err || !res) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true, requestId: requestId, deadlineAt: deadlineAt }); return; }
         var out = {}; for (var k in res) out[k] = res[k];
