@@ -165,7 +165,7 @@ const EXTENSION_BASE_COMMIT = '58eb0b5d30dcb65a64bdb2fa4db238cceb933d25';
    /cloned, cure proven live before landing). Behavior fix, b1028-hotfix-train
    class; /1p and /cloned load the same shared file. */
 /* SAME untangle: fixpack + mls-connect are production-shared, b1028-hotfix-train class */
-const PRODUCTION_BASE_COMMIT = 'e38f3422d92a3fdac2ca74cfa2ebfd594d71a713';
+const PRODUCTION_BASE_COMMIT = '1e7b15052f9462418857ffb0ce4a64febb1c49cb';
 
 const P1_FILES = [
   '1pScribeFlow.html',
