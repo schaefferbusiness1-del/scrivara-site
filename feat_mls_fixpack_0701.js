@@ -977,12 +977,16 @@
         }
       }
       entry.render = rerender;
-      btn.addEventListener('click', function () {
+      btn.addEventListener('click', function (ev) {
         entry.hidden = !entry.hidden;
         body.style.display = entry.hidden ? 'none' : 'block';
         btn.textContent = entry.hidden ? '📄 Formatted' : '✏️ Edit';
         setTaVisible(entry.hidden);
-        if (entry.hidden) { try { ta.focus({ preventScroll: true }); } catch (e) {} }
+        /* Focus the textarea only on the doctor's OWN click. The op-note room
+           takes every panel in hand by calling btn.click() programmatically
+           (fmtSync/fmtReset/fmtToggle) - an untrusted click here must never
+           steal focus, or a day-open would yank it once per card. */
+        if (entry.hidden && ev && ev.isTrusted) { try { ta.focus({ preventScroll: true }); } catch (e) {} }
         if (!entry.hidden) rerender(true);
       });
       rerender(true);
