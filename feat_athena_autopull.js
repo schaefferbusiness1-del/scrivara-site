@@ -257,13 +257,32 @@
     barText = barWrap.querySelector('[data-text]');
     return barWrap;
   }
+  /* eta-1.2 (owner: the bar must "actually tell u how long it would take"):
+     the estimate comes from the MEASURED pace of this very pull - elapsed
+     time over encounters finished - never a guessed constant. Before the
+     first encounter lands it says the chart is being sized; the wording
+     rounds honestly (minutes near the top, quarter-minutes in the middle,
+     "almost done" at the tail) so it never fakes second-level precision. */
+  var etaT0 = 0, etaLastN = -1;
+  function etaText(n, total) {
+    if (!(total > 1)) return '';
+    if (!(n > 0)) { etaT0 = Date.now(); etaLastN = 0; return ' — sizing the chart…'; }
+    if (n < etaLastN || !etaT0) { etaT0 = Date.now() - 1; etaLastN = 0; } /* a new pull reset */
+    etaLastN = n;
+    var pace = (Date.now() - etaT0) / n;
+    var left = Math.max(0, Math.round(((total - n) * pace) / 1000));
+    if (left <= 12) return ' — almost done';
+    if (left <= 90) { var q = Math.max(15, Math.round(left / 15) * 15); return ' — about ' + q + 's left'; }
+    var m = Math.max(2, Math.round(left / 30) / 2);
+    return ' — about ' + (m % 1 === 0 ? m : m.toFixed(1)) + ' min left';
+  }
   function setBar(n, total, msg2) {
     var w = ensureBar(); if (!w) return;
     if (barHideT) { try { clearTimeout(barHideT); } catch (eB0) {} barHideT = 0; }
     w.style.display = 'block';
     var pct = total > 0 ? Math.max(2, Math.min(100, Math.round((Number(n) / Number(total)) * 100))) : 2;
     if (barFill) barFill.style.width = pct + '%';
-    if (barText) barText.textContent = (total > 1 ? (Math.min(Number(n) || 0, total) + ' of ' + total + ' — ') : '') + S(msg2 || '');
+    if (barText) barText.textContent = (total > 1 ? (Math.min(Number(n) || 0, total) + ' of ' + total + etaText(Number(n) || 0, Number(total)) + ' — ') : '') + S(msg2 || '');
   }
   function finishBar(okState, msg2) {
     var w = barWrap; if (!w || !w.isConnected) return;
@@ -351,12 +370,33 @@
       catch (e) { status(onStatus, '⚠ ' + (e && e.message || 'Save failed') + '.', true); hideChipLater(); return; }
       status(onStatus, 'Saved ' + saved + ' visit' + (saved === 1 ? '' : 's') + '. Generating AI summaries…');
       try { await M.ensureSummaries(patient.id, function (msg) { if (msg) status(onStatus, msg); }); } catch (e) {}
-      /* fm-1.1: land the chart FACTS the visits verb never carries. A verified
-         capture reads medications/problems/allergies straight off the open
-         chart banner cards; meds was measured EMPTY on every autopull patient
-         (2026-08-19, Tom + Lamar) while the capture reply carried them. Names
-         must still match the pulled identity - a swapped chart adds nothing. */
+      /* ff-1.2 (owner, live Alicia James card 2026-08-19: every prep-summary
+         line read "NOT PULLED from Athena yet" after a one-person pull - "it
+         needs to also pull their actual history and stuff not just their
+         visits"): the visits verb never carried the chart CARD. The app's own
+         __mlsChartField.read is the proven rail - verified read, parse, and a
+         three-factor-gated save of problems, medications, allergies, summary,
+         VITALS and HISTORY plus the provenance stamp the SOURCE line reads.
+         The chart is already open and verified from the walk, so this read
+         lands fast. PROVE the handle exists before trusting it (a
+         feature-detect must never hide a typo); the capture merge below stays
+         as the fallback when the rail is absent or refuses. */
+      var cardLanded = false;
       try {
+        var cf = window.__mlsChartField;
+        if (cf && typeof cf.read === 'function') {
+          status(onStatus, 'Reading the full chart card — medications, vitals, history…');
+          var cardRes = await Promise.resolve(cf.read(patient, function (msg) { if (msg) status(onStatus, msg); }));
+          cardLanded = !!(cardRes && cardRes.ok === true);
+          if (!cardLanded && cardRes && cardRes.reason) {
+            status(onStatus, 'The full chart card could not be read (' + S(cardRes.reason) + ') — visits are saved; the card can be pulled from the profile.');
+          }
+        }
+      } catch (eFf) {}
+      /* fm-1.1 fallback: a verified capture still lands medications/problems/
+         allergies off the open chart banner when the full-card rail is absent
+         or refused. Names must match the pulled identity. */
+      if (!cardLanded) try {
         var post = await captureOpen(9000);
         var postCap = (post && post.ok === true && post.captured) ? post.captured : null;
         if (postCap && namesMatch(postCap.name, identity.name)) {
