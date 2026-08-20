@@ -33828,42 +33828,37 @@ async function importPatients(){
   }catch(e){ toast('Network error during import.','err'); if(out) out.textContent=''; }
 }
 
-/* ---- Cue the MLS Assist extension to capture the patient open in the EMR ---- */
+/* ---- Cue the MLS Assist extension to capture the patient open in the EMR ----
+   setpull-1.0 (owner, 2026-08-20: "rewire this button in settings to go right
+   to the patient page and start running what we just did"): this used to be a
+   THIRD pull engine - its own ping loop, its own mlsAppCapture, its own record
+   landing - one more place a duplicate patient could be minted. It now takes
+   the doctor to the Patients screen and presses the ONE proven whoever-button
+   (#ptPullAthenaBtn), so the exact wrapped chain the practice validated runs:
+   capture-first autoswitch, chart facts, visit history, the progress bar. */
 function captureFromEMR(btn){
   const st=document.getElementById('emrPullStatus');
   const set=(m,c)=>{ if(st){ st.textContent=m; st.style.color=c||'var(--muted)'; } };
-  set('Looking for MLS Assist…');
-  // Detect the extension by pinging repeatedly (it may still be initializing).
-  let ponged=false, tries=0, iv=null;
-  function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); window.removeEventListener('message',onPong); proceed(); } }
-  window.addEventListener('message',onPong);
-  const ping=()=>window.postMessage({source:'mls-app',type:'mlsPing'},'*');
-  ping();
-  iv=setInterval(()=>{
+  set('Taking you to Patients — pulling whoever is open in your EMR…');
+  try{ if(typeof showView==='function') showView('patients'); }catch(e){}
+  let tries=0;
+  (function press(){
     tries++;
-    if(ponged){ clearInterval(iv); return; }
-    if(tries>8){ clearInterval(iv); window.removeEventListener('message',onPong);
-      set('MLS Assist isn’t responding on this page. Make sure it’s installed and enabled, then reload this page and try again.','#b4760e'); return; }
-    ping();
-  }, 350);
-  function proceed(){
-    if(btn){ btn.disabled=true; btn.textContent='… reading your EMR'; }
-    set('Reading the patient open in your EMR…');
-    let got=false;
-    function onResult(e){
-      if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppCaptureResult')) return;
-      got=true; window.removeEventListener('message',onResult);
-      if(btn){ btn.disabled=false; btn.textContent='📥 Pull current EMR patient into MLS'; }
-      const r=e.data.resp||{};
-      if(r.ok){ set('✓ Pulled '+(r.patient||'patient')+' + '+(r.visits||0)+' prior visit(s) into MLS.','#1c7a43');
-        try{ if(typeof loadPatients==='function') loadPatients(); else if(typeof syncDown==='function') syncDown(); }catch(_){}
-        try{ toast('Pulled '+(r.patient||'patient')+' from your EMR.','ok'); }catch(_){}
-      } else { set(r.error||'Could not read a patient from the EMR tab.','#b4231e'); }
+    const b=document.getElementById('ptPullAthenaBtn');
+    if(b){
+      try{ b.click(); set('✓ Pull started — watch the progress bar under the pull button.','#1c7a43'); }
+      catch(e){ set('Could not start the pull — press "📥 Pull the patient open in athena" on the Patients screen.','#b4231e'); }
+      return;
     }
-    window.addEventListener('message',onResult);
-    window.postMessage({source:'mls-app',type:'mlsAppCapture'},'*');
-    setTimeout(()=>{ if(!got){ window.removeEventListener('message',onResult); if(btn){ btn.disabled=false; btn.textContent='📥 Pull current EMR patient into MLS'; } set('No response from the extension. Make sure your EMR tab is open and try again.','#b4231e'); } }, 30000);
-  }
+    if(typeof pullPatientFromAthenaPrompt==='function'){
+      /* The Patients screen exists but the button has not painted yet; the
+         global runs the same wrapped chain the button does. */
+      try{ pullPatientFromAthenaPrompt(null); set('✓ Pull started — switching you to the Patients screen.','#1c7a43'); }catch(e){ set('Could not start the pull — open Patients and press the pull button there.','#b4231e'); }
+      return;
+    }
+    if(tries<12){ setTimeout(press,250); return; }
+    set('The Patients screen has not finished loading — open Patients and press "📥 Pull the patient open in athena".','#b4760e');
+  })();
 }
 
 /* ---- Lawyer portal: submit a new request ---- */
