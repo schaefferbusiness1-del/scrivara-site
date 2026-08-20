@@ -8829,7 +8829,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1030: persist:false work belongs to this exact COW candidate. Passing
+    /* b1031: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -9070,7 +9070,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1030: the retired 3-second owner synchronously regex-scanned every
+      /* b1031: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -36134,7 +36134,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1030';
+  window.__MLS_AV = window.__MLS_AV || 'b1031';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36477,7 +36477,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1030';
+  var MLS_APP_BUILD='2026-07-25-b1031';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -47173,7 +47173,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            repaints when any other tab changes the preference (qol-1.1d). */
         var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
         paint();
-        /* sbp-1.0 boot-paint settle (live b1016/b1030, final-live-proofs
+        /* sbp-1.0 boot-paint settle (live b1016/b1031, final-live-proofs
            Proof 3): the ONE paint above can run before the session namespace
            exists - the resolver reads the placeholder slot, answers 'unset'
            (= on), and the box paints CHECKED while the settled preference is
@@ -47358,7 +47358,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          from a REAL session namespace - during boot uns() builds a
          placeholder ('sf_u::_::' / '::undefined::') and this read consults
          the wrong slot, so its 'unset' (= default on) is provisional and
-         views must re-read after the session settles (live b1016/b1030:
+         views must re-read after the session settles (live b1016/b1031:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
       var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;
@@ -47442,7 +47442,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* 2026-07-28: a DAY-SCOPED read (runOpts.onlyDate) is the fast lane's own
        guarantee — the pulled day's note saves even with the preference off —
        so the preference gate applies only to the full every-visit read. */
-    if (!enabled() && !(runOpts && runOpts.onlyDate)) return Promise.resolve({ ok: true, skipped: 'preference-off' });
+    /* spv-1.1 (owner, 2026-08-20): the preference governs DAY/BULK pulls. A
+       single-patient button press is the doctor asking for THIS chart complete
+       - it always reads visit notes (runOpts.singlePull), like onlyDate. */
+    if (!enabled() && !(runOpts && (runOpts.onlyDate || runOpts.singlePull === true))) return Promise.resolve({ ok: true, skipped: 'preference-off' });
     if (!p || !p.id || !p.name) return Promise.reject(new Error('No patient is selected for the full-visit pull.'));
     if (api.running && api.current) return api.current;
     var cv = window.__mlsCopyVisits;
@@ -47494,8 +47497,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }
         if(!target)return r;
         var ps=(typeof window.getPatients==='function'?(window.getPatients()||[]):[]),p=ps.filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
-        if (!enabled() || !p || !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(target))) return r;
-        return api.runForPatient(p, function (m) { if (m) toast(m, ''); }).then(function () { return r; });
+        if (!p || !(typeof window._hasImportedHistory === 'function' && window._hasImportedHistory(target))) return r; /* spv-1.1: pref no longer refuses the single pull */
+        return api.runForPatient(p, function (m) { if (m) toast(m, ''); }, { singlePull: true }).then(function () { return r; });
       });
     };
     w.__mlsFullVisitPref = true;

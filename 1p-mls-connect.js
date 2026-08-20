@@ -51015,7 +51015,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* 2026-07-28: a DAY-SCOPED read (runOpts.onlyDate) is the fast lane's own
        guarantee — the pulled day's note saves even with the preference off —
        so the preference gate applies only to the full every-visit read. */
-    if (!enabled() && !(runOpts && runOpts.onlyDate)) return Promise.resolve({ ok: true, skipped: 'preference-off' });
+    /* spv-1.1 (owner, 2026-08-20): the preference governs DAY/BULK pulls. A
+       single-patient button press is the doctor asking for THIS chart complete
+       - it always reads visit notes (runOpts.singlePull), like onlyDate. */
+    if (!enabled() && !(runOpts && (runOpts.onlyDate || runOpts.singlePull === true))) return Promise.resolve({ ok: true, skipped: 'preference-off' });
     if (!p || !p.id || !p.name) return Promise.reject(new Error('No patient is selected for the full-visit pull.'));
     if (api.running && api.current) return api.current;
     var cv = window.__mlsCopyVisits;
@@ -51108,13 +51111,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return Promise.resolve(spvPublish({ at: Date.now(), ok: false, reason: 'chart-import-not-verified', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: before, added: 0,
         message: 'MLS could not verify this chart import against ' + who + '’s record, so it did not read their prior visits. Nothing was faked.' }));
     }
-    /* The preference governs the FULL every-visit read, and it is the doctor's
-       to set. It does not license a false success line. */
-    if (!enabled()) {
-      return Promise.resolve(spvPublish({ at: Date.now(), ok: false, reason: 'preference-off', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: before, added: 0,
-        message: 'Saved ' + who + '’s chart facts. Prior visit notes were NOT read — "Pull full visit notes" is off in Settings. Turn it on and pull again to bring their visit history in.' }));
-    }
-    return api.runForPatient(p, function (m) { if (m) toast(m, ''); }).then(function (res) {
+    /* spv-1.1: the preference no longer refuses the SINGLE pull - the doctor
+       pressed a button whose contract is "this patient, chart AND visits".
+       Day/bulk pulls still honor the toggle inside runForPatient. */
+    return api.runForPatient(p, function (m) { if (m) toast(m, ''); }, { singlePull: true }).then(function (res) {
       var fresh = spvFresh(p.id) || p, after = spvVisitCount(fresh), added = Math.max(0, after - before);
       if (added > 0) {
         return spvPublish({ at: Date.now(), ok: true, reason: 'read', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: after, added: added,

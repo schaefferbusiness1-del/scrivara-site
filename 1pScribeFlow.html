@@ -5347,7 +5347,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
              the DOM node, while the importer reads the stored key. -->
         <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="setPullVisitBodies" style="margin-top:2px">
-          <span><b>📖 Pull full visit notes</b> — during an Athena pull, also open and save every encounter note (slower, most complete). Off: the schedule and each patient's chart history cards only — much faster. Applies to every pull on this account, wherever you start it.</span>
+          <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, also open and save every encounter note (slower, most complete). Off: day pulls save the schedule and each patient's chart history cards — much faster. The single-patient pull button always brings that one patient's visit notes either way.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
         <a href="https://mlsscribe.com/MLS_Assist_v3.0.76.zip" download="MLS_Assist_v3.0.76.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.76 ZIP)</a>
@@ -23906,6 +23906,11 @@ async function pullPatientChartViaAssist(btn, opts){
        twenty minutes later. Say exactly what was saved; the visit leg publishes
        its own verdict at window.__mlsSinglePullVisits and says it out loud. */
     say('✅ Saved '+pullTarget.name+'’s Athena chart facts — problems, medications, allergies and history. Checking for their prior visit notes…','ok','step 3 of 3');
+    /* focus-1.0 (owner, 2026-08-20: "it should pull up whoever it just saved"):
+       success lands the saved patient ON SCREEN - the Patients view with their
+       profile card - no matter which view the pull started from. The active
+       id was already set to the pull target before the read began. */
+    try{ if(typeof showView==='function') showView('patients'); if(typeof renderProfile==='function') renderProfile(); var pcF=document.getElementById('profileCard'); if(pcF&&pcF.scrollIntoView) pcF.scrollIntoView({block:'nearest'}); }catch(eFo){}
     if(btn){ btn.disabled=false; btn.innerHTML=orig; }
     releaseDirect(); return true;
   }catch(err){
