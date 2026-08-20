@@ -302,6 +302,11 @@
     if (barHideT) { try { clearTimeout(barHideT); } catch (eB1) {} }
     barHideT = setTimeout(function () { try { w.style.display = 'none'; if (barFill) barFill.style.width = '0%'; } catch (eB2) {} }, okState ? 2500 : 16000); /* focus-1.1: a finished bar retires in 2.5s - 8s of full green read as "it never stops" */
   }
+  /* doorbar-1.0 (owner, Ed SPEER Jr: "when I search by name and date of birth
+     the loading bar doesn't come up"): the typed pull runs the CHART engine,
+     whose step narration never spoke this bar's language. Export the bar so
+     the chart engine's steps can drive the same surface the visits walk uses. */
+  try { window.__mlsPullBar = { set: setBar, finish: finishBar }; } catch (eXp) {}
 
   /* ---------- the one-button auto pull ---------- */
   var busy = false;

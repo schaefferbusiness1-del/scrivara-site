@@ -51094,6 +51094,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function spvPublish(receipt) {
     try { window.__mlsSinglePullVisits = receipt; } catch (e) {}
     try { if (receipt && receipt.message) toast(receipt.message, receipt.ok ? 'ok' : ''); } catch (e2) {}
+    /* doorbar-1.0: every single-pull outcome lands here - finish the bar the
+       chart steps started, with the same honest sentence the toast carries. */
+    try { var pb = window.__mlsPullBar; if (pb && receipt) pb.finish(receipt.ok === true, String(receipt.message || '')); } catch (e3) {}
     return receipt;
   }
   /* Enqueue the one patient the falling-edge watcher will never see. */

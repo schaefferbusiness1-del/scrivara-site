@@ -106,15 +106,18 @@ function statics() {
     .replace("route:'/1p/'", "route:'/1pScribeFlow.html'");
   eq(canon(read('1p/index.html')) === read('1pScribeFlow.html'), true, 'the two /1p shells are not twins');
 
-  /* LANE NEUTRALITY — production only. The lane-era version of this guard also
-     required cloned/* to be clean, which was true exactly until the r23 derive
-     ran: /cloned is DERIVED from /1p, so a correct integration PROMOTES these
-     blocks into it (cloned-lane-contract owns that parity). Production proper
-     must stay clean forever. */
-  for (const prod of ['ScribeFlow.html', 'mls-connect.js']) {
-    const src = read(prod);
+  /* THE PROMOTION (b1036, 2026-08-20): "production proper must stay clean
+     forever" ended when the owner made the 1p lineage the official site -
+     production is now DERIVED from /1p (scripts/derive-production-from-1p.js),
+     so the invariant INVERTS: these lane blocks must be PRESENT in production,
+     exactly as the derive emits them. Absence now means a broken derivation. */
+  {
+    /* Each token lives where its 1p source put it (idread in the shell, the
+       wrapper names across shell+bundle) - assert against the pair, exactly
+       the surface the old absence-check swept. */
+    const prodPair = read('ScribeFlow.html') + read('mls-connect.js');
     for (const token of ['idread-1.0.0', 'pullone-1.0.0', 'pvrPullOne', '_athenaHistoryDobSame']) {
-      ok(src.indexOf(token) < 0, `${prod} carries ${token} — this lane reached production`);
+      ok(prodPair.indexOf(token) >= 0, `production lost ${token} — the derivation is broken`);
     }
   }
   {

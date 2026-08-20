@@ -23896,7 +23896,12 @@ async function pullPatientChartViaAssist(btn, opts){
      so at the BUTTON the only visible change was its label. Every phase now
      also paints an inline status line beside the button — same messages, a
      step counter instead of an invented percentage. */
-  var say=function(m,k,ph){ setT(m,k); try{ var s=document.getElementById('pullChartStatus'); if(s){ s.style.display='block'; s.style.color=k==='err'?'#9f2d2d':(k==='ok'?'#205c43':'#52675c'); s.textContent=(ph?ph+' · ':'')+m; } }catch(e){} };
+  var say=function(m,k,ph){ setT(m,k); try{ var s=document.getElementById('pullChartStatus'); if(s){ s.style.display='block'; s.style.color=k==='err'?'#9f2d2d':(k==='ok'?'#205c43':'#52675c'); s.textContent=(ph?ph+' · ':'')+m; } }catch(e){}
+    /* doorbar-1.0 (owner, Ed SPEER Jr): the chart engine's three steps drive
+       the SAME progress bar the visits walk uses, so a typed name+DOB pull
+       shows a bar from its first second. The visit leg's per-encounter
+       events then take the bar over; its publisher finishes it. */
+    try{ var pb=window.__mlsPullBar; if(pb){ if(k==='err'){ pb.finish(false,m); } else { var mmB=/^step (\d+) of (\d+)$/.exec(String(ph||'')); if(mmB){ pb.set(Number(mmB[1]),Number(mmB[2]),m); } } } }catch(ePb){} };
   say('Opening this patient’s chart in Athena…','','step 1 of 3');
   try{
     var rd;
@@ -37370,7 +37375,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260820-r1';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1037';
+  window.__MLS_AV='b1038';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -54978,16 +54983,32 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
       : 'Indexing this chart’s encounters — no count yet';
     var line = head + ' · ' + secs(now - run.startedAt) + ' elapsed';
     if (stalled) line += ' · no new progress for ' + secs(since) + ' — athenaOne may be stuck. Nothing has been written either way.';
+    /* pullsee-1.1 (measured live 2026-08-20, Mark H Wollum pull: 12 title
+       rewrites and a full line+button rebuild EVERY SECOND - the owner's
+       "very glitchy"). One write per CHANGE: the text node and stop button
+       are built once; a tick only touches the text when the line changed.
+       The button is born with data-tip, never title, so the tooltip
+       converter has nothing to strip and refight. ez3calm class. */
     el.style.display = 'block';
-    el.style.color = stalled ? '#9f2d2d' : '#52675c';
-    el.textContent = line + ' ';
-    var stop = document.createElement('button');
-    stop.type = 'button'; stop.id = STOP_ID;
-    stop.textContent = 'Stop waiting on this read';
-    stop.title = 'Lets go of this read: MLS stops narrating it and will ignore its answer. It cannot cancel athenaOne’s own read, which may still finish in the background. Nothing is written to Athena either way.';
-    stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer';
-    stop.addEventListener('click', function () { stopWaiting(); }, false);
-    el.appendChild(stop);
+    if (!el.__pullseeStop || !el.__pullseeStop.isConnected) {
+      el.textContent = '';
+      el.__pullseeText = document.createTextNode('');
+      el.appendChild(el.__pullseeText);
+      var stop = document.createElement('button');
+      stop.type = 'button'; stop.id = STOP_ID;
+      stop.textContent = 'Stop waiting on this read';
+      stop.setAttribute('data-tip', 'Lets go of this read: MLS stops narrating it and will ignore its answer. It cannot cancel athenaOne’s own read, which may still finish in the background. Nothing is written to Athena either way.');
+      stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer';
+      stop.addEventListener('click', function () { stopWaiting(); }, false);
+      el.appendChild(stop);
+      el.__pullseeStop = stop;
+      el.__pullseeLine = '';
+    }
+    if (el.__pullseeLine !== line || el.__pullseeStalled !== stalled) {
+      el.style.color = stalled ? '#9f2d2d' : '#52675c';
+      el.__pullseeText.nodeValue = line + ' ';
+      el.__pullseeLine = line; el.__pullseeStalled = stalled;
+    }
   }
   function start() {
     seq++; run = { seq: seq, startedAt: Date.now(), lastAt: Date.now(), n: null, total: null };
@@ -54998,6 +55019,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     if (iv) { safe(function () { clearInterval(iv); }); iv = null; }
     run = null;
     var el = byId(TICKER_ID); if (!el) return;
+    el.__pullseeStop = null; el.__pullseeText = null; el.__pullseeLine = ''; /* pullsee-1.1: settle wipes children; the next run rebuilds */
     if (msg) { el.style.display = 'block'; el.style.color = color || '#52675c'; el.textContent = msg; }
     else el.style.display = 'none';
   }

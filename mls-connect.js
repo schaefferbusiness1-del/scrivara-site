@@ -51094,6 +51094,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function spvPublish(receipt) {
     try { window.__mlsSinglePullVisits = receipt; } catch (e) {}
     try { if (receipt && receipt.message) toast(receipt.message, receipt.ok ? 'ok' : ''); } catch (e2) {}
+    /* doorbar-1.0: every single-pull outcome lands here - finish the bar the
+       chart steps started, with the same honest sentence the toast carries. */
+    try { var pb = window.__mlsPullBar; if (pb && receipt) pb.finish(receipt.ok === true, String(receipt.message || '')); } catch (e3) {}
     return receipt;
   }
   /* Enqueue the one patient the falling-edge watcher will never see. */
@@ -51751,7 +51754,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            there is no Athena read that could change it. They still get a
            sentence rather than a dash: the doctor should never have to work out
            which kind of nothing a dash meant. */
-        ['Next appt', qlocal(appt && (appt.time ? appt.time + (appt.reason ? ' \u00b7 ' + appt.reason : '') : ''), 90, 'Nothing scheduled.')],
+        /* apptclean-1.0.0 (owner screenshot 2026-08-20: the tile read
+           "10:50 AM \u00b7 API (Clearwave Production (MDP Partner))"). The reason
+           is athena's raw appointment-type field and can carry integration
+           vendor text that means nothing to a doctor. A reason that names the
+           plumbing rather than the visit renders as the time alone - the
+           schedule detail is one click away and a vendor string is never it. */
+        ['Next appt', qlocal(appt && (appt.time ? appt.time + ((function (rs) {
+          rs = String(rs || '').trim();
+          if (!rs) return '';
+          if (/\b(API|Clearwave|MDP|Partner|Production|integration|webhook|HL7|interface)\b/i.test(rs)) return '';
+          return ' \u00b7 ' + rs;
+        })(appt.reason)) : ''), 90, 'Nothing scheduled.')],
         ['Visits', vfield],
         ['Key risks', qlocal(p.careFlags, 120, 'None flagged.')]
       ];

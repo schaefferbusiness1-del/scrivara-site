@@ -63,8 +63,17 @@ function blockSource() {
 const SRC = blockSource();
 
 function elementStub(id) {
+  /* pullsee-1.1 renders through a persistent child text node; like a real DOM,
+     textContent must COMPOSE from own text plus children (and setting it must
+     clear them). The stub previously kept a flat string, which read "" the
+     moment the block moved to create-once rendering. */
+  let ownText = '';
   const el = {
-    id: id || '', style: {}, children: [], _on: {}, tagName: 'DIV', textContent: '',
+    id: id || '', style: {}, children: [], _on: {}, tagName: 'DIV',
+    get textContent() {
+      return ownText + el.children.map((c) => (c && (c.nodeValue != null ? c.nodeValue : c.textContent)) || '').join('');
+    },
+    set textContent(v) { ownText = String(v == null ? '' : v); el.children.length = 0; },
     parentNode: null, previousSibling: null, nextSibling: null,
     setAttribute() {}, getAttribute() { return null; },
     addEventListener(t, fn) { (el._on[t] = el._on[t] || []).push(fn); },
@@ -93,6 +102,9 @@ function harness() {
     readyState: 'complete',
     addEventListener() {}, removeEventListener() {},
     getElementById: id => nodes.has(id) ? nodes.get(id) : null,
+    /* pullsee-1.1 renders through a persistent text node - give the stub the
+       same primitive a real document has. */
+    createTextNode: (t) => { const n = { nodeValue: String(t == null ? '' : t) }; return n; },
     createElement: () => {
       const el = elementStub('');
       /* the block assigns .id after creation; register it so byId finds it */
