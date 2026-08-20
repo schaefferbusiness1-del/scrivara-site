@@ -2455,6 +2455,18 @@ function mlsAthenaTeachWatcherFn(config) {
   var QP = { active: false, winId: null, athenaTabId: null, orig: null, soloWin: false, athOrig: null,
              hostWinId: null, hostOrig: null, lastUse: 0, flashed: false, pending: null, restoring: null, epoch: 0 };
   self.__mlsQp = QP;
+  /* qpx-3075 layer 1: clear the lease the moment its tab closes (awake path). */
+  try {
+    chrome.tabs.onRemoved.addListener(function (tid) {
+      try {
+        if (QP.active && Number(QP.athenaTabId) === Number(tid)) {
+          QP.active = false; QP.winId = null; QP.orig = null; QP.soloWin = false;
+          QP.athenaTabId = null; QP.pending = null; QP.restoring = null;
+          try { chrome.storage.session.set({ mlsQpState: null }); } catch (eQxP) {}
+        }
+      } catch (eQx) {}
+    });
+  } catch (eQxL) {}
   var QP_QUIET_MS = 120000; /* run considered over after 2 min without op traffic */
   var QP_SERIAL_WAIT_MS = 5000;
   var QP_PENDING_RELEASE_MS = 1500;
@@ -2667,6 +2679,17 @@ function mlsAthenaTeachWatcherFn(config) {
   /* adopt state across service-worker restarts so the layout is never stranded */
   try {
     chrome.storage.session.get(['mlsQpState'], function (st) {
+      /* qpx-3075 layer 2: the worker SLEEPS through tab closures, so a stored
+         lease may name a tab that no longer exists - validate before adopting;
+         a missing tab discards the lease and clears the store. */
+      try {
+        if (st && st.mlsQpState && st.mlsQpState.athenaTabId != null) {
+          chrome.tabs.get(Number(st.mlsQpState.athenaTabId)).catch(function () {
+            try { chrome.storage.session.set({ mlsQpState: null }); } catch (eQv1) {}
+            try { if (self.__mlsQp && Number(self.__mlsQp.athenaTabId) === Number(st.mlsQpState.athenaTabId)) { self.__mlsQp.active = false; self.__mlsQp.athenaTabId = null; } } catch (eQv2) {}
+          });
+        }
+      } catch (eQv) {}
       try {
         var s = st && st.mlsQpState;
         if (!s || QP.active) return;
@@ -4470,6 +4493,14 @@ async function mlsPickAthenaTab(all, opts) {
     var qpLease = self.__mlsQp;
     if (qpLease && qpLease.active && qpLease.athenaTabId != null) {
       var qt = null; try { qt = await chrome.tabs.get(qpLease.athenaTabId); } catch (eQpTab) { qt = null; }
+      if (!qt) {
+        /* qpx-3075 layer 3: the leased tab is GONE - a dead tab has no run to
+           protect. Clear the stale lease (module + the storage.session copy
+           that rehydrates on every boot) and fall through to the pin and
+           heuristics for tabs that actually exist. An existing-but-unhealthy
+           leased tab keeps the fail-closed path below - never-hop stands. */
+        try { qpLease.active = false; qpLease.athenaTabId = null; chrome.storage.session.set({ mlsQpState: null }); } catch (eQx2) {}
+      } else {
       if (qt && mlsAthTabHost(qt) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(qt)) {
         var qpHealth = await mlsAthPing(qt.id, opts.noPing ? 1000 : 1500);
         if (qpHealth.alive && !qpHealth.signedOut) return qt;
@@ -4482,6 +4513,7 @@ async function mlsPickAthenaTab(all, opts) {
         if (!qt.discarded) { var qpHealth2 = await mlsAthPing(qt.id, 3000); if (qpHealth2.alive && !qpHealth2.signedOut) return qt; if (qpHealth2.signedOut) mlsAthRejectSignedOut(qt.id); }
       }
       return null;
+      }
     }
     /* v1.99 TAB PIN: the user explicitly handed this athena tab to MLS via the
        tab picker - with no active quiet-work lease it wins over every heuristic
