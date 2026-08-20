@@ -314,12 +314,16 @@ function harness() {
         document.body.appendChild(b);
       }
       /* reposition EVERY call - the search box moves with viewport and scroll.
-         90px below the box = the pull button's real offset: near enough that
-         place()'s default above-the-anchor bubble reaches the box (the control
-         arm's collision), far enough that a re-picked side can clear it. */
+         Mirror the real pull button's stacking: 90px BELOW the box on roomy
+         layouts (place()'s above-the-anchor bubble then reaches the box - the
+         control arm's collision), but ABOVE it when the box rides the viewport
+         bottom (mobile stacking), where an off-screen anchor would clamp every
+         candidate onto the box and assert an impossibility. */
       var r = inp.getBoundingClientRect();
+      var below = r.bottom + 90;
+      var top = (below + 46 <= window.innerHeight - 8) ? below : Math.max(8, r.top - 126);
       b.style.left = Math.round(r.left) + 'px';
-      b.style.top = Math.round(r.bottom + 90) + 'px';
+      b.style.top = Math.round(top) + 'px';
       return 'ok';
     },
     removeProbe: function () { var b = document.getElementById('t9TipProbe'); if (b) b.remove(); return true; },
