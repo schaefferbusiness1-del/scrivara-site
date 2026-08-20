@@ -84,7 +84,12 @@ const PREEXISTING = {
                   //          /cloned was re-derived from /1p: mls-connect.js 1,
                   //          1p-mls-connect.js 1, cloned-mls-connect.js 1, and
                   //          0 in every 1p-feat_*.js and cloned-feat_*.js.
-  '#5b7186': 30,  // "b718"
+  '#5b7186': 26,  // "b718"
+                  //          -4 on 2026-08-20: the production promotion
+                  //          (derive-production-from-1p) replaced the old
+                  //          shared feat files with the 1p forks, which use
+                  //          this colour four fewer times. Shell + connect
+                  //          counts verified unchanged (3 + 1).
                   //          +4 on 2026-08-16: the /cloned lane. Clone count
                   //          matches ScribeFlow.html + mls-connect.js exactly;
                   //          inherited copies, not new design. A build bumper
@@ -149,14 +154,20 @@ const PREEXISTING = {
                   //          /cloned was re-derived from /1p: ScribeFlow.html 2,
                   //          1pScribeFlow.html 2, cloned/index.html 2, and 0 in
                   //          every 1p-feat_*.js and cloned-feat_*.js.
-  '#8b9791': 4,   // "b979" — the write-back walkthrough's muted todo colour
+  '#8b9791': 5,   // "b979" — the write-back walkthrough's muted todo colour
+                  //          +1 on 2026-08-20: the production promotion —
+                  //          ScribeFlow.html is now the 1p shell, which
+                  //          carries one use (verified 0 -> 1, shell only).
                   // (feat_mls_writeback_walkthrough.js), plus residue-athena-1.0.0's
                   // evidence-derived step chips reusing the palette in both twins
                   // + derived cloned (2026-08-18: 1 production + 3 residue).
                   //          byte-identical since its introduction in
                   //          d1aa8a98 on 2026-07-27; the b979 bump did not
                   //          edit that asset or this chosen colour.
-  '#e0b877': 5,   // "b877" — the fill-box amber border and its dictation-
+  '#e0b877': 6,   // "b877" — the fill-box amber border and its dictation-
+                  //          +1 on 2026-08-20: the production promotion —
+                  //          ScribeFlow.html is now the 1p shell (0 -> 1,
+                  //          shell only, connect unchanged).
                   // corr button (feat_mls_opnote_fill.js), plus the opnote-day
                   // shell comments naming the colour in both twins + derived
                   // cloned (2026-08-18: 2 CSS literals + 3 prose comments).

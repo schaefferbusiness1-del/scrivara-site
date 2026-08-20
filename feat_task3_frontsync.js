@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_task3_frontsync.js -> window.__mlsT3   (Task 3, 2026-07-05, build b19)
+ * feat_task3_frontsync.js -> window.__mlsT3 (p1 exact census display fork)
  * ----------------------------------------------------------------------------
  * FRONTEND CALENDAR / PATIENT SELECTOR / MLS EASY / PROVIDER FLOW FIX.
  * One canonical appointment store + one provider scope + one status system so
@@ -33,9 +33,17 @@
  * ========================================================================== */
 ;(function () {
   'use strict';
-  if (window.__mlsT3 && window.__mlsT3.installed) return;
+  var previousMLSCal = window.MLSCal || null;
+  if (window.__mlsT3 && window.__mlsT3.installed) {
+    if (window.__mlsT3.version === 't3-p1-1.2.0') return;
+    try { if (typeof window.__mlsT3.revert === 'function') window.__mlsT3.revert(); } catch (eOldT3) {}
+  }
 
-  var VERSION = 't3-1.1.3';
+  var VERSION = 't3-p1-1.2.0';
+  /* Empty provider scope remains the canonical internal "all" value. Calendar
+     wording stays deliberately neutral because this is a saved-schedule
+     display filter, not proof that Athena's entire practice roster was read. */
+  var DEFAULT_SCOPE_LABEL = 'Default schedule';
   var wrapped = [], trackedTimeouts = [], destroyed = false, started = false, runtimeGeneration = 0;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
@@ -241,6 +249,93 @@
     return '';
   }
 
+  function appointmentCensusStatusForDay(day) {
+    return safe(function () {
+      var si = window.__mlsSI;
+      return si && isFn(si.appointmentCensusStatusForDay) ? si.appointmentCensusStatusForDay(day) : null;
+    }, null);
+  }
+  function appointmentCensusRowsForDay(day) {
+    return safe(function () {
+      var si = window.__mlsSI;
+      if (!si || !isFn(si.appointmentCensusRowsForDay)) return null;
+      var rows = si.appointmentCensusRowsForDay(day);
+      return Array.isArray(rows) ? rows : null;
+    }, null);
+  }
+  function visibleProviderTarget() {
+    var raw = lsGet('mlsProvScope3'), split = raw.indexOf('|');
+    return split >= 0 && raw.slice(split + 1).trim() ? raw.slice(split + 1).trim() : 'all';
+  }
+  function exactDisplaySelection(day) {
+    return safe(function () {
+      var si = window.__mlsSI;
+      if (!si) return { owned: false, census: false, rows: null, status: null };
+      var provider = visibleProviderTarget();
+      var providerStatus = isFn(si.authoritativeStatusForDay) ? si.authoritativeStatusForDay(day, provider) : null;
+      if (providerStatus && providerStatus.reason !== 'no-snapshot') {
+        return {
+          owned: true, census: false,
+          rows: isFn(si.authoritativeRowsForDay) ? si.authoritativeRowsForDay(day, provider) : null,
+          status: providerStatus
+        };
+      }
+      var censusStatus = appointmentCensusStatusForDay(day);
+      if (censusStatus && censusStatus.reason !== 'no-snapshot') {
+        return { owned: true, census: true, rows: appointmentCensusRowsForDay(day), status: censusStatus };
+      }
+      return { owned: false, census: false, rows: null, status: providerStatus || censusStatus || null };
+    }, { owned: false, census: false, rows: null, status: null });
+  }
+  function exactWholeDaySelection(day) {
+    return safe(function () {
+      var si = window.__mlsSI;
+      if (!si) return { owned: false, census: false, rows: null, status: null };
+      var providerStatus = isFn(si.authoritativeStatusForDay) ? si.authoritativeStatusForDay(day, 'all') : null;
+      if (providerStatus && providerStatus.reason !== 'no-snapshot') {
+        return {
+          owned: true, census: false,
+          rows: isFn(si.authoritativeRowsForDay) ? si.authoritativeRowsForDay(day, 'all') : null,
+          status: providerStatus
+        };
+      }
+      var censusStatus = appointmentCensusStatusForDay(day);
+      if (censusStatus && censusStatus.reason !== 'no-snapshot') {
+        return { owned: true, census: true, rows: appointmentCensusRowsForDay(day), status: censusStatus };
+      }
+      return { owned: false, census: false, rows: null, status: providerStatus || censusStatus || null };
+    }, { owned: false, census: false, rows: null, status: null });
+  }
+  function appointmentCensusOwnsDay(day) {
+    var selected = exactDisplaySelection(day);
+    return !!(selected.owned && selected.census);
+  }
+  function effectiveScopeForDay(day) {
+    if (!appointmentCensusOwnsDay(day)) return Cal.getScope();
+    /* A selected-provider preference cannot apply to rows whose source proves
+       no provider association. Clear the misleading scope even when the
+       Calendar view is hidden and only the Visit header is rendering. */
+    if (lsGet('mlsProvScope3')) lsSet('mlsProvScope3', '');
+    safe(function () { var pf = $('calProvFilter'); if (pf && pf.value !== '') pf.value = ''; });
+    return { pk: '', label: 'Provider unavailable', census: true };
+  }
+  function displayRowForRender(row) {
+    if (!row || !appointmentCensusOwnsDay(row.appt_date)) return row;
+    var copy = {};
+    Object.keys(row).forEach(function (key) { copy[key] = row[key]; });
+    copy.provider = '';
+    [
+      'providerName', 'provider_name', 'providerId', 'provider_id',
+      'providerDisplayName', 'provider_display_name',
+      'renderingProvider', 'rendering_provider',
+      'renderingProviderName', 'rendering_provider_name',
+      'athenaProviderId', 'athena_provider_id', 'renderingProviderId',
+      'rendering_provider_id', 'doctor_user_id', 'doctorUserId',
+      'provider_key', 'providerKey', 'providerTag', 'provider_tag'
+    ].forEach(function (key) { delete copy[key]; });
+    copy.__t3pk = '';
+    return copy;
+  }
   var swapping = false;
   var Cal = {
     version: VERSION,
@@ -256,6 +351,15 @@
       var resolvedTz = acctTz();
       var dateFormatter = tzFormatter('date', resolvedTz);
       var timeFormatter = tzFormatter('time', resolvedTz);
+      var censusDayPass = {}, identityDayPass = {};
+      function censusOwnedInPass(day) {
+        if (!Object.prototype.hasOwnProperty.call(censusDayPass, day)) censusDayPass[day] = appointmentCensusOwnsDay(day);
+        return censusDayPass[day];
+      }
+      function identityProtectedInPass(day) {
+        if (!Object.prototype.hasOwnProperty.call(identityDayPass, day)) identityDayPass[day] = exactWholeDaySelection(day).owned || exactDisplaySelection(day).owned;
+        return identityDayPass[day];
+      }
       var seen = {}, provIdx = {}, keep = [], removed = [], i, x;
       for (i = 0; i < a.length; i++) {
         x = a[i]; if (!x) continue;
@@ -269,6 +373,15 @@
         if (!nk || !dk) { keep.push(x); continue; }
         var key = nk + '|' + dk + '|' + x.__t3t;
         var dayKeyD = nk + '|' + dk;
+        if (identityProtectedInPass(dk)) {
+          /* The exact census ID list, not demographics, owns appointment
+             identity on this day. Two real appointments for the same patient
+             may share a time; pre-authority name/patient dedupe must not
+             collapse their distinct backend IDs. Stale IDs are retired by the
+             exact membership pass below. */
+          keep.push(x);
+          continue;
+        }
         if (seen[key] && pickRowsSameIdentity(seen[key], x)) {             /* duplicate only after positive patient-identity proof */
           var prev = seen[key];
           if (!prev.patient_external_id && x.patient_external_id) { removed.push(prev); keep[keep.indexOf(prev)] = x; seen[key] = x; if (seen[dayKeyD] === prev) seen[dayKeyD] = x; }
@@ -302,20 +415,28 @@
          touched, and nothing is deleted from the backend. */
       safe(function () {
         var si = window.__mlsSI;
-        if (!si || !isFn(si.authoritativeRowsForDay)) return;
+        if (!si) return;
         var byDate = {};
         for (var di = 0; di < a.length; di++) { var dkey = a[di] && a[di].appt_date; if (dkey) byDate[dkey] = 1; }
         var retire = [];
         Object.keys(byDate).forEach(function (day) {
-          var rows = safe(function () { return si.authoritativeRowsForDay(day); }, null);
-          if (!rows) return;
+          /* Destructive display retirement is authorized only by exact
+             whole-day membership (all-provider authority or appointment
+             census). A selected-provider subset must never retire the other
+             appointments before the user clears that filter. */
+          var selected = exactWholeDaySelection(day), rows = selected.rows;
+          if (!selected.owned || !Array.isArray(rows)) return;
           var ids = {};
           rows.forEach(function (r) { var id = String(r && r.id || ''); if (id) ids[id] = 1; });
           if (!Object.keys(ids).length && rows.length) return; /* id-less snapshot rows: no safe trim basis */
           for (var ai = 0; ai < a.length; ai++) {
             var row = a[ai]; if (!row || row.appt_date !== day) continue;
             if (ids[String(row.id || '')]) continue;
-            var athenaMarked = !!String(row.athena_appointment_id || '') || /^p_sched_/.test(String(row.patient_external_id || ''));
+            /* patient_external_id belongs to the patient/chart namespace and
+               is not appointment provenance. Retire only an explicit Athena
+               appointment/import marker. */
+            var athenaMarked = !!String(row.athena_appointment_id || row.athenaAppointmentId || row.source_appointment_id || '') ||
+              /^(?:athena-schedule|athena-import)$/i.test(String(row.appointment_source || row.import_source || row.source || ''));
             if (athenaMarked) retire.push(row);
           }
         });
@@ -328,6 +449,10 @@
       });
       for (i = 0; i < a.length; i++) {
         x = a[i]; if (!x || !x.__t3pk || !x.appt_date) continue;
+        /* An appointment-only census intentionally carries no row-to-provider
+           proof. Even if an old backend row still has a provider label, do not
+           let it create a roster/grouping for the census-owned day. */
+        if (censusOwnedInPass(x.appt_date)) continue;
         if (!provIdx[x.__t3pk]) provIdx[x.__t3pk] = { pk: x.__t3pk, label: humanize(x.provider), total: 0, byDate: {} };
         provIdx[x.__t3pk].total++;
         provIdx[x.__t3pk].byDate[x.appt_date] = (provIdx[x.__t3pk].byDate[x.appt_date] || 0) + 1;
@@ -342,9 +467,9 @@
     },
     getScope: function () {
       var raw = lsGet('mlsProvScope3');
-      if (!raw) return { pk: '', label: 'All providers' };
-      var i = raw.indexOf('|'); if (i < 0) return { pk: '', label: 'All providers' };
-      return { pk: raw.slice(0, i), label: raw.slice(i + 1) || 'All providers' };
+      if (!raw) return { pk: '', label: DEFAULT_SCOPE_LABEL };
+      var i = raw.indexOf('|'); if (i < 0) return { pk: '', label: DEFAULT_SCOPE_LABEL };
+      return { pk: raw.slice(0, i), label: raw.slice(i + 1) || DEFAULT_SCOPE_LABEL };
     },
     setScope: function (pk, label) {
       lsSet('mlsProvScope3', pk ? (pk + '|' + (label || pk)) : '');
@@ -385,27 +510,55 @@
       opt = opt || {};
       var scope = opt.all ? null : Cal.getScope();
       var useSn = !!(scope && scope.pk && !Cal._provIdx[scope.pk]);
-      var out = [], a = Cal._full || window._calAppts || [];
+      var out = [], a = Cal._full || window._calAppts || [], displayDays = {};
+      function includeByExactDisplay(row) {
+        var day = String(row && row.appt_date || ''); if (!day) return true;
+        var selected = displayDays[day];
+        if (!selected) {
+          selected = exactDisplaySelection(day);
+          if (selected.owned && Array.isArray(selected.rows)) {
+            selected.ids = {};
+            selected.rows.forEach(function (one) { var id = String(one && one.id || ''); if (id) selected.ids[id] = 1; });
+          }
+          displayDays[day] = selected;
+        }
+        if (!selected.owned) return true;
+        /* Pending hydration owns the day but has no complete safe slice yet.
+           Render empty/pending, never fall back to append-only raw rows. */
+        if (!Array.isArray(selected.rows)) return false;
+        var id = String(row && row.id || '');
+        if (id && selected.ids && selected.ids[id]) return true;
+        /* Athena cannot adjudicate a manual MLS appointment. Keep it visible
+           beside the exact census, but never preserve an explicitly sourced
+           stale Athena appointment outside the verified ID set. */
+        return !String(row && (row.athena_appointment_id || row.athenaAppointmentId || row.source_appointment_id) || '') &&
+          !/^(?:athena-schedule|athena-import)$/i.test(String(row && (row.appointment_source || row.import_source || row.source) || ''));
+      }
       for (var i = 0; i < a.length; i++) {
         var x = a[i]; if (!x) continue;
         if (opt.date && x.appt_date !== opt.date) continue;
         if (opt.month && String(x.appt_date || '').slice(0, 7) !== opt.month) continue;
         if (opt.dates && !opt.dates[x.appt_date]) continue;
-        if (scope && !Cal.matches(x, scope, useSn)) continue;
-        out.push(x);
+        if (!includeByExactDisplay(x)) continue;
+        if (scope && !appointmentCensusOwnsDay(x.appt_date) && !Cal.matches(x, scope, useSn)) continue;
+        out.push(displayRowForRender(x));
       }
       out.sort(function (p, q) { return (String(p.appt_date) + 'T' + String(p.__t3t || '99')).localeCompare(String(q.appt_date) + 'T' + String(q.__t3t || '99')); });
       return out;
     },
     counts: function (opt) { return { scoped: Cal.rows(opt).length, all: Cal.rows(Object.assign({}, opt, { all: true })).length }; },
     providers: function (date) {
+      if (date && appointmentCensusOwnsDay(date)) return [];
       var out = [], k;
       for (k in Cal._provIdx) { var p = Cal._provIdx[k]; out.push({ pk: p.pk, label: p.label, count: date ? (p.byDate[date] || 0) : p.total }); }
       out.sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label); });
       return out;
     }
   };
-  if (!window.MLSCal) window.MLSCal = Cal;
+  /* The shared consumer leaves its MLSCal object behind after revert. The 1p
+     fork must own the live calendar API, while retaining the previous object
+     solely so its own revert remains genuinely reversible. */
+  window.MLSCal = Cal;
 
   /* current unit filter for the visible native calendar mode */
   function unitOpt() {
@@ -492,19 +645,27 @@
     var opt = unitOpt();
     var c = Cal.counts(opt);
     if (c.scoped > 0) return;
-    var scope = Cal.getScope();
+    var scope = (opt.mode === 'day' && opt.date) ? effectiveScopeForDay(opt.date) : Cal.getScope();
     var el = document.createElement('div'); el.id = 'mlsT3Empty';
     var label = opt.mode === 'day' ? pretty(opt.date) : (opt.mode === 'week' ? 'this week' : 'this month');
     if (scope.pk && c.all > 0) {
       el.innerHTML = '<div class="t3e-t">No patients for <b>' + esc(scope.label) + '</b> ' + (opt.mode === 'day' ? 'on ' + esc(label) : esc(label)) + '.</div>' +
         '<div class="t3e-s">' + c.all + ' patient' + (c.all === 1 ? ' is' : 's are') + ' booked with other providers.</div>' +
-        '<div class="t3e-b"><button type="button" class="t3e-all">View all providers</button><button type="button" class="t3e-rf">Refresh</button></div>';
+        '<div class="t3e-b"><button type="button" class="t3e-all">View default schedule</button><button type="button" class="t3e-rf">Refresh</button></div>';
       el.querySelector('.t3e-all').onclick = function () { Cal.setScope('', ''); };
     } else {
+      /* defect-1 (2026-08-16): this box used to grow its OWN "Pull from
+         athenaOne" button (.t3e-pull) - a second, easy-to-miss pull entry
+         point beside the calendar's real primary (#mlsCvNxt_calendar, built
+         by feat_mls_calm_views.js). Two controls that do the same thing is
+         worse than one: this now only points at the hero instead of
+         duplicating it. Text only, never a button - feat_athena_clarity.js
+         prefix-matches any BUTTON whose label starts "pull from athena" and
+         would weld a per-patient chart-pull explanation onto a whole-day
+         schedule pull; a plain <div> is never scanned by that matcher. */
       el.innerHTML = '<div class="t3e-t">No appointments ' + (opt.mode === 'day' ? 'on ' + esc(label) : esc(label)) + '.</div>' +
-        '<div class="t3e-s">' + (opt.mode === 'day' ? 'A quiet day. Pull the schedule from athenaOne if patients are missing.' : 'Pull the schedule from athenaOne if patients are missing.') + '</div>' +
-        '<div class="t3e-b">' + (isFn(window.pullScheduleViaAssist) ? '<button type="button" class="t3e-pull">Pull from athenaOne</button>' : '') + '<button type="button" class="t3e-rf">Refresh</button></div>';
-      var pb = el.querySelector('.t3e-pull'); if (pb) pb.onclick = function () { safe(function () { window.pullScheduleViaAssist(); }); };
+        '<div class="t3e-s">' + (opt.mode === 'day' ? 'A quiet day, or the schedule has not been pulled yet — use the Pull button above.' : 'Missing patients? Use the Pull button above to read the schedule from athenaOne.') + '</div>' +
+        '<div class="t3e-b"><button type="button" class="t3e-rf">Refresh</button></div>';
     }
     el.querySelector('.t3e-rf').onclick = function () { safe(function () { if (isFn(window.loadCalendar)) window.loadCalendar(); }); };
     grid.insertBefore(el, grid.firstChild);
@@ -518,10 +679,20 @@
     var ros = $('mlsT3Roster');
     if (!visible || !wrap || !wrap.parentNode) { if (ros) ros.style.display = 'none'; return; }
     var opt = unitOpt();
+    var censusOwned = !!(opt.mode === 'day' && opt.date && appointmentCensusOwnsDay(opt.date));
     var provs = Cal.providers(opt.mode === 'day' ? opt.date : null);
-    var scope = Cal.getScope();
+    var scope = (opt.mode === 'day' && opt.date) ? effectiveScopeForDay(opt.date) : Cal.getScope();
+    if (censusOwned && scope.pk) {
+      /* A saved provider filter cannot adjudicate rows whose Athena source did
+         not associate any appointment with a provider. Clear it durably and
+         keep the native filter neutral without emitting a misleading click. */
+      lsSet('mlsProvScope3', '');
+      scope = { pk: '', label: DEFAULT_SCOPE_LABEL };
+      safe(function () { var pf = $('calProvFilter'); if (pf && pf.value !== '') pf.value = ''; });
+    }
     var allCount = Cal.rows(Object.assign({}, opt, { all: true })).length;
-    var sig = JSON.stringify([scope.pk, allCount, provs.map(function (p) { return p.pk + p.count; }).join(','), opt.mode, opt.date || opt.month || '']);
+    var censusCount = censusOwned ? Number((appointmentCensusStatusForDay(opt.date) || {}).sourceCount || 0) : 0;
+    var sig = JSON.stringify([censusOwned ? 'appointment-census-only' : scope.pk, allCount, censusCount, provs.map(function (p) { return p.pk + p.count; }).join(','), opt.mode, opt.date || opt.month || '']);
     if (!ros) {
       ros = document.createElement('div'); ros.id = 'mlsT3Roster';
       wrap.parentNode.insertBefore(ros, wrap);
@@ -532,8 +703,16 @@
     }
     ros.style.display = '';
     if (sig === rosterSig) return; rosterSig = sig;
+    if (censusOwned) {
+      var manualCount = Math.max(0, allCount - censusCount);
+      ros.innerHTML = '<span class="t3r-cap t3r-census">' + censusCount + ' Athena appointment' + (censusCount === 1 ? '' : 's') + ' &middot; provider unavailable' +
+        (manualCount ? ' &middot; ' + manualCount + ' manual MLS entr' + (manualCount === 1 ? 'y' : 'ies') : '') + '</span>' +
+        '<button type="button" class="t3r-rf" title="Refresh appointments">&#8635; Refresh</button>';
+      ros.querySelector('.t3r-rf').onclick = function () { safe(function () { if (isFn(window.loadCalendar)) window.loadCalendar(); }); };
+      return;
+    }
     var html = '<span class="t3r-cap">Providers</span>' +
-      '<span class="t3r-chip' + (!scope.pk ? ' t3r-on' : '') + '" data-pk="" data-label="All providers">All providers <b>' + allCount + '</b></span>';
+      '<span class="t3r-chip' + (!scope.pk ? ' t3r-on' : '') + '" data-pk="" data-label="' + esc(DEFAULT_SCOPE_LABEL) + '">' + esc(DEFAULT_SCOPE_LABEL) + ' <b>' + allCount + '</b></span>';
     provs.forEach(function (p) {
       if (!p.label) return;
       var on = scope.pk && (scope.pk === p.pk);
@@ -549,10 +728,11 @@
   function glanceNote() {
     var glance = document.querySelector('#calendarView .cx-glance');
     var old = $('mlsT3GlanceNote');
-    var scope = Cal.getScope();
     if (!glance) { if (old) old.remove(); return; }
-    if (!scope.pk) { if (old) old.remove(); return; }
     var key = safe(function () { return window._calSelDay || window._calRefDate; }, null) || todayKey();
+    var scope = effectiveScopeForDay(key);
+    if (appointmentCensusOwnsDay(key)) { if (old) old.remove(); return; }
+    if (!scope.pk) { if (old) old.remove(); return; }
     var n = Cal.rows({ date: key }).length;
     var txt = 'For ' + scope.label + ': ' + n + ' this day';
     if (old && old.parentElement === glance) { if (old.getAttribute('data-t') !== txt) { old.textContent = txt; old.setAttribute('data-t', txt); } return; }
@@ -614,7 +794,7 @@
     var vv = $('visitView'); if (!vv || !viewShown('visitView')) return;
     var date = viewingDate();
     var list = canonicalList(date);
-    var scope = Cal.getScope();
+    var scope = effectiveScopeForDay(date);
     var sig = date + '|' + scope.pk + '|' + list.length + '|' + list.map(pickRowIdentitySig).join(',');
     if (!force && sig === pickSig) return;
     pickSig = sig;
@@ -629,7 +809,7 @@
     if (!viewShown('visitView')) return;
     var box = $('heroToday'); if (!box) return;
     var date = viewingDate();
-    var scope = Cal.getScope();
+    var scope = effectiveScopeForDay(date);
     var scoped = canonicalList(date);
     var all = Cal.rows({ date: date, all: true });
     /* header line: date + provider scope + count (one truth, shown once) */
@@ -643,15 +823,15 @@
     else if (head.nextSibling !== box) box.parentElement.insertBefore(head, box);
     head.querySelector('.t3p-date').textContent = (date === todayKey() ? 'Today' : pretty(date));
     head.querySelector('.t3p-prov').textContent = scope.label;
-    head.querySelector('.t3p-prov').title = 'Provider scope (change on the Calendar tab)';
+    head.querySelector('.t3p-prov').title = scope.census ? 'Athena did not associate these appointments with a provider' : 'Provider scope (change on the Calendar tab)';
     head.querySelector('.t3p-count').textContent = scoped.length + ' of ' + all.length + ' patient' + (all.length === 1 ? '' : 's');
     head.style.display = (all.length || scoped.length) ? 'flex' : 'none';
     /* smart empty: scoped day empty but other providers have patients */
     var note = $('mlsT3PickEmpty');
-    if (scope.pk && !scoped.length && all.length) {
+    if (!scope.census && scope.pk && !scoped.length && all.length) {
       if (!note) {
         note = document.createElement('div'); note.id = 'mlsT3PickEmpty';
-        note.innerHTML = '<span class="t3pe-t"></span><button type="button" class="t3pe-all">Show all providers for this day</button>';
+        note.innerHTML = '<span class="t3pe-t"></span><button type="button" class="t3pe-all">Show default schedule for this day</button>';
         note.querySelector('.t3pe-all').onclick = function () { Cal.setScope('', ''); };
       }
       note.querySelector('.t3pe-t').textContent = 'No patients for ' + scope.label + ' on ' + (date === todayKey() ? 'today' : pretty(date)) + ' - ' + all.length + ' booked with other providers.';
@@ -923,7 +1103,7 @@
       /* calendar smart empty card */
       '#mlsT3Empty{grid-column:1/-1;margin:4px 0 12px;padding:16px 18px;border:1px dashed #c9d9f0;border-radius:12px;background:#f7faff;color:#204034;font:500 13px/1.5 system-ui,sans-serif}',
       '#mlsT3Empty .t3e-t{font-size:14px;color:#1E2B24}',
-      '#mlsT3Empty .t3e-s{margin-top:3px;color:#5b7186;font-size:12.5px}',
+      '#mlsT3Empty .t3e-s{margin-top:3px;color:#5c7186;font-size:12.5px}',
       '#mlsT3Empty .t3e-b{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}',
       '#mlsT3Empty button{font:700 12.5px/1 system-ui,sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;border:1px solid #cfe0f5;background:#fff;color:#204034}',
       '#mlsT3Empty button.t3e-all,#mlsT3Empty button.t3e-pull{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
@@ -1236,6 +1416,7 @@
     status: S,
     resolveSavedPick: resolveSavedPick,
     resolveStoredPick: resolveStoredPick,
+    _renderRoster: renderRoster,
     rerender: rerenderAll,
     revert: function () {
       destroyed = true;
@@ -1255,6 +1436,7 @@
         Cal._removedDups = [];
       });
       safe(function () { window.__mlsT3.installed = false; });
+      safe(function () { if (window.MLSCal === Cal) window.MLSCal = previousMLSCal; });
     }
   };
 })();

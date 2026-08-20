@@ -1,4 +1,4 @@
-/* feat_nextup_connect.js -- exact verified schedule snapshot -> top visit UI
+/* feat_nextup_connect.js -- exact verified schedule/census -> top visit UI
  *
  * The backend calendar may also contain manual or legacy MLS rows, so the top
  * Choose / Next Up / Agenda surfaces must not blindly re-expand a verified
@@ -9,13 +9,14 @@
  */
 ;(function () {
   'use strict';
-  var VERSION = 'nextup-2.0.1';
+  var VERSION = 'nextup-p1-2.1.0';
   try { if (window.__mlsNextUp && window.__mlsNextUp.version === VERSION) return; } catch (e) { }
   var previousApi = safe(function () { return window.__mlsNextUp || null; }, null);
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(fn) { return typeof fn === 'function'; }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
+  if (previousApi && isFn(previousApi.revert)) safe(function () { previousApi.revert(); });
 
   function todayKey() {
     var dbg = safe(function () { return window.__mlsNextUpDebugDate || (window.sessionStorage && sessionStorage.getItem('__mlsNextUpDebugDate')); }, '');
@@ -43,19 +44,57 @@
       return matches.length === 1 ? (matches[0].dob || matches[0].DOB || matches[0].birthDate || '') : '';
     }, '');
   }
-  function authoritativeRows(day) {
+  function visibleProviderTarget() {
+    return safe(function () {
+      if (!isFn(window.uns) || !window.localStorage) return 'all';
+      var raw = String(localStorage.getItem(window.uns('mlsProvScope3')) || '');
+      var split = raw.indexOf('|');
+      return split >= 0 && raw.slice(split + 1).trim() ? raw.slice(split + 1).trim() : 'all';
+    }, 'all');
+  }
+  function authoritativeRows(day, provider) {
     return safe(function () {
       var si = window.__mlsSI;
       if (!si || !isFn(si.authoritativeRowsForDay)) return null;
-      var rows = si.authoritativeRowsForDay(day);
+      var rows = si.authoritativeRowsForDay(day, provider || 'all');
       return Array.isArray(rows) ? rows : null;
     }, null);
   }
-  function authoritativeStatus(day) {
+  function authoritativeStatus(day, provider) {
     return safe(function () {
       var si = window.__mlsSI;
-      return si && isFn(si.authoritativeStatusForDay) ? si.authoritativeStatusForDay(day) : null;
+      return si && isFn(si.authoritativeStatusForDay) ? si.authoritativeStatusForDay(day, provider || 'all') : null;
     }, null);
+  }
+  function appointmentCensusRowsForDay(day) {
+    return safe(function () {
+      var si = window.__mlsSI;
+      if (!si || !isFn(si.appointmentCensusRowsForDay)) return null;
+      var rows = si.appointmentCensusRowsForDay(day);
+      return Array.isArray(rows) ? rows : null;
+    }, null);
+  }
+  function appointmentCensusStatusForDay(day) {
+    return safe(function () {
+      var si = window.__mlsSI;
+      return si && isFn(si.appointmentCensusStatusForDay) ? si.appointmentCensusStatusForDay(day) : null;
+    }, null);
+  }
+  /* Provider/day authority is stronger when present. Otherwise a p1
+     appointment census may own the exact display rows while explicitly
+     owning no provider or practice coverage. A known-but-pending snapshot
+     returns an empty slice, never the append-only raw calendar. */
+  function displaySelection(day) {
+    var provider = visibleProviderTarget();
+    var providerStatus = authoritativeStatus(day, provider);
+    if (providerStatus && providerStatus.reason !== 'no-snapshot') {
+      return { rows: authoritativeRows(day, provider) || [], status: providerStatus, exactOwned: true };
+    }
+    var censusStatus = appointmentCensusStatusForDay(day);
+    if (censusStatus && censusStatus.reason !== 'no-snapshot') {
+      return { rows: appointmentCensusRowsForDay(day) || [], status: censusStatus, exactOwned: true };
+    }
+    return { rows: null, status: providerStatus || censusStatus || null, exactOwned: false };
   }
   function toHeroRows(src, day) {
     var out = [], hhmm = isFn(window._apptHHMMTz) ? window._apptHHMMTz : function () { return ''; };
@@ -79,14 +118,29 @@
     });
     return out;
   }
+  function toCensusHeroRows(src, day) {
+    return toHeroRows(src, day).map(function (row) {
+      /* A backend row may retain a stronger/older provider value, but the
+         census source did not associate this appointment with any provider.
+         Never project that stale label through a census-owned surface. */
+      row.provider = '';
+      delete row.provider_id; delete row.athena_provider_id;
+      return row;
+    });
+  }
+  function projectSelection(selected, fallbackRows, day) {
+    var rows = selected.exactOwned ? selected.rows : fallbackRows;
+    return selected.exactOwned && selected.status && selected.status.kind === 'appointment-census-only'
+      ? toCensusHeroRows(rows, day) : toHeroRows(rows, day);
+  }
   function buildToday() {
-    var day = todayKey(), exact = authoritativeRows(day);
-    return toHeroRows(exact !== null ? exact : (window._calAppts || []), day);
+    var day = todayKey(), selected = displaySelection(day);
+    return projectSelection(selected, window._calAppts || [], day);
   }
 
   function renderUnclassifiedNote() {
     safe(function () {
-      var status = authoritativeStatus(todayKey()), note = gid('mlsScheduleUnclassifiedNote');
+      var status = displaySelection(todayKey()).status, note = gid('mlsScheduleUnclassifiedNote');
       var count = status && status.available ? Number(status.unclassifiedCount || 0) : 0;
       if (!count) { if (note) note.hidden = true; return; }
       if (!note && document.createElement) {
@@ -122,18 +176,19 @@
   function installRendererGuard() {
     var current = safe(function () { return window._renderTodayPatients; }, null);
     if (!isFn(current)) return false;
-    if (findRendererMarker(current, '__mlsAuthoritativeScheduleGuard')) return true;
+    if (findRendererMarker(current, '__mlsP1CensusScheduleGuard')) return true;
     var original = current;
     var wrapper = function (rows) {
-      var exact = authoritativeRows(todayKey());
-      var chosen = exact !== null ? toHeroRows(exact, todayKey()) : rows;
-      if (exact !== null) window._heroTodayList = chosen.slice();
+      var selected = displaySelection(todayKey());
+      var chosen = projectSelection(selected, rows, todayKey());
+      if (selected.exactOwned) window._heroTodayList = chosen.slice();
       var result = original.apply(this, [chosen]);
       renderUnclassifiedNote();
       return result;
     };
     safe(function () { Object.keys(original).forEach(function (key) { if (/^__/.test(key) && key !== '__orig') wrapper[key] = original[key]; }); });
     wrapper.__mlsAuthoritativeScheduleGuard = true;
+    wrapper.__mlsP1CensusScheduleGuard = true;
     wrapper.__orig = original;
     guardedRenderer = wrapper;
     window._renderTodayPatients = wrapper;
@@ -158,7 +213,7 @@
   var loading = false;
   function ensureToday(force) {
     safe(function () {
-      var status = authoritativeStatus(todayKey());
+      var status = displaySelection(todayKey()).status;
       var need = !!force || (!!status && status.reason === 'backend-rows-pending') || ((!status || status.reason === 'no-snapshot') && (!window._calAppts || !window._calAppts.length));
       var haveToken = isFn(window.bkToken) && window.bkToken();
       if (need && haveToken && isFn(window.loadCalendar) && !loading) {
@@ -169,26 +224,35 @@
   }
   function signature() {
     return safe(function () {
-      var day = todayKey(), status = authoritativeStatus(day), src = authoritativeRows(day);
-      if (src === null) src = (window._calAppts || []).filter(function (a) { return localDateOf(a) === day; });
+      var day = todayKey(), selected = displaySelection(day), status = selected.status, src = selected.rows;
+      if (!selected.exactOwned) src = (window._calAppts || []).filter(function (a) { return localDateOf(a) === day; });
       var parts = src.map(function (a) { return String(a && a.id || '') + '#' + String(a && a.dob || '') + '#' + String(a && (a.start_at || a.appt_date) || ''); }).sort();
       var hero = (window._heroTodayList || []).map(function (a) { return String(a && a.id || '') + '#' + String(a && a.name || '') + '#' + String(a && (a.start_at || a.time) || ''); }).sort();
       return day + '|' + (status && status.reason || 'raw') + '|' + (status && status.unclassifiedCount || 0) + '|' + parts.join(',') + '|hero:' + hero.join(',');
     }, '');
   }
-  var lastSignature = ' ';
+  var lastSignature = ' ', tickInterval = null, bootTimers = [], authorityListener = null, censusListener = null;
   function tick() {
     installRendererGuard();
     var now = signature(); if (now !== lastSignature) { lastSignature = now; renderFromCalendar(); }
   }
   function start() {
     installRendererGuard(); ensureToday(false);
-    setTimeout(function () { ensureToday(false); }, 1200);
-    setTimeout(function () { ensureToday(false); }, 4000);
-    setInterval(tick, 1500);
-    safe(function () { window.addEventListener('mls-authoritative-schedule', function () { lastSignature = ' '; ensureToday(false); }); });
+    bootTimers.push(setTimeout(function () { ensureToday(false); }, 1200));
+    bootTimers.push(setTimeout(function () { ensureToday(false); }, 4000));
+    tickInterval = setInterval(tick, 1500);
+    authorityListener = function () { lastSignature = ' '; ensureToday(false); };
+    censusListener = function () { lastSignature = ' '; ensureToday(false); };
+    safe(function () { window.addEventListener('mls-authoritative-schedule', authorityListener); });
+    safe(function () { window.addEventListener('mls-appointment-census-display', censusListener); });
   }
   function revert() {
+    safe(function () { document.removeEventListener('DOMContentLoaded', start); });
+    safe(function () { if (tickInterval != null) clearInterval(tickInterval); tickInterval = null; });
+    while (bootTimers.length) safe(function () { clearTimeout(bootTimers.pop()); });
+    safe(function () { if (authorityListener) window.removeEventListener('mls-authoritative-schedule', authorityListener); });
+    safe(function () { if (censusListener) window.removeEventListener('mls-appointment-census-display', censusListener); });
+    authorityListener = null; censusListener = null;
     safe(function () { if (window._renderTodayPatients === guardedRenderer && guardedRenderer.__orig) window._renderTodayPatients = guardedRenderer.__orig; });
     safe(function () { if (previousApi) window.__mlsNextUp = previousApi; else window.__mlsNextUp.__installed = false; });
   }

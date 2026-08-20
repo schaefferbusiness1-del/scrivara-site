@@ -2668,6 +2668,12 @@
     var st = pullState(); if (st && st.running) return true;
     try { if (window.__mlsProvMonthPull && window.__mlsProvMonthPull.running) return true; } catch (e) {}
     try { if (window.__mlsImportChainFix && window.__mlsImportChainFix.bulk && window.__mlsImportChainFix.bulk.running) return true; } catch (e) {}
+    /* notes-idle-1.0.0: the OTHER half of the one-engine rule. The idle
+       day-note catch-up (feat_mls_schedimport_exact.js) refuses to start
+       while THIS backfill is running; without this line the refusal is
+       one-sided and both engines could open a chart at the same moment.
+       It is a read of a boolean - no message, no lease, no round trip. */
+    try { if (window.__mlsNotesIdle && typeof window.__mlsNotesIdle.reading === 'function' && window.__mlsNotesIdle.reading()) return true; } catch (e) {}
     if (Date.now() < _foreignBusyUntil) return true; /* cohort builder / grab / copy-visits etc. (flagless engines) */
     return false;
   }
@@ -2687,20 +2693,372 @@
 
   /* ----------------------------- status line ------------------------------ */
   function statusLine(msg) {
+    /* STATE.status stays the RAW, name-bearing engineering line - it is what
+       the copyable diagnostics carry, and it is no longer what the doctor
+       reads. p1-backfill-footer-1.0.0 owns every visible byte. */
     STATE.status = S(msg);
-    try {
-      var panel = document.getElementById('mlsPullProgPanel');
-      var hostEl = panel && panel.querySelector('.ppc');
-      if (hostEl) {
-        var el = document.getElementById('mlsVbfStatus');
-        if (!el) { el = document.createElement('div'); el.id = 'mlsVbfStatus'; el.style.cssText = 'margin-top:8px;font:12px system-ui;color:#B9CEC2'; }
-        if (el.parentNode !== hostEl) hostEl.appendChild(el); /* panel re-renders wipe it; re-attach */
-        el.textContent = 'Visit backfill: ' + STATE.status;
-        return;
-      }
-    } catch (e) {}
+    if (bfRender()) return;
     try { console.log('[MLS visits-backfill]', STATE.status); } catch (e) {}
   }
+
+  /* ===== p1-backfill-footer-1.0.0 =========================================
+     MEASURED, owner's /cloned pull, 2026-08-17: the footer read
+
+       "Visit backfill: <Full Patient Name> - open-failed: Open your signed-in
+        athenaOne in another tab, then try again"
+
+     while THREE signed-in athenaOne tabs were open. Three defects in one line:
+
+       1. a patient NAME sat in persistent chrome (this line re-attaches itself
+          to the progress panel after every re-render, so it stays on screen);
+       2. the instruction was FALSE and unactionable - the extension's tab
+          picker had merely missed its 1.2-1.5 s session ping while athena was
+          rendering;
+       3. there was no retry: a transient was rendered as a terminal verdict.
+
+     The pull lane already proved the cure for its own NAV leg
+     (p1-athena-presence-1.0.0, dnbf-1.0.0) and exported exactly what this
+     footer needs. This block spends those exports and adds nothing of its own:
+
+       (a) FOOTER   two fixed sentences and a COUNT. Never a name, never a raw
+                    reason, never a reason code. The raw reason and the name
+                    live in STATE.status / STATE.rows / BF_DIAG, which only
+                    diagnostics() copies out.
+       (b) RETRY    a no-athena-tab-class refusal is a QUESTION. Ask
+                    __mlsSI._athenaPresenceProbe; retry the patient after
+                    2 s / 6 s for at most BF_ROUNDS rounds and ONLY while
+                    presence is verified. Presence absent - or a probe that
+                    cannot answer at all - leaves the honest verdict standing
+                    and re-drives NOTHING.
+       (c) CODES    every reason is mapped by __mlsSI._todayNoteReasonCode, so
+                    this surface and the pull's own receipt speak ONE closed
+                    vocabulary. The local fallback recognises only the class
+                    this block acts on and calls everything else "other"; it
+                    never invents a code the importer does not have.
+       (d) QUIET    quietnotify-1.0.0 classes: the footer is an OUTCOME/INFO
+                    line, so it renders as the small inline status it already
+                    was, and end-of-run it is also recorded in the activity
+                    tray. bfQuiet() REFUSES to call toast() unless quietnotify
+                    has wrapped it AND the text classifies outcome/info, so
+                    this block can never raise a toast.
+
+     Nothing here changes what is read from athena, what is filed, or any
+     identity gate: it changes what the doctor is TOLD and how many times a
+     transient refusal is asked again. */
+  var BF_VERSION = 'p1-backfill-footer-1.0.0';
+  var BF_ROUNDS = 2;                  /* at most two presence-verified retry rounds per patient */
+  var BF_WAITS = [2000, 6000];        /* dnbf-1.0.0's backoff; index = rounds already spent */
+  var BF_PROBE_MS = 3500;             /* the presence verb answered 5/5 within 80 ms when live */
+  var BF_DIAG_KEEP = 40;
+  /* The ONLY two sentences this footer may render, plus a count. */
+  var BF_FOOT_RUNNING = "Finishing today's notes in the background";
+  var BF_FOOT_LATER = "Today's notes will finish next time you pull — nothing was lost";
+  /* Same shape as the importer's TN_NO_TAB_REASON. Used only when the importer
+     has not loaded yet; the suite EXECUTES it against the owner's measured
+     footer text rather than grepping for it. */
+  var BF_NO_TAB_RE = /no-athena-tab|no athenaone tab|open your signed-in athenaone|open-failed|not responding|unreachable/i;
+  var BF_REC = {
+    presenceChecks: 0, presenceVerified: 0, presenceAbsent: 0, presenceUnknown: 0,
+    probeUnavailable: 0, retried: 0, recovered: 0, roundsExhausted: 0,
+    backoffWaits: 0, backoffMs: 0, codes: {}, lastCode: '', at: 0
+  };
+  var BF_DIAG = [];   /* RAW rows (name + reason). Copied ONLY by diagnostics(). */
+
+  function bfSafe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function bfSI() { return bfSafe(function () { return window.__mlsSI || null; }, null); }
+
+  /* (c) one closed vocabulary, owned by the pull lane ---------------------- */
+  function bfReasonCode(reason) {
+    var si = bfSI();
+    var viaLane = bfSafe(function () {
+      return (si && typeof si._todayNoteReasonCode === 'function') ? S(si._todayNoteReasonCode(reason)) : '';
+    }, '');
+    if (viaLane) return viaLane;
+    var r = S(reason);
+    if (!r) return 'unknown';
+    return BF_NO_TAB_RE.test(r) ? 'no-athena-tab' : 'other';
+  }
+  function bfKnownCodes() {
+    var si = bfSI();
+    var v = bfSafe(function () {
+      return (si && typeof si._todayNoteReasonCodes === 'function') ? si._todayNoteReasonCodes() : null;
+    }, null);
+    return (v && v.length) ? v.slice() : ['no-athena-tab', 'other', 'unknown'];
+  }
+
+  /* (a) the visible line: counts only ------------------------------------- */
+  function bfLeft() {
+    var n = STATE.queue.length + ((STATE.current || STATE.inFlight) ? 1 : 0);
+    return n > 0 ? n : 0;
+  }
+  function bfUnfinished() {
+    return STATE.queue.length > 0 || STATE.failed > 0 || STATE.transient > 0;
+  }
+  function bfFootText() {
+    var left = bfLeft();
+    if (STATE.running && left > 0) return BF_FOOT_RUNNING + ' (' + left + ' left)';
+    /* Deliberately NOT an instruction. When presence is genuinely absent the
+       pull lane's own action-needed surface is what asks the doctor to sign
+       in; this quiet line's job is to say the work is not lost, which is true
+       in every one of these cases - the queue is kept and only DEFINITIVE
+       outcomes are marked done. */
+    if (!STATE.running && bfUnfinished()) return BF_FOOT_LATER;
+    return '';
+  }
+  function bfRender() {
+    return bfSafe(function () {
+      var panel = document.getElementById('mlsPullProgPanel');
+      var hostEl = panel && panel.querySelector('.ppc');
+      if (!hostEl) return false;
+      var el = document.getElementById('mlsVbfStatus');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'mlsVbfStatus';
+        el.style.cssText = 'margin-top:8px;font:12px system-ui;color:#B9CEC2';
+      }
+      if (el.parentNode !== hostEl) hostEl.appendChild(el); /* panel re-renders wipe it; re-attach */
+      var text = bfFootText();
+      el.setAttribute('data-mls-quiet', 'outcome');         /* a quiet line, never a toast */
+      el.textContent = text;
+      el.hidden = !text;
+      return true;
+    }, false);
+  }
+
+  /* (b) a no-athena-tab answer is a QUESTION, not a verdict ---------------- */
+  function bfPresenceProbe() {
+    var si = bfSI();
+    var probe = si && si._athenaPresenceProbe;
+    if (typeof probe !== 'function') { BF_REC.probeUnavailable++; return Promise.resolve(null); }
+    return Promise.resolve()
+      .then(function () { return probe(BF_PROBE_MS); })
+      .then(function (r) { return r; }, function () { return null; });
+  }
+  /* The importer keeps its predicate private, so it is replicated EXACTLY:
+     athenaOpen===true is presence-verified, and 'athena-tab-unverified' means
+     raw athena tabs ARE present and only the signed-in proof is missing this
+     instant - precisely the busy-render case, so it earns a retry too. */
+  function bfPresenceLives(resp) {
+    if (!resp || typeof resp !== 'object') return false;
+    if (resp.athenaOpen === true) return true;
+    return S(resp.reason) === 'athena-tab-unverified';
+  }
+  function bfShouldRecheck(row) {
+    return !!row && row.ok !== true && bfReasonCode(row.reason) === 'no-athena-tab';
+  }
+  function bfRecheck(item, row) {
+    var code = bfReasonCode(row && row.reason);
+    BF_REC.codes[code] = Number(BF_REC.codes[code] || 0) + 1;
+    BF_REC.lastCode = code;
+    BF_REC.at = Date.now();
+    var spent = Number((item && item.presenceRounds) || 0);
+    if (spent >= BF_ROUNDS) {
+      BF_REC.roundsExhausted++;
+      return Promise.resolve({ retry: false, verdict: 'rounds-exhausted', waitMs: 0, code: code });
+    }
+    BF_REC.presenceChecks++;
+    return bfPresenceProbe().then(function (resp) {
+      if (resp == null) {
+        BF_REC.presenceUnknown++;
+        return { retry: false, verdict: 'presence-unknown', waitMs: 0, code: code };
+      }
+      if (!bfPresenceLives(resp)) {
+        BF_REC.presenceAbsent++;
+        return { retry: false, verdict: 'presence-absent', waitMs: 0, code: code };
+      }
+      BF_REC.presenceVerified++;
+      item.presenceRounds = spent + 1;
+      var waitMs = BF_WAITS[spent < BF_WAITS.length ? spent : BF_WAITS.length - 1];
+      BF_REC.retried++; BF_REC.backoffWaits++; BF_REC.backoffMs += waitMs;
+      return { retry: true, verdict: 'presence-verified', waitMs: waitMs, code: code };
+    });
+  }
+
+  /* the record: PHI-free receipt for a surface, raw rows for the copy button */
+  function bfObserve(item, row) {
+    if (!row) return;
+    var rounds = Number((item && item.presenceRounds) || 0);
+    if (row.ok === true && rounds > 0) BF_REC.recovered++;
+    BF_DIAG.push({
+      at: Date.now(),
+      ok: row.ok === true,
+      code: row.reason ? bfReasonCode(row.reason) : '',
+      presenceRounds: rounds,
+      presenceVerdict: S(row.presenceVerdict),
+      added: Number(row.added || 0),
+      name: S(row.name),                    /* RAW - diagnostics only */
+      reason: S(row.reason).slice(0, 200)   /* RAW - diagnostics only */
+    });
+    while (BF_DIAG.length > BF_DIAG_KEEP) BF_DIAG.shift();
+  }
+  function bfReceipt() {
+    var codes = {};
+    for (var k in BF_REC.codes) {
+      if (Object.prototype.hasOwnProperty.call(BF_REC.codes, k)) codes[k] = Number(BF_REC.codes[k] || 0);
+    }
+    return {
+      version: BF_VERSION,
+      queued: STATE.queue.length, left: bfLeft(), running: !!STATE.running,
+      ok: STATE.ok, failed: STATE.failed, transient: STATE.transient,
+      visitsAdded: STATE.visitsAdded,
+      presenceChecks: BF_REC.presenceChecks, presenceVerified: BF_REC.presenceVerified,
+      presenceAbsent: BF_REC.presenceAbsent, presenceUnknown: BF_REC.presenceUnknown,
+      probeUnavailable: BF_REC.probeUnavailable,
+      retried: BF_REC.retried, recovered: BF_REC.recovered,
+      roundsExhausted: BF_REC.roundsExhausted,
+      backoffWaits: BF_REC.backoffWaits, backoffMs: BF_REC.backoffMs,
+      rounds: BF_ROUNDS, waits: BF_WAITS.slice(),
+      codes: codes, lastCode: BF_REC.lastCode, footer: bfFootText(), at: BF_REC.at
+    };
+  }
+  function bfDiagnostics() {
+    var out = ['MLS visit backfill diagnostics - ' + BF_VERSION];
+    out.push('receipt: ' + bfSafe(function () { return JSON.stringify(bfReceipt()); }, '{}'));
+    out.push('status: ' + S(STATE.status));
+    out.push('rows (raw, contains patient names - do not paste into a shared surface):');
+    for (var i = 0; i < BF_DIAG.length; i++) {
+      var d = BF_DIAG[i];
+      out.push('  ' + [d.at, d.ok ? 'ok' : 'fail', d.code || '-', d.presenceVerdict || '-',
+        'rounds=' + d.presenceRounds, d.name, d.reason || '-'].join(' | '));
+    }
+    return out.join('\n');
+  }
+
+  /* (d) quiet by construction: this block cannot raise a toast -------------- */
+  function bfQuiet(msg) {
+    var text = S(msg);
+    if (!text) return 'empty';
+    var q = bfSafe(function () { return window.__mlsQuietNotify || null; }, null);
+    var wrapped = bfSafe(function () { return !!(window.toast && window.toast.__mlsQuietWrapped); }, false);
+    if (!q || !wrapped || typeof q.classify !== 'function') { bfRender(); return 'inline-only'; }
+    var kind = bfSafe(function () { return S(q.classify(text, '')); }, '');
+    if (kind !== 'outcome' && kind !== 'info') { bfRender(); return 'refused:' + (kind || 'unknown'); }
+    bfSafe(function () { window.toast(text, ''); });
+    bfRender();
+    return kind;
+  }
+  /* ===== end p1-backfill-footer-1.0.0 ===================================== */
+
+  /* ===== p1-backfill-progress-1.0.0 — the top-up says what it is ==========
+   * Owner, 2026-08-18: the progress widget showed "Pulling patient history ·
+   * Done · 15s · repeated 2 times · ✓✓✓ · No charts were read."
+   *
+   * MEASURED CAUSE (reproduced from this module's own traffic): this backfill
+   * auto-starts on the falling edge of every pull — no user press — and posts
+   * one mlsAppReadVisits per patient. The shared progress observer
+   * (feat_mls_progress_stages.js) treats any such post as a chart-history pull,
+   * counts no charts, and 15s later completes a job that claims three stages of
+   * per-chart work nobody did. The doctor never learned that a visit-LIST
+   * top-up was what actually ran.
+   *
+   * This block gives the run its OWN named job in the shared progress store
+   * (feat_mls_loading_calm's public API — no second store, no second widget),
+   * with real counts and an honest ending, so the panel can show the truth and
+   * the presentation half (pshonest-1.0.0 in the shells) can recognise the
+   * manufactured card as a duplicate of it.
+   *
+   * It also ends the silence when the auto-start finds NOTHING to do: that
+   * verdict is recorded on STATE and offered to the quiet activity tray
+   * through bfQuiet, which refuses anything that is not an outcome/info line.
+   *
+   * PHI: counts only. No patient name is ever put in the job — the same rule
+   * p1-backfill-footer-1.0.0 established for persistent chrome.
+   * Fail-open: with no progress store present every call here is a no-op. */
+  var bpJob = null, bpBase = null;
+  /* STATE's tallies are cumulative for the life of the tab, so every number
+     this job reports is a DELTA against the moment its own run started. */
+  function bpSnap() {
+    return { done: STATE.done, ok: STATE.ok, failed: STATE.failed, transient: STATE.transient, added: STATE.visitsAdded };
+  }
+  function bpDelta() {
+    var b = bpBase || { done: 0, ok: 0, failed: 0, transient: 0, added: 0 };
+    return {
+      done: Math.max(0, STATE.done - b.done), ok: Math.max(0, STATE.ok - b.ok),
+      failed: Math.max(0, STATE.failed - b.failed), transient: Math.max(0, STATE.transient - b.transient),
+      added: Math.max(0, STATE.visitsAdded - b.added)
+    };
+  }
+  function bpApi() {
+    try {
+      var l = window.__mlsLoadingCalm;
+      return (l && l.installed === true && typeof l.start === 'function') ? l : null;
+    } catch (e) { return null; }
+  }
+  function bpStart(total) {
+    if (bpJob) return bpJob;
+    bpBase = bpSnap();
+    var api = bpApi();
+    if (!api) return null;
+    try {
+      bpJob = api.start({
+        key: 'visits:backfill', kind: 'visits_backfill',
+        label: 'Filling in missing visit lists',
+        stages: ['Opening each patient in Athena', 'Reading their visit list', 'Filing new visits'],
+        total: Math.max(0, Number(total) || 0),
+        timeoutMs: 45 * 60000, replace: true, cancelable: false
+      });
+    } catch (e) { bpJob = null; }
+    return bpJob;
+  }
+  function bpStage(name, operation) {
+    if (!bpJob) return;
+    try { bpJob.stage(name, { operation: S(operation).slice(0, 160) }); } catch (e) {}
+  }
+  function bpProgress(done, total, operation) {
+    if (!bpJob) return;
+    try { bpJob.progress(Math.max(0, done), Math.max(0, total), S(operation).slice(0, 160)); } catch (e) {}
+  }
+  /* One sentence, built from what this run actually did. */
+  function bpEndText() {
+    var d = bpDelta();
+    var read = d.ok + d.failed + d.transient;
+    var added = d.added;
+    var lists = read + ' visit list' + (read === 1 ? '' : 's');
+    if (STATE.stopped && STATE.stopReason === 'no-ext') {
+      return 'MLS Assist did not answer, so nothing was read. The queue is kept and runs again after the next pull.';
+    }
+    if (STATE.stopped && STATE.stopReason === 'athena-session-lost') {
+      return 'Athena signed out part-way through. Read ' + lists + ' before stopping; sign back in and pull again.';
+    }
+    if (STATE.stopped && STATE.stopReason === 'extension-not-answering') {
+      return 'MLS Assist stopped answering after ' + lists + '. The rest stay in the queue.';
+    }
+    if (STATE.stopped) {
+      return 'Stopped after ' + lists + ' (' + S(STATE.stopReason || 'stopped') + '). ' + added + ' visit' + (added === 1 ? '' : 's') + ' filed.';
+    }
+    if (d.failed || d.transient) {
+      return 'Read ' + d.ok + ' of ' + read + ' visit lists — ' + added + ' visit' + (added === 1 ? '' : 's') +
+        ' filed; ' + (d.failed + d.transient) + ' could not be read.';
+    }
+    if (!added) return 'Checked ' + lists + ' — everything was already on file.';
+    return 'Read ' + lists + ' — ' + added + ' new visit' + (added === 1 ? '' : 's') + ' filed.';
+  }
+  function bpEnd() {
+    if (!bpJob) return '';
+    var text = bpEndText(), d = bpDelta();
+    try {
+      if (STATE.stopped && STATE.stopReason === 'no-ext') bpJob.fail({ message: text });
+      else if (STATE.stopped || d.failed || d.transient) bpJob.partial(text, d.ok);
+      else bpJob.complete(text);
+    } catch (e) {}
+    bpJob = null; bpBase = null;
+    return text;
+  }
+  /* The auto-start that finds nothing must not be silent. */
+  function bpEdgeVerdict(added, runState) {
+    var rows = (runState && runState.rows) ? runState.rows.length : 0;
+    if (added > 0) {
+      STATE.lastAutoVerdict = { at: Date.now(), queued: added, reason: 'queued', rows: rows };
+      return STATE.lastAutoVerdict;
+    }
+    var reason = rows ? 'all-already-have-visits' : 'pull-returned-no-patients';
+    STATE.lastAutoVerdict = { at: Date.now(), queued: 0, reason: reason, rows: rows };
+    STATE.lastAutoVerdict.said = bfQuiet(rows
+      ? 'Visit top-up: nothing to do - every patient in that pull already has visits on file.'
+      : 'Visit top-up: nothing to do - that pull returned no patients to check.');
+    return STATE.lastAutoVerdict;
+  }
+  /* ===== end p1-backfill-progress-1.0.0 ================================== */
 
   /* ---------------------------- extension ping ---------------------------- */
   function pingExt() {
@@ -2955,6 +3313,10 @@
       STATE.running = true;
       say('Visit backfill: ' + STATE.queue.length + ' patient' + (STATE.queue.length === 1 ? '' : 's') + ' queued (fewer than ' + CFG.minVisits + ' visits on file).');
       statusLine(STATE.queue.length + ' queued');
+      /* p1-backfill-progress-1.0.0: this run owns a named job from here on */
+      var bpPlanned = STATE.queue.length;
+      bpStart(bpPlanned);
+      bpStage('Opening each patient in Athena', 'Checking MLS Assist is answering');
       var pong = await pingExt();
       if (!pong) {
         stop('no-ext');
@@ -2966,6 +3328,8 @@
         var item = STATE.queue.shift();
         STATE.current = item.name;
         statusLine('reading ' + item.name + ' (' + STATE.queue.length + ' left)');
+        /* p1-backfill-progress-1.0.0: counts only, never the name */
+        bpStage('Reading their visit list', 'Visit list ' + (bpDelta().done + 1) + ' of ' + Math.max(bpPlanned, bpDelta().done + 1 + STATE.queue.length));
         var row;
         try { row = await backfillOne(item); }
         catch (e) { row = { name: item.name, key: item.key, ok: false, added: 0, skipped: 0, reason: 'error:' + ((e && e.message) || e), definitive: false }; }
@@ -2980,6 +3344,35 @@
           item.busyRetries = (item.busyRetries || 0) + 1;
           if (item.busyRetries <= 2) { STATE.queue.push(item); statusLine('athena busy - ' + item.name + ' requeued'); await wait(CFG.busyRetryWaitMs); continue; }
         }
+        /* ===== p1-backfill-footer-1.0.0 (b): presence re-check ==============
+           A no-athena-tab-class refusal is a QUESTION. Ask the lease-free
+           presence verb the pull lane exports, and re-drive this patient only
+           while athena is PROVEN present (2 s then 6 s, at most BF_ROUNDS
+           rounds). Presence absent, or a probe that cannot answer, falls
+           straight through to the honest accounting below with nothing
+           re-driven. This runs BEFORE the verdict is booked, exactly like the
+           abort/busy paths above. */
+        if (bfShouldRecheck(row)) {
+          var bfV = await bfRecheck(item, row);
+          if (bfV.retry) {
+            /* the footer counts queue + in-flight, so the patient that is
+               going back on the queue must stop being counted as current or
+               the count reads one too high for the whole backoff. Same
+               clearing the busy-wait branch above does. */
+            /* the footer counts queue + in-flight, so the patient that is
+               going back on the queue must stop being counted as current or
+               the count reads one too high for the whole backoff. Same
+               clearing the busy-wait branch above does. */
+            STATE.current = '';
+            STATE.queue.unshift(item);
+            statusLine('athenaOne was busy rendering - re-checking round ' + item.presenceRounds + ' of ' + BF_ROUNDS);
+            await wait(bfV.waitMs);
+            continue;
+          }
+          row.presenceVerdict = bfV.verdict;   /* PHI-free, honest, kept on the row */
+        }
+        bfObserve(item, row);
+        /* ===== end p1-backfill-footer-1.0.0 (b) ===== */
         if (row.definitive) _doneKeys[item.key] = Date.now();   /* SAME key as the enqueue check (wf_9 #6) */
         STATE.rows.push(row); STATE.done++;
         if (row.ok) { STATE.ok++; STATE.consecFail = 0; }
@@ -2993,14 +3386,27 @@
           if (SESSION_LOST.test(row.reason)) stop('athena-session-lost');
         }
         statusLine(row.name + ' - ' + (row.ok ? ('+' + row.added + ' visit' + (row.added === 1 ? '' : 's') + (row.skipped ? ' (' + row.skipped + ' already on file)' : '')) : row.reason));
+        /* p1-backfill-progress-1.0.0: real counts, no invented total */
+        bpProgress(bpDelta().done, Math.max(bpPlanned, bpDelta().done + STATE.queue.length),
+          bpDelta().added ? (bpDelta().added + ' visit' + (bpDelta().added === 1 ? '' : 's') + ' filed so far') : '');
+        if (bpDelta().added) bpStage('Filing new visits', bpDelta().added + ' visit' + (bpDelta().added === 1 ? '' : 's') + ' filed so far');
         try { if (window.__mlsVisitUI && window.__mlsVisitUI.render) window.__mlsVisitUI.render(true); } catch (e) {}
         try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
         await wait(CFG.paceMs);
       }
       STATE.running = false; STATE.current = ''; _pumping = false;
+      /* p1-backfill-progress-1.0.0: the run's own honest ending, before the
+         legacy engineering lines below */
+      STATE.lastProgressText = bpEnd();
       var tail = STATE.stopped ? ('stopped (' + STATE.stopReason + ')') : 'finished';
       statusLine(tail + ' - ' + STATE.ok + ' ok, ' + STATE.failed + ' failed, ' + STATE.transient + ' retryable, ' + STATE.visitsAdded + ' visits added');
       say('Visit backfill ' + tail + ': ' + STATE.ok + ' ok, ' + STATE.failed + ' failed, ' + STATE.visitsAdded + ' visit' + (STATE.visitsAdded === 1 ? '' : 's') + ' added. Summaries stay click-driven (no AI spend).');
+      /* p1-backfill-footer-1.0.0 (d): when work is still owed, record the ONE
+         sanctioned sentence in the quiet activity tray as well, so the doctor
+         can find it after the progress panel has gone. bfQuiet refuses any
+         text that does not classify outcome/info, so this can never become a
+         toast. */
+      bfQuiet(bfFootText());
       if (_alive && STATE.queue.length && !STATE.stopped) kick(); /* a pull may have queued more mid-pump */
     })().then(null, function (e) {
       _pumping = false; STATE.running = false; STATE.current = '';
@@ -3087,7 +3493,13 @@
       var now = !!st.running;
       if (was && !now) {
         STATE.lastEdgeAt = Date.now();
+        /* p1-backfill-progress-1.0.0: an auto-start that finds nothing must
+           say so instead of running silently to no effect. Measured off the
+           queue itself (enqueueFromRun's own line is kept byte-for-byte, and
+           the pump it kicks cannot shift a patient before its first await). */
+        var bpQueueWas = STATE.queue.length;
         try { enqueueFromRun((st.rows || []).slice()); } catch (e) {}
+        try { bpEdgeVerdict(Math.max(0, STATE.queue.length - bpQueueWas), st); } catch (e2) {}
       }
       was = now;
     }
@@ -3119,7 +3531,34 @@
     _identityVeto: identityVeto,
     _ingestVisits: ingestVisits,
     _bridgeVisits: bridgeVisits,
-    _anyPullRunning: anyPullRunning
+    _anyPullRunning: anyPullRunning,
+    /* ===== p1-backfill-progress-1.0.0: the named job and the empty-verdict,
+       exported so a suite can EXECUTE them rather than grep for them. ===== */
+    progressText: bpEndText,
+    autoVerdict: function () { return STATE.lastAutoVerdict || null; },
+    _bpStart: bpStart,
+    _bpEnd: bpEnd,
+    _bpEdgeVerdict: bpEdgeVerdict,
+    /* ===== end p1-backfill-progress-1.0.0 ===== */
+    /* ===== p1-backfill-footer-1.0.0: the PHI-free receipt, the copyable raw
+       diagnostics, and the pieces a suite must EXECUTE rather than grep. ===== */
+    footerText: bfFootText,
+    receipt: bfReceipt,
+    diagnostics: bfDiagnostics,
+    _bfVersion: BF_VERSION,
+    _bfConfig: function () {
+      return { version: BF_VERSION, rounds: BF_ROUNDS, waits: BF_WAITS.slice(),
+        probeMs: BF_PROBE_MS, running: BF_FOOT_RUNNING, later: BF_FOOT_LATER };
+    },
+    _bfReasonCode: bfReasonCode,
+    _bfKnownCodes: bfKnownCodes,
+    _bfPresenceLives: bfPresenceLives,
+    _bfShouldRecheck: bfShouldRecheck,
+    _bfRecheck: bfRecheck,
+    _bfObserve: bfObserve,
+    _bfRender: bfRender,
+    _bfQuiet: bfQuiet,
+    /* ===== end p1-backfill-footer-1.0.0 (api) ===== */
   };
   window.__mlsVisitsBackfill_revert = revert; /* deploy-convention alias */
 })();

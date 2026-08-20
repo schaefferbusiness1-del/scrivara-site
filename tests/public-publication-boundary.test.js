@@ -166,7 +166,10 @@ const RETIRED_ASSETS = [
   'feat_mls_legal_exact.js',
   'feat_mls_legal_pay_setup.js',
   'feat_mls_legal_paywidget.js',
-  'feat_mls_legalpack.js',
+  /* feat_mls_legalpack.js left this list 2026-08-20: the production promotion
+     put the 1p fork's DRAFT-ONLY legal workspace (fail-closed, no payment, no
+     delivery; legal-luna model choice) under the shared name. The pay-era
+     machinery above stays retired. */
   'feat_mls_navfeat_keep.js',
   'feat_mls_staff_hub.js',
   'feat_mls_team_exact.js',

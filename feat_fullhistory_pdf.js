@@ -41,9 +41,9 @@
  * ===================================================================== */
 (function () {
   "use strict";
-  if (window.__mlsFullHistoryPdf && window.__mlsFullHistoryPdf.installed) return;
-
-  var VERSION = "1.0.0";
+  var VERSION = "p1-1.1.0";
+  var previousApi = window.__mlsFullHistoryPdf || null;
+  if (previousApi && previousApi.installed && previousApi.version === VERSION) return;
   var isFn = function (f) { return typeof f === "function"; };
   var S = function (x) { return x == null ? "" : String(x); };
   var trim = function (x) { return S(x).trim(); };
@@ -53,6 +53,7 @@
   function PRO() { return window.__mlsOpNotePro; }
   function activeP() { try { return isFn(window.activePatient) ? window.activePatient() : null; } catch (e) { return null; } }
   function safe(fn) { try { return fn(); } catch (e) { return undefined; } }
+  if (previousApi && isFn(previousApi.revert)) safe(function () { previousApi.revert(); });
 
   /* b820: this read the login/account name and NOTHING else — the provider
      identity the doctor configures in Settings never reached the full-history
@@ -412,25 +413,27 @@
   }
   // mount into the §52 header if present, else the base history header, else profile card.
   function wire() {
-    if (!activeP()) return;
-    injectCss();
+    if (document.querySelector("[data-mls-fhpdf]")) return;
     var ext = document.getElementById("mlsVisitHistoryExt");
-    if (ext) {
-      if (ext.querySelector("[data-mls-fhpdf]")) return;
+    if (ext && ext.offsetParent !== null) {
+      if (!activeP()) return;
+      injectCss();
       var headEl = ext.querySelector(".mlsxh-head") || ext;
       headEl.appendChild(mkBtn());
       return;
     }
     var base = document.getElementById("mlsVisitHistory");
-    if (base) {
-      if (base.querySelector("[data-mls-fhpdf]")) return;
+    if (base && base.offsetParent !== null) {
+      if (!activeP()) return;
+      injectCss();
       var bh = base.querySelector(".mlsvh-head, .mlsvd-head") || base;
       bh.appendChild(mkBtn());
       return;
     }
     var card = document.getElementById("profileCard");
     if (card && card.offsetParent !== null) {
-      if (card.querySelector("[data-mls-fhpdf]")) return;
+      if (!activeP()) return;
+      injectCss();
       var holder = document.createElement("div");
       holder.setAttribute("data-mls-fhpdf-holder", "1");
       holder.style.cssText = "margin:10px 0";
@@ -456,9 +459,11 @@
     });
   }
   function revert() {
+    safe(function () { document.removeEventListener("DOMContentLoaded", start); });
     safe(function () { if (_iv) clearInterval(_iv); _iv = null; });
     safe(function () { if (_mo) _mo.disconnect(); _mo = null; });
     removeButtons();
+    safe(function () { if (window.__mlsFullHistoryPdf) window.__mlsFullHistoryPdf.installed = false; });
   }
 
   window.__mlsFullHistoryPdf = {

@@ -1,68 +1,29 @@
-/* feat_athena_provider_roster.js  ->  window.__mlsProviderRoster  (v2.0.0)
+/* feat_athena_provider_roster.js -> window.__mlsProviderRoster
+ * Preview-only canonical provider roster, authenticated by the exact loader
+ * token. Every ingest is bound to one armed schedule request and the exact MLS
+ * account/session generation that started it. Account boundaries synchronously
+ * clear request, receipt, diagnostic and replay state before the next account can
+ * begin.
  *
- * "Whose patients?" dropdown — make the list REAL.
+ * The legacy provider picker is intentionally neither loaded nor called. Its
+ * missing-attribution fallback can widen a selected-provider pull to every row;
+ * P1 instead publishes clinician-only roster updates to the canonical provider
+ * selector. Unowned compatibility-buffer replays are permanently refused.
  *
- * THE PROBLEM THIS FIXES
- * ----------------------
- * Michael's athenaOne practice is multi-provider (e.g. Matthew Schaeffer,
- * Jonathon Hoynak, Matthew Schaeffer staff — visible in his Inbox "Assigned to").
- * But the "🩺 Whose patients?" dropdown (feat_athena_provider_picker.js, §68/§69)
- * only ever showed "Dr. Schaeffer (you)" + "All doctors". That is a LIE: the real
- * providers exist, they just weren't being read.
- *
- * Root cause: the picker populates its list ONLY from `resp.providers` /
- * `resp.appts[].provider`, which are emitted ONLY by the v1.37+ MLS Assist
- * extension AND only when a multi-doctor schedule grid is open. §69 confirmed the
- * INSTALLED extension is still pre-v1.37 (it returns just the flat `resp.text`),
- * so those fields were empty and the dropdown stayed stuck on "just you."
- *
- * THE FIX (no extension change required)
- * --------------------------------------
- * The MLS Assist schedule read ALWAYS returns the flat schedule innerText as
- * `resp.text` (every version, §68.0 contract `{ok,text,url,title,frames}`). That
- * flat dump contains the per-provider grouping athenaOne renders ("Benner, John MD
- * — 3 appointments", then that provider's rows; or a provider/rendering column).
- * This module recovers the DISTINCT REAL PROVIDERS from `resp.text` CLIENT-SIDE —
- * the same proven text extractor used by the deployed extractor (ext_provider_
- * extract.js, 29/29 tests) — and feeds them into the picker's existing persistent
- * roster cache (`mergeProviders`). The dropdown then renders the real names.
- *
- * It also recovers per-appointment provider tags from the same flat text and, when
- * the extension did NOT supply structured `resp.appts` (i.e. pre-v1.37), enriches
- * the picker's `lastResp` so the EXISTING §68 scoping works too — selecting a real
- * provider scopes the pull to only that provider's patients, with NO extension
- * reload. (When v1.37 structured data IS present, that wins; we only add to it.)
- *
- * SOURCE PRECEDENCE (most → least trusted), all REAL, none fabricated:
- *   1. resp.providers        (v1.37 structured distinct provider list)
- *   2. resp.appts[].provider (v1.37 structured per-appointment provider)
- *   3. recovered from resp.text via the text extractor (ALL versions) <- the fix
- *   4. window.__schedRaw.text (defensive: last raw schedule payload, if a message
- *      was missed)
- *
- * HONEST EMPTY STATE: if NO real providers can be read from any source, this module
- * does NOTHING — the dropdown shows the honest "just you + All doctors" state. It
- * NEVER injects a hardcoded or fabricated name. Real names appear only when really
- * read.
- *
- * PHI: `resp.text` contains patient names. They are read TRANSIENTLY only to find
- * the clinician grouping and are NEVER persisted, logged, or emitted. The roster
- * cache and the (optional) diag carry CLINICIAN names + structural counts only —
- * never a patient name, DOB, or appointment detail. Recovered per-appt objects
- * (which include patient names) live only in the picker's in-memory `lastResp`,
- * exactly as the v1.37 path already does — same discipline, never written out.
- *
- * SAFETY: read-only. Sends NOTHING to the MLS Assist extension; never
- * preventDefault/stops any event, never posts, never Saves/Signs/writes a chart.
- * Additive, own IIFE, try/catch throughout, idempotent, reversible via
- * window.__mlsProviderRoster.revert(). Companion to feat_athena_provider_picker.js
- * — touches only the picker's PUBLIC API; the deployed picker is unchanged.
+ * PHI discipline: schedule text is examined transiently to identify clinician
+ * headers. Patient rows, names and DOBs are never persisted, emitted in roster
+ * events, or placed in diagnostics. This module is read-only toward Athena and
+ * does not alter extension bytes.
  */
 (function (root) {
   'use strict';
-  try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {}
+  var script=root.document&&root.document.currentScript,loader=root.__mlsP1ProviderRosterLoader;
+  if (!root.__MLS_MAIN || root.__MLS_MAIN.enabled !== true||!script||!loader||loader.installed!==true||loader.version!=='p1-provider-roster-1.0.0'||
+      script.getAttribute('data-mls-install-token')!==loader.installToken||script.getAttribute('data-mls-asset')!=='feat_athena_provider_roster.js') return;
+  try { if (root.__mlsProviderRoster && root.__mlsProviderRoster.installed) return; } catch (e) {return;}
 
-  var VERSION = '2.3.0';
+  var VERSION = 'p1-provider-roster-1.0.0';
+  var INSTALL_TOKEN=loader.installToken;
   var ASSET = 'feat_athena_provider_roster.js';
 
   // ---------- tiny safe helpers ----------
@@ -70,6 +31,13 @@
   function isFn(f) { return typeof f === 'function'; }
   function S(x) { return x == null ? '' : String(x); }
   function clean(s) { return S(s).replace(/\s+/g, ' ').trim(); }
+  var sessionGeneration=1,operationSerial=0,boundaryHandler=null;
+  function account(){return clean(safe(function(){return root.__mlsSessionAccount||'';},'')).toLowerCase();}
+  function epoch(){return Number(safe(function(){return root.__mlsSessionEpoch;},0))||0;}
+  function token(){return S(safe(function(){return isFn(root.bkToken)?root.bkToken():(localStorage.getItem('sf_bk_token')||sessionStorage.getItem('sf_bk_token')||'');},''));}
+  function capture(kind){return Object.freeze({generation:sessionGeneration,serial:++operationSerial,kind:clean(kind||'roster'),account:account(),epoch:epoch(),token:token()});}
+  function current(owner){try{return (!api||root.__mlsProviderRoster===api)&&!!owner&&!!owner.account&&!!owner.token&&owner.epoch>0&&owner.generation===sessionGeneration&&owner.account===account()&&owner.epoch===epoch()&&owner.token===token();}catch(e){return false;}}
+  function sameContext(a,b){return !!a&&!!b&&a.generation===b.generation&&a.account===b.account&&a.epoch===b.epoch&&a.token===b.token;}
 
   // ============================================================
   //  Provider recovery from flat schedule text
@@ -173,15 +141,13 @@
   }
 
   // ============================================================
-  //  Canonical structured roster + legacy picker bridge
+  //  Canonical structured roster (the legacy picker is intentionally absent)
   // ============================================================
-  function picker() { return safe(function () { return root.__mlsProviderPicker || null; }, null); }
-
   var CACHE_KEY = 'mlsSchedProviders';       // legacy display-only cache
   var CACHE_V2_KEY = 'mlsProviderRosterV2';  // stable-identity structured cache
   var RECEIPT_KEY = 'mlsProviderRosterReceiptV2';
   function unsGet(name) { return safe(function () { if (!isFn(root.uns)) return ''; return S(localStorage.getItem(root.uns(name)) || ''); }, '') || ''; }
-  function unsSet(name, v) { safe(function () { if (isFn(root.uns)) localStorage.setItem(root.uns(name), S(v)); }); }
+  function unsSet(name, v, owner) { if(!current(owner))return false;return safe(function () { if (!isFn(root.uns)) return false;localStorage.setItem(root.uns(name), S(v));return true; },false); }
   function normKey(v) { return clean(v).toLowerCase(); }
   function humanName(raw) {
     var v = clean(raw);
@@ -409,7 +375,8 @@
     return bodyEq && bodyEq === e.equivalentKey ? e.equivalentKey : '';
   }
   var _lastMergeIdentityConflict = false;
-  function mergeEntries(list, source) {
+  function mergeEntries(list, source, owner) {
+    if(!current(owner))return [];
     var have = storedEntries(), byKey = {}, order = [], conflicted = {};
     _lastMergeIdentityConflict = false;
     var incoming = Array.isArray(list) ? list : [];
@@ -508,18 +475,19 @@
       }
       return false;
     }).slice(-240);
-    unsSet(CACHE_V2_KEY, JSON.stringify(out));
-    /* Keep the old picker usable, but never use its name-only cache as the
-       canonical roster. Same-name clinicians remain distinct in V2. */
+    unsSet(CACHE_V2_KEY, JSON.stringify(out),owner);
+    /* Keep the legacy display-name cache for old read-only identity labels,
+       but never forward data into the legacy picker. That picker can widen a
+       selected-provider pull to every retained row when attribution is absent;
+       P1's canonical provider selector must remain the only pull-scope owner. */
     var legacyNames = [], legacySeen = {};
     out.forEach(function (e) { var k = normKey(e.name); if (e.providerEligible !== false && k && !legacySeen[k]) { legacySeen[k] = 1; legacyNames.push(e.name); } });
-    unsSet(CACHE_KEY, JSON.stringify(legacyNames.slice(-200)));
-    var pk = picker();
-    if (pk && isFn(pk.mergeProviders)) safe(function () { pk.mergeProviders(legacyNames); });
-    mergeIntoCalendar(out);
+    unsSet(CACHE_KEY, JSON.stringify(legacyNames.slice(-200)),owner);
+    mergeIntoCalendar(out,owner);
     return out;
   }
-  function mergeIntoCalendar(entries) {
+  function mergeIntoCalendar(entries,owner) {
+    if(!current(owner))return false;
     safe(function () {
       var arr = Array.isArray(root._calProviders) ? root._calProviders : [], seen = {}, out = [];
       arr.concat(entries || []).forEach(function (raw) {
@@ -565,10 +533,11 @@
       return out;
     }, []) || [];
   }
-  function syncCalendarProviders() {
+  function syncCalendarProviders(owner) {
+    if(!current(owner))return [];
     var cal = safe(function () { return Array.isArray(root._calProviders) ? root._calProviders.slice() : []; }, []);
     var merged = null;
-    if (cal.length) merged = mergeEntries(cal, 'backend-calendar');
+    if (cal.length) merged = mergeEntries(cal, 'backend-calendar',owner);
     /* Only merge observed providers that are genuinely NEW — an unconditional
        second merge would rewrite the cache on every getReceipt() call, and this
        module sits behind a gate that runs on every provider selection. */
@@ -582,16 +551,17 @@
       var fresh = observed.filter(function (e) {
         return !haveKeys[e.stableKey] && !haveKeys['eq:' + e.equivalentKey];
       });
-      if (fresh.length) return mergeEntries(fresh, 'observed-appointments');
+      if (fresh.length) return mergeEntries(fresh, 'observed-appointments',owner);
     }
     if (merged) return merged;
-    mergeIntoCalendar(storedEntries());
+    mergeIntoCalendar(storedEntries(),owner);
     return storedEntries();
   }
   /* The honest answer to "did we get everyone?" — which, before prs-1.0.0, the
      receipt answered `complete:true` from a one-column grid. */
   function rosterScope() {
-    var entries = safe(function () { return listEntries(); }, []) || [];
+    var scopeOwner=capture('scope');if(!current(scopeOwner))return {scope:ROSTER_SCOPE,knownCount:0,gridSweptCount:0,rosterVerifiedCount:0,athenaListEnumerated:false,scopeComplete:false,sources:{},statement:'stale provider owner'};
+    var entries = safe(function () { return listEntries(scopeOwner); }, []) || [];
     var bySource = {}, verified = 0;
     entries.forEach(function (e) {
       var src = clean(e && e.source) || 'unknown';
@@ -627,10 +597,8 @@
     };
   }
   function cachedCount() { return storedEntries().length; }
-  function mergeProviders(list) { return mergeEntries(list, 'legacy-structured'); }
-  function renderDropdown() { var pk = picker(); if (pk && isFn(pk.renderDropdown)) safe(pk.renderDropdown); }
-  function setLastResp(r) { var pk = picker(); if (pk && isFn(pk._setLastResp)) safe(function () { pk._setLastResp(r); }); }
-  function notifyRosterUpdated(entries, receipt) {
+  function notifyRosterUpdated(entries, receipt,owner) {
+    if(!current(owner))return;
     var detail = { entries: (entries || []).slice(), receipt: receipt || null, version: VERSION };
     safe(function () {
       var ev = null;
@@ -645,7 +613,9 @@
     safe(function () { if (root.__mlsCalPolish && isFn(root.__mlsCalPolish.enhance)) root.__mlsCalPolish.enhance(); });
   }
 
-  var lastReceipt = safe(function () { var r = JSON.parse(unsGet(RECEIPT_KEY) || 'null'); return r && typeof r === 'object' ? r : null; }, null);
+  var lastReceipt = null,receiptOwner='';
+  function ownerKey(){return account()+'|'+epoch()+'|'+sessionGeneration;}
+  function ensureReceiptLoaded(){var key=ownerKey();if(receiptOwner===key)return;receiptOwner=key;lastReceipt=safe(function () { var r = JSON.parse(unsGet(RECEIPT_KEY) || 'null'); return r && typeof r === 'object' ? r : null; }, null);}
   /* ---- batch-bound operation provenance (v2.2.0) ----------------------
      A roster receipt is trustworthy for ONE exact pull only. The importer
      arms the batch context (exact requested date, the frozen schedule
@@ -669,18 +639,25 @@
     if (providerMode !== 'all' && providerMode !== 'selected') return null;
     if (providerMode === 'all' && (requestedProviderId || requestedProviderStableKey)) return null;
     if (providerMode === 'selected' && !requestedProviderId && !requestedProviderStableKey) return null;
+    var owner=op.owner;
+    if(!owner||!current(owner))return null;
     return {
       targetDate: targetDate,
       requestId: requestId,
       providerMode: providerMode,
       requestedProviderId: requestedProviderId,
       requestedProviderStableKey: requestedProviderStableKey,
-      armedAt: Date.now()
+      armedAt: Date.now(),owner:owner
     };
   }
   function beginOperation(op) {
-    _armedOperation = normalizeOperation(op);
+    op=op&&typeof op==='object'?op:{};var owned={};Object.keys(op).forEach(function(k){owned[k]=op[k];});owned.owner=capture('pull');
+    _armedOperation = normalizeOperation(owned);
     if (!_armedOperation) return null;
+    /* No earlier receipt/cache may masquerade as this newly armed request. */
+    lastReceipt=null;receiptOwner=ownerKey();
+    _ingestSeenObjects=typeof WeakMap==='function'?new WeakMap():null;
+    _ingestByRequest=Object.create(null);_ingestRequestOrder=[];
     return {
       targetDate: _armedOperation.targetDate,
       requestId: _armedOperation.requestId,
@@ -692,19 +669,10 @@
   function operationForResponse(resp) {
     var respRequestId = clean(resp && (resp.requestId || resp.id) || '');
     if (!_armedOperation || !respRequestId) return null;
+    if(!current(_armedOperation.owner))return null;
     if (respRequestId !== _armedOperation.requestId) return null;
     if ((Date.now() - Number(_armedOperation.armedAt || 0)) > OPERATION_TTL_MS) return null;
     return _armedOperation;
-  }
-  function operationFromReceipt(r) {
-    if (!r || typeof r !== 'object') return null;
-    return normalizeOperation({
-      targetDate: typeof r.targetDate === 'string' ? r.targetDate : '',
-      requestId: typeof r.requestId === 'string' ? r.requestId : '',
-      providerMode: typeof r.providerMode === 'string' ? r.providerMode : '',
-      requestedProviderId: typeof r.requestedProviderId === 'string' ? r.requestedProviderId : '',
-      requestedProviderStableKey: typeof r.requestedProviderStableKey === 'string' ? r.requestedProviderStableKey : ''
-    });
   }
   /* ==== prs-1.0.0  WHAT "complete" ACTUALLY MEANS ==========================
      Measured on the owner's tab, 2026-07-26 (b688 / ext 3.0.21):
@@ -770,26 +738,34 @@
     };
   }
   function setReceipt(receipt, observed, reason, operation) {
-    lastReceipt = normalizeReceipt(receipt, observed, reason, operation);
-    unsSet(RECEIPT_KEY, JSON.stringify(lastReceipt));
+    var op=normalizeOperation(operation);
+    if(!op||!current(op.owner))return null;
+    lastReceipt = normalizeReceipt(receipt, observed, reason, op);
+    receiptOwner=ownerKey();
+    if(!unsSet(RECEIPT_KEY, JSON.stringify(lastReceipt),op.owner)){lastReceipt=null;receiptOwner='';return null;}
     return lastReceipt;
   }
-  function listEntries() {
-    syncCalendarProviders();
+  function listEntries(listOwner) {
+    var owner=current(listOwner)?listOwner:capture('list');
+    if(!current(owner))return [];
+    ensureReceiptLoaded();
+    syncCalendarProviders(owner);
     var cleanList = storedEntries();
     /* A formerly-complete receipt cannot survive discovery that its persisted
        roster contained non-provider rows. Keep the clean entries visible, but
        require a fresh exact Athena sweep before selected-provider pulls. */
     if (_cacheSanitized && lastReceipt && lastReceipt.complete === true) {
-      lastReceipt = normalizeReceipt({ complete: false, partial: true, reason: 'cached-roster-sanitized', observedCount: cleanList.length }, cleanList.length, 'cached-roster-sanitized', operationFromReceipt(lastReceipt));
-      unsSet(RECEIPT_KEY, JSON.stringify(lastReceipt));
+      lastReceipt = normalizeReceipt({ complete: false, partial: true, reason: 'cached-roster-sanitized', observedCount: cleanList.length }, cleanList.length, 'cached-roster-sanitized', null);
+      unsSet(RECEIPT_KEY, JSON.stringify(lastReceipt),owner);
     }
     return cleanList.filter(function (e) { return e.providerEligible !== false; }).map(function (e) { var c = {}; Object.keys(e).forEach(function (k) { c[k] = e[k]; }); return c; });
   }
   function receiptSnapshot() {
+    var snapshotOwner=capture('receipt');if(!current(snapshotOwner))return null;
+    ensureReceiptLoaded();
     var base=lastReceipt||normalizeReceipt(null,listEntries().length,'not-yet-verified');
     var out={};Object.keys(base||{}).forEach(function(k){out[k]=base[k];});
-    var entries=listEntries(),keys=[],seen={};
+    var entries=listEntries(snapshotOwner),keys=[],seen={};
     entries.forEach(function(entry){var key=clean(entry&&entry.stableKey);if(key&&!seen[key]){seen[key]=1;keys.push(key);}});
     keys.sort();out.listedCount=entries.length;out.identityKeys=keys;
     /* prs-1.0.0: every consumer of this receipt gets the SCOPE with it, so a
@@ -821,9 +797,11 @@
 
   // diag for the live tuning run (PHI-FREE — provider names + counts only)
   var lastDiag = null;
-  function publishDiag(d) {
+  function publishDiag(d,owner) {
+    if(!current(owner))return false;
     lastDiag = d;
     safe(function () { root.__mlsProviderRosterDiag = d; });
+    return true;
   }
 
   // ============================================================
@@ -835,25 +813,30 @@
   function ingestRequestId(r) {
     return clean(r && (r.requestId || r.id || (r.receipt && r.receipt.requestId) || (r.providerRosterReceipt && r.providerRosterReceipt.requestId)) || '');
   }
-  function ingestResp(resp) {
-    var r = resp || {}, requestId = ingestRequestId(r), cached;
+  function ingestResp(resp,ingressOwner) {
+    var r = resp || {},ingress=current(ingressOwner)?ingressOwner:capture('direct-ingest');
+    var boundOperation=operationForResponse(r);
+    if(!current(ingress)||!boundOperation||!current(boundOperation.owner)||!sameContext(ingress,boundOperation.owner))return {ignored:true,reason:'unbound-or-stale-response'};
+    ensureReceiptLoaded();
+    var requestId = ingestRequestId(r),cacheKey=[boundOperation.owner.generation,boundOperation.owner.account,boundOperation.owner.epoch,boundOperation.owner.serial,requestId].join('|'), cached;
     if (_ingestSeenObjects && r && typeof r === 'object' && _ingestSeenObjects.has(r)) {
       _ingestStats.deduped++;
       return _ingestSeenObjects.get(r);
     }
-    if (requestId && Object.prototype.hasOwnProperty.call(_ingestByRequest, requestId)) {
+    if (requestId && Object.prototype.hasOwnProperty.call(_ingestByRequest, cacheKey)) {
       _ingestStats.deduped++;
-      cached = _ingestByRequest[requestId];
+      cached = _ingestByRequest[cacheKey];
       if (_ingestSeenObjects && r && typeof r === 'object') _ingestSeenObjects.set(r, cached);
       return cached;
     }
     var result = safe(function () {
-      /* Snapshot legacy calendar/provider selections before the exact Athena
-         roster merge. A fresh response may arrive before any picker/list call;
+      /* Snapshot canonical calendar/provider selections before the exact Athena
+         roster merge. A fresh response may arrive before any selector/list call;
          mergeIntoCalendar() would otherwise discard a weak uncredentialed old
          value before it can become a non-rendering alias of one unique strong
          identity. Ambiguous matches still fail closed in mergeEntries(). */
-      syncCalendarProviders();
+      if(!current(boundOperation.owner))return {ignored:true,reason:'stale-before-merge'};
+      syncCalendarProviders(boundOperation.owner);
       var structuredRosterRaw = Array.isArray(r.providerRoster) ? r.providerRoster : [];
       var structuredRoster = structuredRosterRaw.map(function (p) { return makeEntry(p, 'athena-schedule-header'); }).filter(Boolean);
       var structuredIdentityConflict = false, structuredByStable = {};
@@ -899,7 +882,7 @@
       };
 
       var before = cachedCount();
-      var afterList = union.length ? mergeEntries(union, 'schedule-result') : listEntries();
+      var afterList = union.length ? mergeEntries(union, 'schedule-result',boundOperation.owner) : listEntries(boundOperation.owner);
       var mergeIdentityConflict = _lastMergeIdentityConflict;
       var receiptReason = r.error ? 'schedule-read-error' : (structuredRoster.length ? 'structured-roster-unverified' : (afterList.length ? 'legacy-unverified' : 'no-provider-headers'));
       var receiptInput = r.providerRosterReceipt;
@@ -908,7 +891,6 @@
          receipt claiming a DIFFERENT requestId than its own reply is stale or
          replayed evidence and voids completeness outright. */
       var respRequestId = clean(r.requestId || r.id || '');
-      var boundOperation = operationForResponse(r);
       var extensionReceiptRequestId = clean(receiptInput && receiptInput.requestId || '');
       var requestEchoConflict = !!(extensionReceiptRequestId && respRequestId && extensionReceiptRequestId !== respRequestId) ||
         !!(extensionReceiptRequestId && boundOperation && extensionReceiptRequestId !== boundOperation.requestId);
@@ -945,77 +927,57 @@
           };
         } else _cacheSanitized = false; /* a fresh exact clean sweep supersedes an old polluted cache */
       }
-      /* pr-sticky (live 2026-07-17 month-pull finding): an evidence-free read
-         must not revoke a session-verified roster. Empty weekend days return
-         no provider headers, and their reads used to overwrite the complete
-         receipt with no-provider-headers - so the FIRST clinic day after a
-         weekend always failed its all-provider roster gate ("roster was not
-         verified") and the month pull lost that day, deterministically, on
-         every run. A read downgrades the receipt only when it carries actual
-         contrary evidence: a structured roster (the contamination checks
-         above), a schedule-read error, an identity conflict, or a
-         request-echo conflict. Fail-closed paths are unchanged. */
+      /* A receipt belongs to this exact request. Evidence from an earlier day
+         cannot be rebound to an empty current response; the persisted roster
+         stays available for display, while completeness truthfully becomes
+         incomplete for this request. */
       var receipt;
       var evidenceFree = !structuredRosterRaw.length && !r.error && !requestEchoConflict &&
         !structuredIdentityConflict && !mergeIdentityConflict &&
         !(receiptInput && receiptInput.complete === true);
-      if (evidenceFree && lastReceipt && lastReceipt.complete === true && !_cacheSanitized) {
-        receipt = lastReceipt;
-        diag.receiptKept = 'evidence-free-read-kept-verified-receipt';
-      } else {
-        receipt = setReceipt(receiptInput, structuredRoster.length || afterList.length, receiptReason, requestEchoConflict ? null : boundOperation);
-      }
+      if (evidenceFree) diag.receiptKept = 'none-current-request-has-no-provider-evidence';
+      receipt = setReceipt(receiptInput, structuredRoster.length || afterList.length, receiptReason, boundOperation);
       diag.providerNames = afterList.map(function (e) { return e.name; }).slice(0, 50);
       diag.added = afterList.length - before;
       diag.receipt = receipt;
 
-      // Enable §68 scoping WITHOUT v1.37: if the extension supplied no structured
-      // per-appt provider but we recovered one from the flat text, hand the picker
-      // an enriched lastResp so applyScope can attach + filter by provider.
-      if (!hasStructuredScope && rec.appts.length && rec.providers.length) {
-        setLastResp({ appts: rec.appts, providers: rec.providers });
-        diag.scopeEnabledFromText = true;
-      } else {
-        diag.scopeEnabledFromText = false;
-      }
+      // The canonical selector consumes clinician-only entries from the event.
+      // Patient appointment rows never leave this ingestion frame.
+      diag.scopeEnabledFromText = false;
 
-      publishDiag(diag);
+      if(!current(boundOperation.owner))return {ignored:true,reason:'stale-before-publish'};
+      publishDiag(diag,boundOperation.owner);
 
-      // Re-render only if we actually added real names (avoid needless churn /
-      // fighting the picker's glitch-fix signature guard).
-      if (diag.added > 0 || structuredRoster.length || r.providerRosterReceipt) renderDropdown();
-      notifyRosterUpdated(afterList, receipt);
+      notifyRosterUpdated(afterList, receipt,boundOperation.owner);
       return diag;
     }, null);
+    if(!current(boundOperation.owner))return {ignored:true,reason:'stale-after-ingest'};
     _ingestStats.processed++;
     if (_ingestSeenObjects && r && typeof r === 'object') _ingestSeenObjects.set(r, result);
     if (requestId) {
-      _ingestByRequest[requestId] = result;
-      _ingestRequestOrder.push(requestId);
+      _ingestByRequest[cacheKey] = result;
+      _ingestRequestOrder.push(cacheKey);
       if (_ingestRequestOrder.length > 64) delete _ingestByRequest[_ingestRequestOrder.shift()];
     }
     return result;
   }
 
   // ---------- read-only message listener ----------
+  function trustedMessage(e){return !!e&&e.source===root&&!!root.location&&e.origin===String(root.location.origin||'');}
   function onMessage(e) {
     safe(function () {
+      var ingress=capture('message');
+      if(!trustedMessage(e)||!current(ingress))return;
       var d = e && e.data;
       if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppScheduleResult') return;
       var r = d.resp || {};
-      ingestResp(r);   // request/object de-dupe lives at the ingestion choke point
+      ingestResp(r,ingress);   // request/object de-dupe lives at the ingestion choke point
     });
   }
 
   // ---------- defensive sweep of the last raw schedule payload, if present ----------
   function sweepSchedRaw() {
-    safe(function () {
-      var raw = root.__schedRaw;
-      if (!raw) return;
-      // __schedRaw may be the resp object or carry {text}
-      var resp = (raw && (raw.text || raw.providers || raw.providerRoster || raw.appts)) ? raw : (raw && raw.resp ? raw.resp : null);
-      if (resp) ingestResp(resp);
-    });
+    return {ignored:true,reason:'unowned-raw-replay-disabled'};
   }
 
   // ---------- listener (attached SYNCHRONOUSLY so a pull can never beat it) ----------
@@ -1029,39 +991,58 @@
   var _bootSweepT = null;
   function boot() {
     attachListener();
-    // one-time light sweep in case a pull already happened before this loaded
-    sweepSchedRaw();
-    var n = 0;
-    _bootSweepT = setInterval(function () { n++; sweepSchedRaw(); if (n > 6) { clearInterval(_bootSweepT); _bootSweepT = null; } }, 1500);
+  }
+
+  function sessionBoundary(){
+    if(api&&root.__mlsProviderRoster!==api)return false;
+    sessionGeneration++;operationSerial++;
+    _armedOperation=null;lastReceipt=null;receiptOwner='';lastDiag=null;
+    _cacheSanitized=false;_lastMergeIdentityConflict=false;
+    _ingestSeenObjects=typeof WeakMap==='function'?new WeakMap():null;
+    _ingestByRequest=Object.create(null);_ingestRequestOrder=[];_ingestStats={processed:0,deduped:0};
+    if(_bootSweepT){clearInterval(_bootSweepT);_bootSweepT=null;}
+    safe(function(){delete root.__mlsProviderRosterDiag;});
+    /* __schedRaw is an unowned compatibility buffer. It may contain patient
+       rows from the previous account, so a boundary both scrubs and permanently
+       refuses replay; only an exact armed request may enter ingestResp. */
+    safe(function(){root.__schedRaw=null;});
+    return true;
   }
 
   // ---------- revert ----------
   function revert() {
+    if(!api||root.__mlsProviderRoster!==api)return false;
     safe(function () { root.removeEventListener('message', onMessage, true); _listening = false; });
+    safe(function () { if(boundaryHandler)root.removeEventListener('mls:session-boundary',boundaryHandler,true); });
     safe(function () { if (_bootSweepT) { clearInterval(_bootSweepT); _bootSweepT = null; } });
-    safe(function () { delete root.__mlsProviderRosterDiag; });
-    safe(function () { root.__mlsProviderRoster.installed = false; });
-    // Note: this does NOT erase real providers already merged into the cache —
-    // they were really read. To clear them, the user/picker manages the cache.
+    sessionBoundary();boundaryHandler=null;api.installed=false;
+    // Persisted provider identities are account-namespaced real evidence and are
+    // intentionally retained; every in-memory owner/request receipt is gone.
+    return true;
   }
 
-  root.__mlsProviderRoster = {
+  var api=root.__mlsProviderRoster = {
     installed: true,
     version: VERSION,
     asset: ASSET,
+    installToken: INSTALL_TOKEN,
     recoverFromText: recoverFromText,
     ingestResp: ingestResp,
     sweepSchedRaw: sweepSchedRaw,
     list: listEntries,
     providers: function () { return listEntries().map(function (e) { return e.name; }); },
-    merge: mergeEntries,
+    merge: function(list,source,owner){return mergeEntries(list,source,owner);},
     resolve: resolveProvider,
     beginOperation: beginOperation,
     getReceipt: receiptSnapshot,
     getScope: rosterScope,
     getDiag: function () { return lastDiag; },
     getIngestStats: function () { return { processed: _ingestStats.processed, deduped: _ingestStats.deduped }; },
-    notify: function () { notifyRosterUpdated(listEntries(), lastReceipt); },
+    notify: function () { var owner=capture('notify');notifyRosterUpdated(listEntries(owner), lastReceipt,owner); },
+    _captureOwner:capture,
+    _ownerCurrent:current,
+    _sessionBoundary:sessionBoundary,
+    _debugOwner:function(){return {generation:sessionGeneration,account:account(),epoch:epoch(),armedRequestId:_armedOperation&&_armedOperation.requestId||'',cacheCount:_ingestRequestOrder.length,hasReceipt:!!lastReceipt};},
     _makeEntry: makeEntry,
     _canonicalName: canonicalProviderName,
     _equivalentKey: providerEquivalentKey,
@@ -1070,6 +1051,9 @@
     _patientNameFromRow: patientNameFromRow,
     revert: revert
   };
+
+  boundaryHandler=sessionBoundary;
+  safe(function(){root.addEventListener('mls:session-boundary',boundaryHandler,true);});
 
   // Attach the read-only listener immediately (independent of DOM readiness) so a
   // schedule result can never arrive before we are listening.

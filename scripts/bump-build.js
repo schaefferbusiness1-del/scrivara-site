@@ -37,9 +37,13 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 
 /* Every file that pins the build token. A partial bump is refused. */
+/* 2026-08-20 promotion: mls-connect.js left this list - the production bundle
+   is now DERIVED from the 1p bundle (derive-production-from-1p.js), which
+   carries no build literal of its own; it reads window.__MLS_AV from the
+   shell, exactly as the 1p and cloned bundles always have. The shell
+   (ScribeFlow.html) remains the pinned owner. */
 const TARGETS = [
   'app-version.json',
-  'mls-connect.js',
   'ScribeFlow.html',
   'tests/boot-loading-visual-contract.test.js',
   'tests/interaction-performance-contract.test.js',
