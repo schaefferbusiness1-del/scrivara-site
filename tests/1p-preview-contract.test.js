@@ -157,7 +157,13 @@ const EXTENSION_BASE_COMMIT = '58eb0b5d30dcb65a64bdb2fa4db238cceb933d25';
    pins, feat_mls_checker.js SERVER_EXT_VERSION + its chk3072 loader token in
    mls-connect.js/-staging.js - exactly what every prior extension release moved.
    No production behaviour changed. */
-const PRODUCTION_BASE_COMMIT = '58eb0b5d30dcb65a64bdb2fa4db238cceb933d25';
+/* Advanced by the AUTHORIZED glitch-cleanup fix of 2026-08-20 (owner directive:
+   "tie up the loose ends"): feat_mls_redesign.js nav rail height:100vh - the
+   rail was fixed INSIDE the backdrop-filtered header, whose containing block
+   collapsed it to 87px and the burger opened an EMPTY menu (measured live on
+   /cloned, cure proven live before landing). Behavior fix, b1028-hotfix-train
+   class; /1p and /cloned load the same shared file. */
+const PRODUCTION_BASE_COMMIT = '3f3b214984d54ce76beba6d91ed9ac4eb086cb37';
 
 const P1_FILES = [
   '1pScribeFlow.html',
