@@ -18,7 +18,7 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const EXPECTED_BUILD = 'p1-20260815-launch-r1';
-const P1_CONFIG_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
+const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 /* The extension release train of 2026-08-17 (MLS Assist 3.0.62, wsg-2.0.0)
    moved exactly TWO literals in _config.yml - the released-package include
    name (MLS_Assist_v3.0.61 -> v3.0.62: zip, bin and the download comment) and
@@ -554,7 +554,14 @@ assert.strictEqual((currentConfig.match(/  - "1p\/legal\/index\.html"/g) || []).
 assert.strictEqual((currentConfig.match(/  - "1p\/marketing\/index\.html"/g) || []).length, 1, 'exact FREE Marketing showcase include must appear once');
 assert.strictEqual((currentConfig.match(/  - "cloned\/index\.html"/g) || []).length, 1, 'exact /cloned live-route include must appear once');
 const baseConfigText = P1_CONFIG_RELEASE_SUBS.reduce((text, [from, to]) => text.split(from).join(to), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'));
-assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, '').replace(wyzantConfigBlock, ''), baseConfigText,
+
+/* THE SECOND PROMOTION (owner order, 2026-08-20 evening): feat_mls_legalpack.js
+   left the 2026-08-06 dead-code exclusion list - the promoted 1p fork now
+   serves under that name on the official route ('where did Legal go': the
+   retired-era exclusion 404d the revived file). Exactly one reviewed removal;
+   the pay-era legal names stay excluded and everything else stays frozen. */
+const baseConfigTextAdjusted = baseConfigText.replace('  - "feat_mls_legalpack.js"' + String.fromCharCode(10), '');
+assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, '').replace(wyzantConfigBlock, ''), baseConfigTextAdjusted,
   '_config.yml changed beyond the exact reviewed 1p showcase, /cloned and /wyzant traversal blocks (and the two 3.0.62 release literals)');
 
 const productionShell = read('ScribeFlow.html');
