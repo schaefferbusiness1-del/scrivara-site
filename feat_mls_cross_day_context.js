@@ -1,4 +1,4 @@
-/* feat_mls_cross_day_context.js -> window.__mlsCrossDayContext (xdc-2.0.3)
+/* feat_mls_cross_day_context.js -> window.__mlsCrossDayContext (xdc-2.0.4)
  *
  * Every selected date now uses the native MLS Easy Visit workspace. This
  * companion adds no alternate appointment list, banner, or "full workspace"
@@ -14,7 +14,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsCrossDayContext", VERSION = "xdc-2.0.3";
+  var NS = "__mlsCrossDayContext", VERSION = "xdc-2.0.4";
   /* A backend asset refresh runs inside the existing document.  b419's
      xdc-1.0.0 owned a whole-body MutationObserver and continually rewrote its
      obsolete "Open full workspace" buttons.  A truthy-only guard left that
@@ -185,7 +185,22 @@
        Athena WRITE and verification still fail closed without it, independently
        of this module - feat_mls_writeflow exactVisitBlocked, exact-encounter
        verify, and the extension's own digits(appointmentId) policy. */
-    if (!providerOf(a)) return { ok: false, reason: "provider-missing" };
+    /* b438 part 2 (owner ASAP 2026-08-20, live Aug-31 day): athena provided no
+       row-to-provider link, the import honestly declined to guess between the
+       two visible provider headers - and this line then walled off ALL 16
+       reconciled appointments ("Appointment not opened" on every row).
+       PROVIDER IS A FILING ATTRIBUTE, NOT IDENTITY - the same reasoning that
+       removed the appointment-id block above. Opening proceeds with the
+       provider honestly blank in the frozen context; the write/verify gates
+       (feat_mls_writeflow exactVisitBlocked, the exact-encounter verify, the
+       extension's own policy) still fail closed on a blank provider
+       independently of this module, and the doctor sees a notice instead of
+       a wall. Owner, verbatim: "DONT OVERTHINK IT NO NEED TO BLOCK ANYTHING". */
+    if (!providerOf(a)) {
+      safe(function () {
+        if (typeof window.toast === "function") window.toast("Provider not recorded for this appointment - the visit opens normally; Athena send stays unavailable until a provider is set.", "");
+      });
+    }
     return { ok: true, appointment: a };
   }
   function resolveAppointment(a) {

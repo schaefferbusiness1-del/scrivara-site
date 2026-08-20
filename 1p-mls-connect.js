@@ -22475,7 +22475,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         dob: locked.dob || (a ? dobOf(a) : ''),
         activeName: an,
         mismatch: true,
-        onYes: null
+        /* jlp-1.0 (owner 2026-08-20, the false Jalpa Patel block): the send
+           targets the note+s LOCKED patient regardless of the on-screen
+           selection - the pull deliberately moves the active patient all day,
+           so active-vs-locked is a WARN+CONFIRM, never a wall. The Athena
+           sheet+s own identity verification still gates the actual write. */
+        onYes: function () { handOff(function () { p.click(); }, ''); }
       });
       return;
     }
@@ -22488,8 +22493,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = document.createElement('div'); m.className = 'ez3-modal'; m.id = 'ez3Confirm';
     m.innerHTML = '<div class="ez3-modal-card">' +
       '<div class="ez3-modal-h">Confirm before sending to Athena</div>' +
-      (cfg.mismatch ? '<div class="ez3-warn">⚠️ The open visit is labeled “' + esc(cfg.activeName || '—') +
-        '”, which does <b>not</b> match this patient. Sending is blocked. Re-select the patient and try again.</div>' : '') +
+      (cfg.mismatch ? '<div class="ez3-warn">⚠️ Your screen is on “' + esc(cfg.activeName || '—') + '”, but this note belongs to “' + esc(cfg.name || '—') + '” — the send goes to <b>' + esc(cfg.name || 'that patient') + '</b>’s chart, never to whoever is on screen. Confirm below only if that is what you want.</div>' : '') +
       '<div class="ez3-crow"><span>Patient</span><b>' + esc(cfg.name || '—') + '</b></div>' +
       '<div class="ez3-crow"><span>DOB</span><b>' + (cfg.dob ? esc(cfg.dob) : '—') + '</b></div>' +
       '<div class="ez3-crow"><span>Destination</span><b>athenaOne — review &amp; confirm</b></div>' +
@@ -22497,7 +22501,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'MLS never submits or signs an order.</p>' +
       '<div class="ez3-modal-btns">' +
         '<button type="button" class="ez3-sm" id="ez3ConfCancel">Cancel</button>' +
-        (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
+        '<button type="button" class="ez3-sm pri" id="ez3ConfYes">' + (cfg.mismatch ? ('✓ Send to ' + esc(cfg.name || 'the note’s patient')) : '✓ Open Athena review') + '</button>' +
       '</div></div>';
     document.body.appendChild(m);
     /* mdl-1.1.0: a confirm that cannot be escaped or focused is not a dialog.
@@ -27714,7 +27718,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         dob: locked.dob || (a ? dobOf(a) : ''),
         activeName: an,
         mismatch: true,
-        onYes: null
+        /* jlp-1.0 (owner 2026-08-20, the false Jalpa Patel block): the send
+           targets the note+s LOCKED patient regardless of the on-screen
+           selection - the pull deliberately moves the active patient all day,
+           so active-vs-locked is a WARN+CONFIRM, never a wall. The Athena
+           sheet+s own identity verification still gates the actual write. */
+        onYes: function () { handOff(function () { p.click(); }, ''); }
       });
       return;
     }
@@ -27727,8 +27736,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = document.createElement('div'); m.className = 'ez3-modal'; m.id = 'ez3Confirm';
     m.innerHTML = '<div class="ez3-modal-card">' +
       '<div class="ez3-modal-h">Confirm before sending to Athena</div>' +
-      (cfg.mismatch ? '<div class="ez3-warn">⚠️ The open visit is labeled “' + esc(cfg.activeName || '—') +
-        '”, which does <b>not</b> match this patient. Sending is blocked. Re-select the patient and try again.</div>' : '') +
+      (cfg.mismatch ? '<div class="ez3-warn">⚠️ Your screen is on “' + esc(cfg.activeName || '—') + '”, but this note belongs to “' + esc(cfg.name || '—') + '” — the send goes to <b>' + esc(cfg.name || 'that patient') + '</b>’s chart, never to whoever is on screen. Confirm below only if that is what you want.</div>' : '') +
       '<div class="ez3-crow"><span>Patient</span><b>' + esc(cfg.name || '—') + '</b></div>' +
       '<div class="ez3-crow"><span>DOB</span><b>' + (cfg.dob ? esc(cfg.dob) : '—') + '</b></div>' +
       '<div class="ez3-crow"><span>Destination</span><b>athenaOne — review &amp; confirm</b></div>' +
@@ -27736,7 +27744,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'MLS never submits or signs an order.</p>' +
       '<div class="ez3-modal-btns">' +
         '<button type="button" class="ez3-sm" id="ez3ConfCancel">Cancel</button>' +
-        (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
+        '<button type="button" class="ez3-sm pri" id="ez3ConfYes">' + (cfg.mismatch ? ('✓ Send to ' + esc(cfg.name || 'the note’s patient')) : '✓ Open Athena review') + '</button>' +
       '</div></div>';
     document.body.appendChild(m);
     /* mdl-1.1.0: a confirm that cannot be escaped or focused is not a dialog.
@@ -29755,7 +29763,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         dob: locked.dob || (a ? dobOf(a) : ''),
         activeName: an,
         mismatch: true,
-        onYes: null
+        /* jlp-1.0 (owner 2026-08-20, the false Jalpa Patel block): the send
+           targets the note+s LOCKED patient regardless of the on-screen
+           selection - the pull deliberately moves the active patient all day,
+           so active-vs-locked is a WARN+CONFIRM, never a wall. The Athena
+           sheet+s own identity verification still gates the actual write. */
+        onYes: function () { handOff(function () { p.click(); }, ''); }
       });
       return;
     }
@@ -29768,8 +29781,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = document.createElement('div'); m.className = 'ez3-modal'; m.id = 'ez3Confirm';
     m.innerHTML = '<div class="ez3-modal-card">' +
       '<div class="ez3-modal-h">Confirm before sending to Athena</div>' +
-      (cfg.mismatch ? '<div class="ez3-warn">⚠️ The open visit is labeled “' + esc(cfg.activeName || '—') +
-        '”, which does <b>not</b> match this patient. Sending is blocked. Re-select the patient and try again.</div>' : '') +
+      (cfg.mismatch ? '<div class="ez3-warn">⚠️ Your screen is on “' + esc(cfg.activeName || '—') + '”, but this note belongs to “' + esc(cfg.name || '—') + '” — the send goes to <b>' + esc(cfg.name || 'that patient') + '</b>’s chart, never to whoever is on screen. Confirm below only if that is what you want.</div>' : '') +
       '<div class="ez3-crow"><span>Patient</span><b>' + esc(cfg.name || '—') + '</b></div>' +
       '<div class="ez3-crow"><span>DOB</span><b>' + (cfg.dob ? esc(cfg.dob) : '—') + '</b></div>' +
       '<div class="ez3-crow"><span>Destination</span><b>athenaOne — review &amp; confirm</b></div>' +
@@ -29777,7 +29789,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'MLS never submits or signs an order.</p>' +
       '<div class="ez3-modal-btns">' +
         '<button type="button" class="ez3-sm" id="ez3ConfCancel">Cancel</button>' +
-        (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
+        '<button type="button" class="ez3-sm pri" id="ez3ConfYes">' + (cfg.mismatch ? ('✓ Send to ' + esc(cfg.name || 'the note’s patient')) : '✓ Open Athena review') + '</button>' +
       '</div></div>';
     document.body.appendChild(m);
     $('ez3ConfCancel').onclick = closeConfirm;
@@ -31326,7 +31338,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         dob: locked.dob || (a ? dobOf(a) : ''),
         activeName: an,
         mismatch: true,
-        onYes: null
+        /* jlp-1.0 (owner 2026-08-20, the false Jalpa Patel block): the send
+           targets the note+s LOCKED patient regardless of the on-screen
+           selection - the pull deliberately moves the active patient all day,
+           so active-vs-locked is a WARN+CONFIRM, never a wall. The Athena
+           sheet+s own identity verification still gates the actual write. */
+        onYes: function () { handOff(function () { p.click(); }, ''); }
       });
       return;
     }
@@ -31339,8 +31356,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = document.createElement('div'); m.className = 'ez3-modal'; m.id = 'ez3Confirm';
     m.innerHTML = '<div class="ez3-modal-card">' +
       '<div class="ez3-modal-h">Confirm before sending to Athena</div>' +
-      (cfg.mismatch ? '<div class="ez3-warn">⚠️ The open visit is labeled “' + esc(cfg.activeName || '—') +
-        '”, which does <b>not</b> match this patient. Sending is blocked. Re-select the patient and try again.</div>' : '') +
+      (cfg.mismatch ? '<div class="ez3-warn">⚠️ Your screen is on “' + esc(cfg.activeName || '—') + '”, but this note belongs to “' + esc(cfg.name || '—') + '” — the send goes to <b>' + esc(cfg.name || 'that patient') + '</b>’s chart, never to whoever is on screen. Confirm below only if that is what you want.</div>' : '') +
       '<div class="ez3-crow"><span>Patient</span><b>' + esc(cfg.name || '—') + '</b></div>' +
       '<div class="ez3-crow"><span>DOB</span><b>' + (cfg.dob ? esc(cfg.dob) : '—') + '</b></div>' +
       '<div class="ez3-crow"><span>Destination</span><b>athenaOne — review &amp; confirm</b></div>' +
@@ -31348,7 +31364,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'MLS never submits or signs an order.</p>' +
       '<div class="ez3-modal-btns">' +
         '<button type="button" class="ez3-sm" id="ez3ConfCancel">Cancel</button>' +
-        (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
+        '<button type="button" class="ez3-sm pri" id="ez3ConfYes">' + (cfg.mismatch ? ('✓ Send to ' + esc(cfg.name || 'the note’s patient')) : '✓ Open Athena review') + '</button>' +
       '</div></div>';
     document.body.appendChild(m);
     $('ez3ConfCancel').onclick = closeConfirm;
@@ -32851,7 +32867,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         dob: locked.dob || (a ? dobOf(a) : ''),
         activeName: an,
         mismatch: true,
-        onYes: null
+        /* jlp-1.0 (owner 2026-08-20, the false Jalpa Patel block): the send
+           targets the note+s LOCKED patient regardless of the on-screen
+           selection - the pull deliberately moves the active patient all day,
+           so active-vs-locked is a WARN+CONFIRM, never a wall. The Athena
+           sheet+s own identity verification still gates the actual write. */
+        onYes: function () { handOff(function () { p.click(); }, ''); }
       });
       return;
     }
@@ -32864,8 +32885,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = document.createElement('div'); m.className = 'ez3-modal'; m.id = 'ez3Confirm';
     m.innerHTML = '<div class="ez3-modal-card">' +
       '<div class="ez3-modal-h">Confirm before sending to Athena</div>' +
-      (cfg.mismatch ? '<div class="ez3-warn">⚠️ The open visit is labeled “' + esc(cfg.activeName || '—') +
-        '”, which does <b>not</b> match this patient. Sending is blocked. Re-select the patient and try again.</div>' : '') +
+      (cfg.mismatch ? '<div class="ez3-warn">⚠️ Your screen is on “' + esc(cfg.activeName || '—') + '”, but this note belongs to “' + esc(cfg.name || '—') + '” — the send goes to <b>' + esc(cfg.name || 'that patient') + '</b>’s chart, never to whoever is on screen. Confirm below only if that is what you want.</div>' : '') +
       '<div class="ez3-crow"><span>Patient</span><b>' + esc(cfg.name || '—') + '</b></div>' +
       '<div class="ez3-crow"><span>DOB</span><b>' + (cfg.dob ? esc(cfg.dob) : '—') + '</b></div>' +
       '<div class="ez3-crow"><span>Destination</span><b>athenaOne — review &amp; confirm</b></div>' +
@@ -32873,7 +32893,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'MLS never submits or signs an order.</p>' +
       '<div class="ez3-modal-btns">' +
         '<button type="button" class="ez3-sm" id="ez3ConfCancel">Cancel</button>' +
-        (cfg.mismatch ? '' : '<button type="button" class="ez3-sm pri" id="ez3ConfYes">✓ Open Athena review</button>') +
+        '<button type="button" class="ez3-sm pri" id="ez3ConfYes">' + (cfg.mismatch ? ('✓ Send to ' + esc(cfg.name || 'the note’s patient')) : '✓ Open Athena review') + '</button>' +
       '</div></div>';
     ov.appendChild(m);
     $('ez3ConfCancel').onclick = closeConfirm;
@@ -46572,7 +46592,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})();
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260819chk3074';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260820chk3076';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
@@ -47386,7 +47406,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
-;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260811fp118";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- exact ID/account-bound Find routing + pull progress panel + any-day pull clarity, op-prep procedure autodetect, note model with honest fallback cascade, agenda/calendar polish, formatted note preview, and fill-in-the-blanks restore. */
+;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260820fp119";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- exact ID/account-bound Find routing + pull progress panel + any-day pull clarity, op-prep procedure autodetect, note model with honest fallback cascade, agenda/calendar polish, formatted note preview, and fill-in-the-blanks restore. */
 
 /* item80 (Templates suite + Simple-mode tunnel + MLS Agent dock) WAS injected
    here, and the injection was doing nothing but costing a 404.
@@ -54572,7 +54592,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.3.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260722ps131';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{
-  var A='feat_mls_cross_day_context.js',V='xdc-2.0.3',old=window.__mlsCrossDayContext||null;
+  var A='feat_mls_cross_day_context.js',V='xdc-2.0.4',old=window.__mlsCrossDayContext||null;
   if(old&&old.installed&&old.version===V)return;
   if(old){try{if(typeof old.revert==='function')old.revert();}catch(e0){}try{delete window.__mlsCrossDayContext;}catch(e1){window.__mlsCrossDayContext=null;}}
   var stale=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;
@@ -54581,7 +54601,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var buttons=document.querySelectorAll('.mls-xdc-open');for(i=0;i<buttons.length;i++){node=buttons[i];if(node&&node.parentNode)node.parentNode.removeChild(node);}
   if(document.body&&document.body.classList)document.body.classList.remove('mls-xdc-active');
   var eb=document.getElementById('mlsEz3Body');if(eb&&eb.classList)eb.classList.remove('mls-xdc-active');
-  var s=document.createElement('script');s.src=A+'?v=20260719xdc203';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
+  var s=document.createElement('script');s.src=A+'?v=20260820xdc204';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
 }catch(e){}})(); /* xdc-2.0.3: backend hot refreshes evict b419's observer/list owner; every selected date stays in native Easy and exact actions still fail closed */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A='feat_mls_portal_request_inbox.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717prq102';s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* prq-1.0.0: exact-patient portal request clinician review inbox; no prescribing, pull, extension, or Athena action */
 ;(function(){try{

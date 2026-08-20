@@ -9,8 +9,8 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_cross_day_context.js'), 'utf8');
 const connectSource = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 new Function(source); // syntax gate / ES5-compatible source syntax
-assert(source.includes('VERSION = "xdc-2.0.3"'), 'observer-free xdc-2.0.3 release marker is missing');
-assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.includes("?v=20260719xdc203"),
+assert(source.includes('VERSION = "xdc-2.0.4"'), 'observer-free xdc-2.0.4 release marker is missing');
+assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.includes("?v=20260820xdc204"),
   'account-clearing cross-day context is not loaded through a fresh immutable asset URL');
 
 // A backend refresh re-executes mls-connect.js in the existing document.  It
@@ -66,7 +66,7 @@ assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.
   assert.deepStrictEqual(classRemovals.sort(), ['body:mls-xdc-active', 'easy:mls-xdc-active'].sort(),
     'the loader left the legacy full-workspace presentation class active');
   assert.strictEqual(appended.length, 1, 'the current xdc asset was not loaded exactly once');
-  assert.strictEqual(appended[0].src, 'feat_mls_cross_day_context.js?v=20260719xdc203');
+  assert.strictEqual(appended[0].src, 'feat_mls_cross_day_context.js?v=20260820xdc204');
   assert.strictEqual(appended[0].attributes['data-mls-asset'], 'feat_mls_cross_day_context.js');
 }
 
@@ -84,7 +84,7 @@ assert(connectSource.includes("feat_mls_cross_day_context.js") && connectSource.
   nodes.set('mlsEz3Body', { classList: { remove() {} } });
   let reverted = 0;
   const context = {
-    NS: '__mlsCrossDayContext', VERSION: 'xdc-2.0.3',
+    NS: '__mlsCrossDayContext', VERSION: 'xdc-2.0.4',
     window: { __mlsCrossDayContext: { installed: true, version: 'xdc-1.0.0', revert() { reverted += 1; } } },
     document: {
       body: { classList: { remove() {} } },
@@ -218,7 +218,7 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: 'feat_mls_cross_day_context.js' });
 
 const api = window.__mlsCrossDayContext;
-assert(api && api.installed && api.version === 'xdc-2.0.3', 'selected-day native-workspace guard did not install');
+assert(api && api.installed && api.version === 'xdc-2.0.4', 'selected-day native-workspace guard did not install');
 assert.strictEqual(api._test.selectedDay(), '2026-07-17', 'selected day did not come from the DaySwitch API');
 assert(windowListeners.click && windowListeners.click.length === 1 && windowListeners.click[0].capture, 'guard must intercept on window capture before Easy document capture');
 assert(!documentListeners.click, 'a late document capture listener cannot preempt native Easy and must not be used');
@@ -392,17 +392,27 @@ assertSameIdConflict({ appt_date: '2026-07-18' }, 'date');
 assertSameIdConflict({ provider: 'Dr Different' }, 'provider');
 assertSameIdConflict({ start_local: '15:30', time_display: '3:30 PM' }, 'time');
 
-// Missing exact provider and unapproved data-act both fail before activation.
+// Expectation moved with b438 part 2 (owner ASAP 2026-08-20): a missing
+// provider is a FILING attribute, not identity — the live Aug-31 day arrived
+// with no row-to-provider link and the old hard block walled off all 16
+// reconciled appointments. The visit now OPENS with the provider honestly
+// blank in the frozen context (the write gates fail closed on it
+// independently), and no failure modal appears. Unapproved data-act still
+// fails before activation, unchanged.
 const noProvider = Object.assign({}, friday, { id: 798, appointment_id: 'A-NOPROV', provider: '', start_local: '11:00', time_display: '11:00 AM' });
 appts.push(noProvider);
 const noProviderKey = api._test.rowKey(noProvider);
 const beforeMissing = starts.length;
 click(target({ 'data-hd': noProviderKey }));
-assert.strictEqual(starts.length, beforeMissing, 'provider-less appointment opened without an immutable provider context');
-assert(/no exact provider/i.test(document.getElementById('mlsXdcModal').innerHTML), 'provider failure did not explain the missing exact context');
-appts.pop(); closeFailure();
+assert.strictEqual(starts.length, beforeMissing + 1, 'provider-less appointment no longer opens — the Aug-31 wall is back');
+assert(api.current() && api.current().appointmentId === 'A-NOPROV' && api.current().provider === '',
+  'the provider-less open did not carry an honestly blank provider in its immutable context');
+assert(!document.getElementById('mlsXdcModal'), 'a failure modal appeared for a provider-less open — the wall is back in modal form');
+resetVisit();
+appts.pop();
+const beforeMissing2 = starts.length;
 click(target({ 'data-act': 'delete', 'data-k': fridayKey }));
-assert.strictEqual(starts.length, beforeMissing, 'unapproved action activated the appointment');
+assert.strictEqual(starts.length, beforeMissing2, 'unapproved action activated the appointment');
 assert(/not approved/i.test(document.getElementById('mlsXdcModal').innerHTML), 'unapproved action did not fail clearly');
 closeFailure();
 

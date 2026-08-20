@@ -42,14 +42,14 @@ assert(/MLS_BRIDGE_TYPES = \{[^}]*mlsAppChartIdentity: 1/.test(content),
 assert(content.includes("if (d.type === 'mlsAppChartIdentity') {") &&
   content.includes("chrome.runtime.sendMessage({ type: 'mlsAssistChartIdentity' }"),
   'the chart-identity verb must forward to the proven write-safety identity handler');
-assert.strictEqual(manifest.version, '3.0.74', 'extension manifest must be 3.0.74'); /* pin moved with the 3.0.74 release train (srr-1.0) */
+assert.strictEqual(manifest.version, '3.0.76', 'extension manifest must be 3.0.76'); /* pin moved with the 3.0.76 release train (srr-1.0) */
 /* qol-2.4b: SELF-DERIVED from manifest.version rather than a hand-carried
-   literal — this line still said 3.0.56 while line 45 said 3.0.74, red since
+   literal — this line still said 3.0.56 while line 45 said 3.0.76, red since
    the version first moved and invisible behind every partial gate. A pin
    that must be hand-moved on every release eventually is not moved. */
 assert(new RegExp('^' + manifest.version.replace(/\./g, '\\.') + '\\+core-sha256:[0-9a-f]{64}$').test(manifest.version_name),
   'manifest must carry the stamped core digest for its OWN version');
-assert.strictEqual(feed.version, '3.0.74', 'release feed must announce 3.0.74');
+assert.strictEqual(feed.version, '3.0.76', 'release feed must announce 3.0.76');
 assert(connect.includes('data-mls-asset="feat_mls_athena_follow.js"'), 'the follow module has no loader');
 assert(app.includes('id="athenaFollowToggle"'), 'the off-switch is missing from Settings -> Integrations');
 assert(mod.includes("var MIN_EXT = '3.0.23';"), 'the module must gate on the verb-carrying extension version');

@@ -1,5 +1,5 @@
 {
-  "version": "3.0.74",
+  "version": "3.0.76",
   "minChrome": 116,
-  "notes": "v3.0.74 - Repeat pulls now come back full every time: after a deep read the extension finds its way back to the patient's visit list instead of re-reading the page it was left on, a partial fallback read can no longer report itself as complete, and when athenaOne gets tired the app can ask the extension to refresh its tab and re-open the chart for one clean retry. Everything from the previous release remains: the one-patient pull detects whoever is open on its own, legal-name-vs-nickname charts pass without weakening any identity check, background reads keep full speed, stuck reads release themselves, the athenaOne session is kept alive, and phone-confirmed note writes stay notes-and-drafts only, confirmed by you. Requires Chrome 116+."
+  "notes": "v3.0.76 - The version the practice validated live. On top of the repeat-pull fixes: closing your athenaOne tab can no longer silently block every pull until the browser restarts (the extension now notices the tab is gone and finds your new one), a briefly-offline extension worker retries your read instead of failing it, and the session keep-alive now keeps a minute-by-minute ledger so sign-out causes can be diagnosed instead of guessed. Everything from earlier releases remains: one-click pull of whoever is open, honest identity checks, full-speed background reads, and phone-confirmed note writes that stay notes-and-drafts only, confirmed by you. Requires Chrome 116+."
 }
