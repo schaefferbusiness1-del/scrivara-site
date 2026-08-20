@@ -8953,6 +8953,7 @@ function kaFrameTouch() {
         var host = hosts[h];
         var tx = String(host.textContent || '').slice(0, 600);
         if (!(/session/i.test(tx) && /(expire|expiring|time[ -]?out|timed out|inactivity|inactive)/i.test(tx))) continue;
+        try { window.__mlsKaSawDlg = true; } catch (eDlg) {} /* ka-4: sighting recorded even buttonless */
         var btns = host.querySelectorAll('button,input[type="button"],input[type="submit"],a');
         for (var k = 0; k < btns.length; k++) {
           var b = btns[k];
@@ -8984,12 +8985,23 @@ function kaFrameTouch() {
         }
       } catch (e8) {}
       try { fetch(String(window.location.href), { method: 'HEAD', credentials: 'include', cache: 'no-store' }).then(function () {}, function () {}); } catch (e7) {}
+      /* ka-4: every OTHER tick, a full authenticated page GET - the strongest
+         candidate for what athena's server counts as activity. Parity from the
+         wall clock so MV3 worker resets cannot skew it. */
+      try {
+        if (kaSeg && Math.floor(Date.now() / 180000) % 2 === 0) {
+          fetch('/' + kaSeg[1] + '/6/ax/dashboard', { credentials: 'include', cache: 'no-store' }).then(function (rA) { return rA.text(); }).then(function () {}, function () {});
+        }
+      } catch (e9) {}
     }
-    if (kaPing) { return kaPing.then(function (v0) { return (v0 === 'signedout') ? 'ka-signedout' : (hit ? 'ka-clicked-continue' : 'ka-touched'); }); }
-    return hit ? 'ka-clicked-continue' : 'ka-touched';
+    var kaDlgSeen = false; try { kaDlgSeen = window.__mlsKaSawDlg === true; window.__mlsKaSawDlg = false; } catch (eDs) {}
+    var kaIdleV = hit ? 'ka-clicked-continue' : (kaDlgSeen ? 'ka-dialog-nobutton' : 'ka-touched');
+    if (kaPing) { return kaPing.then(function (v0) { return (v0 === 'signedout') ? 'ka-signedout' : kaIdleV; }); }
+    return kaIdleV;
   } catch (e) { return 'ka-error'; }
 }
 async function kaTick() {
+  var __kaTickSummary = [];
   try {
     var cfg = await kaGetCfg();
     if (!cfg.enabled) return;
@@ -9004,11 +9016,19 @@ async function kaTick() {
         var clicked = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-clicked-continue'; });
         if (clicked) { try { console.log('[MLS ka-3066] clicked athena continue-session button in tab', t.id); } catch (eC) {} }
         var kaOut = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-signedout'; });
+        try { __kaTickSummary.push({ id: t.id, v: kaOut ? 'signedout' : (clicked ? 'clicked' : ((rs || []).some(function (r0) { return r0 && r0.result === 'ka-dialog-nobutton'; }) ? 'dialog-nobutton' : 'touched')) }); } catch (eSum) {}
         if (kaOut) { try { chrome.storage.local.set({ mlsAthenaSignedOutAt: Date.now() }, function () {}); console.log('[MLS ka-3] athena session reads SIGNED OUT in tab', t.id); } catch (eS2) {} }
         else { try { chrome.storage.local.remove('mlsAthenaSignedOutAt', function () {}); } catch (eS3) {} }
       } catch (eX) {}
     }
     try { chrome.storage.local.set({ mlsKeepAliveLastTick: Date.now() }, function () {}); } catch (eS) {}
+    /* ka-4 ledger: one row per tick, ring of 48 (~2.4h at 3min). */
+    try {
+      var kaLed = await new Promise(function (r0) { chrome.storage.local.get('mlsKaLedger', function (g0) { r0((g0 && g0.mlsKaLedger) || []); }); });
+      kaLed.push({ at: Date.now(), tabs: __kaTickSummary });
+      if (kaLed.length > 48) kaLed = kaLed.slice(kaLed.length - 48);
+      chrome.storage.local.set({ mlsKaLedger: kaLed }, function () {});
+    } catch (eLg) {}
   } catch (e) {}
 }
 try { chrome.alarms.create('mlsKaTick', { periodInMinutes: 3, delayInMinutes: 1 }); } catch (e) {}
@@ -15488,6 +15508,10 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     try { out.platform = await chrome.runtime.getPlatformInfo(); } catch (e) { out.platform = null; }
     try { out.workerBootAt = self.__mlsWorkerBootAt || null; } catch (e) { out.workerBootAt = null; }
     try { var errBag = await chrome.storage.local.get('mlsWorkerErrorLogV1'); out.workerErrors = (errBag && errBag.mlsWorkerErrorLogV1) || []; } catch (e) { out.workerErrors = null; } /* wet-1.1.0: crash log rides the health verb */
+    try {
+      var kaBag = await chrome.storage.local.get(['mlsKaLedger', 'mlsKeepAliveLastTick', 'mlsAthenaSignedOutAt']);
+      out.ka = { lastTick: (kaBag && kaBag.mlsKeepAliveLastTick) || null, signedOutAt: (kaBag && kaBag.mlsAthenaSignedOutAt) || null, ledger: ((kaBag && kaBag.mlsKaLedger) || []).slice(-16) };
+    } catch (eKa) { out.ka = null; } /* ka-4: the keep-alive timeline rides the health verb */
     try { sendResponse(out); } catch (e) {}
   })();
   return true;
