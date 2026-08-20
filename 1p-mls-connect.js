@@ -21263,7 +21263,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     } catch (e0) { keepTx = null; }
     try { w.querySelectorAll('.ez3fl-record').forEach(function (n) { n.remove(); }); } catch (e) {}
-    w.innerHTML = h;
+    if (w.__ez3H !== h) { w.innerHTML = h; w.__ez3H = h; } /* ez3calm-1.0.0 */
     if (!keepTx) return;
     var freshTx = null;
     try { freshTx = w.querySelector('#ez3Transcript'); } catch (e1) {}
@@ -27137,7 +27137,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect(); wireAdv(); wireEmptyToday(); wireRecBanner();
     on('ez3Now', function () { var t2 = timeContext(); if (t2.cur) lockAndStart(t2.cur, { record: true }); });
     on('ez3Nxt', function () { var t2 = timeContext(); if (t2.nxt) lockAndStart(t2.nxt, { record: !t2.cur }); });
@@ -27367,7 +27367,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<div class="ez3-search"><input type="text" id="ez3Search" placeholder="🔍 Type a patient’s name…" value="' +
          esc(S.query || '') + '" autocomplete="off" autocapitalize="off" spellcheck="false"></div>';
     h += '<div id="ez3ChooseList">' + chooseListHtml() + '</div>';
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect(); wireRecBanner();
     on('ez3Back', function () { S.screen = 'home'; S.query = ''; render(); });
     var inp = $('ez3Search');
@@ -27511,7 +27511,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireAdv(); wireQuickStrip();
 
     /* v3.4: ALL clicks below are registry-based (delegated) — see ez3Click.
@@ -28220,7 +28220,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     }
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect(); wireAdv(); wireRecBanner();
     /* v3.4: registry-based (delegated); range tabs + rows via data attributes */
     on('ez3PullStart', function () { startMonthPull(false); });
@@ -29205,7 +29205,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect(); wireAdv(); wireEmptyToday();
     var b;
     if ((b = $('ez3Now'))) b.onclick = function () { lockAndStart(tc.cur, { record: false }); };
@@ -29444,7 +29444,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<div class="ez3-search"><input type="text" id="ez3Search" placeholder="🔍 Type a patient’s name…" value="' +
          esc(S.query || '') + '" autocomplete="off" autocapitalize="off" spellcheck="false"></div>';
     h += '<div id="ez3ChooseList">' + chooseListHtml() + '</div>';
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect();
     $('ez3Back').onclick = function () { S.screen = 'home'; S.query = ''; render(); };
     var inp = $('ez3Search');
@@ -29618,7 +29618,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireAdv(); wireQuickStrip();
 
     var b;
@@ -30191,7 +30191,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     }
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect(); wireAdv();
     var b;
     if ((b = $('ez3PullStart'))) b.onclick = function () { startMonthPull(false); };
@@ -31019,7 +31019,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect(); wireAdv();
     var b;
     if ((b = $('ez3Next'))) b.onclick = function () { lockAndStart(nx, { record: false }); };
@@ -31092,7 +31092,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              ' more (' + (all.length - S.showCount) + ' left)</button>';
       }
     }
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect();
     $('ez3Back').onclick = function () { S.screen = 'home'; render(); };
     var m = $('ez3More'); if (m) m.onclick = function () { S.showCount += 5; render(); };
@@ -31193,7 +31193,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireAdv();
 
     var b;
@@ -31766,7 +31766,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     }
     h += advRowHtml();
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect(); wireAdv();
     var b;
     if ((b = $('ez3PullStart'))) b.onclick = function () { startMonthPull(false); };
@@ -32623,7 +32623,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
          '</div>';
     h += '<p class="ez3-status" id="ez3HomeStatus">' + homeStatus() + '</p>';
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect();
     var b;
     if ((b = $('ez3Next'))) b.onclick = function () { lockAndStart(nx, { record: false }); };
@@ -32693,7 +32693,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              ' more (' + (all.length - S.showCount) + ' left)</button>';
       }
     }
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect();
     $('ez3Back').onclick = function () { S.screen = 'home'; render(); };
     var m = $('ez3More'); if (m) m.onclick = function () { S.showCount += 5; render(); };
@@ -32784,7 +32784,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          (a && typeof window.openOpPrepForPatient === 'function' ? '<button type="button" class="ez3-sm" id="ez3Prep2" title="Draft this patient operative / procedure note from your uploaded op-note templates">💉 Draft op note</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist2">📚 History</button>' +
          '</div>';
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
 
     var b;
     $('ez3Back').onclick = function () { S.screen = 'home'; render(); };
@@ -32968,7 +32968,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              ' more (' + (all.length - S.showCount) + ' left)</button>';
       }
     }
-    wrap().innerHTML = h;
+    var __ez3w = wrap(); if (__ez3w.__ez3H !== h) { __ez3w.innerHTML = h; __ez3w.__ez3H = h; } /* ez3calm-1.0.0 */
     wireProvSelect();
     var b;
     if ((b = $('ez3sPullToday'))) b.onclick = pullTodayProxy;
