@@ -117,7 +117,8 @@ const P1_CONFIG_RELEASE_SUBS = [
    Settings cards in both twins moved to 3.0.72 and the 1p loader token moved
    to chk3072 (scripts/sweep-3072.js), on top of the tip viewport containment
    fix (1c0e971f). */
-const P1_BASE_COMMIT = '58eb0b5d30dcb65a64bdb2fa4db238cceb933d25'; /* sweep-3074 + cloned r26 derive (r26 train: ext 3.0.74 + autopull v1.1 + five lanes) */
+/* walkthrough untangle 2026-08-20: onenote-1.0.0 + rvack-1.0.0 (owner screenshots) */
+const P1_BASE_COMMIT = 'e38f3422d92a3fdac2ca74cfa2ebfd594d71a713'; /* sweep-3074 + cloned r26 derive (r26 train: ext 3.0.74 + autopull v1.1 + five lanes) */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
@@ -163,7 +164,8 @@ const EXTENSION_BASE_COMMIT = '58eb0b5d30dcb65a64bdb2fa4db238cceb933d25';
    collapsed it to 87px and the burger opened an EMPTY menu (measured live on
    /cloned, cure proven live before landing). Behavior fix, b1028-hotfix-train
    class; /1p and /cloned load the same shared file. */
-const PRODUCTION_BASE_COMMIT = '3f3b214984d54ce76beba6d91ed9ac4eb086cb37';
+/* SAME untangle: fixpack + mls-connect are production-shared, b1028-hotfix-train class */
+const PRODUCTION_BASE_COMMIT = 'e38f3422d92a3fdac2ca74cfa2ebfd594d71a713';
 
 const P1_FILES = [
   '1pScribeFlow.html',
