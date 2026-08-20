@@ -23861,7 +23861,16 @@ async function pullPatientChartViaAssist(btn, opts){
     if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient could not be re-verified against the chart just read, so nothing was saved. Check that the same patient is selected here and open in athenaOne, then pull again.');
     try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
-    say('✅ Saved '+pullTarget.name+'’s Athena history to their MLS chart — it’s on your account now.','ok','step 3 of 3');
+    /* spv-1.0.0 (2026-08-19): this line used to say "Saved X's Athena history",
+       which a doctor reads as "their prior visit notes are here". They are not:
+       everything above this point reads CHART FACTS (problems, meds, allergies,
+       summary, vitals, the history object) and files ONE 'Athena chart import'
+       encounter. The visit-note read is a separate leg that runs after this
+       function returns and can legitimately land nothing. Measured live on
+       patient 7618711: this line printed and the patient still had zero visits
+       twenty minutes later. Say exactly what was saved; the visit leg publishes
+       its own verdict at window.__mlsSinglePullVisits and says it out loud. */
+    say('✅ Saved '+pullTarget.name+'’s Athena chart facts — problems, medications, allergies and history. Checking for their prior visit notes…','ok','step 3 of 3');
     if(btn){ btn.disabled=false; btn.innerHTML=orig; }
     releaseDirect(); return true;
   }catch(err){
@@ -42249,8 +42258,40 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     var save = cardBtn(card, 'opPrepSave(');
     if (!save) return null;
-    return { label: '💾 Save to ' + (S(row.appt && row.appt.name) || 'the chart') + '’s chart',
-      run: function () { save.click(); setTimeout(refresh, 350); }, able: true };
+    /* ===== opnsend-1.0.0 (owner 2026-08-19: "including op notes btw they
+       should be able to put right into athena to") ==========================
+       A finished op note reached Athena in TWO presses - Save, then Send - and
+       the send control only existed after the save had already landed. One
+       press now does both, through the SAME two functions in the SAME order:
+       opPrepSave() (canonical blank-token completeness, exact patient identity,
+       verified read-back, and opvs-1.0.0's day/provider/appointment stamp) and
+       then pushHistoryNoteToAthena(), which opens the ordinary write confirm
+       sheet - identity, previewHash, per-action human confirm, all unchanged.
+
+       NOTHING IS WEAKENED, and nothing is assumed:
+         - the blanks branch ABOVE returns first, so a note with any unresolved
+           placeholder never reaches this branch at all;
+         - the push runs only if filedRecord() can SEE a saved, non-draft record
+           after the save (a failed or quota-refused save simply does not send,
+           and the room's own message says why);
+         - pushHistoryNoteToAthena re-checks isDraft and blank tokens itself.
+       An op note send stages the note TEXT only: write_note / save_draft. It
+       never signs and never places an order - those rows are governed by the
+       sheet's own capability gates exactly as they are for a visit note. */
+    var canPush = typeof window.pushHistoryNoteToAthena === 'function';
+    return { label: canPush ? '🚀 Save & send to Athena' : ('💾 Save to ' + (S(row.appt && row.appt.name) || 'the chart') + '’s chart'),
+      run: function () {
+        save.click();
+        setTimeout(function () {
+          refresh();
+          if (!canPush) return;
+          /* Verify the save landed and is NOT a draft before sending. */
+          var rec2 = filedRecord(rows()[sel]);
+          if (!rec2) return;
+          try { window.pushHistoryNoteToAthena(rec2.id); } catch (e) {}
+        }, 350);
+      }, able: true };
+    /* ===== end opnsend-1.0.0 ============================================== */
   }
   function runNotePrimary() {
     var plan = notePlan();
@@ -54600,6 +54641,310 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
 })();
 </script>
 <!-- ===== end pullverb-1.0.0 =============================================== -->
+<!-- ===== xpdoor-1.0.0 — a safety stop must open a door, not end the road ==
+     Owner 2026-08-19, reading the live refusal: "this warning it gave is very
+     clunky it should be a better system."
+
+     The refusal is CORRECT and is not touched here: when athenaOne has patient
+     B open and MLS is on patient A, the extension refuses to read a single
+     encounter body and MLS saves nothing. That guard stays exactly as it is.
+
+     What was clunky is what came next. The message told the doctor to go find
+     (or create) that same patient somewhere else, come back, and press again —
+     a scavenger hunt whose answer MLS already had. The extension returns the
+     live chart identity ON the safety stop (background.js returns
+     {ok:false, identity, error}); feat_visits' driveRequest turns that reply
+     into an Error and keeps only the message, so the name was thrown away one
+     layer below the refusal that needed it.
+
+     This block observes the reply that is ALREADY flowing to this page — no
+     new Athena traffic, no second read, nothing sent — and turns the refusal
+     into one button: "Switch to <Name> here and pull their chart".
+
+     THE FAIL-CLOSED FLOOR IS UNCHANGED, and this block is deliberately
+     stricter than the auto-pull resolver it borrows from:
+       - an MRN that matches a record with a DIFFERENT date of birth  -> REFUSE
+       - an MRN or name+DOB that matches MORE THAN ONE record         -> REFUSE
+       - a matching record carrying a DIFFERENT MRN                   -> REFUSE
+       - a chart with no DOB and no MRN                               -> REFUSE
+     (__mlsAthenaAutoPull.resolvePatient CREATES a record on an ambiguous MRN;
+     this door refuses instead, and only delegates creation when there is
+     genuinely no candidate at all.)
+     The switch is VERIFIED before the pull re-runs: if the active patient did
+     not actually become the intended one, nothing is pulled.
+     ==================================================================== -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'xpdoor-1.0.0';
+  var off = false, captured = null, obs = null, DOOR_ID = 'xpDoorSwitch';
+  var MISMATCH = /DIFFERENT patient open than the one selected here/i;
+  var SAFETY = /did not match the frozen MLS patient/i;
+  var FRESH_MS = 120000;
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function autoPull() { return safe(function () { return window.__mlsAthenaAutoPull || null; }, null); }
+  function digits(v) { return S(v).replace(/[^0-9]/g, ''); }
+  function statusEl() { return byId('pullChartStatus'); }
+  /* READ-ONLY observation of a reply already addressed to this page. */
+  function onMsg(ev) {
+    if (off) return;
+    var d = ev && ev.data;
+    if (!d || d.type !== 'mlsAppAllVisitsResult' || d.ok !== false) return;
+    if (!SAFETY.test(S(d.error))) return;
+    var id = d.identity || {};
+    if (!S(id.name).trim()) return;
+    captured = { name: S(id.name).trim(), dob: S(id.dob).trim(), mrn: S(id.mrn || id.athenaId).trim(), at: Date.now() };
+  }
+  function fresh() { return (captured && (Date.now() - captured.at) < FRESH_MS) ? captured : null; }
+  function say(msg, color) {
+    var el = statusEl(); if (!el) return;
+    el.style.display = 'block'; el.style.color = color || '#6f5a20'; el.textContent = msg;
+  }
+  /* Stricter than the auto resolver: every ambiguity is a refusal. */
+  function match(idn) {
+    var a = autoPull();
+    var pts = safe(function () { return (typeof getPatients === 'function' ? getPatients() : []) || []; }, []);
+    var namesMatch = function (x, y) { return (a && a.namesMatch) ? a.namesMatch(x, y) : (S(x).trim().toLowerCase() === S(y).trim().toLowerCase()); };
+    var normDob = function (x) { return (a && a.normDob) ? a.normDob(x) : digits(x); };
+    var cm = digits(idn.mrn), cd = normDob(idn.dob);
+    if (!cm && !cd) return { kind: 'conflict', why: 'athenaOne did not report a date of birth or an MRN for that chart, so no record here can be matched safely' };
+    if (cm) {
+      var hits = pts.filter(function (p) { return p && digits(p.athenaId || p.mrn) === cm; });
+      if (hits.length > 1) return { kind: 'conflict', why: 'more than one record here carries MRN ' + idn.mrn };
+      if (hits.length === 1) {
+        var p = hits[0], pd = normDob(p.dob);
+        if (pd && cd && pd !== cd) return { kind: 'conflict', why: 'the record here with MRN ' + idn.mrn + ' has a different date of birth' };
+        if (!namesMatch(p.name, idn.name) && !(pd && cd && pd === cd)) return { kind: 'conflict', why: 'the record here with MRN ' + idn.mrn + ' is under a different name' };
+        return { kind: 'match', patient: p };
+      }
+    }
+    if (cd) {
+      var nh = pts.filter(function (p) { return p && namesMatch(p.name, idn.name) && normDob(p.dob) === cd; });
+      if (nh.length > 1) return { kind: 'conflict', why: 'more than one record here matches that name and date of birth' };
+      if (nh.length === 1) {
+        var q = nh[0], qm = digits(q.athenaId || q.mrn);
+        if (qm && cm && qm !== cm) return { kind: 'conflict', why: 'the matching record here carries a different MRN' };
+        return { kind: 'match', patient: q };
+      }
+    }
+    return { kind: 'new' };
+  }
+  function press() {
+    var idn = fresh();
+    if (!idn) { say('MLS no longer has the identity athenaOne reported. Press Pull from Athena again. Nothing was changed.', '#9f2d2d'); return; }
+    var m = match(idn);
+    if (m.kind === 'conflict') {
+      say('MLS will not switch automatically: ' + m.why + '. Open the Patients list and pick or correct the right record yourself. Nothing was changed and nothing was saved.', '#9f2d2d');
+      return;
+    }
+    var p = m.patient || null;
+    if (m.kind === 'new') {
+      var a = autoPull();
+      if (!a || typeof a.resolvePatient !== 'function') { say('MLS cannot add ' + idn.name + ' on this build. Add them in the Patients list, then pull again. Nothing was changed.', '#9f2d2d'); return; }
+      var r = safe(function () { return a.resolvePatient({ name: idn.name, dob: idn.dob, mrn: idn.mrn, athenaId: idn.mrn }); }, null);
+      p = (r && r.patient) || null;
+      if (!p || !p.id) { say('MLS could not add ' + idn.name + ' here, so nothing was pulled and nothing was changed.', '#9f2d2d'); return; }
+    }
+    safe(function () { if (typeof setActivePtId === 'function') setActivePtId(p.id); });
+    safe(function () { if (typeof renderProfile === 'function') renderProfile(); });
+    safe(function () { if (typeof renderPatientBar === 'function') renderPatientBar(); });
+    safe(function () { if (typeof renderPatients === 'function') renderPatients(); });
+    /* Verify the switch actually happened before re-running the pull. */
+    var now = safe(function () { return (typeof activePatient === 'function' && activePatient()) || null; }, null);
+    if (!now || String(now.id || '') !== String(p.id || '')) {
+      say('MLS could not make ' + idn.name + ' the selected patient here, so nothing was pulled. Pick them in the Patients list and try again.', '#9f2d2d');
+      return;
+    }
+    say((m.kind === 'new' ? 'Added ' : 'Switched to ') + idn.name + ' here — pulling their chart from athenaOne now…', '#52675c');
+    setTimeout(function () {
+      safe(function () { if (typeof window.pullPatientFromAthenaPrompt === 'function') window.pullPatientFromAthenaPrompt(byId('ptPullAthenaBtn') || null); });
+    }, 350);
+  }
+  function offerDoor() {
+    if (off) return;
+    var el = statusEl(); if (!el) return;
+    if (!MISMATCH.test(S(el.textContent))) return;
+    if (el.querySelector('#' + DOOR_ID)) return;
+    var idn = fresh(); if (!idn) return;
+    var wrap = document.createElement('span');
+    wrap.style.cssText = 'display:inline-flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center';
+    var b = document.createElement('button');
+    b.type = 'button'; b.id = DOOR_ID;
+    b.textContent = 'Switch to ' + idn.name + ' here and pull their chart';
+    b.title = 'Selects (or adds) ' + idn.name + ' in MLS from the identity athenaOne reported, re-verifies it, then re-runs this same read-only pull. A conflicting record refuses instead.';
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:8px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer';
+    b.addEventListener('click', function () { press(); }, false);
+    wrap.appendChild(b);
+    el.appendChild(document.createElement('br'));
+    el.appendChild(wrap);
+  }
+  function arm() {
+    safe(function () { window.addEventListener('message', onMsg, false); });
+    var el = statusEl();
+    if (el && typeof MutationObserver === 'function') {
+      obs = new MutationObserver(function () { if (!off) safe(offerDoor); });
+      safe(function () { obs.observe(el, { childList: true, characterData: true, subtree: true }); });
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  window.__mlsXpDoor = {
+    installed: true, version: VERSION,
+    captured: function () { return fresh(); },
+    _test: { onMsg: onMsg, match: match, offerDoor: offerDoor, press: press, doorId: DOOR_ID },
+    revert: function () {
+      off = true;
+      safe(function () { window.removeEventListener('message', onMsg, false); });
+      safe(function () { if (obs) obs.disconnect(); });
+      var el = statusEl(), b = el && el.querySelector('#' + DOOR_ID);
+      if (b && b.parentNode) safe(function () { b.parentNode.remove(); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end xpdoor-1.0.0 ================================================= -->
+<!-- ===== pulsee-1.0.0 — a long read must show it is alive =================
+     Owner 2026-08-19, watching a live pull: "if Maria's chart is running and
+     this is no indicator that is so bad."
+
+     Measured on r23: pressing Pull from Athena paints ONE line — "Reading every
+     encounter from athenaOne… (read-only)" — and leaves it there for five-plus
+     minutes. Between the emit that writes it (background.js:10676) and the next
+     one sit the encounter opens, two hydration sleeps and a 48-pass enumerate
+     grind at 3.5s each: minutes of dead air with nothing to distinguish working
+     from wedged.
+
+     The numbers were never missing. The extension emits
+     mlsAppVisitsProgress with n and total, content.js relays both to this page,
+     and feat_visits hands the whole event to its callback — where
+     feat_athena_autopull keeps only the message string. Separately,
+     feat_visits_counter_guard rewrites every counter-bearing MESSAGE to one
+     neutral sentence (it does not touch n/total). So the page has had the count
+     all along and threw it away twice.
+
+     This block observes those events — it emits nothing, sends nothing, and
+     never re-dispatches a progress event (the absolute-deadline contract
+     forbids one escaping after settlement) — and renders three things the
+     doctor did not have:
+       1. a live count, "encounter 3 of 17", read from n/total, not the message;
+       2. elapsed time and time-since-last-progress, both computed from
+          timestamps rather than counted ticks, so a throttled background tab
+          cannot inflate them;
+       3. an honest STALL verdict after 60s with no progress.
+
+     The Stop control ABANDONS; it does not cancel. There is no cancel verb on
+     this bridge for the all-visits read (searched: no mlsAppCancel/Stop/Abort),
+     so the only truthful stop is legalpack's readstop model: bump a sequence
+     token, stop narrating, stop owning the answer, and SAY that athenaOne's own
+     read may still finish. It deliberately does NOT set
+     __mlsPullStopRequested — that flag belongs to the day engines and setting
+     it here would stop an unrelated schedule pull.
+     ==================================================================== -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'pulsee-1.0.0';
+  var off = false, seq = 0, run = null, iv = null, TICKER_ID = 'mlsPullTicker', STOP_ID = 'mlsPullStopRead';
+  var STALL_MS = 60000;
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function num(v) { var n = Number(v); return (isFinite(n) && n >= 0) ? n : null; }
+  function secs(ms) {
+    var t = Math.max(0, Math.round(ms / 1000));
+    if (t < 60) return t + 's';
+    var m = Math.floor(t / 60);
+    return m + 'm ' + (t % 60) + 's';
+  }
+  /* The ticker is its OWN node, a sibling of #pullChartStatus: say() owns that
+     line's textContent outright and would wipe anything parented inside it. */
+  function ticker() {
+    var status = byId('pullChartStatus'); if (!status) return null;
+    var el = byId(TICKER_ID);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = TICKER_ID;
+      el.setAttribute('role', 'status');
+      el.style.cssText = 'display:none;font-size:12px;line-height:1.45;margin-top:5px;color:#52675c';
+    }
+    if (el.previousSibling !== status && status.parentNode) {
+      safe(function () { status.parentNode.insertBefore(el, status.nextSibling); });
+    }
+    return el;
+  }
+  function paint() {
+    if (off || !run) return;
+    var el = ticker(); if (!el) return;
+    var now = Date.now(), since = now - run.lastAt, stalled = since >= STALL_MS;
+    var head = (run.total && run.n != null)
+      ? ('Reading encounter ' + Math.min(run.n + 1, run.total) + ' of ' + run.total)
+      : 'Indexing this chart’s encounters — no count yet';
+    var line = head + ' · ' + secs(now - run.startedAt) + ' elapsed';
+    if (stalled) line += ' · no new progress for ' + secs(since) + ' — athenaOne may be stuck. Nothing has been written either way.';
+    el.style.display = 'block';
+    el.style.color = stalled ? '#9f2d2d' : '#52675c';
+    el.textContent = line + ' ';
+    var stop = document.createElement('button');
+    stop.type = 'button'; stop.id = STOP_ID;
+    stop.textContent = 'Stop waiting on this read';
+    stop.title = 'Lets go of this read: MLS stops narrating it and will ignore its answer. It cannot cancel athenaOne’s own read, which may still finish in the background. Nothing is written to Athena either way.';
+    stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer';
+    stop.addEventListener('click', function () { stopWaiting(); }, false);
+    el.appendChild(stop);
+  }
+  function start() {
+    seq++; run = { seq: seq, startedAt: Date.now(), lastAt: Date.now(), n: null, total: null };
+    if (iv) safe(function () { clearInterval(iv); });
+    iv = setInterval(function () { if (!off && run) paint(); }, 1000);
+  }
+  function settle(msg, color) {
+    if (iv) { safe(function () { clearInterval(iv); }); iv = null; }
+    run = null;
+    var el = byId(TICKER_ID); if (!el) return;
+    if (msg) { el.style.display = 'block'; el.style.color = color || '#52675c'; el.textContent = msg; }
+    else el.style.display = 'none';
+  }
+  function stopWaiting() {
+    if (!run) return;
+    seq++; /* the abandoned read owns nothing from here on */
+    settle('You stopped waiting on this read. MLS has let it go and will ignore its answer. athenaOne’s own read may still finish on its own — nothing was written to Athena, and nothing was saved here.', '#6f5a20');
+  }
+  function onMsg(ev) {
+    if (off) return;
+    var d = ev && ev.data; if (!d || !d.type) return;
+    if (d.type === 'mlsAppVisitsProgress' || d.type === 'mlsAppSearchProgress') {
+      if (!run) start();
+      /* n/total come off the EVENT, never off the message text: the counter
+         guard rewrites the message and leaves these untouched. */
+      var n = num(d.n), t = num(d.total);
+      if (t != null && t > 0) run.total = t;
+      if (n != null) run.n = n;
+      run.lastAt = Date.now();
+      paint();
+      return;
+    }
+    if (d.type === 'mlsAppAllVisitsResult') { settle('', ''); return; }
+  }
+  function arm() { safe(function () { window.addEventListener('message', onMsg, false); }); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  window.__mlsPullSee = {
+    installed: true, version: VERSION, stallMs: STALL_MS,
+    state: function () { return run ? { seq: run.seq, n: run.n, total: run.total, startedAt: run.startedAt, lastAt: run.lastAt } : null; },
+    _test: { onMsg: onMsg, paint: paint, stopWaiting: stopWaiting, tickerId: TICKER_ID, stopId: STOP_ID, secs: secs },
+    revert: function () {
+      off = true;
+      safe(function () { window.removeEventListener('message', onMsg, false); });
+      if (iv) safe(function () { clearInterval(iv); });
+      iv = null; run = null;
+      var el = byId(TICKER_ID); if (el && el.parentNode) safe(function () { el.parentNode.removeChild(el); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end pulsee-1.0.0 ================================================= -->
 <!-- ===== pshonest-1.0.0 — a checkmark must mean work that happened ========
      Owner, 2026-08-18, from his own screenshot of the progress widget:
 
@@ -54986,5 +55331,214 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
 })();
 </script>
 <!-- ===== end autoswitch-1.0.0 ============================================ -->
+<!-- ===== cvfull-1.0.0 — "copy every visit" must mean the notes, not the gist =
+     Owner, 2026-08-19: "copy every visit from athenaOne must take EVERY
+     VISIT's full text, not just the summary."
+
+     MEASURED FIRST, because the control he names does something else entirely.
+     "Copy every visit from athenaOne" (feat_visits.js:2400, unforked, not this
+     lane's to edit) is an IMPORTER, not a clipboard control — it contains no
+     clipboard code at all. Its primary path already refuses anything less than
+     full bodies (feat_visits.js:2354 demands receipt.bodyComplete AND
+     receipt.fullDetail), so the note text really is pulled and really is
+     stored. What happens NEXT is where the summary took over: the import ends
+     in summarizeAll(), and every encounter card then renders v.aiSummary
+     (feat_visits.js:1969). The only route out to the full text was the
+     per-encounter "Copy" button — one visit, one press, fifteen times for a
+     patient with fifteen visits. A doctor who presses "copy every visit" and
+     gets fifteen one-line gists is reading exactly what the product did.
+
+     So this is the copy that button was mistaken for, and it is COMPOSED, not
+     reinvented: the records come from histview's forPatient(), which is
+     pvr-1.0.0's ONE resolver; each body comes from textBlock(rec,{source:true}),
+     the very builder the single-visit copy already uses; the glance table is
+     chronTable(). Nothing here re-reads a store, re-counts a visit, or invents
+     a fifth reading of what a visit is.
+
+     It also refuses to overstate itself. An encounter whose body never landed
+     is indexOnly; one whose text did not survive cleaning is illegible; one
+     that parsed to nothing is empty. All three are COUNTED and NAMED, in the
+     copied text and in the status line (W4: an omission is only honest when it
+     is visible). "Copied 15 encounters — 15 with the full note" is a claim
+     this module can prove; "copied every visit" is not, so it is never
+     printed.
+     ===================================================================== -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'cvfull-1.0.0';
+  var off = false, obs = null, lastCopy = null;
+  var BTN_ID = 'hxCopyAll', SAY_ID = 'hxCopyAllSay', WRAP_ID = 'hxCopyAllRow';
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function enc() { return safe(function () { return window.__mlsEncView || null; }, null); }
+  function activeP() { return safe(function () { return (typeof activePatient === 'function' && activePatient()) || null; }, null); }
+  /* The ONE resolver, through the room that already owns these records. */
+  function viewNow() {
+    var api = enc(), p = activeP();
+    if (!api || !p || typeof api.forPatient !== 'function') return null;
+    var v = safe(function () { return api.forPatient(p); }, null);
+    return (v && v.ok) ? v : null;
+  }
+  /* Four honest grades. Everything that is not 'full' must be said out loud. */
+  function grade(rec) {
+    if (!rec) return 'empty';
+    if (rec.indexOnly) return 'indexOnly';
+    if (rec.illegible) return 'illegible';
+    return (rec.sections && rec.sections.length) ? 'full' : 'empty';
+  }
+  function tally(recs) {
+    var t = { total: recs.length, full: 0, indexOnly: 0, illegible: 0, empty: 0 };
+    for (var i = 0; i < recs.length; i++) t[grade(recs[i])]++;
+    return t;
+  }
+  function gaps(t) {
+    var bits = [];
+    if (t.indexOnly) bits.push(t.indexOnly + ' index only (athenaOne stored no note text for ' + (t.indexOnly === 1 ? 'it' : 'them') + ')');
+    if (t.illegible) bits.push(t.illegible + ' not legible after cleaning');
+    if (t.empty) bits.push(t.empty + ' with no documented text');
+    return bits;
+  }
+  function tallyLine(t) {
+    var bits = [t.full + ' with the full note'].concat(gaps(t));
+    return t.total + ' encounter' + (t.total === 1 ? '' : 's') + ' — ' + bits.join(', ') + '.';
+  }
+  function oldestFirst(a, b) {
+    if (a.date && b.date) return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0);
+    if (a.date) return -1; if (b.date) return 1; return 0;
+  }
+  function compose(v, patientName) {
+    var api = enc(); if (!api || !v) return null;
+    var recs = (v.records || []).slice().sort(oldestFirst);
+    var t = tally(recs), lines = [], i;
+    lines.push(S(patientName) + ' — every encounter on this chart');
+    lines.push(tallyLine(t));
+    lines.push('');
+    if (recs.length && typeof api.chronTable === 'function') {
+      lines.push('AT A GLANCE');
+      lines.push(S(safe(function () { return api.chronTable(recs); }, '')));
+      lines.push('');
+    }
+    for (i = 0; i < recs.length; i++) {
+      lines.push(S(safe(function () { return api.textBlock(recs[i], { source: true }); }, '')));
+      lines.push('');
+    }
+    var missing = gaps(t);
+    if (missing.length) {
+      lines.push('Where a note is missing above it is missing from the record, not from this copy: ' +
+        missing.join(', ') + '. Each of those encounters still shows its date, type and provider, ' +
+        'and the stored records are unchanged.');
+    }
+    return { text: lines.join('\n').replace(/\n{3,}/g, '\n\n'), tally: t, count: recs.length };
+  }
+  function say(msg) {
+    var el = byId(SAY_ID); if (el) el.textContent = S(msg);
+  }
+  /* Same two-path write the single-visit copy uses, for the same reason. */
+  function toClipboard(text, done) {
+    var fell = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      var okc = safe(function () { return document.execCommand('copy'); }, false);
+      safe(function () { ta.parentNode.removeChild(ta); });
+      done(okc === true);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      safe(function () {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, fell);
+      }, fell);
+    } else fell();
+  }
+  function press() {
+    var v = viewNow();
+    if (!v || !v.records.length) { say('There are no encounters on this chart to copy.'); return false; }
+    var p = activeP();
+    var built = compose(v, (p && p.name) || 'This patient');
+    if (!built || !built.text) { say('MLS could not build the copy. Nothing was changed.'); return false; }
+    lastCopy = built;
+    /* The status line stays PHI-free — same rule the single-visit copy keeps. */
+    toClipboard(built.text, function (ok) {
+      if (!ok) { say('This browser would not let MLS copy it.'); return; }
+      var bits = gaps(built.tally);
+      say('Copied ' + built.tally.total + ' encounter' + (built.tally.total === 1 ? '' : 's') + ' — ' +
+        built.tally.full + ' with the full note' + (bits.length ? ', ' + bits.join(', ') : '') + '.');
+    });
+    return true;
+  }
+  function mount() {
+    if (off) return false;
+    var host = byId('mlsHxSection');
+    if (!host || host.hidden) return false;
+    if (host.querySelector('#' + WRAP_ID)) return true; /* stops the observer recursing */
+    var v = viewNow();
+    if (!v || !v.records.length) return false;
+    var wrap = document.createElement('div');
+    wrap.id = WRAP_ID;
+    wrap.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 9px';
+    var b = document.createElement('button');
+    b.type = 'button'; b.id = BTN_ID;
+    b.textContent = 'Copy all ' + v.records.length + ' encounter' + (v.records.length === 1 ? '' : 's') + ' — full notes';
+    b.title = 'Puts every encounter on this chart on the clipboard with its FULL note text, not the one-line summaries. ' +
+      'Any encounter with no stored note text is counted and named in the copy, never silently dropped.';
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:8px;background:#205c43;color:#fff;' +
+      'font-weight:700;font-size:12px;cursor:pointer';
+    b.addEventListener('click', function () { safe(press); }, false);
+    var s = document.createElement('span');
+    s.id = SAY_ID;
+    s.setAttribute('role', 'status');
+    s.setAttribute('aria-live', 'polite');
+    s.style.cssText = 'font-size:12px;color:#52675c';
+    wrap.appendChild(b); wrap.appendChild(s);
+    var lead = host.querySelector('.hx-lead');
+    if (lead && lead.parentNode === host && lead.nextSibling) host.insertBefore(wrap, lead.nextSibling);
+    else if (lead && lead.parentNode === host) host.appendChild(wrap);
+    else host.appendChild(wrap);
+    return true;
+  }
+  function arm() {
+    safe(mount);
+    var host = byId('mlsHxSection');
+    if (host && typeof MutationObserver === 'function') {
+      obs = new MutationObserver(function () { if (!off) safe(mount); });
+      safe(function () { obs.observe(host, { childList: true }); });
+    }
+    /* The room can be built after this script runs, and it replaces its own
+       innerHTML on every repaint, so an observer bound to a node that does not
+       exist yet would never fire. A slow heartbeat re-binds it. */
+    safe(function () {
+      setInterval(function () {
+        if (off) return;
+        var h = byId('mlsHxSection');
+        if (!h) return;
+        if (!obs && typeof MutationObserver === 'function') {
+          obs = new MutationObserver(function () { if (!off) safe(mount); });
+          safe(function () { obs.observe(h, { childList: true }); });
+        }
+        safe(mount);
+      }, 1500);
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  window.__mlsCvFull = {
+    installed: true, version: VERSION,
+    copy: press,
+    last: function () { return lastCopy; },
+    _test: { compose: compose, tally: tally, tallyLine: tallyLine, gaps: gaps, grade: grade,
+             mount: mount, press: press, view: viewNow, btnId: BTN_ID, sayId: SAY_ID, wrapId: WRAP_ID },
+    revert: function () {
+      off = true;
+      safe(function () { if (obs) obs.disconnect(); });
+      obs = null;
+      var w = byId(WRAP_ID);
+      if (w && w.parentNode) safe(function () { w.parentNode.removeChild(w); });
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end cvfull-1.0.0 ================================================= -->
 </body>
 </html>

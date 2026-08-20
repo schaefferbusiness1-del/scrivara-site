@@ -1618,6 +1618,10 @@
     var host = wfdxFixHost(); if (!host || !state || state.closed) return;
     host.innerHTML = '';
     var manifest = state.manifest, visit = manifest.visit || {}, day = wfdxDayKey(visit.visitDate);
+    /* wfbind-1.0.0: when the sheet failed closed for a MISSING BINDING, the cure
+       leads. This strip renders even with zero ready rows (renderUnifiedConfirmation
+       calls it with an empty rowId), which is exactly the owner's screenshot. */
+    try { wfbindOfferCure(state, host); } catch (eCure) {}
     if (day && S(rowId).trim()) {
       host.appendChild(wfdxButton('Open this patient’s encounter in athenaOne',
         'Read-only: sends athenaOne’s Day view to ' + day + ', clicks this exact appointment row, then re-runs the read-only check. Nothing is written.',
@@ -1714,7 +1718,15 @@
     if (!lockedContext.encounterId || !lockedContext.encounterUrl || !lockedContext.visitDate || !lockedContext.provider || !control) {
       return { ok: false, error: 'Athena did not report one exact encounter date, provider, ID, URL, and action control. Nothing was changed.' };
     }
-    return { ok: true, token: token, patient: { name: patient.name, dob: patient.dob, mrn: mrn, patientId: S(patient.patientId).trim() }, context: lockedContext, control: control, rawContext: stableClone(ctx) };
+    /* W3 (qwen3.8 oracle, HANDOFF 12:5x) — RESPONSE-BODY IDENTITY. `patient`
+       below is the INTENDED identity (what the extension must match on), and it
+       is what the write is addressed to. The receipt must additionally record
+       what Athena's own reply SAID the chart was, so a twin / name+DOB
+       collision is legible after the fact instead of being papered over by the
+       request parameters we sent. These three values are read from the response
+       body and are never substituted from the request. */
+    var responseIdentity = { name: S(name).trim(), dob: S(dob).trim(), mrn: S(mrn).trim() };
+    return { ok: true, token: token, patient: { name: patient.name, dob: patient.dob, mrn: mrn, patientId: S(patient.patientId).trim() }, responseIdentity: responseIdentity, context: lockedContext, control: control, rawContext: stableClone(ctx) };
   }
   function renderUnifiedContext(state, lock) {
     var el = document.getElementById('mlsAthenaUnifiedContext'); if (!el) return;
@@ -1829,7 +1841,24 @@
       if (row.action === 'sign_encounter' && (!exactWrite || !exactWrite.noteWriteProof)) { unifiedStatus(state, 'The verified note proof does not match this exact Athena encounter. Sign & Save remains blocked.', 'err'); unifiedRecheckButton(state, row.id); return; }
       var probedClientOrderId = row.action === 'place_order' ? S(probe.clientOrderId).trim() : '';
       if (row.action === 'place_order' && (S(probe.rowHash).trim() !== row.rowHash || probedClientOrderId !== S(row.payload.order && row.payload.order.clientOrderId).trim())) { unifiedStatus(state, 'The Athena order authorization did not bind this exact immutable row. Nothing was changed.', 'err'); unifiedRecheckButton(state, row.id); return; }
-      state.probe = deepFreeze({ rowId: row.id, rowHash: row.rowHash, clientOrderId: probedClientOrderId, manifestHash: state.manifest.manifestHash, token: lock.token, patient: lock.patient, context: lock.context, control: lock.control, rawContext: lock.rawContext, verifiedWrite: exactWrite, taughtDestination: stableClone(taughtDestination), taughtDestinationHash: hashPreview(taughtDestination || {}) });
+      /* W5 (qwen3.8 oracle, HANDOFF 12:5x) — DISPLAY TARGET vs EXECUTE TARGET.
+         The sheet shows the EXPECTED visit from the manifest, but the write is
+         addressed to the encounter this probe just LOCKED. If those two name
+         different days, the doctor would be confirming one visit and writing to
+         another. The extension enforces expectedContext on its side; MLS must
+         not depend on that, and must never display an identity it is not about
+         to write to. Refuse, name both days, and let the doctor re-check. */
+      var expectedDay = wfdxDayKey(state.manifest.visit.visitDate), lockedDay = wfdxDayKey(lock.context.visitDate);
+      if (expectedDay && lockedDay && expectedDay !== lockedDay) {
+        wfdxNote({ verb: 'mlsAppAthenaActionV2', stage: 'target-diff', mode: 'probe', action: row.action, rowId: row.id,
+          ok: false, reason: 'display-execute-day-mismatch', expectedDay: expectedDay, observedDay: lockedDay,
+          appointmentIdPresent: !!S(state.manifest.visit.appointmentId).trim() });
+        unifiedStatus(state, 'This review is for ' + expectedDay + ', but the encounter Athena verified is dated ' + lockedDay +
+          '. MLS will not write to an encounter it is not showing you. Open the ' + expectedDay + ' encounter in athenaOne and press Check Athena again. Nothing was changed.', 'err');
+        unifiedRecheckButton(state, row.id);
+        return;
+      }
+      state.probe = deepFreeze({ rowId: row.id, rowHash: row.rowHash, clientOrderId: probedClientOrderId, manifestHash: state.manifest.manifestHash, token: lock.token, patient: lock.patient, responseIdentity: lock.responseIdentity, context: lock.context, control: lock.control, rawContext: lock.rawContext, verifiedWrite: exactWrite, taughtDestination: stableClone(taughtDestination), taughtDestinationHash: hashPreview(taughtDestination || {}) });
       renderUnifiedContext(state, lock);
       if (go) {
         go.disabled = false; go.setAttribute('aria-disabled', 'false');
@@ -1885,7 +1914,11 @@
       status = resp.verified === true && (resp.orderPlaced === true || resp.alreadyPresent === true) ? 'verified' : 'uncertain';
       message = status === 'verified' ? (resp.alreadyPresent === true ? 'Athena verified that this exact order was already present. Nothing was added and no other action ran.' : 'Athena verified one isolated exact order addition. No Save, Sign, billing, prescription, second order, or other action ran.') : 'Athena did not verify one isolated exact order result. Inspect the Orders workspace before retrying; this manifest is halted.';
     }
-    var receipt = deepFreeze({ rowId: row.id, action: row.action, status: status, message: message, patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(), manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context), completedAt: new Date().toISOString() });
+    /* W3: the receipt records the identity Athena's own RESPONSE reported for
+       the chart it acted on, alongside the intended patient id. A twin or a
+       name+DOB collision is then legible in the receipt itself rather than
+       being confirmed by the parameters we happened to send. */
+    var receipt = deepFreeze({ rowId: row.id, action: row.action, status: status, message: message, patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(), responseIdentity: stableClone((probe && probe.responseIdentity) || null), manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context), completedAt: new Date().toISOString() });
     state.receipts[row.id] = receipt;
     if (status === 'uncertain') state.halted = true;
     return receipt;
@@ -2004,6 +2037,246 @@
       return true;
     } catch (e) { return false; }
   }
+  /* ===== wfbind-1.0.0 (2026-08-19) =========================================
+     THE CURE ON THE SHEET ITSELF.
+
+     Owner 2026-08-19, with a screenshot of a confirm sheet whose three rows all
+     read CANNOT SEND ("The exact visit needs its date, provider, and
+     appointment ID (or a bound encounter ID and URL). MLS will not guess an
+     encounter.", footer "this review has no expected day - no appointment id is
+     bound to this encounter"): "all these cannot sends need to become can sends
+     and that confirm and send to athena thing needs to be ungrayed out and
+     work."
+
+     srr-1.0.0 already rebinds an open sheet the moment SOMEONE ELSE'S pull
+     lands. It cannot help the screenshot case, because nothing is pulling: the
+     doctor is looking at a dead sheet whose only documented cure is to abandon
+     it, run a day pull by hand, and rebuild the review from scratch.
+
+     This block puts that cure ON the sheet as one press. It runs exactly the
+     machinery the doctor would have run by hand, in order, and re-verifies:
+       1. name the DAY (see wfbindCandidateDays - never a clock read),
+       2. mlsAppGotoDate -> athenaOne's own Day view, read-only, CONFIRMED by
+          reading back the day it actually painted,
+       3. the account's normal schedule pull for that painted day,
+       4. poll the LOCAL resolver until the day ledger (or the booking row,
+          awb-1.0.0) can name this exact appointment, then rebuild through the
+          SAME reopen path srr-1.0.0 and "Check Athena again" use - a manifest
+          is never mutated in place,
+       5. the rebuilt sheet runs the ordinary read-only probe as always.
+
+     IT CANNOT WEAKEN THE GATE. It never assigns a visit field, never invents an
+     appointment id, and never marks a row ready. Everything it does is re-run
+     the pull and re-ask expectedVisitContext, whose answer is unchanged law. An
+     unbindable visit - no MLS appointment for this patient on that day, an
+     identity mismatch, a day athenaOne will not paint, a ledger that still
+     cannot name one exact appointment - stays CANNOT SEND with the reason
+     named, and the live probe remains the fail-closed arbiter afterwards.
+
+     THE DAY IS NEVER GUESSED. opvs-1.0.0 records what a clock read costs: a
+     historical note bound itself to whichever appointment sat nearest TODAY.
+     Candidate days therefore come only from THIS exact patient's own MLS
+     schedule rows. Exactly one candidate is one press; several are offered as
+     named days for the doctor to choose between; none is an honest refusal.
+     ======================================================================== */
+  var WFBIND_LABEL = 'Bind this visit to its Athena appointment — re-pulls this day';
+  var WFBIND_POLL_MS = 5000, WFBIND_POLL_TICKS = 36;   /* 3 minutes, bounded */
+  var wfbindLast = null;
+  /* A pull already in flight (this tab or another) must not be stomped: the
+     schedule importer keeps its own lease and busy stamp. */
+  function wfbindPullBusy() {
+    try {
+      var now = Date.now();
+      var lease = window.__mlsSchedulePullLease;
+      if (lease && Number(lease.at) && (now - Number(lease.at)) < 60000) return true;
+      var busyAt = Number(window.__mlsPullBusyAt || 0);
+      if (busyAt && (now - busyAt) < 60000) return true;
+    } catch (e) {}
+    return false;
+  }
+  /* Days this patient could have been seen on, from the MLS schedule ONLY. */
+  function wfbindCandidateDays(manifest) {
+    var out = [], seen = {};
+    try {
+      var visit = (manifest && manifest.visit) || {};
+      var pinned = wfdxDayKey(visit.visitDate);
+      if (pinned) return [pinned];
+      var pid = S(manifest && manifest.patient && manifest.patient.patientId).trim();
+      if (!pid) return [];
+      calendarRows().forEach(function (a) {
+        if (!a || S(a.patient_external_id || a.patientId || '').trim() !== pid) return;
+        var d = wfdxDayKey(visitDay(a.day_local || a.appt_date || a.start_at));
+        if (!d || seen[d]) return;
+        seen[d] = 1; out.push(d);
+      });
+      out.sort();
+    } catch (e) {}
+    return out;
+  }
+  /* Is THIS row blocked by exactly the thing a re-pull can cure? A missing
+     identity (no MLS patient id, no Athena name/DOB/MRN) is NOT curable by a
+     pull and must never advertise a cure; nor is a row with no candidate day. */
+  var WFBIND_IDENTITY_BLOCK = 'An immutable local patient ID';
+  function wfbindCurableRow(manifest, row) {
+    try {
+      if (!row || row.capability !== 'blocked') return false;
+      if (S(row.reason).indexOf(WFBIND_IDENTITY_BLOCK) === 0) return false;
+      if (!/appointment id|not bound|exact visit/i.test(S(row.reason))) return false;
+      if (p1VisitBound(manifest && manifest.visit)) return false;
+      return wfbindCandidateDays(manifest).length > 0;
+    } catch (e) { return false; }
+  }
+  /* A detached reopen option set that names ONE day. Never mutates the source. */
+  function wfbindOptsForDay(state, day) {
+    var base = state && state.reopenOpts;
+    if (!base || !wfdxDayKey(day)) return null;
+    var o = {}, k;
+    for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) o[k] = base[k];
+    var ctx = {}, c0 = base.expectedContext || {};
+    for (k in c0) if (Object.prototype.hasOwnProperty.call(c0, k)) ctx[k] = c0[k];
+    ctx.visitDate = day;
+    o.expectedContext = ctx;
+    return o;
+  }
+  /* The ONLY test of success: the ordinary resolver can now name the exact
+     Athena appointment for this exact patient on that day. */
+  function wfbindResolvedOpts(state, day) {
+    try {
+      var o = wfbindOptsForDay(state, day);
+      if (!o) return null;
+      var fresh = expectedVisitContext(state.manifest.patient, o);
+      return (fresh && S(fresh.appointmentId).trim()) ? o : null;
+    } catch (e) { return null; }
+  }
+  function wfbindFinish(btn, label) {
+    if (!btn) return;
+    try { btn.disabled = false; btn.textContent = label; } catch (e) {}
+  }
+  function wfbindPoll(state, day, btn, label, generation) {
+    var ticks = 0;
+    var timer = setInterval(function () {
+      try {
+        ticks++;
+        if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { clearInterval(timer); wfbindFinish(btn, label); return; }
+        var resolved = wfbindResolvedOpts(state, day);
+        if (!resolved) {
+          if (ticks < WFBIND_POLL_TICKS) return;
+          clearInterval(timer); wfbindFinish(btn, label);
+          unifiedStatus(state, 'The day pull for ' + day + ' finished, but MLS still cannot name one exact Athena appointment for this patient on that day. This review stays unsendable and nothing was written. Check that ' + day + ' is the right day and that this patient is on athenaOne’s schedule for it.', 'err');
+          wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: false, reason: 'unresolved-after-pull', expectedDay: day, appointmentIdPresent: false });
+          return;
+        }
+        clearInterval(timer); wfbindFinish(btn, label);
+        wfbindLast = { day: day, at: Date.now() };
+        wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: true, expectedDay: day, appointmentIdPresent: true });
+        unifiedStatus(state, 'The day pull named this exact Athena appointment — rebinding this review now. Nothing was sent.', 'ok');
+        openUnifiedConfirmation(resolved);
+      } catch (eTick) { try { clearInterval(timer); } catch (e2) {} wfbindFinish(btn, label); }
+    }, WFBIND_POLL_MS);
+    return timer;
+  }
+  function wfbindRun(state, day, btn) {
+    if (!state || state.closed || state.running || unifiedAthenaState !== state) return false;
+    day = wfdxDayKey(day);
+    if (!day) return false;
+    var label = btn ? S(btn.textContent) : '';
+    var generation = state.probeGeneration;
+    /* Already resolvable locally? Then no Athena read is needed at all. */
+    var already = wfbindResolvedOpts(state, day);
+    if (already) {
+      unifiedStatus(state, 'This day is already imported and names this exact appointment — rebinding this review now. Nothing was sent.', 'ok');
+      wfbindLast = { day: day, at: Date.now() };
+      openUnifiedConfirmation(already);
+      return true;
+    }
+    if (wfbindPullBusy()) {
+      unifiedStatus(state, 'A schedule pull is already running. Let it finish — this review rebinds itself the moment the day is named. Nothing was sent.', '');
+      return false;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = 'Binding — re-pulling ' + day + '…'; }
+    wfbindNavigateAndPull(day, function (msg, kind) { unifiedStatus(state, msg, kind || ''); }).then(function (res) {
+      res = res || { ok: false, message: 'The day re-pull did not report a result. Nothing was changed.' };
+      if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { wfbindFinish(btn, label); return; }
+      if (res.ok !== true) { wfbindFinish(btn, label); unifiedStatus(state, res.message, 'err'); return; }
+      wfbindPoll(state, day, btn, label, generation);
+    });
+    return true;
+  }
+  /* Steps 2-3 of the cure, shared by the confirm sheet and by the visit-screen
+     banner in 1p-mls-connect.js: send athenaOne's own Day view to this exact
+     day, CONFIRM the day it actually painted, then start the account's normal
+     schedule pull for it. Reads Athena; writes nothing. Resolves
+     {ok:true} once the pull has been STARTED for a confirmed day - the caller
+     owns the wait, because only the caller knows what "bound" means for it. */
+  function wfbindNavigateAndPull(day, say) {
+    day = wfdxDayKey(day);
+    function tell(msg, kind) { try { if (typeof say === 'function') say(msg, kind); } catch (e) {} }
+    if (!day) return Promise.resolve({ ok: false, message: 'MLS has no exact day to re-pull, so nothing was pulled and nothing was written.' });
+    if (wfbindPullBusy()) return Promise.resolve({ ok: false, message: 'A schedule pull is already running. Let it finish, then try again. Nothing was changed.' });
+    tell('Sending athenaOne’s Day view to ' + day + ' and re-pulling that day so MLS can name this exact appointment. This is a read of Athena — nothing is written…', '');
+    return bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000).then(function (nav) {
+      nav = nav || {};
+      var observed = wfdxDayKey(nav.schedDate);
+      if (observed) { wfdx.observedDay = observed; wfdx.observedDayAt = Date.now(); }
+      wfdxNote({ verb: 'mlsAppGotoDate', stage: 'bind-cure', ok: nav.ok === true, timeout: nav.__timeout === true,
+        reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed, appointmentIdPresent: false });
+      if (nav.ok !== true) {
+        return { ok: false, message: 'athenaOne could not be sent to ' + day + '.' + (observed && observed !== day ? ' Its Day view is on ' + observed + '.' : '') +
+          ' Open athenaOne’s Day view on ' + day + ' yourself and pull that day, then check again. Nothing was changed.' };
+      }
+      /* Never pull a day athenaOne did not actually paint. */
+      if (observed && observed !== day) {
+        return { ok: false, message: 'athenaOne reported it is on ' + observed + ', not ' + day + '. MLS will not pull a day it cannot confirm, so nothing was pulled and nothing was written.' };
+      }
+      wfdx.observedDay = day; wfdx.observedDayAt = Date.now();
+      var pull = null;
+      try { pull = window.pullScheduleViaAssist; } catch (eP) {}
+      if (typeof pull !== 'function') {
+        return { ok: false, message: 'athenaOne is on ' + day + ', but this build exposes no schedule pull to run. Pull ' + day + ' from the schedule screen, then check again. Nothing was changed.' };
+      }
+      /* The day-probe inside the pull wrapper compares against TODAY and would
+         stop a deliberate historical pull with a modal. We have already proven
+         the painted day by reading it back, which is the stronger check. */
+      try { pull.__skipProbe = true; } catch (eSkip) {}
+      try { pull(); } catch (ePull) {
+        return { ok: false, message: 'The schedule pull for ' + day + ' could not be started. Make sure athenaOne is open on Calendar > View Calendar for ' + day + ', then try again. Nothing was changed.' };
+      }
+      tell('Pulling athenaOne’s schedule for ' + day + ' read-only. This rebinds itself the moment the exact appointment is named — nothing is sent…', '');
+      return { ok: true, message: '', day: day };
+    }, function () {
+      return { ok: false, message: 'The read-only day navigation could not be started. Nothing was changed.' };
+    });
+  }
+  /* The strip control(s). One candidate day is one press; several are named. */
+  function wfbindOfferCure(state, host) {
+    if (!state || state.closed || !host) return false;
+    var manifest = state.manifest, visit = manifest.visit || {};
+    if (p1VisitBound(visit)) return false;
+    var days = wfbindCandidateDays(manifest);
+    if (!days.length) return false;
+    if (days.length === 1) {
+      var one = wfbindButton(WFBIND_LABEL,
+        'Sends athenaOne’s Day view to ' + days[0] + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.',
+        function (btn) { wfbindRun(state, days[0], btn); });
+      one.setAttribute('data-mls-bind-cure', days[0]);
+      host.appendChild(one);
+      return true;
+    }
+    days.slice(0, 8).forEach(function (day) {
+      var b = wfbindButton('Bind to ' + day + ' — re-pulls this day',
+        'This review names no day. ' + day + ' is one of this patient’s own scheduled days. MLS re-pulls it read-only and re-checks the exact appointment; it will not choose a day for you.',
+        function (btn) { wfbindRun(state, day, btn); });
+      b.setAttribute('data-mls-bind-cure', day);
+      host.appendChild(b);
+    });
+    return true;
+  }
+  function wfbindButton(label, title, onClick) {
+    var btn = wfdxButton(label, title, onClick);
+    try { btn.style.cssText = 'border:1px solid #204034;background:#204034;color:#fff;border-radius:8px;padding:7px 12px;font:800 12px inherit;cursor:pointer'; } catch (e) {}
+    return btn;
+  }
+  /* ===== end wfbind-1.0.0 ================================================= */
   function renderUnifiedOrderSummary(orderRows, manifest) {
     if (!orderRows.length) return '';
     var items = orderRows.map(function (row) {
@@ -2143,9 +2416,164 @@
       '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#8b2525">' + esc(row.label) + '</b>' +
       '<span style="font-size:10.5px;font-weight:850;color:#8b2525;border:1px solid currentColor;border-radius:999px;padding:1px 7px">CANNOT SEND</span></div>' +
       (row.reason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px">' + esc(row.reason) + '</div>' : '') +
+      /* wfbind-1.0.0: a row blocked ONLY for the missing appointment binding has
+         a one-press cure on this same sheet. Say so where the doctor is reading
+         the refusal, instead of leaving the strip to be discovered. */
+      (wfbindCurableRow(manifest, row)
+        ? '<div data-mls-bind-hint="' + esc(row.id) + '" style="font-size:12px;color:#204034;margin-top:5px;font-weight:700">Fixable here: press &ldquo;' + esc(WFBIND_LABEL) + '&rdquo; above. MLS re-pulls the day and re-checks this exact appointment; nothing is written.</div>'
+        : '') +
       '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Consequence:</b> ' + esc(row.consequence) + '</div>' +
       unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + '</section>';
   }
+  /* ===== wfx-1.0.0 (2026-08-19) — THE WRITE-FIDELITY CONTRACT ==============
+     Closes three of the five holes the qwen3.8:27b oracle found in the
+     walkthrough (HANDOFF_LIVE 12:5x). W3 (response-body identity in the
+     receipt) and W5 (display target vs execute target) are enforced at their
+     own call sites above; W1, W2 and W4 are EVIDENCE the doctor reads before
+     confirming, so they render here.
+
+       W1 STALE-SNAPSHOT RACE — provenance is not currency. The chart can change
+          between the pull and the confirm. Stamp how old this day's pulled
+          facts are, and say plainly that Athena is re-read at check time and
+          again at write time.
+       W2 CROSS-SECTION CONTRADICTION — "Continue warfarin" in the plan while
+          "warfarin anaphylaxis" sits in allergies passes every zero-fabrication
+          test ever written. Screen the note against the patient's own allergy
+          list and REPORT a collision.
+       W4 OMISSION IS NOT FABRICATION — a note that silently drops a pulled fact
+          is not "safe" merely because it invented nothing. Tally every pulled
+          fact above the relevance floor: it either appears in the note or it is
+          COUNTED as excluded, with the excluded ones named.
+
+     THREE RULES THIS BLOCK NEVER BREAKS:
+       1. It never edits clinical text. Not one character. It reports.
+       2. It never blocks a send on its own judgment — a heuristic must not get
+          a veto over a clinician. Every finding is advisory and says so.
+       3. It is computed at RENDER time from the source patient, never folded
+          into the manifest: previewHash, manifestHash and every row hash are
+          byte-for-byte what they were before this block existed.
+     ======================================================================== */
+  var WFX_NEGATION = /^(?:none|nkda|nka|n\/a|unknown|denies|no known|not recorded|none recorded|no active|negative)\b/i;
+  var WFX_MIN_TERM = 4;
+  function wfxSourcePatient(state) {
+    try { return (state && state.sourceOpts && state.sourceOpts.patient) || activePt() || {}; } catch (e) { return {}; }
+  }
+  /* One pulled fact per line/segment, above the relevance floor: long enough to
+     be a real clinical term, and not a recorded ABSENCE (an absence has nothing
+     to carry into a note). */
+  function wfxFactList(value) {
+    return S(value).split(/[\n;,]+/)
+      .map(function (x) { return x.replace(/^[\s\-•*\d.)]+/, '').trim(); })
+      .filter(function (x) { return x.length >= WFX_MIN_TERM && !WFX_NEGATION.test(x); });
+  }
+  /* The first substantial word is the term we can honestly look for — unless
+     that word is a CATEGORY or a qualifier rather than a substance. "Other:
+     see chart" would otherwise flag every note containing the word "other",
+     and a screen that cries wolf on a patient-safety surface gets ignored
+     exactly when it is right. Skip those and take the next real word. */
+  var WFX_NOT_A_SUBSTANCE = {
+    other: 1, others: 1, misc: 1, miscellaneous: 1, various: 1, multiple: 1, several: 1,
+    unknown: 1, unspecified: 1, patient: 1, reports: 1, reported: 1, history: 1,
+    drug: 1, drugs: 1, medication: 1, medications: 1, medicine: 1, medicines: 1,
+    allergy: 1, allergies: 1, allergic: 1, reaction: 1, reactions: 1, intolerance: 1,
+    seasonal: 1, environmental: 1, food: 1, foods: 1, contact: 1, chart: 1, note: 1,
+    active: 1, chronic: 1, acute: 1, mild: 1, moderate: 1, severe: 1, daily: 1, other1: 1
+  };
+  function wfxHeadTerm(entry) {
+    var words = S(entry).match(/[A-Za-z][A-Za-z0-9\-]{3,}/g) || [];
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i].toLowerCase();
+      if (!WFX_NOT_A_SUBSTANCE[w]) return w;
+    }
+    return '';
+  }
+  function wfxFacts(patient) {
+    var out = [];
+    [['allergy', patient && patient.allergies], ['medication', patient && patient.meds], ['problem', patient && patient.problems]]
+      .forEach(function (pair) {
+        wfxFactList(pair[1]).forEach(function (entry) {
+          var term = wfxHeadTerm(entry);
+          if (term) out.push({ kind: pair[0], entry: entry, term: term });
+        });
+      });
+    return out;
+  }
+  function wfxNoteCorpus(manifest) {
+    var bits = [];
+    manifest.rows.forEach(function (row) {
+      var p = row.payload || {};
+      if (p.noteText) bits.push(S(p.noteText));
+      if (p.body) bits.push(S(p.body));
+      if (p.reviewText) bits.push(S(p.reviewText));
+    });
+    return bits.join('\n').toLowerCase();
+  }
+  function wfxMentions(corpus, term) {
+    try { return new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(corpus); } catch (e) { return corpus.indexOf(term) >= 0; }
+  }
+  /* W2: an allergy term the note also talks about. REPORT ONLY. */
+  function wfxContradictions(manifest, patient) {
+    var corpus = wfxNoteCorpus(manifest), out = [];
+    wfxFacts(patient).forEach(function (f) {
+      if (f.kind !== 'allergy') return;
+      if (wfxMentions(corpus, f.term)) out.push(f);
+    });
+    return out;
+  }
+  /* W4: appears-or-counted-excluded, for every pulled fact. */
+  function wfxTally(manifest, patient) {
+    var corpus = wfxNoteCorpus(manifest), facts = wfxFacts(patient), present = [], excluded = [];
+    facts.forEach(function (f) { (wfxMentions(corpus, f.term) ? present : excluded).push(f); });
+    return { total: facts.length, present: present, excluded: excluded };
+  }
+  /* W1: how old are the facts this note was written from? */
+  function wfxPulledAt(day) {
+    try {
+      var stamps = window.__mlsDayPullStamp || {}, entry = stamps[wfdxDayKey(day)];
+      return (entry && Number(entry.completedAt)) || 0;
+    } catch (e) { return 0; }
+  }
+  function wfxAgeText(ms) {
+    var mins = Math.floor(ms / 60000);
+    if (mins < 1) return 'less than a minute ago';
+    if (mins < 60) return mins + (mins === 1 ? ' minute ago' : ' minutes ago');
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + (hrs === 1 ? ' hour ago' : ' hours ago');
+    var days = Math.floor(hrs / 24);
+    return days + (days === 1 ? ' day ago' : ' days ago');
+  }
+  function wfxStalenessLine(manifest) {
+    var day = wfdxDayKey(manifest.visit.visitDate), at = day ? wfxPulledAt(day) : 0;
+    if (!day) return 'This review names no day, so MLS cannot date the facts it was written from. Athena is still re-read read-only before the check and again at the write.';
+    if (!at) return 'This browser has no record of pulling ' + day + ', so MLS cannot say how old these facts are. Athena is re-read read-only before the check and again at the write.';
+    return 'Facts for ' + day + ' were pulled ' + wfxAgeText(Math.max(0, Date.now() - at)) + '. The chart can have changed since: Athena is re-read read-only before the check and again at the write.';
+  }
+  function wfxEvidenceHtml(state) {
+    var manifest = state.manifest, patient = wfxSourcePatient(state);
+    var contradictions = wfxContradictions(manifest, patient);
+    var tally = wfxTally(manifest, patient);
+    var head = '<details open style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">What this note was written from</summary>' +
+      '<div style="margin-top:7px;padding:11px 12px;background:#f7f9fb;border:1px solid #e2e8f2;border-radius:10px;color:#3d5147;font-size:12px;overflow-wrap:anywhere">';
+    var body = '<div data-mls-wfx="staleness">' + esc(wfxStalenessLine(manifest)) + '</div>';
+    if (contradictions.length) {
+      body += '<div data-mls-wfx="contradiction" style="margin-top:8px;padding:9px 10px;border:1px solid #e7c0c0;background:#fdf7f7;border-radius:9px;color:#8b2525">' +
+        '<b>Check this before you send.</b> This note discusses ' +
+        contradictions.map(function (f) { return '<b>' + esc(f.term) + '</b>'; }).join(', ') +
+        ', which also appears in this patient’s recorded allergies (' +
+        contradictions.map(function (f) { return esc(f.entry); }).join('; ') +
+        '). MLS does not change clinical text and is not overruling you — it is showing you both sections at once.</div>';
+    } else {
+      body += '<div data-mls-wfx="contradiction-clear" style="margin-top:8px">No recorded allergy is named anywhere in this note.</div>';
+    }
+    body += '<div data-mls-wfx="tally" style="margin-top:8px"><b>Pulled facts carried into this note:</b> ' +
+      tally.present.length + ' of ' + tally.total + ' appear; ' + tally.excluded.length + ' are not mentioned.' +
+      (tally.excluded.length
+        ? ' Not mentioned: ' + tally.excluded.map(function (f) { return esc(f.entry) + ' (' + f.kind + ')'; }).join('; ') +
+          '. Leaving a fact out can be exactly right — this is a count, not a correction.'
+        : '') + '</div>';
+    return head + body + '</div></details>';
+  }
+  /* ===== end wfx-1.0.0 ==================================================== */
   function unifiedNoteHeroHtml(manifest) {
     var noteRow = unifiedRow(manifest, 'write-note');
     var who = [S(manifest.patient.name).trim() || '(patient name missing)'];
@@ -2226,6 +2654,7 @@
       '<div id="mlsAthenaUnifiedDiag" style="display:none;margin-top:6px;font-size:11.5px;color:#52675c;overflow-wrap:anywhere"></div>' +
       '<div id="mlsAthenaUnifiedFix" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>' +
       '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.') + '</div>' +
+      wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
       '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
@@ -3032,6 +3461,21 @@
       reason: wfdxReason, errorClass: wfdxErrorClass, health: wfdxHealth,
       probeOnly: probeOnlyActive, probeOnlyBanner: PROBE_ONLY_BANNER,
       state: function () { return unifiedAthenaState; } },
+    /* wfbind-1.0.0 test + support seam (read-only; run() is the same call the
+       sheet's own control makes). */
+    bindCure: { v: 'wfbind-1.0.0', label: WFBIND_LABEL,
+      candidateDays: wfbindCandidateDays, curableRow: wfbindCurableRow,
+      optsForDay: wfbindOptsForDay, resolvedOpts: wfbindResolvedOpts, pullBusy: wfbindPullBusy,
+      run: function (day) { return wfbindRun(unifiedAthenaState, day, null); },
+      /* wfx-1.0.0 write-fidelity seam (read-only, render-time, advisory) */
+      fidelity: { v: 'wfx-1.0.0', facts: wfxFacts, factList: wfxFactList,
+        contradictions: wfxContradictions, tally: wfxTally,
+        stalenessLine: wfxStalenessLine, pulledAt: wfxPulledAt,
+        evidenceHtml: function () { return unifiedAthenaState ? wfxEvidenceHtml(unifiedAthenaState) : ''; } },
+      /* The visit-screen banner's cure uses this same navigate + confirm-day +
+         pull; it owns its own definition of "bound" and its own wait. */
+      pullDay: function (day, say) { return wfbindNavigateAndPull(day, say); },
+      last: function () { return wfbindLast; } },
     revert: revert
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
