@@ -6980,8 +6980,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              feedback — a doctor who did not see the highlight move has no way to
              know the click registered, and this is the last gate before Athena. */
           flowToast('Ready to review — press Enter, or use "Review Athena actions", to see exactly what will be sent.' + reviewReachNote, '');
+          /* rvack-1.0.0 (owner 2026-08-20: "the review and send to athena
+             doesnt work at all"): with scrolling ruled out (b940) and the toast
+             routable to the quiet tray, a click could complete with NOTHING the
+             doctor perceives at the place they clicked. Acknowledge AT the
+             pressed control and AT the destination: a 1.6s pulse on both. Pure
+             presentation; nothing moves, nothing sends. */
+          try {
+            if (!document.getElementById('mlsRvAckCss')) {
+              var ack = document.createElement('style'); ack.id = 'mlsRvAckCss';
+              ack.textContent = '@keyframes mlsRvPulse{0%{box-shadow:0 0 0 0 rgba(46,106,75,.65)}70%{box-shadow:0 0 0 12px rgba(46,106,75,0)}100%{box-shadow:0 0 0 0 rgba(46,106,75,0)}}.mls-rv-ack{animation:mlsRvPulse 1.6s ease-out 1}';
+              (document.head || document.documentElement).appendChild(ack);
+            }
+            [document.getElementById('ez3flReview'), send].forEach(function (el) {
+              if (!el) return;
+              el.classList.remove('mls-rv-ack'); void el.offsetWidth; el.classList.add('mls-rv-ack');
+              setTimeout(function () { try { el.classList.remove('mls-rv-ack'); } catch (e5) {} }, 1800);
+            });
+          } catch (e4) {}
         }
-      } catch (e) {}
+      } catch (e) {
+        /* The old empty catch made ANY throw in this chain a perfectly silent
+           dead button — the exact complaint, three times now. Name it. */
+        try { flowToast('The review step hit an error and stopped: ' + (e && e.message ? e.message : e) + ' — the note is safe in MLS.', 'err'); } catch (e6) {}
+      }
       window.__mlsAdvQuietOpen = false;
     }, wasOpen ? 100 : 700);
   }

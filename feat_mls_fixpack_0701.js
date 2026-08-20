@@ -874,6 +874,8 @@
       '.mls-fp-fmt .fmt-bar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff;font-size:12px;font-weight:800}' +
       '.mls-fp-fmt .fmt-bar button{margin-left:auto;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:3px 10px;font-size:11.5px;font-weight:700;cursor:pointer}' +
       '.mls-fp-fmt .fmt-body{padding:12px 16px;font-size:13.5px;line-height:1.55;max-height:340px;overflow:auto}' +
+      '.mls-fp-fmt .fmt-dup{display:flex;align-items:center;gap:10px;color:#204034;font-size:13px;font-weight:600}' +
+      '.mls-fp-fmt .fmt-dup .fmt-dup-show{background:none;border:1px solid var(--line,#E4E1D8);color:#2E6A4B;border-radius:8px;padding:3px 10px;font-size:12px;cursor:pointer}' +
       '.mls-fp-fmt .fmt-body h4{margin:12px 0 4px;font-size:13px;letter-spacing:.5px;color:#204034;border-bottom:1px solid var(--line,#e3e9f2);padding-bottom:2px}' +
       '.mls-fp-fmt .fmt-body ul{margin:2px 0 6px 20px;padding:0}' +
       '.mls-fp-fmt .fmt-body .fmt-fill{background:#fff3cd;border:1px dashed #d9a406;border-radius:5px;padding:0 5px;font-weight:700}');
@@ -900,12 +902,22 @@
       return html || '<div style="opacity:.55">Nothing to format yet.</div>';
     }
     var previewEntries = [];
+    /* onenote-1.0.0 (owner 2026-08-20, screenshots: "FIX THIS MESY DUPLICATE UI
+       ... duplicate formatted views"): this panel used to sit ABOVE the
+       textarea while the textarea stayed visible, so every structured note
+       rendered TWICE in one scroll (and the walkthrough has two note
+       textareas, so up to four copies). The panel is now the ONE view: while
+       it shows, the source textarea collapses; the bar's Edit button swaps to
+       the raw textarea and back. The textarea stays in the DOM untouched -
+       every engine reads/writes ta.value and mirrors fire on 'input', neither
+       of which cares about display. Fail-open: any state where the panel
+       cannot show restores the textarea. */
     function attachPreview(ta) {
       if (!ta || ta.__fpFmt) return;
       var wrap = document.createElement('div');
       wrap.className = 'mls-fp-fmt';
       wrap.style.display = 'none';
-      wrap.innerHTML = '<div class="fmt-bar">📄 Formatted view (live)<button type="button">Hide</button></div><div class="fmt-body"></div>';
+      wrap.innerHTML = '<div class="fmt-bar">📄 Formatted view (live)<button type="button" class="fmt-edit">✏️ Edit</button></div><div class="fmt-body"></div>';
       ta.insertAdjacentElement('beforebegin', wrap);
       remember(wrap);
       var body = wrap.querySelector('.fmt-body');
@@ -913,15 +925,51 @@
       var entry = { ta: ta, wrap: wrap, body: body, hidden: false, lastValue: null, lastShow: null, lastHtml: null, render: null };
       ta.__fpFmt = entry;
       previewEntries.push(entry);
+      var taPriorDisplay = ta.style.display || '';
+      function setTaVisible(v) {
+        try { ta.style.display = v ? taPriorDisplay : 'none'; } catch (e) {}
+      }
       function rerender(force) {
         var t = ta.value || '';
         var show = looksStructured(t) && t.length > 60;
-        if (!force && t === entry.lastValue && show === entry.lastShow) return;
+        /* onenote-1.0.0 part B (owner 2026-08-20: the "Review the note" card
+           repeats the whole note the doctor just reviewed up top): when THIS
+           textarea is the advanced card's #noteBox and the flow lane's
+           #ez3flNote holds the SAME text on screen, collapse to one compact
+           bar - the card's job here is coding/actions/send, not a re-read.
+           Any divergence (draft edits, no flow lane) shows the full view
+           again: fail-open, never hide a note that differs from what was
+           reviewed. */
+        var dup = false;
+        if (show && ta.id === 'noteBox') {
+          try {
+            var fl = document.getElementById('ez3flNote');
+            dup = !!(fl && fl.offsetParent !== null && String(fl.value || '').trim() === t.trim());
+          } catch (eDup) { dup = false; }
+        }
+        if (!force && t === entry.lastValue && show === entry.lastShow && dup === entry.lastDup) return;
         entry.lastValue = t;
         entry.lastShow = show;
+        entry.lastDup = dup;
         var wantDisplay = show ? 'block' : 'none';
         if (wrap.style.display !== wantDisplay) wrap.style.display = wantDisplay;
+        /* ONE view: formatted shown => textarea hidden (unless the doctor is
+           editing); formatted absent => textarea back. */
+        setTaVisible(!show || entry.hidden);
         if (!show || entry.hidden) return;
+        if (dup) {
+          var dupHtml = '<div class="fmt-dup">This sends the note exactly as reviewed above. <button type="button" class="fmt-dup-show">Show it here anyway</button></div>';
+          if (entry.lastHtml !== dupHtml) {
+            entry.lastHtml = dupHtml;
+            body.innerHTML = dupHtml;
+            var showBtn = body.querySelector('.fmt-dup-show');
+            if (showBtn) showBtn.addEventListener('click', function () {
+              entry.lastDup = false; entry.lastHtml = null;
+              body.innerHTML = fmtHtml(ta.value || '');
+            });
+          }
+          return;
+        }
         var html = fmtHtml(t);
         if (html !== entry.lastHtml) {
           entry.lastHtml = html;
@@ -932,7 +980,9 @@
       btn.addEventListener('click', function () {
         entry.hidden = !entry.hidden;
         body.style.display = entry.hidden ? 'none' : 'block';
-        btn.textContent = entry.hidden ? 'Show' : 'Hide';
+        btn.textContent = entry.hidden ? '📄 Formatted' : '✏️ Edit';
+        setTaVisible(entry.hidden);
+        if (entry.hidden) { try { ta.focus({ preventScroll: true }); } catch (e) {} }
         if (!entry.hidden) rerender(true);
       });
       rerender(true);
