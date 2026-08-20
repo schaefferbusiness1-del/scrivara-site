@@ -9611,7 +9611,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!tab) tab = cand;
         } catch (e1) {}
       }
-      if (!tab) return { ok: false, reason: 'visits-tab-not-found' };
+      if (!tab) {
+        /* rst-3073 (live 2026-08-19): after a deep walk this frame can be LEFT
+           on an /ax/encounter/N/exam page, where the chart rail (and its
+           visits tab) does not exist. openVisits then failed silently forever
+           and the ax fallback harvested 1-2 anchors off the encounter page,
+           reporting them as a complete history. Recover the chart first:
+           prefer an explicit briefing link in the page, else one history step
+           back. Engine-owned same-origin navigation of THIS frame only - the
+           axGo discipline. The enumerate loop re-drives openVisits next pass,
+           which then finds the rail and clicks Visits normally. */
+        if (/\/ax\/encounter\//.test(String(location.pathname || ''))) {
+          if (!visitActionAllowed()) return visitDeadlineFailure();
+          var rstHref = '';
+          try {
+            var rstAs = document.querySelectorAll('a[href]');
+            for (var rstI = 0; rstI < rstAs.length; rstI++) {
+              var rstH = String(rstAs[rstI].getAttribute('href') || '');
+              var rstM = rstH.match(/^\/\d+\/\d+\/ax\/briefing\/\d+/);
+              if (rstM) { rstHref = rstM[0]; break; }
+            }
+          } catch (eRstA) {}
+          if (rstHref) { try { location.assign(rstHref); return { ok: true, recovered: 'briefing-link' }; } catch (eRstG) {} }
+          try { history.back(); return { ok: true, recovered: 'history-back' }; } catch (eRstB) {}
+        }
+        return { ok: false, reason: 'visits-tab-not-found' };
+      }
       /* 3.0.2 (live 2026-07-21 late): v26.3 FL made the Visits panel
          COLLAPSIBLE and the rail tab keeps class "active" while the panel is
          CLOSED. Returning early on the class alone left charts with ZERO
@@ -9657,6 +9682,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var axSeenEid = {}, axUnique = [];
       for (var au = 0; au < axAcc.length; au++) { if (!axSeenEid[axAcc[au].eid]) { axSeenEid[axAcc[au].eid] = 1; axUnique.push(axAcc[au]); } }
       return { ok: true, encounters: axUnique, surfaceSig: { route: String(location.pathname || '').replace(/\d{4,}/g, 'N').slice(0, 60), testids: Object.keys(axTids).sort().slice(0, 20), shadowN: axShadowN, nodes: axNodes } };
+    }
+    if (op === 'briefingGo') {
+      /* im-3074: engine-owned recovery navigation of THIS frame to a chart
+         briefing route after a verb-level tab refresh. Same-origin relative
+         path only, ax frames only. Runs under the refresh verb's authority -
+         the AllVisits single-flight slot is proven free before it fires. */
+      var bHref = String(idx || '');
+      if (!/^\/\d+\/\d+\/ax\/briefing\/\d+(#[\w?=\/-]*)?$/.test(bHref)) return { ok: false, reason: 'briefing-href-rejected' };
+      if (!/\/ax\//.test(String(location.pathname || ''))) return { ok: false, reason: 'not-an-ax-frame' };
+      try { location.assign(bHref); return { ok: true }; } catch (eBg) { return { ok: false, reason: 'briefing-nav-failed' }; }
     }
     if (op === 'axGo') {
       /* Engine-owned navigation of THIS frame to an encounter summary route.
@@ -11196,8 +11231,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             var axKept = axVisits.length, axTotalE = axBest.encounters.length;
             return {
               ok: true, reason: '', identity: (axVisits[0] ? { name: axVisits[0].patientName, dob: axVisits[0].patientDob, mrn: axVisits[0].patientMrn } : identity), visits: axVisits, diag: diag,
-              receipt: { complete: axOnlyDate ? (axScannedAll && axRefused === 0 && axShapeUnknown === 0) : (axKept === axTotalE && axRefused === 0 && axShapeUnknown === 0), indexComplete: true, bodyComplete: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, fullDetail: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, onlyDate: axOnlyDate, axDateSkipped: axDateSkipped, expected: axTotalE, parsed: axKept, attempted: axCap, failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
-              error: axOnlyDate ? ((axScannedAll && axRefused === 0 && axShapeUnknown === 0) ? '' : ('The scoped ax read kept ' + axKept + ' in-day of ' + axTotalE + ' encounters (' + axDateSkipped + ' other-day skipped, ' + axRefused + ' refused, ' + axShapeUnknown + ' identity-unknown' + (axScannedAll ? '' : ', scan cut by deadline') + ').')) : (axKept === axTotalE ? '' : ('The ax route read ' + axKept + ' of ' + axTotalE + ' encounters; ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.'))
+              receipt: { complete: axOnlyDate ? (axScannedAll && axRefused === 0 && axShapeUnknown === 0) : (axKept === axTotalE && axRefused === 0 && axShapeUnknown === 0 && (!(total > 0) || axKept >= total)), indexComplete: true, indexRowsKnown: (total || 0), /* axh-3073 */ bodyComplete: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, fullDetail: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, onlyDate: axOnlyDate, axDateSkipped: axDateSkipped, expected: axTotalE, parsed: axKept, attempted: axCap, failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
+              error: axOnlyDate ? ((axScannedAll && axRefused === 0 && axShapeUnknown === 0) ? '' : ('The scoped ax read kept ' + axKept + ' in-day of ' + axTotalE + ' encounters (' + axDateSkipped + ' other-day skipped, ' + axRefused + ' refused, ' + axShapeUnknown + ' identity-unknown' + (axScannedAll ? '' : ', scan cut by deadline') + ').')) : ((axKept === axTotalE && (!(total > 0) || axKept >= total)) ? '' : ('The ax route read ' + axKept + ' of ' + Math.max(axTotalE, total || 0) + ' known encounters (classic index rows: ' + (total || 0) + '); ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.'))
             };
           }
           if (!rrFromPartial && (axShapeUnknown || axRefused)) {
@@ -11607,6 +11642,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }).then(function (res) {
       res = res || {};
       res.readerVersion = '2.9.22-visits-r4-two-stage';
+      try { if (Number(readTabId) > 0) res.readTabId = Number(readTabId); } catch (eImT) {}
+      try { if (res.ok !== true && /^(visit-bodies-incomplete|no-chart-frame-candidate|ax-identity-shape-unknown|visits-list-still-rendering|encounter-surface-not-open|stale-encounter-surface-open)/.test(String(res.reason || ''))) res.retryable = true; } catch (eImF) {} /* im-3074 */
       /* fb-1.0: every outcome crosses this hop - the one honest place to
          classify. The receipt carries the live streak (and the refresh stamp
          when one just fired) so the day ledger can see the breaker work. */
@@ -11829,6 +11866,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     } catch (e) { activeAllVisitsPromise = null; sendResponse({ ok: false, requestId: transportRequestId, error: String((e && e.message) || e) }); }
     return true; // async response
+  });
+
+  /* im-3074: engine-owned athena refresh for the INTERACTIVE retry (the
+     whoever-button). The app passes back the failed read's readTabId and the
+     chart's briefing URL; this verb refreshes the tab under the fb weather
+     discipline and re-opens the chart, then the app re-drives the read. */
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== 'mlsAppAthenaRefreshV1Request') return;
+    (async function () {
+      if (activeAllVisitsPromise) return { ok: false, reason: 'busy', error: 'A verified history read is running; the tab was not refreshed.' };
+      var tabId = Number(msg.readTabId || 0);
+      var tab = null;
+      try { tab = await chrome.tabs.get(tabId); } catch (eImG) {}
+      if (!tab || !/^https:\/\/athenanet\.athenahealth\.com\//.test(String(tab.url || ''))) {
+        return { ok: false, reason: 'no-athena-tab', error: 'The tab from the failed read is no longer a signed-in athenaOne tab.' };
+      }
+      var cfg = await loadVisitsCfgBound(1500);
+      var pre = null;
+      try { pre = bestResult(await exec(tabId, [0], ['surfaceProbe', cfg]), function (r) { return r ? 1 : 0; }).result || null; } catch (eImP) {}
+      if (pre && pre.interstitial) return { ok: false, reason: 'interstitial-weather', error: 'athenaOne is showing its temporary-error page; reloading now can end the signed-in session. Nothing was refreshed.' };
+      try { await exec(tabId, [0], ['surfaceRefresh', cfg]); } catch (eImR) {}
+      await new Promise(function (r) { setTimeout(r, 12000); });
+      var post = null;
+      try { post = bestResult(await exec(tabId, [0], ['surfaceProbe', cfg]), function (r) { return r ? 1 : 0; }).result || null; } catch (eImQ) {}
+      if (!post || post.interstitial || post.signIn || Number(post.frames || 0) < 2) {
+        return { ok: false, reason: 'refresh-came-back-wrong', error: 'After the refresh, athenaOne did not come back signed in. Sign in to athenaOne, then pull again.' };
+      }
+      var bPath = '';
+      try {
+        var bm = String(msg.briefingUrl || '').match(/\/\d+\/\d+\/ax\/briefing\/\d+/);
+        if (bm) bPath = bm[0] + '#chart?section=visits';
+      } catch (eImB) {}
+      if (bPath) {
+        try { await exec(tabId, null, ['briefingGo', cfg, bPath]); } catch (eImN) {}
+        await new Promise(function (r) { setTimeout(r, 8000); });
+      }
+      return { ok: true, refreshed: true, reopened: !!bPath };
+    })().then(sendResponse, function (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); });
+    return true;
   });
 
   // --- v1.40: publish the PROVEN read-all-visits engine so the Seamless overlay
