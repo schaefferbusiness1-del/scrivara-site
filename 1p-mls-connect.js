@@ -51751,7 +51751,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            there is no Athena read that could change it. They still get a
            sentence rather than a dash: the doctor should never have to work out
            which kind of nothing a dash meant. */
-        ['Next appt', qlocal(appt && (appt.time ? appt.time + (appt.reason ? ' \u00b7 ' + appt.reason : '') : ''), 90, 'Nothing scheduled.')],
+        /* apptclean-1.0.0 (owner screenshot 2026-08-20: the tile read
+           "10:50 AM \u00b7 API (Clearwave Production (MDP Partner))"). The reason
+           is athena's raw appointment-type field and can carry integration
+           vendor text that means nothing to a doctor. A reason that names the
+           plumbing rather than the visit renders as the time alone - the
+           schedule detail is one click away and a vendor string is never it. */
+        ['Next appt', qlocal(appt && (appt.time ? appt.time + ((function (rs) {
+          rs = String(rs || '').trim();
+          if (!rs) return '';
+          if (/\b(API|Clearwave|MDP|Partner|Production|integration|webhook|HL7|interface)\b/i.test(rs)) return '';
+          return ' \u00b7 ' + rs;
+        })(appt.reason)) : ''), 90, 'Nothing scheduled.')],
         ['Visits', vfield],
         ['Key risks', qlocal(p.careFlags, 120, 'None flagged.')]
       ];
