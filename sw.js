@@ -6,7 +6,7 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v205';
+const CACHE = 'mls-v206';
 
 const SHELL = [
   '/ScribeFlow.html',
@@ -57,7 +57,10 @@ const RETIRED_ASSET_PATHS = new Set([
   'feat_mls_legal_exact.js',
   'feat_mls_legal_pay_setup.js',
   'feat_mls_legal_paywidget.js',
-  'feat_mls_legalpack.js',
+  /* feat_mls_legalpack.js left this 410 list 2026-08-20: THE SECOND PROMOTION
+     put the 1p fork's draft-only Legal workspace under the shared name - the
+     retired-era killswitch was the last link 404/410-ing the revived file.
+     The pay-era legal names above stay retired. */
   'feat_mls_navfeat_keep.js',
   'feat_mls_staff_hub.js',
   'feat_mls_team_exact.js',
