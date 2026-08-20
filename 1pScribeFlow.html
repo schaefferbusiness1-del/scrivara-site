@@ -55526,5 +55526,375 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
 })();
 </script>
 <!-- ===== end cvfull-1.0.0 ================================================= -->
+<!-- ===== busyall-1.0.0 - every control that starts work says so, AT the control =
+     Owner, 2026-08-19: "u added the loading thing to that button - all buttons
+     should have a loading." And, watching a long read: "if Maria's chart is
+     running and this is no indicator that is so bad" - a control sat with a
+     STATIC label for six minutes.
+
+     MEASURED on this tree before this block (tests/1p-busy-contract-runtime):
+       594 controls carry an inline onclick in the shell
+       221 of them call a handler that is directly async (async fn / await /
+           .then / fetch), across 185 distinct handlers
+        71 of those handlers already paint a busy state at the pressed control
+       114 painted NOTHING at the control while their work ran - the defect
+       372 [onclick] controls exist in the booted DOM, 89 of their handlers
+           resolve to an AsyncFunction on window at runtime
+
+     WHAT THIS BLOCK DOES. One shared wrapper, never a per-button copy. A
+     capture-phase click listener records the pressed control and wraps that
+     control's global handler in place; if the handler returns a thenable the
+     control is put into the house busy state until it settles, and released.
+
+     WHY THE HANDLER AND NOT THE ELEMENT. An inline onclick="foo()" compiles to
+     an expression statement, so the element's own handler returns undefined -
+     the promise is only visible where foo is. The wrap happens at click time,
+     so it always takes the CURRENT window.foo: the bundle reassigns 110 global
+     handlers after the shell defines them, and a wrapper installed at load
+     would be silently replaced by the ones that matter most.
+
+     TWO MODES, so it never fights a handler that speaks for itself.
+     - FULL, on a control showing nothing: aria-busy + disabled + a spinner and
+       an ellipsis on its own label, all restored on settle.
+     - LITE, on a control whose handler already disabled it or swapped its
+       label: the label and the disabled flag are left strictly alone. Only two
+       things are added, because measurement showed those 71 handlers supply
+       neither: aria-busy (they set disabled and nothing assistive tech can
+       read) and, past ten seconds, the elapsed stamp. The long generations are
+       exactly the controls that sit on one static word for minutes.
+
+     WHAT IT DELIBERATELY DOES NOT DO.
+     - It never shows two indicators. A control that already carries a spinner
+       or a busy label keeps the one it has.
+     - It never draws a percentage. We cannot observe when someone else's async
+       work truly finished, so past ten seconds it shows a moving ELAPSED stamp
+       - the same honesty rule the calm shell's activity bar is built on.
+     - It never renders a Stop it cannot honour. offerStop() exists for work
+       that hands us a real canceller; the cooperative stops already in the
+       tree keep their own.
+     - It does not rename or restyle the pull controls; that lane owns them.
+
+     Additive and reversible: window.__mlsBusyAll.revert(). No shared feature
+     file is edited. Contract test: tests/1p-busy-contract-runtime.test.js. -->
+<style id="busyallCss">
+/* The house busy visual for a control, generalised from the pull lane's rule.
+   Not a new visual language: opacity + cursor:progress is what a busy control
+   already looks like here. */
+html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
+/* The shipped .spin is hard-coded white (border-top-color:#fff), so it is
+   invisible on every ghost/light control - which is most of the silent ones.
+   This is the same spinner in currentColor, reusing @keyframes rot. */
+.mls-bspin{ width:13px; height:13px; border:2.5px solid currentColor;
+  border-top-color:transparent; border-radius:50%; display:inline-block;
+  vertical-align:-2px; margin-right:6px; opacity:.8;
+  animation:rot .7s linear infinite; }
+.mls-belapsed{ opacity:.75; font-variant-numeric:tabular-nums; }
+.mls-bstop{ margin-left:8px; font-size:12px; padding:2px 8px; cursor:pointer; }
+/* House rule: reduced motion SLOWS an indicator, it never removes it - a busy
+   state that vanishes is worse than one that spins. */
+@media (prefers-reduced-motion: reduce){ html .mls-bspin{ animation-duration:2s; } }
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsBusyAll && window.__mlsBusyAll.installed) return;
+  var VERSION = 'busyall-1.0.0';
+  var ELLIPSIS = '…';
+
+  function S(v) { return v == null ? '' : String(v); }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+
+  var off = false;
+  var live = [];
+  var armedNow = [];
+  var pressed = null;
+  var pressClear = null;
+  /* Work registers its canceller in its own synchronous prologue - i.e. BEFORE
+     it has suspended, so before begin() has made a token for it. Hold it here
+     and let begin() claim it. */
+  var pendingCancel = null;
+  var stats = { armed: 0, begun: 0, skipped: 0 };
+
+  /* Controls whose busy state belongs to the pull lane. It renames and
+     instruments them itself; two blocks on one control would fight. */
+  var OWNED_ELSEWHERE = {
+    ptPullAthenaBtn: 1, pullChartBtn: 1, profUnpulledPull: 1,
+    pvrPullOne: 1, ezPull: 1, ezPullAlt: 1
+  };
+
+  /* Swap the FIRST REAL TEXT NODE, never innerHTML: feat_athena_clarity.js
+     welds a sub-label and a READ-ONLY chip inside buttons, and innerHTML
+     would delete them. */
+  function firstTextNode(el) {
+    var kids = el.childNodes, i, n;
+    for (i = 0; i < kids.length; i++) {
+      n = kids[i];
+      if (n.nodeType === 3 && S(n.nodeValue).replace(/\s+/g, ' ').trim()) return n;
+    }
+    return null;
+  }
+  function setLabelText(el, text) {
+    var n = firstTextNode(el);
+    if (n) { if (S(n.nodeValue) !== text) n.nodeValue = text; return true; }
+    return safe(function () {
+      el.insertBefore(document.createTextNode(text), el.firstChild); return true;
+    }, false);
+  }
+
+  /* A control that already speaks for itself is left alone. The handlers that
+     do their own disable+label swap do it synchronously, before their first
+     await - i.e. before we ever see their promise - so this check is what
+     keeps the two mechanisms from ever both firing on one control. */
+  function alreadySpeaking(el) {
+    if (el.getAttribute('aria-busy') === 'true') return true;
+    if (el.hasAttribute('data-busy-label')) return true;
+    if ('disabled' in el && el.disabled) return true;
+    if (el.querySelector && el.querySelector('.spin,.ds-spin,.mls-bspin')) return true;
+    return false;
+  }
+
+  function mmss(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    var m = Math.floor(s / 60);
+    return m ? (m + 'm ' + (s % 60) + 's') : (s + 's');
+  }
+
+  /* Past elapsedAfterMs a static label is exactly the defect that was
+     reported. We cannot know the total, so we show the one number that is
+     always true: how long it has been running. Re-attached on every tick
+     because the handler may have re-rendered the label underneath us. */
+  function tick(tok) {
+    if (off || live.indexOf(tok) < 0) return;
+    safe(function () {
+      var el = tok.el;
+      if (!tok.stamp || !el.contains(tok.stamp)) {
+        var sp = document.createElement('span');
+        sp.className = 'mls-belapsed';
+        sp.setAttribute('aria-hidden', 'true');
+        el.appendChild(sp);
+        tok.stamp = sp;
+      }
+      tok.stamp.textContent = ' ' + mmss(Date.now() - tok.t0);
+      if (tok.cancel && !tok.stopBtn && (Date.now() - tok.t0) >= API.stopAfterMs) renderStop(tok);
+    });
+    tok.timer = setTimeout(function () { tick(tok); }, 1000);
+  }
+
+  /* Only ever rendered when the work handed us a real canceller. */
+  function renderStop(tok) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'mls-bstop';
+    b.textContent = 'Stop';
+    b.onclick = function (e) {
+      safe(function () { e.stopPropagation(); e.preventDefault(); });
+      b.disabled = true;
+      b.textContent = 'Stopping' + ELLIPSIS;
+      safe(function () { tok.cancel(); });
+    };
+    tok.stopBtn = b;
+    safe(function () {
+      if (tok.el.parentNode) tok.el.parentNode.insertBefore(b, tok.el.nextSibling);
+    });
+  }
+
+  function begin(el) {
+    if (off || !el || OWNED_ELSEWHERE[el.id] || el.getAttribute('data-mls-busy')) { stats.skipped++; return null; }
+    var lite = alreadySpeaking(el);
+    var n = firstTextNode(el);
+    var orig = n ? S(n.nodeValue) : null;
+    var tok = {
+      el: el, orig: orig, lite: lite, t0: Date.now(), spin: null, stamp: null,
+      stopBtn: null, cancel: null, timer: null, cap: null,
+      wasDisabled: !!el.disabled, setAria: false
+    };
+    safe(function () {
+      el.setAttribute('data-mls-busy', VERSION);
+      /* aria-busy is added in BOTH modes: the handlers that speak for
+         themselves set disabled and swap a label, which assistive tech cannot
+         read as "working". Only remove later what we actually set here. */
+      if (el.getAttribute('aria-busy') !== 'true') {
+        el.setAttribute('aria-busy', 'true');
+        tok.setAria = true;
+      }
+      if (lite) return;
+      el.setAttribute('data-mls-busy-paint', '1');
+      if (orig !== null) el.setAttribute('data-busy-label', orig);
+      if ('disabled' in el) el.disabled = true; else el.setAttribute('aria-disabled', 'true');
+      var s = document.createElement('span');
+      s.className = 'mls-bspin';
+      s.setAttribute('aria-hidden', 'true');
+      el.insertBefore(s, el.firstChild);
+      tok.spin = s;
+      if (orig !== null) setLabelText(el, orig.replace(/\s+$/, '') + ELLIPSIS);
+    });
+    if (pendingCancel) { tok.cancel = pendingCancel; pendingCancel = null; }
+    /* A control may never be left disabled forever, however the work ends. */
+    tok.cap = setTimeout(function () { end(tok); }, API.capMs);
+    tok.timer = setTimeout(function () { tick(tok); }, API.elapsedAfterMs);
+    live.push(tok);
+    stats.begun++;
+    return tok;
+  }
+
+  function end(tok) {
+    if (!tok) return false;
+    var i = live.indexOf(tok);
+    if (i < 0) return false;
+    live.splice(i, 1);
+    if (tok.timer) { clearTimeout(tok.timer); tok.timer = null; }
+    if (tok.cap) { clearTimeout(tok.cap); tok.cap = null; }
+    safe(function () {
+      var el = tok.el;
+      if (tok.spin && tok.spin.parentNode) tok.spin.parentNode.removeChild(tok.spin);
+      if (tok.stamp && tok.stamp.parentNode) tok.stamp.parentNode.removeChild(tok.stamp);
+      if (tok.stopBtn && tok.stopBtn.parentNode) tok.stopBtn.parentNode.removeChild(tok.stopBtn);
+      /* Give back only what we took. If the control was re-rendered or another
+         owner claimed it meanwhile, our marker is gone and we must not fight. */
+      if (el.getAttribute('data-mls-busy') !== VERSION) return;
+      el.removeAttribute('data-mls-busy');
+      el.removeAttribute('data-mls-busy-paint');
+      if (tok.setAria) el.removeAttribute('aria-busy');
+      if (tok.lite) return;
+      el.removeAttribute('data-busy-label');
+      if ('disabled' in el) el.disabled = tok.wasDisabled; else el.removeAttribute('aria-disabled');
+      if (tok.orig !== null) setLabelText(el, tok.orig);
+    });
+    return true;
+  }
+
+  function arm(name) {
+    var fn = window[name];
+    if (typeof fn !== 'function' || fn.__mlsBusyAll) return false;
+    var wrapped = function () {
+      var el = pressed;
+      var r = fn.apply(this, arguments);
+      if (r && typeof r.then === 'function' && el) {
+        var tok = begin(el);
+        if (tok) {
+          r.then(function () { end(tok); }, function (err) {
+            end(tok);
+            /* Attaching a handler would mark the original rejection handled and
+               silence it. Re-emit so an unhandled rejection stays unhandled. */
+            Promise.reject(err);
+          });
+        }
+      }
+      return r;
+    };
+    wrapped.__mlsBusyAll = true;
+    wrapped.__mlsBusyAllOrig = fn;
+    var ok = safe(function () { window[name] = wrapped; return window[name] === wrapped; }, false);
+    if (ok) { armedNow.push({ n: name, prev: fn }); stats.armed++; }
+    return ok;
+  }
+
+  /* Hand every global back exactly as it was found - see onClickCapture. */
+  function restoreOne(a) {
+    safe(function () {
+      /* only ever take back what is still ours */
+      var cur = window[a.n];
+      if (cur && cur.__mlsBusyAll) window[a.n] = a.prev;
+    });
+  }
+  function disarmAll() {
+    for (var i = armedNow.length - 1; i >= 0; i--) restoreOne(armedNow[i]);
+    armedNow.length = 0;
+  }
+
+  function controlFrom(t) {
+    for (var hops = 0; t && t !== document && hops < 6; hops++, t = t.parentNode) {
+      if (t.nodeType === 1 && t.hasAttribute && t.hasAttribute('onclick')) return t;
+    }
+    return null;
+  }
+
+  var NAME_RE = /(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g;
+  function onClickCapture(e) {
+    if (off) return;
+    var el = controlFrom(e && e.target);
+    if (!el) { pressed = null; return; }
+    /* Double-fire guard, for the controls we disabled ourselves. A disabled
+       button already swallows its own clicks; this is what covers the anchors
+       and divs that carry an onclick. In lite mode the handler owns the
+       control's enabled state and its own re-entry guard, so we do not hold
+       the door shut on its behalf. */
+    if (el.getAttribute('data-mls-busy') === VERSION && el.hasAttribute('data-mls-busy-paint')) {
+      safe(function () { e.stopImmediatePropagation(); e.preventDefault(); });
+      return;
+    }
+    pressed = el;
+    pendingCancel = null;
+    /* ATTRIBUTION MUST NOT OUTLIVE THE CLICK THAT MADE IT, AND NEITHER MAY THE
+       WRAP. MEASURED twice, both times as damage this block did on its own:
+
+         1p-ui-shape-contract went red. A handler armed by one click stayed
+         armed, so a LATER PROGRAMMATIC call to that global - another module, a
+         timer, a harness calling openOpPrep() directly - still saw the last
+         clicked element in `pressed` and painted the busy state onto it. An
+         unrelated control was disabled, and the double-fire guard then ate
+         real clicks on it until the cap.
+
+         Clicking a day in the calendar month grid died with "Maximum call
+         stack size exceeded". feat_mls_caldedupe_render.js and
+         1p-mls-connect.js BOTH wrap calOpenDay, each capturing whatever the
+         global held when its pass ran; a third wrapper left standing in that
+         chain lets it close into a loop, recursing w -> w -> w between the two
+         files. The shell alone never does this and this block alone never does
+         it - the block PLUS somebody else's re-wrap does, which is why it
+         surfaced intermittently and only after a walk had clicked enough.
+
+       An inline onclick runs synchronously inside this dispatch, so clearing
+       and disarming on the very next task keeps every genuine press, drops
+       every stale attribution, and leaves nothing of ours in anyone else's
+       wrap chain. */
+    if (pressClear) clearTimeout(pressClear);
+    pressClear = setTimeout(function () { pressed = null; pendingCancel = null; disarmAll(); }, 0);
+    var a = S(el.getAttribute('onclick'));
+    var m;
+    NAME_RE.lastIndex = 0;
+    while ((m = NAME_RE.exec(a))) arm(m[2]);
+  }
+  document.addEventListener('click', onClickCapture, true);
+
+  var API = {
+    installed: true,
+    version: VERSION,
+    capMs: 300000,
+    elapsedAfterMs: 10000,
+    stopAfterMs: 30000,
+    begin: begin,
+    end: end,
+    /* Work that can really be cancelled calls this while it runs; a Stop is
+       rendered only once the work has been going long enough to want one. */
+    offerStop: function (cancel) {
+      if (typeof cancel !== 'function') return false;
+      if (live.length && live[live.length - 1].el === pressed) {
+        live[live.length - 1].cancel = cancel;
+        return true;
+      }
+      pendingCancel = cancel;
+      return true;
+    },
+    stats: function () {
+      return { armed: stats.armed, begun: stats.begun, skipped: stats.skipped, live: live.length };
+    },
+    revert: function () {
+      off = true;
+      safe(function () { document.removeEventListener('click', onClickCapture, true); });
+      while (live.length) end(live[0]);
+      disarmAll();
+      safe(function () {
+        var c = document.getElementById('busyallCss');
+        if (c && c.parentNode) c.parentNode.removeChild(c);
+      });
+      try { delete window.__mlsBusyAll; } catch (e) { window.__mlsBusyAll = undefined; }
+      return true;
+    }
+  };
+  window.__mlsBusyAll = API;
+})();
+</script>
+<!-- ===== end busyall-1.0.0 ================================================ -->
 </body>
 </html>

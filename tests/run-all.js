@@ -116,6 +116,32 @@ const tests = [
      honest bar, and the notice layer that never lands on the dock. Drives the
      real shell in real Chrome with a synthetic 28-patient day. */
   '1p-clunky-contract.test.js',
+  /* The site-wide busy-state contract (busyall-1.0.0), from the owner's rule of
+     2026-08-19: "all buttons should have a loading", and the long read that sat
+     on a static label for six minutes. Presses every async control surface in
+     the booted shell with a controlled stub and requires each one to say it is
+     working AT ITS OWN SURFACE inside 150ms, to refuse a second fire, and to be
+     restored exactly as it was; work past ten seconds must also show a moving
+     elapsed stamp. It runs that probe TWICE over the same shell — once with the
+     block reverted at boot, once with it live — because a bare "nothing was
+     silent" is also what a shell that already painted everything would score:
+     80 of 80 reachable controls say nothing without the block, 0 of 80 with it,
+     paired per control. ~3 min. */
+  '1p-busy-contract-runtime.test.js',
+  /* THE OWNER'S LAW, 2026-08-19, verbatim: "everything should work as its
+     designed if there is a button that doesnt work its a huge problem every
+     single button should work ok." Walks every view the router will enter,
+     crawls the surfaces those views open, and presses EVERY visible control —
+     not only the async ones — requiring something observable anywhere in the
+     document within 2s: a DOM change, a navigation, an ask, an honest refusal
+     ("Choose a patient first" is a working button), or a busy state. A press
+     that produces nothing is named with its id, label and surface. Each surface
+     is first watched with nothing pressed so the shell's own clocks cannot pass
+     for an answer, and no control is called dead on one silent press. File
+     pickers and the microphone are excluded BY NAME with their reason; sign
+     out, wipe-device and the kiosk are pressed at the end on their own fresh
+     boots rather than waived. SLOW — the heaviest suite in this gate. */
+  '1p-every-button-contract.test.js',
   /* The Settings redesign (t2settings-1.0.0) and its every-control-pressed
      inventory: seven tabs in clinic words, every section reachable from exactly
      one of them, and every visible control in the dialog actually pressed in
