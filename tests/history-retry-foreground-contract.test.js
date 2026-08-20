@@ -135,8 +135,13 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
 
 /* ---- 3. content bridge forwards strictly ---- */
 {
-  assert.ok(content.includes("foregroundOk: d.foregroundOk === true, foregroundBatchStart: d.foregroundBatchStart === true, hint: d.hint || {}"),
-    'the bridge forwards foregroundOk and the batch announcement strictly (=== true)');
+  /* Pin moved with fgo-3070 (ext 3.0.70, merged 2026-08-19): the bridge line
+     deliberately gained initiator (40-char cap) and background (=== true) so a
+     button press is distinguishable from a background batch. The strictness
+     this pin protects - BOTH foreground flags compared === true, never
+     truthy-coerced - is unchanged and still asserted byte-exactly. */
+  assert.ok(content.includes("foregroundOk: d.foregroundOk === true, foregroundBatchStart: d.foregroundBatchStart === true, initiator: String(d.initiator || '').slice(0, 40), background: d.background === true, hint: d.hint || {}"),
+    'the bridge forwards foregroundOk and the batch announcement strictly (=== true), plus the fgo-3070 initiator/background provenance');
   ok('content bridge forwards the flag strictly');
 }
 
