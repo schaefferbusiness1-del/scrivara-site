@@ -40,7 +40,8 @@ const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 assert(/MLS_BRIDGE_TYPES = \{[^}]*mlsAppChartIdentity: 1/.test(content),
   'mlsAppChartIdentity is missing from the bridge allowlist - the handler is dead (v1.52 class)');
 assert(content.includes("if (d.type === 'mlsAppChartIdentity') {") &&
-  content.includes("chrome.runtime.sendMessage({ type: 'mlsAssistChartIdentity' }"),
+  content.includes("mlsRelayRetry({ type: 'mlsAssistChartIdentity' }"),
+  /* rr-3076 wraps the forward in the dead-worker retry; mlsRelayRetry itself calls chrome.runtime.sendMessage */
   'the chart-identity verb must forward to the proven write-safety identity handler');
 assert.strictEqual(manifest.version, '3.0.76', 'extension manifest must be 3.0.76'); /* pin moved with the 3.0.76 release train (srr-1.0) */
 /* qol-2.4b: SELF-DERIVED from manifest.version rather than a hand-carried
