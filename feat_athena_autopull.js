@@ -300,7 +300,7 @@
     if (barFill && okState) barFill.style.width = '100%';
     if (barText && msg2) barText.textContent = S(msg2);
     if (barHideT) { try { clearTimeout(barHideT); } catch (eB1) {} }
-    barHideT = setTimeout(function () { try { w.style.display = 'none'; if (barFill) barFill.style.width = '0%'; } catch (eB2) {} }, okState ? 8000 : 16000);
+    barHideT = setTimeout(function () { try { w.style.display = 'none'; if (barFill) barFill.style.width = '0%'; } catch (eB2) {} }, okState ? 2500 : 16000); /* focus-1.1: a finished bar retires in 2.5s - 8s of full green read as "it never stops" */
   }
 
   /* ---------- the one-button auto pull ---------- */
@@ -436,7 +436,18 @@
       /* the terminal line reports what THIS pull captured — the total the
          patient already had is context, never the headline (finding #6). */
       status(onStatus, '✓ Done — ' + saved + ' new visit' + (saved === 1 ? '' : 's') + ' captured for ' + identity.name + ' (' + n + ' now on file).', true);
-      hideChipLater(12000);
+      /* focus-1.1 (owner, 2026-08-20: "it should pull up whoever it just saved"
+         and "it still doesn't stop when it's done"): the terminal state OWNS
+         the screen. The early openPatient() at resolve time selects but does
+         not SWITCH VIEW or survive a mid-pull deselect, so the doctor could
+         finish a pull staring at a different room. Land the saved patient's
+         card wherever the pull started, and retire the progress surfaces
+         quickly instead of letting a full bar linger like unfinished work. */
+      try { if (typeof setActivePtId === 'function') setActivePtId(String(patient.id)); } catch (eF1) {}
+      try { if (typeof showView === 'function') showView('patients'); } catch (eF2) {}
+      try { if (typeof renderPatients === 'function') renderPatients(); if (typeof renderProfile === 'function') renderProfile(); } catch (eF3) {}
+      try { var pcF = document.getElementById('profileCard'); if (pcF && pcF.scrollIntoView) pcF.scrollIntoView({ block: 'nearest' }); } catch (eF4) {}
+      hideChipLater(5000);
       return { ok: true, saved: saved, total: n, created: r.created };
     } finally { busy = false; }
   }

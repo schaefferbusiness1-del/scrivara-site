@@ -23923,11 +23923,13 @@ async function pullPatientChartViaAssist(btn, opts){
        twenty minutes later. Say exactly what was saved; the visit leg publishes
        its own verdict at window.__mlsSinglePullVisits and says it out loud. */
     say('✅ Saved '+pullTarget.name+'’s Athena chart facts — problems, medications, allergies and history. Checking for their prior visit notes…','ok','step 3 of 3');
-    /* focus-1.0 (owner, 2026-08-20: "it should pull up whoever it just saved"):
-       success lands the saved patient ON SCREEN - the Patients view with their
-       profile card - no matter which view the pull started from. The active
-       id was already set to the pull target before the read began. */
-    try{ if(typeof showView==='function') showView('patients'); if(typeof renderProfile==='function') renderProfile(); var pcF=document.getElementById('profileCard'); if(pcF&&pcF.scrollIntoView) pcF.scrollIntoView({block:'nearest'}); }catch(eFo){}
+    /* focus-1.1 (was focus-1.0): the NAVIGATION moved to the whoever engine's
+       terminal (feat_athena_autopull run()) - this core path also serves the
+       History-view "Pull this patient's chart" button, where yanking the
+       doctor to Patients mid-review is wrong (1p-pull-one-owner-contract pins
+       exactly that). Here: selection was already set before the read; refresh
+       the profile so the saved facts are visible wherever the doctor is. */
+    try{ if(typeof renderProfile==='function') renderProfile(); }catch(eFo){}
     if(btn){ btn.disabled=false; btn.innerHTML=orig; }
     releaseDirect(); return true;
   }catch(err){
