@@ -17,11 +17,23 @@
  *
  * Self-contained, idempotent, reversible (window.__mlsAthenaAutoPull.revert()).
  * No backend / extension / ScribeFlow.html edits. Preserves all honest guards.
+ *
+ * v1.1.0 (2026-08-19, owner directives): cp-1.1 the button checks WHO is open
+ * FIRST and asks for what it needs AT THE CLICK (never drives a doomed walk,
+ * never warns after the fact); rt-1.1 one engine-refreshed retry when the read
+ * fails hydration-shaped (extension 3.0.74 mlsAppAthenaRefreshV1); tm-1.1 the
+ * mismatch message tells the mid-walk truth at the SOURCE (the old sentence
+ * blamed "a DIFFERENT patient open", which detect-3072 made false, and shipped
+ * a dead green-panel pointer that pullone-1.0.0 had to strip at display time);
+ * fm-1.1 chart FACTS (medications, problems, allergies) land after the visits
+ * save via a verified capture - meds was measured EMPTY on every autopull
+ * patient; pullbar-1.0.0 a real progress bar under the button, driven by the
+ * extension's own n/total encounter progress events.
  */
 (function () {
   'use strict';
   if (window.__mlsAthenaAutoPull && window.__mlsAthenaAutoPull.installed) return;
-  var VERSION = '1.0.1';
+  var VERSION = '1.1.0';
 
   function S(x) { return x == null ? '' : String(x); }
   function trim(x) { return S(x).trim(); }
@@ -168,7 +180,97 @@
   function status(onStatus, msg, loud) {
     try { onStatus && onStatus(msg); } catch (e) {}
     setChip(msg);
+    /* pullbar-1.0.0: the bar under the button narrates the same line; a ✓ or ⚠
+       terminal message settles and then hides it. */
+    try {
+      if (/^✓/.test(msg)) finishBar(true, msg);
+      else if (/^⚠/.test(msg)) finishBar(false, msg);
+      else if (barWrap && barWrap.isConnected && barWrap.style.display !== 'none' && barText) barText.textContent = msg;
+    } catch (eBs) {}
     if (loud) { try { if (typeof toast === 'function') toast(msg, /^⚠/.test(msg) ? 'err' : ''); } catch (e) {} }
+  }
+
+  /* ---------- raw result tap (rt-1.1) ----------
+     The visit driver REJECTS with only the error STRING; the retry rail needs
+     the structured fields (retryable, readTabId, identity.url) from the raw
+     mlsAppAllVisitsResult. One tap keeps the LAST raw response - safe because
+     the extension enforces a single-flight verified read. */
+  var lastRawResult = null;
+  try {
+    window.addEventListener('message', function (e) {
+      try {
+        if (!(e.data && e.data.source === 'mls-ext')) return;
+        if (e.data.type === 'mlsAppAllVisitsResult') {
+          lastRawResult = e.data.resp || e.data;
+          var rr = lastRawResult;
+          if (rr && rr.ok === true) setBar(1, 1, 'All encounters read — saving…');
+        } else if (e.data.type === 'mlsAppVisitsProgress') {
+          var pr = e.data.resp || e.data;
+          if (pr && (Number(pr.total) > 0 || pr.message)) setBar(Number(pr.n) || 0, Number(pr.total) || 0, pr.message);
+        }
+      } catch (e2) {}
+    });
+  } catch (e3) {}
+
+  /* ---------- bounded bridge calls (cp-1.1 / rt-1.1) ---------- */
+  function bridgeOnce(sendType, resultType, extra, ms) {
+    return new Promise(function (resolve) {
+      var done = false, t = 0;
+      function cleanup() { try { window.removeEventListener('message', onR); } catch (e4) {} }
+      function settle(v) { if (done) return; done = true; try { clearTimeout(t); } catch (e5) {} cleanup(); resolve(v); }
+      function onR(e) {
+        if (!(e.data && e.data.source === 'mls-ext' && e.data.type === resultType)) return;
+        settle(e.data.resp || null);
+      }
+      t = setTimeout(function () { settle(null); }, ms || 9000);
+      window.addEventListener('message', onR);
+      var out = { source: 'mls-app', type: sendType };
+      if (extra) { for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k]; } }
+      try { window.postMessage(out, '*'); } catch (e6) { settle(null); }
+    });
+  }
+  function captureOpen(ms) { return bridgeOnce('mlsAppCapture', 'mlsAppCaptureResult', null, ms || 9000); }
+  function refreshAthena(readTabId, briefingUrl, ms) {
+    return bridgeOnce('mlsAppAthenaRefreshV1', 'mlsAppAthenaRefreshV1Result',
+      { readTabId: Number(readTabId) || 0, briefingUrl: S(briefingUrl).slice(0, 300) }, ms || 40000);
+  }
+
+  /* ---------- pullbar-1.0.0: a real progress bar for the single pull ----------
+     Mounted INSIDE the pull door (#mlsPullDoor) when present so the door's
+     button-adjacency contract stays intact; after the button otherwise. */
+  var barWrap = null, barFill = null, barText = null, barHideT = 0;
+  function ensureBar() {
+    if (barWrap && barWrap.isConnected) return barWrap;
+    var door = document.getElementById('mlsPullDoor');
+    var btn = document.getElementById('ptPullAthenaBtn');
+    var host = door || (btn && btn.parentElement ? btn.parentElement : null);
+    if (!host) return null;
+    barWrap = document.createElement('div');
+    barWrap.id = 'mlsPullBar';
+    barWrap.setAttribute('role', 'progressbar');
+    barWrap.style.cssText = 'display:none;margin-top:6px;max-width:360px;';
+    barWrap.innerHTML = '<div style="height:8px;border-radius:6px;background:rgba(32,64,52,.16);overflow:hidden"><div data-fill style="height:100%;width:0%;border-radius:6px;background:#2f7d5d;transition:width .35s ease"></div></div><div data-text style="font-size:12px;line-height:1.45;margin-top:3px;color:#3a5147"></div>';
+    if (door) door.appendChild(barWrap);
+    else if (btn && btn.nextSibling) host.insertBefore(barWrap, btn.nextSibling);
+    else host.appendChild(barWrap);
+    barFill = barWrap.querySelector('[data-fill]');
+    barText = barWrap.querySelector('[data-text]');
+    return barWrap;
+  }
+  function setBar(n, total, msg2) {
+    var w = ensureBar(); if (!w) return;
+    if (barHideT) { try { clearTimeout(barHideT); } catch (eB0) {} barHideT = 0; }
+    w.style.display = 'block';
+    var pct = total > 0 ? Math.max(2, Math.min(100, Math.round((Number(n) / Number(total)) * 100))) : 2;
+    if (barFill) barFill.style.width = pct + '%';
+    if (barText) barText.textContent = (total > 1 ? (Math.min(Number(n) || 0, total) + ' of ' + total + ' — ') : '') + S(msg2 || '');
+  }
+  function finishBar(okState, msg2) {
+    var w = barWrap; if (!w || !w.isConnected) return;
+    if (barFill && okState) barFill.style.width = '100%';
+    if (barText && msg2) barText.textContent = S(msg2);
+    if (barHideT) { try { clearTimeout(barHideT); } catch (eB1) {} }
+    barHideT = setTimeout(function () { try { w.style.display = 'none'; if (barFill) barFill.style.width = '0%'; } catch (eB2) {} }, okState ? 8000 : 16000);
   }
 
   /* ---------- the one-button auto pull ---------- */
@@ -182,28 +284,57 @@
     busy = true;
     try {
       hardenModel();
-      status(onStatus, '🔍 Detecting the patient open in your athenaOne tab…', true);
-      var res;
-      try {
-        res = await cv._driveRequest('mlsAppReadAllVisits', {}, 'mlsAppAllVisitsResult',
-          ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
-          function (msg) { if (msg) status(onStatus, msg); }, null, 240000, 12000);
-      } catch (e) {
-        var em = S(e && e.message || e);
-        /* v1.0.1 (live 2026-07-18): the #1 real-world outcome of this button is
-           the cross-patient SAFETY STOP — MLS is on patient A while athenaOne
-           shows patient B. The old technical message vanished in 9s, so the
-           button read as dead. Say exactly what to do, and keep it up longer. */
-        if (/frozen MLS patient|did not match/i.test(em)) {
-          status(onStatus, '⚠ athenaOne has a DIFFERENT patient open than the one selected here — MLS stopped on purpose so charts can never mix. To pull the patient whose chart is open in Athena: select (or add) that same patient here first, then click again. Or use the green MLS panel inside Athena (“Pull history”) — it always pulls the open chart. Nothing was saved.', true);
-          hideChipLater(22000); return;
-        }
-        status(onStatus, '⚠ Couldn’t read your open athenaOne chart (' + em + '). Open a patient’s chart in your Athena tab, then try again. Nothing was saved.', true);
+      /* cp-1.1: check WHO is open FIRST (a read-only capture, ~1-2s) and ask
+         for what the pull needs AT THE CLICK. The old flow drove the full walk
+         and complained after the fact; the owner ruled that out 2026-08-19. */
+      status(onStatus, '🔍 Checking who is open in your athenaOne tab…', true);
+      var pre = await captureOpen(9000);
+      var preCap = (pre && pre.ok === true && pre.captured) ? pre.captured : null;
+      if (!preCap || !trim(preCap.name)) {
+        var door = document.getElementById('pdName');
+        if (door) { try { door.focus(); door.scrollIntoView({ block: 'center' }); } catch (eDoor) {} }
+        status(onStatus, '⚠ No patient chart could be read in your athenaOne tab. Open the patient’s chart there and click again' +
+          (door ? ' — or type a name and date of birth in the form under this button and MLS will find them in athena for you.' : '.') +
+          ' Nothing was saved.', true);
         hideChipLater(15000); return;
       }
+      status(onStatus, 'Found ' + trim(preCap.name) + ' open in athenaOne — pulling their full history…', true);
+      /* rt-1.1: one engine-refreshed retry. The driver rejects with only the
+         error STRING; the raw tap holds the structured failure (retryable,
+         readTabId, the chart's briefing URL) so a hydration-starved surface
+         gets ONE fb-disciplined refresh + chart re-open (ext 3.0.74
+         mlsAppAthenaRefreshV1), then ONE more read. Never loops. */
+      var res = null, driveErr = '';
+      for (var attempt = 0; attempt < 2; attempt++) {
+        res = null; driveErr = '';
+        try {
+          res = await cv._driveRequest('mlsAppReadAllVisits', {}, 'mlsAppAllVisitsResult',
+            ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
+            function (msg) { if (msg) status(onStatus, msg); }, null, 240000, 12000);
+        } catch (e) { driveErr = S(e && e.message || e); }
+        if (res && res.ok) break;
+        var raw = lastRawResult;
+        if (attempt !== 0 || !raw || raw.retryable !== true || !(Number(raw.readTabId) > 0)) break;
+        status(onStatus, 'athenaOne is responding poorly — refreshing its tab and reading once more (nothing was saved yet)…', true);
+        var rfr = await refreshAthena(Number(raw.readTabId), S(raw.identity && raw.identity.url || ''), 40000);
+        if (!rfr || rfr.ok !== true) break;
+        status(onStatus, 'athenaOne refreshed — reading the chart again…', true);
+      }
       if (!res || !res.ok) {
-        status(onStatus, '⚠ ' + ((res && res.message) || 'No patient chart could be read from athenaOne') + '. Nothing was saved.', true);
-        hideChipLater(); return;
+        var em = driveErr || S(res && (res.error || res.message) || '');
+        if (/frozen MLS patient|did not match/i.test(em)) {
+          /* tm-1.1: this button anchors to whoever was OPEN at the click
+             (detect-3072), so a mismatch mid-read means the chart CHANGED
+             under the walk. Say that truth at the source. The old sentence
+             blamed "a DIFFERENT patient open" — false for the empty-hint
+             refusal this button used to die on — and pointed at the retired
+             in-athena panel, which pullone-1.0.0 had to strip at display
+             time. MLS stopped on purpose so charts can never mix. */
+          status(onStatus, '⚠ The chart in athenaOne changed while it was being read, so MLS stopped — charts can never mix, and nothing was saved. Keep one patient’s chart open in athenaOne and click again.', true);
+          hideChipLater(22000); return;
+        }
+        status(onStatus, '⚠ Couldn’t read the open athenaOne chart (' + (em || 'no readable result') + '). Open the patient’s chart in your Athena tab, then try again. Nothing was saved.', true);
+        hideChipLater(15000); return;
       }
       var identity = res.identity || {};
       var visits = Array.isArray(res.visits) ? res.visits : [];
@@ -220,6 +351,34 @@
       catch (e) { status(onStatus, '⚠ ' + (e && e.message || 'Save failed') + '.', true); hideChipLater(); return; }
       status(onStatus, 'Saved ' + saved + ' visit' + (saved === 1 ? '' : 's') + '. Generating AI summaries…');
       try { await M.ensureSummaries(patient.id, function (msg) { if (msg) status(onStatus, msg); }); } catch (e) {}
+      /* fm-1.1: land the chart FACTS the visits verb never carries. A verified
+         capture reads medications/problems/allergies straight off the open
+         chart banner cards; meds was measured EMPTY on every autopull patient
+         (2026-08-19, Tom + Lamar) while the capture reply carried them. Names
+         must still match the pulled identity - a swapped chart adds nothing. */
+      try {
+        var post = await captureOpen(9000);
+        var postCap = (post && post.ok === true && post.captured) ? post.captured : null;
+        if (postCap && namesMatch(postCap.name, identity.name)) {
+          var factsChanged = false;
+          var medsIn = Array.isArray(postCap.medications) ? postCap.medications.map(trim).filter(Boolean) : [];
+          if (medsIn.length) {
+            var haveMeds = S(patient.meds);
+            var addMeds = medsIn.filter(function (m) { return haveMeds.toLowerCase().indexOf(m.toLowerCase()) < 0; });
+            if (addMeds.length) { patient.meds = (trim(haveMeds) ? trim(haveMeds) + '\n' : '') + addMeds.join('\n'); factsChanged = true; }
+          }
+          if (!trim(patient.problems) && Array.isArray(postCap.problems) && postCap.problems.length) {
+            patient.problems = postCap.problems.map(trim).filter(Boolean).join('\n'); factsChanged = true;
+          }
+          if (!trim(patient.allergies) && Array.isArray(postCap.allergies) && postCap.allergies.length) {
+            patient.allergies = postCap.allergies.map(trim).filter(Boolean).join('\n'); factsChanged = true;
+          }
+          if (factsChanged) {
+            try { upsertPatient(patient); } catch (eFm1) {}
+            status(onStatus, 'Chart facts saved — medications, problems and allergies are on the profile.');
+          }
+        }
+      } catch (eFm) {}
       try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
       try { if (typeof renderProfile === 'function') renderProfile(); } catch (e) {}
       var n = saved; try { n = M.getVisits(patient).length; } catch (e) {}

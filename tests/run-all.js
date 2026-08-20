@@ -78,6 +78,7 @@ const tests = [
      birthday spelled two ways and a banner name with no separators, and ONE
      pull control that says what it is doing and lands on the chart it pulled. */
   '1p-pull-one-owner-contract.test.js',
+  '1p-pull-door-contract.test.js',
   '1p-pull-verb-truth-contract.test.js',
   /* The hover explainer clipped off the bottom of the screen mid-sentence
      (owner screenshot 2026-08-19): place() never clamped Y and tipAvoid's

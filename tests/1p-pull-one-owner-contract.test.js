@@ -126,13 +126,21 @@ function statics() {
       'cloned-mls-connect.js is missing pvrPullOne — the derive did not promote this lane\'s connect change');
   }
 
-  /* THE TWO CONTROLS FOR THE OVERLAY. Both are production modules this lane may
-     not edit. If either of these stops being true, the overlay above it is
-     rewriting or mirroring something that no longer happens, and this suite
-     must fail LOUDLY rather than keep passing. */
+  /* THE TWO CONTROLS FOR THE OVERLAY. If either of these stops being true, the
+     overlay above it is rewriting or mirroring something that no longer
+     happens, and this suite must fail LOUDLY rather than keep passing. */
   const autopull = read('feat_athena_autopull.js');
-  ok(autopull.indexOf('green MLS panel') > 0,
-    'feat_athena_autopull.js no longer advertises the green MLS panel — pullone-1.0.0 rewrites a sentence that is gone');
+  /* autopull v1.1 (tm-1.1, 2026-08-19): the mismatch message is truthful AT THE
+     SOURCE — it no longer blames "a DIFFERENT patient open" (false since the
+     extension's detect-3072 anchors the read to whoever was open at the click)
+     and no longer ships the dead green-panel pointer pullone had to strip at
+     display time. The overlay's rewrite is now an inert passthrough for a
+     sentence that no longer exists; the pin flips to prove the dead pointer
+     never returns to the source. */
+  ok(autopull.indexOf('green MLS panel') < 0,
+    'feat_athena_autopull.js reintroduced the dead green-panel pointer — tm-1.1 made the source message truthful; fix the source, never re-point at the retired panel');
+  ok(autopull.indexOf('charts can never mix') > 0,
+    'feat_athena_autopull.js dropped the mix promise from its stop message — the stop must still say what it protected');
   ok(autopull.indexOf('mlsAutoPullChip') > 0,
     'feat_athena_autopull.js no longer uses #mlsAutoPullChip — the mirror has nothing to read');
   const unify = read('feat_athena_ux_unify.js');
