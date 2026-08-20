@@ -187,8 +187,16 @@ ok(clearedTimers.length > 0 && mount.child.style.transition === 'none', 'photo c
 
 const captureSlice = source.slice(source.indexOf('pendingFace = dataUrl;'), source.indexOf('status.textContent = \'Portrait captured', source.indexOf('pendingFace = dataUrl;')));
 ok(/pendingFace = dataUrl;[\s\S]*faceModeSelect\.value = faceModeAfterCapture[\s\S]*renderPatientPreview\(\)/.test(captureSlice), 'capture does not immediately switch and repaint the patient preview');
-ok(source.includes("lookCtl = makePhotoFace(lookStage, portrait, 'Your patient-facing portrait')"), 'Setup photo mode does not show the exact selected portrait');
-ok(source.includes("kiosk.face = makePhotoFace(mount, av.faceImage, '')"), 'kiosk does not use the same photo controller as Setup');
+/* ⛔ THESE TWO PIN THE CLAIM, NOT THE ARGUMENT COUNT. They were written as
+   exact-string includes and both broke on p1-photo-fallback-1.0.0 — a change
+   that STRENGTHENED what they guard, by giving each call site a decode-failure
+   fallback. That is the recorded failure mode of a literal pin, so the trailing
+   `[,)]` deliberately admits further arguments while still requiring that both
+   surfaces mount the SAME controller with the SAME portrait. */
+ok(/lookCtl = makePhotoFace\(lookStage, portrait, 'Your patient-facing portrait'\s*[,)]/.test(source),
+  'Setup photo mode does not show the exact selected portrait');
+ok(/kiosk\.face = makePhotoFace\(mount, av\.faceImage, ''\s*[,)]/.test(source),
+  'kiosk does not use the same photo controller as Setup');
 ok(source.includes('My photo — closest likeness, moves gently while speaking'), 'photo mode is not presented as the closest likeness');
 ok(source.includes('Animated character — expressions, matched from your photo'), 'Animated alternative is missing');
 

@@ -3969,12 +3969,25 @@
        active stays active - including an explicit 'photo' the doctor chose. */
     return currentMode === 'photo' ? 'photo' : 'drawn';
   }
-  function makePhotoFace(mount, dataUrl, altText) {
+  /* p1-photo-fallback-1.0.0 — A PREFIX IS NOT A DECODE.
+     `faceValidPhoto` tests the STRING ("data:image/…"), which is all a cheap
+     synchronous check can do; it cannot know whether the bytes decode. An
+     empty-payload or truncated portrait passes it and then fails in the
+     decoder — and nothing was listening. The <img> stayed in the
+     patient-facing circle as the browser's broken-image glyph, with no way
+     back, because the two mount sites both replace the drawn face BEFORE the
+     photograph has proved it can be shown. There is no `onerror` on any
+     avatar image anywhere in this file; this is the first.
+     `onUnusable` is OPT-IN (the a-flag-on-a-shared-helper law): a caller that
+     passes nothing gets exactly the controller it always got. It fires at
+     most once, and it fires only for a decode failure — never for a portrait
+     the caller itself replaced, because `destroy()` marks the controller dead
+     first. */
+  function makePhotoFace(mount, dataUrl, altText, onUnusable) {
     if (!mount || !faceValidPhoto(dataUrl)) return null;
     mount.innerHTML = '';
     var img = document.createElement('img');
     img.alt = altText || '';
-    img.src = dataUrl;
     img.style.cssText = 'width:100%;height:100%;object-fit:cover;transform-origin:50% 58%;transition:transform .24s cubic-bezier(.2,.7,.3,1),filter .3s ease';
     mount.appendChild(img);
     var dead = false, cycling = false, timer = 0, gestureTimer = 0, moodNow = 'idle';
@@ -4038,6 +4051,20 @@
     var ctl = { mood: mood, talk: talk, talkCycle: talkCycle,
       retint: function () {}, nod: nod, shake: curious, curious: curious,
       gaze: function () {}, destroy: destroy, node: img };
+    /* ⛔ THE HANDLER IS ATTACHED BEFORE `src` IS ASSIGNED, and both happen
+       after `dead` and `destroy` exist. An image load is dispatched from a
+       task, so nothing here can fire while this function is still running —
+       but ordering the two this way means the guarantee does not depend on
+       that, and the pin in 1p-avatar-photo-fallback-runtime asserts the
+       order rather than the timing. */
+    if (typeof onUnusable === 'function') {
+      img.addEventListener('error', function () {
+        if (dead) return;
+        destroy();
+        safe(function () { onUnusable(); });
+      }, false);
+    }
+    img.src = dataUrl;
     mood('idle');
     return ctl;
   }
@@ -6439,7 +6466,35 @@
 
     var chosen = clusters[0].best;
     var finalX = Math.max(0, Math.min(spanX, clusters[0].cx - side * 0.50));
-    var finalY = Math.max(0, Math.min(spanY, clusters[0].cy - side * 0.44));
+    /* p1-photo-framing-1.1.0 — THE PHOTOGRAPH AND THE DRAWN CHARACTER ARE THE
+       SAME CONTROL, AND THEY WERE COMPOSED TO DIFFERENT VERTICAL RULES.
+       "My photo" and "Animated character" are two states of one toggle mounted
+       into one circle, and the doctor flips between them while looking at it.
+       Measured in the shipped 302px kiosk circle with one instrument
+       (1p-avatar-surface-quality-proof, section 7): the drawn clinician starts
+       its head 0.205 down the circle; an uploaded photograph started its head
+       at 0.160. That is a 21px jump on the toggle — and 0.160 sits in the band
+       of the drawn build the owner rejected on sight (0.140), not the one he
+       accepted (0.236). [[judged-in-a-square-shipped-into-a-circle]]
+
+       CROWN_TARGET is where the TOP OF THE HEAD lands, and that is the
+       quantity the memory recorded for both the accepted and the rejected
+       build. Anchoring the box CENTRE instead was measured and rejected here:
+       the crown then drifts with box height, which ranges 0.533-0.604 across
+       the sweep, and the crown gap came out anywhere from 0.120 to 0.199. The
+       crown is what a person looks at, so the crown is what gets anchored.
+       ⛔ Still built on the CLUSTER CENTROID, which is averaged over every
+       credible window; a single window's T is exactly the estimator
+       [[the-face-box-swallowed-the-hair]] records running to the top of the
+       frame. The half-height comes from the chosen window's own box, so a
+       photograph the reader saw poorly moves the crop less, not more.
+       ⛔ A source whose head is already near the top has no pixels above it to
+       give: finalY clamps at 0 and cannot reach the target. That is a limit of
+       the photograph. The alternative is upscaling or letterboxing, and this
+       path has never invented a pixel. */
+    var CROWN_TARGET = 0.205;
+    var chosenBh = Number(clusters[0].best && clusters[0].best.bh) || 0.56;
+    var finalY = Math.max(0, Math.min(spanY, clusters[0].cy - side * (CROWN_TARGET + chosenBh / 2)));
     if (Math.abs(finalX - chosen.plan.x) > 1 || Math.abs(finalY - chosen.plan.y) > 1) {
       var reframed = analyse({ x: finalX, y: finalY, label: 'face-aware' });
       if (reframed && credible.indexOf(reframed) >= 0) {
@@ -7542,14 +7597,28 @@
     if (faceValidPhoto(pendingHi) && facePhotoMatches(pendingPortrait, shownPortrait)) return pendingHi;
     return faceHiRead(shownPortrait);
   }
+  /* p1-photo-fallback-1.1.0 — THE THIRD MOUNT. p1-photo-fallback-1.0.0 gave the
+     kiosk and the Setup preview a decode-failure fallback and MISSED this one,
+     which is the 72px circle beside the Face row in Setup and Settings. It
+     already has the right fallback for a missing portrait — the drawn
+     character, deliberately never a bare emoji — and the only thing it lacked
+     was any way to find out that the bytes did not decode. Same prefix test,
+     same blind spot: a truncated portrait put the browser's broken-image glyph
+     in a 72px circle and left it there.
+     ⛔ The handler is attached BEFORE `src`, for the reason recorded on
+     makePhotoFace: a cached failure can dispatch early, and ordering the two
+     this way means the guarantee never rests on task timing. */
   function facePreviewNode(dataUrl, look) {
     var wrap = make('div', '');
     wrap.style.cssText = 'width:72px;height:72px;border-radius:999px;overflow:hidden;border:2px solid #E7E5DD;background:#F4F2EC;display:flex;align-items:center;justify-content:center;font-size:34px';
+    function drawn() { wrap.innerHTML = faceSvg(look || null); } /* the drawn character, never a bare emoji */
     if (dataUrl && String(dataUrl).indexOf('data:image/') === 0) {
-      var img = document.createElement('img'); img.alt = ''; img.src = dataUrl;
+      var img = document.createElement('img'); img.alt = '';
       img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      img.addEventListener('error', function () { safe(drawn); }, false);
       wrap.appendChild(img);
-    } else wrap.innerHTML = faceSvg(look || null); /* the drawn character, never a bare emoji */
+      img.src = dataUrl;
+    } else drawn();
     return wrap;
   }
 
@@ -8127,20 +8196,43 @@
       lookStage.style.cssText = 'width:132px;height:132px;border-radius:999px;overflow:hidden;background:radial-gradient(circle at 50% 38%,#fff,#f2f4ef);border:3px solid #fff;box-shadow:0 8px 24px rgba(32,64,52,.16);flex:0 0 auto';
       var lookGrid = make('div', '');
       lookGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1;min-width:220px';
+      /* p1-photo-fallback-1.0.0 — the exact portrait string that failed to
+         decode in this preview, so Setup shows the doctor the same drawn
+         fallback the kiosk would show a patient rather than a broken glyph,
+         and SAYS WHICH of the two reasons it is. */
+      var lookPhotoUnusable = '';
       function shownFaceImage() {
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         return faceValidPhoto(shown) ? shown : '';
+      }
+      /* ⛔ RENDERING ONLY, AND THE DISTINCTION IS LOAD-BEARING. `shownFaceImage`
+         also names the match transaction (the ownership comparison further
+         down asks "is the portrait on screen still the one this pending read
+         belongs to?"). Answering '' there because the bytes would not DECODE
+         would make every in-flight match look stale and silently discard it.
+         Decodability is a question about drawing, so only the preview asks. */
+      function displayableFaceImage() {
+        var shown = shownFaceImage();
+        return lookPhotoUnusable && lookPhotoUnusable === String(shown) ? '' : shown;
       }
       function renderPatientPreview() {
         if (!lookStage || !faceModeSelect) return;
         if (lookCtl) safe(function () { lookCtl.destroy(); });
         lookCtl = null;
-        var portrait = shownFaceImage();
+        var portrait = displayableFaceImage();
         if (faceModeSelect.value === 'photo' && portrait) {
           lookStage.setAttribute('data-face-preview-kind', 'photo');
-          lookCtl = makePhotoFace(lookStage, portrait, 'Your patient-facing portrait');
+          lookCtl = makePhotoFace(lookStage, portrait, 'Your patient-facing portrait', function () {
+            lookPhotoUnusable = String(portrait);
+            renderPatientPreview();
+          });
         } else {
-          lookStage.setAttribute('data-face-preview-kind', faceModeSelect.value === 'photo' ? 'photo-fallback' : 'animated');
+          /* ⛔ "photo-fallback" means NO PORTRAIT YET and its copy says so.
+             A portrait that exists and cannot be decoded is a different fact
+             and must not borrow those words — the doctor would be told to
+             take a photo he can see he already took. */
+          lookStage.setAttribute('data-face-preview-kind', faceModeSelect.value !== 'photo' ? 'animated'
+            : (lookPhotoUnusable ? 'photo-unreadable' : 'photo-fallback'));
           lookCtl = makeFace(lookStage, lookQuarantine.length ? faceLookSafe(FACE_LOOK) : lookNow);
         }
         if (moodBtn) moodBtn.textContent = faceModeSelect.value === 'photo' && portrait
@@ -10664,7 +10756,13 @@ function kioskLine(kind, text) {
        the gate, and only a real payload resolves the unknown state */
     if (av && typeof av.exitPinSet === 'boolean') kiosk.pinSet = av.exitPinSet === true;
     var hasPhoto = av && faceValidPhoto(av.faceImage);
-    if (hasPhoto && av.faceMode === 'photo') {
+    /* p1-photo-fallback-1.0.0 — a portrait that failed to DECODE is not a
+       portrait. It is remembered BY VALUE, so the same unusable bytes are
+       never mounted a second time (which would flash a broken glyph at the
+       patient on every identity update) while a genuinely new portrait is
+       still tried on its own merits. */
+    var photoUsable = hasPhoto && kiosk.photoUnusable !== String(av.faceImage);
+    if (photoUsable && av.faceMode === 'photo') {
       /* The doctor chose THEIR real portrait. Use the same bounded portrait
          controller Setup previews, so speech/listening state stays connected
          without drawing fake mouth landmarks over a still image. */
@@ -10672,7 +10770,29 @@ function kioskLine(kind, text) {
         kiosk.photoFace = true;
         if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
         var mount = gid('mlsAvKioskFace');
-        if (mount) kiosk.face = makePhotoFace(mount, av.faceImage, '');
+        var photoReceipt = { session: sessionReceipt(), generation: kiosk.generation | 0,
+          portrait: String(av.faceImage) };
+        if (mount) kiosk.face = makePhotoFace(mount, av.faceImage, '', function () {
+          /* ⛔ THE DRAWN FACE IS THE FALLBACK, AND IT IS A DELIBERATE ONE —
+             the illustrated clinician composed for this exact circle
+             (av-6.0.1), wearing whatever appearance the doctor saved. What
+             the patient must never meet is the browser's broken-image glyph
+             or an empty white disc, and before this both were reachable and
+             permanent: photoFace latched true at the top of this branch and
+             only openKiosk cleared it, so a portrait that failed to decode
+             held the surface for the whole encounter. */
+          if (!sessionReceiptCurrent(photoReceipt.session) || !kiosk.open ||
+              (kiosk.generation | 0) !== photoReceipt.generation) return;
+          kiosk.photoUnusable = photoReceipt.portrait;
+          kiosk.photoFace = false;
+          kiosk.face = null;
+          var back = gid('mlsAvKioskFace');
+          if (back) kiosk.face = makeFace(back, kiosk.look || faceLookSafe(av.faceLook));
+        });
+        /* Nothing to mount into, or no controller: do not latch a face that
+           was never drawn. An empty circle that can never be refilled is the
+           other half of the same defect. */
+        if (!kiosk.face) kiosk.photoFace = false;
       }
     } else if (av && av.faceLook && !kiosk.tinted) {
       /* drawn mode: the doctor's SAVED appearance wins — colours, hair cut,
@@ -12949,6 +13069,9 @@ function kioskLine(kind, text) {
     kiosk.pinProbeBusy = false; kiosk.pinUnlockBusy = false;
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.tintPortrait = ''; kiosk.completed = false; kiosk.silent = 0;
+    /* A new check-in re-earns the portrait: a decode that failed once on a
+       cold cache must not condemn the doctor's photograph forever. */
+    kiosk.photoUnusable = '';
     kiosk.finishTries = 0; kiosk.heard = false;
     /* NOTHING HAS BEEN SAID TO *THIS* PATIENT YET. kioskTurn uses this to mark
        the opening line as a greeting so it is delivered as a welcome rather
@@ -13876,6 +13999,7 @@ function kioskLine(kind, text) {
     dormant.lookProportions = function () { return null; };   /* avlook-1.0.0 */
     dormant.deriveLookFromPhoto = function () { return false; };
     dormant.captureFit = function () { return null; };   /* avfit-1.0.0 */
+    dormant.photoFrame = function () { return null; };   /* avframe-1.0.0 */
     dormant.landmarkStatus = function () { return null; };   /* avml-1.0.0 */
     dormant.landmarkRead = function () { return false; };    /* avml-1.0.0 */
     dormant.voiceGate = function () { return { ready: false, why: 'no authenticated session', echoFinalsRefused: 0 }; };
@@ -13994,6 +14118,44 @@ function kioskLine(kind, text) {
         after: receiptOf(fitted.q) };
     };
     /* ===== end avfit-1.0.0 ===== */
+    /* ===== avframe-1.0.0 — THE UPLOAD CROP, DRIVABLE, WITH THE REAL READER.
+       The framing proof beside this one executes faceAwareSquareFromImage
+       against a STUBBED faceReadPortrait that returns a perfect box, so the
+       crop ARITHMETIC is proven and the crop's behaviour on real pixels never
+       was. This runs the shipped chain end to end — real detector, real
+       clustering, real re-frame — and then reports where the face landed IN
+       THE SQUARE THAT SHIPS, which is the number every surface downstream
+       inherits and the one no harness has ever read.
+
+       ⛔ It returns NUMBERS plus the live canvas it just made. The canvas is
+       an in-page handle for a harness that needs to render the crop into the
+       shape it ships (judged-in-a-square-shipped-into-a-circle); it is never
+       serialised, never stored and never sent anywhere, exactly like the node
+       faceDemo hands back. Pure with respect to the doctor: it touches no
+       look, no mode, no storage. ===== */
+    owner.photoFrame = function (source) {
+      if (!owned() || !source) return null;
+      var picked = safe(function () { return faceAwareSquareFromImage(source, MEASURE_MAX); }, null);
+      if (!picked) return null;
+      var res = picked.square ? safe(function () { return faceReadPortrait(picked.square); }, null) : null;
+      var b = (res && res.box) || null;
+      var grid = Number(b && b.grid) || 0;
+      /* The box in FRACTIONS of the shipped square. A grid-relative box is
+         only comparable to itself; a fraction is comparable to a circle. */
+      function frac(v) { return grid ? Math.round((Number(v) / grid) * 10000) / 10000 : 0; }
+      return {
+        why: picked.why || '',
+        meta: picked.meta || null,
+        outPx: Number(picked.square && picked.square.width) || 0,
+        ready: !!(picked.q && picked.q.faceVerdict && picked.q.faceVerdict.ready),
+        derived: (res && res.derived) ? res.derived.slice() : [],
+        box: b ? { grid: grid, L: frac(b.L), R: frac(b.R), T: frac(b.T), B: frac(b.B),
+          cx: frac(isFinite(Number(b.cx)) ? b.cx : (Number(b.L) + Number(b.R)) / 2),
+          w: frac(Math.max(Number(b.w) || 0, Number(b.R) - Number(b.L))) } : null,
+        square: picked.square || null
+      };
+    };
+    /* ===== end avframe-1.0.0 ===== */
     /* ===== avml-1.0.0 — the landmark read, drivable without a camera =========
        Same shape as captureFit and for the same reason: the proof must run the
        REAL reader on real pixels, not a re-implementation. `landmarkRead` runs
