@@ -8829,7 +8829,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1033: persist:false work belongs to this exact COW candidate. Passing
+    /* b1034: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -9070,7 +9070,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1033: the retired 3-second owner synchronously regex-scanned every
+      /* b1034: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -20114,7 +20114,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* XDC already installed the stronger non-today binding synchronously;
          its context must not be replaced by this delayed activation check. */
       var xdc = window.__mlsCrossDayContext, xctx = xdc && typeof xdc.current === 'function' ? xdc.current() : null;
-      if (xctx && String(xctx.sourceId) === String(a.id) && String(xctx.appointmentId) === apptId && String(xctx.date) === day) return true;
+      /* wfbind-1.1 (live 2026-08-20, Donna M Monturo row 4407): xdc holding the
+         matching CONTEXT is not proof a BINDING was frozen - the global sat
+         undefined while this early-return said "bound", so the cure loop and
+         the exact-match check disagreed forever and the banner never cleared.
+         Short-circuit only when a real binding exists; otherwise fall through
+         and freeze one right here (every input is present on this path). The
+         original concern stands: an EXISTING xdc binding is never replaced. */
+      if (xctx && String(xctx.sourceId) === String(a.id) && String(xctx.appointmentId) === apptId && String(xctx.date) === day && currentVisitBinding()) return true;
       var p = typeof window.activePatient === 'function' ? window.activePatient() : null;
       if (!p || !p.id || !nameMatch(p.name, a.name)) return false;
       var ad = String(a.dob || '').replace(/\D/g, ''), pd = String(p.dob || '').replace(/\D/g, '');
@@ -36134,7 +36141,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1033';
+  window.__MLS_AV = window.__MLS_AV || 'b1034';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36477,7 +36484,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1033';
+  var MLS_APP_BUILD='2026-07-25-b1034';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -47173,7 +47180,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            repaints when any other tab changes the preference (qol-1.1d). */
         var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
         paint();
-        /* sbp-1.0 boot-paint settle (live b1016/b1033, final-live-proofs
+        /* sbp-1.0 boot-paint settle (live b1016/b1034, final-live-proofs
            Proof 3): the ONE paint above can run before the session namespace
            exists - the resolver reads the placeholder slot, answers 'unset'
            (= on), and the box paints CHECKED while the settled preference is
@@ -47358,7 +47365,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          from a REAL session namespace - during boot uns() builds a
          placeholder ('sf_u::_::' / '::undefined::') and this read consults
          the wrong slot, so its 'unset' (= default on) is provisional and
-         views must re-read after the session settles (live b1016/b1033:
+         views must re-read after the session settles (live b1016/b1034:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
       var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;

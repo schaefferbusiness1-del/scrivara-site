@@ -21087,7 +21087,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* XDC already installed the stronger non-today binding synchronously;
          its context must not be replaced by this delayed activation check. */
       var xdc = window.__mlsCrossDayContext, xctx = xdc && typeof xdc.current === 'function' ? xdc.current() : null;
-      if (xctx && String(xctx.sourceId) === String(a.id) && String(xctx.appointmentId) === apptId && String(xctx.date) === day) return true;
+      /* wfbind-1.1 (live 2026-08-20, Donna M Monturo row 4407): xdc holding the
+         matching CONTEXT is not proof a BINDING was frozen - the global sat
+         undefined while this early-return said "bound", so the cure loop and
+         the exact-match check disagreed forever and the banner never cleared.
+         Short-circuit only when a real binding exists; otherwise fall through
+         and freeze one right here (every input is present on this path). The
+         original concern stands: an EXISTING xdc binding is never replaced. */
+      if (xctx && String(xctx.sourceId) === String(a.id) && String(xctx.appointmentId) === apptId && String(xctx.date) === day && currentVisitBinding()) return true;
       var p = typeof window.activePatient === 'function' ? window.activePatient() : null;
       if (!p || !p.id || !nameMatch(p.name, a.name)) return false;
       var ad = String(a.dob || '').replace(/\D/g, ''), pd = String(p.dob || '').replace(/\D/g, '');
