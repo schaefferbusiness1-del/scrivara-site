@@ -143,6 +143,17 @@
         return p && namesMatch(p.name, identity.name) && normDob(p.dob) === chartDob;
       });
       if (ndHits.length === 1) { found = ndHits[0]; via = 'name-dob'; }
+      /* dupmatch-1.0 (live 2026-08-20, Christine WRIGHT): namesMatch above is
+         strict, so a missing middle initial or LAST-FIRST order minted a
+         duplicate here too. Same tolerant fallback as the twins' matcher,
+         gated by the SAME DOB - and only an unambiguous single hit binds;
+         anything else still creates the recoverable duplicate. */
+      if (!found && !ndHits.length && typeof window._athenaHistoryNameCompatible === 'function') {
+        var cHits = pts.filter(function (p) {
+          return p && normDob(p.dob) === chartDob && window._athenaHistoryNameCompatible(String(p.name || ''), String(identity.name || ''));
+        });
+        if (cHits.length === 1) { found = cHits[0]; via = 'name-dob-compat'; }
+      }
     }
     if (found) {
       var changed = false;

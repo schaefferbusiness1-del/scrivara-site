@@ -51154,7 +51154,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         try{ target=window._athenaHistoryTargetSnapshot(before,false); }catch(e){ target=null; }
       }
       return Promise.resolve(origSingle.apply(self, args)).then(function (r) {
-        if(r!==true||!target)return r;
+        if(r!==true)return r;
+        /* dupmatch-1.0: the pre-call snapshot cannot see a patient the core
+           CREATED during this very pull (allowCreate lives in the core), so a
+           brand-new patient's first successful pull silently skipped its visit
+           leg. Re-resolve after success; still fail-quiet when nothing matches. */
+        if(!target&&typeof window._athenaHistoryTargetSnapshot==='function'){
+          try{ target=window._athenaHistoryTargetSnapshot(before,false); }catch(e2){ target=null; }
+        }
+        if(!target)return r;
         var ps=(typeof window.getPatients==='function'?(window.getPatients()||[]):[]),p=ps.filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
         return spvVisitLeg(p, target).then(function () { return r; }, function () { return r; });
       });
