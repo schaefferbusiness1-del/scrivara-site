@@ -1161,6 +1161,26 @@ async function runtime() {
     ok(saved.histRect.h >= 44,
       `the "Open in History" control is ${saved.histRect.h}px tall — the owner asked for a big one`);
     measured.hist = saved.histRect;
+    /* opnsend-1.0.0 (2026-08-19, one press saves AND sends) opens the Athena
+       review sheet 350ms after the save — a feature this suite predates. The
+       honest expectation moved with it: the sheet OPENS (that is the one-press
+       send working), the glow serves the sheet while it is up, and the room's
+       own History glow returns once the sheet is dismissed. This suite runs
+       with no extension, so the sheet's verification can never complete here —
+       dismissing through its own Cancel is the doctor's real path too.
+       (The freeze this section used to die under was clunky-athena's footer
+       ping-pong, fixed at the source the same night — storm-fix 2026-08-20.) */
+    const sheetSeen = await page.evaluate(async () => {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const c = document.getElementById('mlsAthenaUnifiedCancel');
+        if (c && c.getBoundingClientRect().width > 0) { c.click(); return 'opened-and-dismissed'; }
+        await new Promise((x) => setTimeout(x, 200));
+      }
+      return 'never-opened';
+    });
+    eq(sheetSeen, 'opened-and-dismissed', 'the one-press Save & send did not open the Athena review sheet');
+    await page.waitForTimeout(900);
     await glowIs('mlsOpnHist', 'note saved to the chart');
     /* and it goes where it says: the app's own anchor, clicked */
     const wentToHistory = await page.evaluate(async () => {

@@ -51516,6 +51516,14 @@ html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
     var probe = el('mlsAthenaUnifiedProbe');
     var mark = probe && /verified/i.test(txt(probe)) ? ' · ✓ verified' : '';
     var want = label ? (label + mark) : '';
+    /* storm-fix 2026-08-20 (measured: 67k childList mutations on this line's
+       #text in one six-second trace — the whole page froze on every BOUND
+       sheet): txt() reads back whitespace-COLLAPSED text while `want` could
+       carry a trailing space from the 48-char slice, so the equality guard
+       below never held, every pass rewrote the text node, and this block's
+       own body-wide observer re-triggered pass() on its own write. Normalize
+       `want` exactly the way txt() reads, and the guard becomes reachable. */
+    want = want.replace(/\s+/g, ' ').trim();
     line.hidden = !want;
     if (want && txt(line) !== want) line.textContent = want;
   }
