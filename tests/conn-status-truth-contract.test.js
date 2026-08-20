@@ -105,8 +105,14 @@ function exerciseTrustedScheduleBridge(content) {
     setTimeout, clearTimeout, isFinite,
     getComputedStyle() { return { display: 'block', visibility: 'visible', opacity: '1' }; }
   }, { filename: 'content-bridge-slice.js', timeout: 5000 });
-  assert.strictEqual(messageListeners.length, 1, 'content bridge installed an unexpected number of message listeners');
-  const onMessage = messageListeners[0];
+  /* Pin moved 1 -> 2 with ra-3072 (ext 3.0.72, 2026-08-19): the phone-confirm
+     remote-arm verb registers its own message listener beside the main bridge
+     (it arms the click-gate gesture and must live inside the gate's closure).
+     The harness now does what the real window does - dispatch every message to
+     ALL listeners - so a double-reply or a stolen message would fail the
+     reply-count asserts below instead of hiding behind listener[0]. */
+  assert.strictEqual(messageListeners.length, 2, 'content bridge installed an unexpected number of message listeners (main bridge + the ra-3072 remote-arm handler)');
+  const onMessage = (ev) => messageListeners.forEach((l) => l(ev));
 
   onMessage({
     origin: 'https://mlsscribe.com',
