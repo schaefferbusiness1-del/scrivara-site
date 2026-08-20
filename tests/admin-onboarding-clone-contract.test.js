@@ -505,7 +505,12 @@ const clonedShell = read(clonedShellName);
 for (const proof of [readyEndpoint, '/api/auth/invite', '/api/onboarding/state', 'Create &amp; invite account']) {
   ok(clonedShell.includes(proof), '/cloned is missing derived admin/onboarding proof: ' + proof);
 }
-ok(!productionShell.includes(readyEndpoint) && !productionShell.includes('Create &amp; invite account'),
-  'the clone-only admin/onboarding candidate leaked into the production route');
+/* PROMOTED (owner order, 2026-08-20 evening: "push cloned to main fully"):
+   the clone-only staging phase ended - production is DERIVED from the same
+   1p sources (derive-production-from-1p.js), so the admin/onboarding
+   surfaces must now be PRESENT in production, exactly as derived. Absence
+   here would mean a broken production derivation, not safety. */
+ok(productionShell.includes(readyEndpoint) && productionShell.includes('Create &amp; invite account'),
+  'production lost the promoted admin/onboarding surfaces — the derivation is broken');
 
 console.log('PASS admin/onboarding clone contract: ' + assertions + ' assertions');
