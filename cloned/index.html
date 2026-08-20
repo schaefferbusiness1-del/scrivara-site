@@ -14979,7 +14979,13 @@ async function loadCalendar(options){
      still, and if even the smallest will not fit it REMOVES the key rather than
      leaving a stale oversized value behind and reports nothing. A smaller cache
      costs a less complete first paint and nothing else. */
-  try{ if(_calApplied&&_calRequestCurrent()){
+  /* snappy-1.0: this cache serialization (full-array filter + ~1MB stringify +
+     setItem, with up to four shrinking quota retries) ran SYNCHRONOUSLY inside
+     every loadCalendar - the largest fixed cost of opening the calendar, paid
+     from ~15 call sites. It is a best-effort warm-boot cache: writing it a
+     beat after the paint changes nothing it guarantees. _calRequestCurrent()
+     is re-checked at write time, so a superseded load still never writes. */
+  setTimeout(function(){ try{ if(_calApplied&&_calRequestCurrent()){
     var _ccKey=function(d){ return d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); };
     var _ccNow=new Date();
     var _ccWrite=function(days,cap){
@@ -14996,7 +15002,7 @@ async function loadCalendar(options){
       catch(_ccE){ /* quota or serialization — try a smaller window */ }
     }
     if(!_ccDone){ try{ localStorage.removeItem(uns('calApptsCacheV2')); }catch(_ccR){} }
-  } }catch(e){}
+  } }catch(e){} }, 250);
   renderCalendar(); renderCalCheckin();
   return _calResult(_calApplied,_calApplied,_calReadError,'');
 }
@@ -15210,10 +15216,17 @@ function _fmtApptTime(v){
   try{ return window.__mlsApptClock.fmtTime(v)||v; }catch(e){ return v; }
 }
 /* The fourth hook the shared module can no longer install (see the block header). */
+var _calDateOfMemo=new WeakMap(); /* snappy-1.0: the Intl dateKey runs once per row OBJECT, not once per render - keyed to the row and revalidated against its start_at so a mutated row can never serve a stale key */
 function _calDateOf(a){
   try{
     if(a&&a.appt_date) return String(a.appt_date).slice(0,10);
-    if(a&&a.start_at) return window.__mlsApptClock.dateKey(a.start_at);
+    if(a&&a.start_at){
+      var mz=_calDateOfMemo.get(a);
+      if(mz&&mz.s===a.start_at) return mz.k;
+      var kz=window.__mlsApptClock.dateKey(a.start_at)||'';
+      try{ _calDateOfMemo.set(a,{s:a.start_at,k:kz}); }catch(eMz){}
+      return kz;
+    }
   }catch(e){}
   return '';
 }
@@ -15356,7 +15369,11 @@ function _calRenderWeek(){
   var tn=new Date(); var todayKey=tn.getFullYear()+'-'+_calPad(tn.getMonth()+1)+'-'+_calPad(tn.getDate());
   var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var grid=document.getElementById('calGrid'); if(!grid) return;
-  var rng=_calHourRange(_calAppts||[]); var pxPerMin=0.8; var totalH=(rng.endMin-rng.startMin)*pxPerMin;
+  /* snappy-1.0: the hour-gutter range comes from THIS week's rows, not from an
+     Intl+Date scan of every appointment ever imported (the day renderer next
+     door already passes only its own rows - same proven pattern). */
+  var wkRows=[]; days.forEach(function(dW){ var kW=dW.getFullYear()+'-'+_calPad(dW.getMonth()+1)+'-'+_calPad(dW.getDate()); if(byDate[kW]) wkRows=wkRows.concat(byDate[kW]); });
+  var rng=_calHourRange(wkRows); var pxPerMin=0.8; var totalH=(rng.endMin-rng.startMin)*pxPerMin;
   // Header row — click a day to open its Day agenda.
   var h='<div style="display:grid;grid-template-columns:44px repeat(7,1fr)">';
   h+='<div></div>';
@@ -37359,7 +37376,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes clone requests only. */
-  var CLONED_BUILD='cloned-20260820-r31';
+  var CLONED_BUILD='cloned-20260820-r32';
   window.__MLS_CLONED=Object.freeze({enabled:true,route:'/cloned/',build:CLONED_BUILD});
   window.__MLS_AV=CLONED_BUILD;
   var CRITICAL=[
@@ -47787,11 +47804,27 @@ html[data-mls-dock-band="top"] body[data-mls-dock="top"] #appWrap{
   /* Falling = healthy. Flat and non-zero for STALL_MS = the doctor needs to
      know. Measured from the count itself rather than from "is a pull running",
      because a queue draining after a pull is still perfectly normal. */
+  /* pullface-1.0.1 (live 2026-08-20): a flat count during a RUNNING pull is
+     the flush's own depth guard holding the queue by design - every phase
+     longer than 45s painted "didn't save - retrying" over a healthy queue
+     (12-patient day pull, all 12 landed the moment the batch closed). While
+     a pull batch is open the clock does not run; it re-arms at batch close,
+     so a queue that stays flat AFTER the pull still alarms honestly. */
+  function pullHolding() {
+    return safe(function () {
+      var st = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
+      if (st && st.running === true) return true;
+      var bk = window.__mlsPtsBatchByKey, uk = (typeof window.uns === 'function') ? window.uns('patients') : '';
+      var b = bk && uk ? bk[uk] : null;
+      return !!(b && b.cooperative && num(b.depth) > 0);
+    }, false);
+  }
   function stuck() {
     var n = pendingCount();
     var now = Date.now();
     if (n !== pendingSeen.count) { pendingSeen = { count: n, since: now }; return false; }
     if (!n) return false;
+    if (pullHolding()) { pendingSeen.since = now; return false; }
     return (now - pendingSeen.since) >= STALL_MS;
   }
 
