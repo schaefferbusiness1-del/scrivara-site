@@ -23537,6 +23537,21 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
     matches=pts.filter(function(x){return _athenaHistoryName(x&&x.name)===_athenaHistoryName(wantName);});
     if(wantDob){ matches=matches.filter(function(x){return _athenaHistoryDobSame(x&&x.dob,wantDob);}); } /* idread-1.0.0: same birthday, any spelling */
     if(wantMrn){ var mm=_athenaHistoryDigits(wantMrn); matches=matches.filter(function(x){return mm&&_athenaHistoryDigits((x&&x.mrn)||(x&&x.athenaId))===mm;}); }
+    /* dupmatch-1.0 (live 2026-08-20, Christine WRIGHT): the exact-token pass
+       above is the only spelling this matcher accepted, so a missing middle
+       initial or athena's LAST-FIRST order minted a brand-new record for a
+       patient the store already had - and the pull landed on the duplicate.
+       When the exact pass finds nothing, re-match with the tolerant comparator
+       the chart proof already trusts, gated by a hard second factor (same DOB
+       or same MRN digits) - never name alone. Ambiguity still fails closed. */
+    if(!matches.length&&(wantDob||wantMrn)){
+      matches=pts.filter(function(x){
+        if(!x||!_athenaHistoryNameCompatible(String(x.name||''),wantName)) return false;
+        var mOk=wantMrn&&(x.mrn||x.athenaId)&&_athenaHistoryDigits(wantMrn)===_athenaHistoryDigits(x.mrn||x.athenaId);
+        var dOk=wantDob&&x.dob&&_athenaHistoryDobSame(x.dob,wantDob);
+        return !!(mOk||dOk);
+      });
+    }
   }
   if(matches.length>1) return null;
   var p=matches[0]||null;
@@ -23545,7 +23560,7 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
     try{upsertPatient(p);}catch(e){return null;}
   }
   if(!p||!p.id) return null;
-  if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)) return null;
+  if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)&&!_athenaHistoryNameCompatible(String(p.name||''),wantName)) return null; /* dupmatch-1.0: a fallback match survives its own recheck */
   if(wantDob&&p.dob&&!_athenaHistoryDobSame(wantDob,p.dob)) return null; /* idread-1.0.0 */
   if(wantMrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(wantMrn)!==_athenaHistoryDigits(p.mrn||p.athenaId)) return null;
   var appointmentId=String(ref.appointmentId||ref.athenaAppointmentId||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);
@@ -37344,7 +37359,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes clone requests only. */
-  var CLONED_BUILD='cloned-20260820-r27';
+  var CLONED_BUILD='cloned-20260820-r28';
   window.__MLS_CLONED=Object.freeze({enabled:true,route:'/cloned/',build:CLONED_BUILD});
   window.__MLS_AV=CLONED_BUILD;
   var CRITICAL=[
@@ -55346,6 +55361,8 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
               var match = null;
               for (var i=0;i<all.length;i++){ var pm=String(all[i].mrn||all[i].athenaId||'').replace(/[^0-9]/g,''); if (capMrn && pm && pm===capMrn) { match=all[i]; break; } }
               if (!match && capName) { for (var j=0;j<all.length;j++){ if (nrm(all[j].name)===capName && nrmDob(all[j].dob)===capDob) { match=all[j]; break; } } }
+              /* dupmatch-1.0: same tolerant fallback as _athenaHistoryTargetSnapshot - a name variant (middle initial, LAST-FIRST, case) with the SAME DOB must switch to the existing record, never add-new. */
+              if (!match && capName && capDob && typeof _athenaHistoryNameCompatible==='function') { for (var j2=0;j2<all.length;j2++){ if (nrmDob(all[j2].dob)===capDob && _athenaHistoryNameCompatible(String(all[j2].name||''), String(cap.name||''))) { match=all[j2]; break; } } }
               if (match) {
                 try { if (typeof setActivePtId==='function') setActivePtId(String(match.id||match.patientId)); if (typeof renderProfile==='function') renderProfile(); if (typeof renderPatients==='function') renderPatients(); } catch(eSw){}
                 say('Switched to '+(match.name||cap.name)+' - pulling their chart\u2026');
