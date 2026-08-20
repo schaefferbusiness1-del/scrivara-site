@@ -43555,12 +43555,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* ============================================================
    MLS-CONNECT — Feature: Lite (scribe-only) tier mode
    Pairs with the server-side liteGate (auth.js) which is the real, unbypassable
-   enforcement. This module is the matching UX + the Owner admin control:
+   enforcement. This module is the matching doctor-side UX:
      • Doctor side: if the signed-in user is on the Lite plan, hide every non-Lite
        nav tab (keep Visit), redirect restricted views to Visit, show a "Lite" badge.
-     • Admin side: inject a per-row "Lite" toggle into the Owner Users table (next to
-       Premium), reading each row's existing adminSetPremium(id,..) to get the user id;
-       calls POST /api/admin/users/:id/lite via the app's own authed adminFetch.
+     • Owner-side tier assignment is intentionally handled only by the normalized
+       plan picker and its atomic Ready transaction. Independent Lite/Premium
+       toggles could create contradictory entitlement states and are not rendered.
    Self-contained IIFE; every external call wrapped in try/catch; no-op on any error.
    ============================================================ */
 (function(){
@@ -43569,6 +43569,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   var RESTRICTED = ['calendar','patients','orders','recs','history','legalreq','team','analysis','studio'];
   var NAV_IDS = RESTRICTED.map(function(v){ return 'nav_' + v; });
+  var liteDisplayOwned = [];
 
   function getBk(){
     try { if (typeof bkUser !== 'undefined' && bkUser) return bkUser; } catch(e){}
@@ -43580,8 +43581,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return !!(u && u.lite) && !(u && u.isAdmin);
   }
 
+  function setLiteDisplay(el, value){
+    if (!el) return;
+    if (!el.__mlsLiteDisplayOwned) {
+      el.__mlsLiteDisplayOwned = true;
+      el.__mlsLiteOriginalDisplay = el.style.display;
+      liteDisplayOwned.push(el);
+    }
+    el.style.display = value;
+  }
+
+  function clearDoctorRestrictions(){
+    try {
+      for (var i = liteDisplayOwned.length - 1; i >= 0; i--) {
+        var el = liteDisplayOwned[i];
+        try {
+          el.style.display = el.__mlsLiteOriginalDisplay || '';
+          delete el.__mlsLiteOriginalDisplay;
+          delete el.__mlsLiteDisplayOwned;
+        } catch (e) {}
+      }
+      liteDisplayOwned = [];
+      if (document.body) document.body.classList.remove('mls-lite');
+      var badge = document.getElementById('mlsLiteBadge');
+      if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+    } catch (e) {}
+  }
+
   function applyDoctorRestrictions(){
-    if (!isLiteUser()) return;
+    if (!isLiteUser()) { clearDoctorRestrictions(); return; }
     try {
       /* setInterval(tick, 1500) re-enters this for the whole session. add()
          re-commits <body class> even when the token is already present, so
@@ -43589,8 +43617,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          minute - for Lite users only, which is why no measurement on an admin
          or Premium account ever saw it. */
       if (!document.body.classList.contains('mls-lite')) document.body.classList.add('mls-lite');
-      NAV_IDS.forEach(function(id){ var el = document.getElementById(id); if (el) el.style.display = 'none'; });
-      var v = document.getElementById('nav_visit'); if (v) v.style.display = '';
+      NAV_IDS.forEach(function(id){ setLiteDisplay(document.getElementById(id), 'none'); });
+      setLiteDisplay(document.getElementById('nav_visit'), '');
       try {
         var active = document.querySelector('.navtab.on');
         if (active && NAV_IDS.indexOf(active.id) !== -1 && typeof window.showView === 'function') window.showView('visit');
@@ -43613,81 +43641,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch(e){}
   }
 
-  var _liteMap = null;
-  function fetchLiteMap(cb){
-    try {
-      if (typeof window.adminFetch !== 'function') { cb && cb(); return; }
-      window.adminFetch('/api/admin/users')
-        .then(function(x){ return (x && typeof x.json === 'function') ? x.json() : x; })
-        .then(function(rows){
-          try { var arr = (rows && rows.users) ? rows.users : (Array.isArray(rows) ? rows : []); _liteMap = {}; arr.forEach(function(u){ if (u && u.id != null) _liteMap[String(u.id)] = (u.lite ? 1 : 0); }); } catch(e){}
-          cb && cb();
-        })
-        .catch(function(){ cb && cb(); });
-    } catch(e){ cb && cb(); }
-  }
-
-  function injectAdminToggles(){
-    try {
-      var premBtns = Array.prototype.slice.call(document.querySelectorAll('[onclick*="adminSetPremium("]'));
-      if (!premBtns.length) return;
-      premBtns.forEach(function(btn){
-        try {
-          if (btn.parentNode && btn.parentNode.querySelector('[data-mls-lite-btn]')) return;
-          var oc = btn.getAttribute('onclick') || '';
-          var m = oc.match(/adminSetPremium\(\s*['"]?([^'",\)]+)['"]?/);
-          if (!m) return;
-          var id = m[1];
-          var liteOn = _liteMap ? !!_liteMap[String(id)] : false;
-          var lb = document.createElement('button');
-          lb.setAttribute('data-mls-lite-btn','1');
-          lb.className = btn.className || 'btn-ghost';
-          lb.style.cssText = btn.getAttribute('style') || '';
-          lb.style.marginLeft = '4px';
-          if (liteOn){ lb.style.background = '#204034'; lb.style.color = '#fff'; lb.style.borderColor = '#204034'; }
-          lb.textContent = liteOn ? 'Lite ✓' : 'Lite';
-          var tip = 'Lite plan (scribe only). Restricts this doctor to Lite-tier features. Enforced server-side.';
-          lb.title = tip; lb.setAttribute('data-tip', tip);
-          lb.onclick = function(ev){ try { ev.preventDefault(); ev.stopPropagation(); } catch(e){} setLite(id, !liteOn, lb); };
-          btn.parentNode.insertBefore(lb, btn.nextSibling);
-        } catch(e){}
-      });
-    } catch(e){}
-  }
-
-  function setLite(id, on, lb){
-    try {
-      if (typeof window.adminFetch !== 'function') return;
-      if (lb) lb.disabled = true;
-      window.adminFetch('/api/admin/users/' + id + '/lite', { method: 'POST', body: JSON.stringify({ lite: !!on }) })
-        .then(function(){
-          try { if (typeof window.toast === 'function') window.toast(on ? 'Lite plan ON — this doctor is now scribe-only.' : 'Lite plan OFF.', 'ok'); } catch(e){}
-          _liteMap = null;
-          if (typeof window.loadAdminUsers === 'function') { try { window.loadAdminUsers(); } catch(e){} }
-        })
-        .catch(function(e){
-          try { if (typeof window.toast === 'function') window.toast('Could not update Lite: ' + (e && e.message || e), 'err'); } catch(_){}
-          if (lb) lb.disabled = false;
-        });
-    } catch(e){}
-  }
-
-  function adminPass(){
-    try {
-      if (!document.querySelector('[onclick*="adminSetPremium("]')) return;
-      if (!_liteMap) fetchLiteMap(injectAdminToggles);
-      else injectAdminToggles();
-    } catch(e){}
-  }
-
-  function tick(){ try { applyDoctorRestrictions(); adminPass(); } catch(e){} }
+  function tick(){ try { applyDoctorRestrictions(); } catch(e){} }
   try {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick);
     tick();
     var liteIv = setInterval(tick, 1500);
   } catch(e){}
 
-  window.__mlsLite = { isLiteUser: isLiteUser, apply: applyDoctorRestrictions, refreshAdmin: function(){ _liteMap = null; adminPass(); } };
+  window.__mlsLite = { isLiteUser: isLiteUser, apply: applyDoctorRestrictions, clear: clearDoctorRestrictions, refreshAdmin: function(){} };
 })();
 
 
