@@ -18,7 +18,7 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const EXPECTED_BUILD = 'p1-20260815-launch-r1';
-const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
+const P1_CONFIG_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
 /* The extension release train of 2026-08-17 (MLS Assist 3.0.62, wsg-2.0.0)
    moved exactly TWO literals in _config.yml - the released-package include
    name (MLS_Assist_v3.0.61 -> v3.0.62: zip, bin and the download comment) and
@@ -118,7 +118,7 @@ const P1_CONFIG_RELEASE_SUBS = [
    to chk3072 (scripts/sweep-3072.js), on top of the tip viewport containment
    fix (1c0e971f). */
 /* walkthrough untangle 2026-08-20: onenote-1.0.0 + rvack-1.0.0 (owner screenshots) */
-const P1_BASE_COMMIT = '9ccc709d9a910fd039dc9672b9aecb5fbde87285'; /* r27 finish-line + ext 3.0.76 root-bytes merge + athena-follow rr-3076 pin */
+const P1_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f'; /* r27 finish-line + ext 3.0.76 root-bytes merge + athena-follow rr-3076 pin */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
@@ -137,7 +137,7 @@ const P1_BASE_COMMIT = '9ccc709d9a910fd039dc9672b9aecb5fbde87285'; /* r27 finish
    phoneConfirmedWriteV1). Digest 5de12655..., zip a1dca473... - documented in
    scripts/sweep-3072.js and the 2026-08-19 evidence artifact. Only write_note/
    save_draft can be remotely armed; the write-safety contract did not move. */
-const EXTENSION_BASE_COMMIT = '9ccc709d9a910fd039dc9672b9aecb5fbde87285';
+const EXTENSION_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
 /* Advanced by the SAME extension release train, for the pin lines ONLY: the
    production Settings card version strings + release notes (ScribeFlow.html,
    ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
@@ -165,7 +165,7 @@ const EXTENSION_BASE_COMMIT = '9ccc709d9a910fd039dc9672b9aecb5fbde87285';
    /cloned, cure proven live before landing). Behavior fix, b1028-hotfix-train
    class; /1p and /cloned load the same shared file. */
 /* SAME untangle: fixpack + mls-connect are production-shared, b1028-hotfix-train class */
-const PRODUCTION_BASE_COMMIT = '9ccc709d9a910fd039dc9672b9aecb5fbde87285';
+const PRODUCTION_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
 
 const P1_FILES = [
   '1pScribeFlow.html',
