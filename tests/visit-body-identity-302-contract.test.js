@@ -38,7 +38,11 @@ const gateEnd = bg.indexOf('function realVisit', gateStart);
 assert(gateStart > 0 && gateEnd > gateStart, 'could not bound visitIdentityGate');
 const ctx = { String, Number, Object };
 vm.createContext(ctx);
-vm.runInContext(bg.slice(gateStart, gateEnd) + '\nthis.gate = visitIdentityGate;', ctx);
+/* wa-3072 (ext 3.0.72, merged 2026-08-19) gave the gate a walk-scoped alias
+   record living OUTSIDE the function (reset where the AllVisits mutex is
+   taken). Supply it null - exactly the fresh-walk state - so every case below
+   still exercises the pre-existing anchored semantics unchanged. */
+vm.runInContext('var __mlsWalkAliasRec = null;\n' + bg.slice(gateStart, gateEnd) + '\nthis.gate = visitIdentityGate;', ctx);
 const gate = (frozen, live) => ctx.gate(frozen, live);
 
 const FROZEN = { name: 'James B Fortune', dob: '11/04/1939', mrn: '7588619' };

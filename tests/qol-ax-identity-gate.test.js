@@ -65,13 +65,18 @@ function makeHarness(opts) {
     (arr || []).forEach(function (it) { const s = scorer(it && it.result); if (s > bs) { bs = s; best = it; } });
     return { result: best && best.result };
   };
-  const fn = new Function('exec', 'emrId', 'cfg', 'bestResult', 'sleep', 'touchVisitLease', 'readDeadline', 'visitIdentityGate', 'frozenHint', 'identity', 'diag', 'readBudgetMs', 'readStartedAt', 'mlsVisitDateKeyForHint',
+  /* axh-3073 (ext 3.0.74, merged 2026-08-19) made the closure consult the
+     enclosing walk's `total` (the classic index row count) so an ax fallback
+     can never claim complete when the classic index proved more rows. Supply
+     it per scenario; 0 = "classic index proved nothing", which makes the new
+     guard a no-op and keeps every pre-existing case semantically identical. */
+  const fn = new Function('exec', 'emrId', 'cfg', 'bestResult', 'sleep', 'touchVisitLease', 'readDeadline', 'visitIdentityGate', 'frozenHint', 'identity', 'diag', 'readBudgetMs', 'readStartedAt', 'mlsVisitDateKeyForHint', 'total',
     'var gate = null, rrWait = 0, rrRecovered = false;\n' + closure + '\nreturn { run: axRouteRun, getGate: function () { return gate; } };');
   const h = fn(exec, 1, { maxVisits: 40 }, bestResult,
     () => new Promise(r => setTimeout(r, 20)), () => {},
     Date.now() + 600000,
     (hint, ident) => ({ ok: !!(ident && ident.name === 'Adam Right') }),
-    opts.frozenHint, { name: 'fallback' }, {}, 0, Date.now(), dateKey);
+    opts.frozenHint, { name: 'fallback' }, {}, 0, Date.now(), dateKey, opts.classicTotal || 0);
   return { h, log };
 }
 

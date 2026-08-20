@@ -81,7 +81,9 @@ const sleepFn = new Function('return (' + src + ')')();
   ok(/  function sleep\(ms\) \{ var __hsAt[^\n]*\/\* mls-hs-1\.0\.0/.test(bg), 'the all-visits orchestrator sleep (SW scope) carries the hs body and behaves as a plain wait there');
 
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  eq(manifest.version, '3.0.64', 'manifest version 3.0.64');
-  ok(/^3\.0\.64\+core-sha256:[0-9a-f]{64}$/.test(String(manifest.version_name || '')), 'version_name carries the core digest');
+  /* Pin moved 3.0.64 -> 3.0.74 with the 2026-08-19 release train; the
+   hidden-safe sleep contract this suite executes is unchanged. */
+eq(manifest.version, '3.0.74', 'manifest version 3.0.74');
+  ok(/^3\.0\.74\+core-sha256:[0-9a-f]{64}$/.test(String(manifest.version_name || '')), 'version_name carries the core digest');
   console.log('PASS ext-3064 hidden-safe sleep contract: ' + checks + ' checks (hidden ' + hidden + ' ms, visible ' + visible + ' ms, sw ' + noDoc + ' ms)');
 })().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
