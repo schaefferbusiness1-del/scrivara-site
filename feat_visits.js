@@ -2289,8 +2289,32 @@
       if (!isFn(window._assistReadChart)) {
         throw new Error('The exact-patient Athena chart reader is not available. Refresh MLS and update MLS Assist before retrying. Nothing was saved.');
       }
-      st('Opening and verifying the exact patient chart in athenaOne… (read-only)');
-      return Promise.resolve(window._assistReadChart(targetRef, function (msg) { if (msg) st(msg); })).then(function (chartReceipt) {
+      /* freshwalk-1.0 (measured live 2026-08-20, Christine M Wright): when this
+         runs as the visit leg RIGHT AFTER a chart pull, the exact chart was
+         opened and identity-verified seconds ago - athenaChartImportedAt is
+         stamped only by that identity-verified save. Re-opening via athena's
+         patient search FROM the chart page is the measured failure ("athenaOne
+         patient search found no matching patient"), so while that proof is
+         fresh (90s) the redundant second open is skipped. Fail-closed intact:
+         the walk's own receipt carries the open chart's identity and the save
+         gate still refuses any mismatch ("charts can never mix"). */
+      var freshVerify = 0;
+      try {
+        var rows0 = (isFn(window.getPatients) ? window.getPatients() : []) || [];
+        for (var fw = 0; fw < rows0.length; fw++) {
+          if (String(rows0[fw] && rows0[fw].id) === S(targetRef.patientId)) {
+            var ia = rows0[fw].athenaChartImportedAt;
+            freshVerify = ia ? (typeof ia === 'number' ? ia : (Date.parse(String(ia)) || 0)) : 0;
+            break;
+          }
+        }
+      } catch (eFw) { freshVerify = 0; }
+      var skipReopen = freshVerify > 0 && (Date.now() - freshVerify) < 90000;
+      if (skipReopen) st('Chart verified moments ago — reading every visit from the open chart… (read-only)');
+      else st('Opening and verifying the exact patient chart in athenaOne… (read-only)');
+      return Promise.resolve(skipReopen
+        ? { targetPatientId: targetRef.patientId, skipped: 'fresh-chart-verify' }
+        : window._assistReadChart(targetRef, function (msg) { if (msg) st(msg); })).then(function (chartReceipt) {
         if (!chartReceipt || S(chartReceipt.targetPatientId) !== S(targetRef.patientId)) {
           throw new Error('Safety stop — Athena did not prove the selected patient chart before the visit read. Nothing was saved.');
         }

@@ -368,6 +368,23 @@
           status(onStatus, '⚠ The chart in athenaOne changed while it was being read, so MLS stopped — charts can never mix, and nothing was saved. Keep one patient’s chart open in athenaOne and click again.', true);
           hideChipLater(22000); return;
         }
+        /* schedfall-1.0 (measured live 2026-08-20, Cynthia Gutierrez then Mary
+           Miller - BOTH "38 encounters, 0 full clinical detail"): identical
+           numbers on different patients is not patient data. The tab sat on
+           the WEEK SCHEDULE while the masthead still named a patient, so the
+           walker counted appointment rows as encounters and honestly bound
+           zero details. When the capture carried name+DOB, fall back to the
+           proven chart-first engine: it OPENS the exact chart itself and the
+           visit walk then runs on that open chart (freshwalk-1.0). One hop,
+           never loops; every downstream identity gate stays in force. */
+        if (/only 0 had full clinical detail/i.test(em) && trim(preCap.dob) && typeof window.pullPatientChartViaAssist === 'function') {
+          status(onStatus, 'That athena screen was the schedule, not ' + trim(preCap.name) + '’s chart — opening their exact chart instead…', true);
+          var fbOk = false;
+          try { fbOk = (await window.pullPatientChartViaAssist(null, { name: trim(preCap.name), dob: trim(preCap.dob) })) === true; } catch (eFb) {}
+          if (fbOk) { status(onStatus, '✓ Pulled ' + trim(preCap.name) + ' through their exact chart — visit notes follow in the bar below.', true); hideChipLater(8000); return; }
+          status(onStatus, '⚠ The exact-chart fallback could not finish either. Open ' + trim(preCap.name) + '’s chart in athenaOne and click again. Nothing was saved.', true);
+          hideChipLater(18000); return;
+        }
         status(onStatus, '⚠ Couldn’t read the open athenaOne chart (' + (em || 'no readable result') + '). Open the patient’s chart in your Athena tab, then try again. Nothing was saved.', true);
         hideChipLater(15000); return;
       }
