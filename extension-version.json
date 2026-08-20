@@ -1,5 +1,5 @@
 {
-  "version": "3.0.72",
+  "version": "3.0.74",
   "minChrome": 116,
-  "notes": "v3.0.72 - The one-patient pull works from its button: MLS detects whoever is open in your athenaOne tab on its own (no more false different-patient stops), recognizes a chart whose legal name differs from the nickname on file without weakening any identity check, keeps reading at full speed while the athenaOne tab is in the background, and releases a stuck read instead of refusing forever. The extension also keeps your athenaOne session alive using athena's own heartbeat, never reads any tab that is not athenaOne, and can accept a phone-confirmed instruction to prepare a note write - still only notes and drafts, and still confirmed by you. Everything from earlier releases remains. Requires Chrome 116+."
+  "notes": "v3.0.74 - Repeat pulls now come back full every time: after a deep read the extension finds its way back to the patient's visit list instead of re-reading the page it was left on, a partial fallback read can no longer report itself as complete, and when athenaOne gets tired the app can ask the extension to refresh its tab and re-open the chart for one clean retry. Everything from the previous release remains: the one-patient pull detects whoever is open on its own, legal-name-vs-nickname charts pass without weakening any identity check, background reads keep full speed, stuck reads release themselves, the athenaOne session is kept alive, and phone-confirmed note writes stay notes-and-drafts only, confirmed by you. Requires Chrome 116+."
 }

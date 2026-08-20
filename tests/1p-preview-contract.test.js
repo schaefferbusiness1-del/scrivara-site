@@ -30,8 +30,8 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    v3.0.61 / 4d77f337...; each release maps THOSE baseline literals to the current
    release (scripts/sweep-3063.js). */
 const P1_CONFIG_RELEASE_SUBS = [
-  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.72'],
-  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', 'a1dca473780e1dd2b20075c3d3869a3c3ffcf96c1d22cd53e5a91eb0535efe74']
+  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.74'],
+  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', '70c7a57ca80bf58a946531775d6ab0398b9fd82558bb435a20c62d0b4909ac72']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
@@ -473,8 +473,8 @@ const PROTECTED_EXTENSION = [
   'icon-48.png',
   'icon-128.png',
   'extension-version.json',
-  'MLS_Assist_v3.0.72.zip',
-  'MLS_Assist_v3.0.72.bin'
+  'MLS_Assist_v3.0.74.zip',
+  'MLS_Assist_v3.0.74.bin'
 ];
 const unchangedProduction = spawnSync('git', ['diff', '--quiet', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
   { cwd: root, encoding: 'utf8', windowsHide: true });

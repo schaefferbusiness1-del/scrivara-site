@@ -214,6 +214,14 @@
     if (photo && kind === 'photo') {
       help.innerHTML = '<strong>Your photo is the patient-facing face</strong>This is the exact portrait patients see. It keeps the closest likeness and moves gently with speaking and listening.<span class="mlsP1FaceProvenance">Matched field badges distinguish on-device pixels, the second vision read, and your manual settings.</span>';
       previewSub.textContent = 'Actual patient view — your saved camera portrait, with subtle voice and listening movement.';
+    } else if (photo && kind === 'photo-unreadable') {
+      /* p1-photo-fallback-1.0.0 — DO NOT TELL HIM TO TAKE A PHOTO HE CAN SEE
+         HE ALREADY TOOK. The saved portrait exists and the browser could not
+         decode it, so the animated character is standing in. That is a
+         different sentence from "no portrait yet", and the engine now
+         distinguishes the two states so this can say which one it is. */
+      help.innerHTML = '<strong>Your saved portrait could not be opened</strong>The stored photo did not decode, so the animated face below is what patients are seeing right now. Taking a new photo replaces it.<span class="mlsP1FaceProvenance">Nothing was changed about your saved appearance settings.</span>';
+      previewSub.textContent = 'Current patient fallback — your saved photo could not be opened, so this is what patients see.';
     } else if (photo) {
       help.innerHTML = '<strong>Take a photo to use photo mode</strong>No portrait is available yet, so the animated fallback shown here is what patients would see.<span class="mlsP1FaceProvenance">Photo mode is recommended whenever a valid portrait is available.</span>';
       previewSub.textContent = 'Current patient fallback — take a camera portrait to replace it with your photo.';

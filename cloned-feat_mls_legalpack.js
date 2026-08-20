@@ -1602,9 +1602,86 @@
      claims the detach and nothing else - an earlier draft of this line said
      "nothing was changed in this account", which would be false the moment a
      background day pull did finish and upsert the patients it found. */
+  /* ===== p1-legal-readlive-1.0.0 (2026-08-19) =============================
+     A read that narrates into a collapsed card is a read with no indicator.
+
+     Measured at HEAD: runReadOp's onStatus routes every progress line the
+     delegate emits ("Reading verified history 3 of 14…", "Verifying patient
+     identity N of M…") into setStatus, which writes #mlsP1LegalStatus. That
+     node lives inside the GENERATE disclosure card, and autoExpandedFor() only
+     opens that card at stage 'report-picked'. During a read at stage 'unbound'
+     or 'bound' — which is every read a doctor starts before choosing a report
+     type — the entire live narration is written into a collapsed element and
+     never seen. The settled verdict shows (state.athenaNote renders at the
+     control); the minutes in between show nothing at all.
+
+     This mirrors the same narration to a live line INSIDE the read-ops block,
+     beside the button that is running, and adds what the room never had: an
+     elapsed stamp and an honest stall verdict after 60s of silence. It repaints
+     ONE text node and never re-renders the block, so the Stop control is never
+     torn down and rebuilt underneath a doctor's finger.
+
+     It is display only. It starts no read, cancels nothing, and changes no
+     verdict: the receipt and the ownership token are untouched. */
+  var LEGAL_STALL_MS = 60000, legalLiveTimer = null;
+  function legalSecs(ms) {
+    var t = Math.max(0, Math.round(ms / 1000));
+    if (t < 60) return t + 's';
+    return Math.floor(t / 60) + 'm ' + (t % 60) + 's';
+  }
+  /* The LINE is the thing; the node is only where it goes. Keeping them apart
+     means the words can be asserted even where a harness stores innerHTML as a
+     string and never builds child nodes. */
+  function legalLiveLine() {
+    if (!state.athenaOp) return '';
+    var now = Date.now();
+    var since = now - (state.athenaLastAt || now);
+    var line = (clean(state.athenaLive) || 'Working — no step reported yet') +
+      ' · ' + legalSecs(now - (state.athenaStartAt || now)) + ' elapsed';
+    if (since >= LEGAL_STALL_MS) {
+      line += ' · no new step for ' + legalSecs(since) +
+        ' — the EMR tab may be stuck. Nothing has been written to the EMR; press “Stop the read” to take this workspace back.';
+    }
+    return line;
+  }
+  function legalLiveStalled() {
+    if (!state.athenaOp) return false;
+    return (Date.now() - (state.athenaLastAt || Date.now())) >= LEGAL_STALL_MS;
+  }
+  function legalLivePaint() {
+    var node = byId('mlsP1LegalReadLive');
+    if (!node) return;
+    if (!state.athenaOp) { try { node.style.display = 'none'; node.textContent = ''; } catch (e) {} return; }
+    try { node.style.display = ''; } catch (e2) {}
+    node.textContent = legalLiveLine();
+    node.style.color = legalLiveStalled() ? '#8a2b2b' : '';
+  }
+  /* The ticking clock is an ENHANCEMENT, not the mechanism: every progress
+     message repaints this line by itself. Where no interval timer exists the
+     line still updates on each step — it simply stops counting seconds between
+     them — so the room degrades instead of throwing. */
+  function legalLiveClear() {
+    if (!legalLiveTimer) return;
+    try { (typeof clearInterval === 'function' ? clearInterval : window.clearInterval)(legalLiveTimer); } catch (e) {}
+    legalLiveTimer = null;
+  }
+  function legalLiveStart() {
+    state.athenaStartAt = Date.now(); state.athenaLastAt = Date.now(); state.athenaLive = '';
+    legalLiveClear();
+    try {
+      var si = (typeof setInterval === 'function') ? setInterval : (window && window.setInterval);
+      if (typeof si === 'function') legalLiveTimer = si(function () { try { legalLivePaint(); } catch (e) {} }, 1000);
+    } catch (e) { legalLiveTimer = null; }
+  }
+  function legalLiveStop() {
+    legalLiveClear();
+    state.athenaLive = '';
+  }
+  /* ===== end p1-legal-readlive-1.0.0 ===== */
   function stopReadOp() {
     if (!state.athenaOp) return false;
     var stopped = ATHENA_READ_OPS[state.athenaOp];
+    legalLiveStop(); /* p1-legal-readlive-1.0.0 */
     state.athenaSeq++;
     state.athenaOp = '';
     state.athenaNote = (stopped ? stopped.label : 'The read') + ' was stopped here: this workspace is free again and ' +
@@ -1639,17 +1716,23 @@
     var token = ++state.athenaSeq;
     var rosterBefore = rosterPatients().length;
     var itemsBefore = state.model ? state.model.items.length : 0;
-    state.athenaOp = key; state.athenaNote = ''; renderReadOps(); updateControls();
+    state.athenaOp = key; state.athenaNote = '';
+    legalLiveStart(); /* p1-legal-readlive-1.0.0 */
+    renderReadOps(); updateControls();
     setStatus(op.label + ' — reading. This reads only; nothing is written to the EMR. ' +
       'The rest of this workspace waits until the read finishes; press "Stop the read" to take it back.', false);
     var onStatus = function (message) {
       if (state.athenaSeq !== token) return; /* a stopped read does not narrate */
       setStatus(op.label + ' — ' + clean(message), false);
+      /* p1-legal-readlive-1.0.0: the same words, where they can be seen. */
+      state.athenaLive = clean(message); state.athenaLastAt = Date.now();
+      try { legalLivePaint(); } catch (e) {}
     };
     function settle(okText, errText, error) {
       /* The ownership boundary: a read the clinician stopped, or a second
          read started after it, owns nothing here. */
       if (state.athenaSeq !== token) return !error;
+      legalLiveStop(); /* p1-legal-readlive-1.0.0 */
       state.athenaOp = '';
       state.athenaNote = error ? (errText + ' ' + (clean(error && error.message) || 'the read did not complete')) : okText;
       renderReadOps(); renderRoster(); updateControls();
@@ -2069,6 +2152,10 @@
       /* p1-legal-readstop-1.0.0: say WHY the rest of the room went quiet.
          A doctor who presses Compile and gets nothing needs the reason on
          screen, not an inference from four greyed-out buttons. */
+      /* p1-legal-readlive-1.0.0: the live line, AT the control. Repainted in
+         place by legalLivePaint() so this block is never re-rendered mid-read
+         and the Stop button is never rebuilt under a finger. */
+      '<p class="p1l-explain" id="mlsP1LegalReadLive" role="status" aria-live="polite"' + (busy ? '' : ' style="display:none"') + '></p>' +
       (busy ? '<p class="p1l-explain">Compile history, Generate and local files wait while a read runs, so a chart cannot change underneath a report you are part-way through. Press “Stop the read” to take the workspace back — that releases this room; the app’s own read-only reader may still finish in the background, and it writes nothing to the EMR either way.</p>' : '') +
       (state.athenaNote ? '<p class="p1l-explain">' + esc(state.athenaNote) + '</p>' : '') + '</div>';
     var dateBox = byId('mlsP1LegalReadDay'); if (dateBox) dateBox.value = typedDate;
@@ -2081,6 +2168,9 @@
     Array.prototype.forEach.call(node.querySelectorAll('button[data-read-stop]'), function (button) {
       button.addEventListener('click', function () { stopReadOp(); });
     });
+    /* p1-legal-readlive-1.0.0: fill the live line now, so it never sits blank
+       for a second waiting on the first tick. */
+    try { legalLivePaint(); } catch (e) {}
     return true;
   }
   function renderReportTypes() {
@@ -2500,6 +2590,25 @@
     /* p1-legal-readstop-1.0.0: the SAME mutation the "Stop the read" button
        drives, so what a test drives is what a click does. */
     stopRead: function () { return apiCurrent() ? stopReadOp() : false; },
+    /* p1-legal-readlive-1.0.0: the live line, exposed so a suite reads what the
+       control actually shows instead of grepping for it. */
+    readLive: function () {
+      var n = byId('mlsP1LegalReadLive');
+      return { text: legalLiveLine(), painted: n ? clean(n.textContent) : '', node: !!n,
+        stalled: legalLiveStalled(), stallMs: LEGAL_STALL_MS,
+        startedAt: state.athenaStartAt || 0, lastAt: state.athenaLastAt || 0 };
+    },
+    _readLivePaint: function () { try { legalLivePaint(); } catch (e) {} return true; },
+    /* Test seam: shift only the two DISPLAY timestamps back, so a suite can
+       reach the stall verdict without sleeping a minute. It touches nothing
+       else — not the ownership token, not the receipt, not the read. */
+    _readLiveBackdate: function (ms) {
+      var n = Number(ms) || 0;
+      if (state.athenaStartAt) state.athenaStartAt -= n;
+      if (state.athenaLastAt) state.athenaLastAt -= n;
+      try { legalLivePaint(); } catch (e) {}
+      return true;
+    },
     snapshotDrifted: function () { return apiCurrent() && snapshotDrifted(); },
     /* p1-legal-restore-2.0.0: the restored production extractors, exposed so
        each one is EXECUTED by a test rather than grepped for. */
