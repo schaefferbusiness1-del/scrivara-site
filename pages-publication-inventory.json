@@ -185,6 +185,7 @@
     "feat_mls_keyboard_layer.js",
     "feat_mls_lastmonth_b51.js",
     "feat_mls_lastseen_unify.js",
+    "feat_mls_legalpack.js",
     "feat_mls_loading_calm.js",
     "feat_mls_login_clean.js",
     "feat_mls_login_exact.js",

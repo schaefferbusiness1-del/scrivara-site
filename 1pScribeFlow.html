@@ -56134,7 +56134,13 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     say(retried ? ('athenaOne did not answer \u2014 retrying '+nm+'\u2019s pull\u2026') : ('Pulling '+nm+'\u2019s chart from athena\u2026'));
     var g = byId('pdGo'); if (g) { g.disabled = true; g.textContent = '\u2026 pulling'; }
     Promise.resolve().then(function(){ return (typeof pullPatientChartViaAssist==='function') ? pullPatientChartViaAssist(g, { name: nm, dob: dv }) : Promise.reject(new Error('pull unavailable')); })
-      .then(function(okv){ if (g) { g.disabled=false; g.textContent='Pull this patient in'; } if (okv===true) say('Done - '+nm+'\u2019s chart is in.'); })
+      .then(function(okv){ if (g) { g.disabled=false; g.textContent='Pull this patient in'; }
+        if (okv===true) { say('Done - '+nm+'\u2019s chart is in.'); }
+        /* pdsay-1.1 (owner live 2026-08-20 evening, twice): a lease-class
+           refusal returns FALSE with only a transient toast, so the door sat
+           on "Pulling\u2026" forever and read as the old bug. A false return now
+           says the truth in the door's own persistent line. */
+        else if (okv===false) { say('The pull was refused before it could start - most often another MLS tab owns the athena reader, or another pull is mid-flight. Close other MLS tabs, wait a few seconds, then press "Pull this patient in" again.', true); } })
       .catch(function(err){
         if (g) { g.disabled=false; g.textContent='Pull this patient in'; }
         var m = String((err&&err.message)||'The pull could not run. Check the athena tab is signed in and retry.');

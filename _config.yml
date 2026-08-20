@@ -90,7 +90,6 @@ exclude:
   - "feat_mls_legal_exact.js"
   - "feat_mls_legal_pay_setup.js"
   - "feat_mls_legal_paywidget.js"
-  - "feat_mls_legalpack.js"
   - "feat_mls_navfeat_keep.js"
   - "feat_mls_staff_hub.js"
   - "feat_mls_team_exact.js"
