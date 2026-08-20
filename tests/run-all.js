@@ -341,6 +341,7 @@ const tests = [
   '1p-athena-write-readiness-and-probe-only.test.js',
   '1p-copy-all-visits-full-text.test.js',
   '1p-cross-patient-door.test.js',
+  '1p-day-pull-facts-capture.test.js',
   '1p-long-read-progress.test.js',
   '1p-single-pull-visit-accounting.test.js',
   '1p-visit-banner-bind-cure.test.js',

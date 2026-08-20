@@ -41,9 +41,14 @@ function ok(cond, msg) { assert.ok(cond, msg); checks++; }
 
 /* ---- the guard is not weakened, and the refusal text is untouched ---- */
 {
-  const SHIPPED = '⚠ athenaOne has a DIFFERENT patient open than the one selected here — MLS ' +
-    'stopped on purpose so charts can never mix.';
-  ok(autopull.indexOf(SHIPPED) > 0, 'the shipped cross-patient refusal must be unchanged');
+  /* Pin moved with tm-1.1 (2026-08-19): detect-3072 made the whoever-button
+     anchor to whoever IS open, so the on-selection refusal this door was
+     built for can no longer occur; the one mismatch left is the MID-WALK
+     swap, and the source message now says that truth. The door's own
+     MISMATCH regex moved with it (both twins). */
+  const SHIPPED = '⚠ The chart in athenaOne changed while it was being read, so MLS stopped — ' +
+    'charts can never mix, and nothing was saved.';
+  ok(autopull.indexOf(SHIPPED) > 0, 'the shipped mid-walk-swap refusal must be unchanged');
   ok(shell.indexOf('xpdoor-1.0.0') > 0, 'the door must ship in 1pScribeFlow.html');
   ok(twin.indexOf('xpdoor-1.0.0') > 0, 'the door must ship in 1p/index.html');
   /* the block must never re-read Athena: no bridge verb of its own */
@@ -149,7 +154,9 @@ function countDoors(node) {
 }
 
 const SAFETY_ERROR = 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.';
-const REFUSAL = '⚠ athenaOne has a DIFFERENT patient open than the one selected here — MLS stopped on purpose so charts can never mix.';
+/* Fixture moved with tm-1.1 (2026-08-19) — the status line the door watches
+   now carries the mid-walk-swap truth; see the SHIPPED pin note above. */
+const REFUSAL = '⚠ The chart in athenaOne changed while it was being read, so MLS stopped — charts can never mix, and nothing was saved.';
 const CHART = { name: 'Maria Sandoval', dob: '04/11/1962', mrn: '7618711' };
 
 function stop(identity) {

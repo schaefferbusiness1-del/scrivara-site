@@ -351,6 +351,13 @@ async function runtime() {
       const out = [];
       for (const n of nodes) {
         const id = n.id || (n.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 26);
+        /* Visibility is judged AT PRESS TIME, not at capture (moved 2026-08-19,
+           measured: pressing ◀/Today closes the day panel, so its "✕ Close"
+           was pressed while hidden and read as dead — panelBefore="none" on
+           the instrumented run. The rule this suite states is that every
+           VISIBLE control answers; a control whose surface has legitimately
+           left the stage is skipped and recorded, never counted dead. */
+        if (!window.__cal.visible(n)) { out.push({ id, hiddenAtPress: 1, d: 1, err: '', disabled: false }); continue; }
         /* Compare the markup ITSELF, not its length. A length delta calls a
            press silent whenever the page happens to shrink somewhere else by
            as much as it grew — measured: "✕ Close" hides the day panel, and a

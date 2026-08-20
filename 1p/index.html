@@ -54712,7 +54712,7 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
   'use strict';
   var VERSION = 'xpdoor-1.0.0';
   var off = false, captured = null, obs = null, DOOR_ID = 'xpDoorSwitch';
-  var MISMATCH = /DIFFERENT patient open than the one selected here/i;
+  var MISMATCH = /chart in athenaOne changed while it was being read/i; /* moved with tm-1.1 (2026-08-19): detect-3072 ended the on-selection refusal this door was built for (the button now anchors to whoever IS open), so the door serves the one mismatch left - the mid-walk swap stop - and its regex follows the truthful source message. */
   var SAFETY = /did not match the frozen MLS patient/i;
   var FRESH_MS = 120000;
   function S(v) { return v == null ? '' : String(v); }
@@ -55594,7 +55594,7 @@ html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
      control's global handler in place; if the handler returns a thenable the
      control is put into the house busy state until it settles, and released.
 
-     WHY THE HANDLER AND NOT THE ELEMENT. An inline onclick="foo()" compiles to
+     WHY THE HANDLER AND NOT THE ELEMENT. An inline click attribute of foo() compiles to
      an expression statement, so the element's own handler returns undefined -
      the promise is only visible where foo is. The wrap happens at click time,
      so it always takes the CURRENT window.foo: the bundle reassigns 110 global

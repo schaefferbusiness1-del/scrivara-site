@@ -53,8 +53,13 @@ ok(reExpandAt > 0 && closureAt > reExpandAt && axHookAt > closureAt && refusalAt
   'route order: re-expand -> route closure -> starved hook -> refusal return');
 ok(SRC.split('var axRouteRun = async function').length - 1 === 1,
   'the route body exists ONCE (wrap-once: both entries share one closure)');
-ok(/error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient \(name plus DOB\/MRN\)\. No encounter body was read\.'/.test(SRC),
-  'the identity-mismatch refusal is byte-identical (fail-closed untouched)');
+/* Pin moved deliberately with axh-3073/detect-3072 (2026-08-19): the refusal
+   became a TERNARY so an empty-hint stop (identity-hint-incomplete — the
+   whoever-button's detect mode) gets an honest message that can never match
+   the app's cross-patient wording. The mismatch refusal itself survives
+   byte-identically in the else branch — both branches are pinned exactly. */
+ok(/error: \(String\(gate\.reason \|\| ''\) === 'identity-hint-incomplete'\) \? 'Could not read a clear patient identity \(name plus DOB or MRN\) from the open athenaOne chart header, so nothing was read\. Open the patient chart fully and retry\.' : 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient \(name plus DOB\/MRN\)\. No encounter body was read\.'/.test(SRC),
+  'the identity-mismatch refusal is byte-identical inside the axh-3073 ternary (fail-closed untouched, incomplete-hint message honest)');
 const hookBlock = SRC.slice(closureAt, axHookAt);
 ok(/if \(axIdent && \(axIdent\.name \|\| axIdent\.dob\)\) axRefused\+\+;/.test(hookBlock),
   'a SEEN-and-mismatched identity is a hard refusal, never a shape-unknown');

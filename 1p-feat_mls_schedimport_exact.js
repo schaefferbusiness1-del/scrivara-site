@@ -4091,6 +4091,51 @@
     return true;
   }
   /* ===== end cap-1.0.0 (retry lane) ===== */
+  /* si-facts-1.0 (owner 2026-08-19: "very important that history is also
+     saved just like that when doing a day pull"): the organize pass already
+     lands problems/history from the pulled encounter text, but MEDICATIONS
+     live on the chart banner and never ride encounter bodies (measured
+     2026-08-19: every day-pulled patient shows an empty meds card while the
+     capture reply carries the full list). One bounded read-only capture per
+     patient, taken while THAT patient's chart is still open, fills meds
+     (append-missing) and problems/allergies when empty. Two-token name guard:
+     a capture naming a different patient adds nothing. Non-fatal by design —
+     a capture miss never voids the proven visit save; the verdict rides the
+     per-patient ledger row as factsCapture. */
+  function siCaptureFacts(patientId, ms) {
+    return new Promise(function (resolve) {
+      var done = false, t = 0;
+      function settle(v) { if (done) return; done = true; try { clearTimeout(t); } catch (e0) {} try { window.removeEventListener('message', onR); } catch (e1) {} resolve(v); }
+      function onR(e) {
+        if (!(e.data && e.data.source === 'mls-ext' && e.data.type === 'mlsAppCaptureResult')) return;
+        settle((e.data.resp && e.data.resp.ok === true && e.data.resp.captured) || null);
+      }
+      t = setTimeout(function () { settle(null); }, ms || 8000);
+      window.addEventListener('message', onR);
+      try { window.postMessage({ source: 'mls-app', type: 'mlsAppCapture' }, '*'); } catch (e2) { settle(null); }
+    }).then(function (cap) {
+      if (!cap) return 'no-capture';
+      var p = patientById(patientId);
+      if (!p) return 'no-patient';
+      var capName = String(cap.name || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+      var rowName = String(p.name || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!capName || !rowName) return 'no-name';
+      var capT = capName.split(' '), rowT = rowName.split(' ');
+      var inter = capT.filter(function (w) { return w.length > 1 && rowT.indexOf(w) >= 0; }).length;
+      if (inter < 2) return 'name-mismatch';
+      var changed = false;
+      var meds = Array.isArray(cap.medications) ? cap.medications.map(function (m) { return String(m || '').trim(); }).filter(Boolean) : [];
+      if (meds.length) {
+        var have = String(p.meds || '');
+        var add = meds.filter(function (m) { return have.toLowerCase().indexOf(m.toLowerCase()) < 0; });
+        if (add.length) { p.meds = (have.trim() ? have.trim() + '\n' : '') + add.join('\n'); changed = true; }
+      }
+      if (!String(p.problems || '').trim() && Array.isArray(cap.problems) && cap.problems.length) { p.problems = cap.problems.map(function (x) { return String(x || '').trim(); }).filter(Boolean).join('\n'); changed = true; }
+      if (!String(p.allergies || '').trim() && Array.isArray(cap.allergies) && cap.allergies.length) { p.allergies = cap.allergies.map(function (x) { return String(x || '').trim(); }).filter(Boolean).join('\n'); changed = true; }
+      if (changed) { try { if (isFn(window.upsertPatient)) window.upsertPatient(p); } catch (e3) {} }
+      return changed ? 'saved' : 'nothing-new';
+    }).catch(function () { return 'error'; });
+  }
   function saveVerifiedVisits(target, r) {
     var identity = r && r.identity || {};
     var observed = { chartName: identity.name || r.chartName || "", chartDob: identity.dob || r.chartDob || "", chartMrn: identity.mrn || identity.athenaId || r.chartMrn || "" };
@@ -5392,6 +5437,10 @@
               savedVisits.clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(savedVisits.profileCoverage&&savedVisits.profileCoverage.cards&&savedVisits.profileCoverage.cards[k]&&savedVisits.profileCoverage.cards[k].populated?1:0);},0);
             }
             stageMs.visitSave = Date.now() - __visitSaveT0;
+            /* si-facts-1.0: banner facts (medications above all) while THIS
+               patient's chart is still the open one — awaited so the walk can
+               never navigate to the next chart underneath the capture. */
+            try { one.factsCapture = await siCaptureFacts(target.patientId, 8000); } catch (eSiF) { one.factsCapture = 'error'; }
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||""); one.axRrWaitMs=Number(savedVisits.axRrWaitMs||0); one.axRrRecovered=savedVisits.axRrRecovered===true; one.axEntry=String(savedVisits.axEntry||""); one.fatigueRefresh=savedVisits.fatigueRefresh===true; one.hydStreak=Number(savedVisits.hydStreak||0);
             /* qv-1.0 (2026-08-09): a chart is only COMPLETE when its bytes are
                provably in storage. The quota guard (mls-connect) judges every
