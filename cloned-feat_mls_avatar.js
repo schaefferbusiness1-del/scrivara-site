@@ -1882,18 +1882,36 @@
     var whole = decision || faceMatchDecision(res);
     if (whole.applies) return { partial: false, derived: [], skipped: [], why: '' };
     var provedPhoto = !!(res && res.look && r.srcKind === 'photo' && r.fromIllustration !== true);
-    var eligible = provedPhoto && examined >= 10 && got.indexOf('skin') >= 0 && got.length >= FACE_PARTIAL_MIN;
+    /* avfit-2.0.0 (owner 2026-08-20, holding a "8 of 14 readable, all settings
+       stayed unchanged" screen: "HAVE IT PUT IN THE 8 THAT IT GOT AT LEAST").
+       His eight were ALL geometry (nose, lips, brows, hairline, face shape,
+       eye spacing, hair length, face lines) and the six unreadables were the
+       COLOURS - and the old rule refused the whole partial because `skin` was
+       missing. The skin anchor exists because a beige WALL has twice won the
+       colour vote (the-face-box-swallowed-the-hair) - it is COLOUR evidence.
+       Geometry claims come from the box/feature readers with their own gates
+       and were never part of that failure mode. So the anchor now guards only
+       what it evidences: COLOUR traits still require the skin claim; GEOMETRY
+       traits apply on a proven photo with a full examination. No claim is ever
+       invented - `derived` remains a filter of what the readers claimed. */
+    var FACE_COLOR_FIELDS = ['skin', 'hair', 'eyes', 'browCol', 'shirt'];
+    var isColor = function (k) { return FACE_COLOR_FIELDS.indexOf(k) >= 0; };
+    var hasSkin = got.indexOf('skin') >= 0;
+    var applyable = got.filter(function (k) { return hasSkin || !isColor(k); });
+    var colorsHeld = got.filter(function (k) { return !hasSkin && isColor(k); });
+    var eligible = provedPhoto && examined >= 10 && applyable.length >= FACE_PARTIAL_MIN;
     var skipped = [];
-    FACE_MATCH_FIELDS.forEach(function (k) { if (got.indexOf(k) < 0) skipped.push(k); });
+    FACE_MATCH_FIELDS.forEach(function (k) { if (applyable.indexOf(k) < 0) skipped.push(k); });
     if (!eligible) {
       return { partial: false, derived: [], skipped: skipped,
         why: !provedPhoto
           ? 'Nothing was applied: this image was never proved to be a photograph of a face.'
-          : (got.indexOf('skin') < 0
-            ? 'Nothing was applied: your skin tone could not be read, and without it there is no proof the reader was looking at a face.'
-            : 'Nothing was applied: fewer than ' + FACE_PARTIAL_MIN + ' details were readable.') };
+          : 'Nothing was applied: fewer than ' + FACE_PARTIAL_MIN + ' details were readable.' };
     }
-    return { partial: true, derived: got, skipped: skipped, why: '' };
+    return { partial: true, derived: applyable, skipped: skipped,
+      why: colorsHeld.length
+        ? 'Colour settings stayed unchanged: your skin tone could not be read to anchor them.'
+        : '' };
   }
   /* Pixel evidence and high-confidence model evidence are candidates until
      this function has built one complete receipt.  Nothing here mutates the
