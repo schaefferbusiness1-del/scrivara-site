@@ -31,9 +31,14 @@ function statics() {
   const a = shells[0], b = shells[1];
   const blk = (s) => s.slice(s.indexOf('pulldoor-1.0.0'), s.indexOf('end pulldoor-1.0.0'));
   ok(blk(a) === blk(b), 'block byte-identical in both twins');
-  /* production untouched */
-  for (const prod of ['ScribeFlow.html', 'mls-connect.js']) {
-    eq(fs.readFileSync(path.join(root, prod), 'latin1').indexOf('pulldoor-1.0.0'), -1, `${prod} untouched`);
+  /* THE PROMOTION (b1036, 2026-08-20): production is now DERIVED from the 1p
+     lineage (scripts/derive-production-from-1p.js), so the old "production
+     untouched" invariant inverts - the door must be PRESENT in production and
+     byte-identical to the twins' block (same derivation, same bytes). */
+  for (const prod of ['ScribeFlow.html']) {
+    const ps = fs.readFileSync(path.join(root, prod), 'latin1');
+    ok(ps.indexOf('pulldoor-1.0.0') > 0, `${prod} carries the promoted door`);
+    ok(blk(ps) === blk(a), `${prod} door block matches the 1p source it derives from`);
   }
 }
 

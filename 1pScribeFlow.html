@@ -55342,11 +55342,44 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
       for (var i0=0;i0<all0.length;i0++){ if (normName(all0[i0].name)===normName(nm) && String(all0[i0].dob||'').trim() && normDob(all0[i0].dob)!==normDob(dv)) { conflict = all0[i0]; break; } }
     } catch (eC0) {}
     if (conflict) { say('A patient named '+nm+' already exists with a different date of birth. Open their profile to check before pulling.', true); return; }
-    say('Pulling '+nm+'\u2019s chart from athena\u2026');
+    runDoorPull(nm, dv, false);
+  }
+  /* pdheal-1.0 (owner live, Mugdha GORE 2026-08-20: "KEEP GETTING THIS ERROR
+     EVEN IF I OPEN IN ANOTHER TAB"): the extension's 'no-athena-tab' verdict
+     covers TWO different worlds - a missed 1.2s session ping while athena
+     renders (transient; heals by retrying), and an ORPHANED athena page whose
+     content script died when the tab was closed/reopened (only an F5 on that
+     tab heals it). The old catch parroted the extension's one-size message,
+     which was FALSE and unactionable in both worlds. Now: retry once after
+     6s; still failing, ask the presence probe which world we are in and say
+     the applicable truth. Same cure class the visit-backfill footer proved
+     (p1-backfill-footer-1.0.0). */
+  function runDoorPull(nm, dv, retried){
+    say(retried ? ('athenaOne did not answer \u2014 retrying '+nm+'\u2019s pull\u2026') : ('Pulling '+nm+'\u2019s chart from athena\u2026'));
     var g = byId('pdGo'); if (g) { g.disabled = true; g.textContent = '\u2026 pulling'; }
     Promise.resolve().then(function(){ return (typeof pullPatientChartViaAssist==='function') ? pullPatientChartViaAssist(g, { name: nm, dob: dv }) : Promise.reject(new Error('pull unavailable')); })
       .then(function(okv){ if (g) { g.disabled=false; g.textContent='Pull this patient in'; } if (okv===true) say('Done - '+nm+'\u2019s chart is in.'); })
-      .catch(function(err){ if (g) { g.disabled=false; g.textContent='Pull this patient in'; } say(String((err&&err.message)||'The pull could not run. Check the athena tab is signed in and retry.'), true); });
+      .catch(function(err){
+        if (g) { g.disabled=false; g.textContent='Pull this patient in'; }
+        var m = String((err&&err.message)||'The pull could not run. Check the athena tab is signed in and retry.');
+        var noTab = /another tab, then try again|no-athena-tab/i.test(m);
+        if (noTab && !retried) {
+          say('athenaOne did not answer \u2014 retrying in a few seconds\u2026');
+          setTimeout(function(){ runDoorPull(nm, dv, true); }, 6000);
+          return;
+        }
+        if (noTab) {
+          var probe = null;
+          try { probe = (window.__mlsSI && typeof window.__mlsSI._athenaPresenceProbe==='function') ? window.__mlsSI._athenaPresenceProbe() : null; } catch (ePr) {}
+          Promise.resolve(probe).then(function(p){
+            var present = !!(p && (p.present===true || p.ok===true || p.tabs>0));
+            if (present) say('Your athenaOne tab is open, but its page has stopped answering MLS. Click the athenaOne tab, press F5 (you stay signed in), then press \u201cPull this patient in\u201d again.', true);
+            else say(m, true);
+          }, function(){ say('Your athenaOne tab may have stopped answering MLS. Click it, press F5, then press \u201cPull this patient in\u201d again \u2014 or open a signed-in athenaOne tab if none is open.', true); });
+          return;
+        }
+        say(m, true);
+      });
   }
   function normDob(d){ var m=String(d||'').match(/(\d{1,4})\D(\d{1,2})\D(\d{1,4})/); if(!m) return String(d||'').replace(/\D/g,''); var a=+m[1],b=+m[2],c=+m[3]; if (a>31) return a+'-'+p2(b)+'-'+p2(c); return c+'-'+p2(a)+'-'+p2(b); }
   function p2(n){ return (n<10?'0':'')+n; }
