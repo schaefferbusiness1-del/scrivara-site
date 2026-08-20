@@ -3128,7 +3128,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            paperwork only — never a clinical unlock). Doctor signs; the owner
            countersigns the BAA from Admin; both parties receive copies. -->
       <div id="agCeremonyWrap" style="display:none">
-        <p class="sub">Before you start, please review and electronically sign your onboarding agreements. Your signature is recorded with your account, and a compliance record is sent to your administrator. The two-party Business Associate Agreement is fully executed once MLS countersigns.</p>
+        <p class="sub">Before you start, please review and electronically sign the onboarding agreements assigned to your role. The server stores the exact signed record and reports artifact and email-delivery status after submission. A two-party Business Associate Agreement is fully executed only after MLS countersigns it.</p>
         <div id="agGateSections"></div>
         <div class="field" style="margin-top:16px">
           <label for="agSignName">Type your full legal name</label>
@@ -3141,7 +3141,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
         <div class="row tight" style="margin-top:14px;align-items:center;gap:14px">
           <button class="btn-primary" id="agSignBtn" onclick="agSubmitSign()" disabled>Sign &amp; continue</button>
-          <a href="#" id="agCerSkip" onclick="agCeremonySkip(event)" style="display:none;font-size:14px;color:var(--muted)">Continue without signing for now</a>
+        </div>
+      </div>
+      <div id="agPendingWrap" style="display:none">
+        <p class="sub" id="agPendingSummary"><b>Your forms are safely stored.</b> The patient workspace stays closed until the practice agreement is fully signed.</p>
+        <div class="row tight" style="margin-top:12px;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn-ghost" type="button" onclick="downloadMyAgreementReceipt(this)">Download my signed-form receipt</button>
         </div>
       </div>
       <!-- clunky2-signin-1.0.0 (CLUNKY 44): the fail-closed result, said once. -->
@@ -4185,6 +4190,29 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
   <!-- ============ ADMIN VIEW (owner only) ============ -->
   <div id="adminView" style="display:none">
+    <div class="card" id="adminCreateCard">
+      <h2 aria-label="Admin — Create and invite account"><span class="ic">➕</span> Create &amp; invite account</h2>
+      <p class="sub">Create the account, choose its real plan/tier, and approve its clinical workspace in one protected step. The private invite is safe to send after the server confirms the admin-controlled access; patient work opens only after the recipient’s forms and any required practice countersignature are verified.</p>
+      <div class="row tight" style="align-items:flex-end;flex-wrap:wrap;gap:10px">
+        <div class="field" style="flex:1;min-width:180px;margin:0"><label for="adminCreateName">Full name</label><input id="adminCreateName" autocomplete="off" placeholder="Dr. Jane Smith"></div>
+        <div class="field" style="flex:1.4;min-width:220px;margin:0"><label for="adminCreateEmail">Email</label><input id="adminCreateEmail" type="email" autocomplete="off" placeholder="doctor@example.com"></div>
+        <div class="field" style="flex:1;min-width:180px;margin:0"><label for="adminCreateRole">Account type</label><select id="adminCreateRole" class="sf-select" onchange="adminCreateRoleChanged()"><option value="head">Head doctor · new practice</option><option value="doctor">Doctor · existing practice</option><option value="nurse">Nurse · existing practice</option><option value="receptionist">Receptionist · existing practice</option></select></div>
+      </div>
+      <div class="row tight" style="align-items:flex-end;flex-wrap:wrap;gap:10px;margin-top:10px">
+        <div class="field" id="adminCreatePracticeWrap" style="flex:1.2;min-width:220px;margin:0;display:none"><label for="adminCreatePractice">Practice</label><select id="adminCreatePractice" class="sf-select" onchange="adminCreateRoleChanged()"><option value="">— Choose the practice —</option></select></div>
+        <div class="field" id="adminCreatePlanWrap" style="flex:1.2;min-width:220px;margin:0"><label for="adminCreatePlan">Plan</label><select id="adminCreatePlan" class="sf-select"><option value="lite_monthly">Lite monthly · note generation only</option><option value="lite_annual">Lite annual · note generation only</option><option value="standard_monthly" selected>Standard monthly · core clinical tools</option><option value="standard_annual">Standard annual · core clinical tools</option><option value="premium_monthly">Premium monthly · all clinician tools</option><option value="premium_annual">Premium annual · all clinician tools</option><option value="enterprise_monthly">Enterprise monthly · 3+ providers</option><option value="enterprise_annual">Enterprise annual · 3+ providers</option></select></div>
+        <div class="field" id="adminCreateAccessWrap" style="min-width:170px;margin:0"><label for="adminCreateAccessMode">Access</label><select id="adminCreateAccessMode" class="sf-select" onchange="adminCreateAccessChanged()"><option value="comp">Owner-granted · ongoing</option><option value="trial">Timed trial</option></select></div>
+        <div class="field" id="adminCreateTrialWrap" style="width:110px;margin:0;display:none"><label for="adminCreateTrialDays">Trial days</label><input id="adminCreateTrialDays" type="number" inputmode="numeric" min="1" max="365" value="30"></div>
+      </div>
+      <div id="adminCreateCoverageNote" class="mini" style="display:none;margin-top:8px;color:#127a55;font-weight:600"></div>
+      <label style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer"><input id="adminCreateClinicalApproved" type="checkbox" style="width:18px;height:18px;margin-top:1px"><span style="font-size:13.5px;line-height:1.45"><b>I approve this account for the clinical workspace.</b><br><span class="sub">This records the current workspace release grant. Plan limits still apply.</span></span></label>
+      <div class="row" style="align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn-green" id="adminCreateBtn" onclick="adminProvisionAccount(this)">Create account &amp; make ready</button><span id="adminCreateStatus" class="sub" role="status" aria-live="polite"></span></div>
+      <div class="mini" style="margin-top:8px;color:var(--muted)">Attorney portal accounts are intentionally unavailable here while the legal-request workspace remains unreleased.</div>
+      <div id="adminCreateResult" style="display:none;margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--soft,#f8fbf9)">
+        <div id="adminCreateResultTitle" style="font-weight:700"></div><div id="adminCreateResultDetail" class="sub" style="margin-top:3px"></div>
+        <div id="adminCreateInviteRow" style="display:none;margin-top:10px"><label for="adminCreateInviteUrl" style="font-size:12.5px;font-weight:600">Private one-time invite</label><div class="row tight" style="gap:7px;margin-top:4px"><input id="adminCreateInviteUrl" readonly aria-label="Private one-time invite URL" style="flex:1"><button class="btn-ghost" onclick="adminCopyCreatedInvite(this)">Copy invite</button><button class="btn-ghost" onclick="adminClearCreatedInvite()">Clear</button></div></div>
+      </div>
+    </div>
     <div class="card">
       <h2 aria-label="Admin — Users"><span class="ic">🛡️</span> Admin — Users
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminUsers()">🔄 Refresh users</button>
@@ -5626,6 +5654,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <button class="modal-x" onclick="closeCountersign()">×</button>
     <h3>🖋️ Countersign the Business Associate Agreement</h3>
     <p class="note">You are executing the two-party BAA as the Business Associate. Signer: <b id="csSignerLabel"></b>. Once countersigned, the executed record is stored server-side and both parties can download it.</p>
+    <div id="csMeta" class="note" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--soft,#f9fbfe)">Loading the server-verified signing record…</div>
+    <div id="csManifest" style="font-size:12.5px;line-height:1.5;margin:8px 0"></div>
+    <div id="csConsent" style="font-size:12.5px;line-height:1.5;margin:8px 0"></div>
+    <div id="csSignerSig" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;min-height:62px"><span class="sub">Loading the signer’s stored signature…</span></div>
     <div id="csBaaText" style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--soft,#f9fbfe);font-size:13px;line-height:1.55"></div>
     <div class="field"><label for="csName">Type your full legal name</label>
       <input type="text" id="csName" autocomplete="name" oninput="csSyncState()" style="width:100%"></div>
@@ -5887,9 +5919,22 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 </div>
 
 <!-- SET UP YOUR PRACTICE — first-run guided onboarding wizard -->
+<div class="modal-bg" id="invitePasswordModal" role="dialog" aria-modal="true" aria-labelledby="invitePasswordTitle" aria-describedby="invitePasswordHelp" style="z-index:10001">
+  <div class="modal" style="max-width:480px">
+    <h3 id="invitePasswordTitle">🔐 Finish securing your account</h3>
+    <p class="note" id="invitePasswordHelp">Your invitation was accepted. Choose the password you will use the next time you sign in. Setup will continue only after this password is saved.</p>
+    <div id="invitePasswordIdentity" style="font-size:13px;font-weight:600;margin:8px 0 12px"></div>
+    <div class="field"><label for="invitePasswordNew">New password</label><input id="invitePasswordNew" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div>
+    <div class="field"><label for="invitePasswordConfirm">Confirm password</label><input id="invitePasswordConfirm" type="password" autocomplete="new-password" minlength="8" placeholder="Type it again" onkeydown="if(event.key==='Enter'){event.preventDefault();saveInvitePassword(this)}"></div>
+    <div id="invitePasswordErr" class="auth-err" role="alert" style="display:none;margin-top:8px"></div>
+    <div class="row" style="margin-top:14px;gap:8px;flex-wrap:wrap"><button class="btn-green" id="invitePasswordBtn" onclick="saveInvitePassword(this)" style="flex:1">Save password &amp; continue</button><button class="btn-ghost" type="button" onclick="leaveInvitePasswordForLogin()">Return to sign in</button></div>
+    <p class="mini" style="margin-top:10px">This private invitation cannot be used as a permanent login. If you cannot finish, ask the administrator to issue a new invite or reset your password.</p>
+  </div>
+</div>
+
 <div class="modal-bg" id="setupModal" role="dialog" aria-modal="true" aria-label="Set up your practice">
   <div class="modal" style="max-width:660px">
-    <button class="modal-x" onclick="closeSetup()">×</button>
+    <button class="modal-x" onclick="closeSetup('deferred')">×</button>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
       <h3 style="margin:0">🚀 Set up your practice</h3>
       <span id="su_progress" style="font-size:12.5px;color:var(--muted);font-weight:600"></span>
@@ -5901,7 +5946,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div style="text-align:center;padding:6px 4px 2px">
         <div style="font-size:40px">👋</div>
         <h2 style="margin:6px 0 4px;font-size:21px">Welcome to MLS</h2>
-        <p class="note" style="max-width:460px;margin:0 auto">Let's get your practice ready in a few quick steps — your details, schedule, Staff Prep, and key settings. Then a short guide to the core doctor workflow. You can change anything later in Settings.</p>
+        <p class="note" style="max-width:460px;margin:0 auto">Let’s finish the items that apply to your role and plan. MLS saves each required step, skips unavailable features, and resumes here if you come back later.</p>
       </div>
     </div>
 
@@ -5911,13 +5956,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="note" style="margin:0 0 10px">These reviewed practice details appear on your notes and authenticated booking page.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Your full name <span style="color:#c0392b">*</span></label><input id="su_name" aria-label="Your name" placeholder="e.g. Jane A. Smith" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
-        <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Credentials</label><input id="su_cred" aria-label="Your credentials" placeholder="MD, DO, NP…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
-        <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Specialty</label><input id="su_spec" aria-label="Your specialty" placeholder="e.g. Pain Management, PM&amp;R" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
+        <div class="su-provider-only"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Credentials</label><input id="su_cred" aria-label="Your credentials" placeholder="MD, DO, NP…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
+        <div class="su-provider-only"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Specialty</label><input id="su_spec" aria-label="Your specialty" placeholder="e.g. Pain Management, PM&amp;R" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
         <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic / practice name</label><input id="su_practice" aria-label="Practice name" placeholder="e.g. Chester County Spine Care" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
-        <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">NPI number</label><input id="su_npi" aria-label="NPI number" inputmode="numeric" placeholder="10-digit NPI" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
+        <div class="su-provider-only"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">NPI number</label><input id="su_npi" aria-label="NPI number" inputmode="numeric" placeholder="10-digit NPI" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
         <div><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic phone</label><input id="su_phone" aria-label="Practice phone number" placeholder="(555) 123-4567" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
         <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Clinic address</label><input id="su_addr" aria-label="Practice address" placeholder="Street, City, State ZIP" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></div>
-        <div style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Note signature block <button type="button" class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="su_autoSig()">Auto-fill from above</button></label><textarea id="su_sig" aria-label="Signature block" rows="2" placeholder="Your name, credentials, practice…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></textarea></div>
+        <div class="su-provider-only" style="grid-column:1/3"><label style="font-weight:600;font-size:13px;display:block;margin-bottom:3px">Note signature block <button type="button" class="btn-ghost" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="su_autoSig()">Auto-fill from above</button></label><textarea id="su_sig" aria-label="Signature block" rows="2" placeholder="Your name, credentials, practice…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:10px;font-size:14px"></textarea></div>
       </div>
     </div>
 
@@ -5940,7 +5985,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p style="font-weight:700;margin:0 0 2px">⚙️ A few key settings</p>
       <p class="note" style="margin:0 0 10px">Optional, but handy. Everything else lives in <b>Settings</b> (gear icon) anytime.</p>
       <div style="display:flex;flex-direction:column;gap:10px">
-        <div style="background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:11px 13px">
+        <div id="suBookingCard" data-su-cap="scheduling" style="background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:11px 13px">
           <div style="font-weight:600;font-size:14px">📅 Your online booking link</div>
           <div class="note" style="margin:2px 0 7px">Share this so patients can self-book into your open times.</div>
           <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="copyBookingLink(this)">Get my booking link</button>
@@ -5967,29 +6012,32 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            scroller is gone because the modal already scrolls. -->
       <p style="font-weight:700;margin:0 0 2px">📖 You are set up. Three things to know:</p>
       <div style="display:flex;flex-direction:column;gap:8px;margin:8px 0 12px">
-        <div class="su_guide"><b>🎙️ Record a visit.</b> Open a patient, press record, talk through the visit — MLS writes the note.</div>
-        <div class="su_guide"><b>👤 Patients.</b> Every chart lives here; search by name or date of birth up top.</div>
+        <div class="su_guide" data-su-cap="noteGeneration"><b>🎙️ Record a visit.</b> Open a patient, press record, talk through the visit — MLS writes the note.</div>
+        <div class="su_guide" data-su-cap="patientCharts"><b>👤 Patients.</b> Every chart lives here; search by name or date of birth up top.</div>
         <div class="su_guide"><b>❓ Stuck?</b> Press <b>❓ Help</b> and ask “where is…” or “how do I…”.</div>
       </div>
       <details id="su_guideFold"><summary style="cursor:pointer;font-weight:600">Read the full guide</summary>
       <p class="note" style="margin:8px 0 10px">The essentials. You can reopen this anytime from <b>❓ Help</b> or the 🚀 button.</p>
       <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="su_guide"><b>🎙️ Record a visit → instant note.</b> Open a patient (or “New visit”), press record, and talk through the visit normally. MLS transcribes and writes a structured note. Review, edit, then <b>Sign</b> — your signature block is appended automatically.</div>
-        <div class="su_guide"><b>👤 Patients.</b> Add patients with “＋ New patient.” Each chart keeps the problem list, meds, allergies, prior visits, and notes. Search by name or DOB up top.</div>
-        <div class="su_guide"><b>🗓️ Scheduling &amp; booking.</b> Set your hours in <b>🕘 Availability</b>. Share your booking link; patients pick only open slots and get a confirmation email with a link to confirm or cancel. See everyone on the <b>🗓️ Check-in board</b>.</div>
-        <div class="su_guide"><b>🗂 Staff Prep.</b> Open <b>Menu → Staff prep &amp; Athena month pull</b> for explicit day/month schedule pulls and preparation. MLS never starts a hidden Athena pull.</div>
-        <div class="su_guide"><b>👤 Patient portal.</b> Select the exact patient, then use the active-patient Patient portal control. Review the frozen identity and email before sending an invite.</div>
-        <div class="su_guide"><b>🧩 MLS Assist (browser extension).</b> Install it to let MLS work with your real EMR (e.g. Athena): read a chart into MLS and prepare the finished note with an exact, visible destination plan. You remain in control of every Athena save or submission. Reload to the latest version at chrome://extensions.</div>
-        <div class="su_guide"><b>✨ Create your own + 🔗 connectors.</b> Build custom tabs/widgets by describing them, and connect via the FHIR API. All under the tools menu.</div>
+        <div class="su_guide" data-su-cap="noteGeneration"><b>🎙️ Record a visit → instant note.</b> Open a patient (or “New visit”), press record, and talk through the visit normally. MLS transcribes and writes a structured note. Review, edit, then <b>Sign</b> — your signature block is appended automatically.</div>
+        <div class="su_guide" data-su-cap="patientCharts"><b>👤 Patients.</b> Add patients with “＋ New patient.” Each chart keeps the problem list, meds, allergies, prior visits, and notes. Search by name or DOB up top.</div>
+        <div class="su_guide" data-su-cap="scheduling"><b>🗓️ Scheduling &amp; booking.</b> Set your hours in <b>🕘 Availability</b>. Share your booking link; patients pick only open slots and get a confirmation email with a link to confirm or cancel. See everyone on the <b>🗓️ Check-in board</b>.</div>
+        <div class="su_guide" data-su-cap="scheduling"><b>🗂 Staff Prep.</b> Open <b>Menu → Staff prep &amp; Athena month pull</b> for explicit day/month schedule pulls and preparation. MLS never starts a hidden Athena pull.</div>
+        <div class="su_guide" data-su-cap="patientCharts"><b>👤 Patient portal.</b> Select the exact patient, then use the active-patient Patient portal control. Review the frozen identity and email before sending an invite.</div>
+        <div class="su_guide" data-su-cap="noteGeneration"><b>🧩 MLS Assist (browser extension).</b> Install it to let MLS work with your real EMR (e.g. Athena): read a chart into MLS and prepare the finished note with an exact, visible destination plan. You remain in control of every Athena save or submission. Reload to the latest version at chrome://extensions.</div>
+        <div class="su_guide" data-su-cap="premiumAi"><b>✨ Create your own + 🔗 connectors.</b> Build custom tabs/widgets by describing them, and connect via the FHIR API. All under the tools menu.</div>
         <div class="su_guide"><b>❓ Stuck?</b> Hit <b>❓ Help</b> anytime and ask “where is…” or “how do I…”. Answers are specific to this app.</div>
       </div>
       </details>
+      <button class="btn-ghost" id="suAgreementReceipt" style="font-size:13px;padding:7px 12px" onclick="downloadMyAgreementReceipt(this)">⬇ Download my signed-form receipt</button>
+      <button class="btn-ghost" id="suAgreementExecuted" style="font-size:13px;padding:7px 12px" onclick="downloadMyExecutedAgreement(this)">⬇ Download fully executed BAA (after MLS signs)</button>
     </div>
 
     <div class="row" style="gap:8px;margin-top:16px;align-items:center">
       <button class="btn-ghost" id="su_backBtn" onclick="suBack()" style="display:none">← Back</button>
       <button class="btn-green" id="su_nextBtn" onclick="suNext(this)">Get started →</button>
-      <button class="btn-ghost" id="su_skipBtn" onclick="closeSetup()" style="font-size:13px">Skip for now</button>
+      <button class="btn-ghost" id="su_retryBtn" onclick="openSetup(false)" style="display:none;font-size:13px">Retry loading setup</button>
+      <button class="btn-ghost" id="su_skipBtn" onclick="closeSetup('deferred')" style="font-size:13px">Skip for now</button>
       <span id="setupMsg" style="font-size:13px;color:var(--muted)"></span>
     </div>
   </div>
@@ -7325,6 +7373,23 @@ function sfSessionPromptValid(epoch,account){
   const live=sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   return !account||live===sfNormalizeSessionAccount(account);
 }
+function sfIsClonedSetupLane(){
+  try{
+    const base=document.querySelector('base[href]');
+    const basePath=base?new URL(base.href,location.href).pathname:'';
+    return /^\/cloned\/?$/.test(String(location.pathname||''))||/^\/cloned\/?$/.test(basePath);
+  }catch(e){ return false; }
+}
+function sfRouteIncompatibleSetupAccount(user){
+  try{
+    if(!sfIsClonedSetupLane()||!user||user.isAdmin||user.role==='admin'||user.role==='owner') return false;
+    const policy=Number(user.setupPolicyVersion), mode=String((user.agreements&&user.agreements.mode)||'');
+    if(policy===2&&mode==='role-scoped') return false;
+    const app=document.getElementById('appScreen'); if(app) app.style.display='none';
+    location.replace(location.origin+'/ScribeFlow.html');
+    return true;
+  }catch(e){ return false; }
+}
 function sfCancelSessionPrompts(removeBanner){
   try{ if(sfAssistPromptStartTimer) clearTimeout(sfAssistPromptStartTimer); }catch(e){}
   try{ if(sfAssistPromptPingTimer) clearTimeout(sfAssistPromptPingTimer); }catch(e){}
@@ -7372,6 +7437,14 @@ function sfResetSessionBoundary(nextEmail,opts){
     : (sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||''));
   const next=sfNormalizeSessionAccount(nextEmail);
   if(!opts.force&&previous===next) return sfSessionUiEpoch;
+  /* Same-account reload keeps the owner's unsent invite and an invited user's
+     one-purpose password credential. A real logout/account switch purges both
+     before the old namespace disappears. */
+  if(previous!==next||!next){
+    try{ if(typeof adminClearCreatedInvite==='function') adminClearCreatedInvite(previous); }catch(e){}
+    try{ if(typeof setInviteSetupToken==='function') setInviteSetupToken(''); if(typeof clearInvitePasswordDue==='function') clearInvitePasswordDue(); if(typeof clearInvitePasswordFields==='function') clearInvitePasswordFields(); }catch(e){}
+    try{ if(typeof agResetManifestState==='function') agResetManifestState(); }catch(e){}
+  }
   /* A managed pull owns an explicit account key. Its newest in-memory rows
      must reach that key before any logout/account reset can purge or retarget
      storage. A quota failure therefore stops the boundary instead of being
@@ -7616,11 +7689,15 @@ function startSession(email){
       return _gateDecision;
     }).catch(()=>true);
     /* Do not parse and initialize the 200+ optional feature assets for an
-       unsigned account that can only see the compliance gate. Signed users
-       start the bundle as soon as the gate decision is known, while the green
-       loader remains the single first-paint owner. */
+       account that can only see legal release, its own signing ceremony, or a
+       practice-BAA waiting screen. Identity has settled before this branch, so
+       the structured server-owned setup state can choose that surface without
+       paying the multi-megabyte clinical bundle cost. Ready users start the
+       bundle as soon as both decisions are known, while the green loader
+       remains the single first-paint owner. */
     const _uiReady=_gateCheck.then(gated=>{
       if(gated) return true;
+      if(typeof agAccountSetupSurface==='function'&&agAccountSetupSurface()) return true;
       return typeof window.__mlsEnsureUiBundle==='function'?window.__mlsEnsureUiBundle():false;
     }).catch(()=>false);
     const _hydrate=_gateCheck.then(gated=>{
@@ -7809,6 +7886,12 @@ function refreshMe(opts){
         if(!requestStillOwned()){ notifyIdentity(); return false; }
         if(!d.user||typeof d.user!=='object'){ sfP1ReleaseMarketingIdentity(null); notifyIdentity(); return false; }
         bkUser=d.user; // /api/me carries role, head_id, isHead, isAdmin
+        /* The shared backend rolls first-login policy forward per account. A
+           legacy non-owner belongs on the current official UI; routing here
+           prevents the clone from submitting its strict role-scoped ceremony
+           to a legacy endpoint. Existing owners remain in clone Admin so they
+           can provision and countersign protected v2 accounts. */
+        if(sfRouteIncompatibleSetupAccount(bkUser)){ notifyIdentity(); return false; }
         try{ window._calendarOn = d.calendarEnabled!==false; }catch(e){}
         const em=bkUser&&bkUser.email;
         const previousIdentity=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
@@ -7925,6 +8008,36 @@ function handle401(){
   }catch(e){ _h401Busy=false; }
 }
 
+/* A setup-only response proves the token is valid and the server deliberately
+   kept the account inside first-login setup. Never route HTTP 428 through the
+   expired-session path or discard the account. Refresh the server-owned state,
+   then return to the required signature/waiting surface without revealing the
+   clinical app. */
+var _accountSetupResponseBusy=false;
+async function handleAccountSetupRequired(response){
+  if(!response||response.status!==428) return false;
+  let payload={};
+  try{ payload=await response.clone().json(); }catch(e){}
+  let isSetup=payload&&payload.code==='ACCOUNT_SETUP_REQUIRED';
+  if(!isSetup){ try{ isSetup=JSON.stringify(payload).indexOf('ACCOUNT_SETUP_REQUIRED')>=0; }catch(e){} }
+  if(!isSetup) return false;
+  if(bkUser&&payload.readiness&&typeof payload.readiness==='object') bkUser.readiness=payload.readiness;
+  if(_accountSetupResponseBusy) return true;
+  _accountSetupResponseBusy=true;
+  try{
+    /* Startup already owns the screen and will choose the correct setup surface
+       after /api/me. Avoid racing that transition with background hydration. */
+    if(document.documentElement.classList.contains('mls-secure-loading')) return true;
+    await agRefreshAccountReadiness();
+    const surface=agAccountSetupSurface();
+    if(surface==='ceremony') showAgreementsCeremony(false);
+    else if(surface==='pending') showAgreementsPending(false);
+    else showAgreementsGate(false);
+  }catch(e){ try{ showAgreementsGate(false); }catch(_e){} }
+  finally{ _accountSetupResponseBusy=false; }
+  return true;
+}
+
 /* Show/hide the Admin nav item and the no-access banner based on bkUser. */
 function applyAccessUI(){
   /* Undo only the inline mutations owned by the previous role before applying
@@ -7932,6 +8045,13 @@ function applyAccessUI(){
   try{ if(typeof resetRoleUi==='function') resetRoleUi(); }catch(e){}
   const adminTab=document.getElementById('nav_admin');
   const isAdmin=!!(bkUser&&bkUser.isAdmin);
+  const _accessCaps=(bkUser&&bkUser.capabilities)||{};
+  const _accessRole=String((bkUser&&bkUser.role)||'').toLowerCase();
+  const _accessClinician=_accessRole==='head'||_accessRole==='doctor'||_accessRole==='user';
+  const _canAnalytics=typeof _accessCaps.analytics==='boolean'?_accessCaps.analytics:_accessClinician;
+  const _canCharts=typeof _accessCaps.patientCharts==='boolean'?_accessCaps.patientCharts:(_accessClinician||_accessRole==='nurse');
+  const _canSchedule=typeof _accessCaps.scheduling==='boolean'?_accessCaps.scheduling:(_accessClinician||_accessRole==='nurse'||_accessRole==='receptionist');
+  const _canLegalInbox=typeof _accessCaps.signClinicalNotes==='boolean'?_accessCaps.signClinicalNotes:_accessClinician;
   if(adminTab) adminTab.style.display=(backendMode()&&isAdmin)?'':'none';
   // Team/supervision is held until its role, persistence, and cosign paths are released.
   const teamTab=document.getElementById('nav_team');
@@ -7940,10 +8060,11 @@ function applyAccessUI(){
   // 🩺 Add-a-doctor (paid seat) button: head physician only.
   const docSeatBtn=document.getElementById('ptDoctorsBtn');
   if(docSeatBtn){ docSeatBtn.style.display='none'; docSeatBtn.disabled=true; docSeatBtn.setAttribute('aria-hidden','true'); }
-  // 📊 Analysis tab: ANY clinician (doctor or head) + the owner — never lawyers.
+  // 📊 Analysis is capability-owned; support/Lite/legal accounts never see a
+  // control whose API will refuse them.
   // (The per-doctor review card inside the view stays gated to head/owner below.)
   const analysisTab=document.getElementById('nav_analysis');
-  if(analysisTab) analysisTab.style.display=(backendMode()&&bkUser&&!isLawyerUser())?'':'none';
+  if(analysisTab) analysisTab.style.display=(backendMode()&&bkUser&&_canAnalytics)?'':'none';
   // Supervisory analysis is part of the held Team workspace. Personal/practice
   // analysis remains available through the rest of the Analysis view.
   const teamAnalysisAllowed=window.__MLS_TEAM_WORKSPACE_RELEASED===true&&(isHead||isAdmin);
@@ -7958,16 +8079,17 @@ function applyAccessUI(){
   const isLawyer=isLawyerUser();
   const legalReqTab=document.getElementById('nav_legalreq');
   if(legalReqTab){
-    const clinician=backendMode()&&bkUser&&!isAdmin&&!isLawyer;
+    const clinician=backendMode()&&bkUser&&!isAdmin&&!isLawyer&&_canLegalInbox;
     const showInbox=legalWorkspaceReleased()&&clinician&&((typeof legalEnabled==='function'&&legalEnabled())||((document.getElementById('navLegalReqCount')||{}).textContent>0));
     legalReqTab.style.display=showInbox?'':'none';
     // Clinicians: keep the pending count fresh on boot so the tab can appear even
     // before the Legal feature is enabled, if requests are waiting.
     if(legalWorkspaceReleased() && clinician && backendMode() && bkToken() && typeof loadLegalRequests==='function'){ loadLegalRequests().then(()=>{ const n=Number((document.getElementById('navLegalReqCount')||{}).textContent||0); if(n>0) legalReqTab.style.display=''; }).catch(()=>{}); }
   }
-  // 📋 Patient intake kiosk button: clinicians (and the owner) in hosted mode; never lawyers.
+  // 📋 Intake requires chart capability; it is hidden for front-desk, Lite,
+  // legal, owner, or any future tier that lacks it.
   const intakeBtn=document.getElementById('intakeBtn');
-  if(intakeBtn) intakeBtn.style.display=(backendMode()&&bkUser&&!isLawyer)?'':'none';
+  if(intakeBtn) intakeBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer&&_canCharts)?'':'none';
   // Lawyer portal: replaces the entire clinical app for lawyer accounts.
   if(typeof applyLawyerPortal==='function') applyLawyerPortal();
   // Receptionist front-desk mode: hides all clinical UI, leaves scheduling only.
@@ -7979,13 +8101,15 @@ function applyAccessUI(){
     const show=backendMode()&&bkUser&&!bkUser.hasAccess&&!isAdmin&&!isLawyer;
     banner.style.display=show?'flex':'none';
   }
-  // 🚀 Set-up wizard: doctors/head only — NOT lawyers, receptionists, or owner-admin.
-  const _isRecept=(typeof isReceptionistUser==='function')&&isReceptionistUser();
+  // 🚀 Setup is capability-aware for every provisionable practice role.
+  const _setupCaps=(bkUser&&bkUser.capabilities)||{};
+  const _setupRole=String((bkUser&&bkUser.role)||'').toLowerCase();
+  const _setupAllowed=['head','doctor','user','nurse','receptionist'].indexOf(_setupRole)>=0&&_setupCaps.setupAllowed!==false;
   const setupBtn=document.getElementById('ptSetupBtn');
-  if(setupBtn) setupBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer&&!_isRecept)?'':'none';
-  // 📅 Calendar tab: visible to everyone in the practice (not lawyers) when the practice setting is on.
+  if(setupBtn) setupBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer&&_setupAllowed)?'':'none';
+  // 📅 Calendar follows the same scheduling capability the server enforces.
   const calNavTab=document.getElementById('nav_calendar');
-  if(calNavTab) calNavTab.style.display=(backendMode()&&bkUser&&!isLawyer&&(window._calendarOn!==false))?'':'none';
+  if(calNavTab) calNavTab.style.display=(backendMode()&&bkUser&&!isLawyer&&_canSchedule&&(window._calendarOn!==false))?'':'none';
   // 🧰 App-tab gating: hide advanced tabs the doctor hasn't switched on (runs LAST so it wins).
   try{ applyNavFeatureGates(); }catch(e){}
   try{ if(window.__mlsTopbar&&typeof window.__mlsTopbar.apply==='function') window.__mlsTopbar.apply(); }catch(e){}
@@ -8025,11 +8149,14 @@ async function adminFetch(path,opts){
   const r=await fetch(bkBase()+path,opts);
   if(r.status===401){ handle401(); throw new Error('401'); }
   let d={}; try{ d=await r.json(); }catch(e){}
-  if(!r.ok){ throw new Error((d&&(d.error||d.message))||('Request failed ('+r.status+').')); }
+  if(!r.ok){ const err=new Error((d&&(d.error||d.message))||('Request failed ('+r.status+').')); err.status=r.status; err.code=d&&d.code; err.payload=d; throw err; }
   return d;
 }
 
 function fmtAccess(u){
+  const commercial=(u&&u.commercialEntitlement)||{};
+  if(commercial.source==='practice-enterprise') return commercial.hasAccess===false?'Blocked · Enterprise practice coverage':'Enterprise via practice';
+  if(String(commercial.storedPlan||u.plan||'')==='doctor_seat_monthly') return commercial.hasAccess===false?'Blocked · paid doctor seat':'Paid doctor seat';
   const a=u.access||'';
   let label=a||'—';
   if(a==='comp') label='Comp (forever)';
@@ -8042,6 +8169,194 @@ function fmtAccess(u){
   return label;
 }
 
+/* Admin account readiness is one server-owned transition. Authentication,
+   commercial access, tier capabilities and the current clinical release are
+   reported together; the browser never calls a green button "ready" from a
+   200 alone. */
+var ADMIN_PENDING_INVITE_KEY='sf_admin_pending_invite';
+var _adminLastUsers=[];
+function adminUserById(id){ return _adminLastUsers.filter(function(u){return String(u&&u.id)===String(id);})[0]||null; }
+function adminPendingInviteKey(email){
+  var owner=String(email||'').trim().toLowerCase();
+  if(owner) return 'sf_u::'+owner+'::'+ADMIN_PENDING_INVITE_KEY;
+  try{ return uns(ADMIN_PENDING_INVITE_KEY); }catch(e){ return ADMIN_PENDING_INVITE_KEY; }
+}
+function accountInviteLinkForCurrentLane(raw,token){
+  var value=String(raw||''), secret=String(token||'');
+  try{
+    if(value){ var source=new URL(value,location.href), hp=new URLSearchParams(String(source.hash||'').replace(/^#/,'')); secret=hp.get('invite')||secret; }
+    if(!secret) return value;
+    var path=String(location.pathname||'/ScribeFlow.html');
+    var baseNode=document.querySelector('base[href]'), basePath='';
+    try{ if(baseNode) basePath=new URL(baseNode.href,location.href).pathname; }catch(_baseError){}
+    if(/^\/cloned\/?$/.test(path)||/^\/cloned\/?$/.test(basePath)) path='/cloned';
+    else if(/^\/[A-Za-z0-9_-]+\/?$/.test(basePath)) path=basePath;
+    else path='/ScribeFlow.html';
+    return location.origin+path+'#invite='+encodeURIComponent(secret);
+  }catch(e){ return value; }
+}
+function adminRoleKey(u){
+  var r=String((u&&u.role)||u||'').toLowerCase();
+  if(r==='user') return 'doctor';
+  if(r==='admin'||r==='owner') return 'owner';
+  return r||'doctor';
+}
+function adminCommercial(u){ return (u&&u.commercialEntitlement)||{}; }
+function adminIsEnterpriseCovered(u){ var c=adminCommercial(u); return c.source==='practice-enterprise'&&c.coverageActive===true&&c.coverageBlocked===false&&c.hasAccess===true; }
+function adminManagedCommercial(u){ var c=adminCommercial(u), stored=String((u&&u.storedPlan)||c.storedPlan||''); return c.coverageAvailable===true||stored==='doctor_seat_monthly'; }
+function adminCanRestoreEnterprise(u){ var c=adminCommercial(u); return c.coverageAvailable===true&&c.coverageBlocked===true; }
+function adminCanRestorePaidSeat(u){ var c=adminCommercial(u), stored=String((u&&u.storedPlan)||c.storedPlan||''), access=String(c.storedAccess||(u&&u.storedAccess)||(u&&u.access)||''), stripe=String((u&&u.stripe_status)||'').toLowerCase(); return stored==='doctor_seat_monthly'&&access==='blocked'&&(stripe==='active'||stripe==='trialing')&&c.hasAccess===false; }
+function adminNeedsDirectPlan(u){ var c=adminCommercial(u), stored=String((u&&u.storedPlan)||c.storedPlan||''); return stored==='practice_enterprise_member'&&c.coverageAvailable!==true; }
+function adminSelectedEnterprisePractice(role){
+  if(role==='head'||role==='owner'||role==='lawyer') return null;
+  var practiceId=String((document.getElementById('adminCreatePractice')||{}).value||'');
+  var head=_adminLastUsers.filter(function(u){return String(u&&u.id)===practiceId&&adminProtectedPractice(u);})[0]||null;
+  if(!head) return null;
+  var commercial=adminCommercial(head), caps=(head&&head.capabilities)||{}, tier=String(commercial.effectiveTier||caps.tier||'').toLowerCase();
+  var active=typeof commercial.hasAccess==='boolean'?commercial.hasAccess:adminReadinessState(head)!=='blocked';
+  return tier==='enterprise'&&active?head:null;
+}
+function adminProtectedPractice(u){ return !!(u&&adminRoleKey(u)==='head'&&Number(u.setupPolicyVersion)===2&&u.agreements&&u.agreements.mode==='role-scoped'); }
+function adminPlanLabel(p){
+  if(!p) return 'Unknown plan';
+  var key=String(p.key||''), tier=/^([a-z]+)/.exec(key); tier=tier?tier[1]:key;
+  var names={lite:'Lite · note generation only',standard:'Standard · core clinical tools',premium:'Premium · all clinician tools',enterprise:'Enterprise · 3+ providers',lawyer:'Legal portal'};
+  var cadence=p.interval==='year'?'annual':'monthly';
+  var amount=Number(p.amountCents||0); var price=amount?('$'+(amount/100)+(p.flags&&p.flags.perSeat?'/provider':'')+'/'+(p.interval==='year'?'yr':'mo')):'included';
+  return (names[tier]||p.label||key)+' · '+cadence+' · '+price;
+}
+function adminPlanAllowedForUser(p,u){
+  if(!p||p.adminAssignable===false) return false;
+  if((p.flags&&p.flags.internalSeat)||String(p.key||'')==='doctor_seat_monthly') return false;
+  var role=adminRoleKey(u);
+  var allowed=Array.isArray(p.allowedRoles)?p.allowedRoles.map(adminRoleKey):null;
+  if(allowed&&allowed.length&&allowed.indexOf(role)<0) return false;
+  var key=String(p.key||'');
+  if(role==='lawyer') return /^lawyer_/.test(key);
+  if(role==='owner') return false;
+  if(/^lawyer_/.test(key)) return false;
+  if(role==='doctor'&&/^enterprise_/.test(key)) return false;
+  return /^(lite|standard|premium|enterprise)_/.test(key);
+}
+function adminPlansForUser(u){ return (_adminBillingPlans||[]).filter(function(p){ return adminPlanAllowedForUser(p,u); }); }
+function adminReadinessState(d){
+  var r=d&&d.readiness; var state=String((r&&r.state)||'').toLowerCase();
+  return state==='ready'||state==='setup-only'||state==='blocked'?state:'blocked';
+}
+function adminReadinessReasonLabel(reason){
+  const labels={
+    PASSWORD_SETUP_REQUIRED:'Password not chosen yet',
+    AGREEMENTS_REQUIRED:'Role forms not signed yet',
+    PRACTICE_BAA_REQUIRED:'Practice agreement not signed yet',
+    PRACTICE_BAA_COUNTERSIGNATURE_REQUIRED:'MLS countersignature pending',
+    AGREEMENT_ARTIFACT_INVALID:'User form receipt failed its integrity check',
+    PRACTICE_BAA_INVALID:'Practice agreement failed its integrity check',
+    PRACTICE_REQUIRED:'Practice assignment is missing',
+    COMMERCIAL_ACCESS_INACTIVE:'Plan or account access is inactive',
+    CLINICAL_APPROVAL_MISSING:'Workspace release has not been granted',
+    CLINICAL_OPERATIONS_CLOSED:'Clinical operations are closed on the server'
+  };
+  return labels[String(reason)]||String(reason||'');
+}
+function adminReadinessText(d){
+  var state=adminReadinessState(d), r=d&&d.readiness;
+  var title=state==='ready'?'Ready':(state==='setup-only'?'Setup only':'Blocked');
+  var reasons=(r&&Array.isArray(r.reasons))?r.reasons.filter(Boolean).map(adminReadinessReasonLabel):[];
+  return title+(reasons.length?' · '+reasons.join(' · '):'');
+}
+async function adminReadyRequest(body){
+  var d=await adminFetch('/api/admin/accounts/ready',{method:'POST',body:JSON.stringify(body||{})});
+  if(!d||!d.readiness||!d.readiness.state) throw new Error('The server did not return account readiness. Nothing was reported as ready.');
+  return d;
+}
+function adminCreateRoleChanged(){
+  var role=adminRoleKey((document.getElementById('adminCreateRole')||{}).value||'head');
+  var practice=document.getElementById('adminCreatePracticeWrap'); if(practice) practice.style.display=role==='head'?'none':'';
+  var coverage=adminSelectedEnterprisePractice(role), planWrap=document.getElementById('adminCreatePlanWrap'), accessWrap=document.getElementById('adminCreateAccessWrap'), note=document.getElementById('adminCreateCoverageNote');
+  if(planWrap) planWrap.style.display=coverage?'none':''; if(accessWrap) accessWrap.style.display=coverage?'none':'';
+  if(note){ note.style.display=coverage?'':'none'; note.textContent=coverage?'Covered by '+String(coverage.name||coverage.email||'this practice')+'’s active Enterprise plan. No separate plan, Comp grant, or trial will be assigned.':''; }
+  var plan=document.getElementById('adminCreatePlan');
+  if(plan&&_adminBillingPlans.length){
+    var keep=plan.value, available=adminPlansForUser({role:role});
+    plan.innerHTML=available.map(function(p){return '<option value="'+esc(p.key)+'" title="'+esc((p.capabilities||[]).join?p.capabilities.join(', '):JSON.stringify(p.capabilities||{}))+'">'+esc(adminPlanLabel(p))+'</option>';}).join('');
+    if(available.some(function(p){return p.key===keep;})) plan.value=keep;
+    else if(available.length) plan.value=available[0].key;
+  }else if(plan){ Array.prototype.forEach.call(plan.options,function(o){ var key=String(o.value||''), allowed=(role==='head')?/^(lite|standard|premium|enterprise)_/.test(key):(role==='doctor'?/^(lite|standard|premium)_/.test(key):/^standard_/.test(key)); o.disabled=!allowed; o.hidden=!allowed; }); if(plan.selectedOptions.length&&!plan.selectedOptions[0].hidden){}else plan.value='standard_monthly'; }
+  adminCreateAccessChanged();
+}
+function adminCreateAccessChanged(){ var role=adminRoleKey((document.getElementById('adminCreateRole')||{}).value||'head'), covered=!!adminSelectedEnterprisePractice(role), mode=(document.getElementById('adminCreateAccessMode')||{}).value; var wrap=document.getElementById('adminCreateTrialWrap'); if(wrap) wrap.style.display=!covered&&mode==='trial'?'':'none'; }
+function adminPopulatePractices(users){
+  _adminLastUsers=Array.isArray(users)?users:[];
+  var sel=document.getElementById('adminCreatePractice'); if(!sel) return;
+  var keep=sel.value; var heads=_adminLastUsers.filter(adminProtectedPractice), legacyHeads=_adminLastUsers.filter(function(u){ return adminRoleKey(u)==='head'&&!adminProtectedPractice(u); });
+  sel.innerHTML='<option value="">— Choose the protected practice —</option>'+heads.map(function(u){ return '<option value="'+esc(String(u.id))+'">'+esc(u.name||u.email||('Head #'+u.id))+(u.email?' · '+esc(u.email):'')+'</option>'; }).join('')+(legacyHeads.length?'<optgroup label="Needs protected setup">'+legacyHeads.map(function(u){return '<option disabled>'+esc(u.name||u.email||('Head #'+u.id))+' · create a protected practice head first</option>';}).join('')+'</optgroup>':'');
+  if(keep&&heads.some(function(u){return String(u.id)===String(keep);})) sel.value=keep;
+  adminCreateRoleChanged(); adminRestoreCreatedInvite();
+}
+function adminStoreCreatedInvite(record){ try{ sessionStorage.setItem(adminPendingInviteKey(),JSON.stringify(record||{})); }catch(e){} }
+function adminRestoreCreatedInvite(){
+  try{ var raw=sessionStorage.getItem(adminPendingInviteKey()); if(raw) adminRenderCreateResult(JSON.parse(raw),true); }catch(e){}
+}
+function adminExpectedRecipientSetup(d){
+  var r=d&&d.readiness, reasons=r&&Array.isArray(r.reasons)?r.reasons:[];
+  var firstLoginReasons=['PASSWORD_SETUP_REQUIRED','AGREEMENTS_REQUIRED','PRACTICE_BAA_REQUIRED','PRACTICE_BAA_COUNTERSIGNATURE_REQUIRED'];
+  return adminReadinessState(d)==='setup-only'&&reasons.length>0&&reasons.every(function(x){return firstLoginReasons.indexOf(String(x))>=0;});
+}
+function adminRenderCreateResult(record,restored){
+  record=record||{}; var d=record.response||record; var state=adminReadinessState(d);
+  var box=document.getElementById('adminCreateResult'), title=document.getElementById('adminCreateResultTitle'), detail=document.getElementById('adminCreateResultDetail'), row=document.getElementById('adminCreateInviteRow'), input=document.getElementById('adminCreateInviteUrl');
+  if(!box) return; box.style.display='block';
+  var expectedSetup=adminExpectedRecipientSetup(d), setupPolicyReady=Number(d&&d.user&&d.user.setupPolicyVersion)===2;
+  if(title){ title.textContent=setupPolicyReady?(state==='ready'?'✅ Account Ready':(expectedSetup?'✅ Ready for first login':'⛔ Account not ready')):'⛔ Account not ready'; title.style.color=(setupPolicyReady&&(state==='ready'||expectedSetup))?'#127a55':'#b4231e'; }
+  var readinessReasons=d&&d.readiness&&Array.isArray(d.readiness.reasons)?d.readiness.reasons.map(String):[];
+  var practiceSigningPending=readinessReasons.indexOf('PRACTICE_BAA_REQUIRED')>=0||readinessReasons.indexOf('PRACTICE_BAA_COUNTERSIGNATURE_REQUIRED')>=0;
+  if(detail) detail.textContent=(!setupPolicyReady?'The server did not confirm the protected first-login policy. Do not send this invite. ':(expectedSetup
+    ? ('Admin-controlled access is approved. The recipient sets a password and signs only the forms assigned to their role on first login.'+(practiceSigningPending?' Patient work then waits safely for the practice agreement and MLS countersignature.':''))
+    : adminReadinessText(d)))+(restored?' · restored from this tab':'');
+  var invite=accountInviteLinkForCurrentLane(record.inviteUrl||d.inviteUrl||'',''); var canSend=setupPolicyReady&&(state==='ready'||expectedSetup)&&!!invite;
+  if(input) input.value=canSend?invite:''; if(row) row.style.display=canSend?'':'none';
+  adminStoreCreatedInvite({response:d,inviteUrl:invite,request:record.request||null});
+}
+function adminClearCreatedInvite(ownerEmail){
+  try{ sessionStorage.removeItem(adminPendingInviteKey(ownerEmail)); }catch(e){}
+  var input=document.getElementById('adminCreateInviteUrl'); if(input) input.value='';
+  var box=document.getElementById('adminCreateResult'); if(box) box.style.display='none';
+}
+async function adminCopyCreatedInvite(btn){
+  var input=document.getElementById('adminCreateInviteUrl'), value=input&&input.value; if(!value) return;
+  try{ await navigator.clipboard.writeText(value); if(btn) btn.textContent='Copied ✓'; toast('Private invite copied. Send it only to the intended account holder.','ok'); }
+  catch(e){ try{ input.focus(); input.select(); }catch(_e){} toast('Select and copy the private invite manually.','err'); }
+}
+async function adminProvisionAccount(btn){
+  var name=((document.getElementById('adminCreateName')||{}).value||'').trim();
+  var email=((document.getElementById('adminCreateEmail')||{}).value||'').trim().toLowerCase();
+  var role=adminRoleKey((document.getElementById('adminCreateRole')||{}).value||'head');
+  var practiceUserId=Number((document.getElementById('adminCreatePractice')||{}).value||0)||null;
+  var practiceRecord=_adminLastUsers.filter(function(u){return String(u&&u.id)===String(practiceUserId);})[0]||null;
+  var enterprisePractice=adminSelectedEnterprisePractice(role);
+  var plan=enterprisePractice?null:String((document.getElementById('adminCreatePlan')||{}).value||'standard_monthly');
+  var accessMode=enterprisePractice?null:String((document.getElementById('adminCreateAccessMode')||{}).value||'comp');
+  var trialDays=accessMode==='trial'?Number((document.getElementById('adminCreateTrialDays')||{}).value||0):null;
+  var clinicalApproved=!!((document.getElementById('adminCreateClinicalApproved')||{}).checked);
+  var status=document.getElementById('adminCreateStatus'); var setStatus=function(m,bad){ if(status){status.textContent=m;status.style.color=bad?'#b4231e':'var(--muted)';} };
+  if(!name){ setStatus('Enter the account holder’s full name.',true); return false; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ setStatus('Enter a valid email address.',true); return false; }
+  if(role!=='head'&&!practiceUserId){ setStatus('Choose the practice this account joins.',true); return false; }
+  if(role!=='head'&&!adminProtectedPractice(practiceRecord)){ setStatus('Choose a protected practice head. Legacy practices must create a protected head before adding new accounts.',true); return false; }
+  if(accessMode==='trial'&&(!trialDays||trialDays<1||trialDays>365)){ setStatus('Enter trial days from 1 to 365.',true); return false; }
+  if(!clinicalApproved){ setStatus('Confirm clinical-workspace approval before creating the account.',true); return false; }
+  var request={action:'provision',setupPolicyVersion:2,name:name,email:email,role:role,practiceUserId:practiceUserId,clinicalApproved:clinicalApproved};
+  if(!enterprisePractice){ request.plan=plan; request.accessMode=accessMode; request.trialDays=trialDays; }
+  var old=btn&&btn.textContent; if(btn){btn.disabled=true;btn.textContent='Creating safely…';} setStatus('Creating the account and verifying every access layer…');
+  try{
+    var d=await adminReadyRequest(request); if(Number(d&&d.user&&d.user.setupPolicyVersion)!==2) throw new Error('The server did not confirm protected first-login setup.'); var record={response:d,inviteUrl:d.inviteUrl||'',request:request}; adminRenderCreateResult(record,false);
+    if(adminReadinessState(d)==='ready'){ setStatus('Ready. Copy the private invite below.'); loadAdminUsers(); loadAdminBilling(); return true; }
+    if(adminExpectedRecipientSetup(d)){ setStatus('Admin-controlled access is approved. Send the invite; patient work will remain locked until all required signatures are verified.'); loadAdminUsers(); loadAdminBilling(); return true; }
+    setStatus('The account exists but is not Ready. Do not send an invite yet. '+adminReadinessText(d),true); return false;
+  }catch(e){ setStatus('Nothing was reported as Ready: '+(e.message||'request failed'),true); return false; }
+  finally{ if(btn){btn.disabled=false;btn.textContent=old||'Create account & make ready';} }
+}
+
 /* Admin — Billing & plans: reads the owner-only billing overview + PHI-free
    webhook diagnostics, and drives the safe plan grant/clear workflow. Access
    source is server-derived truth (role/subscription/trial/grant/override). */
@@ -8051,29 +8366,39 @@ async function loadAdminBilling(){
   status.style.display='block'; status.innerHTML='Loading billing state…';
   try{
     var d=await adminFetch('/api/admin/billing/overview');
-    _adminBillingPlans=(d.plans||[]).filter(function(p){ return !p.lawyer; });
+    _adminBillingPlans=d.plans||[];
+    adminCreateRoleChanged();
     var body=document.getElementById('adminBillingBody'); body.innerHTML='';
     (d.users||[]).forEach(function(u){
       var tr=document.createElement('tr'); tr.style.borderBottom='1px solid var(--line)';
-      var planOpts=_adminBillingPlans.map(function(p){
-        var money=p.amountCents?('$'+(p.amountCents/100)+(p.perSeat?'/provider':'')+'/'+(p.interval==='year'?'yr':'mo')):'free';
-        return '<option value="'+p.key+'">'+p.key+' — '+money+'</option>';
+      var commercial=adminCommercial(u), enterpriseCovered=adminIsEnterpriseCovered(u), storedPlan=String(u.storedPlan||commercial.storedPlan||''), managedSeat=adminManagedCommercial(u);
+      var availablePlans=(enterpriseCovered||managedSeat)?[]:adminPlansForUser(u);
+      var planOpts=availablePlans.map(function(p){
+        var selected=String(u.plan||'')===String(p.key||'')?' selected':'';
+        var caps=Array.isArray(p.capabilities)?p.capabilities.join(', '):'';
+        return '<option value="'+esc(p.key)+'"'+selected+' title="'+esc(caps)+'">'+esc(adminPlanLabel(p))+'</option>';
       }).join('');
+      var currentPlan=_adminBillingPlans.filter(function(p){return String(p.key)===String(u.plan||'');})[0];
       var stripeState=u.hasSubscription?('subscription'+(u.stripe_status?(' ('+u.stripe_status+')'):'')):(u.hasStripeCustomer?'customer only':'—');
       var connectState=u.hasConnectAccount?(u.connectReady?'ready':'pending'):'—';
+      var planControls='';
+      if(adminRoleKey(u)==='owner') planControls='<span class="sub">owner</span>';
+      else if(enterpriseCovered) planControls='<span class="sub">Enterprise via practice · individual plan controls disabled</span>';
+      else if(managedSeat) planControls='<span class="sub">Paid/internal practice seat · managed by practice billing</span>';
+      else{
+        planControls=availablePlans.length
+          ? '<select data-billing-plan="'+u.id+'" style="max-width:310px">'+planOpts+'</select> <button class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="adminGrantPlan('+u.id+', this)">Grant &amp; make Ready</button>'
+          : '<span class="sub">Practice staff · no separate clinician plan</span>';
+        if(u.accessSource==='admin-override') planControls+=' <button class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="adminClearPlan('+u.id+', this)">Clear override</button>';
+      }
       tr.innerHTML=
         '<td style="padding:8px 6px">'+esc(u.email)+'</td>'+
         '<td style="padding:8px 6px">'+esc(u.role||'user')+'</td>'+
-        '<td style="padding:8px 6px">'+esc(u.plan||'—')+(u.premium?' <span title="premium">★</span>':'')+(u.lite?' <span title="lite">Lite</span>':'')+'</td>'+
-        '<td style="padding:8px 6px"><b>'+esc(u.accessSource)+'</b></td>'+
+        '<td style="padding:8px 6px">'+esc(currentPlan?adminPlanLabel(currentPlan):(u.plan||'—'))+'</td>'+
+        '<td style="padding:8px 6px"><b>'+esc(adminReadinessText(u))+'</b><div class="mini">'+esc(commercial.source||u.accessSource||'none')+'</div></td>'+
         '<td style="padding:8px 6px">'+esc(stripeState)+'</td>'+
         '<td style="padding:8px 6px">'+esc(connectState)+'</td>'+
-        '<td style="padding:8px 6px;white-space:nowrap">'+
-          (u.role==='admin'?'<span class="sub">owner</span>':
-            '<select data-billing-plan="'+u.id+'" style="max-width:230px">'+planOpts+'</select> '+
-            '<button class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="adminGrantPlan('+u.id+', this)">Grant</button>'+
-            (u.accessSource==='admin-override'?' <button class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="adminClearPlan('+u.id+', this)">Clear override</button>':''))+
-        '</td>';
+        '<td style="padding:8px 6px;white-space:nowrap">'+planControls+'</td>';
       body.appendChild(tr);
     });
     document.getElementById('adminBillingTable').style.display='table';
@@ -8095,14 +8420,17 @@ async function loadAdminBilling(){
   }
 }
 async function adminGrantPlan(id, btn){
+  var target=adminUserById(id);
+  if(adminManagedCommercial(target)){ toast('This account follows practice billing. Individual plan grants are unavailable; Block remains available.','warn'); return; }
   var sel=document.querySelector('select[data-billing-plan="'+id+'"]'); if(!sel) return;
   var plan=sel.value;
-  if(!await mlsConfirm('Grant plan "'+plan+'" to this account as an admin override?')) return;
+  if(!await mlsConfirm('Grant this plan and make every required access layer Ready?')) return;
   btn.disabled=true; btn.textContent='Granting…';
-  try{ await adminFetch('/api/admin/billing/plan',{method:'POST',body:JSON.stringify({userId:id,action:'grant',plan:plan})}); toast('Plan granted.','ok'); loadAdminBilling(); }
+  try{ var d=await adminReadyRequest({action:'grant',userId:Number(id),plan:plan,accessMode:'comp',clinicalApproved:true}); if(adminReadinessState(d)!=='ready'&&!adminExpectedRecipientSetup(d)) throw new Error(adminReadinessText(d)); toast(adminExpectedRecipientSetup(d)?'Plan and access granted — recipient setup remains.':'Plan granted — account is Ready.','ok'); loadAdminBilling(); loadAdminUsers(); }
   catch(e){ toast('Grant failed: '+(e.message||'error'),'err'); btn.disabled=false; btn.textContent='Grant'; }
 }
 async function adminClearPlan(id, btn){
+  if(adminManagedCommercial(adminUserById(id))){ toast('This account follows practice billing; there is no individual override to clear.','warn'); return; }
   if(!await mlsConfirm('Remove the admin override and return this account to normal billing?')) return;
   btn.disabled=true; btn.textContent='Clearing…';
   try{ await adminFetch('/api/admin/billing/plan',{method:'POST',body:JSON.stringify({userId:id,action:'clear'})}); toast('Override cleared — account follows normal billing.','ok'); loadAdminBilling(); }
@@ -8116,6 +8444,7 @@ async function loadAdminUsers(){
   try{
     const d=await adminFetch('/api/admin/users');
     const users=(d&&d.users)||[];
+    adminPopulatePractices(users);
     if(!users.length){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>No users yet.'; table.style.display='none'; return; }
     empty.style.display='none'; table.style.display='table';
     /* Clinical-workspace grants (owner-managed, server-recorded). Absent
@@ -8128,9 +8457,10 @@ async function loadAdminUsers(){
     const wkspBtnFor=function(u){
       if(!wksp) return '';
       if(!wksp.releaseConfigured) return '';
-      return wkspActive[String(u.id)]
-        ? ' <button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:#127a55" onclick="adminWkspRevoke(\''+u.id+'\',\''+esc(u.email||'')+'\')" title="Clinical workspace access is GRANTED — click to revoke (takes effect immediately)">Wksp ✓</button>'
-        : ' <button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminWkspGrant(\''+u.id+'\')" title="Grant clinical workspace access under the configured legal release">Wksp Grant</button>';
+      var uid=Number(u&&u.id); if(!Number.isSafeInteger(uid)||uid<=0) return '';
+      return wkspActive[String(uid)]
+        ? ' <button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:#127a55" onclick="adminWkspRevoke('+uid+')" title="Clinical workspace access is GRANTED — click to revoke (takes effect immediately)">Wksp ✓</button>'
+        : ' <button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminWkspGrant('+uid+')" title="Grant only the current workspace release; plan and trial status stay unchanged">Release Grant</button>';
     };
     // heads available for assignment (role==='head', not the owner)
     const heads=users.filter(u=>u.role==='head'&&!(u.role==='owner'||u.isAdmin));
@@ -8139,21 +8469,23 @@ async function loadAdminUsers(){
       : (wksp.releaseConfigured?'':'<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">No legal release is configured on the server — workspace grants are unavailable until the LEGAL_RELEASE_* values are set.</td></tr>'))
       + users.map(u=>{
       const isOwner=(u.role==='owner'||u.isAdmin);
-      const premOn=!!(u.premium===1||u.premium===true);
-      const premBtn='<button class="btn-ghost" style="font-size:12px;padding:5px 9px;'+(premOn?'background:linear-gradient(90deg,#C9DCD2,#9B82D4);color:#fff;border-color:#C9DCD2':'')+'" onclick="adminSetPremium(\''+u.id+'\','+(premOn?'false':'true')+')" title="Toggle the premium Data Study add-on">'+(premOn?'Premium ✓':'Premium')+'</button>';
+      const serverReadiness=u&&u.readiness&&u.readiness.state?u.readiness:null;
+      const inferredState=String(u.access||'').toLowerCase()==='blocked'?'blocked':(wkspActive[String(u.id)]?'ready':'setup-only');
+      const readiness={readiness:serverReadiness||{state:inferredState,reasons:inferredState==='setup-only'?['Clinical workspace grant required']:[]}};
+      const readinessState=adminReadinessState(readiness);
+      const readinessColor=readinessState==='ready'?'#127a55':(readinessState==='setup-only'?'#9a6700':'#b42318');
+      const commercial=adminCommercial(u), managedCommercial=adminManagedCommercial(u), restoreEnterprise=adminCanRestoreEnterprise(u), restorePaidSeat=adminCanRestorePaidSeat(u), needsDirectPlan=adminNeedsDirectPlan(u);
       const actions=isOwner
         ? '<span style="color:var(--muted)">Owner</span>'+(wksp&&wksp.releaseConfigured&&!wkspActive[String(u.id)]?wkspBtnFor(u):'')
-        : '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> '+
-          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetTrial(\''+u.id+'\')">Trial…</button> '+
-          premBtn+' '+
-          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminResetPassword(\''+u.id+'\',\''+esc(u.email||'')+'\')">Reset PW</button> '+
+        : (managedCommercial?'<span class="mini" title="Commercial access follows practice billing">Practice plan</span> '+(restoreEnterprise?'<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:#127a55" onclick="adminRestoreEnterprise('+Number(u.id)+')">Restore Enterprise</button> ':(restorePaidSeat?'<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:#127a55" onclick="adminRestorePaidSeat('+Number(u.id)+')">Restore paid seat</button> ':'')):(needsDirectPlan?'<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminOpenDirectPlan('+Number(u.id)+')">Choose direct plan</button> ':'<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetAccess(\''+u.id+'\',\'comp\')">Comp</button> <button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminSetTrial(\''+u.id+'\')">Trial…</button> '))+
+          '<button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="adminResetPassword('+Number(u.id)+')">Reset PW</button> '+
           '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminSetAccess(\''+u.id+'\',\'blocked\')">Block</button>'+
           wkspBtnFor(u);
       const roleHead=isOwner ? '<span style="color:var(--muted)">Owner</span>' : adminRoleHeadCell(u,heads);
       return '<tr style="border-bottom:1px solid var(--line)">'+
         '<td style="padding:8px 6px">'+esc(u.email||'')+'</td>'+
         '<td style="padding:8px 6px">'+esc(u.name||'—')+'</td>'+
-        '<td style="padding:8px 6px">'+esc(fmtAccess(u))+'</td>'+
+        '<td style="padding:8px 6px"><b style="color:'+readinessColor+'">'+esc(adminReadinessText(readiness))+'</b><div class="mini" style="margin-top:3px">'+esc(fmtAccess(u))+'</div></td>'+
         '<td style="padding:8px 6px">'+(u.visits!=null?u.visits:'—')+'</td>'+
         '<td style="padding:8px 6px;white-space:nowrap;min-width:230px">'+roleHead+'</td>'+
         '<td style="padding:8px 6px;white-space:nowrap">'+actions+'</td>'+
@@ -8165,11 +8497,12 @@ async function loadAdminUsers(){
 async function adminWkspGrant(id){
   try{
     await adminFetch('/api/admin/legal-release/grant',{method:'POST',body:JSON.stringify({userId:Number(id)})});
-    toast('Clinical workspace access granted.','ok');
+    toast('Current workspace release granted. The account’s paid, trial, or Comp plan was not changed.','ok');
     loadAdminUsers();
   }catch(e){ toast('Grant failed: '+e.message,'err'); }
 }
-async function adminWkspRevoke(id,email){
+async function adminWkspRevoke(id){
+  var target=adminUserById(id), email=target&&target.email;
   if(!await mlsConfirm('Revoke clinical workspace access for '+(email||'this account')+'? The lock takes effect on their next request.')) return;
   try{
     await adminFetch('/api/admin/legal-release/revoke',{method:'POST',body:JSON.stringify({userId:Number(id)})});
@@ -8179,12 +8512,48 @@ async function adminWkspRevoke(id,email){
 }
 async function adminSetAccess(id,access,days){
   try{
-    const body={access:access};
-    if(days) body.days=days;
-    await adminFetch('/api/admin/users/'+id+'/access',{method:'POST',body:JSON.stringify(body)});
-    toast('Access updated.','ok');
+    const blocking=String(access)==='blocked';
+    const target=adminUserById(id);
+    if(adminManagedCommercial(target)&&!blocking){ toast('This account follows practice billing. Comp and Trial overrides are unavailable; use Block only when access must stop.','warn'); return; }
+    if(adminNeedsDirectPlan(target)&&!blocking){ toast('The practice Enterprise plan ended. Choose a direct plan in Billing before granting access.','warn'); adminOpenDirectPlan(id); return; }
+    const body=blocking
+      ? {action:'block',userId:Number(id)}
+      : {action:'grant',userId:Number(id),accessMode:days?'trial':'comp',trialDays:days||null,clinicalApproved:true};
+    const d=await adminReadyRequest(body);
+    const actual=adminReadinessState(d);
+    if(blocking?actual!=='blocked':(actual!=='ready'&&!adminExpectedRecipientSetup(d))) throw new Error(adminReadinessText(d));
+    toast(blocking?'Account blocked.':(adminExpectedRecipientSetup(d)?'Access granted — recipient setup remains.':'Access updated — account is Ready.'),'ok');
     loadAdminUsers();
   }catch(e){ toast('Update failed: '+e.message,'err'); }
+}
+async function adminOpenDirectPlan(id){
+  try{
+    await loadAdminBilling();
+    const sel=document.querySelector('select[data-billing-plan="'+Number(id)+'"]');
+    if(!sel){ toast('No assignable direct plan was returned for this account.','err'); return; }
+    try{ sel.scrollIntoView({behavior:'smooth',block:'center'}); sel.focus(); }catch(e){}
+    toast('Choose the direct plan, then select “Grant & make Ready.”','ok');
+  }catch(e){ toast('Billing plans could not be loaded: '+(e.message||'error'),'err'); }
+}
+async function adminRestoreEnterprise(id){
+  try{
+    if(!adminCanRestoreEnterprise(adminUserById(id))){ toast('Enterprise coverage is not available to restore. Choose a direct plan if the practice subscription ended.','warn'); return; }
+    const d=await adminReadyRequest({action:'grant',userId:Number(id),clinicalApproved:true});
+    const actual=adminReadinessState(d);
+    if(actual!=='ready'&&!adminExpectedRecipientSetup(d)) throw new Error(adminReadinessText(d));
+    toast(adminExpectedRecipientSetup(d)?'Enterprise coverage restored — recipient setup remains.':'Enterprise coverage restored — account is Ready.','ok');
+    loadAdminUsers();
+  }catch(e){ toast('Restore failed: '+e.message,'err'); }
+}
+async function adminRestorePaidSeat(id){
+  try{
+    if(!adminCanRestorePaidSeat(adminUserById(id))){ toast('This paid doctor seat is not available to restore. Check practice billing before changing access.','warn'); return; }
+    const d=await adminReadyRequest({action:'grant',userId:Number(id),clinicalApproved:true});
+    const actual=adminReadinessState(d);
+    if(actual!=='ready'&&!adminExpectedRecipientSetup(d)) throw new Error(adminReadinessText(d));
+    toast(adminExpectedRecipientSetup(d)?'Paid doctor seat restored — recipient setup remains.':'Paid doctor seat restored — account is Ready.','ok');
+    loadAdminUsers(); loadAdminBilling();
+  }catch(e){ toast('Restore failed: '+e.message,'err'); }
 }
 /* Owner-only: grant/revoke the premium Data Study add-on for a user. */
 async function adminSetPremium(id,on){
@@ -8195,10 +8564,11 @@ async function adminSetPremium(id,on){
   }catch(e){ toast('Premium update failed: '+e.message,'err'); }
 }
 /* Owner-only fallback: set a new password for a user directly (works before email is configured). */
-async function adminResetPassword(id,email){
-  const pw=await mlsPrompt('Set a new password for '+(email||'this user')+' (min 6 characters):','');
+async function adminResetPassword(id){
+  var target=adminUserById(id), email=target&&target.email;
+  const pw=await mlsPrompt('Set a new password for '+(email||'this user')+' (min 8 characters):','');
   if(pw===null) return;
-  if(!pw || pw.length<6){ toast('Password must be at least 6 characters.','err'); return; }
+  if(!pw || pw.length<8){ toast('Password must be at least 8 characters.','err'); return; }
   try{
     await adminFetch('/api/admin/users/'+id+'/reset-password',{method:'POST',body:JSON.stringify({password:pw})});
     toast('Password reset for '+(email||'user')+'.','ok');
@@ -8209,7 +8579,7 @@ async function adminSetTrial(id){
   if(v===null) return;
   const days=parseInt(v,10);
   if(!days||days<1){ toast('Enter a valid number of days.','err'); return; }
-  adminSetAccess(id,'active',days);
+  adminSetAccess(id,'trial',days);
 }
 
 /* =========================================================
@@ -8323,15 +8693,14 @@ async function loadAdminAudit(){
 function adminRoleHeadCell(u,heads){
   // The owner/admin row never gets role or head controls — just a muted "Owner" label.
   if(u.role==='admin'||u.role==='owner'||u.isAdmin){ return '<span style="color:var(--muted)">Owner</span>'; }
-  const role=(u.role==='lawyer')?'lawyer':((u.role==='head')?'head':'doctor'); // owner handled by caller
-  const roleBtns=
-    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='doctor'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'doctor\')">Doctor</button> '+
-    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='head'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'head\')">Head Dr</button> '+
-    '<button class="btn-ghost" style="font-size:12px;padding:4px 8px;'+(role==='lawyer'?'background:var(--brand);color:#fff;border-color:var(--brand)':'')+'" onclick="adminSetRole(\''+u.id+'\',\'lawyer\')">Lawyer</button>';
+  const rawRole=String(u.role||'doctor').toLowerCase();
+  const role=['head','doctor','nurse','receptionist','lawyer'].indexOf(rawRole)>=0?rawRole:'doctor'; // owner handled by caller
+  const roleLabel={doctor:'Doctor',head:'Head doctor',nurse:'Nurse',receptionist:'Reception',lawyer:'Lawyer'}[role]||role;
+  const roleBtns='<span style="font-size:12px;font-weight:700;color:var(--brand-dk)">'+esc(roleLabel)+'</span>';
   let headSel='';
   if(role==='lawyer'){
     headSel='<div class="mini" style="color:var(--muted);margin-top:5px">Lawyer — uses the attorney portal; no clinical access.</div>';
-  }else if(role==='doctor'){
+  }else if(role==='doctor'||role==='nurse'||role==='receptionist'){
     const opts=['<option value="">— Unassigned —</option>'].concat(
       heads.filter(h=>String(h.id)!==String(u.id)).map(h=>{
         const sel=(u.head_id!=null&&String(u.head_id)===String(h.id))?' selected':'';
@@ -8339,24 +8708,21 @@ function adminRoleHeadCell(u,heads){
       })
     ).join('');
     headSel='<div style="margin-top:5px"><select class="sf-select" style="font-size:12px;padding:5px 7px" onchange="adminSetHead(\''+u.id+'\',this.value)">'+opts+'</select></div>';
-    if(u.head_email){ headSel+='<div class="mini" style="color:var(--muted);margin-top:3px">Under: '+esc(u.head_email)+'</div>'; }
+    if(u.head_email){ headSel+='<div class="mini" style="color:var(--muted);margin-top:3px">Practice: '+esc(u.head_email)+'</div>'; }
   }else{
     headSel='<div class="mini" style="color:var(--muted);margin-top:5px">Head doctor — doctors can be assigned to them.</div>';
   }
   return roleBtns+headSel;
 }
 async function adminSetRole(id,role){
-  try{
-    await adminFetch('/api/admin/users/'+id+'/role',{method:'POST',body:JSON.stringify({role:role})});
-    toast('Role updated.','ok');
-    loadAdminUsers();
-  }catch(e){ toast('Role update failed: '+e.message,'err'); }
+  toast('Role changes are disabled here because role, plan, practice, and access must change together. Create the correct account type instead.','err');
+  return false;
 }
 async function adminSetHead(id,headId){
   try{
     const body={head_id: headId? headId : null};
     await adminFetch('/api/admin/users/'+id+'/head',{method:'POST',body:JSON.stringify(body)});
-    toast(headId?'Doctor assigned to head.':'Doctor unassigned.','ok');
+    toast(headId?'Account assigned to practice.':'Account unassigned from practice.','ok');
     loadAdminUsers();
   }catch(e){ toast('Assignment failed: '+e.message,'err'); }
 }
@@ -9740,7 +10106,7 @@ function _studioPrefsValue(budget){
 }
 function syncPrefsToServer(opts){
   opts=opts||{};
-  if(!backendMode()||!bkToken()) return;   // hosted mode only
+  if(!backendMode()||!bkToken()) return Promise.resolve(false);   // hosted mode only
   try{
     const prefs={};
     PREF_SYNC_KEYS.forEach(k=>{
@@ -9757,11 +10123,12 @@ function syncPrefsToServer(opts){
     const wv=_studioPrefsValue(Math.min(STUDIO_CLOUD_BUDGET, 460000-usedByOthers));
     let wids=null;
     if(wv!==null){ prefs['studio_widgets']=wv; try{ wids=JSON.parse(wv).map(w=>w.id); }catch(e){ wids=null; } }
-    fetch(bkBase()+'/api/prefs',{
+    return fetch(bkBase()+'/api/prefs',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
       body:JSON.stringify({prefs:prefs})
-    }).then(r=>{
+    }).then(async r=>{
+      if(r.status===428){ try{ await handleAccountSetupRequired(r); }catch(e){} if(opts.required) throw new Error('Account setup is still waiting for a required step.'); return false; }
       /* Only the SERVER's acceptance may light the "☁ in your account" badge on a
          creation card. An optimistic badge would be exactly the lie this whole
          rewrite exists to remove. */
@@ -9769,11 +10136,18 @@ function syncPrefsToServer(opts){
         window.__studioCloudIds=wids;
         try{ if(typeof renderStudioSaved==='function'&&currentView==='studio') renderStudioSaved(); }catch(e){}
       }
-      if(!r.ok&&opts.notify) toast('Saved on this device — cloud sync failed ('+r.status+'); it will retry on your next save.','warn');
-    }).catch(()=>{ /* offline / transient — next save retries */
+      if(!r.ok){
+        if(opts.notify) toast('Saved on this device — cloud sync failed ('+r.status+'); it will retry on your next save.','warn');
+        if(opts.required) throw new Error('Your account settings were not saved (server '+r.status+'). Try again.');
+        return false;
+      }
+      return true;
+    }).catch((err)=>{ /* offline / transient — next save retries */
       if(opts.notify) toast('Saved on this device — cloud sync unreachable; it will retry on your next save.','warn');
+      if(opts.required) throw err;
+      return false;
     });
-  }catch(e){ /* never block settings save */ }
+  }catch(e){ if(opts.required) return Promise.reject(e); return Promise.resolve(false); /* ordinary settings saves stay best-effort */ }
 }
 async function loadPrefsFromServer(opts){
   opts=opts||{};
@@ -9782,6 +10156,7 @@ async function loadPrefsFromServer(opts){
     const init={headers:{'Authorization':'Bearer '+bkToken()}};
     if(opts.signal) init.signal=opts.signal;
     const r=await fetch(bkBase()+'/api/prefs',init);
+    if(r.status===428){ await handleAccountSetupRequired(r); return false; }
     if(!sfStartupValid(opts)||!r.ok) return false; // incl. 401 — refreshMe handles auth
     let d={}; try{ d=await r.json(); }catch(e){ return false; }
     if(!sfStartupValid(opts)) return false;
@@ -13300,13 +13675,14 @@ async function sfFetchPagedList(endpoint,collection,opts,config){
       const request=await sfFetchListRequest(bkBase()+endpoint+query,init,opts.signal,requestTimeoutMs);
       response=request.response; anyTimeout=anyTimeout||request.timedOut;
       if(!sfStartupValid(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
-      if(response&&(response.ok||response.status===401))break;
+      if(response&&(response.ok||response.status===401||response.status===428))break;
       if(attempt+1<attempts){
         const waits=Array.isArray(config.retryDelays)?config.retryDelays:[];
         await new Promise(resolve=>setTimeout(resolve,Number(waits[attempt])||600));
       }
     }
     lastStatus=response?response.status:0;
+    if(response&&response.status===428){ await handleAccountSetupRequired(response); return {ok:false,status:428,setupRequired:true,rows:[]}; }
     if(!response||!response.ok) return {ok:false,status:lastStatus,timeout:anyTimeout,rows:[]};
     pages++;
     if(!await sfHydrationBoundary(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
@@ -16366,58 +16742,165 @@ function copyPrevisitLinkText(){
 // Push the clinician's app display name to their user row so they show up BY NAME
 // as a bookable provider on the schedule + public booking page (the name otherwise
 // lives only client-side). Idempotent + cheap; safe to call before scheduling reads.
-async function syncProfileName(){
+async function syncProfileName(opts){
+  opts=opts||{};
   try{
-    if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return;
+    if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return false;
     var nm=(typeof getName==='function')?String(getName()||'').trim():'';
-    if(!nm) return;
-    if(bkUser && bkUser.name===nm) return;
+    if(!nm) return false;
     var sp=(typeof getSpec==='function')?String(getSpec()||'').trim():'';
-    await fetch(bkBase()+'/api/me/profile',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(sp?{name:nm,specialty:sp}:{name:nm})});
-    if(bkUser) bkUser.name=nm;
-  }catch(e){}
+    if(bkUser && bkUser.name===nm && (!sp||String(bkUser.specialty||'')===sp)) return true;
+    var r=await fetch(bkBase()+'/api/me/profile',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(sp?{name:nm,specialty:sp}:{name:nm})}), d={};
+    if(r.status===428){ try{ await handleAccountSetupRequired(r); }catch(e){} throw new Error('Account setup is still waiting for a required step.'); }
+    try{ d=await r.json(); }catch(e){}
+    if(!r.ok) throw new Error((d&&d.error)||('Your profile was not saved (server '+r.status+').'));
+    if(bkUser){ bkUser.name=nm; if(sp) bkUser.specialty=sp; }
+    return true;
+  }catch(e){ if(opts.required) throw e; return false; }
 }
-/* ===== SET UP YOUR PRACTICE — first-run guided onboarding wizard ===== */
+/* ===== SET UP YOUR PRACTICE — resumable, role/tier-aware onboarding ===== */
 var SU_STEP=0, SU_MAX=5;
-function openSetup(){
-  var m=document.getElementById('setupModal'); if(!m) return;
+var SU_STATUS={NOT_STARTED:'not_started',IN_PROGRESS:'in_progress',DEFERRED:'deferred',COMPLETED:'completed'};
+var SU_PROMPT_SESSION_KEY='sf_setup_prompted';
+var SU_STATE={status:SU_STATUS.NOT_STARTED,currentStep:'profile',completedSteps:[],error:'',capabilities:{},role:'',tier:''};
+function suRole(){ return String((bkUser&&bkUser.role)||SU_STATE.role||'doctor').toLowerCase(); }
+function suTier(){ var c=SU_STATE.capabilities||{}; return String(c.tier||c.plan||SU_STATE.tier||'standard').toLowerCase(); }
+function suIsProvider(){ var r=suRole(); return r==='head'||r==='doctor'||r==='user'; }
+function suHasCapability(name){
+  var c=SU_STATE.capabilities||{};
+  if(typeof c[name]==='boolean') return c[name];
+  var tier=suTier(), role=suRole(), lite=tier==='lite';
+  if(name==='setupAllowed') return role!=='owner'&&role!=='admin'&&role!=='lawyer';
+  if(name==='scheduling') return !lite&&(role==='head'||role==='doctor'||role==='nurse'||role==='receptionist'||role==='user');
+  if(name==='patientCharts') return !lite&&(role==='head'||role==='doctor'||role==='user');
+  if(name==='noteGeneration') return role==='head'||role==='doctor'||role==='user';
+  if(name==='premiumAi') return tier==='premium'||tier==='enterprise';
+  return false;
+}
+function suCanSchedule(){ var r=suRole(); return suHasCapability('scheduling')&&(r==='head'||r==='doctor'||r==='user'||r==='nurse'||r==='receptionist'); }
+function suAllowedSteps(){ var out=[0,1]; if(suCanSchedule()){ out.push(2); out.push(3); } out.push(4); out.push(5); return out; }
+function suNormalizeOnboarding(data){
+  var o=(data&&data.onboarding)||data||{}, caps=o.capabilities||(bkUser&&bkUser.capabilities)||{};
+  var raw=String(o.status||'').toLowerCase(), status=raw==='complete'?SU_STATUS.COMPLETED:(raw==='in-progress'?SU_STATUS.IN_PROGRESS:SU_STATUS.NOT_STARTED);
+  SU_STATE={status:status,currentStep:String(o.currentStep||'profile'),completedSteps:Array.isArray(o.completedSteps)?o.completedSteps.slice():[],error:'',capabilities:caps,role:String((bkUser&&bkUser.role)||o.role||''),tier:String(caps.tier||caps.plan||o.tier||'')};
+  return SU_STATE;
+}
+async function suOnboardingRequest(method,payload){
+  var init={method:method||'GET',cache:'no-store',headers:{Authorization:'Bearer '+bkToken()}};
+  if(payload){ init.headers['Content-Type']='application/json'; init.body=JSON.stringify(payload); }
+  var r=await fetch(bkBase()+'/api/onboarding/state',init), d={}; try{ d=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error((d&&d.error)||'Setup progress could not be saved.');
+  return suNormalizeOnboarding(d);
+}
+function suClientCompleted(names){
+  var allowed={profile:1,practice:1,schedule:1,staff_prep:1,preferences:1};
+  return (Array.isArray(names)?names:[]).map(String).filter(function(n,i,a){ return !!allowed[n]&&a.indexOf(n)===i; });
+}
+function suCompletedWith(names){
+  var out=suClientCompleted(SU_STATE.completedSteps||[]);
+  suClientCompleted(names||[]).forEach(function(n){ if(out.indexOf(n)<0) out.push(n); });
+  return out;
+}
+async function suSaveOnboarding(payload){
+  try{
+    SU_STATE.error='';
+    var safePayload=Object.assign({},payload||{});
+    safePayload.completedSteps=suClientCompleted(Array.isArray(safePayload.completedSteps)?safePayload.completedSteps:(SU_STATE.completedSteps||[]));
+    var init={method:'PUT',cache:'no-store',headers:{Authorization:'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify(safePayload)};
+    var r=await fetch(bkBase()+'/api/onboarding/state',init), d={}; try{ d=await r.json(); }catch(parseError){}
+    if(!r.ok) throw new Error((d&&d.error)||'Setup progress could not be saved.');
+    return suNormalizeOnboarding(d);
+  }catch(e){ SU_STATE.error=e&&e.message||'Setup progress could not be saved.'; throw e; }
+}
+function suResumeStep(){
+  if(SU_STATE.status===SU_STATUS.NOT_STARTED) return 0;
+  var done=SU_STATE.completedSteps||[];
+  if(done.indexOf('profile')<0||(suIsProvider()&&done.indexOf('practice')<0)) return 1;
+  if(suCanSchedule()&&done.indexOf('schedule')<0) return 2;
+  if(suCanSchedule()&&done.indexOf('staff_prep')<0) return 3;
+  if(done.indexOf('preferences')<0) return 4;
+  return 5;
+}
+function suPrefill(){
   function gv(fn){ try{ return (typeof window[fn]==='function')?(window[fn]()||''):''; }catch(e){ return ''; } }
-  document.getElementById('su_name').value = gv('getName') || gv('getProviderName');
+  document.getElementById('su_name').value = gv('getName') || gv('getProviderName') || (bkUser&&bkUser.name) || '';
   document.getElementById('su_cred').value = localStorage.getItem(uns('providerCred'))||'';
-  document.getElementById('su_spec').value = gv('getSpec');
+  document.getElementById('su_spec').value = gv('getSpec') || (bkUser&&bkUser.specialty) || '';
   document.getElementById('su_practice').value = gv('getPracticeName');
   document.getElementById('su_npi').value = gv('getNpi');
   document.getElementById('su_phone').value = localStorage.getItem(uns('clinicPhone'))||'';
   document.getElementById('su_addr').value = localStorage.getItem(uns('clinicAddress'))||'';
   document.getElementById('su_sig').value = (typeof getQolSignature==='function')?getQolSignature():'';
-  SU_STEP=0; suShow();
-  m.classList.add('show');
 }
-function closeSetup(){ var m=document.getElementById('setupModal'); if(m) m.classList.remove('show'); }
+function suApplyCapabilityUI(){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-su-cap]'),function(el){ el.style.display=suHasCapability(el.getAttribute('data-su-cap'))?'':'none'; });
+  Array.prototype.forEach.call(document.querySelectorAll('.su-provider-only'),function(el){ el.style.display=suIsProvider()?'':'none'; });
+}
+async function openSetup(autoOpen){
+  var m=document.getElementById('setupModal'); if(!m) return false;
+  var automatic=autoOpen===true, msg=document.getElementById('setupMsg'), next=document.getElementById('su_nextBtn'), retry=document.getElementById('su_retryBtn');
+  if(!automatic){ m.classList.add('show'); if(msg){msg.style.color='var(--muted)';msg.textContent='Loading saved setup progress…';} }
+  if(next) next.disabled=true; if(retry) retry.style.display='none';
+  try{ await suOnboardingRequest('GET'); }
+  catch(e){
+    SU_STATE={status:SU_STATUS.NOT_STARTED,currentStep:'profile',completedSteps:[],error:e&&e.message||'Could not load setup progress.',capabilities:(bkUser&&bkUser.capabilities)||{},role:String((bkUser&&bkUser.role)||''),tier:String((bkUser&&bkUser.capabilities&&bkUser.capabilities.tier)||'')};
+    if(msg){msg.style.color='#c0392b';msg.textContent=SU_STATE.error+' Retry before continuing so another account’s setup is never reused.';}
+    if(retry) retry.style.display='';
+    return false;
+  }
+  if(automatic&&SU_STATE.status===SU_STATUS.COMPLETED) return false;
+  suPrefill(); SU_STEP=automatic?suResumeStep():((SU_STATE.status===SU_STATUS.COMPLETED)?0:suResumeStep());
+  suApplyCapabilityUI(); suShow(); m.classList.add('show');
+  if(next) next.disabled=false; if(retry) retry.style.display='none';
+  SU_STATE.status=SU_STATUS.IN_PROGRESS;
+  return true;
+}
+async function closeSetup(reason){
+  var m=document.getElementById('setupModal'); if(m) m.classList.remove('show');
+  if(reason==='deferred'&&backendMode()&&bkToken()){
+    SU_STATE.status=SU_STATUS.DEFERRED;
+    try{ await suSaveOnboarding({completedSteps:SU_STATE.completedSteps||[]}); }catch(e){ try{ toast('Setup was closed, but progress could not be saved.','err'); }catch(_e){} }
+  }
+}
 function suShow(){
+  var allowed=suAllowedSteps(); if(allowed.indexOf(SU_STEP)<0) SU_STEP=allowed.filter(function(x){return x>SU_STEP;})[0]||allowed[allowed.length-1];
   for(var i=0;i<=SU_MAX;i++){ var s=document.getElementById('su_step'+i); if(s) s.style.display=(i===SU_STEP?'':'none'); }
-  var titles=['Welcome','Step 1 of 4 · Your practice','Step 2 of 4 · Schedule','Step 3 of 4 · Staff Prep','Step 4 of 4 · Settings','All set · Quick guide'];
-  var pg=document.getElementById('su_progress'); if(pg) pg.textContent=titles[SU_STEP]||'';
-  var bar=document.getElementById('su_bar'); if(bar) bar.style.width=Math.round(SU_STEP/SU_MAX*100)+'%';
-  var back=document.getElementById('su_backBtn'); if(back) back.style.display=(SU_STEP>0?'':'none');
+  var titles={0:'Welcome',1:'Your account & practice',2:'Your schedule',3:'Staff Prep',4:'Key settings',5:'All set · Quick guide'};
+  var pos=allowed.indexOf(SU_STEP), pg=document.getElementById('su_progress'); if(pg) pg.textContent=(titles[SU_STEP]||'Setup')+' · '+(pos+1)+' of '+allowed.length;
+  var bar=document.getElementById('su_bar'); if(bar) bar.style.width=Math.round((pos+1)/allowed.length*100)+'%';
+  var back=document.getElementById('su_backBtn'); if(back) back.style.display=(pos>0?'':'none');
   var skip=document.getElementById('su_skipBtn'); if(skip) skip.style.display=(SU_STEP>=SU_MAX?'none':'');
   var next=document.getElementById('su_nextBtn'); if(next){ next.textContent = SU_STEP===0?'Get started →' : (SU_STEP>=SU_MAX?'✓ Finish' : 'Next →'); }
-  var msg=document.getElementById('setupMsg'); if(msg) msg.textContent='';
+  var msg=document.getElementById('setupMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent=SU_STATE.error||''; }
   if(SU_STEP===2) suRenderSchedule();
   if(SU_STEP===3) suRenderPayments();
 }
-function suBack(){ if(SU_STEP>0){ SU_STEP--; suShow(); } }
+function suBack(){ var a=suAllowedSteps(), p=a.indexOf(SU_STEP); if(p>0){ SU_STEP=a[p-1]; suShow(); } }
 async function suNext(btn){
-  if(SU_STEP===1){
-    var nm=document.getElementById('su_name').value.trim();
-    if(!nm){ var msg=document.getElementById('setupMsg'); if(msg){msg.style.color='#c0392b'; msg.textContent='Please enter your name first.';} return; }
-    var pn=document.getElementById('su_practice').value.trim();
-    if(!pn){ var pmsg=document.getElementById('setupMsg'); if(pmsg){pmsg.style.color='#c0392b'; pmsg.textContent='Please add your clinic or practice name so booking and patient messages identify the right office.';} return; }
-    suPersistIdentity();
-  }
-  if(SU_STEP===2 && document.getElementById('avDay0') && typeof saveAvailability==='function'){ try{ await saveAvailability(null); }catch(e){} }
-  if(SU_STEP>=SU_MAX){ suFinish(); return; }
-  SU_STEP++; suShow();
+  var old=btn&&btn.textContent, msg=document.getElementById('setupMsg');
+  if(btn) btn.disabled=true;
+  try{
+    if(SU_STEP===1){
+      var nm=document.getElementById('su_name').value.trim();
+      if(!nm) throw new Error('Please enter your name first.');
+      var pn=document.getElementById('su_practice').value.trim();
+      if(suIsProvider()&&!pn) throw new Error('Please add your clinic or practice name.');
+      await suPersistIdentity();
+      var identitySteps=['profile']; if(suIsProvider()) identitySteps.push('practice');
+      await suSaveOnboarding({completedSteps:suCompletedWith(identitySteps),step:suIsProvider()?'practice':'profile'});
+    }
+    if(SU_STEP===2){
+      if(!document.getElementById('avDay0')||typeof saveAvailability!=='function') throw new Error('Your schedule editor is not ready yet. Try again.');
+      var saved=await saveAvailability(null);
+      if(saved!==true) throw new Error('Your schedule was not saved. Fix the message above or try again before continuing.');
+      await suSaveOnboarding({completedSteps:suCompletedWith(['schedule']),step:'schedule'});
+    }
+    if(SU_STEP===3&&(SU_STATE.completedSteps||[]).indexOf('staff_prep')<0){ await suSaveOnboarding({completedSteps:suCompletedWith(['staff_prep']),step:'staff_prep'}); }
+    if(SU_STEP===4&&(SU_STATE.completedSteps||[]).indexOf('preferences')<0){ await suSaveOnboarding({completedSteps:suCompletedWith(['preferences']),step:'preferences'}); }
+    if(SU_STEP>=SU_MAX){ await suFinish(); return; }
+    var allowed=suAllowedSteps(), pos=allowed.indexOf(SU_STEP); SU_STEP=allowed[Math.min(pos+1,allowed.length-1)]; suShow();
+  }catch(e){ SU_STATE.error=e&&e.message||'This step could not be saved.'; if(msg){msg.style.color='#c0392b';msg.textContent=SU_STATE.error;} }
+  finally{ if(btn){btn.disabled=false;btn.textContent=old||'Next →';} }
 }
 /* Identity separation (2026-07-21): the wizard's one name field used to seed
    BOTH the account display name AND the clinical provider identity. When a
@@ -16433,14 +16916,14 @@ function suProviderIdentityKey(s){
 function suRosterEntries(){
   try{ var a=JSON.parse(localStorage.getItem(uns('mlsSchedProviders'))||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; }
 }
-function suPersistIdentity(){
+async function suPersistIdentity(){
   var nm=document.getElementById('su_name').value.trim();
   localStorage.setItem(uns('docname'), nm);
   var suRoster=suRosterEntries(), suNmKey=suProviderIdentityKey(nm);
   var suRosterMismatch=suRoster.length>0&&!!nm&&!suRoster.some(function(p){ return suProviderIdentityKey(p)===suNmKey; });
   if(suRosterMismatch){
     try{ if(typeof toast==='function') toast('Saved as your account name. The clinical provider identity comes from your verified Athena schedule, so it was not changed.',''); }catch(e){}
-  }else if(nm){
+  }else if(nm&&suIsProvider()){
     localStorage.setItem(uns('providerName'), nm);
   }
   localStorage.setItem(uns('docspec'), document.getElementById('su_spec').value.trim());
@@ -16450,14 +16933,23 @@ function suPersistIdentity(){
   localStorage.setItem(uns('clinicPhone'), document.getElementById('su_phone').value.trim());
   localStorage.setItem(uns('clinicAddress'), document.getElementById('su_addr').value.trim());
   localStorage.setItem(uns('qolSignature'), document.getElementById('su_sig').value.trim());
-  try{ if(typeof syncProfileName==='function') syncProfileName(); }catch(e){}
-  try{ if(typeof syncPrefsToServer==='function') syncPrefsToServer(); }catch(e){}
+  if(typeof syncProfileName!=='function'||await syncProfileName({required:true})!==true) throw new Error('Your account profile could not be saved. Try again.');
+  if(typeof syncPrefsToServer!=='function'||await syncPrefsToServer({required:true})!==true) throw new Error('Your account settings could not be saved. Try again.');
+  return true;
 }
-function suFinish(){
-  suPersistIdentity();
-  localStorage.setItem(uns('setupDone'),'1');
-  closeSetup();
-  try{ if(typeof toast==='function') toast('You are all set! 🎉','ok'); }catch(e){}
+async function suFinish(){
+  var msg=document.getElementById('setupMsg');
+  try{
+    await suPersistIdentity();
+    var required=['profile','preferences']; if(suIsProvider()) required.push('practice'); if(suCanSchedule()) required.push('schedule','staff_prep');
+    var finished=await suSaveOnboarding({completedSteps:suCompletedWith(required),completed:true,tourStatus:'completed'});
+    if(!finished||finished.status!==SU_STATUS.COMPLETED) throw new Error('Setup still needs '+String((finished&&finished.currentStep)||'one required step')+'. Return to that step before finishing.');
+    SU_STATE.status=SU_STATUS.COMPLETED;
+    localStorage.setItem(uns('setupDone'),'1');
+    await closeSetup();
+    try{ if(typeof toast==='function') toast('You are all set! 🎉','ok'); }catch(e){}
+    return true;
+  }catch(e){ SU_STATE.error=e&&e.message||'Completion could not be saved.'; if(msg){msg.style.color='#c0392b';msg.textContent=SU_STATE.error;} return false; }
 }
 function su_autoSig(){
   var nm=document.getElementById('su_name').value.trim();
@@ -16483,33 +16975,10 @@ function su_mlsVisibleEl(el){
   }catch(e){ return false; }
 }
 function su_showStaffPrepMenu(){
-  closeSetup();
-  try{
-    if(su_mlsVisibleEl(document.getElementById('mlsTbMenuBtn'))&&window.__mlsTopbar&&typeof window.__mlsTopbar.openMenu==='function'){
-      window.__mlsTopbar.openMenu();
-      var row=document.querySelector('#mlsTbMenuPanel .mlsTbItem[data-mls-action="staff-prep"]');
-      if(row&&typeof row.focus==='function') row.focus();
-      if(su_mlsVisibleEl(row)){
-        try{ toast('Choose Staff prep & Athena month pull from Menu.','ok'); }catch(e0){}
-        return true;
-      }
-    }
-  }catch(e){}
-  try{
-    if(window.__mlsCalmShell&&typeof window.__mlsCalmShell.go==='function'){
-      /* go('tools') TOGGLES, so an already-open launcher must not be closed. */
-      if(!document.getElementById('mlsToolsMenu')) window.__mlsCalmShell.go('tools');
-      var rows=document.querySelectorAll('#mlsToolsMenu .r'), hit=null;
-      for(var i=0;i<rows.length;i++){ if(/staff\s*prep/i.test(rows[i].textContent||'')){ hit=rows[i]; break; } }
-      if(su_mlsVisibleEl(hit)){
-        if(typeof hit.focus==='function') hit.focus();
-        try{ toast('Choose Staff prep from Tools.','ok'); }catch(e1){}
-        return true;
-      }
-    }
-  }catch(e){}
-  try{ toast('Menu is still loading. Close Setup, then open Menu.','err'); }catch(e){}
-  return false;
+  var box=document.getElementById('su_payBox'), msg=document.getElementById('setupMsg');
+  if(box) box.innerHTML='<div style="font-weight:700;color:#127a55">✓ Staff Prep is in Menu</div><div class="note" style="margin-top:4px">After setup, open <b>Menu → Staff prep &amp; Athena month pull</b>. Setup will stay on this step and your earlier answers are preserved.</div>';
+  if(msg){ msg.style.color='#127a55'; msg.textContent='Location saved — continue when ready.'; }
+  return true;
 }
 function su_openSettings(){ closeSetup(); if(typeof openSettings==='function') openSettings(); }
 async function suChangePassword(btn){
@@ -16539,38 +17008,43 @@ async function suRenderSchedule(){
   box.innerHTML='<div class="note">Loading your availability…</div>';
   try{
     var r=await fetch(bkBase()+'/api/schedule/availability',{headers:{Authorization:'Bearer '+bkToken()}});
-    var d=await r.json();
+    var d=await r.json().catch(function(){return{};});
+    if(!r.ok){ box.innerHTML='<div class="note" style="color:#c0392b">'+esc((d&&d.error)||'Your plan or role does not include schedule setup.')+'</div>'; SU_STATE.error=(d&&d.error)||'Schedule setup is unavailable.'; return false; }
     try{ if(d&&d.availability&&d.availability.tz) localStorage.setItem(uns('acctTz'),String(d.availability.tz)); }catch(e){}
     box.innerHTML=(typeof _avRenderEditor==='function')?_avRenderEditor((d&&d.availability)||{}):'<div class="note">Schedule editor unavailable.</div>';
-  }catch(e){ box.innerHTML='<div class="note" style="color:#c0392b">Could not load your schedule.</div>'; }
+    return true;
+  }catch(e){ box.innerHTML='<div class="note" style="color:#c0392b">Could not load your schedule.</div>'; SU_STATE.error='Could not load your schedule.'; return false; }
 }
 async function suRenderPayments(){
   var box=document.getElementById('su_payBox'); if(!box) return;
   box.innerHTML='<button class="btn-primary" type="button" style="font-size:13px;padding:7px 12px" onclick="su_showStaffPrepMenu()">Show Staff Prep in Menu</button>';
   return true;
 }
-// Offer the wizard once for a brand-new staff account that hasn't set a name yet.
+// Offer the wizard only after the authenticated app and agreement owner have yielded.
 function maybePromptSetup(){
   try{
     if(typeof backendMode!=='function'||!backendMode()||!bkToken()) return;
-    // Doctors / head physicians only — never lawyers or receptionists.
-    if(typeof isLawyerUser==='function'&&isLawyerUser()) return;
-    if(typeof isReceptionistUser==='function'&&isReceptionistUser()) return;
-    if(bkUser && !(bkUser.role==='head'||bkUser.role==='user'||bkUser.isHead)) return;
-    var hasName=(typeof getName==='function'&&getName())||(typeof getProviderName==='function'&&getProviderName());
-    if(hasName) return;
-    if(localStorage.getItem(uns('setupDone'))==='1'||localStorage.getItem(uns('setupPrompted'))==='1') return;
+    var role=String((bkUser&&bkUser.role)||'').toLowerCase(), caps=(bkUser&&bkUser.capabilities)||{};
+    if(role==='owner'||role==='admin'||role==='lawyer'||(bkUser&&bkUser.isAdmin)||caps.setupAllowed===false) return;
+    if(['head','doctor','user','nurse','receptionist'].indexOf(role)<0) return;
+    if(sessionStorage.getItem(uns(SU_PROMPT_SESSION_KEY))==='1') return;
     if(sfSetupPromptTimer) return;
     var promptEpoch=sfSessionUiEpoch, promptAccount=sfSessionUiAccount;
-    sfSetupPromptTimer=setTimeout(function(){
-      sfSetupPromptTimer=0;
-      if(!sfSessionPromptValid(promptEpoch,promptAccount)) return;
-      try{
-        if(localStorage.getItem(uns('setupDone'))==='1'||localStorage.getItem(uns('setupPrompted'))==='1') return;
-        localStorage.setItem(uns('setupPrompted'),'1');
-        openSetup();
-      }catch(e){}
-    },900);
+    var ready=window.__mlsSessionReady;
+    if(!ready||typeof ready.then!=='function'){ sfSetupPromptTimer=setTimeout(function(){sfSetupPromptTimer=0;maybePromptSetup();},250); return; }
+    Promise.resolve(ready).then(function(){
+      if(!sfSessionPromptValid(promptEpoch,promptAccount)||sfSessionLegalState!=='verified') return;
+      var app=document.getElementById('appScreen'), gate=document.getElementById('agreementsGate'), invite=document.getElementById('invitePasswordModal');
+      var appVisible=!!(app&&app.style.display!=='none'&&getComputedStyle(app).display!=='none'&&!document.documentElement.classList.contains('mls-secure-loading'));
+      var agreementOwns=!!(gate&&getComputedStyle(gate).display!=='none')||(typeof agCeremonyNeeded==='function'&&agCeremonyNeeded());
+      if(!appVisible||agreementOwns||(invite&&invite.classList.contains('show'))) return;
+      sfSetupPromptTimer=setTimeout(async function(){
+        sfSetupPromptTimer=0;
+        if(!sfSessionPromptValid(promptEpoch,promptAccount)||sfSessionLegalState!=='verified') return;
+        var opened=await openSetup(true);
+        if(opened) sessionStorage.setItem(uns(SU_PROMPT_SESSION_KEY),'1');
+      },500);
+    }).catch(function(){});
   }catch(e){}
 }
 /* ===== MLS Help — in-app "how do I / where is" assistant ===== */
@@ -16866,15 +17340,14 @@ function copyLawyerCreds(){
    sign-in details — so the doctor can paste it straight into an email or text. */
 /* Build the one-click magic link for an attorney invite. */
 function lawyerInviteLink(creds){
-  var base=(location.origin||'https://mlsscribe.com')+'/ScribeFlow.html';
-  return (creds&&creds.inviteToken)?(base+'#invite='+encodeURIComponent(creds.inviteToken)):base;
+  return accountInviteLinkForCurrentLane(creds&&creds.inviteUrl,creds&&creds.inviteToken)||((location.origin||'https://mlsscribe.com')+'/ScribeFlow.html');
 }
 function lawyerInviteMessage(creds){
   var practice=(typeof getPracticeName==='function'&&getPracticeName())||(typeof getName==='function'&&getName())||'our practice';
   if(creds&&creds.inviteToken){
     var link=lawyerInviteLink(creds);
     return 'You\'ve been invited to '+practice+'’s secure medical-legal portal to request reports from the treating physician.\n\n'
-      +'Open your portal — one click, no password needed the first time:\n'+link+'\n\n'
+      +'Open your private portal link, then choose the password you will use to sign in:\n'+link+'\n\n'
       +'This evaluation build can demonstrate a synthetic request draft only. Do not upload case files, authorizations, medical records, or patient information. Signing and report delivery are unavailable.\n\n'
       +'This portal is encrypted and limited to legal requests only. The link is private to you — please don\'t forward it.';
   }
@@ -16893,40 +17366,139 @@ function copyLawyerLink(){
   if(navigator.clipboard){ navigator.clipboard.writeText(link).then(function(){toast('One-click portal link copied.','ok');}).catch(function(){ mlsPrompt('Copy the attorney’s portal link:', link); }); }
   else { mlsPrompt('Copy the attorney’s portal link:', link); }
 }
-/* ===== Attorney side: consume the already-scrubbed one-time token. ===== */
+/* ===== Invited account side: consume the already-scrubbed one-time token. =====
+   Every seat uses the generic exchange. A required password is completed BEFORE
+   startSession, so legal/setup/extension prompts cannot stack over this gate. */
 function _cleanInviteUrl(){}
-async function acceptLawyerInvite(tok){
+var MLS_INVITE_PASSWORD_DUE='sf_invite_password_due';
+var MLS_INVITE_SETUP_KEY='sf_invite_setup_token';
+function invitePasswordDueFor(email){
+  try{ return String(sessionStorage.getItem(MLS_INVITE_PASSWORD_DUE)||'').toLowerCase()===String(email||'').toLowerCase(); }catch(e){ return false; }
+}
+function setInvitePasswordDue(email){
+  try{ if(email) sessionStorage.setItem(MLS_INVITE_PASSWORD_DUE,String(email).toLowerCase()); }catch(e){}
+}
+function clearInvitePasswordDue(){
+  try{ sessionStorage.removeItem(MLS_INVITE_PASSWORD_DUE); }catch(e){}
+}
+function setInviteSetupToken(token){ try{ if(token) sessionStorage.setItem(MLS_INVITE_SETUP_KEY,String(token)); else sessionStorage.removeItem(MLS_INVITE_SETUP_KEY); }catch(e){} }
+function inviteSetupToken(){ try{ return sessionStorage.getItem(MLS_INVITE_SETUP_KEY)||''; }catch(e){ return ''; } }
+function clearInvitePasswordFields(){ ['invitePasswordNew','invitePasswordConfirm'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; }); }
+function inviteRoleLabel(u){
+  var role=String((u&&u.role)||'').toLowerCase();
+  if(role==='head') return 'Head doctor';
+  if(role==='nurse') return 'Nurse';
+  if(role==='receptionist') return 'Receptionist';
+  if(role==='lawyer') return 'Attorney portal';
+  return 'Doctor';
+}
+var _invitePasswordResolve=null;
+function showInvitePasswordGate(user){
+  if(user) bkUser=user;
+  var email=(user&&user.email)||getSessionEmail()||'';
+  if(email) setInvitePasswordDue(email);
+  var auth=document.getElementById('authScreen'); if(auth) auth.style.display='flex';
+  var app=document.getElementById('appScreen'); if(app) app.style.display='none';
+  var identity=document.getElementById('invitePasswordIdentity');
+  if(identity) identity.textContent=(email||'Invited account')+' · '+inviteRoleLabel(user||bkUser);
+  var err=document.getElementById('invitePasswordErr'); if(err){ err.textContent=''; err.style.display='none'; }
+  clearInvitePasswordFields();
+  var modal=document.getElementById('invitePasswordModal'); if(modal) modal.classList.add('show');
+  setTimeout(function(){ try{ var p=document.getElementById('invitePasswordNew'); if(p) p.focus(); }catch(e){} },50);
+}
+function requireInvitePassword(user){
+  showInvitePasswordGate(user);
+  return new Promise(function(resolve){ _invitePasswordResolve=resolve; });
+}
+async function saveInvitePassword(btn){
+  var p1=((document.getElementById('invitePasswordNew')||{}).value||'');
+  var p2=((document.getElementById('invitePasswordConfirm')||{}).value||'');
+  var err=document.getElementById('invitePasswordErr');
+  var fail=function(m){ if(err){ err.textContent=m; err.style.display='block'; } };
+  if(p1.length<8){ fail('Use at least 8 characters.'); return false; }
+  if(p1!==p2){ fail('The passwords do not match.'); return false; }
+  var setupToken=inviteSetupToken()||bkToken();
+  if(!setupToken){ fail('Your secure invite session expired. Ask the administrator for a new invite.'); return false; }
+  var old=btn&&btn.textContent; if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
   try{
-    var r=await _legalFetchRetry(bkBase()+'/api/auth/lawyer-invite',{method:'POST',cache:'no-store',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})},4);
+    var r=await fetch(bkBase()+'/api/auth/invite/set-password',{method:'POST',cache:'no-store',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify({setupToken:setupToken,password:p1})});
+    /* Compatibility only for a backend from before password-setup credentials.
+       New servers never expose the setup credential as a Bearer session. */
+    if(r.status===404){ r=await fetch(bkBase()+'/api/auth/set-password',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','Authorization':'Bearer '+setupToken},body:JSON.stringify({password:p1})}); }
     var d={}; try{ d=await r.json(); }catch(e){}
-    if(!r.ok || !d.token){
-      _cleanInviteUrl();
-      try{ switchAuth('login'); }catch(e){}
-      toast((d&&d.error)||'This invite link is no longer valid — please ask the practice to resend it.','err');
-      return;
-    }
-    setBkToken(d.token);
-    if(d.user&&d.user.email) setSessionEmail(d.user.email);
-    _cleanInviteUrl();
-    // Enter the app as the attorney (routes to the lawyer portal via refreshMe()).
-    try{ await startSession((d.user&&d.user.email)||getSessionEmail()); }catch(e){}
-    if(d.mustSetPassword){ setTimeout(promptSetLawyerPassword, 700); }
-  }catch(e){
-    _cleanInviteUrl();
-    try{ switchAuth('login'); }catch(_e){}
-    toast('Could not open the invite — the server may be waking up. Reload the link in a few seconds.','err');
+    if(!r.ok){ fail((d&&d.error)||'Could not save the password. Please try again.'); return false; }
+    if(d.token) setBkToken(d.token);
+    if(d.user) bkUser=d.user;
+    if(!bkToken()){ fail('The password was saved, but no signed-in session was returned. Sign in with your new password.'); return false; }
+    setInviteSetupToken('');
+    clearInvitePasswordDue();
+    clearInvitePasswordFields();
+    var modal=document.getElementById('invitePasswordModal'); if(modal) modal.classList.remove('show');
+    toast('Password saved. Let’s finish setting up your account.','ok');
+    var done=_invitePasswordResolve; _invitePasswordResolve=null;
+    if(done) done(true);
+    return true;
+  }catch(e){ fail('The reply was lost. Retry once; if your password was already saved, choose Return to sign in and use it.'); return false; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=old||'Save password & continue'; } }
+}
+function leaveInvitePasswordForLogin(){
+  var email=getSessionEmail()||'';
+  setInviteSetupToken(''); clearInvitePasswordDue(); clearInvitePasswordFields();
+  try{ setBkToken(''); }catch(e){} bkUser=null;
+  var modal=document.getElementById('invitePasswordModal'); if(modal) modal.classList.remove('show');
+  try{ switchAuth('login'); }catch(e){}
+  var field=document.getElementById('authEmail'); if(field&&email) field.value=email;
+  var auth=document.getElementById('authScreen'); if(auth) auth.style.display='flex';
+}
+function showInviteRetry(tok,message){
+  window.__mlsPendingInviteToken=tok;
+  try{ switchAuth('login'); }catch(e){}
+  var err=document.getElementById('authErr');
+  if(err){
+    err.style.display='block'; err.classList.add('show'); err.textContent='';
+    var span=document.createElement('span'); span.textContent=message||'The server could not open this invite yet.'; err.appendChild(span);
+    var retry=document.createElement('button'); retry.type='button'; retry.className='btn-ghost'; retry.style.cssText='display:block;margin-top:8px;font-size:13px;padding:6px 10px'; retry.textContent='Retry this invite';
+    retry.onclick=function(){ acceptAccountInvite(window.__mlsPendingInviteToken); }; err.appendChild(retry);
   }
 }
-async function promptSetLawyerPassword(){
-  var pw=await mlsPrompt('Welcome to your secure portal! Set a password (at least 8 characters) so you can sign back in later. You can change it anytime in Settings.');
-  if(pw===null) return; // they can set it later from Settings
-  pw=(pw||'').trim();
-  if(pw.length<8){ toast('Password needs at least 8 characters — you can set one anytime from Settings.','err'); return; }
+async function acceptAccountInvite(tok){
+  tok=String(tok||'').trim(); if(!tok) return false;
+  window.__mlsPendingInviteToken=tok;
   try{
-    var r=await fetch(bkBase()+'/api/auth/set-password',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({password:pw})});
-    if(r.ok){ toast('Password set. Next time, sign in with your email and this password.','ok'); }
-    else { var d={}; try{ d=await r.json(); }catch(e){} toast((d&&d.error)||'Could not set the password — you can set it later from Settings.','err'); }
-  }catch(e){ toast('Could not set the password right now — set it later from Settings.','err'); }
+    var r=await _legalFetchRetry(bkBase()+'/api/auth/invite',{method:'POST',cache:'no-store',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})},4);
+    var d={}; try{ d=await r.json(); }catch(e){}
+    var needsPassword=!!(d.mustSetPassword||d.sessionCreated===false||d.credentialType==='password-setup');
+    var setupToken=String(d.setupToken||(needsPassword?d.token:'')||'');
+    var sessionToken=String(d.sessionCreated===false?'':(d.token||''));
+    if(!r.ok || (needsPassword?!setupToken:!sessionToken)){
+      if(r.status>=500||r.status===408||r.status===429){ showInviteRetry(tok,(d&&d.error)||'The server could not open this invite yet.'); return false; }
+      window.__mlsPendingInviteToken='';
+      try{ switchAuth('login'); }catch(e){}
+      toast((d&&d.error)||'This invite link is no longer valid — please ask the administrator to issue a new one.','err');
+      return false;
+    }
+    if(needsPassword) setInviteSetupToken(setupToken);
+    else setBkToken(sessionToken);
+    /* Older servers returned a real Bearer token before password setup. Keep it
+       only for their compatibility endpoint; new setup tokens never enter auth storage. */
+    if(needsPassword&&!d.setupToken&&d.sessionCreated!==false&&d.token) setBkToken(d.token);
+    bkUser=d.user||null;
+    if(d.user&&d.user.email) setSessionEmail(d.user.email);
+    window.__mlsPendingInviteToken=''; _cleanInviteUrl();
+    if(needsPassword){
+      var secured=await requireInvitePassword(d.user);
+      if(!secured) return false;
+    }
+    await startSession((d.user&&d.user.email)||getSessionEmail());
+    return true;
+  }catch(e){ showInviteRetry(tok,'Could not open the invite — the server may be waking up.'); return false; }
+}
+/* Compatibility names for old callers; both now use the safe generic flow. */
+function acceptLawyerInvite(tok){ return acceptAccountInvite(tok); }
+function promptSetLawyerPassword(){ return showInvitePasswordGate(bkUser); }
+async function resumeInvitePasswordGate(email){
+  var secured=await requireInvitePassword(bkUser||{email:email});
+  if(secured) await startSession(email);
 }
 function copyLawyerInvite(){
   if(!_lastLawyerCreds) return;
@@ -17015,9 +17587,9 @@ async function saveAvailability(btn){
   try{
     var r=await fetch(bkBase()+'/api/schedule/availability',{method:'POST',headers:{Authorization:'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify({availability:av})});
     if(btn) btn.disabled=false;
-    if(r.ok){ try{ localStorage.setItem(uns('acctTz'),String(av.tz||'America/New_York')); }catch(e){} if(msg){ msg.style.color='#127a55'; msg.textContent='✓ Saved. Calendar, guided view, front desk, online booking, and phone scheduling now use this time zone.'; } toast('Availability and practice time zone saved.','ok'); }
-    else { if(msg){ msg.style.color='#a12c2c'; msg.textContent='Could not save — try again.'; } }
-  }catch(e){ if(btn) btn.disabled=false; if(msg){ msg.style.color='#a12c2c'; msg.textContent='Network error — try again.'; } }
+    if(r.ok){ try{ localStorage.setItem(uns('acctTz'),String(av.tz||'America/New_York')); }catch(e){} if(msg){ msg.style.color='#127a55'; msg.textContent='✓ Saved. Calendar, guided view, front desk, online booking, and phone scheduling now use this time zone.'; } toast('Availability and practice time zone saved.','ok'); return true; }
+    if(msg){ msg.style.color='#a12c2c'; msg.textContent='Could not save — try again.'; } return false;
+  }catch(e){ if(btn) btn.disabled=false; if(msg){ msg.style.color='#a12c2c'; msg.textContent='Network error — try again.'; } return false; }
 }
 function openFollowups(){
   toast('Automated follow-up emails are not released in this evaluation build. Nothing was sent.','err');
@@ -17174,11 +17746,11 @@ function renderLawyers(list, justCreated){
     h+='<div style="background:#eef4fc;border:1px solid #cfe2f8;border-radius:10px;padding:11px 12px;margin-bottom:10px">';
     h+='<div style="font-weight:700;color:var(--brand-dk);margin-bottom:5px">✅ Attorney portal created for '+esc(justCreated.name||justCreated.email)+'</div>';
     if(justCreated.inviteToken){
-      h+='<div style="font-size:13px;margin-bottom:6px">Send them this <b>one-click link</b> — it opens their portal and signs them in automatically (no password to type the first time):</div>';
+      h+='<div style="font-size:13px;margin-bottom:6px">Send them this <b>private one-time link</b>. It opens the attorney portal and asks them to choose their password before the first session starts:</div>';
       h+='<div style="font-size:12px;background:#fff;border:1px solid #cfe2f8;border-radius:10px;padding:7px 9px;word-break:break-all;color:var(--brand-dk)">'+esc(lawyerInviteLink(justCreated))+'</div>';
     }
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn-primary" style="font-size:12.5px;padding:6px 11px" onclick="copyLawyerInvite()">📋 Copy full invite</button><button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="copyLawyerLink()">🔗 Copy link only</button><button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="emailLawyerInvite()">✉️ Email the invite</button></div>';
-    h+='<div class="mini" style="color:var(--muted);margin-top:6px">The link is private to this attorney and works for 21 days. They\'ll set their own password on first entry; after that they sign in with their email + password (<b>'+esc(justCreated.email)+'</b>, temp password <b>'+esc(justCreated.tempPassword)+'</b> as a backup).</div>';
+    h+='<div class="mini" style="color:var(--muted);margin-top:6px">The link is private to this attorney and works for 21 days. They choose their own password on first entry; after that they sign in with <b>'+esc(justCreated.email)+'</b> and that password.</div>';
     h+='</div>';
   }
   if(list.length){
@@ -32106,14 +32678,64 @@ const BROWSER_AGREEMENT_TEMPLATES=[
   }
 ];
 const MLS_AGREEMENTS=Object.freeze(BROWSER_AGREEMENT_TEMPLATES);
+let ACTIVE_MLS_AGREEMENTS=MLS_AGREEMENTS;
+const BROWSER_AGREEMENT_EVIDENCE=Object.freeze([
+  ['mls.master-subscription-services','aa04649a025bbb5070c9c352f47f19fd7d85edd808c31519b372595c047f333a'],
+  ['mls.business-associate-agreement','7108094d65c917a98396c5a9ee153a6e7a0a754e9590134ad20c43ee25dcf915'],
+  ['mls.hipaa-notice-privacy-practices-ack','fc5aaa0c47b388cddd197b2845792f7d29160226248400698dd6b36b734cb652'],
+  ['mls.workforce-confidentiality-nda','47acc489071d066c79bd0476a952e87a21ee3ba3b4b46f37e65e3ee0d7137581'],
+  ['mls.acceptable-use-information-security','c23647294cbc0c31557e053d7949eaae3a4218bbc2407599062036501e5d669c'],
+  ['mls.hipaa-workforce-training','60cd6157b274f8a15bc4120c1f25ddd7c28d23cca5ee978b5290f871fa0086dc'],
+  ['mls.sanction-policy-ack','58f009aa5dbce2d97efdb77c4b0ca5f817c9f16f832868b9822d094f80b00d7e'],
+  ['mls.authorized-representative-esign','1550b572047d666adf1bab6d2c1bef9089105ae6fa52753c01a6250827f2a6b3']
+]);
+let _agManifest=null, _agManifestPromise=null, _agManifestEpoch=0;
+function agResetManifestState(){ _agManifestEpoch++; _agManifest=null; _agManifestPromise=null; ACTIVE_MLS_AGREEMENTS=MLS_AGREEMENTS; }
+function agValidateServerManifest(m){
+  var docs=m&&m.documents;
+  if(!m||m.schemaVersion!==1||!m.manifestId||!m.version||!/^[a-f0-9]{64}$/.test(String(m.manifestSha256||''))||!Array.isArray(docs)||!docs.length||docs.length>MLS_AGREEMENTS.length) throw new Error('The server returned an invalid agreement manifest.');
+  var selected=[], seen={}, lastIndex=-1;
+  docs.forEach(function(doc){
+    var index=BROWSER_AGREEMENT_EVIDENCE.findIndex(function(expected){ return expected[0]===String(doc&&doc.documentId||''); });
+    var expected=index>=0?BROWSER_AGREEMENT_EVIDENCE[index]:null, shown=index>=0?MLS_AGREEMENTS[index]:null;
+    if(!doc||!expected||!shown||seen[doc.documentId]||index<=lastIndex||doc.sha256!==expected[1]||doc.title!==shown.title||doc.required!==true||!!doc.requiresCountersignature!==(shown.requiresCountersign===true)) throw new Error('The server agreement manifest does not match the role-appropriate document text in this release. Reload after the application is updated.');
+    seen[doc.documentId]=true; lastIndex=index; selected.push(shown);
+  });
+  return {manifest:m,agreements:Object.freeze(selected)};
+}
 
 // Convenience: does the current agreements set include any two-party document
 // that must await the owner's countersignature?
 function agSetRequiresCountersign(){
-  return MLS_AGREEMENTS.some(s=>s&&s.requiresCountersign===true);
+  return ACTIVE_MLS_AGREEMENTS.some(s=>s&&s.requiresCountersign===true);
 }
 // Standardized electronic-signature consent (E-SIGN Act / UETA intent-to-sign).
-const AG_ESIGN_CONSENT='Browser signing is unavailable. A future ceremony must be server-owned and counsel-approved.';
+const AG_ESIGN_CONSENT='I consent to use electronic records and signatures for this agreement ceremony, intend my drawn signature to be legally binding, and understand that the server will preserve the exact document manifest and signed artifact.';
+async function agLoadManifest(){
+  if(_agManifest) return _agManifest;
+  if(_agManifestPromise) return _agManifestPromise;
+  var requestEpoch=_agManifestEpoch;
+  _agManifestPromise=(async function(){
+    var r=await fetch(bkBase()+'/api/agreements/manifest',{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+bkToken()}}), d={};
+    try{ d=await r.json(); }catch(e){}
+    if(!r.ok) throw new Error((d&&d.error)||'The current agreement set could not be loaded.');
+    var validated=agValidateServerManifest(d&&d.manifest);
+    if(requestEpoch!==_agManifestEpoch) throw new Error('The signed-in account changed while agreements were loading. Retry.');
+    ACTIVE_MLS_AGREEMENTS=validated.agreements; _agManifest=validated.manifest; return validated.manifest;
+  })().finally(function(){ _agManifestPromise=null; });
+  return _agManifestPromise;
+}
+function agCeremonyKey(manifest){
+  var agreementState=(bkUser&&bkUser.agreements)||{};
+  var scope=[String(manifest&&manifest.manifestId||''),String(manifest&&manifest.manifestSha256||''),String(agreementState.audience||''),String(agreementState.practiceUserId||'')].join(':');
+  var storageKey=uns('agreementCeremony:'+scope), key='';
+  try{ key=sessionStorage.getItem(storageKey)||''; }catch(e){}
+  if(!key){
+    try{ key='sign:'+crypto.randomUUID(); }catch(e){ key='sign:'+Date.now().toString(36)+':'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2); }
+    try{ sessionStorage.setItem(storageKey,key); }catch(e){}
+  }
+  return key;
+}
 
 /* =========================================================
    REUSABLE DRAWN-SIGNATURE PAD (canvas; mouse + touch; high-DPI)
@@ -32204,10 +32826,12 @@ function agGateErr(m){
 function agRenderSections(){
   const host=document.getElementById('agGateSections');
   if(!host) return;
+  if(!_agManifest||!Array.isArray(_agManifest.documents)){ host.innerHTML='<p class="sub">Loading the server-owned agreement set…</p>'; return; }
   let html='';
-  MLS_AGREEMENTS.forEach((sec,i)=>{
+  ACTIVE_MLS_AGREEMENTS.forEach((sec,i)=>{
+    const serverDoc=_agManifest.documents[i];
     html+='<div style="border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-top:14px">';
-    html+='<h3 style="margin:0 0 8px">'+esc(sec.title)+'</h3>';
+    html+='<h3 style="margin:0 0 8px">'+esc(serverDoc.title)+'</h3>';
     if(sec.intro) html+='<p class="sub" style="margin:0 0 8px">'+esc(sec.intro)+'</p>';
     /* Owner directive 2026-07-20: the ceremony was a wall of text. Every
        document's FULL body stays one tap away (legally identical content),
@@ -32236,11 +32860,11 @@ function agRenderSections(){
     if(sec.closing) html+='<p style="margin:10px 0 0;font-style:italic">'+esc(sec.closing)+'</p>';
     html+='</div></details>';
     if(sec.role) html+='<p class="sub" style="margin:8px 0 0"><strong>You are signing:</strong> '+esc(sec.role)+'</p>';
-    if(sec.requiresCountersign) html+='<p class="sub" style="margin:6px 0 0;font-style:italic">This document becomes fully executed once MLS countersigns as the Business Associate.</p>';
+    if(serverDoc.requiresCountersignature) html+='<p class="sub" style="margin:6px 0 0;font-style:italic">This document becomes fully executed once MLS countersigns as the Business Associate.</p>';
     // Lawyerly attestation above the consent for each section.
-    var _attest='By affixing my electronic signature, I, '+(sec.requiresCountersign?'as the Covered Entity’s authorized representative,':'the undersigned,')+' intending to be legally bound, acknowledge and agree to the '+esc(sec.title)+' as set forth above.';
+    var _attest='By affixing my electronic signature, I, '+(serverDoc.requiresCountersignature?'as the Covered Entity’s authorized representative,':'the undersigned,')+' intending to be legally bound, acknowledge and agree to the '+esc(serverDoc.title)+' as set forth above.';
     html+='<label style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer;font-weight:600">'+
-            '<input type="checkbox" class="agCheckbox" data-ag="'+i+'" onchange="agSyncSignState()" style="margin-top:3px">'+
+            '<input type="checkbox" class="agCheckbox" data-ag="'+i+'" data-document-id="'+esc(serverDoc.documentId)+'" data-sha256="'+esc(serverDoc.sha256)+'" onchange="agSyncSignState()" style="margin-top:3px">'+
             '<span>'+_attest+'</span></label>';
     html+='</div>';
   });
@@ -32249,7 +32873,8 @@ function agRenderSections(){
 /* Enable "Sign & continue" only when ALL boxes are checked AND name is non-empty. */
 function agSyncSignState(){
   const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
-  const allChecked=boxes.length===MLS_AGREEMENTS.length && boxes.every(b=>b.checked);
+  const required=(_agManifest&&Array.isArray(_agManifest.documents))?_agManifest.documents.length:0;
+  const allChecked=required>0&&boxes.length===required && boxes.every(b=>b.checked);
   const name=(document.getElementById('agSignName')||{}).value||'';
   const hasSig=!sigPadIsEmpty('agSigPad');
   const btn=document.getElementById('agSignBtn');
@@ -32582,7 +33207,14 @@ function sfHideGateLoading(gated,options){
     sfRafSoon(()=>{
       if(token!==sfGateHideToken){ resolve(); return; }
       if(gated){ try{ showAgreementsGate(true); }catch(e){} }
-      else { try{ if(agCeremonyNeeded()) showAgreementsCeremony(true); }catch(e){} }
+      else {
+        try{
+          const setupSurface=agAccountSetupSurface();
+          if(setupSurface==='locked') showAgreementsGate(true);
+          else if(setupSurface==='ceremony') showAgreementsCeremony(true);
+          else if(setupSurface==='pending') showAgreementsPending(true);
+        }catch(e){}
+      }
       document.documentElement.classList.add('mls-app-revealing');
       document.documentElement.classList.remove('mls-secure-loading');
       if(el) el.style.opacity='0';
@@ -32615,11 +33247,20 @@ function showAgreementsGate(fromLoading){
   /* locked mode (default): hide the ceremony layout */
   const lw=document.getElementById('agLockedWrap'); if(lw) lw.style.display='';
   const cw=document.getElementById('agCeremonyWrap'); if(cw) cw.style.display='none';
+  const pw=document.getElementById('agPendingWrap'); if(pw) pw.style.display='none';
   /* clunky2-signin-1.0.0 (CLUNKY 44): the heading, the summary and the status
      line each named the same refusal in different words. The heading is the
      label; it now uses the same plain words the summary does. */
   const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent='Not switched on yet';
+  const summary=document.getElementById('agGateSummary'), reasons=agReadinessReasons();
+  if(summary){
+    if(reasons.indexOf('PRACTICE_REQUIRED')>=0) summary.innerHTML='<b>This account is not attached to a practice.</b> Ask your MLS administrator to correct the practice assignment before patient work begins.';
+    else if(reasons.indexOf('AGREEMENT_ARTIFACT_INVALID')>=0) summary.innerHTML='<b>Your signed-form receipt did not pass the server integrity check.</b> Patient work remains closed; ask your MLS administrator to review the account evidence.';
+    else if(reasons.indexOf('PRACTICE_BAA_INVALID')>=0) summary.innerHTML='<b>The practice agreement did not pass the server integrity check.</b> Patient work remains closed; ask the MLS owner to review the executed agreement.';
+    else summary.innerHTML='<b>Your practice has not been switched on for patient work yet.</b> Ask your MLS administrator to enable the clinical workspace for this account — nobody can do it from this browser.';
+  }
   const rb=document.getElementById('agRetryBtn'); if(rb) rb.style.display='';
+  if(rb) rb.textContent='Check workspace access again';
   /* clunky2-signin-1.0.0 (CLUNKY 44): the summary above already says what is
      not enabled and who enables it; this line is the RESULT, not a third
      retelling of the reason. */
@@ -32635,18 +33276,74 @@ function agCeremonyNeeded(){
     if(!backendMode()||!bkToken()||!bkUser) return false;
     if(document.body.classList.contains('mls-public-preview')) return false;
     if(bkUser.isLawyer) return false;               // attorney portal has its own terms
-    if(!MLS_AGREEMENTS.length) return false;
-    /* "Continue without signing" is session-sticky: without this, every
-       startSession re-entry (settings close, view switches) re-trapped the
-       user in the ceremony during the server-410 transition window. The next
-       tab / next sign-in prompts again. */
-    try{ if(sessionStorage.getItem('mlsAgCerSkip')==='1') return false; }catch(e){}
-    /* Once THIS account signed on THIS device, never re-ask here even if a
-       cached/stale bkUser is missing the server-recorded field (owner
-       directive 2026-07-20: first sign-in only, never again). */
-    try{ if(localStorage.getItem(uns('agSignedVersion'))===AGREEMENTS_VERSION) return false; }catch(e){}
-    return bkUser.agreements_signed_version!==AGREEMENTS_VERSION;
+    const agreements=bkUser.agreements;
+    if(sfIsClonedSetupLane()&&(Number(bkUser.setupPolicyVersion)!==2||!agreements||agreements.mode!=='role-scoped')) return false;
+    if(agreements&&typeof agreements==='object'){
+      if(agreements.required===false) return false;
+      if(agreements.required===true) return agreements.signerComplete!==true;
+    }
+    /* A legacy version string lacks manifest, scope and artifact integrity.
+       Missing structured server state therefore fails closed. */
+    return true;
   }catch(e){ return false; }
+}
+function agReadinessReasons(){
+  const readiness=bkUser&&bkUser.readiness;
+  return readiness&&Array.isArray(readiness.reasons)?readiness.reasons.map(String):[];
+}
+function agPracticeBaaReason(){
+  const reasons=agReadinessReasons();
+  const matched=['PRACTICE_BAA_REQUIRED','PRACTICE_BAA_COUNTERSIGNATURE_REQUIRED'].find(function(reason){ return reasons.indexOf(reason)>=0; });
+  if(matched) return matched;
+  const status=String((bkUser&&bkUser.agreements&&bkUser.agreements.practiceBaaStatus)||'');
+  if(status==='required') return 'PRACTICE_BAA_REQUIRED';
+  if(status==='pending-countersignature') return 'PRACTICE_BAA_COUNTERSIGNATURE_REQUIRED';
+  return '';
+}
+function agAccountSetupSurface(){
+  try{
+    if(!backendMode()||!bkToken()||!bkUser||bkUser.isLawyer) return '';
+    if(bkUser.readiness&&bkUser.readiness.state==='blocked') return 'locked';
+    if(agCeremonyNeeded()) return 'ceremony';
+    if(agPracticeBaaReason()) return 'pending';
+    return '';
+  }catch(e){ return 'locked'; }
+}
+async function agRefreshAccountReadiness(){
+  const token=bkToken(), epoch=Number(window.__mlsSessionEpoch)||0;
+  if(!token) return false;
+  let r,d={};
+  try{ r=await fetch(bkBase()+'/api/me',{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token}}); }catch(e){ return false; }
+  try{ d=await r.json(); }catch(e){}
+  if(r.status===401){ handle401(); return false; }
+  if(!r.ok||!d.user||bkToken()!==token||(Number(window.__mlsSessionEpoch)||0)!==epoch) return false;
+  bkUser=d.user;
+  try{ applyAccessUI(); }catch(e){}
+  return true;
+}
+function showAgreementsPending(fromLoading,reasonOverride){
+  const app=document.getElementById('appScreen'); if(app) app.style.display='none';
+  if(!fromLoading){
+    const ld=document.getElementById('sfGateLoading'); if(ld){ ld.style.display='none'; ld.setAttribute('aria-busy','false'); }
+    document.documentElement.classList.remove('mls-secure-loading','mls-app-revealing');
+  }
+  const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
+  const lw=document.getElementById('agLockedWrap'); if(lw) lw.style.display='none';
+  const cw=document.getElementById('agCeremonyWrap'); if(cw) cw.style.display='none';
+  const pw=document.getElementById('agPendingWrap'); if(pw) pw.style.display='';
+  const reason=reasonOverride||agPracticeBaaReason();
+  const headPending=reason==='PRACTICE_BAA_COUNTERSIGNATURE_REQUIRED';
+  const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent=headPending?'Waiting for MLS to countersign':'Waiting for the practice agreement';
+  const summary=document.getElementById('agPendingSummary');
+  if(summary) summary.innerHTML=headPending
+    ? '<b>Your own forms are signed and safely stored.</b> The patient workspace will open after the MLS owner countersigns the practice agreement. You do not need to sign again.'
+    : (reason==='PRACTICE_BAA_REQUIRED'
+      ? '<b>Your own forms are signed and safely stored.</b> The patient workspace will open after the practice head signs and MLS countersigns the practice agreement. You do not need to sign again.'
+      : '<b>Your signature is safely stored.</b> MLS could not yet verify the final account state. Check again; you will not be asked to sign twice.');
+  const rb=document.getElementById('agRetryBtn'); if(rb){ rb.style.display=''; rb.textContent='Check signing status again'; }
+  agGateErr('Patient work remains safely locked until every required signature is verified.');
+  const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
+  if(rb) try{ rb.focus(); }catch(e){}
 }
 function showAgreementsCeremony(fromLoading){
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
@@ -32657,12 +33354,14 @@ function showAgreementsCeremony(fromLoading){
   const auth=document.getElementById('authScreen'); if(auth) auth.style.display='none';
   const lw=document.getElementById('agLockedWrap'); if(lw) lw.style.display='none';
   const cw=document.getElementById('agCeremonyWrap'); if(cw) cw.style.display='';
+  const pw=document.getElementById('agPendingWrap'); if(pw) pw.style.display='none';
   const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent='Review & sign your onboarding agreements';
   const rb=document.getElementById('agRetryBtn'); if(rb) rb.style.display='none';
   const sk=document.getElementById('agCerSkip'); if(sk) sk.style.display='none';
-  agGateErr('');
-  try{ agRenderSections(); }catch(e){}
+  agGateErr('Loading the server-owned agreement set…');
+  const host=document.getElementById('agGateSections'); if(host) host.innerHTML='<p class="sub">Loading the current documents…</p>';
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
+  const nm=document.getElementById('agSignName'); if(nm) nm.value='';
   /* Init the signature pad only AFTER the gate is visible and laid out: sizing
      the canvas while its container is display:none produced a 0-rect → 300px
      fallback that CSS then stretched, so strokes landed in the wrong place
@@ -32670,7 +33369,7 @@ function showAgreementsCeremony(fromLoading){
      the coordinate space honest; an in-progress signature survives via its
      required re-draw prompt. */
   requestAnimationFrame(function(){
-    try{ sigPadInit('agSigPad'); if(_sigPads&&_sigPads['agSigPad']) _sigPads['agSigPad'].onstroke=agSyncSignState; }catch(e){}
+    try{ sigPadInit('agSigPad'); sigPadClear('agSigPad'); if(_sigPads&&_sigPads['agSigPad']) _sigPads['agSigPad'].onstroke=agSyncSignState; }catch(e){}
     try{ agSyncSignState(); }catch(e){}
   });
   if(!window.__agPadResizeWired){
@@ -32686,36 +33385,15 @@ function showAgreementsCeremony(fromLoading){
       }catch(e){}
     });
   }
-  const nm=document.getElementById('agSignName'); if(nm) try{ nm.focus(); }catch(e){}
-  /* Capability probe: an empty POST records nothing on any backend (new: 400
-     validation; transition-era: 410 retired). On 410/404, surface the honest
-     continue link IMMEDIATELY so nobody fills the whole form only to learn
-     the server cannot record signatures yet. */
-  try{
-    fetch(bkBase()+'/api/agreements/sign',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:'{}'})
-      .then(function(r){ if(r.status===410||r.status===404){
-        agGateErr('Heads up: signing isn’t available on the server yet — you can review now and you’ll be asked to sign on a later sign-in.');
-        const sk=document.getElementById('agCerSkip'); if(sk) sk.style.display='';
-      }}).catch(function(){});
-  }catch(e){}
+  if(nm) try{ nm.focus(); }catch(e){}
+  agLoadManifest().then(function(){ agGateErr(''); agRenderSections(); agSyncSignState(); }).catch(function(e){ agGateErr(e&&e.message||'The current agreement set could not be loaded. Retry this page.'); });
 }
-/* Transition escape hatch: shown ONLY after the server answers 410/404 (the
-   ceremony endpoints are not deployed yet). Never lets an error lock anyone
-   out of a workspace the clinical gate already opened. */
+/* Retained only for stale cached markup. A missing ceremony endpoint now fails
+   closed; the backend enforces the same requirement on clinical routes. */
 function agCeremonySkip(ev){
   if(ev&&ev.preventDefault) ev.preventDefault();
-  try{ sessionStorage.setItem('mlsAgCerSkip','1'); }catch(e){}
-  hideAgreementsGate();
-  /* The ceremony overlays an app whose boot CONTINUED underneath (the reveal
-     path). Re-running startSession here re-hydrated the entire patient store
-     — on large accounts that froze the UI on every continue. If the boot
-     loader already finished, just reveal the running app. */
-  if(sfGateLoadingStarted&&!sfGateLoadingVisible){
-    const app=document.getElementById('appScreen'); if(app) app.style.display='';
-    return;
-  }
-  const em=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
-  startSession(em);
+  agGateErr('Required forms cannot be skipped. Reload after the server update or contact the administrator.');
+  return false;
 }
 function hideAgreementsGate(){
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='none';
@@ -32770,7 +33448,11 @@ async function retryLegalReadiness(){
   try{
     const gated=await checkAgreementsGate({});
     if(gated){ agGateErr('The clinical workspace is still not enabled for this deployment or account. Access remains locked.'); return; }
-    if(agCeremonyNeeded()){ showAgreementsCeremony(false); return; }
+    if(!await agRefreshAccountReadiness()){ agGateErr('The account state could not be refreshed. Nothing was unlocked; please check again.'); return; }
+    const setupSurface=agAccountSetupSurface();
+    if(setupSurface==='locked'){ showAgreementsGate(false); return; }
+    if(setupSurface==='ceremony'){ showAgreementsCeremony(false); return; }
+    if(setupSurface==='pending'){ showAgreementsPending(false); return; }
     hideAgreementsGate();
     const email=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
     await startSession(email);
@@ -32809,7 +33491,7 @@ async function agBuildReceiptPdf(name,signatureImg){
   wrap('Date: '+dateStr,10,false);
   wrap('Version: '+AGREEMENTS_VERSION,10,false);
   y+=8;
-  MLS_AGREEMENTS.forEach(sec=>{
+  ACTIVE_MLS_AGREEMENTS.forEach(sec=>{
     y+=6; ensure(lineH*2);
     wrap(sec.title+'  —  Accepted',12,true);
     if(sec.intro) wrap(sec.intro.replace(/&amp;/g,'&'),10,false);
@@ -32841,13 +33523,22 @@ async function agBuildReceiptPdf(name,signatureImg){
   return doc;
 }
 
-/* Submit the signing: build the PDF, POST to the server, enter the app on success.
-   Restored 2026-07-20 — commercial paperwork only; never touches the clinical gate. */
+function agDeliveryMessage(delivery){
+  var status=String((delivery&&delivery.status)||'not_attempted');
+  if(status==='delivered') return 'Email copies were delivered.';
+  if(status==='partial') return 'The stored receipt is complete; one email copy could not be delivered.';
+  if(status==='failed') return 'The stored receipt is complete, but email delivery failed and can be retried.';
+  if(status==='not_configured') return 'The stored receipt is complete; email delivery is not configured.';
+  return 'The stored receipt is complete; email delivery has not been attempted.';
+}
+/* Submit exact assent; the server owns the manifest and generated PDF. */
 async function agSubmitSign(){
+  let manifest;
+  try{ manifest=await agLoadManifest(); }catch(e){ agGateErr(e&&e.message||'The agreement set could not be loaded.'); return; }
   const name=((document.getElementById('agSignName')||{}).value||'').trim();
   if(!name){ agGateErr('Type your full legal name to sign.'); return; }
   const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
-  if(!(boxes.length===MLS_AGREEMENTS.length && boxes.every(b=>b.checked))){
+  if(!(boxes.length===manifest.documents.length && boxes.every(b=>b.checked))){
     agGateErr('Please accept every document above to confirm you have read and agree.'); return;
   }
   if(sigPadIsEmpty('agSigPad')){ agGateErr('Please draw your signature in the box above.'); return; }
@@ -32857,24 +33548,18 @@ async function agSubmitSign(){
   const btn=document.getElementById('agSignBtn');
   const orig=btn?btn.textContent:'';
   if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
-  let doc=null, receiptB64='';
   try{
-    try{
-      doc=await agBuildReceiptPdf(name,signatureImg);
-      if(doc){
-        const uri=doc.output('datauristring'); // data:application/pdf;base64,XXXX
-        const comma=uri.indexOf(',');
-        receiptB64=comma!==-1?uri.slice(comma+1):'';
-      }
-    }catch(e){ receiptB64=''; } // PDF is best-effort; still record the signing
     const body={
-      version:AGREEMENTS_VERSION,
+      schemaVersion:manifest.schemaVersion,
+      ceremonyKey:agCeremonyKey(manifest),
+      manifestId:manifest.manifestId,
+      manifestVersion:manifest.version,
+      manifestSha256:manifest.manifestSha256,
       name:name,
-      signatureImg:signatureImg,
-      requiresCountersign:agSetRequiresCountersign(),
-      agreements:MLS_AGREEMENTS.map(s=>({title:s.title}))
+      intent:'sign',
+      documents:manifest.documents.map(function(doc){ return {documentId:doc.documentId,sha256:doc.sha256,intent:'accept'}; }),
+      signatureImg:signatureImg
     };
-    if(receiptB64) body.receiptPdfBase64=receiptB64;
     let res,data;
     try{
       res=await fetch(bkBase()+'/api/agreements/sign',{
@@ -32885,18 +33570,28 @@ async function agSubmitSign(){
     }catch(netErr){ agGateErr('Could not reach the MLS server. Please try again.'); return; }
     try{ data=await res.json(); }catch(e){ data={}; }
     if(res.status===401){ handle401(); return; }
-    if(res.status===410||res.status===404){
-      /* Transition window: the server does not accept ceremony signatures yet.
-         Say so honestly and let the user continue — nothing was recorded. */
-      agGateErr('Signing isn’t available on the server yet — nothing was recorded. You can continue and will be asked again on a later sign-in.');
-      const sk=document.getElementById('agCerSkip'); if(sk) sk.style.display='';
+    if(!res.ok){ agGateErr((data&&(data.error||data.message))||('Could not save your signature ('+res.status+').')); return; }
+    const artifact=data&&data.artifact, delivery=data&&data.delivery, agreement=data&&data.agreement;
+    if(!artifact||artifact.status!=='stored'||artifact.stored!==true){ agGateErr('Your signature was not reported as a stored server artifact. Nothing is being called complete; please retry.'); return; }
+    if(!agreement||agreement.manifestVersion!==manifest.version){ agGateErr('The server did not return the signed agreement record for this manifest. Please retry.'); return; }
+    try{ sessionStorage.setItem(uns('latestAgreementRecordId'),String(agreement.recordId||'')); }catch(e){}
+    const refreshed=await agRefreshAccountReadiness();
+    if(!refreshed){
+      showAgreementsPending(false,'SIGNED_RECORD_VERIFICATION_PENDING');
+      toast('Signed receipt stored. '+agDeliveryMessage(delivery),delivery&&delivery.status==='delivered'?'ok':'');
       return;
     }
-    if(!res.ok){ agGateErr((data&&(data.error||data.message))||('Could not save your signature ('+res.status+').')); return; }
-    // Success: mark signed locally, hide the gate, enter the app normally.
-    if(bkUser) bkUser.agreements_signed_version=AGREEMENTS_VERSION;
-    /* Durable per-account marker so no cached bkUser can ever re-ask. */
-    try{ localStorage.setItem(uns('agSignedVersion'),AGREEMENTS_VERSION); }catch(e){}
+    const setupSurface=agAccountSetupSurface();
+    if(setupSurface==='ceremony'){
+      agGateErr('The server stored the receipt but has not yet confirmed this role’s required agreement state. Check again instead of signing twice.');
+      return;
+    }
+    if(setupSurface==='locked'){ showAgreementsGate(false); return; }
+    if(setupSurface==='pending'){
+      showAgreementsPending(false);
+      toast('Signed receipt stored. '+agDeliveryMessage(delivery),delivery&&delivery.status==='delivered'?'ok':'');
+      return;
+    }
     hideAgreementsGate();
     /* Same boot-aware reveal as the skip path: never re-boot a running app. */
     if(sfGateLoadingStarted&&!sfGateLoadingVisible){
@@ -32905,12 +33600,33 @@ async function agSubmitSign(){
       const em=(bkUser&&bkUser.email)||(session&&session.email)||'';
       startSession(em);
     }
-    toast('Thanks — your signed forms were saved and sent to your administrator.','ok');
-    // Offer the user their own copy of the receipt.
-    try{ if(doc) doc.save('MLS_Signed_Acknowledgment.pdf'); }catch(e){}
+    toast('Signed receipt stored. '+agDeliveryMessage(delivery),delivery&&delivery.status==='delivered'?'ok':'');
+    try{ setTimeout(function(){ maybePromptSetup(); },200); }catch(e){}
   } finally {
     if(btn){ btn.disabled=false; btn.textContent=orig; }
   }
+}
+async function downloadMyAgreementReceipt(btn){
+  var old=btn&&btn.textContent; if(btn){btn.disabled=true;btn.textContent='Preparing…';}
+  try{
+    var r=await fetch(bkBase()+'/api/agreements/me/receipt',{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+bkToken()}}), d={}; try{d=await r.json();}catch(e){}
+    if(!r.ok) throw new Error((d&&d.error)||'No signed receipt is available.');
+    if(!d.artifact||d.artifact.status!=='stored'||!d.receiptPdfBase64) throw new Error('The stored receipt did not pass its integrity check.');
+    var bytes=atob(d.receiptPdfBase64), arr=new Uint8Array(bytes.length); for(var i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+    var url=URL.createObjectURL(new Blob([arr],{type:'application/pdf'})), a=document.createElement('a'); a.href=url; a.download='MLS_Signed_Agreement_Receipt.pdf'; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(url);},1500);
+  }catch(e){ toast(e&&e.message||'Could not download the receipt.','err'); }
+  finally{ if(btn){btn.disabled=false;btn.textContent=old||'Download my signed-form receipt';} }
+}
+async function downloadMyExecutedAgreement(btn){
+  var old=btn&&btn.textContent; if(btn){btn.disabled=true;btn.textContent='Checking…';}
+  try{
+    var r=await fetch(bkBase()+'/api/agreements/me/executed',{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+bkToken()}}), d={}; try{d=await r.json();}catch(e){}
+    if(!r.ok) throw new Error((d&&d.error)||'The fully executed BAA is not available yet.');
+    if(!d.artifact||d.artifact.status!=='stored'||d.artifact.stored!==true||!d.executedPdfBase64) throw new Error('The executed agreement did not pass its server integrity check.');
+    var bytes=atob(d.executedPdfBase64), arr=new Uint8Array(bytes.length); for(var i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
+    var url=URL.createObjectURL(new Blob([arr],{type:'application/pdf'})), a=document.createElement('a'); a.href=url; a.download='MLS_Fully_Executed_BAA.pdf'; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(url);},1500);
+  }catch(e){ toast(e&&e.message||'Could not download the executed BAA.','err'); }
+  finally{ if(btn){btn.disabled=false;btn.textContent=old||'Download fully executed BAA (after MLS signs)';} }
 }
 
 /* ---- Admin: signed compliance forms table (restored 2026-07-20) ---- */
@@ -32934,24 +33650,34 @@ async function loadAdminAgreements(){
       body.innerHTML=rows.map(r=>{
         let when=r.signed_at||'';
         try{ when=new Date(r.signed_at).toLocaleString(); }catch(e){}
-        const id=Number(r.id);
-        // Status cell: acknowledgments => "Signed"; BAA => awaiting / executed.
+        const id=Number(r.id), legacyPolicy=Number(r.signer_setup_policy_version)===0;
+        // Only server-verified ceremonies with stored artifacts may be called
+        // signed/executed or offered for countersignature. Legacy rows remain
+        // visible for audit, but must be completed again on the current forms.
+        const artifact=(r&&r.artifact)||{}, agreement=(r&&r.agreement)||{};
+        const verified=r.verified_ceremony===true&&artifact.status==='stored'&&artifact.stored===true;
+        const executed=verified&&agreement.status==='fully_executed'&&!!r.has_executed;
+        const countersignable=verified&&r.countersignable===true&&agreement.status==='awaiting_countersignature';
         let status, docCell;
         if(r.requires_countersign){
-          if(r.countersigned){
+          if(executed){
             status='<span style="color:#127a4f;font-weight:700">Executed</span>';
-            docCell=r.has_executed
-              ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementExecuted('+id+')">⬇ Executed PDF</button>'
-              : (r.has_receipt?'<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+id+')">⬇ Receipt</button>':'<span style="color:var(--muted)">—</span>');
-          }else{
+            docCell='<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementExecuted('+id+')">⬇ Executed PDF</button>';
+          }else if(countersignable){
             status='<span style="color:#b45309;font-weight:700">Awaiting your signature</span>';
-            docCell='<button class="btn-primary" style="font-size:13px;padding:6px 12px" onclick="openCountersign('+id+',\''+esc(String(r.name_signed||'')).replace(/\x27/g,"\\\x27")+'\')">Review &amp; countersign</button>';
+            docCell='<button class="btn-primary" style="font-size:13px;padding:6px 12px" onclick="openCountersign('+id+')">Review &amp; countersign</button> <button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+id+')">⬇ Signed receipt</button>';
+          }else{
+            status='<span style="color:#b45309;font-weight:700">Needs current forms</span>';
+            docCell=legacyPolicy
+              ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="adminOpenLegacyAgreement('+id+')">Open current-site Admin</button><div class="mini">This older form stays in the legacy review flow.</div>'
+              : '<span class="mini">Ask the signer to complete the current forms again.</span>';
           }
-        }else{
+        }else if(verified&&r.has_receipt){
           status='<span style="color:#2E6A4B;font-weight:700">Signed</span>';
-          docCell=r.has_receipt
-            ? '<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+id+')">⬇ Download</button>'
-            : '<span style="color:var(--muted)">—</span>';
+          docCell='<button class="btn-ghost" style="font-size:13px;padding:6px 11px" onclick="downloadAgreementReceipt('+id+')">⬇ Download</button>';
+        }else{
+          status='<span style="color:#b45309;font-weight:700">Needs current forms</span>';
+          docCell='<span class="mini">No verified receipt is stored.</span>';
         }
         return '<tr style="border-bottom:1px solid var(--line)">'+
           '<td style="padding:8px 6px">'+esc(r.name_signed||'')+'</td>'+
@@ -32968,11 +33694,19 @@ async function loadAdminAgreements(){
     if(empty){ empty.style.display=''; empty.innerHTML='<span class="big">⚠️</span>Could not load: '+esc(friendlyError(e)); }
   }
 }
+function adminOpenLegacyAgreement(id){
+  const url=location.origin+'/ScribeFlow.html';
+  let opened=null; try{ opened=window.open(url,'_blank','noopener,noreferrer'); }catch(e){}
+  if(opened){ try{ opened.opener=null; }catch(e){} toast('Current-site Admin opened. Choose Admin, then Signed forms, to review this older record.','ok'); }
+  else { toast('Your browser blocked the new tab. Open the current MLS site, then choose Admin → Signed forms.','warn'); }
+  return Number(id)>0;
+}
 async function downloadAgreementReceipt(id){
   try{
     const d=await adminFetch('/api/admin/agreements/'+encodeURIComponent(id)+'/receipt');
     const b64=d&&d.receiptPdfBase64;
-    if(!b64){ toast('No receipt on file.','err'); return; }
+    const artifact=(d&&d.artifact)||{};
+    if(artifact.status!=='stored'||artifact.stored!==true||!b64){ toast('No verified stored receipt is available.','err'); return; }
     const bytes=atob(b64);
     const arr=new Uint8Array(bytes.length);
     for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
@@ -32989,7 +33723,8 @@ async function downloadAgreementExecuted(id){
   try{
     const d=await adminFetch('/api/admin/agreements/'+encodeURIComponent(id)+'/executed');
     const b64=d&&d.executedPdfBase64;
-    if(!b64){ toast('No executed PDF on file.','err'); return; }
+    const artifact=(d&&d.artifact)||{};
+    if(artifact.status!=='stored'||artifact.stored!==true||!b64){ toast('No verified stored executed PDF is available.','err'); return; }
     const bytes=atob(b64);
     const arr=new Uint8Array(bytes.length);
     for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
@@ -33003,29 +33738,19 @@ async function downloadAgreementExecuted(id){
 }
 
 /* ---- Owner COUNTERSIGNATURE workflow (admin-only) ---- */
-let _csCurrentId=null, _csSignerName='', _csSignerSig='';
+let _csCurrentId=null, _csSignerName='', _csSignerSig='', _csEvidence=null;
 function csErr(m){ const e=document.getElementById('csErr'); if(e){ e.textContent=m||''; e.style.display=m?'block':'none'; } }
 // Find the BAA section definition (the one flagged requiresCountersign).
-function agBaaSection(){ return MLS_AGREEMENTS.filter(s=>s&&s.requiresCountersign===true)[0]||null; }
-async function openCountersign(id,signerName){
-  /* Restored 2026-07-20 — owner-side BAA execution. */
-  _csCurrentId=Number(id); _csSignerName=String(signerName||''); _csSignerSig='';
-  const _lbl=document.getElementById('csSignerLabel'); if(_lbl) _lbl.textContent=_csSignerName||'—';
+function agBaaSection(){ return ACTIVE_MLS_AGREEMENTS.filter(s=>s&&s.requiresCountersign===true)[0]||null; }
+async function openCountersign(id){
+  _csCurrentId=Number(id); _csSignerName=''; _csSignerSig=''; _csEvidence=null;
+  const _lbl=document.getElementById('csSignerLabel'); if(_lbl) _lbl.textContent='Loading signer…';
   const modal=document.getElementById('countersignModal'); if(!modal) return;
-  // Render the BAA operative text into the modal (escaped).
-  const baa=agBaaSection();
   const box=document.getElementById('csBaaText');
-  if(box){
-    let h='';
-    if(baa){
-      if(baa.recitals) h+='<p style="margin:0 0 8px">'+esc(baa.recitals)+'</p>';
-      if(baa.clauses) baa.clauses.forEach(c=>{ h+='<p style="margin:6px 0 1px;font-weight:700">'+esc(c.h)+'</p><p style="margin:0 0 5px">'+esc(c.t)+'</p>'; });
-    }
-    box.innerHTML=h||'<p class="sub">Business Associate Agreement.</p>';
-  }
-  const meta=document.getElementById('csMeta');
-  if(meta) meta.textContent='Covered Entity representative: '+_csSignerName+'. By countersigning, MLS (Business Associate) executes this Agreement under 45 C.F.R. § 164.504(e).';
-  const consent=document.getElementById('csConsent'); if(consent) consent.textContent=AG_ESIGN_CONSENT;
+  if(box) box.textContent='Loading the exact server-pinned agreement version…';
+  const meta=document.getElementById('csMeta'); if(meta) meta.textContent='Loading the server-verified signer, manifest, assent, signature, and stored receipt…';
+  const consent=document.getElementById('csConsent'); if(consent) consent.textContent='';
+  const manifestHost=document.getElementById('csManifest'); if(manifestHost) manifestHost.textContent='';
   const nameEl=document.getElementById('csName'); if(nameEl) nameEl.value=(bkUser&&bkUser.name)||'';
   csErr('');
   // Fetch + render the signer's drawn signature as an <img> (never as HTML).
@@ -33035,25 +33760,50 @@ async function openCountersign(id,signerName){
   try{ sigPadClear('csSigPad'); sigPadInit('csSigPad'); if(_sigPads['csSigPad']) _sigPads['csSigPad'].onstroke=csSyncState; }catch(e){}
   try{
     const d=await adminFetch('/api/admin/agreements/'+encodeURIComponent(_csCurrentId)+'/signature');
-    _csSignerSig=(d&&d.signatureImg)||'';
+    const targetManifestState=agValidateServerManifest(d&&d.manifest), currentManifest=targetManifestState.manifest, targetAgreements=targetManifestState.agreements;
+    const signatureImg=(d&&d.signatureImg)||'', signature=(d&&d.signature)||{}, assent=(d&&d.assent)||{}, artifact=(d&&d.artifact)||{}, agreement=(d&&d.agreement)||{};
+    _csSignerName=String((d&&d.name_signed)||''); if(_lbl) _lbl.textContent=_csSignerName||'Verified signer';
+    const documents=Array.isArray(assent.documents)?assent.documents:[];
+    const ceremonyKey=String(assent.ceremonyKey||agreement.ceremonyKey||''), manifestId=String(assent.manifestId||agreement.manifestId||''), manifestVersion=String(assent.manifestVersion||agreement.manifestVersion||'');
+    const manifestSha256=String(assent.manifestSha256||agreement.manifestSha256||''), assentSha256=String(agreement.assentSha256||'');
+    const manifestMatchesCurrent=!!(currentManifest&&manifestId===String(currentManifest.manifestId||'')&&manifestVersion===String(currentManifest.version||'')&&manifestSha256===String(currentManifest.manifestSha256||''));
+    const expectedDocuments=Array.isArray(currentManifest&&currentManifest.documents)?currentManifest.documents:[];
+    const exactDocuments=manifestMatchesCurrent&&documents.length===expectedDocuments.length&&documents.every(function(doc,i){ var expected=expectedDocuments[i]||{}; return !!(doc&&doc.documentId===expected.documentId&&String(doc.sha256||'')===String(expected.sha256||'')&&doc.intent==='accept'); });
+    const validatedPng=signature.validatedPng===true&&/^data:image\/png;base64,/.test(signatureImg);
+    const entityScope=!!(d&&d.countersignable===true&&d.audience==='entity'&&Number(d.practiceUserId)>0&&agreement.audience==='entity'&&Number(agreement.practiceUserId)===Number(d.practiceUserId));
+    const valid=entityScope&&targetAgreements.some(function(s){return s&&s.requiresCountersign===true;})&&validatedPng&&exactDocuments&&!!ceremonyKey&&!!manifestId&&!!manifestVersion&&/^[a-f0-9]{64}$/.test(manifestSha256)&&/^[a-f0-9]{64}$/.test(assentSha256)&&artifact.status==='stored'&&artifact.stored===true;
+    _csSignerSig=signatureImg;
+    _csEvidence={valid:valid,validatedPng:validatedPng,artifact:artifact,manifestMatchesCurrent:manifestMatchesCurrent,ceremonyKey:ceremonyKey,manifestId:manifestId,manifestVersion:manifestVersion,manifestSha256:manifestSha256,assentSha256:assentSha256,documents:documents,intent:assent.intent};
+    if(box&&manifestMatchesCurrent){
+      const baa=targetAgreements.filter(function(s){return s&&s.requiresCountersign===true;})[0]||null; let h='';
+      if(baa){ if(baa.recitals) h+='<p style="margin:0 0 8px">'+esc(baa.recitals)+'</p>'; if(baa.clauses) baa.clauses.forEach(c=>{ h+='<p style="margin:6px 0 1px;font-weight:700">'+esc(c.h)+'</p><p style="margin:0 0 5px">'+esc(c.t)+'</p>'; }); }
+      box.innerHTML=h||'<p class="sub">Business Associate Agreement.</p>';
+    }else if(box){
+      box.innerHTML='<p style="color:#b42318;font-weight:700">This record belongs to a different agreement version. MLS will not show current text or let you countersign it as though it were the signed version.</p><button class="btn-ghost" type="button" onclick="downloadAgreementReceipt('+_csCurrentId+')">⬇ Download the exact signed receipt</button>';
+    }
+    if(meta) meta.textContent=valid?'✓ Server-verified signing record · '+_csSignerName+' · receipt stored':'This signing record did not pass server evidence verification.';
+    if(manifestHost) manifestHost.innerHTML='<b>Manifest:</b> '+esc(manifestId)+' · '+esc(manifestVersion)+'<br><span class="mini">Manifest SHA-256: '+esc(manifestSha256)+'<br>Assent SHA-256: '+esc(assentSha256)+'</span><ol style="margin:6px 0 0;padding-left:20px">'+documents.map(function(doc){ return '<li>'+esc(doc.documentId)+' · '+esc(doc.intent)+' · <span class="mini">'+esc(doc.sha256)+'</span></li>'; }).join('')+'</ol>';
+    if(consent) consent.textContent='Server-recorded signer intent: '+String(assent.intent||'unverified')+'. The exact manifest, document hashes, and validated signature evidence shown above are the stored record.';
     if(sigHost){
-      if(_csSignerSig && /^data:image\/png;base64,/.test(_csSignerSig)){
+      if(validatedPng){
         const img=document.createElement('img');
         img.src=_csSignerSig; img.alt='Signer signature'; img.style.maxHeight='56px'; img.style.maxWidth='100%';
         sigHost.innerHTML=''; sigHost.appendChild(img);
       }else{
-        sigHost.innerHTML='<span class="sub" style="margin:0">(No drawn signature on file — typed name: '+esc(_csSignerName)+')</span>';
+        sigHost.innerHTML='<span class="sub" style="margin:0">No verified drawn signature is available.</span>';
       }
     }
-  }catch(e){ if(sigHost) sigHost.innerHTML='<span class="sub" style="margin:0">Could not load signer signature.</span>'; }
+    if(!valid) csErr(manifestMatchesCurrent?'Countersigning is disabled because the stored signer evidence or receipt failed verification.':'Countersigning is disabled because this pinned manifest does not match the current agreement text. Ask the signer to complete the current forms again.');
+  }catch(e){ _csEvidence=null; if(sigHost) sigHost.innerHTML='<span class="sub" style="margin:0">Could not load verified signer evidence.</span>'; csErr('Could not load verified signer evidence: '+friendlyError(e)); }
   csSyncState();
 }
-function closeCountersign(){ const m=document.getElementById('countersignModal'); if(m) m.classList.remove('show'); _csCurrentId=null; }
+function closeCountersign(){ const m=document.getElementById('countersignModal'); if(m) m.classList.remove('show'); _csCurrentId=null; _csEvidence=null; }
 function csSyncState(){
   const name=((document.getElementById('csName')||{}).value||'').trim();
   const hasSig=!sigPadIsEmpty('csSigPad');
+  const evidence=!!(_csEvidence&&_csEvidence.valid&&_csEvidence.validatedPng&&_csEvidence.artifact&&_csEvidence.artifact.status==='stored');
   const btn=document.getElementById('csSubmitBtn');
-  if(btn) btn.disabled=!(name.length>0 && hasSig);
+  if(btn) btn.disabled=!(name.length>0 && hasSig && evidence);
 }
 /* Build the EXECUTED BAA PDF embedding BOTH drawn signatures (signer + owner). */
 async function agBuildExecutedPdf(signerName,signerSig,ownerName,ownerSig){
@@ -33108,9 +33858,8 @@ async function agBuildExecutedPdf(signerName,signerSig,ownerName,ownerSig){
   return doc;
 }
 async function submitCountersign(){
-  /* Restored 2026-07-20 — the owner countersigns the BAA as the Business
-     Associate; the server records the executed two-party document. */
   if(_csCurrentId==null) return;
+  if(!_csEvidence||!_csEvidence.valid){ csErr('The signer evidence is not verified; countersigning is disabled.'); return; }
   const name=((document.getElementById('csName')||{}).value||'').trim();
   if(!name){ csErr('Type your full legal name to countersign.'); return; }
   if(sigPadIsEmpty('csSigPad')){ csErr('Please draw your countersignature.'); return; }
@@ -33121,22 +33870,20 @@ async function submitCountersign(){
   const orig=btn?btn.textContent:'';
   if(btn){ btn.disabled=true; btn.textContent='Executing…'; }
   try{
-    let execB64='';
-    try{
-      const doc=await agBuildExecutedPdf(_csSignerName,_csSignerSig,name,ownerSig);
-      if(doc){
-        const uri=doc.output('datauristring');
-        const comma=uri.indexOf(',');
-        execB64=comma!==-1?uri.slice(comma+1):'';
-      }
-    }catch(e){ execB64=''; }
-    const body={ name:name, signatureImg:ownerSig };
-    if(execB64) body.executedPdfBase64=execB64;
-    await adminFetch('/api/admin/agreements/'+encodeURIComponent(_csCurrentId)+'/countersign',{
+    var keyStore=uns('agreementCountersign:'+String(_csCurrentId)), countersignKey=''; try{countersignKey=sessionStorage.getItem(keyStore)||'';}catch(e){}
+    if(!countersignKey){ try{countersignKey='counter:'+crypto.randomUUID();}catch(e){countersignKey='counter:'+Date.now().toString(36)+':'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);} try{sessionStorage.setItem(keyStore,countersignKey);}catch(e){} }
+    const body={ceremonyKey:_csEvidence.ceremonyKey,countersignKey:countersignKey,name:name,intent:'countersign',signatureImg:ownerSig};
+    const d=await adminFetch('/api/admin/agreements/'+encodeURIComponent(_csCurrentId)+'/countersign',{
       method:'POST', body:JSON.stringify(body)
     });
+    const artifact=d&&d.artifact;
+    const stored=!!(artifact&&artifact.status==='stored'&&artifact.stored===true);
+    const agreement=d&&d.agreement;
+    const executed=!!(agreement&&agreement.status==='fully_executed');
+    if(!stored||!executed){ csErr('The server did not verify a stored executed artifact. This agreement is not being reported as complete.'); return; }
+    const delivery=d&&d.delivery, deliveryText=agDeliveryMessage(delivery);
     closeCountersign();
-    toast('Business Associate Agreement fully executed.','ok');
+    toast('Business Associate Agreement fully executed and stored. '+deliveryText,delivery&&delivery.status==='delivered'?'ok':'');
     loadAdminAgreements();
   }catch(e){
     csErr('Could not countersign: '+friendlyError(e));
@@ -33398,6 +34145,7 @@ function mlsRoleSetNavText(el,value){
   node.data=value;
 }
 function resetRoleUi(){
+  try{ if(window.__mlsLite&&typeof window.__mlsLite.clear==='function') window.__mlsLite.clear(); }catch(e){}
   for(var i=_mlsRoleDisplayOwned.length-1;i>=0;i--){
     var el=_mlsRoleDisplayOwned[i];
     try{ el.style.display=el.__mlsRoleOriginalDisplay||''; delete el.__mlsRoleOriginalDisplay; delete el.__mlsRoleDisplayOwned; }catch(e){}
@@ -36984,12 +37732,12 @@ window.addEventListener('DOMContentLoaded',()=>{
     showResetScreen(_resetTok);
     return; // don't auto-enter the app while resetting
   }
-  // ---- One-click attorney invite: exchange the scrubbed one-time token
-  //      and land the attorney straight in their portal. ----
+  // ---- One-click account invite: exchange the scrubbed one-time token,
+  //      require its password first, then continue by returned role. ----
   const _inviteTok=_authHandoff.invite||'';
   if(_inviteTok){
-    acceptLawyerInvite(_inviteTok);
-    return; // the handler enters the app (or shows login on failure)
+    acceptAccountInvite(_inviteTok);
+    return; // the handler opens the password gate or enters the correct app
   }
   // restore session if present (sessionStorage-first: a tab with its own
   // per-tab session restores that account; a fresh tab falls back to the
@@ -37002,6 +37750,9 @@ window.addEventListener('DOMContentLoaded',()=>{
      sign-in screen. */
   try{ if(typeof swEnabled==='function'&&swEnabled()&&swSeedOnlyEntry()) swRequireReauth(saved); }catch(eSw){}
   try{ if(typeof swEnsureSettingsField==='function') swEnsureSettingsField(); }catch(eSw2){}
+  /* A password-setup credential is deliberately not a Bearer token. Resume its
+     modal before the normal session branch so refresh cannot strand the invite. */
+  if(backendMode()&&inviteSetupToken()&&invitePasswordDueFor(saved)){ resumeInvitePasswordGate(saved); return; }
   if(backendMode() && bkToken() && saved){
     // CLAIM the session into THIS tab's sessionStorage. If we only seeded from
     // the localStorage "last login" (sessionStorage empty), copy it into
@@ -37011,6 +37762,9 @@ window.addEventListener('DOMContentLoaded',()=>{
     // stores; the key effect is populating sessionStorage for this tab.
     try{ if(!sessionStorage.getItem('sf_bk_token')) setBkToken(bkToken()); }catch(e){}
     try{ if(!sessionStorage.getItem('sf_session')) setSessionEmail(saved); }catch(e){}
+    // An invited account that still owes its password never auto-enters the
+    // clinical/compliance startup. The non-secret due marker survives reload.
+    if(invitePasswordDueFor(saved)){ resumeInvitePasswordGate(saved); return; }
     // hosted mode: a stored Bearer token means we can auto-enter and verify with the server
     startSession(saved); // startSession() calls refreshMe() in backend mode
   } else {
@@ -37387,7 +38141,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes clone requests only. */
-  var CLONED_BUILD='cloned-20260820-r38';
+  var CLONED_BUILD='cloned-20260820-r39';
   window.__MLS_CLONED=Object.freeze({enabled:true,route:'/cloned/',build:CLONED_BUILD});
   window.__MLS_AV=CLONED_BUILD;
   var CRITICAL=[
