@@ -118,7 +118,7 @@ const P1_CONFIG_RELEASE_SUBS = [
    to chk3072 (scripts/sweep-3072.js), on top of the tip viewport containment
    fix (1c0e971f). */
 /* walkthrough untangle 2026-08-20: onenote-1.0.0 + rvack-1.0.0 (owner screenshots) */
-const P1_BASE_COMMIT = 'de1782edbcd54c572a3f89ac594755c25b0f40ac'; /* r27 finish-line + ext 3.0.76 root-bytes merge + athena-follow rr-3076 pin */
+const P1_BASE_COMMIT = '3967feecd7bbce1fe90ca518109adbba1cac2c44'; /* r27 finish-line + ext 3.0.76 root-bytes merge + athena-follow rr-3076 pin */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
@@ -137,7 +137,7 @@ const P1_BASE_COMMIT = 'de1782edbcd54c572a3f89ac594755c25b0f40ac'; /* r27 finish
    phoneConfirmedWriteV1). Digest 5de12655..., zip a1dca473... - documented in
    scripts/sweep-3072.js and the 2026-08-19 evidence artifact. Only write_note/
    save_draft can be remotely armed; the write-safety contract did not move. */
-const EXTENSION_BASE_COMMIT = '44fd6e90e3d4b2a63e649163871a6fe480a06cdc';
+const EXTENSION_BASE_COMMIT = '3967feecd7bbce1fe90ca518109adbba1cac2c44';
 /* Advanced by the SAME extension release train, for the pin lines ONLY: the
    production Settings card version strings + release notes (ScribeFlow.html,
    ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
@@ -165,7 +165,7 @@ const EXTENSION_BASE_COMMIT = '44fd6e90e3d4b2a63e649163871a6fe480a06cdc';
    /cloned, cure proven live before landing). Behavior fix, b1028-hotfix-train
    class; /1p and /cloned load the same shared file. */
 /* SAME untangle: fixpack + mls-connect are production-shared, b1028-hotfix-train class */
-const PRODUCTION_BASE_COMMIT = 'de1782edbcd54c572a3f89ac594755c25b0f40ac';
+const PRODUCTION_BASE_COMMIT = '3967feecd7bbce1fe90ca518109adbba1cac2c44';
 
 const P1_FILES = [
   '1pScribeFlow.html',
