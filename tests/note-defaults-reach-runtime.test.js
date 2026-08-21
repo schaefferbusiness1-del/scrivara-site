@@ -74,6 +74,10 @@ function lift(sig, label) {
 }
 const realSrc = [
   'var session={email:"proof@example.com"};',
+  /* uns() now delegates account resolution to unsEmail(). This focused
+     drafting harness supplies the same resolved synthetic account explicitly;
+     namespace resolution itself is covered by its own runtime contracts. */
+  'function unsEmail(){return session.email;}',
   lift('function uns(suffix){', 'uns()'),
   lift('function getDocPrefs(){', 'getDocPrefs()'),
   lift('function getQolFollowup(){', 'getQolFollowup()'),

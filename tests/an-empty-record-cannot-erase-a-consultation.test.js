@@ -39,6 +39,10 @@ assert.ok(from > 0 && to > from, 'could not extract the ambient store layer');
 const layer = src.slice(from, to);
 assert.ok(/function ambientStoreWrite/.test(layer) && /function ambientStoreList/.test(layer),
   'the extracted slice is not the store layer');
+const receiptFrom = src.indexOf('  function ambientReceiptText');
+const receiptTo = src.indexOf('  function ambientVisitReceiptFor', receiptFrom);
+assert.ok(receiptFrom > 0 && receiptTo > receiptFrom, 'could not extract the closed visit-receipt owner');
+const receiptLayer = src.slice(receiptFrom, receiptTo);
 
 /* ── THE FIXTURE-FAITHFULNESS CHECK ────────────────────────────────────────────────────────────
    Read the fields the SHIPPED caller forwards, so a fixture that has drifted from production
@@ -60,7 +64,7 @@ assert.ok(shippedFields.length >= 5,
   '), so it is broken rather than the caller — a faithfulness check that matches nothing would ' +
   'pass vacuously against any fixture');
 const FIXTURE_FIELDS = ['sid', 'bound', 'start', 'avName', 'intake', 'actions', 'parts',
-  'consentAt', 'intakeFiled'].sort();
+  'consentAt', 'intakeFiled', 'visitBinding'].sort();
 assert.deepStrictEqual(shippedFields, FIXTURE_FIELDS,
   'kioskAmbientSaveNow no longer forwards the fields this fixture builds.\n  shipped: ' +
   JSON.stringify(shippedFields) + '\n  fixture: ' + JSON.stringify(FIXTURE_FIELDS) +
@@ -86,7 +90,7 @@ const ROOM = ['the pain radiates into the left leg', 'straight leg raise is posi
   const page = await browser.newPage();
   await page.goto('http://127.0.0.1:' + port + '/');
 
-  const out = await page.evaluate(({ layer, INTAKE, ROOM }) => {
+  const out = await page.evaluate(({ layer, receiptLayer, INTAKE, ROOM }) => {
     const CHART = '7833832';
     const boot = new Function(`
       var kiosk = { ambient: false, ambBound: '${CHART}', sid: '' };
@@ -94,6 +98,7 @@ const ROOM = ['the pain radiates into the left leg', 'straight leg raise is posi
       var clean = function (v) { return String(v == null ? '' : v).trim(); };
       var isFn = function (v) { return typeof v === 'function'; };
       var activePtIdSafe = function () { return '${CHART}'; };
+      ${receiptLayer}
       ${layer}
       return { write: ambientStoreWrite, parse: ambientRecParse, keyFor: ambientStoreKeyFor,
                list: ambientStoreList, kiosk: kiosk };
@@ -102,49 +107,58 @@ const ROOM = ['the pain radiates into the left leg', 'straight leg raise is posi
     const key = api.keyFor(CHART);
 
     /* every record built the way kioskAmbientSaveNow builds it */
-    function buildRecord(sid, parts, intake) {
+    function visitBinding(appointmentId) {
+      return { bindingId: 'binding-' + appointmentId, epoch: 9,
+        patient: { patientId: CHART, name: 'Patient Example', dob: '1980-01-02', mrn: 'MRN-7833832' },
+        visit: { historical: false, noteTimestamp: null, visitDate: '2026-08-21',
+          provider: 'Provider Example', appointmentId: appointmentId, encounterId: '', encounterUrl: '' } };
+    }
+    function buildRecord(sid, parts, intake, appointmentId) {
       return { sid: sid, bound: CHART, start: 1000, avName: 'Ava',
-        intake: intake, actions: [], parts: parts, consentAt: 1786000000000, intakeFiled: false };
+        intake: intake, actions: [], parts: parts, consentAt: 1786000000000, intakeFiled: false,
+        visitBinding: visitBinding(appointmentId || sid) };
     }
     const R = {};
 
     /* ── 1. a real consultation from session A, stored by the shipped writer ── */
     localStorage.clear();
-    R.first = api.write(buildRecord('office-A', ROOM, INTAKE));
+    R.first = api.write(buildRecord('office-A', ROOM, INTAKE, 'appointment-A'));
 
     /* ── 2. THE PRODUCTION PATH: a NEW check-in (session B) on the same chart hands off to the
            room. Zero room words yet, but the FULL interview intake — the shape production sends. */
-    R.second = api.write(buildRecord('office-B', [], INTAKE));
+    R.second = api.write(buildRecord('office-B', [], INTAKE, 'appointment-B'));
     R.atChartKey = api.parse(localStorage.getItem(key));
     const listed = api.list();
     R.listedCount = listed.length;
     R.consultationFound = listed.some((e) => e.rec.sid === 'office-A' && e.rec.parts.length === ROOM.length);
     R.consultationIntake = (listed.filter((e) => e.rec.sid === 'office-A')[0] || { rec: {} }).rec.intake;
+    R.consultationVisit = (listed.filter((e) => e.rec.sid === 'office-A')[0] || { rec: {} }).rec.visitBinding;
     R.asideKeyHasChartPrefix = listed.filter((e) => e.rec.sid === 'office-A')
       .every((e) => e.key.indexOf(key) === 0);
     R.newCaptureBackedUp = !!(R.atChartKey && R.atChartKey.sid === 'office-B');
+    R.newCaptureVisit = R.atChartKey && R.atChartKey.visitBinding;
 
     /* ── 3. the SAME session saving again with no room words must NOT clone itself ── */
     const before = localStorage.length;
-    R.same = api.write(buildRecord('office-B', [], INTAKE));
+    R.same = api.write(buildRecord('office-B', [], INTAKE, 'appointment-B'));
     R.sameSessionMadeNoCopy = localStorage.length === before;
 
     /* ── 4. a BODYLESS held record must not be preserved — it can never be offered, so keeping
            it would silt the chart's slot up with nothing ── */
     localStorage.clear();
-    api.write(buildRecord('office-C', [], INTAKE));
-    api.write(buildRecord('office-D', [], INTAKE));
+    api.write(buildRecord('office-C', [], INTAKE, 'appointment-C'));
+    api.write(buildRecord('office-D', [], INTAKE, 'appointment-D'));
     R.bodylessKeys = localStorage.length;
 
     /* ── 5. and a real capture still replaces a real capture only via the aside copy, never by
            silent destruction ── */
     localStorage.clear();
-    api.write(buildRecord('office-E', ROOM, INTAKE));
-    R.realOverReal = api.write(buildRecord('office-F', ['a different visit entirely'], INTAKE));
+    api.write(buildRecord('office-E', ROOM, INTAKE, 'appointment-E'));
+    R.realOverReal = api.write(buildRecord('office-F', ['a different visit entirely'], INTAKE, 'appointment-F'));
     R.afterRealOverReal = (api.parse(localStorage.getItem(key)) || {}).sid;
 
     return R;
-  }, { layer, INTAKE, ROOM });
+  }, { layer, receiptLayer, INTAKE, ROOM });
 
   await browser.close();
   server.close();
@@ -160,6 +174,8 @@ const ROOM = ['the pain radiates into the left leg', 'straight leg raise is posi
     'could not see, and the earlier fixture could not produce.');
   assert.deepStrictEqual(out.consultationIntake, INTAKE,
     "the consultation survived but lost its interview answers");
+  assert.strictEqual(out.consultationVisit && out.consultationVisit.visit.appointmentId, 'appointment-A',
+    'the preserved consultation lost or borrowed its exact visit binding');
   assert.strictEqual(out.asideKeyHasChartPrefix, true,
     'the preserved consultation is stored under a key that does NOT begin with the chart key, so ' +
     "ambientStoreList's prefix enumeration will never find it — preserved but unreachable");
@@ -173,6 +189,8 @@ const ROOM = ['the pain radiates into the left leg', 'straight leg raise is posi
   assert.strictEqual(out.newCaptureBackedUp, true,
     "the new check-in got no backup of its own — protecting the old capture must not cost the new " +
     'one its crash protection');
+  assert.strictEqual(out.newCaptureVisit && out.newCaptureVisit.visit.appointmentId, 'appointment-B',
+    'the new backup must retain its own appointment binding, never the held consultation\'s');
 
   /* 3 */
   assert.strictEqual(out.sameSessionMadeNoCopy, true,

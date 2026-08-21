@@ -236,7 +236,7 @@
     if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { mlsRelayRetry({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
     if (d.type === 'mlsAppCapture') {
       try {
-        mlsRelayRetry({ type: 'mlsAppCaptureRequest' }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAppCaptureRequest', explicitUserPull: d.explicitUserPull === true, foregroundOk: d.foregroundOk === true }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', requestId: mlsStr(d.requestId || d.id, 100), resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { error: 'extension error' } }); }
@@ -1945,6 +1945,26 @@
   'use strict';
   try { if (window.__mlsSearchOpenBridge) return; window.__mlsSearchOpenBridge = 1; } catch (e) { return; }
   var activeOrigin = '', activeUntil = 0, activeRequestId = '';
+  /* rr-3077: this append-only bridge is a separate IIFE from the main bridge,
+     so rr-3076's mlsRelayRetry helper is not in scope here. Keep the same
+     bounded one-retry rule locally for this read/navigation request only. */
+  function mlsSearchRelayRetry(req, cb) {
+    var done = false;
+    function finish(resp) { if (done) return; done = true; try { cb(resp); } catch (e) {} }
+    function once(last) {
+      try {
+        chrome.runtime.sendMessage(req, function (resp) {
+          var dead = chrome.runtime.lastError || resp == null;
+          if (dead && !last) { setTimeout(function () { once(true); }, 300); return; }
+          finish(resp);
+        });
+      } catch (e) {
+        if (!last) setTimeout(function () { once(true); }, 300);
+        else finish(null);
+      }
+    }
+    once(false);
+  }
   function trusted(origin) {
     if (!origin || typeof origin !== 'string') return false;
     try {
@@ -2001,7 +2021,7 @@
           }
         } catch (e1) {}
       }
-      mlsRelayRetry({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, appointmentId: String(d.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40), bootstrapIdentity: d.bootstrapIdentity === true, scheduleDate: /^\d{4}-\d{2}-\d{2}$/.test(String(d.scheduleDate || '')) ? String(d.scheduleDate) : '', noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
+      mlsSearchRelayRetry({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, appointmentId: String(d.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40), bootstrapIdentity: d.bootstrapIdentity === true, scheduleDate: /^\d{4}-\d{2}-\d{2}$/.test(String(d.scheduleDate || '')) ? String(d.scheduleDate) : '', noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
         if (err || !res) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true, requestId: requestId, deadlineAt: deadlineAt }); return; }
         var out = {}; for (var k in res) out[k] = res[k];

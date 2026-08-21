@@ -247,6 +247,11 @@
     if (!state[pid]) state[pid] = { q: "", type: "", dx: "", from: "", to: "", sort: "newest", collapsed: false };
     return state[pid];
   }
+  function clearState() {
+    /* Keep the exported _state object identity stable for diagnostics while
+       dropping every prior-account filter (search text may itself be PHI). */
+    Object.keys(state).forEach(function (pid) { delete state[pid]; });
+  }
 
   /* ---- filtering ---- */
   function applyFilters(visits, f) {
@@ -553,8 +558,12 @@
   /* ---- host + lifecycle ---- */
   function host() {
     var card = document.getElementById("profileCard");
-    if (!card || card.offsetParent === null) return null;
-    return card;
+    /* A route switch temporarily hides profileCard. offsetParent is null in
+       that state even though this module still owns the card and its Visit
+       Notes. Removing the enhanced history while hidden also leaves the base
+       history hidden by CSS, producing an intermittent blank panel. Presence,
+       not layout visibility, is the ownership boundary. */
+    return card || null;
   }
   function getVisits(p) {
     try { var M = MODEL(); if (M) { try { M.deriveFromLegacy(p); } catch (e) {} return M.getVisits(p) || []; } } catch (e) {}
@@ -577,7 +586,37 @@
   var _lastSig = "", _lastPid = "";
   function rebuild(force) {
     var card = host(); if (!card) { removeExt(); _lastSig = ""; return; }
-    var p = activeP(); if (!p) { removeExt(); _lastSig = ""; _lastPid = ""; return; }
+    var p = activeP();
+    /* Patient selection is cleared for a short window while the next patient
+       is activated. Retain the last complete section through that handoff;
+       the exact patient-change event below rebuilds it for the new owner. */
+    if (!p) {
+      if (!document.getElementById("mlsVisitHistoryExt")) { _lastSig = ""; _lastPid = ""; }
+      scheduleEmptyRemoval(); return;
+    }
+    clearEmptyRemoval();
+    var f = stateFor(p.id);
+    var focusRestore = null;
+    /* A same-patient background filing/summary changes dataSig and rebuilds
+       the section. Search text already lives in f.q, but replacing the focused
+       input used to drop its caret (and could abort an in-progress composed
+       character). Capture the DOM value as the final source of truth and put
+       focus back only for the exact same patient owner. Patient/session
+       boundaries must never carry focus or text into another chart. */
+    try {
+      var oldSec = document.getElementById("mlsVisitHistoryExt");
+      var activeEl = document.activeElement;
+      if (S(p.id) === S(_lastPid) && oldSec && activeEl &&
+          activeEl.classList && activeEl.classList.contains("mlsxh-search") &&
+          oldSec.contains(activeEl)) {
+        f.q = activeEl.value;
+        focusRestore = {
+          start: activeEl.selectionStart,
+          end: activeEl.selectionEnd,
+          direction: activeEl.selectionDirection
+        };
+      }
+    } catch (eFocus) { focusRestore = null; }
     var visits = getVisits(p);
     var sig = dataSig(p, visits);
     if (!force && sig === _lastSig && document.getElementById("mlsVisitHistoryExt")) return;
@@ -633,7 +672,6 @@
       } catch (e) { sumBtn.disabled = false; }
     });
     head.appendChild(sumBtn);
-    var f = stateFor(p.id);
     var collapseBtn = document.createElement("button"); collapseBtn.className = "mlsxh-btn mlsxh-collapse";
     collapseBtn.setAttribute("aria-expanded", f.collapsed ? "false" : "true");
     collapseBtn.textContent = f.collapsed ? "Show history" : "Hide history";
@@ -674,10 +712,35 @@
         else card.appendChild(sec);
       }
     }
+    if (focusRestore) {
+      try {
+        var nextSearch = sec.querySelector(".mlsxh-search");
+        if (nextSearch) {
+          try { nextSearch.focus({ preventScroll: true }); } catch (eFocusOpt) { nextSearch.focus(); }
+          if (focusRestore.start != null && focusRestore.end != null && isFn(nextSearch.setSelectionRange)) {
+            nextSearch.setSelectionRange(focusRestore.start, focusRestore.end, focusRestore.direction || "none");
+          }
+        }
+      } catch (eRestore) {}
+    }
   }
   function removeExt() { var s = document.getElementById("mlsVisitHistoryExt"); if (s) s.remove(); }
 
-  var _iv = null, _obs = null, _obsTarget = null, _deb = null;
+  var _iv = null, _obs = null, _obsTarget = null, _deb = null, _emptyTimer = null;
+  var _onPatient = null, _onView = null, _onSession = null;
+  function clearOwnedHistory() {
+    clearEmptyRemoval(); removeExt(); _lastSig = ""; _lastPid = "";
+  }
+  function clearEmptyRemoval() {
+    if (_emptyTimer) { clearTimeout(_emptyTimer); _emptyTimer = null; }
+  }
+  function scheduleEmptyRemoval() {
+    if (_emptyTimer) return;
+    _emptyTimer = setTimeout(function () {
+      _emptyTimer = null;
+      try { if (activeP()) rebuild(true); else clearOwnedHistory(); } catch (e) { clearOwnedHistory(); }
+    }, 600);
+  }
   function scheduleRebuild() {
     if (_deb) clearTimeout(_deb);
     _deb = setTimeout(function () { _deb = null; try { rebuild(false); } catch (e) {} }, 140);
@@ -701,14 +764,43 @@
        sub-second full history poll. The slow fallback covers changes that do
        not touch the profile DOM. Signature checks make both paths cheap. */
     bindObserver();
-    _iv = setInterval(function () { try { bindObserver(); rebuild(false); } catch (e) {} }, 3000);
+    _onPatient = function (event) {
+      try {
+        bindObserver();
+        /* An explicit empty-id lifecycle event is an authoritative clear, not
+           a transient render handoff. Remove prior-patient PHI immediately;
+           reserve the short grace only for silent DOM transitions. */
+        var detail = event && event.detail;
+        if (detail && Object.prototype.hasOwnProperty.call(detail, "patientId") && !S(detail.patientId)) {
+          clearOwnedHistory();
+          return;
+        }
+        /* Replace A immediately once B is authoritative; a transient no-patient
+           handoff gets only the bounded grace above and can never survive a
+           logout/session boundary. */
+        if (activeP()) rebuild(true); else scheduleEmptyRemoval();
+      } catch (e) { scheduleEmptyRemoval(); }
+    };
+    _onView = function () { try { bindObserver(); scheduleRebuild(); } catch (e) {} };
+    _onSession = function () { try { clearState(); } catch (e) {} try { clearOwnedHistory(); } catch (e2) {} };
+    try { window.addEventListener("mls:active-patient-changed", _onPatient, false); } catch (e) {}
+    try { window.addEventListener("mls:view-changed", _onView, false); } catch (e) {}
+    try { window.addEventListener("mls:session-boundary", _onSession, false); } catch (e) {}
+    /* Events and the scoped observer own normal updates. This slow watchdog is
+       only for legacy writers that emit neither, so it need not rescan a long
+       visit history every three seconds. */
+    _iv = setInterval(function () { try { bindObserver(); rebuild(false); } catch (e) {} }, 15000);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
 
   function revert() {
     try { if (_iv) clearInterval(_iv); _iv = null; } catch (e) {}
     try { if (_deb) clearTimeout(_deb); _deb = null; } catch (e) {}
+    try { clearEmptyRemoval(); } catch (e) {}
     try { if (_obs) _obs.disconnect(); _obs = null; _obsTarget = null; } catch (e) {}
+    try { if (_onPatient) window.removeEventListener("mls:active-patient-changed", _onPatient, false); _onPatient = null; } catch (e) {}
+    try { if (_onView) window.removeEventListener("mls:view-changed", _onView, false); _onView = null; } catch (e) {}
+    try { if (_onSession) window.removeEventListener("mls:session-boundary", _onSession, false); _onSession = null; } catch (e) {}
     removeExt();
     try { var st = document.getElementById("mls-xh-style"); if (st) st.remove(); } catch (e) {}
     // un-hide the base list

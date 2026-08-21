@@ -38,7 +38,7 @@ const MUST_AUTOBUST = [
 ];
 
 for (const asset of MUST_AUTOBUST) {
-  const re = new RegExp("s\\.src\\s*=\\s*'" + asset.replace(/\./g, '\\.') + "\\?v='\\s*\\+\\s*\\(window\\.__MLS_AV");
+  const re = new RegExp("(?:s|node)\\.src\\s*=\\s*'" + asset.replace(/\./g, '\\.') + "\\?v='\\s*\\+\\s*\\(window\\.__MLS_AV");
   assert(re.test(connect),
     asset + ' must load with ?v=\' + (window.__MLS_AV || Date.now()).\n' +
     'A frozen ?v= token is served cache-first by the service worker, so every\n' +

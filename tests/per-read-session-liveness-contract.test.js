@@ -111,9 +111,16 @@ async function executedRiderSemantics() {
 
 /* 7 — app side: the chart-read failure translates the flag into the canonical
  *     reason, byte-identically in ScribeFlow.html and ScribeFlow-staging.html. */
-const translatedLine = "if(!r.ok || !r.text){ reject(new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||";
-assert(app.includes(translatedLine), 'ScribeFlow.html must translate sessionLikelyExpired into the athena-session-expired reason');
-assert(staging.includes(translatedLine), 'ScribeFlow-staging.html must carry the byte-identical translation (parity law)');
+const translatedError = "var __fdErr=new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||";
+function carriesTranslatedChartFailure(source) {
+  const at = source.indexOf(translatedError);
+  if (at < 0) return false;
+  const block = source.slice(at, at + 900);
+  return block.includes('sessionLikelyExpired:r.sessionLikelyExpired===true') &&
+    block.includes('reject(__fdErr); return;');
+}
+assert(carriesTranslatedChartFailure(app), 'ScribeFlow.html must translate sessionLikelyExpired into the athena-session-expired reason and reject that same enriched error');
+assert(carriesTranslatedChartFailure(staging), 'ScribeFlow-staging.html must carry the same translated chart-failure contract (parity law)');
 
 /* 8 — importer: dead session halts the batch without burning retries, and the
  *     identity loop names the canonical reason. */

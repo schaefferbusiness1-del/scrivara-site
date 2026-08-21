@@ -391,9 +391,9 @@ assert(!/innerWidth/.test(source),
 
 /* The loader must not even REQUEST the file on a desktop. */
 {
-  const li = connect.indexOf('feat_mls_phone_ui.js');
+  const li = connect.indexOf('data-mls-asset="feat_mls_phone_ui.js"');
   assert(li > 0, 'the phone module must still be loaded from mls-connect.js');
-  const loader = connect.slice(Math.max(0, li - 1400), li + 400);
+  const loader = connect.slice(Math.max(0, li - 1200), li + 800);
   assert(/if\(!want\)return;/.test(loader),
     'the loader must return before creating the script element when the device is not a phone');
   assert(!/innerWidth/.test(loader), 'the loader must not classify by window width either');

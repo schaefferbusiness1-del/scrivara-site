@@ -36,15 +36,18 @@ assert(/mode:\s*'probe'/.test(unified), 'selected action must be checked read-on
 assert(/mode:\s*'execute'/.test(unified), 'the single confirmation entrypoint must execute one typed action');
 assert(/setAttribute\('data-mls-athena-action',\s*row\.action\)/.test(unified));
 assert(/setAttribute\('data-mls-preview-hash',\s*state\.manifest\.previewHash\)/.test(unified));
-assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'UI must disclose the two allowed note lanes');
+assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'capability-off UI must disclose the two allowed note lanes');
+assert(/Reviewed note write, Save Draft, billing staging, and Sign &amp; Save each run only after your explicit one-click confirm/i.test(unified), 'capability-on UI must disclose the separately confirmed final-action lanes');
 /* wf3 (owner 2026-08-04, one-click rebuild): the READY row is PRE-selected and
    probed on open — "Select one" is no longer the doctor's job, so the
    one-action boundary is disclosed as what each click RUNS instead. */
 assert(/One READY note row is pre-selected/i.test(unified), 'UI must disclose the pre-selected single note row');
+assert(/One READY row is pre-selected and checked read-only/i.test(unified), 'capability-on UI must disclose the pre-selected single typed row');
 assert(/runs exactly that one action/i.test(unified), 'UI must disclose the one-action trusted-click boundary');
 assert(/never retries or auto-chains|never auto-chain/i.test(unified), 'UI must disclose fail-closed no-chain behavior');
-assert(/Complete Sign & Save directly in Athena/.test(unified), 'Sign must be visibly manual');
-assert(!/Review Sign & Save separately/.test(unified), 'verified note write must not recreate an executable Sign offer');
+assert(/complete Sign & Save directly in Athena/i.test(unified), 'capability-off Sign must remain visibly manual');
+assert(/Sign &amp; Save unlocks only after a verified note write/i.test(unified), 'capability-on Sign must disclose its verified-write prerequisite');
+assert(/athenaFinalActionsV1 === true/.test(flow), 'final-action rows are not gated by the extension capability');
 assert(!/probeUnifiedRow\([^)]*sign[^)]*\)[^]{0,300}executeUnifiedSelection/.test(unified), 'Sign must not auto-chain after a new note write');
 
 const render = between(unified, 'function renderUnifiedConfirmation(state)', 'function openUnifiedConfirmation(opts)');
@@ -76,4 +79,4 @@ assert(!/startAthenaAction\(['"]stage_billing['"]/.test(superbill), 'Superbill m
   assert(unified.includes('autoOpened: false'), 'the unified state must initialize the once-per-review auto-open flag');
 }
 
-console.log('PASS unified Athena confirmation: one page/button for note lanes, exact manual final-action rows, trusted hash binding, seamless bounded auto-open, and no Sign/billing execution offer');
+console.log('PASS unified Athena confirmation: one page/button, capability-off manual fallback, capability-on separately confirmed final actions, trusted hash binding, bounded auto-open, and no auto-chain');

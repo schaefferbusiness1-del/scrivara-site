@@ -11,7 +11,9 @@ assert(start >= 0 && end > start, 'canonical Help/Find feature directory is miss
 const directory = source.slice(start, end);
 
 assert(directory.includes('Shared by Find and Help'), 'Help and Find no longer share one location source');
-assert(directory.includes("where:'Left navigation -> Reviews'") && directory.includes("route:'reach:reviews'"), 'Reviews location is stale or missing');
+assert(directory.includes("name:'Free Marketing workspace'") && directory.includes("where:'Tools -> Marketing'") && directory.includes("route:'reach:reviews'"),
+  'Marketing location or its guarded legacy-route handoff is stale or missing');
+assert(!directory.includes("where:'Left navigation -> Reviews'"), 'Help still teaches the retired Reviews navigation');
 assert(directory.includes("where:'Left navigation -> Send to patient (or Patient portal in the active-patient bar)'") && directory.includes("route:'reach:send'"), 'Send-to-patient location is stale or missing');
 assert(directory.includes("where:'AI Studio -> natural-language study builder at the top'") && directory.includes("route:'study'"), 'natural-language study location is stale or missing');
 assert(directory.includes('limited-data draft') && directory.includes('clinician and privacy review are still required'), 'Help/Search overstates study privacy or readiness');
@@ -28,4 +30,4 @@ assert(directory.includes("if(typeof window.showView==='function') window.showVi
   'Help/Find cannot navigate to and recover focus when the natural-language study builder mounts late');
 assert(directory.includes('window.__mlsFeatureDirectory = DIR') && directory.includes('window.mlsFeatureHelpAnswer = helpAnswer') && directory.includes('window.mlsOpenFeature = openFeature'), 'directory is not published to both answer and navigation owners');
 
-console.log('PASS Help/Search locations: one canonical directory routes Reviews, Send, Copilot, and natural-language studies to their exact current UI');
+console.log('PASS Help/Search locations: one canonical directory routes Marketing, Send, Copilot, and natural-language studies to their exact current UI');

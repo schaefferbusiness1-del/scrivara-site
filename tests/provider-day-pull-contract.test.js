@@ -34,7 +34,9 @@ assert(!calSource.includes('Also pull &amp;amp; verify full history/visits'), '2
 assert(calSource.includes('the calendar checkbox for this preference is') && /function includeHistory\(\) \{[\s\S]{0,700}?return true;\s*\}/.test(calSource), '2026-07-28: includeHistory is hard-true and must IGNORE the legacy stored 0 (honoring it would strand opted-out accounts in schedule-only mode with no control left)');
 assert(calSource.includes('includeHistory: withHistory'), 'calendar UI must freeze and route the checkbox value into the exact pull');
 assert(calSource.includes('Schedule-only complete:'), 'unchecked mode must report an honest schedule-only result');
-assert(loaderSource.includes("feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now())"), 'production loader must use the shared cache-buster for the exact provider/day/month history importer');
+assert(loaderSource.includes("var A='feat_mls_schedimport_exact.js',V='si-1.7.22-p1-census1'") &&
+  loaderSource.includes("s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||'p1-preview')"),
+  'production loader must own the promoted exact importer version and use the shared build cache-buster with a deterministic pre-build fallback');
 assert(stagingLoaderSource.includes("feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now())"), 'staging loader must use the shared cache-buster for the exact provider/day/month history importer');
 assert(loaderSource.includes('A+"?v="+(window.__MLS_AV||Date.now())'), 'production loader must use the shared cache-buster for the canonical calendar provider pull UI');
 

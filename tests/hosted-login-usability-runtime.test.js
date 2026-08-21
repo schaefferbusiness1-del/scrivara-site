@@ -28,15 +28,21 @@ assert.strictEqual(stagingHelpers, liveHelpers, 'staging hosted-email helpers dr
 assert(!/getElementById\(['"]authPass|sessionStorage\.|password\s*[:=]/.test(liveHelpers), 'hosted email memory reads password/session credential state');
 
 for (const [name, source] of [['production', live], ['staging', staging]]) {
-  const initialAuthNote = between(source, '<p class="local-note" id="authNote">', '</p>');
+  const initialAuthNote = name === 'production'
+    ? between(source, '<div class="local-note" id="authNote">', '</div>')
+    : between(source, '<p class="local-note" id="authNote">', '</p>');
   const authNote = between(source, "const _an=document.getElementById('authNote');", '// One-time token was captured');
-  assert(initialAuthNote.includes('<b>Secure account sign-in.</b>') && initialAuthNote.includes('checked separately for this deployment and account'), `${name} first-paint login copy does not distinguish account sign-in from clinical access`);
-  assert(authNote.includes('<b>Secure account sign-in.</b>'), `${name} hosted login is not described as secure account sign-in`);
+  const secureLabel = name === 'production' ? '<b>Secure sign-in.</b>' : '<b>Secure account sign-in.</b>';
+  assert(initialAuthNote.includes(secureLabel) && initialAuthNote.includes('checked separately for this deployment and account'), `${name} first-paint login copy does not distinguish account sign-in from clinical access`);
+  assert(authNote.includes(secureLabel), `${name} hosted login is not described as secure sign-in`);
   assert(authNote.includes('Clinical workspace access is checked separately for this deployment and account.'), `${name} login copy conflates authentication and clinical readiness`);
   assert(!/Hosted evaluation account|signed BAA|BAA.*(?:missing|required|unsigned)/i.test(authNote), `${name} hosted login makes an inaccurate evaluation/BAA claim`);
 
   const gate = between(source, '<!-- Hosted clinical-readiness gate.', '<!-- ============ MAIN APP');
-  for (const phrase of ['Clinical workspace not enabled', 'not enabled for this deployment or account', 'PHI deployment readiness', 'release configuration', 'account grant']) {
+  const readinessPhrases = name === 'production'
+    ? ['Your practice has not been switched on for patient work yet.', 'MLS administrator', 'PHI deployment readiness', 'release configuration', 'account grant']
+    : ['Clinical workspace not enabled', 'not enabled for this deployment or account', 'PHI deployment readiness', 'release configuration', 'account grant'];
+  for (const phrase of readinessPhrases) {
     assert(gate.includes(phrase), `${name} clinical gate omits: ${phrase}`);
   }
   /* The LOCKED-mode copy must never guess at legal/BAA status. In production

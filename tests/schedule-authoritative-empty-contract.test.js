@@ -158,9 +158,25 @@ assert.strictEqual(api.authoritativeStatusForDay('2026-07-23').available, false,
   const src = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'utf8');
   const gate = src.indexOf('var verifiedEmptyDay = r.receipt.authoritativeEmpty === true;');
   assert(gate >= 0, 'importer must derive verifiedEmptyDay from the authoritative empty receipt');
-  const block = src.slice(gate, gate + 1400);
-  assert(block.includes('if(!verifiedEmptyDay&&!(currentProviderRosterReceipt&&currentProviderRosterReceipt.complete===true'), 'roster completeness must still be required on NON-empty days');
-  assert(block.includes('if (!verifiedEmptyDay && !rosterReceiptBatchBound(currentProviderRosterReceipt))'), 'roster batch binding must still be required on NON-empty days');
+  const block = src.slice(gate, gate + 9000);
+  assert(block.includes('if(!verifiedEmptyDay&&!p1CensusDecision.ok&&!p1DetectedSelected.ok&&!(currentProviderRosterReceipt&&currentProviderRosterReceipt.complete===true'),
+    'roster completeness must still be required on non-empty days outside the two explicit P1 proof lanes');
+  assert(block.includes('if (!verifiedEmptyDay && !p1CensusDecision.ok && !p1DetectedSelected.ok && !rosterReceiptBatchBound(currentProviderRosterReceipt))'),
+    'roster batch binding must still be required on non-empty days outside the two explicit P1 proof lanes');
+  const censusStart = src.indexOf('function p1AppointmentCensusDecision(');
+  const censusEnd = src.indexOf('function p1DetectedSelectedDecision(', censusStart);
+  const detectedEnd = src.indexOf('function p1AppointmentCensusScope(', censusEnd);
+  assert(censusStart >= 0 && censusEnd > censusStart && detectedEnd > censusEnd,
+    'the two narrow P1 roster exceptions could not be isolated');
+  const censusProof = src.slice(censusStart, censusEnd);
+  const detectedProof = src.slice(censusEnd, detectedEnd);
+  assert(censusProof.includes('laneToken !== P1_DAY_CENSUS_TOKEN') &&
+    censusProof.includes('expected !== parsed || expected !== candidates || expected !== rows') &&
+    censusProof.includes('foreign !== 0') && censusProof.includes('noProviderGuess: true'),
+  'appointment-census exception no longer requires the private lane token, exact counts, zero foreign rows and no provider guess');
+  assert(detectedProof.includes('req.mode !== "selected" || req.detectedOnly !== true || !req.stableKey') &&
+    detectedProof.includes('String(receipt.requestId || "") !== requestId') && detectedProof.includes('if (exact !== 1) return no;'),
+  'detected-provider exception no longer requires selected scope, exact request binding and one unique clinician');
   const contractIdx = src.indexOf('var emptyContract = authoritativeEmptyContract(r);');
   assert(contractIdx >= 0 && contractIdx < gate, 'the authoritative empty contract must be proven BEFORE the roster bypass can apply');
   console.log('PASS verified-empty day bypasses the roster gate only after the empty contract is proven');

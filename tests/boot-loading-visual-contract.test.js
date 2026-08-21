@@ -53,7 +53,7 @@ assert(app.includes("window.__mlsLoaderReadyAt=Date.now(); window.dispatchEvent(
 assert(!app.slice(app.indexOf('function sfWaitForStableFirstFrame('), app.indexOf('function sfShowGateLoading')).includes('priorityQueued'),
   'noncritical queued presentation work can still hold the secure loader after the critical bundle is ready');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV='b1043'"), 'ScribeFlow loader was not cache-busted to b1043');
+assert(app.includes("window.__MLS_AV='b1044'"), 'ScribeFlow loader was not cache-busted to b1044');
 
 const sessionStart = app.indexOf('function startSession(email)');
 const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));
@@ -128,7 +128,16 @@ assert(bootDriver.includes("owner:'ScribeFlow'"), 'compatibility layer does not 
 assert(!bootDriver.includes('setInterval('), 'a second progress interval can fight the secure loader again');
 assert(!bootDriver.includes('MutationObserver'), 'a second loader style observer can reset or duplicate the reveal again');
 assert(!bootDriver.includes("wrap('sfShowGateLoading'"), 'mls-connect still replaces the secure loader owner');
-assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b1043'"), 'shared asset version was not bumped to b1043');
-assert(connect.includes("var MLS_APP_BUILD='2026-07-25-b1043'"), 'app build was not bumped to b1043');
+/* Production is derived from the 1p lane: the shell owns the bNNN cache stamp,
+   while the generated bundle carries the immutable main-lineage token. Keep
+   those two owners distinct, but require both bundle literals to match the
+   exact lineage declared by this shell. */
+const mainBuild = (app.match(/var P1_BUILD='(main-\d{8}-r\d+)'/) || [])[1];
+const bundleFallback = (connect.match(/window\.__MLS_AV = window\.__MLS_AV \|\| '([^']+)'/) || [])[1];
+const bundleBuild = (connect.match(/var MLS_APP_BUILD='([^']+)'/) || [])[1];
+assert(mainBuild, 'production shell has no immutable main-lineage build');
+assert.strictEqual(bundleFallback, mainBuild, 'bundle fallback cache identity drifted from the generated production lineage');
+assert.strictEqual(bundleBuild, mainBuild, 'bundle app-build identity drifted from the generated production lineage');
+assert(!/^b\d+$/.test(bundleBuild), 'derived bundle regained an independent bNNN owner');
 
 console.log('PASS branded boot loader: one centered green MLS logo surface, one progress tree, and readiness ownership preserved');

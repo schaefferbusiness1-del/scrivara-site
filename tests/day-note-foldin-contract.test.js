@@ -34,16 +34,17 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const patcher = require('./patch-daynote-foldin.js');
-const ROOT = patcher.ROOT;
+const ROOT = path.resolve(__dirname, '..');
 
 const raw = {
-  'feat_mls_schedimport_exact.js': fs.readFileSync(path.join(ROOT, 'feat_mls_schedimport_exact.js'), 'latin1'),
-  'mls-connect.js': fs.readFileSync(path.join(ROOT, 'mls-connect.js'), 'latin1')
+  'feat_mls_schedimport_exact.js': fs.readFileSync(path.join(ROOT, 'feat_mls_schedimport_exact.js'), 'utf8'),
+  'mls-connect.js': fs.readFileSync(path.join(ROOT, 'mls-connect.js'), 'utf8')
 };
-const { sources: patched } = patcher.applyToSources(raw, { tolerateApplied: true });
-const si = patched['feat_mls_schedimport_exact.js'];
-const mc = patched['mls-connect.js'];
+/* This is a shipped-behavior contract, not a historical patcher test. The
+ * production sources have evolved past dn-1.0's exact insertion anchors, so
+ * execute and inspect the current bytes directly. */
+const si = raw['feat_mls_schedimport_exact.js'];
+const mc = raw['mls-connect.js'];
 
 function between(src, startTok, endTok, what) {
   const s = src.indexOf(startTok);
@@ -57,28 +58,31 @@ function between(src, startTok, endTok, what) {
  * (a) ORDERING — the day-note read is issued inside the open-chart window
  * ======================================================================== */
 function inlineCaptureInsideLoop(src) {
-  const loopStart = src.indexOf('for (var i = 0; i < rows.length; i++) {');
-  const loopEnd = src.indexOf('/* si-1.7.4 finalization:');
+  const call = src.indexOf('tnBoundedRead(dnVp, dnP, dnDay)');
+  const loopStart = src.lastIndexOf('for (var i = 0; i < rows.length; i++) {', call);
+  const loopEnd = src.indexOf('/* si-1.7.4 finalization:', call);
   if (loopStart < 0 || loopEnd < loopStart) return false;
   const body = src.slice(loopStart, loopEnd);
-  const call = body.indexOf('dnVp.runForPatient(dnP, function () {}, { onlyDate: dnDay })');
-  if (call < 0) return false;
+  const callInBody = body.indexOf('tnBoundedRead(dnVp, dnP, dnDay)');
+  if (callInBody < 0) return false;
   /* the capture must come AFTER this patient's chart read+settle and BEFORE
      the loop moves on (the stop-check is the last thing before the next
      iteration) */
-  const settle = body.indexOf('receipt.patients.push(one); receipt.processed++;');
-  const stopCheck = body.indexOf('if (stopAfterTimeout) {', call);
-  return settle >= 0 && call > settle && stopCheck > call;
+  const settle = body.lastIndexOf('receipt.patients.push(one); receipt.processed++;', callInBody);
+  const stopCheck = body.indexOf('if (stopAfterTimeout) {', callInBody);
+  return settle >= 0 && callInBody > settle && stopCheck > callInBody;
 }
 assert(inlineCaptureInsideLoop(si), '(a) inline day-note capture sits inside the per-patient loop, after the chart settle, before the loop advances');
 assert(si.indexOf('&& rd && !inlineDayNoteFuse)') > 0, '(a) inline capture requires THIS batch\'s successful chart read (rd) and an untripped fuse');
+assert(/return vp\.runForPatient\(p, function \(\) \{\}, \{ onlyDate: String\(day\) \}\)/.test(si),
+  '(a) the bounded helper must delegate to the same patient-scoped onlyDate reader');
 
 /* EXECUTED: the extracted inline block issues the read while the chart window
    is (fictionally) open, and awaits it fully before the block ends. */
-const inlineBlock = between(si,
-  '        if (!stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {',
-  '          if (one.todayNote !== true && typeof ppSettle === "function" && one.name) { try { ppSettle(one.name, false, "pulled-day-note-unread " + String(one.todayNoteReason || "").slice(0, 60), false, { pid: one.patientId }); } catch (eDnPp) {} }\n        }',
-  '(a) inline block');
+const inlineStart = si.indexOf('        if (!stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {');
+const inlineEnd = si.indexOf('        if (stopAfterTimeout) {', inlineStart);
+assert(inlineStart > 0 && inlineEnd > inlineStart, '(a) current inline block bounds');
+const inlineBlock = si.slice(inlineStart, inlineEnd);
 
 function runInlineBlock(cfg) {
   const events = [];
@@ -90,10 +94,26 @@ function runInlineBlock(cfg) {
     stopAfterTimeout: false, pullVisitBodies: false, rd: { text: 'chart' },
     one, row: { scheduleDate: cfg.day, name: cfg.name }, receipt,
     normDate: d => String(d || ''),
+    batchRowDay: r => String((r && r.scheduleDate) || ''),
+    tnDayApplicable: () => ({ ok: true, future: false, reason: '' }),
+    tnApptPassed: () => true,
+    dnAlreadyReadToday: () => null,
+    dnPassExhausted: () => false,
     safe: (fn, fb) => { try { return fn(); } catch (e) { return fb; } },
     findStorePatient: id => ({ id, name: cfg.name }),
     ppCurrent: m => events.push(['current', String(m)]),
-    ppSettle: (n, ok, reason, pending, extra) => { events.push(['settle', n, ok, String(reason), extra && extra.pid]); },
+    tnEmitDayNoteColumn: o => events.push(['daynote-column', o && o.patientId, o && o.todayNote, o && o.todayNoteReason]),
+    tnBoundedRead: (vp, p, day) => vp.runForPatient(p, function () {}, { onlyDate: String(day) }),
+    tnReadOk: r => !!(r && (r.ok === true || r.visits != null)),
+    tnProgressCode: () => '',
+    tnStamp: () => {},
+    acctTodayKey: () => '2099-01-01',
+    TNY_NO_ENCOUNTER: /never-match/,
+    tnIsDeferrable: () => false,
+    tnDeferRow: () => {},
+    tnStampNotYet: () => {},
+    tnStampAlreadyRead: () => {},
+    tnStampHandedOff: () => {},
     bridge: async () => ({ version: cfg.extVersion || '3.0.61' }),
     safeAsync: async (fn, fb) => { try { return await fn(); } catch (e) { return fb; } },
     window: {
@@ -126,7 +146,7 @@ Promise.resolve()
     assert.strictEqual(issued[2], '2026-08-11', '(a) scoped to the pulled day');
     assert.strictEqual(issued[3], 'windowOpen=true', '(a) issued WHILE the patient\'s chart window is open');
     assert.strictEqual(r.one.todayNote, true, '(a) success recorded');
-    assert(!r.events.some(e => e[0] === 'settle'), '(a) no failure row on success');
+    assert(r.events.some(e => e[0] === 'daynote-column' && e[2] === true), '(a) success is emitted in the dedicated day-note column');
   })
 
   /* -- (c1) identity-mismatch refusal: reason byte-identical, no fuse ------ */
@@ -134,8 +154,9 @@ Promise.resolve()
   .then(r => {
     assert.strictEqual(r.one.todayNote, false, '(c) inline refusal recorded');
     assert.strictEqual(r.one.todayNoteReason, IDENTITY_MISMATCH.slice(0, 80), '(c) refusal reason BYTE-IDENTICAL to the tail-pass semantics (same slice of the same safety-stop text)');
-    const settle = r.events.find(e => e[0] === 'settle');
-    assert(settle && /^pulled-day-note-unread /.test(settle[3]) && settle[4] === 'p2', '(c) pid-keyed pulled-day-note-unread row emitted');
+    const column = r.events.find(e => e[0] === 'daynote-column');
+    assert(column && column[1] === 'p2' && column[2] === false && column[3] === IDENTITY_MISMATCH.slice(0, 80),
+      '(c) the dedicated day-note column carries the pid-keyed refusal without changing the history verdict');
     assert.strictEqual(r.fuse, '', '(c) an identity refusal never trips the fuse (it is deterministic, not a wedged runner)');
     assert.strictEqual(r.receipt.todayNoteInlineFuse, undefined, '(c) no fuse on receipt either');
   })
@@ -174,9 +195,28 @@ function runTail(tailSrc, patients) {
     receipt,
     rows: patients.map(p => ({ _mlsTargetPatientId: p.patientId, scheduleDate: '2026-08-11', name: p.name })),
     normDate: d => String(d || ''),
+    batchRowDay: r => String((r && r.scheduleDate) || ''),
+    tnDayApplicable: () => ({ ok: true, future: false, reason: '' }),
+    tnApptPassed: () => true,
+    dnAlreadyReadToday: () => null,
+    dnPassExhausted: () => false,
+    tnRowMinutes: () => 600,
+    ppPhase: () => {},
     safe: (fn, fb) => { try { return fn(); } catch (e) { return fb; } },
     ppCurrent: () => {},
     ppSettle: () => {},
+    tnEmitDayNoteColumn: () => {},
+    tnBoundedRead: (vp, p, day) => vp.runForPatient(p, function () {}, { onlyDate: String(day) }),
+    tnReadOk: r => !!(r && (r.ok === true || r.visits != null)),
+    tnProgressCode: () => '',
+    tnStamp: () => {},
+    acctTodayKey: () => '2099-01-01',
+    TNY_NO_ENCOUNTER: /never-match/,
+    tnIsDeferrable: () => false,
+    tnDeferRow: () => {},
+    tnStampNotYet: () => {},
+    tnStampAlreadyRead: () => {},
+    tnStampHandedOff: () => {},
     findStorePatient: id => ({ id }),
     bridge: async () => ({ version: '3.0.61' }),
     window: {
@@ -211,7 +251,7 @@ function runTailAndRest() {
     })
     /* -- (e1) NON-VACUITY: string-revert the attempt-once filter ----------- */
     .then(() => {
-      const FILTER = ' || oneTn.todayNote != null';
+      const FILTER = '        if (oneTn.todayNote != null && !(oneTn.todayNote === "not-yet" && tnApptPassed(tnDay, tnRow))) continue;';
       assert(tailSrc.indexOf(FILTER) > 0, '(e) the filter under revert exists');
       const OLD = tailSrc.replace(FILTER, '');
       return runTail(OLD, allInline.map(p => Object.assign({}, p)));
@@ -228,18 +268,19 @@ function runTailAndRest() {
  * todayNoteFailures with their reasons, and the run records its day verdict
  * ======================================================================== */
 function partC() {
-  const aggStart = si.indexOf('safe(function () { var tnF = 0');
+  const aggStart = si.indexOf('function tnAggregate() {');
   assert(aggStart > 0, '(c) receipt aggregate exists');
-  const aggTerm = 'receipt.todayNoteReasons = tnR; });';
-  const aggEnd = si.indexOf(aggTerm, aggStart);
-  const aggSrc = si.slice(aggStart, aggEnd + aggTerm.length);
+  const aggEnd = si.indexOf('function tnBatchDay()', aggStart);
+  assert(aggEnd > aggStart, '(c) receipt aggregate bounds');
+  const aggSrc = si.slice(aggStart, aggEnd);
   const receipt = { complete: false, patients: [
     { todayNote: true },
     { todayNote: false, todayNoteReason: IDENTITY_MISMATCH.slice(0, 80) },
     { todayNote: false, todayNoteReason: 'encounter-index-unverified' },
     { visitsSkipped: true } /* never attempted: NOT a failure */
   ] };
-  new Function('safe', 'receipt', aggSrc)(fn => fn(), receipt);
+  new Function('receipt', 'tnReasonCode', aggSrc + '\nreturn tnAggregate();')(
+    receipt, reason => String(reason || 'unknown').slice(0, 80));
   assert.strictEqual(receipt.todayNoteFailures, 2, '(c) inline failures counted');
   assert.strictEqual(receipt.todayNoteReasons[IDENTITY_MISMATCH.slice(0, 80)], 1, '(c) identity-mismatch reason keyed byte-identically in the histogram');
   assert.strictEqual(receipt.todayNoteReasons['encounter-index-unverified'], 1, '(c) scoped-read refusal reason in the histogram');
@@ -266,8 +307,13 @@ function partC() {
   /* the ledger persists the aggregate (queue item) */
   assert(si.indexOf('todayNoteFailures: Number(receipt.todayNoteFailures || 0),') > 0, '(c) ledger carries the count');
   assert(si.indexOf('todayNoteRefused:') > 0, '(c) ledger carries per-patient refusals');
-  /* and the day line NAMES the refused notes (queue item) */
-  assert(si.indexOf("__tnNote = \" The pulled day's note could not be read for \"") > 0, '(c) day-end line NAMES refused day-notes');
+  /* and the day line distinguishes queued work from a chart with no note,
+     without leaking patient names into the quiet background tray. */
+  assert(si.indexOf('var __tnList = ((historyReceipt && historyReceipt.patients) || []).filter') > 0 &&
+    si.indexOf('tnReasonCode(p.todayNoteReason) === "no-encounter"') > 0,
+    '(c) day-end note census classifies no-encounter separately from queued work');
+  assert(si.indexOf('will fill in quietly when you\'re idle') > 0 && si.indexOf('no visit note in Athena for that day') > 0,
+    '(c) day-end wording reports queued work and true no-note outcomes honestly');
   assert(si.indexOf('+ __redoNote + __tnNote, "ok");') > 0 && si.indexOf('+ __redoNote + __tnNote, "err");') > 0,
     '(c) the naming rides BOTH verdict lines');
 }
@@ -359,8 +405,10 @@ function partD() {
 
   const tally = panel.querySelector('[data-pp="tally"]').textContent;
   assert(tally.indexOf('✓ 2 saved') === 0, '(d) honest saved count leads the line');
-  assert(tally.indexOf('⚠ 1 not saved') > 0, '(d) honest failure count');
-  assert(tally.indexOf('1 pulled-day note not read') > 0, '(d) day-note refusal on the DONE line');
+  assert(tally.indexOf('⚠ 2 need attention') > 0, '(d) compact tally combines one chart failure and one day-note refusal honestly');
+  const tallyMore = panel.querySelector('[data-pp="tallyMore"]').textContent;
+  assert(tallyMore.indexOf('⚠ 1 chart not saved') > 0, '(d) detailed line keeps the chart failure count separate');
+  assert(tallyMore.indexOf('1 pulled-day note not read yet') > 0, '(d) detailed line keeps the day-note refusal separate');
   assert(panel.querySelector('h3').textContent.indexOf('Done') >= 0, '(d) the card says DONE plainly');
   const hide = dom.reg.get('mlsPullProgHide');
   assert.strictEqual(hide.textContent, 'Done', '(d) no "keep pulling" framing survives - the button is Done');

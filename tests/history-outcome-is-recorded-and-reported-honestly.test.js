@@ -58,15 +58,16 @@ assert(/writeIndex\(day, x\);/.test(si) && si.indexOf('recordHistoryVerdict') < 
 
 /* it has to be CALLED, or it is exactly the dead code this codebase keeps shipping */
 {
-  const fv = si.slice(si.indexOf('function finalizeVerdict()'));
-  const end = fv.indexOf('\n    }');
-  const body = fv.slice(0, end > 0 ? end : 4000);
+  const start = si.indexOf('function finalizeVerdict()');
+  const end = si.indexOf('/* 2026-07-28 owner directive', start);
+  assert(start > 0 && end > start, 'finalizeVerdict bounds must remain discoverable');
+  const body = si.slice(start, end);
   assert(/recordHistoryVerdict\(day, receipt, rows\.length\)/.test(body),
     'the recorder must be called from finalizeVerdict - that runs at EVERY exit, so ' +
     'no pull can finish without leaving a record. An uncalled recorder is the ' +
     'present-but-unreachable pattern this codebase has shipped four times.');
-  assert(/normDate\(/.test(body),
-    'the day must be derived from the rows themselves so a month pull records per day');
+  assert(/day = batchRowDay\(rows\[di\]\)/.test(body) && /if \(!day\) day = batchScopeDay/.test(body),
+    'the day must be derived from each row, with the batch-scoped day only as a fallback, so a month pull records per day');
 }
 
 /* the day's own count must be recorded next to the queue count, because the two

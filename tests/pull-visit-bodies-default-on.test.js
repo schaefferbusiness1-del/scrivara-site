@@ -115,8 +115,17 @@ const UNS = k => 'acct::' + k;
 
   /* the two writers go THROUGH the resolver, and the resolver records the
      human-choice marker — executed on the real shipped resolver */
-  const settingsWriter = extract(src, "cb.addEventListener('change',function(){", '});', 'settings writer');
-  assert(settingsWriter.includes('r.write(cb.checked===true)'), 'Settings checkbox writes THROUGH the resolver');
+  /* There are other checkbox listeners earlier in the shell. Isolate the
+     named Settings owner before checking its writer, rather than accidentally
+     extracting the shared-computer toggle. */
+  const settingsOwnerAt = src.indexOf('function renderPullVisitBodiesSetting(){');
+  const settingsOwnerEnd = src.indexOf('/* =========================================================', settingsOwnerAt);
+  assert(settingsOwnerAt >= 0 && settingsOwnerEnd > settingsOwnerAt,
+    'Settings visit-note owner could not be isolated');
+  const settingsWriter = src.slice(settingsOwnerAt, settingsOwnerEnd);
+  assert(settingsWriter.includes("cb.addEventListener('change',function(){") &&
+    settingsWriter.includes('r.write(cb.checked===true)'),
+    'Settings checkbox writes THROUGH the resolver');
   const connectSrc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const stripWriter = extract(connectSrc, 'tgl.onchange = function () {', '};', 'day-strip writer');
   assert(stripWriter.includes('r.write(tgl.checked === true)'), 'day-strip toggle writes THROUGH the resolver');

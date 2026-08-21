@@ -232,6 +232,42 @@ function waitForChildExit(child, timeoutMs) {
   });
 }
 
+async function terminateDisposableChromeTree(child, chromePath, profile, timeoutMs = 5000) {
+  assert.strictEqual(process.platform, 'win32', 'process-tree fallback is Windows-only');
+  assert(child && Number.isInteger(child.pid) && child.pid > 0, 'refusing to terminate an unknown browser PID');
+  assert.strictEqual(path.resolve(child.spawnfile || ''), path.resolve(chromePath),
+    'refusing to terminate a process that is not the selected isolated Chrome executable');
+  const resolvedProfile = path.resolve(profile);
+  const resolvedTemp = path.resolve(os.tmpdir());
+  const relative = path.relative(resolvedTemp, resolvedProfile);
+  assert(relative && !relative.startsWith('..') && !path.isAbsolute(relative),
+    `refusing to terminate a browser outside the disposable temp-profile contract: ${resolvedProfile}`);
+  assert(path.basename(resolvedProfile).startsWith('mls-extension-candidate-'),
+    `refusing to terminate a browser with an unexpected profile: ${resolvedProfile}`);
+  assert(child.spawnargs.some((arg) => {
+    const prefix = '--user-data-dir=';
+    return String(arg).startsWith(prefix) && path.resolve(String(arg).slice(prefix.length)) === resolvedProfile;
+  }), 'refusing to terminate a browser that was not launched with the exact disposable profile');
+  await new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore', windowsHide: true
+    });
+    const timer = setTimeout(() => {
+      try { killer.kill(); } catch (_) {}
+      done();
+    }, timeoutMs);
+    killer.once('error', done);
+    killer.once('exit', done);
+  });
+}
+
 async function removeDisposableProfile(profile, timeoutMs = 10000) {
   const resolvedProfile = path.resolve(profile);
   const resolvedTemp = path.resolve(os.tmpdir());
@@ -350,7 +386,7 @@ async function createPage(port, url) {
   return cdp;
 }
 
-async function createSyntheticOriginPage(port, initialUrl, htmlForUrl) {
+async function createSyntheticOriginPage(port, initialUrl, htmlForUrl, bodyForRequest = null) {
   const targetUrl = new URL(initialUrl);
   const cdp = await createPage(port, 'about:blank');
   const patterns = [
@@ -363,8 +399,10 @@ async function createSyntheticOriginPage(port, initialUrl, htmlForUrl) {
       const requestUrl = String(event.request && event.request.url || '');
       const resourceType = String(event.resourceType || '');
       const sameOrigin = (() => { try { return new URL(requestUrl).origin === state.origin; } catch (_) { return false; } })();
-      const html = sameOrigin && resourceType === 'Document' ? htmlForUrl(requestUrl) : null;
-      if (typeof html === 'string') {
+      const body = sameOrigin
+        ? (resourceType === 'Document' ? htmlForUrl(requestUrl) : (bodyForRequest ? bodyForRequest(requestUrl, resourceType, String(event.request && event.request.method || 'GET')) : null))
+        : null;
+      if (typeof body === 'string') {
         state.fulfilled++;
         await cdp.send('Fetch.fulfillRequest', {
           requestId: event.requestId,
@@ -375,7 +413,7 @@ async function createSyntheticOriginPage(port, initialUrl, htmlForUrl) {
             { name: 'Cache-Control', value: 'no-store' },
             { name: 'X-Content-Type-Options', value: 'nosniff' }
           ],
-          body: Buffer.from(html, 'utf8').toString('base64')
+          body: Buffer.from(body, 'utf8').toString('base64')
         });
       } else {
         state.blocked.push({
@@ -870,10 +908,26 @@ async function openAthenaOverlay(browser, workerSessionId, tabId, label) {
 }
 
 async function proveAthenaOverlayOwnership(browser, workerSessionId, athena) {
-  await waitFor(athena, `document.querySelectorAll('#mls-popup-root').length===1 && !!document.querySelector('#mls-popup-root .mlsp-pill')`, 'canonical Athena overlay owner', 30000);
   const tabs = await workerEvaluate(browser, workerSessionId, `(async()=>{const rows=await chrome.tabs.query({});return rows.filter(tab=>/^https:\\/\\/athenanet\\.athenahealth\\.com\\//.test(tab.url||'')).map(tab=>({id:tab.id,url:tab.url,title:tab.title||''}))})()`);
   assert.strictEqual(tabs.length, 1, `overlay proof expected exactly one synthetic Athena tab: ${JSON.stringify(tabs)}`);
   const tabId = tabs[0].id;
+  /* The shipped widget is deliberately disabled unless its isolated content-
+     script world explicitly opts in. A page-level fixture variable cannot
+     cross Chrome's isolated-world boundary. Opt in only this synthetic tab,
+     dispose the initially disabled API, and inject the exact packaged widget
+     again so this optional-surface lifecycle proof remains meaningful without
+     changing the production default or any shipped runtime bytes. */
+  const optIn = await workerEvaluate(browser, workerSessionId, `(async()=>{try{
+    await chrome.scripting.executeScript({target:{tabId:${Number(tabId)}},func:()=>{
+      window.__mlsPopupShowOnAthena=true;
+      try { if(window.__mlsPopup&&typeof window.__mlsPopup.revert==='function') window.__mlsPopup.revert(); } catch(error) {}
+      return window.__mlsPopupShowOnAthena===true;
+    }});
+    await chrome.scripting.executeScript({target:{tabId:${Number(tabId)}},files:['mls-popup.js']});
+    return {ok:true};
+  }catch(error){return {ok:false,error:String(error&&error.message||error)}}})()`);
+  assert.deepStrictEqual(optIn, { ok: true }, `synthetic Athena overlay opt-in failed: ${JSON.stringify(optIn)}`);
+  await waitFor(athena, `document.querySelectorAll('#mls-popup-root').length===1 && !!document.querySelector('#mls-popup-root .mlsp-pill')`, 'canonical Athena overlay owner', 30000);
   const ownerToken = 'live-extension-candidate-owner';
   const initial = await evaluate(athena, `(() => {const root=document.getElementById('mls-popup-root');if(!root)return false;root.setAttribute('data-live-owner-token',${JSON.stringify(ownerToken)});return true})()`);
   assert.strictEqual(initial, true, 'canonical Athena overlay root was not available for ownership proof');
@@ -896,7 +950,7 @@ async function proveAthenaOverlayOwnership(browser, workerSessionId, athena) {
   return { tabId, ownerToken, before, cycles };
 }
 
-async function proveOfflineScheduleRecovery(athena, trusted) {
+async function proveOfflineScheduleRecovery(browser, workerSessionId, athena, trusted, athenaTabId) {
   let offline = false, firewallDisabled = false;
   const startedAt = Date.now();
   try {
@@ -925,6 +979,18 @@ async function proveOfflineScheduleRecovery(athena, trusted) {
     await athena.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1, connectionType: 'wifi' });
     offline = false;
     await navigateSyntheticPage(athena, SYNTHETIC_ATHENA_SCHEDULE_URL, 'online synthetic Athena recovery', `document.readyState==='complete' && !!document.querySelector('[data-testid="schedule-grid"]')`);
+    /* Navigation creates a fresh isolated world, so restore the synthetic-only
+       overlay opt-in before asserting the test fixture's canonical owner. */
+    const recoveredOverlayOptIn = await workerEvaluate(browser, workerSessionId, `(async()=>{try{
+      await chrome.scripting.executeScript({target:{tabId:${Number(athenaTabId)}},func:()=>{
+        window.__mlsPopupShowOnAthena=true;
+        try { if(window.__mlsPopup&&typeof window.__mlsPopup.revert==='function') window.__mlsPopup.revert(); } catch(error) {}
+        return window.__mlsPopupShowOnAthena===true;
+      }});
+      await chrome.scripting.executeScript({target:{tabId:${Number(athenaTabId)}},files:['mls-popup.js']});
+      return {ok:true};
+    }catch(error){return {ok:false,error:String(error&&error.message||error)}}})()`);
+    assert.deepStrictEqual(recoveredOverlayOptIn, { ok: true }, `recovered synthetic Athena overlay opt-in failed: ${JSON.stringify(recoveredOverlayOptIn)}`);
     await waitFor(athena, `document.querySelectorAll('#mls-popup-root').length===1`, 'recovered Athena content owner', 30000);
     const recovery = await bridge(trusted, 'mlsAppPullSchedule', { deadlineAt: Date.now() + 30000 }, 45000);
     assertSyntheticSchedule(recovery, 'online recovery');
@@ -1100,6 +1166,9 @@ async function main() {
       (requestUrl) => {
         const parsedUrl = new URL(requestUrl);
         const pathname = parsedUrl.pathname;
+        if (pathname === '/1/1/ax/dashboard') {
+          return '<!doctype html><html><body><main>Signed-in synthetic Athena dashboard</main></body></html>';
+        }
         if (pathname === new URL(SYNTHETIC_ATHENA_SCHEDULE_URL).pathname) return SYNTHETIC_ATHENA_SCHEDULE_HTML;
         if (pathname === new URL(SYNTHETIC_ATHENA_CHART_URL).pathname) return SYNTHETIC_ATHENA_CHART_HTML;
         if (pathname === new URL(SYNTHETIC_ATHENA_EXACT_SCHEDULE_URL).pathname) {
@@ -1107,7 +1176,10 @@ async function main() {
         }
         if (pathname === new URL(SYNTHETIC_ATHENA_EXACT_ENCOUNTER_URL).pathname) return SYNTHETIC_ATHENA_EXACT_ENCOUNTER_HTML;
         return null;
-      }
+      },
+      (requestUrl) => new URL(requestUrl).pathname === '/1/1/ax/dashboard'
+        ? '<!doctype html><html><body><main>Signed-in synthetic Athena dashboard</main></body></html>'
+        : null
     );
     await waitFor(athena, `location.href===${JSON.stringify(SYNTHETIC_ATHENA_SCHEDULE_URL)} && !!document.querySelector('[data-testid="schedule-grid"]')`, 'synthetic Athena schedule', 30000);
     const overlayProof = await proveAthenaOverlayOwnership(browser, attachedWorker.sessionId, athena);
@@ -1149,7 +1221,7 @@ async function main() {
       overlayProof.tabId
     );
 
-    const offlineProof = await proveOfflineScheduleRecovery(athena, trusted);
+    const offlineProof = await proveOfflineScheduleRecovery(browser, attachedWorker.sessionId, athena, trusted, overlayProof.tabId);
     assert(offlineProof.failureElapsedMs < 17000, 'offline failure receipt exceeded its bound');
 
     await navigateSyntheticPage(
@@ -1231,6 +1303,10 @@ async function main() {
       let exited = await waitForChildExit(chrome.child, 5000);
       if (!exited) {
         try { chrome.child.kill(); } catch (_) {}
+        exited = await waitForChildExit(chrome.child, 5000);
+      }
+      if (!exited && process.platform === 'win32') {
+        await terminateDisposableChromeTree(chrome.child, chromeSelection.path, profile);
         exited = await waitForChildExit(chrome.child, 5000);
       }
       assert(exited, 'isolated Chrome for Testing process did not exit during cleanup');

@@ -36,7 +36,7 @@
 
   var D = document;
   var host = null, door = null, calmDoor = null, styleNode = null, menuObserver = null, backgroundNodes = [];
-  var permanentListeners = [], workspaceListeners = [], generation = 0, workspaceOwner = null;
+  var permanentListeners = [], workspaceListeners = [], generation = 0, workspaceOwner = null, confirmations = 0, confirmDialog = null;
   var receipts = 0;
   var legacyNodes = [], reachOriginals = null, opener = null, dirty = false;
 
@@ -99,8 +99,14 @@
     box.hidden = false; box.className = 'mkt-receipt ' + (ok ? 'ok' : 'bad');
     box.textContent = (ok ? '✓ ' : 'Could not ') + kind + (message ? ' — ' + message : '') + ' · receipt ' + receipts;
   }
+  function cancelOwnedConfirmation() {
+    var owned = confirmDialog; confirmDialog = null;
+    if (!owned || byId('_mlsAskDialog') !== owned) return;
+    var cancel = byId('_mlsAskNo');
+    if (cancel && cancel.click && (!owned.contains || owned.contains(cancel))) safe(function () { cancel.click(); });
+  }
   function scrub() {
-    generation += 1; receipts = 0; workspaceOwner = null;
+    generation += 1; confirmations += 1; cancelOwnedConfirmation(); receipts = 0; workspaceOwner = null;
     clearListenerList(workspaceListeners);
     if (host) {
       var fields = host.querySelectorAll && host.querySelectorAll('input,textarea,select');
@@ -300,7 +306,7 @@
     return null;
   }
   function containBackgroundNode(node) {
-    if (!node || node === host || backgroundNodes.some(function (record) { return record.node === node; })) return;
+    if (!node || node === host || node === confirmDialog || backgroundNodes.some(function (record) { return record.node === node; })) return;
     backgroundNodes.push({ node: node, inert: !!node.inert,
       inertAttribute: node.getAttribute && node.getAttribute('inert'),
       ariaHidden: node.getAttribute && node.getAttribute('aria-hidden') });
@@ -311,15 +317,39 @@
     var children = D.body && D.body.children ? Array.prototype.slice.call(D.body.children) : [];
     children.forEach(containBackgroundNode);
   }
-  function close() {
-    if (!currentApi()) return false;
-    if (dirty && !safe(function () { return window.confirm('Discard every unsaved Marketing draft in this tab?'); }, false)) return false;
+  function confirmedAction(message, action) {
+    if (!currentApi() || !host || !workspaceOwner) return false;
+    cancelOwnedConfirmation();
+    var owner = workspaceOwner, token = generation, ownedHost = host, ticket = ++confirmations;
+    var ask = safe(function () { return window.mlsConfirm; }, null);
+    if (typeof ask !== 'function') return false;
+    var priorDialog = byId('_mlsAskDialog');
+    var pending = safe(function () { return ask(message, { title: 'Marketing workspace' }); }, null);
+    var ownedDialog = byId('_mlsAskDialog');
+    if (ownedDialog && ownedDialog !== priorDialog) {
+      confirmDialog = ownedDialog;
+      if (ownedDialog.style) ownedDialog.style.zIndex = '100061';
+      try { ownedDialog.inert = false; } catch (_confirmInertError) {}
+      if (ownedDialog.removeAttribute) { ownedDialog.removeAttribute('inert'); ownedDialog.removeAttribute('aria-hidden'); }
+    }
+    if (!safe(function () { return pending && typeof pending.then === 'function'; }, false)) { cancelOwnedConfirmation(); return false; }
+    return safe(function () { return pending.then(function (accepted) {
+      if (confirmDialog === ownedDialog) confirmDialog = null;
+      if (accepted !== true || ticket !== confirmations || token !== generation || host !== ownedHost || !accountMatches(owner)) return false;
+      return action();
+    }, function () { if (confirmDialog === ownedDialog) confirmDialog = null; return false; }); }, false);
+  }
+  function finishClose() {
     var restore = opener; scrub(); reconcileDoor();
     restore = stableInvoker(restore); if (restore) safe(function () { restore.focus(); });
     opener = null; return true;
   }
-  function clearDrafts() {
-    if (!host || !safe(function () { return window.confirm('Clear every Marketing draft in this open tab?'); }, false)) return false;
+  function close() {
+    if (!currentApi()) return false;
+    return dirty ? confirmedAction('Discard every unsaved Marketing draft in this tab?', finishClose) : finishClose();
+  }
+  function finishClearDrafts() {
+    if (!host) return false;
     var fields = host.querySelectorAll('input,textarea,select');
     for (var i = 0; i < fields.length; i++) {
       var kind = String(fields[i].type || '').toLowerCase();
@@ -334,6 +364,9 @@
     safe(function () { var gate = window.__mlsUpgradeSafety; if (gate && typeof gate.clear === 'function') gate.clear('marketing-' + VERSION); });
     receipt('all drafts', true, 'cleared from this tab');
     return true;
+  }
+  function clearDrafts() {
+    return confirmedAction('Clear every Marketing draft in this open tab?', finishClearDrafts);
   }
   function open(invoker) {
     if (!currentApi()) return false;

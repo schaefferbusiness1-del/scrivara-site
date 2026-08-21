@@ -220,7 +220,85 @@ function harness() {
   var CTRL = 'button,a[href],input:not([type=hidden]),select,textarea,summary,'
     + '[role=button],[role=tab],[role=menuitem],[role=switch],[onclick]';
 
-  var W = { mut: null, keys: null, asks: 0, lastAsk: '', navs: 0, opens: 0, errs: [] };
+  var W = { mut: null, keys: null, asks: 0, lastAsk: '', navs: 0, opens: 0, errs: [], valueAttempt: null };
+
+  /* A positional selector identifies the node the crawler first met, but it is
+     not the identity of a value control. Focusing a field blurs the previous
+     one, and that blur can legitimately re-render the panel before the harness
+     types. Retarget only when there is ONE visible semantic successor in the
+     same stable owner. Anything missing or ambiguous remains a failure. */
+  function ownerId(el) {
+    var n = el && el.parentElement;
+    while (n && n !== document.documentElement) {
+      if (n.id) return n.id;
+      n = n.parentElement;
+    }
+    return '';
+  }
+  function controlKey(el) {
+    return {
+      id: el.id || '', owner: ownerId(el),
+      tag: el.tagName.toLowerCase(), type: (el.type || '').toLowerCase(),
+      nameAttr: el.getAttribute('name') || '',
+      aria: el.getAttribute('aria-label') || '',
+      placeholder: el.getAttribute('placeholder') || '',
+      title: el.getAttribute('title') || '',
+      label: name(el)
+    };
+  }
+  function semanticControl(el, key) {
+    if (!el || !key) return false;
+    if (el.tagName.toLowerCase() !== key.tag || (el.type || '').toLowerCase() !== key.type) return false;
+    if (key.id) return el.id === key.id;
+    if (key.owner) {
+      var owner = document.getElementById(key.owner);
+      if (!owner || !owner.contains(el)) return false;
+    }
+    if ((el.getAttribute('name') || '') !== key.nameAttr) return false;
+    if ((el.getAttribute('aria-label') || '') !== key.aria) return false;
+    if ((el.getAttribute('placeholder') || '') !== key.placeholder) return false;
+    if ((el.getAttribute('title') || '') !== key.title) return false;
+    return name(el) === key.label;
+  }
+  function connectedControl(el, key, requireVisible) {
+    if (!el || el.isConnected === false || !document.documentElement.contains(el)) return false;
+    if (!semanticControl(el, key)) return false;
+    return !requireVisible || visible(el);
+  }
+  function equivalent(key, requireVisible) {
+    var connected = Array.prototype.slice.call(document.querySelectorAll(CTRL))
+      .filter(function (el) { return connectedControl(el, key, false); });
+    var visibleMatches = connected.filter(function (el) { return visible(el); });
+    var matches = requireVisible ? visibleMatches : connected;
+    return {
+      status: matches.length === 1 ? 'found' : (matches.length ? 'ambiguous' : 'missing'),
+      count: matches.length, connectedCount: connected.length, visibleCount: visibleMatches.length,
+      el: matches.length === 1 ? matches[0] : null
+    };
+  }
+  function currentValueAttempt() {
+    var a = W.valueAttempt;
+    if (!a) return { status: 'none', count: 0, connectedCount: 0, visibleCount: 0,
+      connected: false, visible: false, match: false, expected: null, actual: null };
+    var el = a.el;
+    var status = 'original', count = 1, connectedCount = 1, visibleCount = visible(el) ? 1 : 0;
+    if (!connectedControl(el, a.key, false)) {
+      var found = equivalent(a.key, false);
+      status = found.status; count = found.count; connectedCount = found.connectedCount;
+      visibleCount = found.visibleCount; el = found.el;
+    }
+    if (!el) return {
+      status: status, count: count, connectedCount: connectedCount, visibleCount: visibleCount,
+      connected: false, visible: false, match: false, expected: a.expected, actual: null,
+      retargeted: !!a.retargeted
+    };
+    var actual = a.mode === 'checked' ? !!el.checked : String(el.value == null ? '' : el.value);
+    return {
+      status: status, count: count, connectedCount: connectedCount, visibleCount: visibleCount,
+      connected: true, visible: visible(el), match: actual === a.expected,
+      expected: a.expected, actual: actual, retargeted: !!a.retargeted
+    };
+  }
 
   /* ---- every way this app can answer a press, counted ------------------- */
   /* Native dialogs, for completeness - this shell does not use them, but a
@@ -340,15 +418,10 @@ function harness() {
       if (!id) return false;
       return window.__eb.openModals().indexOf(id) >= 0;
     },
-    /* What a value control is holding now. A field is judged on whether it TOOK
-       what was put in it, not on whether the page moved - see judge(). */
-    probeUsed: function () { return W.probe == null ? '' : String(W.probe); },
-    valueOf: function (sel) {
-      var el = document.querySelector(sel);
-      if (!el) return null;
-      if (el.type === 'checkbox' || el.type === 'radio') return 'checked:' + String(!!el.checked);
-      return String(el.value == null ? '' : el.value);
-    },
+    /* What the ONE current semantic instance of the last value control holds.
+       Re-rendering is not a waiver: its unique successor must hold the exact
+       probe. A missing, duplicated, or reset successor reports match:false. */
+    valueOutcome: currentValueAttempt,
     bootGateUp: function () {
       var g = document.getElementById('sfGateLoading');
       return !!(g && visible(g)) || document.documentElement.classList.contains('mls-secure-loading');
@@ -364,6 +437,7 @@ function harness() {
           sel: sel, id: el.id || '',
           tag: el.tagName.toLowerCase() + (el.type ? ':' + el.type : ''),
           label: name(el),
+          key: controlKey(el),
           disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true',
           onclick: (el.getAttribute('onclick') || '').slice(0, 160)
         });
@@ -414,13 +488,22 @@ function harness() {
       for (var k in W.keys) { if (!a[k]) return true; }
       return false;
     },
-    press: function (sel) {
+    press: function (sel, suppliedKey) {
+      W.valueAttempt = null;
       var el = document.querySelector(sel);
       if (!el) return 'not-found';
       if (!visible(el)) return 'not-visible';
       var tag = el.tagName.toLowerCase();
       try {
-        if (tag === 'input' && (el.type === 'checkbox' || el.type === 'radio')) { el.click(); return 'toggled'; }
+        if (tag === 'input' && (el.type === 'checkbox' || el.type === 'radio')) {
+          var toggleTarget = el.type === 'radio' ? true : !el.checked;
+          W.valueAttempt = {
+            mode: 'checked', expected: toggleTarget, key: suppliedKey || controlKey(el),
+            el: el, retargeted: false
+          };
+          el.click();
+          return 'toggled';
+        }
         if (tag === 'input' && el.type === 'file') return 'file';
         if (tag === 'select') {
           var opts = Array.prototype.slice.call(el.options).filter(function (o) { return o.value !== el.value; });
@@ -428,8 +511,11 @@ function harness() {
              value="" would otherwise read as a field that refused to hold it. */
           var next = opts.filter(function (o) { return o.value !== ''; })[0] || opts[0];
           if (!next) return 'one-option';
+          W.valueAttempt = {
+            mode: 'value', expected: String(next.value), key: suppliedKey || controlKey(el),
+            el: el, retargeted: false
+          };
           el.value = next.value;
-          W.probe = next.value;
           el.dispatchEvent(new Event('change', { bubbles: true }));
           return 'changed';
         }
@@ -452,8 +538,24 @@ function harness() {
           else if (ty === 'url') probe = 'https://example.test';
           else if (ty === 'tel') probe = '5551234567';
           else if (ty === 'color') probe = '#336699';
-          W.probe = probe;
-          el.focus(); el.value = probe;
+          var key = suppliedKey || controlKey(el);
+          W.valueAttempt = {
+            mode: 'value', expected: probe, key: key, el: el, retargeted: false
+          };
+          el.focus();
+          /* focus() first blurs the previously-walked control. That blur may
+             replace this panel and this exact node. Typing into the detached
+             node would test the harness, not the field a user can now see. */
+          if (!connectedControl(el, key, true)) {
+            var live = equivalent(key, true);
+            W.valueAttempt.retargeted = true;
+            W.valueAttempt.retargetStatus = live.status;
+            W.valueAttempt.el = live.el;
+            if (!live.el) return 'typed';
+            el = live.el;
+            el.focus();
+          }
+          el.value = probe;
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
           /* .blur() alone does not run an onblur handler when the element was
@@ -468,6 +570,78 @@ function harness() {
         W.errs.push(String(e && e.message).slice(0, 140));
         return 'threw';
       }
+    },
+    /* Calibrate the instrument against the exact race it claims to handle.
+       Focus-time retargeting requires one VISIBLE semantic successor, while
+       final grading accepts one connected successor that later becomes hidden.
+       Detached, ambiguous, never-visible and reset outcomes still fail. */
+    valueInstrumentSelfCheck: function () {
+      var host = document.createElement('div');
+      host.id = '__ebValueInstrument';
+      host.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647;background:#fff;padding:4px';
+      document.body.appendChild(host);
+      function desc(el) { return { sel: cssPath(el), key: controlKey(el) }; }
+      function outcome() { return currentValueAttempt(); }
+      function focusReplacement(kind) {
+        host.innerHTML = '';
+        var driver = document.createElement('input'); driver.placeholder = 'instrument focus driver';
+        var target = document.createElement('input'); target.type = 'search'; target.placeholder = 'instrument semantic target';
+        host.appendChild(driver); host.appendChild(target);
+        var d = desc(target);
+        driver.addEventListener('blur', function () {
+          if (kind === 'unique' || kind === 'unique-hidden-after') {
+            var next = target.cloneNode(true);
+            if (kind === 'unique-hidden-after') next.addEventListener('input', function () { next.style.display = 'none'; });
+            target.replaceWith(next);
+          } else if (kind === 'hidden-before') {
+            var hidden = target.cloneNode(true); hidden.style.display = 'none'; target.replaceWith(hidden);
+          } else if (kind === 'ambiguous') target.replaceWith(target.cloneNode(true), target.cloneNode(true));
+          else target.remove();
+        }, { once: true });
+        driver.focus();
+        window.__eb.press(d.sel, d.key);
+        return outcome();
+      }
+      var retarget = focusReplacement('unique');
+      var hiddenAfter = focusReplacement('unique-hidden-after');
+      var hiddenBefore = focusReplacement('hidden-before');
+      var ambiguous = focusReplacement('ambiguous');
+      var missing = focusReplacement('missing');
+
+      host.innerHTML = '';
+      var detached = document.createElement('input'); detached.placeholder = 'instrument detached target'; host.appendChild(detached);
+      detached.addEventListener('input', function () { detached.remove(); });
+      var detachedD = desc(detached); window.__eb.press(detachedD.sel, detachedD.key);
+      var detachedAfter = outcome();
+
+      host.innerHTML = '';
+      var reset = document.createElement('input'); reset.placeholder = 'instrument resetting target'; host.appendChild(reset);
+      reset.addEventListener('input', function () { reset.value = ''; });
+      var resetD = desc(reset); window.__eb.press(resetD.sel, resetD.key);
+      var resetting = outcome();
+
+      host.innerHTML = '';
+      var select = document.createElement('select');
+      var oa = document.createElement('option'); oa.value = 'a'; oa.textContent = 'A';
+      var ob = document.createElement('option'); ob.value = 'b'; ob.textContent = 'B';
+      select.appendChild(oa); select.appendChild(ob); host.appendChild(select);
+      select.addEventListener('change', function () { select.value = 'a'; });
+      var selectD = desc(select); window.__eb.press(selectD.sel, selectD.key);
+      var resettingSelect = outcome();
+
+      host.innerHTML = '';
+      var toggle = document.createElement('input'); toggle.type = 'checkbox'; host.appendChild(toggle);
+      toggle.addEventListener('change', function () { toggle.checked = false; });
+      var toggleD = desc(toggle); window.__eb.press(toggleD.sel, toggleD.key);
+      var resettingToggle = outcome();
+
+      host.remove();
+      W.valueAttempt = null;
+      return {
+        retarget: retarget, hiddenAfter: hiddenAfter, hiddenBefore: hiddenBefore,
+        ambiguous: ambiguous, missing: missing, detachedAfter: detachedAfter,
+        resetting: resetting, resettingSelect: resettingSelect, resettingToggle: resettingToggle
+      };
     },
     /* A SIGNED-OUT SHELL IS AN EMPTY SHELL. Measured on the first run of this
        suite: the walk reached every view and pressed FIFTY controls, because
@@ -685,11 +859,17 @@ async function ambient(page, ms) {
   return a.keys;
 }
 
-async function pressAndWatch(page, sel) {
+async function pressAndWatch(page, control) {
+  const desc = typeof control === 'string' ? { sel: control, key: null } : control;
   await page.evaluate(() => window.__eb.watchStart());
-  const did = await page.evaluate((s) => window.__eb.press(s), sel);
-  await page.waitForFunction(() => window.__eb.hasNovel(), null,
-    { timeout: PRESS_WINDOW_MS, polling: 100 }).catch(() => {});
+  const did = await page.evaluate((d) => window.__eb.press(d.sel, d.key || null), desc);
+  /* A value control is graded by the exact value below, so waiting two seconds
+     for unrelated DOM evidence only creates time for another panel to repaint
+     under it. Action controls retain the full transient-evidence window. */
+  if (!/^(typed|changed|toggled|one-option)$/.test(did)) {
+    await page.waitForFunction(() => window.__eb.hasNovel(), null,
+      { timeout: PRESS_WINDOW_MS, polling: 100 }).catch(() => {});
+  }
   const w = await page.evaluate(() => window.__eb.watchStop());
   const errs = await page.evaluate(() => window.__eb.errs());
   return { did, w, errs };
@@ -700,15 +880,18 @@ async function pressAndWatch(page, sel) {
    watched again with nothing pressed, and the control pressed a second time.
    Only silent BOTH times is a verdict; anything else was the instrument. */
 async function judge(page, c, amb, surfaceLabel) {
-  let r = await pressAndWatch(page, c.sel);
+  let r = await pressAndWatch(page, c);
   /* the surface re-rendered under the walk: not a verdict about this control */
   if (r.did === 'not-found' || r.did === 'not-visible') return null;
   let ev = evidenceOf(r.w, amb);
+  const kind = /^(typed|changed|toggled|one-option)$/.test(r.did) ? 'value' : 'action';
   let secondTry = false;
-  if (!ev.any) {
+  /* The second-press rescue is for a silent ACTION. A value has stronger,
+     direct evidence and pressing it twice can hide a first reset/ambiguity. */
+  if (kind === 'action' && !ev.any) {
     secondTry = true;
     const amb2 = new Set(await ambient(page, 1600));
-    const r2 = await pressAndWatch(page, c.sel);
+    const r2 = await pressAndWatch(page, c);
     const ev2 = evidenceOf(r2.w, amb2);
     if (ev2.any) { r = r2; ev = ev2; }
     await page.evaluate((keys) => window.__eb.setAmbient(keys), Array.from(amb));
@@ -726,16 +909,22 @@ async function judge(page, c, amb, surfaceLabel) {
      same reason. An ACTION control - a button, a tab, a disclosure, anything
      clicked - must answer. A VALUE control must simply HOLD what was put into
      it; that is its whole job, and it is asserted separately below. */
-  const kind = /^(typed|changed|toggled|one-option)$/.test(r.did) ? 'value' : 'action';
   let took = null;
+  let valueOutcome = null;
   if (kind === 'value' && r.did !== 'one-option') {
-    const v = await page.evaluate((s) => window.__eb.valueOf(s), c.sel);
-    const probe = await page.evaluate(() => window.__eb.probeUsed());
-    took = (v !== null && v !== '') && (r.did !== 'typed' || v === probe);
+    /* A component may replace the field while applying its state. Give one
+       unique successor a bounded settle window. Ambiguity is immediately
+       disqualifying; missing/reset controls exhaust the window and fail. */
+    await page.waitForFunction(() => {
+      const o = window.__eb.valueOutcome();
+      return !!(o && (o.match === true || o.status === 'ambiguous'));
+    }, null, { timeout: 900, polling: 40 }).catch(() => {});
+    valueOutcome = await page.evaluate(() => window.__eb.valueOutcome());
+    took = !!(valueOutcome && valueOutcome.match === true);
   }
   return {
     surface: surfaceLabel, sel: c.sel, id: c.id, label: c.label, tag: c.tag,
-    did: r.did, kind, took, how: ev.how, alive: ev.any, secondTry,
+    did: r.did, kind, took, valueOutcome, how: ev.how, alive: ev.any, secondTry,
     said: (r.w.lastAsk || '').slice(0, 70), errs: r.errs
   };
 }
@@ -864,6 +1053,28 @@ async function runtime() {
     ok(seeded && seeded.patients >= 10,
       `the synthetic roster did not land (${JSON.stringify(seeded)}) - every per-patient room would be an empty state and the walk would grade a shell nobody filled in`);
     ok(!!seeded.active, 'no patient is bound after seeding, so the visit, history, recs and orders rooms render nothing to press');
+
+    const valueInstrument = await page.evaluate(() => window.__eb.valueInstrumentSelfCheck());
+    measured.valueInstrument = valueInstrument;
+    ok(valueInstrument.retarget.match && valueInstrument.retarget.retargeted,
+      `the value instrument could not type into one unique replacement: ${JSON.stringify(valueInstrument.retarget)}`);
+    ok(valueInstrument.hiddenAfter.match && valueInstrument.hiddenAfter.retargeted,
+      `the value instrument rejected an exact connected successor only because it later hid: ${JSON.stringify(valueInstrument.hiddenAfter)}`);
+    eq(valueInstrument.hiddenAfter.connected, true, 'the hidden-pass calibration did not retain one connected successor');
+    eq(valueInstrument.hiddenAfter.visible, false, 'the hidden-pass calibration never actually hid its successor');
+    eq(valueInstrument.hiddenBefore.match, false, 'the value instrument typed into a successor that was hidden before retargeting');
+    eq(valueInstrument.hiddenBefore.connected, true, 'the hidden-before-typing calibration did not leave a connected diagnostic successor');
+    eq(valueInstrument.hiddenBefore.visible, false, 'the hidden-before-typing calibration never actually hid its successor');
+    eq(valueInstrument.ambiguous.status, 'ambiguous', 'the value instrument accepted two semantic replacements');
+    eq(valueInstrument.ambiguous.match, false, 'an ambiguous replacement was counted as holding the probe');
+    eq(valueInstrument.missing.status, 'missing', 'the value instrument hid a missing replacement');
+    eq(valueInstrument.missing.match, false, 'a missing replacement was counted as holding the probe');
+    eq(valueInstrument.detachedAfter.status, 'missing', 'the value instrument treated its detached original as a live field');
+    eq(valueInstrument.detachedAfter.connected, false, 'the value instrument reported a detached original as connected');
+    eq(valueInstrument.detachedAfter.match, false, 'a detached original was counted as holding the probe');
+    eq(valueInstrument.resetting.match, false, 'a text field that resets the probe was counted as editable');
+    eq(valueInstrument.resettingSelect.match, false, 'a select that resets to its old option was counted as editable');
+    eq(valueInstrument.resettingToggle.match, false, 'a checkbox that resets its checked state was counted as editable');
 
     /* ---- the queue starts as every view the router will accept ---------- */
     const queue = [];
@@ -1004,7 +1215,11 @@ async function runtime() {
     measured.oneOptionSelects = values.filter((c) => c.did === 'one-option').map((c) => c.id || c.label).slice(0, 12);
     eq(refused.length, 0,
       'THESE FIELDS WOULD NOT HOLD WHAT WAS PUT INTO THEM:\n'
-      + refused.map((c) => `    ${c.id || '(no id)'}  "${c.label}"  <${c.tag}>  on ${c.surface}`).join('\n'));
+      + refused.map((c) => {
+        const o = c.valueOutcome || {};
+        return `    ${c.id || '(no id)'}  "${c.label}"  <${c.tag}>  on ${c.surface}`
+          + `  [${o.status || 'no outcome'}; expected=${JSON.stringify(o.expected)}, actual=${JSON.stringify(o.actual)}, matches=${o.count == null ? '?' : o.count}, connected=${o.connected == null ? '?' : o.connected}, visible=${o.visible == null ? '?' : o.visible}, visibleMatches=${o.visibleCount == null ? '?' : o.visibleCount}]`;
+      }).join('\n'));
 
     /* ---- the costly controls, each on its own fresh boot ----------------- */
     const costlyResults = [];

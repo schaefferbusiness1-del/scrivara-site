@@ -129,12 +129,16 @@ function makeIDB(persist, opts) {
           return {
             get(k) {
               const r = req(); if (stalled) return r;
-              setImmediate(() => {
+              if (opts.onGet) opts.onGet(String(k));
+              const finish = () => {
                 if (tx._aborted) return;
                 let rec = m.has(k) ? JSON.parse(JSON.stringify(m.get(k))) : undefined;
                 if (rec && opts.tamperRead && opts.tamperRead.on) rec.json = String(rec.json) + '~TAMPER';
                 r.result = rec; r.onsuccess && r.onsuccess();
-              });
+              };
+              finish.key = String(k);
+              if (opts.deferGet && opts.deferGet.on) opts.deferGet.queue.push(finish);
+              else setImmediate(finish);
               return r;
             },
             put(rec) { const r = req(); if (stalled) return r; setImmediate(() => { if (tx._aborted) return; m.set(rec.k, JSON.parse(JSON.stringify(rec))); r.onsuccess && r.onsuccess(); }); return r; },
@@ -166,8 +170,12 @@ function boot(opts) {
   opts = opts || {};
   const hooks = opts.hooks || {};
   const ls = opts.ls || makeLS(hooks);
-  const toasts = []; const events = [];
-  const win = { addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: ev => { events.push(ev && ev.type); return true; } };
+  const toasts = []; const events = []; const eventDetails = [];
+  const win = { addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: ev => {
+    events.push(ev && ev.type); eventDetails.push({ type: ev && ev.type, detail: ev && ev.detail });
+    if (typeof opts.onDispatch === 'function') opts.onDispatch(ev);
+    return true;
+  } };
   const ctx = {
     window: win, localStorage: ls,
     navigator: opts.navigator || {},
@@ -187,10 +195,19 @@ function boot(opts) {
   const api = ctx.window.__mlsPtsStore;
   assert.ok(api && typeof api.init === 'function', 'the block defines window.__mlsPtsStore');
   if (opts.idb) api._t.setIdbFactory(opts.idb);
-  return { ctx, ls, hooks, toasts, events, api };
+  return { ctx, ls, hooks, toasts, events, eventDetails, api };
 }
 const tick = () => new Promise(r => setImmediate(r));
 async function settle(n) { for (let i = 0; i < (n || 80); i++) await tick(); }
+function takeDeferred(deferred, key, label) {
+  const index = deferred.queue.findIndex(finish => finish.key === key);
+  assert.notStrictEqual(index, -1, (label || 'deferred read') + ' was not queued for ' + key);
+  return deferred.queue.splice(index, 1)[0];
+}
+function blob(key, rows, gen) {
+  const json = JSON.stringify(rows);
+  return { k: key, gen: gen || 1, len: json.length, hash: '', at: Date.now(), tab: 'seed', json };
+}
 const J = 't::acct::ptsJournalV2', G = 't::acct::ptsGenV2', B = 't::acct::patients';
 
 (async function () {
@@ -352,9 +369,282 @@ const J = 't::acct::ptsJournalV2', G = 't::acct::ptsGenV2', B = 't::acct::patien
       'the survival path (write-behind) still carried the edit');
   }
 
+  /* ---- K: same account, new session epoch while a catch-up read is late.
+     init() reuses the same key/promise in this case. The new epoch asks for
+     catch-up BEFORE the stale read settles; that request must transfer after
+     the old flags retire, without adopting old rows or needing a third trigger. */
+  {
+    const deferred = { on: false, queue: [] };
+    const idb = makeIDB(null, { deferGet: deferred });
+    const h = boot({ idb });
+    h.ctx.window.__mlsSessionEpoch = 70;
+    const original = [{ id: 'p1', name: 'Epoch 70', visits: [] }];
+    h.ls.setItem(B, JSON.stringify(original));
+    await h.api.init();
+    assert.strictEqual((await h.api.migrate()).migrated, true, 'same-key epoch control migrate');
+    await settle();
+
+    const current = [{ id: 'p1', name: 'Epoch 71', visits: [] }];
+    idb._stores.get('ptsBlobs').set(B, { k: B, gen: 2, json: JSON.stringify(current) });
+    h.ls.setItem(G, '2|foreign-tab|' + Date.now());
+    h.ls.setItem(J, JSON.stringify({ v: 2, baseGen: 1, entries: [] }));
+    deferred.on = true;
+    h.api.catchUp();
+    await settle(6);
+    assert.strictEqual(deferred.queue.length, 1, 'epoch-70 refresh read was not held by the instrument');
+    assert.strictEqual(h.api._t.state().refreshing, true, 'refresh latch was not active before the epoch change');
+    assert.strictEqual(h.api._t.state().pendingIdbRefresh, true, 'pending refresh marker was not active before the epoch change');
+
+    h.ctx.window.__mlsSessionEpoch = 71; /* same uns() key; init() would reuse */
+    h.api.catchUp(); /* arrives while epoch 70 still owns S.refreshing */
+    deferred.queue.shift()();
+    await settle(6);
+    assert.strictEqual(h.api._t.state().rows[0].name, 'Epoch 70', 'late epoch-70 refresh adopted rows into epoch 71');
+    assert.strictEqual(deferred.queue.length, 1, 'epoch-71 catch-up requested before stale completion was lost');
+    assert.strictEqual(h.api._t.state().refreshing, true, 'current epoch did not take ownership of the transferred refresh');
+    assert.strictEqual(h.api._t.state().pendingIdbRefresh, true, 'current epoch lost its transferred pending marker');
+    assert.strictEqual(h.api._t.state().refreshTries, 0, 'late same-key completion carried its retry budget into the new epoch');
+
+    deferred.queue.shift()();
+    await settle(6);
+    assert.strictEqual(h.api.getRoster()[0].name, 'Epoch 71', 'current epoch did not adopt the current account blob');
+    assert.strictEqual(h.api._t.state().refreshing, false, 'current epoch refresh did not settle');
+    assert.strictEqual(h.api._t.state().pendingIdbRefresh, false, 'current epoch refresh marker did not settle');
+  }
+
+  /* ---- L: the transferred catch-up can settle synchronously from a now-
+     contiguous journal. abandon() has no getRoster caller to observe that
+     return value, so it must emit one correctly owned update event itself. */
+  {
+    const deferred = { on: false, queue: [] };
+    const idb = makeIDB(null, { deferGet: deferred });
+    const h = boot({ idb });
+    h.ctx.window.__mlsSessionEpoch = 80;
+    h.ls.setItem(B, JSON.stringify([{ id: 'p1', name: 'Epoch 80', visits: [] }]));
+    await h.api.init();
+    assert.strictEqual((await h.api.migrate()).migrated, true, 'contiguous transfer control migrate');
+    await settle();
+
+    h.ls.setItem(G, '2|foreign-tab|' + Date.now());
+    h.ls.setItem(J, JSON.stringify({ v: 2, baseGen: 1, entries: [] }));
+    deferred.on = true;
+    h.api.catchUp();
+    await settle(6);
+    assert.strictEqual(deferred.queue.length, 1, 'epoch-80 contiguous-transfer read was not held');
+
+    h.ctx.window.__mlsSessionEpoch = 81;
+    h.ls.setItem(J, JSON.stringify({ v: 2, baseGen: 1, entries: [{
+      gen: 2, tab: 'foreign-tab', at: Date.now(),
+      p: [{ id: 'p1', name: 'Epoch 81 journal', visits: [] }], o: ['p1']
+    }] }));
+    const eventsBefore = h.eventDetails.length;
+    deferred.queue.shift()();
+    await settle(6);
+
+    assert.strictEqual(h.api.getRoster()[0].name, 'Epoch 81 journal', 'transferred contiguous journal entry was not adopted');
+    assert.strictEqual(deferred.queue.length, 0, 'contiguous journal transfer incorrectly scheduled another IDB refresh');
+    const update = h.eventDetails.slice(eventsBefore).find(event => event.type === 'mls:pts-store-updated');
+    assert(update, 'synchronous transferred catch-up did not publish a roster update');
+    assert.strictEqual(update.detail.key, B, 'synchronous transferred catch-up published the wrong account key');
+    assert.strictEqual(update.detail.epoch, 81, 'synchronous transferred catch-up published the stale session epoch');
+  }
+
+  /* ---- M: account B wins even when account A's real IndexedDB hydrate
+     completes later. The stale attempt settles inert and cannot replace B's
+     rows, flags, receipt, or ready barrier. ---- */
+  {
+    let account = 'hydrate-a';
+    const keyFor = (name, suffix) => 't::' + name + '::' + suffix;
+    const BA = keyFor('hydrate-a', 'patients'), BB = keyFor('hydrate-b', 'patients');
+    const stores = new Map([['ptsBlobs', new Map([
+      [BA, blob(BA, [{ id: 'a-1', name: 'A secret', visits: [] }], 1)],
+      [BB, blob(BB, [{ id: 'b-1', name: 'B only', visits: [] }], 1)]
+    ])]]);
+    const deferred = { on: true, queue: [] };
+    const h = boot({ idb: makeIDB(stores, { deferGet: deferred }), uns: suffix => keyFor(account, suffix) });
+
+    h.ctx.window.__mlsSessionEpoch = 90;
+    const initA = h.api.init();
+    await settle(6);
+    account = 'hydrate-b'; h.ctx.window.__mlsSessionEpoch = 91;
+    const initB = h.api.init();
+    await settle(6);
+    assert.strictEqual(deferred.queue.length, 2, 'overlapping A/B hydrates were not both held');
+
+    takeDeferred(deferred, BB, 'account-B hydrate')();
+    const receiptB = await initB;
+    assert.strictEqual(receiptB.mode, 'idb', 'account B did not hydrate from its IndexedDB row');
+    assert.strictEqual(h.api.getRoster()[0].name, 'B only', 'account B was not current before late A settled');
+    assert.strictEqual(h.api.ready(), initB, 'account B did not own the current ready barrier');
+
+    takeDeferred(deferred, BA, 'late account-A hydrate')();
+    const receiptA = await initA;
+    assert.strictEqual(receiptA.stale, true, 'late account A hydrate was not marked stale');
+    assert.strictEqual(h.api.getRoster()[0].name, 'B only', 'late account A hydrate overwrote account B rows');
+    assert.strictEqual(h.api._t.state().key, BB, 'late account A hydrate overwrote account B key');
+    assert.strictEqual(h.api._t.state().initPending, false, 'late account A hydrate changed account B readiness flags');
+    assert.strictEqual(h.api.ready(), initB, 'late account A hydrate replaced account B ready barrier');
+  }
+
+  /* ---- N: A -> B -> A uses the init-attempt token, not key equality. A1's
+     late completion must not hydrate the current A3 attempt merely because
+     the namespace key has returned to A. ---- */
+  {
+    let account = 'aba-a';
+    const keyFor = (name, suffix) => 't::' + name + '::' + suffix;
+    const BA = keyFor('aba-a', 'patients'), BB = keyFor('aba-b', 'patients');
+    const rowsA1 = [{ id: 'a-1', name: 'A attempt one', visits: [] }];
+    const rowsB = [{ id: 'b-1', name: 'B current', visits: [] }];
+    const rowsA3 = [{ id: 'a-3', name: 'A attempt three', visits: [] }];
+    const stores = new Map([['ptsBlobs', new Map([
+      [BA, blob(BA, rowsA1, 1)], [BB, blob(BB, rowsB, 1)]
+    ])]]);
+    const deferred = { on: true, queue: [] };
+    const h = boot({ idb: makeIDB(stores, { deferGet: deferred }), uns: suffix => keyFor(account, suffix) });
+
+    h.ctx.window.__mlsSessionEpoch = 92;
+    const initA1 = h.api.init(); await settle(6);
+    const finishA1 = takeDeferred(deferred, BA, 'A1 hydrate');
+    account = 'aba-b'; h.ctx.window.__mlsSessionEpoch = 93;
+    const initB = h.api.init(); await settle(6);
+    takeDeferred(deferred, BB, 'B2 hydrate')();
+    await initB;
+
+    account = 'aba-a'; h.ctx.window.__mlsSessionEpoch = 94;
+    stores.get('ptsBlobs').set(BA, blob(BA, rowsA3, 3));
+    const initA3 = h.api.init(); await settle(6);
+    const finishA3 = takeDeferred(deferred, BA, 'A3 hydrate');
+    assert.strictEqual(h.api._t.state().rows, null, 'A3 did not fail closed while its hydrate was pending');
+    assert.strictEqual(h.api.ready(), initA3, 'A3 did not own the ready barrier before A1 settled');
+
+    finishA1();
+    const staleA1 = await initA1;
+    assert.strictEqual(staleA1.stale, true, 'A1 completion was trusted after A -> B -> A');
+    assert.strictEqual(h.api._t.state().rows, null, 'A1 completion populated A3 with stale rows');
+    assert.strictEqual(h.api._t.state().initPending, true, 'A1 completion retired A3 hydration flags');
+    assert.strictEqual(h.api.ready(), initA3, 'A1 completion replaced A3 ready barrier');
+
+    finishA3();
+    await initA3;
+    assert.strictEqual(h.api.getRoster()[0].name, 'A attempt three', 'A3 did not hydrate its own current rows');
+    assert.strictEqual(h.api._t.state().initPending, false, 'A3 readiness flag did not settle');
+  }
+
+  /* ---- O: refresh ownership is also an attempt token. In A1 -> B2 -> A3,
+     the late A1 read cannot clear A3's active flags or admit a duplicate read. ---- */
+  {
+    let account = 'refresh-a';
+    const keyFor = (name, suffix) => 't::' + name + '::' + suffix;
+    const BA = keyFor('refresh-a', 'patients'), BB = keyFor('refresh-b', 'patients');
+    const JA = keyFor('refresh-a', 'ptsJournalV2'), GA = keyFor('refresh-a', 'ptsGenV2');
+    const JB = keyFor('refresh-b', 'ptsJournalV2'), GB = keyFor('refresh-b', 'ptsGenV2');
+    const stores = new Map([['ptsBlobs', new Map([
+      [BA, blob(BA, [{ id: 'a-1', name: 'A generation one', visits: [] }], 1)],
+      [BB, blob(BB, [{ id: 'b-1', name: 'B generation one', visits: [] }], 1)]
+    ])]]);
+    const deferred = { on: false, queue: [] };
+    const h = boot({ idb: makeIDB(stores, { deferGet: deferred }), uns: suffix => keyFor(account, suffix) });
+    h.ls.setItem(JA, JSON.stringify({ v: 2, baseGen: 1, entries: [] })); h.ls.setItem(GA, '1|seed|1');
+    h.ls.setItem(JB, JSON.stringify({ v: 2, baseGen: 1, entries: [] })); h.ls.setItem(GB, '1|seed|1');
+
+    h.ctx.window.__mlsSessionEpoch = 100;
+    await h.api.init();
+    stores.get('ptsBlobs').set(BA, blob(BA, [{ id: 'a-2', name: 'A generation two', visits: [] }], 2));
+    h.ls.setItem(GA, '2|foreign|2');
+    deferred.on = true; h.api.catchUp(); await settle(6);
+    assert.strictEqual(deferred.queue.length, 1, 'A1 refresh was not held');
+
+    deferred.on = false;
+    account = 'refresh-b'; h.ctx.window.__mlsSessionEpoch = 101;
+    await h.api.init();
+    account = 'refresh-a'; h.ctx.window.__mlsSessionEpoch = 102;
+    await h.api.init();
+    assert.strictEqual(h.api.getRoster()[0].name, 'A generation two', 'A3 setup did not hydrate current A rows');
+
+    stores.get('ptsBlobs').set(BA, blob(BA, [{ id: 'a-3', name: 'A generation three', visits: [] }], 3));
+    h.ls.setItem(GA, '3|foreign|3');
+    h.ls.setItem(JA, JSON.stringify({ v: 2, baseGen: 2, entries: [] }));
+    deferred.on = true; h.api.catchUp(); await settle(6);
+    assert.strictEqual(deferred.queue.length, 2, 'A3 refresh was not queued beside the held A1 read');
+
+    takeDeferred(deferred, BA, 'late A1 refresh')();
+    await settle(6);
+    assert.strictEqual(h.api._t.state().refreshing, true, 'late A1 refresh cleared A3 refreshing ownership');
+    assert.strictEqual(h.api._t.state().pendingIdbRefresh, true, 'late A1 refresh cleared A3 pending marker');
+    assert.strictEqual(deferred.queue.length, 1, 'late A1 refresh disturbed the current A3 read');
+    h.api.catchUp(); await settle(3);
+    assert.strictEqual(deferred.queue.length, 1, 'late A1 refresh admitted a duplicate A3 read');
+
+    takeDeferred(deferred, BA, 'current A3 refresh')();
+    await settle(6);
+    assert.strictEqual(h.api.getRoster()[0].name, 'A generation three', 'current A3 refresh did not adopt its own blob');
+    assert.strictEqual(h.api._t.state().refreshing, false, 'current A3 refresh did not retire its flags');
+    assert.strictEqual(h.api._t.state().pendingIdbRefresh, false, 'current A3 pending marker did not settle');
+  }
+
+  /* ---- P: visible-Patients feedback cannot turn an unchanged refresh into
+     an event/read loop. This is the shipped failure shape: migrated gen-1
+     blob, foreign gen-2 stamp, corrupt journal. Production's visible Patients
+     listener handles each store-updated event by painting on the next task;
+     that paint calls getPatients -> getRoster. Mirror that exact feedback here
+     against the real extracted store and cap the old failure so the suite can
+     report instead of hanging. The unchanged blob may be read only by the
+     store's two-attempt recovery; generation authority must skip it without
+     serializing, scanning, or replacing the live roster. ---- */
+  {
+    let api = null, updates = 0, feedbackReads = 0, idbReads = 0, runaway = false;
+    const idb = makeIDB(null, { onGet: () => { idbReads++; } });
+    const h = boot({
+      idb,
+      onDispatch: event => {
+        if (!event || event.type !== 'mls:pts-store-updated') return;
+        updates++;
+        if (updates > 8) { runaway = true; return; }
+        setImmediate(() => { feedbackReads++; api.getRoster(); });
+      }
+    });
+    api = h.api;
+    h.ls.setItem(B, JSON.stringify([{ id: 'p1', name: 'Stable generation one', visits: [] }]));
+    await api.init();
+    assert.strictEqual((await api.migrate()).migrated, true, 'loop control migrate');
+    await settle();
+
+    const liveRows = api._t.state().rows;
+    const liveRow = liveRows[0];
+    let liveRosterReads = 0;
+    Object.defineProperty(liveRows, '0', {
+      configurable: true, enumerable: true,
+      get() { liveRosterReads++; return liveRow; }
+    });
+
+    const readsBefore = idbReads;
+    h.ls.setItem(G, '2|foreign-loop|' + Date.now());
+    h.ls.setItem(J, '{CORRUPT');
+    api.catchUp();
+    await settle(400);
+
+    const state = api._t.state();
+    assert.strictEqual(runaway, false, 'corrupt-journal refresh entered the visible Patients feedback loop');
+    assert.strictEqual(updates, 0, 'equal-generation unchanged blob falsely emitted a store-updated event');
+    assert.strictEqual(feedbackReads, 0, 'false update caused a visible Patients-equivalent roster reread');
+    assert.strictEqual(idbReads - readsBefore, 2, 'corrupt-journal recovery was not hard-bounded to two IDB reads');
+    assert.strictEqual(liveRosterReads, 0, 'equal-generation recovery serialized or scanned the live roster');
+    assert.strictEqual(state.rows, liveRows, 'equal-generation recovery replaced the generation-authoritative live roster');
+    assert.strictEqual(state.refreshing, false, 'bounded corrupt-journal recovery left refreshing active');
+    assert.strictEqual(state.pendingIdbRefresh, true, 'unresolved foreign generation lost its pending safety marker');
+    assert.strictEqual(state.refreshTries, 2, 'corrupt-journal recovery counter exceeded its hard bound');
+    assert.strictEqual(state.degraded, true, 'unresolved corrupt-journal gap did not latch degraded safety mode');
+    assert.strictEqual(state.gen, 1, 'unchanged generation-one blob was mislabeled generation two');
+
+    const stable = { updates, feedbackReads, idbReads };
+    await settle(100);
+    assert.deepStrictEqual({ updates, feedbackReads, idbReads }, stable, 'bounded recovery restarted without new external evidence');
+  }
+
   console.log('sj2-pts-store-contract: OK (block position + ASCII + cross-anchor pins, ls-mode guards, ' +
     'byte-identical migrate, undefined-save + same-tick read-after-write + dirty-only journal, confirm-then-truncate ' +
     'with content hash, quota edit survives loudly with journal refused, oversized delta refuses as JOURNAL_FULL, ' +
     'saveAsync gap semantics, cold-reload replay, wipe proven empty + unprovable wipe never green, namespace refusal, ' +
-    'lying echo caught as loud contention)');
+    'lying echo caught as loud contention, same-key new-epoch catch-up ownership + synchronous transfer event, ' +
+    'A/B and A/B/A hydrate fencing, refresh ABA attempt ownership, corrupt-journal equal-gen loop bounded)');
 })().catch(e => { console.error('sj2-pts-store-contract FAILED:', e && e.stack || e); process.exit(1); });

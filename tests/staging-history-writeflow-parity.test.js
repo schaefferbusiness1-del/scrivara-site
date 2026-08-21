@@ -127,13 +127,17 @@ assert(/MAX_ORDER_FIELD=2000/.test(candidate) && /exceeds/.test(candidate), 'typ
 const capability = extractFunction(staging, '_athenaOrderPlacementCapabilityReady');
 assert(/supervisedOrderPlacementV2===true/.test(capability), 'legacy capability reader fixture disappeared unexpectedly');
 const control = extractFunction(staging, '_athenaOrderPlacementControl');
-assert(/Review for Athena/.test(control), 'staging order row must offer review, not placement');
-assert(!/Review &amp; place|Nothing is placed until|Update MLS Assist/.test(control), 'staging order row still presents a policy-blocked execute lane');
-assert(!/_athenaOrderPlacementCapabilityReady/.test(control), 'manual staging review must not depend on an execution capability');
+assert(/Send to Athena/.test(control) && /Review for Athena/.test(control), 'staging order row lost its capable action or legacy manual fallback');
+assert(/athenaFinalActionsV1===true/.test(control) && /supervisedOrderPlacementV2===true/.test(control), 'staging order row can advertise placement without both typed capabilities');
+assert(/Update MLS Assist/.test(control), 'older-extension manual fallback no longer names the cure');
 const place = extractFunction(staging, 'reviewAndPlaceOrderInAthena');
 assert(/openUnifiedConfirmation/.test(place), 'one-order review does not open the immutable unified review');
-assert(!/preferredAction\s*:\s*['"]place_order['"]/.test(place), 'one-order review still selects executable place_order');
-assert(/Complete in Athena/.test(place) && /MLS did not place anything/.test(place), 'one-order review does not disclose its manual Athena completion path');
+assert(/matches\.length!==1/.test(place) && /_athenaOrderPlacementCandidate/.test(place), 'one-order review can proceed without exactly one eligible frozen order');
+assert(/_athenaBoundVisitForAction/.test(place) && /reviewPatient/.test(place) && /reviewExpected/.test(place), 'one-order review lost its exact patient/encounter binding');
+assert(/candidate\.order\.clientOrderId/.test(place), 'one-order review receipt lost the immutable client-order binding');
+assert(/athenaFinalActionsV1===true/.test(place) && /supervisedOrderPlacementV2===true/.test(place), 'one-order review can promise placement without both extension capabilities');
+assert(/Nothing is placed until you press Confirm & Send/.test(place), 'capable order review does not preserve the separate explicit confirmation');
+assert(/Update MLS Assist to place it from here; nothing was placed/.test(place), 'older-extension order review lost its manual fallback');
 assert(!/startAthenaAction|sendToEMRviaAssist|mlsAppPasteNote|mlsAppPushVisit/.test(place), 'one-order button contains a direct/generic Athena write path');
 
 const pushPlan = extractFunction(staging, '_athenaPushPlan');
@@ -205,4 +209,4 @@ assert(Object.isFrozen(openedReview.patient) && Object.isFrozen(openedReview.pla
 active = { id: 'pt-wrong-2', name: 'Wrong Patient', dob: '03/04/1980', mrn: 'MRN-88' };
 assert.strictEqual(runtime.boundForAction('reviewing', true), null, 'staging allowed a patient switch to reuse the prior visit binding');
 
-console.log('PASS staging parity: exact six-card history refresh, immutable manual order review, no final-action execution offer, and no suggestion auto-save');
+console.log('PASS staging parity: exact six-card history refresh, capability-gated immutable one-order review with manual fallback, and no suggestion auto-save');

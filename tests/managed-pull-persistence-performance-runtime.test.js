@@ -25,6 +25,12 @@ const enqueueStart = html.indexOf('function _pendingSyncAdd(id,key,arm){');
 const enqueueEnd = html.indexOf('function _pendingSyncRemove', enqueueStart);
 assert(enqueueStart >= 0 && enqueueEnd > enqueueStart, 'real _pendingSyncAdd not found in ScribeFlow.html');
 const enqueueSource = html.slice(enqueueStart, enqueueEnd);
+const badgeStart = html.indexOf('var PENDING_BADGE_THROTTLE_MS=');
+const badgeEnd = html.indexOf('function __mlsPendingSyncBudget', badgeStart);
+assert(badgeStart >= 0 && badgeEnd > badgeStart, 'real throttled pending-sync badge helper not found');
+const badgeSource = html.slice(badgeStart, badgeEnd);
+assert(badgeSource.includes('now-__mlsPendingBadgeAt<PENDING_BADGE_THROTTLE_MS'),
+  'pending-sync enqueue badge lost its O(1) throttle guard');
 
 assert(importer.includes('cooperative: true, maxChanges: 64, maxDelayMs: 15000'),
   'managed pulls must opt into unique-patient cooperative persistence');
@@ -230,7 +236,7 @@ function patientStoreHarness(options) {
     }
     terminate() { if (this.node) this.node.terminate(); }
   }
-  let timerSeq = 0, directMirrors = 0;
+  let timerSeq = 0, directMirrors = 0, badgeRenders = 0;
   const ctx = {
     console, Date, JSON, Object, Array, String, Number, Math, Map, Set, Promise,
     Blob: FakeBlob, URL: FakeURL, Worker: FakeWorker,
@@ -238,6 +244,7 @@ function patientStoreHarness(options) {
     uns: suffix => 'sf_u::' + account + '::' + suffix,
     backendMode: () => true, bkToken: () => 'synthetic-token',
     syncPatientToServer: () => { directMirrors++; }, toast() {},
+    _renderBackupBadge: () => { badgeRenders++; },
     setTimeout(fn, ms) { const id = ++timerSeq; timers.set(id, { fn, ms: Number(ms) || 0 }); return id; },
     clearTimeout(id) { timers.delete(id); },
     setInterval: () => 0, clearInterval() {},
@@ -250,6 +257,7 @@ function patientStoreHarness(options) {
   ctx.dispatchEvent = event => { for (const fn of listeners.get(event.type) || []) fn(event); };
   vm.createContext(ctx);
   vm.runInContext(patientStoreSource, ctx, { filename: 'ScribeFlow.patient-store-cooperative.js' });
+  vm.runInContext(badgeSource, ctx, { filename: 'ScribeFlow.pending-badge-throttle.js' });
   vm.runInContext(enqueueSource, ctx, { filename: 'ScribeFlow.pending-sync-add.js' });
   return {
     ctx, data, writes, timers, held,
@@ -264,6 +272,7 @@ function patientStoreHarness(options) {
       return out.sort();
     },
     directMirrors: () => directMirrors,
+    badgeRenders: () => badgeRenders,
     cleanup() { workers.forEach(worker => worker.terminate()); }
   };
 }

@@ -218,6 +218,9 @@
   function boundary() {
     /* Labels contain no account facts. A session transition merely discards
        detached-node bookkeeping and reconciles the newly rendered room. */
+    if (!window.__MLS_P1_PREVIEW || window.__MLS_P1_PREVIEW.enabled !== true || !ownLoader()) {
+      revert(); return;
+    }
     records = records.filter(function (record) {
       var node = record.kind === 'text' ? record.node : record.element;
       return !!(node && (typeof node.isConnected !== 'boolean' || node.isConnected));
@@ -272,7 +275,8 @@
   on(window, 'mls:session-boundary', boundary);
   on(window, 'mls:account-changed', boundary);
   on(window, 'mls:session-changed', boundary);
-  if (typeof window.MutationObserver === 'function' && document.documentElement) {
+  var opPrepModal = document.getElementById('opPrepModal');
+  if (typeof window.MutationObserver === 'function' && opPrepModal) {
     observer = new window.MutationObserver(function () {
       if (!ownApi()) return;
       if (!window.__MLS_P1_PREVIEW || window.__MLS_P1_PREVIEW.enabled !== true || !ownLoader()) {
@@ -280,7 +284,7 @@
       }
       schedule();
     });
-    observer.observe(document.documentElement, {
+    observer.observe(opPrepModal, {
       childList: true,
       subtree: true,
       attributes: true,

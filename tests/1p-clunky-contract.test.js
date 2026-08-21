@@ -1576,11 +1576,20 @@ async function runtime() {
         return { shown: C.shown('#su_step5'), clipped: clipped,
           fold: !!fold, foldOpen: fold ? fold.open : null,
           openWords: (function () {
-            /* what is on screen with the fold shut */
-            const clone = b.cloneNode(true);
-            const f = clone.querySelector('#su_guideFold');
-            if (f) f.remove();
-            return (clone.textContent || '').trim().split(/\s+/).filter(Boolean).length;
+            /* What is actually on screen outside the shut fold. Do not count
+               cards hidden by the existing unified-guide runtime: textContent
+               on a detached clone includes those display:none descendants and
+               stopped measuring the screen once account receipt controls were
+               added to this step. */
+            let text = '';
+            [b].concat(Array.prototype.slice.call(b.querySelectorAll('*'))).forEach((n) => {
+              if (fold && fold.contains(n)) return;
+              if (n !== b && !C.visible(n)) return;
+              Array.prototype.slice.call(n.childNodes).forEach((x) => {
+                if (x.nodeType === 3) text += ' ' + x.nodeValue;
+              });
+            });
+            return text.trim().split(/\s+/).filter(Boolean).length;
           })(),
           keepsAll: /Answers are specific to this app/.test(b.textContent || '') };
       })();

@@ -238,10 +238,11 @@ async function flush() {
   api.pullDay();
   await flush();
 
+  const visibleBusyExplanation = String(status.textContent || '');
   assert.strictEqual(pullButton.disabled, false, 'the busy refusal left the current click stuck in a loading state');
-  assert(/another pull|already running|pull is already running/i.test(String(status.textContent || '')),
+  assert(/another pull|already running|pull is already running/i.test(visibleBusyExplanation),
     'pull-in-flight did not explain that another pull is running: ' + JSON.stringify(status.textContent));
-  assert(!/verified completion receipt/i.test(String(status.textContent || '')),
+  assert(!/verified completion receipt/i.test(visibleBusyExplanation),
     'pull-in-flight was mislabeled as a missing verified-completion receipt');
   assert.strictEqual(diagnosticButton.style.display, 'inline-block',
     'the current failed click did not expose its copyable report');
@@ -262,8 +263,14 @@ async function flush() {
   assert.strictEqual(report.result.complete, false);
   assert(!JSON.stringify(report).includes(OTHER_DAY),
     'the current-click report leaked the unrelated engine operation date');
-  assert((report.lastStatuses || []).some(message => /another pull|already running/i.test(String(message))),
+  assert.strictEqual(report.result.error, visibleBusyExplanation,
     'the report omitted the explicit busy explanation shown for this click');
+  assert(/another pull|already running/i.test(String(report.result.error || '')),
+    'the current-click result did not retain an explicit busy explanation');
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(report, 'lastStatuses'), false,
+    'the copied report restored the retired raw-status channel');
+  assert(Number.isInteger(report.statusEventsOmitted) && report.statusEventsOmitted > 0,
+    'the copied report did not record that the raw busy status was intentionally omitted');
   assert.strictEqual(dayPullCalls, 1,
     'the current busy refusal was automatically pulled a second time');
 
@@ -272,7 +279,19 @@ async function flush() {
   nextClickResult = {
     ok: false, complete: false, reason: 'provider-roster-incomplete', target: DAY,
     error: 'The provider roster did not prove row attribution.',
-    retry: { providerRoster: true }
+    retry: { providerRoster: true },
+    scheduleReceipt: {
+      complete: true, expectedCount: 1, parsedCount: 1,
+      candidateCount: 1, authoritativeEmpty: false
+    },
+    providerRosterReceipt: {
+      complete: false, partial: true, reason: 'legacy-unverified',
+      providerMode: 'all', targetDate: DAY, observedCount: 1,
+      attributionCoverage: {
+        verdict: 'row-unattributed', rows: 1, headerCount: 1,
+        unattributedRows: 1, foreignRows: 0
+      }
+    }
   };
   api.pullDay();
   await flush();

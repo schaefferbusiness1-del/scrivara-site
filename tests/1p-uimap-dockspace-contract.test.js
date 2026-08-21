@@ -203,15 +203,27 @@ function harness() {
         items.push(k);
       }
       const horiz = dr.width >= dr.height;
-      const lines = new Set();
+      const lineCentres = [];
+      const itemRects = [];
       const clipped = [];
       const offscreen = [];
+      const unreachable = [];
       items.forEach((k) => {
         const r = k.getBoundingClientRect();
-        /* the item CENTRE in a 20px bucket: items of different heights centred
+        const lineCentre = horiz ? (r.top + r.height / 2) : (r.left + r.width / 2);
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        const target = document.elementFromPoint(cx, cy);
+        const hit = !!(target && (target === k || k.contains(target)));
+        itemRects.push({ id: k.id || k.getAttribute('data-dest') || (k.textContent || '').trim().slice(0, 12),
+          left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height),
+          centre: Math.round(lineCentre), hit, topId: target && (target.id || target.tagName) });
+        /* the item CENTRE, clustered within a 20px tolerance: items of different heights centred
            on one row have different TOPS by construction, and measuring tops
-           called one row two rows */
-        lines.add(Math.round((horiz ? (r.top + r.height / 2) : (r.left + r.width / 2)) / 20));
+           called one row two rows. Cluster RELATIVE centres below rather than
+           rounding their absolute screen coordinate: 769px and 771px straddle
+           a global 20px bucket boundary even though they are the same row. */
+        lineCentres.push(lineCentre);
+        if (!hit) unreachable.push(k.id || k.getAttribute('data-dest') || (k.textContent || '').trim().slice(0, 12));
         const outOfBox = horiz ? (r.top < dr.top - 2 || r.bottom > dr.bottom + 2)
           : (r.left < dr.left - 2 || r.right > dr.right + 2);
         if (outOfBox) clipped.push(k.id || (k.textContent || '').trim().slice(0, 12));
@@ -219,11 +231,16 @@ function harness() {
           offscreen.push(k.id || (k.textContent || '').trim().slice(0, 12));
         }
       });
+      lineCentres.sort((a, b) => a - b);
+      let lines = 0, clusterStart = null;
+      lineCentres.forEach((centre) => {
+        if (clusterStart === null || centre - clusterStart > 20) { lines++; clusterStart = centre; }
+      });
       return {
         present: true,
         band: document.documentElement.getAttribute('data-mls-dock-band') || '',
         rect: { x: Math.round(dr.left), y: Math.round(dr.top), w: Math.round(dr.width), h: Math.round(dr.height) },
-        items: items.length, lines: lines.size, clipped, offscreen, hits,
+        items: items.length, itemRects, lines, clipped, offscreen, unreachable, hits,
         inside: dr.left >= -1 && dr.top >= -1 && dr.right <= innerWidth + 1 && dr.bottom <= innerHeight + 1
       };
     }
@@ -294,8 +311,9 @@ async function runtime() {
         eq(m.hits.length, 0, `${at}: something covers the dock: ${JSON.stringify(m.hits)}`);
         eq(m.clipped.length, 0, `${at}: dock item(s) clipped out of the dock's own box: ${JSON.stringify(m.clipped)}`);
         eq(m.offscreen.length, 0, `${at}: dock item(s) off-screen: ${JSON.stringify(m.offscreen)}`);
+        eq(m.unreachable.length, 0, `${at}: dock item(s) do not hit-test to themselves: ${JSON.stringify(m.itemRects)}`);
         ok(m.inside, `${at}: the dock is not fully inside the viewport (${JSON.stringify(m.rect)})`);
-        ok(m.lines <= 1, `${at}: the dock wrapped to ${m.lines} lines`);
+        ok(m.lines <= 1, `${at}: the dock wrapped to ${m.lines} lines: ${JSON.stringify(m.itemRects)}`);
         measured.overlaps += m.hits.length;
         measured.clipped += m.clipped.length;
         measured.offscreen += m.offscreen.length;

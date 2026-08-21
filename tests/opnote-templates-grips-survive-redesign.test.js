@@ -159,7 +159,9 @@ const GRIPPED_STATIC_IDS = [
   'opPrepModeRow', 'opPrepModePatient', 'opPrepModeAll',
   'opPrepDayRow', 'opPrepList', 'opPrepGenAllBtn',
   /* templates */
-  'templatesModal', 'tplName', 'tplKeywords', 'tplFileInput', 'tplDropZone',
+  /* The old lower single-file intake was retired in favor of the canonical
+     top uploader, which handles one file, batches, and multi-form PDFs. */
+  'templatesModal', 'tplName', 'tplKeywords', 'tplMultiFileInput', 'tplMultiDrop',
   'tplText', 'tplSearch', 'tplWorkspace', 'tplList', 'tplDetail'
 ];
 GRIPPED_STATIC_IDS.forEach(function (id) {

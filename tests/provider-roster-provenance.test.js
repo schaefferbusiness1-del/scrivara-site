@@ -34,6 +34,7 @@ assert(siSrc.includes('roster.beginOperation') || siSrc.includes('beginOperation
 
 /* ---- roster module runtime ---- */
 function rosterContext() {
+  const installToken = 'provider-provenance-owned-roster';
   const store = new Map();
   const localStorage = {
     getItem: k => store.has(k) ? store.get(k) : null,
@@ -43,10 +44,24 @@ function rosterContext() {
   const document = {
     readyState: 'complete',
     addEventListener: () => {}, removeEventListener: () => {},
-    querySelector: () => null, querySelectorAll: () => [], getElementById: () => null
+    querySelector: () => null, querySelectorAll: () => [], getElementById: () => null,
+    currentScript: {
+      getAttribute(name) {
+        if (name === 'data-mls-install-token') return installToken;
+        if (name === 'data-mls-asset') return 'feat_athena_provider_roster.js';
+        return null;
+      }
+    }
   };
   const window = {
     _calProviders: [],
+    __MLS_MAIN: { enabled: true },
+    __mlsP1ProviderRosterLoader: {
+      installed: true, version: 'p1-provider-roster-1.0.0', installToken
+    },
+    __mlsSessionAccount: 'provider-provenance@example.test',
+    __mlsSessionEpoch: 1,
+    bkToken: () => 'provider-provenance-session-token',
     uns: n => `provenance-test::${n}`,
     addEventListener: () => {}, removeEventListener: () => {},
     document, localStorage
@@ -63,7 +78,12 @@ function rosterContext() {
 function freshRoster() {
   const ctx = rosterContext();
   vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
-  return ctx.window.__mlsProviderRoster;
+  const api = ctx.window.__mlsProviderRoster;
+  assert(api && api.version === 'p1-provider-roster-1.0.0',
+    'the promoted provider roster did not install under its exact controller/session owner');
+  assert.strictEqual(api.installToken, ctx.window.__mlsP1ProviderRosterLoader.installToken,
+    'the provider roster API is not bound to the exact loader token');
+  return api;
 }
 
 const PROVENANCE_KEYS = ['targetDate', 'requestId', 'providerMode', 'requestedProviderId', 'requestedProviderStableKey'];
@@ -192,19 +212,26 @@ function reply(requestId, extra) {
   const receipt = api.getReceipt();
   assert.strictEqual(receipt.complete, false, 'request-echo conflict must void completeness');
   assert.strictEqual(receipt.reason, 'provider-roster-request-mismatch');
-  assert.strictEqual(String(receipt.requestId || ''), '', 'conflicted receipt must not carry batch provenance');
+  assert.strictEqual(receipt.requestId, 'rq-now',
+    'the refusal receipt must stay bound to the current armed batch, not the hostile nested request id');
+  assert.notStrictEqual(receipt.requestId, hostile.providerRosterReceipt.requestId,
+    'the hostile nested request id crossed into the refusal receipt');
 }
 
-/* 6. A later unbound ingest wipes provenance — an old batch binding can never
-      survive onto fresh receipt state. */
+/* 6. A later unbound ingest is ignored — it can neither replace nor clear the
+      current exact receipt. The last accepted batch remains the only evidence. */
 {
   const api = freshRoster();
   api.beginOperation({ targetDate: '2026-07-15', requestId: 'rq-a', providerMode: 'all', requestedProviderId: '', requestedProviderStableKey: '' });
   api.ingestResp(reply('rq-a'));
   assert.strictEqual(api.getReceipt().requestId, 'rq-a');
-  api.ingestResp(reply('rq-b'));  /* stray/probe reply, not armed */
+  const ignored = api.ingestResp(reply('rq-b'));  /* stray/probe reply, not armed */
+  assert.deepStrictEqual(Object.assign({}, ignored), { ignored: true, reason: 'unbound-or-stale-response' },
+    'the stray response was not explicitly refused at the ingestion choke point');
   const receipt = api.getReceipt();
-  for (const key of PROVENANCE_KEYS) assert.strictEqual(String(receipt[key] || ''), '', `stray ingest must clear ${key}`);
+  assert.strictEqual(receipt.requestId, 'rq-a', 'a stray response displaced the last accepted exact receipt');
+  assert.strictEqual(receipt.targetDate, '2026-07-15');
+  assert.strictEqual(receipt.providerMode, 'all');
 }
 
 /* 7. Operation TTL: an armed batch context expires rather than binding forever. */

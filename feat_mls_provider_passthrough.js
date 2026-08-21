@@ -44,13 +44,24 @@
   function dayLabel(iso) { try { return new Date(iso + 'T12:00').toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }); } catch (e) { return iso; } }
   function provKey() { try { return (typeof uns === 'function') ? uns('pullProvider') : 'pullProvider'; } catch (e) { return 'pullProvider'; } }
 
+  var _myNameCache = '', _headerNameTried = false;
   function myName() {
     /* bkUser is a top-level let (not on window) - reference it bare, guarded */
-    try { if (typeof bkUser !== 'undefined' && bkUser && (bkUser.name || bkUser.full_name || bkUser.display_name)) return String(bkUser.name || bkUser.full_name || bkUser.display_name); } catch (e) {}
-    try { var r = (window._calProviders || [])[0]; if (r && r.name) return String(r.name); } catch (e) {}
-    try { var m = String((document.querySelector('header') || document.body).innerText || '').match(/Dr\.?\s+([A-Z][A-Za-z.\s]{2,40})/); if (m) return m[1].trim().split('\n')[0]; } catch (e) {}
-    return '';
+    try {
+      if (typeof bkUser !== 'undefined' && bkUser && (bkUser.name || bkUser.full_name || bkUser.display_name)) {
+        _myNameCache = String(bkUser.name || bkUser.full_name || bkUser.display_name); return _myNameCache;
+      }
+    } catch (e) {}
+    try { var r = (window._calProviders || [])[0]; if (r && r.name) { _myNameCache = String(r.name); return _myNameCache; } } catch (e) {}
+    if (_myNameCache || _headerNameTried) return _myNameCache;
+    /* innerText forces layout. The signed-in clinician name is account-stable,
+       so use this legacy fallback at most once per session boundary instead of
+       rereading the whole header on every chip reconciliation/view change. */
+    _headerNameTried = true;
+    try { var m = String((document.querySelector('header') || document.body).innerText || '').match(/Dr\.?\s+([A-Z][A-Za-z.\s]{2,40})/); if (m) _myNameCache = m[1].trim().split('\n')[0]; } catch (e) {}
+    return _myNameCache;
   }
+  try { window.addEventListener('mls:session-boundary', function () { _myNameCache = ''; _headerNameTried = false; }); } catch (eNameLife) {}
   function rosterNames() {
     var out = [];
     try { (window._calProviders || []).forEach(function (p) { if (p && p.name) out.push(String(p.name)); }); } catch (e) {}

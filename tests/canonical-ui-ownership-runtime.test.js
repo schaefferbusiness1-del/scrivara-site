@@ -87,8 +87,11 @@ assert(topbarStaff.includes('mls:menu-staff-prep-request') && !topbarStaff.inclu
   'Menu row still calls the Easy Staff API directly');
 assert(!app.includes('su_openStaffPrep') && !app.includes('openStaffPulls'),
   'ScribeFlow retains a Setup/rail direct Staff activation function');
-assert(app.includes('onclick="su_showStaffPrepMenu()"') && app.includes("window.__mlsTopbar.openMenu()"),
-  'Setup no longer guides the user to the canonical Menu');
+const setupStaffGuide = functionBlock(app, 'su_showStaffPrepMenu');
+assert(app.includes('onclick="su_showStaffPrepMenu()"') &&
+  setupStaffGuide.includes('Menu → Staff prep &amp; Athena month pull') &&
+  !/openMenu\s*\(|__mlsEasyV3|openStaff/.test(setupStaffGuide),
+  'Setup must guide the user to the canonical Menu row without directly opening a hidden or competing owner');
 assert(!/onclick=["'][^"']*(?:openStaff|ez3ModeStaff)/i.test(app),
   'ScribeFlow markup retains a direct Staff activation control');
 

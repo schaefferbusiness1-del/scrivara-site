@@ -45,7 +45,12 @@ if (count(html, 'showNote(currentSoap);') !== 1) {
   console.error('FAIL: expected exactly 1 hardcoded showNote(currentSoap) (the history-restore path, which forces soap first), found ' + count(html, 'showNote(currentSoap);'));
   process.exit(1);
 }
-if (!html.includes("currentOpt=n.opt||null; currentFormat='soap'; lastEMR=n.emr||null;")) {
+const restoreStart = html.indexOf('function loadRecordIntoEditor(n)');
+const restoreEnd = html.indexOf('\n/* =========================================================', restoreStart);
+const restore = (restoreStart >= 0 && restoreEnd > restoreStart) ? html.slice(restoreStart, restoreEnd) : '';
+const restoreFormatAt = restore.indexOf("currentFormat='soap';");
+const restoreShowAt = restore.indexOf('showNote(currentSoap);');
+if (!(restoreStart >= 0 && restoreEnd > restoreStart && restoreFormatAt >= 0 && restoreShowAt > restoreFormatAt)) {
   console.error('FAIL: the history-restore path no longer forces currentFormat=soap before its hardcoded SOAP showNote');
   process.exit(1);
 }

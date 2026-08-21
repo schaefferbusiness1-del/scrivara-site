@@ -13,6 +13,7 @@ const connectSrc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const appSrc = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
 function context(providers) {
+  const installToken = 'provider-selector-owned-roster';
   const store = new Map();
   const localStorage = {
     getItem: key => store.has(key) ? store.get(key) : null,
@@ -21,10 +22,24 @@ function context(providers) {
   };
   const document = {
     readyState: 'complete', addEventListener() {}, removeEventListener() {},
-    querySelector() { return null; }, querySelectorAll() { return []; }, getElementById() { return null; }
+    querySelector() { return null; }, querySelectorAll() { return []; }, getElementById() { return null; },
+    currentScript: {
+      getAttribute(name) {
+        if (name === 'data-mls-install-token') return installToken;
+        if (name === 'data-mls-asset') return 'feat_athena_provider_roster.js';
+        return null;
+      }
+    }
   };
   const window = {
     _calProviders: providers.slice(), uns: key => `acct:${key}`,
+    __MLS_MAIN: { enabled: true },
+    __mlsP1ProviderRosterLoader: {
+      installed: true, version: 'p1-provider-roster-1.0.0', installToken
+    },
+    __mlsSessionAccount: 'provider-selector@example.test',
+    __mlsSessionEpoch: 1,
+    bkToken: () => 'provider-selector-session-token',
     addEventListener() {}, removeEventListener() {}, dispatchEvent() {},
     document, localStorage
   };
@@ -36,6 +51,35 @@ function context(providers) {
   });
   ctx.__store = store;
   return ctx;
+}
+
+function installRoster(ctx) {
+  vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
+  const api = ctx.window.__mlsProviderRoster;
+  assert(api && api.version === 'p1-provider-roster-1.0.0',
+    'the promoted provider roster did not install under its exact controller/session owner');
+  assert.strictEqual(api.installToken, ctx.window.__mlsP1ProviderRosterLoader.installToken,
+    'the provider roster API is not bound to the exact loader token');
+  const ingest = api.ingestResp.bind(api);
+  let sequence = 0;
+  api.ingestResp = response => {
+    const requestId = `provider-selector-${++sequence}`;
+    assert(api.beginOperation({
+      targetDate: '2026-07-15', requestId, providerMode: 'all',
+      requestedProviderId: '', requestedProviderStableKey: ''
+    }), 'the exact provider-roster operation did not arm');
+    const payload = Object.assign({}, response, { requestId });
+    if (payload.providerRosterReceipt) {
+      payload.providerRosterReceipt = Object.assign({}, payload.providerRosterReceipt, {
+        requestId, targetDate: '2026-07-15'
+      });
+    }
+    const result = ingest(payload);
+    assert(!result || result.ignored !== true,
+      'the exact owned provider-roster response was refused as unbound');
+    return result;
+  };
+  return api;
 }
 
 const legitimate = [
@@ -63,7 +107,7 @@ const pollution = [
 ];
 
 const ctx = context(legitimate.concat(equivalentEchoes, pollution));
-vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(ctx);
 vm.runInContext(labelSrc, ctx, { filename: 'feat_mls_provider_label.js' });
 ctx.window.__mlsProviderLabel.normalize();
 const roster = Array.from(ctx.window.__mlsProviderRoster.list());
@@ -121,7 +165,7 @@ assert.strictEqual(ctx.window.__mlsProviderRoster._canonicalName('Smith, John Jr
 /* A complete provider receipt containing even one rejected/duplicate roster row
    must fail closed instead of blessing the sanitized subset as exact. */
 const receiptCtx = context([]);
-vm.runInContext(rosterSrc, receiptCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(receiptCtx);
 receiptCtx.window.__mlsProviderRoster.ingestResp({
   providerRoster: [
     { stableKey: 'athena:valid_md', raw: 'Valid_Jordan_MD' },
@@ -136,7 +180,7 @@ assert.strictEqual(receiptCtx.window.__mlsProviderRoster.getReceipt().complete, 
 assert.strictEqual(receiptCtx.window.__mlsProviderRoster.getReceipt().reason, 'provider-roster-contaminated');
 
 const humanPollutionCtx = context([]);
-vm.runInContext(rosterSrc, humanPollutionCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(humanPollutionCtx);
 humanPollutionCtx.window.__mlsProviderRoster.ingestResp({
   providerRoster: [
     { stableKey: 'athena:jane', raw: 'Doe_Jane_MD' },
@@ -153,7 +197,7 @@ assert.strictEqual(humanPollutionCtx.window.__mlsProviderRoster.getReceipt().rea
 /* A repeated strong stable identity must never merge two clinicians or retain
    a complete receipt. The whole identity is quarantined until a clean retry. */
 const identityConflictCtx = context([]);
-vm.runInContext(rosterSrc, identityConflictCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(identityConflictCtx);
 identityConflictCtx.window.__mlsProviderRoster.ingestResp({
   providerRoster: [
     { stableKey: 'athena:dup', raw: 'Doe_Jane_MD' },
@@ -172,7 +216,7 @@ assert.strictEqual(identityConflictCtx.window.__mlsProviderRoster.getReceipt().c
 assert.deepStrictEqual(Array.from(identityConflictCtx.window.__mlsProviderRoster.list(), x => [x.name, x.raw]), [['Jane Doe, MD', 'Jane Doe, MD']], 'clean recovery synthesized a hybrid clinician');
 
 const singleHybridCtx = context([]);
-vm.runInContext(rosterSrc, singleHybridCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(singleHybridCtx);
 singleHybridCtx.window.__mlsProviderRoster.ingestResp({
   providerRoster: [{ stableKey: 'athena:hybrid', name: 'John Smith, DO', raw: 'Doe_Jane_MD' }],
   providerRosterReceipt: { complete: true, partial: false, reason: 'complete', expectedCount: 1, observedCount: 1, reachedEnd: true, restored: true }
@@ -183,7 +227,7 @@ assert.strictEqual(singleHybridCtx.window.__mlsProviderRoster.getReceipt().compl
 /* Old uncredentialed selections are retained only as non-rendering migration
    aliases, then promoted to one uniquely matching strong identity. */
 const weakPromotionCtx = context(['Matthew Schaeffer']);
-vm.runInContext(rosterSrc, weakPromotionCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(weakPromotionCtx);
 const oldWeakRef = 'legacy-name:matthewschaeffer|';
 assert.strictEqual(weakPromotionCtx.window.__mlsProviderRoster.list().length, 0, 'weak uncredentialed value rendered before positive provider proof');
 weakPromotionCtx.window.__mlsProviderRoster.ingestResp({
@@ -198,7 +242,7 @@ assert.strictEqual(weakPromotionCtx.window.__mlsProviderRoster.resolve('pv:' + e
    the legacy calendar claim during ingest so its selected value still migrates
    without ever appearing as a selectable provider. */
 const weakPromotionNoPreListCtx = context(['Matthew Schaeffer']);
-vm.runInContext(rosterSrc, weakPromotionNoPreListCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(weakPromotionNoPreListCtx);
 weakPromotionNoPreListCtx.window.__mlsProviderRoster.ingestResp({
   providerRoster: [{ stableKey: 'athena:ms', raw: 'Schaeffer_Matthew_MD' }],
   providerRosterReceipt: { complete: true, partial: false, reason: 'complete', expectedCount: 1, observedCount: 1, reachedEnd: true, restored: true }
@@ -207,7 +251,7 @@ assert.deepStrictEqual(Array.from(weakPromotionNoPreListCtx.window.__mlsProvider
 assert.strictEqual(weakPromotionNoPreListCtx.window.__mlsProviderRoster.resolve('pv:' + encodeURIComponent(oldWeakRef)).stableKey, 'athena:ms', 'no-pre-list weak selected ref was lost before exact ingest');
 
 const weakAmbiguousCtx = context(['Alex Same']);
-vm.runInContext(rosterSrc, weakAmbiguousCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(weakAmbiguousCtx);
 weakAmbiguousCtx.window.__mlsProviderRoster.ingestResp({
   providerRoster: [
     { stableKey: 'athena:alex-md-1', raw: 'Same_Alex_MD' },
@@ -228,7 +272,7 @@ legacyCacheCtx.__store.set('acct:mlsProviderRosterReceiptV2', JSON.stringify({
   complete: true, partial: false, reason: 'complete', expectedCount: 1,
   observedCount: 1, reachedEnd: true, restored: true
 }));
-vm.runInContext(rosterSrc, legacyCacheCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(legacyCacheCtx);
 legacyCacheCtx.window.__mlsProviderRoster.list();
 assert.strictEqual(legacyCacheCtx.window.__mlsProviderRoster.getReceipt().complete, false, 'polluted legacy cache preserved a complete receipt');
 assert.strictEqual(legacyCacheCtx.window.__mlsProviderRoster.getReceipt().reason, 'cached-roster-sanitized');
@@ -249,7 +293,7 @@ liveCalendarCtx.__store.set('acct:mlsProviderRosterReceiptV2', JSON.stringify({
   complete: true, partial: false, reason: 'complete', expectedCount: 1,
   observedCount: 1, reachedEnd: true, restored: true
 }));
-vm.runInContext(rosterSrc, liveCalendarCtx, { filename: 'feat_athena_provider_roster.js' });
+installRoster(liveCalendarCtx);
 liveCalendarCtx.window.__mlsProviderRoster.list();
 assert.strictEqual(liveCalendarCtx.window.__mlsProviderRoster.getReceipt().complete, false, 'polluted _calProviders merge preserved a complete receipt');
 assert.strictEqual(liveCalendarCtx.window.__mlsProviderRoster.getReceipt().reason, 'cached-roster-sanitized');

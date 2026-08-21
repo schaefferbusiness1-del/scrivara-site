@@ -19,16 +19,20 @@ const templateLib = fs.readFileSync(path.join(root, 'feat_mls_template_library.j
    transition and exposes __mlsBootTimeline() for the owner's 5-second bar. */
 assert(connect.includes("window.__mlsBootReadiness={installed:true,version:'br-1.1.0'}"),
   'boot-readiness strip module must be installed exactly once');
-assert(connect.includes("'Getting MLS ready - '+n+' of '+total+' engines live'"),
-  'the boot strip must name the not-ready state with real counts');
+assert(connect.includes('var QUIET_MS=2500') && /Date\.now\(\)-t0<QUIET_MS\) return/.test(connect),
+  'a fast boot must stay visually quiet instead of flashing a readiness strip');
+assert(connect.includes("'Still starting up…' : 'Starting up…'"),
+  'a genuinely slow boot must use short human-facing startup language');
+assert(!/el\.textContent\s*=\s*['"]Getting MLS ready/.test(connect),
+  'the visible boot strip must not regress to engine-count implementation language');
 assert(/Date\.now\(\)-t0>30000\)\{[^}]*clearInterval\(iv\);gone\(\);return\}/.test(connect),
   'the boot strip must self-clear on a hard deadline — it can never wedge (b733: the deadline branch also stamps the all-live mark first)');
 assert(connect.indexOf('__mlsSI&&window.__mlsSI.pull') > 0 && connect.indexOf('__mlsPatientLock') > 0,
   'readiness must be judged on the real core engines, not timers');
 
 /* b514 — the history RETRY paints the same progress bar as the pull. */
-assert(connect.includes("fill.textContent = 'Retry ' + mm[1] + '/' + mm[2]"),
-  'retry must show real Retry X/N progress, not just a status sentence');
+assert(/fill\.textContent = \(cvOpts\.label \|\| 'Retry '\) \+ mm\[1\] \+ '\/' \+ mm\[2\]/.test(connect),
+  'retry must show real X/N progress while allowing the continuous-pull lane to keep its own label');
 assert(connect.includes('DS.retryStartedAt = Date.now()'),
   'retry progress must carry elapsed time from its own start');
 

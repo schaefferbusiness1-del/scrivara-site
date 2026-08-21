@@ -73,9 +73,10 @@ assert(!/for\s*\([^)]*order/i.test(place.split('placeDecision.item.click()')[1] 
 assert(place.indexOf('mutationAttempted = true') >= 0 && place.indexOf('mutationAttempted = true') < place.indexOf('candidate.option.click()'), 'catalog selection is not treated as the first order mutation boundary');
 assert(/uncertainOrderMutation\('order-required-field-missing'|uncertainOrderMutation\(fieldHit\.error/.test(place) && /partialMutation:\s*true/.test(place), 'post-selection failures can still claim that nothing was attempted');
 for (const word of ['save', 'sign', 'submit', 'prescribe', 'billing', 'claim', 'delete']) assert(driver.toLowerCase().includes(word), `final-action denylist omits ${word}`);
-assert(!/Confirm place one reviewed order/.test(flow), 'order placement confirmation copy is still visible');
-assert(!/Confirm\s*&amp;\s*place one order|Confirm & place one order/.test(flow), 'single-order execute button is still visible');
-assert(/Complete in Athena/.test(flow) && /MLS (?:keeps[^.]+visible, but never selects or places|does not place)/.test(flow), 'manual order review copy is missing');
+assert(/Place reviewed order in Athena/.test(flow) && /one-click confirm/.test(flow), 'capability-on exact-order confirmation copy is missing');
+assert(/final-action-capability-required/.test(flow) && /supervised-order-capability-required/.test(flow), 'order action lost an extension-capability refusal');
+assert(/order-row-hash-required/.test(flow), 'order action can probe without its immutable review-row hash');
+assert(/Update MLS Assist/.test(flow) && /Complete in Athena/.test(flow), 'capability-off/manual exact-order fallback is missing');
 
 // Exercise exact catalog identity and isolated readback helpers with adversarial
 // candidate/row shapes. Missing, near, and duplicate candidates never become a

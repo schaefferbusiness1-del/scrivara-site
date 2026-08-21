@@ -48,6 +48,13 @@ const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 
 const focusSrc = read('feat_mls_visit_focus.js');
 const timelineSrc = read('feat_mls_visit_timeline.js');
+const timelineHost = timelineSrc.slice(timelineSrc.indexOf('  function findHost() {'), timelineSrc.indexOf('  function remove()', timelineSrc.indexOf('  function findHost() {')));
+assert(!/offsetParent/.test(timelineHost), 'visit timeline still deletes itself when the profile route is only hidden');
+assert(timelineSrc.includes('if (!host) { retryMissingHost(); return; }'), 'visit timeline removes the completed card during a transient host handoff');
+assert(timelineSrc.includes('if (hostRetry !== null || hostRetrySpent) return;'), 'visit timeline can recursively re-arm its missing-host retry forever');
+assert(timelineSrc.includes('card.parentNode !== host'), 'visit timeline does not rehome its card when profileCard is replaced');
+assert(timelineSrc.includes("window.addEventListener('mls:session-boundary', clearForSession, false)"),
+  'visit timeline can retain the prior patient across a session boundary');
 const connectSrc = read('mls-connect.js');
 
 /* ------------------------------------------------------------------ 1. source
@@ -80,8 +87,8 @@ assert(
  * literal ?v= pin, so its bytes only reach a returning browser when that pin
  * moves. feat_mls_visit_focus.js rides window.__MLS_AV and moves with the build. */
 assert(
-  connectSrc.includes("feat_mls_visit_timeline.js?v=20260805vtl103"),
-  'mls-connect.js must cache-bust feat_mls_visit_timeline.js to the vtl-1.0.3 fix'
+  connectSrc.includes("feat_mls_visit_timeline.js?v=20260821vtl104"),
+  'mls-connect.js must cache-bust feat_mls_visit_timeline.js to the vtl-1.0.4 lifecycle fix'
 );
 assert(
   !connectSrc.includes('20260712vtl102c1'),

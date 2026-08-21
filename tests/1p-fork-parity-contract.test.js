@@ -118,7 +118,13 @@ const SUPERSESSIONS = {
  * ---------------------------------------------------------------------- */
 const BASELINE_ABSENCES = {
   'feat_athena_provider_roster.js': ['operationFromReceipt', 'picker', 'renderDropdown', 'setLastResp'],
+  /* 2026-08-20 occurrence-search fork: the current production and 1p assets
+     declare the same function set. Keep an explicit empty baseline so either
+     a newly missing called function or a silently undiscovered fork pair
+     turns this gate red. */
+  'feat_mls_athena_occurrence.js': [],
   'feat_fullhistory_pdf.js': [],
+  'feat_mls_avatar_face.js': [],
   'feat_mls_avatar.js': ['applyVision', 'commitEdit', 'faceHiSave'],
   /* 2026-08-18 b121 fork lane: 1p-feat_mls_b121_pack.js is a byte-identical
      copy of the shared pack plus the delimited p1-backfill-footer-1.0.0 block,
@@ -143,12 +149,20 @@ const BASELINE_ABSENCES = {
     'providerIdentityBlock', 'providerName', 'readAnyFile',
     'renderProvChips', 'say', 'step', 'sysFor', 'visitsOf', 'wireDrop', 'wireSearch'
   ],
+  /* These current production/1p pairs were discovered when the release lane
+     expanded the canonical fork topology. Each is presently function-exact;
+     the empty baselines make any later called-function loss fail loudly. */
+  'feat_mls_marketing.js': [],
+  'feat_mls_mobile_encounter.js': [],
+  'feat_mls_rangejobs.js': [],
   'feat_mls_schedimport_exact.js': [
     'exactNonnegativeInteger', 'exactProviderUnknownCensusRows', 'legacyResumeKey',
     'newResumeIntentId', 'productionAppointmentCensusDecision', 'productionAppointmentCensusScope',
     'publishProviderUnknownAppointmentSnapshot', 'readAuthoritativeStore', 'resumeIntentSignature',
     'rowProviderName', 'validResumeIntentId'
   ],
+  'feat_mls_study_provenance.js': [],
+  'feat_mls_template_modes.js': [],
   'feat_mls_writeflow.js': [],
   'feat_nextup_connect.js': [],
   'feat_task3_frontsync.js': []
@@ -164,6 +178,8 @@ const pairs = forkFiles
 assert(pairs.length >= 9, 'expected at least 9 production/1p fork pairs, found ' + pairs.length);
 assert(pairs.some(([prod]) => prod === 'mls-connect.js'),
   'the mls-connect.js fork pair vanished - the parity contract lost its primary subject');
+assert(pairs.some(([prod]) => prod === 'feat_mls_athena_occurrence.js'),
+  'the Athena occurrence fork pair vanished - its exact empty parity baseline is no longer measured');
 
 const report = [];
 let tier1Absences = 0;

@@ -47,8 +47,7 @@ assert(b18.includes('listeners.push(rec); if(active) attach(rec);') &&
   b18.includes('listeners.forEach(attach);'),
   'b18 listeners can attach beneath the loader or fail to attach when the lifecycle starts');
 
-assert(task3.includes("var VERSION = 't3-1.1.3'") &&
-  task3.includes('if (destroyed || !started) return;') &&
+assert(task3.includes('if (destroyed || !started) return;') &&
   task3.includes('if (!firstUseReconciled) { scheduleFirstUseReconcile(); return; }'),
   'Task 3 heavy reconciliation is not gated on post-loader startup');
 assert(task3.includes("target.closest('.wn-chip,#nav_calendar,#nav_visit,#nav_patients,#heroToday,#calProvFilter,#calJump')") &&
@@ -221,7 +220,9 @@ runT3Timers(7130);
 assert.strictEqual(t3Api.ticks(), 2, 'Task 3 lost route-driven correctness after its deferred startup pass');
 
 assert(connect.includes('feat_b18_qa.js') && connect.includes('20260808b18v14perf2'));
-assert(connect.includes('feat_task3_frontsync.js') && connect.includes('20260808t3113perf2'));
+assert(connect.includes('SRC="feat_task3_frontsync.js",V="t3-p1-1.2.0"') &&
+  connect.includes('s.src=SRC+"?v="+(window.__MLS_AV||"p1-preview")'),
+  'Task 3 is not loaded from its current exact owner under the shared immutable build token');
 assert(connect.includes("feat_mls_upnow_realtime.js?v='+(window.__MLS_AV||Date.now())"));
 assert(staging.includes("feat_mls_upnow_realtime.js?v='+(window.__MLS_AV||Date.now())"));
 

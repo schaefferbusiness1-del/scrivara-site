@@ -129,7 +129,11 @@ function makeDom() {
       const a = this.listeners[type] || [];
       const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
     }
-    fire(type) { (this.listeners[type] || []).slice().forEach(fn => fn({ type: type })); }
+    fire(type) {
+      const event = { type: type, target: this };
+      if (typeof this['on' + type] === 'function') this['on' + type](event);
+      (this.listeners[type] || []).slice().forEach(fn => fn(event));
+    }
     walk(fn) { fn(this); this.children.forEach(c => c.walk(fn)); }
     querySelector(sel) {
       /* exactly two forms are used by the code under test */
@@ -147,6 +151,13 @@ function makeDom() {
       }
       throw new Error('harness does not support the selector ' + sel + ' — extend it rather than let it pass');
     }
+    querySelectorAll(sel) {
+      const hit = [];
+      const m = /^script\[data-mls-asset="([^"]+)"\]$/.exec(sel);
+      if (!m) throw new Error('harness does not support the selector ' + sel + ' — extend it rather than let it pass');
+      this.walk(el => { if (el.tagName === 'SCRIPT' && el.getAttribute('data-mls-asset') === m[1]) hit.push(el); });
+      return hit;
+    }
   }
 
   const documentElement = new El('html');
@@ -157,6 +168,7 @@ function makeDom() {
     createElement: (t) => new El(t),
     getElementById(id) { let hit = null; documentElement.walk(el => { if (!hit && el.id === id) hit = el; }); return hit; },
     querySelector: (sel) => documentElement.querySelector(sel),
+    querySelectorAll: (sel) => documentElement.querySelectorAll(sel),
     addEventListener() {}, removeEventListener() {}
   };
   return { El, doc, body, documentElement };
@@ -214,12 +226,12 @@ function makeClock() {
  *    bytes under test are the shipped bytes.
  * ------------------------------------------------------------------------- */
 function shimSource(text) {
-  const at = text.indexOf('/* av-6.0.8:');
-  assert(at >= 0, 'the av-6.0.8 skeleton is not in this file');
+  const at = text.indexOf('/* p1-avatar-loader-1.0.0:');
+  assert(at >= 0, 'the capability-owned Avatar loader is not in this file');
   const start = text.indexOf(';(function(){try{', at);
-  assert(start > at, 'the skeleton comment is present but its IIFE is not');
+  assert(start > at, 'the loader comment is present but its IIFE is not');
   const end = text.indexOf('}catch(e){}})();', start);
-  assert(end > start, 'the skeleton IIFE is not terminated as expected');
+  assert(end > start, 'the loader IIFE is not terminated as expected');
   return text.slice(start, end + '}catch(e){}})();'.length);
 }
 
@@ -234,6 +246,10 @@ function runShim(opts) {
     Date: { now: clock.now },
     window: {
       __MLS_AV: 'b999',
+      __MLS_P1_PREVIEW: { enabled: true },
+      /* Keep the ordinary deferred fetch pending. The Visit skeleton's own 1.2s
+         promotion remains on the controllable clock below. */
+      __mlsDeferAsset() { return true; },
       addEventListener(type, fn) { (winListeners[type] = winListeners[type] || []).push(fn); },
       removeEventListener(type, fn) {
         const a = winListeners[type] || []; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
@@ -247,7 +263,10 @@ function runShim(opts) {
   if (opts.workspace) { const w = dom.doc.createElement('div'); w.id = 'ez3Host'; view.appendChild(w); }
   if (opts.noView !== true) dom.body.appendChild(view);
   vm.createContext(sandbox);
-  vm.runInContext(shimSource(opts.text === undefined ? connect : opts.text), sandbox, { filename: 'mls-connect.shim.js' });
+  vm.runInContext(shimSource(opts.text === undefined ? p1Connect : opts.text), sandbox, { filename: '1p-avatar-controller.js' });
+  assert(sandbox.window.__mlsP1AvatarLoader && typeof sandbox.window.__mlsP1AvatarLoader.mountSkeleton === 'function',
+    'the current controller did not publish its skeleton capability');
+  sandbox.window.__mlsP1AvatarLoader.mountSkeleton();
   return {
     dom, clock, view, winListeners, sandbox,
     card: () => dom.doc.getElementById('mlsAvVisitCard'),
@@ -307,7 +326,7 @@ function runShim(opts) {
   ok('and the label says so rather than staying silent', /Loading/i.test(r.card().textContent));
 }
 
-/* 2e — HONESTY: a module that can never arrive must not leave a card behind. */
+/* 2e — HONESTY: retry once, then a module that can never arrive must not leave a card behind. */
 {
   const r = runShim({ rail: true });
   r.clock.advance(0);
@@ -315,7 +334,12 @@ function runShim(opts) {
   const tag = r.tag();
   ok('the placeholder is on screen while the module is in flight', !!r.card());
   tag.fire('error');
-  ok('a 404 REMOVES the placeholder — no card that can never work', !r.card());
+  ok('the first failure retires its exact tag but preserves the card for one bounded retry', !r.tag() && !!r.card());
+  r.clock.advance(1000);
+  const retry = r.tag();
+  ok('the controller makes exactly one bounded retry', !!retry && retry !== tag);
+  retry.fire('error');
+  ok('the second failure REMOVES the placeholder — no card that can never work', !r.card());
 }
 
 /* 2f — NO TURF WAR. This is the av-6.0.2 defect class: two modules re-asserting
@@ -428,8 +452,8 @@ modulePins(source, 'the fixed file', true);
 /* And the shim pins must be impossible without the shim. */
 {
   let threw = false;
-  try { shimSource(connect.replace('/* av-6.0.8:', '/* removed:')); } catch (e) { threw = true; }
-  ok('CONTROL: the executed shim suite cannot run at all without the shim present', threw);
+  try { shimSource(p1Connect.replace('/* p1-avatar-loader-1.0.0:', '/* removed:')); } catch (e) { threw = true; }
+  ok('CONTROL: the executed suite cannot run without the capability-owned controller', threw);
 }
 
 console.log('\navatar-visit-card-appears-at-once: ' + pass + ' assertions passed');

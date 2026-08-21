@@ -40,6 +40,69 @@ assert(!app.includes('__mlsPtsReadState'), 'retired worker-journal state machine
 assert(app.includes("if(__mlsPtsMemo&&__mlsPtsMemo.key===__key)__mlsPtsMemo=null; /* never serve a pre-write parse after a write */"),
   'savePatients no longer invalidates the read memo before writing');
 
+/* ---------- 1b. exact-generation active-patient lookup ---------- */
+{
+  const start = app.indexOf('/* roster-find-1.0.0:');
+  const end = app.indexOf('/* px-3.0:', start);
+  assert(start > 0 && end > start, 'active-patient lookup index source is missing');
+  const src = app.slice(start, end);
+  let account = 'account-a';
+  let gen = 1;
+  let roster = Array.from({ length: 100000 }, (_, i) => ({ id: `p-${i}`, marker: i }));
+  roster.splice(20, 0, { id: 'duplicate-id', marker: 'first' }, { id: 'duplicate-id', marker: 'second' });
+  roster.push({ id: 7, marker: 'numeric' });
+  let activeId = 'p-99999';
+  let legacyReads = 0;
+  const store = { isReady: () => true, getRoster: () => roster, genRead: () => gen };
+  const sandbox = {
+    window: { __mlsPtsStore: store },
+    uns: suffix => `${account}::${suffix}`,
+    __mlsPtsBatchByKey: Object.create(null),
+    getActivePtId: () => activeId,
+    getPatients() { legacyReads++; return roster.slice(); },
+    Map, Array, Number, Object
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(src + '\nthis.lookupApi={active:activePatient,find:findPatient};', sandbox);
+  const api = sandbox.lookupApi;
+
+  const started = process.hrtime.bigint();
+  for (let i = 0; i < 1000; i++) assert.strictEqual(api.active().marker, 99999, 'large-roster active lookup returned the wrong row');
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+  assert(elapsedMs < 100, `1,000 cached 100k-row active lookups took ${elapsedMs.toFixed(1)}ms`);
+  assert.strictEqual(legacyReads, 0, 'IDB active lookups cloned the public roster');
+  assert.strictEqual(api.find('duplicate-id').marker, 'first', 'lookup index changed Array.find first-duplicate semantics');
+  assert.strictEqual(api.find('7'), null, 'lookup index weakened strict numeric/string id matching');
+  assert.strictEqual(api.find(7).marker, 'numeric', 'lookup index lost numeric id matching');
+  assert.strictEqual(api.find('p-3'), roster[3], 'lookup index changed returned object-reference semantics');
+
+  const replacement = { id: 'replacement', marker: 'generation-2' };
+  roster = [replacement]; gen++;
+  assert.strictEqual(api.find('replacement'), replacement, 'store generation change retained a stale lookup');
+  assert.strictEqual(api.find('p-99999'), null, 'store generation change retained a removed patient');
+
+  account = 'account-b';
+  roster = [{ id: 'replacement', marker: 'other-account' }]; gen = 1;
+  assert.strictEqual(api.find('replacement').marker, 'other-account', 'account boundary reused another account lookup');
+
+  const batchKey = 'account-b::patients';
+  const batch = sandbox.__mlsPtsBatchByKey[batchKey] = {
+    depth: 1, totalChanges: 4, externalWrites: 0,
+    arr: [{ id: 'batch-a', marker: 'batch-a' }]
+  };
+  assert.strictEqual(api.find('batch-a'), batch.arr[0], 'active batch did not own lookup results');
+  batch.arr = [{ id: 'batch-b', marker: 'changed' }]; batch.totalChanges++;
+  assert.strictEqual(api.find('batch-b'), batch.arr[0], 'batch change generation retained a stale lookup');
+  batch.arr = [{ id: 'batch-c', marker: 'external' }]; batch.externalWrites++;
+  assert.strictEqual(api.find('batch-c'), batch.arr[0], 'batch external-write generation retained a stale lookup');
+
+  delete sandbox.__mlsPtsBatchByKey[batchKey];
+  sandbox.window.__mlsPtsStore = { isReady: () => false };
+  roster = [{ id: 'legacy', marker: 'fallback' }];
+  assert.strictEqual(api.find('legacy').marker, 'fallback', 'legacy fallback lost current find semantics');
+  assert.strictEqual(legacyReads, 1, 'legacy fallback did not use the public roster exactly once');
+}
+
 /* ---------- 2. patientNotes index ---------- */
 assert(app.includes('var __mlsNotesIdx={ver:-1,map:null};'), 'patientNotes index was removed');
 assert(app.includes('__mlsNotesIdx.map.get(id)'), 'patientNotes is no longer an indexed lookup');

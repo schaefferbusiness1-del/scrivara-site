@@ -67,8 +67,8 @@ assert(mc.includes('Another tab or device is pulling right now'), 'the refusal m
 /* ---- 3. hidden tabs never self-start automatic rounds, EXECUTED ---- */
 {
   const s = mc.indexOf('var DS_BODIES_REASON');
-  const e = mc.indexOf('function startPull()');
-  assert(s > 0 && e > s, 'auto-convergence block missing');
+  const e = mc.indexOf('function startPull(autoRetry)');
+  assert(s > 0 && e > s, 'auto-convergence block or current startPull(autoRetry) boundary missing');
   const block = mc.slice(s, e);
   function run(visibility) {
     let retries = 0;

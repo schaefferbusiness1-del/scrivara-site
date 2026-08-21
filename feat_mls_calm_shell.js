@@ -53,6 +53,22 @@
     if (el.hidden || el.disabled) return false;
     return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   }
+  /* showView() owns each top-level view's inline display value. Read that
+     write-side state first so route changes do not force layout on every
+     hidden room merely to rediscover which room showView just selected. Only
+     old/ambiguous markup with no inline decision falls back to visible(). */
+  function activeAppView() {
+    var views = qsa('#appWrap > div').filter(function (el) { return /View$/.test(el.id || '') && !el.hidden; });
+    for (var i = 0; i < views.length; i++) {
+      var inline = String(views[i].style && views[i].style.display || '');
+      if (inline && inline !== 'none') return views[i];
+    }
+    for (var j = 0; j < views.length; j++) {
+      var decision = String(views[j].style && views[j].style.display || '');
+      if (!decision && visible(views[j])) return views[j];
+    }
+    return null;
+  }
   function normLabel(t) {
     return String(t || '').replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ' ')
       .replace(/[←-⯿☀-➿️‍＋]/g, ' ')
@@ -801,6 +817,53 @@
        121 of 143 shell rules page-level, 14 trapped at max-width:760px, 5 of
        them motion. Grep cannot see this; only the CSSOM can. */
     '#mlsStages .bar{display:none}}',
+
+    /* dock-phone-reach-1.0.0 — the phone dock has eight real controls, not
+       seven. ScribeFlow's old phone guard hid #mlsDockAskWrap and the op-note
+       replica consequently measured only the destination buttons. Once Ask is
+       counted, the previous 52/46px fixed bases plus the dock-space 20px cap
+       put Copilot (and then Ask) in horizontal overflow at 360-390px. A thumb
+       could reach them only by discovering an unmarked horizontal scroll.
+
+       Eight 44px targets need 352px. The narrowest supported viewport here is
+       360px, so the dock uses a 2px edge inset, its existing 1px border, and no
+       horizontal gap/padding: 360 - 4 - 2 = 354px of content. Nothing wraps,
+       nothing is hidden, and every target keeps the 44px floor. Ask rests as a
+       compact finder (the shipped finder controller already labels a box this
+       small with Find…/the search icon) and expands LEFT over the dock while
+       focused, so typing still gets a full field without changing the dock's
+       one-row height. overflow is visible because its results list opens above
+       the dock; all eight items fit, so the old scroll safety valve is not
+       needed in this measured width band.
+
+       The data-mls-dock selector is deliberate. A saved top/side preference
+       falls back to bottom below 640px, but its more-specific desktop anchor
+       used to survive that fallback and beat the generic phone rule. Re-state
+       the bottom geometry at the same rank so every saved preference produces
+       the same reachable phone dock. */
+    '@media (max-width:430px){',
+    '#mlsDock,body[data-mls-dock] #mlsDock{left:2px;right:2px;top:auto;bottom:8px;width:calc(100vw - 4px)!important;',
+    'max-width:calc(100vw - 4px)!important;padding-left:0;padding-right:0;gap:0;overflow:visible!important;',
+    'transform:none;animation-name:mlsDockInM}',
+    /* public-preview-runtime already reserves 112px for its persistent sample
+       strip, but the later phone safe-area rule carries !important and reduced
+       that to 8px. Keep the preview's own offset at the rank it needs; signed-in
+       pages have no mls-public-preview class and never match this rule. */
+    'html body.mls-public-preview #mlsDock,html body.mls-public-preview[data-mls-dock] #mlsDock{bottom:112px!important}',
+    'body.mls-headsdown #mlsDock,body.mls-headsdown[data-mls-dock] #mlsDock{transform:translateY(6px)}',
+    '#mlsDock>button,html[data-mls-dock-band] #mlsDock>button{min-width:44px!important;min-height:44px;',
+    'flex:1 1 44px!important;padding-left:2px!important;padding-right:2px!important}',
+    '#mlsDock #mlsDockCopilot{min-width:44px!important;padding-left:2px;padding-right:2px}',
+    '#mlsDock #mlsDockAskWrap{display:flex!important;flex:0 0 44px!important;width:44px;min-width:44px;',
+    /* Some roles legitimately offer fewer destinations. Pin Ask to the right
+       edge so its left-opening focused field stays inside the viewport even
+       when hidden destinations leave spare room in the dock. */
+    'margin-left:auto;padding-left:0;border-left:0}',
+    '#mlsDock #mlsDockAsk{width:44px;min-width:44px;height:44px;padding-left:6px;padding-right:6px;',
+    'text-overflow:ellipsis}',
+    '#mlsDock #mlsDockAsk:focus{position:absolute;right:0;bottom:0;width:min(250px,calc(100vw - 12px));}',
+    '}',
+    '@media (max-width:375px){#mlsDock>button{font-size:10px!important}}',
 
     /* ---------------- motion system (mls-motion-system) ----------------
        One vocabulary, four durations, three easings. Adopted here and by the
@@ -1706,9 +1769,7 @@
   }
 
   function markViewEnter() {
-    var v = qsa('#appWrap > div').filter(function (el) {
-      return /View$/.test(el.id || '') && visible(el);
-    })[0];
+    var v = activeAppView();
     if (!v) return;
     v.classList.remove('view-enter');
     void v.offsetWidth;
@@ -2281,9 +2342,7 @@
      announcing a bare "Copy" until the next render lands. */
   function nameGenericInView() {
     if (!W.__mlsCalmShell.active) return;
-    var view = qsa('#appWrap > div').filter(function (el) {
-      return /View$/.test(el.id || '') && visible(el);
-    })[0];
+    var view = activeAppView();
     if (!view) return;
     qsa('button,[role="button"]', view).forEach(function (b) {
       if (b.closest && b.closest('#mlsDock,#mlsRightNow,#mlsToolsMenu,#mlsAskResults,#mlsPrepRows')) return;
@@ -3412,8 +3471,15 @@
 
   function nameControls() {
     if (!W.__mlsCalmShell.active) return;
+    var activeView = activeAppView();
     qsa('button,[role="button"]').forEach(function (el) {
       if (!el.children || !el.children.length) return;
+      /* Hidden top-level views can contain hundreds of composite controls.
+         Reject them from showView's inline state before onScreen() performs
+         any offset/getClientRects layout read. Global overlays and chrome have
+         no owning view and continue through the normal path. */
+      var owningView = el.closest && el.closest('#appWrap > div[id$="View"]');
+      if (owningView && owningView !== activeView) return;
       var stamped = el.getAttribute('data-mls-acn');
       if (el.getAttribute('aria-label') && !stamped) return;
       var flat = normLabel(el.textContent);

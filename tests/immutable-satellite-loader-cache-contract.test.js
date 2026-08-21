@@ -30,20 +30,20 @@ const assets = [
   ['feat_b18_qa.js', '20260808b18v14perf2', '20260808b18v13perf1'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260802asst145', '20260719asst143'],
-  ['feat_mls_assistant_exact.js', '20260808asst220perf1', '20260725asst217'],
+  ['feat_mls_assistant_exact.js', '20260820asst220perf2', '20260808asst220perf1'],
   /* feat_mls_b121_pack.js left this list on 2026-08-07 (px train): the pack
      changed (matchRow lost its name-only merge leg - the cross-patient weld)
      and rather than mint 20260807p2c7 for the same date-granularity blindness
      that bit copilot_actions, its loader now follows the build number. The
      build-form + dead-literal assertions live below with feat_visits'. */
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
-  ['feat_mls_checker.js', '20260820chk3076', '20260819chk3074'],
+  ['feat_mls_checker.js', '20260820chk3077', '20260820chk3076'],
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
   ['feat_mls_header_exact.js', '20260802hx303', '20260716hx301'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
-  ['feat_mls_provider_passthrough.js', '20260722pp1c5', '20260702pp1c1'],
+  ['feat_mls_provider_passthrough.js', '20260820pp1c6', '20260722pp1c5'],
   /* Bumped, not reshaped: two suites pin this asset to a LITERAL token, and the
      service worker serves versioned assets cache-first. It had drifted - the
      file changed three times after '20260728rd328' while the token stood still,
@@ -61,7 +61,8 @@ const assets = [
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
-  ['feat_task3_frontsync.js', '20260808t3113perf2', '20260808t3112perf1'],
+  /* feat_task3_frontsync.js now follows the shared build token. It is derived
+     across lanes and changes too often for a second hand-maintained token. */
   ['feat_mls_upnow_activeselect.js', '20260808uas5perf1', '20260804uas4'],
   ['feat_mls_upnow_sync.js', '20260808uns6perf2', '20260808uns5perf1'],
   /* 2026-08-05, unr-1.1.0 -> unr-1.1.1: the module's boot() poll re-ran its
@@ -188,6 +189,13 @@ for (const [label, text] of [['production', connect], ['staging', staging]]) {
     label + ': event-driven allergy strip must follow the shared build cache token');
   assert(!text.includes('20260727hcep2'),
     label + ': retired polling allergy-strip URL is still reachable');
+  if (label === 'production') {
+    assert(text.includes('var A="feat_task3_frontsync.js"') &&
+      text.includes('s.src=SRC+"?v="+(window.__MLS_AV||'),
+      label + ': TASK3 front sync must follow the shared build cache token');
+    assert(!text.includes('20260808t3113perf2') && !text.includes('20260808t3112perf1'),
+      label + ': a retired TASK3 front-sync token is still reachable');
+  }
   assert(text.includes("var A='feat_mls_simple_exact.js'") &&
     text.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
     label + ': Simple Visit input fast path must follow the shared build cache token');
@@ -236,7 +244,9 @@ assert(!/feat_mls_b121_pack\.js\?v=20\d{6}/.test(connect),
 /* feat_mls_avatar.js, same rule, from av-5.7.0. See the note in the list above:
    this file changes more than once a day, which is exactly the drift a
    date-granular staleness gate cannot see. */
-assert(connect.includes("feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now())"),
+assert((connect.includes("feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now())") ||
+    (connect.includes("var A='feat_mls_avatar.js',SRC='feat_mls_avatar.js'") &&
+     connect.includes("node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview')"))),
   'the avatar must load with the build-number cache-buster');
 assert(!/feat_mls_avatar\.js\?v=20\d{6}/.test(connect),
   'a hand-maintained avatar token came back — on this file it goes stale the same afternoon');
@@ -244,13 +254,13 @@ for (const dead of ['20260807av567', '20260807av566']) {
   assert(!connect.includes(dead), 'retired avatar cache token ' + dead + ' is back in the loader');
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260820chk3076'),
+assert(staging.includes('feat_mls_checker.js?v=20260820chk3077'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');
 assert(staging.includes('feat_mls_command_palette.js?v=20260808cmd106perf2'),
   'staging must load the same canonical Ctrl/Cmd+K owner as production');
-assert(staging.includes('feat_mls_assistant_exact.js?v=20260808asst220perf1') &&
+assert(staging.includes('feat_mls_assistant_exact.js?v=20260820asst220perf2') &&
   !staging.includes('20260725asst217'),
   'staging must use the current assistant asset URL and retire the prior one');
 for (const assetUrl of [

@@ -20,9 +20,12 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
    semantics; the four source-level fixes below are still asserted against the
    live background.js bytes. */
 /* Pin moved 3.0.64 -> 3.0.74 with the 2026-08-19 release train (3.0.65-3.0.74
-   chain); the tab-resilience contract this suite executes is unchanged. */
-assert.strictEqual(manifest.version, '3.0.74', 'manifest version must be 3.0.74');
-assert(/^3\.0\.74\+core-sha256:[0-9a-f]{64}$/.test(String(manifest.version_name || '')), 'version_name must carry the stamped core digest');
+   chain); later releases keep this historical behavior contract version-agnostic.
+   The package/release suites own the exact current version; this suite only
+   requires the digest stamp to be bound to whatever manifest version ships. */
+assert(/^\d+\.\d+\.\d+$/.test(String(manifest.version || '')), 'manifest version must be a release version');
+assert(new RegExp('^' + manifest.version.replace(/\./g, '\\.') + '\\+core-sha256:[0-9a-f]{64}$').test(String(manifest.version_name || '')),
+  'version_name must carry the stamped core digest for the manifest version');
 
 /* 1. session probe counts RENDERED day tabs; ping aggregates it */
 assert(bg.includes('var calTabs = 0;'), 'probe must count rendered day tabs');
@@ -32,7 +35,12 @@ assert(bg.includes('calTabs: signedOut ? 0 : fr.reduce(function (m, f) { return 
 /* 2. lease path: a missed ping is re-pinged once with a longer budget; both misses / closed / discarded / loginish still fail CLOSED (never hop) */
 assert(bg.includes("if (qpHealth.signedOut) { mlsAthRejectSignedOut(qt.id); return null; }"), 'signed-out leased tab still fails closed');
 assert(bg.includes('if (!qt.discarded) { var qpHealth2 = await mlsAthPing(qt.id, 3000); if (qpHealth2.alive && !qpHealth2.signedOut) return qt; if (qpHealth2.signedOut) mlsAthRejectSignedOut(qt.id); }'), 'missed ping on the leased tab must be re-pinged once (3000ms) before failing closed');
-assert(bg.includes("if (qpHealth2.signedOut) mlsAthRejectSignedOut(qt.id); }\n      }\n      return null;\n    }"), 'a leased tab that misses both pings, is closed, discarded or loginish still fails CLOSED (lease-over-pin contract)');
+const leaseRegion = bg.slice(bg.indexOf('if (qpLease && qpLease.active'), bg.indexOf('/* v1.99 TAB PIN'));
+assert(
+  /if \(!qt\) \{[\s\S]*?qpLease\.active = false;[\s\S]*?qpLease\.athenaTabId = null;[\s\S]*?mlsQpState: null[\s\S]*?return null;[\s\S]*?\} else \{/.test(leaseRegion) &&
+  /if \(!qt\.discarded\) \{[^\n]*qpHealth2[^\n]*if \(qpHealth2\.alive && !qpHealth2\.signedOut\) return qt;[^\n]*if \(qpHealth2\.signedOut\) mlsAthRejectSignedOut\(qt\.id\); \}\s*\}\s*return null;/.test(leaseRegion),
+  'a leased tab that misses both pings, is closed, discarded or loginish still fails CLOSED (lease-over-pin contract)'
+);
 assert(!bg.includes("        if (qpHealth.signedOut) mlsAthRejectSignedOut(qt.id);\n      }\n      return null;\n    }"), 'the old fail-closed-on-any-miss lease block must be gone');
 
 /* 3. general path: unreachable-not-signed-out candidates are re-pinged before "no athena tab" (then fail closed as before); rendered strip preferred */

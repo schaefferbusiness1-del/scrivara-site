@@ -113,6 +113,15 @@ const GUARDED = [
      defect as the original, on the one population nobody sampled. */
   ['mls-connect.js', 'applyDoctorRestrictions (LITE USERS ONLY)', 'add() — ~40/min all session',
     "if (!document.body.classList.contains('mls-lite')) document.body.classList.add('mls-lite');"],
+  ['mls-connect.js', 'clearDoctorRestrictions (NON-LITE USERS)', 'remove() — ~40/min all session',
+    "if (document.body && document.body.classList.contains('mls-lite')) document.body.classList.remove('mls-lite');"],
+  /* The P1 dock guard is re-entered by click/view/header/resize lifecycle
+     events. markReady() and its bounded failure path must not re-commit the
+     same body class on every event or every settle retry. */
+  ['mls-connect.js', 'P1 dock clearReady()', 'remove() on lifecycle/settle paths',
+    "if(document.body&&document.body.classList.contains('mls-p1-dock-ready'))document.body.classList.remove('mls-p1-dock-ready');"],
+  ['mls-connect.js', 'P1 dock markReady()', 'add() on every lifecycle event',
+    "if(!document.body.classList.contains('mls-p1-dock-ready'))document.body.classList.add('mls-p1-dock-ready');"],
   /* 2026-08-07, ph2-1.0.0. Two sides of one handover, and BOTH run on a
      repeating pass on a phone: __mlsPhoneHome.ensure() is a 1600ms interval, and
      the new phone UI's ensure() re-runs on every engine mode change. Each drops
@@ -133,6 +142,36 @@ for (const [file, fn, volume, guard] of GUARDED) {
     'document; for toggle() the guard is belt-and-braces. Expected:\n    ' + guard);
 }
 
+/* Execute the three newly exposed repeating guards against a counting
+   DOMTokenList replica. Static presence alone cannot prove the condition is on
+   the correct side of the mutation. Each unchanged pass must make zero calls;
+   a real transition must make exactly one and land in the requested state. */
+for (const row of [
+  { code: "if (document.body && document.body.classList.contains('mls-lite')) document.body.classList.remove('mls-lite');", token: 'mls-lite', op: 'remove' },
+  { code: "if(document.body&&document.body.classList.contains('mls-p1-dock-ready'))document.body.classList.remove('mls-p1-dock-ready');", token: 'mls-p1-dock-ready', op: 'remove' },
+  { code: "if(!document.body.classList.contains('mls-p1-dock-ready'))document.body.classList.add('mls-p1-dock-ready');", token: 'mls-p1-dock-ready', op: 'add' }
+]) {
+  function run(initiallyPresent) {
+    const tokens = new Set(initiallyPresent ? [row.token] : []);
+    const calls = { add: 0, remove: 0 };
+    const document = { body: { classList: {
+      contains(token) { return tokens.has(token); },
+      add(token) { calls.add++; tokens.add(token); },
+      remove(token) { calls.remove++; tokens.delete(token); }
+    } } };
+    Function('document', row.code)(document);
+    return { calls, present: tokens.has(row.token) };
+  }
+  const unchanged = run(row.op === 'add');
+  assert.strictEqual(unchanged.calls.add + unchanged.calls.remove, 0,
+    row.token + ' unchanged pass still committed a body-class mutation');
+  const changed = run(row.op === 'remove');
+  assert.strictEqual(changed.calls[row.op], 1,
+    row.token + ' real transition did not perform exactly one ' + row.op);
+  assert.strictEqual(changed.present, row.op === 'add',
+    row.token + ' guard landed in the wrong final state');
+}
+
 /* ---- 2. the unguarded forms are actually gone, not merely shadowed ------- */
 
 const BANNED = [
@@ -148,7 +187,10 @@ const BANNED = [
   ['feat_mls_redesign.js', "document.body.classList.toggle('mls-has-active-patient',hasPatient);"],
   ['feat_mls_redesign.js', "document.body.classList.toggle('mls-no-active-patient',!hasPatient);"],
   ['feat_mls_redesign.js', "document.body.classList.toggle('mls-has-note-draft',!!(hasPatient&&noteText));"],
-  ['mls-connect.js', "\n      document.body.classList.add('mls-lite');"]
+  ['mls-connect.js', "\n      document.body.classList.add('mls-lite');"],
+  ['mls-connect.js', "if (document.body) document.body.classList.remove('mls-lite');"],
+  ['mls-connect.js', "function clearReady(){try{if(document.body)document.body.classList.remove('mls-p1-dock-ready');"],
+  ['mls-connect.js', "try{document.body.classList.add('mls-p1-dock-ready');}catch(_classError){return false;}"]
 ];
 for (const [file, snippet] of BANNED) {
   assert(!read(file).includes(snippet),
@@ -226,7 +268,103 @@ const scanned = PUBLISHED.length;
    add/remove calls in syncRouteLayout(). They are O(1) route-state repairs,
    never recurring passes, and prevent a stale patient identity from showing
    while its cold record refresh waits for browser idle. */
-const SITES = { 'mls-connect.js': 25, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 15, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
+/* 2026-08-21: mls-connect is 32 syntactic matches. Six came with the P1 dock
+   guard; the seventh is `var body = $('mlsEz3Body')`, a local element that the
+   broad scanner deliberately over-counts. The manifest below accounts for all
+   32 individually by operation/count and records why each is either guarded,
+   force-toggle safe, local-element-only, or a one-shot transition/teardown.
+   A new operation or changed multiplicity cannot pass by raising one number. */
+const CONNECT_BODY_SITE_AUDIT = [
+  { op: "remove('empty-txt')", count: 1, reasons: ['local #mlsEpReasonBody; one explicit Edit click'] },
+  { op: "toggle('mls-top-voice-tools', visible)", count: 1, reasons: ['contains() guard'] },
+  { op: "toggle('mls-recording', live)", count: 1, reasons: ['contains() guard'] },
+  { op: "toggle('ez3fl-top-owns', wantOwns)", count: 1, reasons: ['local #mlsEz3Body plus contains() guard'] },
+  { op: "remove('mls-top-voice-tools')", count: 1, reasons: ['owner revert teardown'] },
+  { op: "toggle('mls-top-voice-tools', wantTvt)", count: 1, reasons: ['contains() guard'] },
+  { op: "toggle('ez3adv', S.advOpen)", count: 4, reasons: ['trusted/user toggle', 'trusted/user toggle', 'trusted/user toggle', 'trusted/user toggle'] },
+  { op: "add('ez3adv')", count: 1, reasons: ['guarded by !S.advOpen state transition'] },
+  { op: "toggle('ez3sec0', !secOpen)", count: 1, reasons: ['contains() guard'] },
+  { op: "remove('ez3adv')", count: 3, reasons: ['v3.2 owner revert', 'v3.2 twin owner revert', 'v3.1 owner revert'] },
+  { op: "toggle('mls-r44-hidebday', !c.birthdays)", count: 1, reasons: ['contains() guard'] },
+  { op: "remove('mls-r44-hidebday')", count: 1, reasons: ['Round4 owner revert'] },
+  { op: "remove('mls-lite')", count: 1, reasons: ['contains() guard on repeating non-Lite cleanup'] },
+  { op: "add('mls-lite')", count: 1, reasons: ['contains() guard on repeating Lite apply'] },
+  { op: "remove('mls-p1-dock-ready')", count: 1, reasons: ['contains() guard on lifecycle/settle clear'] },
+  { op: "add('mls-p1-dock-clearance-released')", count: 1, reasons: ['ctl.clearanceReleased state guard'] },
+  { op: "remove('mls-p1-dock-clearance-released')", count: 1, reasons: ['ctl.clearanceReleased state guard'] },
+  { op: "toggle('mls-p1-dock-collapsed',!ctl.compactExpanded)", count: 1, reasons: ['toggle(name, force) is unchanged-value safe'] },
+  { op: "remove('mls-p1-dock-collapsed')", count: 1, reasons: ['compact-owner teardown'] },
+  { op: "add('mls-p1-dock-ready')", count: 1, reasons: ['contains() guard on lifecycle markReady'] },
+  { op: "remove('mls-ds-otherday')", count: 1, reasons: ['local #mlsEz3Body plus contains() guard'] },
+  { op: "remove('mls-phone')", count: 4, reasons: ['contains() guard in repeating new-UI handoff', 'on/has state guard', 'explicit user exit click', 'phone-owner revert'] },
+  { op: "add('mls-phone')", count: 1, reasons: ['on/has state guard'] },
+  { op: "remove('mls-xdc-active')", count: 1, reasons: ['one-shot hot-upgrade retirement'] }
+];
+const connectBodyOps = new Map();
+const connectBodyRe = /(?:document\.body|\bbody)\.classList\.(add|remove|toggle)\(([^\n;]*)\)/g;
+const connectText = read('mls-connect.js');
+let connectBodyMatch;
+while ((connectBodyMatch = connectBodyRe.exec(connectText))) {
+  const op = connectBodyMatch[1] + '(' + connectBodyMatch[2] + ')';
+  connectBodyOps.set(op, (connectBodyOps.get(op) || 0) + 1);
+}
+assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 32,
+  'mls-connect body-class audit no longer enumerates exactly 32 syntactic sites');
+assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 32,
+  'the documented mls-connect body-class audit does not account for all 32 sites');
+assert.strictEqual(connectBodyOps.size, CONNECT_BODY_SITE_AUDIT.length,
+  'mls-connect gained or lost an operation shape without an explicit audit entry');
+for (const row of CONNECT_BODY_SITE_AUDIT) {
+  assert.strictEqual(connectBodyOps.get(row.op) || 0, row.count,
+    'mls-connect body-class operation changed without audit: ' + row.op);
+  assert.strictEqual(row.reasons.length, row.count,
+    'every occurrence needs its own guard or exact exception: ' + row.op);
+  row.reasons.forEach(reason => assert(reason && typeof reason === 'string',
+    'blank body-class audit rationale: ' + row.op));
+}
+
+/* Profile-coherence added four ScribeFlow operations after the old 15-site
+   count: one force-toggle, one guarded repeating add, and two revert-only
+   removes. Enumerate all 19, rather than blessing only the four newcomers. */
+const SCRIBEFLOW_BODY_SITE_AUDIT = [
+  { op: "toggle('theme-dark', w)", count: 1, reasons: ['contains() guard in explicit preview'] },
+  { op: "toggle('pt-split', w)", count: 1, reasons: ['contains() guard in explicit preview'] },
+  { op: "toggle('compact', w)", count: 1, reasons: ['contains() guard in explicit preview'] },
+  { op: "toggle('pt-has-active', wantPta)", count: 1, reasons: ['contains() guard in profile render'] },
+  { op: "remove('mls-nav-left','mls-nav-collapsed')", count: 2, reasons: ['public-preview one-shot/Settings apply branch', 'redesign-shell one-shot/Settings apply branch'] },
+  { op: "toggle('mls-nav-left',wNavL)", count: 1, reasons: ['contains() guard'] },
+  { op: "toggle('mls-nav-collapsed')", count: 1, reasons: ['explicit collapse button click; always a real state change'] },
+  { op: "toggle('mls-nav-collapsed',!!col)", count: 1, reasons: ['contains() guard'] },
+  { op: "remove('mls-nav-collapsed')", count: 1, reasons: ['top-layout transition; boot/Settings apply, no repeating owner'] },
+  { op: 'remove(BODY_CLS)', count: 3, reasons: ['contains() guard in ctx build', 'contains() guard in empty route fast-path', 'contains() guard before stale identity wait'] },
+  { op: 'add(BODY_CLS)', count: 2, reasons: ['contains() guard in ctx build', 'contains() guard in exact route fast-path'] },
+  { op: "toggle('pvr-empty', timelineEmpty)", count: 1, reasons: ['contains() guard; force-toggle is unchanged-value safe'] },
+  { op: "add('pvr-on')", count: 1, reasons: ['contains() guard on repeating profile pass'] },
+  { op: "remove('pvr-on')", count: 1, reasons: ['profile-coherence owner revert'] },
+  { op: "remove('pvr-empty')", count: 1, reasons: ['profile-coherence owner revert'] }
+];
+const scribeBodyOps = new Map();
+const scribeBodyRe = /(?:document\.body|\bbody)\.classList\.(add|remove|toggle)\(([^\n;]*)\)/g;
+const scribeText = read('ScribeFlow.html');
+let scribeBodyMatch;
+while ((scribeBodyMatch = scribeBodyRe.exec(scribeText))) {
+  const op = scribeBodyMatch[1] + '(' + scribeBodyMatch[2] + ')';
+  scribeBodyOps.set(op, (scribeBodyOps.get(op) || 0) + 1);
+}
+assert.strictEqual([...scribeBodyOps.values()].reduce((sum, count) => sum + count, 0), 19,
+  'ScribeFlow body-class audit no longer enumerates exactly 19 syntactic sites');
+assert.strictEqual(SCRIBEFLOW_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 19,
+  'the documented ScribeFlow body-class audit does not account for all 19 sites');
+assert.strictEqual(scribeBodyOps.size, SCRIBEFLOW_BODY_SITE_AUDIT.length,
+  'ScribeFlow gained or lost an operation shape without an explicit audit entry');
+for (const row of SCRIBEFLOW_BODY_SITE_AUDIT) {
+  assert.strictEqual(scribeBodyOps.get(row.op) || 0, row.count,
+    'ScribeFlow body-class operation changed without audit: ' + row.op);
+  assert.strictEqual(row.reasons.length, row.count,
+    'every ScribeFlow occurrence needs its own guard or exact exception: ' + row.op);
+}
+
+const SITES = { 'mls-connect.js': 32, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -271,4 +409,4 @@ assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.4'") &&
 assert(!connect.includes('20260808rd332perf2') && !connect.includes('20260804rd331'),
   'a retired hand-maintained redesign cache token is still reachable');
 
-console.log('PASS body-class churn: the 3 measured add()/remove() writers (54+14+5 no-op attribute re-commits) now compare first, 10 further toggle sites carry belt-and-braces guards, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');
+console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 32 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');

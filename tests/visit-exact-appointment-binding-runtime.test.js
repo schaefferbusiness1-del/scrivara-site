@@ -39,6 +39,8 @@ function harness(overrides) {
   const context = {
     Date,
     isNaN,
+    safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } },
+    currentVisitAthenaBinding: overrides.existingBinding,
     apptDay(a) { return String(a.appt_date || a.day_local || '').slice(0, 10); },
     nameMatch(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); },
     window: {
@@ -130,10 +132,23 @@ for (const bad of [
 }
 
 {
-  const h = harness({ xdcContext: { sourceId: row.id, appointmentId: row.appointment_id, date: row.appt_date } });
+  const h = harness({
+    xdcContext: { sourceId: row.id, appointmentId: row.appointment_id, date: row.appt_date },
+    existingBinding: { id: 'xdc-binding' }
+  });
   assert.strictEqual(h.install(row), true, 'existing stronger selected-day binding was not preserved');
   assert.strictEqual(h.calls.freeze.length, 0, 'delayed Easy activation overwrote XDC binding');
   assert.strictEqual(h.calls.set.length, 0, 'delayed Easy activation mutated XDC binding');
+}
+
+/* A matching XDC context without a real frozen binding is not success. That
+ * was the live wfbind-1.1 defect: the context existed while the binding global
+ * was absent, so downstream exact-match checks could never agree. */
+{
+  const h = harness({ xdcContext: { sourceId: row.id, appointmentId: row.appointment_id, date: row.appt_date } });
+  assert.strictEqual(h.install(row), true, 'matching XDC context without a binding was not repaired');
+  assert.strictEqual(h.calls.freeze.length, 1, 'missing XDC binding must fall through to one exact freeze');
+  assert.strictEqual(h.calls.set.length, 1, 'missing XDC binding must be installed before reporting success');
 }
 
 console.log('PASS scheduled Visit binding: one exact Athena appointment/date/provider context is installed before actions; missing/conflicting rows fail closed and XDC is preserved');

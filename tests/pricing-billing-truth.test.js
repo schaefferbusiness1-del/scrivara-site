@@ -59,8 +59,21 @@ assert(scribe.includes('Access source'), 'the panel must show WHY each account h
 assert(scribe.includes("adminFetch('/api/admin/billing/webhooks')"), 'webhook diagnostics must be wired');
 /* pin updated 2026-07-22: same explicit confirmation, via the non-blocking
    in-app dialog instead of thread-freezing native confirm() */
-assert(/mlsConfirm\('Grant plan/.test(scribe) && /mlsConfirm\('Remove the admin override/.test(scribe),
-  'plan changes must be explicitly confirmed');
+const grantStart = scribe.indexOf('async function adminGrantPlan(');
+const clearStart = scribe.indexOf('async function adminClearPlan(', grantStart);
+const clearEnd = scribe.indexOf('async function loadAdminUsers(', clearStart);
+assert(grantStart >= 0 && clearStart > grantStart && clearEnd > clearStart,
+  'admin plan mutation blocks could not be isolated');
+const grantBlock = scribe.slice(grantStart, clearStart);
+const clearBlock = scribe.slice(clearStart, clearEnd);
+const grantConfirm = grantBlock.indexOf("await mlsConfirm('");
+const grantWrite = grantBlock.indexOf("adminReadyRequest({action:'grant'");
+const clearConfirm = clearBlock.indexOf("await mlsConfirm('");
+const clearWrite = clearBlock.indexOf("adminFetch('/api/admin/billing/plan'");
+assert(grantConfirm >= 0 && grantWrite > grantConfirm && /Grant[^']*plan/i.test(grantBlock.slice(grantConfirm, grantWrite)),
+  'grant-plan mutation must follow an explicit in-app confirmation');
+assert(clearConfirm >= 0 && clearWrite > clearConfirm && /Remove the admin override/i.test(clearBlock.slice(clearConfirm, clearWrite)),
+  'clear-override mutation must follow an explicit in-app confirmation');
 assert(scribe.includes('returns the account to normal billing'), 'the clear action must explain the return-to-billing semantics');
 
 console.log('PASS pricing/billing truth: $40 Enterprise displayed as charged, capability-driven single status with named reasons and a real Retry, no dead CTAs or false bars, and a confirmed+audited admin plan panel with access sources');

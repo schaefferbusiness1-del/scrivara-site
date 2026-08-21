@@ -50,7 +50,10 @@ async function runPage(name) {
   const events = [];
   const storage = new Map();
   const context = {
-    console, Date, Intl,
+    /* loadCalendar defers its best-effort warm-cache write. Timers are browser
+       globals, so the VM must provide them even though this suite does not need
+       to wait for that unrelated cache write to judge account ownership. */
+    console, Date, Intl, setTimeout, clearTimeout,
     __mlsSessionAccount: 'doctor-a@example.test', __mlsSessionEpoch: 1,
     __mlsCalLoadSeq: 0, __mlsCalendarMutationEpoch: 0,
     session: { email: 'doctor-a@example.test' },

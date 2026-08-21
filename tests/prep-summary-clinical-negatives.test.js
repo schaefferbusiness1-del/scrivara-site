@@ -31,9 +31,12 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 /* Pin the builder's fallbacks by their real call sites, so this fails on the
  * line that would reintroduce the claim rather than on a fuzzy text search. */
 const FIELDS = [
-  { label: 'PROBLEMS', expr: "(trim(ctx.problems) || 'Not recorded')" },
-  { label: 'MEDICATIONS', expr: "(trim(ctx.meds) || 'Not recorded')" }
+  { label: 'PROBLEMS', expr: "(trim(ctx.problems) || blank.problems || 'Not recorded')" },
+  { label: 'MEDICATIONS', expr: "(trim(ctx.meds) || blank.meds || 'Not recorded')" }
 ];
+
+assert(connect.includes('var blank = ctx.emptyText || {}'),
+  'coverage-receipt-aware empty wording must be the first fallback source');
 
 for (const field of FIELDS) {
   assert(connect.includes(field.expr),
@@ -60,8 +63,8 @@ assert(/confirm with patient/i.test(allergyLine[0]),
 
 /* VITALS and HISTORY were already correct; keep them that way so the four
  * record-describing fields cannot drift apart again. */
-for (const expr of ["'VITALS: ' + (vBits.length ? vBits.join(', ') : 'Not recorded')",
-                    "'HISTORY: ' + (hBits.length ? hBits.join(' | ') : 'Not recorded')"]) {
+for (const expr of ["'VITALS: ' + (vBits.length ? vBits.join(', ') : (blank.vitals || 'Not recorded'))",
+                    "'HISTORY: ' + (hBits.length ? hBits.join(' | ') : (blank.history || 'Not recorded'))"]) {
   assert(connect.includes(expr),
     'prep summary field drifted from the record-describing convention: ' + expr);
 }

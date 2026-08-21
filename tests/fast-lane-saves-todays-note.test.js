@@ -76,7 +76,12 @@ function part4() {
   /* ---- 4. site payload + fast-lane wiring (source pins) ---- */
   assert(fv.includes("onlyDate: String(runOpts.onlyDate || '')"), 'cv payload must carry onlyDate');
   assert(fv.includes('function run(onStatus, patientOverride, runOpts)'), 'cv.run accepts opts');
-  assert(si.includes("runForPatient(tnP, function () {}, { onlyDate: tnDay })"), 'fast lane must request the day-scoped read');
+  assert(si.includes('function tnBoundedRead(vp, p, day, opts)'), 'the bounded pulled-day-note reader is missing');
+  assert(si.includes('vp.runForPatient(p, function () {}, { onlyDate: String(day) })'),
+    'the bounded reader must pass the exact day scope to runForPatient');
+  assert(si.includes('await tnBoundedRead(dnVp, dnP, dnDay)') &&
+    si.includes('await tnBoundedRead(vpToday, tnP, tnDay)'),
+  'both inline and post-sweep fast lanes must use the same day-scoped bounded reader');
   assert(si.includes('todayNoteReason'), 'the scoped read reports honestly');
   assert(si.includes('FULLY AWAITED'), 'the scoped reads must run post-sweep, never racing the batch for the athena tab');
   const skipIdx = si.indexOf('one.visitsSkipped = true');

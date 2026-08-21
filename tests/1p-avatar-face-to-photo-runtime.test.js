@@ -204,10 +204,34 @@ partialOf(fiveOfFourteen).derived.forEach(k =>
 /* a whole match is NOT a partial one — the two states are exclusive */
 eq(partialOf(read(7)).partial, false, 'a passing whole read is also reported as partial');
 
-/* ⛔ AND THE FOUR REFUSALS THAT MAKE PARTIAL APPLICATION SAFE. */
+/* avfit-2.0.0 deliberately narrowed the skin anchor to the evidence it can
+   actually prove: COLOUR. A proven, fully examined photograph may contribute
+   claimed geometry without a skin read, but every unanchored colour must be
+   held and no field may be invented. */
 const noSkin = read(8); noSkin.derived = noSkin.derived.filter(k => k !== 'skin');
-eq(partialOf(noSkin).partial, false,
-  'traits are applied from a read with no proven skin sample — the one guard that proves a face, not a wall');
+const noSkinPartial = partialOf(noSkin);
+eq(noSkinPartial.partial, true,
+  'a proven photo loses its readable geometry merely because skin colour was unreadable');
+eq(noSkinPartial.derived.join(','), 'hairStyle,beard,glasses,brows',
+  'an unanchored colour crossed the no-skin filter, or readable geometry was dropped');
+noSkinPartial.derived.forEach(k =>
+  ok(noSkin.derived.indexOf(k) >= 0, k + ' was invented by the no-skin geometry path'));
+['skin', 'hair', 'eyes', 'browCol', 'shirt'].forEach(k =>
+  ok(noSkinPartial.derived.indexOf(k) < 0 && noSkinPartial.skipped.indexOf(k) >= 0,
+    k + ' was not held when there was no skin anchor'));
+ok(/Colour settings stayed unchanged/.test(noSkinPartial.why) && /skin tone could not be read/.test(noSkinPartial.why),
+  'the no-skin partial does not disclose that its colour settings were held');
+
+const colorsOnly = read(4);
+colorsOnly.derived = ['hair', 'eyes', 'browCol', 'shirt'];
+colorsOnly.look = { hair: '#241a11', eyes: '#4a3423', browCol: '#362820', shirt: '#2E6A4B' };
+colorsOnly.receipt.claimed = 4; colorsOnly.receipt.refused = 10;
+eq(partialOf(colorsOnly).partial, false,
+  'unanchored colours alone qualify as a partial application');
+eq(partialOf(colorsOnly).derived.length, 0,
+  'an unanchored colour receives an apply licence when no geometry survives');
+
+/* ⛔ The remaining source, completeness and minimum-count guards stay hard. */
 const posterized = read(9, { receipt: { fromIllustration: true } });
 eq(partialOf(posterized).partial, false, 'a stylized copy\'s manufactured colours are applied partially');
 const neverProved = read(9, { receipt: { srcKind: 'unknown' } });

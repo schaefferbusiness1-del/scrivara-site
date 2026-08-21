@@ -52,8 +52,8 @@
    hiding nav items with inline display:none because the Calm Shell reads that
    as "the app gated this feature off".
 
-   PART B EXECUTES it in real Chrome at both viewports and both tabs, hit-tests
-   every control, and dispatches a REAL mouse event at the Visit button's centre
+   PART B EXECUTES it in real Chrome at desktop plus 360/375/390/430px, on both
+   room tabs, hit-tests every button and Ask, and dispatches a REAL mouse event at the Visit button's centre
    to prove the room actually stands down - because a dock button that switches
    the view behind a room still covering the whole screen is the same trap with
    an extra step. Part B needs a Chrome binary; if there is none it says so in
@@ -255,7 +255,7 @@ ok(!/style\s*\./.test(leaveSrc) && !/display\s*=/.test(leaveSrc),
 /* ========================================================================
    PART B - executed in real Chrome
    ==================================================================== */
-head('PART B - executed at 1440x900 and 390x844, in a PHI-free replica');
+head('PART B - executed at 1440px and every supported 360-430px phone width, in a PHI-free replica');
 
 function chromePath() {
   const c = [
@@ -361,8 +361,9 @@ const PROBE = `(() => {
   const out = {};
   const rectOf = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
     return { w:+r.width.toFixed(1), h:+r.height.toFixed(1), top:+r.top.toFixed(1), bottom:+r.bottom.toFixed(1),
-             left:+r.left.toFixed(1), display:s.display, visibility:s.visibility, opacity:s.opacity,
-             zIndex:s.zIndex, position:s.position }; };
+             left:+r.left.toFixed(1), right:+r.right.toFixed(1), display:s.display, visibility:s.visibility, opacity:s.opacity,
+             zIndex:s.zIndex, position:s.position, cssLeft:s.left, cssRight:s.right,
+             cssWidth:s.width, cssMaxWidth:s.maxWidth }; };
   /* HIT TEST, not a rect. "visible" and "clickable" are different things. */
   const hit = el => { if(!el) return { hit:false, why:'absent' };
     const r = el.getBoundingClientRect();
@@ -376,10 +377,14 @@ const PROBE = `(() => {
   const dock = document.getElementById('mlsDock');
   out.viewport = { w: innerWidth, h: innerHeight };
   out.dock = dock ? rectOf(dock) : null;
+  out.dockOverflow = dock ? { clientWidth:dock.clientWidth, scrollWidth:dock.scrollWidth,
+    clientHeight:dock.clientHeight, scrollHeight:dock.scrollHeight,
+    overflowX:getComputedStyle(dock).overflowX, overflowY:getComputedStyle(dock).overflowY } : null;
   out.dockHit = hit(dock);
   out.buttons = [...document.querySelectorAll('#mlsDock button')].map(b => Object.assign(
-    { dest: b.getAttribute('data-dest') || b.id }, hit(b),
-    { w:+b.getBoundingClientRect().width.toFixed(1), h:+b.getBoundingClientRect().height.toFixed(1) }));
+    { dest: b.getAttribute('data-dest') || b.id }, rectOf(b), hit(b)));
+  const ask = document.getElementById('mlsDockAsk');
+  out.ask = ask ? Object.assign({ placeholder:ask.placeholder, active:document.activeElement===ask }, rectOf(ask), hit(ask)) : null;
   out.toolsZ = (document.getElementById('mlsToolsMenu')||{}) && getComputedStyle(document.getElementById('mlsToolsMenu')).zIndex;
   out.copilotZ = getComputedStyle(document.getElementById('copilotDock')).zIndex;
   const back = document.getElementById('oprBack');
@@ -470,7 +475,13 @@ async function runBrowser(exe) {
   };
 
   try {
-    for (const vp of [{ n: '1440x900', w: 1440, h: 900 }, { n: '390x844', w: 390, h: 844 }]) {
+    for (const vp of [
+      { n: '1440x900', w: 1440, h: 900 },
+      { n: '360x800', w: 360, h: 800 },
+      { n: '375x812', w: 375, h: 812 },
+      { n: '390x844', w: 390, h: 844 },
+      { n: '430x900', w: 430, h: 900 }
+    ]) {
       for (const tab of ['procedures', 'templates']) {
         const label = vp.n + ' ' + tab;
         await cdp.send('Emulation.setDeviceMetricsOverride',
@@ -491,7 +502,44 @@ async function runBrowser(exe) {
         const missed = m.buttons.filter(b => !b.hit);
         ok(missed.length === 0,
           label + ': all ' + m.buttons.length + ' dock buttons hit-test to themselves',
-          missed.map(b => b.dest + ' -> ' + (b.topId || b.why)).join(', '));
+          missed.map(b => b.dest + ' -> ' + (b.topId || b.why) + ' ' + JSON.stringify(b)).join(', '));
+        if (vp.w <= 430) {
+          const small = m.buttons.filter(b => b.w < 44 || b.h < 44);
+          const clipped = m.buttons.filter(b => b.left < 0 || b.right > vp.w || b.top < 0 || b.bottom > vp.h);
+          ok(m.buttons.length === 7 && small.length === 0 && clipped.length === 0,
+            label + ': all seven dock buttons are wholly in the viewport and at least 44x44',
+            'small=' + JSON.stringify(small) + ' clipped=' + JSON.stringify(clipped));
+          ok(m.ask && m.ask.display !== 'none' && m.ask.visibility === 'visible' && m.ask.w >= 44 && m.ask.h >= 44,
+            label + ': Ask remains rendered as a >=44x44 control', JSON.stringify(m.ask));
+          ok(m.ask && m.ask.hit && m.ask.left >= 0 && m.ask.right <= vp.w,
+            label + ': Ask hit-tests to itself and is wholly inside the viewport', JSON.stringify(m.ask));
+          ok(m.dock.left >= 0 && m.dock.right <= vp.w &&
+              m.dockOverflow.scrollWidth <= m.dockOverflow.clientWidth + 1,
+            label + ': the dock is inside the viewport with no undisclosed horizontal overflow',
+            JSON.stringify({ dock: m.dock, overflow: m.dockOverflow }));
+
+          /* A real pointer press, not HTMLElement.focus(): the compact Ask box
+             must accept the press over the room and expand without leaving the
+             viewport. This is the interaction the old display:none rule made
+             impossible even though the input still existed in the DOM. */
+          if (tab === 'procedures' && m.ask) {
+            for (const type of ['mousePressed', 'mouseReleased']) {
+              await cdp.send('Input.dispatchMouseEvent', {
+                type, x: m.ask.cx, y: m.ask.cy, button: 'left', clickCount: 1,
+                buttons: type === 'mousePressed' ? 1 : 0
+              });
+            }
+            await sleep(120);
+            const focusedAsk = await evalJs(`(() => { const a=document.getElementById('mlsDockAsk');
+              const r=a.getBoundingClientRect(), t=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+              return { active:document.activeElement===a, left:r.left, right:r.right, width:r.width,
+                hit:!!(t&&(t===a||a.contains(t))) }; })()`);
+            ok(focusedAsk.active && focusedAsk.hit && focusedAsk.width >= 200 &&
+                focusedAsk.left >= 0 && focusedAsk.right <= vp.w,
+              label + ': a real press focuses Ask and its full field stays hit-testable on screen',
+              JSON.stringify(focusedAsk));
+          }
+        }
         ok(Number(m.dock.zIndex) > 9400, label + ': the dock is stacked above the modal layer',
           'z-index ' + m.dock.zIndex);
         ok(Number(m.toolsZ) > 9400 && Number(m.copilotZ) > 9400,

@@ -515,6 +515,13 @@
   function ptMoreOpen() {
     var m = $('ptMore');
     if (!m) return false;
+    /* The app opens/closes this disclosure by writing inline display. Use the
+       state it just wrote; getComputedStyle forced a full layout flush during
+       patient/view transitions for no additional information. Keep a fallback
+       for legacy markup whose owner has not written an inline value yet. */
+    if (m.hidden) return false;
+    var inline = String(m.style && m.style.display || '').trim();
+    if (inline) return inline !== 'none';
     return safe(function () { return getComputedStyle(m).display !== 'none'; }, false);
   }
   function toolsOpen() {

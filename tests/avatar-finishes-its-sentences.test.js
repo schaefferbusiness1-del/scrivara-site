@@ -125,8 +125,8 @@ assert.ok(/function pvNovelWordCount\(/.test(src),
     '200-400ms of energy and would silence the avatar');
   /* THE FILING REFUSAL NEEDS TWO INDEPENDENT REASONS. Audio alone is not enough: the bar is
      floor x 2.6 and the floor is learned from the room, so a noisy waiting area raises it until
-     a soft-spoken patient never registers — and then an audio-only refusal deletes every answer
-     they give while the avatar is speaking. The transcript must ALSO carry zero novel words. */
+     a soft-spoken patient never registers. The current guard is stricter than the former
+     zero-novel-word rule: after normalisation, the final must equal the exact echo template. */
   {
     const at = src.indexOf('if (pvIsSelfEcho(finalText)) return;');
     assert.ok(at > 0, 'the final-path self-echo guard is gone');
@@ -139,41 +139,37 @@ assert.ok(/function pvNovelWordCount\(/.test(src),
       'confirmed AEC this would start deleting real answers again (9 of 12, 22 of 22 measured)');
     /* 2026-08-11 ROUND 10 — NAME-AGNOSTIC AND STRICTLY STRONGER. The template was
        split into a liveness binding and an echo binding, and this gate is on the
-       FILING side so it now reads pvEchoSaying. The back-reference pins what the
-       old literal pinned (the novel-word condition is present) PLUS something it
-       did not: the identifier the guard tests and the identifier the novel-word
-       count compares against must be THE SAME ONE. A refusal guarded on one
-       template and measured against another is exactly how round 9 filed the
-       avatar's own question as the patient's answer. */
-    const REFUSAL = /if \((pvEchoSaying|pvSaying) && pvVoiceGateReady\(\) && !pvOtherVoiceNow\(\) &&\s*\n\s*pvNovelWordCount\(\1, finalText\) === 0\)/;
+       FILING side so it now reads pvEchoSaying. The back-reference proves the
+       identifier guarding the refusal is the same exact normalised template on
+       the right-hand side; mixing those lifetimes is how round 9 filed echoes. */
+    const REFUSAL = /if \((pvEchoSaying|pvSaying) && pvVoiceGateReady\(\) && !pvOtherVoiceNow\(\) &&\s*\n\s*pvNorm\(finalText\) === \1\)/;
     const rm = REFUSAL.exec(win);
     assert.ok(rm,
-      'THE FILING REFUSAL IS AUDIO-ONLY AGAIN, or it is guarded on one template and measured ' +
-      'against another. In a noisy room the learned floor rises until a quiet patient never clears ' +
-      'the bar, and this branch then deletes every answer they give while the avatar is still ' +
-      'speaking. It must require zero novel words, against the same template it tested.');
+      'THE FILING REFUSAL IS AUDIO-ONLY AGAIN, or it compares the final against a different ' +
+      'template. It must require exact normalised equality with the same echo binding it tested.');
     const TPL = rm[1];
     /* executed: a real answer must survive even when the mic never registered the speaker */
     const rStart = src.indexOf('if (' + TPL + ' && pvVoiceGateReady()', at);
     const rEnd = src.indexOf('}', src.indexOf('kiosk.echoRefused', rStart));
     assert.ok(rStart > 0 && rEnd > rStart, 'the filing refusal has no identifiable site');
-    const refuse = new Function('finalText', TPL, 'ready', 'presence', 'novelCount', `
+    const refuse = new Function('finalText', TPL, 'ready', 'presence', 'normalize', `
       var kiosk = { echoRefused: 0 };
       var pvVoiceGateReady = function () { return ready; };
       var pvOtherVoiceNow = function () { return presence; };
-      var pvNovelWordCount = function () { return novelCount; };
+      var pvNorm = normalize;
       var refused = false;
       ${src.slice(rStart, rEnd + 1).replace(/return;/, 'refused = true;')}
       return refused;
     `);
-    const Q = 'is the pain in your back or in your neck';
-    assert.strictEqual(refuse('my shoulder actually', Q, true, false, 2), false,
+    const Q = cls.norm('is the pain in your back or in your neck');
+    assert.strictEqual(refuse('my shoulder actually', Q, true, false, cls.norm), false,
       'A REAL ANSWER IS BEING DELETED: the mic did not register the patient (quiet room-floor ' +
       'problem) but the words are clearly not ours, and it was refused anyway');
-    assert.strictEqual(refuse('is the pain in your', Q, true, false, 0), true,
-      'a pure self-echo arriving in a silent room is no longer refused — mis-transcribed echo ' +
-      'would be filed as the patient answer');
-    assert.strictEqual(refuse('is the pain in your', Q, false, false, 0), false,
+    assert.strictEqual(refuse('Is the pain in your back, or in your neck?', Q, true, false, cls.norm), true,
+      'an exact self-echo arriving in a silent room is no longer refused');
+    assert.strictEqual(refuse('is the pain in your', Q, true, false, cls.norm), false,
+      'a partial phrase is swallowed by the exact-equality backup instead of being left to the primary echo classifier');
+    assert.strictEqual(refuse('Is the pain in your back, or in your neck?', Q, false, false, cls.norm), false,
       'the refusal fires without confirmed echo cancellation');
   }
   /* the microphone must be released with the overlay */

@@ -26,6 +26,67 @@ for (const file of lifecycleFiles) {
 }
 
 const app = read('ScribeFlow.html');
+const p1App = read('1pScribeFlow.html');
+const connect = read('mls-connect.js');
+const dockStart = p1App.indexOf('/* clunky-dock-1.0.0 */');
+const dockEnd = p1App.indexOf('<!-- ===== end clunky-dock-1.0.0', dockStart);
+const dock = p1App.slice(dockStart, dockEnd);
+assert(dockStart >= 0 && dockEnd > dockStart, 'clunky dock performance owner is missing');
+assert(dock.includes("new MutationObserver(function () { schedule(false); })"),
+  'clunky dock body mutations are not coalesced');
+assert(dock.includes("_domObs.observe(document.body, { childList: true, subtree: true })"),
+  'clunky dock no longer watches lazily mounted owned controls');
+assert(!/subtree:\s*true,\s*attributes:\s*true[\s\S]*?attributeFilter:\s*\['data-mls-dock',\s*'class'\]/.test(dock),
+  'clunky dock restored the body-wide class observer that forced layout per mutation');
+assert(/function settle\(\) \{ passes\+\+; ask\(false\); rightNow\(\); names\(\); \}/.test(dock),
+  'ordinary clunky dock reconciliation still measures the menu or a stable finder');
+assert(dock.indexOf('if (!force && !_askDirty) return;') < dock.indexOf('var full = textFits(a, FIND);'),
+  'clunky dock finder cache checks dirty state after forcing layout');
+assert(dock.includes("target.closest('#mlsDock button[data-dest=\"tools\"],#mlsDockNub,#mlsToolsMenu,#mlsDockNubMenu')"),
+  'clunky dock still measures both menus after unrelated document clicks');
+assert(dock.includes("bar.querySelector('.segbtn')") && !dock.includes("qa('.segbtn', bar).length"),
+  'right-now navigation detection still allocates a full querySelectorAll result');
+
+const roomsStart = p1App.indexOf('<!-- ===== clunky2-rooms-1.0.0');
+const roomsEnd = p1App.indexOf('<!-- ===== end clunky2-rooms-1.0.0', roomsStart);
+const rooms = p1App.slice(roomsStart, roomsEnd);
+assert(rooms.includes("window.addEventListener(ev, schedule)"),
+  'patient/view lifecycle still runs the heavy rooms reconciliation synchronously');
+
+const calmShell = read('feat_mls_calm_shell.js');
+const calmNameStart = calmShell.indexOf('  function nameControls()');
+const calmNameEnd = calmShell.indexOf('\n  function ', calmNameStart + 10);
+const calmNames = calmShell.slice(calmNameStart, calmNameEnd);
+assert(calmShell.includes('function activeAppView()') &&
+  calmShell.includes("views[i].style && views[i].style.display"),
+  'Calm shell no longer reads showView inline state before layout fallback');
+assert(calmNames.indexOf('owningView && owningView !== activeView') >= 0 &&
+  calmNames.indexOf('owningView && owningView !== activeView') < calmNames.indexOf('onScreen(el)'),
+  'Calm shell still forces layout on controls inside inactive views');
+
+const dockGuardStart = connect.indexOf('  function positionHandle(){');
+const dockGuardEnd = connect.indexOf('\n  function ', dockGuardStart + 10);
+const dockHandle = connect.slice(dockGuardStart, dockGuardEnd);
+assert(dockHandle.indexOf('ctl.compactExpanded||ctl.compactPinned||narrowDock()') >= 0 &&
+  dockHandle.indexOf('ctl.compactExpanded||ctl.compactPinned||narrowDock()') < dockHandle.indexOf('getBoundingClientRect'),
+  'expanded/pinned/phone docks still measure the hidden reveal handle');
+
+const assistantExact = read('feat_mls_assistant_exact.js');
+const dupWatchStart = assistantExact.indexOf('  function startDupWatch()');
+const dupWatchEnd = assistantExact.indexOf('\n  function ', dupWatchStart + 10);
+const dupWatch = assistantExact.slice(dupWatchStart, dupWatchEnd);
+assert(dupWatch.includes('requestIdleCallback') && !dupWatch.includes('setInterval(function () { killDupFull()'),
+  'assistant duplicate fallback still walks body * repeatedly during interactions');
+
+const visitFocus = read('feat_mls_visit_focus.js');
+const ptMoreStart = visitFocus.indexOf('  function ptMoreOpen()');
+const ptMoreEnd = visitFocus.indexOf('\n  function ', ptMoreStart + 10);
+const ptMore = visitFocus.slice(ptMoreStart, ptMoreEnd);
+const ptMoreCode = ptMore.replace(/\/\*[\s\S]*?\*\//g, '');
+assert(ptMoreCode.indexOf('m.style && m.style.display') >= 0 &&
+  ptMoreCode.indexOf('m.style && m.style.display') < ptMoreCode.indexOf('getComputedStyle'),
+  'Visit focus still forces computed layout before reading the disclosure inline state');
+
 const patientCardStart = app.indexOf('function renderInto(bar, p)');
 const patientCard = app.slice(patientCardStart, app.indexOf('var _syncHtml', patientCardStart));
 assert(patientCard.includes('bar.__mlsCardBaseHtml !== baseHtml'), 'active-patient header must diff its base facts before replacing the subtree');
@@ -41,7 +102,6 @@ const observerStart = tooltip.indexOf('new MutationObserver');
 assert(observerStart >= 0);
 assert(!tooltip.slice(observerStart).includes('_stripTitles(document)'), 'tooltip observer must not rescan the whole document after each mutation');
 
-const connect = read('mls-connect.js');
 const round4 = connect.slice(connect.indexOf('if (window.__mlsRound4B44)'), connect.indexOf('/* ================= apply toggles ================= */'));
 assert(round4.includes('function backendReady()'), 'legacy controls must share the app demo/backend safety boundary');
 assert(round4.includes("typeof window.backendMode === 'function' && !window.backendMode()"), 'demo/local mode must disable controls-card backend probes');
@@ -116,6 +176,19 @@ assert(!/MutationObserver|setInterval/.test(noBlink), 'Today-button polish must 
    section. Its exact node must short-circuit the legacy 900 ms heartbeat before
    profile visibility and visit-array work, while removal restores fallback. */
 const visits = read('feat_visits.js');
+const enhancedVisits = read('feat_visit_history_ext.js');
+const enhancedHostStart = enhancedVisits.indexOf('  function host() {');
+const enhancedHostEnd = enhancedVisits.indexOf('  function getVisits', enhancedHostStart);
+const enhancedHost = enhancedVisits.slice(enhancedHostStart, enhancedHostEnd);
+assert(enhancedHostStart >= 0 && enhancedHostEnd > enhancedHostStart, 'enhanced Visit Notes host boundary is missing');
+assert(!/card\.offsetParent|offsetParent\s*===/.test(enhancedHost.replace(/\/\*[\s\S]*?\*\//g, '')),
+  'enhanced Visit Notes still deletes itself when the profile route is merely hidden');
+assert(enhancedVisits.includes('window.addEventListener("mls:active-patient-changed", _onPatient, false)'),
+  'enhanced Visit Notes does not rebuild from the exact patient lifecycle event');
+assert(enhancedVisits.includes('window.addEventListener("mls:session-boundary", _onSession, false)') &&
+  enhancedVisits.includes('if (activeP()) rebuild(true); else clearOwnedHistory();'),
+  'enhanced Visit Notes can retain a prior patient across a real clear/session boundary');
+assert(enhancedVisits.includes('}, 15000);'), 'enhanced Visit Notes restored its three-second full-history scan');
 const visitHostStart = visits.indexOf('  function host() {');
 const visitHostEnd = visits.indexOf('  function activeP()', visitHostStart);
 const visitRenderStart = visits.indexOf('  function render(force) {', visitHostEnd);

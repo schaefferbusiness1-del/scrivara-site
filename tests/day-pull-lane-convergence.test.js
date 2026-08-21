@@ -129,7 +129,9 @@ function createHarness(opts) {
   const providerAlpha = { stableKey: 'backend:7', id: '7', raw: 'Schaeffer_Matthew_MD', name: ACCOUNT_NAME, rosterVerified: true };
   const providerNear = { stableKey: 'backend:8', id: '8', raw: 'Schaeffer_Michael_MD', name: 'Michael Schaeffer, MD', rosterVerified: true };
   const roster = [providerAlpha, providerNear];
-  let rosterReceipt = { complete: true, partial: false, reason: 'complete', observedCount: 2, reachedEnd: true, restored: true };
+  let rosterReceipt = opts.legacyRoster
+    ? { complete: false, partial: true, reason: 'legacy-unverified', observedCount: 2, reachedEnd: true, restored: true }
+    : { complete: true, partial: false, reason: 'complete', observedCount: 2, reachedEnd: true, restored: true };
   let currentDay = '';
   let createSeq = 0;
   const patient = { id: 'p-dp-1', name: 'Columnless Patient', dob: '01/02/1960', mrn: 'MRN-DP1', athenaId: 'MRN-DP1', visits: [] };
@@ -167,13 +169,28 @@ function createHarness(opts) {
     /* The read can only report provider names the GRID actually painted. His
        one-column Day view paints NONE - that is the whole surface under test. */
     const painted = Array.from(new Set(appts.map(a => String(a.provider || '').trim()).filter(Boolean)));
+    const armed = rt.__armedRosterOperation || {};
+    const responseRosterReceipt = Object.assign(clone(rosterReceipt), {
+      targetDate: day, requestId,
+      providerMode: String(armed.providerMode || 'all'),
+      requestedProviderId: String(armed.requestedProviderId || ''),
+      requestedProviderStableKey: String(armed.requestedProviderStableKey || '')
+    });
+    if (opts.legacyRoster) responseRosterReceipt.attributionCoverage = {
+      rows: appts.length,
+      unattributedRows: appts.filter(row => !String(row.provider || '').trim()).length,
+      foreignRows: 0,
+      headerCount: roster.length,
+      verdict: 'row-unattributed'
+    };
     return {
       id: requestId, ok: true, schedDate: day,
+      scheduleVerified: true,
       text: appts.length ? `Verified Day schedule ${day}` : '',
       appts,
       providers: painted,
       providerRoster: clone(roster),
-      providerRosterReceipt: clone(rosterReceipt),
+      providerRosterReceipt: responseRosterReceipt,
       providerDiag: { providerNames: painted },
       receipt: { complete: true, authoritativeEmpty: appts.length === 0, requestId,
         parsedCount: appts.length, candidateCount: appts.length, expectedCount: appts.length }
@@ -250,6 +267,15 @@ function createHarness(opts) {
     _athenaHistoryVerifiedRef: t => Object.freeze({ patientId: t.patientId, name: t.name, dob: t.dob, mrn: t.mrn,
       verifiedName: t.name, verifiedDob: t.dob, verifiedMrn: t.mrn }),
     _savePatientChart: (ref, _row, chart) => {
+      /* Mirror the current production saver: the durable patient record owns
+         both the top-level clinical cards and the Athena attribution
+         snapshot. The store-census gate deliberately measures the former. */
+      patient.problems = String(chart.problems || '');
+      patient.meds = String(chart.meds || '');
+      patient.allergies = String(chart.allergies || '');
+      patient.summary = String(chart.summary || '');
+      patient.vitals = Object.assign({}, chart.vitals || {});
+      patient.history = Object.assign({}, chart.history || {});
       patient.athenaChartSnapshot = { problems: String(chart.problems || ''), meds: String(chart.meds || ''),
         allergies: String(chart.allergies || ''), summary: String(chart.summary || ''),
         vitals: Object.assign({}, chart.vitals || {}), history: Object.assign({}, chart.history || {}), visits: [] };
@@ -332,6 +358,12 @@ function columnlessRows(day) {
     athenaPatientId: 'ath-1', patient_external_id: 'p-dp-1', athenaAppointmentId: 'ath-appt-' + day,
     date: day, time: '9:20 AM', reason: 'Columnless day grid', provider: '' }];
 }
+function taggedRows(day) {
+  return columnlessRows(day).map(row => Object.assign({}, row, {
+    athenaAppointmentId: 'ath-appt-tagged-' + day,
+    provider: 'Schaeffer_Matthew_MD'
+  }));
+}
 
 async function main() {
   /* ---- ARM 1: the converged entry warms, scopes, and IMPORTS ---- */
@@ -347,13 +379,15 @@ async function main() {
   assert.strictEqual(account.stableKey, 'backend:7', 'the account scope must be a roster entry, never a bare name');
 
   h.rowDays.set(DAY, columnlessRows(DAY));
-  h.rowDays.set(DAY2, columnlessRows(DAY2));
+  h.rowDays.set(DAY2, taggedRows(DAY2));
   /* includeHistory deliberately omitted: the default must be ON. */
   const res = await h.api.dayPull({ date: DAY, onStatus: h.onStatus });
 
-  assert.strictEqual(h.posted[0] && h.posted[0].type, 'mlsAppGotoDate',
-    'the FIRST thing a Visit pull does must be opening the day in athenaOne');
-  assert.strictEqual(h.posted[0].date, DAY, 'the pre-flight must open the day the clinician selected');
+  assert.strictEqual(h.posted[0] && h.posted[0].type, 'mlsAthenaPresence',
+    'the first bridge action must prove an athenaOne tab is present before navigation is attempted');
+  const firstGoto = h.posted.findIndex(message => message.type === 'mlsAppGotoDate');
+  assert(firstGoto > 0, 'the presence probe must be followed by the exact day navigation');
+  assert.strictEqual(h.posted[firstGoto].date, DAY, 'the pre-flight must open the day the clinician selected');
   assert(h.warmReadAt() > 0, 'the pre-flight must re-read the painted Day grid');
   assert(h.enumReadAt() > h.warmReadAt(),
     'the day must be WARMED before the engine enumerates - the un-warmed first pull after a reload is the failure');
@@ -378,15 +412,16 @@ async function main() {
   assert.strictEqual(pre.scopeSource, 'account', 'a Visit pull with no picker scopes from the ACCOUNT');
   assert.strictEqual(res.includeHistory, true, 'verified history must default ON through the converged entry');
 
-  assert.strictEqual(res.ok, true, 'the owner\'s columnless Day grid must PULL: ' + JSON.stringify({ reason: res.reason, error: res.error }));
-  assert.strictEqual(res.complete, true, 'a warmed, scoped, fully-read day must settle complete');
-  assert.strictEqual(res.created, 1, 'the columnless appointment must be imported, not silently dropped');
-  assert.strictEqual(h.backendRows.length, 1, 'the imported appointment must reach the store');
-  assert.strictEqual(h.savedBodies[0].provider, ACCOUNT_NAME, 'the stored row must carry the scoped provider');
-  assert.strictEqual(res.providerReceipt.attribution, 'requested-scope-columnless',
-    'the receipt must name attribution honestly as a columnless scope fill');
-  assert.strictEqual(res.providerReceipt.scopeFilledRows, 1, 'every filled row must be counted on the receipt');
-  assert.strictEqual(res.providerReceipt.unattributedRows, 0, 'no row may be left unattributed on a scoped columnless pull');
+  assert.strictEqual(res.ok, false,
+    'a selected account provider must not be guessed onto a provider-blank appointment row');
+  assert.strictEqual(res.reason, 'provider-incomplete',
+    'the selected account scope must fail closed when row attribution is unavailable');
+  assert.strictEqual(res.created, 0, 'the selected scope imported an unattributed row');
+  assert.strictEqual(h.backendRows.length, 0, 'an unattributed row reached the store under a selected clinician');
+  assert(res.providerReceipt && res.providerReceipt.unattributedRows === 1,
+    'the provider receipt did not disclose the unattributed row');
+  assert.strictEqual(res.providerReceipt.scopeFilledRows, 0,
+    'the selected provider was guessed into an empty row');
 
   /* ---- ARM 1b: ONE pre-flight per page lifetime while the scope resolves ---- */
   const gotosAfterFirst = h.gotos();
@@ -395,12 +430,22 @@ async function main() {
   assert.strictEqual(second.preflightReceipt.reason, 'skipped-already-warm', 'the skip must be disclosed, not hidden');
   assert.strictEqual(second.preflightReceipt.providerResolved, true, 'a skipped pre-flight must still scope to the account');
   assert.strictEqual(h.gotos(), gotosAfterFirst + 1, 'a warm lane must open the day ONCE, not twice');
-  assert.strictEqual(second.ok, true, 'the second day must still pull');
+  assert.strictEqual(second.ok, true, 'an exactly provider-tagged second day must still pull: ' +
+    JSON.stringify({ reason: second.reason, error: second.error, providerReceipt: second.providerReceipt,
+      scheduleReceipt: second.scheduleReceipt, calendarReceipt: second.calendarReceipt,
+      identityBootstrapReceipt: second.identityBootstrapReceipt }));
+  assert.strictEqual(h.backendRows.length, 1, 'the exactly attributed second-day appointment did not reach the store');
+  assert.strictEqual(h.savedBodies[0].provider, h.providerAlpha.raw,
+    'the stored attributed row lost the exact Athena provider value carried by the proven schedule row');
+  assert.notStrictEqual(h.savedBodies[0].provider, h.providerNear.raw,
+    'the stored attributed row crossed onto the near-name clinician');
 
   /* ---- ARM 1c: an explicit caller scope is never overwritten by the account ---- */
+  h.rowDays.set(DAY, taggedRows(DAY));
   const third = await h.api.dayPull({ date: DAY, provider: h.providerAlpha, onStatus: h.onStatus });
   assert.strictEqual(third.preflightReceipt.scopeSource, 'caller', 'an explicit provider must stay the callers');
   assert.strictEqual(third.preflightReceipt.providerMode, 'selected', 'an explicit provider must resolve selected');
+  assert.strictEqual(third.ok, true, 'an explicit exact provider did not pull its tagged row');
 
   /* ---- ARM 2: THE DEFECT. The old Visit-lane call, same columnless day ---- */
   const old = createHarness();
@@ -414,7 +459,7 @@ async function main() {
   assert.strictEqual(old.warmReadAt(), -1, 'the old lane never re-read the grid before enumerating');
 
   /* ---- ARM 3: no resolvable account -> honest "all", never a guess ---- */
-  const anon = createHarness({ noAccount: true });
+  const anon = createHarness({ noAccount: true, legacyRoster: true });
   assert.strictEqual(anon.api._accountProviderRequest(), 'all',
     'an unresolvable account must fall back to the string all - never a guessed name');
   anon.rowDays.set(DAY, columnlessRows(DAY));
@@ -423,9 +468,21 @@ async function main() {
   assert.strictEqual(anonRes.preflightReceipt.providerResolved, false, 'an unresolved scope must not claim it resolved');
   assert(anon.statuses.some(s => s === 'Pulling every provider painted on the athenaOne Day grid.'),
     'the all-scope must be stated plainly to the clinician');
-  assert.strictEqual(anonRes.ok, false, 'an all-scope pull of a columnless grid must stay fail-closed');
-  assert.strictEqual(anonRes.reason, 'provider-incomplete', 'attribution is never invented for an all-scope pull');
-  assert.strictEqual(anon.backendRows.length, 0, 'an unattributable all-scope row must never be stored');
+  assert.strictEqual(anonRes.ok, true,
+    'the guarded all-Day lane did not import its exact appointment census: ' +
+    JSON.stringify({ reason: anonRes.reason, error: anonRes.error,
+      appointmentCensusReceipt: anonRes.appointmentCensusReceipt,
+      providerReceipt: anonRes.providerReceipt, calendarReceipt: anonRes.calendarReceipt,
+      identityBootstrapReceipt: anonRes.identityBootstrapReceipt }));
+  assert.strictEqual(anonRes.reason, 'complete-appointment-census-only',
+    'the provider-unknown success was not explicitly bounded to the appointment census');
+  assert.strictEqual(anonRes.appointmentCensusOnly, true,
+    'the provider-unknown completion was not identified as an appointment census');
+  assert.strictEqual(anonRes.providerAttributionComplete, false,
+    'the appointment census fabricated provider attribution');
+  assert.strictEqual(anon.backendRows.length, 1, 'the exact appointment census did not reach the store');
+  assert.strictEqual(String(anon.savedBodies[0].provider || ''), '',
+    'the guarded all-Day census guessed a provider onto an unattributed row');
 
   /* ---- ARM 4: the pre-flight is ADVISORY. It cannot refuse a pull ---- */
   const nav = createHarness();
@@ -460,7 +517,7 @@ async function main() {
     'a dateless call must be handed straight to the engine - no warm-up, no decoration');
   assert.strictEqual(undated.warmReadAt(), -1, 'a dateless call must never run the pre-flight read');
 
-  console.log('PASS day-pull lane convergence: the Visit strip routes through the guarded dayPull (history on, si.pull fallback intact), the day is warmed and the roster re-ingested BEFORE the engine enumerates, onStatus reaches both halves, the account scope imports the columnless Day grid the old provider-less call dropped, and every pre-flight stays advisory - no invented scope, no invented verdict');
+  console.log('PASS day-pull lane convergence: the Visit strip routes through guarded dayPull, proves Athena presence before exact navigation, warms before enumeration, preserves selected-provider attribution, and limits provider-blank success to the explicit appointment-census capability');
 }
 
 const watchdog = setTimeout(() => {

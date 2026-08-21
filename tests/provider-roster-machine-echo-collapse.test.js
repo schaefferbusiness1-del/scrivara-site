@@ -24,9 +24,11 @@ const vm = require('vm');
 const root = path.join(__dirname, '..');
 const rosterSrc = fs.readFileSync(path.join(root, 'feat_athena_provider_roster.js'), 'utf8');
 
-assert(rosterSrc.includes("var VERSION = '2.3.0'"), 'roster satellite version must be 2.3.0 (prs-1.0.0: the receipt states its scope, and the roster learns from providers observed on already-pulled appointments)');
+assert(rosterSrc.includes("var VERSION = 'p1-provider-roster-1.0.0'"),
+  'promoted roster satellite must expose the exact session-owned provider-roster version');
 
 function browserContext(seedV2) {
+  const installToken = 'machine-echo-owned-roster';
   const store = new Map();
   if (seedV2) store.set('acct:mlsProviderRosterV2', JSON.stringify(seedV2));
   const localStorage = {
@@ -40,21 +42,61 @@ function browserContext(seedV2) {
     removeEventListener: () => {},
     querySelector: () => null,
     querySelectorAll: () => [],
-    getElementById: () => null
+    getElementById: () => null,
+    currentScript: {
+      getAttribute(name) {
+        if (name === 'data-mls-install-token') return installToken;
+        if (name === 'data-mls-asset') return 'feat_athena_provider_roster.js';
+        return null;
+      }
+    }
   };
   const window = {
     _calProviders: [],
+    __MLS_MAIN: { enabled: true },
+    __mlsP1ProviderRosterLoader: {
+      installed: true, version: 'p1-provider-roster-1.0.0', installToken
+    },
+    __mlsSessionAccount: 'machine-echo@example.test',
+    __mlsSessionEpoch: 1,
+    bkToken: () => 'machine-echo-session-token',
     uns: n => `acct:${n}`,
     addEventListener: () => {}, removeEventListener: () => {},
     document, localStorage
   };
   window.window = window;
-  return vm.createContext({
+  const ctx = vm.createContext({
     window, document, localStorage,
     setInterval: () => 1, clearInterval: () => {},
     setTimeout: () => 1, clearTimeout: () => {},
     console
   });
+  vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
+  assert(ctx.window.__mlsProviderRoster && ctx.window.__mlsProviderRoster.version === 'p1-provider-roster-1.0.0',
+    'the promoted provider roster did not install under the exact controller/session owner');
+  assert.strictEqual(ctx.window.__mlsProviderRoster.installToken, installToken,
+    'the provider roster API is not bound to the exact loader token');
+  return ctx;
+}
+
+let ingestSequence = 0;
+function ingestExact(ctx, response) {
+  const api = ctx.window.__mlsProviderRoster;
+  const requestId = `machine-echo-${++ingestSequence}`;
+  assert(api.beginOperation({
+    targetDate: '2026-07-16', requestId, providerMode: 'all',
+    requestedProviderId: '', requestedProviderStableKey: ''
+  }), 'the exact provider-roster operation did not arm');
+  const payload = Object.assign({}, response, { requestId });
+  if (payload.providerRosterReceipt) {
+    payload.providerRosterReceipt = Object.assign({}, payload.providerRosterReceipt, {
+      requestId, targetDate: '2026-07-16'
+    });
+  }
+  const result = api.ingestResp(payload);
+  assert(!result || result.ignored !== true,
+    'the exact owned provider-roster response was refused as unbound');
+  return result;
 }
 
 const completeReceipt = (n) => ({
@@ -67,8 +109,7 @@ const completeReceipt = (n) => ({
 //    its completeness because the collapsed unique count matches the sweep.
 {
   const ctx = browserContext();
-  vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
-  ctx.window.__mlsProviderRoster.ingestResp({
+  ingestExact(ctx, {
     providerRoster: [
       { stableKey: 'athena:matthew schaeffer, md', raw: 'Matthew Schaeffer, MD' },
       { stableKey: 'athena:schaeffer_matthew_md', raw: 'Schaeffer_Matthew_MD' }
@@ -92,8 +133,7 @@ const completeReceipt = (n) => ({
 // 2. A label-prefixed key body ("doctor: ...") is the same clinician too.
 {
   const ctx = browserContext();
-  vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
-  ctx.window.__mlsProviderRoster.ingestResp({
+  ingestExact(ctx, {
     providerRoster: [
       { stableKey: 'athena:clare miller, np', raw: 'Clare Miller, NP' },
       { stableKey: 'athena:doctor: clare miller, np', raw: 'Doctor: Clare Miller, NP' }
@@ -109,8 +149,7 @@ const completeReceipt = (n) => ({
 //    and never folds into a display-text entry by name alone.
 {
   const ctx = browserContext();
-  vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
-  ctx.window.__mlsProviderRoster.ingestResp({
+  ingestExact(ctx, {
     providerRoster: [
       { stableKey: 'athena:alex-1', name: 'Alex Same, MD' },
       { stableKey: 'athena:alex same, md', raw: 'Alex Same, MD' }
@@ -125,8 +164,7 @@ const completeReceipt = (n) => ({
 // 4. Distinct credentials never collapse (MD vs DO with identical human name).
 {
   const ctx = browserContext();
-  vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
-  ctx.window.__mlsProviderRoster.ingestResp({
+  ingestExact(ctx, {
     providerRoster: [
       { stableKey: 'athena:same_alex_md', raw: 'Same_Alex_MD' },
       { stableKey: 'athena:same_alex_do', raw: 'Same_Alex_DO' }
@@ -148,13 +186,15 @@ const completeReceipt = (n) => ({
     { stableKey: 'athena:schaeffer_matthew_md', raw: 'Schaeffer_Matthew_MD', name: 'Matthew Schaeffer, MD', source: 'athena-schedule-header', rosterVerified: true, aliases: [] }
   ];
   const ctx = browserContext(seed);
-  vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
-  ctx.window.__mlsProviderRoster.merge([]);
+  const api = ctx.window.__mlsProviderRoster;
+  const healOwner = api._captureOwner('machine-echo-cache-heal');
+  assert(api._ownerCurrent(healOwner), 'the cache-heal merge did not capture the current account/session owner');
+  api.merge([], 'machine-echo-cache-heal', healOwner);
   const healed = ctx.window.__mlsProviderRoster.list().filter(x => /schaeffer/i.test(x.name));
   assert.strictEqual(healed.length, 1, 'a polluted persisted cache must heal on the first merge');
   const degraded = ctx.window.__mlsProviderRoster.getReceipt();
   assert.notStrictEqual(degraded.complete, true, 'healing must honestly degrade the stale receipt');
-  ctx.window.__mlsProviderRoster.ingestResp({
+  ingestExact(ctx, {
     providerRoster: [{ stableKey: 'athena:matthew schaeffer, md', raw: 'Matthew Schaeffer, MD' }],
     providerRosterReceipt: completeReceipt(1)
   });

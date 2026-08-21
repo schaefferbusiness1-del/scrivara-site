@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_athena_provider_roster.js'), 'utf8');
+const installToken = 'provider-dedupe-owned-roster';
 const store = new Map();
 const messageListeners = [];
 let rosterUpdates = 0;
@@ -18,11 +19,26 @@ const localStorage = {
 const document = {
   readyState: 'complete',
   addEventListener() {}, removeEventListener() {},
-  querySelector() { return null; }, querySelectorAll() { return []; }, getElementById() { return null; }
+  querySelector() { return null; }, querySelectorAll() { return []; }, getElementById() { return null; },
+  currentScript: {
+    getAttribute(name) {
+      if (name === 'data-mls-install-token') return installToken;
+      if (name === 'data-mls-asset') return 'feat_athena_provider_roster.js';
+      return null;
+    }
+  }
 };
 class CustomEvent { constructor(type, init) { this.type = type; this.detail = init && init.detail; } }
 const window = {
   window: null, document, localStorage, _calProviders: [],
+  __MLS_MAIN: { enabled: true },
+  __mlsP1ProviderRosterLoader: {
+    installed: true, version: 'p1-provider-roster-1.0.0', installToken
+  },
+  __mlsSessionAccount: 'provider-dedupe@example.test',
+  __mlsSessionEpoch: 1,
+  bkToken: () => 'provider-dedupe-session-token',
+  location: { origin: 'https://provider-dedupe.example.test' },
   uns: suffix => `dedupe-test::${suffix}`,
   addEventListener(type, fn) { if (type === 'message') messageListeners.push(fn); },
   removeEventListener() {},
@@ -37,6 +53,8 @@ const context = vm.createContext({
 vm.runInContext(source, context, { filename: 'feat_athena_provider_roster.js' });
 const api = window.__mlsProviderRoster;
 assert(api && typeof api.getIngestStats === 'function', 'provider roster did not expose PHI-free ingestion counters');
+assert.strictEqual(api.version, 'p1-provider-roster-1.0.0', 'the promoted exact provider-roster owner did not install');
+assert.strictEqual(api.installToken, installToken, 'provider roster API is not bound to the exact loader token');
 
 function reply(requestId) {
   return {
@@ -53,7 +71,10 @@ function arm(requestId) {
   api.beginOperation({ targetDate: '2026-07-21', requestId, providerMode: 'all', requestedProviderId: '', requestedProviderStableKey: '' });
 }
 function dispatch(resp) {
-  const event = { data: { source: 'mls-ext', type: 'mlsAppScheduleResult', requestId: resp.requestId, resp } };
+  const event = {
+    source: window, origin: window.location.origin,
+    data: { source: 'mls-ext', type: 'mlsAppScheduleResult', requestId: resp.requestId, resp }
+  };
   for (const fn of messageListeners) fn(event);
 }
 

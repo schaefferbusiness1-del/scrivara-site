@@ -143,7 +143,7 @@
         return p && namesMatch(p.name, identity.name) && normDob(p.dob) === chartDob;
       });
       if (ndHits.length === 1) { found = ndHits[0]; via = 'name-dob'; }
-      /* dupmatch-1.0 (live 2026-08-20, Christine WRIGHT): namesMatch above is
+      /* dupmatch-1.0 (verified duplicate-name incident): namesMatch above is
          strict, so a missing middle initial or LAST-FIRST order minted a
          duplicate here too. Same tolerant fallback as the twins' matcher,
          gated by the SAME DOB - and only an unambiguous single hit binds;
@@ -240,7 +240,7 @@
       try { window.postMessage(out, '*'); } catch (e6) { settle(null); }
     });
   }
-  function captureOpen(ms) { return bridgeOnce('mlsAppCapture', 'mlsAppCaptureResult', null, ms || 9000); }
+  function captureOpen(ms) { return bridgeOnce('mlsAppCapture', 'mlsAppCaptureResult', { explicitUserPull: true, foregroundOk: true }, ms || 18000); }
   function refreshAthena(readTabId, briefingUrl, ms) {
     return bridgeOnce('mlsAppAthenaRefreshV1', 'mlsAppAthenaRefreshV1Result',
       { readTabId: Number(readTabId) || 0, briefingUrl: S(briefingUrl).slice(0, 300) }, ms || 40000);
@@ -310,20 +310,31 @@
 
   /* ---------- the one-button auto pull ---------- */
   var busy = false;
+  var BUSY_EVENT = 'mls:athena-autopull-state';
+  function emitBusy(value) {
+    /* State only: never put patient identity or chart content on a DOM event. */
+    try {
+      var ev;
+      if (typeof window.CustomEvent === 'function') ev = new CustomEvent(BUSY_EVENT, { detail: { busy: value === true } });
+      else { ev = document.createEvent('CustomEvent'); ev.initCustomEvent(BUSY_EVENT, false, false, { busy: value === true }); }
+      window.dispatchEvent(ev);
+    } catch (e) {}
+  }
   async function run(onStatus) {
     if (busy) return;
     var cv = window.__mlsCopyVisits, M = window.__mlsVisitModel;
     if (!cv || !cv._driveRequest || !cv._saveVisits || !M) {
-      status(onStatus, '⚠ Visit modules aren’t loaded yet — reload the page and try again.', true); hideChipLater(); return;
+      status(onStatus, '⚠ Visit modules aren’t loaded yet — reload the page and try again.', true); hideChipLater(); emitBusy(false); return;
     }
     busy = true;
+    emitBusy(true);
     try {
       hardenModel();
       /* cp-1.1: check WHO is open FIRST (a read-only capture, ~1-2s) and ask
          for what the pull needs AT THE CLICK. The old flow drove the full walk
          and complained after the fact; the owner ruled that out 2026-08-19. */
       status(onStatus, '🔍 Checking who is open in your athenaOne tab…', true);
-      var pre = await captureOpen(9000);
+      var pre = await captureOpen(18000);
       var preCap = (pre && pre.ok === true && pre.captured) ? pre.captured : null;
       if (!preCap || !trim(preCap.name)) {
         var door = document.getElementById('pdName');
@@ -430,7 +441,7 @@
          allergies off the open chart banner when the full-card rail is absent
          or refused. Names must match the pulled identity. */
       if (!cardLanded) try {
-        var post = await captureOpen(9000);
+        var post = await captureOpen(18000);
         var postCap = (post && post.ok === true && post.captured) ? post.captured : null;
         if (postCap && namesMatch(postCap.name, identity.name)) {
           var factsChanged = false;
@@ -471,7 +482,7 @@
       try { var pcF = document.getElementById('profileCard'); if (pcF && pcF.scrollIntoView) pcF.scrollIntoView({ block: 'nearest' }); } catch (eF4) {}
       hideChipLater(5000);
       return { ok: true, saved: saved, total: n, created: r.created };
-    } finally { busy = false; }
+    } finally { busy = false; emitBusy(false); }
   }
 
   /* ---------- wire the existing "📥 Pull from Athena" button to the no-typing auto flow ---------- */
@@ -479,7 +490,10 @@
     hardenModel();
     if (typeof window.pullPatientFromAthenaPrompt === 'function' && !window.pullPatientFromAthenaPrompt.__mlsAutoWrapped) {
       window.__mlsPullPromptOrig = window.pullPatientFromAthenaPrompt; // keep the typed-search fallback available
-      var wrapped = function (btn) { run(null); };
+      /* Return the real completion Promise. Besides making callers testable,
+         this lets every browser (including timer-throttled background tabs on
+         macOS) bind UI completion to the actual read instead of a timeout. */
+      var wrapped = function (btn) { return run(null); };
       wrapped.__mlsAutoWrapped = true;
       window.pullPatientFromAthenaPrompt = wrapped;
     }
@@ -499,6 +513,7 @@
 
   window.__mlsAthenaAutoPull = {
     installed: true, version: VERSION, run: run,
+    isBusy: function () { return busy; }, busyEvent: BUSY_EVENT,
     resolvePatient: resolvePatient, namesMatch: namesMatch, normDob: normDob, dobsMatch: dobsMatch,
     firstLast: firstLast, hardenModel: hardenModel, revert: revert
   };

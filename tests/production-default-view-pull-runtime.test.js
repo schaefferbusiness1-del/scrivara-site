@@ -354,7 +354,8 @@ async function withWatchdog(promise, label, ms = 12000) {
     'a complete default-view schedule was blocked by a legacy-unverified provider roster: ' +
     JSON.stringify({ reason: result.reason, providerRosterReceipt: result.providerRosterReceipt, providerReceipt: result.providerReceipt, calendarReceipt: result.calendarReceipt, authoritativeSnapshot: result.authoritativeSnapshot, historyReceipt: result.historyReceipt, identityBootstrapReceipt: result.identityBootstrapReceipt, failureReasons: result.failureReasons, unresolvedMappings: result.unresolvedMappings }));
   assert.strictEqual(result.complete, true, 'the exact default-view schedule/history pipeline did not complete');
-  assert.strictEqual(result.reason, 'complete-appointment-census-history');
+  assert.strictEqual(result.reason, 'complete-appointment-census-with-history',
+    'a completed appointment-census phase-two history read must use the current explicit terminal reason');
   assert.strictEqual(result.scheduleReceipt.complete, true);
   assert.strictEqual(result.scheduleReceipt.parsedCount, 1);
 
@@ -392,19 +393,22 @@ async function withWatchdog(promise, label, ms = 12000) {
   assert.strictEqual(result.historyReceipt.exactIdentityVerified, true);
   assert.strictEqual(result.historyReceipt.failures, 0);
   assert.strictEqual(patient.visits.length, 1, 'the verified prior visit was not stored');
-  assert(resumeRecords.some(record => record && record.surface === 'production' && record.guardedDay === true),
-    'the guarded Day origin was not preserved in its durable resume intent');
-  assert(source.includes('if (next.guardedDay === true) resumeOpts.__prodDayCensusToken = PROD_DAY_CENSUS_TOKEN;'),
-    'a same-intent guarded Day resume does not restore the private census capability');
+  assert(resumeRecords.some(record => record && record.p1CensusEligible === true &&
+      record.providerScope && record.providerScope.mode === 'all' && record.providerScope.source === 'day-caller'),
+    'the guarded all-Day origin and census eligibility were not preserved in the bounded durable resume intent');
+  assert(source.includes('if (p1ResumeCensusEligible) resumeOpts.__p1DayCensusToken = P1_DAY_CENSUS_TOKEN;'),
+    'a same-intent guarded all-Day resume does not restore the private census capability');
 
-  const authority = context.__mlsSI.authoritativeStatusForDay(DAY, 'all');
-  assert.strictEqual(authority.exact, true,
+  const appointmentCensus = context.__mlsSI.appointmentCensusStatusForDay(DAY);
+  assert.strictEqual(appointmentCensus.exactAppointments, true,
     'the exact default-view appointment list was not available to production day consumers');
-  assert.strictEqual(authority.reason, 'exact-appointment-census');
-  assert.strictEqual(authority.providerAttributionComplete, false,
+  assert.strictEqual(appointmentCensus.reason, 'exact-appointment-census');
+  assert.strictEqual(appointmentCensus.providerAttributionComplete, false,
     'the display snapshot fabricated provider attribution');
-  assert.strictEqual(authority.coversPractice, false,
+  assert.strictEqual(appointmentCensus.coversPractice, false,
     'the default-view appointment census fabricated practice-wide coverage');
+  assert.strictEqual(context.__mlsSI.appointmentCensusRowsForDay(DAY).length, 1,
+    'the exact appointment-census snapshot did not expose its one proven backend appointment');
   const selectedAuthority = context.__mlsSI.authoritativeStatusForDay(DAY, {
     id: 'provider-a', stableKey: 'athena:provider-a', name: 'Provider Alpha, MD'
   });
@@ -428,8 +432,11 @@ async function withWatchdog(promise, label, ms = 12000) {
     'the public pull API wrote provider-unknown rows');
   assert.strictEqual(historyReads, historyBeforeDirect,
     'the public pull API started history without the guarded Day capability');
-  assert.strictEqual(context.__mlsSI.resumeState().guardedDay, false,
-    'a direct public pull persisted guarded Day authority');
+  const directResume = context.__mlsSI.resumeState();
+  assert(directResume && directResume.p1CensusEligible === false &&
+      directResume.providerScope && directResume.providerScope.mode === 'all' &&
+      directResume.providerScope.source === 'direct',
+    'a direct public pull persisted the guarded Day census capability');
 
   const schedulesBeforeMonth = posted.filter(message => message.type === 'mlsAppPullSchedule').length;
   const savesBeforeMonth = savedBodies.length;

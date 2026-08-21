@@ -34,16 +34,25 @@ assert.ok(!/\S{1,3}…$/.test(out) || / \S+…$/.test(out) === false || true, 'c
 assert.ok(out.slice(0, -1) === long.slice(0, out.length - 1) && long[out.length - 1] !== ' ' ? out.slice(0, -1).endsWith(long.slice(0, out.length - 1).split(/\s+/).slice(0, -1).join(' ')) || true : true);
 assert.strictEqual(why('short-code-nobody-mapped'), 'short-code-nobody-mapped', 'short unmapped heads pass through unchanged');
 /* D6 coverage: the raw jargon the owner actually sees is mapped */
-assert.strictEqual(why('storage-full-not-saved'), 'read but not saved — MLS storage is full');
+const storageWhy = why('storage-full-not-saved');
+assert.strictEqual(storageWhy, 'read, but the latest save could not be verified');
+assert.ok(!/storage (?:is )?full|quota|not saved|nothing was saved/i.test(storageWhy),
+  'the panel must not claim an unproven storage cause or data-loss outcome');
 assert.strictEqual(why('encounter-index-incomplete [d:3]'), 'the visit list could not be fully confirmed');
 assert.strictEqual(why('pulled-day-unknown'), 'could not tell which day to read the note for');
 
 /* ---- D3: the pass narrates on the card ---- */
 const announceIdx = si.indexOf("saving the pulled day's note (");
 assert.ok(announceIdx > 0, 'the pass announces per patient');
-assert.ok(announceIdx < si.indexOf('vpToday.runForPatient(tnP'), 'the announce precedes the scoped read');
+const inlineAnnounceIdx = si.indexOf("saving the pulled day's note");
+const inlineReadIdx = si.indexOf('tnBoundedRead(dnVp, dnP, dnDay)', inlineAnnounceIdx);
+assert.ok(inlineAnnounceIdx > 0 && inlineReadIdx > inlineAnnounceIdx,
+  'the inline per-patient announce precedes the bounded scoped read');
+const tailReadIdx = si.indexOf('tnBoundedRead(vpToday, tnP, tnDay)', announceIdx);
+assert.ok(tailReadIdx > announceIdx, 'the tail-pass progress phase precedes its bounded scoped read');
 assert.ok(si.indexOf('finishing \\u2014 recording the day verdict') > 0, 'the finishing line replaces a silent grind');
-assert.ok(si.indexOf('ppCurrent("all charts read') > 0, 'narration rides ppCurrent (never number-parsed - the si-1.9.4 bar law)');
+assert.ok(si.indexOf('ppCurrent("reading today\'s notes ("') > 0 && si.indexOf('ppPhase("day-notes"') > 0,
+  'tail narration rides the dedicated phase and ppCurrent instead of a number-parsed chart tally');
 
 /* ---- D5: chartSaved end-to-end, EXECUTED through the real ppSettle/ppTally ---- */
 const ppStart2 = si.indexOf('function ppState(){');
@@ -60,7 +69,7 @@ assert.strictEqual(S2.ok, 1, 'one clean save');
 assert.strictEqual(S2.failed, 2, 'failed rows still count as failed - no laundering');
 assert.strictEqual(S2.chartOnly, 1, 'the chart-saved subset is counted separately');
 assert.ok(mc.indexOf("'chart saved \\u2014 visit notes incomplete'") > 0, 'the row says what actually happened');
-assert.ok(mc.indexOf("' chart-saved, notes incomplete)'") > 0, 'the tally names the subset');
+assert.ok(mc.indexOf("' saved the chart but not every note)'") > 0, 'the tally names the subset in plain words');
 assert.ok(si.indexOf('DID save the six-card chart summary') > 0, 'the day-end line stops calling a persisted chart not-saved');
 
 /* ---- D6: one wording per reason code ---- */
@@ -71,7 +80,9 @@ assert.ok(si.indexOf('__ppWhy(String(p.reason || "unread"))') > 0, 'the retry-na
 
 /* ---- override armed inside the mutex ---- */
 const pullIdx2 = si.indexOf('function pull(opts) {');
-const pullBlock2 = si.slice(pullIdx2, pullIdx2 + 3600);
+const pullEnd2 = si.indexOf('function _quotaLatchStale()', pullIdx2);
+assert.ok(pullIdx2 > 0 && pullEnd2 > pullIdx2, 'the complete pull owner is extractable');
+const pullBlock2 = si.slice(pullIdx2, pullEnd2);
 assert.ok(pullBlock2.indexOf('__ownedPull = true;') > 0 && pullBlock2.indexOf('var run = function') < pullBlock2.indexOf('_pullBodiesOverride = (typeof opts.pullVisitBodies'),
   'the override is armed INSIDE run(), after the mutex decides this call owns the pull');
 assert.strictEqual((pullBlock2.match(/if \(__ownedPull\) _pullBodiesOverride = null;/g) || []).length, 2,

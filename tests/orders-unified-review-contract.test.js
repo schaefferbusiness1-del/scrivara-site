@@ -12,7 +12,7 @@ const document = {
   readyState: 'loading', body: {}, addEventListener() {}, getElementById() { return null; },
   querySelectorAll() { return []; }, createElement() { return {}; }
 };
-const window = { document, location: { origin: 'https://mlsscribe.com' }, __mlsExtensionCapabilities: { supervisedOrderPlacementV2: true }, addEventListener() {}, removeEventListener() {}, postMessage() {}, toast() {} };
+const window = { document, location: { origin: 'https://mlsscribe.com' }, __mlsExtensionCapabilities: { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true }, addEventListener() {}, removeEventListener() {}, postMessage() {}, toast() {} };
 window.window = window;
 function MutationObserver() { this.observe = () => {}; this.disconnect = () => {}; }
 const ctx = { window, document, MutationObserver, console, setTimeout, clearTimeout, Date, Math, Promise, Object, Array, String, Number, RegExp, JSON, Uint32Array };
@@ -49,9 +49,9 @@ const suggestion = orders.find(row => /suggestion only/i.test(row.payload.review
 assert(reviewed && incomplete && suggestion, 'order status separation is missing');
 assert.strictEqual(manifest.patient.patientId, 'local-patient-exact-7', 'immutable frontend manifest lost the local patient id');
 assert(Object.isFrozen(manifest.patient), 'frontend patient binding must be immutable');
-assert.strictEqual(reviewed.capability, 'manual', 'a complete canonical order must remain a visible manual review payload');
-assert.strictEqual(reviewed.action, '', 'a reviewed order must never expose place_order');
-assert(/Complete in Athena/i.test(reviewed.reason), 'reviewed order must explicitly direct the clinician to complete it in Athena');
+assert.strictEqual(reviewed.capability, 'ready', 'a complete canonical order with both extension capabilities must expose one supervised ready row');
+assert.strictEqual(reviewed.action, 'place_order', 'the capable reviewed order lost its typed place_order action');
+assert.strictEqual(reviewed.reason, '', 'a capable exact order is incorrectly described as blocked or manual');
 assert.strictEqual(reviewed.payload.fields.indication, 'Persistent radicular pain');
 assert.strictEqual(reviewed.payload.order.clientOrderId, 'order-reviewed-imaging-1');
 assert.strictEqual(reviewed.payload.order.query, 'MRI Lumbar spine');
@@ -67,7 +67,7 @@ assert(/not accepted/i.test(suggestion.reason));
 assert(/AI suggestion \(not accepted\)/.test(suggestion.source));
 assert(Object.isFrozen(reviewed.payload.fields), 'complete order payload must be immutable');
 assert(Object.isFrozen(reviewed.payload.order) && Object.isFrozen(reviewed.payload.order.fields), 'canonical reviewed order must be immutable');
-assert.strictEqual(orders.filter(row => row.action === 'place_order').length, 0, 'no reviewed order row may expose place_order');
+assert.strictEqual(orders.filter(row => row.action === 'place_order').length, 1, 'exactly one complete, catalog-bound reviewed order must expose place_order');
 
 window.__mlsExtensionCapabilities = {};
 const oldClientManifest = window.__mlsWriteFlow.buildUnifiedManifest({
@@ -82,8 +82,8 @@ const oldClientManifest = window.__mlsWriteFlow.buildUnifiedManifest({
 const oldClientOrder = oldClientManifest.rows.find(row => row.payload.category === 'order');
 assert.strictEqual(oldClientOrder.capability, 'manual', 'extension capability must not change a manual order into an executable action');
 assert.strictEqual(oldClientOrder.action, '', 'capability-missing client received place_order');
-assert(/Complete in Athena/i.test(oldClientOrder.reason), 'capability-missing row lost the same truthful manual route');
-window.__mlsExtensionCapabilities = { supervisedOrderPlacementV2: true };
+assert(/Update MLS Assist/i.test(oldClientOrder.reason) && /manual entry/i.test(oldClientOrder.reason), 'capability-missing row must truthfully name the update and preserve a manual route');
+window.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
 
 function extractFunction(source, name) {
   const start = source.indexOf('function ' + name + '(');
@@ -176,7 +176,7 @@ assert(/patientId:\s*S\(p\.patientId/.test(flowSource), 'local patient audit ID 
 /* oa-1.0.0 (owner 2026-07-22): a suggestion row must carry a review-and-accept
    control; acceptance is recorded app-side immediately, the review reopens
    with the item as an accepted draft, and it is never re-asked. Acceptance is
-   a recorded decision only — placement stays human, in Athena. */
+   a recorded decision only — it never performs placement by itself. */
 assert(flowSource.includes('data-mls-accept-order='), 'suggestion rows lost their review-and-accept button');
 assert(flowSource.includes('function acceptUnifiedSuggestion(state, rowId, btn)'), 'the unified accept handler is missing');
 assert(/typeof window\._athenaAcceptProposedOrder === 'function'/.test(flowSource), 'the accept button must exist only when the app can record acceptance');
@@ -215,4 +215,4 @@ for (const [label, source] of [['ScribeFlow', scribeSource], ['ScribeFlow-stagin
   assert(empty.ok === false, 'an empty descriptor must be refused');
 }
 
-console.log('PASS Orders final review: immutable exact-patient payloads, every reviewed order manual, incomplete/suggestion rows blocked, and acceptance recorded once');
+console.log('PASS Orders final review: immutable exact-patient payloads, one capable typed order ready, older clients/manual/high-risk/incomplete/suggestion rows safe, and acceptance recorded once');

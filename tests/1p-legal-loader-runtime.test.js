@@ -10,7 +10,8 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const bundle = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
-const start = bundle.indexOf(";(function(){try{\n  var A='feat_mls_legalpack.js',SRC='1p-feat_mls_legalpack.js'");
+const marker = bundle.indexOf("var A='feat_mls_legalpack.js',SRC='1p-feat_mls_legalpack.js'");
+const start = bundle.lastIndexOf(';(function(){try{', marker);
 assert(start >= 0, 'real 1p Legal loader start not found');
 const end = bundle.indexOf('/* 1p FREE Legal / IME preview:', start);
 assert(end > start, 'real 1p Legal loader end not found');
@@ -40,12 +41,14 @@ function runtime(options = {}) {
   const document = {
     head, documentElement: head,
     createElement(tag) { assert.strictEqual(tag, 'script'); return node(); },
+    getElementById() { return null; },
+    addEventListener() {}, removeEventListener() {},
     querySelectorAll(selector) {
       if (selector !== 'script[data-mls-asset="feat_mls_legalpack.js"]') return [];
       return scripts.filter(item => item.getAttribute('data-mls-asset') === 'feat_mls_legalpack.js');
     }
   };
-  const window = { __MLS_AV: 'synthetic-preview' };
+  const window = { __MLS_AV: 'synthetic-preview', addEventListener() {}, removeEventListener() {} };
   if (options.shared) window.__mlsLegalPack = options.shared;
   if (options.existingP1) window.__mlsP1LegalPack = options.existingP1;
   if (options.priorLoader) {
@@ -55,16 +58,19 @@ function runtime(options = {}) {
   const randomValues = options.randomValues || [0.125, 0.25]; let randomIndex = 0;
   const controlledMath = Object.create(Math);
   controlledMath.random = () => randomValues[Math.min(randomIndex++, randomValues.length - 1)];
-  const context = { window, document, setTimeout: setTimeoutFake, clearTimeout: clearTimeoutFake, console, Math: controlledMath };
+  const context = { window, document, location: { search: '' }, URLSearchParams, setTimeout: setTimeoutFake, clearTimeout: clearTimeoutFake, console, Math: controlledMath };
   vm.createContext(context);
   function evalLoader() { vm.runInContext(loader, context, { filename: '1p-mls-connect.js#legal-loader' }); }
   evalLoader();
-  return { window, document, scripts, timers, tick, context, evalLoader };
+  const coldScripts = scripts.length;
+  tick();
+  return { window, document, scripts, timers, tick, context, evalLoader, coldScripts };
 }
 
 /* Fresh success publishes only the unique 1p source under canonical identity. */
 {
   const r = runtime(), ctl = r.window.__mlsP1LegalLoader;
+  eq(r.coldScripts, 0, 'Legal joined cold boot before first-use/idle admission');
   eq(r.scripts.length, 1, 'fresh loader did not create one script');
   eq(r.scripts[0].src, '1p-feat_mls_legalpack.js?v=synthetic-preview', 'fresh loader requested the wrong source');
   eq(r.scripts[0].getAttribute('data-mls-asset'), 'feat_mls_legalpack.js', 'fresh loader lost canonical identity');
@@ -193,6 +199,7 @@ function runtime(options = {}) {
   const oldLoad = oldNode.onload, oldError = oldNode.onerror;
   oldCtl.revert();
   r.evalLoader();
+  r.tick();
   const newCtl = r.window.__mlsP1LegalLoader, newNode = r.scripts[0];
   ok(newCtl !== oldCtl, 'new loader did not replace the reverted controller');
   ok(newCtl.installToken !== oldCtl.installToken, 'new loader reused stale ownership token');

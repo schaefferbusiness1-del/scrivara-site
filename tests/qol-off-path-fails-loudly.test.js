@@ -11,19 +11,32 @@ const path = require('path');
 const si = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'latin1');
 const mc = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'latin1');
 
-/* every emit carries the pid, so a failure is the SAME row, not a phantom
-   second chart inflating the tally */
-const pidEmits = (si.match(/pulled-day-note-unread[^\n]*\{ pid: oneTn\.patientId \}/g) || []).length;
-assert.strictEqual(pidEmits, 3, 'all three day-note emits key by pid (found ' + pidEmits + ')');
-assert.ok(si.indexOf('if (tnDay && typeof ppSettle') < 0, 'the no-day-on-row branch no longer swallows its emit');
+/* The day-note lane owns a verdict-neutral column. Its live update and its
+   post-Done restamp both resolve the SAME row by immutable pid, never by list
+   position or by creating a second failed chart row. */
+const columnStart = si.indexOf('function tnColumn(entry)');
+const columnEnd = si.indexOf('/* ===== end tny-1.0.0 ===== */', columnStart);
+assert.ok(columnStart > 0 && columnEnd > columnStart, 'dedicated day-note column block exists');
+const column = si.slice(columnStart, columnEnd);
+assert.ok(/pid \? String\(r\.pid \|\| ""\) === pid : String\(r\.name \|\| ""\) === nm/.test(column),
+  'post-Done restamps resolve the exact patient row by pid');
+assert.ok(/\{ pid: entry\.patientId, sp: entry\.summaryPending === true, dn: col, dnDay: tnEntryDay\(entry\)/.test(column),
+  'live emits carry exact patient and day ownership with the dedicated cell');
+assert.strictEqual((si.match(/ppSettle\(oneTn\.name, false, "pulled-day-note-unread/g) || []).length, 0,
+  'day-note failures never create a phantom failed chart row');
+assert.ok(/todayNoteReason = tnGate\.ok \? "reader-unavailable" : tnGate\.reason; tnEmitDayNoteColumn\(oneTn\); continue;/.test(si),
+  'the no-day/reader-unavailable branch emits its exact reason instead of swallowing it');
 
 /* EXECUTED: the receipt aggregate counts failures and reasons */
-const aggStart = si.indexOf('safe(function () { var tnF = 0');
+const aggStart = si.indexOf('function tnAggregate()');
 assert.ok(aggStart > 0, 'receipt aggregate exists');
-const aggTerm = 'receipt.todayNoteReasons = tnR; });';
-const aggEnd = si.indexOf(aggTerm, aggStart);
+const aggEnd = si.indexOf('function tnBatchDay()', aggStart);
 assert.ok(aggEnd > aggStart, 'aggregate terminator found');
-const aggSrc = si.slice(aggStart, aggEnd + aggTerm.length);
+const aggSrc = si.slice(aggStart, aggEnd);
+const reasonStart = si.indexOf('var TN_NO_TAB_REASON');
+const reasonEnd = si.indexOf('function tnIsNoTabReason', reasonStart);
+assert.ok(reasonStart > 0 && reasonEnd > reasonStart, 'closed reason-code mapper is extractable');
+const reasonSrc = si.slice(reasonStart, reasonEnd);
 const receipt = { patients: [
   { todayNote: false, todayNoteReason: 'reader-unavailable' },
   { todayNote: true },
@@ -31,9 +44,11 @@ const receipt = { patients: [
   { todayNote: false, todayNoteReason: 'no-day-on-row' },
   {}
 ] };
-new Function('safe', 'receipt', aggSrc)(function (fn) { return fn(); }, receipt);
+new Function('receipt', reasonSrc + '\n' + aggSrc + '\nreturn tnAggregate();')(receipt);
 assert.strictEqual(receipt.todayNoteFailures, 3, 'aggregate counts every todayNote failure');
 assert.deepStrictEqual(receipt.todayNoteReasons, { 'reader-unavailable': 2, 'no-day-on-row': 1 }, 'aggregate histograms the reasons');
+assert.deepStrictEqual(receipt.todayNoteReasonCodes, { 'reader-unavailable': 2, other: 1 },
+  'the same census publishes a closed, PHI-safe reason vocabulary');
 
 /* the day-end success line and the error report both read the aggregate */
 assert.ok(/todayNoteFailures[\s\S]{0,200}pulled-day note/.test(mc), 'the day-end success line names unread pulled-day notes');
@@ -59,4 +74,4 @@ assert.deepStrictEqual(handler(0), { ok: true, visits: 0 }, 'an honestly empty d
 assert.ok(mc.indexOf('var vdayKnown') > 0 && mc.indexOf("{ onlyDate: vdayKnown }") > 0, 'the scoped note read uses only a KNOWN day');
 assert.ok(mc.indexOf("reason: 'pulled-day-unknown'") > 0, 'an unknown day fails loudly instead of reading the wrong day');
 
-console.log('qol-off-path-fails-loudly: OK (pid-keyed emits x3, no-day branch emits, aggregate executed 3/{2,1}, day-end + report wired, undefined-resolve fails by name, known-day scoping)');
+console.log('qol-off-path-fails-loudly: OK (pid/day-keyed verdict-neutral column, no-day branch emits, aggregate executed 3/{2,1}, day-end + report wired, undefined-resolve fails by name, known-day scoping)');

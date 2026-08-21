@@ -60,7 +60,7 @@ assert.ok(from > 0 && to > from, 'could not extract the arbitrator');
 function build() {
   let node = { textContent: '' };
   let now = 1000;
-  const api = new Function('getNode', 'clock', `
+  const api = new Function('getNode', 'clock', 'window', `
     var gid = function () { return getNode(); };
     ${src.slice(from, to)}
     return { line: kioskLine, reset: kioskLineReset, state: kioskLineState };
@@ -69,7 +69,7 @@ function build() {
   const realNow = Date.now;
   const inst = (() => {
     Date.now = () => now;
-    try { return api(() => node, null); } finally { Date.now = realNow; }
+    try { return api(() => node, null, {}); } finally { Date.now = realNow; }
   })();
   const wrap = (fn) => (...a) => { Date.now = () => now; try { return fn(...a); } finally { Date.now = realNow; } };
   return {
@@ -99,7 +99,8 @@ function build() {
   k.advance(21000);
   assert.strictEqual(k.line('transcript', 'my back hurts'), true,
     'the line froze on an old alert — after its hold expires the transcript must flow again');
-  assert.strictEqual(k.text(), 'my back hurts');
+  assert.strictEqual(k.text(), '',
+    'interim words are still recognized but must not be painted as a fragmentary patient line');
 }
 
 /* 2c — a NEW TURN clears the hold immediately, or one warning silences every later question. */
@@ -125,7 +126,10 @@ function build() {
       const shouldWrite = lo >= hi || RANK[hi] === 'transcript';
       assert.strictEqual(wrote, shouldWrite,
         RANK[lo] + ' over a live ' + RANK[hi] + ': expected write=' + shouldWrite + ', got ' + wrote);
-      assert.strictEqual(k.text(), shouldWrite ? ('NEW-' + RANK[lo]) : held,
+      const expectedText = shouldWrite
+        ? (RANK[lo] === 'transcript' ? '' : ('NEW-' + RANK[lo]))
+        : held;
+      assert.strictEqual(k.text(), expectedText,
         'the line shows the wrong message after ' + RANK[lo] + ' over ' + RANK[hi]);
     }
   }

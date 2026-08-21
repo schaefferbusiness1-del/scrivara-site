@@ -386,11 +386,49 @@ partialOf(five).derived.forEach(k =>
 eq(partialOf(read(7)).partial, false, 'a passing whole read is reported as partial as well');
 eq(partialOf(read(7)).derived.length, 0, 'a passing whole read hands the partial path an apply list too');
 
-/* ⛔ THE FIVE REFUSALS THAT MAKE PARTIAL APPLICATION SAFE. */
+/* avfit-2.0.0: skin anchors COLOURS, not independently measured geometry.
+   Exercise the licensed subset through the real applier so this test proves
+   both halves: geometry reaches the character, while every colour remains the
+   doctor's prior value and no absent claim is manufactured. */
 const noSkin = read(8); noSkin.derived = noSkin.derived.filter(k => k !== 'skin');
-eq(partialOf(noSkin).partial, false,
-  'traits are applied without a proven skin sample — the one measurement that proves a face and not a wall');
-ok(/skin tone could not be read/.test(partialOf(noSkin).why), 'the no-skin refusal does not say why');
+Object.assign(noSkin.look, {
+  hair: '#17120f', hairStyle: 'wavy', beard: 'stubble', glasses: true,
+  eyes: '#405060', brows: 'thick', browCol: '#302820'
+});
+const noSkinPartial = partialOf(noSkin);
+eq(noSkinPartial.partial, true,
+  'a proven photo loses its readable geometry merely because skin colour was unreadable');
+eq(noSkinPartial.derived.join(','), 'hairStyle,beard,glasses,brows',
+  'an unanchored colour crossed the no-skin filter, or readable geometry was dropped');
+noSkinPartial.derived.forEach(k =>
+  ok(noSkin.derived.indexOf(k) >= 0, k + ' was invented by the no-skin geometry path'));
+['skin', 'hair', 'eyes', 'browCol', 'shirt'].forEach(k =>
+  ok(noSkinPartial.derived.indexOf(k) < 0 && noSkinPartial.skipped.indexOf(k) >= 0,
+    k + ' was not held when there was no skin anchor'));
+ok(/Colour settings stayed unchanged/.test(noSkinPartial.why) && /skin tone could not be read/.test(noSkinPartial.why),
+  'the no-skin partial does not disclose that its colour settings were held');
+{
+  const out = lookApi.apply(lookApi.FACE_LOOK, { derived: noSkinPartial.derived, look: noSkin.look });
+  eq(out.hairStyle, 'wavy', 'licensed hair geometry did not reach the character');
+  eq(out.beard, 'stubble', 'licensed facial-hair geometry did not reach the character');
+  eq(out.glasses, true, 'licensed glasses geometry did not reach the character');
+  eq(out.brows, 'thick', 'licensed brow geometry did not reach the character');
+  eq(out.skin, lookApi.FACE_LOOK.skin, 'skin changed without a proved skin sample');
+  eq(out.hair, lookApi.FACE_LOOK.hair, 'hair colour changed without a skin anchor');
+  eq(out.eyes, lookApi.FACE_LOOK.eyes, 'eye colour changed without a skin anchor');
+  eq(out.browCol, lookApi.FACE_LOOK.browCol, 'brow colour changed without a skin anchor');
+  eq(out.shirt, lookApi.FACE_LOOK.shirt, 'shirt colour changed without a skin anchor');
+}
+const colorsOnly = read(4);
+colorsOnly.derived = ['hair', 'eyes', 'browCol', 'shirt'];
+colorsOnly.look = { hair: '#17120f', eyes: '#405060', browCol: '#302820', shirt: '#355f4c' };
+colorsOnly.receipt.claimed = 4; colorsOnly.receipt.refused = 10;
+eq(partialOf(colorsOnly).partial, false,
+  'unanchored colours alone qualify as a partial application');
+eq(partialOf(colorsOnly).derived.length, 0,
+  'an unanchored colour receives an apply licence when no geometry survives');
+
+/* ⛔ The source, completeness and minimum-count refusals stay hard. */
 eq(partialOf(read(9, { receipt: { fromIllustration: true } })).partial, false,
   'a stylized copy\'s manufactured colours are applied partially');
 eq(partialOf(read(9, { receipt: { srcKind: 'unknown' } })).partial, false,

@@ -26,16 +26,18 @@
    dead since that skin shipped on 2026-07-28.
 
    THE LAW THIS SUITE PINS, which is bigger than those two rules: a runtime
-   skin that redeclares a property some narrow @media rule owns MUST scope
-   itself to the widths it means. Otherwise it silently deletes a responsive
-   rule that is still sitting in the file looking correct - which is exactly why
-   this survived a read of both files.
+   skin that redeclares a property some narrow @media rule owns must leave an
+   EFFECTIVE narrow owner in the cascade. Usually that means scoping the desktop
+   declaration to min-width; a stronger document narrow selector or a later
+   same/higher-specificity runtime narrow override is equally sound. Otherwise
+   it silently deletes a responsive rule that is still sitting in the file
+   looking correct - which is exactly why this survived a read of both files.
 
    HOW IT CHECKS: it extracts the shipped skin from the module's own string
    table, parses which declarations sit inside a media query and which do not,
-   parses every max-width block in ScribeFlow.html, and fails on any selector +
-   property that a narrow rule owns and an UNCONDITIONED skin rule also sets.
-   New collisions fail automatically; nothing has to be listed here by hand.
+   parses every max-width block in ScribeFlow.html and in executed runtime CSS,
+   and fails when an UNCONDITIONED skin declaration would actually win at the
+   narrow width. New collisions fail automatically; nothing is listed by hand.
    ========================================================================= */
 const fs = require('fs');
 const path = require('path');
@@ -74,13 +76,16 @@ function skinCss(file, startMark) {
 function unconditionedDecls(css) {
   const map = new Map(); /* selector -> Set(prop) */
   let depth = 0, i = 0, buf = '';
-  const flush = function (selList, decls, inMedia) {
+  const flush = function (selList, decls, inMedia, at) {
     if (inMedia) return;
+    const declared = [];
+    decls.replace(/([-a-zA-Z]+)\s*:/g, function (_, p) { declared.push(p.toLowerCase()); return ''; });
     selList.split(',').forEach(function (sel) {
       const key = sel.trim().replace(/\s+/g, ' ');
       if (!key) return;
       const props = map.get(key) || new Set();
-      decls.replace(/([-a-zA-Z]+)\s*:/g, function (_, p) { props.add(p.toLowerCase()); return ''; });
+      if (!props.atByProperty) props.atByProperty = new Map();
+      declared.forEach(function (p) { props.add(p); props.atByProperty.set(p, at); });
       map.set(key, props);
     });
   };
@@ -90,32 +95,49 @@ function unconditionedDecls(css) {
   while ((m = re.exec(css))) {
     if (m[0].charAt(0) === '@') { depth++; continue; }
     if (m[0] === '}') { if (depth > 0) depth--; continue; }
-    flush(m[1], m[2], depth > 0);
+    flush(m[1], m[2], depth > 0, m.index);
   }
   return map;
 }
 
-/* ---------- every max-width rule in the document stylesheet ------------- */
-function narrowRules(htmlFile) {
-  const html = fs.readFileSync(path.join(ROOT, htmlFile), 'utf8');
-  let css = '';
-  html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, function (_, b) { css += b + '\n'; return ''; });
-  css = css.replace(/\/\*[\s\S]*?\*\//g, '');
+/* ---------- every max-width rule in a stylesheet ------------------------- */
+function narrowRulesFromCss(input) {
+  /* Preserve offsets while blanking comments: runtime narrow rules must come
+     AFTER the unconditional declaration they are expected to override. */
+  const css = String(input || '').replace(/\/\*[\s\S]*?\*\//g, function (m) { return m.replace(/[^\n]/g, ' '); });
   const out = new Map(); /* selector -> Set(prop) */
-  const blocks = css.match(/@media[^{]*max-width[^{]*\{(?:[^{}]*\{[^{}]*\}\s*)*\}/g) || [];
-  blocks.forEach(function (block) {
-    const body = block.slice(block.indexOf('{') + 1, block.lastIndexOf('}'));
-    body.replace(/([^{}]+)\{([^{}]*)\}/g, function (_, selList, decls) {
+  const entries = [];    /* [{selector, props, at}] keeps cascade evidence */
+  const blockRe = /@media[^{]*max-width[^{]*\{(?:[^{}]*\{[^{}]*\}\s*)*\}/g;
+  let blockMatch, blockCount = 0;
+  while ((blockMatch = blockRe.exec(css))) {
+    blockCount++;
+    const block = blockMatch[0];
+    const bodyOpen = block.indexOf('{') + 1;
+    const body = block.slice(bodyOpen, block.lastIndexOf('}'));
+    const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+    let rule;
+    while ((rule = ruleRe.exec(body))) {
+      const selList = rule[1], decls = rule[2];
+      const ruleProps = new Set();
+      decls.replace(/([-a-zA-Z]+)\s*:/g, function (_, p) { ruleProps.add(p.toLowerCase()); return ''; });
       selList.split(',').forEach(function (sel) {
         const key = sel.trim().replace(/\s+/g, ' ');
         if (!key) return;
         const props = out.get(key) || new Set();
-        decls.replace(/([-a-zA-Z]+)\s*:/g, function (__, p) { props.add(p.toLowerCase()); return ''; });
+        ruleProps.forEach(function (p) { props.add(p); });
         out.set(key, props);
+        entries.push({ selector: key, props: new Set(ruleProps), at: blockMatch.index + bodyOpen + rule.index });
       });
-    });
-  });
-  return { rules: out, blockCount: blocks.length };
+    }
+  }
+  return { rules: out, entries: entries, blockCount: blockCount };
+}
+
+function narrowRules(htmlFile) {
+  const html = fs.readFileSync(path.join(ROOT, htmlFile), 'utf8');
+  let css = '';
+  html.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, function (_, b) { css += b + '\n'; return ''; });
+  return narrowRulesFromCss(css);
 }
 
 const NARROW = narrowRules('ScribeFlow.html');
@@ -200,12 +222,11 @@ SKINS.forEach(function (entry) {
 });
 
 /* ---------- the same law, but keyed on the TARGETED ELEMENT --------------
-   Matching whole selector text is not enough. A rule written as
-   `body.mls-ot3 #oprDayRail{border-right:...}` targets the very same element as
-   the narrow `#oprDayRail{border-right:0}` and, because the body class ADDS
-   specificity, it wins at EVERY width - a strictly worse version of the
-   original defect. So collisions are also checked on the rightmost simple
-   selector, which is the element actually being styled. */
+   Matching whole selector text is not enough. Rules with different ancestor
+   qualifiers can target the same id. The verdict must then follow the actual
+   cascade: an unconditional runtime declaration is unsafe only when neither a
+   stronger document narrow rule nor a later same/higher-specificity runtime
+   narrow rule can override it. */
 function rightmostKey(sel) {
   const parts = sel.trim().split(/\s+|>/).filter(Boolean);
   const last = parts[parts.length - 1] || '';
@@ -214,11 +235,35 @@ function rightmostKey(sel) {
   const cls = last.match(/\.[\w-]+/);
   return cls ? cls[0] : last;
 }
+
+/* Enough of Selectors specificity for this contract: ids, then class/
+   attribute/pseudo-class selectors, then element names. The first two columns
+   decide every selector currently compared here; the element count preserves
+   the correct tie-break for future simple additions. */
+function specificity(sel) {
+  const s = String(sel || '').replace(/:where\([^)]*\)/g, '');
+  const ids = (s.match(/#[\w-]+/g) || []).length;
+  const classLike = (s.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) || []).length;
+  const stripped = s
+    .replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|::?[\w-]+(?:\([^)]*\))?/g, ' ')
+    .replace(/[>+~*,()]/g, ' ');
+  const elements = stripped.split(/\s+/).filter(function (part) { return /^[a-z][\w-]*$/i.test(part); }).length;
+  return [ids, classLike, elements];
+}
+function compareSpecificity(a, b) {
+  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] - b[i]; }
+  return 0;
+}
+ok(compareSpecificity(
+    specificity('#opPrepModal[data-mls-opnotes-state] #oprDayRail'),
+    specificity('body.mls-ot3 #oprDayRail')) > 0,
+  'specificity reader recognizes the stronger two-id narrow owner');
+
 const NARROW_BY_KEY = new Map();
 NARROW.rules.forEach(function (props, sel) {
   const k = rightmostKey(sel);
-  if (!NARROW_BY_KEY.has(k)) NARROW_BY_KEY.set(k, new Set());
-  props.forEach(function (p) { NARROW_BY_KEY.get(k).add(p); });
+  if (!NARROW_BY_KEY.has(k)) NARROW_BY_KEY.set(k, []);
+  NARROW_BY_KEY.get(k).push({ selector: sel, props: props });
 });
 
 EXEC_SKINS.forEach(function (entry) {
@@ -231,8 +276,9 @@ EXEC_SKINS.forEach(function (entry) {
     entry[0] + ': the executed stylesheet contains the rules under test (not vacuous)');
 
   const un = unconditionedDecls(got.css);
+  const runtimeNarrow = narrowRulesFromCss(got.css);
   const collisions = [];
-  let unsound = 0;
+  let unsound = 0, cascadeProtected = 0;
   un.forEach(function (props, sel) {
     const key = rightmostKey(sel);
     /* ONLY ids are compared. A tag or generic class key is unsound: reducing
@@ -242,19 +288,33 @@ EXEC_SKINS.forEach(function (entry) {
        false positives were produced before this guard, and a suite that cries
        wolf gets switched off - so it only speaks where it can be right. */
     if (key.charAt(0) !== '#') { unsound++; return; }
-    const narrow = NARROW_BY_KEY.get(key);
-    if (!narrow) return;
+    const narrowOwners = NARROW_BY_KEY.get(key);
+    if (!narrowOwners) return;
+    const unconditionedSpecificity = specificity(sel);
     props.forEach(function (p) {
-      if (narrow.has(p)) collisions.push(sel + ' { ' + p + ' }  -> same element as narrow ' + key);
+      const unconditionedAt = props.atByProperty ? props.atByProperty.get(p) : -1;
+      const propertyOwners = narrowOwners.filter(function (owner) { return owner.props.has(p); });
+      if (!propertyOwners.length) return;
+      const strongerDocumentOwner = propertyOwners.some(function (owner) {
+        return compareSpecificity(specificity(owner.selector), unconditionedSpecificity) > 0;
+      });
+      const laterRuntimeOwner = runtimeNarrow.entries.some(function (owner) {
+        return rightmostKey(owner.selector) === key && owner.props.has(p) &&
+          owner.at > unconditionedAt &&
+          compareSpecificity(specificity(owner.selector), unconditionedSpecificity) >= 0;
+      });
+      if (strongerDocumentOwner || laterRuntimeOwner) { cascadeProtected++; return; }
+      collisions.push(sel + ' { ' + p + ' }  -> same element as narrow ' + key);
     });
   });
   if (unsound) console.log('  note  ' + unsound + ' rule(s) target a tag/class rather than an id; not comparable this way');
+  if (cascadeProtected) console.log('  note  ' + cascadeProtected + ' overlap(s) retain an effective narrow owner by specificity/source order');
   ok(collisions.length === 0,
     entry[0] + ': no unconditioned rule out-specifies a narrow @media rule',
     collisions.length
-      ? 'a body-class-scoped rule targeting the same element wins at EVERY width:\n          - '
+      ? 'an unconditioned rule has no stronger document narrow owner and no later\n        same/higher-specificity runtime narrow override:\n          - '
         + collisions.join('\n          - ')
-        + '\n        Move these into the @media (min-width:901px) block.'
+        + '\n        Move it into a min-width block or add an effective narrow override.'
       : '');
   checked += un.size;
 });

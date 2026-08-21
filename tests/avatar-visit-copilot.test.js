@@ -257,6 +257,10 @@ assert(/var fixed = safe\(function \(\) \{ return applyCorrection\(seg\); \}, nu
    PART 2 — THE BACKUP, EXECUTED (persistence, reload, quota, drop)
    =========================================================================*/
 const storeSrc = slice("var AMBIENT_STORE_KEY =", 'function ambientActionsForStore', 'the backup');
+/* ambientStoreWrite now normalizes the immutable visit receipt before persisting it. Bring
+   the production normalizer into this isolated storage harness too; leaving it undefined
+   makes safe() report a fictional storage failure before localStorage is even attempted. */
+const closedVisitReceiptSrc = slice('function ambientReceiptText', 'function ambientVisitReceiptFor', 'the closed-visit receipt normalizer');
 
 function makeStore(limitBytes) {
   const mem = {};
@@ -296,7 +300,7 @@ function bootStore(limitBytes, nsFn) {
     'var kiosk = { ambient:false, sid:"" };\n' +
     'var __openChart = "";\n' +
     'function activePtIdSafe(){ return __openChart; }\n' +
-    storeSrc +
+    closedVisitReceiptSrc + '\n' + storeSrc +
     /* read() keeps its old shape - the record or null - so every assertion written
        against the single-slot store still means what it meant. pick()/list() are the
        new surface. */
@@ -475,13 +479,15 @@ assert(/kiosk\.ambParts\.push\(v\);[\s\S]{0,400}kioskAmbientSave\(false\)[\s\S]{
      list is not. */
   const dropAt = fileFn.indexOf('ambientStoreDrop(');
   const filedAt = fileFn.indexOf('kiosk.ambFiled = true');
+  const commitAt = fileFn.indexOf('ambientCommitTranscript(');
+  const receiptAt = fileFn.indexOf('if (!receipt.ok) return receipt;');
   assert(dropAt > 0 && filedAt > 0 && dropAt > filedAt,
     'the backup must be dropped only AFTER the write is marked filed');
   const refusals = fileFn.slice(0, filedAt).match(/return \{ ok: false/g) || [];
   assert(refusals.length >= 5,
     'the fail-closed refusals must all precede the drop (found ' + refusals.length + ')');
-  assert(fileFn.slice(0, dropAt).indexOf('box.value = prior') > 0,
-    'the transcript write must happen before the backup is discarded');
+  assert(commitAt > 0 && receiptAt > commitAt && filedAt > receiptAt,
+    'the canonical transcript commit must return a proven receipt before the capture is marked filed');
 }
 
 /* 3c. End Visit WAITS for the recogniser's trailing results. The last sentence
@@ -489,15 +495,22 @@ assert(/kiosk\.ambParts\.push\(v\);[\s\S]{0,400}kioskAmbientSave\(false\)[\s\S]{
 assert(source.includes('function kioskAmbientFlush'), 'the flush-before-file step was removed');
 assert(/rec\.stop\(\);[\s\S]{0,400}waited >= 960/.test(source),
   'End Visit must stop the recogniser and then WAIT for its tail results');
-assert(/function kioskEndVisit[\s\S]{0,600}kioskAmbientFlush\(function \(\) \{[\s\S]{0,200}kioskAmbientSave\(true\)[\s\S]{0,120}kioskAmbientStop/.test(source),
-  'End Visit must flush, then save, then file — in that order');
+{
+  const endFn = slice('function kioskEndVisit', 'function kioskReviewShow', 'the End Visit path');
+  const flushAt = endFn.indexOf('kioskAmbientFlush(');
+  const saveAt = endFn.indexOf('kioskAmbientSave(true)');
+  const stopAt = endFn.indexOf("kioskAmbientStop('end-visit')");
+  const stopFn = slice('function kioskAmbientStop', 'function kioskCloseServerSide', 'the ambient stop path');
+  assert(flushAt > 0 && saveAt > flushAt && stopAt > saveAt && stopFn.indexOf('kioskAmbientFile()') > 0,
+    'End Visit must flush, then save, then stop through the proven file path — in that order');
+}
 assert(/function kioskAmbientRetry\(\)[\s\S]{0,500}if \(kiosk\.ambClosing\) return;/.test(source),
   'the restart loop must be disarmed while closing, or the mic reopens under the review screen');
 
 /* 3d. the confirm gate is enforced in the HANDLER, not only on the attribute —
    a disabled attribute is a UI hint, not a safety property */
-assert(/confirm\.addEventListener\('click', function \(\) \{\s*\n\s*if \(\(a\.missing \|\| \[\]\)\.length\) return;/.test(source),
-  'Confirm must re-check the missing fields inside the handler');
+assert(/confirm\.addEventListener\('click', kioskControl\(function \(\) \{\s*\n\s*if \(\(a\.missing \|\| \[\]\)\.length\) return;/.test(source),
+  'Confirm must be owner-fenced and re-check the missing fields inside the handler');
 assert(/confirm\.disabled = true;/.test(source), 'Confirm must also be visibly disabled while a field is missing');
 
 /* 3e. nothing here submits anything, and the note says so */
@@ -521,7 +534,7 @@ assert(!/fetch\([^)]*order/i.test(source), 'this module must not gain an order-s
 assert(!/window\.(prompt|confirm)\s*\(/.test(source),
   'a native blocking dialog is back in the avatar module — it would freeze the capture loop mid-visit');
 assert(source.includes('a.editing = true'), 'the inline action editor was removed');
-assert(/function commitEdit\(\)[\s\S]{0,200}if \(!v\) return;/.test(source),
+assert(/var commitEdit = kioskControl\(function \(\) \{[\s\S]{0,200}if \(!v\) return;/.test(source),
   'saving an empty edit must be a no-op, not a blank action');
 assert(/data-armed/.test(source), 'the two-tap discard guard was removed — one reflex tap would delete a consultation');
 
@@ -563,8 +576,13 @@ assert(/function kioskReviewShow[\s\S]{0,3000}Nothing was written: /.test(source
     'a chart mismatch must refuse and name the chart the words belong to');
   /* the drop takes the record's OWN key now (av-5.7.2), so another chart's held
      capture survives this one being filed */
-  assert(rec.lastIndexOf('ambientStoreDrop(info.key)') > rec.indexOf('box.value = prior'),
-    'the recovered backup must not be discarded before it is written');
+  {
+    const commitAt = rec.indexOf('ambientCommitTranscript(');
+    const provedAt = rec.indexOf('if (!receipt.ok) return receipt;');
+    const dropAt = rec.lastIndexOf('ambientStoreDrop(info.key)');
+    assert(commitAt > 0 && provedAt > commitAt && dropAt > provedAt,
+      'the recovered backup must not be discarded before the canonical writer returns a proven receipt');
+  }
   assert(!/ambientStoreDrop\(\)/.test(rec),
     'a keyless drop in the recovery path would delete whichever capture the store points at, not the one just filed');
   /* `info` IS THE RECOVERY PATH'S OWN VARIABLE, and the LIVE path has no such name.
@@ -591,14 +609,14 @@ assert(/function kioskReviewShow[\s\S]{0,3000}Nothing was written: /.test(source
   /* the ONE earlier drop is the idempotency branch: the words are already in
      the transcript, so the backup has done its job and must not keep offering
      itself. It must return WITHOUT appending anything a second time. */
-  assert(rec.includes('box.value.indexOf(info.body) >= 0'),
-    'filing the same recovered capture twice must be a no-op — that would duplicate a whole visit');
   {
-    const dupAt = rec.indexOf('box.value.indexOf(info.body) >= 0');
-    const writeAt = rec.indexOf('box.value = prior');
-    assert(dupAt > 0 && writeAt > dupAt, 'the duplicate check must guard the write, not follow it');
-    assert(rec.slice(dupAt, writeAt).includes('already: true'),
-      'the duplicate branch must return an "already" result instead of appending');
+    const commit = slice('function ambientCommitTranscript', 'function kioskAmbientFile', 'the canonical transcript writer');
+    const dupAt = commit.indexOf('ambientTranscriptHasBlock(mirrorBefore, block)');
+    const writeAt = commit.indexOf('mirror.value = next');
+    assert(dupAt > 0 && writeAt > dupAt,
+      'the complete-block duplicate check must guard the canonical write, not follow it');
+    assert(commit.slice(dupAt, writeAt).includes('already: true'),
+      'the duplicate branch must return an "already" receipt instead of appending');
   }
 }
 
@@ -612,8 +630,14 @@ assert(/function kioskReviewShow[\s\S]{0,3000}Nothing was written: /.test(source
 
 /* 3k. ending the RECORDING needs no PIN; the door back into the app still has
    the lock it always had */
-assert(/back\.addEventListener\('click', function \(\) \{[\s\S]{0,200}kiosk\.pinSet === false[\s\S]{0,120}kioskRequestEnd\(\)/.test(source),
-  'leaving the kiosk from the review must still pass through the exit-PIN gate');
+{
+  const backAt = source.indexOf("var back = make('button', 'mlsAvRevGo', 'Back to the chart')");
+  const backEnd = source.indexOf('row.appendChild(back);', backAt);
+  const backHandler = source.slice(backAt, backEnd);
+  assert(backAt > 0 && /back\.addEventListener\('click', kioskControl\(function \(\)/.test(backHandler) &&
+      backHandler.indexOf('kiosk.pinSet === false') > 0 && backHandler.indexOf('kioskRequestEnd()') > 0,
+    'leaving the kiosk from the review must be owner-fenced and still pass through the exit-PIN gate');
+}
 assert(/#mlsAvKiosk\.ambient #mlsAvKioskEndVisit\{display:block\}/.test(source),
   'the End Visit control must be visible during a capture');
 assert(/#mlsAvKiosk\.ambient #mlsAvKioskEnd\{display:none\}/.test(source),
@@ -666,8 +690,10 @@ assert(source.includes('function kioskPauseToggle'), 'the mute/pause control was
 assert(source.includes('mlsAvKioskMute'), 'the mute/pause button was removed');
 {
   const p = slice('function kioskPauseToggle', 'function kioskEndVisit', 'the pause toggle');
-  assert(/kiosk\.ambient\) kioskAmbientSave\(true\)[\s\S]{0,120}pvStopVoice\(\)/.test(p),
-    'the capture must be flushed to the backup BEFORE the microphone closes — pausing must not cost words');
+  const flushAt = p.indexOf('kioskAmbientFlush(');
+  const saveAt = p.indexOf('kioskAmbientSave(true)', flushAt);
+  assert(flushAt > 0 && saveAt > flushAt,
+    'pause must stop-and-wait for the recognizer tail, then persist it to the backup — pausing must not cost words');
   assert(/PAUSED[^']*not recording/.test(p),
     'the banner must stop claiming to record the moment pause is pressed');
   assert(p.indexOf('pvStopVoice()') > 0, 'pause must actually close the microphone, not merely relabel the screen');
@@ -736,9 +762,9 @@ assert(source.includes('function ttsSplitForSpeech'), 'the two-piece speech spli
     'the 911 line must never be split across two generations — one continuous contour');
   assert(/var second = ttsFetchUrl\(chunks\[1\][\s\S]{0,200}ttsFetchUrl\(chunks\[0\]/.test(speak),
     'both pieces must be requested in PARALLEL — a sequential second fetch would be slower than not splitting');
-  assert(speak.includes('pvSpeakSynth(t, mySeq, finish)'),
+  assert(speak.includes('pvSpeakSynth(t, mySeq, finish,'),
     'if the FIRST piece fails, nothing has played yet, so the whole line must fall back exactly as before');
-  assert(speak.includes('pvSpeakSynth(chunks[1], mySeq, finish)'),
+  assert(speak.includes('pvSpeakSynth(chunks[1], mySeq, finish,'),
     'if only the SECOND piece fails, the first has already played — only the remainder may be re-spoken');
   assert(/chunks\.length === 2 && Date\.now\(\) >= ttsDownUntil/.test(speak),
     'the split path must respect the TTS circuit breaker like every other call');
@@ -768,8 +794,8 @@ assert(/isFn\(window\.generateNote\)/.test(source),
     'a failed draft must say plainly that the transcript is still saved — that is the doctor\'s real question');
   assert(rev.includes('Try drafting again'), 'a failed draft must be retryable without leaving the screen');
   assert(/waited >= 45000/.test(rev), 'the draft watcher must give up honestly rather than spin forever');
-  assert(/b2\.value\.trim\(\)\.length > 0/.test(rev),
-    'a note is "ready" only when the note box actually holds something — never on the promise alone');
+  assert(rev.includes('receipt !== true') && rev.includes('!!note.trim() && note !== before'),
+    'a note is "ready" only after an exact success receipt and new canonical note bytes — never on the promise alone');
 }
 
 /* 3q. ONE STATE CHIP. The brief names the states it wants shown; they existed
@@ -803,8 +829,11 @@ assert(source.includes("var VERSION = 'av-5.7.0'"), 'VERSION must move with this
      were both set on 2026-08-07, and the file changed three more times that
      day. See tests/immutable-satellite-loader-cache-contract.test.js. */
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
-  assert(connect.includes("feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now())"),
-    'the avatar loader must use the build-number cache-buster');
+  const loaderAt = connect.indexOf("var A='feat_mls_avatar.js',SRC='feat_mls_avatar.js'");
+  const loaderEnd = connect.indexOf("var A='feat_mls_avatar_face.js'", loaderAt);
+  const loader = connect.slice(loaderAt, loaderEnd > loaderAt ? loaderEnd : undefined);
+  assert(loaderAt > 0 && loader.includes("node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview')"),
+    'the one capability-owned avatar loader must use the build-number cache-buster');
   assert(!/feat_mls_avatar\.js\?v=\d{8}av\d+/.test(connect),
     'a hand-maintained avatar cache token is back');
 }

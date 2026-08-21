@@ -13,6 +13,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const packSource = fs.readFileSync(path.join(root, 'feat_mls_b121_pack.js'), 'utf8');
 const autopullSource = fs.readFileSync(path.join(root, 'feat_athena_autopull.js'), 'utf8');
+const siteSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
 function between(source, start, end) {
   const a = source.indexOf(start);
@@ -127,15 +128,20 @@ assert.strictEqual(
 const baseUtilsSrc = between(autopullSource, '  function S(x)', '  /* ---------- robust NAME normalization');
 const nameUtilsSrc = between(autopullSource, '  /* ---------- robust NAME normalization', '  /* ---------- harden the model');
 const resolveSrc = between(autopullSource, '  function resolvePatient(identity) {', '  /* ---------- on-screen status chip');
+const compatibleNameSrc = between(siteSource, 'function _athenaHistoryName(v)', 'function _athenaHistoryTargetSnapshot');
+const compatibleName = new Function(compatibleNameSrc + '\nreturn _athenaHistoryNameCompatible;')();
+assert.strictEqual(compatibleName('Smith, John Q', 'John Smith'), true,
+  'the canonical tolerant name helper could not be executed by the resolver fixture');
 
 function makeResolver(store) {
   const upserts = [];
-  const fn = new Function('getPatients', 'upsertPatient', 'Date', `
+  const fn = new Function('getPatients', 'upsertPatient', 'Date', 'window', `
     ${baseUtilsSrc}
     ${nameUtilsSrc}
     ${resolveSrc}
     return resolvePatient;
-  `)(() => store, p => upserts.push(JSON.parse(JSON.stringify(p))), Date);
+  `)(() => store, p => upserts.push(JSON.parse(JSON.stringify(p))), Date,
+    { _athenaHistoryNameCompatible: compatibleName });
   return { resolve: fn, upserts };
 }
 
@@ -205,6 +211,24 @@ function makeResolver(store) {
   const r = resolve({ name: 'John Smith', dob: '03/04/1980', mrn: '' });
   assert.strictEqual(r.created, false, 'name+DOB unique bind broke');
   assert.strictEqual(r.patient.id, 'd');
+}
+
+/* The production tolerant-name fallback may relax only the name echo. The
+   same exact DOB remains mandatory and the result must stay unambiguous. */
+{
+  const store = [{ id: 'd2', name: 'Smith, J Q', dob: '3/4/1980' }];
+  const { resolve } = makeResolver(store);
+  const r = resolve({ name: 'John Smith', dob: '03/04/1980', mrn: '' });
+  assert.strictEqual(r.created, false, 'canonical tolerant name + exact DOB failed to bind');
+  assert.strictEqual(r.patient.id, 'd2');
+  assert.strictEqual(r.via, 'name-dob-compat');
+}
+
+{
+  const store = [{ id: 'd3', name: 'Smith, J Q', dob: '3/5/1980' }];
+  const { resolve } = makeResolver(store);
+  const r = resolve({ name: 'John Smith', dob: '03/04/1980', mrn: '' });
+  assert.strictEqual(r.created, true, 'tolerant name matching bypassed the exact-DOB requirement');
 }
 
 /* the created record carries the chart identity forward for future exact binds */

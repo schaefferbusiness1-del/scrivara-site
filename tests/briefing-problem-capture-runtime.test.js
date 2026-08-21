@@ -407,6 +407,7 @@ assert(identitySlice.length > 1000, 'the exact-identity helper slice could not b
 function readChartOnce(respOverrides, target) {
   const patients = [{ id: 'pt-1', name: 'Ada Lovelace-Byron', dob: '04/05/1955', mrn: '90210' }];
   const listeners = [];
+  let leaseToken = '', leaseClaims = 0, leaseReleases = 0;
   const fakeWindow = {
     addEventListener(type, fn) { if (type === 'message') listeners.push(fn); },
     removeEventListener(type, fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); },
@@ -428,11 +429,32 @@ function readChartOnce(respOverrides, target) {
             requestId: data.requestId, url: 'https://athenanet.athenahealth.com/ax/clinicals/chart',
             opened: true, chartName: 'Ada Lovelace-Byron', chartDob: '04/05/1955', chartMrn: '90210'
           }, (respOverrides && respOverrides.resp) || {});
-          return deliver({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: data.requestId, resp });
+          return deliver({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: data.requestId, deadlineAt: data.deadlineAt, resp });
         }
       }, 0);
     }
   };
+  /* _assistReadChart is deliberately lease-gated. Exercise the real claim /
+     release path instead of bypassing it in this isolated bridge fixture. */
+  if (!(respOverrides && respOverrides.noLease)) {
+    fakeWindow.__mlsP1AthenaReadLease = {
+      claim(owner, ttl) {
+        assert.strictEqual(owner, 'p1-chart-read', 'chart reads must claim the chart-read lease class');
+        assert(Number(ttl) >= 110000, 'chart-read lease became shorter than the reader deadline');
+        leaseClaims += 1;
+        leaseToken = 'chart-lease-' + leaseClaims;
+        return leaseToken;
+      },
+      owns(token) { return !!leaseToken && token === leaseToken; },
+      touch(token) { assert.strictEqual(token, leaseToken, 'reader touched a lease it does not own'); return true; },
+      release(token) {
+        assert.strictEqual(token, leaseToken, 'reader released a lease it does not own');
+        leaseToken = '';
+        leaseReleases += 1;
+        return true;
+      }
+    };
+  }
   function deliver(payload) { listeners.slice().forEach(fn => { try { fn({ data: payload }); } catch (e) { /* surfaced by the assertion */ } }); }
   const sandbox = {
     console, Date, Math, JSON, Object, String, Number, Array, RegExp, Boolean, Error, Promise, isFinite,
@@ -449,11 +471,29 @@ function readChartOnce(respOverrides, target) {
     identitySlice + '\n' + extractFunction(prod, '_assistReadChart') + '\nthis.__read=_assistReadChart;',
     sandbox, { filename: 'assist-read-chart.js' }
   );
-  return sandbox.__read(target || { patientId: 'pt-1', id: 'pt-1', name: 'Ada Lovelace-Byron', dob: '04/05/1955', mrn: '90210' }, function () {});
+  const read = sandbox.__read(target || { patientId: 'pt-1', id: 'pt-1', name: 'Ada Lovelace-Byron', dob: '04/05/1955', mrn: '90210' }, function () {});
+  return Promise.resolve(read).then(value => {
+    assert.strictEqual(leaseClaims, 1, 'a chart read did not claim exactly one lease');
+    assert.strictEqual(leaseReleases, 1, 'a successful chart read leaked its lease');
+    return value;
+  }, error => {
+    if (respOverrides && respOverrides.noLease) {
+      assert.strictEqual(leaseClaims, 0, 'an unavailable lease manager still started a chart read');
+      throw error;
+    }
+    assert.strictEqual(leaseClaims, 1, 'a refused chart read did not own exactly one lease');
+    assert.strictEqual(leaseReleases, 1, 'a refused chart read leaked its lease');
+    throw error;
+  });
 }
 const CHART_TEXT = 'Ada Lovelace-Byron 04/05/1955 MRN 90210\nallergies: NKDA\nvitals BP 128/82\nhistory of present illness\ndiagnosis notes';
 
 (async function main() {
+  await assert.rejects(
+    readChartOnce({ noLease: true }),
+    /preview Athena reader is unavailable/,
+    'the chart reader did not fail closed when no lease manager was available'
+  );
   const rd = await readChartOnce();
   assert.strictEqual(rd.text, CHART_TEXT, 'the bridge mutated the coverage-bound chart text');
   assert.strictEqual(rd.briefingText, BRIEFING_TEXT, 'the bridge dropped briefingText - the captured problem list never reaches the app');
@@ -466,7 +506,7 @@ const CHART_TEXT = 'Ada Lovelace-Byron 04/05/1955 MRN 90210\nallergies: NKDA\nvi
   /* identity still fails closed WITH a rich briefing attached */
   await assert.rejects(
     readChartOnce({ resp: { chartDob: '01/01/1900' } }),
-    /matching DOB\/MRN proof/,
+    /did not prove it is this patient|matching DOB\/MRN proof/,
     'a wrong-DOB chart was accepted because a briefing was attached'
   );
   await assert.rejects(
@@ -489,7 +529,8 @@ const CHART_TEXT = 'Ada Lovelace-Byron 04/05/1955 MRN 90210\nallergies: NKDA\nvi
      4. THE COMBINER - the only place the two are joined, and it is capped
      ===================================================================== */
   const combinerSandbox = { console, String, Number, Math, Date, Array, window: {} };
-  vm.runInNewContext(extractFunction(prod, COMBINER) + '\nthis.__combine=' + COMBINER + ';', combinerSandbox, { filename: 'combiner.js' });
+  vm.runInNewContext(extractFunction(prod, '_athenaSurfaceNote') + '\n' +
+    extractFunction(prod, COMBINER) + '\nthis.__combine=' + COMBINER + ';', combinerSandbox, { filename: 'combiner.js' });
   const combine = combinerSandbox.__combine;
 
   const combined = combine(rd);
@@ -662,7 +703,7 @@ const CHART_TEXT = 'Ada Lovelace-Byron 04/05/1955 MRN 90210\nallergies: NKDA\nvi
     assert.strictEqual(countOf(source, "briefingDiag:(r.briefingDiag&&typeof r.briefingDiag==='object')"), 1, label + ': the bridge does not carry briefingDiag out exactly once');
     assert.strictEqual(countOf(source, 'window.__mlsBriefingCombineLog'), 2, label + ': the bounded per-patient briefing log is not written exactly where the combiner records it');
     assert.strictEqual(countOf(source, 'function ' + COMBINER + '(rd){'), 1, label + ': the combiner is not declared exactly once');
-    assert(source.includes('try{ window.' + COMBINER + '=' + COMBINER + '; }'), label + ': the combiner is not published on window for the day-pull lane');
+    assert(source.includes('try{ window.' + COMBINER + '=' + COMBINER + ';'), label + ': the combiner is not published on window for the day-pull lane');
   }
   const laneFn = extractFunction(sched, 'saveOrganizedHistory');
   assert(laneFn.includes('window._parsePatientChart(parseText,'), 'the day-pull lane no longer parses the combined text variable');
@@ -679,10 +720,13 @@ const CHART_TEXT = 'Ada Lovelace-Byron 04/05/1955 MRN 90210\nallergies: NKDA\nvi
   /* =====================================================================
      8. STAGING PARITY - _savePatientChart parity killed an earlier build
      ===================================================================== */
+  const coreCombiner = source => normalized(source.replace(
+    /return _athenaSurfaceNote\(note,([^;]+)\);/g, 'return $1;'
+  ));
   assert.strictEqual(
-    normalized(extractFunction(staging, COMBINER)),
-    normalized(extractFunction(prod, COMBINER)),
-    'the staging combiner drifted from production'
+    coreCombiner(extractFunction(staging, COMBINER)),
+    coreCombiner(extractFunction(prod, COMBINER)),
+    'the staging combiner drifted from production outside production-only surface provenance annotation'
   );
   for (const name of ['_assistReadChart', 'pullPatientChartViaAssist', '_pullAllHistories', '_parsePatientChart', '_savePatientChart', '_athenaHistoryVerifiedRef']) {
     assert.strictEqual(

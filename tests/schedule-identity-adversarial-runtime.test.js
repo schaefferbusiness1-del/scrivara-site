@@ -202,9 +202,13 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-/* The default-census release changed only admission/census authority; every
-   adversarial identity behavior this suite pins is unchanged and re-run. */
-assert(api && api.version === 'si-1.7.23-default-census');
+/* Derive the release identity from the canonical owner instead of freezing an
+   obsolete label. The executed API must expose exactly the version it loaded. */
+const canonicalVersion = source.match(/\bvar VERSION = ["']([^"']+)["'];/);
+assert(canonicalVersion && /^si-[A-Za-z0-9._-]+$/.test(canonicalVersion[1]),
+  'schedule importer canonical version marker is missing or malformed');
+assert(api && api.version === canonicalVersion[1],
+  'executed schedule importer API does not match its canonical version marker');
 
 (async () => {
   const bootstrapDate = '2026-07-22';

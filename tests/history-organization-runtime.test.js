@@ -216,7 +216,11 @@ async function main() {
 
   assert(historyUiSource.includes('MODEL().summarizeAll || MODEL().ensureSummaries'), 'visible Summarize all control does not update the aggregate profile');
   assert(historyUiSource.includes('document.createElement("details")'), 'visit years are not collapsible');
-  assert(historyUiSource.includes('MutationObserver(scheduleRebuild)') && historyUiSource.includes('}, 3000)'), 'history UI still relies on a sub-second whole-section poll');
+  assert(historyUiSource.includes('MutationObserver(scheduleRebuild)') &&
+    historyUiSource.includes('mls:active-patient-changed') &&
+    historyUiSource.includes('mls:view-changed') &&
+    historyUiSource.includes('}, 15000)'),
+  'history UI lost exact lifecycle updates or returned to a fast whole-section poll');
 
   console.log('PASS verified history organization: identity-bound visits populate profile groups, summaries, collapsible timeline, and op-note context');
 }

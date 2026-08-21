@@ -4397,6 +4397,9 @@ function mlsAthScore(t) {
   if (t && (t.discarded || t.status === 'unloaded')) s -= 300;
   return s;
 }
+function mlsAthTabSleeping(t) {
+  return !!(t && (t.discarded === true || t.status === 'unloaded'));
+}
 /* Injected independently into every current frame. This is deliberately an
    exact, visible-session probe rather than a generic search for "login" or
    "timed out"; clinical/chart text can legitimately contain those words. */
@@ -4473,6 +4476,64 @@ function mlsAthPing(tabId, ms) { /* READ-ONLY all-frame probe; one exact expired
     };
   }).catch(function () { return { alive: false, reachable: false, signedOut: false, timedOut: false, login: false, frames: 0 }; });
 }
+/* macwake-1.0.0: Chrome Memory Saver commonly discards background
+   athenaOne tabs on Macs. A discarded product tab is not a signed-out tab: it
+   has no live frames to answer the session probe yet. Only the explicit
+   open-patient capture may make that exact raw-product tab visible, which lets
+   Chrome restore it without an extension reload call. Quiet schedule/history
+   work never passes this opt-in and therefore never activates a tab. After the
+   bounded wake, the normal all-frame session probe must prove the restored tab
+   before it can be selected. */
+async function mlsAthWakeExplicitReadTab(t, opts) {
+  opts = opts || {};
+  var fail = function (reason, signedOut) {
+    opts.failure = { reason: reason, signedOut: signedOut === true, tabId: t && t.id != null ? t.id : null };
+    return { ok: false, reason: reason, signedOut: signedOut === true };
+  };
+  if (opts.explicitUserPull !== true || opts.foregroundOk !== true) return fail('athena-tab-sleeping', false);
+  if (!t || t.id == null || !mlsAthTabSleeping(t)) return fail('athena-tab-sleeping', false);
+  if (mlsAthTabHost(t) !== 'athenanet.athenahealth.com' || mlsAthIsLoginish(t)) return fail('athena-signed-out', true);
+  try {
+    var lastW = await chrome.windows.getLastFocused();
+    /* Never raise Chrome under another application. The explicit click must
+       still originate while Chrome owns focus. */
+    if (!lastW || lastW.focused !== true) return fail('athena-tab-sleeping', false);
+    var windowTabs = [];
+    try { windowTabs = await chrome.tabs.query({ windowId: t.windowId }); } catch (eQt) { windowTabs = []; }
+    var prev = windowTabs.find(function (x) { return x && x.active && x.id !== t.id; }) || null;
+    var state = {
+      athTabId: t.id,
+      athWinId: t.windowId,
+      prevTabId: prev ? prev.id : null,
+      prevWinId: (lastW.id != null && lastW.id !== t.windowId) ? lastW.id : null,
+      appTabId: opts.appTabId != null ? opts.appTabId : null
+    };
+    await chrome.tabs.update(t.id, { active: true });
+    try { await chrome.windows.update(t.windowId, { focused: true }); } catch (eFw) {}
+    opts.frontState = state;
+    var budgets = [1500, 3000, 4000];
+    for (var i = 0; i < budgets.length; i++) {
+      if (i === 0) await mlsSleepW(700);
+      else await mlsSleepW(350);
+      var current = null;
+      try { current = await chrome.tabs.get(t.id); } catch (eGt) { current = null; }
+      if (!current) return fail('athena-tab-sleeping', false);
+      if (mlsAthTabHost(current) !== 'athenanet.athenahealth.com' || mlsAthIsLoginish(current)) {
+        mlsAthRejectSignedOut(t.id);
+        return fail('athena-signed-out', true);
+      }
+      var proof = await mlsAthPing(t.id, budgets[i]);
+      if (proof.signedOut) return fail('athena-signed-out', true);
+      if (proof.alive && proof.reachable) {
+        opts.failure = null;
+        return { ok: true, tab: current, probe: proof };
+      }
+    }
+    return fail('athena-tab-sleeping', false);
+  } catch (eWake) {
+    return fail('athena-tab-sleeping', false);
+  }
+}
 function mlsPickGenericEmrTab(all) { /* non-athena EMR fallback (athena candidates were already considered+rejected) */
   try {
     return all.find(function (t) { return /epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com|athena/i.test((t.url || '') + ' ' + (t.title || '')); })
@@ -4481,6 +4542,10 @@ function mlsPickGenericEmrTab(all) { /* non-athena EMR fallback (athena candidat
 }
 async function mlsPickAthenaTab(all, opts) {
   opts = opts || {};
+  /* Keep the picker extractable in its long-standing runtime contract tests;
+     production uses the shared helper, while an isolated picker still applies
+     the same exact discarded/unloaded predicate. */
+  var isSleepingTab = (typeof mlsAthTabSleeping === 'function') ? mlsAthTabSleeping : function (t) { return !!(t && (t.discarded === true || t.status === 'unloaded')); };
   try {
     /* QUIET-WORK LEASE FIRST (v2.9.25): a managed pull may span many read-only
        chart navigations. Once its quiet workspace is established, every patient
@@ -4494,14 +4559,17 @@ async function mlsPickAthenaTab(all, opts) {
     if (qpLease && qpLease.active && qpLease.athenaTabId != null) {
       var qt = null; try { qt = await chrome.tabs.get(qpLease.athenaTabId); } catch (eQpTab) { qt = null; }
       if (!qt) {
-        /* qpx-3075 layer 3: the leased tab is GONE - a dead tab has no run to
-           protect. Clear the stale lease (module + the storage.session copy
-           that rehydrates on every boot) and fall through to the pin and
-           heuristics for tabs that actually exist. An existing-but-unhealthy
-           leased tab keeps the fail-closed path below - never-hop stands. */
+        /* The leased tab is gone. Clear the stale persisted lease, but fail
+           this cohort selection closed: the same run may never hop to a pin or
+           heuristic tab after losing its exact Athena owner. A later request
+           starts without the stale lease and may choose normally. */
         try { qpLease.active = false; qpLease.athenaTabId = null; chrome.storage.session.set({ mlsQpState: null }); } catch (eQx2) {}
+        return null;
       } else {
       if (qt && mlsAthTabHost(qt) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(qt)) {
+        /* An active quiet-work lease is deliberately never foregrounded or
+           woken, even if an unrelated explicit pull arrives concurrently. */
+        if (isSleepingTab(qt)) { opts.failure = { reason: 'athena-tab-sleeping', signedOut: false, tabId: qt.id }; return null; }
         var qpHealth = await mlsAthPing(qt.id, opts.noPing ? 1000 : 1500);
         if (qpHealth.alive && !qpHealth.signedOut) return qt;
         if (qpHealth.signedOut) { mlsAthRejectSignedOut(qt.id); return null; }
@@ -4527,6 +4595,11 @@ async function mlsPickAthenaTab(all, opts) {
       var pt = null; try { pt = await chrome.tabs.get(pin.tabId); } catch (eP) { pt = null; }
       if (!pt) { try { mlsPinSet(null); } catch (eP2) {} }
       else if (mlsAthTabHost(pt) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(pt)) {
+        if (isSleepingTab(pt)) {
+          var pinnedWake = await mlsAthWakeExplicitReadTab(pt, opts);
+          if (pinnedWake.ok) return pinnedWake.tab;
+          return null;
+        }
         var pinnedHealth = await mlsAthPing(pt.id, 1500);
         if (pinnedHealth.alive && !pinnedHealth.signedOut) return pt;
         if (pinnedHealth.signedOut) mlsAthRejectSignedOut(pt.id);
@@ -4538,7 +4611,11 @@ async function mlsPickAthenaTab(all, opts) {
     var known = http.filter(function (t) { return /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || '') || mlsTabTitleAthena(t); });
     if (!known.length) return opts.athenaOnly ? null : mlsPickGenericEmrTab(http);
     known.sort(function (a, b) { return (mlsAthScore(b) - mlsAthScore(a)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)) || ((b.id || 0) - (a.id || 0)); });
-    if (mlsAthScore(known[0]) < 0) return opts.athenaOnly ? null : mlsPickGenericEmrTab(http); /* every athena tab is an identity/login page */
+    if (known.every(function (t) { return mlsAthIsLoginish(t); })) {
+      known.forEach(function (t) { mlsAthRejectSignedOut(t.id); });
+      opts.failure = { reason: 'athena-signed-out', signedOut: true, tabId: known[0] && known[0].id };
+      return opts.athenaOnly ? null : mlsPickGenericEmrTab(http);
+    }
     var C = self.__mlsAthPickCache;
     /* Cache preserves preference, never health. A fresh all-frame probe vetoes
        a cached globalframeset whose child frame has since timed out. */
@@ -4548,7 +4625,8 @@ async function mlsPickAthenaTab(all, opts) {
     }
     var probeBudget = opts.noPing ? 1000 : 1200; /* legacy noPing is only a shorter budget, never a session-check bypass */
     var checked = await Promise.all(known.map(async function (t) {
-      if (mlsAthScore(t) < 0) { mlsAthRejectSignedOut(t.id); return { tab: t, probe: { alive: false, signedOut: true } }; }
+      if (mlsAthIsLoginish(t)) { mlsAthRejectSignedOut(t.id); return { tab: t, probe: { alive: false, reachable: true, signedOut: true } }; }
+      if (isSleepingTab(t)) return { tab: t, probe: { alive: false, reachable: false, signedOut: false, sleeping: true } };
       return { tab: t, probe: await mlsAthPing(t.id, probeBudget) };
     }));
     checked.forEach(function (x) { if (x.probe && x.probe.signedOut) mlsAthRejectSignedOut(x.tab.id); });
@@ -4564,12 +4642,28 @@ async function mlsPickAthenaTab(all, opts) {
         usable = rechecked.filter(function (x) { return x.probe && x.probe.alive && !x.probe.signedOut; });
       }
     }
+    if (!usable.length && opts.explicitUserPull === true && opts.foregroundOk === true) {
+      var sleeping = checked.filter(function (x) {
+        return x && x.tab && isSleepingTab(x.tab)
+          && mlsAthTabHost(x.tab) === 'athenanet.athenahealth.com'
+          && !mlsAthIsLoginish(x.tab);
+      });
+      if (sleeping.length) {
+        var woken = await mlsAthWakeExplicitReadTab(sleeping[0].tab, opts);
+        if (woken.ok) usable = [{ tab: woken.tab, probe: woken.probe }];
+      }
+    }
     /* 3.0.63: prefer the tab whose Day view has RENDERED day tabs (calTabs > 0). Measured live:
        two of three signed-in dashboards had .calendar-nav with no cells and every date
        navigation on them failed "no selected day" while the third tab was fine. */
     var selectedShell = usable.find(function (x) { return Number((x.probe && x.probe.calTabs) || 0) > 0; }) || usable.find(function (x) { return x.probe.cal || x.probe.fs; });
     var pick = (selectedShell || usable[0] || {}).tab || null;
-    if (!pick) return opts.athenaOnly ? null : mlsPickGenericEmrTab(http);
+    if (!pick) {
+      if (!opts.failure && checked.some(function (x) { return x && x.probe && x.probe.signedOut; })) opts.failure = { reason: 'athena-signed-out', signedOut: true, tabId: null };
+      if (!opts.failure && checked.some(function (x) { return x && x.probe && x.probe.sleeping; })) opts.failure = { reason: 'athena-tab-sleeping', signedOut: false, tabId: null };
+      if (!opts.failure) opts.failure = { reason: 'athena-tab-unreachable', signedOut: false, tabId: null };
+      return opts.athenaOnly ? null : mlsPickGenericEmrTab(http);
+    }
     C = self.__mlsAthPickCache || (self.__mlsAthPickCache = { tabId: null, at: 0 });
     C.tabId = pick.id; C.at = Date.now();
     return pick;
@@ -8744,6 +8838,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
 
   if (msg.type === 'mlsAppCaptureRequest') {
     (async () => {
+      var capturePickOpts = null;
       try {
         const tabs = await chrome.tabs.query({});
         /* cap-3067 (3.0.67): athena tab or NOTHING. The v1.90 fallback
@@ -8752,8 +8847,22 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
            chatgpt.com tab and only the host-permission wall stopped it. A
            capture that cannot find a signed-in athenaOne tab refuses in
            words; it never touches any other tab. */
-        const tab = await mlsPickAthenaTab(tabs, { athenaOnly: true });
-        if (!tab) return sendResponse({ error: 'No signed-in athenaOne tab was found. Open your patient in athenaOne (finish signing in if it is on the sign-in screen), then press this again.' });
+        capturePickOpts = {
+          athenaOnly: true,
+          explicitUserPull: msg.explicitUserPull === true,
+          foregroundOk: msg.foregroundOk === true,
+          appTabId: sender && sender.tab && sender.tab.id != null ? sender.tab.id : null
+        };
+        const tab = await mlsPickAthenaTab(tabs, capturePickOpts);
+        if (!tab) {
+          if (capturePickOpts.failure && capturePickOpts.failure.reason === 'athena-tab-sleeping') {
+            return sendResponse({ ok: false, reason: 'athena-tab-sleeping', error: 'The exact athenaOne tab is asleep and could not be safely restored. Click that Athena tab once, keep the patient open, then press this again. Nothing was captured.' });
+          }
+          if (capturePickOpts.failure && capturePickOpts.failure.reason === 'athena-tab-unreachable') {
+            return sendResponse({ ok: false, reason: 'athena-tab-unreachable', error: 'The athenaOne tab did not answer the bounded read check. Keep the patient open in Athena and press this again. MLS did not treat this as a sign-out, and nothing was captured.' });
+          }
+          return sendResponse({ ok: false, reason: 'athena-signed-out', error: 'No signed-in athenaOne tab was found. Open your patient in athenaOne (finish signing in if it is on the sign-in screen), then press this again.' });
+        }
         let pageText = '';
         try {
           /* cap-3065 (3.0.65): athenaOne is a FRAMESET and its chart/briefing
@@ -8790,6 +8899,15 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         const res = await callBackend('/api/assist/extract', { pageText, url: tab.url });
         sendResponse(Object.assign({ fromTab: tab.url }, res));
       } catch (e) { sendResponse({ error: 'Capture failed: ' + e.message }); }
+      finally {
+        var wakeState = capturePickOpts && capturePickOpts.frontState;
+        if (wakeState) {
+          try {
+            if (typeof self.__mlsDeferRestoreAfterRead === 'function') self.__mlsDeferRestoreAfterRead(wakeState);
+            else if (typeof self.__mlsRestoreFocusAfterRead === 'function') setTimeout(function () { try { self.__mlsRestoreFocusAfterRead(wakeState); } catch (eRs) {} }, 0);
+          } catch (eRestore) {}
+        }
+      }
     })();
     return true;
   }
@@ -8802,10 +8920,16 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         const note = String(msg.note || '');
         if (!note.trim()) return sendResponse({ error: 'Nothing to send.' });
         const tabs = await chrome.tabs.query({});
-        /* v1.90: unified verified picker; newest non-athena tab stays the generic-EMR fallback. */
-        const tab = (await mlsPickAthenaTab(tabs, { athenaOnly: true })) || (function () { const c = tabs.filter(t => /^https?:/.test(t.url || '') && !/mlsscribe\.com|athena/i.test((t.url || '') + ' ' + (t.title || ''))); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); return c[0]; })();
+        /* Any exact raw-product Athena tab owns this control, including a
+           sleeping or temporarily unreachable one. Never fall through from
+           that state into an unrelated generic EMR tab. The supervised review
+           performs its own fresh identity/encounter/session gates. */
+        const pickedAthena = await mlsPickAthenaTab(tabs, { athenaOnly: true });
+        const hasExactAthena = tabs.some(t => mlsAthTabHost(t) === 'athenanet.athenahealth.com');
+        if (pickedAthena || hasExactAthena) return sendResponse({ ok: false, blocked: true, reason: 'legacy-untyped-write-disabled', delegate: 'athena-supervised-review-v2', error: 'Opening Review Athena actions for exact patient, encounter, and note confirmation. Nothing was written.' });
+        /* No Athena product tab exists: preserve the legacy generic-EMR lane. */
+        const tab = (function () { const c = tabs.filter(t => /^https?:/.test(t.url || '') && !/mlsscribe\.com|athena/i.test((t.url || '') + ' ' + (t.title || ''))); c.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)); return c[0]; })();
         if (!tab) return sendResponse({ error: 'No EMR tab is open. Open the patient in your EMR in another tab, then try again.' });
-        if (mlsAthTabHost(tab) === 'athenanet.athenahealth.com') return sendResponse({ ok: false, blocked: true, reason: 'legacy-untyped-write-disabled', error: 'Use Review Athena actions for an exact patient, encounter, and note confirmation. Nothing was written.' });
 
         // v1.57: same identity gate mlsVerifiedWrite already uses -- read the open chart's
         // identity + the MLS active patient, and refuse (unless the doctor explicitly forces)
@@ -12280,6 +12404,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               return false;
             };
             var mains = matchedRows.filter(function (r) { return !inMini(r); });
+            /* rr-3077: one main row plus Athena's mini-schedule copies is the
+               benign b754 double render. More than one visible non-mini row is
+               materially different: the exact id is claimed by two primary
+               schedule rows, so refuse before clicking either one. */
+            if (mains.length > 1) return { el: null, sc: 99, scanned: holders.length, viaApptId: true, matches: mains.length, ambiguous: true, dupRenders: matchedRows.length, mainRows: mains.length };
             var pool = mains.length ? mains : matchedRows;
             pool.sort(function (a, b) { return rowText(b).length - rowText(a).length; });
             return { el: pool[0], sc: 99, scanned: holders.length, viaApptId: true, matches: 1, dupRenders: matchedRows.length, mainRows: mains.length };

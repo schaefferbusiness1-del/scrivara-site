@@ -90,6 +90,7 @@ const exactContext = {
 const window = {
   document,
   location: { origin: 'https://mlsscribe.com' },
+  __mlsExtensionCapabilities: { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true },
   sessionStorage: (() => { const data = Object.create(null); return { getItem: key => Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null, setItem: (key, value) => { data[key] = String(value); }, removeItem: key => { delete data[key]; } }; })(),
   toast() {},
   addEventListener(type, fn) { (windowListeners[type] || (windowListeners[type] = [])).push(fn); },
@@ -154,6 +155,7 @@ assert.strictEqual(window.__mlsShowAsst.forRow(teachManifest, taughtRow).selecto
 assert.deepStrictEqual(teachStates, ['connected', 'waiting', 'captured'], 'destination teaching did not expose its explicit connection lifecycle');
 sent.length = 0;
 const manifest = window.__mlsWriteFlow.openUnifiedConfirmation(reviewOpts);
+const actionMessages = () => sent.filter(message => message.type === 'mlsAppAthenaActionV2');
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 8));
 
@@ -162,11 +164,11 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 8));
   assert(byId.mlsAthenaUnifiedConfirm, 'unified page did not open');
   assert(!byId.athenaReceipt, 'legacy receipt still overlaps unified page');
   assert(!byId.mlsAthenaActionConfirm, 'legacy action modal still overlaps unified page');
-  assert.strictEqual(sent.length, 1);
-  assert.strictEqual(sent[0].mode, 'probe', 'opening the review must only perform a read-only probe');
-  assert.strictEqual(sent[0].manifestHash, manifest.manifestHash, 'probe lost the immutable manifest binding');
-  assert.strictEqual(sent[0].rowHash, taughtRow.rowHash, 'probe lost the exact destination-row binding');
-  assert.strictEqual(sent[0].taughtDestination.selector, '#exact-note-editor', 'read-only probe did not consume the taught destination');
+  assert.strictEqual(actionMessages().length, 1);
+  assert.strictEqual(actionMessages()[0].mode, 'probe', 'opening the review must only perform a read-only probe');
+  assert.strictEqual(actionMessages()[0].manifestHash, manifest.manifestHash, 'probe lost the immutable manifest binding');
+  assert.strictEqual(actionMessages()[0].rowHash, taughtRow.rowHash, 'probe lost the exact destination-row binding');
+  assert.strictEqual(actionMessages()[0].taughtDestination.selector, '#exact-note-editor', 'read-only probe did not consume the taught destination');
   await tick();
 
   const go = byId.mlsAthenaUnifiedGo;
@@ -175,24 +177,24 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 8));
   assert.strictEqual(go.getAttribute('data-mls-preview-hash'), manifest.previewHash);
   assert(/Confirm write reviewed note/i.test(go.getAttribute('aria-label')));
   const card = byId.mlsAthenaUnifiedConfirm.children[0];
-  assert(/MANUAL|COMPLETE IN ATHENA/.test(card.innerHTML), 'manual final-action rows are not visible');
-  assert(/complete (?:billing|the exact order|final actions).+Athena/i.test(card.innerHTML), 'review does not visibly route final actions to Athena');
+  assert(/MANUAL|COMPLETE IN ATHENA/.test(card.innerHTML), 'manual diagnosis/order rows are not visible');
+  assert(/complete (?:billing|the exact order|final actions).+Athena/i.test(card.innerHTML), 'review does not visibly route unsupported/untyped rows to Athena');
   assert(/Exact reviewed note\./.test(card.innerHTML), 'full note payload is not visible');
 
   go.listeners.click[0]({ target: go });
   await tick();
-  assert.deepStrictEqual(sent.map(message => message.mode), ['probe', 'execute'], 'one Confirm & write click must issue exactly one typed execute');
-  assert.strictEqual(sent[1].action, 'write_note');
-  assert.strictEqual(sent[1].noteText, 'Exact reviewed note.');
-  assert.strictEqual(sent[1].taughtDestination.selector, '#exact-note-editor', 'confirmed execute did not consume the same taught destination');
-  assert.strictEqual(sent[1].taughtDestination.contextHash, taughtBinding.contextHash, 'confirmed execute changed the taught patient/writeflow binding');
-  assert(!sent.some(message => message.action === 'sign_encounter'), 'Sign auto-chained from a newly written note');
+  assert.deepStrictEqual(actionMessages().map(message => message.mode), ['probe', 'execute'], 'one Confirm & write click must issue exactly one typed execute');
+  assert.strictEqual(actionMessages()[1].action, 'write_note');
+  assert.strictEqual(actionMessages()[1].noteText, 'Exact reviewed note.');
+  assert.strictEqual(actionMessages()[1].taughtDestination.selector, '#exact-note-editor', 'confirmed execute did not consume the same taught destination');
+  assert.strictEqual(actionMessages()[1].taughtDestination.contextHash, taughtBinding.contextHash, 'confirmed execute changed the taught patient/writeflow binding');
+  assert(!actionMessages().some(message => message.action === 'sign_encounter'), 'Sign auto-chained from a newly written note');
   assert(/VERIFIED/.test(byId.mlsAthenaUnifiedReceipt.innerHTML), 'per-row verified receipt was not rendered');
-  assert(!byId.mlsAthenaUnifiedReviewSign, 'verified note must not offer an executable Sign review');
   const signRow = manifest.rows.find(row => row.id === 'sign-encounter');
-  assert(signRow && signRow.capability === 'manual' && signRow.action === '', 'Sign did not remain an immutable manual row after note verification');
+  assert(signRow && signRow.capability === 'ready' && signRow.action === 'sign_encounter', 'capable extension did not expose Sign as its own immutable, proof-gated row');
+  assert.strictEqual(actionMessages().filter(message => message.action === 'sign_encounter').length, 0, 'proof-gated Sign ran without a separate row selection and confirmation');
 
-  console.log('PASS unified Athena runtime: exact taught destination bound through probe + one confirmed execute, one page, per-row receipt, no Sign auto-chain');
+  console.log('PASS unified Athena runtime: exact taught destination bound through probe + one confirmed execute, one page, per-row receipt, separate proof-gated Sign with no auto-chain');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

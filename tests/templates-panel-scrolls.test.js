@@ -316,8 +316,10 @@ const tplHtml = HTML.slice(tplStart, tplEnd);
 const INVENTORY = [
   ['tplName', 'the template Name field'],
   ['tplKeywords', 'the keywords / specialty tags field'],
-  ['tplFileInput', 'the file picker (Word / PDF / image / text)'],
-  ['tplDropZone', 'the drag-and-drop zone'],
+  /* The duplicate single-file uploader was deliberately retired. The one
+     canonical uploader accepts one file, many files, or a multi-form PDF. */
+  ['tplMultiFileInput', 'the consolidated file picker (Word / PDF / image / text)'],
+  ['tplMultiDrop', 'the consolidated drag-and-drop zone'],
   ['tplText', 'the editable extracted-text area'],
   ['tplSearch', 'the template search box'],
   ['tplWorkspace', 'the two-pane workspace'],

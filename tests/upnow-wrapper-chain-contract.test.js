@@ -11,6 +11,9 @@ const realtimeSource = fs.readFileSync(path.join(root, 'feat_mls_upnow_realtime.
 const task3Source = fs.readFileSync(path.join(root, 'feat_task3_frontsync.js'), 'utf8');
 const upnowSyncSource = fs.readFileSync(path.join(root, 'feat_mls_upnow_sync.js'), 'utf8');
 const nextUpSource = fs.readFileSync(path.join(root, 'feat_nextup_connect.js'), 'utf8');
+const nextUpVersionMatch = nextUpSource.match(/var VERSION = '([^']+)'/);
+assert(nextUpVersionMatch, 'Next Up source no longer declares its release identity');
+const nextUpVersion = nextUpVersionMatch[1];
 
 function harness(readyState) {
   let sequence = 0;
@@ -140,7 +143,8 @@ function hiddenRenderOwnerChain(marker, originMarker) {
   vm.runInContext(nextUpSource, context, { filename: 'feat_nextup_connect.js' });
   assert.strictEqual(window._renderTodayPatients, chain.top,
     'Next Up added a duplicate renderer guard above a hidden existing owner');
-  assert.strictEqual(window.__mlsNextUp.version, 'nextup-2.0.1');
+  assert.strictEqual(window.__mlsNextUp.version, nextUpVersion,
+    'Next Up API did not publish the exact version declared by the loaded module');
   window.__mlsNextUp._installRendererGuard();
   assert.strictEqual(window._renderTodayPatients, chain.top,
     'Next Up reapply added a duplicate renderer guard');

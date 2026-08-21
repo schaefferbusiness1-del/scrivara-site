@@ -32,19 +32,22 @@ function beforeMutation(source, needle, mutationNeedle) {
  * order. wsg-2.0.0 (MLS Assist 3.0.62, owner directive 2026-08-12): every
  * supervised V2 action (write_note, save_draft, stage_billing, sign_encounter,
  * place_order) can receive a trusted-click arm from ITS OWN confirm button; the
- * production site (feat_mls_writeflow.js) still only offers note write/save.
+ * production site (feat_mls_writeflow.js) exposes all five only through the
+ * extension-capability, exact-context, proof, and one-use-token gates below.
  */
 assert(/mlsAppAthenaActionV2\s*:\s*1/.test(content), 'the typed Athena action must be origin-gated by the content bridge');
 
 const appActions = between(writeflow, '/* ---------------- explicit Athena actions', '/* ---- identity helpers');
 for (const action of ['write_note', 'save_draft', 'stage_billing', 'sign_encounter', 'place_order']) assert(appActions.includes(action), `app policy metadata must name ${action}`);
-assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*\}/.test(appActions), 'app executable allowlist must contain only note write/save');
+assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*,\s*stage_billing\s*:\s*true\s*,\s*sign_encounter\s*:\s*true\s*,\s*place_order\s*:\s*true\s*\}/.test(appActions), 'app executable allowlist must contain the five supervised typed actions');
 const appProbeStart = appActions.indexOf('function startAthenaAction(action, opts)');
 assert(appProbeStart >= 0);
 const appProbe = appActions.slice(appProbeStart);
-const manualRefusalAt = appProbe.indexOf('manual-only-final-action');
+const capabilityRefusalAt = appProbe.indexOf('final-action-capability-required');
+const signProofRefusalAt = appProbe.indexOf('verified-note-write-required');
 const bridgeProbeAt = appProbe.indexOf("mode: 'probe'");
-assert(manualRefusalAt >= 0 && bridgeProbeAt > manualRefusalAt, 'manual final actions must be refused before any probe crosses the bridge');
+assert(capabilityRefusalAt >= 0 && bridgeProbeAt > capabilityRefusalAt, 'final actions must be refused before probe unless the extension advertises the typed capability');
+assert(signProofRefusalAt >= 0 && bridgeProbeAt > signProofRefusalAt, 'Sign must be refused before probe without an exact verified note-write proof');
 assert(appProbe.indexOf("mode: 'probe'") < appProbe.indexOf('showActionConfirm('), 'opening the action must probe read-only before showing confirmation');
 assert(appProbe.includes('previewHash'));
 const appConfirm = between(appActions, 'function showActionConfirm(action, opts, patient, previewHash, payload, probe)', 'function startAthenaAction(action, opts)');

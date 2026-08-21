@@ -1206,9 +1206,10 @@
   /* ---------- item 4: kill the duplicate RIGHT-side "MLS Assist" surface for real ----------
      #mls-assist-badge (built by feat_mls_redesign.js) is the bottom-right duplicate. CSS alone
      loses if it is re-created or shown via inline !important, so we ALSO hide it actively and
-     idempotently: a cheap observer/rAF re-hides the known badge whenever the DOM changes, and a
-     1s interval (30x) runs a full safety-net scan for any OTHER fixed bottom-right element whose
-     own text is exactly "MLS Assist". The new LEFT panel (#mlsAsstPanel) supersedes it. */
+     idempotently: a cheap observer/rAF re-hides the known badge whenever the DOM changes. One
+     idle-time safety scan catches an older unknown fixed bottom-right owner; it must not walk
+     `body *` every two seconds while a clinician is switching rooms. The new LEFT panel
+     (#mlsAsstPanel) supersedes it. */
   var _dupObs = null, _dupPoll = null, _dupRaf = 0;
   function hideEl(e) {
     if (!e) return false;
@@ -1252,22 +1253,30 @@
       syncChatOwner(false);
     });
   }
-  var _dupFullPoll = null;
+  var _dupFullIdle = null;
   function startDupWatch() {
-    killDupFull();
+    killBadge();
     /* catch (re)creation of the badge or any new node */
     safe(function () { _dupObs = new MutationObserver(scheduleDup); _dupObs.observe(document.body || document.documentElement, { childList: true, subtree: true }); });
     /* UNCAPPED gentle backstop: re-hide the known badge forever (cheap getElementById).
        Combined with the per-badge attribute observer (attachBadgeObs), a re-show by the
        redesign paint loop is reverted within a frame, so it cannot come back. */
     _dupPoll = setInterval(function () { killBadge(); }, 1500);
-    /* heavier full safety-net scan, less frequent + capped */
-    var t = 0; _dupFullPoll = setInterval(function () { killDupFull(); if (++t > 20) { clearInterval(_dupFullPoll); _dupFullPoll = null; } }, 2000);
+    /* The unknown-owner fallback is discovery work, not interaction work. Run
+       it once when Chrome is idle; the exact-ID badge remains guarded forever
+       by the targeted paths above. */
+    var idle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 3500); };
+    _dupFullIdle = idle(function () { _dupFullIdle = null; killDupFull(); });
   }
   function unkillDup() {
     safe(function () { if (_dupObs) _dupObs.disconnect(); _dupObs = null; });
     safe(function () { if (_dupPoll) clearInterval(_dupPoll); _dupPoll = null; });
-    safe(function () { if (_dupFullPoll) clearInterval(_dupFullPoll); _dupFullPoll = null; });
+    safe(function () {
+      if (_dupFullIdle) {
+        if (window.cancelIdleCallback) window.cancelIdleCallback(_dupFullIdle); else clearTimeout(_dupFullIdle);
+      }
+      _dupFullIdle = null;
+    });
     safe(function () { var b = document.getElementById("mls-assist-badge"); if (b && b.__mlsDupAttrObsRef) { b.__mlsDupAttrObsRef.disconnect(); b.__mlsDupAttrObs = false; } });
     safe(function () { var h = document.querySelectorAll('[data-mls-dup-hidden="1"]'); for (var i = 0; i < h.length; i++) { h[i].style.removeProperty("display"); h[i].style.removeProperty("visibility"); h[i].removeAttribute("data-mls-dup-hidden"); } });
   }

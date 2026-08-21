@@ -150,14 +150,26 @@ paintHead(T8);
 const NOFACE = mkImg();
 rect(NOFACE, 0, 0, M - 1, M - 1, WALL);
 
-/* POSTERIZED: T1 through the shipped stylize math, replicated EXACTLY and
-   string-pinned against the shipped lines so a formula change breaks this
-   suite loudly instead of silently un-posterizing the fixture. */
-ok(SRC.indexOf('var levels = 6, step2 = 255 / (levels - 1);') >= 0 &&
-   SRC.indexOf('d[i] = Math.round(Math.min(255, d[i] * 1.06) / step2) * step2;') >= 0 &&
-   SRC.indexOf('d[i + 2] = Math.round((d[i + 2] * 0.97) / step2) * step2;') >= 0,
-  'the stylizeCanvas posterize formula moved - the POSTERIZED fixture below no longer replicates ' +
-  'the shipped math and every illustration pin would be measuring a fiction');
+/* LEGACY_POSTERIZED: T1 through the historical six-level transform. Existing
+   saved portraits made by that build must still be recognized and quarantined,
+   but new captures must remain natural photographs. Pin the fixture against the
+   pre-fix bytes and pin the current encoder separately so neither contract can
+   silently drift. */
+ok(BASE.indexOf('var levels = 6, step2 = 255 / (levels - 1);') >= 0 &&
+   BASE.indexOf('d[i] = Math.round(Math.min(255, d[i] * 1.06) / step2) * step2;') >= 0 &&
+   BASE.indexOf('d[i + 2] = Math.round((d[i + 2] * 0.97) / step2) * step2;') >= 0,
+  'the historical fixture no longer reproduces the exact six-level bytes it is meant to quarantine');
+{
+  const stylizeAt = SRC.indexOf('function stylizeCanvas(src)');
+  const stylizeEnd = SRC.indexOf('function stylizePortrait', stylizeAt);
+  const stylize = SRC.slice(stylizeAt, stylizeEnd);
+  ok(stylizeAt > 0 && !/getImageData|putImageData|step2|levels\s*=/.test(stylize),
+    'new patient portraits are being posterized again instead of preserving the captured person');
+  ok(stylize.includes("canvas.toDataURL('image/png')") &&
+     stylize.includes("canvas.toDataURL('image/jpeg', qualities[qi])") &&
+     stylize.includes('var qualities = [0.98, 0.96, 0.94, 0.92]'),
+    'the natural PNG plus independent high-quality JPEG fallback contract moved');
+}
 function posterize(img) {
   const out = mkImg();
   const step2 = 255 / 5;
@@ -311,10 +323,22 @@ const CLAIM_SENTENCES = {
     'KIOSK: an illustration-only read did not yield the byte-identical default look (P6)');
   eq(JSON.stringify(NEW.faceKioskDayOneLook(null)), def,
     'KIOSK: a failed read (null) did not yield the default look');
-  /* a clean read applies exactly the claimed knobs over the default */
+  /* A natural source is necessary but not sufficient: day one applies only a
+     complete six-claim skin+hair match. The synthetic T1 pixel reader may be
+     below that whole-match bar, so prove both sides explicitly. */
   const applied = NEW.faceKioskDayOneLook(rNew.t1);
-  eq(applied.skin, rNew.t1.look.skin, 'KIOSK: a claimed skin did not reach the day-one look');
+  const t1Whole = rNew.t1.receipt.srcKind === 'photo' && rNew.t1.receipt.fromIllustration !== true &&
+    rNew.t1.receipt.claimed >= 6 && rNew.t1.derived.indexOf('skin') >= 0 && rNew.t1.derived.indexOf('hair') >= 0;
+  eq(applied.skin, t1Whole ? rNew.t1.look.skin : NEW.FACE_LOOK.skin,
+    'KIOSK: day one did not enforce the complete natural-photo match gate');
   eq(applied.cap, false, 'KIOSK: accessories moved without a licence');
+  const fullRead = {
+    look: { skin: '#c68e6f', hair: '#3a2a1b', eyes: '#241a12', lip: '#9a5a4a', shirt: '#4a6a8a', hairStyle: 'short' },
+    derived: ['skin', 'hair', 'eyes', 'lip', 'shirt', 'hairStyle'],
+    receipt: { srcKind: 'photo', fromIllustration: false, examined: 14, claimed: 6, refused: 8 }
+  };
+  eq(NEW.faceKioskDayOneLook(fullRead).skin, '#c68e6f',
+    'KIOSK: a complete proven-photo match did not apply its licensed skin');
   /* the applier itself refuses unlicensed values even if a future look carries them */
   const drift = NEW.faceApplyDerived(NEW.FACE_LOOK, { look: { skin: '#c68e6f', hair: '#999999' }, derived: ['skin'] });
   eq(drift.skin, '#c68e6f', 'APPLIER: a licensed knob was not applied');
@@ -392,7 +416,7 @@ const CLAIM_SENTENCES = {
   const mkBadge = function () { return { textContent: '', style: {} }; };
   const badges = { skin: mkBadge(), hair: mkBadge(), cap: mkBadge() };
   const env = new Function('lookBadges', 'lookMarks', 'manualNow',
-    'var lastGot = [], lastAi = [];\n' + badgeSrc +
+    'var lastGot = [], lastAi = []; function faceMutated(){}\n' + badgeSrc +
     '\nreturn { set: setLookBadges, touch: lookManualTouch };')(
     badges, { skin: 'from your last photo — retake or adjust' }, {});
   env.set([], []);
@@ -414,20 +438,27 @@ const CLAIM_SENTENCES = {
   ok(/font:700 13\.5px/.test(say) && /#7a1f1f/.test(say) && /#fdecec/.test(say),
     'LOUD: the refusal style is no longer measurably louder than the pale meta line (font:700, ' +
     'dark red on a red-tinted box) - the owner barely saw the pale one');
-  ok(SRC.indexOf("lookMarks[sk] = 'from your last photo \\u2014 retake or adjust';") >= 0,
-    'the whole-read refusal no longer marks the stale controls');
-  ok(/setLookBadges\(\[\], \[\]\);\s*\n\s*lookNoteSay\(whyNoFace/.test(SRC),
-    'the whole-read refusal no longer repaints the badges before speaking, or no longer routes ' +
-    'through the loud note');
-  ok(SRC.indexOf('lookNoteSay(whyNoFace') >= 0 && /lookNoteSay\(whyNoFace[^;]+, 2\);/.test(SRC),
-    'the whole-read refusal is not at level 2 (LOUD)');
+  ok(SRC.indexOf("lookMarks[sk] = 'left at the default \\u2014 not readable from this photo';") >= 0,
+    'the whole-read refusal no longer marks every unread non-manual control as an explicit default');
+  {
+    const finishAt = SRC.indexOf('function finishMatch(');
+    const finishEnd = SRC.indexOf('function afterLandmarks', finishAt);
+    const finish = SRC.slice(finishAt, finishEnd);
+    ok(SRC.indexOf('finishMatch(unproved, [], false, whyNoFace') >= 0 &&
+       finish.indexOf('setLookBadges(appliedPixel, appliedAi);') > 0 &&
+       finish.indexOf('lookNoteSay(why, partial.partial ? 1 : 2);') > finish.indexOf('setLookBadges(appliedPixel, appliedAi);'),
+      'the unproved portrait no longer routes through the single refusal/partial ledger that repaints badges before speaking');
+  }
+  ok(/lookNoteSay\(why, partial\.partial \? 1 : 2\);/.test(SRC),
+    'a whole refusal is not loud while a safely applied partial remains an amber warning');
   ok(SRC.indexOf("make('button', 'mlsAvAction', 'Clear the derived look')") >= 0 &&
      SRC.indexOf("clearLookBtn.id = 'mlsAvClearDerived'") >= 0 &&
      SRC.indexOf('faceClearDerived(lookNow, manualNow)') >= 0 &&
      SRC.indexOf('lookActions.appendChild(matchBtn); lookActions.appendChild(clearLookBtn); lookActions.appendChild(moodBtn);') >= 0,
     'the one-click Clear-the-derived-look reset is missing, unwired, or unmounted');
-  ok(SRC.indexOf('lookNow = faceApplyDerived(lookNow, res);') >= 0,
-    'Setup no longer merges through the shared applier');
+  ok(SRC.indexOf('lookNow = faceApplyDerived(lookNow, combined);') >= 0 &&
+     SRC.indexOf('lookNow = faceApplyDerived(lookNow, { derived: applied, look: (combined && combined.look) || {} });') >= 0,
+    'whole and partial Setup matches no longer merge through the shared licensed-field applier');
   ok(SRC.indexOf('merged[k] = (got.indexOf(k) >= 0') < 0,
     'the hand-rolled Setup merge is back beside the shared applier - two implementations drift');
   ok(BASE.indexOf('merged[k] = (got.indexOf(k) >= 0') >= 0,
@@ -436,25 +467,25 @@ const CLAIM_SENTENCES = {
     'a quarantined saved look renders straight into the preview again (root cause 4)');
   ok(SRC.indexOf('quarantineShow(lookQuarantine)') >= 0 && SRC.indexOf("box.id = 'mlsAvLookQuarantine'") >= 0,
     'the quarantine banner is gone');
-  ok(SRC.indexOf('window.__mlsAvatar.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: true') >= 0 &&
-     SRC.indexOf('window.__mlsAvatar.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: false') >= 0,
+  ok(SRC.indexOf('currentApi.lastMatchReceipt = {\n              at: Date.now(), usedHi: usedHi, wholeReadRefusal: true') >= 0 &&
+     SRC.indexOf('currentApi.lastMatchReceipt = {\n            at: Date.now(), usedHi: usedHi, wholeReadRefusal: false') >= 0,
     'the Match receipt is no longer published for diagnosis (refusal or success side missing)');
 }
 
 /* ═══ C6: the vision input guard (P9-lite) and output gate wiring ══════════ */
 {
-  ok(SRC.indexOf('faceVisionClaimGate(k, vl[k])') >= 0,
-    'the vision output gate is not consulted where model claims are applied');
-  const at = SRC.indexOf('if (rct && rct.fromIllustration) {');
+  ok(SRC.indexOf('faceVisionClaimGate(k, ml[k])') >= 0 && SRC.indexOf('faceVisionClaimGate(k, pxLook[k])') >= 0,
+    'model and pixel claims no longer pass through the shared output safety gate');
+  const at = SRC.indexOf('if (rct0 && rct0.fromIllustration === true) {');
   ok(at >= 0, 'the vision input guard (never show the model the illustration) is gone');
-  const after = SRC.slice(at, at + 1400);
-  ok(/} else \{[\s\S]{0,700}applyVision\(got, pixNote, pixLoud\);/.test(after),
-    'applyVision is no longer lexically inside the non-illustration branch - the model can be ' +
-    'shown the copy the pixel path just refused (Mechanism C)');
-  ok(SRC.indexOf('applyVision(got, pixNote);') < 0,
-    'an ungated applyVision call site is back');
+  const after = SRC.slice(at, at + 4200);
+  ok(after.indexOf('finishMatch(illustrated') > 0 &&
+     after.indexOf('the second read was not asked') > 0 &&
+     after.indexOf('return;') > after.indexOf('finishMatch(illustrated') &&
+     after.indexOf("rct && rct.srcKind === 'photo'") > after.indexOf('return;'),
+    'the illustration no longer returns before the proved-photo branch may request the second read');
   /* the count reaches the doctor */
-  ok(/Matched ' \+ rct\.claimed \+ ' of ' \+ rct\.examined \+ ', refused ' \+ rct\.refused/.test(SRC),
+  ok(/Matched ' \+ rct\.claimed \+ ' of ' \+ rct\.examined[\s\S]{0,120}rct\.refused \+ ' stayed unchanged/.test(SRC),
     'the note no longer carries the counted receipt - "it did nothing" and "it refused 9 and ' +
     'told you" collapse back into one fact');
 }

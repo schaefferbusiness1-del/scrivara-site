@@ -1,5 +1,5 @@
 {
-  "version": "3.0.76",
+  "version": "3.0.77",
   "minChrome": 116,
-  "notes": "v3.0.76 - The version the practice validated live. On top of the repeat-pull fixes: closing your athenaOne tab can no longer silently block every pull until the browser restarts (the extension now notices the tab is gone and finds your new one), a briefly-offline extension worker retries your read instead of failing it, and the session keep-alive now keeps a minute-by-minute ledger so sign-out causes can be diagnosed instead of guessed. Everything from earlier releases remains: one-click pull of whoever is open, honest identity checks, full-speed background reads, and phone-confirmed note writes that stay notes-and-drafts only, confirmed by you. Requires Chrome 116+."
+  "notes": "v3.0.77 - Open-patient pulls are more reliable on Macs: an explicit pull can safely wake and verify the exact sleeping athenaOne tab without reloading it, while quiet and background work never wakes a tab. A sleeping or temporarily unreachable tab is no longer mistaken for a sign-out. Legacy Send to Athena requests now enter the existing supervised review flow, with exact patient and encounter checks plus clinician confirmation; nothing writes automatically. Everything from earlier releases remains. Requires Chrome 116+."
 }

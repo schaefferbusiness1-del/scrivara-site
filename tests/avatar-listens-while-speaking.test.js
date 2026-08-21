@@ -91,8 +91,15 @@ assert(/if \(piece && pvIsSelfEcho\(piece\)\) continue;/.test(source),
 {
   const at = source.indexOf('function pvListen');
   const listen = source.slice(at, source.indexOf('/* ======', at));
-  assert(/function submit\(\)[\s\S]{0,1200}if \(!v\) return;[\s\S]{0,200}rec\.stop\(\)/.test(listen),
-    'submit() must refuse BEFORE stopping the recogniser when nothing survived the filter — otherwise one echo leaves the kiosk deaf until the 9s watchdog');
+  const submitAt = listen.indexOf('function submit()');
+  const submitEnd = listen.indexOf('function armQuiet()', submitAt);
+  const submit = listen.slice(submitAt, submitEnd);
+  assert(submitAt >= 0 && submitEnd > submitAt && /if \(!v\) return false;/.test(submit),
+    'submit() must refuse when nothing survived the filter');
+  assert(/finalText = '';\s*\n\s*lastInterim = '';[\s\S]{0,220}if \(onFinal\) onFinal\(v\);/.test(submit),
+    'a real final is not consumed atomically before it is handed to the caller');
+  assert(!/rec\.stop\(\)/.test(submit) && /rec\.continuous = true;/.test(listen),
+    'submit() stops the continuous recogniser — one echo or backend turn would leave the kiosk deaf until recovery');
 }
 /* the template must OUTLIVE the speech, boundedly. Both halves are asserted:
    it is handed to the tail, and it is still cleared.
@@ -130,8 +137,15 @@ assert(source.includes('if (keepMood && pvRec) return;'), 'opening the mic twice
 /* av-5.7.0: and the silence clock starts when the QUESTION ENDS. Armed from
    kioskListen it started when the question began, so a six-second question left
    three seconds before the kiosk talked over the patient's first words. */
-assert(/pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{[\s\S]{0,600}kioskArmWatchdog\(9000\);/.test(source),
-  'the silence watchdog must be re-armed when the question finishes playing, not when it starts');
+{
+  const askAt = source.indexOf('kioskListen(true);');
+  const askEnd = source.indexOf('}, saidShape', askAt);
+  const ask = source.slice(askAt, askEnd > askAt ? askEnd : askAt + 3000);
+  assert(askAt > 0 && /pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{/.test(ask) &&
+    /kioskArmWatchdog\(9000\);/.test(ask) &&
+    ask.indexOf('kioskArmWatchdog(9000);') > ask.indexOf('pvSpeak'),
+  'the silence watchdog must be re-armed from the question-finished callback, not when speech starts');
+}
 
 /* ---- 4. barge-in stops the VOICE only, and is guarded ---- */
 assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear down the recogniser');
@@ -147,7 +161,7 @@ assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear dow
   assert(at > 0, 'kioskListen is gone');
   const end = source.indexOf('\n  function ', at + 20);
   const body = source.slice(at, end > at ? end : at + 6000);
-  assert(/if \(pvSaying && otherVoice\) pvStopSpeechOnly\(\);/.test(body),
+  assert(/var bargedIn = !!\(pvSaying && otherVoice\);[\s\S]{0,80}if \(bargedIn\) pvStopSpeechOnly\(\);/.test(body),
     'barge-in must fire from the interim path, on the decided condition');
   /* and it must remain the ONLY caller: the whole diagnosis of "it does not say everything it
      is going to say" rests on there being exactly one thing that can cut a question off */
@@ -165,19 +179,13 @@ assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear dow
    would have gone red on the next push. Trading one text-shape proxy for another only moves
    the brittleness, so the requirement is now checked by EXECUTING the decision instead, with
    their self-echo case among the nine. Nothing was dropped and nothing was relaxed. */
-/* ── "a cough or an 'mhm' must not cut the question off" — NOW EXECUTED ────────────────────
-   This requirement is unchanged and is the whole point of the pin that used to live here. What
-   changed is how it is checked. The old form matched the literal text
-   `filter(Boolean).length >= 2) pvStopSpeechOnly()`, i.e. it required the condition and the call
-   to sit adjacent on one line. av-6.1.0 gave the condition a NAME (`otherVoice`) because there
-   are now three regimes, and the literal disappeared — while the requirement itself got
-   STRONGER. A text-adjacency proxy cannot tell those two situations apart, and it reported a
-   correct refactor as a broken cough guard on main, blocking another lane.
-   ⚠️ This is deliberately NOT a relaxation. It EXECUTES the shipped decision expression, lifted
-   verbatim out of kioskListen, against a cough, an "mhm", a real interruption and a self-echo —
-   and it fails on any build where a cough can stop the question. It caught a real defect the
-   moment it was written: av-6.1.0's first barge-in used audio presence ALONE, and a cough is
-   200-400ms of sustained energy, so it WOULD have cut the question off. */
+/* ── "a cough must not cut the question off" — EXECUTED ──────────────────────────────────────
+   The shipped AEC path now treats audible presence plus any recognized word as a patient
+   interruption. That deliberately keeps short answers such as "mhm" instead of losing them;
+   a cough still cannot cut the question off because it has no recognized word. Without confirmed
+   AEC, the conservative two-novel-word fallback remains. Execute the decision lifted verbatim
+   from kioskListen so this test pins those safety boundaries rather than an obsolete source-text
+   shape. */
 {
   const listenAt = source.indexOf('function kioskListen');
   assert(listenAt > 0, 'kioskListen is gone');
@@ -201,16 +209,16 @@ assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear dow
     /* label,                       interim,        saying, ready, presence, sustained, novel, expect */
     ['a COUGH while the question plays (loud, 320ms, no words)',
       '', Q, true, true, false, 0, false],
-    ['an "mhm" while the question plays',
-      'mhm', Q, true, true, false, 0, false],
+    ['a voiced one-word patient interjection while the question plays',
+      'mhm', Q, true, true, false, 0, true],
     ['a cough with NO echo cancellation available',
       '', Q, false, false, false, 0, false],
     ['the avatar hearing ITSELF (all its own words back)',
       'is the pain in your', Q, true, false, false, 0, false],
     ['a REAL interruption: one novel word plus a voice present',
       'actually', Q, true, true, false, 1, true],
-    ['a REAL interruption with no transcript yet, but speech running on past a cough',
-      '', Q, true, true, true, 0, true],
+    ['sustained sound with no recognized word (still could be a cough)',
+      '', Q, true, true, true, 0, false],
     ['a REAL interruption with NO echo cancellation (two novel words)',
       'my shoulder hurts', Q, false, false, false, 2, true],
     ['two ordinary words while NOTHING is playing',
@@ -256,26 +264,29 @@ vm.runInContext("var pvSaying='', pvEchoSaying='';" + normSrc +
 
 const QUESTION = 'How bad is the pain right now, on a scale of zero to ten?';
 sandbox.setSaying(sandbox.pvNorm(QUESTION));
-// the avatar hearing itself, in whole or in part -> ALWAYS discarded
-assert.strictEqual(sandbox.pvIsSelfEcho('how bad is the pain right now'), true, 'a slice of our own sentence is self-echo');
-assert.strictEqual(sandbox.pvIsSelfEcho('on a scale of zero to ten'), true, 'a later slice is self-echo');
-assert.strictEqual(sandbox.pvIsSelfEcho(QUESTION), true, 'the whole sentence is self-echo');
+// Only exact full-line equality is destructive evidence. Ordinary answers commonly quote a
+// clause or option from the question, so fragments must survive even while it is playing.
+assert.strictEqual(sandbox.pvIsSelfEcho('how bad is the pain right now'), false,
+  'a clause from our sentence can also be the patient answer and must survive');
+assert.strictEqual(sandbox.pvIsSelfEcho('on a scale of zero to ten'), false,
+  'a later clause is not enough evidence to delete a patient answer');
+assert.strictEqual(sandbox.pvIsSelfEcho(QUESTION), true, 'the exact whole sentence is self-echo');
 // the PATIENT answering -> never discarded
 assert.strictEqual(sandbox.pvIsSelfEcho('about a seven'), false, 'a real answer must not be mistaken for self-echo');
 assert.strictEqual(sandbox.pvIsSelfEcho('my back has been killing me for three weeks'), false, 'a long real answer must survive');
 assert.strictEqual(sandbox.pvIsSelfEcho('seven'), false, 'a one-word answer must survive');
 
-/* ---- 5a. THE DEFECT THE OWNER REPORTED. The audio has stopped; Chrome
-   delivers the tail of the question a moment later. It must still be self-echo,
-   because the alternative is what happened: the avatar's own question posted as
-   the patient's answer, and every summary built on top of it. ---- */
+/* ---- 5a. The template outlives playback, but the same exact-equality rule applies
+   during that bounded tail. A clause can be the answer; the full question cannot. ---- */
 sandbox.dropTail();
 sandbox.hold(sandbox.pvNorm(QUESTION));      /* what finish() now does */
 sandbox.setSaying('');                        /* ...and pvSaying still clears */
-assert.strictEqual(sandbox.pvIsSelfEcho('on a scale of zero to ten'), true,
-  'A: a late final result carrying the tail of the question the avatar JUST finished must still be self-echo');
-assert.strictEqual(sandbox.pvIsSelfEcho('how bad is the pain right now'), true,
-  'A: the same for the front of the sentence');
+assert.strictEqual(sandbox.pvIsSelfEcho('on a scale of zero to ten'), false,
+  'A: a late clause may be the patient answer and must not be deleted');
+assert.strictEqual(sandbox.pvIsSelfEcho('how bad is the pain right now'), false,
+  'A: the same is true for a clause from the front of the sentence');
+assert.strictEqual(sandbox.pvIsSelfEcho(QUESTION), true,
+  'A: a late exact copy of the full question is still refused during the bounded tail');
 /* and it must be BOUNDED - the patient answering in the question's own words a
    few seconds later is a real answer, not an echo */
 sandbox.expire();
@@ -300,16 +311,13 @@ assert.strictEqual(sandbox.pvIsSelfEcho('no nothing makes it worse'), false,
 assert.strictEqual(sandbox.pvIsSelfEcho(NOSY), true,
   'C: a full echo of the question is still caught — the boundary fix must not blunt the detector');
 
-/* ---- 5c. THE REGIME BOUNDARY, stated out loud. "worse at night" is both the
-   tail of the question and the whole answer to it. While the speaker is ACTIVE
-   it is our own voice (and the server has the question anyway). Once the
-   speaker has stopped it is the PATIENT, and a three-word quote is no longer
-   evidence of anything. The window is short for the same reason. ---- */
+/* ---- 5c. "worse at night" is both a clause in the question and the whole answer
+   to it, so it survives on both sides of the playback boundary. ---- */
 const NIGHT = 'Is the pain worse at night?';
 sandbox.dropTail();
 sandbox.setSaying(sandbox.pvNorm(NIGHT));
-assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), true,
-  'while the question is still playing, a quote of it is the microphone hearing the speaker');
+assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), false,
+  'while the question is playing, a clause alone is not enough evidence to delete an answer');
 sandbox.hold(sandbox.pvNorm(NIGHT));
 sandbox.setSaying('');
 assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), false,
@@ -358,16 +366,8 @@ sandbox.hold(sandbox.pvNorm(NIGHT2));
 assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), false,
   'E: a three-word quote AFTER the question is the answer, not an echo');
 assert.strictEqual(sandbox.pvIsSelfEcho('in the morning'), false, 'E: and so is the other branch of it');
-assert.strictEqual(sandbox.pvIsSelfEcho('is the pain worse at night'), true,
-  'E: a long contiguous quote is still caught in the tail');
-/* ⛔ THE THREE ASSERTIONS ABOVE ALL PASS AGAINST THE PRE-FIX MODULE, so on their
-   own they prove nothing about the change they were written for. Measured: the old
-   tail call was pvEchoMatch(tail, h, words, 4, 5), which returns before the overlap
-   loop whenever words.length < 5 — so both 3-word cases already returned false and
-   the 6-word contiguous one already returned true. The change this group exists to
-   pin is the removal of the OVERLAP branch, and only a case with >= 5 words that is
-   NOT contiguous can see it. This one was measured on both files: true on the
-   pre-fix module (the overlap branch deleted a real answer), false now. */
+assert.strictEqual(sandbox.pvIsSelfEcho('is the pain worse at night'), false,
+  'E: even a long clause survives; only exact full-line equality is destructive evidence');
 sandbox.dropTail();
 sandbox.setSaying('');
 sandbox.hold(sandbox.pvNorm('Do you have any chest pain or pressure when you walk?'));
@@ -381,9 +381,9 @@ assert.strictEqual(sandbox.pvIsSelfEcho('how bad is the pain right now'), false,
   'with silence and an expired tail there is no self-echo — otherwise real answers would be dropped forever');
 
 console.log('PASS avatar listens while speaking: echo cancellation requested, the filter runs at the SOURCE, ' +
-  'the echo template outlives the speech but EXPIRES, the tail is contiguity-only so a short reply survives it, ' +
+  'the echo template outlives the speech but EXPIRES, only exact full-line echo is refused, ' +
   'and NO ONE-WORD ANSWER IS EVER DELETED — a laterality, a refusal, a number, or the question\'s own noun ' +
   '(the rule that dropped those was reverted after it was measured deleting 9 of 12 ordinary A-or-B answers, ' +
   'and this group used to pin the damage) — ' +
   'an all-echo result never costs the microphone, the mic opens with the question, the silence clock starts when it ends, ' +
-  'and barge-in stays guarded at two words');
+  'and AEC barge-in requires audible presence plus a recognized word');

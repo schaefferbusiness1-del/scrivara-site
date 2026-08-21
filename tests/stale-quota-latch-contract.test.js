@@ -84,26 +84,39 @@ function bootQv(store) {
     removeItem: k => map.delete(k)
   };
   const elements = new Map();
+  function host() {
+    return {
+      firstChild: null,
+      insertBefore(el) { el.parentNode = this; if (el.id) elements.set(el.id, el); this.firstChild = el; return el; },
+      appendChild(el) { el.parentNode = this; if (el.id) elements.set(el.id, el); if (!this.firstChild) this.firstChild = el; return el; }
+    };
+  }
+  const body = host(), documentElement = host();
   const doc = {
     getElementById: id => elements.get(id) || null,
     createElement: () => {
       const el = {
         id: '', style: {}, attrs: {}, textContent: '',
         setAttribute(k, v) { this.attrs[k] = v; },
-        remove() { if (this.id && elements.get(this.id) === this) elements.delete(this.id); this.__removed = true; }
+        parentNode: null,
+        remove() { if (this.id && elements.get(this.id) === this) elements.delete(this.id); this.parentNode = null; this.__removed = true; }
       };
       return el;
     },
-    body: { appendChild: el => { if (el.id) elements.set(el.id, el); } },
-    documentElement: { appendChild: el => { if (el.id) elements.set(el.id, el); } }
+    body,
+    documentElement
   };
   const toasts = [];
   const warns = [];
   const intervalFns = [];
   const win = {
-    uns: k => 'sf_u::t::' + k,
+    uns: k => 'sf_u::doctor@example.test::' + k,
     toast: m => toasts.push(String(m)),
-    localStorage
+    localStorage,
+    __mlsSessionAccount: 'doctor@example.test',
+    __mlsSessionEpoch: 1,
+    addEventListener() {},
+    removeEventListener() {}
   };
   if (store) win.__mlsPtsStore = store;
   /* the retired-key world: savePatients persists NOTHING to localStorage
@@ -139,10 +152,12 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
 
   /* ---- A2. the confirm point is the flag's SECOND self-clear writer ---- */
   {
-    const h = bootQv(mkStore());
-    h.win.__mlsStoreWriteFailed = { at: Date.now() - 900000, reason: 'silent-no-op', expected: 38235881, got: 0 };
-    h.win.__mlsQuotaGuard._chip(); /* paint the stale chip the live page showed */
+    const store = mkStore({ flushReject: 'temporary confirm failure' });
+    const h = bootQv(store);
+    h.win.savePatients(big);
+    await drain(); await drain();
     assert.ok(h.elements.get('mlsQuotaChip'), 'stale chip painted for the test');
+    store._st.flushReject = '';
     h.win.savePatients(big);
     await drain(); await drain();
     assert.strictEqual(h.win.__mlsStoreWriteFailed, null,
@@ -157,7 +172,7 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
     h.win.savePatients(big);
     await drain(); await drain();
     assert.ok(h.win.__mlsStoreWriteFailed, 'a rejecting store confirm ARMS the flag - the refusal side is not weakened');
-    assert.ok(/^idb-confirm:/.test(String(h.win.__mlsStoreWriteFailed.reason)),
+    assert.strictEqual(String(h.win.__mlsStoreWriteFailed.reason), 'idb-confirm-rejected',
       'the failure names the idb confirm as its source: ' + String(h.win.__mlsStoreWriteFailed.reason));
     assert.ok(h.elements.get('mlsQuotaChip'), 'the chip appears for the genuine failure');
     console.log('ok 3 - genuinely failing idb store still arms flag + chip loudly');
@@ -167,9 +182,9 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
   {
     /* no store at all (pre-migration world) */
     const h = bootQv(null);
-    h.map.set('sf_u::t::patients', 'A'.repeat(1000));
+    h.map.set('sf_u::doctor@example.test::patients', 'A'.repeat(1000));
     h.win.savePatients(big); /* wants growth, bytes do not move -> silent-no-op */
-    assert.ok(h.win.__mlsStoreWriteFailed && h.win.__mlsStoreWriteFailed.reason === 'silent-no-op',
+    assert.ok(h.win.__mlsStoreWriteFailed && h.win.__mlsStoreWriteFailed.reason === 'local-write-unconfirmed',
       'ls mode: the swallowed-quota no-op is still caught (qv-1.0 unchanged)');
     /* a verified ls write still clears */
     h.win.savePatients.__mlsQvOrig
@@ -183,28 +198,33 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
     void orig;
     /* an ls-mode store object (isReady false) must also take the legacy path */
     const h2 = bootQv(mkStore({ mode: 'ls', hydrated: false }));
-    h2.map.set('sf_u::t::patients', 'A'.repeat(1000));
+    h2.map.set('sf_u::doctor@example.test::patients', 'A'.repeat(1000));
     h2.win.savePatients(big);
-    assert.ok(h2.win.__mlsStoreWriteFailed && h2.win.__mlsStoreWriteFailed.reason === 'silent-no-op',
+    assert.ok(h2.win.__mlsStoreWriteFailed && h2.win.__mlsStoreWriteFailed.reason === 'local-write-unconfirmed',
       'an un-migrated store (mode ls / not ready) never routes verification to idb');
     console.log('ok 4 - ls mode unchanged: silent-no-op caught, verified write clears, not-ready store stays legacy');
   }
 
   /* ---- A5. the heal tick clears a latch the receipt proves stale ---- */
   {
-    const h = bootQv(mkStore());
-    h.win.__mlsStoreWriteFailed = { at: Date.now() - 600000, reason: 'silent-no-op' };
-    h.win.__mlsQuotaGuard._chip();
+    const store = mkStore({ flushReject: 'temporary confirm failure' });
+    const h = bootQv(store);
+    h.win.savePatients(big);
+    await drain(); await drain();
     assert.ok(h.elements.get('mlsQuotaChip'), 'stale chip up before the tick');
+    store._st.flushReject = '';
     h.intervalFns.forEach(fn => fn());
     assert.strictEqual(h.win.__mlsStoreWriteFailed, null,
       'the 4s heal tick adjudicates the latch against the store receipt (old shape: the tick only re-painted the stale chip forever)');
     assert.ok(!h.elements.get('mlsQuotaChip'), 'the stale chip dies within one tick');
-    assert.ok(h.warns.some(w => w.indexOf('stale write-failure latch CLEARED') >= 0),
-      'the clear says why, on the record');
+    const recovered = h.win.__mlsQuotaGuard.diagnostic();
+    assert.ok(recovered.lastRecoveryAt > 0 && recovered.recoverySource === 'idb-receipt',
+      'the diagnostic receipt records when and why the latch recovered');
     /* and the tick NEVER clears over an unhealthy receipt */
-    const hBad = bootQv(mkStore({ degraded: true, degradedWhy: 'idb-write-behind: quota' }));
-    hBad.win.__mlsStoreWriteFailed = { at: Date.now(), reason: 'idb-unhealthy: x' };
+    const badStore = mkStore({ flushReject: 'confirm failed', degraded: true, degradedWhy: 'idb-write-behind: quota' });
+    const hBad = bootQv(badStore);
+    hBad.win.savePatients(big);
+    await drain(); await drain();
     hBad.intervalFns.forEach(fn => fn());
     assert.ok(hBad.win.__mlsStoreWriteFailed, 'a degraded store keeps its latch through every tick');
     console.log('ok 5 - heal tick: stale latch dies in one tick, degraded latch survives every tick');
@@ -242,15 +262,22 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
       'var console = ctx.console || { warn: function () {}, error: function () {}, log: function () {} };\n' +
       'var pullRunning = false;\n' +
       'var lastPullResult = null;\n' +
+      'var monthPullRunning = false;\n' +
+      'var p1MonthForeignOwner = function () { return null; };\n' +
+      'var p1MonthOverlapRefusal = function () { return { ok:false, reason:"pull-in-flight" }; };\n' +
+      'var p1MetadataRefusal = function () { return null; };\n' +
       'var isFn = function (x) { return typeof x === "function"; };\n' +
       'var normDate = function (d) { d = String(d || ""); return /^\\d{4}-\\d{2}-\\d{2}$/.test(d) ? d : ""; };\n' +
       'var safe = function (fn, fb) { try { return fn(); } catch (e) { return fb; } };\n' +
       'var foreignPullLease = function () { return null; };\n' +
-      'var PROD_DAY_CENSUS_TOKEN = {};\n' +
+      'var P1_DAY_CENSUS_TOKEN = {};\n' +
       'var _dayPreflightDone = true;\n' +
       'var warmUpDay = ctx.warmUpDay;\n' +
       'var accountProviderRequest = function () { return "all"; };\n' +
       'var _resolveDayScope = function () { return { ok: true, provider: "all" }; };\n' +
+      'var providerRequest = function (x) { return { mode: x === "all" ? "all" : "selected" }; };\n' +
+      'var rosterReceiptComplete = function () { return true; };\n' +
+      'var p1OneTabPreflight = function () {};\n' +
       'var pull = ctx.pull;\n' +
       adjSrc + '\n' +
       innerSrc + '\n' +
@@ -262,16 +289,20 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
   {
     const said = [];
     let pulled = false, chipRefreshes = 0;
-    const warns = [];
+    const recoverCalls = [];
     const ctx = {
       window: {
         __mlsStoreWriteFailed: { at: Date.now() - 780000, reason: 'silent-no-op', expected: 38235881, got: 0 },
-        __mlsQuotaGuard: { failures: 1, _chip: () => { chipRefreshes++; } },
-        __mlsPtsStore: mkStore()
+        __mlsQuotaGuard: { failures: 1 }
       },
-      console: { warn: m => warns.push(String(m)), error: () => {}, log: () => {} },
       warmUpDay: () => Promise.resolve({}),
       pull: () => { pulled = true; return Promise.resolve({ ok: true, marker: 'engine-ran' }); }
+    };
+    ctx.window.__mlsQuotaGuard._recover = source => {
+      recoverCalls.push(String(source));
+      ctx.window.__mlsStoreWriteFailed = null;
+      chipRefreshes++;
+      return true;
     };
     const h = buildInner(ctx);
     const res = await h.inner({ date: '2026-07-07', onStatus: (m, k) => said.push({ m: String(m), k: String(k || '') }) }, null);
@@ -280,9 +311,8 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
     assert.ok(pulled, 'the engine ran');
     assert.strictEqual(ctx.window.__mlsStoreWriteFailed, null, 'the preflight CLEARED the stale latch, it did not just step over it');
     assert.ok(chipRefreshes >= 1, 'the chip was refreshed at the clear (the surface follows the flag)');
-    assert.ok(warns.some(w => w.indexOf('stale write-failure latch CLEARED') >= 0),
-      'the adjudication says why, on the record');
-    assert.ok(!said.some(s => /storage is FULL/i.test(s.m)), 'no false storage-full narration');
+    assert.deepStrictEqual(recoverCalls, ['pull-preflight'], 'the adjudicator delegates to the account-scoped quota guard recovery seam');
+    assert.ok(!said.some(s => /could not verify the latest save/i.test(s.m)), 'no false write-failure narration');
     console.log('ok 6 - day preflight: stale latch clears, pull proceeds, clear is named');
   }
 
@@ -305,7 +335,7 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
     assert.strictEqual(res.ok, false, 'no store receipt to consult => the refusal stands');
     assert.strictEqual(res.reason, 'storage-full-writes-failing', 'named reason unchanged');
     assert.strictEqual(res.gate, 'quota-preflight', 'named gate unchanged');
-    assert.ok(said.some(s => s.k === 'err' && /storage is FULL/i.test(s.m)), 'spoken through onStatus');
+    assert.ok(said.some(s => s.k === 'err' && /could not verify the latest save/i.test(s.m)), 'spoken through onStatus');
     assert.ok(said.some(s => /No Athena navigation was started/.test(s.m)), 'the no-navigation truth survives');
     assert.strictEqual(h.getLastPullResult(), res, 'receipt-stamped into lastPullResult');
     assert.ok(ctx.window.__mlsPullLastOutcome && ctx.window.__mlsPullLastOutcome.ok === false, 'outcome-stamped');
@@ -345,7 +375,11 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
   /* =========================================================================
    * PART C: the MONTH lane carries the same preflight (proof-2 gap)
    * ========================================================================= */
-  const monthSrc = extractBraced(si, 'function pullMonth(opts)');
+  const monthStart = si.indexOf('function pullMonth(opts)');
+  const monthAdmitted = si.indexOf('window.__mlsPullStopRequested = false;', monthStart);
+  assert(monthStart > 0 && monthAdmitted > monthStart, 'month quota-preflight admission boundary found');
+  const monthPrefix = si.slice(monthStart, monthAdmitted) +
+    'return Promise.resolve({ ok: true, complete: false, reason: "admitted-past-quota-preflight", month: month });\n  }';
 
   function buildMonth(ctx) {
     const f = new Function('ctx',
@@ -356,11 +390,12 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
       'var safe = function (fn, fb) { try { return fn(); } catch (e) { return fb; } };\n' +
       'var monthDateKeys = function () { return ctx.dates.slice(); };\n' +
       'var resolveProviderRequest = function () { return { ok: true, provider: "all", receipt: { complete: true } }; };\n' +
+      'var p1MetadataRefusal = function () { return null; };\n' +
       'var providerScopeReceipt = function () { return {}; };\n' +
       'var providerScopeNotice = function () { return ""; };\n' +
       'var pull = ctx.pull;\n' +
       adjSrc + '\n' +
-      monthSrc + '\n' +
+      monthPrefix + '\n' +
       'return { pullMonth: pullMonth };');
     return f(ctx);
   }
@@ -385,7 +420,7 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
     assert.strictEqual(res.gate, 'quota-preflight', 'same named gate as the day lane');
     assert.strictEqual(res.failures, 2, 'the refusal carries the guard failure count');
     assert.strictEqual(pullCalls.length, 0, 'ZERO per-day engine calls: Athena was never driven');
-    assert.ok(said.some(s => s.k === 'err' && /storage is FULL/i.test(s.m)), 'spoken through onStatus');
+    assert.ok(said.some(s => s.k === 'err' && /could not verify the latest save/i.test(s.m)), 'spoken through onStatus');
     assert.ok(said.some(s => /No Athena navigation was started/.test(s.m)), 'the no-navigation truth is spoken');
     assert.ok(ctx.window.__mlsPullLastOutcome && ctx.window.__mlsPullLastOutcome.ok === false, 'outcome-stamped');
     assert.strictEqual(res.month, '2026-02', 'the month-shaped receipt survives (failed() shape, not a foreign object)');
@@ -394,36 +429,38 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
 
   /* ---- C2. stale latch + healthy idb receipt => the month PROCEEDS ---- */
   {
-    const pullCalls = [];
+    const recoverCalls = [];
     const ctx = {
       window: {
         __mlsStoreWriteFailed: { at: Date.now() - 720000, reason: 'silent-no-op' },
-        __mlsQuotaGuard: { failures: 1, _chip: () => {} },
-        __mlsPtsStore: mkStore()
+        __mlsQuotaGuard: { failures: 1 }
       },
       dates: ['2026-02-02', '2026-02-03'],
-      pull: o => { pullCalls.push(o); return Promise.resolve({ ok: true, complete: true }); }
+      pull: () => assert.fail('preflight probe must stop at the admission boundary')
+    };
+    ctx.window.__mlsQuotaGuard._recover = source => {
+      recoverCalls.push(String(source));
+      ctx.window.__mlsStoreWriteFailed = null;
+      return true;
     };
     const h = buildMonth(ctx);
     const res = await h.pullMonth({ month: '2026-02', onStatus: () => {} });
     assert.strictEqual(ctx.window.__mlsStoreWriteFailed, null, 'the stale latch cleared on the month entry too');
-    assert.strictEqual(pullCalls.length, 2, 'every day of the month ran');
-    assert.strictEqual(res.reason, 'complete', 'the month completed normally');
+    assert.deepStrictEqual(recoverCalls, ['pull-preflight'], 'month recovery uses the same account-scoped guard seam');
+    assert.strictEqual(res.reason, 'admitted-past-quota-preflight', 'the month crossed the quota gate normally');
     console.log('ok 10 - month lane: stale latch clears and the month proceeds');
   }
 
   /* ---- C3. control: no flag => the month lane is untouched ---- */
   {
-    const pullCalls = [];
     const ctx = {
       window: {},
       dates: ['2026-02-02'],
-      pull: o => { pullCalls.push(o); return Promise.resolve({ ok: true, complete: true }); }
+      pull: () => assert.fail('preflight probe must stop at the admission boundary')
     };
     const h = buildMonth(ctx);
     const res = await h.pullMonth({ month: '2026-02', onStatus: () => {} });
-    assert.strictEqual(res.reason, 'complete', 'no flag: month unchanged');
-    assert.strictEqual(pullCalls.length, 1, 'no flag: the engine ran');
+    assert.strictEqual(res.reason, 'admitted-past-quota-preflight', 'no flag: month crosses the gate unchanged');
     console.log('ok 11 - month lane control: no flag, no gate, unchanged behavior');
   }
 
@@ -433,11 +470,11 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
   {
     /* the month gate sits BETWEEN the in-flight refusal and the engine start */
     const mIdx = si.indexOf('function pullMonth(opts)');
-    const mBusy = si.indexOf('if (monthPullRunning) return', mIdx);
     const mGate = si.indexOf('var _lrQuotaM', mIdx);
-    const mRun = si.indexOf('monthPullRunning = true;', mIdx);
-    assert.ok(mBusy > 0 && mGate > mBusy && mRun > mGate,
-      'month quota gate sits between the in-flight refusal and the engine start (BEFORE any Athena navigation)');
+    const mClaimCall = si.indexOf('p1ClaimMonthOwner()', mGate);
+    const mEngineCall = si.indexOf('return pull({', mClaimCall);
+    assert.ok(mGate > mIdx && mClaimCall > mGate && mEngineCall > mClaimCall,
+      'month quota gate sits before the owner claim and every per-day engine call (BEFORE any Athena navigation)');
 
     /* the day gate ordering the qol suites pin stays intact around our line */
     const dIdx = si.indexOf('function __dayPullInner(opts, __armPresence)');
@@ -447,17 +484,18 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
     assert.ok(dAdvisory > 0 && dAdj > dAdvisory && dArm > dAdj,
       'day lane order: advisory in-flight < latch adjudication < presence arm');
 
-    /* patcher identity: every ql-1.0 edit present exactly once */
-    const patcher = require('./patch-stale-quota-latch.js');
-    const raw = {
-      'mls-connect.js': mc,
-      'feat_mls_schedimport_exact.js': si
-    };
-    const { log } = patcher.applyToSources(raw, { tolerateApplied: true });
-    const appliedIds = log.filter(l => l.status === 'already-applied').map(l => l.id);
-    assert.strictEqual(appliedIds.length, patcher.EDITS.length,
-      'all ' + patcher.EDITS.length + ' ql-1.0 edits are already applied on the shipped bytes (got: ' + appliedIds.join(', ') + ')');
-    console.log('ok 12 - placement pins + patcher identity (' + appliedIds.length + '/' + patcher.EDITS.length + ' edits present exactly once)');
+    /* Current ownership pins replace the retired patcher's exact insertion
+       anchors: recovery is account-scoped, diagnosable, and shared by both
+       preflights; the real month function continues into its owner claim and
+       per-day engine only after that gate. */
+    assert(/function qvAccountScope\(\)/.test(mc) && /QG\.diagnostic = qvDiagnosticSnapshot/.test(mc) &&
+      /QG\._recover = function \(source\)/.test(mc),
+      'the current guard publishes account-scoped recovery and bounded diagnostics');
+    assert(/qg\._recover\("pull-preflight"\) === true/.test(adjSrc),
+      'the shared quota adjudicator delegates to the guard-owned recovery proof');
+    assert(mClaimCall > mGate && mEngineCall > mClaimCall,
+      'the real month lane claims ownership and reaches the existing per-day engine only after the quota gate');
+    console.log('ok 12 - placement + current account-scoped recovery ownership pins');
   }
 
   console.log('# stale-quota-latch-contract: 12 groups passed');

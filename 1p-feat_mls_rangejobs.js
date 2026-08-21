@@ -1053,6 +1053,17 @@
     }
     return null;
   }
+  function uiYearHost(card) {
+    if (!card) return null;
+    /* clunky-staff groups this same controller under its existing "Other ways
+       to pull" fold. That fold is an accepted presentation host only while it
+       belongs to the current canonical pull card; accepting it preserves the
+       exact node, selection and four wired actions instead of delete/recreate
+       churn between the two owners. */
+    var folded = document.getElementById('mlsClunkyPullMoreBody');
+    if (folded && isFn(card.contains) && card.contains(folded)) return folded;
+    return card;
+  }
   function uiProviderSelection() {
     if (!uiDocumentReady()) return { ok: false, reason: 'provider-required', label: 'Provider unavailable' };
     var select = document.getElementById('ez3Prov');
@@ -1339,9 +1350,9 @@
   }
   function mountYearUi() {
     if (!installedApi || installedApi.installed !== true || !uiDocumentReady()) return false;
-    var card = uiCanonicalCard(), existing = document.getElementById('mlsP1YearPull');
+    var card = uiCanonicalCard(), host = uiYearHost(card), existing = document.getElementById('mlsP1YearPull');
     if (!card) { if (existing && existing.parentNode) existing.parentNode.removeChild(existing); return false; }
-    if (existing && existing.parentNode !== card) { existing.parentNode.removeChild(existing); existing = null; }
+    if (existing && existing.parentNode !== host) { existing.parentNode.removeChild(existing); existing = null; }
     if (!existing) {
       removeUiNodes(); ensureUiStyle();
       existing = document.createElement('section'); existing.id = 'mlsP1YearPull';
@@ -1358,7 +1369,7 @@
         '<button type="button" class="ez3-sm" id="mlsP1YearPause">Pause</button>' +
         '<button type="button" class="ez3-sm pri" id="mlsP1YearResume">Resume</button>' +
         '<button type="button" class="ez3-sm warn" id="mlsP1YearCancel">Cancel</button></div>';
-      card.appendChild(existing); wireYearUi(existing);
+      host.appendChild(existing); wireYearUi(existing);
     }
     refreshYearUi(existing); return true;
   }

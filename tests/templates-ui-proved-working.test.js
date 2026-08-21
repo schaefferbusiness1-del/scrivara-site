@@ -89,8 +89,8 @@ ok(dead.length === 0,
 
 /* the controls the owner names, pinned individually so a rename cannot quietly
    drop one */
-[['tplFileInput', 'the file picker'],
- ['tplDropZone', 'the drop zone'],
+[['tplMultiFileInput', 'the multi-file picker'],
+ ['tplMultiDrop', 'the multi-file drop zone'],
  ['tplText', 'the extracted-text editor'],
  ['tplName', 'the name field'],
  ['tplKeywords', 'the keywords field'],

@@ -60,15 +60,22 @@ function extractFn(name) {
   assert(m, 'could not extract ' + name);
   return m[0];
 }
-const helpers = new Function(
-  extractFn('normDob') + '\n' + extractFn('normMrn') + '\n' +
+const normDateFn = si.match(/function normDate\(d\) \{[^\r\n]*\}/);
+assert(normDateFn, 'could not extract canonical normDate');
+const helpers = new Function('gfn',
+  normDateFn[0] + '\n' + extractFn('normDob') + '\n' + extractFn('normMrn') + '\n' +
   extractFn('frozenRetryEntry') + '\n' + extractFn('historyDiagSuffix') + '\n' +
   'return { frozenRetryEntry: frozenRetryEntry, historyDiagSuffix: historyDiagSuffix };'
-)();
+)(() => null);
 
 const plain = helpers.frozenRetryEntry({ name: 'X' }, { patientId: 'p1', dob: '2000-01-02', mrn: 'm1' }, 'visit-bodies-incomplete');
 assert.strictEqual(plain.diag, undefined, 'no evidence -> no diag key');
-assert.deepStrictEqual(Object.keys(plain).sort(), ['frozenDob', 'frozenMrn', 'patientId', 'reason']);
+assert.deepStrictEqual(Object.keys(plain).sort(), ['frozenDob', 'frozenMrn', 'patientId', 'reason', 'scheduleDate']);
+assert.strictEqual(plain.scheduleDate, '', 'a missing schedule day was not represented honestly');
+
+const scoped = helpers.frozenRetryEntry({ name: 'X', date: '2026-08-05T09:00:00Z' },
+  { patientId: 'p1', dob: '2000-01-02', mrn: 'm1' }, 'visit-bodies-incomplete');
+assert.strictEqual(scoped.scheduleDate, '2026-08-05', 'retry entry lost its frozen exact day scope');
 
 const rich = helpers.frozenRetryEntry({ name: 'X' }, { patientId: 'p1' }, 'visit-bodies-incomplete', {
   visitsFailedHistogram: { 'encounter-section-loading': 6 },
@@ -79,10 +86,12 @@ const rich = helpers.frozenRetryEntry({ name: 'X' }, { patientId: 'p1' }, 'visit
   name: 'LEAKY PATIENT NAME', chartText: 'LEAKY CHART'
 });
 assert(rich.diag, 'evidence present -> diag carried');
-assert.deepStrictEqual(Object.keys(rich.diag).sort(), ['enumDiag', 'hist', 'receipt'],
-  'diag carries exactly the three evidence fields - nothing else from the patient record');
+assert.deepStrictEqual(Object.keys(rich.diag).sort(), ['enumDiag', 'find', 'hist', 'receipt'],
+  'diag carries exactly the four PHI-free evidence fields - nothing else from the patient record');
 assert(!JSON.stringify(rich.diag).includes('LEAKY'), 'diag must not leak sibling fields');
 assert.strictEqual(rich.diag.hist['encounter-section-loading'], 6);
+assert.strictEqual(rich.diag.find, null,
+  'missing bounded find evidence must remain an explicit null, never borrow sibling patient data');
 
 assert.strictEqual(
   helpers.historyDiagSuffix({ visitsFailedHistogram: { 'encounter-section-loading': 6, 'read-deadline-exceeded': 2, 'slideout-trigger-missing': 1 } }),

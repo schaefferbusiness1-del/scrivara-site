@@ -11,6 +11,19 @@ const start = source.indexOf('/* ===== __mlsDaySwitch');
 const end = source.indexOf('/* ===== __mlsVisitSavePref', start);
 assert(start >= 0 && end > start, 'day-switch module markers are missing');
 const moduleSource = source.slice(start, end);
+/* Eligible transient chart work now stays in ONE continuous pull and owns the
+   controls until its bounded automatic finishing pass settles. Manual retry
+   remains the recovery path for identity/session/schedule classes only. */
+assert(moduleSource.includes('var willConverge = retryCount > 0 && dsConvergeEligible(result);'),
+  'partial pulls no longer decide continuous convergence before painting a verdict');
+assert(moduleSource.includes('DS.__autoRetrying = true;') &&
+  moduleSource.includes('dsAutoConvergeBodies(sessionSerial, function (cv) {'),
+  'eligible partial pulls no longer transfer ownership to one continuous finishing pass');
+const eligibilityStart = moduleSource.indexOf('function dsConvergeEligible(result)');
+const eligibilityEnd = moduleSource.indexOf('function dsAutoConvergeBodies(', eligibilityStart);
+assert(eligibilityStart >= 0 && eligibilityEnd > eligibilityStart &&
+  /identity\|schedule\|wrong-day\|permission\|stopped-by-user/.test(moduleSource.slice(eligibilityStart, eligibilityEnd)),
+  'human-first identity/schedule/permission refusals are no longer excluded from automatic convergence');
 
 const nodes = Object.create(null);
 function makeNode(tag) {
@@ -110,7 +123,12 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const partialPull = {
     ok: false, complete: false, reason: 'history-partial',
     scheduleReceipt: { parsedCount: 18 },
-    historyReceipt: { reason: 'history-partial', requested: 18, processed: 18, retry: [{ patientId: 'a' }, { patientId: 'b' }] }
+    /* Identity refusals are deliberately human-first: they must reveal an
+       enabled manual recovery control, never start automatic chart driving. */
+    historyReceipt: { reason: 'history-partial', requested: 18, processed: 18, retry: [
+      { patientId: 'a', reason: 'identity-target-unresolved' },
+      { patientId: 'b', reason: 'identity-target-unresolved' }
+    ] }
   };
 
   pullButton.onclick();

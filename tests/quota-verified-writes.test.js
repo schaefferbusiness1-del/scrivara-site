@@ -37,11 +37,16 @@ function mkCtx(storeBehavior) {
         if (store.behavior === 'quota-throw') { const e = new Error('quota'); e.name = 'QuotaExceededError'; throw e; }
         if (store.behavior === 'silent-noop') return; /* the swallowed-quota shape: no throw, no write */
         store.data[k] = String(v);
+        /* A result that lands after account/session ownership changes is stale,
+           even when its local echo is healthy. Exercise that exact race below. */
+        if (store.behavior === 'session-switch') ctx.window.__mlsSessionEpoch++;
       }
     }
   };
   ctx.window = ctx;
-  ctx.window.uns = function (k) { return 'test::' + k; };
+  ctx.window.__mlsSessionAccount = 'doctor@example.test';
+  ctx.window.__mlsSessionEpoch = 7;
+  ctx.window.uns = function (k) { return 'test::doctor@example.test::' + k; };
   ctx.window.savePatients = function (arr) { ctx.localStorage.setItem(ctx.window.uns('patients'), JSON.stringify(arr)); };
   vm.createContext(ctx);
   vm.runInContext(iife, ctx);
@@ -66,8 +71,8 @@ for (let i = 0; i < 40; i++) big.push({ id: 'p' + i, name: 'X'.repeat(50) });
   let threw = false;
   try { ctx.window.savePatients(big); } catch (e) { threw = true; assert(/Quota/.test(e.name), 'the original error surfaces'); }
   assert(threw, 'the wrapper RETHROWS - a dead write can never look done');
-  assert(ctx.window.__mlsStoreWriteFailed && /Quota/.test(ctx.window.__mlsStoreWriteFailed.reason),
-    'the failure is recorded loudly with its reason');
+  assert(ctx.window.__mlsStoreWriteFailed && ctx.window.__mlsStoreWriteFailed.reason === 'quota-exceeded',
+    'the failure is recorded loudly with its bounded reason code');
 }
 
 /* arm 3: the SILENT NO-OP shape (the exact 2026-08-09 failure: store cannot
@@ -78,7 +83,7 @@ for (let i = 0; i < 40; i++) big.push({ id: 'p' + i, name: 'X'.repeat(50) });
   store.behavior = 'silent-noop';
   const bigger = big.concat([{ id: 'new', name: 'Y'.repeat(500) }]);
   ctx.window.savePatients(bigger);
-  assert(ctx.window.__mlsStoreWriteFailed && ctx.window.__mlsStoreWriteFailed.reason === 'silent-no-op',
+  assert(ctx.window.__mlsStoreWriteFailed && ctx.window.__mlsStoreWriteFailed.reason === 'local-write-unconfirmed',
     'a write that wanted to grow the store but changed nothing is a recorded FAILURE');
 }
 
@@ -90,7 +95,20 @@ for (let i = 0; i < 40; i++) big.push({ id: 'p' + i, name: 'X'.repeat(50) });
   assert.strictEqual(ctx.window.__mlsStoreWriteFailed, null, 'an idempotent same-bytes save is not a failure');
 }
 
-/* arm 5 (CONTROL, non-vacuity): the RAW unwrapped save on the silent-noop
+/* arm 5: an echo from the prior session cannot clear a latch in the new one */
+{
+  const { ctx } = mkCtx('session-switch');
+  const prior = { at: 1, reason: 'stale-but-owned-by-current-session' };
+  ctx.window.__mlsStoreWriteFailed = prior;
+  ctx.window.savePatients(big);
+  assert.strictEqual(ctx.window.__mlsSessionEpoch, 8, 'the fixture crossed an exact session boundary during the write');
+  assert.strictEqual(ctx.window.__mlsStoreWriteFailed, prior,
+    'a healthy echo from the old epoch must not clear the new session\'s failure state');
+  assert(ctx.window.__mlsQuotaGuard.diagnostic().lateResultsDropped >= 1,
+    'the cross-session echo is recorded as a dropped late result');
+}
+
+/* arm 6 (CONTROL, non-vacuity): the RAW unwrapped save on the silent-noop
    store reports nothing - proving the wrapper is what catches it */
 {
   const store = { data: {} };
@@ -105,14 +123,16 @@ assert(si.includes('if (__qvFail && Number(__qvFail.at || 0) >= patientReadStart
   'si fails the row when a storage failure is fresher than this chart\'s read');
 assert(si.includes('one.reason = "storage-full-not-saved";'),
   'the row carries the storage reason, not a generic failure');
-assert(si.includes('read correctly but could NOT be saved because this browser\'s MLS storage is full'),
-  'the day line names the storage cause in plain words');
-assert(si.includes('Existing records are intact - nothing was lost or overwritten.'),
-  'the day line carries the one-key atomicity reassurance (verified: one key, one atomic setItem)');
+assert(si.includes('read correctly, but MLS could not verify the latest save on this device'),
+  'the day line states the verified failure without inventing a storage cause');
+assert(!si.includes('read correctly but could NOT be saved because this browser\'s MLS storage is full'),
+  'the day line must not claim storage-full as a proven cause');
+assert(!si.includes('Existing records are intact - nothing was lost or overwritten.'),
+  'the day line must not promise that no records were lost without a complete store proof');
 {
   const sweepable = si.slice(si.indexOf('var SWEEPABLE_REASON'), si.indexOf('var SWEEPABLE_REASON') + 400);
   assert(!/storage-full/.test(sweepable),
     'storage-full is NOT sweepable - a re-check against a full store fails identically and would only churn');
 }
 
-console.log('quota-verified-writes: PASS (5 executed arms + 5 si pins)');
+console.log('quota-verified-writes: PASS (6 executed arms + 5 si pins, exact account/session ownership)');

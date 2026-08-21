@@ -52,7 +52,10 @@ function sliceFunction(name, nextMarker) {
   assert.strictEqual(context.S.mode, 'doctor'); assert.strictEqual(context.S.screen, 'home');
   assert.strictEqual(context.S.visitDay, '2026-07-19');
   assert.strictEqual(context.S.appt, null); assert.strictEqual(context.S.locked, null);
-  assert.strictEqual(context.S.providerFilter, null); assert.strictEqual(context.S.providerRef, '');
+  /* '' is Easy's canonical all/account-scope selection; null means "follow the
+     app provider" in the older bundles. Both clear Account A, but this bundle
+     intentionally resets to the account-wide view. */
+  assert.strictEqual(context.S.providerFilter, ''); assert.strictEqual(context.S.providerRef, '');
   assert.strictEqual(context.S.query, ''); assert.strictEqual(context.S.customFrom, ''); assert.strictEqual(context.S.customTo, '');
   assert.strictEqual(context.S.phase, 'idle'); assert.strictEqual(context.S.autoPull, 'idle');
   assert.strictEqual(bindingClears, 1, 'Easy reset did not clear the visit binding');

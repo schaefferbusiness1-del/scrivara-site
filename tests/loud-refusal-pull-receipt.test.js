@@ -9,9 +9,9 @@
  *      ABSENCE instead of element VISIBILITY;
  *   2. the dayPull receipt was DISCARDED at the cv-handoff settle
  *      (.then(_cvDone,_cvDone) where _cvDone only re-enabled the button);
- *   3. the advisory in-flight gate (schedimport __dayPullInner) returned an
- *      inline refusal object that NOBODY stored - the only zero-trace exit
- *      in the whole gate chain, un-adjudicable after the fact.
+ *   3. the advisory in-flight gate (schedimport __dayPullInner) must return a
+ *      named, visible refusal without overwriting the healthy RUNNING pull's
+ *      evidence with the second click's non-terminal result.
  * This suite runs the REAL shipped functions (extracted from the served
  * bytes) and fails on every one of the three old shapes by name. */
 const assert = require('assert');
@@ -156,8 +156,8 @@ const ROSTER_REFUSAL = {
   }
 
   /* =======================================================================
-   * PART 2: the advisory in-flight gate (schedimport __dayPullInner) leaves
-   * a NAMED receipt - never again a zero-trace exit
+   * PART 2: the advisory in-flight gate (schedimport __dayPullInner) returns
+   * a NAMED, visible receipt while preserving the running pull's evidence
    * ======================================================================= */
   const innerSrc = extractBraced(si, 'function __dayPullInner(opts, __armPresence)');
 
@@ -165,6 +165,8 @@ const ROSTER_REFUSAL = {
     const f = new Function('ctx',
       'var window = ctx.window;\n' +
       'var pullRunning = ctx.pullRunning;\n' +
+      'var monthPullRunning = false;\n' +
+      'var p1MonthForeignOwner = ctx.p1MonthForeignOwner || function () { return null; };\n' +
       'var lastPullResult = null;\n' +
       'var isFn = function (x) { return typeof x === "function"; };\n' +
       'var normDate = function (d) { d = String(d || ""); return /^\\d{4}-\\d{2}-\\d{2}$/.test(d) ? d : ""; };\n' +
@@ -180,7 +182,8 @@ const ROSTER_REFUSAL = {
     return f(ctx);
   }
 
-  /* ---- 2a. same-tab in-flight: named gate, spoken, stamped ---- */
+  /* ---- 2a. same-tab in-flight: named and spoken, but never allowed to
+     replace the real running pull's eventual completion evidence ---- */
   {
     const said = [];
     const ctx = {
@@ -197,14 +200,14 @@ const ROSTER_REFUSAL = {
       'the refusal NAMES its gate (old shape: an anonymous inline object)');
     assert.ok(typeof res.holder === 'string' && res.holder.length > 0,
       'the refusal names its holder');
-    assert.ok(said.some(s => s.k === 'err' && s.m.indexOf('already running') >= 0),
-      'the advisory refusal is SPOKEN through onStatus (old shape: never called say)');
-    assert.strictEqual(h.getLastPullResult(), res,
-      'the advisory refusal is STAMPED into lastPullResult (old shape: zero receipts by design)');
-    assert.ok(ctx.window.__mlsPullLastOutcome && ctx.window.__mlsPullLastOutcome.ok === false,
-      'the outcome stamp records the refusal');
+    assert.ok(said.some(s => s.k === '' && s.m.indexOf('already running') >= 0),
+      'the harmless second-click refusal is SPOKEN through onStatus without painting the running pull as failed');
+    assert.strictEqual(h.getLastPullResult(), null,
+      'a second click must not overwrite the running pull\'s lastPullResult evidence');
+    assert.strictEqual(ctx.window.__mlsPullLastOutcome, undefined,
+      'a second click must not overwrite the running pull\'s machine outcome stamp');
     assert.ok(!ctx.warmed, 'a refused pull never navigates (warm-up untouched)');
-    ok('advisory gate (same tab): named, spoken, stamped, no navigation');
+    ok('advisory gate (same tab): named, spoken, running evidence preserved, no navigation');
   }
 
   /* ---- 2b. foreign lease: the holder carries kind + age ---- */

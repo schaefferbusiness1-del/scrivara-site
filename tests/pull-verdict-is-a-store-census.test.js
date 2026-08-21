@@ -409,9 +409,11 @@ assert(/ck !== "prints"/.test(rec),
 assert(/var historySummary = \(historyStoreCensus && historyStoreCensus\.measured === true\)/.test(si),
   'the history fraction in the terminal status line must be measured against the store; ' +
   'processed/requested are both walk counters and reported 19/19 on a day that stored nothing');
-assert(/failures 0\." \+ freshnessNotice\(r\) \+ providerScopeNotice\(selectedProvider\.mode\) \+ contentNotice\(historyReceipt\)/.test(si),
+assert(/var __p1ScopeNotice = p1AppointmentCensusComplete[\s\S]{0,260}: providerScopeNotice\(selectedProvider\.mode\)/.test(si),
+  'the P1 census scope notice must either disclose appointment-census-only coverage or preserve the selected-provider notice');
+assert(/failures 0\." \+ freshnessNotice\(r\) \+ __p1ScopeNotice \+ contentNotice\(historyReceipt\)/.test(si),
   'the terminal verdict must carry the census notice. It is appended AFTER the freshness ' +
-  'and provider notices so the distances pinned by all-providers-means-all-providers and ' +
+  'and P1 provider/census scope notice so the distances pinned by all-providers-means-all-providers and ' +
   'schedule-read-declares-its-freshness stay byte-identical.');
 
 const noticeSrc = between(si, 'function censusChangeClause(hr) {', '\n  function providerScopeReceipt', 'contentNotice');

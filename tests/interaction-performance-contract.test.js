@@ -245,7 +245,7 @@ assert.strictEqual(unavailableContext.uiUnavailable(), false, 'visible-loader st
 
 const versionRaw = fs.readFileSync(path.join(root, 'app-version.json'));
 assert(versionRaw.length <= 64, 'app-version.json is no longer a tiny version probe');
-assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b1043' }, 'tiny version probe does not match b1043');
+assert.deepStrictEqual(JSON.parse(versionRaw.toString('utf8')), { build: '2026-07-25-b1044' }, 'tiny version probe does not match b1044');
 const versionMarker = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionStart = connect.lastIndexOf('(function(){', versionMarker);
 const versionEnd = connect.indexOf('\n(function(){', versionMarker);
@@ -253,7 +253,10 @@ assert(versionStart >= 0 && versionEnd > versionStart, 'app-version check module
 const versionCode = connect.slice(versionStart, versionEnd);
 assert(versionCode.includes("var URL='app-version.json'") && versionCode.includes("fetch(URL+'?nc='+now,{cache:'no-store'})"), 'version check downloads more than the tiny no-store metadata file');
 assert(versionCode.includes('if(checking) return checking') && versionCode.includes('if(now-lastCheck<60000)'), 'version check lost its in-flight or one-minute debounce');
-assert(versionCode.includes('setInterval(check, 180000)') && versionCode.includes("window.addEventListener('focus', function(){ setTimeout(check, 1200); })"), 'version check cadence is no longer bounded');
+assert(versionCode.includes('setInterval(check, 180000)') &&
+  versionCode.includes("window.addEventListener('focus', function(){ setTimeout(check, 1200); })") &&
+  versionCode.includes("document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&!document.hidden)setTimeout(check,1200);})"),
+  'version check cadence is no longer bounded across boot, focus, and visible-tab return');
 
 // Runtime proof: the scheduled boot check and a focus check while it is pending
 // must share one request. This catches a syntactically present but ineffective
@@ -263,6 +266,7 @@ const versionTimeouts = [];
 const versionIntervals = [];
 const versionFetches = [];
 let focusHandler = null;
+let visibilityHandler = null;
 const neverSettles = new Promise(function () {});
 const versionWindow = {
   backendMode() { return true; },
@@ -270,7 +274,12 @@ const versionWindow = {
 };
 vm.runInNewContext(versionCode, {
   window: versionWindow,
-  document: { createElement() { return {}; }, body: { appendChild() {} }, documentElement: { appendChild() {} } },
+  document: {
+    hidden: false,
+    visibilityState: 'visible',
+    addEventListener(name, fn) { if (name === 'visibilitychange') visibilityHandler = fn; },
+    createElement() { return {}; }, body: { appendChild() {} }, documentElement: { appendChild() {} }
+  },
   fetch(url, opts) { versionFetches.push({ url, opts }); return neverSettles; },
   setTimeout(fn, delay) { versionTimeouts.push({ fn, delay }); return versionTimeouts.length; },
   setInterval(fn, delay) { versionIntervals.push({ fn, delay }); return versionIntervals.length; },
@@ -288,6 +297,10 @@ assert(focusHandler, 'version focus listener was not installed');
 focusHandler();
 versionTimeouts.filter(task => task.delay === 1200).pop().fn();
 assert.strictEqual(versionFetches.length, 1, 'focus created a duplicate in-flight version request');
+assert(visibilityHandler, 'version visible-tab listener was not installed');
+visibilityHandler();
+versionTimeouts.filter(task => task.delay === 1200).pop().fn();
+assert.strictEqual(versionFetches.length, 1, 'visible-tab return created a duplicate in-flight version request');
 
 const exactVersionHelperStart = sw.indexOf('function isExactVersionedAsset');
 const exactVersionHelperEnd = sw.indexOf('function isSafeCacheUrl', exactVersionHelperStart);

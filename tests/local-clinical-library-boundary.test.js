@@ -28,7 +28,7 @@ const freshHardcodedLoaderTags = new Map([
   ['mls-outcome-study.js', '20260807lib7'],
   ['mls-opnote-pro.js', '20260807lib7'],
   ['mls-procedure-report.js', '20260807lib7'],
-  ['feat_mls_assistant_exact.js', '20260808asst220perf1'],
+  ['feat_mls_assistant_exact.js', '20260820asst220perf2'],
   ['feat_mls_outcome_pdf.js', '20260807lib7'],
   ['feat_mls_studygroups.js', '20260804sg1c8'],
   ['feat_comp_report.js', '20260718pr5'],
@@ -115,7 +115,8 @@ assert(cspMatch, 'ScribeFlow must declare a CSP before executing scripts');
 assert(firstScript > html.indexOf(cspMatch[0]), 'CSP must appear before the first script');
 const csp = cspMatch[1];
 assert(/script-src\s+'self'\s+'unsafe-inline'/.test(csp), 'script-src must restrict files to same-origin while legacy inline code is migrated');
-assert(!/unsafe-eval/.test(csp), 'CSP must not permit eval-like script execution');
+assert(!/(?:^|[\s;])'unsafe-eval'(?=[\s;]|$)/.test(csp),
+  'CSP must not permit general eval-like script execution (the narrower wasm-unsafe-eval token is not unsafe-eval)');
 assert(/worker-src\s+'self'\s+blob:\s*(?:;|$)/.test(csp), 'workers must allow only same-origin files and same-document blob URLs');
 assert(!/worker-src[^;]*(?:https?:|data:)/.test(csp), 'workers must not allow remote or data-URL execution');
 assert(/object-src\s+'none'/.test(csp), 'plugins must be disabled');

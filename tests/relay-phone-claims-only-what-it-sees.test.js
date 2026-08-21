@@ -30,12 +30,13 @@ const assert = require('assert');
 const root = path.resolve(__dirname, '..');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-const doneIdx = connect.indexOf("if (job.status === 'done')");
-assert(doneIdx > 0, 'the relay done-branch could not be located');
-/* Window sized from a measurement, not a guess: the last assertion below sits
-   ~4.6k after the branch opens. Kept tight enough that a match still means "in
-   the done-branch". */
-const block = connect.slice(doneIdx, doneIdx + 6000);
+const pollIdx = connect.indexOf('function pollJob(id, date, officeWho, hooks)');
+const pollEnd = connect.indexOf('\n  api.pullDay = function', pollIdx);
+assert(pollIdx > 0 && pollEnd > pollIdx, 'the pull-day relay poller could not be bounded');
+const pollBlock = connect.slice(pollIdx, pollEnd);
+const doneIdx = pollBlock.indexOf("if (job.status === 'done')");
+assert(doneIdx > 0, 'the pull-day relay done-branch could not be located');
+const block = pollBlock.slice(doneIdx);
 
 /* ---- it must actually look at the calendar, not just re-assert ---- */
 assert(/window\.loadCalendar\(\{ fresh: true \}\)/.test(block),

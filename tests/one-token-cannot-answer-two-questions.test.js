@@ -48,8 +48,10 @@
  *     the real pvListen, the real recogniser handlers and the real onFinal
  *     handler lifted out of kioskListen, so it is valid against a build that has
  *     one binding and a build that has two.
- *     ACCEPTANCE: this tree vs the live build = 0 differences. Round 9 vs the
- *     live build must be NON-zero, or this gate could not have caught it.
+ *     ACCEPTANCE: the current fail-safe classifier preserves every novel answer
+ *     byte-exact and drops an exact full-line echo; a mere option/clause is no
+ *     longer destructive evidence. The pinned live and round-9 builds remain
+ *     controls for the original lifetime regression, not current policy.
  * S1b THE TWO-TURN SEQUENCE, because 32 single-turn scenarios provably CANNOT
  *     reach the mechanism the brief measured. 4 shapes x 2 device states = 8,
  *     driven as: question 1 starts, the microphone re-opens mid-sentence, then
@@ -185,9 +187,9 @@ ok(BUILDS.live.sha256 !== BUILDS.prefix.sha256 && BUILDS.prefix.sha256 !== BUILD
   'must stay the pre-composition build)');
 
 /* ── AND "LIVE" MUST STILL MEAN LIVE ──────────────────────────────────────────
-   This suite's whole claim is "byte-identical to the LIVE build". A pin is
-   immutable, which is what makes the comparison reproducible — and is exactly how
-   it could come to certify against bytes that stopped being live months ago.
+   The historical controls below must still name the exact builds they claim to
+   reproduce. A pin is immutable, which is what makes those controls reproducible
+   — and is exactly how it could otherwise come to describe the wrong baseline.
    ⚠️ THIS IS NOT PARANOIA: origin/main moved 13 commits WHILE this change was
    being gated, and the only reason the pin was still live is that none of the 13
    touched this file. Verified, not assumed. If a later lane changes
@@ -373,6 +375,11 @@ function probeHarness(tl) {
   const listen = tl.liftFn('pvListen');
   const onFinalSrc = tl.liftOnFinal();
   const onInterimSrc = tl.liftOnInterim();
+  /* Newer builds clear a recoverable provisional transcript from this exact
+     final handler. Lift that shipped dependency when (and only when) the
+     handler calls it; immutable baselines predate the helper. */
+  const needsRecoverable = /\bkioskConfirmRecoverable\s*\(/.test(maskLiterals(onFinalSrc));
+  const recoverable = needsRecoverable ? tl.liftFn('kioskConfirmRecoverable') : '';
   /* the harness can only observe the template contract if the classifier, the
      stops and the tail all live inside the lifted region — checked, not assumed */
   ['function pvStopVoice()', 'function pvStopSpeechOnly()', 'function pvIsSelfEcho(',
@@ -385,6 +392,8 @@ function probeHarness(tl) {
     var report = { filed: [], painted: [] };
     function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
     function isFn(f) { return typeof f === 'function'; }
+    function clean(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+    function gid() { return null; }
     var pvVoice, pvWantMale = null, pvHeld = [], pvRec = null, pvWatchdog = null, pvSpeakSeq = 0;
     var ttsAudioNow = null, ttsDownUntil = 0;
     function faceTalkStop() {}
@@ -395,10 +404,12 @@ function probeHarness(tl) {
     function ttsFetchUrl() { return new Promise(function () {}); }
     function ttsPlayUrl() {}
     function pvSpeakSynth(t, mySeq, finish) { finish(); }
-    var kiosk = { ambient: false, open: true, echoRefused: 0, nudgeTimer: null, lastTry: null, heard: false };
+    var kiosk = { ambient: false, open: true, echoRefused: 0, nudgeTimer: null, lastTry: null, heard: false,
+                  provisionalSpeech: '', provisionalShown: '', provisionalEdited: false, mic: true };
     function kioskNonce() { return 'n'; }
     function kioskTurn(answer) { report.filed.push(answer); }
     function kioskLine(kind, text) { report.painted.push(kind + ':' + text); }
+    function kioskMood() {}
     var window = {
       speechSynthesis: { cancel: function () {}, getVoices: function () { return []; },
                          speak: function () {}, addEventListener: function () {} },
@@ -411,6 +422,7 @@ function probeHarness(tl) {
     ${region}
     ${speak}
     ${listen}
+    ${recoverable}
     ${'var onFinal = ' + onFinalSrc + ';'}
     ${'var onInterim = ' + onInterimSrc + ';'}
     return {
@@ -548,16 +560,36 @@ function diffRows(a, b) {
     '(device state) is inert and the second filing gate is untested');
 }
 
-/* ── THE GATE ─────────────────────────────────────────────────────────────── */
+/* ── THE CURRENT GATE ──────────────────────────────────────────────────────
+   p1-listener deliberately retired the historical "any two-word slice is
+   echo" policy: ordinary A-or-B answers are made from the question's words,
+   and deleting one is irreversible. Assert the fail-safe contract directly.
+   Historical byte differences remain measured below as migration evidence. */
 {
   const d = diffRows(RESULT.work, RESULT.live);
-  eq(d.length, 0,
-    'THE FILED OUTPUT IS NOT BYTE-IDENTICAL TO THE LIVE BUILD. ' + d.length + ' of ' + POP +
-    ' scenarios file a different string:\n    ' + d.join('\n    ') + '\n' +
-    'This is the acceptance condition of the split and it is absolute — a DIFFERENCE is a defect ' +
-    'even when it looks like an improvement, because every one of round 9\'s five differences ' +
-    'looked defensible in isolation and all five were silent losses of a patient\'s answer. If the ' +
-    'split is right, the echo template\'s lifetime is unchanged and this number is 0.');
+  const byShape = Object.fromEntries(SHAPES);
+  RESULT.work.forEach((row) => {
+    const expected = byShape[row[1]];
+    if (row[3] !== '[]' && row[3] !== 'NO-RECOGNISER') {
+      eq(row[3], JSON.stringify([expected]),
+        'the recogniser changed or duplicated the filed bytes for ' + row.slice(0, 3).join('/') +
+        ': expected ' + JSON.stringify(expected) + ', filed ' + row[3]);
+    }
+  });
+  RESULT.work.filter((row) => row[1] === 'answerNovel').forEach((row) => {
+    eq(row[3], JSON.stringify([byShape.answerNovel]),
+      'a novel patient answer was silently lost in ' + row.slice(0, 3).join('/'));
+  });
+  const exact = [];
+  MOMENTS.forEach(([mName, arrange]) => DEVICES.forEach(([dName, gate]) => {
+    const h = probeHarness(T.work)();
+    h.gate(gate[0], gate[1]); arrange(h); h.deliverFinal(QUESTION);
+    exact.push([mName, dName, h.report.filed.slice()]);
+  }));
+  exact.forEach((row) => eq(row[2].length, 0,
+    'an exact full-line echo was filed as the patient answer in ' + row[0] + '/' + row[1]));
+  console.log('  [measured policy migration] current vs historical live: ' + d.length + ' of ' + POP +
+    ' scenarios differ; novel answers remain byte-exact and exact full-line echoes are refused');
 }
 
 /* ── THE LIVENESS SIDE IS ALLOWED TO DIVERGE, AND IS MEASURED SO IT CANNOT ───
@@ -644,12 +676,22 @@ function diffRows(a, b) {
       d.push(w[i][0] + '/' + w[i][1] + ': live filed ' + l[i][2] + ', this build ' + w[i][2]);
     }
   }
-  eq(d.length, 0,
-    'THE TWO-TURN SEQUENCE FILES DIFFERENTLY FROM LIVE in ' + d.length + ' of ' + w.length +
-    ' cases:\n    ' + d.join('\n    ') + '\nThis is the exact mechanism the round-9 regression was ' +
-    'measured on. If question 1 is not held into the bounded tail at the microphone teardown, its ' +
-    'late tail meets an empty filter after question 2 overwrites the template, and the avatar\'s ' +
-    'own question is filed as the patient\'s answer.');
+  const byShape = Object.fromEntries(SHAPES);
+  w.forEach((row) => {
+    if (row[2] !== '[]') eq(row[2], JSON.stringify([byShape[row[0]]]),
+      'the two-turn path changed or duplicated filed bytes for ' + row[0] + '/' + row[1]);
+    if (row[0] === 'answerNovel') eq(row[2], JSON.stringify([byShape.answerNovel]),
+      'the two-turn path silently lost the novel patient answer in ' + row[1]);
+  });
+  DEVICES.forEach(([dName, gate]) => {
+    const h = probeHarness(T.work)();
+    h.gate(gate[0], gate[1]); h.openMic(); h.speak(Q1); h.openMic(); h.speak(Q2); h.deliverFinal(Q1);
+    eq(h.report.filed.length, 0,
+      'question 1 was not held as an exact echo across question 2 in ' + dName +
+      ' — one token answered two questions');
+  });
+  console.log('  [measured policy migration] current vs historical live two-turn differences: ' + d.length +
+    ' of ' + w.length + '; exact question-1 echo still refused after question 2 overwrites the live template');
   /* THE CONTROL, IN THE MEASURED DIRECTION: round 9 must file the avatar's own
      question here — refusing where live files would be a different defect. */
   const ownVoiceFiled = [];
@@ -740,18 +782,18 @@ function diffRows(a, b) {
   console.log('             this pvEchoSaying [' + fmt(workEcho) + ']');
   /* the filing gates read the ECHO binding */
   const isSelfEcho = T.work.liftFn('pvIsSelfEcho');
-  ok(/pvEchoSaying && pvEchoMatch\(pvEchoSaying,/.test(isSelfEcho),
-    'FILING GATE 1 (pvIsSelfEcho) no longer compares against pvEchoSaying. It is reading the ' +
-    'liveness value again, which is the round-9 defect exactly: a template that outlives the ' +
-    'microphone teardown changes what is filed.');
+  ok(/pvEchoSaying && h === pvEchoSaying/.test(isSelfEcho) &&
+     /pvEchoTail\[i\]\.until > now && h === pvEchoTail\[i\]\.norm/.test(isSelfEcho),
+    'FILING GATE 1 must compare exact full-line equality against both the live echo binding and ' +
+    'its bounded tail; a clause alone is not destructive evidence, while losing either exact ' +
+    'owner would let the avatar\'s whole question reach the chart.');
   ok(!/\bpvSaying\b/.test(maskLiterals(isSelfEcho)),
     'pvIsSelfEcho reads pvSaying as well as pvEchoSaying. A filing gate with one foot in each ' +
     'contract is the defect this change exists to remove.');
   const kl = T.work.liftFn('kioskListen');
-  ok(/if \(pvEchoSaying && pvVoiceGateReady\(\) && !pvOtherVoiceNow\(\) &&\s*\n\s*pvNovelWordCount\(pvEchoSaying, finalText\) === 0\)/.test(kl),
-    'FILING GATE 2 (the novel-word refusal in kioskListen) no longer compares against ' +
-    'pvEchoSaying — everything it refuses is DELETED, so it must read the binding whose lifetime ' +
-    'the live build calibrated it against');
+  ok(/if \(pvEchoSaying && pvVoiceGateReady\(\) && !pvOtherVoiceNow\(\) &&\s*\n\s*pvNorm\(finalText\) === pvEchoSaying\)/.test(kl),
+    'FILING GATE 2 must require exact normalized equality against pvEchoSaying — everything it ' +
+    'refuses is deleted, so an option or clause cannot be enough.');
   /* and the liveness readers keep the liveness one */
   const onFinal = T.work.liftOnFinal();
   ok(!/\bpvSaying\b/.test(maskLiterals(onFinal)),
@@ -864,26 +906,21 @@ function negationRun(tl, devices) {
       'a pause; a negation or a laterality lost on the way to the chart is the most expensive ' +
       'thing in this file to get wrong.');
   });
-  /* ── MEASURED, REPORTED, NOT ASSERTED — and it must be IDENTICAL on both ────
-     The same seven controls in the silent-room state S1 uses. Whatever the live
-     build does there, this build must do the same; that is the acceptance
-     condition, and it is checked. What it does is a live property this lane is
-     not fixing, so it is printed rather than judged. */
+  /* ── SILENT-ROOM FAIL-SAFE ────────────────────────────────────────────────
+     Historical live could delete these controls when AEC measured a silent
+     room. Current policy requires the actual answer bytes to survive; silence
+     is not proof that a recogniser result was the speaker. */
   {
     const silent = [['aecSilentRoom', [true, 0]]];
     const lv = negationRun(T.live, silent);
     const wk = negationRun(T.work, silent);
     const lost = lv.filter(r => r.filed !== r.answer);
-    lv.forEach((r, i) => {
-      eq(wk[i].filed, r.filed,
-        'the silent-room state diverges from live for "' + r.answer + '" (' + r.regime + '): live ' +
-        JSON.stringify(r.filed) + ', this build ' + JSON.stringify(wk[i].filed) + '. Byte-identical ' +
-        'means byte-identical in every device state, including the ones this lane is not fixing.');
-    });
+    wk.forEach((r) => eq(r.filed, r.answer,
+      'the silent-room state deleted or changed "' + r.answer + '" (' + r.regime + ')'));
     console.log('  [measured, NOT a claim] with confirmed AEC and a room the gate measured as ' +
       'SILENT, the LIVE build already deletes ' + lost.length + ' of ' + lv.length +
       ' brief controls: ' + (lost.map(r => '"' + r.answer + '" (' + r.regime + ')').join(', ') || 'none') +
-      '. Its own comment predicted this. Out of scope here; this build matches it exactly.');
+      '. Current policy is asserted above to preserve all of them byte-exact.');
   }
 
   /* ── THE TWO REGIMES, PINNED BY EXECUTION ─────────────────────────────────
@@ -895,10 +932,9 @@ function negationRun(tl, devices) {
     const mk = probeHarness(T.work);
     const Q = 'is it worse in the morning or in the evening';
     const mid = mk(); mid.gate(false, 0); mid.openMic(); mid.speak(Q); mid.deliverFinal('in the morning');
-    eq(mid.report.filed.length, 0,
-      'THE AGGRESSIVE REGIME IS GONE: while the avatar is still saying "' + Q + '", the contiguous ' +
-      'quote "in the morning" is no longer treated as its own voice — this is how the avatar came ' +
-      'to interview itself and build the summary out of its own questions');
+    eq(mid.report.filed.join('|'), 'in the morning',
+      'A STRING SLICE WAS USED AS DESTRUCTIVE ECHO PROOF: while the avatar is saying "' + Q + '", ' +
+      'the ordinary A-or-B answer "in the morning" was deleted');
     const aft = mk(); aft.gate(false, 0); aft.openMic(); aft.speak(Q); aft.endSpeech();
     aft.deliverFinal('in the morning');
     eq(aft.report.filed.join('|'), 'in the morning',
@@ -913,10 +949,10 @@ function negationRun(tl, devices) {
   h.gate(false, 0);
   h.openMic();
   h.speak('is the pain in your back or in your neck');
-  h.deliverFinal('is the pain in your back');
+  h.deliverFinal('is the pain in your back or in your neck');
   eq(h.report.filed.length, 0,
-    'A UNIVERSAL ACCEPT PROVES NOTHING: a contiguous quote of the question the avatar is still ' +
-    'saying was FILED as the patient\'s answer, so every control above would pass with the echo ' +
+    'A UNIVERSAL ACCEPT PROVES NOTHING: the exact full question the avatar is still saying was ' +
+    'FILED as the patient\'s answer, so every preservation control above would pass with the echo ' +
     'filter deleted outright');
 }
 
@@ -1214,9 +1250,12 @@ function walkOf(tl) {
    kioskListen's interim handler with ONE call site. Round 8 asserted the flat
    version and it was false. So the barge-in edge is pinned by COUNT instead. */
 const ALLOWED = {
+  close: 'explicit Setup/inbox dialog close: its owned preview audio must stop before the dialog is removed',
   kioskClose: 'teardown: the overlay is removed, so the voice must stop with it',
+  kioskRequestEnd: 'staff-requested interview end: the voice must stop before the PIN/end transition',
   kioskStopBounded: 'bounded give-up, gated by the uncapped speech wait (S4)',
   kioskWatchdog: 'all three stops sit after the uncapped speech wait (S4)',
+  kioskAmbientStart: 'verified transition into silent room capture: interview voice must stop before recording begins',
   kioskAmbientStop: 'ambient mode is silent by construction (asserted below)',
 };
 const ALLOWED_SPEECH_ONLY_CALLERS = 1;
@@ -1232,11 +1271,12 @@ const ALLOWED_SPEECH_ONLY_CALLERS = 1;
   ok(w.nodes.length > 500,
     'the walk found only ' + w.nodes.length + ' function nodes in a ~500KB module — the brace ' +
     'matcher has stopped tracking the file');
-  ok(w.reach.length > 100 && w.reach.length < w.nodes.length * 0.6,
+  ok(w.reach.length > 100 && w.nodes.length - w.reach.length > 100,
     'the microphone-reachable closure is ' + w.reach.length + ' of ' + w.nodes.length + ' functions. ' +
-    'Too few means the walk stopped following the call graph and "no mic path reaches a stop" ' +
-    'would be true by blindness; more than 60% of the file means the safe(fn) immediate-body rule ' +
-    'has broken and everything looks reachable (it once marked 516 of 605).');
+    'The walk must include a substantial live closure and exclude a substantial non-microphone ' +
+    'closure; an old percentage ceiling became stale as the module added shared safe helpers.');
+  eq(new Set(w.reach).size, w.reach.length,
+    'the reachability closure contains duplicate node ids, so its size no longer measures coverage');
   /* every recogniser event property must be represented in the seeds, so a
      handler added later (onnomatch, onspeechend) cannot slip past */
   {
@@ -1270,17 +1310,29 @@ const ALLOWED_SPEECH_ONLY_CALLERS = 1;
     'the patient\'s voice interrupt now has ' + so.length + ' mic-reachable call sites (' +
     so.map(o => o.text).join(', ') + '). With more than one, nothing can reason about what is able ' +
     'to cut a question off; with none, the interrupt three existing pins require has been deleted.');
-  /* a FIFTH name on the safe list is a failure: the set is a pin, not a bucket */
-  eq(Object.keys(ALLOWED).length, 4,
-    'the pinned safe set has ' + Object.keys(ALLOWED).length + ' entries, not four. Adding a name ' +
+  /* an EIGHTH name on the safe list is a failure: the set is a pin, not a bucket */
+  eq(Object.keys(ALLOWED).length, 7,
+    'the pinned safe set has ' + Object.keys(ALLOWED).length + ' entries, not seven. Adding a name ' +
     'here is how "nothing mic-reachable stops speech" quietly becomes "a few things do".');
-  /* the ambient claim in ALLOWED, asserted rather than asserted-about */
+  /* the three newer lifecycle claims and the ambient claim are asserted rather
+     than asserted-about: each stop must remain behind its exact ownership
+     transition, not merely share a convenient function name. */
+  const setupClose = T.work.liftFn('close');
+  ok(setupClose.indexOf('if (!back) return false;') < setupClose.indexOf('pvStopVoice();'),
+    'Setup close can stop voice without first proving it owns a live dialog');
+  const requestEnd = T.work.liftFn('kioskRequestEnd');
+  ok(/function kioskRequestEnd\(\)[\s\S]*pvStopVoice\(\);[\s\S]*mlsAvKioskPin/.test(requestEnd),
+    'the staff end transition no longer stops voice as part of its PIN/end lifecycle');
+  const ambientStart = T.work.liftFn('kioskAmbientStart');
+  ok(ambientStart.indexOf('kiosk.ambient = true;') > 0 &&
+     ambientStart.indexOf('kiosk.ambient = true;') < ambientStart.indexOf('pvStopVoice();'),
+    'ambient start can stop interview voice before it has committed to the verified silent-room transition');
   ok(/kiosk\.ambient\) \{ if \(then\) safe\(then\); return; \}/.test(T.work.liftFn('pvSpeakVoiced')),
     'ambient room mode is no longer silent at the one place a voice can start, so ' +
     'kioskAmbientStop\'s presence on the pinned safe list is no longer justified');
   /* the interrupt the patient is left with must be a VISIBLE CONTROL: an
      untrusted event cannot press a button, so our own audio cannot forge it */
-  ok(/#mlsAvKioskMute'\)\.addEventListener\('click', kioskPauseToggle\)/.test(T.work.liftFn('openKiosk')) &&
+  ok(/#mlsAvKioskMute'\)\.addEventListener\('click', kioskEvent\(kioskPauseToggle\)\)/.test(T.work.liftFn('openKiosk')) &&
      /pvStopVoice\(\)/.test(T.work.liftFn('kioskPauseToggle')),
     'the visible pause control is no longer wired to a real click listener that stops the voice — ' +
     'with the microphone unable to end speech, this button is the interrupt the patient has left');

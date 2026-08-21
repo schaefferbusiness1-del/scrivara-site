@@ -3825,12 +3825,12 @@
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.76</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.76.bin" download="MLS_Assist_v3.0.76.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.76</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.77</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.77.bin" download="MLS_Assist_v3.0.77.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.77</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Install: unzip the download, open <b>chrome://extensions</b>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>. Updating an existing install: replace the folder's contents, then press the ↻ reload arrow on the MLS Assist card. Full guide: <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.76</span></summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.76 - The version the practice validated live. On top of the repeat-pull fixes: closing your athenaOne tab can no longer silently block every pull until the browser restarts (the extension now notices the tab is gone and finds your new one), a briefly-offline extension worker retries your read instead of failing it, and the session keep-alive now keeps a minute-by-minute ledger so sign-out causes can be diagnosed instead of guessed. Everything from earlier releases remains: one-click pull of whoever is open, honest identity checks, full-speed background reads, and phone-confirmed note writes that stay notes-and-drafts only, confirmed by you. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.77</span></summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.77 - Open-patient pulls are more reliable on Macs: an explicit pull can safely wake and verify the exact sleeping athenaOne tab without reloading it, while quiet and background work never wakes a tab. A sleeping or temporarily unreachable tab is no longer mistaken for a sign-out. Legacy Send to Athena requests now enter the existing supervised review flow, with exact patient and encounter checks plus clinician confirmation; nothing writes automatically. Everything from earlier releases remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -13057,6 +13057,119 @@ function _assistReadAthenaTab(onStatus){
 }
 function _athenaHistoryDigits(v){ return String(v||'').replace(/\D/g,''); }
 function _athenaHistoryName(v){ return String(v||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+/* ===== idread-1.0.0 — the identity guard READS a name and a date the way athena prints them ==
+   Owner, 2026-08-18: the cross-patient safety stop "keeps happening" on charts
+   that ARE the same patient.
+
+   MEASURED in the local harness on this exact shell, with the guard as the only
+   thing under test (tests/1p-pull-one-owner-contract.test.js reproduces every row,
+   and executes the pre-fix rule beside it as the causal control):
+
+     stored DOB      athena banner DOB   before   why
+     --------------- ------------------- -------- ----------------------------
+     1962-03-04      03/04/1962          REFUSE   digit-order, not the date
+     1962-03-04      3/4/1962            REFUSE   digit-order + padding
+     03/04/1962      3/4/1962            REFUSE   padding alone
+     03/04/1962      March 4, 1962       REFUSE   month name unreadable
+     03/04/1962      04/03/1962          REFUSE   a genuinely different date
+     03/04/1962      ''                  REFUSE   no proof at all
+
+   _athenaHistoryDigits strips every non-digit and compares the RUN, so
+   "1962-03-04" reads as 19620304 and "03/04/1962" reads as 03041962 - the same
+   birthday, two strings that can never be equal. This is not a rare spelling:
+   #ptDob's own placeholder says "e.g. 1980-05-14", the pre-visit intake's DOB
+   field is <input type="date"> (which can only produce yyyy-mm-dd), and
+   athenaOne's chart banner prints mm/dd/yyyy. A record created either of those
+   two ways can therefore NEVER prove identity against its own athena chart.
+
+   The same class on the name side: a reader that lands on textContent instead
+   of innerText returns the banner name with no separator between its parts
+   ("AdaSample" for "Ada Sample"), and an ALL-CAPS banner leaves no camel
+   boundary to split on either. Measured before: VETO on the same patient.
+
+   WHAT CHANGES IS THE READING, NEVER THE REQUIREMENT. Both helpers below are
+   strictly ADDITIVE - every pair the old code accepted is still accepted, and a
+   pair is newly accepted only when the two strings denote the SAME date, or when
+   a run-together name re-segments into the OTHER name's own tokens with the
+   whole run consumed and each token used once. Two different dates still differ;
+   a name whose tokens are not in the other name still cannot be matched; an
+   absent DOB still proves nothing. The three-factor rule (name echo + DOB or MRN
+   equality) is untouched.
+
+   No regex here carries an escape a shell transport could eat, and the suite
+   EXECUTES every one of them rather than grepping for their source. */
+var _ATHENA_DOB_MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12,
+  january:1,february:2,march:3,april:4,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+function _athenaHistoryDobKey(v){
+  var s=String(v==null?'':v).trim(); if(!s) return '';
+  var pad=function(n){ n=String(n); return n.length>1?n:('0'+n); };
+  var ok=function(y,m,d){ y=+y; m=+m; d=+d;
+    return (y>=1870&&y<=2200&&m>=1&&m<=12&&d>=1&&d<=31)?(String(y)+pad(m)+pad(d)):''; };
+  var iso=s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(iso){ var kiso=ok(iso[1],iso[2],iso[3]); if(kiso) return kiso; }
+  var us=s.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+  if(us){ var kus=ok(us[3],us[1],us[2]); if(kus) return kus; }
+  var lo=s.toLowerCase();
+  var mn=lo.match(/([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/);
+  if(mn&&_ATHENA_DOB_MONTHS[mn[1]]){ var kmn=ok(mn[3],_ATHENA_DOB_MONTHS[mn[1]],mn[2]); if(kmn) return kmn; }
+  var dm=lo.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})\.?,?\s+(\d{4})/);
+  if(dm&&_ATHENA_DOB_MONTHS[dm[2]]){ var kdm=ok(dm[3],_ATHENA_DOB_MONTHS[dm[2]],dm[1]); if(kdm) return kdm; }
+  var run=_athenaHistoryDigits(s);
+  if(run.length===8){
+    var kA=ok(run.slice(0,4),run.slice(4,6),run.slice(6,8)); if(kA) return kA;
+    var kB=ok(run.slice(4,8),run.slice(0,2),run.slice(2,4)); if(kB) return kB;
+  }
+  return '';
+}
+/* TRUE only when both sides carry a date AND it is the same date. The pre-idread
+   raw-digit equality is kept whole as the first test, so this can only ever add. */
+function _athenaHistoryDobSame(a,b){
+  var x=_athenaHistoryDigits(a), y=_athenaHistoryDigits(b);
+  if(!x||!y) return false;
+  if(x===y) return true;
+  var ka=_athenaHistoryDobKey(a), kb=_athenaHistoryDobKey(b);
+  return !!(ka&&kb&&ka===kb);
+}
+function _athenaHistoryNameCamel(v){ return String(v==null?'':v).replace(/([a-z0-9])([A-Z])/g,'$1 $2'); }
+/* Segment ONE run-together token using the other name's tokens as the whole
+   dictionary. The entire run must be consumed and each dictionary word may be
+   used once, so "annsmith" against "ann cubbage reilly" yields nothing and stays
+   a mismatch, while "adasample" against "ada sample" yields ["ada","sample"]. */
+function _athenaHistoryNameSegment(run, dict){
+  var words=[],seen={},i;
+  for(i=0;i<dict.length;i++){ var d=dict[i]; if(d&&d.length>1&&!seen[d]){ seen[d]=1; words.push(d); } }
+  if(!words.length) return null;
+  var used={}, best=null;
+  (function walk(rest, acc){
+    if(best) return;
+    if(!rest.length){ if(acc.length>1) best=acc.slice(); return; }
+    for(var k=0;k<words.length;k++){
+      if(used[k]) continue;
+      if(rest.indexOf(words[k])!==0) continue;
+      used[k]=1; acc.push(words[k]);
+      walk(rest.slice(words[k].length), acc);
+      acc.pop(); used[k]=0;
+      if(best) return;
+    }
+  })(run, []);
+  return best;
+}
+function _athenaHistoryNameUnrun(tokens, dict){
+  var out=[], moved=false;
+  for(var i=0;i<tokens.length;i++){
+    var t=tokens[i];
+    var parts=(t.length>=6)?_athenaHistoryNameSegment(t,dict):null;
+    if(parts&&parts.length>1){ moved=true; out=out.concat(parts); }
+    else out.push(t);
+  }
+  return moved?out:tokens;
+}
+function _athenaHistoryNameTokensCover(A,B){
+  function tokOk(a,b){ return a===b||(a.length>=4&&b.length>=4&&(a.indexOf(b)===0||b.indexOf(a)===0))||(a.length===1&&a===b.charAt(0))||(b.length===1&&b===a.charAt(0)); }
+  function covered(X,Y){ return X.every(function(x){ return Y.some(function(y){ return tokOk(x,y); }); }); }
+  return covered(A,B)||covered(B,A);
+}
+/* ===== end idread-1.0.0 ===== */
 function _athenaHistoryNameCompatible(seen, want){
   var s=_athenaHistoryName(seen), w=_athenaHistoryName(want);
   if(!s||!w) return true; /* an absent echo never vetoes; the DOB/MRN equality proof below still decides */
@@ -13065,10 +13178,15 @@ function _athenaHistoryNameCompatible(seen, want){
      "ann cubbage reilly"). Accept when every token on one side matches a token
      on the other by exact text, a >=4-char prefix, or a single-letter initial.
      This relaxes ONLY the name echo; DOB/MRN equality still proves identity. */
-  var st=s.split(' '), wt=w.split(' ');
-  function tokOk(a,b){ return a===b||(a.length>=4&&b.length>=4&&(a.indexOf(b)===0||b.indexOf(a)===0))||(a.length===1&&a===b.charAt(0))||(b.length===1&&b===a.charAt(0)); }
-  function covered(A,B){ return A.every(function(x){ return B.some(function(y){ return tokOk(x,y); }); }); }
-  return covered(st,wt)||covered(wt,st);
+  if(_athenaHistoryNameTokensCover(s.split(' '),w.split(' '))) return true;
+  /* idread-1.0.0: retried, never replaced. Camel boundaries first (a textContent
+     read of "Ada Sample"), then dictionary re-segmentation (an ALL-CAPS run).
+     Both run only after the rule above has already declined, so no pair that
+     used to be compatible can stop being compatible here. */
+  var s2=_athenaHistoryName(_athenaHistoryNameCamel(seen)), w2=_athenaHistoryName(_athenaHistoryNameCamel(want));
+  if((s2!==s||w2!==w)&&_athenaHistoryNameTokensCover(s2.split(' '),w2.split(' '))) return true;
+  var sa=s2.split(' '), wa=w2.split(' ');
+  return _athenaHistoryNameTokensCover(_athenaHistoryNameUnrun(sa,wa),_athenaHistoryNameUnrun(wa,sa));
 }
 function _athenaHistoryTargetSnapshot(ref, allowCreate){
   ref=(ref&&typeof ref==='object')?ref:{name:String(ref||'')};
@@ -13082,8 +13200,23 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
     matches=pts.filter(function(x){return String(x&&x.id||'')===targetId;});
   }else if(wantName){
     matches=pts.filter(function(x){return _athenaHistoryName(x&&x.name)===_athenaHistoryName(wantName);});
-    if(wantDob){ var dd=_athenaHistoryDigits(wantDob); matches=matches.filter(function(x){return dd&&_athenaHistoryDigits(x&&x.dob)===dd;}); }
+    if(wantDob){ matches=matches.filter(function(x){return _athenaHistoryDobSame(x&&x.dob,wantDob);}); } /* idread-1.0.0: same birthday, any spelling */
     if(wantMrn){ var mm=_athenaHistoryDigits(wantMrn); matches=matches.filter(function(x){return mm&&_athenaHistoryDigits((x&&x.mrn)||(x&&x.athenaId))===mm;}); }
+    /* dupmatch-1.0 (verified duplicate-name incident): the exact-token pass
+       above is the only spelling this matcher accepted, so a missing middle
+       initial or athena's LAST-FIRST order minted a brand-new record for a
+       patient the store already had - and the pull landed on the duplicate.
+       When the exact pass finds nothing, re-match with the tolerant comparator
+       the chart proof already trusts, gated by a hard second factor (same DOB
+       or same MRN digits) - never name alone. Ambiguity still fails closed. */
+    if(!matches.length&&(wantDob||wantMrn)){
+      matches=pts.filter(function(x){
+        if(!x||!_athenaHistoryNameCompatible(String(x.name||''),wantName)) return false;
+        var mOk=wantMrn&&(x.mrn||x.athenaId)&&_athenaHistoryDigits(wantMrn)===_athenaHistoryDigits(x.mrn||x.athenaId);
+        var dOk=wantDob&&x.dob&&_athenaHistoryDobSame(x.dob,wantDob);
+        return !!(mOk||dOk);
+      });
+    }
   }
   if(matches.length>1) return null;
   var p=matches[0]||null;
@@ -13092,8 +13225,8 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
     try{upsertPatient(p);}catch(e){return null;}
   }
   if(!p||!p.id) return null;
-  if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)) return null;
-  if(wantDob&&p.dob&&_athenaHistoryDigits(wantDob)!==_athenaHistoryDigits(p.dob)) return null;
+  if(wantName&&_athenaHistoryName(p.name)!==_athenaHistoryName(wantName)&&!_athenaHistoryNameCompatible(String(p.name||''),wantName)) return null; /* dupmatch-1.0: a fallback match survives its own recheck */
+  if(wantDob&&p.dob&&!_athenaHistoryDobSame(wantDob,p.dob)) return null; /* idread-1.0.0 */
   if(wantMrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(wantMrn)!==_athenaHistoryDigits(p.mrn||p.athenaId)) return null;
   var appointmentId=String(ref.appointmentId||ref.athenaAppointmentId||'').replace(/[^A-Za-z0-9_-]/g,'').slice(0,40);
   var scheduleDate=/^\d{4}-\d{2}-\d{2}$/.test(String(ref.scheduleDate||ref.date||''))?String(ref.scheduleDate||ref.date):'';
@@ -13107,7 +13240,7 @@ function _athenaHistoryTargetStillExact(target){
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
   var p=pts.find(function(x){return String(x&&x.id||'')===String(target.patientId);});
   if(!p||_athenaHistoryName(p.name)!==_athenaHistoryName(target.name)) return false;
-  if(target.dob&&p.dob&&_athenaHistoryDigits(p.dob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(target.dob&&p.dob&&!_athenaHistoryDobSame(p.dob,target.dob)) return false; /* idread-1.0.0 */
   if(target.mrn&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(p.mrn||p.athenaId)!==_athenaHistoryDigits(target.mrn)) return false;
   return true;
 }
@@ -13118,9 +13251,9 @@ function _athenaHistoryProofMatches(target, observed){
   var seenDob=String(observed.chartDob||observed.dob||'').trim();
   var seenMrn=String(observed.chartMrn||observed.mrn||'').trim();
   if(seenName&&!_athenaHistoryNameCompatible(seenName,target.name)) return false;
-  if(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(target.dob)) return false;
+  if(seenDob&&target.dob&&!_athenaHistoryDobSame(seenDob,target.dob)) return false; /* idread-1.0.0 */
   if(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)!==_athenaHistoryDigits(target.mrn)) return false;
-  var dobProof=!!(seenDob&&target.dob&&_athenaHistoryDigits(seenDob)===_athenaHistoryDigits(target.dob));
+  var dobProof=_athenaHistoryDobSame(seenDob,target.dob); /* idread-1.0.0: still a proof, still both sides present */
   var mrnProof=!!(seenMrn&&target.mrn&&_athenaHistoryDigits(seenMrn)===_athenaHistoryDigits(target.mrn));
   return dobProof||mrnProof;
 }
@@ -13137,8 +13270,33 @@ function _athenaHistoryVerifiedRef(target, observed){
 function _assistReadChart(patientRef, onStatus){
   var requestOptions=arguments[2]||{};
   return new Promise(function(resolve,reject){
-    var target=_athenaHistoryTargetSnapshot(patientRef,false);
-    if(!target){ reject(new Error('Choose one MLS patient with a verified DOB or MRN before pulling history. Name alone is not safe, so nothing was saved.')); return; }
+    var leaseMgr=window.__mlsP1AthenaReadLease,ownerToken=String(requestOptions.athenaOwnerToken||''),ownedToken='',leaseTouch=null,leaseReady=false;
+    function releaseLease(){if(leaseTouch){clearInterval(leaseTouch);leaseTouch=null;}if(ownedToken&&leaseMgr&&typeof leaseMgr.release==='function'){try{leaseMgr.release(ownedToken);}catch(_){}ownedToken='';}}
+    if(leaseMgr&&ownerToken&&typeof leaseMgr.owns==='function'&&leaseMgr.owns(ownerToken))leaseReady=true;
+    else{
+      /* p1-lease-loan-1.0.0: a caller with no token of its own may JOIN the
+         live lease rather than fight it. The today-note leg reaches here
+         through the frozen feat_visits.js, which passes no options at all, so
+         it used to attempt a fresh claim() against the schedule pull that was
+         still holding the lease and be refused - all six rows, every time.
+         A loan is honoured ONLY while the lease manager still reports it as
+         the live owner, so a stale or forged loan grants nothing and this
+         stays fail-closed. The loan is never claimed or released here; the
+         pull that published it owns its whole lifetime. */
+      if(!ownerToken&&leaseMgr&&typeof leaseMgr.owns==='function'){
+        var loanToken=String(window.__mlsP1AthenaLeaseLoan||'');
+        if(loanToken&&leaseMgr.owns(loanToken)){ownerToken=loanToken;leaseReady=true;}
+      }
+    }
+    if(!leaseReady){
+      if(!leaseMgr||typeof leaseMgr.claim!=='function'){reject(new Error('pull-in-flight: the preview Athena reader is unavailable. Nothing started.'));return;}
+      ownedToken=leaseMgr.claim('p1-chart-read',110000)||'';
+      if(!ownedToken){reject(new Error('pull-in-flight: another Athena read or schedule pull is active. Nothing started.'));return;}
+      ownerToken=ownedToken;leaseTouch=setInterval(function(){try{leaseMgr.touch(ownedToken);}catch(_){}},25000);
+    }
+    var candidateRead=requestOptions.verifiedCandidate===true&&patientRef&&patientRef.__mlsVerifiedCandidateRead==='athena-candidate-read-r1'&&Object.isFrozen(patientRef);
+    var target=null;try{target=candidateRead?{patientId:String(patientRef.patientId||''),name:String(patientRef.name||''),dob:String(patientRef.dob||''),mrn:String(patientRef.mrn||patientRef.athenaId||'')}:_athenaHistoryTargetSnapshot(patientRef,false);}catch(targetErr){releaseLease();reject(targetErr);return;}
+    if(!target||!String(target.name||'').trim()||(!String(target.dob||'').trim()&&!String(target.mrn||'').trim())){ releaseLease(); reject(new Error('Choose one MLS patient with a verified DOB or MRN before pulling history. Name alone is not safe, so nothing was saved.')); return; }
     var patientName=String(target.name||'').trim();
     var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
     var ponged=false, tries=0, iv=null, got=false, cancelDeadline=null;
@@ -13147,7 +13305,7 @@ function _assistReadChart(patientRef, onStatus){
     var requestId=suppliedRequestId||('chart-'+readStartedAt.toString(36)+'-'+Math.random().toString(36).slice(2,8));
     var suppliedDeadline=Number(requestOptions.deadlineAt||0);
     var deadlineAt=isFinite(suppliedDeadline)&&suppliedDeadline>0?suppliedDeadline:(readStartedAt+100000);
-    function cleanup(){ if(iv) clearInterval(iv); if(cancelDeadline) cancelDeadline(); iv=null; cancelDeadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); }
+    function cleanup(){ if(iv) clearInterval(iv); if(cancelDeadline) cancelDeadline(); iv=null; cancelDeadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); releaseLease(); }
     function fail(err){ if(got) return; got=true; cleanup(); reject(err); }
     function armDeadline(){
       var scheduler=window.__mlsAbsoluteDeadline;
@@ -13159,7 +13317,10 @@ function _assistReadChart(patientRef, onStatus){
       tid=setTimeout(function(){ fail(new Error('chart-read-deadline-exceeded: Athena did not finish the exact chart read before its immutable deadline. Nothing was saved.')); },Math.max(0,deadlineAt-Date.now()));
       return cancel;
     }
-    function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); iv=null; window.removeEventListener('message',onPong); proceed(); } }
+    function trustedMessage(e){try{return (!e.source||e.source===window)&&(!e.origin||!window.location||e.origin===window.location.origin);}catch(_){return false;}}
+    function onPong(e){ if(trustedMessage(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); iv=null; window.removeEventListener('message',onPong); proceed(); } }
+    function beginOwnedRead(){
+    try{
     window.addEventListener('message',onPong);
     cancelDeadline=armDeadline();
     if(cancelDeadline&&typeof cancelDeadline.isTerminal==='function'&&cancelDeadline.isTerminal()) return;
@@ -13167,16 +13328,57 @@ function _assistReadChart(patientRef, onStatus){
     var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
     say('Looking for MLS Assist…'); ping();
     iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); iv=null; return; } if(tries>8){ fail(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled and your Athena tab is open.')); } else ping(); }, 350);
+    }catch(beginErr){fail(beginErr);}
+    }
+    if(leaseReady)beginOwnedRead();else Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(ownedToken):true;}).then(function(ok){if(!ok){fail(new Error('pull-in-flight: another MLS tab owns the Athena reader. Nothing started.'));return;}beginOwnedRead();},function(){fail(new Error('pull-in-flight: the Athena reader lock could not be acquired. Nothing started.'));});
     function onResult(e){
-      if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppChartResult')) return;
+      if(!trustedMessage(e)||!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppChartResult')) return;
       if(!e.data.requestId||String(e.data.requestId)!==requestId) return;
+      if(Number(e.data.deadlineAt||0)!==deadlineAt||Date.now()>=deadlineAt) return;
       if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
-      if(!r.ok || !r.text){ reject(new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||'Couldn’t read the chart from your Athena tab.'))); return; }
+      /* ===== p1-find-diag-1.0.0 (PHI-free chart-open evidence) =====
+         Owner 2026-08-17, "Pull Thursday the 27th": 13 of 15 rows failed with
+         the SAME sentence, "athenaOne patient search found no matching
+         patient." That sentence is background.js:12596 collapsing FOUR
+         distinct extension outcomes - no-results, no-name-match, blank-error,
+         rows-not-rendered - into one string, and this reject() threw away the
+         `findReason` the response already carries, so the site could not tell
+         "athena has no such patient" from "the results grid never painted".
+         Attach the extension's own PHI-free verdict fields to the Error the
+         same way mlsEchoes already rides one. Codes and counts only: no name,
+         no DOB, no MRN, no chart text. */
+      if(!r.ok || !r.text){
+        var __fdErr=new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||'Couldn’t read the chart from your Athena tab.'));
+        try{ __fdErr.mlsFind={
+          findReason:String(r.findReason||(r.diag&&r.diag.findReason)||'').slice(0,40),
+          via:String(r.via||(r.diag&&r.diag.route)||'').slice(0,40),
+          route:String((r.diag&&r.diag.route)||'').slice(0,40),
+          candidates:Number(r.candidates||0)||0,
+          opened:r.opened===true,
+          reason:String(r.reason||'').slice(0,40),
+          sessionLikelyExpired:r.sessionLikelyExpired===true
+        }; }catch(_fdE){}
+        reject(__fdErr); return;
+      }
+      /* ===== end p1-find-diag-1.0.0 ===== */
       var observed={chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''};
-      if(!_athenaHistoryProofMatches(target,observed)){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
+      var proofOk=false;
+      if(candidateRead){
+        var idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+        var seenName=String(observed.chartName||'').trim(),wantDob=_athenaHistoryDigits(target.dob),seenId=idKey(observed.chartMrn),wantId=idKey(target.mrn);
+        /* idread-1.0.0: the same date in two spellings is one date. */
+        proofOk=!!seenName&&_athenaHistoryNameCompatible(seenName,target.name)&&!!wantDob&&_athenaHistoryDobSame(observed.chartDob,target.dob)&&(!wantId||(!!seenId&&seenId===wantId));
+      }else proofOk=_athenaHistoryProofMatches(target,observed);
+      /* pullone-1.0.0: the stop is unchanged; the sentence now says what the
+         doctor can do about it. "Did not return matching DOB/MRN proof" named a
+         mechanism, and the other cross-patient message in this app pointed at an
+         in-athena green panel that mounts nowhere on athenaOne v26.7 ax views.
+         Both causes - a different chart open, and a chart whose banner did not
+         render - are covered honestly by one instruction. */
+      if(!proofOk){ reject(new Error('The chart open in athenaOne did not prove it is this patient — its name, date of birth or MRN did not match, so MLS stopped and charts can never mix. Open that patient’s chart in athenaOne, or select (or add) that same patient here, then pull again. Nothing was saved.')); return; }
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
-      var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000);
+      var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000&&Number(rawReceipt.capturedAt||0)<=deadlineAt);
       var receiptFrames=!!(rawReceipt&&Number(rawReceipt.expectedClinicalFrames||0)>=1&&Number(rawReceipt.readClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.boundClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.unboundClinicalFrames||0)===0&&Number(rawReceipt.oversizeClinicalFrames||0)===0&&Number(rawReceipt.unreadFrames||0)===0&&Number(rawReceipt.omittedForCap||0)===0);
       var receiptBound=!!(rawReceipt&&String(rawReceipt.requestId||'')===requestId&&String(r.requestId||'')===requestId);
       if(!rawReceipt||rawReceipt.kind!=='athena-chart-coverage'||rawReceipt.complete!==true||rawReceipt.truncated===true||String(rawReceipt.readerVersion||'')!=='2.9.19-chart-r3'||rawReceipt.identityObserved!==true||!receiptFresh||!receiptFrames||!receiptBound||Number(rawReceipt.textChars||0)!==String(r.text||'').length){ reject(new Error('MLS Assist could not prove that every patient chart frame finished loading and belonged to the selected patient. Nothing was saved; update the extension and retry.')); return; }
@@ -13268,34 +13470,104 @@ async function pullPatientFromAthenaPrompt(btn){
 }
 async function pullPatientChartViaAssist(btn, opts){
   opts=opts||{};
+  var lm=window.__mlsP1AthenaReadLease,directLeaseToken='',directTouch=null;
+  var releaseDirect=function(){if(directTouch){clearInterval(directTouch);directTouch=null;}try{if(directLeaseToken)lm.release(directLeaseToken);}catch(_){}directLeaseToken='';};
+  try{if(!lm||typeof lm.claim!=='function'){toast('The preview Athena reader is still loading. Retry in a moment.','err');return false;}directLeaseToken=lm.claim('p1-direct-chart',110000)||'';if(!directLeaseToken){toast('Another Athena read or schedule pull is active. Wait for it to finish, then retry.','err');return false;}directTouch=setInterval(function(){try{lm.touch(directLeaseToken);}catch(_){}},25000);if(typeof lm.ready==='function'&&await lm.ready(directLeaseToken)!==true){releaseDirect();toast('Another MLS tab owns the Athena reader. Wait for it to finish, then retry.','err');return false;}}catch(eLease){releaseDirect();return false;}
   var requested=(opts.patientId||opts.name)?opts:((typeof activePatient==='function'&&activePatient())||null);
   var pullTarget=_athenaHistoryTargetSnapshot(requested,true);
-  if(!pullTarget){ try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
+  if(!pullTarget){
+    releaseDirect();
+    /* idask-1.0.0 (owner live, 2026-08-18: a brand-new name-only record made
+       every pull refuse into the tray — "says it pulls but doesn't save").
+       A name-only record CANNOT safely match a chart (that law stands), but
+       the refusal now opens a door INSTEAD of a dead end: type the DOB (and/or
+       MRN) exactly as the athena chart shows it, one click saves it onto this
+       record and re-runs this same pull. The banner-match verification
+       downstream still fail-closes on a typo — a wrong entry can never
+       attach the wrong chart, it just refuses honestly. */
+    try{
+      var apx=(typeof activePatient==='function'&&activePatient())||null;
+      var sx=document.getElementById('pullChartStatus');
+      if(apx&&(apx.id||apx.patientId)&&sx&&!String(apx.dob||'').trim()&&!String(apx.mrn||apx.athenaId||'').trim()){
+        sx.style.display='block'; sx.style.color='#6f5a20';
+        sx.innerHTML='This record has no DOB or MRN, so no chart can be safely matched. Enter them from the athena chart banner: '+
+          '<span style="display:inline-flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center">'+
+          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
+          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
+          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
+        var goB=document.getElementById('idaskGo');
+        if(goB) goB.onclick=function(){
+          try{
+            var dv=String((document.getElementById('idaskDob')||{}).value||'').trim();
+            var mv=String((document.getElementById('idaskMrn')||{}).value||'').trim().replace(/[^0-9]/g,'');
+            if(!/^\d{1,2}\/\d{1,2}\/(19|20)\d{2}$/.test(dv)&&!/^\d{5,10}$/.test(mv)){ sx.style.color='#9f2d2d'; sx.appendChild(document.createTextNode(' — enter a full DOB (mm/dd/yyyy) or a 5-10 digit MRN.')); return; }
+            var all=(typeof getPatients==='function'&&getPatients())||[];
+            var pid=String(apx.id||apx.patientId||'');
+            for(var qi=0;qi<all.length;qi++){ if(String(all[qi].id||all[qi].patientId||'')===pid){ if(dv)all[qi].dob=dv; if(mv){all[qi].mrn=mv;all[qi].athenaId=mv;} break; } }
+            if(typeof savePatients==='function') savePatients(all);
+            sx.style.color='#52675c'; sx.textContent='Saved — matching the chart now…';
+            setTimeout(function(){ try{ pullPatientChartViaAssist(btn); }catch(e2){} }, 400);
+          }catch(e1){ sx.style.color='#9f2d2d'; sx.textContent='Could not save the identity — edit the patient profile instead.'; }
+        };
+        return false;
+      }
+    }catch(eAsk){}
+    try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
   // Make this patient the active one so the pulled chart attaches to them + the UI follows.
   try{ if(typeof setActivePtId==='function' && (typeof getActivePtId!=='function' || getActivePtId()!==pullTarget.patientId)){ setActivePtId(pullTarget.patientId); if(typeof renderProfile==='function') renderProfile(); if(typeof renderPatientBar==='function') renderPatientBar(); if(typeof renderPatients==='function') renderPatients(); } }catch(e){}
   var orig = btn ? btn.innerHTML : '';
   if(btn){ btn.disabled=true; btn.innerHTML='… reading Athena'; }
   var setT=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
+  /* pcs-1.0.0 (owner, 2026-08-18: "make sure that pull from athena has a
+     progress bar"): quietnotify routes outcome toasts to the activity tray,
+     so at the BUTTON the only visible change was its label. Every phase now
+     also paints an inline status line beside the button — same messages, a
+     step counter instead of an invented percentage. */
+  var say=function(m,k,ph){ setT(m,k); try{ var s=document.getElementById('pullChartStatus'); if(s){ s.style.display='block'; s.style.color=k==='err'?'#9f2d2d':(k==='ok'?'#205c43':'#52675c'); s.textContent=(ph?ph+' · ':'')+m; } }catch(e){}
+    /* doorbar-1.0 (owner, Ed SPEER Jr): the chart engine's three steps drive
+       the SAME progress bar the visits walk uses, so a typed name+DOB pull
+       shows a bar from its first second. The visit leg's per-encounter
+       events then take the bar over; its publisher finishes it. */
+    try{ var pb=window.__mlsPullBar; if(pb){ if(k==='err'){ pb.finish(false,m); } else { var mmB=/^step (\d+) of (\d+)$/.exec(String(ph||'')); if(mmB){ pb.set(Number(mmB[1]),Number(mmB[2]),m); } } } }catch(ePb){} };
+  say('Opening this patient’s chart in Athena…','','step 1 of 3');
   try{
     var rd;
-    rd=await _assistReadChart(pullTarget, setT);
-    if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
-    setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
+    rd=await _assistReadChart(pullTarget, setT,{athenaOwnerToken:directLeaseToken});
+    if(rd && rd.opened){ say('Opened the chart in Athena — reading it…','','step 1 of 3'); }
+    say('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…','','step 2 of 3');
     var chart=await _parsePatientChart(_athenaChartTextForParse(rd));
     if(!chart || _athenaChartProfileCoverage(chart).complete!==true){
-      setT('Read the page, but all six patient-history sections were not verified. Nothing was saved as a complete pull; keep the exact chart open and retry.','err');
-      if(btn){ btn.disabled=false; btn.innerHTML=orig; } return false;
+      say('Read the page, but all six patient-history sections were not verified. Nothing was saved as a complete pull; keep the exact chart open and retry.','err');
+      if(btn){ btn.disabled=false; btn.innerHTML=orig; } releaseDirect(); return false;
     }
     var saveRef=_athenaHistoryVerifiedRef(pullTarget,rd);
-    if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient changed or could not be re-verified before save, so the history was discarded. Nothing was saved.');
+    /* pullone-1.0.0: same stop, actionable words. */
+    if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient could not be re-verified against the chart just read, so nothing was saved. Check that the same patient is selected here and open in athenaOne, then pull again.');
     try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
-    setT('✅ Saved '+pullTarget.name+'’s Athena history to their MLS chart — it’s on your account now.','ok');
+    /* spv-1.0.0 (2026-08-19): this line used to say "Saved X's Athena history",
+       which a doctor reads as "their prior visit notes are here". They are not:
+       everything above this point reads CHART FACTS (problems, meds, allergies,
+       summary, vitals, the history object) and files ONE 'Athena chart import'
+       encounter. The visit-note read is a separate leg that runs after this
+       function returns and can legitimately land nothing. Measured live on
+       patient 7618711: this line printed and the patient still had zero visits
+       twenty minutes later. Say exactly what was saved; the visit leg publishes
+       its own verdict at window.__mlsSinglePullVisits and says it out loud. */
+    say('✅ Saved '+pullTarget.name+'’s Athena chart facts — problems, medications, allergies and history. Checking for their prior visit notes…','ok','step 3 of 3');
+    /* focus-1.1 (was focus-1.0): the NAVIGATION moved to the whoever engine's
+       terminal (feat_athena_autopull run()) - this core path also serves the
+       History-view "Pull this patient's chart" button, where yanking the
+       doctor to Patients mid-review is wrong (1p-pull-one-owner-contract pins
+       exactly that). Here: selection was already set before the read; refresh
+       the profile so the saved facts are visible wherever the doctor is. */
+    try{ if(typeof renderProfile==='function') renderProfile(); }catch(eFo){}
     if(btn){ btn.disabled=false; btn.innerHTML=orig; }
-    return true;
+    releaseDirect(); return true;
   }catch(err){
-    setT((err&&err.message)?err.message:'Couldn’t pull the chart. Open the patient’s chart in Athena and try again.','err');
+    say((err&&err.message)?err.message:'Couldn’t pull the chart. Open the patient’s chart in Athena and try again.','err');
   }
+  releaseDirect();
   if(btn){ btn.disabled=false; btn.innerHTML=orig; }
   return false;
 }
@@ -13433,10 +13705,24 @@ function _savePatientChart(name, appt, chart){
   var targetId=String(ref.patientId||ref.id||(appt&&appt._mlsTargetPatientId)||'').trim();
   if(!targetId||!nm) return _chartSaveRefused('no-target-id-or-name'); /* legacy name-only callers fail closed */
   var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null;
+  var creating=!p&&ref.__mlsVerifiedNewPatient==='athena-new-patient-r1'&&ref.newPatient&&String(ref.newPatient.id||'')===targetId&&
+    Object.isFrozen(ref)&&Object.isFrozen(ref.newPatient)&&String(ref.requestId||'').trim();
+  if(!p&&creating){
+    var np=ref.newPatient,idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+    var nk=_athenaHistoryName(np.name),dk=_athenaHistoryDigits(np.dob),ik=idKey(np.athenaId||np.mrn);
+    /* idread-1.0.0 on both lines: the collision test only gets more sensitive,
+       and the DOB proof stops failing on a birthday spelled two ways. */
+    var collided=pts.some(function(x){if(!x)return false;var xk=idKey(x.athenaId||x.athenaPatientId||x.mrn);return String(x.id||'')===targetId||(ik&&xk&&ik===xk)||(nk&&dk&&_athenaHistoryName(x.name)===nk&&_athenaHistoryDobSame(x.dob,np.dob));});
+    var exactName=_athenaHistoryNameCompatible(ref.verifiedName,np.name);
+    var exactDob=!np.dob||_athenaHistoryDobSame(ref.verifiedDob,np.dob);
+    var exactId=!ik||(idKey(ref.verifiedMrn)&&idKey(ref.verifiedMrn)===ik);
+    if(collided||!exactName||!exactDob||!exactId||(!ik&&!dk))return _chartSaveRefused('verified-create-refused',{collision:!!collided,exactName:exactName,exactDob:exactDob,exactId:exactId});
+    p=Object.assign({},np);
+  }
   if(!p) return _chartSaveRefused('patient-not-found');
   var target={patientId:targetId,name:nm,dob:String(ref.dob||(appt&&appt._mlsTargetDob)||''),mrn:String(ref.mrn||ref.athenaId||(appt&&appt._mlsTargetMrn)||'')};
   var observed={chartName:String(ref.verifiedName||(appt&&appt._mlsVerifiedName)||''),chartDob:String(ref.verifiedDob||(appt&&appt._mlsVerifiedDob)||''),chartMrn:String(ref.verifiedMrn||(appt&&appt._mlsVerifiedMrn)||'')};
-  if(!_athenaHistoryProofMatches(target,observed)) return _chartSaveRefused('identity-proof-mismatch',{hasObsName:!!observed.chartName,hasObsDob:!!observed.chartDob,hasObsMrn:!!observed.chartMrn});
+  if(!creating&&!_athenaHistoryProofMatches(target,observed)) return _chartSaveRefused('identity-proof-mismatch',{hasObsName:!!observed.chartName,hasObsDob:!!observed.chartDob,hasObsMrn:!!observed.chartMrn});
   p=Object.assign({},p);
   var priorAthenaSnapshot=(p.athenaChartSnapshot&&typeof p.athenaChartSnapshot==='object')?p.athenaChartSnapshot:{};
   /* Merge clinical lists fact-by-fact. Athena commonly changes separators between
@@ -13504,6 +13790,25 @@ function _savePatientChart(name, appt, chart){
      current facts, rather than an ever-growing series of stale daily snapshots. */
   p.athenaChartSnapshot=Object.assign({capturedAt:importedAtIso},currentAthenaSnapshot);
   profileCoverage.patientId=String(p.id||''); profileCoverage.exactIdentityVerified=true; profileCoverage.capturedAt=importedAtIso; profileCoverage.saveRequestId=String(ref.requestId||'');
+  /* pvr-1.0.0: carry the surface evidence onto the receipt, so the profile can
+     say WHY a section is empty instead of printing a bare dash. Trusted only
+     when the combine note is from this same read (two minutes) — a stale note
+     from the previous patient in a day pull must never label THIS chart. The
+     field is additive: a record saved before this change simply has no
+     sourceEvidence, and the reader treats that as "unknown", which is the
+     cautious answer rather than a clinical claim. */
+  try{
+    var __ev=window.__mlsLastBriefingCombine;
+    if(__ev&&typeof __ev==='object'&&(importedAtMs-Number(__ev.at||0))>=0&&(importedAtMs-Number(__ev.at||0))<=120000){
+      profileCoverage.sourceEvidence={
+        briefing:String(__ev.dropped||'')||((Number(__ev.briefChars||0)>0)?'present':'absent'),
+        briefChars:Number(__ev.briefChars||0),
+        problemsSurface:Number(__ev.problemsSurface||0),
+        medsSurface:Number(__ev.medsSurface||0),
+        at:Number(__ev.at||0)
+      };
+    }
+  }catch(eSrcEv){}
   p.athenaProfileCoverage=profileCoverage;
   p.athenaChartImportedAt=importedAtIso;
 
@@ -13553,7 +13858,7 @@ function _hasImportedHistory(ref){
     var targetId=String(obj.patientId||obj.id||'').trim(); if(!targetId)return false;
     var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null; if(!p)return false;
     if(obj.name&&_athenaHistoryName(obj.name)!==_athenaHistoryName(p.name))return false;
-    if(obj.dob&&p.dob&&_athenaHistoryDigits(obj.dob)!==_athenaHistoryDigits(p.dob))return false;
+    if(obj.dob&&p.dob&&!_athenaHistoryDobSame(obj.dob,p.dob))return false; /* idread-1.0.0 */
     if((obj.mrn||obj.athenaId)&&(p.mrn||p.athenaId)&&_athenaHistoryDigits(obj.mrn||obj.athenaId)!==_athenaHistoryDigits(p.mrn||p.athenaId))return false;
     if(p && (String(p.athenaChartSnapshot||'').trim() || /Pulled from Athena/i.test(p.summary||''))) return true;
     return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){ return String(n.patientId||'')===String(p.id||'') && n.cc==='Athena chart import'; });
@@ -16577,7 +16882,12 @@ function _athenaOrderPlacementControl(order){
   var candidate=_athenaOrderPlacementCandidate(order);
   if(!candidate.eligible)return '<span style="font-size:11.5px;color:var(--muted);font-weight:700" title="'+esc(candidate.reason)+'">'+esc(candidate.badge)+'</span>';
   var encoded=encodeURIComponent(String(order.id||''));
-  return '<button type="button" class="btn-green" style="font-size:12px;padding:7px 11px;white-space:nowrap" onclick="event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(\''+encoded+'\'),this)" title="Review this frozen proposal, then complete the exact order directly in Athena. MLS does not place it.">Review for Athena</button>';
+  /* Owner directive 2026-08-12 (MLS Assist 3.0.62+): a complete, accepted,
+     catalog-bound order is placed by MLS after one explicit confirm in the
+     Athena review. With an older MLS Assist the review still opens, but the
+     order row says the extension must be updated and stays manual. */
+  var _opCapable=false;try{_opCapable=!!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.athenaFinalActionsV1===true&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(_eCap){}
+  return '<button type="button" class="btn-green" style="font-size:12px;padding:7px 11px;white-space:nowrap" onclick="event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(\''+encoded+'\'),this)" title="'+(_opCapable?'Open the Athena review for this frozen proposal. One Confirm &amp; Send places exactly this catalog item in the verified encounter and verifies it by read-back.':'Review this frozen proposal in the Athena review. Update MLS Assist (3.0.62 or newer) to let MLS place it after your confirm; until then complete the exact order in Athena.')+'">'+(_opCapable?'Send to Athena':'Review for Athena')+'</button>';
 }
 /* Compact orders list shown ON the Visit page (Orders combined into Visit). */
 function renderVisitOrders(){
@@ -16886,7 +17196,10 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
     toast('The Athena review is still loading. Nothing was sent; wait a moment and try again.','err');
     return null;
   }
-  var consequence='Complete in Athena. Review this frozen '+candidate.order.type+' proposal, then select and place the exact catalog item directly in Athena. MLS does not place, prescribe, or submit it.';
+  var _rpCapable=false;try{_rpCapable=!!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.athenaFinalActionsV1===true&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(_eRp){}
+  var consequence=_rpCapable
+    ?('Review this frozen '+candidate.order.type+' proposal. After your one-click confirm, MLS selects exactly this catalog item in the verified Athena encounter, places only it, and verifies it by an isolated read-back. It does not prescribe, sign, or bill.')
+    :('Review this frozen '+candidate.order.type+' proposal. Your installed MLS Assist still enforces the previous write-safety policy; update it (3.0.62 or newer) to let MLS place this exact catalog item after your confirm. Until then, place it directly in Athena.');
   var drafts=Object.freeze([candidate.order]);
   var orderPlan=Object.freeze({kind:'orders',body:consequence,consequence:consequence,orderDrafts:drafts,orderSuggestions:Object.freeze([])});
   var reviewPatient=Object.freeze({name:String(binding.patient.name||''),dob:String(binding.patient.dob||''),mrn:String(binding.patient.mrn||''),patientId:String(binding.patient.patientId||'')});
@@ -16896,7 +17209,7 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
     noteTimestamp:binding.noteTimestamp||null,requireExpectedVisit:binding.historical===true,visitBindingId:String(binding.id||''),
     receiptSessionId:'order-review-'+String(binding.id||'current')+'-'+candidate.order.clientOrderId
   });
-  if(manifest)toast('Order review opened. Complete the exact order in Athena; MLS did not place anything.','');
+  if(manifest)toast(_rpCapable?'Order review opened. Nothing is placed until you press Confirm & Send on the READY order row.':'Order review opened. Update MLS Assist to place it from here; nothing was placed.','');
   return manifest||null;
 }
 /* Keep the overview as a route/manual-review surface. */
@@ -23867,6 +24180,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1043';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1044';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

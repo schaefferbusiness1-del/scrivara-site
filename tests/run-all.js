@@ -86,6 +86,11 @@ const tests = [
      causal control so a green result cannot come from a block that does
      nothing. */
   '1p-profile-coherence.test.js',
+  /* A migrated 150-row roster can be briefly unreadable during the exact
+     post-pull/account-store handoff. Patients must repaint from the fresh,
+     account-scoped reader when hydration settles, never wait for a refresh,
+     never loop on a true empty account, and never cross a session boundary. */
+  'patient-roster-render-handoff-runtime.test.js',
   /* The Patients repair of 2026-08-18: an identity guard that can read a
      birthday spelled two ways and a banner name with no separators, and ONE
      pull control that says what it is doing and lands on the chart it pulled. */
@@ -532,6 +537,9 @@ const tests = [
   'static-site.test.js',
   'hex-colour-integrity.test.js',
   'boot-script-budget.test.js',
+  /* b1036 promotion performance: the promoted engines stay off cold boot but
+     each exact late surface admits its owner immediately on first use. */
+  'promoted-late-loader-admission-runtime.test.js',
   'public-preview-policy.test.js',
   'public-preview-runtime.test.js',
   'preview-route-canonicalize-runtime.test.js',
@@ -863,6 +871,7 @@ const tests = [
   'cohort-request-correlation-runtime.test.js',
   'visit-accordion-body-runtime.test.js',
   'history-organization-runtime.test.js',
+  'visit-history-search-lifecycle-runtime.test.js',
   'history-organization-responsive-runtime.test.js',
   'history-organization-adversarial.test.js',
   'patient-isolation-strong-key-binding.test.js',
@@ -995,6 +1004,7 @@ const tests = [
   'writeflow-auto-open-runtime.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
+  'extension-mac-sleep-and-legacy-review-runtime.test.js',
   'status-notifier-guard.test.js',
   'schedule-nonpatient-row-guard.test.js',
   'provider-selector-sanitizer-runtime.test.js',

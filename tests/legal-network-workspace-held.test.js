@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const tracker = fs.readFileSync(path.join(root, 'legal-tracker.js'), 'utf8');
 const connector = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const legalPack = fs.readFileSync(path.join(root, 'feat_mls_legalpack.js'), 'utf8');
 const redesign = fs.readFileSync(path.join(root, 'feat_mls_redesign.js'), 'utf8');
 const copilotActions = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), 'utf8');
 const commandPalette = fs.readFileSync(path.join(root, 'feat_mls_command_palette.js'), 'utf8');
@@ -90,10 +91,18 @@ assert(!/_params\.get\('connect'\)/.test(app), 'held payout success callback sti
 for (const asset of [
   'feat_mls_navfeat_keep.js', 'legal-chart-fill-ui.js', 'feat_mls_legal_exact.js',
   'feat_mls_team_exact.js', 'feat_mls_legal_paywidget.js', 'feat_mls_expert_top.js',
-  'feat_mls_legal_pay_setup.js', 'feat_mls_legalpack.js', 'feat_mls_staff_hub.js'
+  'feat_mls_legal_pay_setup.js', 'feat_mls_staff_hub.js'
 ]) {
   assert(!connector.includes(asset), `production connector still loads held asset ${asset}`);
 }
+/* The read-only drafting pack graduated with the 1p -> production derivation.
+   It is intentionally separate from the still-held networked legal product:
+   require its canonical loader while continuing to forbid the intake,
+   payment, messaging, signing and delivery graph above and below. */
+assert(connector.includes("var A='feat_mls_legalpack.js',SRC='feat_mls_legalpack.js',V='p1-legal-1.0.0'"),
+  'production connector does not load the promoted read-only Legal / IME pack');
+assert(!/\/api\/legal\//.test(legalPack) && !/_legalFetchRetry\s*\(/.test(legalPack),
+  'the promoted draft pack can reach the held networked legal API');
 
 const supervisionMarker = connector.indexOf('/* ---- module: feat_supervision.js ---- */');
 const supervisionGuard = connector.indexOf('if (window.__MLS_TEAM_WORKSPACE_RELEASED !== true) return;', supervisionMarker);
@@ -160,4 +169,4 @@ const legacyPaymentClaim = tracker.indexOf('Payment complete', trackerStop);
 assert(trackerStart >= 0 && trackerStop > trackerStart && legacyPaymentClaim > trackerStop,
   'old cached legal tracker is not stopped before legacy delivery/payment states');
 
-console.log('PASS held legal network workspace: no visible entry points, no API path before release guards, and old cached tracker fails closed');
+console.log('PASS held networked legal workspace: promoted read-only draft pack stays separate, no visible networked entry points or API path precedes release guards, and old cached tracker fails closed');

@@ -8,10 +8,15 @@ const vm = require('vm');
 const root = path.join(__dirname, '..');
 const scheduleSource = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const nextUpSource = fs.readFileSync(path.join(root, 'feat_nextup_connect.js'), 'utf8');
-assert(scheduleSource.includes('window.__mlsNextUp.version === "nextup-2.0.1"'),
+const nextUpVersion = nextUpSource.match(/\bvar VERSION = ["']([^"']+)["'];/);
+assert(nextUpVersion && /^nextup-[A-Za-z0-9._-]+$/.test(nextUpVersion[1]),
+  'canonical Next Up module version marker is missing or malformed');
+assert(scheduleSource.includes('window.__mlsNextUp.version === "' + nextUpVersion[1] + '"'),
   'schedule import does not recognize the current authoritative Next Up module');
-assert(scheduleSource.includes('feat_nextup_connect.js?v=20260808auth3perf1'),
-  'schedule import did not mint a fresh immutable Next Up asset URL');
+assert(/s\.src = "feat_nextup_connect\.js\?v=" \+ \(window\.__MLS_AV \|\| "p1-preview"\)/.test(scheduleSource),
+  'schedule import does not bind the Next Up asset URL to the immutable shell build token');
+assert(!/feat_nextup_connect\.js\?v=["']?\s*\+\s*Date\.now/.test(scheduleSource),
+  'schedule import regressed to a per-load Next Up cache token');
 assert(!scheduleSource.includes('feat_nextup_connect.js?v=20260714auth1'),
   'schedule import still references the retired Next Up asset URL');
 const store = new Map();
@@ -229,12 +234,12 @@ assert(api && typeof api.authoritativeRowsForDay === 'function');
 
   const providerDay = '2026-07-21';
   const providerRows = [
-    { id: 'provider-a-1', name: 'Provider A One', appt_date: providerDay, provider: 'Doctor Alpha' },
-    { id: 'provider-a-2', name: 'Provider A Two', appt_date: providerDay, provider: 'Doctor Alpha' },
-    { id: 'provider-b-1', name: 'Provider B One', appt_date: providerDay, provider: 'Doctor Beta' }
+    { id: 'provider-a-1', name: 'Provider A One', appt_date: providerDay, provider: 'Alice Alpha' },
+    { id: 'provider-a-2', name: 'Provider A Two', appt_date: providerDay, provider: 'Alice Alpha' },
+    { id: 'provider-b-1', name: 'Provider B One', appt_date: providerDay, provider: 'Bob Beta' }
   ];
   context._calAppts.push(...providerRows);
-  const selectedProvider = { id: 'provider-a', name: 'Doctor Alpha', rosterVerified: true };
+  const selectedProvider = { id: 'provider-a', name: 'Alice Alpha', rosterVerified: true };
   const providerPublished = api._publishAuthoritativeSnapshot({
     date: providerDay, provider: selectedProvider, scheduleReceipt: { complete: true },
     providerReceipt: { complete: true, reason: 'provider-complete' }, calendarReceipt: { complete: true, attempted: 2 },
@@ -244,8 +249,10 @@ assert(api && typeof api.authoritativeRowsForDay === 'function');
     ]
   });
   assert.strictEqual(providerPublished.published, true);
-  assert.strictEqual(api.authoritativeRowsForDay(providerDay).length, 2);
-  assert.strictEqual(api.authoritativeStatusForDay(providerDay).unclassifiedCount, 1);
+  assert.strictEqual(api.authoritativeRowsForDay(providerDay, selectedProvider).length, 2,
+    'selected-provider authoritative rows must be queried with their exact provider scope');
+  assert.strictEqual(api.authoritativeStatusForDay(providerDay, selectedProvider).unclassifiedCount, 1,
+    'selected-provider status must remain bound to the exact provider scope');
 
   const storageFailureDay = '2026-07-22';
   context._calAppts.push({ id: 'storage-stable-backend-1', name: 'Synthetic Stable Snapshot', appt_date: storageFailureDay });
@@ -275,7 +282,8 @@ assert(api && typeof api.authoritativeRowsForDay === 'function');
   context._renderTodayPatients.__wnRender = true;
   context._renderTodayPatients.__mlsUnrGuard = true;
   vm.runInNewContext(nextUpSource, context, { filename: 'feat_nextup_connect.js', timeout: 1000 });
-  assert(context.__mlsNextUp && context.__mlsNextUp.version === 'nextup-2.0.1');
+  assert(context.__mlsNextUp && context.__mlsNextUp.version === nextUpVersion[1],
+    'the executed Next Up owner did not publish the canonical source version');
   assert.strictEqual(context._renderTodayPatients.__wnRender, true, 'Who\'s Next ownership marker was dropped and would cause wrapper churn');
   assert.strictEqual(context.__mlsNextUp._buildToday().length, 19);
   assert(rendered && rendered.length === 19, 'top schedule renderer did not consume the exact snapshot');

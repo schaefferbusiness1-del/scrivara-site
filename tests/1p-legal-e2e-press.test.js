@@ -92,12 +92,21 @@ function harness() {
     const doc = { _html: '', write(h) { doc._html += h; }, close() {}, title: '' };
     return { document: doc, focus() {}, print() { C.push({ k: 'print', chars: doc._html.length }); window.__lg.lastPrint = doc._html; }, close() {} };
   };
-  /* The configured MLS AI path, answered locally. The reply names its own
-     section so a mis-ordered or dropped section is visible in the draft. */
+  /* The configured MLS AI path, answered locally. Derive the one whole-report
+     JSON receipt from the request itself so this browser press follows the
+     same exact section/order boundary as production. */
   window.aiCallRaw = function (sys) {
-    const head = (/Section: ([^.]+)\./.exec(sys) || [])[1] || '?';
-    C.push({ k: 'ai', section: head });
-    return Promise.resolve('Synthetic drafted body for ' + head + '.');
+    const marker = 'Expected sections: ', allow = '. Evidence-ID allowlist: ';
+    const start = String(sys || '').indexOf(marker), end = String(sys || '').indexOf(allow, start + marker.length);
+    const specs = start >= 0 && end > start ? JSON.parse(String(sys).slice(start + marker.length, end)) : [];
+    C.push({ k: 'ai', sections: specs.map((spec) => spec.heading) });
+    return Promise.resolve(JSON.stringify({ sections: specs.map((spec, index) => ({
+      heading: spec.heading,
+      paragraphs: [{
+        text: 'The records reviewed do not document sufficient evidence for requested item ' + (index + 1) + '; clinician verification is required.',
+        evidenceIds: []
+      }]
+    })) }));
   };
   window.getKey = function () { return 'synthetic-local-key'; };
 

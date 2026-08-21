@@ -3206,7 +3206,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <h2 aria-label="Patients" style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
-        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" aria-label="Pull the patient open in athena" title="Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena.">📥 Pull the patient open in athena</button>
+        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" aria-label="Pull the open patient in athena" title="Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena.">📥 Pull the open patient in athena</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, scheduling, and import cleanup">⋯ More</button>
         <span id="ptMore" style="display:none;flex-basis:100%;flex-wrap:wrap;gap:8px;margin-top:2px"><button class="btn-ghost" id="ptReceptionBtn" hidden disabled aria-disabled="true" style="display:none;font-size:14px;padding:9px 15px" title="Staff account provisioning is not released">👥 Receptionists unavailable</button>
         <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
@@ -4194,7 +4194,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <label style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer"><input id="adminCreateClinicalApproved" type="checkbox" style="width:18px;height:18px;margin-top:1px"><span style="font-size:13.5px;line-height:1.45"><b>I approve this account for the clinical workspace.</b><br><span class="sub">This records the current workspace release grant. Plan limits still apply.</span></span></label>
       <div class="row" style="align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn-green" id="adminCreateBtn" onclick="adminProvisionAccount(this)">Create account &amp; make ready</button><span id="adminCreateStatus" class="sub" role="status" aria-live="polite"></span></div>
       <div class="mini" style="margin-top:8px;color:var(--muted)">Attorney portal accounts are intentionally unavailable here while the legal-request workspace remains unreleased.</div>
-      <div id="adminCreateResult" style="display:none;margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--soft,#f8fbf9)">
+      <div id="adminCreateResult" style="display:none;margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--soft,#f8fbf9)">
         <div id="adminCreateResultTitle" style="font-weight:700"></div><div id="adminCreateResultDetail" class="sub" style="margin-top:3px"></div>
         <div id="adminCreateInviteRow" style="display:none;margin-top:10px"><label for="adminCreateInviteUrl" style="font-size:12.5px;font-weight:600">Private one-time invite</label><div class="row tight" style="gap:7px;margin-top:4px"><input id="adminCreateInviteUrl" readonly aria-label="Private one-time invite URL" style="flex:1"><button class="btn-ghost" onclick="adminCopyCreatedInvite(this)">Copy invite</button><button class="btn-ghost" onclick="adminClearCreatedInvite()">Clear</button></div></div>
       </div>
@@ -5173,12 +5173,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.76</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.76.bin" download="MLS_Assist_v3.0.76.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.76</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.77</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.77.bin" download="MLS_Assist_v3.0.77.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.77</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Download it, then follow the four setup steps under <b>Integrations → Advanced integrations</b> in this dialog — or the illustrated guide at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. Already have it? Updating is the same four steps over the old folder.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.76</span>)</summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.76 - The version the practice validated live. On top of the repeat-pull fixes: closing your athenaOne tab can no longer silently block every pull until the browser restarts (the extension now notices the tab is gone and finds your new one), a briefly-offline extension worker retries your read instead of failing it, and the session keep-alive now keeps a minute-by-minute ledger so sign-out causes can be diagnosed instead of guessed. Everything from earlier releases remains: one-click pull of whoever is open, honest identity checks, full-speed background reads, and phone-confirmed note writes that stay notes-and-drafts only, confirmed by you. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.77</span>)</summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.77 - Open-patient pulls are more reliable on Macs: an explicit pull can safely wake and verify the exact sleeping athenaOne tab without reloading it, while quiet and background work never wakes a tab. A sleeping or temporarily unreachable tab is no longer mistaken for a sign-out. Legacy Send to Athena requests now enter the existing supervised review flow, with exact patient and encounter checks plus clinician confirmation; nothing writes automatically. Everything from earlier releases remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -5378,7 +5378,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, also open and save every encounter note (slower, most complete). Off: day pulls save the schedule and each patient's chart history cards — much faster. The single-patient pull button always brings that one patient's visit notes either way.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.76.zip" download="MLS_Assist_v3.0.76.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.76 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.77.zip" download="MLS_Assist_v3.0.77.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.77 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
       </div>
       <!-- ===== advint-1.0.0 — one disclosure for everything a physician never needs =====
@@ -11270,6 +11270,7 @@ var __mlsPtsMemo=null;
   var HASH_CHUNK=2*1024*1024;
   var TAB=Math.random().toString(36).slice(2,10);
   var WARNED=Object.create(null);
+  var __initSeq=0,__refreshSeq=0;
   var __dbPromise=null,__listenerInstalled=false;
 
   var S={
@@ -11279,9 +11280,9 @@ var __mlsPtsMemo=null;
     journal:null,            /* cache of the last parsed/stored journal */
     lastSaveWall:0,          /* wall clock of the last save (dirty heuristic) */
     foreignTouched:null,     /* id -> gen applied from another tab's entries */
-    initPromise:null,bootReceipt:null,
+    initPromise:null,bootReceipt:null,initAttempt:0,initEpoch:-1,initPending:false,
     idbOverride:null,dbFailed:false,
-    refreshing:false,refreshTries:0,pendingIdbRefresh:false,
+    refreshing:false,refreshTries:0,pendingIdbRefresh:false,refreshAttempt:0,
     degraded:false,degradedWhy:'',lastError:'',
     durable:{requested:false,persisted:null,why:'',verdictAt:0,estimate:null},
     wb:{queued:false,inflight:false,lastConfirmedGen:0,failures:0,waiters:[]}
@@ -11306,7 +11307,11 @@ var __mlsPtsMemo=null;
     try{window.dispatchEvent(new CustomEvent(name,{detail:detail||{}}));}
     catch(e){try{var ev=new Event(name);ev.detail=detail||{};window.dispatchEvent(ev);}catch(e2){}}
   }
-  function fireUpdated(){fireEvent('mls:pts-store-updated',{gen:S.gen,rows:S.rows?S.rows.length:0});}
+  function fireUpdated(ownerKey,ownerEpoch){
+    var key=ownerKey==null?S.key:String(ownerKey);
+    var epoch=ownerEpoch==null?Number(window.__mlsSessionEpoch||0):Number(ownerEpoch);
+    fireEvent('mls:pts-store-updated',{gen:S.gen,rows:S.rows?S.rows.length:0,key:key,epoch:epoch});
+  }
   function byGen(a,b){return (Number(a.gen)||0)-(Number(b.gen)||0);}
 
   /* ---- sleep/yield: worker-backed when available. Hidden-tab setTimeout is
@@ -11552,12 +11557,44 @@ var __mlsPtsMemo=null;
   }
   function scheduleRefresh(){
     if(S.refreshing)return;
-    S.refreshing=true;
+    var refreshAttempt=++__refreshSeq;
+    S.refreshing=true;S.refreshAttempt=refreshAttempt;
+    var refreshKey=S.key,refreshEpoch=Number(window.__mlsSessionEpoch||0);
+    function stillOwned(){
+      try{return S.refreshAttempt===refreshAttempt&&S.key===refreshKey&&bKey()===refreshKey&&Number(window.__mlsSessionEpoch||0)===refreshEpoch;}
+      catch(e){return false;}
+    }
+    function abandon(){
+      /* A same-account reauthentication advances the session epoch without
+         changing S.key, so init() legitimately reuses its settled promise.
+         Retire only this still-same-key refresh; a different-key reset owns
+         its own flags and must never be touched by the old completion. Once
+         the old flags are retired, transfer any still-needed catch-up to the
+         exact current epoch so a request made while this read was in flight is
+         not lost. */
+      if(S.key!==refreshKey||S.refreshAttempt!==refreshAttempt)return;
+      S.refreshing=false;S.pendingIdbRefresh=false;S.refreshTries=0;
+      try{
+        var currentEpoch=Number(window.__mlsSessionEpoch||0);
+        if(bKey()!==refreshKey||currentEpoch===refreshEpoch)return;
+        var currentInitAttempt=S.initAttempt;
+        var applied=syncCatchUp();
+        if(applied>0&&S.key===refreshKey&&S.initAttempt===currentInitAttempt&&
+           bKey()===refreshKey&&Number(window.__mlsSessionEpoch||0)===currentEpoch)
+          fireUpdated(refreshKey,currentEpoch);
+      }catch(e){}
+    }
     var target=0;
     try{var st=stampParse(localStorage.getItem(gKey()));target=st?st.gen:0;}catch(e){}
-    idbReadBlob(S.key).then(function(rec){
+    idbReadBlob(refreshKey).then(function(rec){
+      if(!stillOwned()){abandon();return;}
       S.refreshing=false;
-      if(rec&&Number(rec.gen)>=S.gen){
+      /* Generation is the cross-tab CAS authority. Equal-generation rewrites
+         are valid durability insurance for their owning writer, but they are
+         unordered across tabs and cannot close a higher-stamp gap. Never scan
+         or replace the live roster with one here; wait for a newer blob. */
+      if(rec&&Number(rec.gen)>S.gen){
+        var beforeGen=S.gen;
         var rows=null;
         try{rows=JSON.parse(String(rec.json==null?'':rec.json));}catch(e){rows=null;}
         if(Array.isArray(rows)){
@@ -11582,15 +11619,15 @@ var __mlsPtsMemo=null;
           var arrived=[];
           for(i=0;i<S.rows.length;i++){r=S.rows[i];if(r&&r.id!=null&&!before[String(r.id)])arrived.push(String(r.id));}
           if(arrived.length)markForeignIds(arrived);
-          fireUpdated();
+          if(S.gen!==beforeGen)fireUpdated(refreshKey,refreshEpoch);
         }
       }
       if(target>S.gen){
-        S.refreshTries++;
+        S.refreshTries=Math.min(2,S.refreshTries+1);
         if(S.refreshTries>=2)degradeLatch('content-behind-stamp: gen '+S.gen+' < stamp '+target);
-        else sleep(2000).then(function(){S.pendingIdbRefresh=true;scheduleRefresh();});
+        else sleep(2000).then(function(){if(!stillOwned()){abandon();return;}S.pendingIdbRefresh=true;scheduleRefresh();});
       }else{S.refreshTries=0;S.pendingIdbRefresh=false;}
-    },function(){S.refreshing=false;});
+    },function(){if(stillOwned())S.refreshing=false;else abandon();});
   }
 
   /* ---- delta computation ------------------------------------------------
@@ -11917,7 +11954,8 @@ var __mlsPtsMemo=null;
   /* ---- durability probe (design Q5): request persist(), VERIFY with
      persisted(), record the verdict, log estimate(). Denial is LOUD and
      flips journal truncation conservative; it never blocks hydration. ---- */
-  function probeDurability(){
+  function probeDurability(isCurrent){
+    function current(){try{return typeof isCurrent!=='function'||isCurrent();}catch(e){return false;}}
     var st=null;
     try{st=window.navigator&&window.navigator.storage;}catch(e){}
     S.durable.requested=true;
@@ -11928,6 +11966,7 @@ var __mlsPtsMemo=null;
         .then(function(){return st.persisted();})   /* VERIFY, never trust the request */
         .then(null,function(){return null;})
         .then(function(v){
+          if(!current())return;
           S.durable.persisted=(v===true)?true:((v===false)?false:null);
           S.durable.verdictAt=Date.now();
           if(S.durable.persisted!==true)declareNonDurable(v===false?'denied':'unverifiable');
@@ -11942,6 +11981,7 @@ var __mlsPtsMemo=null;
     var est=Promise.resolve();
     if(st&&typeof st.estimate==='function'){
       est=Promise.resolve().then(function(){return st.estimate();}).then(function(e){
+        if(!current())return;
         S.durable.estimate={usage:Number(e&&e.usage)||0,quota:Number(e&&e.quota)||0,at:Date.now()};
         try{console.info('[pts-store] storage.estimate usage='+S.durable.estimate.usage+' quota='+S.durable.estimate.quota);}catch(_){}
       },function(){});
@@ -11956,35 +11996,48 @@ var __mlsPtsMemo=null;
   }
 
   /* ---- boot hydration behind the explicit ready-barrier ----------------- */
-  function resetState(key){
+  function resetState(key,epoch,attempt){
     S.key=key;S.mode='ls';S.hydrated=false;S.rows=null;S.gen=0;
     S.journal=null;S.lastSaveWall=0;S.foreignTouched=null;S.bootReceipt=null;
-    S.refreshing=false;S.refreshTries=0;S.pendingIdbRefresh=false;S.lastError='';
+    S.initPromise=null;S.initAttempt=attempt;S.initEpoch=epoch;S.initPending=true;
+    S.refreshing=false;S.refreshTries=0;S.pendingIdbRefresh=false;S.refreshAttempt=++__refreshSeq;S.lastError='';
     S.wb={queued:false,inflight:false,lastConfirmedGen:0,failures:0,waiters:[]};
   }
+  function initOwned(key,epoch,attempt){
+    try{return S.initAttempt===attempt&&S.initEpoch===epoch&&S.key===key&&bKey()===key&&Number(window.__mlsSessionEpoch||0)===epoch;}
+    catch(e){return false;}
+  }
+  function staleInitReceipt(key,epoch,attempt){return {key:maskKey(key),at:Date.now(),stale:true,epoch:epoch,attempt:attempt};}
   function init(){
     var key='';
+    var epoch=Number(window.__mlsSessionEpoch||0);
     try{key=bKey();}
     catch(e){return Promise.reject(storeErr('MLS_PTS_STORE_NO_NAMESPACE','uns() is not available yet - init() must run after the session namespace resolves.'));}
     if(key.indexOf('::undefined::')>=0||key.indexOf('::_::')>=0)
       return Promise.reject(storeErr('MLS_PTS_STORE_NO_NAMESPACE','Refusing to bind the patient store to an unresolved account namespace ('+maskKey(key)+') - the sf_u::undefined class.'));
-    if(S.initPromise&&S.key===key)return S.initPromise;
-    resetState(key);
-    S.initPromise=hydrate(key);
-    return S.initPromise;
+    if(S.initPromise&&S.key===key&&S.initEpoch===epoch)return S.initPromise;
+    if(S.initPromise&&S.key===key&&!S.initPending){S.initAttempt=++__initSeq;S.initEpoch=epoch;return S.initPromise;}
+    var attempt=++__initSeq;
+    resetState(key,epoch,attempt);
+    var promise=hydrate(key,epoch,attempt);
+    S.initPromise=promise;
+    return promise;
   }
-  function hydrate(key){
+  function hydrate(key,epoch,attempt){
+    function owned(){return initOwned(key,epoch,attempt);}
     var receipt={key:maskKey(key),at:Date.now()};
     var legacyRaw=null,jraw=null,st=null;
     try{legacyRaw=localStorage.getItem(key);}catch(e){}
     try{jraw=localStorage.getItem(jKey());}catch(e){}
     try{st=stampParse(localStorage.getItem(gKey()));}catch(e){}
-    probeDurability();                             /* async; never gates hydration */
+    probeDurability(owned);                        /* async; never gates hydration */
     return idbReadBlob(key).then(null,function(e){
+      if(!owned())return null;
       S.dbFailed=true;
       receipt.idbError=String(e&&e.message||e).slice(0,120);
       return null;
     }).then(function(rec){
+      if(!owned())return staleInitReceipt(key,epoch,attempt);
       if(rec&&legacyRaw!=null){
         /* BOTH copies exist. Migration removes the blob LAST, so a present
            blob can be NEWER than the IndexedDB copy (a rolled-back build
@@ -11993,7 +12046,7 @@ var __mlsPtsMemo=null;
         S.mode='ls';S.hydrated=false;
         receipt.mode='ls';receipt.anomaly='both-blob-and-idb-present';
         warnOnce('bothPresent','[pts-store] both the localStorage patients blob and an IndexedDB copy exist - staying on localStorage (fail-closed); re-run migrate() to reconcile.');
-        return finishReady(receipt);
+        return finishReady(receipt,key,epoch,attempt);
       }
       if(!rec){
         if(jraw!=null||st){
@@ -12019,17 +12072,18 @@ var __mlsPtsMemo=null;
           degradeLatch('blob-evicted: journal-only reconstruction ('+S.rows.length+' rows from '+replayed+' entries)');
           receipt.mode='idb';receipt.evicted=true;receipt.rows=S.rows.length;receipt.replayed=replayed;
           wbQueue();
-          return finishReady(receipt);
+          return finishReady(receipt,key,epoch,attempt);
         }
         /* nothing anywhere: pre-migration boot or a fresh account */
         S.mode='ls';S.hydrated=false;
         receipt.mode='ls';receipt.migrated=false;
-        return finishReady(receipt);
+        return finishReady(receipt,key,epoch,attempt);
       }
       /* the normal post-migration boot: blob verify + journal replay, all
          behind this barrier - the LZ-decode-on-the-hot-path era ends here */
       var json=String(rec.json==null?'':rec.json);
       return hashAsync(json).then(function(hx){
+        if(!owned())return staleInitReceipt(key,epoch,attempt);
         var ok=(Number(rec.len)===json.length)&&(!rec.hash||rec.hash===hx);
         receipt.blobVerify=ok?'ok':'FAILED';
         if(!ok)degradeLatch('boot-blob-verify-failed');
@@ -12065,11 +12119,13 @@ var __mlsPtsMemo=null;
         }
         receipt.mode='idb';receipt.rows=S.rows.length;receipt.gen=S.gen;receipt.replayed=replayed;
         if(replayed>0)wbQueue();                   /* fold journal edits into the blob promptly */
-        return finishReady(receipt);
+        return finishReady(receipt,key,epoch,attempt);
       });
     });
   }
-  function finishReady(receipt){
+  function finishReady(receipt,key,epoch,attempt){
+    if(!initOwned(key,epoch,attempt))return staleInitReceipt(key,epoch,attempt);
+    S.initPending=false;
     S.bootReceipt=receipt;
     installListener();
     return receipt;
@@ -12186,7 +12242,8 @@ var __mlsPtsMemo=null;
     catch(e){rec.error+=(rec.error?' ':'')+'gen: '+String(e&&e.message||e).slice(0,80);}
     if(S.key===key){
       S.mode='ls';S.hydrated=false;S.rows=null;S.gen=0;S.journal=null;
-      S.foreignTouched=null;S.initPromise=null;
+      S.foreignTouched=null;S.initPromise=null;S.initPending=false;S.initAttempt=++__initSeq;S.initEpoch=Number(window.__mlsSessionEpoch||0);
+      S.refreshing=false;S.pendingIdbRefresh=false;S.refreshTries=0;S.refreshAttempt=++__refreshSeq;
       S.wb.lastConfirmedGen=0;S.wb.queued=false;S.wb.waiters=[];
     }
     return idbDeleteRecord(key).then(function(){
@@ -13113,8 +13170,46 @@ function setActivePtId(id){
     catch(e3){ try{ var ev=new Event('mls:active-patient-changed'); ev.detail={previousId:String(previous||''),patientId:String(id||'')}; window.dispatchEvent(ev); }catch(e4){} }
   }
 }
-function activePatient(){ const id=getActivePtId(); return getPatients().find(p=>p.id===id)||null; }
-function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
+/* roster-find-1.0.0: activePatient()/findPatient() are called throughout the
+   shell.  Slicing then linearly scanning the authoritative roster on every
+   call becomes visible interaction latency on large accounts.  Keep the
+   public getPatients() fresh-slice contract unchanged, but index the LIVE
+   batch/IDB roster by its exact account + generation.  The first duplicate
+   wins, matching Array.find(), and Map keys preserve strict id types. */
+var __mlsPatientLookupCache={key:null,batch:null,batchChanges:-1,batchExternalWrites:-1,store:null,gen:-1,rows:null,byId:null};
+function __mlsPatientLookupData(){
+  var key='';try{key=uns('patients');}catch(e){return null;}
+  var batch=null,store=null,rows=null,gen=-1,batchChanges=-1,batchExternalWrites=-1;
+  try{
+    var candidate=__mlsPtsBatchByKey&&__mlsPtsBatchByKey[key];
+    if(candidate&&candidate.depth>0&&Array.isArray(candidate.arr)){
+      batch=candidate;rows=candidate.arr;
+      batchChanges=Number(candidate.totalChanges||0);
+      batchExternalWrites=Number(candidate.externalWrites||0);
+    }
+  }catch(eBatch){batch=null;rows=null;}
+  if(!batch){
+    try{
+      store=window.__mlsPtsStore;
+      if(!store||!store.isReady())return null;
+      rows=store.getRoster();
+      gen=Number(store.genRead());
+    }catch(eStore){return null;}
+  }
+  if(!Array.isArray(rows))return null;
+  var c=__mlsPatientLookupCache;
+  if(c&&c.byId&&c.key===key&&c.batch===batch&&c.batchChanges===batchChanges&&c.batchExternalWrites===batchExternalWrites&&c.store===store&&c.gen===gen&&c.rows===rows)return c;
+  var byId=new Map();
+  for(var i=0;i<rows.length;i++){var p=rows[i];if(p&&!byId.has(p.id))byId.set(p.id,p);}
+  __mlsPatientLookupCache={key:key,batch:batch,batchChanges:batchChanges,batchExternalWrites:batchExternalWrites,store:store,gen:gen,rows:rows,byId:byId};
+  return __mlsPatientLookupCache;
+}
+function findPatient(id){
+  var indexed=__mlsPatientLookupData();
+  if(indexed)return indexed.byId.has(id)?indexed.byId.get(id):null;
+  return getPatients().find(function(p){return p.id===id;})||null;
+}
+function activePatient(){ return findPatient(getActivePtId()); }
 /* px-3.0: the still-active proof for async completions in the Patients lane.
    Pass the epoch captured BEFORE the await; an id match alone misses A->B->A. */
 function _mlsPatientStillActive(patientId,epoch){
@@ -19505,6 +19600,87 @@ async function dismissIntake(id){
     loadPendingIntakes(false);
   }catch(e){ toast('Could not dismiss.','err'); }
 }
+/* roster-render-handoff-1.0.0
+   A migrated roster can be briefly unreadable while the account-bound IDB
+   store re-initializes or catches up. getPatients() deliberately fails closed
+   to [] in that window, but [] is also the public value for a genuinely empty
+   account. Never cache or reuse rows to bridge that ambiguity: repaint once
+   after this exact account's ready barrier, and repaint on the store's own
+   update event. Every delayed task is bound to both the namespace key and the
+   session epoch, coalesced, and cancelled at a session boundary. */
+var __mlsPtRosterRepair={paintTimer:0,paintKey:'',paintEpoch:-1,paintSeq:-1,retryTimer:0,retrySeq:0,emptyOwner:''};
+function __mlsPtRosterOwner(){
+  try{return {key:String(uns('patients')||''),epoch:Number(window.__mlsSessionEpoch||0)};}
+  catch(e){return {key:'',epoch:-1};}
+}
+function __mlsPtRosterOwnerIsCurrent(key,epoch){
+  var owner=__mlsPtRosterOwner();
+  return !!key&&owner.key===key&&owner.epoch===epoch;
+}
+function __mlsPtScheduleRosterPaint(key,epoch){
+  var repair=__mlsPtRosterRepair;
+  if(currentView!=='patients'||!__mlsPtRosterOwnerIsCurrent(key,epoch))return false;
+  if(repair.paintTimer){
+    if(repair.paintKey===key&&repair.paintEpoch===epoch){repair.paintSeq=repair.retrySeq;return true;}
+    clearTimeout(repair.paintTimer);repair.paintTimer=0;
+  }
+  repair.paintKey=key;repair.paintEpoch=epoch;repair.paintSeq=repair.retrySeq;
+  repair.paintTimer=setTimeout(function(){
+    repair.paintTimer=0;
+    if(currentView!=='patients'||!__mlsPtRosterOwnerIsCurrent(key,epoch)){
+      var marker=epoch+'|'+key;
+      if(repair.paintKey===key&&repair.paintEpoch===epoch&&repair.paintSeq===repair.retrySeq&&repair.emptyOwner===marker)repair.emptyOwner='';
+      return;
+    }
+    renderPatients(); /* fresh account-scoped getPatients(); never cached rows */
+  },0);
+  return true;
+}
+function __mlsPtRetryEmptyRosterOnce(){
+  var repair=__mlsPtRosterRepair,owner=__mlsPtRosterOwner();
+  if(currentView!=='patients'||!owner.key)return;
+  var marker=owner.epoch+'|'+owner.key;
+  if(repair.emptyOwner===marker)return;
+  repair.emptyOwner=marker;
+  var seq=++repair.retrySeq;
+  if(repair.retryTimer)clearTimeout(repair.retryTimer);
+  /* Read ready() in the next task: an identity boundary dispatches before it
+     installs the new account's init promise in the same synchronous stack. */
+  repair.retryTimer=setTimeout(function(){
+    repair.retryTimer=0;
+    function retire(){if(seq===repair.retrySeq&&repair.emptyOwner===marker)repair.emptyOwner='';}
+    if(seq!==repair.retrySeq)return;
+    if(currentView!=='patients'||!__mlsPtRosterOwnerIsCurrent(owner.key,owner.epoch)){retire();return;}
+    var ready=null;
+    try{var store=window.__mlsPtsStore;ready=(store&&typeof store.ready==='function')?store.ready():null;}catch(e){}
+    Promise.resolve(ready).then(function(){
+      if(seq!==repair.retrySeq)return;
+      if(currentView!=='patients'||!__mlsPtRosterOwnerIsCurrent(owner.key,owner.epoch)){retire();return;}
+      if(!__mlsPtScheduleRosterPaint(owner.key,owner.epoch))retire();
+    },function(){retire();});
+  },0);
+}
+function __mlsPtRosterRepairSettled(){
+  var repair=__mlsPtRosterRepair;
+  repair.emptyOwner='';repair.retrySeq++;
+  if(repair.retryTimer){clearTimeout(repair.retryTimer);repair.retryTimer=0;}
+}
+function __mlsPtCancelRosterRepair(){
+  var repair=__mlsPtRosterRepair;
+  if(repair.paintTimer)clearTimeout(repair.paintTimer);
+  if(repair.retryTimer)clearTimeout(repair.retryTimer);
+  repair.paintTimer=0;repair.retryTimer=0;repair.paintKey='';repair.paintEpoch=-1;repair.paintSeq=-1;
+  repair.emptyOwner='';repair.retrySeq++;
+}
+try{
+  window.addEventListener('mls:pts-store-updated',function(event){
+    var owner=__mlsPtRosterOwner();
+    var origin=event&&event.detail;
+    if(!origin||String(origin.key||'')!==owner.key||Number(origin.epoch)!==owner.epoch)return;
+    if(currentView==='patients')__mlsPtScheduleRosterPaint(owner.key,owner.epoch);
+  },false);
+  window.addEventListener('mls:session-boundary',__mlsPtCancelRosterRepair,false);
+}catch(e){}
 function renderPatients(){
   const all=getPatients();
   updateNavCounts(all);
@@ -19520,12 +19696,14 @@ function renderPatients(){
   const sortMode=(sortEl&&sortEl.value==='visits')?'visits':'name';
   // No patients at all → empty state, hide the search bar.
   if(!all.length){
+    __mlsPtRetryEmptyRosterOnce();
     empty.style.display='block'; list.innerHTML='';
     list._mlsRoster=null; list._mlsNotesVer=null;
     if(searchRow) searchRow.style.display='none';
     if(noMatch) noMatch.style.display='none';
     return;
   }
+  __mlsPtRosterRepairSettled();
   empty.style.display='none';
   if(searchRow) searchRow.style.display='flex';
   // The Copilot "View top patients" action selects Most visits; the control is
@@ -24112,7 +24290,7 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
     matches=pts.filter(function(x){return _athenaHistoryName(x&&x.name)===_athenaHistoryName(wantName);});
     if(wantDob){ matches=matches.filter(function(x){return _athenaHistoryDobSame(x&&x.dob,wantDob);}); } /* idread-1.0.0: same birthday, any spelling */
     if(wantMrn){ var mm=_athenaHistoryDigits(wantMrn); matches=matches.filter(function(x){return mm&&_athenaHistoryDigits((x&&x.mrn)||(x&&x.athenaId))===mm;}); }
-    /* dupmatch-1.0 (live 2026-08-20, Christine WRIGHT): the exact-token pass
+    /* dupmatch-1.0 (verified duplicate-name incident): the exact-token pass
        above is the only spelling this matcher accepted, so a missing middle
        initial or athena's LAST-FIRST order minted a brand-new record for a
        patient the store already had - and the pull landed on the duplicate.
@@ -24437,9 +24615,9 @@ async function pullPatientChartViaAssist(btn, opts){
         sx.style.display='block'; sx.style.color='#6f5a20';
         sx.innerHTML='This record has no DOB or MRN, so no chart can be safely matched. Enter them from the athena chart banner: '+
           '<span style="display:inline-flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center">'+
-          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:7px;font-size:12px">'+
-          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:7px;font-size:12px">'+
-          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:8px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
+          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
+          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
+          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
         var goB=document.getElementById('idaskGo');
         if(goB) goB.onclick=function(){
           try{
@@ -27667,6 +27845,11 @@ function sendToEMRviaAssist(btn, opts){
       if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppPasteResult')) return;
       got=true; window.removeEventListener('message',onResult);
       var r=e.data.resp||{};
+      if(r.blocked===true&&r.reason==='legacy-untyped-write-disabled'&&r.delegate==='athena-supervised-review-v2'){
+        if(btn){btn.disabled=false;btn.innerHTML=orig||'📋 Paste note text only';}
+        try{if(typeof pushEntireVisitToAthena==='function'){pushEntireVisitToAthena(null);return;}}catch(eReview){}
+        done('Could not open Review Athena actions. Use the Review Athena actions button; nothing was written.','err');return;
+      }
       var durable=!!(r.persisted||r.serverVerified);
       if(r.ok&&durable){ done('Clinical note placement was durably verified. Review and sign in Athena.', 'ok'); }
       else if(r.ok){ done('A draft paste was attempted, but Athena did not provide durable save verification. Review the open note manually; MLS is not marking this complete.', ''); }
@@ -34700,7 +34883,7 @@ function captureFromEMR(btn){
     const b=document.getElementById('ptPullAthenaBtn');
     if(b){
       try{ b.click(); set('✓ Pull started — watch the progress bar under the pull button.','#1c7a43'); }
-      catch(e){ set('Could not start the pull — press "📥 Pull the patient open in athena" on the Patients screen.','#b4231e'); }
+      catch(e){ set('Could not start the pull — press "📥 Pull the open patient in athena" on the Patients screen.','#b4231e'); }
       return;
     }
     if(typeof pullPatientFromAthenaPrompt==='function'){
@@ -34710,7 +34893,7 @@ function captureFromEMR(btn){
       return;
     }
     if(tries<12){ setTimeout(press,250); return; }
-    set('The Patients screen has not finished loading — open Patients and press "📥 Pull the patient open in athena".','#b4760e');
+    set('The Patients screen has not finished loading — open Patients and press "📥 Pull the open patient in athena".','#b4760e');
   })();
 }
 
@@ -38213,9 +38396,9 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes preview requests only. */
-  var P1_BUILD='main-20260820-r3';
+  var P1_BUILD='main-20260820-r6';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1043';
+  window.__MLS_AV='b1044';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -39368,7 +39551,7 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
 #mslChipBtn:hover{ color:var(--ink); border-color:var(--muted); }
 #mslChipBtn[aria-expanded="true"]{ color:var(--ink); border-color:var(--brand); }
 #mslChipMenu{
-  min-width:232px; padding:8px; border-radius:var(--r-ctl,12px);
+  min-width:232px; padding:8px; border-radius:var(--r-ctl,10px);
   background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow);
   display:flex; flex-direction:column; gap:2px;
 }
@@ -39378,7 +39561,7 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
   color:var(--muted); padding:4px 8px 6px;
 }
 #mslChipMenu .mslChipItem{
-  text-align:left; min-height:36px; padding:8px 10px; border:0; border-radius:8px;
+  text-align:left; min-height:36px; padding:8px 10px; border:0; border-radius:10px;
   font:600 12.5px/1.25 var(--sans); color:var(--ink); background:transparent; cursor:pointer;
 }
 #mslChipMenu .mslChipItem:hover{ background:var(--soft); }
@@ -41845,12 +42028,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpnRailAct #opPrepGenAllBtn{
   width:100%; box-sizing:border-box; min-height:48px; text-align:center;
   font:800 14px/1.25 var(--sans) !important; padding:13px 14px !important;
-  border-radius:var(--r-ctl,12px) !important;
+  border-radius:var(--r-ctl,10px) !important;
 }
 #mlsOpDayGo{
   width:100%; box-sizing:border-box; min-height:48px;
   font:700 13.5px/1.25 var(--sans); padding:13px 14px;
-  border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
+  border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 #mlsOpDayGo[hidden]{ display:none; }
@@ -41886,7 +42069,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   display:grid; text-align:left; width:100%; box-sizing:border-box;
   grid-template-columns:minmax(0,1fr) auto;
   align-content:center; column-gap:10px; row-gap:3px;
-  padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-ctl,12px);
+  padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-ctl,10px);
   background:var(--card); cursor:pointer; min-height:44px;
   font:inherit; color:var(--ink); overflow:hidden;
 }
@@ -41967,7 +42150,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    the owner has reported three times. */
 #mlsOpnPick{
   margin:6px 0 0; padding:30px 22px; text-align:center;
-  border:1px dashed var(--line); border-radius:var(--r-ctl,14px);
+  border:1px dashed var(--line); border-radius:var(--r-ctl,10px);
 }
 #mlsOpnPickH{ margin:0; font:800 17px/1.3 var(--sans); color:var(--ink); }
 #mlsOpnPickP{ margin:8px auto 0; max-width:46ch; font:500 13.5px/1.65 var(--sans); color:var(--muted); }
@@ -41990,7 +42173,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   display:flex; align-items:center; justify-content:center; gap:8px;
   padding:13px 16px; cursor:pointer;
   font:800 13.5px/1.25 var(--sans); color:var(--ink);
-  background:var(--soft); border:1px solid var(--line); border-radius:var(--r-ctl,12px);
+  background:var(--soft); border:1px solid var(--line); border-radius:var(--r-ctl,10px);
 }
 #mlsOpnBack:hover{ border-color:var(--brand,#2E6A4B); background:var(--card); }
 #mlsOpnPos{ flex:0 0 auto; font:600 12px/1.3 var(--sans); color:var(--muted); }
@@ -42031,7 +42214,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpnActs[hidden]{ display:none !important; }
 #mlsOpnGo{
   font:800 14px/1.25 var(--sans); min-height:48px; padding:13px 20px;
-  border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
+  border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 /* A SAFETY NET, NOT A STATE THIS BLOCK USES. paintInner() never disables this
@@ -42048,7 +42231,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    with a disabled button. */
 #mlsOpnHist{
   font:800 14px/1.25 var(--sans); min-height:48px; padding:13px 20px;
-  border-radius:var(--r-ctl,12px); border:1px solid var(--brand,#2E6A4B);
+  border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 #mlsOpnHist[hidden]{ display:none; }
@@ -44489,7 +44672,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   position:fixed; z-index:9405; display:none;
   width:44px; height:44px; min-width:44px; min-height:44px;
   align-items:center; justify-content:center;
-  border:1px solid var(--line,rgba(32,64,52,.28)); border-radius:14px;
+  border:1px solid var(--line,rgba(32,64,52,.28)); border-radius:16px;
   background:var(--card,#f7faf8); color:var(--ink,#204034);
   box-shadow:var(--shadow,0 6px 20px rgba(22,48,38,.18));
   font:700 17px/1 var(--sans,system-ui,sans-serif); cursor:pointer;
@@ -44500,7 +44683,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsDockNub[aria-expanded="true"]{ border-color:var(--brand,#2E6A4B); }
 #mlsDockNubMenu{
   position:fixed; z-index:9406; min-width:238px; padding:8px;
-  border-radius:var(--r-ctl,12px); background:var(--card,#fff);
+  border-radius:var(--r-ctl,10px); background:var(--card,#fff);
   border:1px solid var(--line,#dfe6e2); box-shadow:var(--shadow,0 10px 30px rgba(22,48,38,.18));
   display:flex; flex-direction:column; gap:2px;
 }
@@ -44510,7 +44693,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   color:var(--muted); padding:4px 8px 6px;
 }
 #mlsDockNubMenu .mlsDockItem{
-  text-align:left; min-height:40px; padding:9px 10px; border:0; border-radius:8px;
+  text-align:left; min-height:40px; padding:9px 10px; border:0; border-radius:10px;
   font:600 12.5px/1.25 var(--sans); color:var(--ink); background:transparent; cursor:pointer;
 }
 #mlsDockNubMenu .mlsDockItem:hover{ background:var(--soft); }
@@ -44528,7 +44711,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsDockNudge{
   position:fixed; z-index:9404; display:none;
   max-width:calc(100vw - 32px); min-width:min(320px,calc(100vw - 32px));
-  padding:10px 14px; border-radius:var(--r-ctl,12px);
+  padding:10px 14px; border-radius:var(--r-ctl,10px);
   background:var(--card,#fff); border:1px solid var(--line,#dfe6e2);
   box-shadow:var(--shadow,0 10px 30px rgba(22,48,38,.18));
   font:600 12.5px/1.45 var(--sans); color:var(--ink);
@@ -46321,7 +46504,7 @@ a[data-mls-next="1"]{
   margin:8px 4px 4px 0; padding:11px 18px !important;
   font:800 14px/1.2 var(--sans, system-ui, sans-serif) !important;
   color:#fff !important; background:var(--mls-ng-ring, #2E6A4B) !important;
-  border-radius:var(--r-ctl, 11px); text-decoration:none !important;
+  border-radius:var(--r-ctl, 10px); text-decoration:none !important;
 }
 #mlsNgTag .mlsNgWhy{
   font-weight:600; letter-spacing:0; opacity:.92;
@@ -48946,7 +49129,7 @@ html body .toast[data-mls-quiet="action"]{
   max-width:min(360px, calc(100vw - var(--mls-dock-clear-left, 0px) - 32px)) !important;
   font-size:13px !important;
   padding:10px 14px !important;
-  border-radius:12px !important;
+  border-radius:10px !important;
 }
 html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 
@@ -48974,14 +49157,14 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 #mlsTrayBtn[data-new="1"] #mlsTrayDot{ background:#2E6A4B; }
 #mlsTrayList{
   max-height:min(46vh, 320px); overflow-y:auto; overscroll-behavior:contain;
-  padding:8px; border:1px solid var(--line, #D9D6CD); border-radius:var(--r-ctl, 12px);
+  padding:8px; border:1px solid var(--line, #D9D6CD); border-radius:var(--r-ctl, 10px);
   background:var(--card, #fff); box-shadow:var(--shadow, 0 6px 20px rgba(20,33,28,.16));
   display:flex; flex-direction:column; gap:5px; width:100%; box-sizing:border-box;
 }
 #mlsTrayList[hidden]{ display:none; }
 #mlsTrayList .tl{
   display:flex; gap:8px; align-items:baseline;
-  color:var(--ink, #1A211C); padding:3px 4px; border-radius:7px;
+  color:var(--ink, #1A211C); padding:3px 4px; border-radius:10px;
 }
 #mlsTrayList .tl .tt{ color:var(--muted, #79837C); font-variant-numeric:tabular-nums; flex:0 0 auto; font-size:11px; }
 #mlsTrayList .tl.err{ color:#8a2c24; }
@@ -49993,7 +50176,7 @@ function __mlsJunkScrubRepull(day) {
      _stripPageDebris / _normalizeClinicalText rather than a copy of them. -->
 <style id="mlsPvrCss">
 /* The strip: seven facts as chips, one line each, never a wall. */
-#pf2Quick .qb.pvr-chip{border:1px solid var(--line,#dfe6e1);border-radius:12px;padding:9px 12px;background:var(--card,#fff);min-width:0}
+#pf2Quick .qb.pvr-chip{border:1px solid var(--line,#dfe6e1);border-radius:10px;padding:9px 12px;background:var(--card,#fff);min-width:0}
 #pf2Quick .qb.pvr-chip .qk{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;opacity:.62;font-weight:700}
 #pf2Quick .qb.pvr-chip .qv{font-size:13.5px;line-height:1.35;margin-top:3px;white-space:pre-line;overflow-wrap:anywhere}
 #pf2Quick .qb.pvr-chip.is-quiet .qv{opacity:.72;font-style:italic}
@@ -51883,7 +52066,7 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
 (function () {
   'use strict';
   if (window.__mlsClunkyDock) return;
-  var VERSION = 'clunky-dock-1.0.0';
+  var VERSION = 'clunky-dock-1.1.0';
   var passes = 0;
 
   function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -51908,6 +52091,21 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
   var ICON = '🔎';
   var PREFIX_MIN = 90;   /* px of words that still say what the box is for */
   var _askCtx = null;
+  var _askNode = null;
+  var _askDirty = true;
+  var _askRO = null;
+  function markAskDirty() { _askDirty = true; }
+  function observeAsk(a) {
+    if (a === _askNode) return;
+    try { if (_askRO) _askRO.disconnect(); } catch (e) {}
+    _askRO = null; _askNode = a || null; _askDirty = true;
+    try {
+      if (a && window.ResizeObserver) {
+        _askRO = new ResizeObserver(function () { markAskDirty(); schedule(false); });
+        _askRO.observe(a);
+      }
+    } catch (e) { _askRO = null; }
+  }
   function textFits(a, str) {
     try {
       var cs = window.getComputedStyle(a);
@@ -51919,10 +52117,16 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
       return { avail: avail, need: need, fits: need <= avail - 2 };
     } catch (e) { return { avail: 0, need: 0, fits: false }; }
   }
-  function ask() {
+  function ask(force) {
     var a = el('mlsDockAsk');
+    observeAsk(a);
     if (!a) return;
     if (a.getAttribute('aria-label') !== 'Find') a.setAttribute('aria-label', 'Find');
+    /* Measuring a text box forces style/layout. The old body-wide observer did
+       that once for virtually every class mutation in the app. Keep the last
+       answer until the input itself, the dock side, or the viewport changes. */
+    if (!force && !_askDirty) return;
+    _askDirty = false;
     var full = textFits(a, FIND);
     var want, state;
     /* A box with room for a meaningful prefix keeps the full wording and lets
@@ -51938,8 +52142,14 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
       a.setAttribute('data-mls-clunky-wired', '1');
       /* Focus widens the box through a CSS transition, so re-measure after it
          rather than forcing a label the box may still be too small for. */
-      a.addEventListener('focus', function () { setTimeout(ask, 0); setTimeout(ask, 240); }, false);
-      a.addEventListener('blur', function () { setTimeout(ask, 20); setTimeout(ask, 260); }, false);
+      a.addEventListener('focus', function () {
+        setTimeout(function () { markAskDirty(); schedule(false); }, 0);
+        setTimeout(function () { markAskDirty(); schedule(false); }, 240);
+      }, false);
+      a.addEventListener('blur', function () {
+        setTimeout(function () { markAskDirty(); schedule(false); }, 20);
+        setTimeout(function () { markAskDirty(); schedule(false); }, 260);
+      }, false);
     }
   }
 
@@ -51947,8 +52157,8 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
   function rightNow() {
     var bar = el('mlsRightNow');
     if (!bar) return;
-    var segs = qa('.segbtn', bar).length;
-    bar.setAttribute('data-mls-clunky-hasnav', segs > 0 ? '1' : '0');
+    var hasNav = !!(bar.querySelector && bar.querySelector('.segbtn'));
+    bar.setAttribute('data-mls-clunky-hasnav', hasNav ? '1' : '0');
   }
 
   /* ---- 116: one name for hiding the taskbar --------------------------- */
@@ -51984,28 +52194,63 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
     });
   }
 
-  function pass() { passes++; ask(); rightNow(); names(); fitMenu(); }
+  function settle() { passes++; ask(false); rightNow(); names(); }
+  /* Public/manual passes retain the old synchronous, full-reconciliation
+     semantics. Observer traffic uses settle(), which never measures a stable
+     finder or closed menu. */
+  function pass() { passes++; markAskDirty(); ask(true); rightNow(); names(); fitMenu(); }
+
+  var queued = null, queuedFull = false;
+  function schedule(full) {
+    queuedFull = queuedFull || full === true;
+    if (queued !== null) return;
+    queued = setTimeout(function () {
+      var runFull = queuedFull;
+      queued = null; queuedFull = false;
+      if (runFull) pass(); else settle();
+    }, 60);
+  }
+
+  var _domObs = null, _dockObs = null, _iv = null, _resizeHandler = null, _clickHandler = null;
 
   function arm() {
     try {
-      var obs = new MutationObserver(function () { pass(); });
-      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-mls-dock', 'class'] });
+      /* Child insertion can mount the controls we own, but unrelated class
+         churn cannot change their layout contract. Coalesce insertions and
+         observe the one relevant body attribute separately. */
+      _domObs = new MutationObserver(function () { schedule(false); });
+      if (document.body) _domObs.observe(document.body, { childList: true, subtree: true });
+      _dockObs = new MutationObserver(function () { markAskDirty(); schedule(true); });
+      if (document.body) _dockObs.observe(document.body, { attributes: true, attributeFilter: ['data-mls-dock'] });
     } catch (e) {}
-    setInterval(pass, 2000);
+    _iv = setInterval(settle, 2000);
     [250, 800, 1800, 3600].forEach(function (ms) { setTimeout(pass, ms); });
-    try { window.addEventListener('resize', pass, false); } catch (e) {}
+    try {
+      _resizeHandler = function () { markAskDirty(); schedule(true); };
+      window.addEventListener('resize', _resizeHandler, false);
+    } catch (e) {}
     /* a menu is opened by a click, and it must fit on the frame after it,
        not up to two seconds later */
     try {
-      document.addEventListener('click', function () {
+      _clickHandler = function (event) {
+        var target = event && event.target;
+        var owned = target && target.closest ? target.closest('#mlsDock button[data-dest="tools"],#mlsDockNub,#mlsToolsMenu,#mlsDockNubMenu') : null;
+        if (!owned) return;
         setTimeout(fitMenu, 0); setTimeout(fitMenu, 90); setTimeout(fitMenu, 320);
-      }, true);
+      };
+      document.addEventListener('click', _clickHandler, true);
     } catch (e) {}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
 
   window.__mlsClunkyDock = { version: VERSION, pass: pass, passes: function () { return passes; },
-    revert: function () { var s = el('mlsClunkyDockCss'); if (s) s.disabled = true; return true; } };
+    revert: function () {
+      try { if (_domObs) _domObs.disconnect(); if (_dockObs) _dockObs.disconnect(); if (_askRO) _askRO.disconnect(); } catch (e) {}
+      try { if (_iv) clearInterval(_iv); if (queued !== null) clearTimeout(queued); } catch (e) {}
+      try { if (_resizeHandler) window.removeEventListener('resize', _resizeHandler, false); } catch (e) {}
+      try { if (_clickHandler) document.removeEventListener('click', _clickHandler, true); } catch (e) {}
+      var s = el('mlsClunkyDockCss'); if (s) s.disabled = true; return true;
+    } };
 })();
 </script>
 <!-- ===== end clunky-dock-1.0.0 ========================================= -->
@@ -53016,7 +53261,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
       if (document.body) obs.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
     ['mls:active-patient-changed', 'mls:view-changed'].forEach(function(ev){
-      try { window.addEventListener(ev, pass); } catch (e) {}
+      try { window.addEventListener(ev, schedule); } catch (e) {}
     });
     armHero();
     setInterval(pass, 1200);
@@ -53126,7 +53371,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 #mlsHxSection .hx-lead{margin:0 0 8px;font-size:12.5px;color:var(--muted,#5c6b60)}
 #mlsHxSection .hx-group{margin:0 0 10px}
 #mlsHxSection .hx-gh{font-size:11.5px;letter-spacing:.6px;text-transform:uppercase;font-weight:800;color:var(--muted,#5c6b60);margin:10px 0 6px}
-#mlsHxSection .hx-card{border:1px solid var(--line,#dfe6e1);border-radius:12px;background:var(--card,#fff);margin:0 0 8px;overflow:hidden;min-width:0}
+#mlsHxSection .hx-card{border:1px solid var(--line,#dfe6e1);border-radius:10px;background:var(--card,#fff);margin:0 0 8px;overflow:hidden;min-width:0}
 #mlsHxSection .hx-card[hidden]{display:none!important}
 #mlsHxSection .hx-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;min-height:44px;
   padding:10px 12px;border:0;background:transparent;text-align:left;cursor:pointer;font:inherit;color:inherit}
@@ -53157,7 +53402,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 #mlsHxSection .hx-all{min-height:40px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
   background:transparent;color:var(--ink,#1A211C);border-radius:999px;padding:9px 15px;cursor:pointer;margin:2px 0 4px}
 #mlsHxSection .hx-all:hover{background:var(--soft,#EAF1EC)}
-#mlsHxSection .hx-empty{border:1px dashed var(--line,#dfe6e1);border-radius:12px;padding:14px 14px;
+#mlsHxSection .hx-empty{border:1px dashed var(--line,#dfe6e1);border-radius:10px;padding:14px 14px;
   font-size:13px;line-height:1.5;color:var(--ink,#1A211C);background:var(--card,#fff)}
 #mlsHxSection .hx-say{font-size:12px;color:var(--muted,#5c6b60);margin:4px 0 0;min-height:16px}
 @media(max-width:520px){
@@ -54772,7 +55017,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     font-weight:600 !important;
     border:1px solid var(--line,#E4E1D8) !important;
     border-left:3px solid #2E6A4B !important;
-    border-radius:8px !important;
+    border-radius:10px !important;
   }
   #mlsFpDayFallback > div[style*="linear-gradient"] > span{ opacity:1 !important; }
   #mlsFpDayFallback > div[style*="linear-gradient"] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
@@ -55284,7 +55529,7 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
           Athena". Three controls, one name; and the odd one out, doing the
           other verb entirely, was named the most like all of them.
           The two verbs are now named apart and neither name is borrowed:
-            A  "Pull the patient open in athena"  -> whoever athena has open
+            A  "Pull the open patient in athena"  -> whoever athena has open
             B  "Pull this patient's chart"        -> the record selected here
 
        2. THE NAME WAS 268 CHARACTERS LONG. feat_athena_clarity.js (a shared
@@ -55373,7 +55618,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
   /* ------------------------------------------------------------ THE TWO VERBS
      One name each. Neither name contains the other, so no doctor and no
      contract can confuse them, and READ-ONLY is not part of either. */
-  var VERB_A_NAME = 'Pull the patient open in athena';
+  var VERB_A_NAME = 'Pull the open patient in athena';
   var VERB_A_SUB  = 'Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena.';
   var VERB_B_NAME = "Pull this patient's chart";
   var VERB_B_SUB  = 'Reads the patient selected here in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.';
@@ -55443,7 +55688,8 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
      to say it is working. Released by the chip's own terminal line - a timer
      alone would let a finished pull keep claiming it is running, and a stuck
      one claim it finished. */
-  var busyBtn = null, busyLabel = '', busyObs = null, busyCap = null;
+  var busyBtn = null, busyLabel = '', busyObs = null, busyCap = null, autoStateWired = false;
+  var busyClickSeq = 0, busySettledSeq = 0;
   var TERMINAL = /^\s*(?:✓|✔|⚠|✅)/;
   function clearBusy() {
     if (busyCap) { clearTimeout(busyCap); busyCap = null; }
@@ -55483,7 +55729,29 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     if (off) return;
     var t = e && e.target;
     for (var hops = 0; t && t !== document && hops < 6; hops++, t = t.parentNode) {
-      if (t.nodeType === 1 && t.id === 'ptPullAthenaBtn') { setTimeout(function () { safe(function () { startBusy(t); }); }, 0); return; }
+      if (t.nodeType === 1 && t.id === 'ptPullAthenaBtn') {
+        var btn = t, clickSeq = ++busyClickSeq;
+        setTimeout(function () {
+          safe(function () {
+            /* The engine can refuse synchronously during a cold module load.
+               Its terminal event then owns this click and the delayed visual
+               fallback must not put the control back into a busy state. */
+            if (busySettledSeq >= clickSeq) return;
+            startBusy(btn);
+          });
+        }, 0);
+        return;
+      }
+    }
+  }
+  function onAutoPullState(e) {
+    var working = !!(e && e.detail && e.detail.busy === true);
+    if (working) {
+      var btn = byId('ptPullAthenaBtn');
+      if (btn && !busyBtn) startBusy(btn);
+    } else {
+      busySettledSeq = busyClickSeq;
+      clearBusy();
     }
   }
 
@@ -55544,6 +55812,10 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     if (off) return;
     applyAll();
     if (!wired) { wired = true; safe(function () { document.addEventListener('click', onClick, true); }); }
+    if (!autoStateWired) {
+      autoStateWired = true;
+      safe(function () { window.addEventListener('mls:athena-autopull-state', onAutoPullState, false); });
+    }
     if (!mo) {
       var deb = null;
       mo = new MutationObserver(function () {
@@ -55573,6 +55845,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
       safe(function () { clearInterval(iv); });
       safe(function () { if (mo) mo.disconnect(); }); mo = null;
       safe(function () { document.removeEventListener('click', onClick, true); }); wired = false;
+      safe(function () { window.removeEventListener('mls:athena-autopull-state', onAutoPullState, false); }); autoStateWired = false;
       clearBusy();
       try { delete window.__mlsTipAvoid; } catch (e) { window.__mlsTipAvoid = null; }
       return true;
@@ -55714,7 +55987,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     b.type = 'button'; b.id = DOOR_ID;
     b.textContent = 'Switch to ' + idn.name + ' here and pull their chart';
     b.title = 'Selects (or adds) ' + idn.name + ' in MLS from the identity athenaOne reported, re-verifies it, then re-runs this same read-only pull. A conflicting record refuses instead.';
-    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:8px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer';
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer';
     b.addEventListener('click', function () { press(); }, false);
     wrap.appendChild(b);
     el.appendChild(document.createElement('br'));
@@ -55838,7 +56111,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
       stop.type = 'button'; stop.id = STOP_ID;
       stop.textContent = 'Stop waiting on this read';
       stop.setAttribute('data-tip', 'Lets go of this read: MLS stops narrating it and will ignore its answer. It cannot cancel athenaOne’s own read, which may still finish in the background. Nothing is written to Athena either way.');
-      stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer';
+      stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer';
       stop.addEventListener('click', function () { stopWaiting(); }, false);
       el.appendChild(stop);
       el.__pullseeStop = stop;
@@ -56146,9 +56419,9 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
   #mlsPullDoorOpen{background:none;border:0;padding:4px 2px;color:#2f6a4f;font-size:13px;cursor:pointer;text-decoration:underline;min-height:40px}
   #mlsPullDoorForm{display:none;gap:7px;flex-wrap:wrap;align-items:center;margin-top:4px}
   #mlsPullDoorForm.pd-open{display:inline-flex}
-  #mlsPullDoorForm input{padding:8px 10px;border:1px solid var(--line,#c9d6d0);border-radius:8px;font-size:13px;min-height:40px;box-sizing:border-box}
+  #mlsPullDoorForm input{padding:8px 10px;border:1px solid var(--line,#c9d6d0);border-radius:10px;font-size:13px;min-height:40px;box-sizing:border-box}
   #pdName{width:200px} #pdDob{width:150px}
-  #pdGo{padding:8px 14px;border:0;border-radius:9px;background:#205c43;color:#fff;font-weight:700;font-size:13px;cursor:pointer;min-height:40px}
+  #pdGo{padding:8px 14px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:13px;cursor:pointer;min-height:40px}
   #pdGo[disabled]{opacity:.65;cursor:default}
   #pdSay{display:none;margin-top:5px;font-size:12.5px;color:#52675c}
 </style>
@@ -56260,7 +56533,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
 <!-- ===== end pulldoor-1.0.0 ============================================== -->
 <!-- ===== autoswitch-1.0.0 - the whoever-button aligns the selection itself =
      Owner 2026-08-19 on the mix refusal: "this is an unacceptable bug." The
-     button named "Pull the patient open in athena" now captures the open
+     button named "Pull the open patient in athena" now captures the open
      chart identity FIRST, switches the MLS selection to the matching record
      (MRN, then name+DOB) or clears it for the add-new path, THEN runs the
      original flow. Saves still verify identity downstream - the switch can
@@ -56481,7 +56754,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     b.textContent = 'Copy all ' + v.records.length + ' encounter' + (v.records.length === 1 ? '' : 's') + ' — full notes';
     b.title = 'Puts every encounter on this chart on the clipboard with its FULL note text, not the one-line summaries. ' +
       'Any encounter with no stored note text is counted and named in the copy, never silently dropped.';
-    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:8px;background:#205c43;color:#fff;' +
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:10px;background:#205c43;color:#fff;' +
       'font-weight:700;font-size:12px;cursor:pointer';
     b.addEventListener('click', function () { safe(press); }, false);
     var s = document.createElement('span');

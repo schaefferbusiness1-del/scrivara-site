@@ -45,7 +45,8 @@ assert(/const attempts=Math\.max\(1,Number\(config\.attempts\)\|\|1\)/.test(page
   'paged hydration helper lost its bounded configurable retry');
 assert(patientHydration.includes("sfFetchPagedList('/api/patients','patients',opts,{scopeOwn:true,attempts:3,retryDelays:[600,1500]})"),
   'patient hydration no longer requests exactly three bounded attempts with backoff');
-const authStop = pagedListHelper.indexOf("if(response&&(response.ok||response.status===401))break");
+const authStopMatch = /if\(response&&\(([^)]*response\.status===401[^)]*)\)\)break/.exec(pagedListHelper);
+const authStop = authStopMatch ? authStopMatch.index : -1;
 const retryWait = pagedListHelper.indexOf('if(attempt+1<attempts)');
 assert(authStop >= 0 && retryWait >= 0 && authStop < retryWait,
   'patient hydration can retry an expired session instead of failing closed');

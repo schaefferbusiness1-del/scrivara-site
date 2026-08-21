@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, '..', 'ScribeFlow.html'), 'utf8');
 
 function luminance(hex) {
   const rgb = hex.match(/[a-f\d]{2}/gi).map(value => parseInt(value, 16) / 255);
@@ -75,7 +76,10 @@ for (const state of states) {
   assert(contrast(state.foreground, state.background) >= 4.5, `${state.name}: contrast is below WCAG AA`);
 }
 
-assert(source.includes("window.__MLS_AV = window.__MLS_AV || 'b1043'"), 'shared asset version was not bumped to b1043');
-assert(source.includes("var MLS_APP_BUILD='2026-07-25-b1043'"), 'app build version was not bumped to b1043');
+assert(app.includes("window.__MLS_AV='b1044'"), 'production shell asset version was not bumped to b1044');
+const shellBuild = (app.match(/var P1_BUILD='(main-\d{8}-r\d+)'/) || [])[1];
+const bundleBuild = (source.match(/var MLS_APP_BUILD='([^']+)'/) || [])[1];
+assert(shellBuild, 'production shell has no immutable main-lineage build');
+assert.strictEqual(bundleBuild, shellBuild, 'patient-card bundle is not from the shell\'s generated production lineage');
 
 console.log('PASS patient card contrast: every metadata, verification, history, and action state uses dark AA text on the light card');

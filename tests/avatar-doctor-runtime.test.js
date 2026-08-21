@@ -40,15 +40,18 @@ assert(source.includes("var VERSION = 'av-5.7.0'"), 'version token moved without
    because the loader carried a hand-maintained literal, and the gate that
    guards those literals compares CALENDAR DATES: av566 and av567 were both set
    on 2026-08-07, the same day this file changed three more times, so a browser
-   holding either could be served whichever bytes it had. The loader now follows
-   the build number, which moves on every ship — so the cache-bust is coupled to
-   the release rather than to somebody remembering to type a new token. */
-{
-  assert(connect.includes("feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now())"),
-    'the avatar loader must use the build-number cache-buster, not a hand-maintained token');
-  assert(!/feat_mls_avatar\.js\?v=\d{8}av\d+/.test(connect),
-    'a hand-maintained avatar cache token is back — it goes stale on the same day it is written');
-}
+   holding either could be served whichever bytes it had. The promoted p1
+   capability controller now owns the one script creator; it must still derive
+   its URL from the shell release revision rather than a hand-typed avatar tag. */
+const avatarLoaderStart = connect.indexOf("var A='feat_mls_avatar.js',SRC='feat_mls_avatar.js'");
+const avatarLoaderEnd = connect.indexOf("var A='feat_mls_avatar_face.js'", avatarLoaderStart);
+assert(avatarLoaderStart >= 0 && avatarLoaderEnd > avatarLoaderStart,
+  'the capability-owned Avatar loader is missing from production mls-connect.js');
+const avatarLoader = connect.slice(avatarLoaderStart, avatarLoaderEnd);
+assert(avatarLoader.includes("node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview')"),
+  'the Avatar controller must use the shell release revision, not a hand-maintained token');
+assert(!/feat_mls_avatar\.js\?v=\d{8}av\d+/.test(avatarLoader),
+  'a hand-maintained avatar cache token is back — it goes stale on the same day it is written');
 /* av-5.3.0 — the customizable face, the retired preview, and the six defects
    an adversarial review caught BEFORE this train reached a patient:
    1. kiosk.pinSet is TRI-STATE and unknown means LOCKED (it used to fail open,
@@ -87,8 +90,8 @@ assert(!/patchMedian\(\[F\(0\.50, 0\.74\)/.test(source),
    brow-band pins in the facial-algorithm block further down. The band now opens
    below the MEASURED bottom of the hair, which is the only anchor that survives
    a photo where the head does not fill the picture. */
-assert(/var by0 = Math\.max\(faceT, \(fringeBottom === null \? faceT : fringeBottom\) \+ 2\);/.test(source),
-  'the brow band reopened onto the hairline — it must open below the measured bottom of the hair mass');
+assert(/var by0 = Math\.max\(faceT, \(fringeBottom === null \? faceT : fringeBottom\) \+ 2 \* PR\);/.test(source),
+  'the brow band reopened onto the hairline — it must open below the measured bottom of the hair mass by the scale-aware edge margin');
 assert(source.includes('if (!look.glasses) {'),
   'the brow measure no longer stands down for glasses — a frame lies across that band and reads as the thickest brows on every bespectacled face');
 assert(source.includes('faceLook: lookNow'), 'Setup no longer saves the chosen appearance');
@@ -98,7 +101,7 @@ assert(source.includes('faceLook: lookNow'), 'Setup no longer saves the chosen a
    drawing. Pin parity with the already-correct on-device matcher. */
 assert(!source.includes("browColPick.value = lookNow.browCol || ''"),
   'the AI face-match path assigns a hex value to a selector that only accepts the set sentinel');
-assert(/if \(lookNow\.browCol\) \{[\s\S]{0,420}vbo\.value = 'set'[\s\S]{0,260}browColPick\.value = 'set';[\s\S]{0,180}browColWell\.value = lookNow\.browCol/.test(source),
+assert(/function syncLookControls\(\) \{[\s\S]{0,900}if \(lookNow\.browCol\) \{[\s\S]{0,360}browColPick\.value = 'set';[\s\S]{0,120}if \(browColWell\) browColWell\.value = lookNow\.browCol;[\s\S]{0,100}\} else \{ browColPick\.value = ''; \}/.test(source),
   'the AI face-match path must expose a claimed brow colour in both the selector and colour well');
 assert(source.includes('kiosk.pinSet === false'), 'the exit gate must compare === false — unknown means LOCKED');
 assert(source.includes('kiosk.pinSet = null'), 'openKiosk must seed the PIN state as UNKNOWN, never as unlocked');
@@ -127,10 +130,13 @@ assert(source.includes("toast('Open the patient first"),
    finish turn carries no answer, so an unhonoured/rejected finish re-fired
    every 9s forever. */
 assert(/kiosk\.mic === false[\s\S]{0,320}kioskArmWatchdog\(20000\)/.test(source), 'typed mode must arm the self-end watchdog — a mic-less interview would never end');
-assert(/if \(!started\)[\s\S]{0,320}kioskArmWatchdog\(20000\)/.test(source), 'a failed mic start must still arm the self-end watchdog');
+assert(/if \(!started\) \{\s*kioskTypingFallback\(/.test(source) &&
+  /function kioskTypingFallback\([\s\S]{0,1200}kioskArmWatchdog\(20000\)/.test(source),
+  'a failed mic start must route through the typed fallback that arms the self-end watchdog');
 assert(source.includes('kiosk.finishTries > 2) { kioskStopBounded(); return; }'), 'the auto-finish lost its client-side bound — it could re-fire every 9s forever');
 assert(source.includes('function kioskStopBounded'), 'the bounded honest stop was removed');
-assert(source.includes("kiosk.heard = true; });"), 'typing must reset the self-end watchdog like speech does');
+assert(/#mlsAvKioskInput'[\s\S]{0,120}addEventListener\('input', kioskEvent\(function \(\) \{ kiosk\.heard = true; \}\)\)/.test(source),
+  'typing must reset the self-end watchdog like speech does');
 assert(!/var heardAnything/.test(source), 'the per-call activity latch is back — typing cannot reset a closure-scoped flag');
 /* av-5.2.0 — smilier, faster, self-ending:
    the 1.3s quiet threshold keeps turns snappy, three fruitless listens end
@@ -261,8 +267,8 @@ assert(/if \(!kiosk\.consentAt\) \{/.test(source.slice(source.indexOf('function 
      over comment-stripped source so writing ABOUT them cannot satisfy them. */
   assert(/posterFrac > 0\.5/.test(code) && /% 51\)/.test(code),
     'the posterize detector is gone — the matcher would go back to measuring the stylized copy, whose quantiser collapses the whole fair-skin gamut into #ffcc99 and #ffcccc (pale pink)');
-  assert(/skinHue >= 45 && skinChroma < 32/.test(code),
-    'the CIELAB skin gate is gone — pink samples would be claimed again. h_ab>=45 spans every Monk Skin Tone shade (48.8-89.1) while #ffcccc is 21.0');
+  assert(/skinHue >= 45 && skinHue <= 95 && skinChroma >= 5 && skinChroma < 60/.test(code),
+    'the photographed-skin CIELAB band is gone — it must keep the pink/grey/wall exclusions while admitting measured photographed skin tones');
   assert(/function faceLab\(rgb\)/.test(code) && /Math\.atan2\(lab\.b, lab\.a\)/.test(code),
     'the CIELAB conversion was removed — the hue gate has no axis to measure on');
   assert(/if \(fromIllustration\) \{[\s\S]{0,400}derived\.filter/.test(code),
@@ -347,8 +353,9 @@ assert(source.includes('function rowRun'),
    rather than fall through and describe the background. */
 assert(/if \(!best\) \{[\s\S]{0,400}return \{ look: null/.test(source),
   'the matcher must REFUSE when it cannot find a face rather than describe the background');
-assert(/patchMedian\(\[\[atX\(0\.20\), maxWY\]/.test(source) && /\], 2, true\)/.test(source),
-  'skin must be sampled inside the MASK (skinOnly) on the box-relative cheekbone row — sampling by frame fraction is what read the doctor\'s shirt as skin');
+assert(/var skinSpots = \[\[atX\(0\.28\), Math\.min\(maxWY/.test(source) &&
+       /var skin = patchMedian\(skinSpots, 2 \* PR, true, true\) \|\| skinRef;/.test(source),
+  'skin must be sampled inside the mask on box-relative cheek patches, at a scale-aware radius and through the true-median path');
 assert(!/F\(0\.50, 0\.11\)/.test(source) && !/F\(0\.30, 0\.52\)/.test(source),
   'the fixed-fraction hair/skin patches are back — on a normal webcam frame they land on the wall and the chest');
 assert(/var beardDepth = beardRows/.test(source) && /var lowerChin = beardDepth > 0\.10/.test(source),
@@ -525,7 +532,9 @@ assert(source.includes("'friendly', 'Warm & friendly (default)'"), 'the tone set
 /* av-1.3.0: camera face + Visit-page presence. The camera must stop on every
    exit path INCLUDING panel close; the portrait is size-capped client-side;
    the Visit card mounts at the bottom of #visitView, never near the banner. */
-assert(/function close\(\) \{[\s\S]{0,120}stopCamera/.test(source), 'panel close no longer stops the camera');
+assert(/function close\(\) \{[\s\S]{0,700}cancelFaceCapture\(\)/.test(source) &&
+  /function cancelFaceCapture\(\) \{[\s\S]{0,420}stopCamera\(\)/.test(source),
+  'panel close no longer invalidates late capture work and stops the camera');
 /* av-6.0.7: the cap moved 150000 -> 600000 WITH the stylized portrait going 256px -> 512px
    (owner: "the photo needs to be higher res like not try to image to avatar off a small low
    quaility image it saves"). It is a CROSS-REPO constant: src/routes/patientAvatar.js drops any
@@ -548,7 +557,9 @@ assert(!source.includes('view.appendChild(card)'), 'the Visit card regressed to 
 assert(!source.includes('Preview the interview'), 'the retired typed interview preview is back');
 assert(!source.includes('Nothing was saved or sent'), 'the retired preview left its honesty line behind');
 assert(!source.includes('Type a sample answer'), 'the retired preview transcript box is back');
-assert(source.includes('window.__mlsAvatar.lastReady'), 'the ready cache for the Copilot snapshot was removed');
+assert(source.includes('currentApi.lastReady =') &&
+  /currentApi && window\.__mlsAvatar === currentApi \? currentApi\.lastReady : null/.test(source),
+  'the owner-fenced ready cache for the Copilot snapshot was removed');
 assert(source.includes('total: (rows || []).length'), 'the cache lost its TRUE total (the list is a sample)');
 assert(!source.includes("Promise.reject(new Error('clipboard unavailable'))"), 'the eager rejected-promise fallback is back (unhandled rejection on every successful copy)');
 assert(/Escape[\s\S]{0,300}blur/.test(source), 'the Escape-while-typing guard was removed — one reflex keypress wipes unsaved question edits');
@@ -568,14 +579,14 @@ assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source),
    checking. The token is read out of mls-connect.js and the only thing
    asserted is that it AGREES with the module's own VERSION (the block at the
    top of this file) and that there is exactly one of it. */
-/* av-5.7.0: and now not even derived - the loader follows the BUILD NUMBER, so
-   there is no token to read. The two things still worth asserting are that
-   there is exactly one loader and that it stays idle-deferred. */
-const marker = (connect.match(/feat_mls_avatar\.js\?v='\+\(window\.__MLS_AV\|\|Date\.now\(\)\)/) || [null])[0];
-assert(marker, 'mls-connect.js is missing the Avatar loader entirely (or it went back to a hand-typed token)');
-assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
-const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
-assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
+/* av-5.7.0: the two things still worth asserting are that there is exactly one
+   controller-owned script creator and that its normal startup stays deferred. */
+const marker = "node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview')";
+assert.strictEqual(avatarLoader.split(marker).length - 1, 1, 'duplicate script creators inside the Avatar controller');
+assert.strictEqual(connect.split("var A='feat_mls_avatar.js',SRC='feat_mls_avatar.js'").length - 1, 1,
+  'duplicate Avatar capability controllers');
+assert(/requestIdleCallback/.test(avatarLoader) && /ctl\.deferEnsure\(\)/.test(avatarLoader),
+  'the Avatar controller must keep its normal startup idle-deferred');
 
 /* ---- VM runtime ---- */
 function build(patients) {
@@ -583,6 +594,9 @@ function build(patients) {
   const timers = [];
   const window = {
     addEventListener() {}, removeEventListener() {},
+    __mlsSessionEpoch: 7,
+    __mlsSessionAccount: 'avatar-doctor@example.test',
+    getSessionEmail: () => 'avatar-doctor@example.test',
     getPatients: () => patients,
     upsertPatient: null, // set per test
     toast() {},

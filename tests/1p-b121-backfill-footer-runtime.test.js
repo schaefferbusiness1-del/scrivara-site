@@ -162,11 +162,10 @@ const sharedSrc = read(SHARED);
   ok(/^PRISTINE/.test(String(clonedDerived.stdout || '').trim()),
     'derive-cloned-from-1p.js did not report PRISTINE: ' + String(clonedDerived.stdout || '').trim());
 
-  /* b1043 is intentionally production-only: public signup accounts still use
-     policy 0 while /1p remains byte-frozen. Keep the derivation audit live, but
-     allow exactly that one shell and require the bridge's fail-closed markers.
-     tests/1p-preview-contract.test.js separately freezes every changed byte at
-     the reviewed runtime commit. */
+  /* The signup compatibility bridge is intentionally production-only: public
+     signup accounts can still use policy 0 while the preview keeps its own
+     account ceremony. Keep the derivation audit live, allow exactly that one
+     shell, and require the bridge's fail-closed markers. */
   const productionDerived = spawnSync(process.execPath, [path.join('scripts', 'derive-production-from-1p.js'), '--check'],
     { cwd: ROOT, encoding: 'utf8', windowsHide: true });
   const productionDeriveText = String(productionDerived.stdout || '') + String(productionDerived.stderr || '');

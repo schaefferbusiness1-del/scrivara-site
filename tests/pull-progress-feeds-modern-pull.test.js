@@ -39,8 +39,17 @@ assert(si.includes('ppResolve(pOne.__ppRow, pOne.complete === true,'),
    the THROW path, and the outer batch closes it exactly once after sweeps. */
 assert(si.includes('if (!batchBodyCompleted && !sweepDepth) safe(ppEnd);'),
   'a thrown batch must still end the progress state (throw-path fallback)');
-assert(/if \(!sweepDepth\) try \{[\s\S]*?\} finally \{[\s\S]{0,400}?safe\(ppEnd\);[\s\S]{0,10}?\}/.test(si),
-  'the OUTER batch must end the progress state exactly once, after its sweeps');
+const outerSweepAt = si.indexOf('if (!sweepDepth && !__stpStopped) try {');
+const afterOuterSweep = si.indexOf('/* ===== cap-1.0.0', outerSweepAt);
+assert(outerSweepAt >= 0 && afterOuterSweep > outerSweepAt,
+  'the outer automatic-sweep lifecycle could not be isolated');
+const outerSweepBlock = si.slice(outerSweepAt, afterOuterSweep);
+const outerCloseComment = outerSweepBlock.indexOf('the OUTER batch closes the progress reporter exactly once');
+const outerClose = outerSweepBlock.indexOf('safe(ppEnd);', outerCloseComment);
+assert(outerSweepBlock.includes('await runHistoryBatch(swept.rows') && outerCloseComment > 0 && outerClose > outerCloseComment,
+  'the OUTER batch must end the progress state only after its sweeps');
+assert.strictEqual(outerSweepBlock.split('safe(ppEnd);').length - 1, 1,
+  'the OUTER sweep lifecycle must end the progress state exactly once');
 assert(!si.includes('} finally { historyBatchRunning = false; ppEnd(); }'),
   'the old pre-sweep close must stay gone - it was the panel-teardown bug');
 assert(si.includes('if(g.state&&g.state.running===true) return null;'),

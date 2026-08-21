@@ -48,7 +48,7 @@ const root = path.resolve(__dirname, '..');
 const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 
-/* ---- 1. an exact-id match must never refuse as ambiguous ---- */
+/* ---- 1. main + mini duplicates collapse; two primary rows refuse ---- */
 {
   const at = bg.indexOf('function apptIdRow()');
   assert(at > 0, 'apptIdRow must still exist');
@@ -58,12 +58,6 @@ const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'ut
      very change it was written to pin. */
   const fn = bg.slice(at, at + 6000);
 
-  assert(!/matchedRows\.length > 1\) return \{[^}]*ambiguous: true/.test(fn),
-    'an exact appointment-id match still refuses as ambiguous when more than one ROW matches. ' +
-    'Every holder carries the one wanted id and every row already matched the expected last ' +
-    'name, so those are duplicate RENDERS of one appointment (athena draws a main schedule and ' +
-    'a mini schedule). This refusal made the appointment-id path unresolvable on every pull.');
-
   assert(/dupRenders:/.test(fn),
     'the collapse must report how many duplicate renders it merged, so it stays visible in the ' +
     'diag instead of silently passing');
@@ -72,6 +66,11 @@ const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'ut
   assert(/MINI_RE/.test(fn) && /inMini/.test(fn),
     'the collapse must prefer a row outside any mini-schedule container - the mini row is the ' +
     'abbreviated copy');
+  assert(/mains\.length > 1\) return \{[^}]*ambiguous: true/.test(fn),
+    'two visible non-mini rows claiming the exact appointment id must fail closed before either ' +
+    'row is clicked; only Athena mini-schedule copies are safe to collapse');
+  assert(/var pool = mains\.length \? mains : matchedRows/.test(fn),
+    'one main row plus any mini-schedule copies no longer collapses to the main row');
   assert(/pool\.sort\(/.test(fn),
     'among equally eligible rows the collapse must choose deterministically (longest row text = ' +
     'the fuller main-grid row), not whichever happened to be found first');
@@ -103,7 +102,7 @@ const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'ut
     'the withContent decision must iterate the content subset, not the full breakdown list');
 }
 
-console.log('PASS duplicate render is not ambiguity: an exact appointment-id match collapses ' +
-  'duplicate main/mini renders to the richest main row and reports dupRenders instead of ' +
-  'refusing, while still requiring the expected last name; and allergies remain in the census ' +
+console.log('PASS duplicate render boundary: an exact appointment-id match collapses ' +
+  'duplicate main/mini renders to the richest main row, refuses two visible primary rows, and ' +
+  'reports dupRenders while still requiring the expected last name; allergies remain in the census ' +
   'breakdown but can no longer, alone, mark a record as captured');

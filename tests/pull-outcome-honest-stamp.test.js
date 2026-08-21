@@ -63,11 +63,13 @@ function buildWrapper(env) {
     'var navigator = env.navigator;\n' +
     'var pullRunning = false;\n' +
     'var SI_LEASE_ID = "mls-si-test";\n' +
+    'var siAthenaOwnerToken = "";\n' +
     'function safe(fn, d) { try { return fn(); } catch (e) { return d; } }\n' +
     'function isFn(f) { return typeof f === "function"; }\n' +
     'function foreignPullLease() { return env.foreignLease || null; }\n' +
     'function claimSiLease() {}\n' +
     'function releaseSiLease() {}\n' +
+    'function tnScheduleDeferredRound() {}\n' +
     'function releaseManagedAthenaWorkspace() {}\n';
   const f = new Function('env',
     prelude + helperSrc + '\n' + wrapperSrc + '\nreturn runManagedAthenaOperation;');

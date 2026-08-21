@@ -115,7 +115,12 @@
   function render(force) {
     var host = findHost();
     var id = activeId();
-    if (!host || !id) { if ($(CARD_ID)) remove(); lastKey = ''; return; }
+    /* A route transition can hide or briefly replace profileCard without
+       changing the active patient. Keep the completed timeline through that
+       handoff; only an actual patient clear owns removal. */
+    if (!id) { if ($(CARD_ID)) remove(); lastKey = ''; return; }
+    if (!host) { retryMissingHost(); return; }
+    hostRetrySpent = false;
     /* vtl-1.0.2: the CHEAP revision check runs BEFORE any note parsing, so a
        poll tick on an unchanged store costs microseconds even on a store with
        tens of thousands of notes. */
@@ -128,7 +133,7 @@
     if (!card) {
       card = document.createElement('div'); card.id = CARD_ID;
       host.appendChild(card);
-    }
+    } else if (card.parentNode !== host) host.appendChild(card);
     var painPts = pts.filter(function (p) { return p.pain != null; });
     var W = 560, H = 74, PADX = 14, PADY = 10;
     var t0 = pts.length ? pts[0].t : 0, t1 = pts.length ? pts[pts.length - 1].t : 1;
@@ -171,7 +176,7 @@
   }
   function findHost() {
     var prof = $('profileCard');
-    if (!prof || !prof.offsetParent) return null;
+    if (!prof || prof.isConnected === false) return null;
     return prof;
   }
   function remove() { var c = $(CARD_ID); if (c && c.parentNode) c.parentNode.removeChild(c); }
@@ -179,12 +184,21 @@
   /* renderProfile wrap (same additive pattern as easy-prep) + gentle poll fallback.
      vtl-1.0.1: renders are COALESCED -- any burst of renderProfile calls
      schedules at most ONE pending render (which is itself key-checked). */
-  var wrapped = false, origRender = null, pollIv = null, pending = false;
+  var wrapped = false, origRender = null, pollIv = null, pending = false, hostRetry = null, hostRetrySpent = false, lifecycleWired = false;
+  function retryMissingHost() {
+    if (hostRetry !== null || hostRetrySpent) return;
+    hostRetrySpent = true;
+    hostRetry = setTimeout(function () { hostRetry = null; safe(function () { render(false); }); }, 320);
+  }
   function schedule() {
     if (pending) return;
+    /* One fast handoff retry per real lifecycle burst; the 2s watchdog owns
+       longer absences so a missing Profile host can never create a timer loop. */
+    hostRetrySpent = false;
     pending = true;
     setTimeout(function () { pending = false; safe(function () { render(false); }); }, 120);
   }
+  function clearForSession() { lastKey = ''; remove(); }
   /* CARRY the other renderProfile wrappers' head markers forward. A module that
      guards on "is MY marker on window.renderProfile" and re-arms on a timer
      (feat_mls_visit_focus.js did, at 1.5s/4s/9s) sees an unmarked head the
@@ -223,11 +237,23 @@
   }
   function boot() {
     wrapRenderProfile();
+    if (!lifecycleWired) {
+      lifecycleWired = true;
+      try { window.addEventListener('mls:active-patient-changed', schedule, false); } catch (e) {}
+      try { window.addEventListener('mls:session-boundary', clearForSession, false); } catch (e) {}
+    }
     pollIv = setInterval(function () { safe(wrapRenderProfile); safe(function () { render(false); }); }, 2000);
     safe(function () { render(false); });
   }
   function revert() {
     if (pollIv) { clearInterval(pollIv); pollIv = null; }
+    if (hostRetry !== null) { clearTimeout(hostRetry); hostRetry = null; }
+    hostRetrySpent = false;
+    if (lifecycleWired) {
+      try { window.removeEventListener('mls:active-patient-changed', schedule, false); } catch (e) {}
+      try { window.removeEventListener('mls:session-boundary', clearForSession, false); } catch (e) {}
+      lifecycleWired = false;
+    }
     try { if (window.renderProfile && window.renderProfile.__vtlWrapped && window.renderProfile.__vtlOrig) window.renderProfile = window.renderProfile.__vtlOrig; } catch (e) {}
     remove();
     var s = $(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s);

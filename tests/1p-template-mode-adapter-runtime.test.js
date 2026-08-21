@@ -41,7 +41,7 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
 function ok(value, message) { assert.ok(value, message); checks++; }
 
 function controls() {
-  return `<div id="oprDayRail"><div id="oprTplMode">
+  return `<div id="opPrepModal"><div id="oprDayRail"><div id="oprTplMode">
     <button id="strict" data-tplmode="strict" title="Follow it closely — Keeps your wording. Fills only what varies."><span class="nm">Follow it closely<span class="opr-nav-st">Keeps your wording. Fills only what varies.</span></span></button>
     <button id="adapt" data-tplmode="adapt" title="Adapt to the case — Keeps your structure, adapts the wording. Recommended."><span class="nm">Adapt to the case<span class="opr-nav-st">Keeps your structure, adapts the wording. Recommended.</span></span></button>
     <button id="guide" data-tplmode="guide" title="Use it as a guide — concise — Keeps your headings, writes tighter prose in its own words."><span class="nm">Use it as a guide — concise<span class="opr-nav-st">Keeps your headings, writes tighter prose in its own words.</span></span></button>
@@ -50,7 +50,7 @@ function controls() {
   <div id="oprReceipt"><div class="opr-usedstyle"><span>Style used</span><b>Adapt to the case</b>
     <button id="redo-strict" data-oprredo="strict">Re-draft: Follow it closely</button>
     <button id="redo-guide" data-oprredo="guide">Re-draft: Use it as a guide — concise</button>
-  </div></div>`;
+  </div></div></div>`;
 }
 
 function pageHtml(options) {
@@ -248,7 +248,7 @@ async function modeLabels(page) {
     await boundaryPage.waitForFunction(() => document.querySelector('#adapt .nm').firstChild.nodeValue.trim() === 'Balanced');
     await boundaryPage.evaluate(() => {
       window.__MLS_P1_PREVIEW.enabled = false;
-      document.body.appendChild(document.createElement('i'));
+      window.dispatchEvent(new CustomEvent('mls:session-boundary', { detail: { reason: 'preview-disabled' } }));
     });
     await boundaryPage.waitForFunction(() => !window.__mlsP1TemplateModes);
     const lost = await boundaryPage.evaluate(() => document.querySelector('#adapt .nm').firstChild.nodeValue.trim());

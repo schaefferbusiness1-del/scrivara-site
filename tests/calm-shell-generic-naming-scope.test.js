@@ -74,11 +74,21 @@ const inView = (function () {
   const end = shell.indexOf('\n  function ', start + 10);
   return shell.slice(start, end > start ? end : start + 1400);
 })();
-assert(/visible\(el\)/.test(inView) && /View\$/.test(inView),
-  'nameGenericInView() no longer restricts itself to the visible view. A document-wide walk ' +
+assert(/activeAppView\(\)/.test(inView),
+  'nameGenericInView() no longer restricts itself to the active view. A document-wide walk ' +
   'costs 2.1ms per render pass on a 3.27ms budget, in a repo with a freeze history.');
-assert(/\[0\]/.test(inView),
-  'nameGenericInView() no longer takes a single view.');
+assert(/function\s+activeAppView\s*\(/.test(shell) && /style\s*&&\s*views\[i\]\.style\.display/.test(shell),
+  'activeAppView() no longer reads showView\'s inline display decision before falling back to forced layout.');
+
+const namingPass = (function () {
+  const start = shell.indexOf('function nameControls()');
+  const end = shell.indexOf('\n  function ', start + 10);
+  return shell.slice(start, end > start ? end : start + 2200);
+})();
+const hiddenViewGuard = namingPass.indexOf('owningView && owningView !== activeView');
+const layoutRead = namingPass.indexOf('onScreen(el)');
+assert(hiddenViewGuard >= 0 && layoutRead > hiddenViewGuard,
+  'nameControls() must reject controls in inactive views before onScreen() performs offset/getClientRects layout reads.');
 
 /* 5. It never overwrites a name the app itself chose, and the shell cleans up
  *    after itself so the Classic layout does not inherit these. */

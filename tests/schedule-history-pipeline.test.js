@@ -404,8 +404,8 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   {
     const src = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
     assert(src.includes('function buildRetryRows'), 'the shared retry-row builder must exist');
-    assert(/runHistoryBatch\(swept\.rows, swept\.unresolved, onStatus, \{ depth: 1, deadlineCapAt: batchDeadlineAt, progressBase: Math\.max\(0, rows\.length - swept\.rows\.length\), progressTotal: rows\.length \}\)/.test(src),
-      'a sweep must run at depth 1 AND inherit the outer frozen deadline (never-immortal) AND report cumulative pull-wide progress (si-1.9.4)');
+    assert(/runHistoryBatch\(swept\.rows, swept\.unresolved, onStatus, \{ depth: 1, deadlineCapAt: batchDeadlineAt, progressBase: Math\.max\(0, rows\.length - swept\.rows\.length\), progressTotal: rows\.length, scopeDay: batchScopeDay \}\)/.test(src),
+      'a sweep must run at depth 1, inherit the outer frozen deadline and exact day scope, and report cumulative pull-wide progress (si-1.9.4/dnd-1.0.0)');
     /* si-1.9.4 (owner 2026-07-22): the pull bar parses "N of M" — a sweep
        reporting "1 of 2" made 14 finished charts look thrown away. */
     assert(/sweepProgressBase \+ i \+ 1/.test(src), 'si-1.9.4: sweep counters must continue from the whole-pull base, never restart at 1');
@@ -436,7 +436,17 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
     assert(src.includes('if (operationStarted) xtabBusyClear();'), 'stamp must clear when the operation ends');
     const mc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
     assert(mc.includes("uns('mlsPullBusyXTabV1')"), 'update banner must read the cross-tab stamp');
-    assert(mc.includes('Waiting for the pull to finish'), 'update banner Refresh must defer while a pull is running');
+    const versionOwner = mc.indexOf('if(window.__mlsVersionCheck) return;');
+    const refreshBusyStart = mc.indexOf('function pullBusy()', versionOwner);
+    const refreshBusyEnd = mc.indexOf('function check()', refreshBusyStart);
+    assert(refreshBusyStart >= 0 && refreshBusyEnd > refreshBusyStart,
+      'update banner pull-busy/refresh ownership block is missing');
+    const refreshBusyBlock = mc.slice(refreshBusyStart, refreshBusyEnd);
+    assert(refreshBusyBlock.includes('if(!pullBusy())return goRefresh();') &&
+      refreshBusyBlock.includes('Pull running — refresh afterward'),
+    'update banner Refresh must defer while a pull is running and name the deferred action honestly');
+    assert(!/setTimeout\([^)]*goRefresh/.test(refreshBusyBlock),
+      'update banner must not schedule a blind timed refresh during an active pull');
   }
 
   /* si-1.8.1 static contract (live 2026-07-22, twice): a deadline failure may

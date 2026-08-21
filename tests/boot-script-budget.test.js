@@ -454,7 +454,14 @@ const LOADER = 'mls-connect.js';
  * DEFERRED (requestIdleCallback, 4s timeout), does no boot work beyond two
  * function wraps, and its re-arm is a bounded timeout chain, so first paint
  * and the interval budget are untouched. */
-const CEILING = 258;
+/* 258 -> 265 at b1036 (3967feec): the reviewed /p1 promotion added eight
+ * official feature references and retired feat_mls_pick_smartscope.js, for a
+ * net +7. This optimization adds no feature reference: its exact 265-name set
+ * is byte-for-byte the b1036/origin-main set. The promoted late surfaces now
+ * use scheduler + exact first-use admission, so EAGER_CEILING does not move;
+ * the two broad observers were removed/scoped, so OBSERVER_CEILING does not
+ * move either. */
+const CEILING = 265;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

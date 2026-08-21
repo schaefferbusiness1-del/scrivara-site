@@ -15,7 +15,7 @@ assert(marker >= 0 && start >= 0 && end > start, 'optional satellite scheduler b
 
 assert((source.match(/var sched=window\.__mlsDeferAsset\|\|window\.requestIdleCallback/g) || []).length >= 90,
   'not every previously idle-deferred satellite uses the serialized scheduler');
-assert.strictEqual((source.match(/priority:0,owner:'__mls/g) || []).length, 7,
+assert.strictEqual((source.match(/priority:0,owner:'__mls[^']+'[^\r\n]*requiresFoundation:true/g) || []).length, 7,
   'priority readiness is not tied to all seven Calm-dependent owner APIs');
 assert.strictEqual((source.match(/var sched=window\.requestIdleCallback/g) || []).length, 0,
   'a deferred satellite can still join the native requestIdleCallback timeout stampede');
@@ -44,10 +44,12 @@ assert(source.includes('if(priorityInFlight) return -1;') &&
   source.includes("scheduling.isInputPending({includeContinuous:true})") &&
   source.includes('INITIAL_QUIET_MS=2500, FIRST_USE_MS=30000, FIRST_USE_GAP=250, STEADY_GAP=80'),
   'a deadline or forced gate release can bypass fresh interaction/in-flight priority ownership');
-assert(source.includes("var A='feat_mls_calm_shell.js',owner=window.__mlsCalmShell") &&
-  source.includes("s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now())") &&
-  appSource.includes("'feat_mls_theme_polish.js','feat_mls_calm_shell.js'"),
-  'production navigation is not an immediate auth-first critical asset');
+assert(source.includes("var A='feat_mls_calm_shell.js',V='p1-calm-dock-2.0.0',CALM_V='calm-1.0.0'") &&
+  source.includes("node.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now())") &&
+  source.includes("priority:0,owner:'__mlsCalmShell'") &&
+  source.includes("barrier:true,fallback:'classic',asset:'feat_mls_calm_shell.js'") &&
+  appSource.includes("'feat_mls_theme_polish.js'"),
+  'production navigation is not an auth-first priority foundation with a fail-closed classic fallback');
 assert.strictEqual((source.match(/requiresFoundation:true/g) || []).length, 7,
   'a dependent presentation owner can still evaluate after the Calm foundation fails');
 assert(source.includes("healthy?'mls:deferred-assets-ready':'mls:deferred-assets-error'"),

@@ -60,6 +60,7 @@ const document = {
 const window = {
   document,
   location: { origin: 'https://mlsscribe.com' },
+  __mlsExtensionCapabilities: { athenaFinalActionsV1: false, supervisedOrderPlacementV2: false },
   toast() {},
   addEventListener(t, f) { (listeners[t] || (listeners[t] = [])).push(f); },
   removeEventListener(t, f) { listeners[t] = (listeners[t] || []).filter(x => x !== f); },
@@ -80,7 +81,16 @@ const window = {
             controlLabel: 'Athena Billing / Charges'
           }
         }
-      : {
+      : msg.action === 'sign_encounter'
+        ? {
+            ok: true, signed: true, verified: true,
+            context: {
+              patientName: 'Example Patient', dob: '1/2/1980', mrn: '123',
+              encounterId: 'enc-1', encounterUrl: 'https://athenanet.athenahealth.com/encounter/enc-1',
+              visitDate: '7/14/2026', provider: 'Example Doctor, MD', controlLabel: 'Sign & Save'
+            }
+          }
+        : {
           ok: true, written: true, noteWritten: true, verified: true,
           noteWriteProof: 'proof-runtime-note', noteWriteProofExpiresAt: Date.now() + 120000,
           context: {
@@ -140,14 +150,25 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
   const opts = {
     patient: { patientId: 'pt-runtime-1', name: 'Example Patient', dob: '01/02/1980', mrn: '123' },
     expectedContext: { visitDate: '07/14/2026', provider: 'Example Doctor, MD', appointmentId: 'appt-runtime-1' },
+    receiptSessionId: 'runtime-receipt',
+    previewHash: 'mls-preview-runtime',
     plan: [{ kind: 'note', body: 'NOTE TEXT:\nExact reviewed note.' }]
   };
 
   for (const action of ['stage_billing', 'sign_encounter', 'place_order']) {
     const refused = await window.__mlsWriteFlow.startAthenaAction(action, opts);
-    assert.strictEqual(refused.error, 'manual-only-final-action', `${action} was not refused at the UI controller`);
+    assert.strictEqual(refused.error, 'final-action-capability-required', `${action} crossed the UI controller without the extension capability`);
   }
-  assert.deepStrictEqual(sent, [], 'a manual final action crossed the bridge');
+  assert.deepStrictEqual(sent, [], 'a final action crossed the bridge without the extension capability');
+
+  window.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
+  const noBilling = await window.__mlsWriteFlow.startAthenaAction('stage_billing', opts);
+  assert.strictEqual(noBilling.error, 'no-billing-codes');
+  const noProof = await window.__mlsWriteFlow.startAthenaAction('sign_encounter', opts);
+  assert.strictEqual(noProof.error, 'verified-note-write-required');
+  const noOrder = await window.__mlsWriteFlow.startAthenaAction('place_order', opts);
+  assert.strictEqual(noOrder.error, 'unsupported-order-type');
+  assert.deepStrictEqual(sent, [], 'a final action with missing payload/proof crossed the bridge');
 
   await window.__mlsWriteFlow.startAthenaAction('write_note', opts);
   await tick();
@@ -167,9 +188,23 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
   assert.strictEqual(sent[2].action, 'write_note');
   assert.strictEqual(sent[1].noteText, 'Exact reviewed note.');
   assert.strictEqual(sent[2].noteText, sent[1].noteText, 'note payload changed between visible probe and final confirmation');
-  assert(!sent.some(x => ['stage_billing', 'sign_encounter', 'place_order'].includes(x.action)), 'a final action crossed the bridge');
+  assert(!sent.some(x => ['stage_billing', 'sign_encounter', 'place_order'].includes(x.action)), 'a final action auto-chained from the note write');
 
-  console.log('PASS Athena confirmation runtime: manual final actions never cross the bridge; note probe/cancel/one confirmed execute stay exact');
+  await window.__mlsWriteFlow.startAthenaAction('sign_encounter', opts);
+  await tick();
+  assert.deepStrictEqual(sent.map(x => x.mode), ['probe', 'probe', 'execute', 'probe'], 'Sign did not begin with its own read-only probe');
+  assert.strictEqual(sent[3].action, 'sign_encounter');
+  assert.strictEqual(sent[3].noteWriteProof, 'proof-runtime-note', 'Sign probe lost the exact verified note-write proof');
+  assert.strictEqual(sent.filter(x => x.action === 'sign_encounter' && x.mode === 'execute').length, 0, 'Sign executed before its own clinician confirmation');
+
+  byId.mlsAthenaActionGo.listeners.click[0]({ target: byId.mlsAthenaActionGo });
+  await tick();
+  assert.deepStrictEqual(sent.map(x => x.mode), ['probe', 'probe', 'execute', 'probe', 'execute']);
+  assert.strictEqual(sent[4].action, 'sign_encounter');
+  assert.strictEqual(sent[4].noteWriteProof, 'proof-runtime-note');
+  assert.strictEqual(sent.filter(x => x.action === 'sign_encounter' && x.mode === 'execute').length, 1, 'one Sign confirmation did not emit exactly one execute');
+
+  console.log('PASS Athena confirmation runtime: incapable/missing-proof final actions refuse; note and proof-gated Sign each require their own exact probe and clinician confirmation');
 })().catch(err => {
   console.error(err);
   process.exitCode = 1;

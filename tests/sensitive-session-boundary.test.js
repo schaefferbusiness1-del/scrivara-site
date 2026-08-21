@@ -75,11 +75,18 @@ for (const [name, html] of [['production', prod], ['staging', staging]]) {
   assert(/<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">/.test(html), `${name}: app navigation lacks no-store hint`);
   assert(html.includes("const _resetTok=_authHandoff.reset||''"), `${name}: reset boot bypasses early capture`);
   assert(html.includes("const _inviteTok=_authHandoff.invite||''"), `${name}: invite boot bypasses early capture`);
-  assert(html.includes("base+'#invite='+encodeURIComponent(creds.inviteToken)"), `${name}: generated attorney invite is not fragment-based`);
+  /* Production routes every account role through the lane-aware helper; staging
+     still has the older attorney-only builder. Both are safe only when the
+     secret is encoded into the fragment, never the HTTP query. */
+  const directFragmentInvite = html.includes("base+'#invite='+encodeURIComponent(creds.inviteToken)");
+  const helperFragmentInvite =
+    html.includes('accountInviteLinkForCurrentLane(creds&&creds.inviteUrl,creds&&creds.inviteToken)') &&
+    html.includes("return location.origin+path+'#invite='+encodeURIComponent(secret)");
+  assert(directFragmentInvite || helperFragmentInvite, `${name}: generated attorney invite is not fragment-based`);
   assert(!html.includes("base+'?invite='+encodeURIComponent(creds.inviteToken)"), `${name}: generated attorney invite leaks through the HTTP query`);
   assert(!/id="phoneMicPage"|initPhoneMicPage|togglePhoneRec|uploadPhoneChunk|_params\.get\(['"]mic['"]\)|PHONE MICROPHONE\s+\(phone side/i.test(html), `${name}: retired in-app phone recorder still exists`);
   assert(/\/api\/auth\/reset'[\s\S]{0,240}?cache:'no-store'[\s\S]{0,120}?referrerPolicy:'no-referrer'/.test(html), `${name}: password reset request is cache/referrer unsafe`);
-  assert(/\/api\/auth\/lawyer-invite'[\s\S]{0,220}?cache:'no-store'[\s\S]{0,100}?referrerPolicy:'no-referrer'/.test(html), `${name}: attorney invite exchange is cache/referrer unsafe`);
+  assert(/\/api\/auth\/(?:lawyer-)?invite'[\s\S]{0,240}?cache:'no-store'[\s\S]{0,120}?referrerPolicy:'no-referrer'/.test(html), `${name}: attorney invite exchange is cache/referrer unsafe`);
   const logoutAt = html.indexOf('function logout(force)');
   const logoutEnd = html.indexOf('/* =========================================================', logoutAt);
   const logout = html.slice(logoutAt, logoutEnd);
@@ -216,6 +223,7 @@ function storage(initial) {
     [`sf_visit_draft::${current}`]: 'draft',
     mlsRlActiveJob: 'appointment-job',
     providerSnapshot: 'provider',
+    mlsP1PullTabV1: 'pull-tab-identity',
     sf_bk_token: 'tab-token'
   });
   const deletedDbs = [];
@@ -245,25 +253,32 @@ function storage(initial) {
   assert.strictEqual(sessionStorage.clears, 1, 'sessionStorage was not cleared atomically');
   assert.deepStrictEqual(deletedDbs.sort(), ['mls_rec_backup', 'mls_recguard'], 'logout did not delete both clinical audio databases');
 
-  /* Independently derive literal global clinical storage keys from production
-     writers. New matching writers must be classified without adding a logout
-     one-off, while every uns(...) key is covered by the account prefix rule. */
+  /* Independently derive literal global clinical LOCAL-storage keys from
+     production writers. New matching local writers must be classified without
+     adding a logout one-off, while every uns(...) key is covered by the account
+     prefix rule. Session-only writers are deliberately separate: purge() clears
+     the complete per-tab store, proven above, so asking the local-key matcher to
+     classify them would test the wrong storage boundary. */
   const productionFiles = fs.readdirSync(root)
     .filter(name => (name === 'ScribeFlow.html' || name === 'mls-connect.js' || /^feat_.*\.js$/.test(name)))
     .map(name => read(name));
-  const literalKeys = new Set();
-  const call = /(?:localStorage|sessionStorage)\.(?:getItem|setItem|removeItem)\(\s*(['"])([^'"]+)\1/g;
+  const localLiteralKeys = new Set();
+  const sessionLiteralKeys = new Set();
+  const call = /(localStorage|sessionStorage)\.(?:getItem|setItem|removeItem)\(\s*(['"])([^'"]+)\2/g;
   for (const source of productionFiles) {
     let match;
-    while ((match = call.exec(source))) literalKeys.add(match[2]);
+    while ((match = call.exec(source))) {
+      (match[1] === 'localStorage' ? localLiteralKeys : sessionLiteralKeys).add(match[3]);
+    }
   }
   const clinicalHint = /(?:patient|appt|appointment|calappt|provider|doctorid|copilot|draft|visit|note|record|recsegment|transcript|audio|athena|sched|intake|legal[_-]?visit|outcome|writeback|asstwb|(?:^|[_-])wb|pull|portal.*token|cache|history|studygroup|statuscenter|reviewreq|progress)/i;
-  const derived = [...literalKeys].filter(key => clinicalHint.test(key));
+  const derived = [...localLiteralKeys].filter(key => clinicalHint.test(key));
+  const sessionDerived = [...sessionLiteralKeys].filter(key => clinicalHint.test(key));
   const missed = derived.filter(key => !api._test.shouldRemoveLocalKey(key, current));
   assert.deepStrictEqual(missed, [], `derived global clinical storage keys escape logout: ${missed.join(', ')}`);
 
   assert(backup.includes('purge: purge') && backup.includes('indexedDB.deleteDatabase(DB_NAME)'), 'record-backup database lacks a close/delete purge hook');
   assert(connect.includes('api.purgeClinicalStorage = purgeRecordingDb') && connect.includes('RG.purging = true'), 'record-guard database lacks a race-safe purge hook');
 
-  console.log(`PASS sensitive session boundary: early URL scrub, fragment handoffs, retired mic path, network-only navigation, ${derived.length} derived storage keys, and both audio DB purges`);
+  console.log(`PASS sensitive session boundary: early URL scrub, fragment handoffs, retired mic path, network-only navigation, ${derived.length} derived local keys, ${sessionDerived.length} session-only keys covered by atomic clear, and both audio DB purges`);
 })().catch(error => { console.error(error); process.exit(1); });

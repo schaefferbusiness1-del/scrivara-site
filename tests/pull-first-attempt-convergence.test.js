@@ -59,7 +59,7 @@ function part2() {
 
   /* ---- 3. auto-convergence, EXECUTED ---- */
   const s = connect.indexOf('var DS_BODIES_REASON');
-  const e = connect.indexOf('function startPull()');
+  const e = connect.indexOf('function startPull(autoRetry)');
   assert(s > 0 && e > s, 'dsAutoConvergeBodies block missing');
   const block = connect.slice(s, e);
 
@@ -110,8 +110,21 @@ function part2() {
     assert.strictEqual(h, 1, 'cv-1.2: presence-assisted batches converge even with the app tab hidden (got ' + h + ')');
     assert.strictEqual(i, 0, 'cv-1.2: a hidden tab WITHOUT presence still refuses (forgotten-tab hazard)');
 
-    /* ---- 4. the completion hook is wired ---- */
-    assert(/done\(outcome\.ok[^;]*;\s*[\s\S]{0,220}?if \(retryCount > 0\) dsAutoConvergeBodies\(sessionSerial\);/.test(connect),
-      'the local pull completion must invoke the auto-convergence');
+    /* ---- 4. one continuous completion hook is wired ---------------------
+       The verdict may be painted early only when convergence is ineligible.
+       Eligible work transfers screen ownership before the automatic pass and
+       calls done exactly from its settlement callback. */
+    const startPull = connect.slice(e, connect.indexOf('function removeDoctorDayControls', e));
+    const will = startPull.indexOf('var willConverge = retryCount > 0 && dsConvergeEligible(result);');
+    const early = startPull.indexOf('if (!willConverge) {', will);
+    const transfer = startPull.indexOf('DS.__autoRetrying = true;', early);
+    const converge = startPull.indexOf('dsAutoConvergeBodies(sessionSerial, function (cv) {', transfer);
+    const settledDone = startPull.indexOf('done(outcome.ok, outcome.message + cvNote', converge);
+    assert(will >= 0 && early > will && transfer > early && converge > transfer && settledDone > converge,
+      'continuous convergence no longer gates the early verdict, transfers ownership, and settles through one final done callback');
+    assert(/if \(!willConverge\) \{\s*done\(outcome\.ok,[\s\S]{0,180}?return;\s*\}/.test(startPull),
+      'an ineligible convergence path no longer ends once without starting a second lane');
+    assert(startPull.indexOf('done(outcome.ok', early) < transfer,
+      'the non-convergence verdict moved outside its guarded branch');
   }).catch(err => { console.error(err); process.exit(1); });
 }

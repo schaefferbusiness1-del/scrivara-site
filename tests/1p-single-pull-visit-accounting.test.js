@@ -12,12 +12,11 @@
  *
  * Two defects, both proven at HEAD before this suite existed:
  *
- *   1. The visit leg had THREE silent exits and a receipt on none of them:
- *      the "pull full visit notes" preference being off, the patient record
- *      not resolving, and the reader resolving nothing (cv.run resolves
- *      undefined when it is busy or cannot resolve a patient). All three
- *      returned the pull's own `true` and said nothing, so all three were
- *      indistinguishable from success.
+ *   1. The visit leg had silent exits when the patient record did not resolve
+ *      or the reader resolved nothing (cv.run resolves undefined when it is
+ *      busy or cannot resolve a patient). A later contract also clarified that
+ *      the preference governs day/bulk work: an explicit single-patient pull
+ *      always requests that chart's visits and accounts for the result.
  *   2. The b121 visits-backfill can never rescue a single pull. It is
  *      edge-triggered on __mlsDayHistoryPull.state.running going true->false,
  *      which only the DAY engines set. A single pull produces no edge, so the
@@ -81,12 +80,18 @@ function harness(opts) {
   };
   const toast = (m, k) => toasts.push({ m: String(m), k: String(k || '') });
   const enabled = () => opts.enabled !== false;
+  const readerCalls = [];
+  const reader = opts.runForPatient || (() => Promise.resolve({ ok: true, visits: 0 }));
   const api = {
-    runForPatient: opts.runForPatient || (() => Promise.resolve({ ok: true, visits: 0 }))
+    runForPatient: function () {
+      const args = Array.prototype.slice.call(arguments);
+      readerCalls.push(args);
+      return reader.apply(null, args);
+    }
   };
   const factory = new Function('window', 'toast', 'enabled', 'api',
     block + '\n; return { spvVisitLeg: spvVisitLeg, spvVisitCount: spvVisitCount, spvEnqueue: spvEnqueue };');
-  return { fns: factory(window, toast, enabled, api), toasts, enqueued, window };
+  return { fns: factory(window, toast, enabled, api), toasts, enqueued, readerCalls, window };
 }
 
 const TARGET = { patientId: 'p-7618711', name: 'Synthetic Patient Spv', dob: '07/08/1968', mrn: '7618711' };
@@ -101,15 +106,21 @@ function neverClaimsHistory(r) {
 
 (async function run() {
 
-  /* ---- 1. the preference is off: honest, and it names the toggle ---- */
+  /* ---- 1. the preference is off: an explicit single-patient request still
+     reads this chart's visits, with an explicit non-persistent override ---- */
   {
-    const h = harness({ enabled: false, patients: [patient([])] });
-    const r = await h.fns.spvVisitLeg(patient([]), TARGET);
-    ok(r.ok === false && r.reason === 'preference-off', 'a preference-off skip must be recorded, not silent');
-    ok(/were NOT read/.test(r.message), 'the receipt must say the visit notes were not read');
-    ok(/Pull full visit notes/.test(r.message) && /Settings/.test(r.message),
-      'it must name the exact setting the doctor has to change');
-    ok(neverClaimsHistory(r), 'a preference-off pull must never claim saved history');
+    const landed = patient([]);
+    const h = harness({ enabled: false, patients: [landed], runForPatient: (p, onStatus, runOpts) => {
+      landed.visits = [{ id: 'v-pref-off-single' }];
+      return Promise.resolve({ ok: true, visits: 1, runOpts });
+    } });
+    const r = await h.fns.spvVisitLeg(landed, TARGET);
+    ok(r.ok === true && r.reason === 'read' && r.added === 1,
+      'an explicit single-patient pull must read and account for visits even when the day/bulk preference is off');
+    ok(h.readerCalls.length === 1 && h.readerCalls[0][2] && h.readerCalls[0][2].singlePull === true,
+      'the single-patient visit leg must pass the explicit, non-persistent singlePull override');
+    ok(/1 prior visit note/.test(r.message), 'the receipt must say exactly what the explicit single pull added');
+    ok(neverClaimsHistory(r), 'the single pull must not use the retired broad "Athena history" claim');
     ok(h.toasts.length === 1, 'the verdict must be said out loud exactly once');
   }
 

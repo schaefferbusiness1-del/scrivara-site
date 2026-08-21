@@ -25,6 +25,25 @@ const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 const connect = read('mls-connect.js');
 const importer = read('feat_mls_schedimport_exact.js');
 
+function extractBraced(src, token) {
+  const at = src.indexOf(token);
+  assert(at >= 0, 'extractor found ' + token);
+  const open = src.indexOf('{', at);
+  let depth = 0, quote = null, lineComment = false, blockComment = false;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i], n = src[i + 1];
+    if (lineComment) { if (c === '\n') lineComment = false; continue; }
+    if (blockComment) { if (c === '*' && n === '/') { blockComment = false; i++; } continue; }
+    if (quote) { if (c === '\\') i++; else if (c === quote) quote = null; continue; }
+    if (c === '/' && n === '/') { lineComment = true; i++; continue; }
+    if (c === '/' && n === '*') { blockComment = true; i++; continue; }
+    if (c === "'" || c === '"' || c === '`') { quote = c; continue; }
+    if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return src.slice(at, i + 1);
+  }
+  throw new Error('unbalanced braces after ' + token);
+}
+
 /* ---- hop 1: the phone puts its own control's value in the payload ---- */
 /* Anchor on where the payload is BUILT, not on the fetch body — the frozen trio
    is a named object so the choice can be added without disturbing it. */
@@ -67,20 +86,19 @@ assert(/var _pullBodiesOverride = null;/.test(importer),
   'the importer needs a per-pull override slot');
 const pullIdx = importer.indexOf('function pull(opts) {');
 assert(pullIdx > 0, 'pull(opts) could not be located');
-const pullBlock = importer.slice(pullIdx, pullIdx + 2600);
+const pullBlock = extractBraced(importer, 'function pull(opts) {');
 assert(/_pullBodiesOverride = \(typeof opts\.pullVisitBodies === "boolean"\) \? opts\.pullVisitBodies : null;/.test(pullBlock),
   'pull() must set the override from an explicit boolean and otherwise CLEAR it');
 /* Cleared on BOTH settle paths, or one remote request leaks into the next pull —
    which could be a local pull by the doctor sitting at that desk. */
-const settleTail = importer.slice(pullIdx, pullIdx + 3400);
-/* Exactly two BARE clears inside pull(): one per settle path. The initial set
-   ends `: null;` and deliberately does not match this literal, so counting it
-   here would have made the assertion pass for the wrong reason. */
-const clears = (settleTail.match(/_pullBodiesOverride = null;/g) || []).length;
+const settleTail = pullBlock;
+/* Exactly two ownership-guarded clears inside pull(): one per settle path. A
+   busy click does not own the active pull and must not clear its override. */
+const clears = (settleTail.match(/if \(__ownedPull\) _pullBodiesOverride = null;/g) || []).length;
 assert.strictEqual(clears, 2,
   'the override must be cleared on exactly the two settle paths, success AND failure (found ' + clears +
   '); a leaked override would silently change the NEXT pull, which may be a local one at that desk');
-assert(/}, function \(err\) \{[\s\S]{0,300}_pullBodiesOverride = null;[\s\S]{0,120}throw err;/.test(settleTail),
+assert(/}, function \(err\) \{[\s\S]{0,500}if \(__ownedPull\) _pullBodiesOverride = null;[\s\S]{0,120}throw err;/.test(settleTail),
   'the failure path must clear the override and rethrow, not swallow the error');
 
 /* ---- hop 4: the importer consults the override BEFORE the device preference ----

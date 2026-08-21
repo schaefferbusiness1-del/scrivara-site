@@ -735,8 +735,8 @@
   },
   {
    "id": "ptPullAthenaBtn",
-   "label": "Pull the patient open in athena",
-   "accessibleName": "Pull the patient open in athena",
+   "label": "Pull the open patient in athena",
+   "accessibleName": "Pull the open patient in athena",
    "title": "Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you",
    "kind": "button",
    "tag": "button",

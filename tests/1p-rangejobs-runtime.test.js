@@ -1,9 +1,10 @@
 'use strict';
 
-/* Deterministic /p1-only range-job proof. The engine runs in an isolated VM;
- * real Chrome then exercises its additive Staff Prep controls against a local,
- * synthetic importer. No Athena account, backend, PHI, or regular-site source
- * is used. */
+/* Deterministic range-job proof, originating in /p1 and now promoted to the
+ * official site through the production-from-1p derivation. The engine runs in
+ * an isolated VM; real Chrome then exercises its additive Staff Prep controls
+ * against a local, synthetic importer. No Athena account, backend, or PHI is
+ * used. */
 const assert = require('assert');
 const fs = require('fs');
 const http = require('http');
@@ -11,17 +12,29 @@ const vm = require('vm');
 const { chromium } = require('playwright');
 
 const source = fs.readFileSync('1p-feat_mls_rangejobs.js', 'utf8');
+const productionSource = fs.readFileSync('feat_mls_rangejobs.js', 'utf8');
 const importerSource = fs.readFileSync('1p-feat_mls_schedimport_exact.js', 'utf8');
 const p1Connect = fs.readFileSync('1p-mls-connect.js', 'utf8');
 const regularConnect = fs.readFileSync('mls-connect.js', 'utf8');
 
 assert(p1Connect.includes("s.src=A+'?v='+(window.__MLS_AV||'p1-preview')") &&
   p1Connect.includes("A='1p-feat_mls_rangejobs.js',V='p1-rangejobs-1.1.0'"), 'the /p1 loader does not install the current range-job engine');
-assert(!regularConnect.includes('1p-feat_mls_rangejobs.js') && !regularConnect.includes('__mlsP1RangeJobs'),
-  'the regular site was made aware of the /p1 range-job engine');
+assert(regularConnect.includes("A='feat_mls_rangejobs.js',V='p1-rangejobs-1.1.0'") &&
+  regularConnect.includes('__mlsP1RangeJobs') && !regularConnect.includes('1p-feat_mls_rangejobs.js'),
+  'the official bundle does not load the promoted range-job engine under its production asset name');
 assert(source.includes("preview.route === '/1p/' || preview.route === '/1pScribeFlow.html'") &&
   source.includes('preview.enabled === true') && source.includes('preview.build'),
   'the range-job asset can install without the exact /p1 preview marker');
+const expectedProductionSource = source
+  .split('__MLS_P1_PREVIEW').join('__MLS_MAIN')
+  .split("(preview.route === '/1p/' || preview.route === '/1pScribeFlow.html')")
+    .join("(preview.route === '/ScribeFlow.html' || preview.route === '/')")
+  .split('1p-feat_').join('feat_');
+assert.strictEqual(productionSource, expectedProductionSource,
+  'the official range-job asset drifted from the promoted /p1 source beyond lane identity');
+assert(productionSource.includes("preview.route === '/ScribeFlow.html' || preview.route === '/'") &&
+  productionSource.includes('window.__MLS_MAIN'),
+  'the official range-job asset lacks its exact production marker gate');
 assert(!/\btoast\s*\(/.test(source), 'background range recovery can emit notification spam');
 assert(source.includes("document.getElementById('ez3PullStart')") && source.includes("document.getElementById('ez3Prov')") &&
   source.includes("id=\"mlsP1YearChoice\"") && source.includes("id=\"mlsP1YearProgress\""),
@@ -867,6 +880,32 @@ async function testDoctorFacingYearPullUi() {
     const pickedYear = initial.years[1];
     await page.selectOption('#mlsP1YearChoice', pickedYear);
     await page.check('#mlsP1YearFullNotes');
+    /* The production clunky owner groups this exact node under its fold. The
+       range owner must accept that host while it remains inside the canonical
+       pull card, preserving node identity, selection and the four handlers. */
+    await page.evaluate(() => {
+      const root = document.getElementById('mlsP1YearPull');
+      const card = root.closest('.ez3-card.ez3-pull');
+      const fold = document.createElement('details'); fold.id = 'mlsClunkyPullMore';
+      const body = document.createElement('div'); body.id = 'mlsClunkyPullMoreBody';
+      fold.appendChild(body); card.insertBefore(fold, root); body.appendChild(root);
+      fold.open = true;
+      window.__foldedYearIdentity = root;
+      document.body.appendChild(document.createElement('i'));
+    });
+    await page.waitForTimeout(220);
+    const folded = await page.evaluate(() => ({
+      same: window.__foldedYearIdentity === document.getElementById('mlsP1YearPull'),
+      parent: document.getElementById('mlsP1YearPull').parentElement.id,
+      year: document.getElementById('mlsP1YearChoice').value,
+      full: document.getElementById('mlsP1YearFullNotes').checked,
+      roots: document.querySelectorAll('#mlsP1YearPull').length
+    }));
+    assert.strictEqual(folded.same, true, 'rangejobs replaced the year controller after the Staff Prep fold moved it');
+    assert.strictEqual(folded.parent, 'mlsClunkyPullMoreBody', 'rangejobs fought the canonical Staff Prep fold host');
+    assert.strictEqual(folded.year, pickedYear, 'Staff Prep fold churn lost the chosen year');
+    assert.strictEqual(folded.full, true, 'Staff Prep fold churn lost the full-note choice');
+    assert.strictEqual(folded.roots, 1, 'Staff Prep fold integration duplicated the year controller');
     await page.evaluate(() => {
       const start = document.getElementById('mlsP1YearStart');
       start.click();

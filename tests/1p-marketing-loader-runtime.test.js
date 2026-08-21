@@ -17,12 +17,14 @@ function eq(a, b, m) { assert.strictEqual(a, b, m); checks++; }
 function ok(v, m) { assert.ok(v, m); checks++; }
 
 function runtime(options = {}) {
-  const scripts = [], nodes = [], observers = [], timers = new Map(), defers = []; let nextTimer = 1;
+  const scripts = [], nodes = [], observers = [], timers = new Map(), defers = [], listeners = {}; let nextTimer = 1;
   function node(tag) { return { tagName: String(tag || '').toUpperCase(), attrs: {}, parentNode: null, src: '', id: '',
     setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; }, removeAttribute(k) { delete this.attrs[k]; } }; }
   const head = { appendChild(n) { n.parentNode = this; nodes.push(n); if (n.tagName === 'SCRIPT') scripts.push(n); return n; }, removeChild(n) { let at = scripts.indexOf(n); if (at >= 0) scripts.splice(at, 1); at = nodes.indexOf(n); if (at >= 0) nodes.splice(at, 1); n.parentNode = null; } };
   const document = { head, documentElement: head, createElement: tag => node(tag),
-    getElementById(id) { return nodes.find(n => n.id === id) || null; }, addEventListener() {}, removeEventListener() {},
+    getElementById(id) { return nodes.find(n => n.id === id) || null; },
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter(item => item !== fn); },
     querySelectorAll(selector) { return /feat_mls_marketing/.test(selector) ? scripts.filter(n => n.getAttribute('data-mls-asset') === 'feat_mls_marketing.js') : []; } };
   let orphanGuard = null;
   if (options.orphanGuard) { orphanGuard = node('style'); orphanGuard.id = 'mlsP1MarketingLoadingGuardCss'; orphanGuard.setAttribute('data-mls-install-token', 'orphan-token'); head.appendChild(orphanGuard); }
@@ -34,19 +36,24 @@ function runtime(options = {}) {
   const context = { window, document, setTimeout(fn) { const id = nextTimer++; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); }, Date, Math, Number, console };
   vm.createContext(context);
   function evaluate() { vm.runInContext(source, context, { filename: '1p-mls-connect.js#marketing-loader' }); }
+  function tick() { const jobs = [...timers.values()]; timers.clear(); jobs.forEach(fn => fn()); }
   evaluate();
-  return { window, document, scripts, nodes, orphanGuard, timers, defers, evaluate,
+  const coldScripts = scripts.length;
+  if (options.autoIdle !== false) tick();
+  return { window, document, scripts, nodes, orphanGuard, timers, defers, evaluate, coldScripts,
+    click(selector) { const event = { target: { closest(query) { return query.includes(selector) ? this : null; } }, preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} }; (listeners.click || []).slice().forEach(fn => fn(event)); },
     mutate() { observers.filter(observer => observer.connected).forEach(observer => observer.callback([])); },
-    tick() { const jobs = [...timers.values()]; timers.clear(); jobs.forEach(fn => fn()); } };
+    tick };
 }
 {
   const r = runtime(), ctl = r.window.__mlsP1MarketingLoader;
+  eq(r.coldScripts, 0, 'Marketing joined cold boot before first-use/idle admission');
   r.scripts[0].onerror(); r.tick(); r.scripts[0].onerror();
   eq(ctl.state, 'failed-bounded', 'fixture did not exhaust Marketing load retries');
   const calls = [];
   const lateReach = { open(kind) { calls.push(['open', kind]); return 'old-' + kind; }, openReviews() { calls.push(['reviews']); return 'old-reviews'; }, openContext(kind) { calls.push(['context', kind]); return 'old-context'; } };
   const originals = { open: lateReach.open, openReviews: lateReach.openReviews, openContext: lateReach.openContext };
-  r.window.__mlsPatientReach = lateReach; r.mutate();
+  r.window.__mlsPatientReach = lateReach; ctl.guardReach();
   eq(lateReach.open('reviews'), false, 'failed-bounded loader allowed late Premium Reviews open');
   eq(lateReach.openContext('send'), 'old-context', 'fail-closed guard changed Patient Reach send route');
   ctl.revert();
@@ -54,6 +61,14 @@ function runtime(options = {}) {
   eq(lateReach.openReviews, originals.openReviews, 'guard revert did not restore late openReviews');
   eq(lateReach.openContext, originals.openContext, 'guard revert did not restore late openContext');
   eq(calls.some(call => call[0] === 'open' && call[1] === 'reviews'), false, 'guard delegated blocked review route');
+}
+
+/* Opening Tools admits Marketing immediately, before its idle fallback. */
+{
+  const r = runtime({ autoIdle: false });
+  eq(r.scripts.length, 0, 'Marketing was not cold before the Tools first-use trigger');
+  r.click('#mlsToolsBtn');
+  eq(r.scripts.length, 1, 'Tools first-use did not immediately admit Marketing');
 }
 
 {
@@ -123,7 +138,7 @@ function runtime(options = {}) {
 }
 {
   const r = runtime(), old = r.window.__mlsP1MarketingLoader, oldNode = r.scripts[0], lateLoad = oldNode.onload;
-  old.revert(); r.evaluate(); const fresh = r.window.__mlsP1MarketingLoader, freshNode = r.scripts[0];
+  old.revert(); r.evaluate(); r.tick(); const fresh = r.window.__mlsP1MarketingLoader, freshNode = r.scripts[0];
   ok(fresh !== old && fresh.installToken !== old.installToken, 'new loader reused stale controller/token');
   let freshReverts = 0;
   r.window.__mlsP1Marketing = { installed: true, version: fresh.version, installToken: fresh.installToken, reconcile() {}, isDirty: () => false, open() {}, close() {}, revert() { freshReverts++; this.installed = false; } };

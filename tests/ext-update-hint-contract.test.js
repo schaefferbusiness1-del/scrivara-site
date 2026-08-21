@@ -15,14 +15,24 @@ const root = path.resolve(__dirname, '..');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-/* pin moved si-1.7.17 -> si-1.7.18 deliberately: mdx-1.1.0 captures the
-   bodies/index refusal sub-cause evidence (failedIndexes histogram, enumDiag)
-   and guards the pace learner against fast empty reads; the update-hint
-   behavior this suite pins is unchanged. */
-/* pin moved si-1.7.18 -> si-1.7.19 deliberately: mdx-2.0.0 collapses roster
-   display echoes of the SAME clinician for the selected-provider name
-   fallback (Mac field report 2026-08-06, b894) and discloses the basis. */
-assert(si.includes('var VERSION = "si-1.7.23-default-census"'), 'si-1.7.23 default-census release marker missing');
+/* Production is now derived from the promoted 1p lane. Pin that exact release
+   owner here so this safety suite cannot accidentally exercise a retired
+   default-census bundle while claiming to cover the live receipt gates. */
+const si1p = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
+const p1Shell = fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8');
+const productionShell = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+const p1Build = (p1Shell.match(/var P1_BUILD='([^']+)'/) || [])[1];
+const productionBuild = (productionShell.match(/var P1_BUILD='([^']+)'/) || [])[1];
+assert(/^p1-/.test(p1Build || '') && /^main-/.test(productionBuild || ''),
+  'promoted lane build identities must remain readable before comparing the importer');
+assert(si.includes('var VERSION = "si-1.7.22-p1-census1"'),
+  'promoted si-1.7.22-p1-census1 release marker missing');
+assert.strictEqual(si, si1p.replace(/__MLS_P1_PREVIEW/g, '__MLS_MAIN')
+  .replace(/1p-feat_/g, 'feat_')
+  .split(p1Build).join(productionBuild)
+  .replace('A p1 local metadata write failed during this pull.',
+    'A local metadata write failed during this pull.'),
+  'production schedule importer must remain the promoted 1p source modulo lane identity');
 
 /* the hint must trigger ONLY on receipt-shaped failures, never on e.g. signin */
 const gates = si.match(/RECEIPT_GATE_REASONS = \{([^}]+)\}/);

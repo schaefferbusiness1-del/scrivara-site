@@ -139,8 +139,14 @@ ok(/Charts needing retry: /.test(SI), '1.2 si: day-end names the failing set');
    into first-attempt). Pin moved deliberately with that change — and again
    with qol-2.2 (2026-08-10), which added chartSaved (a persisted chart whose
    visits half failed is named "chart saved — visit notes incomplete" instead
-   of plain not-saved; derived from read-back-proven one.organized). */
-ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface, pid: one\.patientId, axe: one\.axEntry, chartSaved: /.test(SI), '1.2 si: settle call passes extras (incl. pid + redo entry + chartSaved truth chip)');
+   of plain not-saved; derived from read-back-proven one.organized). The
+   summary-pending truth chip may sit between axe and chartSaved; assert the
+   semantic contents of this exact call instead of accidental adjacency. */
+const settleAt = SI.indexOf('one.__ppRow = ppSettle(row.name, one.parsePipelined');
+const settleLine = settleAt < 0 ? '' : SI.slice(settleAt, SI.indexOf('\n', settleAt));
+ok(settleAt > 0, '1.2 si: primary row settle call found');
+ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface, pid: one\.patientId, axe: one\.axEntry, sp: one\.summaryPending === true, chartSaved: /.test(settleLine),
+  '1.2 si: settle call passes surface, exact patient, redo, summary-pending and chartSaved truth chips');
 
 /* ---- axd-1.0 (3.0.54): the dissection payload persists. noRowDiag's
  * liTotal/eidHit (list-vanished vs row-left vs group-resolution-failed)

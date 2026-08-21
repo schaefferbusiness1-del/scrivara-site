@@ -85,6 +85,90 @@ assert.strictEqual(reviewCalls[0].patient.name, 'Example Patient');
 directSnapshot.billing.cptCodes[0] = 'M5450';
 assert.deepStrictEqual(JSON.parse(JSON.stringify(reviewCalls[0].plan[0].billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] }, 'post-preview coding mutation changed the reviewed billing snapshot');
 
+/* The canonical review keeps billing manual for an older/unknown extension,
+ * then exposes one exact separately confirmed staging action only when the
+ * installed extension advertises the typed final-action contract. */
+const billingDocument = {
+  readyState: 'loading', body: {}, addEventListener() {}, getElementById() { return null; },
+  querySelectorAll() { return []; }, createElement() { return {}; }
+};
+const billingWindow = {
+  document: billingDocument, location: { origin: 'https://mlsscribe.com' },
+  addEventListener() {}, removeEventListener() {}, postMessage() {}, toast() {}
+};
+billingWindow.window = billingWindow;
+function BillingMutationObserver() { this.observe = () => {}; this.disconnect = () => {}; }
+const billingContext = {
+  window: billingWindow, document: billingDocument, MutationObserver: BillingMutationObserver, console,
+  setTimeout, clearTimeout, Date, Math, Promise, Object, Array, String, Number, RegExp, JSON, Uint32Array
+};
+vm.createContext(billingContext);
+vm.runInContext(writeflow, billingContext);
+const billingFlow = billingWindow.__mlsWriteFlow;
+const billingReviewOpts = {
+  patient: { patientId: 'billing-patient-1', name: 'Example Patient', dob: '01/02/1980', mrn: '123' },
+  expectedContext: { visitDate: '07/14/2026', provider: 'Example Doctor, MD', appointmentId: 'appt-billing-1' },
+  requireExpectedVisit: true, receiptSessionId: 'billing-review-fixed', previewHash: 'billing-preview-fixed',
+  plan: [
+    { kind: 'billing', body: 'BILLING:\nE/M level: 99214\nCPT: 20610', billing: { emCode: '99214', cptCodes: ['20610'] } },
+    { kind: 'dx', body: 'ICD-10 DIAGNOSES:\n- M54.50' },
+    { kind: 'orders', body: 'ORDERS:\n- MRI lumbar spine' }
+  ]
+};
+const legacyBillingManifest = billingFlow.buildUnifiedManifest(billingReviewOpts);
+const legacyBillingRow = legacyBillingManifest.rows.find(row => row.id === 'stage-billing');
+assert.strictEqual(legacyBillingRow.capability, 'manual', 'billing must remain manual without the typed extension capability');
+assert.strictEqual(legacyBillingRow.action, '', 'billing exposed an executable action without the typed extension capability');
+assert(/update MLS Assist|previous write-safety policy/i.test(legacyBillingRow.reason), 'manual billing fallback did not name the missing capability and cure');
+
+billingWindow.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
+const capableBillingManifest = billingFlow.buildUnifiedManifest(billingReviewOpts);
+const capableBillingRow = capableBillingManifest.rows.find(row => row.id === 'stage-billing');
+assert.strictEqual(capableBillingRow.capability, 'ready', 'exact billing did not become separately confirmable under the typed capability');
+assert.strictEqual(capableBillingRow.action, 'stage_billing', 'capable billing lost its exact typed action');
+assert.deepStrictEqual(Array.from(capableBillingRow.payload.billing.cptCodes), ['20610'], 'capable billing lost or widened its frozen CPT/HCPCS payload');
+assert(Object.isFrozen(capableBillingRow) && Object.isFrozen(capableBillingRow.payload) && Object.isFrozen(capableBillingRow.payload.billing.cptCodes), 'capable billing payload is not immutable');
+assert.strictEqual(capableBillingManifest.rows.find(row => row.kind === 'dx').capability, 'manual', 'diagnosis review became executable billing');
+assert.strictEqual(capableBillingManifest.rows.find(row => row.kind === 'orders').capability, 'manual', 'untyped order prose became executable');
+
+const missingIdentityBilling = billingFlow.buildUnifiedManifest(Object.assign({}, billingReviewOpts, {
+  patient: { patientId: 'billing-patient-1', name: 'Example Patient', dob: '', mrn: '123' }
+})).rows.find(row => row.id === 'stage-billing');
+assert.strictEqual(missingIdentityBilling.capability, 'blocked', 'billing did not fail closed without complete immutable patient identity');
+const missingEncounterBilling = billingFlow.buildUnifiedManifest(Object.assign({}, billingReviewOpts, {
+  expectedContext: {}, requireExpectedVisit: true
+})).rows.find(row => row.id === 'stage-billing');
+assert.strictEqual(missingEncounterBilling.capability, 'blocked', 'billing did not fail closed without exact historical encounter context');
+
+/* The direct and unified controllers must refuse before a probe or execute
+ * whenever capability, typed codes, proof/hash binding, token, identity, or
+ * encounter context is absent or changed. Execution stays inside the human's
+ * confirm click and never auto-chains another action. */
+const startAction = between(writeflow, 'function startAthenaAction(action, opts)', 'function deepFreeze(value)');
+const startProbeAt = startAction.indexOf("mode: 'probe'");
+assert(startAction.indexOf('final-action-capability-required') >= 0 && startAction.indexOf('final-action-capability-required') < startProbeAt, 'billing can probe without the typed extension capability');
+assert(startAction.indexOf('no-billing-codes') >= 0 && startAction.indexOf('no-billing-codes') < startProbeAt, 'billing can probe without exact typed codes');
+const directConfirm = between(writeflow, 'function showActionConfirm(action, opts, patient, previewHash, payload, probe)', '/* wf2-2.0.0');
+const directExecuteAt = directConfirm.indexOf("mode: 'execute'");
+assert(directConfirm.indexOf('if (!actionToken)') >= 0 && directConfirm.indexOf('if (!actionToken)') < directExecuteAt, 'billing can execute without a one-use action token');
+assert(directConfirm.indexOf('!athName || !athDob || !athMrn') >= 0 && directConfirm.indexOf('!athName || !athDob || !athMrn') < directExecuteAt, 'billing can execute without complete Athena-reported identity');
+assert(directConfirm.indexOf('!nameMatch(athName, patient.name)') >= 0 && directConfirm.indexOf('!nameMatch(athName, patient.name)') < directExecuteAt, 'billing can execute after patient identity mismatch');
+assert(directConfirm.indexOf('!lockedContext.encounterId') >= 0 && directConfirm.indexOf('!lockedContext.encounterId') < directExecuteAt, 'billing can execute without exact encounter proof');
+assert(directConfirm.indexOf("go.addEventListener('click'") >= 0 && directConfirm.indexOf("go.addEventListener('click'") < directExecuteAt, 'billing execute escaped the explicit confirmation click');
+assert(/mode:\s*'execute', action:\s*action, actionToken:\s*actionToken/.test(directConfirm), 'billing execute lost its one-use action token binding');
+
+const unifiedExecute = between(writeflow, 'function executeUnifiedSelection(state)', 'function reopenOptions(opts, manifest)');
+const unifiedExecuteAt = unifiedExecute.indexOf("mode: 'execute'");
+assert(unifiedExecute.indexOf("row.capability !== 'ready'") >= 0 && unifiedExecute.indexOf("row.capability !== 'ready'") < unifiedExecuteAt, 'unified billing can execute a manual or blocked row');
+assert(unifiedExecute.indexOf('probe.rowHash !== row.rowHash') >= 0 && unifiedExecute.indexOf('probe.rowHash !== row.rowHash') < unifiedExecuteAt, 'unified billing can execute without fresh row proof');
+assert(unifiedExecute.indexOf('probe.manifestHash !== state.manifest.manifestHash') >= 0 && unifiedExecute.indexOf('probe.manifestHash !== state.manifest.manifestHash') < unifiedExecuteAt, 'unified billing can execute after manifest drift');
+assert(unifiedExecute.indexOf("go.getAttribute('data-mls-athena-action') !== row.action") >= 0 && unifiedExecute.indexOf("go.getAttribute('data-mls-athena-action') !== row.action") < unifiedExecuteAt, 'unified billing can execute after confirm-control drift');
+assert(/mode:\s*'execute', action:\s*row\.action, actionToken:\s*probe\.token/.test(unifiedExecute), 'unified billing execute lost its fresh one-use probe token');
+assert(/expectedPatient:\s*bridgeExecutePatient/.test(unifiedExecute) && /expectedContext:\s*probe\.context/.test(unifiedExecute), 'unified billing execute lost its probed patient or encounter binding');
+assert.strictEqual((unifiedExecute.match(/executeUnifiedSelection\(/g) || []).length, 1, 'one confirmed billing action can recursively auto-chain another action');
+const unifiedRender = between(writeflow, 'function renderUnifiedConfirmation(state)', 'function openUnifiedConfirmation(opts)');
+assert(/go\.addEventListener\('click', function \(\) \{ executeUnifiedSelection\(state\); \}\)/.test(unifiedRender), 'unified billing execution is not exclusively wired to the explicit confirm click');
+
 const identitySource = between(app, 'function _athenaNormIdentity(v)', 'function _athenaResetSuperbill(hide)');
 const sameBoundPatient = Function(identitySource + '\nreturn _athenaSameBoundPatient;')();
 const patientA = { patientId: 'p-a', name: 'Patient A', dob: '01/01/1970', mrn: '100' };
@@ -252,13 +336,13 @@ assert(generation.indexOf('_athenaEditorFingerprint()!==generationFingerprint', 
 assert(generation.indexOf('currentFormat!==generationFormat', generationAwait) < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed note result could overwrite a newly selected note format');
 assert(generation.indexOf('generation-timeout') >= 0 && generation.indexOf('Promise.race') >= 0 && generation.indexOf('Promise.race') < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'note generation must bound the AI wait so a hung request cannot silently disable Generate forever');
 
-const optimization = between(app, 'async function optimizeForPayout()', 'async function postChatRaw');
+const optimization = between(app, 'async function reviewCodingDocumentation()', 'async function postChatRaw');
 const optimizationAwait = optimization.indexOf('await postChatRaw');
-const optimizationMutation = optimization.indexOf('currentOpt=normalizeOpt(data)');
+const optimizationMutation = optimization.indexOf('currentOpt=normalizeOpt(data,');
 assert(optimization.indexOf('if(!currentVisitAthenaBinding)') >= 0 && optimization.indexOf("_athenaGuardBoundEditor('coding optimization')") < optimizationAwait, 'coding optimization must require and guard one immutable visit before starting');
-assert(optimization.indexOf('optimizationBinding=currentVisitAthenaBinding') < optimizationAwait && optimization.indexOf('optimizationEpoch=currentVisitAthenaEpoch') < optimizationAwait && optimization.indexOf('optimizationFingerprint=_athenaEditorFingerprint()') < optimizationAwait, 'coding optimization did not capture the visit, epoch, and exact input before its async request');
+assert(optimization.indexOf('optimizationBinding=currentVisitAthenaBinding') < optimizationAwait && optimization.indexOf('optimizationEpoch=currentVisitAthenaEpoch') < optimizationAwait && optimization.indexOf('optimizationFingerprint=p1CodingReviewFingerprint()') < optimizationAwait, 'coding optimization did not capture the visit, epoch, and exact reviewed evidence before its async request');
 assert(optimizationAwait >= 0 && optimization.indexOf("_athenaAsyncBindingStillSafe(optimizationBinding,'coding optimization',optimizationEpoch)", optimizationAwait) < optimizationMutation, 'a delayed coding response could mutate a different patient visit');
-assert(optimization.indexOf('_athenaEditorFingerprint()!==optimizationFingerprint', optimizationAwait) < optimizationMutation, 'a delayed coding response could overwrite content edited during its request');
+assert(optimization.indexOf('p1CodingReviewFingerprint()!==optimizationFingerprint', optimizationAwait) < optimizationMutation, 'a delayed coding response could overwrite content edited during its request');
 assert(optimization.indexOf('_markVisitDirty()', optimizationMutation) > optimizationMutation, 'accepted coding changes must participate in draft recovery and saved-state checks');
 
 const persistence = between(app, 'function upsertNote(rec)', '/* Best-effort backend persistence');

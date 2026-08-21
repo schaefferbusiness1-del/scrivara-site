@@ -336,6 +336,7 @@ function createHarness() {
 }
 
 function assertLateRosterRefresh() {
+  const installToken = 'provider-month-owned-roster';
   let calendarRefreshes = 0;
   const store = new Map();
   const bridgeWrites = [];
@@ -348,9 +349,23 @@ function assertLateRosterRefresh() {
     },
     document: {
       readyState: 'complete', addEventListener: () => {}, removeEventListener: () => {},
-      querySelector: () => null, querySelectorAll: () => [], getElementById: () => null
+      querySelector: () => null, querySelectorAll: () => [], getElementById: () => null,
+      currentScript: {
+        getAttribute(name) {
+          if (name === 'data-mls-install-token') return installToken;
+          if (name === 'data-mls-asset') return 'feat_athena_provider_roster.js';
+          return null;
+        }
+      }
     },
     _calProviders: [], uns: key => `roster-refresh-test::${key}`,
+    __MLS_MAIN: { enabled: true },
+    __mlsP1ProviderRosterLoader: {
+      installed: true, version: 'p1-provider-roster-1.0.0', installToken
+    },
+    __mlsSessionAccount: 'provider-month@example.test',
+    __mlsSessionEpoch: 1,
+    bkToken: () => 'provider-month-session-token',
     addEventListener: () => {}, removeEventListener: () => {},
     postMessage: msg => bridgeWrites.push(msg),
     renderCalendar: () => { calendarRefreshes++; },
@@ -358,8 +373,30 @@ function assertLateRosterRefresh() {
   };
   context.window = context;
   vm.runInNewContext(rosterSource, context, { filename: 'feat_athena_provider_roster.js', timeout: 1000 });
+  assert(context.__mlsProviderRoster && context.__mlsProviderRoster.version === 'p1-provider-roster-1.0.0',
+    'the promoted provider roster did not install under its exact controller/session owner');
+  assert.strictEqual(context.__mlsProviderRoster.installToken, installToken,
+    'the provider roster API is not bound to the exact loader token');
+  let requestSequence = 0;
+  function exactIngest(response) {
+    const requestId = `provider-month-roster-${++requestSequence}`;
+    assert(context.__mlsProviderRoster.beginOperation({
+      targetDate: '2026-02-03', requestId, providerMode: 'all',
+      requestedProviderId: '', requestedProviderStableKey: ''
+    }), 'the exact provider-roster operation did not arm');
+    const payload = Object.assign({}, response, { requestId });
+    if (payload.providerRosterReceipt) {
+      payload.providerRosterReceipt = Object.assign({}, payload.providerRosterReceipt, {
+        requestId, targetDate: '2026-02-03'
+      });
+    }
+    const result = context.__mlsProviderRoster.ingestResp(payload);
+    assert(!result || result.ignored !== true,
+      'the exact owned provider-roster response was refused as unbound');
+    return result;
+  }
   assert.strictEqual(bridgeWrites.length, 0, 'provider-roster startup must remain read-only and passive');
-  context.__mlsProviderRoster.ingestResp({
+  exactIngest({
     providerRoster: [{ stableKey: 'backend:77', id: '77', raw: 'Doctor_Late_MD', name: 'Late Doctor' }],
     providerRosterReceipt: {
       complete: true, partial: false, reason: 'complete', observedCount: 1,
@@ -368,15 +405,20 @@ function assertLateRosterRefresh() {
   });
   assert(calendarRefreshes > 0, 'late canonical roster ingestion must refresh visible Calendar provider chips');
 
-  // pr-sticky: an evidence-free read (empty weekend day, no provider headers,
-  // no error, no conflict) must NOT revoke a session-verified receipt. This is
-  // the exact live failure that made the first clinic day after a weekend fail
-  // its all-provider roster gate on every month pull.
+  // An evidence-free compatibility replay has no exact armed request owner and
+  // must not revoke the current session-verified receipt. This is the exact
+  // late/empty shape that used to make the first clinic day after a weekend
+  // fail its all-provider roster gate on every month pull.
   assert.strictEqual(context.__mlsProviderRoster.getReceipt().complete, true, 'verified receipt missing before the evidence-free read');
-  context.__mlsProviderRoster.ingestResp({ ok: true, text: '', appts: [] });
-  assert.strictEqual(context.__mlsProviderRoster.getReceipt().complete, true, 'an evidence-free empty-day read revoked the verified roster receipt');
+  const ignoredEmpty = context.__mlsProviderRoster.ingestResp({
+    ok: true, requestId: 'unowned-empty-day', text: '', appts: []
+  });
+  assert.strictEqual(ignoredEmpty && ignoredEmpty.reason, 'unbound-or-stale-response',
+    'an unowned evidence-free replay was not refused at the exact ingestion choke point');
+  assert.strictEqual(context.__mlsProviderRoster.getReceipt().complete, true,
+    'an unowned evidence-free empty-day replay revoked the verified roster receipt');
   // A read carrying a schedule error is contrary evidence and must still downgrade.
-  context.__mlsProviderRoster.ingestResp({ ok: false, error: 'schedule read failed', text: '', appts: [] });
+  exactIngest({ ok: false, error: 'schedule read failed', text: '', appts: [] });
   assert.strictEqual(context.__mlsProviderRoster.getReceipt().complete, false, 'an errored read must still downgrade the receipt (fail-closed)');
 }
 
@@ -394,21 +436,26 @@ async function main() {
   assert.strictEqual(allDoctors.ok, true);
   assert.strictEqual(allDoctors.provider, 'all');
 
-  // A partial canonical roster blocks every selected-provider entry route before
-  // any bridge operation. Calendar exercises the actual public route; Assistant
-  // and Staff wiring above are required to use the same resolver.
+  // A partial canonical roster remains fail-closed on ordinary selected and
+  // every-provider routes. The explicitly guarded Calendar/Day/Month selected
+  // lanes may carry one uniquely detected strong identity forward as
+  // `detectedOnly`; the fresh schedule receipt and row attribution below still
+  // have to prove that exact clinician before anything is imported.
   h.setReceipt({ complete: false, partial: true, reason: 'viewport-incomplete' });
   const partial = api._resolveProviderRequest(h.providerAlpha, { allowAll: true });
   assert.strictEqual(partial.ok, false);
   assert.strictEqual(partial.reason, 'provider-roster-incomplete');
   const calendarPartial = api.calendarSelection();
-  assert.strictEqual(calendarPartial.ok, false);
-  assert.strictEqual(calendarPartial.reason, 'provider-roster-incomplete');
+  assert.strictEqual(calendarPartial.ok, true);
+  assert.strictEqual(calendarPartial.provider.detectedOnly, true);
+  assert.strictEqual(calendarPartial.provider.rosterVerified, false);
+  assert.strictEqual(calendarPartial.provider.id, h.providerAlpha.id);
+  assert.strictEqual(calendarPartial.provider.stableKey, h.providerAlpha.stableKey);
   const beforeBlockedMonth = h.posted.length;
-  const blockedMonth = await api.pullMonth({ month: '2026-02', provider: h.providerAlpha });
+  const blockedMonth = await api.pullMonth({ month: '2026-02', provider: 'all' });
   assert.strictEqual(blockedMonth.ok, false);
   assert.strictEqual(blockedMonth.reason, 'provider-roster-incomplete');
-  assert.strictEqual(h.posted.length, beforeBlockedMonth, 'blocked selected-provider route touched the Athena bridge');
+  assert.strictEqual(h.posted.length, beforeBlockedMonth, 'blocked all-provider month route touched the Athena bridge');
 
   h.setReceipt({ complete: true, partial: false, reason: 'complete' });
   const exactProvider = api._resolveProviderRequest(h.providerAlpha, { allowAll: true });
@@ -557,7 +604,7 @@ async function main() {
     const cleanRun = await api.pullMonth({ month: '2026-05', provider: h.providerAlpha, includeHistory: false });
     assert.strictEqual(cleanRun.stoppedByUser, undefined, 'an unstopped run must not claim a stop');
     assert(!cleanRun.days.some(d => d.reason === 'stopped-by-user'), 'an unstopped run must run every day');
-    assert(/stopPull: function \(\) \{ window\.__mlsPullStopRequested = true;/.test(siSource), 'the engine must expose stopPull()');
+    assert(/stopPull: function \(\) \{\s*window\.__mlsPullStopRequested = true;/.test(siSource), 'the engine must expose stopPull()');
     assert(/window\.__mlsPullStopRequested === true\) \{\n          receipt\.stoppedByUser = true/.test(siSource), 'the per-chart batch loop must honor the flag between charts');
     assert(connectSource.includes('id="mlsPullProgStop"') && connectSource.includes('>Stop pull</button>'), 'the Stop pull button must exist on the progress panel');
     assert(connectSource.includes("getElementById('mlsPullProgStop')") && connectSource.includes('stopPull'), 'the button must be wired to the cooperative stopPull()');
@@ -585,18 +632,27 @@ async function main() {
     });
     const excDay = poisoned.days.find(d => d.date === '2026-05-06');
     assert(excDay && excDay.reason === 'exception', 'the poisoned day must record reason exception, got ' + (excDay ? excDay.reason : 'no-day-entry'));
-    assert(String(excDay.error).includes('sde-test-day-death'), 'the recorded error must carry the real exception, got ' + excDay.error);
-    const emitted = lines.filter(l => l.startsWith('2026-05-06: ') && /unexpected error/.test(l) && /queued for retry/.test(l));
+    assert.strictEqual(excDay.error, undefined, 'a raw exception that may contain chart or DOM text leaked into the durable month receipt');
+    assert.strictEqual(excDay.errorType, 'Error', 'the PHI-free exception class disappeared from the durable month receipt');
+    const emitted = lines.filter(l => l.startsWith('2026-05-06: ') && /stopped before finishing/.test(l) && /queued for retry/.test(l));
     assert.strictEqual(emitted.length, 1, 'the dead day must emit exactly one day-end line into the stream, got ' + emitted.length);
-    assert(emitted[0].includes('sde-test-day-death'), 'the day-end line must name the exception, got ' + emitted[0]);
+    assert(!emitted[0].includes('sde-test-day-death'), 'the day-end line leaked the raw exception, got ' + emitted[0]);
     assert(poisoned.retry.dates.includes('2026-05-06'), 'the dead day must stay retryable');
     assert(poisoned.days.some(d => d.date === '2026-05-07' && d.reason !== 'exception'), 'the day AFTER the death must still run - one dead day must not kill the month');
     const cleanAfter = await api.pullMonth({ month: '2026-05', provider: h.providerAlpha, includeHistory: false });
     assert(!cleanAfter.days.some(d => d.reason === 'exception'), 'control: a clean run must record no exception day');
     // The other two silent exits gained the same day-end shape; pin the emits
     // next to their reasons so a refactor cannot quietly re-silence them.
-    assert(/reason: "stopped-by-user" \}\);[\s\S]{0,220}?onStatus\(date \+ ": Not pulled — stop was requested/.test(siSource), 'the stopped-by-user exit must emit its day-end line');
-    assert(/reason: "not-attempted-after-systemic-failure" \}\);[\s\S]{0,220}?onStatus\(date \+ ": Not attempted — three days in a row failed the same way/.test(siSource), 'the breaker exit must emit its day-end line');
+    const stoppedExit = siSource.slice(siSource.indexOf('if (window.__mlsPullStopRequested === true) {', siSource.indexOf('dates.forEach(function (date, index) {')),
+      siSource.indexOf('        if (breaker.tripped)', siSource.indexOf('dates.forEach(function (date, index) {')));
+    assert(stoppedExit.includes('reason: "stopped-by-user"') &&
+      stoppedExit.includes('onStatus(date + ": Not pulled — stop was requested. The day is queued for retry."'),
+      'the stopped-by-user exit must emit its day-end line');
+    const breakerExit = siSource.slice(siSource.indexOf('        if (breaker.tripped)', siSource.indexOf('dates.forEach(function (date, index) {')),
+      siSource.indexOf('        onStatus("Month pull "', siSource.indexOf('dates.forEach(function (date, index) {')));
+    assert(breakerExit.includes('reason: "not-attempted-after-systemic-failure"') &&
+      breakerExit.includes('onStatus(date + ": Not attempted — three days in a row failed the same way (" + breaker.reason + "), so MLS stopped rather than repeat the failure. The day is queued for retry."'),
+      'the breaker exit must emit its day-end line');
   }
 
   // vb-1.0 (owner 2026-08-09, verbatim: "we do pull the upcoming visit even

@@ -155,6 +155,18 @@ const FH = read('feat_fullhistory_pdf.js');
 const OP = read('feat_mls_opnote_prep.js');
 const WF = read('feat_mls_writeflow.js');
 
+/* Lift isFn by its function identity, not by a disposable parameter spelling.
+   Execute the helper so this fixture still proves the semantic dependency the
+   Legal provider ladder relies on. */
+const LP_IS_FN = block(LP, 'function isFn(');
+{
+  const ctx = { result: null };
+  vm.createContext(ctx);
+  vm.runInContext(LP_IS_FN + '\nthis.result = [isFn(function () {}), isFn({}), isFn(null)];', ctx);
+  assert.deepStrictEqual(Array.from(ctx.result), [true, false, false],
+    'feat_mls_legalpack.js isFn no longer distinguishes callable provider getters from non-functions');
+}
+
 /* feat_mls_opnote_prep's rung list is data, so lift the ARGUMENT LIST from the
    file rather than re-typing it — otherwise this test pins its own opinion. */
 const opArgs = /provider:\s*pick\(([^)]*)\)/.exec(OP);
@@ -175,12 +187,16 @@ const MODULES = [
   },
   {
     file: 'feat_mls_legalpack.js',
-    what: '"Prepared by" on a medical-legal narrative report',
-    prelude: lineDecl(LP, 'function isFn(f)') + '\n' + block(LP, 'function providerName()') + '\n' +
-      block(LP, 'function providerIdentityBlock()'),
-    /* the composed block the report actually prints, credentials and all */
-    call: 'providerIdentityBlock()',
-    unsetIs: '[Physician name]'
+    what: 'the provider line in the medical-legal letterhead and signature identity',
+    prelude: LP_IS_FN + '\n' + block(LP, 'function clean(') + '\n' + block(LP, 'function lhSafe(') + '\n' +
+      lineDecl(LP, 'var UNSET = function') + '\n' + block(LP, 'function settingText(') + '\n' +
+      block(LP, 'function letterhead(') + '\n' + block(LP, 'function signatureName(') + '\n' +
+      block(LP, 'function letterheadBlock('),
+    /* Execute the current artifact producer and read its provider line. The
+       explicit email override keeps this identity test out of storage. */
+    call: 'letterheadBlock("").split("\\n")[1]',
+    unsetIs: '[The evaluating provider name is not configured - set it in Settings before this report is signed]',
+    configuredOnly: true
   },
   {
     file: 'feat_fullhistory_pdf.js',
@@ -208,7 +224,10 @@ const MODULES = [
 /* With nothing configured a producer may print its own honest blank — a
    bracketed placeholder for the physician to complete. What it may never print
    is the account name. */
-function expected(m, s) { return s.want === '' ? (m.unsetIs || '') : s.want; }
+function expected(m, s) {
+  if (m.configuredOnly && !s.providerName) return m.unsetIs || '';
+  return s.want === '' ? (m.unsetIs || '') : s.want;
+}
 
 /* ---- 1. EVERY MODULE, EVERY STATE ------------------------------------- */
 for (const m of MODULES) {
@@ -228,16 +247,20 @@ for (const m of MODULES) {
     'clinician is somebody else. That is the substitution the separation rule forbids.');
 }
 
-/* ---- 2. THE SHARED RESOLVER IS WHAT ANSWERS, NOT A LOCAL COPY --------- */
+/* ---- 2. IDENTITY AUTHORITY IS EXPLICIT, NEVER THE ACCOUNT NAME -------- */
 /* If a module quietly grew its own roster logic, swapping the shared resolver for
-   a sentinel would not change its answer. Each must return the sentinel. */
+   a sentinel would not change its answer. Shared-resolver modules must return
+   the sentinel. Legal is deliberately stricter: it reads only the configured
+   provider field and prints a bracketed refusal when that field is empty. */
 for (const m of MODULES) {
+  const configuredOnly = m.configuredOnly === true;
   const got = ladder(m.prelude, m.call, STATES[0], {
-    window: { clinicalProviderName: () => 'SENTINEL-RESOLVER', getProviderName: () => 'not-this', getName: () => 'nor-this' }
+    window: { clinicalProviderName: () => 'SENTINEL-RESOLVER', getProviderName: () => configuredOnly ? CLINICAL : 'not-this', getName: () => ACCOUNT }
   });
-  assert.strictEqual(got, 'SENTINEL-RESOLVER',
-    m.file + ' does not defer to the shared clinicalProviderName resolver — it is deciding provider ' +
-    'identity locally, which is how the app ends up disagreeing with itself about who the provider is');
+  assert.strictEqual(got, configuredOnly ? CLINICAL : 'SENTINEL-RESOLVER',
+    m.file + (configuredOnly
+      ? ' no longer uses only the configured clinical provider for its legal letterhead'
+      : ' does not defer to the shared clinicalProviderName resolver — it is deciding provider identity locally'));
 }
 
 /* ---- 3. AN ABSENT RESOLVER DEGRADES TO A BLANK, NEVER THE LOGIN NAME --- */
@@ -301,11 +324,9 @@ for (const m of MODULES) {
        free — so the assertion there is that the loader really is version-tied
        and not a bare filename.
 
-   feat_mls_legalpack.js is a THIRD case and is asserted as what it is: the
-   service worker precaches it and nothing executes it, so its fix is dormant.
-   That is recorded here rather than glossed, because the moment somebody wires
-   it up they need a busting token, and because a test claiming to cover a live
-   surface that isn't live is worse than no test. */
+   feat_mls_legalpack.js uses a token-owned multi-line loader. It is live now,
+   and its source URL must remain tied to the app build just like the simpler
+   one-line loaders. */
 {
   const connect = read('mls-connect.js');
   const FIXED_TOKEN = {
@@ -340,23 +361,18 @@ for (const m of MODULES) {
     }
   }
 
-  /* the dormant one, pinned as dormant */
-  const wiredBy = ['mls-connect.js', 'mls-connect.staging.js', 'ScribeFlow.html']
-    .filter((f) => read(f).includes('feat_mls_legalpack.js'));
-  assert.deepStrictEqual(wiredBy, [],
-    'feat_mls_legalpack.js is now executed by ' + wiredBy.join(', ') + '. Its provider identity fix is ' +
-    'therefore live and needs a cache-busting loader token, and this assertion needs to move up into ' +
-    'the list above.');
-  assert(read('sw.js').includes("'feat_mls_legalpack.js'"),
-    'feat_mls_legalpack.js left the service-worker precache list too, so it is fully dead and the ' +
-    'identity fix in it should be removed along with the file rather than left to rot');
+  const legalAt = connect.indexOf("var A='feat_mls_legalpack.js',SRC='feat_mls_legalpack.js'");
+  assert(legalAt >= 0, 'feat_mls_legalpack.js has no token-owned loader in mls-connect.js');
+  const legalLoader = connect.slice(legalAt, legalAt + 7000);
+  assert(/document\.createElement\('script'\)/.test(legalLoader),
+    'feat_mls_legalpack.js is named by a loader that never creates its script');
+  assert(/node\.src=SRC\+'\?v='\+\(window\.__MLS_AV\|\|/.test(legalLoader),
+    'feat_mls_legalpack.js is live but its token-owned loader URL is not tied to the app build');
 }
 
 console.log('PASS clinical artifacts never sign with the account name: five modules that stamped the ' +
-  'LOGIN/account name onto a letterhead, a fax FROM line, a medical-legal "Prepared by", a ' +
-  'full-history PDF, an op-note provider blank and an EHR write context now defer to the shared ' +
-  'clinicalProviderName resolver — all four identity states executed per module, including the staff ' +
-  'login where a verified roster proves the login name is somebody else, plus resolver-absent ' +
-  'degradation to a blank, throwing getters, and cache-busting proven for each of the two loader ' +
-  'mechanisms. FOUR of the five are live surfaces; feat_mls_legalpack.js is precached by the service ' +
-  'worker and executed by nothing, so its fix is dormant and is pinned here as dormant');
+  'LOGIN/account name onto clinical artifacts now use an explicit clinical identity authority. All ' +
+  'four identity states execute per module, including the staff login where a verified roster proves ' +
+  'the login name is somebody else; Legal additionally requires the configured provider and prints an ' +
+  'honest bracketed refusal when it is absent. Resolver-absent degradation, throwing getters, isFn ' +
+  'callability semantics, and cache-busting for fixed, build-tied, and token-owned live loaders are proven.');

@@ -42,7 +42,8 @@
  *      no control anywhere; the count must not have grown.
  *   7. A BUSY STATE AT THE CONTROL. Verb A's engine discards the button it is
  *      handed, so before this it never disabled and never changed.
- *   8. LANE NEUTRALITY. Not one byte reaches production or /cloned.
+ *   8. PROMOTION PARITY. The official shell carries the exact lane-neutral
+ *      block and the official bundle carries the same verb-B labels.
  *
  * PART 1 is static. PART 2 drives the real shell in real Chrome - no login, no
  * network, no PHI, synthetic names only.
@@ -68,8 +69,18 @@ const measured = {};
 function ok(value, message) { assert.ok(value, message); checks++; }
 function eq(a, b, message) { assert.strictEqual(a, b, `${message} (got ${JSON.stringify(a)}, want ${JSON.stringify(b)})`); checks++; }
 
-const NAME_A = 'Pull the patient open in athena';
+const NAME_A = 'Pull the open patient in athena';
 const NAME_B = "Pull this patient's chart";
+
+/* scripts/derive-production-from-1p.js rewrites lane asset names even when
+   they occur in a block's rationale. Compare against that forward-derived
+   identity, not the pre-derivation comment bytes. */
+function asProductionIdentity(src) {
+  return String(src)
+    .split('__MLS_P1_PREVIEW').join('__MLS_MAIN')
+    .split('1p-feat_').join('feat_')
+    .split('1p-mls-connect.js').join('mls-connect.js');
+}
 
 /* ------------------------------------------------------------------ PART 1 */
 function statics() {
@@ -127,14 +138,26 @@ function statics() {
   ok(connect.indexOf('data-mls-pullverb="this-patient"') > 0,
     '1p-mls-connect.js: the Visit room control is not tagged with its verb');
 
-  /* 8. LANE NEUTRALITY */
-  const forbidden = ['ScribeFlow.html', 'mls-connect.js', 'ScribeFlow-staging.html', 'mls-connect.staging.js'];
-  for (const f of forbidden) {
+  /* 8. PROMOTION PARITY. Production is derived from /1p; the shell block is
+     lane-neutral and therefore must match byte-for-byte. The official bundle
+     builds the same two selected-patient controls under production identity. */
+  const productionShell = read('ScribeFlow.html');
+  const pa = productionShell.indexOf('<!-- ===== pullverb-1.0.0');
+  const pb = productionShell.indexOf('<!-- ===== end pullverb-1.0.0');
+  ok(pa > 0 && pb > pa, 'ScribeFlow.html: the promoted pullverb block is missing or unclosed');
+  eq(productionShell.slice(pa, pb), asProductionIdentity(blocks[0]),
+    'ScribeFlow.html: pullverb-1.0.0 drifted from the 1p source it is derived from');
+  ok(productionShell.indexOf(NAME_A) > 0,
+    'ScribeFlow.html: the official whoever-is-open control lost its promoted name');
+  const productionConnect = read('mls-connect.js');
+  ok(productionConnect.split(NAME_B).length - 1 >= 2,
+    'mls-connect.js: the official selected-patient controls lost their promoted name');
+  for (const f of ['ScribeFlow-staging.html', 'mls-connect.staging.js']) {
     const p = path.join(root, f);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf8');
-    eq(src.indexOf('pullverb-1.0.0'), -1, `${f}: a /1p lane block reached production`);
-    eq(src.indexOf(NAME_A), -1, `${f}: a /1p lane label reached production`);
+    eq(src.indexOf('pullverb-1.0.0'), -1, `${f}: the frozen staging lane unexpectedly gained pullverb`);
+    eq(src.indexOf(NAME_A), -1, `${f}: the frozen staging lane unexpectedly gained the production label`);
   }
   const clonedDir = path.join(root, 'cloned');
   if (fs.existsSync(clonedDir)) {
@@ -410,6 +433,25 @@ function harness() {
       }
       return { present: true, ariaBusy: b.getAttribute('aria-busy'), label: txt, disabled: !!b.disabled };
     },
+    finishFirstPullWithoutChip: function () {
+      var chip = document.getElementById('mlsAutoPullChip');
+      if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
+      window.dispatchEvent(new CustomEvent('mls:athena-autopull-state', { detail: { busy: false } }));
+      return !document.getElementById('mlsAutoPullChip');
+    },
+    pressAndRefuseSynchronously: function () {
+      /* Cold boot can reach the real engine before its visit dependencies.
+         That engine emits its terminal state from inside the inline click
+         handler, before the control's zero-delay visual fallback runs. */
+      window.pullPatientFromAthenaPrompt = function () {
+        window.dispatchEvent(new CustomEvent('mls:athena-autopull-state', { detail: { busy: false } }));
+        return undefined;
+      };
+      var b = document.getElementById('ptPullAthenaBtn');
+      if (!b) return 'MISSING';
+      b.click();
+      return 'refused';
+    },
     show: function (v) { try { showView(v); renderPatients(); renderProfile(); } catch (e) {} try { renderHistory(); } catch (e) {} return true; },
     clearBusy: function () { try { window.__mlsPullVerb.clearBusy(); } catch (e) {} return true; },
     revert: function () { try { return window.__mlsPullVerb.revert(); } catch (e) { return 'ERR ' + e.message; } }
@@ -483,7 +525,7 @@ async function runtime() {
     eq(A.present, true, '#ptPullAthenaBtn is missing');
     eq(A.accName, NAME_A, 'verb A does not state its real verb');
     eq(A.verb, 'open-in-athena', 'verb A is not tagged with the verb it performs');
-    ok(/open in athena/i.test(A.accName), 'verb A\'s name does not say the patient is the one open in athena');
+    ok(/open patient in athena/i.test(A.accName), 'verb A\'s name does not say the patient is the one open in athena');
     eq(/READ-?ONLY/i.test(A.accName), false, 'READ-ONLY is still part of verb A\'s name');
     ok(A.accName.length <= 40, `verb A's name is still an essay (${A.accName.length} chars)`);
     /* the essay is still ON the button, just not AS the name */
@@ -634,12 +676,26 @@ async function runtime() {
     eq(before.ariaBusy, null, 'the control claims to be busy before it was pressed');
     eq(during.ariaBusy, 'true', 'pressing verb A shows no busy state AT the control');
     ok(during.label !== before.label, `the control's label did not change while it worked (${JSON.stringify(during.label)})`);
-    await page.evaluate(() => window.__t9.clearBusy());
+    eq(await page.evaluate(() => window.__t9.finishFirstPullWithoutChip()), true,
+      'first-pull completion test accidentally depended on a pre-existing status chip');
     await page.waitForTimeout(300);
     const after = await page.evaluate(() => window.__t9.busyState());
     measured.busy.after = after;
     eq(after.ariaBusy, null, 'the busy state is never released');
     eq(after.label, before.label, 'the label was not restored after the work finished');
+
+    /* A terminal event emitted DURING the click must beat the queued visual
+       fallback. Pre-fix, this exact cold-module ordering put the control back
+       into “reading athena” for the 250-second safety cap after it had already
+       refused and returned. */
+    eq(await page.evaluate(() => window.__t9.pressAndRefuseSynchronously()), 'refused',
+      'the synchronous cold-module refusal probe did not run');
+    await page.waitForTimeout(300);
+    const refused = await page.evaluate(() => window.__t9.busyState());
+    measured.busy.synchronousRefusal = refused;
+    eq(refused.ariaBusy, null, 'a synchronous terminal refusal was overwritten by the delayed busy fallback');
+    eq(refused.label, before.label, 'a synchronous terminal refusal did not retain the exact idle label');
+    eq(refused.disabled, false, 'a synchronous terminal refusal left the pull control disabled');
 
     /* -- 2. THE CAUSAL CONTROL: revert restores the welded essay ---------- */
     const reverted = await page.evaluate(() => window.__t9.revert());

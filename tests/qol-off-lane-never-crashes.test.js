@@ -24,7 +24,16 @@ assert.ok(declIdx < useIdx && helperIdx < useIdx, 'declarations precede first us
 const fenceIdx = si.indexOf('} catch (eTodayNotePass) {');
 const finalizeIdx = si.indexOf('finalizeVerdict();', fenceIdx);
 assert.ok(fenceIdx > useIdx, 'the pass is wrapped in a try/catch');
-assert.ok(finalizeIdx > fenceIdx && finalizeIdx - fenceIdx < 400, 'finalizeVerdict() runs immediately after the fence — reachable even on a throw');
+assert.ok(finalizeIdx > fenceIdx, 'finalizeVerdict() remains reachable after the fence');
+const afterFence = si.slice(fenceIdx, finalizeIdx);
+const phaseIdx = afterFence.indexOf('ppPhase(null)');
+const currentIdx = afterFence.indexOf('ppCurrent("finishing');
+const aggregateIdx = afterFence.indexOf('tnAggregate();');
+const ledgerIdx = afterFence.indexOf('recordHistoryVerdict(dnLedgerDay, receipt, rows.length)');
+assert.ok(phaseIdx > 0 && currentIdx > phaseIdx && aggregateIdx > currentIdx && ledgerIdx > aggregateIdx,
+  'only the synchronous finish narration and final day-note ledger write precede the verdict');
+assert.ok(!/\bawait\b|setTimeout\s*\(|runForPatient\s*\(|\bbridge\s*\(/.test(afterFence),
+  'no asynchronous or Athena-driving work can strand finalizeVerdict() after a fenced failure');
 assert.ok(si.indexOf('receipt.todayNotePassError') > 0, 'a fenced failure is recorded, not swallowed');
 
 /* executed non-vacuity: the OLD shape (undeclared read) throws ReferenceError */
@@ -36,5 +45,5 @@ const p2 = newShape().then(v => assert.strictEqual(v, 1, 'declared shape runs'))
 
 Promise.all([p, p2]).then(() => {
   assert.strictEqual(threw, true, 'non-vacuity: reading an undeclared identifier throws ReferenceError — the crash the fence exists for');
-  console.log('qol-off-lane-never-crashes: OK (identifiers declared, pass fenced, verdict always reachable; old shape throws by name)');
+  console.log('qol-off-lane-never-crashes: OK (identifiers declared, pass fenced, synchronous ledger preserved, verdict always reachable; old shape throws by name)');
 }).catch(e => { console.error(e); process.exit(1); });

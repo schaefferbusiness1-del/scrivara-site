@@ -100,6 +100,9 @@ async function main() {
   const listeners = new Map();
   const posted = [];
   const heroPullStatus = { textContent: '', style: {} };
+  const syntheticLeaseToken = 'synthetic-history-lease';
+  const syntheticLeaseTokens = new Set([syntheticLeaseToken]);
+  let syntheticLeaseSeq = 0;
 
   function addEventListener(type, fn) {
     const list = listeners.get(type) || [];
@@ -129,6 +132,14 @@ async function main() {
     clearTimeout,
     setInterval,
     clearInterval,
+    __mlsP1AthenaLeaseLoan: syntheticLeaseToken,
+    __mlsP1AthenaReadLease: {
+      owns(token) { return syntheticLeaseTokens.has(token); },
+      claim() { const token = `synthetic-direct-lease-${++syntheticLeaseSeq}`; syntheticLeaseTokens.add(token); return token; },
+      ready() { return true; },
+      touch() { return true; },
+      release(token) { syntheticLeaseTokens.delete(token); return true; }
+    },
     getPatients() { return clone(patients); },
     upsertPatient(p) {
       const i = patients.findIndex(x => x.id === p.id);
@@ -170,16 +181,16 @@ async function main() {
   assert(request && request.patientId === 'same-a' && request.patientDob === '01/02/1970', 'chart request omitted its immutable target identity');
   let idlessSettled = false;
   read.then(() => { idlessSettled = true; }, () => { idlessSettled = true; });
-  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', resp: { ok: true, requestId: request.requestId, text: 'idless stale chart', chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(request.requestId, 'idless stale chart') } } });
+  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', deadlineAt: request.deadlineAt, resp: { ok: true, requestId: request.requestId, text: 'idless stale chart', chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(request.requestId, 'idless stale chart') } } });
   await Promise.resolve();
   assert.strictEqual(idlessSettled, false, 'an ID-less chart response settled a stateful exact-patient read');
-  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: request.requestId, resp: { ok: true, requestId: request.requestId, text: 'wrong duplicate chart', chartName: 'Alex Same', chartDob: '03/04/1980', chartMrn: '222', receipt: chartReceipt(request.requestId, 'wrong duplicate chart') } } });
-  await assert.rejects(read, /matching DOB\/MRN proof/, 'same-name patient B response was accepted for patient A');
+  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: request.requestId, deadlineAt: request.deadlineAt, resp: { ok: true, requestId: request.requestId, text: 'wrong duplicate chart', chartName: 'Alex Same', chartDob: '03/04/1980', chartMrn: '222', receipt: chartReceipt(request.requestId, 'wrong duplicate chart') } } });
+  await assert.rejects(read, /did not prove it is this patient|name, date of birth or MRN did not match/, 'same-name patient B response was accepted for patient A');
 
   read = context._assistReadChart(targetA, () => {});
   dispatch('message', { data: { source: 'mls-ext', type: 'mlsPong' } });
   request = posted.filter(x => x.type === 'mlsAppReadChart').pop();
-  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: request.requestId, resp: { ok: true, requestId: request.requestId, text: 'verified chart A', chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(request.requestId, 'verified chart A') } } });
+  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: request.requestId, deadlineAt: request.deadlineAt, resp: { ok: true, requestId: request.requestId, text: 'verified chart A', chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(request.requestId, 'verified chart A') } } });
   const verifiedRead = await read;
   assert.strictEqual(verifiedRead.targetPatientId, 'same-a');
 
@@ -187,7 +198,7 @@ async function main() {
   dispatch('message', { data: { source: 'mls-ext', type: 'mlsPong' } });
   const nestedIdlessRequest = posted.filter(x => x.type === 'mlsAppReadChart').pop();
   const nestedIdlessText = 'outer-only correlated chart';
-  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: nestedIdlessRequest.requestId, resp: { ok: true, text: nestedIdlessText, chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(nestedIdlessRequest.requestId, nestedIdlessText) } } });
+  dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: nestedIdlessRequest.requestId, deadlineAt: nestedIdlessRequest.deadlineAt, resp: { ok: true, text: nestedIdlessText, chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(nestedIdlessRequest.requestId, nestedIdlessText) } } });
   await assert.rejects(nestedIdlessRead, /every patient chart frame/, 'a success response without its own exact requestId passed the chart receipt gate');
 
   // If the shared absolute scheduler cannot arm a deadline at all, the chart
@@ -211,7 +222,7 @@ async function main() {
     dispatch('message', { data: { source: 'mls-ext', type: 'mlsPong' } });
     const req = posted.filter(x => x.type === 'mlsAppReadChart').pop();
     const text = `unsafe ${label} chart`;
-    dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: req.requestId, resp: {
+    dispatch('message', { data: { source: 'mls-ext', type: 'mlsAppChartResult', requestId: req.requestId, deadlineAt: req.deadlineAt, resp: {
       ok: true, requestId: req.requestId, text, chartName: 'Alex Same', chartDob: '01/02/1970', chartMrn: '111', receipt: chartReceipt(req.requestId, text, overrides)
     } } });
     await assert.rejects(pending, /every patient chart frame/, `${label} frame receipt was accepted`);

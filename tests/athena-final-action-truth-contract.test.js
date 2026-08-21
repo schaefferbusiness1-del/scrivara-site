@@ -47,9 +47,9 @@ const document = {
 const window = {
   document,
   location: { origin: 'https://mlsscribe.com' },
-  // Even the newest extension capability handshake must not turn a final
-  // action into an executable row while the worker policy blocks it.
-  __mlsExtensionCapabilities: { supervisedOrderPlacementV2: true },
+  // Final rows are exposed only when the installed extension advertises both
+  // typed final-action and supervised-order capabilities.
+  __mlsExtensionCapabilities: { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true },
   addEventListener() {},
   removeEventListener() {},
   postMessage() {},
@@ -89,35 +89,41 @@ const manifest = window.__mlsWriteFlow.buildUnifiedManifest({
 const stageBilling = manifest.rows.find(row => row.id === 'stage-billing');
 const signEncounter = manifest.rows.find(row => row.id === 'sign-encounter');
 const reviewedOrder = manifest.rows.find(row => row.payload && row.payload.category === 'order' && row.payload.order && row.payload.order.clientOrderId === 'order-truth-1');
-const finalRows = [stageBilling, signEncounter, reviewedOrder];
-for (const row of finalRows) {
+const finalRows = [
+  [stageBilling, 'stage_billing'],
+  [signEncounter, 'sign_encounter'],
+  [reviewedOrder, 'place_order']
+];
+for (const [row, action] of finalRows) {
   assert(row, 'a final-action review payload disappeared from the immutable Athena manifest');
-  assert.strictEqual(row.capability, 'manual', `${row.id} must be review/manual-only while execute is policy-blocked`);
-  assert.strictEqual(row.action, '', `${row.id} still exposes an executable Athena action`);
+  assert.strictEqual(row.capability, 'ready', `${row.id} must be ready only under the advertised typed capability`);
+  assert.strictEqual(row.action, action, `${row.id} lost its exact typed action`);
   const truthCopy = [row.label, row.reason, row.consequence, row.reviewStatus].join(' ');
-  assert(/complete in Athena/i.test(truthCopy), `${row.id} is not visibly labeled “Complete in Athena”`);
+  assert(/one-click confirm|explicit confirmation/i.test(truthCopy), `${row.id} does not disclose its separate explicit confirmation`);
 }
-assert.deepStrictEqual(Array.from(stageBilling.payload.billing.cptCodes), ['20610'], 'manual billing review lost its exact frozen payload');
-assert.strictEqual(reviewedOrder.payload.order.fields.indication, 'Persistent radicular pain', 'manual order review lost its exact frozen payload');
-assert(signEncounter.payload.noteText.includes('Reviewed current-visit note.'), 'manual signing review lost the exact note payload');
+assert.deepStrictEqual(Array.from(stageBilling.payload.billing.cptCodes), ['20610'], 'billing action lost its exact frozen payload');
+assert.strictEqual(reviewedOrder.payload.order.fields.indication, 'Persistent radicular pain', 'order action lost its exact frozen payload');
+assert(signEncounter.payload.noteText.includes('Reviewed current-visit note.'), 'signing action lost the exact note payload');
 
 const readyActions = Array.from(manifest.rows)
   .filter(row => row.capability === 'ready' && row.action)
   .map(row => row.action)
   .sort();
-assert.deepStrictEqual(readyActions, ['save_draft', 'write_note'], 'only write_note and save_draft may remain separately confirmable');
-for (const forbiddenAction of ['stage_billing', 'sign_encounter', 'place_order']) {
-  assert(!manifest.rows.some(row => row.action === forbiddenAction), `${forbiddenAction} leaked into an executable manifest row`);
-}
+assert.deepStrictEqual(readyActions, ['place_order', 'save_draft', 'sign_encounter', 'stage_billing', 'write_note'], 'the capable manifest lost or added a supervised typed action');
+
+const startAction = functionBlock(flowSource, 'startAthenaAction');
+const probeAt = startAction.indexOf("mode: 'probe'");
+assert(startAction.indexOf('final-action-capability-required') >= 0 && startAction.indexOf('final-action-capability-required') < probeAt, 'final actions can probe without the extension capability gate');
+assert(startAction.indexOf('verified-note-write-required') >= 0 && startAction.indexOf('verified-note-write-required') < probeAt, 'Sign can probe without a matching verified note-write proof');
 
 // The visible advanced panel must not recreate a bypass around the manual rows.
 const enhancePanel = functionBlock(flowSource, 'enhancePanel');
 assert(enhancePanel, 'advanced Athena review panel is missing');
-assert(!/actionButton\([^)]*['"](?:stage_billing|sign_encounter|place_order)['"]/.test(enhancePanel), 'advanced panel still offers an executable final action');
+assert(!/actionButton\([^)]*['"](?:stage_billing|sign_encounter|place_order)['"]/.test(enhancePanel), 'advanced panel recreated an independent final-action bypass');
 
 // These are the direct/legacy clinical surfaces outside the unified manifest.
-// They may show and copy the payload, or focus Athena, but cannot advertise a
-// confirmation that the transport is guaranteed to reject.
+// They may show and copy the payload, or focus Athena, but cannot recreate an
+// independent write path around the unified proof/identity/token-gated review.
 const appClinicalUi = [
   functionBlock(appSource, '_athenaReceiptAction'),
   functionBlock(appSource, '_athenaShowReceipt'),
@@ -127,35 +133,16 @@ const appClinicalUi = [
 ].join('\n');
 const consoleSignFlow = functionBlock(wbConsoleSource, 'signSaveFlow');
 const consoleLaunchers = functionBlock(wbConsoleSource, 'injectLaunchers');
-const visibleClinicalCopy = [flowSource, appSource, connectSource, popupSource, consoleSignFlow].join('\n');
-const forbiddenClaims = [
-  [/Sign\s*(?:&|&amp;|and)\s*Save[^.\n]{0,180}\bunlock/i, 'Sign unlock claim'],
-  [/\bSign unlocks\b/i, 'Sign unlock claim'],
-  [/locked until (?:this receipt )?(?:verifies|write)/i, 'locked-until-write Sign claim'],
-  [/Review Sign\s*(?:&|&amp;|and)\s*Save separately/i, 'executable Sign review offer'],
-  [/Confirm\s*(?:&amp;|&)?\s*place one (?:reviewed )?order/i, 'executable order confirmation'],
-  [/Review\s*&amp;\s*place in Athena/i, 'executable order CTA'],
-  [/Nothing is placed until you press Confirm/i, 'order execution promise'],
-  [/Add confirmed billing codes to Athena/i, 'executable billing CTA'],
-  [/Check Athena\s*&amp;\s*confirm billing/i, 'executable billing CTA'],
-  [/Confirm stage billing codes/i, 'executable billing confirmation'],
-  [/Final confirmation stages exact codes/i, 'billing execution promise'],
-  [/Sign unlocks there only after/i, 'guide claims Sign unlocks']
-];
-for (const [pattern, label] of forbiddenClaims) {
-  assert(!pattern.test(visibleClinicalCopy), `${label} remains in clinician-facing UI or guidance`);
-}
-assert(!/preferredAction\s*:\s*['"](?:stage_billing|sign_encounter|place_order)['"]/.test(appClinicalUi), 'legacy UI still selects a blocked final action for confirmation');
-assert(!/startAthenaAction\(\s*['"](?:stage_billing|sign_encounter|place_order)['"]/.test(appClinicalUi), 'legacy UI still starts a blocked final action');
+assert(!/preferredAction\s*:\s*['"](?:stage_billing|sign_encounter|place_order)['"]/.test(appClinicalUi), 'legacy UI independently selects a final action instead of opening the canonical review');
+assert(!/startAthenaAction\(\s*['"](?:stage_billing|sign_encounter|place_order)['"]/.test(appClinicalUi), 'legacy UI independently starts a final action around the canonical review');
 assert(!/mlsAppSignSave|mlsAppPasteNote|signRunning\s*=\s*true/.test(consoleSignFlow), 'legacy console still contains an independent write/sign fallback');
 assert(!/makeSignBtn\(\)|data-mlswbc-sign/.test(consoleLaunchers), 'legacy console still injects a Sign & Save launcher');
 
 // wsg-2.0.0 (MLS Assist 3.0.62, owner directive 2026-08-12): the transport no
-// longer refuses billing / sign / order EXECUTE by policy. The PRODUCTION site
-// above still never offers those actions (its allowlist is unchanged), so the
-// production UI truth contract holds by construction; the extension pins the
-// LIFT explicitly so a stale hop cannot silently re-introduce the refusal the
-// 1p site now relies on being absent.
+// longer refuses billing / sign / order EXECUTE by policy. The production site
+// offers those exact typed actions only through its capability, immutable-row,
+// identity, proof, probe, and one-use-token gates; the extension pins the LIFT
+// explicitly so a stale hop cannot silently re-introduce the old refusal.
 for (const source of [contentSource, backgroundSource]) {
   assert(!/write-safety-final-action-blocked/.test(source), 'wsg-2.0.0: an extension hop still carries the lifted final-action policy refusal');
   assert(/wsg-2\.0\.0/.test(source), 'an extension hop lost its wsg-2.0.0 lift note');
@@ -166,4 +153,4 @@ for (const source of [contentSource, backgroundSource]) {
 const wsgSource = fs.readFileSync(path.join(root, 'write_safety_guard.js'), 'utf8');
 assert(/var BLOCKED_EXECUTE_ACTIONS = \{\};/.test(wsgSource) && /var VERSION = 'wsg-2\.0\.0';/.test(wsgSource), 'write_safety_guard must be wsg-2.0.0 with an EMPTY blocked-execute map');
 
-console.log('PASS Athena final-action truth: production keeps billing, signing, and orders as exact manual payloads labeled Complete in Athena; the wsg-2.0.0 extension no longer refuses them by policy');
+console.log('PASS Athena final-action truth: capable production exposes five exact typed actions while final actions remain capability/proof/identity/token gated; wsg-2.0.0 no longer refuses them by policy');

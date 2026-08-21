@@ -40,8 +40,10 @@ const cardStart = integrations.indexOf('id="schedApiCard"');
 assert(cardStart >= 0, 'the Scheduling API card must live inside the Integrations section');
 assert(integrations.includes('📅 Scheduling API — connect another scheduler'), 'card title is missing');
 
-/* Card region = from the card open to the next .field card (Import patients). */
-const cardEnd = integrations.indexOf('Import patients', cardStart);
+/* Card region = from the card open to its next sibling field. Patient import is
+ * intentionally earlier in Integrations now, so it cannot serve as an end
+ * marker. The Athena-import heading begins the next card. */
+const cardEnd = integrations.indexOf('<!-- Athena imports and optional backups -->', cardStart);
 assert(cardEnd > cardStart, 'could not bound the Scheduling API card region');
 const card = integrations.slice(cardStart, cardEnd);
 

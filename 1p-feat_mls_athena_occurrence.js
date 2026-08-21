@@ -271,7 +271,7 @@
     return { complete: complete, selectedComplete: selectedComplete, coverageComplete: complete, partial: !complete, selectedCount: selectedCount, candidateCount: candidateCount, fullSelection: fullSelection, processed: processed, counts: counts, reason: complete ? 'complete' : (cancelled ? 'cancelled' : (!selectedComplete ? 'patient-pull-incomplete' : (!fullSelection ? 'partial-selection' : 'retrieval-incomplete'))) };
   }
 
-  var seq = 0, epoch = 0, lease = null, snapshot = null, observer = null, boundaryHandler = null, studyHandler = null;
+  var seq = 0, epoch = 0, lease = null, snapshot = null, boundaryHandler = null, studyHandler = null;
   function makeRun(kind, panel) { if (lease) return null; lease = { id: ++seq, kind: kind, panel: panel, cancelled: false, settled: false }; return lease; }
   function current(run) { return !!(run && lease === run && !run.settled); }
   function cancelRun() { if (!lease || lease.settled) return false; lease.cancelled = true; try { if (typeof lease.abortPreDispatch === 'function') lease.abortPreDispatch(); } catch (e) {} return true; }
@@ -487,10 +487,12 @@
     try { var p = document.getElementById(PANEL_ID); if (p) p.remove(); } catch (e) {}
     setTimeout(function () { try { if (ownsInstall()) mount(); } catch (e2) {} }, 0);
   }
-  function studyLifecycle() {
+  function studyLifecycle(event) {
     if (api && !ownsInstall()) return;
     epoch++; cancelRun(); snapshot = null;
     try { var p = document.getElementById(PANEL_ID); if (p) p.remove(); } catch (e) {}
+    var reason = ''; try { reason = String(event && event.detail && event.detail.reason || ''); } catch (e2) {}
+    if (reason === 'render') setTimeout(function () { try { if (ownsInstall()) mount(); } catch (e3) {} }, 0);
   }
   function overlaySweep() {
     if (api && !ownsInstall()) return;
@@ -498,8 +500,8 @@
     if (!overlay && (panel || snapshot || lease)) { epoch++; cancelRun(); snapshot = null; if (panel) try { panel.remove(); } catch (e2) {} return; }
     if (ownsInstall()) mount();
   }
-  function boot() { if (api && !ownsInstall()) return; try { mount(); boundaryHandler = sessionBoundary; studyHandler = studyLifecycle; window.addEventListener('mls:session-boundary', boundaryHandler, true); window.addEventListener('mls:study-lifecycle', studyHandler, true); observer = new MutationObserver(overlaySweep); observer.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {} }
-  function revert() { if (window.__mlsAthenaOccurrence !== api || api.installToken !== INSTALL_TOKEN) return false; try { cancelRun(); epoch++; if (boundaryHandler) window.removeEventListener('mls:session-boundary', boundaryHandler, true); if (studyHandler) window.removeEventListener('mls:study-lifecycle', studyHandler, true); if (observer) observer.disconnect(); var p = document.getElementById(PANEL_ID); if (p) p.remove(); var c = document.getElementById('mlsOccCss'); if (c) c.remove(); } catch (e) {} api.installed = false; snapshot = null; return true; }
+  function boot() { if (api && !ownsInstall()) return; try { mount(); boundaryHandler = sessionBoundary; studyHandler = studyLifecycle; window.addEventListener('mls:session-boundary', boundaryHandler, true); window.addEventListener('mls:study-lifecycle', studyHandler, true); } catch (e) {} }
+  function revert() { if (window.__mlsAthenaOccurrence !== api || api.installToken !== INSTALL_TOKEN) return false; try { cancelRun(); epoch++; if (boundaryHandler) window.removeEventListener('mls:session-boundary', boundaryHandler, true); if (studyHandler) window.removeEventListener('mls:study-lifecycle', studyHandler, true); var p = document.getElementById(PANEL_ID); if (p) p.remove(); var c = document.getElementById('mlsOccCss'); if (c) c.remove(); } catch (e) {} api.installed = false; snapshot = null; return true; }
   function debugState() { return { epoch: epoch, hasSnapshot: !!snapshot, candidateCount: snapshot && snapshot.candidates ? snapshot.candidates.length : 0, lease: lease ? { id: lease.id, kind: lease.kind, cancelled: !!lease.cancelled, settled: !!lease.settled } : null }; }
   function liveMutation(fn, staleValue) { return function () { if (!ownsInstall()) return staleValue; return fn.apply(null, arguments); }; }
   var api = { installed: true, version: VERSION, installToken: loader.installToken, mount: liveMutation(mount, false), cancel: liveMutation(cancelRun, false), revert: revert,

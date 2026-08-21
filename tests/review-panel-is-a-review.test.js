@@ -24,7 +24,9 @@ const src = fs.readFileSync(path.join(ROOT, 'mls-connect.js'), 'latin1');
 
 const start = src.indexOf('REVIEW PANEL (rvp-');
 assert.ok(start > -1, 'the rvp-1.0.0 Review panel block is gone from mls-connect.js');
-const mod = src.slice(start);
+const end = src.indexOf('\n;(function(){try{var sched=', start);
+assert.ok(end > start, 'the rvp-1.0.0 Review panel block has no deterministic module boundary');
+const mod = src.slice(start, end);
 assert.ok(mod.indexOf('mlsReviewPanel') > -1, 'the panel block no longer defines #mlsReviewPanel');
 
 /* Scan CODE, not prose. The panel carries a comment that names the exact bad

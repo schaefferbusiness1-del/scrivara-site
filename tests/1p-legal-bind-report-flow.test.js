@@ -100,6 +100,41 @@ function makeClock() {
 }
 async function flush(turns = 24) { while (turns-- > 0) await Promise.resolve(); }
 
+/* legal-coherent-1.0.0: every AI-backed report is returned as one strict JSON
+   object. Derive fixture replies from the request's own expected-section
+   contract so this flow test follows each report type without copying the
+   runtime's heading table. */
+function promptJson(request, prefix, suffix) {
+  const sys = String(request && request.sys || '');
+  const start = sys.indexOf(prefix);
+  assert.ok(start >= 0, 'whole-report prompt omitted ' + prefix.trim());
+  const from = start + prefix.length;
+  const end = sys.indexOf(suffix, from);
+  assert.ok(end > from, 'whole-report prompt omitted ' + suffix.trim());
+  return JSON.parse(sys.slice(from, end));
+}
+function wholeReportResponse(request, mutate) {
+  const specs = promptJson(request, 'Expected sections: ', '. Evidence-ID allowlist: ');
+  const evidenceIds = promptJson(request, 'Evidence-ID allowlist: ', '.');
+  const nameMatch = /\[P000\] EXACT ACTIVE PATIENT BINDING\s*\nName:\s*([^\n]+)/.exec(String(request.user || ''));
+  const patientName = nameMatch ? nameMatch[1].trim() : 'the bound patient';
+  const report = { sections: specs.map((spec, index) => ({
+    heading: spec.heading,
+    paragraphs: index === 0 && evidenceIds.includes('P000')
+      ? [{ text: spec.heading === 'PURPOSE AND SCOPE'
+          ? 'This physician narrative addresses the requested medical issues for ' + patientName + ' using only the records provided, with source limitations requiring clinician verification.'
+          : 'The frozen patient binding identifies ' + patientName + ' by name.', evidenceIds: ['P000'] }]
+      : [{ text: 'The records reviewed do not document sufficient evidence for requested item ' + (index + 1) + '; clinician verification is required.', evidenceIds: [] }]
+  })) };
+  if (mutate) mutate(report, { specs, evidenceIds, patientName });
+  return JSON.stringify(report);
+}
+async function resolveWholeReport(runtime) {
+  for (let spin = 0; spin < 24 && runtime.pendingAi.length < 1; spin++) await Promise.resolve();
+  eq(runtime.pendingAi.length, 1, 'AI-backed report made other than one coherent request before settlement');
+  runtime.pendingAi[0].resolve(wholeReportResponse(runtime.pendingAi[0]));
+}
+
 /* The workspace paints with innerHTML, which this fixture does not parse. The
    UI ids it then wires are supplied directly so every control is real. */
 const UI_IDS = {
@@ -108,6 +143,8 @@ const UI_IDS = {
   mlsP1LegalChronology: 'div', mlsP1LegalDrop: 'button', mlsP1LegalFile: 'input',
   mlsP1LegalSources: 'div', mlsP1LegalDoi: 'input', mlsP1LegalQuestions: 'textarea',
   mlsP1LegalGenerate: 'button', mlsP1LegalCancel: 'button', mlsP1LegalStatus: 'div',
+  mlsP1LegalModelAsk: 'div', mlsP1LegalModelLuna: 'button',
+  mlsP1LegalModelFast: 'button', mlsP1LegalModelNote: 'span',
   mlsP1LegalDraftCopy: 'button', mlsP1LegalDraftDownload: 'button', mlsP1LegalDraftWord: 'button' /* wdoc-1.0.0 */, mlsP1LegalDraftPrint: 'button',
   mlsP1LegalDraft: 'textarea', mlsP1LegalLetterheadEmail: 'input', mlsP1LegalLetterheadPreview: 'pre',
   /* p1-legal-flow-2.0.0 / p1-legal-bind-2.0.0 */
@@ -298,11 +335,9 @@ function makeRuntime(options = {}) {
     eq(r.ids.mlsP1LegalGenerate.disabled, false, 'Generate stayed unreachable after a report type was picked');
 
     const promise = r.api.generateDraft();
-    for (let i = 0; i < 14; i++) {
-      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
-      r.pendingAi[i].resolve('Synthetic section body ' + (i + 1));
-    }
+    await resolveWholeReport(r);
     eq(await promise, true, 'the IME generation did not complete');
+    eq(r.pendingAi.length, 1, 'valid IME generation used more than one whole-report call');
     eq(r.stage(), 'generated', 'a completed draft did not advance the flow to generated');
     eq(r.ids.mlsP1LegalDraftCopy.disabled, false, 'export stayed disabled after generation');
 
@@ -523,7 +558,8 @@ function makeRuntime(options = {}) {
   }
 
   /* The classifier end to end on the model: the imported row keeps its
-     provider, is NOT filed as a procedure, and the stored AI summary survives. */
+     provider, is NOT filed as a procedure, and secondary AI prose is not
+     promoted into the evidence packet as though it were chart text. */
   {
     const r = makeRuntime();
     r.api.open();
@@ -535,8 +571,15 @@ function makeRuntime(options = {}) {
     eq(visit.category, 'visit', 'the provider specialty filed an office visit as a procedure again');
     deep(model.providers, ['M Synthetic', 'Unattributed'],
       'the provider roster is not credential-normalized into one chip per clinician');
-    ok(model.items.some(i => /Synthetic stored summary line\./.test(i.body)), 'a stored AI summary was dropped');
-    ok(model.items.some(i => /AI summary \(AI-generated - verify\)/.test(i.body)), 'a stored AI summary was not labelled as AI-generated');
+    ok(!model.items.some(i => /Synthetic stored summary line\./.test(i.body)), 'a stored AI summary was promoted into legal evidence');
+    ok(!model.items.some(i => /AI summary \(AI-generated - verify\)/.test(i.body)), 'secondary model prose survived in the legal evidence packet');
+    const summaryOnlyModel = r.api.buildModel({ id: 'A', docs: [{ date: '2025-01-09', name: 'Summary-only document',
+      aiSummary: 'Synthetic document summary must not become source evidence.' }] },
+      Object.freeze({ patientId: 'A', patientEpoch: 1, name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A' }));
+    const summaryOnlyDoc = summaryOnlyModel.items.filter(i => i.title === 'Summary-only document')[0];
+    ok(summaryOnlyDoc, 'a summary-only document disappeared instead of remaining visibly unreadable');
+    eq(summaryOnlyDoc.body, '(no extractable text stored)', 'doc.aiSummary was used as a fallback for absent source text');
+    ok(!/Synthetic document summary/.test(summaryOnlyDoc.body), 'a document AI summary entered the legal evidence packet');
     ok(model.items.some(i => i.category === 'diagnosis' && /M51\.36/.test(i.title)), 'structured visit coding never reached the chronology');
     ok(model.items.some(i => i.category === 'plan' && /Continue therapy\./.test(i.body)), 'the documented treatment plan never reached the chronology');
     ok(model.items.every(i => i.category !== 'plan' || !/Normal gait/.test(i.body)), 'the plan section swallowed the following SOAP block');
@@ -600,10 +643,13 @@ function makeRuntime(options = {}) {
       ok(t.label && t.label.length > 4, 'report type ' + t.key + ' has no label');
       ok(t.blurb && t.blurb.length > 30, 'report type ' + t.key + ' has no one-line description for the picker');
     });
-    deep(types.map(t => t.sectionCount), [14, 13, 5, 0], 'the report types do not have distinct section sets');
+    deep(types.map(t => t.sectionCount), [14, 7, 5, 0], 'the report types do not have distinct section sets');
     eq(r.api.sectionsFor('ime').length, 14, 'the IME set is not the 14-section default');
-    eq(r.api.sectionsFor('narrative').length, 13, 'the narrative set kept the IME OPINIONS section');
-    ok(!r.api.sectionsFor('narrative').some(s => /OPINIONS/.test(s[0])), 'the narrative report states numbered opinions');
+    eq(r.api.sectionsFor('narrative').length, 7, 'the narrative is not the compact seven-part reference form');
+    deep(r.api.sectionsFor('narrative').map(s => s[0]), [
+      'PURPOSE AND SCOPE', 'SUMMARY OF OPINIONS', 'HISTORY AND COURSE OF TREATMENT',
+      'MEDICAL OPINIONS', 'LIKELY FUTURE CARE', 'REASONABLENESS AND NECESSITY', 'CONCLUSION'
+    ], 'the narrative no longer follows the supplied reference report reasoning order');
     ok(r.api.sectionsFor('ime').some(s => /XIV\. OPINIONS/.test(s[0])), 'the IME report lost its OPINIONS section');
     ok(r.api.sectionsFor('records').every(s => !/CAUSATION|OPINION/.test(s[0])), 'the records summary offers opinions');
   }
@@ -626,31 +672,213 @@ function makeRuntime(options = {}) {
         'XIII-A is not immediately after XIII: ' + JSON.stringify(heads));
       ok(heads.indexOf('XIII-A. ANSWERS TO THE QUESTIONS ASKED') < heads.indexOf('XIV. OPINIONS'),
         'XIII-A still prints after XIV: ' + JSON.stringify(heads));
-      /* the narrative type ends at XIII, where "after XIII" and "appended"
-         are the same place - it must not move */
       const nHeads = r.api.runSections('narrative').map(s => s[0]);
-      eq(nHeads[nHeads.length - 1], 'XIII-A. ANSWERS TO THE QUESTIONS ASKED',
-        'the narrative questions section moved: ' + JSON.stringify(nHeads.slice(-3)));
+      eq(nHeads[nHeads.length - 2], 'ANSWERS TO THE QUESTIONS PRESENTED',
+        'the narrative question answers are not immediately before the conclusion: ' + JSON.stringify(nHeads.slice(-3)));
     }
-    eq(r.api.runSections('narrative').length, 14, 'supplied questions did not add their own narrative section');
+    eq(r.api.runSections('narrative').length, 8, 'supplied questions did not add one compact narrative answer section');
     eq(r.api.runSections('records').length, 5, 'the records summary invented a questions section');
     eq(r.api.runSections('chronology').length, 0, 'the deterministic chronology report gained AI sections');
   }
 
-  /* The narrative type really runs 13 calls, not 14. */
+  /* The narrative type asks for the supplied-reference seven-part form in one
+     coherent call, with no IME-numbered OPINIONS section. */
   {
     const r = makeRuntime();
     r.api.open(); r.api.pickReport('narrative');
     const promise = r.api.generateDraft();
-    for (let i = 0; i < 13; i++) {
-      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
-      r.pendingAi[i].resolve('Synthetic narrative body ' + (i + 1));
-    }
+    await resolveWholeReport(r);
     eq(await promise, true, 'the narrative generation did not complete');
-    eq(r.pendingAi.length, 13, 'the narrative report made other than 13 AI calls');
-    ok(/Report type: Medical-legal narrative/.test(r.ids.mlsP1LegalDraft.value), 'the report does not name the type it is');
+    eq(r.pendingAi.length, 1, 'the narrative report made other than one coherent AI call');
+    ok(/^NARRATIVE MEDICAL REPORT$/m.test(r.ids.mlsP1LegalDraft.value), 'the report does not use the reference-form narrative title');
+    ok(/^DOB: 01\/02\/1980$/m.test(r.ids.mlsP1LegalDraft.value) && /^MRN: TEST-A$/m.test(r.ids.mlsP1LegalDraft.value),
+      'the narrative header omitted the frozen patient metadata');
+    ['PURPOSE AND SCOPE', 'SUMMARY OF OPINIONS', 'HISTORY AND COURSE OF TREATMENT', 'MEDICAL OPINIONS',
+      'LIKELY FUTURE CARE', 'REASONABLENESS AND NECESSITY', 'CONCLUSION'].forEach(heading => {
+      ok(new RegExp('^' + heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm').test(r.ids.mlsP1LegalDraft.value),
+        'the narrative omitted ' + heading);
+    });
     ok(!/XIV\. OPINIONS/.test(r.ids.mlsP1LegalDraft.value), 'the narrative report printed an OPINIONS section');
-    ok(/^XV\. ATTESTATION$/m.test(r.ids.mlsP1LegalDraft.value), 'the narrative report lost the signature attestation');
+    ok(/NARRATIVE FORM: Aim for the density of a polished four-to-seven-page physician narrative/.test(r.pendingAi[0].sys),
+      'the Luna prompt does not carry the compact reference-report form');
+    ok(/select only clinically meaningful events/.test(r.pendingAi[0].sys) && /a complaint alone is not an independent diagnosis/.test(r.pendingAi[0].sys),
+      'the narrative prompt lost selective chronology or diagnostic-reasoning guidance');
+    ok(/^ATTESTATION$/m.test(r.ids.mlsP1LegalDraft.value),
+      'the narrative report lost its unnumbered signature attestation');
+  }
+
+  /* Strict JSON alone used to let polished-looking nonsense through. The
+     reference-form validator must reject a purpose with no scope/limits, an
+     unlabeled opinion with no certainty standard, and an unstructured future-
+     care suggestion; each receives only the existing one bounded repair. */
+  for (const qualityCase of [
+    {
+      name: 'scope and source limits', heading: 'PURPOSE AND SCOPE',
+      text: 'Synthetic Alpha has medical issues discussed in this physician report.',
+      error: /both the requested scope and the source limitations/i
+    },
+    {
+      name: 'labeled opinion and certainty', heading: 'SUMMARY OF OPINIONS',
+      text: 'Synthetic Alpha is the bound patient whose requested medical opinion is addressed.',
+      error: /one issue-labeled paragraph per opinion|certainty standard/i
+    },
+    {
+      name: 'numbered conditional future care', heading: 'LIKELY FUTURE CARE',
+      text: 'Future care for Synthetic Alpha may include clinical follow-up if the treating clinician recommends it.',
+      error: /separately numbered paragraph/i
+    }
+  ]) {
+    const r = makeRuntime();
+    r.api.open(); r.api.pickReport('narrative');
+    const promise = r.api.generateDraft(); await flush();
+    eq(r.pendingAi.length, 1, qualityCase.name + ': first narrative request was not singular');
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], report => {
+      const section = report.sections.find(candidate => candidate.heading === qualityCase.heading);
+      section.paragraphs = [{ text: qualityCase.text, evidenceIds: ['P000'] }];
+    }));
+    await flush();
+    eq(r.pendingAi.length, 2, qualityCase.name + ': invalid structured prose did not receive one repair');
+    ok(qualityCase.error.test(r.pendingAi[1].sys), qualityCase.name + ': repair did not name the quality defect');
+    eq(r.ids.mlsP1LegalDraft.value, '', qualityCase.name + ': rejected narrative was painted before repair');
+    r.pendingAi[1].resolve(wholeReportResponse(r.pendingAi[1]));
+    eq(await promise, true, qualityCase.name + ': valid bounded repair did not complete');
+    eq(r.pendingAi.length, 2, qualityCase.name + ': repair escaped its one-attempt bound');
+  }
+
+  /* A JSON envelope and a real allowlisted ID are not proof. Exercise the
+     adversarial narrative cases that previously survived the client check:
+     mixed missing/factual clauses, identity-only or one-word citations,
+     unauthored first person, novel/reversed conclusions, and history prose
+     that does not lead with the cited encounter's date plus type. */
+  for (const adversarial of [
+    {
+      name: 'missing-language factual tail', error: /without an evidence ID|affirmative clinical claim/i,
+      mutate(report) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: 'The records reviewed do not document a lumbar operation; however, the patient underwent lumbar fusion surgery.', evidenceIds: []
+        }];
+      }
+    },
+    {
+      name: 'P000 clinical laundering', error: /clinical evidence|patient-identity evidence/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: meta.patientName + ' underwent lumbar fusion surgery and was diagnosed with radiculopathy.', evidenceIds: ['P000']
+        }];
+      }
+    },
+    {
+      name: 'one-word clinical laundering', error: /clinical evidence|fewer than two concrete facts/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: 'The office visit proves ' + meta.patientName + ' underwent lumbar fusion surgery.',
+          evidenceIds: [meta.evidenceIds.find(id => /^E/.test(id))]
+        }];
+      }
+    },
+    {
+      name: 'unauthored first-person examination', error: /first-person examination or treatment claim/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: 'I examined and treated ' + meta.patientName + ' during the documented office visit.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'conclusion adds a new clinical fact', error: /CONCLUSION introduced a clinical fact or opinion/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'CONCLUSION').paragraphs = [{
+          text: 'The documented therapy and lumbar strain support the final synthesis from the supplied record.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'conclusion reverses opinion polarity', error: /CONCLUSION reversed the polarity of the causation opinion/i,
+      mutate(report, meta) {
+        const ids = meta.evidenceIds.filter(id => /^E/.test(id));
+        report.sections.find(section => section.heading === 'SUMMARY OF OPINIONS').paragraphs = [{
+          text: 'Causation: To a reasonable degree of medical certainty, the documented lumbar strain is causally related to the course represented in the supplied evidence.', evidenceIds: ids
+        }];
+        report.sections.find(section => section.heading === 'MEDICAL OPINIONS').paragraphs = [{
+          text: 'Causation: To a reasonable degree of medical certainty, pain and therapy records support the relationship for the lumbar strain.', evidenceIds: ids
+        }];
+        report.sections.find(section => section.heading === 'CONCLUSION').paragraphs = [{
+          text: 'Causation: To a reasonable degree of medical certainty, the lumbar strain is not related to the documented pain and therapy.', evidenceIds: ids
+        }];
+      }
+    },
+    {
+      name: 'history date is not the prefix', error: /documented date and encounter type/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: meta.patientName + ' attended the documented office visit for pain and continued therapy on 2025-02-02.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'history prefix omits encounter type', error: /documented date and encounter type/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 ' + meta.patientName + ' reported pain and continued therapy.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    }
+  ]) {
+    const r = makeRuntime(); r.api.open(); r.api.pickReport('narrative');
+    const promise = r.api.generateDraft(); await flush();
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], adversarial.mutate));
+    await flush();
+    eq(r.pendingAi.length, 2, adversarial.name + ': invalid first response did not receive exactly one repair');
+    ok(adversarial.error.test(r.pendingAi[1].sys), adversarial.name + ': repair did not name the validator defect: ' + r.pendingAi[1].sys.slice(-260));
+    eq(r.ids.mlsP1LegalDraft.value, '', adversarial.name + ': invalid prose painted before repair');
+    r.pendingAi[1].resolve(wholeReportResponse(r.pendingAi[1]));
+    eq(await promise, true, adversarial.name + ': valid bounded repair did not complete');
+    eq(r.pendingAi.length, 2, adversarial.name + ': repair escaped its one-attempt bound');
+  }
+
+  /* First person remains available when the cited record actually names the
+     report author and documents that author's examination/treatment. */
+  {
+    const r = makeRuntime({
+      patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic',
+        detail: 'M Synthetic examined and treated Synthetic Alpha for lumbar strain with therapy.'
+      }] }],
+      notes: {}, readers: { getProviderName: () => 'M Synthetic' }
+    });
+    r.api.open(); r.api.pickReport('narrative');
+    const promise = r.api.generateDraft(); await flush();
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], (report, meta) => {
+      report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+        text: '2025-02-02 - Office visit: I examined and treated Synthetic Alpha for documented lumbar strain with therapy.',
+        evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+      }];
+    }));
+    eq(await promise, true, 'documented report-author examination was rejected');
+    eq(r.pendingAi.length, 1, 'documented report-author examination unnecessarily triggered repair');
+  }
+
+  /* The visible Legal choice, not the global note preference, is forwarded
+     on the whole-report request. The finished draft records what the server
+     actually served and discloses a fallback. */
+  for (const modelCase of [
+    { button: 'mlsP1LegalModelLuna', requested: 'gpt-5.6-luna', served: 'gpt-4o', fallback: true },
+    { button: 'mlsP1LegalModelFast', requested: 'gpt-4o', served: 'gpt-4o', fallback: false }
+  ]) {
+    const r = makeRuntime(); r.api.open(); r.api.pickReport('narrative');
+    r.ids[modelCase.button].listeners.click();
+    const promise = r.api.generateDraft(); await flush();
+    eq(r.pendingAi[0].opts.model, modelCase.requested, modelCase.button + ' did not forward its visible model choice');
+    r.window.__mlsLastAiModel = modelCase.served;
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0]));
+    eq(await promise, true, modelCase.button + ' draft did not complete');
+    ok(r.ids.mlsP1LegalDraft.value.includes('AI model used: ' + modelCase.served + ' (1 draft attempt)'), modelCase.button + ' omitted the served-model receipt');
+    eq(/NOTE: this differs from the model you selected/.test(r.ids.mlsP1LegalDraft.value), modelCase.fallback,
+      modelCase.button + ' fallback disclosure was not honest');
   }
 
   /* The records-chronology type calls NO model at all. */
@@ -662,7 +890,8 @@ function makeRuntime(options = {}) {
     eq(r.stage(), 'generated', 'the deterministic report did not advance the flow');
     const out = r.ids.mlsP1LegalDraft.value;
     ok(/READ-ONLY MEDICAL-LEGAL CHRONOLOGY/.test(out), 'the chronology report does not contain the chronology');
-    ok(/^XV\. ATTESTATION$/m.test(out), 'the chronology report lost the signature attestation');
+    ok(/^SOURCE ATTESTATION$/m.test(out),
+      'the chronology report lost its source-limited signature attestation');
     ok(/UNSIGNED DRAFT/.test(out), 'the chronology report lost its unsigned-draft framing');
     ok(out.indexOf('[The practice name is not configured') === 0, 'the chronology report does not lead with the letterhead');
   }
@@ -674,12 +903,11 @@ function makeRuntime(options = {}) {
     r.api.open();
     eq(r.api.state().reportType, '', 'the workspace pre-picked a report type');
     const promise = r.api.generateDraft();
-    for (let i = 0; i < 14; i++) {
-      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
-      r.pendingAi[i].resolve('Synthetic default body ' + (i + 1));
-    }
+    await resolveWholeReport(r);
     eq(await promise, true, 'the default generation did not complete');
-    eq(r.pendingAi.length, 14, 'the default report is no longer the 14-section IME');
+    eq(r.pendingAi.length, 1, 'the default IME report made other than one coherent AI call');
+    eq(promptJson(r.pendingAi[0], 'Expected sections: ', '. Evidence-ID allowlist: ').length, 14,
+      'the default coherent report is no longer the 14-section IME');
     eq(r.api.state().reportType, 'ime', 'the default run did not record which type it used');
   }
 
@@ -761,10 +989,7 @@ function makeRuntime(options = {}) {
     ok(/p1l-nextctl/.test(r.ids.mlsP1LegalGenerate.className), 'the next control carries no local emphasis');
     ok(!/p1l-nextctl/.test(r.ids.mlsP1LegalRosterSearch ? r.ids.mlsP1LegalRosterSearch.className : ''), 'a stale next control kept its emphasis');
     const promise = r.api.generateDraft();
-    for (let i = 0; i < 14; i++) {
-      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
-      r.pendingAi[i].resolve('Synthetic body ' + (i + 1));
-    }
+    await resolveWholeReport(r);
     await promise;
     eq(r.api.flow().next, 'mlsP1LegalDraftDownload', 'a generated draft does not point at an export');
     ok(/p1l-nextctl/.test(r.ids.mlsP1LegalDraftDownload.className), 'the export control carries no emphasis');

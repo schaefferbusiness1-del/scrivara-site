@@ -33,6 +33,7 @@ function makeNode(tag, document) {
     removeEventListener(name, fn) { if (this.listeners[name]) this.listeners[name] = this.listeners[name].filter(x => x !== fn); },
     fire(name, extra = {}) { for (const fn of [...(this.listeners[name] || [])]) fn(Object.assign({ target: this, key: '', preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} }, extra)); },
     focus() { document.activeElement = this; }, click() { this.fire('click'); },
+    contains(candidate) { if (candidate === this) return true; return this.children.some(child => child.contains && child.contains(candidate)); },
     querySelector(selector) { return selector === '[data-mls-menu-key="athena-help"]' ? this.children.find(x => x.getAttribute('data-mls-menu-key') === 'athena-help') || null : null; },
     querySelectorAll(selector) { return this.id === 'mlsP1MktWorkspace' && /(input|textarea|select|button)/.test(selector) ? Object.values(document.ui).filter(el => {
       if (selector === 'input,textarea,select') return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
@@ -88,12 +89,13 @@ function runtime(role = 'user', options = {}) {
   const originals = { open: reach.open, openReviews: reach.openReviews, openContext: reach.openContext, send: reach.send };
   const account = { resolved: true, ready: true, email: 'doctor@example.invalid', role, epoch: 1, isAdmin: role === 'admin', isHead: role === 'head', isLawyer: role === 'lawyer' };
   let confirmResult = options.confirm !== false;
+  const confirmCalls = [], pendingConfirms = [];
   const window = {
     __MLS_P1_PREVIEW: { enabled: true, route: '/1p/' }, __mlsPatientReach: options.delayedReach ? undefined : reach,
     __mlsP1MarketingIdentity: () => Object.assign({}, account, { resolved: account.resolved === true && account.ready === true }),
     getPracticeName: () => 'Synthetic Spine Practice', clinicalProviderName: () => 'Wrong Login Account', getProviderName: () => options.provider === undefined ? 'Dr Preview' : options.provider, getProviderCred: () => 'MD', getSpec: () => 'Spine care',
     getClinicPhone: () => '555-0100', getClinicAddress: () => '100 Preview Way', getGoogleBusinessUrl: () => 'https://example.invalid/maps',
-    __mlsTopbar: { closeMenu() {} }, toast() {}, confirm: () => confirmResult,
+    __mlsTopbar: { closeMenu() {} }, toast() {},
     addEventListener(name, fn) { (windowEvents[name] ||= []).push(fn); },
     removeEventListener(name, fn) { if (windowEvents[name]) windowEvents[name] = windowEvents[name].filter(x => x !== fn); },
     dispatch(name, detail = {}) {
@@ -102,6 +104,38 @@ function runtime(role = 'user', options = {}) {
       for (const fn of [...(windowEvents[name] || [])]) fn({ detail });
     }
   };
+  if (!options.confirmMissing) {
+    window.mlsConfirm = function(message, dialogOptions) {
+      confirmCalls.push({ message, options: dialogOptions });
+      if (options.confirmThrows) throw new Error('synthetic confirm failure');
+      if (options.confirmRejects) return Promise.reject(new Error('synthetic confirm rejection'));
+      if (options.confirmNonThenable) return confirmResult;
+      if (options.confirmThrowingThen) return Object.defineProperty({}, 'then', { get() { throw new Error('synthetic then failure'); } });
+      if (options.confirmMode === 'deferred') {
+        const prior = pendingConfirms.find(record => !record.settled);
+        if (prior) prior.settle(false);
+        const prevFocus = document.activeElement;
+        let resolvePromise, rejectPromise;
+        const promise = new Promise((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject; });
+        const dialog = makeNode('div', document); dialog.id = '_mlsAskDialog'; dialog.style.zIndex = '99999';
+        const cancel = makeNode('button', document); cancel.id = '_mlsAskNo';
+        const accept = makeNode('button', document); accept.id = '_mlsAskYes';
+        dialog.appendChild(cancel); dialog.appendChild(accept);
+        const record = { dialog, cancel, accept, promise, settled: false, value: undefined,
+          settle(value, rejected = false) {
+            if (record.settled) return;
+            record.settled = true; record.value = value; dialog.remove();
+            if (prevFocus && prevFocus.focus) prevFocus.focus();
+            if (rejected) rejectPromise(new Error('synthetic deferred rejection')); else resolvePromise(value);
+          } };
+        cancel.addEventListener('click', () => record.settle(false));
+        accept.addEventListener('click', () => record.settle(true));
+        document.body.appendChild(dialog); pendingConfirms.push(record);
+        return promise;
+      }
+      return { then(resolve) { return resolve(confirmResult === true); } };
+    };
+  }
   window.MutationObserver = class {
     constructor(callback) { this.callback = callback; this.connected = false; mutationObservers.push(this); }
     observe() { this.connected = true; }
@@ -113,10 +147,11 @@ function runtime(role = 'user', options = {}) {
   const navigator = { clipboard: { writeText(value) { copied = value; return new Promise(resolve => { resolveCopy = resolve; }); } } };
   const context = { window, document, navigator, Blob, URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} },
     Promise, Object, Array, String, Number, Math, RegExp, JSON, console };
-  window.window = window; window.document = document; window.navigator = navigator; window.confirm = () => confirmResult;
+  window.window = window; window.document = document; window.navigator = navigator;
   vm.createContext(context); vm.runInContext(source, context, { filename: '1p-feat_mls_marketing.js' });
   return { window, document, ui, account, reach, originals, reachCalls, api: window.__mlsP1Marketing,
     copied: () => copied, resolveCopy: () => resolveCopy && resolveCopy(), panel, topbarMenu, toolsBtn, toolsMenu, legacyTab, legacyMenu,
+    confirmCalls, pendingConfirms,
     triggerMutation() { for (const observer of mutationObservers) if (observer.connected) observer.callback([]); },
     setConfirm(value) { confirmResult = !!value; }, installReach(next = reach) { window.__mlsPatientReach = next; window.__mlsP1Marketing.reconcile(); return next; } };
 }
@@ -337,7 +372,113 @@ async function verifyStaleClipboardReceiptIsolation() {
   r.api.close(); r.api.revert();
 }
 
-verifyStaleClipboardReceiptIsolation().then(function () {
+function makeDirtyMarketingRuntime(options) {
+  const r = runtime('user', options);
+  r.topbarMenu.focus(); r.api.open(r.topbarMenu);
+  r.ui.mlsP1MktAdService.value = 'Synthetic service'; r.ui.mlsP1MktPlanAds.click();
+  eq(r.api.isDirty(), true, 'confirmation fixture did not create a dirty draft');
+  return r;
+}
+
+async function verifyAsyncConfirmationOwnership() {
+  const r = makeDirtyMarketingRuntime({ confirmMode: 'deferred' });
+  const draft = r.ui.mlsP1MktAdsOutput.value;
+  const declined = r.api.close();
+  ok(declined && typeof declined.then === 'function', 'dirty Close did not return a non-blocking confirmation promise');
+  eq(r.confirmCalls.length, 1, 'dirty Close did not request exactly one MLS confirmation');
+  eq(r.confirmCalls[0].message, 'Discard every unsaved Marketing draft in this tab?', 'dirty Close changed its confirmation wording');
+  eq(r.confirmCalls[0].options.title, 'Marketing workspace', 'dirty Close omitted its MLS dialog title');
+  const ask = r.document.getElementById('_mlsAskDialog');
+  ok(ask, 'dirty Close did not create the shared MLS confirmation');
+  eq(ask.style.zIndex, '100061', 'Marketing confirmation remained behind the workspace');
+  r.triggerMutation();
+  eq(ask.inert, false, 'Marketing containment made its exact confirmation inert');
+  eq(ask.getAttribute('inert'), null, 'Marketing containment added inert to its exact confirmation');
+  eq(ask.getAttribute('aria-hidden'), null, 'Marketing containment hid its exact confirmation from assistive technology');
+  const unrelated = makeNode('div', r.document); r.document.body.appendChild(unrelated); r.triggerMutation();
+  eq(unrelated.inert, true, 'confirmation exemption leaked to an unrelated body sibling');
+  eq(unrelated.getAttribute('aria-hidden'), 'true', 'confirmation exemption exposed an unrelated body sibling');
+  r.pendingConfirms[0].settle(false);
+  eq(await declined, false, 'declined asynchronous Close reported success');
+  ok(r.document.getElementById('mlsP1MktWorkspace'), 'declined asynchronous Close discarded the workspace');
+  eq(r.ui.mlsP1MktAdsOutput.value, draft, 'declined asynchronous Close erased its draft');
+  eq(r.document.activeElement, r.ui.mlsP1MktClose, 'declined asynchronous Close did not restore dialog focus');
+  const accepted = r.api.close();
+  r.pendingConfirms[1].settle(true);
+  eq(await accepted, true, 'accepted asynchronous Close did not report success');
+  eq(r.document.getElementById('mlsP1MktWorkspace'), null, 'accepted asynchronous Close retained the workspace');
+  eq(r.document.activeElement, r.topbarMenu, 'accepted asynchronous Close did not restore its original invoker');
+  eq(unrelated.inert, false, 'accepted asynchronous Close left an unrelated sibling inert');
+  r.api.revert();
+}
+
+async function verifyLatestConfirmationWins() {
+  const r = makeDirtyMarketingRuntime({ confirmMode: 'deferred' });
+  const first = r.api.close();
+  const firstDialog = r.pendingConfirms[0].dialog;
+  const second = r.api.close();
+  eq(r.pendingConfirms[0].settled, true, 'a repeated destructive action left its older confirmation pending');
+  eq(r.pendingConfirms[0].value, false, 'a repeated destructive action did not cancel its older confirmation');
+  eq(await first, false, 'an older confirmation won after a newer click');
+  ok(r.document.getElementById('_mlsAskDialog') !== firstDialog, 'a repeated destructive action retained the stale dialog node');
+  ok(r.document.getElementById('mlsP1MktWorkspace'), 'cancelling the older confirmation closed the workspace');
+  r.pendingConfirms[1].settle(true);
+  eq(await second, true, 'the latest accepted confirmation did not run');
+  eq(r.document.getElementById('mlsP1MktWorkspace'), null, 'the latest accepted confirmation did not close the workspace');
+  r.api.revert();
+}
+
+async function verifyConfirmationAccountFences() {
+  {
+    const r = makeDirtyMarketingRuntime({ confirmMode: 'deferred' });
+    const pending = r.api.close();
+    r.account.epoch = 2;
+    r.pendingConfirms[0].settle(true);
+    eq(await pending, false, 'an accepted confirmation crossed an account epoch change');
+    ok(r.document.getElementById('mlsP1MktWorkspace'), 'stale accepted confirmation destroyed the old-account draft');
+    eq(r.api.isDirty(), true, 'stale accepted confirmation cleared dirty state');
+    r.window.dispatch('mls:session-boundary', { nextAccount: '', epoch: 2 }); r.api.revert();
+  }
+  {
+    const r = makeDirtyMarketingRuntime({ confirmMode: 'deferred' });
+    const pending = r.api.close(), ask = r.document.getElementById('_mlsAskDialog');
+    r.window.dispatch('mls:session-boundary', { nextAccount: '', epoch: 2 });
+    eq(r.pendingConfirms[0].settled, true, 'session scrub left its exact Marketing confirmation pending');
+    eq(r.pendingConfirms[0].value, false, 'session scrub did not cancel its exact Marketing confirmation');
+    eq(r.document.getElementById('_mlsAskDialog'), null, 'session scrub left a stale confirmation visible');
+    ok(ask.parentNode === null, 'session scrub retained the stale confirmation node');
+    eq(await pending, false, 'session-cancelled confirmation reported success');
+    eq(r.document.getElementById('mlsP1MktWorkspace'), null, 'session boundary retained the Marketing workspace');
+    r.api.revert();
+  }
+}
+
+async function verifyConfirmationFailuresFailClosed() {
+  for (const options of [
+    { confirmMissing: true }, { confirmThrows: true }, { confirmNonThenable: true }, { confirmThrowingThen: true }
+  ]) {
+    const r = makeDirtyMarketingRuntime(options), draft = r.ui.mlsP1MktAdsOutput.value;
+    eq(r.api.close(), false, 'unavailable or invalid MLS confirmation did not fail closed');
+    ok(r.document.getElementById('mlsP1MktWorkspace'), 'confirmation failure discarded the workspace');
+    eq(r.ui.mlsP1MktAdsOutput.value, draft, 'confirmation failure erased the draft');
+    r.window.dispatch('mls:session-boundary', { nextAccount: '', epoch: 2 }); r.api.revert();
+  }
+  const r = makeDirtyMarketingRuntime({ confirmRejects: true }), draft = r.ui.mlsP1MktAdsOutput.value;
+  eq(await r.api.close(), false, 'rejected MLS confirmation did not fail closed');
+  ok(r.document.getElementById('mlsP1MktWorkspace'), 'rejected MLS confirmation discarded the workspace');
+  eq(r.ui.mlsP1MktAdsOutput.value, draft, 'rejected MLS confirmation erased the draft');
+  r.window.dispatch('mls:session-boundary', { nextAccount: '', epoch: 2 }); r.api.revert();
+}
+
+async function runAsyncChecks() {
+  await verifyStaleClipboardReceiptIsolation();
+  await verifyAsyncConfirmationOwnership();
+  await verifyLatestConfirmationWins();
+  await verifyConfirmationAccountFences();
+  await verifyConfirmationFailuresFailClosed();
+}
+
+runAsyncChecks().then(function () {
   console.log(`PASS 1p Marketing workspace runtime (${checks} assertions)`);
 }, function (error) {
   console.error(error && error.stack || error); process.exitCode = 1;

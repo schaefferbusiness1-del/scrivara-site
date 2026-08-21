@@ -12,6 +12,7 @@ const assistantSrc = fs.readFileSync(path.join(root, 'feat_mls_asst_fix.js'), 'u
 const assistantExactSrc = fs.readFileSync(path.join(root, 'feat_mls_assistant_exact.js'), 'utf8');
 
 function browserContext(calProviders) {
+  const installToken = 'provider-integrity-owned-roster';
   const store = new Map();
   const localStorage = {
     getItem: k => store.has(k) ? store.get(k) : null,
@@ -24,10 +25,24 @@ function browserContext(calProviders) {
     removeEventListener: () => {},
     querySelector: () => null,
     querySelectorAll: () => [],
-    getElementById: () => null
+    getElementById: () => null,
+    currentScript: {
+      getAttribute(name) {
+        if (name === 'data-mls-install-token') return installToken;
+        if (name === 'data-mls-asset') return 'feat_athena_provider_roster.js';
+        return null;
+      }
+    }
   };
   const window = {
     _calProviders: calProviders || [],
+    __MLS_MAIN: { enabled: true },
+    __mlsP1ProviderRosterLoader: {
+      installed: true, version: 'p1-provider-roster-1.0.0', installToken
+    },
+    __mlsSessionAccount: 'provider-integrity@example.test',
+    __mlsSessionEpoch: 1,
+    bkToken: () => 'provider-integrity-session-token',
     uns: n => `acct:${n}`,
     addEventListener: () => {}, removeEventListener: () => {},
     document, localStorage
@@ -39,6 +54,30 @@ function browserContext(calProviders) {
     setTimeout: () => 1, clearTimeout: () => {},
     console
   });
+}
+
+let ingestSequence = 0;
+function ingestExact(ctx, response) {
+  const api = ctx.window.__mlsProviderRoster;
+  assert(api && api.version === 'p1-provider-roster-1.0.0',
+    'the promoted provider roster did not install under the exact controller/session owner');
+  assert.strictEqual(api.installToken, ctx.window.__mlsP1ProviderRosterLoader.installToken,
+    'the provider roster API is not bound to the exact loader token');
+  const requestId = `provider-integrity-${++ingestSequence}`;
+  assert(api.beginOperation({
+    targetDate: '2026-07-15', requestId, providerMode: 'all',
+    requestedProviderId: '', requestedProviderStableKey: ''
+  }), 'the exact provider-roster operation did not arm');
+  const payload = Object.assign({}, response, { requestId });
+  if (payload.providerRosterReceipt) {
+    payload.providerRosterReceipt = Object.assign({}, payload.providerRosterReceipt, {
+      requestId, targetDate: '2026-07-15'
+    });
+  }
+  const result = api.ingestResp(payload);
+  assert(!result || result.ignored !== true,
+    'the exact owned provider-roster response was refused as unbound');
+  return result;
 }
 
 // Stable identity, not display name, is the roster invariant. Both clinicians
@@ -55,7 +94,7 @@ assert(roster.every(x => x.rosterVerified), 'backend provider ids are verified r
 assert.strictEqual(ctx.window.__mlsProviderRoster.resolve('Alex Same'), null, 'ambiguous same-name lookup must fail closed');
 assert.strictEqual(ctx.window.__mlsProviderRoster.resolve('pv:' + encodeURIComponent('backend:101')).id, '101');
 
-ctx.window.__mlsProviderRoster.ingestResp({
+ingestExact(ctx, {
   providerRoster: [
     { stableKey: 'athena:same_alex_md', raw: 'Same_Alex_MD', name: 'Alex Same' },
     { stableKey: 'athena:same_alex_do', raw: 'Same_Alex_DO', name: 'Alex Same' },
@@ -72,7 +111,7 @@ assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().complete, true);
 assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().boundsStable, true, 'normalized roster receipt dropped the full-sweep bounds proof');
 assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().expectedCount, 2, 'complete full sweep did not bind its exact observed provider count');
 
-ctx.window.__mlsProviderRoster.ingestResp({ providers: ['Legacy_Doctor_MD'] });
+ingestExact(ctx, { providers: ['Legacy_Doctor_MD'] });
 assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().complete, false, 'legacy provider lists never claim complete coverage');
 assert.strictEqual(ctx.window.__mlsProviderRoster.getReceipt().partial, true);
 

@@ -158,9 +158,14 @@ function makeBoundaryDocument() {
 
 function testSessionBoundary(pageName) {
   const html = read(pageName);
+  const setupPromptSessionKey = (html.match(/var SU_PROMPT_SESSION_KEY='([^']+)'/) || [])[1];
+  if (html.includes('sessionStorage.getItem(uns(SU_PROMPT_SESSION_KEY))')) {
+    assert(setupPromptSessionKey, `${pageName}: session-scoped setup prompt key is missing`);
+  }
   const timers = timerHarness();
   const dom = makeBoundaryDocument();
   const localStorage = memoryStorage();
+  const sessionStorage = memoryStorage();
   const statusResets = [];
   const assistantResets = [];
   const boundaryEvents = [];
@@ -172,7 +177,8 @@ function testSessionBoundary(pageName) {
   class FakeCustomEvent extends FakeEvent { constructor(type, init) { super(type); this.detail = init && init.detail; } }
   const context = addEventTarget({
     console, Event: FakeEvent, CustomEvent: FakeCustomEvent,
-    document: dom.document, localStorage,
+    document: dom.document, localStorage, sessionStorage,
+    SU_PROMPT_SESSION_KEY: setupPromptSessionKey || 'staging-legacy-key',
     session: { email: 'doctor-a@example.test' },
     bkUser: { email: 'doctor-a@example.test', role: 'head' },
     getSessionEmail() { return context.session && context.session.email || ''; },
@@ -426,5 +432,6 @@ testSessionBoundary('ScribeFlow.html');
 testSessionBoundary('ScribeFlow-staging.html');
 testMenuReconciliation();
 testLexicalBkUserBridge();
-assert(read('ScribeFlow.html').includes("window.__MLS_AV='b1043'"), 'web asset stamp changed from b1043');
-assert(read('sw.js').includes("const CACHE = 'mls-v205'"), 'service-worker cache stamp changed from v64');console.log('PASS same-tab UI account isolation: A -> logout -> B clears PHI/modals/intake/prompts, restores role markup, and reconciles account-gated menu rows');
+assert(read('ScribeFlow.html').includes("window.__MLS_AV='b1044'"), 'web asset stamp changed from b1044');
+assert(read('sw.js').includes("const CACHE = 'mls-v206'"), 'service-worker cache stamp changed from v206');
+console.log('PASS same-tab UI account isolation: A -> logout -> B clears PHI/modals/intake/prompts, restores role markup, and reconciles account-gated menu rows');

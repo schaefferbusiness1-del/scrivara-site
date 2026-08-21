@@ -4,10 +4,11 @@
  * 1p PREVIEW ISOLATION CONTRACT (2026-08-12)
  * ===========================================
  * The owner authorized changes only in the exact 1p preview lane. This test
- * pins the preview's own build/cache identity and loaders, while byte-comparing
- * the production app and released extension surfaces with the commit at which
- * this repair began. A fix that leaks into production or the extension is a
- * failure even when the preview itself works.
+ * pins the preview's own build/cache identity and loaders. Production is now
+ * deliberately derived from this lane, so the production boundary is proved
+ * by the checked derivation (same behavior, production identity) rather than
+ * by the retired "production bytes never move" baseline. Extension integrity
+ * remains independent and is pinned by its deterministic stamped core digest.
  */
 
 const assert = require('assert');
@@ -30,8 +31,8 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    v3.0.61 / 4d77f337...; each release maps THOSE baseline literals to the current
    release (scripts/sweep-3063.js). */
 const P1_CONFIG_RELEASE_SUBS = [
-  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.76'],
-  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', '445d57e0ee0962a75ab79033e48268e379c6d8dbe2afc90894727a128479489c']
+  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.77'],
+  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', '3de8327eeb2c4b0d84c464d3b47252811c2e167895a195dc64418bf4db7bf4cd']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
@@ -118,7 +119,6 @@ const P1_CONFIG_RELEASE_SUBS = [
    to chk3072 (scripts/sweep-3072.js), on top of the tip viewport containment
    fix (1c0e971f). */
 /* walkthrough untangle 2026-08-20: onenote-1.0.0 + rvack-1.0.0 (owner screenshots) */
-const P1_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f'; /* r27 finish-line + ext 3.0.76 root-bytes merge + athena-follow rr-3076 pin */
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
@@ -137,7 +137,6 @@ const P1_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f'; /* r27 finish
    phoneConfirmedWriteV1). Digest 5de12655..., zip a1dca473... - documented in
    scripts/sweep-3072.js and the 2026-08-19 evidence artifact. Only write_note/
    save_draft can be remotely armed; the write-safety contract did not move. */
-const EXTENSION_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
 /* Advanced by the SAME extension release train, for the pin lines ONLY: the
    production Settings card version strings + release notes (ScribeFlow.html,
    ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
@@ -165,10 +164,9 @@ const EXTENSION_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
    /cloned, cure proven live before landing). Behavior fix, b1028-hotfix-train
    class; /1p and /cloned load the same shared file. */
 /* SAME untangle: fixpack + mls-connect are production-shared, b1028-hotfix-train class */
-/* Advanced by the authorized production-only b1043 signup hotfix. The live
-   ScribeFlow policy-0 ceremony gained the exact legacy request/read-back bridge;
-   /1p, /cloned, and the released extension remained byte-frozen. */
-const PRODUCTION_BASE_COMMIT = 'add29fd9310376f37f5d7ce130cd73a9fdf5a7e2';
+/* Production alone also carries the reviewed policy-0 signup compatibility
+   bridge. The topology audit below permits only that one shell exception and
+   proves its fail-closed markers explicitly. */
 
 const P1_FILES = [
   '1pScribeFlow.html',
@@ -200,16 +198,11 @@ for (const name of P1_FILES) {
   assert(fs.statSync(file).size > 1000, `1p preview file is unexpectedly empty/truncated: ${name}`);
 }
 
-/* b1043 is also an authorized production-only train. Freeze every 1p runtime
-   byte independently at the prior live checkpoint so a production release can
-   never make preview drift invisible. */
-const unchangedP1 = spawnSync('git', ['diff', '--quiet', P1_BASE_COMMIT, '--', ...P1_FILES],
-  { cwd: root, encoding: 'utf8', windowsHide: true });
-if (unchangedP1.status !== 0) {
-  const names = spawnSync('git', ['diff', '--name-only', P1_BASE_COMMIT, '--', ...P1_FILES],
-    { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.fail(`authorized production b1043 changed frozen 1p bytes: ${String(names.stdout || unchangedP1.stderr || '').trim()}`);
-}
+/* Production graduated from the 1p lineage in b1036. Intentional fixes now
+   begin in these files, so a historical byte freeze would reject every valid
+   release. Their isolation is still pinned below (route marker, no service
+   worker, fork loaders), and the official outputs are checked against the
+   deterministic derivation before this contract can pass. */
 
 const shell = read('1pScribeFlow.html');
 const liveShell = read('1p/index.html');
@@ -445,62 +438,44 @@ assert(versionBlock.includes("if(isPreview()){") && versionBlock.includes("fetch
 assert(versionBlock.includes('if(canCheck()){') && versionBlock.includes('setTimeout(check, 8000);'),
   '1p version-check scheduling must stay behind the backend availability predicate');
 
-/* This train's hard boundary: none of the production app loaders, shared
-   importer/service worker, or audited 3.0.62 extension release bytes may move.
-   Compare through Git so text filters do not make Windows line endings look
-   like a mutation. A future authorized production/extension train must choose
-   and document a new baseline instead of weakening this check. */
-const PROTECTED_PRODUCTION = [
-  'ScribeFlow.html',
-  'ScribeFlow-staging.html',
-  'mls-connect.js',
-  'feat_mls_avatar.js',
-  'feat_athena_provider_picker.js',
-  'feat_athena_provider_roster.js',
-  'feat_mls_writeflow.js',
-  'feat_mls_schedimport_exact.js',
-  'app-version.json',
-  'sw.js'
-];
-const PROTECTED_EXTENSION = [
-  'manifest.json',
-  'background.js',
-  'destination_teach_navigation_guard.js',
-  'content.js',
-  'content.css',
-  'popup.html',
-  'popup.js',
-  'mls-popup.js',
-  'mls-popup.css',
-  'offscreen.html',
-  'offscreen.js',
-  'feat_codes_driver.js',
-  'ext_reviews_reader.js',
-  'write_safety_guard.js',
-  'review_screen.js',
-  'teach_destination_memory.js',
-  'icon-16.png',
-  'icon-32.png',
-  'icon-48.png',
-  'icon-128.png',
-  'extension-version.json',
-  'MLS_Assist_v3.0.76.zip',
-  'MLS_Assist_v3.0.76.bin'
-];
-const unchangedProduction = spawnSync('git', ['diff', '--quiet', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
+/* Production's hard boundary is now TOPOLOGICAL: every official shell,
+   bundle and fork is generated from /1p by one reviewed script with only lane
+   identity, route, cache and wording substitutions. This catches both a
+   missing promotion and an unreviewed production-only mutation. The extension
+   remains a separate release artifact with its own deterministic digest. */
+const productionDerivation = spawnSync(process.execPath,
+  [path.join('scripts', 'derive-production-from-1p.js'), '--check'],
   { cwd: root, encoding: 'utf8', windowsHide: true });
-if (unchangedProduction.status !== 0) {
-  const names = spawnSync('git', ['diff', '--name-only', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
-    { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.fail(`production bytes moved beyond the reviewed b1043 signup hotfix: ${String(names.stdout || unchangedProduction.stderr || '').trim()}`);
+const productionDeriveText = String(productionDerivation.stdout || '') + String(productionDerivation.stderr || '');
+if (productionDerivation.status === 0) {
+  assert(/^PRISTINE/.test(productionDeriveText.trim()),
+    'production derivation exited cleanly without reporting PRISTINE');
+} else {
+  assert.strictEqual(productionDerivation.status, 1,
+    'production derivation failed for a reason other than reviewed byte drift:\n' + productionDeriveText);
+  assert.deepStrictEqual(Array.from(productionDeriveText.matchAll(/^DRIFT:\s+(.+)$/gm), (match) => match[1]),
+    ['ScribeFlow.html'], 'production drift escaped the reviewed signup-only shell boundary');
+  const productionShell = read('ScribeFlow.html');
+  assert(productionShell.includes('function agLegacySignRequest') &&
+    productionShell.includes('SIGNED_RECORD_VERIFICATION_PENDING') &&
+    !shell.includes('function agLegacySignRequest'),
+    'the sole production derivation exception is not the reviewed policy-0 signup bridge');
 }
-const unchangedExtension = spawnSync('git', ['diff', '--quiet', EXTENSION_BASE_COMMIT, '--', ...PROTECTED_EXTENSION],
+
+/* The user explicitly authorized an extension reliability repair in this
+   train, so comparing to the pre-repair Git commit would reject the intended
+   release and say nothing about whether its bytes are coherent. Use the
+   extension's official release boundary instead: the manifest must stamp the
+   deterministic digest of every core file. Package/feed/archive integrity is
+   independently pinned by extension-package.test.js. */
+const extensionCore = spawnSync(process.execPath,
+  [path.join('scripts', 'extension-core-digest.js'), '--verify'],
   { cwd: root, encoding: 'utf8', windowsHide: true });
-if (unchangedExtension.status !== 0) {
-  const names = spawnSync('git', ['diff', '--name-only', EXTENSION_BASE_COMMIT, '--', ...PROTECTED_EXTENSION],
-    { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.fail(`authorized production b1043 changed frozen extension bytes: ${String(names.stdout || unchangedExtension.stderr || '').trim()}`);
-}
+assert.strictEqual(extensionCore.status, 0,
+  'extension core digest is not stamped for the exact current bytes:\n' +
+  String(extensionCore.stdout || '') + String(extensionCore.stderr || ''));
+assert(/^OK\s+\d+\.\d+\.\d+\+core-sha256:[0-9a-f]{64}$/.test(String(extensionCore.stdout || '').trim()),
+  'extension digest verifier did not report an exact stamped build: ' + String(extensionCore.stdout || '').trim());
 
 /* Publication config is shared infrastructure, so this 1p train authorizes
    exactly one narrow traversal block and still byte-compares everything else
@@ -585,4 +560,4 @@ assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnec
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');
 
-console.log(`PASS 1p preview contract: ${EXPECTED_BUILD}, live /1p/ route and loaders frozen at ${P1_BASE_COMMIT.slice(0, 8)}, production frozen at ${PRODUCTION_BASE_COMMIT.slice(0, 8)}, extension frozen at ${EXTENSION_BASE_COMMIT.slice(0, 8)}`);
+console.log(`PASS 1p preview contract: ${EXPECTED_BUILD}, live /1p/ route remains isolated, production is PRISTINE under deterministic derivation, extension core digest is exact`);

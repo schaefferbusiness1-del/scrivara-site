@@ -35,8 +35,10 @@ assert(app.includes('function suProviderIdentityKey('), 'the wizard identity nor
 assert(app.includes('suRosterMismatch'), 'the wizard roster-mismatch guard is missing');
 const wizard = app.slice(app.indexOf('function suPersistIdentity()'), app.indexOf('function suFinish()'));
 assert(wizard.indexOf("localStorage.setItem(uns('docname'), nm);") >= 0, 'the account display name is always kept');
-assert(/suRosterMismatch[\s\S]*else if\(nm\)\{\s*localStorage\.setItem\(uns\('providerName'\), nm\);/.test(wizard),
-  'providerName may only be seeded when the roster does not contradict the typed name');
+assert(/suRosterMismatch[\s\S]*else if\(nm&&suIsProvider\(\)\)\{\s*localStorage\.setItem\(uns\('providerName'\), nm\);/.test(wizard),
+  'providerName may only be seeded when the roster does not contradict the typed name and the account has provider role');
+assert(!/else if\(nm\)\{\s*localStorage\.setItem\(uns\('providerName'\), nm\);/.test(wizard),
+  'a bare typed account name must never seed clinical provider identity');
 assert(!/removeItem\(uns\('providerName'\)\)/.test(wizard),
   'the wizard must never delete an existing provider identity');
 

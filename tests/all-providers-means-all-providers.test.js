@@ -54,6 +54,7 @@ const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 
 function browserContext(opts) {
   opts = opts || {};
+  const installToken = 'all-providers-owned-roster';
   const store = new Map();
   const localStorage = {
     getItem: k => store.has(k) ? store.get(k) : null,
@@ -63,11 +64,25 @@ function browserContext(opts) {
   const document = {
     readyState: 'complete',
     addEventListener: () => {}, removeEventListener: () => {},
-    querySelector: () => null, querySelectorAll: () => [], getElementById: () => null
+    querySelector: () => null, querySelectorAll: () => [], getElementById: () => null,
+    currentScript: {
+      getAttribute(name) {
+        if (name === 'data-mls-install-token') return installToken;
+        if (name === 'data-mls-asset') return 'feat_athena_provider_roster.js';
+        return null;
+      }
+    }
   };
   const window = {
     _calProviders: opts.calProviders || [],
     _calAppts: opts.calAppts || [],
+    __MLS_MAIN: { enabled: true },
+    __mlsP1ProviderRosterLoader: {
+      installed: true, version: 'p1-provider-roster-1.0.0', installToken
+    },
+    __mlsSessionAccount: 'all-providers@example.test',
+    __mlsSessionEpoch: 1,
+    bkToken: () => 'all-providers-session-token',
     uns: n => `acct:${n}`,
     addEventListener: () => {}, removeEventListener: () => {},
     document, localStorage
@@ -80,7 +95,31 @@ function browserContext(opts) {
     console
   });
   vm.runInContext(rosterSrc, ctx, { filename: 'feat_athena_provider_roster.js' });
+  assert(ctx.window.__mlsProviderRoster && ctx.window.__mlsProviderRoster.version === 'p1-provider-roster-1.0.0',
+    'the promoted provider roster did not install under its exact controller/session owner');
+  assert.strictEqual(ctx.window.__mlsProviderRoster.installToken, installToken,
+    'the provider roster API is not bound to the exact loader token');
   return ctx;
+}
+
+function ingestExact(api, response) {
+  const requestId = String(response && response.requestId || 'all-providers-request');
+  const operation = api.beginOperation({
+    targetDate: '2026-07-28', requestId, providerMode: 'all',
+    requestedProviderId: '', requestedProviderStableKey: ''
+  });
+  assert(operation && operation.requestId === requestId,
+    'the exact provider-roster operation did not arm');
+  const payload = Object.assign({}, response, { requestId });
+  if (payload.providerRosterReceipt) {
+    payload.providerRosterReceipt = Object.assign({}, payload.providerRosterReceipt, {
+      requestId, targetDate: '2026-07-28'
+    });
+  }
+  const result = api.ingestResp(payload);
+  assert(!result || result.ignored !== true,
+    'the exact owned provider-roster response was refused as unbound');
+  return result;
 }
 
 /* the EXACT receipt shape background.js produced on the owner's one-column grid */
@@ -107,7 +146,7 @@ const paintedGridComplete = (n) => ({
   const ctx = browserContext({ calProviders: eighteen });
   const api = ctx.window.__mlsProviderRoster;
 
-  api.ingestResp({
+  ingestExact(api, {
     requestId: 'r1',
     providerRoster: [{ stableKey: 'athena:matthew schaeffer, md', raw: 'Matthew Schaeffer, MD' }],
     providerRosterReceipt: paintedGridComplete(1)
@@ -157,7 +196,7 @@ const paintedGridComplete = (n) => ({
     ]
   });
   const api = ctx.window.__mlsProviderRoster;
-  api.ingestResp({
+  ingestExact(api, {
     requestId: 'r2',
     providerRoster: [{ stableKey: 'athena:matthew schaeffer, md', raw: 'Matthew Schaeffer, MD' }],
     providerRosterReceipt: paintedGridComplete(1)
@@ -200,7 +239,7 @@ const paintedGridComplete = (n) => ({
     ]
   });
   const api = ctx.window.__mlsProviderRoster;
-  api.ingestResp({
+  ingestExact(api, {
     requestId: 'r3',
     providerRoster: [{ stableKey: 'athena:matthew schaeffer, md', raw: 'Matthew Schaeffer, MD' }],
     providerRosterReceipt: paintedGridComplete(1)
@@ -233,10 +272,11 @@ assert(/pull again/.test(notice) && /Choose a provider/.test(notice),
   'the notice must name a real next step — this repo has a documented defect class of failure messages pointing nowhere');
 
 /* it must be attached to the sentences the doctor actually acts on */
-assert(/Verified complete: schedule[\s\S]{0,140}providerScopeNotice\(selectedProvider\.mode\)/.test(si),
-  '"Verified complete" is the terminal verdict; a coverage caveat missing from it is missing where it matters');
-assert(/Schedule-only complete:[\s\S]{0,160}providerScopeNotice\(selectedProvider\.mode\)/.test(si),
-  'and from the schedule-only verdict, which is the path the owner runs by default');
+assert(/var __p1ScopeNotice = p1AppointmentCensusComplete[\s\S]{0,260}providerScopeNotice\(selectedProvider\.mode\)/.test(si) &&
+  /Verified complete: schedule[\s\S]{0,260}__p1ScopeNotice/.test(si),
+  '"Verified complete" must append the precomputed provider/appointment-census coverage caveat');
+assert(/Schedule-only complete:[\s\S]{0,340}__p1ScopeNotice/.test(si),
+  'the schedule-only verdict must append the same precomputed coverage caveat');
 assert(/has no appointments\." \+ freshnessNotice\(r\) \+ providerScopeNotice\(selectedProvider\.mode\)/.test(si),
   'an EMPTY day is the worst case: "nobody is coming" read off a one-provider grid is a positive clinical claim about seventeen other clinicians');
 assert(/Verified month complete:[\s\S]{0,320}providerScopeNotice\(frozenProvider === "all"/.test(si),
@@ -249,8 +289,14 @@ const completeStmt = si.slice(si.indexOf('            var complete = !!(r.receip
 assert(completeStmt.length > 0 && completeStmt.length < 400, 'the day-pull completeness statement could not be bounded');
 assert(!/providerScope|scopeComplete|coversPractice/.test(completeStmt),
   'the provider-scope verdict must NOT feed `complete`. A one-provider day is still a COMPLETE read of that provider, and failing it would break the pull to buy a disclosure');
-assert(/providerScope: providerScopeReceipt\(selectedProvider\.mode\)/.test(si),
-  'but it must be RECORDED on the calendar receipt, so the lead can read the coverage of a finished pull rather than infer it');
+const calendarReceiptBlock = si.slice(si.indexOf('            var calendarReceipt = {'),
+  si.indexOf('              attempted: attempted,', si.indexOf('            var calendarReceipt = {')));
+assert(calendarReceiptBlock.includes('providerScope: p1AppointmentCensusComplete ? {') &&
+  calendarReceiptBlock.includes('scope: "appointment-census-only"') &&
+  calendarReceiptBlock.includes('coversPractice: false') &&
+  calendarReceiptBlock.includes('} : providerScopeReceipt(selectedProvider.mode),') &&
+  calendarReceiptBlock.includes('providerAttributionComplete: p1AppointmentCensusComplete ? false :'),
+  'the calendar receipt must record either the narrow appointment-census boundary or the selected/all provider coverage evidence');
 
 /* ================================================================= *
  * 5. The extension-side origin of the claim is still what this says

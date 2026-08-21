@@ -1,7 +1,7 @@
 'use strict';
 
-/* P1-only proof for the storage action surface. The regular-site guard is
- * intentionally not loaded or changed by this test. */
+/* Proof for the /p1 storage action surface and its officially derived
+ * production counterpart. */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -18,6 +18,12 @@ const tail = 'window.__mlsQuotaGuard_revert = QG.revert;\n})();';
 const iifeEnd = connect.indexOf(tail, iifeStart);
 assert(start > 0 && iifeStart > start && iifeEnd > iifeStart, 'P1 quota guard is not extractable');
 const source = connect.slice(iifeStart, iifeEnd) + tail;
+const regularStart = regularConnect.indexOf('qv-1.0 (2026-08-09)');
+const regularIifeStart = regularConnect.indexOf('(function () {', regularStart);
+const regularIifeEnd = regularConnect.indexOf(tail, regularIifeStart);
+assert(regularStart > 0 && regularIifeStart > regularStart && regularIifeEnd > regularIifeStart,
+  'production quota guard is not extractable');
+const regularSource = regularConnect.slice(regularIifeStart, regularIifeEnd) + tail;
 
 function node(tag, elements) {
   return {
@@ -200,9 +206,12 @@ async function settle() { await Promise.resolve(); await Promise.resolve(); }
   const monthPreflightAt = importer.indexOf('var _lrQuotaM');
   assert(monthPreflightAt >= 0 && monthPreflightAt < importer.indexOf('p1ClaimMonthOwner()', monthPreflightAt),
     'month preflight no longer refuses before owner admission/navigation');
-  assert(regularConnect.includes('MLS storage is FULL'), 'test unexpectedly changed the regular-site storage guard');
+  assert.strictEqual(regularSource, source,
+    'the production quota guard drifted from its officially promoted /p1 source');
+  assert(!/MLS storage is FULL|Local storage is FULL|storage fix is in progress|stale write-failure latch CLEARED/.test(regularSource),
+    'the promoted production quota guard restored noisy or unproven storage language');
 
-  console.log('PASS /p1 quota notification: scoped ordering, account wall, truthful non-overlay card, sanitized diagnostics, quiet verified recovery, and pre-navigation refusal');
+  console.log('PASS promoted quota notification: exact /p1-production parity, scoped ordering, account wall, truthful non-overlay card, sanitized diagnostics, quiet verified recovery, and pre-navigation refusal');
 })().catch(error => {
   console.error(error && error.stack || error);
   process.exit(1);

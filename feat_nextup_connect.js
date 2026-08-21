@@ -176,7 +176,12 @@
   function installRendererGuard() {
     var current = safe(function () { return window._renderTodayPatients; }, null);
     if (!isFn(current)) return false;
-    if (findRendererMarker(current, '__mlsP1CensusScheduleGuard')) return true;
+    /* The production predecessor stamped only the semantic owner marker. A
+       promoted/P1 wrapper may sit several co-wrapper links above it, so treating
+       only the newer lane marker as ownership installs a second full renderer
+       over an owner that is already doing this exact projection. */
+    if (findRendererMarker(current, '__mlsP1CensusScheduleGuard') ||
+        findRendererMarker(current, '__mlsAuthoritativeScheduleGuard')) return true;
     var original = current;
     var wrapper = function (rows) {
       var selected = displaySelection(todayKey());

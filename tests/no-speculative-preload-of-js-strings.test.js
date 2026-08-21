@@ -50,7 +50,12 @@ const DOCUMENTS = ['ScribeFlow.html', 'ScribeFlow-staging.html'];
 /* attr = " ' +      or      attr = ' " +
    The opening quote is immediately closed by the other quote and concatenated,
    which only ever happens when the attribute is being built inside JS. */
-const SCANNABLE = /\b(src|href|poster|srcset|data|action|formaction)\s*=\s*(?:"'\s*\+|'"\s*\+)/g;
+/* Require a real attribute boundary. `data-src` is inert metadata, not a
+   fetching `src` attribute; a word boundary before the `src` suffix used to
+   misclassify it and made this gate demand a byte change that could not save a
+   single request. A real attribute starts at the line/fragment boundary or
+   after HTML whitespace / `<`, never after `-`, `:` or an identifier. */
+const SCANNABLE = /(?:^|[\s<])(src|href|poster|srcset|data|action|formaction)\s*=\s*(?:"'\s*\+|'"\s*\+)/g;
 
 const offences = [];
 for (const rel of DOCUMENTS) {
@@ -81,12 +86,19 @@ const PROBE = `  const t=(x)?('<img src="'+x+'" alt="">'):'';`;
 SCANNABLE.lastIndex = 0;
 assert.ok(SCANNABLE.test(PROBE), 'the detector no longer recognises the very shape it exists to catch');
 SCANNABLE.lastIndex = 0;
+assert.ok(SCANNABLE.test(`  const t=(x)?('<a href="'+x+'">open</a>'):'';`), 'the detector no longer recognises a real concatenated href');
+SCANNABLE.lastIndex = 0;
+assert.ok(SCANNABLE.test(`  const t=(x)?('<form action="'+x+'"></form>'):'';`), 'the detector no longer recognises a real concatenated form action');
+SCANNABLE.lastIndex = 0;
 assert.ok(!SCANNABLE.test(`  const t='<img '+'src='+'"'+x+'" alt="">';`),
   'the detector flags the documented fix, which would make the fix impossible to apply');
+SCANNABLE.lastIndex = 0;
+assert.ok(!SCANNABLE.test(`  const t='<span data-src="'+source+'"></span>';`),
+  'the detector mistakes inert data-src metadata for a fetching src attribute');
 SCANNABLE.lastIndex = 0;
 assert.ok(!SCANNABLE.test('<img src="logo.png" alt="">'), 'the detector flags ordinary static markup');
 SCANNABLE.lastIndex = 0;
 assert.ok(!SCANNABLE.test('  el.innerHTML = `<img src="${url}">`;'), 'the detector flags template literals, which the scanner cannot resolve either way');
 
 console.log('PASS no speculative preload of JS strings: ' + DOCUMENTS.length +
-  ' shipped documents carry no fetching attribute the preload scanner can mistake for a URL (4 positive/negative controls).');
+  ' shipped documents carry no fetching attribute the preload scanner can mistake for a URL (7 positive/negative controls).');
