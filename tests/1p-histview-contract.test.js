@@ -20,7 +20,8 @@
  *
  *   PART 1  static — the block is delimited once in BOTH twins, publishes its
  *           API, never schedules on rAF, does NOT re-count visits (pvr-1.0.0 is
- *           still the one resolver), and never leaves /1p.
+ *           still the one resolver), and remains byte-identical after its
+ *           promotion to the official shell.
  *   PART 2  vm — the renderer's pure functions are EXECUTED against the owner's
  *           own two junk samples, a three-header note, a header-less blob and a
  *           legal item set. Deterministic, no browser, no DOM.
@@ -55,6 +56,16 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
 
 const OPEN = '<!-- ===== histview-1.0.0';
 const CLOSE = '<!-- ===== end histview-1.0.0';
+
+/* Production is the official forward derivation of /1p. Lane asset names are
+   rewritten inside code and comments alike, so exact parity is the derived
+   identity below rather than raw pre-derivation bytes. */
+function asProductionIdentity(src) {
+  return String(src)
+    .split('__MLS_P1_PREVIEW').join('__MLS_MAIN')
+    .split('1p-feat_').join('feat_')
+    .split('1p-mls-connect.js').join('mls-connect.js');
+}
 
 let blockJs = '';
 for (const name of SHELLS) {
@@ -121,13 +132,32 @@ for (const name of SHELLS) {
   eq(canon(read('1p/index.html')), read('1pScribeFlow.html'), 'the two /1p shells are no longer twins');
 }
 
-/* LANE NEUTRALITY — production must not have moved by one byte. */
-for (const name of ['ScribeFlow.html', 'mls-connect.js', 'feat_mls_legalpack.js', 'feat_visits.js']) {
-  const p = path.join(root, name);
-  if (!fs.existsSync(p)) continue;
-  const src = fs.readFileSync(p, 'utf8');
-  eq(src.indexOf('histview-1.0.0'), -1, `${name}: this lane's block leaked out of /1p`);
-  eq(src.indexOf('__mlsEncView'), -1, `${name}: this lane's renderer leaked out of /1p`);
+/* PROMOTION PARITY — production is derived from /1p. The lane-neutral shell
+   block must therefore be present exactly once and byte-identical, and the
+   promoted Legal pack must use it. Unrelated assets still must not grow a
+   second renderer. */
+{
+  const previewShell = read('1pScribeFlow.html');
+  const productionShell = read('ScribeFlow.html');
+  eq(productionShell.split(OPEN).length - 1, 1,
+    'ScribeFlow.html: the promoted histview block is missing or duplicated');
+  eq(productionShell.split(CLOSE).length - 1, 1,
+    'ScribeFlow.html: the promoted histview close marker is missing or duplicated');
+  const take = (src) => src.slice(src.indexOf(OPEN), src.indexOf(CLOSE));
+  eq(take(productionShell), asProductionIdentity(take(previewShell)),
+    'ScribeFlow.html: histview-1.0.0 drifted from the 1p source it is derived from');
+
+  const productionLegal = read('feat_mls_legalpack.js');
+  ok(productionLegal.indexOf('window.__mlsEncView') > 0 &&
+    productionLegal.indexOf('enc.reportSection(rows, { table: true })') > 0,
+    'the official Legal pack no longer delegates encounter rendering to histview');
+  for (const name of ['mls-connect.js', 'feat_visits.js']) {
+    const p = path.join(root, name);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf8');
+    eq(src.indexOf('histview-1.0.0'), -1, `${name}: an unrelated asset gained a second histview implementation`);
+    eq(src.indexOf('__mlsEncView'), -1, `${name}: an unrelated asset gained a second encounter renderer`);
+  }
 }
 
 /* THE DETECTOR IS NOT FORKED: the legal pack asks the shell's renderer, and its
@@ -683,6 +713,23 @@ async function runtime() {
     /* -- 9. THE LEGAL REPORT USES THE SAME RENDERER ---------------------- */
     await page.evaluate(() => window.__hx.open('hx-full'));
     await page.waitForTimeout(1400);
+    const legalAdmission = await page.evaluate(() => {
+      try {
+        if (window.__mlsP1CalmDock && typeof window.__mlsP1CalmDock.ensure === 'function') {
+          window.__mlsP1CalmDock.ensure();
+        }
+      } catch (e) {}
+      const trigger = document.querySelector('#mlsDock button[data-dest="tools"]') ||
+        document.getElementById('mlsToolsBtn') || document.getElementById('mlsTbMenuBtn');
+      if (!trigger) return { clicked: false, control: '' };
+      trigger.click();
+      return { clicked: true, control: trigger.id || trigger.getAttribute('data-dest') || trigger.tagName };
+    });
+    measured.legalAdmission = legalAdmission;
+    ok(legalAdmission.clicked,
+      'the page exposes no supported Tools control for Legal / IME first-use admission');
+    await page.waitForFunction(() =>
+      !!(window.__mlsP1LegalPack && window.__mlsP1LegalPack.installed), null, { timeout: 30000 });
     const legal = await page.evaluate(() => window.__hx.legal());
     measured.legal = { stamp: legal.stamp, opened: legal.opened, built: legal.built, skipped: legal.skipped,
       chars: (legal.text || '').length };
