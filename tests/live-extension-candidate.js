@@ -687,6 +687,7 @@ async function proveExactScheduledAppointmentOpenAndProbe(browser, workerSession
     expectedPatient: SYNTHETIC_EXACT_PATIENT,
     expectedContext: SYNTHETIC_EXACT_CONTEXT,
     noteText: 'Read-only encounter context verification payload.',
+    sections: [{ key: 'note', text: 'Read-only encounter context verification payload.', execute: true, destination: 'Athena encounter > Encounter note' }],
     notePolicy: 'empty_only'
   };
 
@@ -783,7 +784,7 @@ async function proveExactScheduledAppointmentOpenAndProbe(browser, workerSession
     const replacement="return {ok:false,blocked:true,reason:'gate-diagnostic',frames:frames.map(function(fr){var eid=encounterId(fr.url),header=anchoredIdentity(fr),identity=header.identity,scopes=explicitNoteScopes(fr),note=findNoteAction(fr,action),appointment=(note&&identity)?appointmentIdFor(fr,note.root,identity.root):'',metadata=(note&&identity)?encounterMetadataFor(fr,note.root,identity.root):null,textareas=deepQueryAll(fr.doc,'textarea').map(function(el){return {visible:visible(el,fr.w),hay:editorHay(el),width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height};});return {path:fr.path,url:fr.url,encounterId:eid,identity:identity?{name:identity.name,dob:identity.dob,mrn:identity.mrn}:null,identityAmbiguous:header.ambiguous===true,noteTarget:!!note,noteScopes:scopes.map(function(el){return {descriptor:scopeDescriptor(el),strength:noteScopeStrength(el),editors:editorsIn(el,fr).length};}),textareas:textareas,appointmentId:appointment,metadata:metadata?{visitDate:metadata.visitDate,provider:metadata.provider}:null};})};";
     if(source.indexOf(needle)<0)return {error:'diagnostic-driver-anchor-missing'};
     const diagnosticFn=(0,eval)('('+source.replace(needle,replacement)+')');
-    const rows=await chrome.scripting.executeScript({target:{tabId:${Number(athenaTabId)}},world:'MAIN',args:[${JSON.stringify({ mode: 'probe', action: 'write_note', expectedPatient: SYNTHETIC_EXACT_PATIENT, expectedContext: SYNTHETIC_EXACT_CONTEXT, noteText: 'Read-only encounter context verification payload.', notePolicy: 'empty_only' })}],func:diagnosticFn});
+    const rows=await chrome.scripting.executeScript({target:{tabId:${Number(athenaTabId)}},world:'MAIN',args:[${JSON.stringify({ mode: 'probe', action: 'write_note', expectedPatient: SYNTHETIC_EXACT_PATIENT, expectedContext: SYNTHETIC_EXACT_CONTEXT, noteText: 'Read-only encounter context verification payload.', sections: [{ key: 'note', text: 'Read-only encounter context verification payload.', execute: true, destination: 'Athena encounter > Encounter note' }], notePolicy: 'empty_only' })}],func:diagnosticFn});
     return rows&&rows[0]&&rows[0].result||null;
   })()`);
 

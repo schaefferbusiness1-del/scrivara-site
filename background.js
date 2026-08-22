@@ -206,6 +206,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     var taughtDestination = req.taughtDestination && typeof req.taughtDestination === 'object' ? req.taughtDestination : null;
     var billing = req.billing || {};
     var order = req.order || {};
+    var noteSections = Array.isArray(req.sections) ? req.sections : [];
     var mutationAttempted = false;
     var orderFinalActionAttempted = false;
     var sleep = function (ms) { return (function (ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); })(ms); };
@@ -628,6 +629,56 @@ async function mlsAthenaActionV2DriverFn(req) {
       var pool = action === 'sign_encounter' ? sign : (preferred.length ? preferred : generic);
       return pool.length === 1 ? pool[0] : null;
     }
+    /* Named note fields are not interchangeable with the generic encounter-note
+       editor. A requested HPI/ROS/Exam/Assessment/Plan row must resolve one
+       semantically exact section root and exactly one editor inside it. Combined
+       labels such as "Assessment & Plan" are intentionally ambiguous for the
+       two independent destinations and therefore refuse. */
+    var NAMED_NOTE_DEFS = {
+      hpi: /\b(?:hpi|history of present illness|present illness)\b/,
+      ros: /\b(?:ros|review of systems)\b/,
+      exam: /\b(?:physical exam(?:ination)?|exam(?:ination)?|objective findings)\b/,
+      assessment: /\b(?:assessment(?: narrative)?|clinical impression|impression)\b/,
+      plan: /\b(?:plan|follow up|followup|recommendations?)\b/
+    };
+    function canonicalNamedNoteKey(raw) {
+      var key = norm(raw).replace(/ /g, '_');
+      var aliases = { note: 'note', encounter_note: 'note', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan' };
+      return aliases[key] || '';
+    }
+    function namedSectionDescriptor(el) {
+      var out = '';
+      try {
+        out = [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component')].join(' ');
+        var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
+        for (var i = 0; i < heads.length && i < 4; i++) out += ' ' + text(heads[i].textContent);
+      } catch (e) {}
+      return norm(out);
+    }
+    function namedKeysForDescriptor(desc) {
+      var keys = [];
+      Object.keys(NAMED_NOTE_DEFS).forEach(function (key) { if (NAMED_NOTE_DEFS[key].test(desc)) keys.push(key); });
+      return keys;
+    }
+    function namedNoteScopes(frame, key) {
+      var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label]';
+      var raw = []; try { raw = deepQueryAll(frame.doc, selector); } catch (e) {}
+      raw = raw.filter(function (el, index) {
+        if (!visible(el, frame.w) || raw.indexOf(el) !== index) return false;
+        var desc = namedSectionDescriptor(el), keys = namedKeysForDescriptor(desc);
+        if (keys.length !== 1 || keys[0] !== key) return false;
+        return editorsIn(el, frame).length === 1;
+      });
+      return collapseContainedMatches(raw);
+    }
+    function findNamedNoteAction(frame, action, key) {
+      if (action !== 'write_note' || !NAMED_NOTE_DEFS[key]) return null;
+      var scopes = namedNoteScopes(frame, key);
+      if (scopes.length !== 1) return null;
+      var editors = editorsIn(scopes[0], frame);
+      if (editors.length !== 1) return null;
+      return { control: editors[0], editor: editors[0], root: scopes[0], strength: 4, namedSection: key };
+    }
     /* A taught selector is only an additional exact anchor inside the typed
        action scope discovered above. It can never create a new generic write
        lane or bypass the patient/encounter/action checks. */
@@ -772,6 +823,16 @@ async function mlsAthenaActionV2DriverFn(req) {
 
     if (!text(expectedPatient.name) || !dateKey(expectedPatient.dob) || !digits(expectedPatient.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'Expected patient name, DOB, and MRN are required.' };
     var reviewedNote = noteNorm(req.noteText), notePolicy = String(req.notePolicy || 'empty_only');
+    var requestedNoteSection = 'note';
+    if (action === 'write_note') {
+      var executableSections = noteSections.filter(function (section) { return section && section.execute === true; });
+      if (noteSections.length !== 1 || executableSections.length !== 1) return { ok: false, blocked: true, reason: 'note-section-count-mismatch', error: 'One confirmed Athena note destination is required per write.' };
+      requestedNoteSection = canonicalNamedNoteKey(executableSections[0].key);
+      if (!requestedNoteSection) return { ok: false, blocked: true, reason: 'unknown-note-section', error: 'The requested Athena note destination is not allowlisted.' };
+      if (noteNorm(executableSections[0].text) !== reviewedNote) return { ok: false, blocked: true, reason: 'note-section-payload-mismatch', error: 'The named section payload does not match the exact reviewed text.' };
+    } else if ((action === 'save_draft' || action === 'sign_encounter') && noteSections.some(function (section) { return canonicalNamedNoteKey(section && section.key) && canonicalNamedNoteKey(section && section.key) !== 'note'; })) {
+      return { ok: false, blocked: true, reason: 'named-section-final-action-unsupported', error: 'Review and save independently placed named sections directly in Athena.' };
+    }
     var checkedOrder = action === 'place_order' ? driverOrderContract(order) : null;
     if (action === 'place_order' && !checkedOrder.ok) return { ok: false, blocked: true, reason: checkedOrder.reason, error: 'The reviewed order payload is incomplete or unsupported.' };
     if (mode !== 'teach' && action !== 'stage_billing' && action !== 'place_order' && !reviewedNote) return { ok: false, blocked: true, reason: 'note-content-required', error: 'The exact reviewed note text is required.' };
@@ -792,7 +853,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (action === 'stage_billing') { billTarget = billingField(fr); if (!billTarget.el) continue; }
       else if (action === 'place_order') { orderTarget = orderWorkspace(fr); if (!orderTarget.search) continue; }
       else {
-        noteTarget = findNoteAction(fr, action); if (!noteTarget) continue;
+        noteTarget = (action === 'write_note' && requestedNoteSection !== 'note') ? findNamedNoteAction(fr, action, requestedNoteSection) : findNoteAction(fr, action); if (!noteTarget) continue;
         var currentNote = editorValue(noteTarget.editor);
         if (mode !== 'teach') {
           if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) continue; }
@@ -822,7 +883,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     var controlLabels = labelSources(actionControl).map(text).filter(Boolean);
     var controlFallback = '';
     try { controlFallback = text(actionControl.getAttribute('placeholder') || actionControl.getAttribute('name') || actionControl.getAttribute('data-testid') || ''); } catch (eLabel) {}
-    if (!controlFallback) controlFallback = action === 'write_note' ? 'Encounter note editor' : (action === 'stage_billing' ? 'Athena Billing / Charges field' : (action === 'place_order' ? 'Athena Orders catalog search' : ''));
+    if (!controlFallback) controlFallback = action === 'write_note' ? (requestedNoteSection === 'note' ? 'Encounter note editor' : ({ hpi: 'HPI editor', ros: 'Review of Systems editor', exam: 'Physical Exam editor', assessment: 'Assessment editor', plan: 'Plan editor' }[requestedNoteSection] || 'Named note editor')) : (action === 'stage_billing' ? 'Athena Billing / Charges field' : (action === 'place_order' ? 'Athena Orders catalog search' : ''));
     var context = {
       mrn: digits(observedPatient.mrn),
       patientName: text(observedPatient.name),
@@ -877,9 +938,9 @@ async function mlsAthenaActionV2DriverFn(req) {
     /* ATHENA_ACTION_V2_WRITE_NOTE_START */
     if (action === 'write_note') {
       var beforeNote = editorValue(noteEditor), alreadyExact = beforeNote === reviewedNote;
-      if (beforeNote && !alreadyExact) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-not-empty', context: context, results: [{ key: 'note', attempted: false, written: false, verified: false, reason: 'note-editor-not-empty' }], noAutomaticChaining: 'no-automatic-chaining' };
+      if (beforeNote && !alreadyExact) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-not-empty', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-not-empty' }], noAutomaticChaining: 'no-automatic-chaining' };
       var noteAttempted = false;
-      if (!alreadyExact) { noteAttempted = true; mutationAttempted = true; if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: 'note', attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' }; await sleep(250); }
+      if (!alreadyExact) { noteAttempted = true; mutationAttempted = true; if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' }; await sleep(250); }
       var noteVerified = editorValue(noteEditor) === reviewedNote;
       if (!noteVerified) {
         /* wv-1.3 (3.0.40): never leave a HALF-VERIFIED note on screen - the doctor sees the text, distrusts the failure receipt, and can sign a note athena's model never received. The empty-editor precheck above means rollback == clearing back to empty. */
@@ -892,9 +953,9 @@ async function mlsAthenaActionV2DriverFn(req) {
             rolledBack = editorValue(noteEditor) === '';
           }
         } catch (eRb) {}
-        return { ok: false, action: action, attempted: noteAttempted, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, rolledBack: rolledBack, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: 'note', attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
+        return { ok: false, action: action, attempted: noteAttempted, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, rolledBack: rolledBack, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
       }
-      return { ok: true, action: action, attempted: noteAttempted, written: true, verified: true, draftEntered: true, draftVerified: true, reason: 'exact-note-editor-verified', context: context, results: [{ key: 'note', attempted: noteAttempted, written: true, verified: true, alreadyPresent: alreadyExact }], noAutomaticChaining: 'no-automatic-chaining' };
+      return { ok: true, action: action, attempted: noteAttempted, written: true, verified: true, draftEntered: true, draftVerified: true, reason: 'exact-note-editor-verified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: true, verified: true, alreadyPresent: alreadyExact }], noAutomaticChaining: 'no-automatic-chaining' };
     }
     /* ATHENA_ACTION_V2_WRITE_NOTE_END */
 
@@ -2310,7 +2371,7 @@ function mlsAthenaTeachWatcherFn(config) {
            below stays bound to the single verified tab id. */
         var tab = null, probe = null, probeFailure = null, verifiedTabCount = 0;
         for (var athIdx = 0; athIdx < athCandidates.length; athIdx++) {
-          var athProbe = await injectOnce(athCandidates[athIdx].id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, order: checkedOrder.order, noteText: noteText, notePolicy: notePolicy, locked: null, taughtDestination: checkedTaught.value });
+          var athProbe = await injectOnce(athCandidates[athIdx].id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: null, taughtDestination: checkedTaught.value });
           if (athProbe && athProbe.ok && athProbe.contextVerified && lockedContextShape(athProbe.context)) { verifiedTabCount++; if (!tab) { tab = athCandidates[athIdx]; probe = athProbe; } }
           else if (!probeFailure) probeFailure = athProbe && athProbe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (athProbe || { ok: false, blocked: true, reason: 'context-unverified' });
         }
@@ -2400,7 +2461,7 @@ function mlsAthenaTeachWatcherFn(config) {
       var executed;
       try {
         /* ATHENA_ACTION_V2_EXECUTE_INJECTION */
-        executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { appointmentId: rec.locked.appointmentId, encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, order: checkedOrder.order, noteText: noteText, notePolicy: notePolicy, locked: rec.locked, taughtDestination: checkedTaught.value });
+        executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { appointmentId: rec.locked.appointmentId, encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: rec.locked, taughtDestination: checkedTaught.value });
       } finally { executeBusy = false; }
       if (!executed) return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', noAutomaticChaining: 'no-automatic-chaining' };
       if (action === 'write_note' && executed.written === true && executed.verified === true && executed.draftVerified === true && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {

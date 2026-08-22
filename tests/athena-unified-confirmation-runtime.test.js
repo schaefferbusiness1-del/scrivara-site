@@ -6,6 +6,7 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
+const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const sent = [];
 const byId = Object.create(null);
 const windowListeners = Object.create(null);
@@ -142,6 +143,63 @@ const reviewOpts = {
 };
 const teachManifest = window.__mlsWriteFlow.buildUnifiedManifest(reviewOpts);
 const taughtRow = teachManifest.rows.find(row => row.id === 'write-note');
+const namedSections = [
+  { key: 'history', text: 'Exact HPI.' },
+  { key: 'ros', text: 'Exact ROS.' },
+  { key: 'physical_exam', text: 'Exact exam.' },
+  { key: 'assessment_narrative', text: 'Exact assessment.' },
+  { key: 'follow_up', text: 'Exact plan.' }
+];
+const namedManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, reviewOpts, { plan: [], sections: namedSections, receiptSessionId: 'runtime-named-sections' }));
+const namedWriteRows = namedManifest.rows.filter(row => row.action === 'write_note');
+assert.deepStrictEqual(Array.from(namedWriteRows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan'], 'named note sections were not split into exact destination rows');
+assert.deepStrictEqual(Array.from(namedWriteRows, row => row.destination), [
+  'Athena encounter > HPI', 'Athena encounter > Review of Systems', 'Athena encounter > Physical Exam',
+  'Athena encounter > Assessment narrative', 'Athena encounter > Plan / Follow-up'
+], 'named note rows advertise the wrong Athena destinations');
+for (const row of namedWriteRows) {
+  assert.strictEqual(row.payload.sections.length, 1, `${row.kind} row carried another destination`);
+  assert.strictEqual(row.payload.sections[0].key, row.kind, `${row.kind} row lost its canonical section key`);
+  assert.strictEqual(row.payload.noteText, row.payload.sections[0].text, `${row.kind} row changed the reviewed bytes`);
+}
+assert(!namedManifest.rows.some(row => row.id === 'write-note'), 'named sections still created a generic encounter-note write row');
+for (const id of ['save-named-sections-manual', 'sign-named-sections-manual']) {
+  const row = namedManifest.rows.find(item => item.id === id);
+  assert(row && row.capability === 'manual' && !row.action, `${id} did not fail closed as a manual final action`);
+}
+const mixedManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, reviewOpts, { plan: [], sections: [
+  { key: 'note', text: 'Generic text must not become a fallback.' },
+  { key: 'hpi', text: 'Exact HPI remains independently reviewable.' }
+], receiptSessionId: 'runtime-mixed-note-targets' }));
+assert.strictEqual(mixedManifest.rows.filter(row => row.action === 'write_note').length, 1, 'mixed generic/named review exposed an extra write action');
+assert.strictEqual(mixedManifest.rows.find(row => row.action === 'write_note').kind, 'hpi', 'mixed review did not preserve the exact named destination');
+const mixedGeneric = mixedManifest.rows.find(row => row.id === 'blocked-mixed-generic-note-0');
+assert(mixedGeneric && mixedGeneric.capability === 'blocked' && !mixedGeneric.action, 'mixed generic note silently fell through to Athena');
+
+const duplicateNamedManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, reviewOpts, { plan: [], sections: [
+  { key: 'hpi', text: 'First HPI fragment.' }, { key: 'history', text: 'Second HPI fragment.' }
+], receiptSessionId: 'runtime-duplicate-hpi-target' }));
+assert(!duplicateNamedManifest.rows.some(row => row.action === 'write_note'), 'duplicate canonical HPI destinations remained executable');
+const duplicateHpi = duplicateNamedManifest.rows.find(row => row.id === 'blocked-duplicate-note-hpi');
+assert(duplicateHpi && duplicateHpi.capability === 'blocked' && duplicateHpi.payload.sections.length === 2, 'duplicate HPI was not shown as one fail-closed destination conflict');
+
+const duplicateGenericManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, reviewOpts, { plan: [], sections: [
+  { key: 'note', text: 'First generic note.' }, { key: 'note', text: 'Second generic note.' }
+], receiptSessionId: 'runtime-duplicate-generic-target' }));
+assert(!duplicateGenericManifest.rows.some(row => row.action === 'write_note'), 'duplicate generic note destinations remained executable');
+assert.strictEqual(duplicateGenericManifest.rows.find(row => row.id === 'blocked-duplicate-generic-note').capability, 'blocked', 'duplicate generic note did not fail closed visibly');
+
+const procedureManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, reviewOpts, { plan: [
+  { kind: 'opnote', body: 'PROCEDURE / OPERATIVE NOTE:\nSynthetic reviewed procedure text.' }
+], sections: [], receiptSessionId: 'runtime-procedure-manual-target' }));
+const procedureRow = procedureManifest.rows.find(row => row.kind === 'procedure');
+assert(procedureRow && procedureRow.capability === 'manual' && !procedureRow.action, 'procedure/op note did not remain manual');
+assert.strictEqual(procedureRow.destination, 'Athena encounter > Physical Exam > Procedure Documentation', 'procedure/op note advertised the wrong exact manual destination');
+assert(!procedureManifest.rows.some(row => row.action === 'write_note' || row.id === 'write-note'), 'procedure/op note fell through to the generic note writer');
+const pushHistorySource = /function pushHistoryNoteToAthena\(id\)\{[\s\S]*?\n\}/.exec(appSource);
+assert(pushHistorySource && /n\.kind==='opnote'\?'procedure':'note'/.test(pushHistorySource[0]), 'saved op-note route discarded its artifact type');
+assert(/var allowed=\{note:1,procedure:1,dx:1,billing:1,orders:1\}/.test(appSource), 'the app blocks the explicit manual Procedure Documentation row before review');
+assert(!/var noteRoute=n\.kind==='opnote'\?'note'/.test(appSource), 'saved op notes explicitly fall back to the generic note route');
 const taughtBinding = window.__mlsShowAsst.contextFor(teachManifest, taughtRow);
 const taughtTarget = {
   selector: '#exact-note-editor', sectionLabel: 'Encounter note editor', label: 'Encounter note editor',

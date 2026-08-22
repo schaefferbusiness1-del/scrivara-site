@@ -1048,7 +1048,7 @@
      one ready action for each Confirm & write click. It never auto-chains the
      next action. This preserves the one-use action token and makes partial or
      uncertain outcomes stop the workflow immediately. */
-  var UNIFIED_ORDER = { write_note: 10, stage_billing: 20, save_draft: 30, sign_encounter: 40, dx: 50, orders: 60, order: 60, rx: 70, referrals: 80, pt: 90, imaging: 100, documents: 110, unknown: 999 };
+  var UNIFIED_ORDER = { write_note: 10, stage_billing: 20, save_draft: 30, sign_encounter: 40, dx: 50, orders: 60, order: 60, rx: 70, referrals: 80, pt: 90, imaging: 100, procedure: 105, documents: 110, unknown: 999 };
   var UNIFIED_MANUAL = {
     dx: { label: 'Diagnoses (ICD-10)', destination: 'Athena encounter > Assessment & Plan > Diagnoses', consequence: 'MLS has no typed, exact-result ICD-10 adapter in this workflow. These diagnoses remain visible for manual entry and are not sent.' },
     orders: { label: 'Orders', destination: 'Athena encounter > Orders', consequence: 'Only one complete reviewed imaging, PT, referral, or DME payload can use the typed exact-catalog adapter after a fresh clinician confirmation. Prose, incomplete drafts, Rx, and injections remain manual or blocked.' },
@@ -1060,9 +1060,10 @@
     consent: { label: 'Consent', destination: 'Athena patient documents > Consent', consequence: 'Consent requires its own document and signature workflow. MLS keeps it manual.' },
     handouts: { label: 'Patient handouts', destination: 'Athena patient documents > Handouts', consequence: 'Document routing is not typed in this workflow. MLS keeps it manual.' },
     instructions: { label: 'Patient instructions', destination: 'Athena encounter > Patient instructions', consequence: 'Patient instructions remain visible but are not written by this typed action bridge.' },
+    procedure: { label: 'Procedure / operative note', destination: 'Athena encounter > Physical Exam > Procedure Documentation', consequence: 'The exact Procedure Documentation adapter is not active. MLS keeps this note manual and will not fall back to the generic encounter-note editor.' },
     documents: { label: 'Documents / letters', destination: 'Athena patient documents', consequence: 'The document type and destination are not typed in this workflow. MLS keeps this payload manual.' }
   };
-  var UNIFIED_ALIASES = { diagnoses: 'dx', diagnosis: 'dx', icd: 'dx', icd10: 'dx', prescription: 'rx', prescriptions: 'rx', referral: 'referrals', document: 'documents', letter: 'documents', letters: 'documents', avs: 'documents', prior_auth: 'documents', ime: 'documents', mips: 'documents' };
+  var UNIFIED_ALIASES = { diagnoses: 'dx', diagnosis: 'dx', icd: 'dx', icd10: 'dx', prescription: 'rx', prescriptions: 'rx', referral: 'referrals', opnote: 'procedure', op_note: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', document: 'documents', letter: 'documents', letters: 'documents', avs: 'documents', prior_auth: 'documents', ime: 'documents', mips: 'documents' };
   var UNIFIED_ARIA = {
     write_note: 'Confirm write reviewed note',
     save_draft: 'Confirm save draft in Athena',
@@ -1265,6 +1266,18 @@
     var noteSections = receiptNoteSections({ sections: opts.sections, plan: plan });
     var noteText = noteSections.map(function (s) { return s.key === 'note' ? S(s.text).trim() : (S(s.key).toUpperCase() + ':\n' + S(s.text).trim()); }).filter(Boolean).join('\n\n').trim();
     var notePayload = { sections: stableClone(noteSections), noteText: noteText, reviewText: noteText };
+    /* A named clinical section is a distinct Athena destination. Never flatten
+       HPI/ROS/Exam/Assessment/Plan into the generic encounter-note editor just
+       because all of them happen to be visible on one review page. Each named
+       section becomes one immutable row and therefore one fresh probe + one
+       clinician confirmation. The generic full-note lane remains one row. */
+    var namedNoteLabels = { hpi: 'HPI', ros: 'Review of Systems', exam: 'Physical Exam', assessment: 'Assessment narrative', plan: 'Plan / Follow-up' };
+    var noteSectionCounts = {};
+    noteSections.forEach(function (section) {
+      var key = S(section && section.key).trim();
+      if (key) noteSectionCounts[key] = Number(noteSectionCounts[key] || 0) + 1;
+    });
+    var hasNamedNoteSections = noteSections.some(function (section) { return section && section.key !== 'note'; });
     var supplied = opts.expectedContext || {};
     var expected = expectedVisitContext(patient, opts) || {
       visitDate: S(supplied.visitDate || supplied.encounterDate).trim(),
@@ -1331,8 +1344,44 @@
       rows.push(row);
     }
     if (noteText) {
-      addRow({ id: 'write-note', action: 'write_note', kind: 'note', label: ATHENA_ACTIONS.write_note.label, destination: DESTINATION.note,
-        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: ATHENA_ACTIONS.write_note.consequence, payload: notePayload, order: UNIFIED_ORDER.write_note });
+      if (hasNamedNoteSections) {
+        var blockedDuplicateSections = {};
+        noteSections.forEach(function (section, sectionIndex) {
+          var sectionText = S(section && section.text).trim(), sectionKey = S(section && section.key).trim();
+          if (!sectionText) return;
+          var sectionPayload = { sections: [stableClone(section)], noteText: sectionText, reviewText: sectionText, sectionKey: sectionKey };
+          if (sectionKey === 'note') {
+            addRow({ id: 'blocked-mixed-generic-note-' + sectionIndex, action: '', kind: 'note', label: 'Generic encounter note (mixed destination)', destination: DESTINATION.note,
+              capability: 'blocked', reason: 'A generic encounter note cannot share one review with named Athena fields. Open it in its own review; MLS will not use the generic editor as a fallback.',
+              consequence: 'Nothing is written for this row.', payload: sectionPayload, order: UNIFIED_ORDER.write_note + sectionIndex / 1000 });
+            return;
+          }
+          if (!namedNoteLabels[sectionKey]) return;
+          if (noteSectionCounts[sectionKey] !== 1) {
+            if (blockedDuplicateSections[sectionKey]) return;
+            blockedDuplicateSections[sectionKey] = true;
+            var duplicateSections = noteSections.filter(function (candidate) { return S(candidate && candidate.key).trim() === sectionKey; });
+            var duplicateText = duplicateSections.map(function (candidate) { return S(candidate && candidate.text).trim(); }).filter(Boolean).join('\n\n');
+            addRow({ id: 'blocked-duplicate-note-' + sectionKey, action: '', kind: sectionKey, label: 'Duplicate ' + namedNoteLabels[sectionKey] + ' destinations', destination: DESTINATION[sectionKey],
+              capability: 'blocked', reason: 'More than one reviewed payload targets this Athena field. Combine them explicitly before review; MLS will not guess an order or overwrite the field twice.',
+              consequence: 'Nothing is written for this destination.', payload: { sections: stableClone(duplicateSections), noteText: duplicateText, reviewText: duplicateText, sectionKey: sectionKey }, order: UNIFIED_ORDER.write_note + sectionIndex / 1000 });
+            return;
+          }
+          addRow({ id: 'write-note-' + sectionKey + '-' + sectionIndex, action: 'write_note', kind: sectionKey,
+            label: 'Write reviewed ' + namedNoteLabels[sectionKey], destination: DESTINATION[sectionKey],
+            capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: ATHENA_ACTIONS.write_note.consequence,
+            payload: sectionPayload, order: UNIFIED_ORDER.write_note + sectionIndex / 1000 });
+        });
+      } else {
+        if (noteSectionCounts.note === 1) {
+          addRow({ id: 'write-note', action: 'write_note', kind: 'note', label: ATHENA_ACTIONS.write_note.label, destination: DESTINATION.note,
+            capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: ATHENA_ACTIONS.write_note.consequence, payload: notePayload, order: UNIFIED_ORDER.write_note });
+        } else {
+          addRow({ id: 'blocked-duplicate-generic-note', action: '', kind: 'note', label: 'Duplicate generic encounter-note destinations', destination: DESTINATION.note,
+            capability: 'blocked', reason: 'More than one reviewed payload targets the generic Athena note editor. Combine them explicitly before review; MLS will not concatenate or overwrite them implicitly.',
+            consequence: 'Nothing is written for this destination.', payload: notePayload, order: UNIFIED_ORDER.write_note });
+        }
+      }
     }
     var billingPlan = null;
     for (var pi = 0; pi < plan.length; pi++) { if (planKind(plan[pi] && plan[pi].kind) === 'billing') { billingPlan = plan[pi]; break; } }
@@ -1376,7 +1425,7 @@
         consequence: manual ? manual.consequence : 'Nothing is written for this row.',
         payload: { body: S(source.body || source.text).trim(), reviewText: S(source.body || source.text).trim() }, order: UNIFIED_ORDER[kind] || UNIFIED_ORDER.unknown });
     }
-    if (noteText) {
+    if (noteText && !hasNamedNoteSections) {
       addRow({ id: 'save-draft', action: 'save_draft', kind: 'save', label: ATHENA_ACTIONS.save_draft.label, destination: 'Athena encounter > Save / Save Draft control',
         capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: ATHENA_ACTIONS.save_draft.consequence, payload: notePayload, order: UNIFIED_ORDER.save_draft });
       if (athenaFinalActionsReady()) {
@@ -1393,6 +1442,15 @@
           reason: FINAL_ACTION_EXT_BLOCK + ' Until then, complete Sign & Save directly in Athena.',
           consequence: ATHENA_ACTIONS.sign_encounter.consequence, payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
       }
+    } else if (noteText && hasNamedNoteSections) {
+      /* A single global Save/Sign cannot prove that several independent Athena
+         section editors all own the same payload. Keep those final actions
+         explicit and manual instead of binding them to an arbitrary editor. */
+      var namedFinalReason = 'This review targets named Athena fields one at a time. Review every placed section, then Save or Sign directly in Athena; MLS will not bind a global final action to an arbitrary section editor.';
+      addRow({ id: 'save-named-sections-manual', action: '', kind: 'save', label: 'Save named sections in Athena', destination: 'Athena encounter > section-specific Save controls',
+        capability: 'manual', reason: namedFinalReason, consequence: 'Nothing is saved automatically from this row.', payload: notePayload, order: UNIFIED_ORDER.save_draft });
+      addRow({ id: 'sign-named-sections-manual', action: '', kind: 'sign', label: 'Sign & Save named sections in Athena', destination: 'Athena encounter > Sign & Save control',
+        capability: 'manual', reason: namedFinalReason, consequence: 'Nothing is signed automatically from this row.', payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
     }
     rows.sort(function (a, b) { return a.order - b.order || a.id.localeCompare(b.id); });
     var manifestHash = hashPreview({ patient: patient, visit: visit, previewHash: previewHash, receiptSessionId: receiptSessionId, rows: rows.map(function (r) { return r.rowHash; }) });
@@ -3080,17 +3138,19 @@
   var EXEC_ALIAS = {
     note: 'note',
     hpi: 'hpi', history: 'hpi',
+    ros: 'ros', review_of_systems: 'ros',
     exam: 'exam', physical_exam: 'exam',
     assessment: 'assessment', assessment_narrative: 'assessment',
     plan: 'plan', followup: 'plan', follow_up: 'plan'
   };
   var PREVIEW_ONLY = {
     orders: 1, rx: 1, referrals: 1, pt: 1, imaging: 1, billing: 1,
-    surgctr: 1, consent: 1, handouts: 1, instructions: 1
+    surgctr: 1, consent: 1, handouts: 1, instructions: 1, procedure: 1
   };
   var DESTINATION = {
     note: 'Athena encounter > Encounter note',
     hpi: 'Athena encounter > HPI',
+    ros: 'Athena encounter > Review of Systems',
     exam: 'Athena encounter > Physical Exam',
     assessment: 'Athena encounter > Assessment narrative',
     plan: 'Athena encounter > Plan / Follow-up',
@@ -3098,7 +3158,8 @@
     referrals: 'Athena Orders > Referral (manual entry)', pt: 'Athena Orders > PT (manual entry)',
     imaging: 'Athena Orders > Imaging (manual entry)', billing: 'Athena Billing / Charges (manual entry)',
     surgctr: 'Surgery scheduling workflow (manual entry)', consent: 'Patient documents / consent (manual entry)',
-    handouts: 'Patient documents / handout (manual entry)', instructions: 'Patient instructions (manual entry)'
+    handouts: 'Patient documents / handout (manual entry)', instructions: 'Patient instructions (manual entry)',
+    procedure: 'Athena encounter > Physical Exam > Procedure Documentation (manual entry)'
   };
   function canonicalSectionKey(raw) {
     raw = S(raw).toLowerCase().trim();

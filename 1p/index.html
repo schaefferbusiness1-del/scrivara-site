@@ -28244,6 +28244,8 @@ function _athenaPushRun(goal, startMsg, onDone, immutablePatient){
 var ATHENA_SECTIONS={
   note:{ icon:'📝', label:'NOTE', dest:'Athena » Encounter note (HPI / Assessment & Plan)',
     goalHead:'In the patient encounter CURRENTLY OPEN in athenaOne, go to the CLINICAL DOCUMENTATION area — the encounter note: the Intake/Exam or the "Assessment & Plan" / HPI text fields (athenaOne lays out the encounter as Chief Complaint, HPI, ROS, Exam, Assessment & Plan). Click into the main note / Assessment & Plan text area and enter the note text below. Announce "athenaOne: Encounter note" when you start.' },
+  procedure:{ icon:'💉', label:'PROCEDURE / OPERATIVE NOTE', dest:'Athena » Physical Exam — Procedure Documentation',
+    goalHead:'This procedure / operative note requires the exact Procedure Documentation destination. MLS keeps it manual until that typed destination is proven; it must never fall back to the generic encounter-note editor.' },
   dx:{ icon:'🩺', label:'DIAGNOSES', dest:'Athena » Assessment & Plan — Diagnosis search (Add assessment)',
     goalHead:'In the OPEN athenaOne encounter, go to the ASSESSMENT & PLAN / DIAGNOSES area. Use athenaOne’s diagnosis search (often "Add assessment" or a Dx / problem search box). For EACH ICD-10 below, type the code or its description, pick the matching result, and add it to the encounter’s diagnosis list. Announce "athenaOne: Assessment/Diagnoses" when you start.' },
   billing:{ icon:'💲', label:'CHARGES / BILLING', dest:'Athena » Billing slate — E/M + CPT/HCPCS codes (Dx links manual; no claim)',
@@ -28263,7 +28265,7 @@ function _athenaItemsOf(s){
 }
 function _athenaPushPlan(sections, who, immutablePatient){
   var visitContext=arguments[3]||null;
-  var allowed={note:1,dx:1,billing:1,orders:1};
+  var allowed={note:1,procedure:1,dx:1,billing:1,orders:1};
   sections=(sections||[]).filter(function(s){ return s && s.body && String(s.body).trim(); });
   var unknown=sections.filter(function(s){ return !allowed[s.kind]; });
   if(unknown.length){ try{ toast('Preview stopped: unsupported Athena route '+unknown.map(function(s){return String(s.kind||'?');}).join(', ')+'. Nothing was written.','err'); }catch(e){} return; }
@@ -28450,7 +28452,12 @@ function pushHistoryNoteToAthena(id){
   if(savedBinding.identityConflict){try{toast('This saved visit patient identity conflicts with its linked chart. Correct or reattach it before any Athena action. Nothing changed.','err');}catch(e0){}return;}
   var immutablePatient=savedBinding.patient;
   var who=immutablePatient.name||'this saved patient';
-  var plan=[{kind:'note', body:'NOTE TEXT:\n'+bundle}]; var lines=[ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest];
+  /* An op note is not a generic encounter note. Until the exact Procedure
+     Documentation adapter is proven, preserve the requested destination as a
+     manual row and never fall back to write_note. */
+  var noteRoute=n.kind==='opnote'?'procedure':'note';
+  var noteMeta=ATHENA_SECTIONS[noteRoute];
+  var plan=[{kind:noteRoute, body:(noteRoute==='note'?'NOTE TEXT:\n':'PROCEDURE / OPERATIVE NOTE:\n')+bundle}]; var lines=[noteMeta.icon+' '+noteMeta.label+'  →  '+noteMeta.dest];
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+' ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   if(c&&(c.em||(c.cpt&&c.cpt.length))){ var bb='BILLING:\n'+(c.em?('E/M level: '+c.em+'\n'):'')+((c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb,billing:_athenaCanonicalBilling(c)}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c.em) lines.push('      • E/M  '+c.em); if(c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
   if(orders.length){ var savedOrderReview=_athenaOrderReviewBundle(orders,[]); var ol=savedOrderReview.drafts.map(function(o){return o.summary;}); var sl=savedOrderReview.suggestions.map(function(o){return o.summary;}); var ob=[]; if(ol.length)ob.push('REVIEWED ORDER DRAFTS (manual entry only):\n• '+ol.join('\n• ')); if(sl.length)ob.push('UNACCEPTED SUGGESTIONS (do not execute):\n• '+sl.join('\n• ')); plan.push({kind:'orders',body:ob.join('\n\n'),orderDrafts:savedOrderReview.drafts,orderSuggestions:savedOrderReview.suggestions}); lines.push(''); lines.push(ATHENA_SECTIONS.orders.icon+' ORDERS PROPOSED FOR ATHENA  →  '+ATHENA_SECTIONS.orders.dest+' ('+savedOrderReview.drafts.length+' reviewed, '+savedOrderReview.suggestions.length+' suggestion-only)'); }

@@ -749,6 +749,7 @@ const tests = [
   'athena-order-action-runtime.test.js',
   'athena-unified-confirmation-contract.test.js',
   'athena-unified-confirmation-runtime.test.js',
+  'athena-named-section-placement-runtime.test.js',
   'destination-teaching-runtime.test.js',
   'athena-advanced-unified-entry-contract.test.js',
   'athena-session-preservation-contract.test.js',
