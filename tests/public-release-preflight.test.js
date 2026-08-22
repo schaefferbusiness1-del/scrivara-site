@@ -147,6 +147,19 @@ function codes(report) {
     assert.strictEqual(headers.cookie, undefined, `cookie leaked into ${call.url}`);
   }
 
+  /* The gate copy is allowed to become clearer; the structural fail-closed
+     boundary is not. Prove the preflight rejects a shell that drops it rather
+     than pinning the retired "Clinical workspace not enabled" heading. */
+  const missingGate = successfulResponses();
+  const localScribe = snapshot.artifacts.find((item) => item.file === 'ScribeFlow.html');
+  const missingGateBytes = Buffer.from(localScribe.bytes.toString('utf8')
+    .replace('id="agreementsGate"', 'id="agreementsGateRemoved"'));
+  missingGate.set(`${SITE}/ScribeFlow.html`, html(missingGateBytes));
+  const missingGateResult = await check(missingGate);
+  assert.strictEqual(missingGateResult.report.ok, false);
+  assert(codes(missingGateResult.report).includes('scribeflow_release_boundary_missing'),
+    'removing the hosted readiness gate was not reported as a release-boundary failure');
+
   /* 2026-07-21: the confirmed-HIPAA posture makes "HIPAA compliant" a
      REQUIRED marker; the forbidden class is now unsupported CERTIFICATION /
      audit claims (plus the unchanged BAA/commercial/Athena/outcome rules). */

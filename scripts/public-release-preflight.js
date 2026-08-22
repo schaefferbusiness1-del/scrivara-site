@@ -354,7 +354,8 @@ function inspectScribeFlow(source, failures) {
   for (const marker of [
     "const AGREEMENTS_VERSION='2026-07-21';",
     'const MLS_AGREEMENTS=Object.freeze(BROWSER_AGREEMENT_TEMPLATES);',
-    'Clinical workspace not enabled',
+    'id="agreementsGate"',
+    'id="agGateErr"',
     'Synthetic evaluation only',
     'const MLS_LEGAL_WORKSPACE_RELEASED=false;',
     'function hasVerifiedServerLegalRelease(payload)',
