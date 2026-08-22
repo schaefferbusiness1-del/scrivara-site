@@ -119,23 +119,33 @@ ok(/isTrusted/.test(block) && /ATHENA_ACTION_V2_CLICK_GATE/.test(block),
 ok(/cannot execute|does not try|never claims/i.test(block),
   'the block must state its own limit in words');
 
-/* A5: SHARED PRODUCTION FILES ARE UNTOUCHED. feat_mls_phone_ui.js has NO 1p
-   fork, so it is the same bytes production serves - editing it would ship to
-   live doctors on a green gate. Same for mls-connect.js and the unforked
-   writeflow. This asserts the lane law was kept, not merely intended.
-   cloned-mls-connect.js is deliberately NOT in this list: it is DERIVED from
-   1p-mls-connect.js by scripts/derive-cloned-from-1p.js (CONNECT_SRC ->
-   CONNECT_OUT), so it legitimately gains phsend when the lead re-derives, and
-   pinning it empty here would turn this suite red on a correct derive. */
-for (const shared of ['mls-connect.js', 'feat_mls_phone_ui.js', 'feat_mls_writeflow.js']) {
+/* A5: /1p is now the official source for both production and /cloned. The
+   phone-send relay must therefore promote with the bundle, byte-for-byte in
+   this identity-neutral block, while the two unforked shared UI/writeflow
+   modules remain uninvolved. This pins both the promotion law and the narrow
+   note/save-only safety boundary. */
+for (const shared of ['feat_mls_phone_ui.js', 'feat_mls_writeflow.js']) {
   const s = read(shared);
-  ok(!s.includes('phsend'), `${shared} is a shared/production file and must not carry phsend`);
+  ok(!s.includes('phsend'), `${shared} is an unforked shared module and must not carry phsend`);
   ok(!s.includes('sendNote'), `${shared} must not have been taught the sendNote kind`);
 }
-// and the derive relationship must still hold, so the note above stays true
-const derive = read('scripts/derive-cloned-from-1p.js');
-ok(/CONNECT_SRC\s*=\s*'1p-mls-connect\.js'/.test(derive) && /CONNECT_OUT\s*=\s*'cloned-mls-connect\.js'/.test(derive),
-  'cloned-mls-connect.js must still be derived from 1p-mls-connect.js (if this changes, re-check A5)');
+function exactPhsendBlock(source, label) {
+  const start = source.indexOf('/* ===== phsend-1.0.0 (2026-08-18, phone lane) =');
+  const end = source.indexOf('/* ===== end phsend-1.0.0 =', start);
+  ok(start > 0 && end > start, `${label} must carry the promoted phsend block`);
+  return source.slice(start, end);
+}
+const productionPhsend = exactPhsendBlock(read('mls-connect.js'), 'production mls-connect.js');
+const clonedPhsend = exactPhsendBlock(read('cloned-mls-connect.js'), 'cloned-mls-connect.js');
+eq(productionPhsend, block, 'production phsend must match its official 1p source exactly');
+eq(clonedPhsend, block, 'cloned phsend must match its official 1p source exactly');
+
+const productionDerive = read('scripts/derive-production-from-1p.js');
+ok(/CONNECT_SRC\s*=\s*'1p-mls-connect\.js'/.test(productionDerive) && /CONNECT_OUT\s*=\s*'mls-connect\.js'/.test(productionDerive),
+  'production mls-connect.js must remain officially derived from 1p-mls-connect.js');
+const clonedDerive = read('scripts/derive-cloned-from-1p.js');
+ok(/CONNECT_SRC\s*=\s*'1p-mls-connect\.js'/.test(clonedDerive) && /CONNECT_OUT\s*=\s*'cloned-mls-connect\.js'/.test(clonedDerive),
+  'cloned-mls-connect.js must remain officially derived from 1p-mls-connect.js');
 
 // A6: honesty vocabulary - staged and sent are different words, and every
 // terminal failure line says nothing was sent.
@@ -1145,7 +1155,7 @@ function allText(el) {
 
 main().then(function () {
   console.log('PASS 1p phone send-to-athena (phsend-1.0.0): ' + checks +
-    ' checks - final actions refused at the runner, one NAMED armed press and no other click, shared production files untouched, identity law (name-only never resolves, ambiguity refused), real startAthenaAction staging, human-confirm beats, closed-sheet + nobody-came + timeout + refusal all fail honestly, phone lifecycle queued->working->SENT, old-server/offline/signed-out/lost/expired degraded modes, button placement and repaint survival; phconfirm: no-capability path byte-identical, stage carries Athena-reported identity, drifted hash never arms, arm verb per spec then one press, refused arm honest, sheet shows name+DOB+MRN+encounter+provider and the note in full, short hold does not confirm, Cancel does not confirm, reloaded phone stands the control down');
+    ' checks - final actions refused at the runner, one NAMED armed press and no other click, official 1p->production/cloned relay parity, identity law (name-only never resolves, ambiguity refused), real startAthenaAction staging, human-confirm beats, closed-sheet + nobody-came + timeout + refusal all fail honestly, phone lifecycle queued->working->SENT, old-server/offline/signed-out/lost/expired degraded modes, button placement and repaint survival; phconfirm: no-capability path byte-identical, stage carries Athena-reported identity, drifted hash never arms, arm verb per spec then one press, refused arm honest, sheet shows name+DOB+MRN+encounter+provider and the note in full, short hold does not confirm, Cancel does not confirm, reloaded phone stands the control down');
 }, function (err) {
   console.error(err && err.stack ? err.stack : err);
   process.exit(1);

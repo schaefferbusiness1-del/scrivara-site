@@ -1,7 +1,9 @@
 'use strict';
 
 /*
- * /1p/ preview only — 2026-08-13 owner report, two independent surfaces.
+ * Originated in /1p/ from the 2026-08-13 owner report, then graduated through
+ * the production-from-1p derivation. The same controls are now pinned on the
+ * two preview twins and the official shell.
  *
  *  1. "there are to places to upalod tempaltes and only the top one is right.
  *     not this second one." Measured live in the open Templates modal: the
@@ -29,7 +31,8 @@ const root = path.resolve(__dirname, '..');
 const connect = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
 const shells = {
   '1p/index.html': fs.readFileSync(path.join(root, '1p', 'index.html'), 'utf8'),
-  '1pScribeFlow.html': fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8')
+  '1pScribeFlow.html': fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8'),
+  'ScribeFlow.html': fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8')
 };
 let passed = 0;
 function ok(value, message) { assert.ok(value, message); passed++; }
@@ -74,11 +77,6 @@ for (const [name, html] of Object.entries(shells)) {
     name + ': the drag handler lost the null guard that keeps it inert');
 }
 
-/* Production must NOT have been touched by this preview-only change. */
-const productionShell = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
-ok(/id="tplFileInput"/.test(productionShell),
-  'the production shell lost its template uploader — this change was 1p-only');
-
 /* ---- 2. A MONTH IS SELECTABLE ----------------------------------------- */
 
 const rangeSelect = connect.slice(connect.indexOf('<select id="sgpRange">'));
@@ -89,6 +87,16 @@ assert.deepStrictEqual(values, ['all', '12', '6', '3', '1'],
 passed++;
 ok(/<option value="1">Last month<\/option>/.test(rangeMarkup),
   'the one-month range option is missing or mislabelled');
+
+const productionConnect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const productionRangeSelect = productionConnect.slice(productionConnect.indexOf('<select id="sgpRange">'));
+const productionRangeMarkup = productionRangeSelect.slice(0, productionRangeSelect.indexOf('</select>'));
+const productionValues = [...productionRangeMarkup.matchAll(/<option value="([^"]+)"/g)].map(m => m[1]);
+assert.deepStrictEqual(productionValues, values,
+  'the official Staff Prep range choices drifted from the promoted 1p source: ' + JSON.stringify(productionValues));
+passed++;
+ok(/<option value="1">Last month<\/option>/.test(productionRangeMarkup),
+  'the official Staff Prep bundle lost the promoted one-month choice');
 
 /* "last 1 months" is printed on the PDF cover, the Excel summary block and the
    on-screen scope line, so the label is executed rather than pattern-matched. */

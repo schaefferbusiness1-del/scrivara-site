@@ -17,9 +17,9 @@
  * nothing was loosened to get the count up. It has three parts:
  *
  *   PART 1  the bundle itself — exact bytes, exact digests, the size budget, the
- *           licence notices, and the two CSP edits (both /1p twins carry
- *           'wasm-unsafe-eval'; production ScribeFlow.html and its staging
- *           snapshot do not, and never may).
+ *           licence notices, and the CSP boundary (both /1p twins and the
+ *           officially derived production shell carry 'wasm-unsafe-eval';
+ *           the staging snapshot, which does not load the model, stays strict).
  *   PART 2  THE EXECUTING PROOF — real Chrome, the real module, the real model
  *           loaded from 1p-avatar-model/ over http, driven across nine
  *           synthetic sitters. It prints the per-fixture table and asserts the
@@ -121,41 +121,34 @@ function cspOf(rel) {
   assert.ok(m, `${rel} has no shell CSP`);
   return m[1];
 }
-/* WHY /1p CARRIES IT AND PRODUCTION DOES NOT.
+/* WHY THE PROMOTED LINEAGE CARRIES IT.
    Instantiating a WebAssembly module counts as script execution under CSP, so
    the bundled tfjs wasm backend cannot start without 'wasm-unsafe-eval' in
-   script-src. /1p runs it — the avatar landmark reader is a /1p fork,
-   1p-feat_mls_avatar.js. Production's ScribeFlow.html loads no wasm at all and
-   keeps the strictly narrower policy it has always had. This test is what stops
-   the expression drifting into it.
+   script-src. The owner promoted /1p into production in b1036; the official
+   production derivation inherits the CSP verbatim because it also promotes the
+   landmark reader. The staging snapshot is not on that derivation and still
+   loads no model, so widening staging would buy no capability.
 
-   ⛔ /cloned IS NOT ON THE "MUST NOT" LIST, AND THAT IS A MEASUREMENT, NOT AN
-   OVERSIGHT. /cloned is DERIVED from /1p by scripts/derive-cloned-from-1p.js,
-   which copies 1pScribeFlow.html to cloned/index.html and substitutes only the
-   lane identity (marker, fork asset names, bundle loader, build token). The CSP
-   is not one of those substitutions, so the moment the lead re-derives,
-   cloned/index.html carries 'wasm-unsafe-eval' too — measured: `derive-cloned
-   --check` reports DRIFTED on cloned/index.html and cloned-feat_mls_avatar.js
-   against this commit. Asserting /cloned must NOT have it would therefore be
-   TRUE today and FALSE the moment the lane is re-derived, which is a test that
-   fails for the lead instead of for the author. That inheritance is correct —
-   /cloned is the release-candidate lane and takes /1p file-for-file — but it is
-   the lead's decision to make knowingly, so it is written down here and in the
-   handover rather than pinned. Production and staging are the lines that are
-   pinned, because those are the ones that must never move. */
-for (const twin of ['1pScribeFlow.html', '1p/index.html']) {
-  const csp = cspOf(twin);
+   The safety boundary is therefore capability-based, not an obsolete lane
+   boundary: every model-bearing shell gets wasm-only evaluation, no shell gets
+   plain unsafe-eval, and the non-model staging shell stays narrower. */
+const modelShells = ['1pScribeFlow.html', '1p/index.html', 'ScribeFlow.html'];
+for (const shell of modelShells) {
+  const csp = cspOf(shell);
   ok(/script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'\s*;/.test(csp),
-    `${twin} must carry 'wasm-unsafe-eval' in script-src or the bundled model cannot start`);
-  ok(!/'unsafe-eval'(?!\s*;)/.test(csp.replace(/'wasm-unsafe-eval'/g, '')),
-    `${twin} must not have gained plain 'unsafe-eval' — wasm only`);
+    `${shell} must carry 'wasm-unsafe-eval' in script-src or its bundled model cannot start`);
+  ok(!/(?:^|\s)'unsafe-eval'(?=\s|;|$)/.test(csp),
+    `${shell} must not have gained plain 'unsafe-eval' — wasm only`);
   ok(/object-src 'none'/.test(csp) && /worker-src 'self' blob:/.test(csp),
-    `${twin} lost an unrelated CSP directive while the wasm expression was added`);
+    `${shell} lost an unrelated CSP directive while the wasm expression was added`);
 }
-for (const strict of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
-  ok(!/wasm-unsafe-eval/.test(cspOf(strict)),
-    `${strict} must NOT carry 'wasm-unsafe-eval' — it runs no wasm, and widening it here would widen production`);
-}
+eq(cspOf('ScribeFlow.html'), cspOf('1pScribeFlow.html'),
+  'the production CSP drifted from the promoted model-bearing source');
+const stagingCsp = cspOf('ScribeFlow-staging.html');
+ok(!/wasm-unsafe-eval/.test(stagingCsp),
+  'ScribeFlow-staging.html must not carry wasm-unsafe-eval while it loads no model');
+ok(!/(?:^|\s)'unsafe-eval'(?=\s|;|$)/.test(stagingCsp) && /object-src 'none'/.test(stagingCsp) && /worker-src 'self' blob:/.test(stagingCsp),
+  'the strict staging CSP lost an unrelated safety directive');
 
 /* ---- THE MODULE REFERENCES THE MODEL SAME-ORIGIN AND LAZILY ------------- */
 const avatarSrc = read('1p-feat_mls_avatar.js');
@@ -314,11 +307,11 @@ async function bootModule(page, port, opts) {
     eq(cspResults.p1.installed, true, 'the model bundle would not even install under the /1p policy');
     eq(cspResults.p1.backend, 'wasm',
       `under the /1p shell CSP the tfjs wasm backend must actually start; got ${JSON.stringify(cspResults.p1)}`);
-    ok(cspResults.prod.backend !== 'wasm',
-      'the PRODUCTION CSP allowed the wasm backend to start — then the /1p source expression is buying nothing ' +
-      'and the whole justification for adding it is wrong');
+    eq(cspResults.prod.installed, true, 'the promoted production policy blocked the reviewed model bundle');
+    eq(cspResults.prod.backend, 'wasm',
+      `under the promoted production CSP the tfjs wasm backend must actually start; got ${JSON.stringify(cspResults.prod)}`);
     console.log(`  CSP experiment: /1p -> backend "${cspResults.p1.backend}", production -> "${cspResults.prod.backend}" ` +
-      '(WebAssembly refused, tfjs falls through to a GPU that may not exist)');
+      '(the same reviewed same-origin model runs under both promoted policies)');
 
     /* ---------- PART 2 : the model is present ---------------------------- */
     const page = await browser.newPage();

@@ -233,7 +233,23 @@ const routeRuntime = p1Route.slice(p1Route.indexOf('const P1_EM_REFERENCE='), p1
 assert.strictEqual(routeRuntime, reviewSource, 'the actual /p1 route diverged from the verified P1 E/M review runtime');
 const routeCard = p1Route.slice(p1Route.indexOf('<div class="opt-card" id="optCard"'), p1Route.indexOf('<!-- 💵 Revenue tools'));
 assert.strictEqual(routeCard, card, 'the actual /p1 route diverged from the verified P1 E/M review card');
-assert(regular.includes('Optimize for Insurance Payout') && !regular.includes('function p1CodingReviewFingerprint()'),
-  'the regular site was changed instead of keeping the E/M review P1-only');
+const productionStart = regular.indexOf('const P1_EM_REFERENCE=');
+const productionEnd = regular.indexOf('/* =========================================================\n   EMR', productionStart);
+assert(productionStart > 0 && productionEnd > productionStart,
+  'the officially promoted production E/M review runtime is missing');
+const productionReviewSource = regular.slice(productionStart, productionEnd);
+const productionCardStart = regular.indexOf('<div class="opt-card" id="optCard"');
+const productionCardEnd = regular.indexOf('<!-- 💵 Revenue tools', productionCardStart);
+assert(productionCardStart > 0 && productionCardEnd > productionCardStart,
+  'the officially promoted production E/M review card is missing');
+const productionCard = regular.slice(productionCardStart, productionCardEnd);
+assert.strictEqual(productionReviewSource, reviewSource,
+  'the production E/M review runtime drifted from its official /p1 source');
+assert.strictEqual(productionCard, card,
+  'the production E/M review card drifted from its official /p1 source');
+assert(regular.includes('function p1CodingReviewFingerprint()') && !regular.includes('Optimize for Insurance Payout'),
+  'the production shell lost the promoted evidence-bound review or restored the retired payout framing');
+assert(!/payout|reimbursement|revenue estimate|\$\d/i.test(productionCard),
+  'the promoted production E/M review card reintroduced financial-outcome framing');
 
-console.log('PASS P1 E/M review: exact evidence, current MDM/time rules, visible provenance, explicit clinician confirmation, stale-state refusal, role wall, and save rollback');
+console.log('PASS promoted E/M review: exact /p1-production parity, evidence, current MDM/time rules, visible provenance, explicit clinician confirmation, stale-state refusal, role wall, and save rollback');

@@ -1,25 +1,39 @@
 'use strict';
 
-/* Deterministic /p1-only mobile encounter-state proof. No browser, network,
- * account, patient, Athena instance, or regular-site asset is touched. */
+/* Deterministic mobile encounter-state proof for the official /p1-derived
+ * production lineage. No browser, network, account, patient, or Athena
+ * instance is touched. */
 const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
 const source = fs.readFileSync('1p-feat_mls_mobile_encounter.js', 'utf8');
+const productionSource = fs.readFileSync('feat_mls_mobile_encounter.js', 'utf8');
 const regularConnect = fs.readFileSync('mls-connect.js', 'utf8');
 const regularShell = fs.readFileSync('ScribeFlow.html', 'utf8');
 
-assert(!regularConnect.includes('1p-feat_mls_mobile_encounter.js') &&
-  !regularConnect.includes('__mlsP1MobileEncounter'),
-  'the regular connect asset was made aware of the P1 mobile coordinator');
+const expectedProductionSource = source
+  .replaceAll('1p-feat_mls_mobile_encounter.js', 'feat_mls_mobile_encounter.js')
+  .replaceAll('__MLS_P1_PREVIEW', '__MLS_MAIN')
+  .replace("Object.freeze({ route: '/1p/' })", "Object.freeze({ route: '/' })");
+assert.strictEqual(productionSource, expectedProductionSource,
+  'the production mobile coordinator drifted from its official /p1 source beyond lane identity');
+assert(regularConnect.includes("A='feat_mls_mobile_encounter.js',V='p1-mobile-encounter-1.0.0',K='__mlsP1MobileEncounterLoader'") &&
+  regularConnect.includes("if(!(window.__MLS_MAIN&&window.__MLS_MAIN.enabled===true))return;var A='feat_mls_mobile_encounter.js'") &&
+  regularConnect.includes('__mlsP1MobileEncounter'),
+  'the production connector does not load the promoted mobile coordinator under its production identity');
+assert(!regularConnect.includes('1p-feat_mls_mobile_encounter.js'),
+  'the production connector leaked a /p1-prefixed mobile asset URL');
 assert(!regularShell.includes('1p-feat_mls_mobile_encounter.js') &&
   !regularShell.includes('__mlsP1MobileEncounter'),
-  'the regular shell was made aware of the P1 mobile coordinator');
+  'the production shell duplicated the connector-owned mobile coordinator');
 assert(source.includes("window.__MLS_P1_PREVIEW.enabled === true") &&
   source.includes("var LOADER_KEY = '__mlsP1MobileEncounterLoader'") &&
   source.includes('loader.installToken !== installToken'),
   'the module is not fail-closed behind the exact P1 loader owner');
+assert(productionSource.includes("window.__MLS_MAIN && window.__MLS_MAIN.enabled === true") &&
+  productionSource.includes("data: Object.freeze({ route: '/' })"),
+  'the promoted coordinator lost its exact production marker or canonical route');
 assert(!/new\s+Notification\s*\(/.test(source),
   'the state module can emit an unsupervised lock-screen notification');
 

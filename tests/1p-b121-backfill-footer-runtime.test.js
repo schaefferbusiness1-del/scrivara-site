@@ -1,6 +1,6 @@
 'use strict';
 /* =============================================================================
- * 1p b121 VISIT-BACKFILL FOOTER  (lane: b121fork / p1-backfill-footer-1.0.0)
+ * b121 VISIT-BACKFILL FOOTER  (1p lineage promoted to production)
  *
  * THE MEASUREMENT THIS SUITE EXISTS FOR - owner's live /cloned pull,
  * 2026-08-17, ext 3.0.62, with THREE signed-in athenaOne tabs open:
@@ -13,29 +13,31 @@
  * 1.2-1.5 s session ping while athena was rendering); and no retry at all, so a
  * transient was rendered as a terminal verdict.
  *
- * The owner of that line is feat_mls_b121_pack.js - a SHARED production file
- * that mls-connect.js and the /1p bundle both load byte-for-byte. It is
- * therefore FORKED (1p-feat_mls_b121_pack.js) exactly the way the other fifteen
- * forks were made, and the fix lives in ONE delimited block inside the fork.
- * Production keeps the old bytes.
+ * The fix first lived in 1p-feat_mls_b121_pack.js. On 2026-08-20 the owner
+ * promoted the whole /1p lineage to production (3967feec), and
+ * scripts/derive-production-from-1p.js became the authoritative definition of
+ * production. feat_mls_b121_pack.js must therefore carry the SAME fix, with
+ * only the official lane-identity rewrite in its bytes.
  *
  * What is proved, and how:
- *   1  FORK        the fork is the shared pack plus one block - every line the
- *                  fork does not carry is on a fixed, explained list - and the
- *                  PHI-bearing footer write is gone from it.
+ *   1  LINEAGE     production is exactly the 1p pack modulo the official asset
+ *                  identity rewrite; both carry the delimited fix, and the
+ *                  PHI-bearing footer write is gone from both.
  *   2  LOADERS     both twins enter exactly one bundle, that bundle loads the
  *                  fork once under the canonical dedupe identity, production
- *                  still loads the SHARED file, and the twins stay canonical.
+ *                  loads its derived production-identity file, and the twins
+ *                  stay canonical.
  *   3  PINS        the fork is registered in every list that enumerates forks
  *                  (P1_FILES, publication inventory + boundary classification,
- *                  fork parity baseline) and the /cloned derivation is PRISTINE.
+ *                  fork parity baseline), the /cloned derivation is PRISTINE,
+ *                  and any production drift is only the reviewed signup bridge.
  *   4  VOCABULARY  reason codes come from the pull lane's own
  *                  _todayNoteReasonCode - EXECUTED here, not grepped for.
  *   5  QUIET       both sanctioned sentences are classified by the REAL
  *                  quietnotify-1.0.0 classifier taken from BOTH shells, and the
  *                  block refuses to hand toast() anything that is not
  *                  outcome/info.
- *   6  RUNTIME     the real module runs in a vm against a fake extension and a
+ *   6  RUNTIME     both real modules run in a vm against a fake extension and a
  *                  virtual clock: the footer is PHI-free with a name-shaped
  *                  fixture; open-failed -> presence VERIFIED -> retried ->
  *                  recovered; presence ABSENT -> honest verdict with nothing
@@ -64,48 +66,31 @@ const SHARED = 'feat_mls_b121_pack.js';
 const forkSrc = read(FORK);
 const sharedSrc = read(SHARED);
 
-/* ===================================================== 1  THE FORK ITSELF == */
+/* ================================================ 1  THE PROMOTED LINEAGE == */
 {
   const i = forkSrc.indexOf('/* ===== p1-backfill-footer-1.0.0 ===');
   const j = forkSrc.indexOf('/* ===== end p1-backfill-footer-1.0.0 ===');
   ok(i > 0 && j > i, 'the p1-backfill-footer-1.0.0 block is missing or unclosed in the fork');
-  ok(sharedSrc.indexOf('p1-backfill-footer-1.0.0') < 0,
-    'the SHARED production pack now carries the 1p block - the fork leaked into production');
+  const si = sharedSrc.indexOf('/* ===== p1-backfill-footer-1.0.0 ===');
+  const sj = sharedSrc.indexOf('/* ===== end p1-backfill-footer-1.0.0 ===');
+  ok(si > 0 && sj > si, 'the promoted production pack lost or truncated the footer block');
 
-  /* The fork is the pack plus one block. Every line the pack has and the fork
-     does not is on this list, each explained. If the list has to grow, the fork
-     has drifted from the file it forked - a decision, not an accident. */
-  const REMOVED_ON_PURPOSE = [
-    /* the PHI defect itself */
-    "        el.textContent = 'Visit backfill: ' + STATE.status;",
-    /* statusLine's DOM scaffolding, moved verbatim into bfRender() */
-    '    try {',
-    '      if (hostEl) {',
-    "        var el = document.getElementById('mlsVbfStatus');",
-    "        if (!el) { el = document.createElement('div'); el.id = 'mlsVbfStatus'; el.style.cssText = 'margin-top:8px;font:12px system-ui;color:#B9CEC2'; }",
-    '        if (el.parentNode !== hostEl) hostEl.appendChild(el); /* panel re-renders wipe it; re-attach */',
-    '        return;',
-    '    } catch (e) {}',
-    "    try { console.log('[MLS visits-backfill]', STATE.status); } catch (e) {}",
-    /* the last exported property gained a trailing comma when the block's api
-       rows were appended after it */
-    '    _anyPullRunning: anyPullRunning'
-  ];
-  const forkLines = new Set(lines(forkSrc));
-  const unexplained = lines(sharedSrc)
-    .filter((l) => l.trim() && !forkLines.has(l))
-    .filter((l) => REMOVED_ON_PURPOSE.indexOf(l) < 0);
-  assert.deepStrictEqual(unexplained, [],
-    'the 1p fork dropped production lines that are not on the reviewed list - it is no longer "the pack plus one block"');
-  checks++;
+  /* The official production derivation rewrites every 1p-feat_ asset identity
+     to feat_. This pack presently has exactly one such identity (in the
+     one-engine comment); after that exact rewrite EVERY byte must match.
+     The whole authoritative derivation is also executed in section 3. */
+  eq((forkSrc.match(/1p-feat_/g) || []).length, 1,
+    'the b121 pack gained another lane-identity occurrence; review it against the official derivation');
+  eq(forkSrc.split('1p-feat_').join('feat_'), sharedSrc,
+    'production is not the exact promoted 1p b121 pack modulo official asset identity');
 
-  ok(sharedSrc.indexOf("el.textContent = 'Visit backfill: ' + STATE.status;") > 0,
-    'the shared pack no longer carries the measured PHI footer write - this suite is testing the wrong file');
-  ok(forkSrc.indexOf("el.textContent = 'Visit backfill: ' + STATE.status;") < 0,
-    'the fork still writes the raw, name-bearing status line into the footer');
-  ok(forkSrc.indexOf('"Finishing today\'s notes in the background"') > 0,
-    'the fork lost the sanctioned in-progress sentence');
-  ok(forkSrc.indexOf('nothing was lost') > 0, 'the fork lost the sanctioned deferred sentence');
+  for (const [name, src] of [[FORK, forkSrc], [SHARED, sharedSrc]]) {
+    ok(src.indexOf("el.textContent = 'Visit backfill: ' + STATE.status;") < 0,
+      name + ' writes the raw, name-bearing status line into the footer again');
+    ok(src.indexOf('"Finishing today\'s notes in the background"') > 0,
+      name + ' lost the sanctioned in-progress sentence');
+    ok(src.indexOf('nothing was lost') > 0, name + ' lost the sanctioned deferred sentence');
+  }
 }
 
 /* ======================================================== 2  THE LOADERS == */
@@ -123,8 +108,9 @@ const sharedSrc = read(SHARED);
     'the 1p pack loader lost the build-number cache-buster (a hand token goes stale)');
 
   ok(prodConnect.indexOf("s.src='feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now())") >= 0,
-    'production no longer loads the SHARED pack with its build-number cache-buster');
-  ok(prodConnect.indexOf('1p-feat_mls_b121_pack') < 0, 'the 1p pack fork leaked into the production bundle');
+    'production no longer loads its derived pack with the build-number cache-buster');
+  ok(prodConnect.indexOf('1p-feat_mls_b121_pack') < 0,
+    'the production-identity bundle contains a 1p asset name');
 
   /* The pack has never had a loader in the shells, so "the fork loads on the 1p
      shell (both twins)" is honestly stated as: each twin enters exactly one
@@ -169,12 +155,36 @@ const sharedSrc = read(SHARED);
   ok(fs.existsSync(path.join(ROOT, 'cloned-feat_mls_b121_pack.js')),
     'the derived cloned counterpart of the fork does not exist on disk');
 
-  const derived = spawnSync(process.execPath, [path.join('scripts', 'derive-cloned-from-1p.js'), '--check'],
+  const clonedDerived = spawnSync(process.execPath, [path.join('scripts', 'derive-cloned-from-1p.js'), '--check'],
     { cwd: ROOT, encoding: 'utf8', windowsHide: true });
-  eq(derived.status, 0, 'scripts/derive-cloned-from-1p.js --check is not clean:\n' +
-    String(derived.stdout || '') + String(derived.stderr || ''));
-  ok(/^PRISTINE/.test(String(derived.stdout || '').trim()),
-    'the derive check did not report PRISTINE: ' + String(derived.stdout || '').trim());
+  eq(clonedDerived.status, 0, 'scripts/derive-cloned-from-1p.js --check is not clean:\n' +
+    String(clonedDerived.stdout || '') + String(clonedDerived.stderr || ''));
+  ok(/^PRISTINE/.test(String(clonedDerived.stdout || '').trim()),
+    'derive-cloned-from-1p.js did not report PRISTINE: ' + String(clonedDerived.stdout || '').trim());
+
+  /* b1043 is intentionally production-only: public signup accounts still use
+     policy 0 while /1p remains byte-frozen. Keep the derivation audit live, but
+     allow exactly that one shell and require the bridge's fail-closed markers.
+     tests/1p-preview-contract.test.js separately freezes every changed byte at
+     the reviewed runtime commit. */
+  const productionDerived = spawnSync(process.execPath, [path.join('scripts', 'derive-production-from-1p.js'), '--check'],
+    { cwd: ROOT, encoding: 'utf8', windowsHide: true });
+  const productionDeriveText = String(productionDerived.stdout || '') + String(productionDerived.stderr || '');
+  if (productionDerived.status === 0) {
+    ok(/^PRISTINE/.test(productionDeriveText.trim()),
+      'derive-production-from-1p.js exited cleanly without reporting PRISTINE');
+  } else {
+    eq(productionDerived.status, 1, 'the production derivation failed for a reason other than reviewed byte drift');
+    assert.deepStrictEqual(Array.from(productionDeriveText.matchAll(/^DRIFT:\s+(.+)$/gm), (m) => m[1]),
+      ['ScribeFlow.html'], 'production drift escaped the reviewed signup-only shell boundary');
+    checks++;
+    const productionShell = read('ScribeFlow.html');
+    const previewShell = read('1pScribeFlow.html');
+    ok(productionShell.indexOf('function agLegacySignRequest') > 0 &&
+      productionShell.indexOf('SIGNED_RECORD_VERIFICATION_PENDING') > 0 &&
+      previewShell.indexOf('function agLegacySignRequest') < 0,
+      'the sole production derivation exception is not the reviewed policy-0 signup bridge');
+  }
 }
 
 /* ================================================ 4  THE CODE VOCABULARY == */
@@ -231,10 +241,29 @@ function moduleOf(text, label) {
   return src.slice(a, end + 5);
 }
 const MODULE_SRC = moduleOf(forkSrc, FORK);
-/* THE CAUSAL CONTROL: the same module out of the SHARED production pack - the
-   engine the owner actually measured. Every claim below about the fork is
-   re-run against this one, so "the fix did it" is a measurement. */
-const CONTROL_SRC = moduleOf(sharedSrc, SHARED);
+const PRODUCTION_MODULE_SRC = moduleOf(sharedSrc, SHARED);
+eq(MODULE_SRC.split('1p-feat_').join('feat_'), PRODUCTION_MODULE_SRC,
+  'the executed production module is not the exact promoted 1p module modulo lane identity');
+let activeModuleSrc = MODULE_SRC;
+let activeModuleLabel = FORK;
+
+/* Mutation control: recreate only the two measured regressions inside the real
+   current module. This replaces the obsolete "production still has the old
+   bytes" control while preserving proof that the harness actually detects a
+   raw footer and an engine that gives up without asking presence. */
+function mutateOnce(src, from, to, label) {
+  eq(src.split(from).length - 1, 1, 'mutation control anchor moved: ' + label);
+  return src.replace(from, to);
+}
+let LEGACY_CONTROL_SRC = MODULE_SRC;
+LEGACY_CONTROL_SRC = mutateOnce(LEGACY_CONTROL_SRC,
+  '      var text = bfFootText();',
+  "      var text = 'Visit backfill: ' + STATE.status;",
+  'raw footer');
+LEGACY_CONTROL_SRC = mutateOnce(LEGACY_CONTROL_SRC,
+  "    return !!row && row.ok !== true && bfReasonCode(row.reason) === 'no-athena-tab';",
+  '    return false; /* TEST MUTATION: legacy engine never rechecked presence */',
+  'no retry');
 
 class FakeEl {
   constructor(tag, dom) {
@@ -382,8 +411,10 @@ function makeSandbox(options) {
   sandbox.window = sandbox;
   sandbox.self = sandbox;
 
-  vm.runInContext(opts.moduleSrc || MODULE_SRC, vm.createContext(sandbox),
-    { filename: opts.moduleSrc ? 'b121-visits-backfill-CONTROL' : 'p1-b121-visits-backfill' });
+  const runtimeSrc = Object.prototype.hasOwnProperty.call(opts, 'moduleSrc') ? opts.moduleSrc : activeModuleSrc;
+  const runtimeLabel = opts.moduleLabel || activeModuleLabel;
+  vm.runInContext(runtimeSrc, vm.createContext(sandbox),
+    { filename: runtimeLabel + ':visits-backfill' });
 
   async function flush(turns) { for (let i = 0; i < (turns || 25); i++) await Promise.resolve(); }
   /* fire timers in time order, jumping the virtual clock to each, until done()
@@ -615,31 +646,30 @@ async function quietByConstruction() {
   api2.revert();
 }
 
-/* ---- 6g  the CAUSAL CONTROL: the shared production engine, same fixture -- */
-async function sharedEngineStillLeaksAndStillGivesUp() {
+/* ---- 6g  mutation control: the harness catches BOTH original defects ----- */
+async function legacyMutationIsCaught() {
   const h = makeSandbox({
-    moduleSrc: CONTROL_SRC,
+    moduleSrc: LEGACY_CONTROL_SRC,
+    moduleLabel: 'TEST-MUTATION-legacy-b121',
     openResult: () => OPEN_FAILED,
     readResult: () => VISITS_OK,
     presence: () => ({ athenaOpen: true, reason: 'presence-verified' })
   });
   const api = h.api();
-  ok(api && api.version, 'the CONTROL module did not install');
-  ok(!api.receipt && !api.footerText, 'the shared production pack already carries the fix - the control proves nothing');
-  eq(api.runOnce([NAME], { force: true }), 1, 'the control fixture was not queued');
-  ok(await h.drive(ended(h)), 'the control pump never finished');
+  ok(api && api.version, 'the legacy mutation control did not install');
+  eq(api.runOnce([NAME], { force: true }), 1, 'the mutation-control fixture was not queued');
+  ok(await h.drive(ended(h)), 'the mutation-control pump never finished');
 
-  /* 1. it re-drives nothing, even though athena is present and would answer */
-  eq(h.presenceCalls.length, 0, 'the control asked the presence verb - it has no such code');
-  eq(h.opens.length, 1, 'the control retried - then this fixture is not reproducing the measured defect');
-  /* 2. and it prints the patient name and the raw reason into the footer */
-  const leaked = h.footSeen.filter((t) => t.indexOf('Jane') >= 0 || t.indexOf('Doe') >= 0);
-  ok(leaked.length > 0,
-    'the control never leaked a name into the footer - the fixture does not reproduce the owner\'s measured line');
+  eq(h.presenceCalls.length, 0,
+    'the no-retry mutation still asked the presence verb; the negative control is not causal');
+  eq(h.opens.length, 1,
+    'the no-retry mutation re-drove the patient; the negative control is not causal');
+  ok(h.footSeen.some((t) => t.indexOf('Jane') >= 0 || t.indexOf('Doe') >= 0),
+    'the raw-footer mutation did not leak the synthetic name; the PHI control would be insensitive');
   ok(h.footSeen.some((t) => t.indexOf('open-failed') >= 0),
-    'the control never printed the raw reason - the fixture does not reproduce the measured line');
+    'the raw-footer mutation did not expose the synthetic reason; the footer control would be insensitive');
   ok(h.footSeen.some((t) => t.indexOf('Visit backfill: ') === 0),
-    'the control footer no longer starts with the measured prefix');
+    'the raw-footer mutation did not reproduce the measured legacy prefix');
   api.revert();
 }
 
@@ -649,19 +679,29 @@ async function sharedEngineStillLeaksAndStillGivesUp() {
     process.exit(1);
   }, 120000);
 
-  await sharedEngineStillLeaksAndStillGivesUp();
-  await footerIsPhiFree();
-  await presenceVerifiedRecovers();
-  await presenceAbsentIsHonest();
-  await noProbeMeansNoRetry();
-  await retryIsBounded();
-  await quietByConstruction();
+  await legacyMutationIsCaught();
+
+  /* Run the complete matrix twice. The negative controls stay live on BOTH
+     published identities: names/raw reasons must never reach the footer,
+     absent or unknowable presence must never retry, retries must remain
+     bounded, and action-class text must never reach toast(). */
+  for (const lane of [[FORK, MODULE_SRC], [SHARED, PRODUCTION_MODULE_SRC]]) {
+    activeModuleLabel = lane[0];
+    activeModuleSrc = lane[1];
+    await footerIsPhiFree();
+    await presenceVerifiedRecovers();
+    await presenceAbsentIsHonest();
+    await noProbeMeansNoRetry();
+    await retryIsBounded();
+    await quietByConstruction();
+  }
 
   clearTimeout(watchdog);
-  console.log('PASS 1p b121 backfill footer (' + checks + ' checks): 1p-feat_mls_b121_pack.js is the shared pack plus one ' +
-    'delimited block, loaded once by the one bundle both twins enter while production keeps the shared file; the footer is ' +
-    'two sanctioned sentences and a count with the name and raw reason moved to the copyable diagnostics; a no-athena-tab ' +
-    'refusal asks __mlsSI._athenaPresenceProbe and is re-driven ONLY while presence is verified (2 s then 6 s, two rounds, ' +
-    'then stop), absent or unknowable presence re-drives nothing, reason codes come from _todayNoteReasonCode, and the real ' +
-    'quietnotify classifier calls both sentences quiet while the footer this replaced was a toast');
+  console.log('PASS b121 backfill footer (' + checks + ' checks): production is the exact promoted 1p pack modulo official ' +
+    'lane identity, cloned derivation is pristine, and the production-only signup exception is explicitly bounded; the complete runtime matrix passes on both published identities; the ' +
+    'footer is two sanctioned sentences and a count with the name and raw reason moved to copyable diagnostics; a ' +
+    'no-athena-tab refusal asks __mlsSI._athenaPresenceProbe and is re-driven ONLY while presence is verified (2 s then ' +
+    '6 s, two rounds, then stop), absent or unknowable presence re-drives nothing, reason codes come from ' +
+    '_todayNoteReasonCode, and the real quietnotify classifier keeps both sentences quiet while the replaced footer is a ' +
+    'live action-class negative control');
 })().catch((err) => { console.error(err); process.exit(1); });
