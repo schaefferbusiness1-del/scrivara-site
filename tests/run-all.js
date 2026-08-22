@@ -46,6 +46,10 @@ const tests = [
   /* Server-owned agreement completion, practice-BAA waiting, setup-only 428
      handling, and Enterprise-managed child access must remain fail-closed. */
   'first-login-server-state-contract.test.js',
+  /* “Pull your first day” is historical setup, not a demand to pull today.
+     A sanitized account-owned day already in the durable importer store must
+     retire the setup card after refresh; empty/invalid stores stay fail-closed. */
+  'first-run-historical-pull-runtime.test.js',
   /* The /1p Calendar repair of 2026-08-16: one pull entry point instead of
      four, the hero carrying the same caller contract the Visit strip has,
      and a per-appointment op-note action that fails closed rather than

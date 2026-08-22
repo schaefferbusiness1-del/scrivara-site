@@ -334,6 +334,16 @@
       var st = safe(function () { return si.authoritativeStatusForDay(todayIso()); }, null);
       if (st && st.available === true) return 'ok';
     }
+    /* first-day-history-1.0.0: this row asks whether the clinician has pulled
+       a first day, not whether TODAY happens to be in the current calendar.
+       The exact importer already exposes its sanitized, account-scoped
+       authoritative-day store. Any surviving day key is durable proof of a
+       completed schedule import; inspect keys only, never patient rows. */
+    if (si && isFn(si._loadAuthoritativeStore)) {
+      var loaded = safe(function () { return si._loadAuthoritativeStore(); }, null);
+      var days = loaded && loaded.ok === true && loaded.store && loaded.store.days;
+      if (days && typeof days === 'object' && Object.keys(days).length) return 'ok';
+    }
     var rows = safe(function () {
       return isFn(window._calAppts) ? (window._calAppts() || []) : (window._calAppts || []);
     }, null);
@@ -914,8 +924,8 @@
         'closes and arrow keys navigate. Anchors are looked up at show time and ' +
         'a missing or hidden anchor skips its step silently. Rows read live ' +
         'truth only: __mlsConnTruth readiness, __mlsAthenaGuard signed in probe ' +
-        '(certain negatives only), and __mlsSI.authoritativeStatusForDay for the ' +
-        'day pull. Gated on done flag, session, setup modal, pull busy, ' +
+        '(certain negatives only), and the account-scoped __mlsSI authoritative ' +
+        'day store for any completed first pull. Gated on done flag, session, setup modal, pull busy, ' +
         'recording and once per browser session. No auto launch, no setInterval, ' +
         'no observers, no network, no PHI.';
     }
