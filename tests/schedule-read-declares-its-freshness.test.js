@@ -202,7 +202,7 @@ assert(!/complete: preSnapshotComplete && [\s\S]{0,80}stale/.test(si),
 /* --- the terminal verdict is where it must appear. --- */
 assert(/Verified complete: schedule[\s\S]{0,120}freshnessNotice\(r\)/.test(si),
   '"Verified complete" is the sentence the doctor acts on; if the notice is missing there it is missing where it matters');
-assert(/Schedule-only complete:[\s\S]{0,140}freshnessNotice\(r\)/.test(si),
+assert(/Schedule-only complete:[^\r\n]*freshnessNotice\(r\)/.test(si),
   'the schedule-only verdict needs it too -- that is the ON=off path, which is the one the owner runs by default');
 assert(/no appointments\." \+ freshnessNotice\(r\)/.test(si),
   'an EMPTY day read off a stale grid is the worst case of all: it is a positive clinical claim that nobody is coming');
