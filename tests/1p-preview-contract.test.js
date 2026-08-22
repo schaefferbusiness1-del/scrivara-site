@@ -165,7 +165,10 @@ const EXTENSION_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
    /cloned, cure proven live before landing). Behavior fix, b1028-hotfix-train
    class; /1p and /cloned load the same shared file. */
 /* SAME untangle: fixpack + mls-connect are production-shared, b1028-hotfix-train class */
-const PRODUCTION_BASE_COMMIT = 'b7aa22d9fe9219fb8a3a6ba9088bf7b96700ca3f';
+/* Advanced by the authorized production-only b1043 signup hotfix. The live
+   ScribeFlow policy-0 ceremony gained the exact legacy request/read-back bridge;
+   /1p, /cloned, and the released extension remained byte-frozen. */
+const PRODUCTION_BASE_COMMIT = 'add29fd9310376f37f5d7ce130cd73a9fdf5a7e2';
 
 const P1_FILES = [
   '1pScribeFlow.html',
@@ -197,15 +200,15 @@ for (const name of P1_FILES) {
   assert(fs.statSync(file).size > 1000, `1p preview file is unexpectedly empty/truncated: ${name}`);
 }
 
-/* b1026 is an authorized production-only Day rendering train. Freeze every
-   1p runtime byte independently at the prior live checkpoint so a production
-   release can never make preview drift invisible. */
+/* b1043 is also an authorized production-only train. Freeze every 1p runtime
+   byte independently at the prior live checkpoint so a production release can
+   never make preview drift invisible. */
 const unchangedP1 = spawnSync('git', ['diff', '--quiet', P1_BASE_COMMIT, '--', ...P1_FILES],
   { cwd: root, encoding: 'utf8', windowsHide: true });
 if (unchangedP1.status !== 0) {
   const names = spawnSync('git', ['diff', '--name-only', P1_BASE_COMMIT, '--', ...P1_FILES],
     { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.fail(`authorized production b1026 changed frozen 1p bytes: ${String(names.stdout || unchangedP1.stderr || '').trim()}`);
+  assert.fail(`authorized production b1043 changed frozen 1p bytes: ${String(names.stdout || unchangedP1.stderr || '').trim()}`);
 }
 
 const shell = read('1pScribeFlow.html');
@@ -489,14 +492,14 @@ const unchangedProduction = spawnSync('git', ['diff', '--quiet', PRODUCTION_BASE
 if (unchangedProduction.status !== 0) {
   const names = spawnSync('git', ['diff', '--name-only', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
     { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.fail(`production bytes moved beyond the reviewed b1026 render release: ${String(names.stdout || unchangedProduction.stderr || '').trim()}`);
+  assert.fail(`production bytes moved beyond the reviewed b1043 signup hotfix: ${String(names.stdout || unchangedProduction.stderr || '').trim()}`);
 }
 const unchangedExtension = spawnSync('git', ['diff', '--quiet', EXTENSION_BASE_COMMIT, '--', ...PROTECTED_EXTENSION],
   { cwd: root, encoding: 'utf8', windowsHide: true });
 if (unchangedExtension.status !== 0) {
   const names = spawnSync('git', ['diff', '--name-only', EXTENSION_BASE_COMMIT, '--', ...PROTECTED_EXTENSION],
     { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.fail(`authorized production b1026 changed frozen extension bytes: ${String(names.stdout || unchangedExtension.stderr || '').trim()}`);
+  assert.fail(`authorized production b1043 changed frozen extension bytes: ${String(names.stdout || unchangedExtension.stderr || '').trim()}`);
 }
 
 /* Publication config is shared infrastructure, so this 1p train authorizes
