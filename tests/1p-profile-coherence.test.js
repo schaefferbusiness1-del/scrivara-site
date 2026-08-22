@@ -32,8 +32,8 @@
  *      "Show all", and there is exactly ONE "No visits yet" on an empty chart
  *      (there were two).
  *
- *   5. LANE NEUTRALITY. Not one byte of the block reaches production
- *      ScribeFlow.html / mls-connect.js / cloned.
+ *   5. PROMOTION PARITY. The official shell and bundle carry the same
+ *      resolver/evidence contract now that production is derived from /1p.
  *
  * PART 1 is static (both twins + 1p-mls-connect.js, no browser).
  * PART 2 drives the real shell in real Chrome — no login, no network, no PHI,
@@ -64,6 +64,17 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
 
 const OPEN = '<!-- ===== pvr-1.0.0';
 const CLOSE = '<!-- ===== end pvr-1.0.0';
+
+/* The production derive deliberately rewrites lane identity everywhere,
+   including path names quoted in a block's explanatory comments. Compare the
+   promoted block to the forward-derived form instead of calling those
+   documented substitutions drift. */
+function asProductionIdentity(src) {
+  return String(src)
+    .split('__MLS_P1_PREVIEW').join('__MLS_MAIN')
+    .split('1p-feat_').join('feat_')
+    .split('1p-mls-connect.js').join('mls-connect.js');
+}
 
 for (const name of SHELLS) {
   const src = read(name);
@@ -130,16 +141,25 @@ for (const name of SHELLS) {
   eq(canon(read('1p/index.html')), read('1pScribeFlow.html'), 'the two /1p shells are no longer twins');
 }
 
-/* LANE NEUTRALITY — production must not have moved by one byte. (/cloned is
-   DERIVED from /1p by scripts/derive-cloned-from-1p.js since 2026-08-17, so it
-   carries this block by design; tests/cloned-lane-contract pins that.) */
-for (const name of ['ScribeFlow.html', 'mls-connect.js']) {
-  const p = path.join(root, name);
-  if (!fs.existsSync(p)) continue;
-  const src = fs.readFileSync(p, 'utf8');
-  eq(src.indexOf('pvr-1.0.0'), -1, `${name}: this lane's block leaked out of /1p`);
-  eq(src.indexOf('__mlsPtVisits'), -1, `${name}: this lane's resolver leaked out of /1p`);
-  eq(src.indexOf('_athenaSurfaceNote'), -1, `${name}: this lane's evidence writer leaked out of /1p`);
+/* PROMOTION PARITY — /cloned and production are both derived from /1p. The
+   resolver block itself is lane-neutral, so the official shell must carry the
+   exact bytes; the official bundle must consume the same public APIs. */
+{
+  const previewShell = read('1pScribeFlow.html');
+  const productionShell = read('ScribeFlow.html');
+  const productionConnect = read('mls-connect.js');
+  eq(productionShell.split(OPEN).length - 1, 1,
+    'ScribeFlow.html: the promoted pvr-1.0.0 block is missing or duplicated');
+  eq(productionShell.split(CLOSE).length - 1, 1,
+    'ScribeFlow.html: the promoted pvr-1.0.0 close marker is missing or duplicated');
+  const take = (src) => src.slice(src.indexOf(OPEN), src.indexOf(CLOSE));
+  eq(take(productionShell), asProductionIdentity(take(previewShell)),
+    'ScribeFlow.html: pvr-1.0.0 drifted from the 1p source it is derived from');
+  ok(productionShell.indexOf('_athenaSurfaceNote') > 0,
+    'ScribeFlow.html: the promoted source-evidence writer is missing');
+  ok(productionConnect.indexOf('window.__mlsPtVisits.resolve') > 0 &&
+    productionConnect.indexOf('window.__mlsChartField') > 0,
+    'mls-connect.js: the official profile strip no longer consumes the promoted resolvers');
 }
 
 /* THE STRIP asks the resolvers rather than printing a dash. */
