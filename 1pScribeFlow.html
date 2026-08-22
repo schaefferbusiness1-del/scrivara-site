@@ -8976,6 +8976,50 @@ function docPrefsBlock(){
     arr.map(p=>'- '+p).join('\n');
 }
 
+/* Hosted main-note generation keeps the backend-owned clinical/safety prompt.
+   Send only structured, PHI-free practice preferences; never send the browser's
+   arbitrary system prompt to /api/generate. The backend re-validates every cap. */
+function hostedNotePreferences(){
+  const out={noteStyle:'balanced',followUp:'',providerPreferences:[],billingCodes:[]};
+  try{
+    const style=(typeof getMlsNoteStyle==='function')?String(getMlsNoteStyle()||''):'balanced';
+    out.noteStyle=(style==='concise'||style==='detailed')?style:'balanced';
+  }catch(e){}
+  try{
+    out.followUp=((typeof getQolFollowup==='function')?String(getQolFollowup()||''):'').trim().slice(0,160);
+  }catch(e){}
+  try{
+    const prefs=(typeof getDocPrefs==='function')?getDocPrefs():[];
+    let used=0;
+    for(let i=0;Array.isArray(prefs)&&i<prefs.length&&out.providerPreferences.length<20;i++){
+      const value=String(prefs[i]||'').trim().slice(0,300);
+      if(!value) continue;
+      if(used+value.length>3000) break;
+      used+=value.length;
+      out.providerPreferences.push(value);
+    }
+  }catch(e){}
+  try{
+    const api=window.__mlsCodeTable;
+    const loaded=api&&typeof api.load==='function'?api.load():null;
+    const entries=loaded&&Array.isArray(loaded.entries)?loaded.entries:[];
+    let used=0;
+    for(let i=0;i<entries.length&&out.billingCodes.length<100;i++){
+      const row=entries[i]||{};
+      const desc=String(row.desc||'').trim().slice(0,180);
+      const code=String(row.code||'').trim().slice(0,40);
+      const rawKind=String(row.kind||'').trim().toLowerCase();
+      const kind=(rawKind==='icd10'||rawKind==='cpt')?rawKind:'';
+      if(!desc||!code) continue;
+      const cost=desc.length+code.length+kind.length;
+      if(used+cost>6000) break;
+      used+=cost;
+      out.billingCodes.push({desc:desc,code:code,kind:kind});
+    }
+  }catch(e){}
+  return out;
+}
+
 /* =========================================================
    QoL SETTINGS (MLS) — appearance, signature, follow-up, logout
    All persisted per-device via uns(): qolTheme, qolTextSize, qolCompact,
@@ -26866,7 +26910,7 @@ async function aiCallRaw(sys,user,key,opts){
     const res=await fetch(bkBase()+'/api/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():'')}),
+      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():''), notePreferences:hostedNotePreferences()}),
       signal:opts.signal
     });
     if(res.status===401){ handle401(); const e=new Error('401 unauthorized'); throw e; }

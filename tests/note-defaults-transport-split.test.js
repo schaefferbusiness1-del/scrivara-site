@@ -1,35 +1,22 @@
 /* note-defaults-transport-split
  *
- * WHERE THE NOTE DEFAULTS CAN AND CANNOT REACH, AND WHY.
+ * Hosted main-note generation deliberately keeps the backend-owned clinical
+ * and safety prompt. The browser must never be able to replace it with an
+ * arbitrary system prompt. It now carries the Settings values through a small,
+ * structured notePreferences object instead:
  *
- * aiCallRaw has two hosted transports and they are not equivalent:
+ *   opts.freeform -> POST /api/complete  {system,user,legal,maxTokens}
+ *   main note     -> POST /api/generate  {transcript,model,notePreferences}
  *
- *   opts.freeform -> POST /api/complete  body {system, user, legal, maxTokens}
- *                    the client's system prompt IS transmitted.
- *   otherwise     -> POST /api/generate  body {transcript, model}
- *                    there is NO system field. The client builds a system
- *                    prompt at ScribeFlow.html (STANDARDS + the practice code
- *                    table + provider preferences) and then THROWS IT AWAY;
- *                    the server composes its own from a fixed SYSTEM_PROMPT
- *                    plus the clinician's specialty.
- *
- * Consequence, measured live on b964 against the real endpoint: for any hosted
- * account -- which is every account, since backendMode() is true whenever
- * BACKEND_URL is set -- the practice billing code table and the Note style
- * preference have NEVER reached MAIN VISIT-NOTE generation. They reach it only
- * for a bring-your-own-API-key device, where aiCallRaw posts messages[] to
- * OpenAI directly. That is not something the client can fix: /api/generate
- * accepts no system input, so closing it needs the endpoint to take (and use)
- * the block. Backend lane, manual deploy.
- *
- * This test does NOT assert the bug is fixed. It pins the transport contract so
- * that (a) nobody credits main-note generation with coverage it does not have,
- * and (b) the day /api/generate starts carrying the block, this fails and tells
- * whoever changed it to update the Settings claim text with it.
+ * The backend independently allowlists and caps the structured object before
+ * appending it beneath its own safety instructions. This test proves the
+ * browser half, including executable client caps, and pins that raw `sys` is
+ * still absent from /api/generate.
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 const sf = fs.readFileSync(path.join(ROOT, 'ScribeFlow.html'), 'utf8').replace(/\r/g, '');
@@ -37,47 +24,67 @@ const sf = fs.readFileSync(path.join(ROOT, 'ScribeFlow.html'), 'utf8').replace(/
 let failures = 0;
 const fail = m => { console.error('FAIL: ' + m); failures++; };
 
-/* ---- 1. the two transports still exist and still differ ---- */
+/* ---- 1. the two hosted transports stay intentionally different ---- */
 const i = sf.indexOf('async function aiCallRaw(sys,user,key,opts){');
 if (i < 0) { console.error('FAIL: aiCallRaw not found'); process.exit(1); }
-const body = sf.slice(i, i + 4000);
+const body = sf.slice(i, i + 5000);
 
 const complete = body.indexOf("'/api/complete'");
 const generate = body.indexOf("'/api/generate'");
 if (complete < 0) fail('the /api/complete transport is gone');
 if (generate < 0) fail('the /api/generate transport is gone');
 
-const completeBody = body.slice(complete, complete + 400);
-const generateBody = body.slice(generate, generate + 400);
-
+const completeBody = body.slice(complete, complete + 500);
+const generateBody = body.slice(generate, generate + 600);
 if (!/body:JSON\.stringify\(\{system:sys,user:user/.test(completeBody)) {
-  fail('/api/complete no longer sends the client system prompt - every Note-defaults path that works today runs through it');
+  fail('/api/complete no longer sends the client system prompt');
 }
-if (/system\s*:/.test(generateBody.split('signal')[0])) {
-  fail('/api/generate NOW SENDS A SYSTEM PROMPT. That is good news and this test is the tripwire: ' +
-       'main visit-note generation can finally carry the practice code table and the Note style. ' +
-       'Update feat_mls_note_defaults_reach to cover it, and only then is the Settings claim ' +
-       '"used everywhere MLS drafts or fills codes (notes, ...)" true for hosted accounts.');
+if (!/body:JSON\.stringify\(\{transcript:user, model:[\s\S]*notePreferences:hostedNotePreferences\(\)\}\)/.test(generateBody)) {
+  fail('/api/generate does not send the structured notePreferences object');
 }
-if (!/body:JSON\.stringify\(\{transcript:user/.test(generateBody)) {
-  fail('/api/generate body shape changed - re-measure what main note generation actually transmits');
+if (/\bsystem\s*:|\bsys\b/.test(generateBody.split('signal')[0].replace('hostedNotePreferences', ''))) {
+  fail('/api/generate sends an arbitrary browser system prompt instead of only structured preferences');
 }
 
-/* ---- 2. the note-generation call really is the non-freeform one ---- */
+/* ---- 2. main note generation really uses this structured lane ---- */
 const gen = sf.indexOf('let content=await aiCallRaw(sys,user,key);');
-if (gen < 0) fail('callOpenAI no longer calls aiCallRaw(sys,user,key) with no opts - re-check which transport main note generation takes');
-
-/* ---- 3. and the discarded prompt really does contain the settings ---- */
+if (gen < 0) fail('main note generation no longer uses the non-freeform /api/generate lane');
 const sysStart = sf.lastIndexOf('const sys=', gen);
-const discarded = sf.slice(sysStart, gen);
-if (discarded.indexOf('__mlsCodeTable') < 0) fail('the main-note system prompt no longer builds in the practice code table');
-if (discarded.indexOf('docPrefsBlock') < 0) fail('the main-note system prompt no longer builds in the provider preferences');
+const mainPrompt = sf.slice(sysStart, gen);
+if (mainPrompt.indexOf('__mlsCodeTable') < 0) fail('the main-note prompt no longer builds in the practice code table for direct-key mode');
+if (mainPrompt.indexOf('docPrefsBlock') < 0) fail('the main-note prompt no longer builds in provider preferences for direct-key mode');
 
-console.log('PASS note-defaults transport split:');
-console.log('  /api/complete  sends {system,user} -> every op-note, letter, AVS, report and');
-console.log('                 prior-auth path carries the practice codes and the Note style.');
-console.log('  /api/generate  sends {transcript,model} only -> MAIN VISIT-NOTE generation on a');
-console.log('                 hosted account carries NEITHER, and cannot until the endpoint');
-console.log('                 accepts them. The client builds the block and drops it. OPEN,');
-console.log('                 backend lane. Do not credit this path with coverage.');
+/* ---- 3. execute the shipped structured collector and prove its caps ---- */
+const prefStart = sf.indexOf('function hostedNotePreferences(){');
+const prefEnd = sf.indexOf('\n\n/* =========================================================', prefStart);
+if (prefStart < 0 || prefEnd < 0) {
+  fail('could not isolate hostedNotePreferences');
+} else {
+  const providerInputs = Array.from({length: 40}, (_, n) => n === 0 ? '  Keep plans focused.  ' : 'p'.repeat(300));
+  const codeInputs = Array.from({length: 140}, (_, n) => ({
+    desc: 'Description ' + n + ' ' + 'd'.repeat(210),
+    code: 'CODE-' + n + 'x'.repeat(50),
+    kind: n % 3 === 0 ? 'ICD10' : (n % 3 === 1 ? 'cpt' : 'not-allowed'),
+    ignored: 'must not travel',
+  }));
+  const sandbox = {
+    window: { __mlsCodeTable: { load: () => ({ entries: codeInputs }) } },
+    getMlsNoteStyle: () => 'detailed',
+    getQolFollowup: () => '  four weeks  ' + 'f'.repeat(300),
+    getDocPrefs: () => providerInputs,
+    result: null,
+  };
+  try {
+    vm.runInNewContext(sf.slice(prefStart, prefEnd) + '\nresult=hostedNotePreferences();', sandbox);
+    const p = sandbox.result;
+    if (!p || p.noteStyle !== 'detailed') fail('note style did not reach the structured object');
+    if (!p || p.followUp.length > 160 || !/^four weeks/.test(p.followUp)) fail('follow-up was not trimmed/capped');
+    if (!p || p.providerPreferences.length > 20 || p.providerPreferences.reduce((n, v) => n + v.length, 0) > 3000) fail('provider preference caps failed');
+    if (!p || p.billingCodes.length > 100 || p.billingCodes.reduce((n, v) => n + v.desc.length + v.code.length + v.kind.length, 0) > 6000) fail('billing-code caps failed');
+    if (p && p.billingCodes.some(v => !['', 'icd10', 'cpt'].includes(v.kind) || 'ignored' in v)) fail('billing-code allowlisted shape failed');
+    if (p && Object.prototype.hasOwnProperty.call(p, 'system')) fail('arbitrary system field leaked into the structured object');
+  } catch (e) { fail('hostedNotePreferences did not execute: ' + e.message); }
+}
+
 if (failures) { console.error('\n' + failures + ' failure(s)'); process.exit(1); }
+console.log('PASS note-defaults hosted transport: main visit notes carry bounded style, follow-up, provider preferences, and practice codes while /api/generate still receives no arbitrary browser system prompt');
