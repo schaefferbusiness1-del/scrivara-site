@@ -43,6 +43,14 @@ assert(/if \(v === 'analysis'\)/.test(hook), 'the redirect no longer recognises 
 assert(/orig\.call\(this, 'studio'\)/.test(hook), 'the Analysis route no longer lands on AI Studio');
 assert(/select\('practice'/.test(hook), 'the Analysis route lands on AI Studio but not on the Practice section');
 assert(/W\.showView\.__mlsSmOrig = orig/.test(merge), 'the original showView is not kept, so revert() cannot restore it');
+assert(/function repairLostAnalysisRoute\(event\)/.test(merge),
+  'a later showView wrapper can displace the redirect and leave Analysis blank; the canonical-event repair is gone');
+assert(/W\.addEventListener\('mls:view-changed', repairLostAnalysisRoute, false\)/.test(merge),
+  'the lost-wrapper repair is not listening to the shell\'s canonical view event');
+assert(/W\.showView\('studio'\)[\s\S]{0,120}select\('practice', true\)/.test(merge),
+  'the lost-wrapper repair no longer returns the displaced Analysis route to AI Studio / Practice');
+assert(/W\.removeEventListener\('mls:view-changed', repairLostAnalysisRoute, false\)/.test(merge),
+  'revert() leaves the lost-wrapper repair listener alive');
 
 /* ---- 2. every caller still uses the string the redirect handles ------------ */
 /* This is deliberately a REMINDER, not a ban: if someone rewrites a caller to

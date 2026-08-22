@@ -4194,7 +4194,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <label style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer"><input id="adminCreateClinicalApproved" type="checkbox" style="width:18px;height:18px;margin-top:1px"><span style="font-size:13.5px;line-height:1.45"><b>I approve this account for the clinical workspace.</b><br><span class="sub">This records the current workspace release grant. Plan limits still apply.</span></span></label>
       <div class="row" style="align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn-green" id="adminCreateBtn" onclick="adminProvisionAccount(this)">Create account &amp; make ready</button><span id="adminCreateStatus" class="sub" role="status" aria-live="polite"></span></div>
       <div class="mini" style="margin-top:8px;color:var(--muted)">Attorney portal accounts are intentionally unavailable here while the legal-request workspace remains unreleased.</div>
-      <div id="adminCreateResult" style="display:none;margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--soft,#f8fbf9)">
+      <div id="adminCreateResult" style="display:none;margin-top:12px;border:1px solid var(--line);border-radius:var(--r-ctl,10px);padding:12px;background:var(--soft,#f8fbf9)">
         <div id="adminCreateResultTitle" style="font-weight:700"></div><div id="adminCreateResultDetail" class="sub" style="margin-top:3px"></div>
         <div id="adminCreateInviteRow" style="display:none;margin-top:10px"><label for="adminCreateInviteUrl" style="font-size:12.5px;font-weight:600">Private one-time invite</label><div class="row tight" style="gap:7px;margin-top:4px"><input id="adminCreateInviteUrl" readonly aria-label="Private one-time invite URL" style="flex:1"><button class="btn-ghost" onclick="adminCopyCreatedInvite(this)">Copy invite</button><button class="btn-ghost" onclick="adminClearCreatedInvite()">Clear</button></div></div>
       </div>
@@ -24659,9 +24659,9 @@ async function pullPatientChartViaAssist(btn, opts){
         sx.style.display='block'; sx.style.color='#6f5a20';
         sx.innerHTML='This record has no DOB or MRN, so no chart can be safely matched. Enter them from the athena chart banner: '+
           '<span style="display:inline-flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center">'+
-          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
-          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
-          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
+          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:var(--r-ctl,10px);font-size:12px">'+
+          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:var(--r-ctl,10px);font-size:12px">'+
+          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:var(--r-ctl,10px);background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
         var goB=document.getElementById('idaskGo');
         if(goB) goB.onclick=function(){
           try{
@@ -38442,7 +38442,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260820-r6';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1046';
+  window.__MLS_AV='b1047';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -39605,7 +39605,7 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
   color:var(--muted); padding:4px 8px 6px;
 }
 #mslChipMenu .mslChipItem{
-  text-align:left; min-height:36px; padding:8px 10px; border:0; border-radius:10px;
+  text-align:left; min-height:36px; padding:8px 10px; border:0; border-radius:var(--r-ctl,10px);
   font:600 12.5px/1.25 var(--sans); color:var(--ink); background:transparent; cursor:pointer;
 }
 #mslChipMenu .mslChipItem:hover{ background:var(--soft); }
@@ -44716,7 +44716,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   position:fixed; z-index:9405; display:none;
   width:44px; height:44px; min-width:44px; min-height:44px;
   align-items:center; justify-content:center;
-  border:1px solid var(--line,rgba(32,64,52,.28)); border-radius:16px;
+  border:1px solid var(--line,rgba(32,64,52,.28)); border-radius:var(--r-card,16px);
   background:var(--card,#f7faf8); color:var(--ink,#204034);
   box-shadow:var(--shadow,0 6px 20px rgba(22,48,38,.18));
   font:700 17px/1 var(--sans,system-ui,sans-serif); cursor:pointer;
@@ -44737,7 +44737,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   color:var(--muted); padding:4px 8px 6px;
 }
 #mlsDockNubMenu .mlsDockItem{
-  text-align:left; min-height:40px; padding:9px 10px; border:0; border-radius:10px;
+  text-align:left; min-height:40px; padding:9px 10px; border:0; border-radius:var(--r-ctl,10px);
   font:600 12.5px/1.25 var(--sans); color:var(--ink); background:transparent; cursor:pointer;
 }
 #mlsDockNubMenu .mlsDockItem:hover{ background:var(--soft); }
@@ -49173,7 +49173,7 @@ html body .toast[data-mls-quiet="action"]{
   max-width:min(360px, calc(100vw - var(--mls-dock-clear-left, 0px) - 32px)) !important;
   font-size:13px !important;
   padding:10px 14px !important;
-  border-radius:10px !important;
+  border-radius:var(--r-ctl,10px) !important;
 }
 html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 
@@ -49208,7 +49208,7 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 #mlsTrayList[hidden]{ display:none; }
 #mlsTrayList .tl{
   display:flex; gap:8px; align-items:baseline;
-  color:var(--ink, #1A211C); padding:3px 4px; border-radius:10px;
+  color:var(--ink, #1A211C); padding:3px 4px; border-radius:var(--r-ctl,10px);
 }
 #mlsTrayList .tl .tt{ color:var(--muted, #79837C); font-variant-numeric:tabular-nums; flex:0 0 auto; font-size:11px; }
 #mlsTrayList .tl.err{ color:#8a2c24; }
@@ -50220,7 +50220,7 @@ function __mlsJunkScrubRepull(day) {
      _stripPageDebris / _normalizeClinicalText rather than a copy of them. -->
 <style id="mlsPvrCss">
 /* The strip: seven facts as chips, one line each, never a wall. */
-#pf2Quick .qb.pvr-chip{border:1px solid var(--line,#dfe6e1);border-radius:10px;padding:9px 12px;background:var(--card,#fff);min-width:0}
+#pf2Quick .qb.pvr-chip{border:1px solid var(--line,#dfe6e1);border-radius:var(--r-ctl,10px);padding:9px 12px;background:var(--card,#fff);min-width:0}
 #pf2Quick .qb.pvr-chip .qk{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;opacity:.62;font-weight:700}
 #pf2Quick .qb.pvr-chip .qv{font-size:13.5px;line-height:1.35;margin-top:3px;white-space:pre-line;overflow-wrap:anywhere}
 #pf2Quick .qb.pvr-chip.is-quiet .qv{opacity:.72;font-style:italic}
@@ -53415,7 +53415,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 #mlsHxSection .hx-lead{margin:0 0 8px;font-size:12.5px;color:var(--muted,#5c6b60)}
 #mlsHxSection .hx-group{margin:0 0 10px}
 #mlsHxSection .hx-gh{font-size:11.5px;letter-spacing:.6px;text-transform:uppercase;font-weight:800;color:var(--muted,#5c6b60);margin:10px 0 6px}
-#mlsHxSection .hx-card{border:1px solid var(--line,#dfe6e1);border-radius:10px;background:var(--card,#fff);margin:0 0 8px;overflow:hidden;min-width:0}
+#mlsHxSection .hx-card{border:1px solid var(--line,#dfe6e1);border-radius:var(--r-ctl,10px);background:var(--card,#fff);margin:0 0 8px;overflow:hidden;min-width:0}
 #mlsHxSection .hx-card[hidden]{display:none!important}
 #mlsHxSection .hx-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;min-height:44px;
   padding:10px 12px;border:0;background:transparent;text-align:left;cursor:pointer;font:inherit;color:inherit}
@@ -53446,7 +53446,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 #mlsHxSection .hx-all{min-height:40px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
   background:transparent;color:var(--ink,#1A211C);border-radius:999px;padding:9px 15px;cursor:pointer;margin:2px 0 4px}
 #mlsHxSection .hx-all:hover{background:var(--soft,#EAF1EC)}
-#mlsHxSection .hx-empty{border:1px dashed var(--line,#dfe6e1);border-radius:10px;padding:14px 14px;
+#mlsHxSection .hx-empty{border:1px dashed var(--line,#dfe6e1);border-radius:var(--r-ctl,10px);padding:14px 14px;
   font-size:13px;line-height:1.5;color:var(--ink,#1A211C);background:var(--card,#fff)}
 #mlsHxSection .hx-say{font-size:12px;color:var(--muted,#5c6b60);margin:4px 0 0;min-height:16px}
 @media(max-width:520px){
@@ -55061,7 +55061,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     font-weight:600 !important;
     border:1px solid var(--line,#E4E1D8) !important;
     border-left:3px solid #2E6A4B !important;
-    border-radius:10px !important;
+    border-radius:var(--r-ctl,10px) !important;
   }
   #mlsFpDayFallback > div[style*="linear-gradient"] > span{ opacity:1 !important; }
   #mlsFpDayFallback > div[style*="linear-gradient"] > span:first-child{ color:#52675c !important; font-weight:700 !important; }
@@ -56031,7 +56031,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     b.type = 'button'; b.id = DOOR_ID;
     b.textContent = 'Switch to ' + idn.name + ' here and pull their chart';
     b.title = 'Selects (or adds) ' + idn.name + ' in MLS from the identity athenaOne reported, re-verifies it, then re-runs this same read-only pull. A conflicting record refuses instead.';
-    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer';
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:var(--r-ctl,10px);background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer';
     b.addEventListener('click', function () { press(); }, false);
     wrap.appendChild(b);
     el.appendChild(document.createElement('br'));
@@ -56155,7 +56155,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
       stop.type = 'button'; stop.id = STOP_ID;
       stop.textContent = 'Stop waiting on this read';
       stop.setAttribute('data-tip', 'Lets go of this read: MLS stops narrating it and will ignore its answer. It cannot cancel athenaOne’s own read, which may still finish in the background. Nothing is written to Athena either way.');
-      stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer';
+      stop.style.cssText = 'min-height:40px;margin-left:8px;padding:7px 12px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:var(--r-ctl,10px);font-weight:700;font-size:12px;cursor:pointer';
       stop.addEventListener('click', function () { stopWaiting(); }, false);
       el.appendChild(stop);
       el.__pullseeStop = stop;
@@ -56463,9 +56463,9 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
   #mlsPullDoorOpen{background:none;border:0;padding:4px 2px;color:#2f6a4f;font-size:13px;cursor:pointer;text-decoration:underline;min-height:40px}
   #mlsPullDoorForm{display:none;gap:7px;flex-wrap:wrap;align-items:center;margin-top:4px}
   #mlsPullDoorForm.pd-open{display:inline-flex}
-  #mlsPullDoorForm input{padding:8px 10px;border:1px solid var(--line,#c9d6d0);border-radius:10px;font-size:13px;min-height:40px;box-sizing:border-box}
+  #mlsPullDoorForm input{padding:8px 10px;border:1px solid var(--line,#c9d6d0);border-radius:var(--r-ctl,10px);font-size:13px;min-height:40px;box-sizing:border-box}
   #pdName{width:200px} #pdDob{width:150px}
-  #pdGo{padding:8px 14px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:13px;cursor:pointer;min-height:40px}
+  #pdGo{padding:8px 14px;border:0;border-radius:var(--r-ctl,10px);background:#205c43;color:#fff;font-weight:700;font-size:13px;cursor:pointer;min-height:40px}
   #pdGo[disabled]{opacity:.65;cursor:default}
   #pdSay{display:none;margin-top:5px;font-size:12.5px;color:#52675c}
 </style>
@@ -56798,7 +56798,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     b.textContent = 'Copy all ' + v.records.length + ' encounter' + (v.records.length === 1 ? '' : 's') + ' — full notes';
     b.title = 'Puts every encounter on this chart on the clipboard with its FULL note text, not the one-line summaries. ' +
       'Any encounter with no stored note text is counted and named in the copy, never silently dropped.';
-    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:10px;background:#205c43;color:#fff;' +
+    b.style.cssText = 'min-height:40px;padding:8px 13px;border:0;border-radius:var(--r-ctl,10px);background:#205c43;color:#fff;' +
       'font-weight:700;font-size:12px;cursor:pointer';
     b.addEventListener('click', function () { safe(press); }, false);
     var s = document.createElement('span');

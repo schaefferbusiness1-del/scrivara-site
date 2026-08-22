@@ -1300,6 +1300,35 @@ async function runtime() {
 
     await page.evaluate(() => { const m = document.getElementById('opPrepModal'); if (m) m.classList.remove('show'); });
 
+    /* A later additive wrapper can displace studio-merge's showView wrapper.
+       Drive the exact canonical event the shell emits in that state: the
+       module must synchronously repair the otherwise blank Analysis route to
+       the visible Studio / Practice surface. This makes the historical timing
+       race deterministic instead of waiting for load order to reproduce it.
+       studio-merge itself is an idle-loaded asset, so first wait for the owner
+       under test; otherwise a busy parallel gate can dispatch this event before
+       the listener exists and accidentally test the loader rather than the
+       route repair. */
+    await page.waitForFunction(() => !!window.__mlsStudioMerge, null, { timeout: 60000 });
+    const routeRepair = await page.evaluate(async () => {
+      window.dispatchEvent(new CustomEvent('mls:view-changed', {
+        detail: { previousView: 'visit', view: 'analysis' }
+      }));
+      await new Promise((r) => setTimeout(r, 120));
+      const studio = document.getElementById('studioView');
+      const analysis = document.getElementById('analysisView');
+      return {
+        current: window.__mlsCurrentView || '',
+        studioVisible: !!(studio && window.__uiContract.visible(studio)),
+        practice: document.body.classList.contains('mls-sm-practice'),
+        hoisted: !!(studio && analysis && analysis.parentElement === studio)
+      };
+    });
+    eq(routeRepair.current, 'studio', 'a displaced Analysis route was not repaired to Studio');
+    ok(routeRepair.studioVisible, 'the repaired Analysis route still leaves the merged Studio surface blank');
+    ok(routeRepair.practice && routeRepair.hoisted,
+      'the repaired Analysis route did not land on the hoisted Practice section');
+
     /* -- 1: exactly one VISIBLE ring per screen in guided, none otherwise -- */
     for (const mode of ['guided', 'calm', 'full']) {
       await page.evaluate((m) => window.__mlsSimpleLayer.set(m), mode);

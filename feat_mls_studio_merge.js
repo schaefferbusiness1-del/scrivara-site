@@ -469,6 +469,30 @@
       .forEach(function (fn) { safe(function () { if (typeof W[fn] === 'function') W[fn](); }); });
   }
 
+  /* A later additive module can replace window.showView after our wrapper is
+     installed. The old boolean then still says the hook is present, while an
+     Analysis route reaches the shell unchanged: the shell hides Studio,
+     #analysisView is already hoisted inside it, and the doctor sees a blank
+     page. The canonical view event is emitted synchronously by the shell, so
+     repair that one impossible post-merge state before the original call
+     returns. Calling the ordinary Studio route preserves every outer wrapper;
+     the guard makes the nested view event non-recursive. */
+  var _repairingAnalysisRoute = false;
+  function repairLostAnalysisRoute(event) {
+    var view = safe(function () { return event && event.detail && event.detail.view; }, '') ||
+      safe(function () { return W.__mlsCurrentView; }, '');
+    if (view !== 'analysis' || _repairingAnalysisRoute || classic()) return;
+    _repairingAnalysisRoute = true;
+    try {
+      if (typeof W.showView !== 'function') return;
+      W.showView('studio');
+      schedule();
+      select('practice', true);
+    } finally {
+      _repairingAnalysisRoute = false;
+    }
+  }
+
   /* ---------------------------------------------------------- showView hook */
 
   function hookShowView() {
@@ -578,6 +602,7 @@
   function teardown() {
     observers.forEach(function (o) { safe(function () { o.disconnect(); }); });
     observers = [];
+    safe(function () { W.removeEventListener('mls:view-changed', repairLostAnalysisRoute, false); });
     safe(function () { D.body.classList.remove(BODY_CLASS); });
     KEYS.forEach(function (k) { safe(function () { D.body.classList.remove(BODY_CLASS + '-' + k); }); });
     safe(function () { D.body.classList.remove(BODY_CLASS + '-all'); });
@@ -595,6 +620,7 @@
 
   function start() {
     if (classic()) return;
+    safe(function () { W.addEventListener('mls:view-changed', repairLostAnalysisRoute, false); });
     hookShowView();
     reconcile();
     watch();

@@ -13536,9 +13536,9 @@ async function pullPatientChartViaAssist(btn, opts){
         sx.style.display='block'; sx.style.color='#6f5a20';
         sx.innerHTML='This record has no DOB or MRN, so no chart can be safely matched. Enter them from the athena chart banner: '+
           '<span style="display:inline-flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center">'+
-          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
-          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:10px;font-size:12px">'+
-          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:10px;background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
+          '<input id="idaskDob" placeholder="DOB mm/dd/yyyy" style="width:130px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:var(--r-ctl,10px);font-size:12px">'+
+          '<input id="idaskMrn" placeholder="MRN (optional)" style="width:110px;padding:5px 8px;border:1px solid var(--line,#ccc);border-radius:var(--r-ctl,10px);font-size:12px">'+
+          '<button type="button" id="idaskGo" style="padding:6px 11px;border:0;border-radius:var(--r-ctl,10px);background:#205c43;color:#fff;font-weight:700;font-size:12px;cursor:pointer">Save &amp; pull</button></span>';
         var goB=document.getElementById('idaskGo');
         if(goB) goB.onclick=function(){
           try{
@@ -24224,6 +24224,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1046';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1047';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
