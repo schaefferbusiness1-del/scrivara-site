@@ -16,12 +16,14 @@
  * result is causal and not a happy sample.
  *
  * WHY THE FIX IS A SHELL OVERLAY. The three ✓ come from ONE line in
- * feat_mls_progress_stages.js — SHARED production bytes this lane must not
- * touch:
+ * feat_mls_progress_stages.js — shared bytes that remain the underlying stage
+ * painter:
  *     var doneAll = !ACTIVE_STATUS[j.status] && (j.status === 'completed');
  * A completed job paints every stage done regardless of what it counted. §1 of
- * PART 1 pins that line: if production ever fixes it, this suite fails and the
- * overlay should be retired rather than left to rot.
+ * PART 1 pins that line: if the underlying painter ever fixes it, this suite
+ * fails and the overlay should be retired rather than left to rot. The overlay
+ * and backfill receipts have since graduated through the 1p -> production
+ * derivation and are required on both routes.
  *
  * WHAT MUST STAY TRUE ON THE OTHER SIDE. A history pull that really read charts
  * keeps every ✓ (PART 2 §2). The overlay only ever acts on a terminal
@@ -80,16 +82,22 @@ for (const shell of SHELLS) {
 eq(blockOf(read(SHELLS[0]), 'pshonest-1.0.0'), blockOf(read(SHELLS[1]), 'pshonest-1.0.0'),
   'the twins carry DIFFERENT pshonest-1.0.0 blocks');
 
-/* §3 the source half lives in the FORK only */
+/* §3 the source half is promoted byte-for-byte (the marker itself is lane
+   neutral), while retaining its count-only/PHI-free contract. */
 {
   const fork = read('1p-feat_mls_b121_pack.js');
-  const shared = read('feat_mls_b121_pack.js');
+  const production = read('feat_mls_b121_pack.js');
   ok(fork.indexOf('/* ===== p1-backfill-progress-1.0.0') > 0,
     'the fork lost the p1-backfill-progress-1.0.0 block');
   ok(fork.indexOf('/* ===== end p1-backfill-progress-1.0.0') > 0,
     'the p1-backfill-progress-1.0.0 block is unclosed in the fork');
-  ok(shared.indexOf('p1-backfill-progress-1.0.0') < 0,
-    'the 1p block leaked into the SHARED production pack');
+  ok(production.indexOf('/* ===== p1-backfill-progress-1.0.0') > 0 &&
+    production.indexOf('/* ===== end p1-backfill-progress-1.0.0') > 0,
+    'the official pack lost the promoted progress block');
+  const take = (src) => src.slice(src.indexOf('/* ===== p1-backfill-progress-1.0.0'),
+    src.indexOf('/* ===== end p1-backfill-progress-1.0.0'));
+  eq(take(production), take(fork),
+    'the official progress block drifted from the promoted 1p source');
   ok(fork.indexOf("key: 'visits:backfill', kind: 'visits_backfill'") > 0,
     'the backfill no longer names its own job in the shared progress store');
   /* PHI: the job carries counts, never a patient name */
