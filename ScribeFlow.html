@@ -32675,8 +32675,8 @@ const BROWSER_AGREEMENT_EVIDENCE=Object.freeze([
   ['mls.sanction-policy-ack','58f009aa5dbce2d97efdb77c4b0ca5f817c9f16f832868b9822d094f80b00d7e'],
   ['mls.authorized-representative-esign','1550b572047d666adf1bab6d2c1bef9089105ae6fa52753c01a6250827f2a6b3']
 ]);
-let _agManifest=null, _agManifestPromise=null, _agManifestEpoch=0;
-function agResetManifestState(){ _agManifestEpoch++; _agManifest=null; _agManifestPromise=null; ACTIVE_MLS_AGREEMENTS=MLS_AGREEMENTS; }
+let _agManifest=null, _agManifestPromise=null, _agManifestEpoch=0, _agSetupPolicyVersion=null;
+function agResetManifestState(){ _agManifestEpoch++; _agManifest=null; _agManifestPromise=null; _agSetupPolicyVersion=null; ACTIVE_MLS_AGREEMENTS=MLS_AGREEMENTS; }
 function agValidateServerManifest(m){
   var docs=m&&m.documents;
   if(!m||m.schemaVersion!==1||!m.manifestId||!m.version||!/^[a-f0-9]{64}$/.test(String(m.manifestSha256||''))||!Array.isArray(docs)||!docs.length||docs.length>MLS_AGREEMENTS.length) throw new Error('The server returned an invalid agreement manifest.');
@@ -32706,8 +32706,11 @@ async function agLoadManifest(){
     try{ d=await r.json(); }catch(e){}
     if(!r.ok) throw new Error((d&&d.error)||'The current agreement set could not be loaded.');
     var validated=agValidateServerManifest(d&&d.manifest);
+    var setupPolicy=Number(d&&d.setupPolicyVersion);
+    if(setupPolicy!==0&&setupPolicy!==2) setupPolicy=Number(bkUser&&bkUser.setupPolicyVersion);
+    if(setupPolicy!==0&&setupPolicy!==2) throw new Error('The server did not identify this account’s agreement setup policy. Retry after signing in again.');
     if(requestEpoch!==_agManifestEpoch) throw new Error('The signed-in account changed while agreements were loading. Retry.');
-    ACTIVE_MLS_AGREEMENTS=validated.agreements; _agManifest=validated.manifest; return validated.manifest;
+    ACTIVE_MLS_AGREEMENTS=validated.agreements; _agSetupPolicyVersion=setupPolicy; _agManifest=validated.manifest; return validated.manifest;
   })().finally(function(){ _agManifestPromise=null; });
   return _agManifestPromise;
 }
@@ -33517,7 +33520,31 @@ function agDeliveryMessage(delivery){
   if(status==='not_configured') return 'The stored receipt is complete; email delivery is not configured.';
   return 'The stored receipt is complete; email delivery has not been attempted.';
 }
-/* Submit exact assent; the server owns the manifest and generated PDF. */
+/* A public self-registration account still uses the server's policy-0 signing
+   route. Build that historical request only after the no-store server manifest
+   has passed the exact browser-evidence check above. Policy-2 accounts continue
+   to send only the strict manifest contract; no browser PDF is authoritative. */
+function agLegacySignRequest(manifest,name,signatureImg){
+  if(_agSetupPolicyVersion!==0||!manifest||manifest.version!==AGREEMENTS_VERSION) return null;
+  return {
+    version:manifest.version,
+    name:name,
+    agreements:manifest.documents.map(function(doc){ return {title:doc.title}; }),
+    signatureImg:signatureImg,
+    requiresCountersign:manifest.documents.some(function(doc){ return doc.requiresCountersignature===true; })
+  };
+}
+function agLegacySigningVerified(manifest){
+  const state=bkUser&&bkUser.agreements;
+  return !!(manifest&&Number(bkUser&&bkUser.setupPolicyVersion)===0&&state&&state.mode==='legacy'&&state.required===true&&state.signerComplete===true&&state.version===manifest.version);
+}
+function agLegacyDeliveryMessage(notification){
+  if(notification&&notification.delivered===true) return 'Email copies were delivered.';
+  if(notification&&notification.configured===true) return 'The signing record is stored; email delivery could not be confirmed.';
+  return 'The signing record is stored; email delivery is not configured.';
+}
+/* Submit exact assent. Policy 2 uses server-owned artifact evidence; policy 0
+   is accepted only after a read-back proves the server recorded this version. */
 async function agSubmitSign(){
   let manifest;
   try{ manifest=await agLoadManifest(); }catch(e){ agGateErr(e&&e.message||'The agreement set could not be loaded.'); return; }
@@ -33535,7 +33562,7 @@ async function agSubmitSign(){
   const orig=btn?btn.textContent:'';
   if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
   try{
-    const body={
+    const body=_agSetupPolicyVersion===0?agLegacySignRequest(manifest,name,signatureImg):{
       schemaVersion:manifest.schemaVersion,
       ceremonyKey:agCeremonyKey(manifest),
       manifestId:manifest.manifestId,
@@ -33546,17 +33573,76 @@ async function agSubmitSign(){
       documents:manifest.documents.map(function(doc){ return {documentId:doc.documentId,sha256:doc.sha256,intent:'accept'}; }),
       signatureImg:signatureImg
     };
-    let res,data;
+    if(!body){ agGateErr('The current agreement version could not be matched to this account. Reload and review the forms again.'); return; }
+    let res,data,legacyResponseRecovered=false;
     try{
       res=await fetch(bkBase()+'/api/agreements/sign',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
         body:JSON.stringify(body)
       });
-    }catch(netErr){ agGateErr('Could not reach the MLS server. Please try again.'); return; }
-    try{ data=await res.json(); }catch(e){ data={}; }
-    if(res.status===401){ handle401(); return; }
-    if(!res.ok){ agGateErr((data&&(data.error||data.message))||('Could not save your signature ('+res.status+').')); return; }
+    }catch(netErr){
+      if(_agSetupPolicyVersion!==0){ agGateErr('Could not reach the MLS server. Please try again.'); return; }
+      const recovered=await agRefreshAccountReadiness();
+      if(!recovered||!agLegacySigningVerified(manifest)){
+        showAgreementsPending(false,'SIGNED_RECORD_VERIFICATION_PENDING');
+        agGateErr('The connection was interrupted, so MLS will check the signing record before another attempt. Do not sign twice.');
+        return;
+      }
+      legacyResponseRecovered=true; data={};
+    }
+    if(!legacyResponseRecovered){
+      try{ data=await res.json(); }catch(e){ data={}; }
+      if(res.status===401){ handle401(); return; }
+      if(!res.ok){
+        const legacyResponseUncertain=_agSetupPolicyVersion===0&&
+          (res.status===408||res.status===425||res.status===429||res.status>=500);
+        if(legacyResponseUncertain){
+          const recovered=await agRefreshAccountReadiness();
+          if(!recovered||!agLegacySigningVerified(manifest)){
+            showAgreementsPending(false,'SIGNED_RECORD_VERIFICATION_PENDING');
+            agGateErr('The server returned an uncertain signing result, so MLS will check the signing record before another attempt. Do not sign twice.');
+            return;
+          }
+          legacyResponseRecovered=true; data={};
+        }else{
+          agGateErr((data&&(data.error||data.message))||('Could not save your signature ('+res.status+').'));
+          return;
+        }
+      }
+    }
+    if(_agSetupPolicyVersion===0){
+      const legacyDelivery=data&&data.compliance_notification;
+      const refreshedLegacy=legacyResponseRecovered||await agRefreshAccountReadiness();
+      if(!refreshedLegacy||!agLegacySigningVerified(manifest)){
+        showAgreementsPending(false,'SIGNED_RECORD_VERIFICATION_PENDING');
+        agGateErr('The server response could not yet be matched to this exact agreement version. Check signing status instead of signing twice.');
+        return;
+      }
+      const legacySurface=agAccountSetupSurface(), legacyMessage=legacyResponseRecovered
+        ? 'The signing record was confirmed after the connection was interrupted. Email delivery status is not available.'
+        : agLegacyDeliveryMessage(legacyDelivery);
+      if(legacySurface==='ceremony'){
+        agGateErr('The server has not yet confirmed this agreement version. Check signing status instead of signing twice.');
+        return;
+      }
+      if(legacySurface==='locked'){ showAgreementsGate(false); return; }
+      if(legacySurface==='pending'){
+        showAgreementsPending(false);
+        toast(legacyMessage,legacyDelivery&&legacyDelivery.delivered===true?'ok':'');
+        return;
+      }
+      hideAgreementsGate();
+      if(sfGateLoadingStarted&&!sfGateLoadingVisible){
+        const app0=document.getElementById('appScreen'); if(app0) app0.style.display='';
+      }else{
+        const em=(bkUser&&bkUser.email)||(session&&session.email)||'';
+        startSession(em);
+      }
+      toast(legacyMessage,legacyDelivery&&legacyDelivery.delivered===true?'ok':'');
+      try{ setTimeout(function(){ maybePromptSetup(); },200); }catch(e){}
+      return;
+    }
     const artifact=data&&data.artifact, delivery=data&&data.delivery, agreement=data&&data.agreement;
     if(!artifact||artifact.status!=='stored'||artifact.stored!==true){ agGateErr('Your signature was not reported as a stored server artifact. Nothing is being called complete; please retry.'); return; }
     if(!agreement||agreement.manifestVersion!==manifest.version){ agGateErr('The server did not return the signed agreement record for this manifest. Please retry.'); return; }
@@ -38129,7 +38215,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260820-r3';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1042';
+  window.__MLS_AV='b1043';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

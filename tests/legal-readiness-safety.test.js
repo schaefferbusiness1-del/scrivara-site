@@ -21,7 +21,9 @@ function between(source, start, end) {
 // restored in production 2026-07-20 as commercial-paperwork-only; the stale
 // staging snapshot still carries the retired state and is pinned as such.)
 for (const [name, source] of [['production', app], ['staging', staging]]) {
-  assert(source.includes('Clinical workspace not enabled'), `${name} lacks the hosted readiness block`);
+  assert(source.includes('<!-- Hosted clinical-readiness gate.'), `${name} lacks the hosted readiness boundary`);
+  assert(source.includes('id="agreementsGate"') && source.includes('id="agGateSummary"') && source.includes('id="agGateErr"'),
+    `${name} lacks the structural, fail-closed readiness surface`);
   assert(source.includes('Clinical workspace access is checked separately'), `${name} does not distinguish sign-in from workspace access`);
   assert(!source.includes('MLS did not receive the immutable'), `${name} makes an unsupported claim about the owner's agreement records`);
   assert(source.includes('id="legalReturnBtn" disabled'), `${name} legal release control is executable`);
@@ -37,6 +39,15 @@ for (const [name, source] of [['production', app], ['staging', staging]]) {
   const legalRelease = between(source, 'async function releaseLegalReport(id)', 'function renderLegalDashboard');
   assert(legalRelease.indexOf('return false;') < legalRelease.indexOf('/unlock'), `${name} legal report override release is reachable`);
 }
+
+// The production wording was deliberately simplified after the original gate
+// shipped. Pin the same safety meaning without requiring the retired heading;
+// staging remains a historical snapshot and therefore retains the old copy.
+assert(app.includes('id="agGateTitleText">Not switched on yet</span>'), 'production readiness heading no longer states that access is off');
+assert(app.includes('Ask your MLS administrator to enable the clinical workspace for this account'),
+  'production readiness gate no longer tells the user who can enable access');
+assert(app.includes('Access remains locked.'), 'production readiness gate no longer states its fail-closed result');
+assert(staging.includes('Clinical workspace not enabled'), 'staging lost its historical hosted-readiness heading');
 
 // Staging snapshot: the ceremony stays retired exactly as shipped.
 assert(staging.includes('const MLS_AGREEMENTS=Object.freeze([]);'), 'staging must not activate embedded browser agreement templates');
@@ -59,10 +70,18 @@ assert(!app.includes('Retired template text.'), 'the BAA flow-down clause must b
   assert(need.includes("classList.contains('mls-public-preview')"), 'the ceremony must never appear in the sample workspace');
   assert(need.includes('bkUser.isLawyer'), 'attorney accounts keep their own portal terms');
   const reveal = between(app, 'if(gated){ try{ showAgreementsGate(true); }catch(e){} }', 'document.documentElement.classList.add');
-  assert(reveal.includes('agCeremonyNeeded()'), 'the ceremony shows only after the clinical gate has PASSED');
+  assert(reveal.includes('const setupSurface=agAccountSetupSurface()') &&
+    reveal.includes("setupSurface==='ceremony'") && reveal.indexOf('else {') < reveal.indexOf("setupSurface==='ceremony'"),
+    'the ceremony is not selected only from the gate-passed branch');
+  const setupSurface = between(app, 'function agAccountSetupSurface()', 'function showAgreementsPending(');
+  assert(setupSurface.includes("readiness.state==='blocked'") && setupSurface.includes('agCeremonyNeeded()'),
+    'the setup-surface router can choose the ceremony without respecting a blocked readiness state');
   const submit = between(app, 'async function agSubmitSign()', '/* ---- Admin:');
-  assert(submit.includes("res.status===410||res.status===404"), 'a server without ceremony endpoints must be reported honestly');
-  assert(submit.includes('nothing was recorded'), 'the transition message must say nothing was recorded');
+  assert(submit.includes("if(!res.ok)") && submit.includes('Could not save your signature (') && submit.includes('res.status'),
+    'a server without a working ceremony endpoint is not reported as a failed signature save');
+  assert(submit.indexOf("if(!res.ok)") < submit.indexOf("artifact.status!=='stored'") &&
+    submit.includes('Nothing is being called complete'),
+    'a failed or unverified signature response can be described as complete');
   assert(!/legal-release|legal_release_grants|\/api\/admin\/legal-release/.test(submit), 'signing must never touch clinical grant endpoints');
 }
 

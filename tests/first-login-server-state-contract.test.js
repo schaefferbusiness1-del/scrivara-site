@@ -10,8 +10,8 @@
  *   - an authenticated setup-only response never destroys the session; and
  *   - practice Enterprise coverage cannot acquire a second access override.
  *
- * The editable source is the 1p lane. /cloned remains a generated artifact and
- * is intentionally not derived or inspected by this focused pre-derive test.
+ * This production-only hotfix is deliberately inspected in ScribeFlow.html.
+ * The separately reviewed /1p and /cloned lanes stay byte-frozen.
  */
 
 const assert = require('assert');
@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const shell = fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8');
+const shell = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
 let assertions = 0;
 function ok(value, message) { assert.ok(value, message); assertions += 1; }
@@ -168,6 +168,71 @@ for (const scopeField of ['manifestId', 'manifestSha256', 'audience', 'practiceU
 const signFlow = fn('agSubmitSign');
 ok(!/bkUser\.agreements_signed_version\s*=/.test(signFlow),
   'sign success locally manufactures legacy agreement completion');
+const manifestFlow = fn('agLoadManifest');
+ok(manifestFlow.includes('setupPolicyVersion') && manifestFlow.includes('_agSetupPolicyVersion=setupPolicy'),
+  'the agreement loader drops the server-owned setup policy before submission');
+const legacyRequest = fn('agLegacySignRequest');
+ok(legacyRequest.includes('_agSetupPolicyVersion!==0') && legacyRequest.includes('version:manifest.version'),
+  'the policy-0 compatibility request is not limited to legacy accounts or does not use the verified manifest version');
+ok(legacyRequest.includes('manifest.documents.map') && legacyRequest.includes('title:doc.title') &&
+   legacyRequest.includes('doc.requiresCountersignature===true'),
+  'the policy-0 compatibility request does not derive titles/countersign truth from the verified server manifest');
+ok(!legacyRequest.includes('receiptPdfBase64') && !legacyRequest.includes('AGREEMENTS_VERSION,'),
+  'the policy-0 compatibility request manufactures a browser PDF or posts a detached version constant');
+const legacyRequestFor = Function('_agSetupPolicyVersion', 'AGREEMENTS_VERSION',
+  legacyRequest + '\nreturn agLegacySignRequest;');
+const legacyManifest = {
+  version: '2026-07-21',
+  documents: [
+    { title: 'One-party form', requiresCountersignature: false },
+    { title: 'Practice BAA', requiresCountersignature: true },
+  ],
+};
+eq(legacyRequestFor(2, legacyManifest.version)(legacyManifest, 'Synthetic Signer', 'data:image/png;base64,AA=='), null,
+  'a policy-2 account can be downgraded to the legacy signing request');
+eq(legacyRequestFor(0, 'stale-version')(legacyManifest, 'Synthetic Signer', 'data:image/png;base64,AA=='), null,
+  'a legacy request can post a manifest that does not match this deployed form set');
+assert.deepStrictEqual(
+  legacyRequestFor(0, legacyManifest.version)(legacyManifest, 'Synthetic Signer', 'data:image/png;base64,AA=='),
+  {
+    version: '2026-07-21',
+    name: 'Synthetic Signer',
+    agreements: [{ title: 'One-party form' }, { title: 'Practice BAA' }],
+    signatureImg: 'data:image/png;base64,AA==',
+    requiresCountersign: true,
+  },
+  'the live policy-0 request does not match the backend compatibility contract'
+);
+const legacyVerified = fn('agLegacySigningVerified');
+for (const proof of ["state.mode==='legacy'", 'state.signerComplete===true', 'state.version===manifest.version', 'setupPolicyVersion)===0']) {
+  ok(legacyVerified.includes(proof), 'legacy signing read-back omits server proof: ' + proof);
+}
+const legacyVerifierFor = Function('bkUser', legacyVerified + '\nreturn agLegacySigningVerified;');
+eq(legacyVerifierFor({ setupPolicyVersion: 0, agreements: {
+  mode: 'legacy', required: true, signerComplete: true, version: legacyManifest.version,
+} })(legacyManifest), true, 'an exact server read-back was not accepted');
+for (const user of [
+  { setupPolicyVersion: 2, agreements: { mode: 'legacy', required: true, signerComplete: true, version: legacyManifest.version } },
+  { setupPolicyVersion: 0, agreements: { mode: 'legacy', required: true, signerComplete: false, version: legacyManifest.version } },
+  { setupPolicyVersion: 0, agreements: { mode: 'legacy', required: true, signerComplete: true, version: 'stale-version' } },
+]) eq(legacyVerifierFor(user)(legacyManifest), false, 'an inexact legacy signing read-back was accepted');
+ok(/_agSetupPolicyVersion===0\?agLegacySignRequest/.test(signFlow),
+  'policy-0 accounts still post the policy-2 manifest body that the backend rejects as version_mismatch');
+ok(/let res,data,legacyResponseRecovered=false/.test(signFlow),
+  'the signing flow does not track a policy-0 response recovered by authoritative read-back');
+ok(/catch\(netErr\)\{[\s\S]{0,1200}_agSetupPolicyVersion!==0[\s\S]{0,500}const recovered=await agRefreshAccountReadiness\(\);[\s\S]{0,500}!agLegacySigningVerified\(manifest\)[\s\S]{0,500}showAgreementsPending\(false,'SIGNED_RECORD_VERIFICATION_PENDING'\)[\s\S]{0,500}Do not sign twice[\s\S]{0,500}legacyResponseRecovered=true/.test(signFlow),
+  'a lost policy-0 response can invite a duplicate signature instead of verifying the committed row first');
+ok(/if\(!legacyResponseRecovered\)\{[\s\S]{0,300}res\.json\(\)[\s\S]{0,300}res\.status===401[\s\S]{0,300}!res\.ok/.test(signFlow),
+  'the response-recovery branch can still dereference the missing network response');
+ok(/legacyResponseUncertain=_agSetupPolicyVersion===0&&[\s\S]{0,180}res\.status===408[\s\S]{0,180}res\.status===425[\s\S]{0,180}res\.status===429[\s\S]{0,180}res\.status>=500[\s\S]{0,500}await agRefreshAccountReadiness\(\)[\s\S]{0,500}!agLegacySigningVerified\(manifest\)[\s\S]{0,500}SIGNED_RECORD_VERIFICATION_PENDING[\s\S]{0,500}Do not sign twice[\s\S]{0,500}legacyResponseRecovered=true/.test(signFlow),
+  'an ambiguous HTTP failure can invite a duplicate policy-0 signature instead of verifying the committed row first');
+ok(/const refreshedLegacy=legacyResponseRecovered\|\|await agRefreshAccountReadiness\(\)/.test(signFlow),
+  'a verified response-loss recovery is not carried into the legacy success proof');
+eq((signFlow.match(/\/api\/agreements\/sign/g) || []).length, 1,
+  'the signing flow contains a second POST path that could duplicate a legacy signing row');
+ok(signFlow.indexOf('agLegacySigningVerified(manifest)') > signFlow.indexOf('await agRefreshAccountReadiness()') &&
+   signFlow.indexOf('agLegacySigningVerified(manifest)') < signFlow.indexOf("artifact.status!=='stored'"),
+  'legacy success is accepted without authoritative read-back or is forced through the policy-2 artifact response');
 const signRefreshAt = signFlow.search(/await\s+[A-Za-z_$][\w$]*(?:Account)?Readiness\s*\(|await\s+refreshMe\s*\(|\/api\/me/);
 const signSurfaceAt = signFlow.search(/(?:AccountSetupSurface|agreementState|agreements)(?:\s*\(|\?|\.)/);
 const signRevealAt = signFlow.search(/\bstartSession\s*\(|\bmaybePromptSetup\s*\(|appScreen[^\n]{0,180}display\s*=/);
