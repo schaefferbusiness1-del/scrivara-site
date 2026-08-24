@@ -282,7 +282,7 @@ for (const required of [
   ...RETIRED_ASSETS,
   '.bundle/', '.jekyll-cache/', '.sass-cache/', '_site/', 'Gemfile', 'Gemfile.lock',
   'pages-publication-inventory.json',
-  'vendor/*', 'vendor/**/*', 'tests/', 'scripts/', 'api/', 'tmp/', 'tools/', '_ws_tools/'
+  'vendor/*', 'vendor/**/*', 'tests/', 'scripts/', 'docs/', 'api/', 'tmp/', 'tools/', '_ws_tools/'
 ]) {
   assert(excludeSet.has(required), `_config.yml must fail closed for ${required}`);
 }

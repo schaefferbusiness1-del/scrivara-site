@@ -27,6 +27,9 @@ exclude:
   - "vendor/**/*"
   - "tests/"
   - "scripts/"
+  # Internal destination maps and live-proof screenshots are repository
+  # evidence, not public application assets.
+  - "docs/"
   - "api/"
   - "tmp/"
   - "tools/"
