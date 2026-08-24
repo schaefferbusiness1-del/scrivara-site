@@ -12656,6 +12656,7 @@ window.__mlsPullShieldTick=__mlsPullShieldTick;
 window.__mlsPullShieldForeign=__mlsPullShieldForeign;
 var __mlsPtsLastSaved=null,__mlsPtsLastPacked=null,__mlsPtsLastSavedKey='';
 var __mlsAthenaProofByKey={};
+var __mlsAthenaPartialProofByKey={};
 /* Newest-verified-proof index: bulk roster writers (render/sweep paths calling
    savePatients with an array they materialized BEFORE a chart save) roll the
    whole store back and bypass upsertPatient's same-id guard entirely. Live
@@ -12694,11 +12695,19 @@ function __mlsAthenaCarryAttested(dst,src){
     if(__mlsAthenaFieldHasContent(src[f]))dst[f]=src[f];
   }
 }
+function __mlsAthenaCarryPartial(dst,src,receipt){
+  if(!dst||!src||!receipt||!receipt.fields)return;
+  ['problems','meds','allergies'].forEach(function(f){
+    if(receipt.fields[f]&&receipt.fields[f].status==='found'&&__mlsAthenaFieldHasContent(src[f]))dst[f]=src[f];
+  });
+}
 function __mlsAthenaProofAt(c){ if(!c||!c.capturedAt)return 0; var n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; }
 function __mlsAthenaProofGuard(key,arr,start,end){
   if(!Array.isArray(arr))return;
   var idx=__mlsAthenaProofByKey[key];
   if(!idx)idx=__mlsAthenaProofByKey[key]={};
+  var partialIdx=__mlsAthenaPartialProofByKey[key];
+  if(!partialIdx)partialIdx=__mlsAthenaPartialProofByKey[key]={};
   start=Math.max(0,Number(start)||0);end=end==null?arr.length:Math.min(arr.length,Math.max(start,Number(end)||0));
   for(var i=start;i<end;i++){
     var row=arr[i]; if(!row||!row.id)continue;
@@ -12717,6 +12726,21 @@ function __mlsAthenaProofGuard(key,arr,start,end){
       if(kept.imp!=null)row.athenaChartImportedAt=kept.imp;
       /* the attested clinical slice travels with the receipt it belongs to */
       if(kept.clin)__mlsAthenaCarryAttested(row,kept.clin);
+    }
+    /* A verified three-field banner fallback has its own receipt because it
+       must never masquerade as a complete six-card pull. Protect that receipt
+       and only the exact fields it attests from the same stale bulk writers. */
+    var partialAt=__mlsAthenaProofAt(row.athenaPartialProfileCoverage);
+    var partialKept=partialIdx[row.id];
+    if(partialAt>=(partialKept?partialKept.at:0)){
+      if(partialAt>0){
+        var partialClin={};
+        __mlsAthenaCarryPartial(partialClin,row,row.athenaPartialProfileCoverage);
+        partialIdx[row.id]={at:partialAt,receipt:row.athenaPartialProfileCoverage,clin:partialClin};
+      }
+    }else{
+      row.athenaPartialProfileCoverage=partialKept.receipt;
+      if(partialKept.clin)__mlsAthenaCarryPartial(row,partialKept.clin,partialKept.receipt);
     }
   }
 }
@@ -13524,6 +13548,10 @@ function upsertPatient(p){
            "complete" over rolled-back data (16 live patients, 61 problem
            rows). See __mlsAthenaCarryAttested. */
         __mlsAthenaCarryAttested(p,__prev);
+      }
+      if(__covAt(__prev.athenaPartialProfileCoverage)>__covAt(p.athenaPartialProfileCoverage)){
+        p.athenaPartialProfileCoverage=__prev.athenaPartialProfileCoverage;
+        __mlsAthenaCarryPartial(p,__prev,__prev.athenaPartialProfileCoverage);
       }
       /* b493: verified visit BODIES survive a degraded write-back. Live
          2026-07-22: two patients' visit arrays were replaced by 4-field

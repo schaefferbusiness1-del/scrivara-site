@@ -373,6 +373,8 @@ const tests = [
   '1p-copy-all-visits-full-text.test.js',
   '1p-cross-patient-door.test.js',
   '1p-day-pull-facts-capture.test.js',
+  'athena-autopull-partial-provenance.test.js',
+  'partial-athena-proof-carryforward.test.js',
   '1p-long-read-progress.test.js',
   '1p-single-pull-visit-accounting.test.js',
   '1p-visit-banner-bind-cure.test.js',

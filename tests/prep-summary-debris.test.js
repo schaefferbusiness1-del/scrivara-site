@@ -74,7 +74,7 @@ ctx2.globalThis = ctx2;
 vm.createContext(ctx2);
 vm.runInContext(epSrc, ctx2);
 const ep = winStub2.__mlsEasyPrep;
-assert.ok(ep && ep.version === '1.1.0', 'easy-prep v1.1.0 expected, got ' + (ep && ep.version));
+assert.ok(ep && ep.version === '1.2.0', 'easy-prep v1.2.0 expected, got ' + (ep && ep.version));
 
 const cleaned = ep.scrubPageDebris('Pulled from Athena 7/16/2026 —\n' + JUNK + '\nRecent visits:\n• 2026-07-16 — ' + JUNK);
 assert.ok(!/window\.|Jotter|Print Premier Ortho|id #7731709/i.test(cleaned), 'prep display scrub: ' + cleaned);
@@ -100,5 +100,97 @@ const summary = ep.buildPrepSummary({
 assert.ok(!/window\.|Jotter|Print Premier Ortho/.test(summary));
 assert.match(summary, /ALLERGIES: NKDA/);
 assert.match(summary, /⚠ Withheld/);
+
+/* SOURCE provenance must follow a trustworthy Athena receipt, never the mere
+   presence of problems/medications/allergies that a clinician can type. */
+const manualOnly = {
+  id: 'patient-a', name: 'Mary Moreno', problems: 'Clinician-entered problem',
+  meds: 'Clinician-entered medication', allergies: 'Clinician-entered allergy'
+};
+assert.strictEqual(ep.athenaChartProvenance(manualOnly).landed, false,
+  'manual clinical fields were mistaken for an Athena pull');
+assert.match(ep.buildPrepSummaryForPatient(manualOnly), /SOURCE: NOT PULLED from Athena yet/,
+  'manual-only record lost its fail-closed source label');
+
+const verifiedReceipt = {
+  ...manualOnly,
+  athenaProfileCoverage: {
+    complete: true, exactIdentityVerified: true, patientId: 'patient-a',
+    capturedAt: '2026-08-24T14:15:16.000Z',
+    cards: { problems: { status: 'found' }, meds: { status: 'found' } }
+  }
+};
+assert.deepStrictEqual(
+  JSON.parse(JSON.stringify(ep.athenaChartProvenance(verifiedReceipt))),
+  {
+    landed: true, partial: false, kind: 'verified-receipt', capturedAt: '2026-08-24T14:15:16.000Z',
+    text: 'PULLED from Athena — identity-verified chart receipt from 2026-08-24; displayed fields may also include clinician-entered additions.'
+  },
+  'the current exact-patient coverage receipt did not authorize positive provenance'
+);
+assert.match(ep.buildPrepSummaryForPatient(verifiedReceipt),
+  /SOURCE: PULLED from Athena — identity-verified chart receipt from 2026-08-24/,
+  'verified current pull still rendered as not pulled');
+assert.doesNotMatch(ep.buildPrepSummaryForPatient(verifiedReceipt), /SOURCE: NOT PULLED/);
+
+const wrongPatientReceipt = {
+  ...manualOnly,
+  athenaProfileCoverage: {
+    complete: true, exactIdentityVerified: true, patientId: 'patient-b',
+    capturedAt: '2026-08-24T14:15:16.000Z'
+  }
+};
+assert.strictEqual(ep.athenaChartProvenance(wrongPatientReceipt).landed, false,
+  'another patient\'s receipt authorized this prep card');
+assert.match(ep.buildPrepSummaryForPatient(wrongPatientReceipt), /SOURCE: NOT PULLED from Athena yet/);
+
+const legacyReceipt = { ...manualOnly, athenaChartImportedAt: '2026-08-20T09:00:00.000Z' };
+assert.strictEqual(ep.athenaChartProvenance(legacyReceipt).kind, 'legacy-import-stamp',
+  'pre-coverage Athena records lost their historical import proof');
+assert.match(ep.buildPrepSummaryForPatient(legacyReceipt),
+  /SOURCE: PULLED from Athena — stored chart import receipt from 2026-08-20/);
+
+const partialReceipt = {
+  ...manualOnly,
+  allergies: '',
+  athenaPartialProfileCoverage: {
+    kind: 'athena-partial-profile-coverage', complete: false,
+    exactIdentityVerified: true, patientId: 'patient-a',
+    capturedAt: '2026-08-24T15:00:00.000Z', identityProof: 'name-dob',
+    fields: { problems: { status: 'found', count: 1 }, meds: { status: 'found', count: 1 } }
+  }
+};
+assert.strictEqual(ep.athenaChartProvenance(partialReceipt).kind, 'verified-partial-receipt');
+const partialSummary = ep.buildPrepSummaryForPatient(partialReceipt);
+assert.match(partialSummary,
+  /SOURCE: PARTIALLY PULLED from Athena — identity-verified capture from 2026-08-24 \(problems, medications only\)/);
+assert.doesNotMatch(partialSummary, /SOURCE: NOT PULLED/);
+assert.match(partialSummary,
+  /ALLERGIES: Not captured in this partial Athena pull — re-pull the full chart/,
+  'a partial receipt falsely converted an unread allergy card into NKDA/none');
+assert.match(partialSummary,
+  /VITALS: Not captured in this partial Athena pull — re-pull the full chart/);
+
+const partialWrongPatient = {
+  ...partialReceipt,
+  athenaPartialProfileCoverage: { ...partialReceipt.athenaPartialProfileCoverage, patientId: 'patient-b' }
+};
+assert.strictEqual(ep.athenaChartProvenance(partialWrongPatient).kind, 'identity-conflict');
+assert.match(ep.buildPrepSummaryForPatient(partialWrongPatient), /SOURCE: NOT PULLED from Athena yet/);
+assert.strictEqual(ep.athenaChartProvenance({
+  ...partialWrongPatient, athenaChartImportedAt: '2026-08-20T09:00:00.000Z'
+}).kind, 'identity-conflict',
+  'a wrong-patient partial receipt fell through to a looser legacy timestamp');
+
+const staleConflict = {
+  ...legacyReceipt,
+  athenaProfileCoverage: {
+    complete: true, exactIdentityVerified: true, patientId: 'patient-b',
+    capturedAt: '2026-08-24T15:00:00.000Z'
+  }
+};
+assert.strictEqual(ep.athenaChartProvenance(staleConflict).kind, 'identity-conflict',
+  'a wrong-patient current receipt fell through to a looser legacy timestamp');
+assert.match(ep.buildPrepSummaryForPatient(staleConflict), /SOURCE: NOT PULLED from Athena yet/);
 
 console.log('prep-summary-debris: ok');

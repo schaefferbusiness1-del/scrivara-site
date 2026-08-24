@@ -2340,9 +2340,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.1.0') return; } catch (e) { return; }
+  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.0') return; } catch (e) { return; }
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   /* ---------- tiny helpers (mirrors the live app's own conventions) ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -2507,17 +2507,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (visitBits.length) lines.push('Visit: ' + visitBits.join(' — '));
     lines.push('');
 
-    /* b940: a record whose Athena chart was never pulled has EVERY card
-       empty, and the reader cannot tell that from a chart that was read and
-       found clear. ctx.chartLanded is the import stamp _savePatientChart
-       writes, so say which of the two this is - once, up front - and make the
-       allergy line refuse to imply a documented NKDA. */
-    var unread = !ctx.chartLanded;
-    if (unread) {
+    /* A record whose Athena chart was never pulled has EVERY card empty, and
+       the reader cannot tell that from a chart that was read and found clear.
+       chartLanded is derived from the exact-patient coverage receipt first and
+       the legacy import stamp second; populated clinical text alone is never
+       treated as Athena provenance. Say which state this is once, up front,
+       and make the allergy line refuse to imply a documented NKDA. */
+    var partial = ctx.chartPartial === true;
+    var unread = !ctx.chartLanded && !partial;
+    if (trim(ctx.chartSourceText)) {
+      lines.push('SOURCE: ' + trim(ctx.chartSourceText));
+    } else if (unread) {
       lines.push('SOURCE: NOT PULLED from Athena yet \u2014 no card on this record has been read from the chart, so every empty line below means UNREAD, not none.');
+    } else {
+      lines.push('SOURCE: PULLED from Athena \u2014 stored chart import receipt; displayed fields may also include clinician-entered additions.');
     }
     // Allergies ALWAYS first in the body - patient-safety convention.
-    lines.push('ALLERGIES: ' + (trim(ctx.allergies) || (unread ? 'NOT PULLED from Athena yet \u2014 no allergy data has been read for this patient; this is NOT a documented NKDA, confirm with patient' : 'None recorded — confirm with patient (NKDA not yet documented)')));
+    var allergyEmpty = unread
+      ? 'NOT PULLED from Athena yet \u2014 no allergy data has been read for this patient; this is NOT a documented NKDA, confirm with patient'
+      : (partial
+        ? 'Not captured in this partial Athena pull \u2014 re-pull the full chart and confirm with the patient; this is NOT a documented NKDA'
+        : 'None recorded — confirm with patient (NKDA not yet documented)');
+    lines.push('ALLERGIES: ' + (trim(ctx.allergies) || allergyEmpty));
     /* pvr-1.0.0: 'Not recorded' is a placeholder the calm shell flattens to an
        em-dash, and rightly - it is not an answer. ctx.emptyText carries the one
        the coverage receipt supports. */
@@ -2687,16 +2698,102 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return S(text).split(/\n/).map(function (line) { return withholdIfOtherPatient(line, p); }).join('\n');
   }
 
+  /* Which evidence is allowed to turn the prep card's SOURCE row positive.
+     The current pull pipeline's authoritative proof is the same closed receipt
+     used by the Athena status chip: complete, exact-identity verified, and
+     bound to this immutable patient id. Older records predate that receipt but
+     carry athenaChartImportedAt, which this card has historically trusted.
+     Snapshot contents and populated fields are intentionally insufficient:
+     either may contain clinician-entered text and cannot prove an Athena read. */
+  function athenaChartProvenance(p) {
+    p = p || {};
+    var pid = trim(p.id);
+    var coverage = p.athenaProfileCoverage;
+    /* A receipt explicitly bound to another immutable patient id is a conflict,
+       not permission to fall back to a looser old timestamp on this record. */
+    if (coverage && coverage.exactIdentityVerified === true && trim(coverage.patientId) &&
+        (!pid || trim(coverage.patientId) !== pid)) {
+      return { landed: false, partial: false, kind: 'identity-conflict', capturedAt: '', text: '' };
+    }
+    if (coverage && coverage.complete === true && coverage.exactIdentityVerified === true &&
+        pid && trim(coverage.patientId) === pid) {
+      var verifiedAt = trim(coverage.capturedAt || p.athenaChartImportedAt);
+      var verifiedDay = (verifiedAt.match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || '';
+      return {
+        landed: true,
+        partial: false,
+        kind: 'verified-receipt',
+        capturedAt: verifiedAt,
+        text: 'PULLED from Athena \u2014 identity-verified chart receipt' +
+          (verifiedDay ? ' from ' + verifiedDay : '') +
+          '; displayed fields may also include clinician-entered additions.'
+      };
+    }
+    var partialReceipt = p.athenaPartialProfileCoverage;
+    if (partialReceipt && partialReceipt.exactIdentityVerified === true && trim(partialReceipt.patientId) &&
+        (!pid || trim(partialReceipt.patientId) !== pid)) {
+      return { landed: false, partial: false, kind: 'identity-conflict', capturedAt: '', text: '' };
+    }
+    var legacyAt = trim(p.athenaChartImportedAt);
+    if (legacyAt) {
+      var legacyDay = (legacyAt.match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || '';
+      return {
+        landed: true,
+        partial: false,
+        kind: 'legacy-import-stamp',
+        capturedAt: legacyAt,
+        text: 'PULLED from Athena \u2014 stored chart import receipt' +
+          (legacyDay ? ' from ' + legacyDay : '') +
+          '; displayed fields may also include clinician-entered additions.'
+      };
+    }
+    if (partialReceipt && partialReceipt.kind === 'athena-partial-profile-coverage' &&
+        partialReceipt.complete === false && partialReceipt.exactIdentityVerified === true &&
+        pid && trim(partialReceipt.patientId) === pid && /^\d{4}-\d{2}-\d{2}T/.test(trim(partialReceipt.capturedAt))) {
+      var fields = partialReceipt.fields || {};
+      var labels = [];
+      if (fields.problems && fields.problems.status === 'found') labels.push('problems');
+      if (fields.meds && fields.meds.status === 'found') labels.push('medications');
+      if (fields.allergies && fields.allergies.status === 'found') labels.push('allergies');
+      if (labels.length) {
+        var partialAt = trim(partialReceipt.capturedAt);
+        var partialDay = (partialAt.match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || '';
+        return {
+          landed: false,
+          partial: true,
+          kind: 'verified-partial-receipt',
+          capturedAt: partialAt,
+          fields: fields,
+          text: 'PARTIALLY PULLED from Athena \u2014 identity-verified capture' +
+            (partialDay ? ' from ' + partialDay : '') + ' (' + labels.join(', ') +
+            ' only); re-pull the full chart for the remaining cards.'
+        };
+      }
+    }
+    return { landed: false, partial: false, kind: 'unverified', capturedAt: '', text: '' };
+  }
+
   function buildPrepSummaryForPatient(p) {
     if (!p) return '';
     var appt = apptContext(p);
     var lv = lastVisitInfo(p.id);
+    var provenance = athenaChartProvenance(p);
+    var emptyText = prepEmptyText(p);
+    if (provenance.partial === true) {
+      ['problems', 'meds', 'vitals', 'history'].forEach(function (key) {
+        if (!(provenance.fields && provenance.fields[key] && provenance.fields[key].status === 'found')) {
+          emptyText[key] = 'Not captured in this partial Athena pull \u2014 re-pull the full chart.';
+        }
+      });
+    }
     return buildPrepSummary({
       name: p.name, dob: p.dob, age: computeAge(p.dob), sex: p.sex || p.gender, mrn: p.mrn,
       reason: appt.reason, apptTime: appt.time,
       problems: cleanListField(p.problems), meds: cleanListField(p.meds),
       allergies: cleanListField(p.allergies, { keepNegatives: true }),
-      chartLanded: !!S(p.athenaChartImportedAt).trim(),
+      chartLanded: provenance.landed,
+      chartPartial: provenance.partial,
+      chartSourceText: provenance.text,
       vitals: getVitals(p), bmi: resolveBmi(p), history: getHistory(p),
       historySummary: withholdLinesIfOtherPatient(cleanNarrative(scrubPageDebris(p.athenaHistorySummary || '')), p),
       careFlags: cleanListField(p.careFlags),
@@ -2706,7 +2803,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* pvr-1.0.0: the honest sentence for each EMPTY clinical field, resolved
          here where the patient record (and its coverage receipt) is in hand.
          generatePrepSummary stays pure - it prints what it is given. */
-      emptyText: prepEmptyText(p)
+      emptyText: emptyText
     });
   }
   /* Downstream, feat_mls_calm_shell renders these lines as labelled rows and
@@ -3086,6 +3183,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     apptContext: apptContext,
     buildPrepSummary: buildPrepSummary,
     buildPrepSummaryForPatient: buildPrepSummaryForPatient,
+    athenaChartProvenance: athenaChartProvenance,
     scrubPageDebris: scrubPageDebris,
     withholdIfOtherPatient: withholdIfOtherPatient,
     render: mlsEP_render

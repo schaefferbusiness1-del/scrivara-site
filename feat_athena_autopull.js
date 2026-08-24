@@ -25,15 +25,17 @@
  * mismatch message tells the mid-walk truth at the SOURCE (the old sentence
  * blamed "a DIFFERENT patient open", which detect-3072 made false, and shipped
  * a dead green-panel pointer that pullone-1.0.0 had to strip at display time);
- * fm-1.1 chart FACTS (medications, problems, allergies) land after the visits
+ * fm-1.2 chart FACTS (medications, problems, allergies) land after the visits
  * save via a verified capture - meds was measured EMPTY on every autopull
- * patient; pullbar-1.0.0 a real progress bar under the button, driven by the
- * extension's own n/total encounter progress events.
+ * patient. The fallback now stores an exact-patient PARTIAL coverage receipt,
+ * so the profile never calls a real banner capture "not pulled" and never calls
+ * three banner fields a complete six-card pull; pullbar-1.0.0 a real progress
+ * bar under the button, driven by the extension's own n/total encounter events.
  */
 (function () {
   'use strict';
   if (window.__mlsAthenaAutoPull && window.__mlsAthenaAutoPull.installed) return;
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   function S(x) { return x == null ? '' : String(x); }
   function trim(x) { return S(x).trim(); }
@@ -93,6 +95,40 @@
     return '';
   }
   function dobsMatch(a, b) { var x = normDob(a), y = normDob(b); return !!(x && y && x === y); }
+
+  /* A post-walk banner may contribute only three facts, so it cannot mint the
+     full athenaProfileCoverage receipt. It can mint a separate partial receipt
+     only when the freshly captured chart repeats the pulled patient's name and
+     either DOB or stable Athena/MRN id. The receipt contains counts/statuses,
+     never the clinical text itself. */
+  function exactCaptureProof(captured, identity) {
+    if (!captured || !identity || !namesMatch(captured.name, identity.name)) return '';
+    var capturedDob = normDob(captured.dob), expectedDob = normDob(identity.dob);
+    if (capturedDob && expectedDob && capturedDob === expectedDob) return 'name-dob';
+    var capturedMrn = trim(captured.mrn || captured.athenaId).toLowerCase();
+    var expectedMrn = trim(identity.mrn || identity.athenaId).toLowerCase();
+    if (capturedMrn && expectedMrn && capturedMrn === expectedMrn) return 'name-mrn';
+    return '';
+  }
+  function partialCoverageReceipt(patient, captured, identity, capturedAt) {
+    var proof = exactCaptureProof(captured, identity);
+    var pid = trim(patient && patient.id);
+    if (!proof || !pid) return null;
+    var fields = {};
+    var meds = Array.isArray(captured.medications) ? captured.medications.map(trim).filter(Boolean) : [];
+    var problems = Array.isArray(captured.problems) ? captured.problems.map(trim).filter(Boolean) : [];
+    var allergies = Array.isArray(captured.allergies) ? captured.allergies.map(trim).filter(Boolean) : [];
+    if (meds.length) fields.meds = { status: 'found', count: meds.length };
+    if (problems.length) fields.problems = { status: 'found', count: problems.length };
+    if (allergies.length) fields.allergies = { status: 'found', count: allergies.length };
+    if (!Object.keys(fields).length) return null;
+    return {
+      kind: 'athena-partial-profile-coverage', version: '1.0.0', complete: false,
+      exactIdentityVerified: true, patientId: pid,
+      capturedAt: trim(capturedAt) || new Date().toISOString(),
+      identityProof: proof, fields: fields
+    };
+  }
 
   /* ---------- harden the model's _normDob so the EXISTING internal gate also benefits ---------- */
   function hardenModel() {
@@ -437,30 +473,35 @@
           }
         }
       } catch (eFf) {}
-      /* fm-1.1 fallback: a verified capture still lands medications/problems/
+      /* fm-1.2 fallback: a verified capture still lands medications/problems/
          allergies off the open chart banner when the full-card rail is absent
-         or refused. Names must match the pulled identity. */
+         or refused. A same-name capture is not enough: DOB or MRN must also
+         match, and the partial receipt prevents the profile from claiming
+         either "not pulled" or a complete six-card pull. */
       if (!cardLanded) try {
         var post = await captureOpen(18000);
         var postCap = (post && post.ok === true && post.captured) ? post.captured : null;
-        if (postCap && namesMatch(postCap.name, identity.name)) {
-          var factsChanged = false;
+        var partialReceipt = partialCoverageReceipt(patient, postCap, identity);
+        if (partialReceipt) {
           var medsIn = Array.isArray(postCap.medications) ? postCap.medications.map(trim).filter(Boolean) : [];
           if (medsIn.length) {
             var haveMeds = S(patient.meds);
             var addMeds = medsIn.filter(function (m) { return haveMeds.toLowerCase().indexOf(m.toLowerCase()) < 0; });
-            if (addMeds.length) { patient.meds = (trim(haveMeds) ? trim(haveMeds) + '\n' : '') + addMeds.join('\n'); factsChanged = true; }
+            if (addMeds.length) patient.meds = (trim(haveMeds) ? trim(haveMeds) + '\n' : '') + addMeds.join('\n');
           }
           if (!trim(patient.problems) && Array.isArray(postCap.problems) && postCap.problems.length) {
-            patient.problems = postCap.problems.map(trim).filter(Boolean).join('\n'); factsChanged = true;
+            patient.problems = postCap.problems.map(trim).filter(Boolean).join('\n');
           }
           if (!trim(patient.allergies) && Array.isArray(postCap.allergies) && postCap.allergies.length) {
-            patient.allergies = postCap.allergies.map(trim).filter(Boolean).join('\n'); factsChanged = true;
+            patient.allergies = postCap.allergies.map(trim).filter(Boolean).join('\n');
           }
-          if (factsChanged) {
-            try { upsertPatient(patient); } catch (eFm1) {}
-            status(onStatus, 'Chart facts saved — medications, problems and allergies are on the profile.');
-          }
+          /* Save the receipt even when every captured fact was already present;
+             provenance changed even if the display characters did not. */
+          patient.athenaPartialProfileCoverage = partialReceipt;
+          try { upsertPatient(patient); } catch (eFm1) {}
+          status(onStatus, 'Partial chart facts saved with an identity-verified receipt — re-pull the full chart for vitals and history.');
+        } else if (postCap && namesMatch(postCap.name, identity.name)) {
+          status(onStatus, 'The banner capture did not repeat this patient’s DOB or Athena ID, so MLS saved no chart facts from it.');
         }
       } catch (eFm) {}
       try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
@@ -515,6 +556,7 @@
     installed: true, version: VERSION, run: run,
     isBusy: function () { return busy; }, busyEvent: BUSY_EVENT,
     resolvePatient: resolvePatient, namesMatch: namesMatch, normDob: normDob, dobsMatch: dobsMatch,
+    exactCaptureProof: exactCaptureProof, partialCoverageReceipt: partialCoverageReceipt,
     firstLast: firstLast, hardenModel: hardenModel, revert: revert
   };
 })();
