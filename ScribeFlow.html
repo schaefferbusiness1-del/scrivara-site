@@ -56708,6 +56708,10 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
     safe(function () { if (isFn(window.showView)) window.showView('patients'); });
     safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
     safe(function () { if (isFn(window.renderPatients)) window.renderPatients(); });
+    /* The seven-tile strip is owned by the calm-profile module rather than by
+       renderProfile itself. Paint it synchronously before reporting that the
+       pull landed; the fallback interval is deliberately only a safety net. */
+    safe(function () { var calm = window.__mlsProfCalm; if (calm && isFn(calm.ensure)) calm.ensure(); });
     /* Open the clinical sections for THIS landing only. The doctor's saved
        mls_pf2_collapsed preference is never rewritten - the seven-tile strip
        that carries problems, medications, allergies and vitals renders even

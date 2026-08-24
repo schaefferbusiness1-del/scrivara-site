@@ -36,8 +36,11 @@
  *      display:none !important. CONTROL: __mlsPullOne.revert() restores exactly
  *      that silence.
  *
- *   6. IT LANDS ON WHAT WAS PULLED. CONTROL: reverted, the same successful pull
- *      leaves the doctor on the History screen.
+ *   6. IT LANDS ON WHAT WAS PULLED, INCLUDING THE SEVEN-TILE STRIP. The strip
+ *      repaints synchronously for this pull and also listens for exact-patient
+ *      record updates; it never waits for a lucky fallback-interval boundary.
+ *      CONTROL: reverted, the same successful pull leaves the doctor on the
+ *      History screen.
  *
  *   7. THE DEAD POINTER. The shipped message advertises an in-athena green
  *      panel that mounts nowhere on athenaOne v26.7 ax views. CONTROL: the
@@ -159,6 +162,14 @@ function statics() {
   ok(conn.indexOf("one.id = 'pvrPullOne'") > 0, '1p-mls-connect.js does not draw the one whole-chart pull control');
   ok(conn.indexOf(':not(#pvrPullOne){display:none!important;}') > 0,
     'the one pull control is hidden by the profile collapse the card ships with');
+  ok(conn.indexOf("window.addEventListener('mls:patient-record-updated', onPatientRecordUpdated)") > 0,
+    'same-patient chart updates do not trigger the seven-tile strip repaint');
+  ok(conn.indexOf("window.removeEventListener('mls:patient-record-updated', onPatientRecordUpdated)") > 0,
+    'the same-patient strip repaint listener cannot be cleanly reverted');
+  for (const shell of SHELLS) {
+    ok(read(shell).indexOf('if (calm && isFn(calm.ensure)) calm.ensure();') > 0,
+      `${shell}: a successful pull still waits for the fallback strip timer before it looks complete`);
+  }
 }
 
 /* ------------------------------------------------------------------ PART 2 */
@@ -444,7 +455,6 @@ async function runtime() {
     /* -- 6. IT LANDS ON WHAT WAS PULLED ---------------------------------- */
     await page.evaluate(() => window.__t1.stubReader('Dee Sample', '01/02/1970', '900004'));
     const pulled = await page.evaluate(() => window.__t1.pullFromHistory());
-    await page.waitForTimeout(1200);
     const land = await page.evaluate(() => window.__t1.landing());
     const saved = await page.evaluate(() => window.__t1.saved('syn-cold'));
     measured.landing = land; measured.saved = saved;

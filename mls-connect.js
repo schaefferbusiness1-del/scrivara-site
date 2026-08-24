@@ -52315,7 +52315,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (patientEnsureFrame) return;
     patientEnsureFrame = setTimeout(function () { patientEnsureFrame = 0; try { ensure(); } catch (e) {} }, 20);
   }
+  /* A chart pull updates the record without changing the active patient id.
+     Listening only for mls:active-patient-changed left #pf2Quick stale until
+     the 1.4s fallback interval happened to run. Repaint from the accepted,
+     account-scoped record event too, but only for the chart still open. */
+  function onPatientRecordUpdated(e) {
+    var d = (e && e.detail) || {}, changed = String(d.patientId || ''), current = '';
+    try { current = (typeof window.getActivePtId === 'function') ? String(window.getActivePtId() || '') : ''; } catch (e1) {}
+    if (!changed || !current || changed !== current) return;
+    try {
+      var currentKey = (typeof window.uns === 'function') ? String(window.uns('patients') || '') : '';
+      if (d.patientStoreKey && currentKey && String(d.patientStoreKey) !== currentKey) return;
+    } catch (e2) { return; }
+    schedulePatientEnsure();
+  }
   try { window.addEventListener('mls:active-patient-changed', schedulePatientEnsure); } catch (e) {}
+  try { window.addEventListener('mls:patient-record-updated', onPatientRecordUpdated); } catch (e) {}
   function ensure() {
     try {
       var pc = $('profileCard');
@@ -52359,6 +52374,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.revert = function () {
     try { clearInterval(iv); } catch (e) {}
     try { if (patientEnsureFrame) { clearTimeout(patientEnsureFrame); patientEnsureFrame = 0; } } catch (e) {}
+    try { window.removeEventListener('mls:active-patient-changed', schedulePatientEnsure); } catch (e) {}
+    try { window.removeEventListener('mls:patient-record-updated', onPatientRecordUpdated); } catch (e) {}
     try {
       var pc = $('profileCard');
       SECS.forEach(function (d) {
