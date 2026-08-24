@@ -19,7 +19,7 @@
  * Scope honesty:
  *  - TIER 1 (mls-connect.js -> 1p-mls-connect.js) is fully adjudicated: every
  *    absence is either closed or carries a verified record.
- *  - TIER 2 (the other eight fork pairs) is pinned to a measured baseline
+ *  - TIER 2 (the other fork pairs) is pinned to a measured baseline
  *    taken 2026-08-17. Those absences are NOT audited; the contract's job
  *    there is to make a NEW absence fail loudly instead of arriving silently.
  * cloned-* is DERIVED from 1p by the release lane, so it is reported for
@@ -159,6 +159,9 @@ const BASELINE_ABSENCES = {
      absent from 1p). Keep the explicit empty baseline so later drift cannot
      hide behind automatic fork-pair discovery. */
   'feat_mls_draft_tuning.js': [],
+  /* 2026-08-24 first-pull style bootstrap: production is derived byte-for-byte
+     from the 1p source, so any later called-function loss is a regression. */
+  'feat_mls_first_pull_style.js': [],
   'feat_mls_rangejobs.js': [],
   'feat_mls_schedimport_exact.js': [
     'exactNonnegativeInteger', 'exactProviderUnknownCensusRows', 'legacyResumeKey',
