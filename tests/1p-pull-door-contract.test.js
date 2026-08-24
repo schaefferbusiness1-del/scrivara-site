@@ -192,7 +192,14 @@ async function runtime() {
       window.pullPatientFromAthenaPrompt.__mlsAutoSwitch || (() => { throw new Error('not armed'); })();
       // grab the wrapped fn's inner orig by replacing the global BENEATH the wrapper:
       // instead, count via a sentinel: re-arm over a fresh orig
-      window.pullPatientFromAthenaPrompt = function () { origCalls++; };
+      /* Preserve the real auto-pull ownership marker on the sentinel. Without
+         it, feat_athena_autopull's documented 1s boot retry can legitimately
+         replace this TEST double between case 2 and case 3 on a busy full-gate
+         run. That measures the harness race (2 calls) rather than autoswitch. */
+      const wasAutoWrapped = !!window.pullPatientFromAthenaPrompt.__mlsAutoWrapped;
+      const sentinel = function () { origCalls++; };
+      sentinel.__mlsAutoWrapped = wasAutoWrapped;
+      window.pullPatientFromAthenaPrompt = sentinel;
       window.__mlsAutoSwitch.arm(); // wraps the sentinel
       const out = {};
       // case 1: wrong selection, capture matches an existing record by MRN
