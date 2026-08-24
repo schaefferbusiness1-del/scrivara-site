@@ -1171,6 +1171,8 @@ const tests = [
   'study-academic-paper.test.js',
   'comp-report-contract.test.js',
   'prep-summary-debris.test.js',
+  'prep-summary-source-browser-runtime.test.js',
+  'fast-release-gate-contract.test.js',
   'visit-single-transcript-contract.test.js',
   'onboarding-tour-v2-contract.test.js',
   'device-role-contract.test.js',
