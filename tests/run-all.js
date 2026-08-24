@@ -627,6 +627,11 @@ const tests = [
   'draft-tuning-contract.test.js',
   'draft-tuning-route-reach.test.js',
   'conditional-draft-profile-routing-contract.test.js',
+  /* Every HPI, ROS, Exam, Assessment and Plan format is independently
+     reusable: name, outline/template, use-when rule and AI prompt comments
+     must survive CRUD, profile switching, automatic routing, one-visit
+     overrides and both generation transports. */
+  'section-format-profile-editor-contract.test.js',
   'legal-longform-family-routing-contract.test.js',
   'legal-report-response-contract.test.js',
   'ime-standalone-contract.test.js',
