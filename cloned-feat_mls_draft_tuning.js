@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsDraftTuning && window.__mlsDraftTuning.installed) return;
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
   var STORE_KEY = 'draftTuningV1';
   var MAX_INSTRUCTIONS = 600;
   var FAMILY_IDS = ['soap', 'hpi', 'ros', 'exam', 'assessment', 'plan', 'opnote', 'avs', 'referral', 'priorauth', 'legal_ime', 'copilot', 'studio_widget', 'coding', 'general_draft'];
@@ -154,6 +154,138 @@
     var list = Array.isArray(profiles) && profiles.length ? profiles : sectionProfiles(id);
     var wanted = profileId(requested, '');
     return list.filter(function (row) { return row.id === wanted; })[0] || list[0];
+  }
+
+  /* A saved format's "Use when" line is an executable, conservative rule.
+     Selection reads ONLY the explicitly delimited TODAY_TRANSCRIPT block. It
+     never sees background chart history or prompt boilerplate, and it returns
+     only a saved profile -- no source text is persisted or transported. */
+  var MATCH_STOP_WORDS = {
+    a: 1, an: 1, and: 1, are: 1, as: 1, at: 1, be: 1, by: 1, for: 1, from: 1,
+    has: 1, have: 1, in: 1, is: 1, it: 1, most: 1, of: 1, on: 1, or: 1,
+    patient: 1, section: 1, the: 1, this: 1, to: 1, use: 1, visit: 1, visits: 1,
+    when: 1, with: 1, documented: 1, documentation: 1, format: 1, active: 1
+  };
+  var MATCH_CONCEPTS = [
+    { weight: 16, rule: ['red flag', 'emergency', 'urgent'], evidence: ['red flag', 'cauda equina', 'saddle anesthesia', 'bowel or bladder change', 'bowel bladder change', 'new motor deficit', 'progressive neurologic deficit', 'emergency department', 'go to the er', 'urgent evaluation'] },
+    { weight: 14, rule: ['escalation', 'worsening', 'progressive'], evidence: ['escalation', 'worsening', 'getting worse', 'progressive', 'new weakness', 'rapid decline', 'failed conservative care', 'no longer helping'] },
+    { weight: 12, rule: ['close follow up', 'return precaution', 'precaution'], evidence: ['close follow up', 'follow up in one week', 'follow up in 1 week', 'follow up in two weeks', 'follow up in 2 weeks', 'return precaution', 'strict precaution', 'return sooner'] },
+    { weight: 12, rule: ['uncertain', 'differential', 'diagnosis remains uncertain'], evidence: ['uncertain', 'unclear', 'differential', 'rule out', 'possible', 'possibly', 'may represent', 'could be', 'versus'] },
+    { weight: 10, rule: ['broad', 'multi system', 'multiple complaint'], evidence: ['multi system', 'multisystem', 'multiple complaints', 'several complaints', 'more than one complaint'] },
+    { weight: 9, rule: ['normal finding', 'normal exam'], evidence: ['normal exam', 'normal findings', 'within normal limits', 'neurovascularly intact', 'full range of motion', 'no tenderness'] },
+    { weight: 8, rule: ['single complaint', 'single active complaint', 'focused problem'], evidence: ['single complaint', 'single active complaint', 'one complaint', 'focused problem', 'localized pain', 'only complaint'] },
+    { weight: 8, rule: ['stable', 'routine follow up'], evidence: ['stable', 'unchanged', 'no change', 'doing well', 'improved', 'routine follow up', 'continue current treatment'] },
+    { weight: 7, rule: ['established', 'confirmed diagnosis'], evidence: ['established diagnosis', 'confirmed diagnosis', 'diagnosed with', 'known diagnosis'] }
+  ];
+  function normalizeMatchText(value) {
+    var text = String(value == null ? '' : value).toLowerCase();
+    try { if (typeof text.normalize === 'function') text = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+    return text.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function todayTranscript(value) {
+    var raw = String(value == null ? '' : value);
+    var match = /TODAY_TRANSCRIPT_BEGIN\s*([\s\S]*?)\s*TODAY_TRANSCRIPT_END/i.exec(raw);
+    return match ? normalizeMatchText(match[1]).slice(0, 24000) : '';
+  }
+  function meaningfulTokens(value) {
+    var seen = {}, out = [];
+    normalizeMatchText(value).split(' ').forEach(function (token) {
+      if (!token || token.length < 3 || MATCH_STOP_WORDS[token] || seen[token]) return;
+      seen[token] = true; out.push(token);
+    });
+    return out;
+  }
+  function affirmedPhrase(source, phrase) {
+    phrase = normalizeMatchText(phrase);
+    if (!source || !phrase) return false;
+    var from = 0;
+    while (from < source.length) {
+      var index = source.indexOf(phrase, from);
+      if (index < 0) return false;
+      var beforeOk = index === 0 || source.charAt(index - 1) === ' ';
+      var after = index + phrase.length;
+      var afterOk = after === source.length || source.charAt(after) === ' ';
+      if (beforeOk && afterOk) {
+        var prior = source.slice(Math.max(0, index - 48), index).trim().split(' ').slice(-5).join(' ');
+        var phraseOwnsNegative = /^(?:no|without)\b/.test(phrase);
+        if (phraseOwnsNegative || !/(?:^|\s)(?:no|not|denies|denied|deny|without|negative for|free of)(?:\s|$)/.test(prior)) return true;
+      }
+      from = index + Math.max(1, phrase.length);
+    }
+    return false;
+  }
+  function scoreProfileCondition(condition, source) {
+    var normalized = normalizeMatchText(condition), tokens = meaningfulTokens(condition);
+    if (!normalized || !source || !tokens.length) return { eligible: false, score: 0 };
+    var score = 0, strong = false;
+    var clauses = String(condition || '').split(/[,;|/]+|\b(?:or|and)\b/i);
+    clauses.forEach(function (clause) {
+      var words = meaningfulTokens(clause), phrase = words.join(' ');
+      if (phrase && affirmedPhrase(source, phrase)) score += words.length > 1 ? 6 : 3;
+    });
+    tokens.forEach(function (token) { if (affirmedPhrase(source, token)) score += 1; });
+    MATCH_CONCEPTS.forEach(function (concept) {
+      var applies = concept.rule.some(function (phrase) { return normalized.indexOf(normalizeMatchText(phrase)) >= 0; });
+      if (!applies) return;
+      var hit = concept.evidence.some(function (phrase) { return affirmedPhrase(source, phrase); });
+      if (hit) { score += concept.weight; strong = true; }
+    });
+    return { eligible: strong || score >= (tokens.length === 1 ? 4 : 6), score: score };
+  }
+  function routedSectionProfile(id, profiles, fallbackId, selectionSource) {
+    var list = Array.isArray(profiles) && profiles.length ? profiles : sectionProfiles(id);
+    var fallback = activeSectionProfile(id, list, fallbackId);
+    var source = todayTranscript(selectionSource);
+    if (!source || list.length < 2) return { profile: fallback, selection: 'default' };
+    var scoredRows = [];
+    list.forEach(function (row, index) {
+      var scored = scoreProfileCondition(row.when, source);
+      scoredRows.push({ profile: row, score: scored.score, eligible: scored.eligible, index: index });
+    });
+    var eligible = scoredRows.filter(function (row) { return row.eligible; });
+    if (!eligible.length) return { profile: fallback, selection: 'default' };
+    eligible.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.profile.id === fallback.id) return -1;
+      if (b.profile.id === fallback.id) return 1;
+      return a.index - b.index;
+    });
+    var winner = eligible[0];
+    var runner = scoredRows.filter(function (row) { return row.profile.id !== winner.profile.id; })
+      .sort(function (a, b) { return b.score - a.score; })[0];
+    /* A weak one-point lead is ambiguous. Keep the clinician's account
+       default unless the automatic winner clears the runner-up by two. */
+    if (winner.profile.id !== fallback.id && runner && winner.score - runner.score < 2) {
+      return { profile: fallback, selection: 'default' };
+    }
+    return { profile: winner.profile, selection: winner.profile.id === fallback.id ? 'default' : 'automatic' };
+  }
+  function automaticRoutes(input, options) {
+    input = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+    options = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+    var rawToday = String(input.todayTranscript == null ? '' : input.todayTranscript);
+    var envelope = /TODAY_TRANSCRIPT_BEGIN[\s\S]*TODAY_TRANSCRIPT_END/i.test(rawToday)
+      ? rawToday : ('TODAY_TRANSCRIPT_BEGIN\n' + rawToday + '\nTODAY_TRANSCRIPT_END');
+    var nested = options.families && typeof options.families === 'object' && !Array.isArray(options.families) ? options.families : {};
+    var out = { schemaVersion: 1, families: {} };
+    ['length', 'tone', 'structure'].forEach(function (key) { if (options[key] != null) out[key] = cleanText(options[key], 40); });
+    if (options.instructions) out.instructions = cleanText(options.instructions, MAX_INSTRUCTIONS);
+    SECTION_FAMILIES.forEach(function (id) {
+      var state = read().families[id] || familyDefaults(id);
+      var request = nested[id] && typeof nested[id] === 'object' && !Array.isArray(nested[id]) ? nested[id] : {};
+      var profiles = sanitizeSectionProfiles(id, Array.isArray(request.profiles) ? request.profiles : state.profiles);
+      var explicit = cleanText(request.profileId || request.activeProfile, 48);
+      var chosen = explicit ? activeSectionProfile(id, profiles, explicit) : routedSectionProfile(id, profiles, state.activeProfile, envelope).profile;
+      out.families[id] = { profileId: chosen.id };
+    });
+    if (nested.coding && typeof nested.coding === 'object' && !Array.isArray(nested.coding)) {
+      out.families.coding = {};
+      ['length', 'tone', 'structure', 'confidenceDisplay', 'payerPresentation'].forEach(function (key) {
+        if (nested.coding[key] != null) out.families.coding[key] = cleanText(nested.coding[key], 40);
+      });
+      if (nested.coding.instructions) out.families.coding.instructions = cleanText(nested.coding.instructions, MAX_INSTRUCTIONS);
+    }
+    return out;
   }
 
   function familyDefaults(id) {
@@ -419,7 +551,7 @@
     sec.id = 'mlsDraftTuningSection';
     sec.innerHTML =
       '<p class="set-head">🤖 AI draft tuning</p>' +
-      '<p class="set-desc">Set the writing defaults for every kind of AI draft. These settings follow your account. Patient facts never belong here, and no setting can relax clinical, coding, legal, identity, or review safeguards.</p>' +
+      '<p class="set-desc">Set the writing defaults for every kind of AI draft. Save different HPI, ROS, Exam, Assessment, and Plan formats and MLS will choose the matching format from today\'s transcript; you can still override it for one visit. These settings follow your account. Patient facts never belong here, and no setting can relax clinical, coding, legal, identity, or review safeguards.</p>' +
       '<div class="field"><label for="mlsDtFamily">Draft type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
       '<div class="set-grid2">' +
         '<div class="field"><label for="mlsDtLength">Detail</label><select class="sf-select" id="mlsDtLength">' + optionHtml([['concise','Concise'],['standard','Standard'],['detailed','Detailed']]) + '</select></div>' +
@@ -427,7 +559,7 @@
         '<div class="field"><label for="mlsDtStructure">Structure</label><select class="sf-select" id="mlsDtStructure">' + optionHtml([['default','Best structure for this draft'],['fixed_headings','Fixed headings'],['problem_grouped','Group by problem'],['template_faithful','Follow the chosen template']]) + '</select></div>' +
         '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
         '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Saved format</label><select class="sf-select" id="mlsDtSectionProfile"></select></div>' +
-        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use when</label><input class="note-box" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"></div>' +
+        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input class="note-box" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
         '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
         '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
       '</div>' +
@@ -612,10 +744,12 @@
     write: write,
     profiles: function (id) { var family = familyId(id); return SECTION_FAMILIES.indexOf(family) >= 0 ? clone(read().families[family].profiles || sectionProfiles(family)) : []; },
     profileState: function (id) { var family = familyId(id), state = read().families[family], profiles = SECTION_FAMILIES.indexOf(family) >= 0 ? (state.profiles || sectionProfiles(family)) : []; return { activeProfile: state.activeProfile || '', activeLabel: (profiles.filter(function (row) { return row.id === state.activeProfile; })[0] || profiles[0] || {}).label || '', profiles: clone(profiles) }; },
+    autoRoute: automaticRoutes,
     forFamily: mergeFamily,
     forStructured: structuredFamily,
     infer: infer,
     promptBlock: promptBlock,
+    selectProfile: function (id, selectionSource) { var family = familyId(id), state = read().families[family], routed = SECTION_FAMILIES.indexOf(family) >= 0 ? routedSectionProfile(family, state.profiles, state.activeProfile, selectionSource) : null; return routed ? { profileId: routed.profile.id, selection: routed.selection } : null; },
     mountSettings: mountSettings,
     beginSettings: beginSettings,
     saveFromUi: saveFromUi,

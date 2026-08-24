@@ -27754,7 +27754,7 @@ function refreshGenSectionProfiles(){
   var api=window.__mlsDraftTuning, row=document.getElementById('genSectionProfilesRow');
   if(!api||!api.installed||typeof api.profiles!=='function') return;
   var ids={hpi:'genHpiProfile',ros:'genRosProfile',exam:'genExamProfile',assessment:'genAssessmentProfile',plan:'genPlanProfile'}, any=false;
-  Object.keys(ids).forEach(function(key){ var sel=document.getElementById(ids[key]); if(!sel) return; var state=typeof api.profileState==='function'?api.profileState(key):{profiles:api.profiles(key)||[],activeLabel:''}, profiles=state.profiles||[], prior=sel.value; sel.innerHTML='<option value="">Account default — '+(state.activeLabel||'saved format')+'</option>'+profiles.map(function(p){return '<option value="'+p.id+'">'+p.label+' — '+(p.when||'saved format')+'</option>';}).join(''); if(prior&&profiles.some(function(p){return p.id===prior;})) sel.value=prior; else sel.value=''; any=any||profiles.length>1; });
+  Object.keys(ids).forEach(function(key){ var sel=document.getElementById(ids[key]); if(!sel) return; var state=typeof api.profileState==='function'?api.profileState(key):{profiles:api.profiles(key)||[],activeLabel:''}, profiles=state.profiles||[], prior=sel.value; sel.innerHTML='<option value="">Automatic — Account default: '+(state.activeLabel||'saved format')+' if no rule matches</option>'+profiles.map(function(p){return '<option value="'+p.id+'">One visit only: '+p.label+' — '+(p.when||'manual format')+'</option>';}).join(''); if(prior&&profiles.some(function(p){return p.id===prior;})) sel.value=prior; else sel.value=''; any=any||profiles.length>1; });
   if(row) row.style.display=any?'flex':'none';
 }
 function getGenSectionProfileOverrides(){
@@ -27965,12 +27965,20 @@ async function aiCallRaw(sys,user,key,opts){
       // their prompt clearly identifies one of the supported draft families.
       if(opts.freeform&&!_requestedFamily) _draftFamily=_dt.infer(sys,user,opts)||_draftFamily;
       if(_draftFamily){
+        var _effectiveDraftTuning=opts.draftTuning||null;
+        /* Saved HPI/ROS/Exam/Assessment/Plan conditions are evaluated only
+           against TODAY_TRANSCRIPT. autoRoute returns profile ids only, so
+           background chart text and patient wording never enter settings or
+           the tuning payload. An explicit one-visit picker always wins. */
+        if(_draftFamily==='soap'&&typeof _dt.autoRoute==='function'){
+          _effectiveDraftTuning=_dt.autoRoute({todayTranscript:user},_effectiveDraftTuning);
+        }
         _draftTuning=(!_draftFamily||_draftFamily!=='soap')
-          ? _dt.forFamily(_draftFamily,opts.draftTuning||null)
+          ? _dt.forFamily(_draftFamily,_effectiveDraftTuning)
           : (typeof _dt.forStructured==='function'
-            ? _dt.forStructured(opts.draftTuning||null)
-            : _dt.forFamily(_draftFamily,opts.draftTuning||null));
-        _directSys=String(sys||'')+_dt.promptBlock(_draftFamily,opts.draftTuning||null);
+            ? _dt.forStructured(_effectiveDraftTuning)
+            : _dt.forFamily(_draftFamily,_effectiveDraftTuning));
+        _directSys=String(sys||'')+_dt.promptBlock(_draftFamily,_effectiveDraftTuning);
       }
     }
   }catch(eDt){}

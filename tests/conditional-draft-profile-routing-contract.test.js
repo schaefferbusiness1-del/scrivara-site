@@ -143,6 +143,20 @@ const escalationIds = ids(escalation);
 assert.strictEqual(escalationIds.assessment, 'differential', 'uncertain assessment did not select differential');
 assert.strictEqual(escalationIds.plan, 'escalation', 'worsening/red-flag/close-follow-up evidence did not escalate Plan');
 
+// The other three section families also route from their own saved rule, not
+// merely from whichever Plan/Assessment rule happened to win.
+const focusedIds = ids(route('Today: a single active complaint of localized right knee pain is addressed.'));
+assert.strictEqual(focusedIds.hpi, 'focused', 'single-complaint evidence did not select Focused HPI');
+const broadIds = ids(route('Today: multiple complaints across multiple systems were reviewed.'));
+assert.strictEqual(broadIds.ros, 'systematic', 'multi-system evidence did not select Systematic ROS');
+const normalExamIds = ids(route('Today: the documented normal findings include a normal exam and the limb is neurovascularly intact.'));
+assert.strictEqual(normalExamIds.exam, 'normal', 'documented normal findings did not select the normal Exam format');
+
+// Negated danger terms are not escalation evidence. This is intentionally a
+// conservative fallback rather than turning "denies red flags" into a red flag.
+const negatedIds = ids(route('Today: symptoms are stable. She denies red flags and has no new weakness. Continue routine follow-up.'));
+assert.strictEqual(negatedIds.plan, 'routine', 'negated red flags incorrectly selected the escalation Plan');
+
 // A one-visit explicit profileId must win even when the transcript strongly
 // matches another saved format, while every other section remains automatic.
 const overridden = route(
