@@ -626,6 +626,7 @@ const tests = [
      while immutable clinical/legal/coding safeguards remain authoritative. */
   'draft-tuning-contract.test.js',
   'draft-tuning-route-reach.test.js',
+  'conditional-draft-profile-routing-contract.test.js',
   'legal-longform-family-routing-contract.test.js',
   'legal-report-response-contract.test.js',
   'ime-standalone-contract.test.js',
