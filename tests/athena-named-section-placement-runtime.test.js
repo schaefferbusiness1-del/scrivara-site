@@ -210,7 +210,7 @@ async function values(page) {
     });
 
     await withPage(browser, fixture(), async page => {
-      const unknown = await drive(page, request('procedure', 'Unknown destination.'));
+      const unknown = await drive(page, request('mystery', 'Unknown destination.'));
       assert.strictEqual(unknown.ok, false);
       assert.strictEqual(unknown.reason, 'unknown-note-section');
       const many = await drive(page, request('hpi', 'One', { sections: [

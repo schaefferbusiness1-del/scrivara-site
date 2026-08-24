@@ -233,13 +233,17 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 12));
   });
   const procedureCard = byId.mlsAthenaUnifiedConfirm.children[0];
   const procedureRow = procedureManifest.rows.find(row => row.kind === 'procedure');
-  assert(procedureRow && procedureRow.capability === 'manual' && !procedureRow.action, 'procedure fixture no longer stays manual');
+  assert(procedureRow && procedureRow.capability === 'ready' && procedureRow.action === 'write_note', 'procedure fixture did not expose its exact supervised placement');
   assert(!/Review the generated encounter-note text/.test(procedureCard.innerHTML), 'procedure-only review still renders a false generic Encounter-note hero');
   assert(/What: Reviewed procedure \/ operative-note draft/.test(procedureCard.innerHTML), 'procedure artifact is not plainly identified');
-  assert(/Where:<\/b> Athena encounter > Physical Exam > Procedure Documentation/.test(procedureCard.innerHTML), 'procedure row does not name its exact manual Athena destination');
-  assert(/MANUAL IN ATHENA/.test(procedureCard.innerHTML), 'procedure row does not plainly state the manual boundary');
-  assert.strictEqual(procedureCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, 0, 'manual procedure row became selectable');
-  assert.strictEqual(sent.filter(message => message.mode === 'probe').length, probesBeforeProcedure, 'manual-only procedure review started an Athena action probe');
+  assert(/Where:<\/b> Athena encounter > Physical Exam > Procedure Documentation/.test(procedureCard.innerHTML), 'procedure row does not name its exact Athena destination');
+  assert(/READY (?:&middot;|·) SEPARATE CONFIRMATION/.test(procedureCard.innerHTML), 'procedure row does not plainly state its separate-confirmation boundary');
+  assert.strictEqual(procedureCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, 1, 'exact procedure row is not independently selectable');
+  await wait();
+  const procedureProbes = sent.filter(message => message.mode === 'probe').slice(probesBeforeProcedure);
+  assert.strictEqual(procedureProbes.length, 1, 'procedure review did not start exactly one read-only probe');
+  assert.strictEqual(procedureProbes[0].action, 'write_note', 'procedure review probed a non-note action');
+  assert.strictEqual(procedureProbes[0].sections[0].key, 'procedure', 'procedure probe lost its exact destination key');
   assert.strictEqual(sent.filter(message => message.mode === 'execute').length, 0, 'rendered destination checks executed an Athena action');
 
   const genericManifest = window.__mlsWriteFlow.openUnifiedConfirmation({

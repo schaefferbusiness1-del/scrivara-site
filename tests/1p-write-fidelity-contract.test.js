@@ -401,12 +401,12 @@ function probeReply(requestId, over) {
       plan: [{ kind: 'procedure', body: 'PROCEDURE / OPERATIVE NOTE:\n' + NOTE_RAW }]
     });
     const procedureRow = procedureManifest.rows.find(r => r.kind === 'procedure');
-    ok(procedureRow && procedureRow.capability === 'manual',
-      'an operative note must remain manual until the exact Procedure Documentation adapter is proven');
+    ok(procedureRow && procedureRow.capability === 'ready' && procedureRow.action === 'write_note',
+      'a completed operative note must expose the exact Procedure Documentation write action');
     ok(!procedureManifest.rows.some(r => r.id === 'write-note'),
       'an operative note must never silently fall back to the generic encounter-note write');
-    ok(procedureRow.payload.body === ('PROCEDURE / OPERATIVE NOTE:\n' + NOTE_RAW).trim(),
-      'the manual Procedure Documentation payload must preserve the drafted note bytes with only the whole payload ends trimmed');
+    ok(procedureRow.payload.noteText === NOTE_CORE && procedureRow.payload.sections[0].key === 'procedure',
+      'the exact Procedure Documentation payload must strip only its transport label and preserve the drafted note bytes');
     /* and the room's one-press send runs save THEN push, and only pushes a
        record it can actually see filed */
     ok(/💾 Save & review for Athena/.test(shell), 'the op-note room must offer a one-press save-and-open-review action without claiming it already sent');

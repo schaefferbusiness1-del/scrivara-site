@@ -473,7 +473,7 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert.strictEqual(binding.visitContext.appointmentId, APPOINTMENT);
 
     /* the exact hand-off pushHistoryNoteToAthena -> _athenaShowReceipt makes */
-    const plan = [{ kind: 'note', body: 'NOTE TEXT:\n' + record.text }];
+    const plan = [{ kind: 'procedure', body: 'PROCEDURE / OPERATIVE NOTE:\n' + record.text }];
     const manifest = h.wf.openUnifiedConfirmation({
       patient: { name: binding.patient.name, dob: PATIENT.dob, mrn: PATIENT.mrn, patientId: PATIENT.patientId },
       plan: plan,
@@ -481,8 +481,10 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
         appointmentId: binding.visitContext.appointmentId, encounterId: '', encounterUrl: '' },
       noteTimestamp: binding.noteTimestamp, requireExpectedVisit: binding.historical, preferredAction: 'write_note'
     });
-    const noteRow = manifest.rows.filter(r => r.id === 'write-note')[0];
+    const noteRow = manifest.rows.filter(r => r.kind === 'procedure')[0];
     assert.strictEqual(noteRow.payload.noteText, NOTE, 'the drafted op note did not reach the review payload byte-for-byte');
+    assert.strictEqual(noteRow.payload.sections[0].key, 'procedure', 'the drafted op note lost its exact Procedure Documentation key');
+    assert(!manifest.rows.some(r => r.id === 'write-note'), 'the drafted op note fell back to the generic encounter-note row');
     assert.strictEqual(noteRow.capability, 'ready', 'a bound op note still could not be sent: ' + noteRow.reason);
     assert.strictEqual(manifest.requireExpectedVisit, true, 'the historical guard was dropped for an op note');
     assert.strictEqual(manifest.visit.appointmentId, APPOINTMENT);
@@ -498,7 +500,7 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     const blocked = h.wf.buildUnifiedManifest({ patient: PATIENT, plan: plan,
       expectedContext: { visitDate: '', provider: '', appointmentId: '', encounterId: '', encounterUrl: '' },
       requireExpectedVisit: true });
-    assert.strictEqual(blocked.rows.filter(r => r.id === 'write-note')[0].capability, 'blocked',
+    assert.strictEqual(blocked.rows.filter(r => r.kind === 'procedure')[0].capability, 'blocked',
       'an op note with no encounter evidence became sendable');
   }
 

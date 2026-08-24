@@ -29427,7 +29427,7 @@ var ATHENA_SECTIONS={
   note:{ icon:'📝', label:'NOTE', dest:'Athena » Encounter note (HPI / Assessment & Plan)',
     goalHead:'In the patient encounter CURRENTLY OPEN in athenaOne, go to the CLINICAL DOCUMENTATION area — the encounter note: the Intake/Exam or the "Assessment & Plan" / HPI text fields (athenaOne lays out the encounter as Chief Complaint, HPI, ROS, Exam, Assessment & Plan). Click into the main note / Assessment & Plan text area and enter the note text below. Announce "athenaOne: Encounter note" when you start.' },
   procedure:{ icon:'💉', label:'PROCEDURE / OPERATIVE NOTE', dest:'Athena » Physical Exam — Procedure Documentation',
-    goalHead:'This procedure / operative note requires the exact Procedure Documentation destination. MLS keeps it manual until that typed destination is proven; it must never fall back to the generic encounter-note editor.' },
+    goalHead:'This completed procedure / operative note may use only the exact, already-open Procedure Documentation editor inside Physical Exam. If that editor is missing, duplicated, nested ambiguously, or already contains different text, MLS stops without writing. MLS never creates a procedure template, falls back to Physical Exam or the generic encounter-note editor, saves, signs, or places an order.' },
   dx:{ icon:'🩺', label:'DIAGNOSES', dest:'Athena » Assessment & Plan — Diagnosis search (Add assessment)',
     goalHead:'In the OPEN athenaOne encounter, go to the ASSESSMENT & PLAN / DIAGNOSES area. Use athenaOne’s diagnosis search (often "Add assessment" or a Dx / problem search box). For EACH ICD-10 below, type the code or its description, pick the matching result, and add it to the encounter’s diagnosis list. Announce "athenaOne: Assessment/Diagnoses" when you start.' },
   billing:{ icon:'💲', label:'CHARGES / BILLING', dest:'Athena » Billing slate — E/M + CPT/HCPCS codes (Dx links manual; no claim)',
@@ -29638,9 +29638,10 @@ function pushHistoryNoteToAthena(id){
   if(savedBinding.identityConflict){try{toast('This saved visit patient identity conflicts with its linked chart. Correct or reattach it before any Athena action. Nothing changed.','err');}catch(e0){}return;}
   var immutablePatient=savedBinding.patient;
   var who=immutablePatient.name||'this saved patient';
-  /* An op note is not a generic encounter note. Until the exact Procedure
-     Documentation adapter is proven, preserve the requested destination as a
-     manual row and never fall back to write_note. */
+  /* An op note is not a generic encounter note. Preserve its exact Procedure
+     Documentation destination; the typed writer may place it only when one
+     already-open empty Procedure Documentation editor is verified. It never
+     creates the template, falls back to another editor, saves, or signs. */
   var noteRoute=n.kind==='opnote'?'procedure':'note';
   var noteMeta=ATHENA_SECTIONS[noteRoute];
   var plan=[{kind:noteRoute, body:(noteRoute==='note'?'NOTE TEXT:\n':'PROCEDURE / OPERATIVE NOTE:\n')+bundle}]; var lines=[noteMeta.icon+' '+noteMeta.label+'  →  '+noteMeta.dest];

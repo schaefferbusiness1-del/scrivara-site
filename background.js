@@ -664,7 +664,8 @@ async function mlsAthenaActionV2DriverFn(req) {
       ros: /\b(?:ros|review of systems)\b/,
       exam: /\b(?:physical exam(?:ination)?|exam(?:ination)?|objective findings)\b/,
       assessment: /\b(?:assessment(?: narrative)?|clinical impression|impression)\b/,
-      plan: /\b(?:plan|follow up|followup|recommendations?)\b/
+      plan: /\b(?:plan|follow up|followup|recommendations?)\b/,
+      procedure: /\b(?:procedure documentation|procedure note|operative note|op note)\b/
     };
     /* The app's visible destination is part of the reviewed payload, not
        decoration. Keep the driver-side copy so a stale/misbuilt page cannot
@@ -674,11 +675,12 @@ async function mlsAthenaActionV2DriverFn(req) {
       ros: 'Athena encounter > Review of Systems',
       exam: 'Athena encounter > Physical Exam',
       assessment: 'Athena encounter > Assessment & Plan > Assessment',
-      plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up'
+      plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up',
+      procedure: 'Athena encounter > Physical Exam > Procedure Documentation'
     };
     function canonicalNamedNoteKey(raw) {
       var key = norm(raw).replace(/ /g, '_');
-      var aliases = { note: 'note', encounter_note: 'note', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan' };
+      var aliases = { note: 'note', encounter_note: 'note', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan', procedure: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', op_note: 'procedure', opnote: 'procedure' };
       return aliases[key] || '';
     }
     function namedSectionDescriptor(el) {
@@ -707,12 +709,21 @@ async function mlsAthenaActionV2DriverFn(req) {
         /* Athena may render Procedure Documentation inside the wider Physical
            Exam panel. A lone nested procedure editor is not an Exam editor,
            even when the outer panel has an exact Physical Exam heading. */
-        if (NAMED_NOTE_NESTED_EXCLUSIONS.test(desc)) return false;
-        if (keys.length && (keys.length !== 1 || keys[0] !== key)) return false;
+        if (NAMED_NOTE_NESTED_EXCLUSIONS.test(desc) && key !== 'procedure') return false;
+        if (keys.length && (keys.length !== 1 || keys[0] !== key)) {
+          /* Procedure Documentation is a distinct editor nested inside
+             Physical Exam in Athena. Once the exact Procedure Documentation
+             scope has been reached, its one outer Exam ancestor is expected;
+             every other conflicting label still refuses the destination. */
+          if (!(key === 'procedure' && reachedScope && keys.length === 1 && keys[0] === 'exam')) return false;
+        }
         if (cur === scope) reachedScope = true;
         cur = parentAcrossRoots(cur);
       }
       return reachedScope;
+    }
+    function namedOwnedEditors(frame, scope, key) {
+      return editorsIn(scope, frame).filter(function (editor) { return editorOwnedByNamedScope(editor, scope, key); });
     }
     function namedNoteScopes(frame, key) {
       var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label]';
@@ -721,8 +732,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (!visible(el, frame.w) || raw.indexOf(el) !== index) return false;
         var desc = namedSectionDescriptor(el), keys = namedKeysForDescriptor(desc);
         if (keys.length !== 1 || keys[0] !== key) return false;
-        var editors = editorsIn(el, frame);
-        return editors.length === 1 && editorOwnedByNamedScope(editors[0], el, key);
+        return namedOwnedEditors(frame, el, key).length === 1;
       });
       return collapseContainedMatches(raw);
     }
@@ -730,7 +740,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (action !== 'write_note' || !NAMED_NOTE_DEFS[key]) return null;
       var scopes = namedNoteScopes(frame, key);
       if (scopes.length !== 1) return null;
-      var editors = editorsIn(scopes[0], frame);
+      var editors = namedOwnedEditors(frame, scopes[0], key);
       if (editors.length !== 1) return null;
       return { control: editors[0], editor: editors[0], root: scopes[0], strength: 4, namedSection: key };
     }
@@ -942,7 +952,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     var controlLabels = labelSources(actionControl).map(text).filter(Boolean);
     var controlFallback = '';
     try { controlFallback = text(actionControl.getAttribute('placeholder') || actionControl.getAttribute('name') || actionControl.getAttribute('data-testid') || ''); } catch (eLabel) {}
-    if (!controlFallback) controlFallback = action === 'write_note' ? (requestedNoteSection === 'note' ? 'Encounter note editor' : ({ hpi: 'HPI editor', ros: 'Review of Systems editor', exam: 'Physical Exam editor', assessment: 'Assessment editor', plan: 'Plan editor' }[requestedNoteSection] || 'Named note editor')) : (action === 'stage_billing' ? 'Athena Billing / Charges field' : (action === 'place_order' ? 'Athena Orders catalog search' : ''));
+    if (!controlFallback) controlFallback = action === 'write_note' ? (requestedNoteSection === 'note' ? 'Encounter note editor' : ({ hpi: 'HPI editor', ros: 'Review of Systems editor', exam: 'Physical Exam editor', assessment: 'Assessment editor', plan: 'Plan editor', procedure: 'Procedure Documentation editor' }[requestedNoteSection] || 'Named note editor')) : (action === 'stage_billing' ? 'Athena Billing / Charges field' : (action === 'place_order' ? 'Athena Orders catalog search' : ''));
     var context = {
       mrn: digits(observedPatient.mrn),
       patientName: text(observedPatient.name),

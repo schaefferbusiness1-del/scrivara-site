@@ -1,8 +1,8 @@
 'use strict';
 
 /* Procedure-template creation is still a staging experiment. Production and
- * P1 must keep it excluded until identity + exact destination are proven; the
- * ordinary generic note writer remains the only supervised production lane. */
+ * P1 keep it excluded: the active supervised lane may use only one already-
+ * open exact Procedure Documentation editor and never creates a template. */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -24,4 +24,4 @@ assert(prep >= 0 && paste > prep, 'op-note module must prepare the exact templat
 assert(opnote.includes("mode: 'prep'"), 'template mutation is not visibly marked as prep-only');
 assert(opnote.includes("if (wb && isFn(wb.writeNoteToChart)"), 'op-note module bypasses the existing verified paste gate');
 assert(opnote.includes('Procedure Documentation') && opnote.includes('Injection Generic Template'), 'fallback destination is not explicit');
-console.log('PASS op-note loader boundary: production/P1/cloned stay excluded; staging-only module remains an unproven template-prep experiment before the existing generic identity/paste gate');
+console.log('PASS op-note loader boundary: production/P1/cloned exclude template creation; staging-only prep remains separate from the exact already-open Procedure Documentation lane');

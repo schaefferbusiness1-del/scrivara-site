@@ -193,12 +193,15 @@ const procedureManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assi
   { kind: 'opnote', body: 'PROCEDURE / OPERATIVE NOTE:\nSynthetic reviewed procedure text.' }
 ], sections: [], receiptSessionId: 'runtime-procedure-manual-target' }));
 const procedureRow = procedureManifest.rows.find(row => row.kind === 'procedure');
-assert(procedureRow && procedureRow.capability === 'manual' && !procedureRow.action, 'procedure/op note did not remain manual');
-assert.strictEqual(procedureRow.destination, 'Athena encounter > Physical Exam > Procedure Documentation', 'procedure/op note advertised the wrong exact manual destination');
-assert(!procedureManifest.rows.some(row => row.action === 'write_note' || row.id === 'write-note'), 'procedure/op note fell through to the generic note writer');
+assert(procedureRow && procedureRow.capability === 'ready' && procedureRow.action === 'write_note', 'procedure/op note did not expose its exact supervised placement');
+assert.strictEqual(procedureRow.destination, 'Athena encounter > Physical Exam > Procedure Documentation', 'procedure/op note advertised the wrong exact destination');
+assert.strictEqual(procedureRow.payload.sections.length, 1, 'procedure/op note carried another note destination');
+assert.strictEqual(procedureRow.payload.sections[0].key, 'procedure', 'procedure/op note lost its immutable destination key');
+assert.strictEqual(procedureRow.payload.noteText, 'Synthetic reviewed procedure text.', 'procedure/op note transport label leaked into the exact editor payload');
+assert(!procedureManifest.rows.some(row => row.id === 'write-note'), 'procedure/op note fell through to the generic note writer');
 const pushHistorySource = /function pushHistoryNoteToAthena\(id\)\{[\s\S]*?\n\}/.exec(appSource);
 assert(pushHistorySource && /n\.kind==='opnote'\?'procedure':'note'/.test(pushHistorySource[0]), 'saved op-note route discarded its artifact type');
-assert(/var allowed=\{note:1,hpi:1,ros:1,exam:1,assessment:1,plan:1,procedure:1,dx:1,billing:1,orders:1\}/.test(appSource), 'the app blocks the explicit manual Procedure Documentation row before review and admits only exact named SOAP rows');
+assert(/var allowed=\{note:1,hpi:1,ros:1,exam:1,assessment:1,plan:1,procedure:1,dx:1,billing:1,orders:1\}/.test(appSource), 'the app blocks unknown destinations before review and admits only exact named clinical rows');
 assert(!/var noteRoute=n\.kind==='opnote'\?'note'/.test(appSource), 'saved op notes explicitly fall back to the generic note route');
 const taughtBinding = window.__mlsShowAsst.contextFor(teachManifest, taughtRow);
 const taughtTarget = {

@@ -1061,7 +1061,6 @@
     consent: { label: 'Consent', destination: 'Athena patient documents > Consent', consequence: 'Consent requires its own document and signature workflow. MLS keeps it manual.' },
     handouts: { label: 'Patient handouts', destination: 'Athena patient documents > Handouts', consequence: 'Document routing is not typed in this workflow. MLS keeps it manual.' },
     instructions: { label: 'Patient instructions', destination: 'Athena encounter > Patient instructions', consequence: 'Patient instructions remain visible but are not written by this typed action bridge.' },
-    procedure: { label: 'Procedure / operative note', destination: 'Athena encounter > Physical Exam > Procedure Documentation', consequence: 'The exact Procedure Documentation adapter is not active. MLS keeps this note manual and will not fall back to the generic encounter-note editor.' },
     documents: { label: 'Documents / letters', destination: 'Athena patient documents', consequence: 'The document type and destination are not typed in this workflow. MLS keeps this payload manual.' }
   };
   var UNIFIED_ALIASES = { diagnoses: 'dx', diagnosis: 'dx', icd: 'dx', icd10: 'dx', prescription: 'rx', prescriptions: 'rx', referral: 'referrals', opnote: 'procedure', op_note: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', document: 'documents', letter: 'documents', letters: 'documents', avs: 'documents', prior_auth: 'documents', ime: 'documents', mips: 'documents' };
@@ -1272,7 +1271,7 @@
        because all of them happen to be visible on one review page. Each named
        section becomes one immutable row and therefore one fresh probe + one
        clinician confirmation. The generic full-note lane remains one row. */
-    var namedNoteLabels = { hpi: 'HPI', ros: 'Review of Systems', exam: 'Physical Exam', assessment: 'Assessment narrative', plan: 'Plan / Follow-up' };
+    var namedNoteLabels = { hpi: 'HPI', ros: 'Review of Systems', exam: 'Physical Exam', assessment: 'Assessment narrative', plan: 'Plan / Follow-up', procedure: 'Procedure / operative note' };
     var noteSectionCounts = {};
     noteSections.forEach(function (section) {
       var key = S(section && section.key).trim();
@@ -1417,7 +1416,7 @@
     }
     for (var i = 0; i < plan.length; i++) {
       var source = plan[i] || {}, kind = planKind(source.kind);
-      if (kind === 'note' || kind === 'billing') continue;
+      if (kind === 'note' || kind === 'procedure' || kind === 'billing') continue;
       if (source.duplicateOf && namedNoteLabels[source.duplicateOf]) {
         var duplicateKey = source.duplicateOf;
         addRow({ id: 'blocked-duplicate-note-' + duplicateKey + '-' + i, action: '', kind: duplicateKey,
@@ -3281,11 +3280,13 @@
     ros: 'ros', review_of_systems: 'ros',
     exam: 'exam', physical_exam: 'exam',
     assessment: 'assessment', assessment_narrative: 'assessment',
-    plan: 'plan', followup: 'plan', follow_up: 'plan'
+    plan: 'plan', followup: 'plan', follow_up: 'plan',
+    procedure: 'procedure', opnote: 'procedure', op_note: 'procedure',
+    procedure_note: 'procedure', operative_note: 'procedure'
   };
   var PREVIEW_ONLY = {
     orders: 1, rx: 1, referrals: 1, pt: 1, imaging: 1, billing: 1,
-    surgctr: 1, consent: 1, handouts: 1, instructions: 1, procedure: 1
+    surgctr: 1, consent: 1, handouts: 1, instructions: 1
   };
   var DESTINATION = {
     note: 'Athena encounter > Encounter note',
@@ -3299,7 +3300,7 @@
     imaging: 'Athena Orders > Imaging (manual entry)', billing: 'Athena Billing / Charges (manual entry)',
     surgctr: 'Surgery scheduling workflow (manual entry)', consent: 'Patient documents / consent (manual entry)',
     handouts: 'Patient documents / handout (manual entry)', instructions: 'Patient instructions (manual entry)',
-    procedure: 'Athena encounter > Physical Exam > Procedure Documentation (manual entry)'
+    procedure: 'Athena encounter > Physical Exam > Procedure Documentation'
   };
   function canonicalSectionKey(raw) {
     raw = S(raw).toLowerCase().trim();
@@ -3551,14 +3552,22 @@
       }).filter(function (s) { return s && s.text; });
     }
     var plan = Array.isArray(opts.plan) ? opts.plan : [];
-    var note = null;
-    for (var i = 0; i < plan.length; i++) { if (plan[i] && plan[i].kind === 'note') { note = plan[i]; break; } }
-    var text = S(note && note.body).replace(/^\s*NOTE TEXT\s*:\s*/i, '').trim();
+    var note = null, route = null;
+    for (var i = 0; i < plan.length; i++) {
+      route = canonicalSectionKey(plan[i] && plan[i].kind);
+      if (route && route.execute && (route.key === 'note' || route.key === 'procedure')) { note = plan[i]; break; }
+      route = null;
+    }
+    var text = S(note && note.body);
+    if (route && route.key === 'procedure') text = text.replace(/^\s*(?:PROCEDURE\s*\/\s*OPERATIVE NOTE|PROCEDURE NOTE|OPERATIVE NOTE|OP NOTE)\s*:\s*/i, '');
+    else text = text.replace(/^\s*NOTE TEXT\s*:\s*/i, '');
+    text = text.trim();
     if (!text) return [];
     /* The top receipt represents the complete generated encounter note. Send it
        through the driver's explicit encounter-note route; diagnosis, billing,
        orders, prescriptions, Save, and Sign remain independent actions. */
-    return [{ key: 'note', text: text, execute: true, destination: DESTINATION.note }];
+    var key = route && route.key === 'procedure' ? 'procedure' : 'note';
+    return [{ key: key, text: text, execute: true, destination: DESTINATION[key] }];
   }
   function writeReceiptDrafts(opts) {
     opts = opts || {};

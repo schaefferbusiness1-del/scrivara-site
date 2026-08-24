@@ -799,6 +799,7 @@ const tests = [
   'athena-what-goes-where-runtime.test.js',
   'athena-launcher-clarity-contract.test.js',
   'athena-named-section-placement-runtime.test.js',
+  'athena-procedure-note-placement-runtime.test.js',
   'athena-generated-soap-staging-runtime.test.js',
   'athena-generated-soap-provenance-runtime.test.js',
   'athena-inline-canonical-generation-runtime.test.js',
