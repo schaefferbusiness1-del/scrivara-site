@@ -7577,11 +7577,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          patient binding. */
       try {
         /* 2026-07-28: one canonical stop - also halts the phone engine and
-           dictation in the same click. */
-        mlsStopAllCapture('lane-pill');
-        if (recordingNow() && typeof window.stopCapture !== 'function') {
-          cb.click();
-          finishTopSegmentAfterStop();
+           dictation in the same click. The Easy phase transition is part of
+           this same action; otherwise the low-level recorder stops while the
+           engine still says `rec` and exposes a second Stop below the lane. */
+        var easyStop = window.__mlsStopEasyRecording;
+        if (typeof easyStop === 'function') easyStop('lane-pill');
+        else {
+          mlsStopAllCapture('lane-pill');
+          if (recordingNow() && typeof window.stopCapture !== 'function') {
+            cb.click();
+            finishTopSegmentAfterStop();
+          }
         }
       }
       catch (e2) { flowToast('The recorder could not pause. Please try again.', 'err'); return; }
@@ -8027,12 +8033,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        nothing flashes and every engine re-render is covered). If the lane is
        ever absent the class comes off and the engine card is back on its own. */
     try {
-      var laneMounted = !!(_primaryLane && _primaryLane.isConnected) || !!body.querySelector('.ez3fl-record');
+      var laneCandidate = (_primaryLane && _primaryLane.isConnected && body.contains(_primaryLane))
+        ? _primaryLane : body.querySelector('.ez3fl-record');
+      /* A connected lane is not necessarily a visible lane. During a stopped
+         zero-word turn the engine can leave the lane mounted under a hidden
+         ancestor (or during its repaint window). Treating that node as the
+         owner in that state hides the engine's only editable transcript too.
+         Ownership must follow the visible surface, while phone behavior keeps
+         its explicit engine-only path below. */
+      var laneMounted = !!laneCandidate;
+      var laneVisible = laneMounted && topLaneIsVisible(laneCandidate);
       /* b940 (phone audit B2): on the phone the whole lane is CSS-hidden, so a
          MOUNTED lane must not claim the top - that claim was hiding the
          engine's transcript card and quick-tools chip, leaving the phone with
          no transcript at all. Mounted is not visible. */
-      var wantOwns = !staff && laneMounted && !(document.body && document.body.classList.contains('mls-phone'));
+      var wantOwns = !staff && laneVisible && !(document.body && document.body.classList.contains('mls-phone'));
       if (body.classList.contains('ez3fl-top-owns') !== wantOwns) body.classList.toggle('ez3fl-top-owns', wantOwns);
     } catch (e) {}
     /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
@@ -22450,7 +22465,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3BindNow', function (btn) { bindCureRun(btn); }); /* wfbindbar-1.0.0 */
     on('ez3Rec', function () { if (!S.appt) { toast('Pick a patient first.'); return; } lockAndStart(S.appt, { record: true }); });
     on('ez3Rec2', function () { if (!requireExactScheduledBinding(S.appt, 'recording')) return; var c = captureBtn(); if (c) { c.click(); setTimeout(render, 400); } });
-    on('ez3Stop', stopRecordingOnly);
+    /* The delegated click registry supplies (button, event). Keep that UI
+       payload out of stopRecordingOnly's lane-owner flag so the engine Stop
+       remains an explicit engine transition. */
+    on('ez3Stop', function () { stopRecordingOnly(false); });
     on('ez3CancelRec', function () {
       confirmBox({
         title: 'Discard this recording?',
@@ -22661,18 +22679,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* ---- stop recording only; transcript stays intact for resume/generate --- */
   var stopIv = null;
-  function stopRecordingOnly() {
-    var c = captureBtn(); if (!c) { toast('Recorder not found.'); return; }
-    if (!isRecording()) { S.phase = 'stopped'; S.recStart = 0; render(); return; }
-    /* 2026-07-28 owner order: ONE stop, no second confirm anywhere. The
-       canonical stop halts every engine (local, phone, dictation) in this
-       one click and the state settles synchronously - no 400ms confirm-poll. */
-    if (isFn(window.__mlsStopAllCapture)) window.__mlsStopAllCapture('engine-stop'); else c.click();
+  function stopRecordingOnly(fromLane) {
+    var c = captureBtn();
+    var wasRecording = isRecording();
+    /* 2026-08-24: the lane and the engine share this idempotent transition.
+       Always invoke the low-level canonical stop, even when the engine's
+       recording flag has already gone false: a segment, phone mic, or
+       dictation session may still be armed after a boundary click. */
+    var did = false;
+    if (isFn(window.__mlsStopAllCapture)) did = !!window.__mlsStopAllCapture(fromLane ? 'lane-pill' : 'engine-stop');
+    else if (wasRecording && c) { c.click(); did = true; }
+    if (!c && !did) { toast('Recorder not found.'); return false; }
     if (stopIv) { clearInterval(stopIv); stopIv = null; }
     S.phase = 'stopped'; S.recStart = 0; S.genClickedAt = 0;
-    toast('Recording stopped. Everything captured is saved below — resume or generate one note.');
+    if (wasRecording || did) toast('Recording stopped. Everything captured is saved below — resume or generate one note.');
     render();
+    return true;
   }
+  /* The top lane must not call remote.stopRecording(): that public method is
+     intentionally gated and would re-enter this function. This private-owner
+     bridge performs the exact same phase transition while keeping the bridge
+     itself idempotent for a second click. */
+  var easyStopBridge = function (reason) { return stopRecordingOnly(!!reason); };
+  try { window.__mlsStopEasyRecording = easyStopBridge; } catch (eStopBridge) {}
+  cleanup.push(function () {
+    try { if (window.__mlsStopEasyRecording === easyStopBridge) delete window.__mlsStopEasyRecording; } catch (eStopBridgeCleanup) {}
+  });
   cleanup.push(function () { if (stopIv) clearInterval(stopIv); });
 
   /* ---- send-to-Athena with name/DOB/destination confirm --------------------

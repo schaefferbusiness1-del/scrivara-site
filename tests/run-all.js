@@ -894,6 +894,7 @@ const tests = [
   'easy-lane-engine-rewrite-runtime.test.js',
   'easy-canonical-action-owner-runtime.test.js',
   'easy-pause-resume-runtime.test.js',
+  'stop-wake-causal-contract.test.js',
   'async-artifact-binding-contract.test.js',
   'async-artifact-source-guard.test.js',
   'note-editor-binding-contract.test.js',

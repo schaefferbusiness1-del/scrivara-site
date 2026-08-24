@@ -2663,9 +2663,15 @@
     (D.body || D.documentElement).appendChild(h);
   }
 
-  function wake() {
-    if (D.body.classList.contains('mls-headsdown')) D.body.classList.remove('mls-headsdown');
+  function clearHeadsDown() {
+    if (D.body) D.body.classList.remove('mls-headsdown');
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    var hint = qs('#mlsHeadsDownHint');
+    if (hint && hint.parentNode) hint.parentNode.removeChild(hint);
+  }
+
+  function wake() {
+    clearHeadsDown();
     if (!headsDownOn()) return;
     if (stageNow() !== 1) return;
     idleTimer = setTimeout(function () {
@@ -2994,7 +3000,7 @@
   function onKey(e) {
     onMove();
     if (e.key === 'Escape' && D.body.classList.contains('mls-headsdown')) {
-      D.body.classList.remove('mls-headsdown');
+      clearHeadsDown();
       return;
     }
     /* Never swallow a key from someone writing a note. Ctrl+1 is heading muscle
@@ -3113,6 +3119,17 @@
     var target = e && e.target;
     if (target && target.nodeType !== 1) target = target.parentElement;
     if (!target || !target.closest) { markAll(); queuePass(); return; }
+    /* A real Pause/Stop is a state transition, not merely activity. Clear the
+       calm shell on entry so a stale hint/timer cannot survive the transition
+       or re-hide the newly stopped controls. Start and unrelated clicks retain
+       the ordinary wake/re-arm behavior. */
+    var stopControl = target.closest('#ez3Stop,#captureBtn,.ez3fl-recbtn');
+    var stopLabel = stopControl ? String(stopControl.textContent || '') : '';
+    var isStopClick = !!(stopControl && (
+      stopControl.id === 'ez3Stop' || /\b(?:pause|stop)\b/i.test(stopLabel) ||
+      (stopControl.id === 'captureBtn' && stopControl.classList.contains('recording'))));
+    if (isStopClick) clearHeadsDown();
+    else wake();
     var shell = target.closest('#mlsDock,#mlsRightNow,#mlsAskResults,#mlsToolsMenu');
     if (shell) {
       if (shell.id === 'mlsDock') {

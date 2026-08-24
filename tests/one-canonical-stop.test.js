@@ -34,7 +34,7 @@ assert(/__mlsDictateAnywhere/.test(body) && /isListening/.test(body),
   'the canonical stop no longer reaches dictation');
 
 /* 3. Every stop surface routes through it. */
-const sro = src.indexOf('function stopRecordingOnly()');
+const sro = src.indexOf('function stopRecordingOnly(fromLane)');
 assert(sro > -1, 'stopRecordingOnly is gone');
 const sroBody = src.slice(sro, sro + 1400);
 assert(/__mlsStopAllCapture/.test(sroBody),
@@ -47,8 +47,8 @@ assert(disc > -1, 'doDiscardRecording is gone');
 assert(/__mlsStopAllCapture/.test(src.slice(disc, disc + 900)),
   'doDiscardRecording (active copy) no longer routes through the canonical stop - the stacked second popup returns');
 
-assert(/mlsStopAllCapture\('lane-pill'\)/.test(src),
-  'the lane pill no longer routes through the canonical stop');
+assert(/__mlsStopEasyRecording/.test(src) && /mlsStopAllCapture\('lane-pill'\)/.test(src),
+  'the lane pill no longer routes through the Easy phase owner with a guarded canonical-stop fallback');
 
 /* 4. The phone engine counts as live on the lane pill, so its Stop is
  *    reachable from the primary control, not only the pairing popup. */
