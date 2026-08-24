@@ -369,17 +369,15 @@ async function runtime() {
     eq(s.glowId, 'ez3flReview', `with a drafted note the next step is ${s.glowId || '(nothing)'}, expected ez3flReview`);
 
     /* ---- 4a. REVIEW TRANSITION: ONE ACTIONABLE FORMATTED NOTE ------------ */
-    /* Touch the visible flow copy exactly as a clinician's generated-note
-       mirror does. This makes the upper formatter mount deterministic even
-       when the deferred preview bus scanned the new lane before its value was
-       copied; the production transition below still owns the hide/show. */
+    /* The upper lane keeps only the compact Next action. The complete editable
+       formatted note has one owner: lower #noteBox. */
     await page.evaluate((note) => window.__vlT.set('ez3flNote', note), generatedNote);
-    s = await until(page, (x) => x.formatted && x.formatted.top && x.formatted.top.visible, 10000, 'formatted preview');
+    s = await until(page, (x) => x.formatted && x.formatted.top && !x.formatted.top.visible && x.noteWrapVisible, 10000, 'compact Next action');
     ok(s.formatted.total >= 2,
       `the generated note did not mount both expected formatter owners before review (${JSON.stringify(s.formatted)})`);
-    ok(s.formatted.visibleOwners.includes('ez3flNote'),
-      `the prior-step formatted note is not visible before review (${JSON.stringify(s.formatted)})`);
-    ok(s.noteWrapVisible, 'the prior-step note card is not visible before review');
+    ok(!s.formatted.visibleOwners.includes('ez3flNote'),
+      `the non-working upper formatted-note duplicate is still visible (${JSON.stringify(s.formatted)})`);
+    ok(s.noteWrapVisible, 'the compact prior-step Next action is not visible before review');
     const reviewStart = await page.evaluate(() => {
       window.scrollTo(0, Math.min(180, Math.max(0, document.documentElement.scrollHeight - window.innerHeight)));
       const before = window.scrollY;
@@ -415,11 +413,11 @@ async function runtime() {
 
     await page.evaluate(() => { const b = document.getElementById('ez3Adv'); if (b) b.click(); });
     s = await until(page, (x) => !x.advanced && !x.reviewMarker && x.formatted &&
-      x.formatted.top && x.formatted.top.visible, 10000, 'Back restores prior formatted view');
+      x.formatted.top && !x.formatted.top.visible && x.noteWrapVisible, 10000, 'Back restores compact Next action');
     ok(!s.reviewMarker, 'Back left the review-step marker set');
-    ok(s.formatted.top && s.formatted.top.visible,
-      `Back did not restore the required prior-page formatted note (${JSON.stringify(s.formatted)})`);
-    ok(s.noteWrapVisible, 'Back did not restore the required prior-step note card');
+    ok(s.formatted.top && !s.formatted.top.visible,
+      `Back restored the retired upper formatted duplicate (${JSON.stringify(s.formatted)})`);
+    ok(s.noteWrapVisible, 'Back did not restore the required compact Next action');
 
     /* ---- 5. IT REBUILDS ITSELF, WITH NO USER INPUT AT ALL ---------------- */
     const razed = await page.evaluate(() => window.__vlT.razeLane());

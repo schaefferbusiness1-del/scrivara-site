@@ -7212,7 +7212,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3fl-note[hidden]{display:none!important;}',
     '#mlsEz3 .ez3fl-note label{display:block;color:#204034;font-size:13px;font-weight:750;margin-bottom:7px;}',
     '#mlsEz3 .ez3fl-note textarea{display:block;width:100%;min-height:220px;resize:vertical;box-sizing:border-box;background:#fff!important;color:#1A211C!important;border:1px solid #CFE0D2!important;border-radius:10px;padding:12px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}',
+    /* The canonical editable note already lives in the lower #noteCard. The
+       old top-lane mirror looked identical but did not own the complete editor,
+       so it created the exact duplicate the live walkthrough exposed. Keep the
+       compact Next action here, but never render a second note/editor. */
+    '#mlsEz3 #ez3flNoteWrap>label,#mlsEz3 #ez3flNoteWrap>textarea,#mlsEz3 #ez3flNoteWrap>.mls-fp-fmt{display:none!important;}',
+    '#mlsEz3 #ez3flNoteWrap{background:transparent;border:0;padding:0;}',
     '#mlsEz3 .ez3fl-nextrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;}',
+    '#mlsEz3 #ez3flNoteWrap .ez3fl-nextrow{margin-top:0;}',
     '#mlsEz3 .ez3fl-review{display:inline-flex;align-items:center;justify-content:center;background:#204034;border:1px solid #204034;border-radius:11px;color:#fff;font-size:14px;font-weight:750;cursor:pointer;padding:11px 17px;}',
     '#mlsEz3 .ez3fl-review:hover{background:#2E6A4B;border-color:#2E6A4B;}',
     '#mlsEz3 .ez3fl-nextrow span{color:#68756E;font-size:11.5px;}',
@@ -7867,8 +7874,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function syncTopLane(rec) {
     /* Back closes the advanced workspace synchronously, while this lane is the
-       durable observer of that engine-owned transition. Restore the upper
-       formatted view on the next sync, including a real Back navigation. */
+       durable observer of that engine-owned transition. Restore the compact
+       Next action on the next sync, including a real Back navigation. The
+       editable formatted note remains owned only by lower #noteCard. */
     var advOpen = false;
     try { advOpen = document.body.classList.contains('ez3adv'); } catch (eAdv) {}
     if (_reviewStepOpen && !advOpen) setReviewStepOpen(false);
@@ -7968,10 +7976,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       else if (txMirror && text.length > topTx.value.length && text.slice(0, topTx.value.length) === topTx.value) txMirror.set(topTx, text);
     }
     if (count) { var words = text.trim() ? text.trim().split(/\s+/).length : 0; setLaneText(count, words + ' word' + (words === 1 ? '' : 's') + ' captured'); }
-    /* Review/send owns the lower #noteBox card. Remove the entire prior-step
-       note block while that workspace is open so its label, button, textarea,
-       and formatted wrapper cannot leave a blank or duplicate shell behind;
-       syncTopLane restores it when Back closes the workspace. */
+    /* Review/send owns the lower #noteBox card. The prior-step wrapper now owns
+       only a compact Next action; hide that action while its destination is
+       open and restore it when Back closes the workspace. */
     setLaneHidden(noteWrap, _reviewStepOpen || !noteText.trim());
     if (topNote && note && document.activeElement !== topNote && topNote.value !== noteText) topNote.value = noteText;
   }
