@@ -200,6 +200,27 @@ assert.ok(
   'boxes precisely because a single class-keyed rule can be wrong about who owns ' +
   'the transcript.'
 );
+
+/* b1055 live-generation regression: b1053 intentionally hides the formatted
+ * mirror in the upper engine lane. The lower note card therefore owns the one
+ * formatted renderer that can show generated note text. Keep the old
+ * `.mlsf-note` duplicate folded, but do not let this presentation module hide
+ * `#noteCard .mls-fp-fmt` too; the fixpack's own inline state decides whether a
+ * real structured note is ready to render. */
+assert.ok(
+  /#mlsEz3\s+#ez3flNoteWrap>\.mls-fp-fmt\{display:none!important;\}/.test(connect),
+  'the upper engine-lane formatted mirror is no longer hidden; allowing both ' +
+  'formatters would restore the duplicate note bug'
+);
+assert.ok(
+  /BODY \+ '\.' \+ NOTE \+ ' #visitView #noteCard \.mlsf-note,/.test(src),
+  'the lower .mlsf-note duplicate is no longer named by the live-note fold'
+);
+assert.ok(
+  !/BODY \+ '\.' \+ NOTE \+ ' #visitView #noteCard \.mls-fp-fmt\{display:none!important\}/.test(src),
+  'the live lower formatted renderer is still hidden; generated note text would ' +
+  'disappear even though the upper mirror is intentionally suppressed'
+);
 /* If a THIRD transcript surface is ever added, neither rule knows about it and
  * the invariant silently stops being an invariant. */
 {

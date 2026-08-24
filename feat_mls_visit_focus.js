@@ -172,9 +172,6 @@
     { sel: '#visitView #noteCard .mlsf-note',
       route: 'the engine note ladder (#ez3Note) renders the same note text',
       why: 'measured 568x752 - a full second rendering of the note stacked over the ladder' },
-    { sel: '#visitView #noteCard .mls-fp-fmt',
-      route: 'the engine note ladder (#ez3Note) renders the same note text',
-      why: 'measured 568x378 - a THIRD rendering of the same note in the same card' },
     { sel: '#visitView #noteCard .mls-as-ind',
       route: 'the engine ladder shows save state on its own controls',
       why: 'autosave chips for the hidden editor; three of them painted beside the duplicates' },
@@ -457,17 +454,18 @@
     'body.' + BODY + ' #visitView #mlsEz3 .ez3-advrow{display:none!important}',
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard{display:block!important}',
     /* vf-1.2.0 (2026-07-28, owner: the advanced section "screws everything
-       up"): the revealed card stacked a SECOND rendering of the note over the
-       engine ladder. Measured live with a real note in the 568px column: an
-       empty-state hint painting 179px DESPITE the live note, two formatted
-       note renderings (752px and 378px), and editor chrome - about 1450px of
-       duplication. The review essentials stay visible: the preview button,
-       the note-actions row (sign / copy / Review Athena actions), the orders
-       card, and the visit-tools toggle. */
+       up"): the revealed card stacked duplicate note chrome over the engine
+       ladder. The empty hint, old .mlsf-note preview, and editor chrome stay
+       folded. The lower .mls-fp-fmt is deliberately NOT in this hide rule:
+       b1053 hides the upper engine-lane formatter, so this lower formatter is
+       the one live generated-note renderer when mls-note-live is present. Its
+       own fixpack still controls whether it is populated/displayed. The review
+       essentials stay visible: the preview button, the note-actions row (sign /
+       copy / Review Athena actions), the orders card, and the visit-tools
+       toggle. */
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard #noteEmpty,' +
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mlsf-bar,' +
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mlsf-note,' +
-    'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-fp-fmt,' +
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-as-ind,' +
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-opaddword,' +
     'body.' + BODY + '.' + NOTE + ' #visitView #noteCard .mls-nm-meter{display:none!important}',
