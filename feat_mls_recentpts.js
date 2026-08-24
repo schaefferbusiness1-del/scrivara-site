@@ -25,7 +25,7 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.__mlsRecentPts && window.__mlsRecentPts.__booted) return;
 
-  var VERSION='rp-2.3.0'; /* layout-stable + exact-event/visible-data refresh + route-fast */
+  var VERSION='rp-2.4.0'; /* identity-safe chart switch + exact-event/visible-data refresh */
   var WRAP_ID='mlsRecentPts', MENU_ID='mlsRecentPtsMenu', STYLE_ID='mlsRecentPts-style';
   var WRAP_STYLE_ID='mls-ctxbar-wrap-style', LS_KEY='mls_recent_pts_v1', MAX=6;
   var renderFrame=0, renderNeedsData=false, idleRefresh=0, idleRefreshKind='', idleDataDirty=false;
@@ -57,6 +57,13 @@
         try{if(typeof window.renderPatients==='function')window.renderPatients();}catch(e){}
         try{if(typeof window.renderPatientBar==='function')window.renderPatientBar();}catch(e){}
       }
+      /* A Recent click means "open this chart", not "silently replace the
+         patient underneath the visit currently on screen".  Staying on the
+         Visit route can leave its schedule-card DOM bound to the prior
+         appointment while the global patient chip already shows the newly
+         selected patient.  Route to the canonical patient chart immediately
+         so one screen can never display two patient identities. */
+      try{if(typeof window.showView==='function')window.showView('patients');}catch(e){}
       var nm=patient.name||'patient';
       try{if(typeof window.toast==='function')window.toast('Switched to '+nm+'.','');}catch(e){}
       closeMenu();

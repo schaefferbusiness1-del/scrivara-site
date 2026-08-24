@@ -8,10 +8,12 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_recentpts.js'), 'utf8');
 
-assert(source.includes("var VERSION='rp-2.3.0'"), 'Recent Patients exact-event version missing');
+assert(source.includes("var VERSION='rp-2.4.0'"), 'Recent Patients identity-safe version missing');
 assert(!/\bsetInterval\s*\(/.test(source), 'Recent Patients retained permanent roster polling');
 assert(!source.includes('window.renderPatientBar=function'), 'Recent Patients still wraps the broad patient-bar renderer');
 assert(source.includes("typeof window.selectPatient==='function'"), 'recent-chart clicks bypass canonical patient selection');
+assert(source.includes("typeof window.showView==='function')window.showView('patients')"),
+  'recent-chart clicks can leave a stale visit card under the newly selected patient');
 assert(source.includes("listen(window,'mls:patient-record-updated',exactRecord)"), 'exact patient-row event missing');
 assert(source.includes("listen(document,'visibilitychange',onVisibility)"), 'hidden/visible lifecycle missing');
 
