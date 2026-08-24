@@ -42,6 +42,11 @@
      Keep this bound deliberately generous for large panels while making the
      failure explicit instead of claiming a save that was never confirmed. */
   var SAVE_FLUSH_TIMEOUT_MS = 30000;
+  /* A durable visit save is already terminal even when optional enrichment
+     stalls. Keep the enrichment lane bounded so the single-pull control can
+     be used again instead of remaining busy behind a best-effort summary or
+     chart-card read. */
+  var POST_SAVE_ENRICH_TIMEOUT_MS = 30000;
 
   function S(x) { return x == null ? '' : String(x); }
   function trim(x) { return S(x).trim(); }
@@ -409,6 +414,7 @@
 
   /* ---------- the one-button auto pull ---------- */
   var busy = false;
+  var activeRunLifecycle = 0;
   var BUSY_EVENT = 'mls:athena-autopull-state';
   var lastTerminalReceipt = null;
   function completeVisitReceipt(receipt, expectedRows) {
@@ -496,6 +502,7 @@
        still waiting for its first correlated visit-progress message. */
     cancelBarRetirement();
     var runSettled = false;
+    var durableSave = null;
     function settleRun(ok, message, details) {
       details = details || {};
       runSettled = true;
@@ -516,6 +523,7 @@
       settleRun(false, 'Visit modules aren’t loaded yet — reload the page and try again.', { reason: 'visit-modules-unavailable' }); hideChipLater(); emitBusy(false); return;
     }
     busy = true;
+    var runLifecycle = ++activeRunLifecycle;
     activeVisitsRequestId = '';
     lastRawResult = null;
     emitBusy(true);
@@ -648,14 +656,42 @@
         });
         hideChipLater(16000); return;
       }
-      /* This is the first success wording: only after the atomic visit writer
-         accepted the batch AND the current patient store read it back. Settle
-         the full-green reader bar now; summaries/chart-card enrichment may
-         continue, but cannot leave the completed read looking permanently busy. */
-      settleRun(true, 'Saved ' + saved + ' visit' + (saved === 1 ? '' : 's') + ' locally (' + persisted.count + ' now on file). Finishing summaries…', {
-        reason: 'visit-save-confirmed', persistenceConfirmed: true, saved: saved, stored: persisted.count
-      });
-      try { await M.ensureSummaries(patient.id, function (msg) { if (msg) status(onStatus, msg); }); } catch (e) {}
+      durableSave = { saved: Number(saved) || 0, stored: Number(persisted.count) || 0 };
+      /* Persistence is proven, but the owned pull is not terminal until the two
+         bounded enrichments below settle. Do not show a green terminal receipt
+         while `busy` is still true: that made the UI promise a retry the lane
+         could not yet accept. Run summary + chart-card reads concurrently so
+         the post-save phase costs one timeout window, not two. */
+      status(onStatus, 'Visits saved locally (' + persisted.count + ' now on file). Finishing summaries and chart details…');
+      /* first-pull-style-1.0.0: persist a short account-local completion receipt
+         before emitting the public seam. The event itself carries only a count,
+         so unrelated listeners cannot observe a patient identity; a late-loaded
+         style module replays the receipt and reads only verified local rows. */
+      try {
+        var firstPullPendingKey = typeof window.uns === 'function'
+          ? window.uns('firstPullStylePendingV1') : 'firstPullStylePendingV1';
+        window.localStorage.setItem(firstPullPendingKey, JSON.stringify({
+          patientId: String(patient.id || ''), saved: Number(saved) || 0, at: Date.now()
+        }));
+        var firstPullEvent = typeof window.CustomEvent === 'function'
+          ? new CustomEvent('mls:athena-full-history-pull-complete', { detail: { saved: Number(saved) || 0 } })
+          : null;
+        if (firstPullEvent) window.dispatchEvent(firstPullEvent);
+      } catch (eFirstPullStyle) {}
+      function enrichmentStatus(msg) {
+        if (msg && busy && runLifecycle === activeRunLifecycle && !runSettled) status(onStatus, msg);
+      }
+      var summaryOpen = true;
+      var summaryTask = (async function () {
+        try {
+          await awaitBounded(M.ensureSummaries(patient.id, function (msg) { if (summaryOpen) enrichmentStatus(msg); }),
+            POST_SAVE_ENRICH_TIMEOUT_MS, 'Visit summaries did not respond before the safety timeout');
+          return true;
+        } catch (eSummary) {
+          enrichmentStatus('Visits are saved. Visit summaries did not finish in time; continuing with the remaining chart details.');
+          return false;
+        } finally { summaryOpen = false; }
+      })();
       /* ff-1.2 (owner, live Alicia James card 2026-08-19: every prep-summary
          line read "NOT PULLED from Athena yet" after a one-person pull - "it
          needs to also pull their actual history and stuff not just their
@@ -667,18 +703,26 @@
          lands fast. PROVE the handle exists before trusting it (a
          feature-detect must never hide a typo); the capture merge below stays
          as the fallback when the rail is absent or refuses. */
-      var cardLanded = false;
-      try {
-        var cf = window.__mlsChartField;
-        if (cf && typeof cf.read === 'function') {
-          status(onStatus, 'Reading the full chart card — medications, vitals, history…');
-          var cardRes = await Promise.resolve(cf.read(patient, function (msg) { if (msg) status(onStatus, msg); }));
-          cardLanded = !!(cardRes && cardRes.ok === true);
-          if (!cardLanded && cardRes && cardRes.reason) {
-            status(onStatus, 'The full chart card could not be read (' + S(cardRes.reason) + ') — visits are saved; the card can be pulled from the profile.');
+      var cardOpen = true;
+      var cardTask = (async function () {
+        try {
+          var cf = window.__mlsChartField;
+          if (!(cf && typeof cf.read === 'function')) return false;
+          enrichmentStatus('Reading the full chart card — medications, vitals, history…');
+          var cardRes = await awaitBounded(Promise.resolve(cf.read(patient, function (msg) { if (cardOpen) enrichmentStatus(msg); })),
+            POST_SAVE_ENRICH_TIMEOUT_MS, 'The full chart card did not respond before the safety timeout');
+          var landed = !!(cardRes && cardRes.ok === true);
+          if (!landed && cardRes && cardRes.reason) {
+            enrichmentStatus('The full chart card could not be read (' + S(cardRes.reason) + ') — visits are saved; the card can be pulled from the profile.');
           }
-        }
-      } catch (eFf) {}
+          return landed;
+        } catch (eFf) {
+          enrichmentStatus('Visits are saved. The full chart card did not finish in time; continuing with the verified visit history.');
+          return false;
+        } finally { cardOpen = false; }
+      })();
+      var enrichmentResults = await Promise.all([summaryTask, cardTask]);
+      var cardLanded = enrichmentResults[1] === true;
       /* fm-1.2 fallback: a verified capture still lands medications/problems/
          allergies off the open chart banner when the full-card rail is absent
          or refused. A same-name capture is not enough: DOB or MRN must also
@@ -737,11 +781,23 @@
       hideChipLater(5000);
       return { ok: true, saved: saved, total: n, created: r.created, receipt: lastTerminalReceipt };
     } catch (unexpected) {
-      if (!runSettled) settleRun(false, 'The pull stopped before MLS could confirm a local save. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'unexpected-pull-exit' });
-      hideChipLater(16000);
-      return { ok: false, reason: 'unexpected-pull-exit', receipt: lastTerminalReceipt };
+      if (!runSettled && durableSave) {
+        settleRun(true, 'The verified visits are saved. Optional summaries or chart details stopped early and can be refreshed later.', {
+          reason: 'saved-enrichment-ended-early', persistenceConfirmed: true, saved: durableSave.saved, stored: durableSave.stored
+        });
+      } else if (!runSettled) {
+        settleRun(false, 'The pull stopped before MLS could confirm a local save. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'unexpected-pull-exit' });
+      }
+      hideChipLater(durableSave ? 5000 : 16000);
+      return { ok: !!durableSave, saved: durableSave && durableSave.saved || 0, reason: durableSave ? 'saved-enrichment-ended-early' : 'unexpected-pull-exit', receipt: lastTerminalReceipt };
     } finally {
-      if (!runSettled) settleRun(false, 'The pull ended without a confirmed local save receipt. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'terminal-receipt-missing' });
+      if (!runSettled && durableSave) {
+        settleRun(true, 'The verified visits are saved. Optional summaries or chart details ended without a final receipt and can be refreshed later.', {
+          reason: 'saved-enrichment-receipt-missing', persistenceConfirmed: true, saved: durableSave.saved, stored: durableSave.stored
+        });
+      } else if (!runSettled) {
+        settleRun(false, 'The pull ended without a confirmed local save receipt. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'terminal-receipt-missing' });
+      }
       busy = false;
       activeVisitsRequestId = '';
       awaitingVisitsRequest = false;

@@ -21234,6 +21234,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      Matches pair. It cannot bind anything by itself: if the re-pull does not
      produce an agreeing exact binding, the warning stays and says so. */
   var bindCureTimer = null;
+  var bindCurePullPending = false;
+  var BIND_CURE_PULL_TIMEOUT_MS = 120000;
   function bindCureDay() { return safe(function () { return apptDay(S.appt); }, ''); }
   function bindCureApi() {
     return safe(function () {
@@ -21267,11 +21269,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function bindCureRun(btn) {
     var a = S.appt, day = bindCureDay(), api = bindCureApi();
-    if (!a || !day || !api || bindCureTimer) return;
+    if (!a || !day || !api || bindCureTimer || bindCurePullPending) return;
     var idle = btn ? String(btn.textContent) : '';
     function restore() { if (btn) { try { btn.disabled = false; btn.textContent = idle; } catch (e) {} } }
     if (btn) { try { btn.disabled = true; btn.textContent = 'Re-pulling ' + day + '…'; } catch (e) {} }
-    api.pullDay(day, function (msg) { try { toast(msg); } catch (e) {} }).then(function (res) {
+    bindCurePullPending = true;
+    var pullFinished = false, pullTimeout = null;
+    function finishPull() {
+      if (pullFinished) return false;
+      pullFinished = true;
+      bindCurePullPending = false;
+      if (pullTimeout) { try { clearTimeout(pullTimeout); } catch (e) {} pullTimeout = null; }
+      return true;
+    }
+    pullTimeout = setTimeout(function () {
+      if (!finishPull()) return;
+      restore();
+      try { toast('The day re-pull did not return in time. Nothing was changed; this visit is still unbound.', 'err'); } catch (e) {}
+    }, BIND_CURE_PULL_TIMEOUT_MS);
+    var pullPromise;
+    try {
+      pullPromise = api.pullDay(day, function (msg) { try { toast(msg); } catch (e) {} });
+    } catch (ePullStart) {
+      pullPromise = Promise.reject(ePullStart);
+    }
+    Promise.resolve(pullPromise).then(function (res) {
+      if (!finishPull()) return;
       res = res || { ok: false, message: 'The day re-pull did not report a result. Nothing was changed.' };
       if (res.ok !== true) { restore(); try { toast(res.message, 'err'); } catch (e) {} return; }
       var ticks = 0;
@@ -21289,7 +21312,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           try { toast('The re-pull of ' + day + ' finished, but MLS still cannot prove this row’s exact Athena appointment binding. Athena verification and send stay off for this visit; recording, the note and history are unaffected.', 'err'); } catch (e) {}
         }
       }, 5000);
-    }, function () { restore(); });
+    }, function () {
+      if (!finishPull()) return;
+      restore();
+      try { toast('The day re-pull failed to finish. Nothing was changed; this visit is still unbound.', 'err'); } catch (e) {}
+    });
   }
   /* ===== end wfbindbar-1.0.0 ============================================= */
   function fmtTimer() {
@@ -57770,3 +57797,19 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   });
   return window.__mlsDraftTuningLoad;
 };
+/* first-pull-style-1.0.0: load the account-local, PHI-free starter-format
+   bootstrap beside draft tuning. It listens for the successful full-history
+   receipt and stays inert until that event; it never opens Athena or writes it. */
+(function () {
+  try {
+    var A = '1p-feat_mls_first_pull_style.js';
+    if (window.__mlsFirstPullStyle || document.querySelector('script[data-mls-asset="' + A + '"]')) return;
+    var s = document.createElement('script');
+    s.src = A + '?v=' + (window.__MLS_AV || Date.now());
+    s.async = true;
+    s.setAttribute('data-mls-asset', A);
+    s.onload = function () { s.setAttribute('data-mls-loaded', '1'); };
+    s.onerror = function () { try { s.remove(); } catch (_) {} };
+    (document.body || document.head || document.documentElement).appendChild(s);
+  } catch (_) {}
+})();

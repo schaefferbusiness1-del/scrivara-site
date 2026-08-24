@@ -98,6 +98,20 @@ try {
     assert.ok(String(accept).toLowerCase().includes(token), 'file picker does not accept ' + token);
   }
 
+  // The same visible Configure/import action must open for every draft family;
+  // previously the controls rendered for all families but the click silently
+  // returned outside HPI/ROS/Exam/Assessment/Plan.
+  await page.click('#mlsDtSectionImportCancel');
+  const familyIds = await page.evaluate(() => window.__mlsDraftTuning.familyIds.slice());
+  for (const family of familyIds) {
+    await page.selectOption('#mlsDtFamily', family);
+    await page.click('#mlsDtSectionImportOpen');
+    assert.ok(await page.locator('#mlsDtSectionImportPanel').isVisible(), family + ' Configure/import button did not open');
+    await page.click('#mlsDtSectionImportCancel');
+  }
+  await page.selectOption('#mlsDtFamily', 'hpi');
+  await page.click('#mlsDtSectionImportOpen');
+
   const profileId = await page.evaluate(() => {
     const editor = window.__mlsDraftTuning.profileEditor('hpi');
     const row = editor.add({ id: 'example_hpi', label: 'Example HPI' });

@@ -856,7 +856,7 @@
       panel.getAttribute('data-profile') === q('mlsDtSectionProfile').value);
   }
   function openSectionImport() {
-    if (SECTION_FAMILIES.indexOf(activeFamily) < 0 || !q('mlsDtSectionProfile')) return;
+    if (!isProfileFamily(activeFamily) || !q('mlsDtSectionProfile')) return;
     resetSectionImport(false);
     var panel = q('mlsDtSectionImportPanel'), profile = q('mlsDtSectionProfile').value;
     sectionImportSession = exampleImporter(activeFamily, profile);

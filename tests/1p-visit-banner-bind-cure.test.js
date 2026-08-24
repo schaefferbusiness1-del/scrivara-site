@@ -60,13 +60,17 @@ function harness(opts) {
   const toasts = [];
   const renders = [];
   const timers = [];
+  const timeouts = [];
   const pulls = [];
   const S = { appt: opts.appt === undefined ? { id: 'row-1', provider: 'Dr Synthetic', appt_date: '2026-08-14' } : opts.appt, lastWarn: 'x' };
   const window = {
     _calAppts: opts.calAppts || [],
     __mlsWriteFlow: opts.noApi ? null : {
       bindCure: {
-        pullDay: (day, say) => { pulls.push({ day, say }); return Promise.resolve(opts.pullResult || { ok: true }); }
+        pullDay: (day, say) => {
+          pulls.push({ day, say });
+          return opts.pullPending ? new Promise(() => {}) : Promise.resolve(opts.pullResult || { ok: true });
+        }
       }
     }
   };
@@ -74,7 +78,7 @@ function harness(opts) {
   const calls = { install: 0, exact: 0 };
   const factory = new Function(
     'window', 'safe', 'S', 'apptDay', 'exactScheduledBindingMatches', 'installScheduledVisitBinding',
-    'toast', 'render', 'setInterval', 'clearInterval',
+    'toast', 'render', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
     block + '\n; return { bindCureOffered: bindCureOffered, bindCureRun: bindCureRun, bindCureDay: bindCureDay, bindCureFreshRow: bindCureFreshRow, bindCureBound: bindCureBound };');
   const fns = factory(
     window,
@@ -86,9 +90,11 @@ function harness(opts) {
     (m, k) => toasts.push({ m: String(m), k: String(k || '') }),
     () => renders.push(1),
     (fn, ms) => { timers.push({ fn, ms, cleared: false }); return timers.length; },
-    id => { if (timers[id - 1]) timers[id - 1].cleared = true; }
+    id => { if (timers[id - 1]) timers[id - 1].cleared = true; },
+    (fn, ms) => { const t = { fn, ms, cleared: false }; timeouts.push(t); return t; },
+    t => { if (t) t.cleared = true; }
   );
-  return { fns, S, toasts, renders, timers, pulls, calls, setBound: v => { bindOk = v; }, window };
+  return { fns, S, toasts, renders, timers, timeouts, pulls, calls, setBound: v => { bindOk = v; }, window };
 }
 
 const tick = () => new Promise(r => setImmediate(r));
@@ -132,6 +138,25 @@ const tick = () => new Promise(r => setImmediate(r));
     ok(h.toasts.some(t => /bound to its exact Athena appointment/.test(t.m) && t.k === 'ok'),
       'the doctor must be told verification and send are available');
     ok(btn.disabled === false, 'the control must be released');
+    ok(h.timeouts.length === 1 && h.timeouts[0].cleared === true,
+      'a settled pull must clear its pending-pull timeout');
+  }
+
+  /* ---- 2b. a never-settling day pull must release the cure control ---- */
+  {
+    const h = harness({ pullPending: true });
+    const btn = { disabled: false, textContent: 'Bind this visit — re-pull this day' };
+    h.fns.bindCureRun(btn);
+    await tick();
+    ok(h.pulls.length === 1 && h.timeouts.length === 1 && h.timeouts[0].cleared === false,
+      'a pending day pull must own one bounded timeout');
+    h.fns.bindCureRun(btn);
+    ok(h.pulls.length === 1, 'a second press must not start another pending day pull');
+    h.timeouts[0].fn();
+    ok(btn.disabled === false && btn.textContent === 'Bind this visit — re-pull this day',
+      'a stalled day pull must restore the cure control');
+    ok(h.toasts.some(t => /did not return in time/i.test(t.m) && t.k === 'err'),
+      'a stalled day pull must say that nothing changed');
   }
 
   /* ---- 3. the row object is RE-RESOLVED, never re-checked stale ---- */
@@ -185,5 +210,5 @@ const tick = () => new Promise(r => setImmediate(r));
     ok(h.pulls.length === 1, 'a second press while a cure is polling must not start a second pull');
   }
 
-  console.log('PASS 1p visit-banner bind cure: ' + checks + ' checks — the banner the owner called unacceptable now carries the same one-press cure as the confirm sheet, re-pulls the visit\'s exact day, re-resolves the schedule row the pull replaced, and clears only on the unchanged binding pair\'s own answer; a refused pull, an unbindable visit and a double press each keep the warning and change nothing');
+  console.log('PASS 1p visit-banner bind cure: ' + checks + ' checks — the banner the owner called unacceptable now carries the same one-press cure as the confirm sheet, re-pulls the visit\'s exact day, re-resolves the schedule row the pull replaced, bounds a stalled pull and clears only on the unchanged binding pair\'s own answer; a refused pull, an unbindable visit and a double press each keep the warning and change nothing');
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });

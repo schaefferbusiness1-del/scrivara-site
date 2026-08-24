@@ -1,0 +1,20 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.join(__dirname, '..');
+const moduleSource = fs.readFileSync(path.join(root, '1p-feat_mls_first_pull_style.js'), 'utf8');
+const connect = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
+const autopull = fs.readFileSync(path.join(root, 'feat_athena_autopull.js'), 'utf8');
+assert.ok(/first-pull-style-1\.0\.0/.test(moduleSource), 'first-pull style module is missing its version marker');
+assert.ok(connect.includes("1p-feat_mls_first_pull_style.js"), '1p bundle does not load the first-pull style module');
+assert.ok(connect.includes("data-mls-asset"), 'first-pull style loader is not marked for startup diagnostics');
+assert.ok(!/window\.dispatchEvent\([^)]*raw|detail\s*:\s*\{[^}]*raw/i.test(moduleSource), 'completion seam may carry raw patient text');
+assert.ok(moduleSource.includes('identityVerified === true') && moduleSource.includes('bodyComplete === true'), 'bootstrap does not require verified full visit bodies');
+assert.ok(moduleSource.includes('firstPullStyleBootstrapV1'), 'bootstrap does not have an account-local idempotency marker');
+assert.ok(moduleSource.includes('firstPullStylePendingV1') && autopull.includes('firstPullStylePendingV1'), 'late-load replay receipt is not wired end to end');
+assert.ok(moduleSource.includes('navigator') && moduleSource.includes('locks.request'), 'cross-tab bootstrap lock is missing');
+assert.ok(!moduleSource.includes('/api/section-templates/derive') && !moduleSource.includes('exampleText:'), 'first-pull clinical examples can still reach a hosted derivation route');
+assert.ok(/CustomEvent\('mls:athena-full-history-pull-complete',[\s\S]{0,180}detail:\s*\{\s*saved:/.test(autopull), 'completion event does not expose only the non-identifying saved count');
+assert.ok(!/CustomEvent\('mls:athena-full-history-pull-complete',[\s\S]{0,220}detail:\s*\{[^}]*patientId/.test(autopull), 'completion event still exposes a patient identifier');
+console.log('PASS first-pull-style loader contract: module is shipped, startup-marked, cross-tab locked, late-load replayable, local-only, and receives only verified full-body rows');

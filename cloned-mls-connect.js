@@ -6752,7 +6752,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         document.body.appendChild(el);
       }
       var nm = String(ap.name || '').trim(); var parts = nm.split(/\s+/);
-      var lastFirst = parts.length >= 2 ? (parts[parts.length - 1] + ', ' + parts.slice(0, parts.length - 1).join(' ')) : nm;
+      /* Athena identities already stored as Last,First are authoritative.
+         Reversing them again produced "First,Last, ..." in the extension
+         beacon and could make an otherwise correct chart look mismatched. */
+      var lastFirst = nm.indexOf(',') >= 0 ? nm.replace(/\s*,\s*/, ', ')
+        : (parts.length >= 2 ? (parts[parts.length - 1] + ', ' + parts.slice(0, parts.length - 1).join(' ')) : nm);
       var txt = 'Patient: ' + lastFirst + '\nDOB: ' + (ap.dob || '') + (ap.mrn ? '\nMRN: ' + ap.mrn : '');
       if (el.textContent !== txt) el.textContent = txt;
     } catch (e) {}
@@ -20897,17 +20901,49 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* 2026-07-29 (owner: "this deselect button doesnt work"): the chip fired and
      deselectPatient() ran, but this engine had NO listener for
      mls:active-patient-changed, so S.appt/S.locked survived and the visit room
-     kept showing the patient the app had just released. Clear our own lock on
-     the EMPTY transition only, never mid-recording, never touching note text. */
+     kept showing the patient the app had just released.
+
+     b1058 live regression (2026-08-24): Recent correctly selected patient B,
+     but this listener ignored every non-empty transition. The Easy engine
+     therefore kept patient A's S.appt/S.locked, and Start visit for B painted
+     A's appointment beneath B's banner. Keep the binding only when the newly
+     active patient actually owns it; otherwise release it exactly like
+     Deselect. Never release mid-recording and never touch note text here. */
+  function visitBindingOwnsPatient(nextId) {
+    if (!nextId || !S || !S.appt) return false;
+    try {
+      var a = S.appt, p = patientById(nextId), owns = false;
+      if (a._pt && a._patientId && String(a._patientId) === String(nextId)) owns = true;
+      else if (a.patient_external_id && String(a.patient_external_id) === String(nextId)) owns = true;
+      else if (p && a.name && p.name && nameMatch(a.name, p.name)) {
+        var ad = String(dobOf(a) || '').replace(/\D/g, '');
+        var pd = String(dobOf(p) || '').replace(/\D/g, '');
+        owns = !(ad && pd && ad !== pd);
+      }
+      if (!owns) return false;
+      /* S.appt and S.locked are written together. If they ever disagree,
+         prefer releasing the binding over preserving a mixed-patient room. */
+      if (p && S.locked && S.locked.name && !nameMatch(S.locked.name, p.name)) return false;
+      if (p && S.locked) {
+        var ld = String(S.locked.dob || '').replace(/\D/g, '');
+        var pd2 = String(dobOf(p) || '').replace(/\D/g, '');
+        if (ld && pd2 && ld !== pd2) return false;
+      }
+      return true;
+    } catch (e) { return false; }
+  }
   try {
     window.addEventListener('mls:active-patient-changed', function (evD) {
       try {
-        var nextId = '';
-        try { nextId = String((evD && evD.detail && evD.detail.patientId) || ''); } catch (eD) {}
-        if (nextId) return;
+        var nextId = '', detail = evD && evD.detail;
+        try {
+          if (detail && Object.prototype.hasOwnProperty.call(detail, 'patientId')) nextId = String(detail.patientId || '');
+          else if (isFn(window.getActivePtId)) nextId = String(window.getActivePtId() || '');
+        } catch (eD) {}
         if (!S || (!S.appt && !S.locked)) return;
+        if (nextId && visitBindingOwnsPatient(nextId)) return;
         if (isRecording()) {
-          S.lastWarn = 'Recording is still running, so this visit stays open. Stop the recording first, then clear the patient.';
+          S.lastWarn = 'Recording is still running, so this visit stays open. Stop the recording before switching or clearing the patient.';
           try { toast(S.lastWarn, 'err'); } catch (eT) {}
           try { render(); } catch (eR) {}
           return;
@@ -21198,6 +21234,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      Matches pair. It cannot bind anything by itself: if the re-pull does not
      produce an agreeing exact binding, the warning stays and says so. */
   var bindCureTimer = null;
+  var bindCurePullPending = false;
+  var BIND_CURE_PULL_TIMEOUT_MS = 120000;
   function bindCureDay() { return safe(function () { return apptDay(S.appt); }, ''); }
   function bindCureApi() {
     return safe(function () {
@@ -21231,11 +21269,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function bindCureRun(btn) {
     var a = S.appt, day = bindCureDay(), api = bindCureApi();
-    if (!a || !day || !api || bindCureTimer) return;
+    if (!a || !day || !api || bindCureTimer || bindCurePullPending) return;
     var idle = btn ? String(btn.textContent) : '';
     function restore() { if (btn) { try { btn.disabled = false; btn.textContent = idle; } catch (e) {} } }
     if (btn) { try { btn.disabled = true; btn.textContent = 'Re-pulling ' + day + '…'; } catch (e) {} }
-    api.pullDay(day, function (msg) { try { toast(msg); } catch (e) {} }).then(function (res) {
+    bindCurePullPending = true;
+    var pullFinished = false, pullTimeout = null;
+    function finishPull() {
+      if (pullFinished) return false;
+      pullFinished = true;
+      bindCurePullPending = false;
+      if (pullTimeout) { try { clearTimeout(pullTimeout); } catch (e) {} pullTimeout = null; }
+      return true;
+    }
+    pullTimeout = setTimeout(function () {
+      if (!finishPull()) return;
+      restore();
+      try { toast('The day re-pull did not return in time. Nothing was changed; this visit is still unbound.', 'err'); } catch (e) {}
+    }, BIND_CURE_PULL_TIMEOUT_MS);
+    var pullPromise;
+    try {
+      pullPromise = api.pullDay(day, function (msg) { try { toast(msg); } catch (e) {} });
+    } catch (ePullStart) {
+      pullPromise = Promise.reject(ePullStart);
+    }
+    Promise.resolve(pullPromise).then(function (res) {
+      if (!finishPull()) return;
       res = res || { ok: false, message: 'The day re-pull did not report a result. Nothing was changed.' };
       if (res.ok !== true) { restore(); try { toast(res.message, 'err'); } catch (e) {} return; }
       var ticks = 0;
@@ -21253,7 +21312,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           try { toast('The re-pull of ' + day + ' finished, but MLS still cannot prove this row’s exact Athena appointment binding. Athena verification and send stay off for this visit; recording, the note and history are unaffected.', 'err'); } catch (e) {}
         }
       }, 5000);
-    }, function () { restore(); });
+    }, function () {
+      if (!finishPull()) return;
+      restore();
+      try { toast('The day re-pull failed to finish. Nothing was changed; this visit is still unbound.', 'err'); } catch (e) {}
+    });
   }
   /* ===== end wfbindbar-1.0.0 ============================================= */
   function fmtTimer() {
@@ -57734,3 +57797,19 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   });
   return window.__mlsDraftTuningLoad;
 };
+/* first-pull-style-1.0.0: load the account-local, PHI-free starter-format
+   bootstrap beside draft tuning. It listens for the successful full-history
+   receipt and stays inert until that event; it never opens Athena or writes it. */
+(function () {
+  try {
+    var A = 'cloned-feat_mls_first_pull_style.js';
+    if (window.__mlsFirstPullStyle || document.querySelector('script[data-mls-asset="' + A + '"]')) return;
+    var s = document.createElement('script');
+    s.src = A + '?v=' + (window.__MLS_AV || Date.now());
+    s.async = true;
+    s.setAttribute('data-mls-asset', A);
+    s.onload = function () { s.setAttribute('data-mls-loaded', '1'); };
+    s.onerror = function () { try { s.remove(); } catch (_) {} };
+    (document.body || document.head || document.documentElement).appendChild(s);
+  } catch (_) {}
+})();

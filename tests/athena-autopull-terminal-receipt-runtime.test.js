@@ -81,7 +81,10 @@ async function makeHarness(browser, saveMode) {
         };
       },
       getVisits(patient) { return Array.isArray(patient && patient.visits) ? patient.visits : []; },
-      ensureSummaries() { return Promise.resolve({ ok: true }); }
+      ensureSummaries() {
+        if (window.__saveMode === 'summary-timeout') return new Promise(() => {});
+        return Promise.resolve({ ok: true });
+      }
     };
     window.__mlsPatientStoreBatch = {
       begin() { return { active: true, id: 'synthetic-batch-' + Date.now() }; },
@@ -103,7 +106,12 @@ async function makeHarness(browser, saveMode) {
         return Promise.resolve({ flushes: window.__saveApplied ? 1 : 0 });
       }
     };
-    window.__mlsChartField = { read() { return Promise.resolve({ ok: true }); } };
+    window.__mlsChartField = {
+      read() {
+        if (window.__saveMode === 'card-timeout') return new Promise(() => {});
+        return Promise.resolve({ ok: true });
+      }
+    };
     window.__mlsCopyVisits = {
       _driveRequest() {
         const requestId = 'owned-autopull-request-' + (++window.__requestSequence);
@@ -382,6 +390,37 @@ async function startAndPause(page) {
       'a stalled durable flush did not settle as an explicit failure');
     assert(!/^✓|\bSaved \d|\bDone\b/i.test(flushTimeout.text), 'a stalled durable flush displayed success');
     await flushTimeoutPage.close();
+
+    /* Durable visit persistence settles the pull before optional enrichment.
+       A never-resolving summary pass must not retain the single-flight lane or
+       prevent a later retry, and it must not rewrite the confirmed receipt as
+       a failure. */
+    const summaryTimeoutPage = await makeHarness(browser, 'summary-timeout');
+    await startAndPause(summaryTimeoutPage);
+    await summaryTimeoutPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
+    const summaryTimeout = await summaryTimeoutPage.evaluate(() => window.__runPromise.then(result => ({
+      busy: window.__mlsAthenaAutoPull.isBusy(), receipt: result.receipt,
+      text: document.querySelector('#mlsPullBar [data-text]').textContent
+    })));
+    assert.strictEqual(summaryTimeout.busy, false, 'a stalled summary pass left the auto-pull lane busy');
+    assert(summaryTimeout.receipt && summaryTimeout.receipt.ok === true && summaryTimeout.receipt.persistenceConfirmed === true,
+      'a stalled summary pass rewrote the durable visit success as failure');
+    assert(/Done|Saved \d/i.test(summaryTimeout.text), 'the stalled summary pass did not leave a terminal success line');
+    await summaryTimeoutPage.close();
+
+    /* The same contract applies to the optional full chart-card rail. */
+    const cardTimeoutPage = await makeHarness(browser, 'card-timeout');
+    await startAndPause(cardTimeoutPage);
+    await cardTimeoutPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
+    const cardTimeout = await cardTimeoutPage.evaluate(() => window.__runPromise.then(result => ({
+      busy: window.__mlsAthenaAutoPull.isBusy(), receipt: result.receipt,
+      text: document.querySelector('#mlsPullBar [data-text]').textContent
+    })));
+    assert.strictEqual(cardTimeout.busy, false, 'a stalled chart-card read left the auto-pull lane busy');
+    assert(cardTimeout.receipt && cardTimeout.receipt.ok === true && cardTimeout.receipt.persistenceConfirmed === true,
+      'a stalled chart-card read rewrote the durable visit success as failure');
+    assert(/Done|Saved \d/i.test(cardTimeout.text), 'the stalled chart-card read did not leave a terminal success line');
+    await cardTimeoutPage.close();
 
     console.log('PASS Athena auto-pull terminal receipt: owned progress, full-detail receipt forwarding, durable exact-row confirmation, bounded failures, stalled-flush timeout, timer isolation, and no late saving-state resurrection');
   } finally {

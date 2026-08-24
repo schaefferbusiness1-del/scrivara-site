@@ -856,7 +856,7 @@
       panel.getAttribute('data-profile') === q('mlsDtSectionProfile').value);
   }
   function openSectionImport() {
-    if (SECTION_FAMILIES.indexOf(activeFamily) < 0 || !q('mlsDtSectionProfile')) return;
+    if (!isProfileFamily(activeFamily) || !q('mlsDtSectionProfile')) return;
     resetSectionImport(false);
     var panel = q('mlsDtSectionImportPanel'), profile = q('mlsDtSectionProfile').value;
     sectionImportSession = exampleImporter(activeFamily, profile);
@@ -937,8 +937,8 @@
         '<div class="field"><label for="mlsDtStructure">Structure</label><select class="sf-select" id="mlsDtStructure">' + optionHtml([['default','Best structure for this draft'],['fixed_headings','Fixed headings'],['problem_grouped','Group by problem'],['template_faithful','Follow the chosen template']]) + '</select></div>' +
         '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
         '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Saved format</label><div class="row"><select class="sf-select" id="mlsDtSectionProfile"></select><button type="button" class="btn-ghost" id="mlsDtSectionAdd">+ Add format</button><button type="button" class="btn-ghost" id="mlsDtSectionDelete">Remove</button></div><p class="mini" id="mlsDtSectionProfileStatus" role="status">Up to 8 reusable formats per section.</p></div>' +
-        '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input class="note-box" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up"></div>' +
-        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input class="note-box" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
+        '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input class="note-box mls-dt-short-field" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up" style="min-height:0;height:42px;box-sizing:border-box;white-space:normal"></div>' +
+        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input class="note-box mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up" style="min-height:0;height:42px;box-sizing:border-box;white-space:normal"><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
         '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
         '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
       '</div>' +
@@ -950,7 +950,7 @@
         '<div class="row" style="margin-top:8px"><button type="button" class="btn-green" id="mlsDtSectionImportDerive">Create AI template preview</button><button type="button" class="btn-ghost" id="mlsDtSectionImportCancel">Cancel</button></div>' +
         '<p class="mini" id="mlsDtSectionImportStatus" role="status"></p>' +
         '<div id="mlsDtSectionImportPreview" style="display:none;margin-top:10px">' +
-          '<div class="field"><label for="mlsDtSectionImportNamePreview">Suggested format name</label><input class="note-box" id="mlsDtSectionImportNamePreview" maxlength="80"></div>' +
+          '<div class="field"><label for="mlsDtSectionImportNamePreview">Suggested format name</label><input class="note-box mls-dt-short-field" id="mlsDtSectionImportNamePreview" maxlength="80" style="min-height:0;height:42px;box-sizing:border-box;white-space:normal"></div>' +
           '<div class="field"><label for="mlsDtSectionImportTemplatePreview">Reusable template preview</label><textarea class="note-box" id="mlsDtSectionImportTemplatePreview" maxlength="2000" style="min-height:130px"></textarea></div>' +
           '<div class="field"><label for="mlsDtSectionImportCommentsPreview">AI prompt comments preview</label><textarea class="note-box" id="mlsDtSectionImportCommentsPreview" maxlength="600" style="min-height:90px"></textarea></div>' +
           '<button type="button" class="btn-green" id="mlsDtSectionImportApply">Apply preview to this saved format</button>' +

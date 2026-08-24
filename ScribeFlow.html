@@ -28032,12 +28032,19 @@ async function aiCallRaw(sys,user,key,opts){
       if(opts.freeform&&!_requestedFamily) _draftFamily=_dt.infer(sys,user,opts)||_draftFamily;
       if(_draftFamily){
         var _effectiveDraftTuning=opts.draftTuning||null;
-        /* Saved HPI/ROS/Exam/Assessment/Plan conditions are evaluated only
+        /* Saved-format conditions for every draft family are evaluated only
            against TODAY_TRANSCRIPT. autoRoute returns profile ids only, so
            background chart text and patient wording never enter settings or
            the tuning payload. An explicit one-visit picker always wins. */
-        if(_draftFamily==='soap'&&typeof _dt.autoRoute==='function'){
-          _effectiveDraftTuning=_dt.autoRoute({todayTranscript:user},_effectiveDraftTuning);
+        if(typeof _dt.autoRoute==='function'){
+          var _routeOptions=_draftFamily==='soap'?(_effectiveDraftTuning||{}):{families:{}};
+          if(_draftFamily!=='soap') _routeOptions.families[_draftFamily]=_effectiveDraftTuning||{};
+          var _routedTuning=_dt.autoRoute({todayTranscript:user},_routeOptions);
+          if(_draftFamily==='soap') _effectiveDraftTuning=_routedTuning;
+          else {
+            var _routedFamily=_routedTuning&&_routedTuning.families&&_routedTuning.families[_draftFamily];
+            if(_routedFamily) _effectiveDraftTuning=Object.assign({},_effectiveDraftTuning||{},_routedFamily);
+          }
         }
         _draftTuning=(!_draftFamily||_draftFamily!=='soap')
           ? _dt.forFamily(_draftFamily,_effectiveDraftTuning)
@@ -29583,7 +29590,7 @@ function _athenaShowReceipt(who, results, partial, immutablePatient, sections, v
     var unifiedWf=window.__mlsWriteFlow;
     if(unifiedWf&&typeof unifiedWf.openUnifiedConfirmation==='function'){
       var unifiedPatient={name:String((immutablePatient&&immutablePatient.name)||who||''),dob:String((immutablePatient&&immutablePatient.dob)||''),mrn:String((immutablePatient&&immutablePatient.mrn)||''),patientId:String((immutablePatient&&immutablePatient.patientId)||'')};
-      var namedKeys={hpi:1,ros:1,exam:1,assessment:1,plan:1}, unifiedSections=[], unifiedPlan=[];
+      var namedKeys={hpi:1,ros:1,exam:1,assessment:1,plan:1,procedure:1}, unifiedSections=[], unifiedPlan=[];
       (sections||[]).forEach(function(s){ var key=String(s&&s.kind||'').trim().toLowerCase(); if(namedKeys[key]) unifiedSections.push(Object.freeze({key:key,text:String(s.body||'').trim(),execute:true,destination:(unifiedWf.destinations||{})[key]||''})); else unifiedPlan.push(s); });
       var unifiedExpected=visitContext?{visitDate:String(visitContext.visitDate||visitContext.encounterDate||''),provider:String(visitContext.provider||visitContext.providerName||''),appointmentId:String(visitContext.appointmentId||visitContext.id||''),encounterId:String(visitContext.encounterId||visitContext.visitId||''),encounterUrl:String(visitContext.encounterUrl||visitContext.visitUrl||'')}:null;
       try{Object.freeze(unifiedPatient);Object.freeze(unifiedSections);Object.freeze(unifiedPlan);if(unifiedExpected)Object.freeze(unifiedExpected);}catch(eUnifiedFreeze){}
@@ -39748,7 +39755,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1058';
+  window.__MLS_AV='b1059';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

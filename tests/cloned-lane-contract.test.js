@@ -15,13 +15,13 @@
  *
  * That third step is what this file now proves. Block-by-block promotion cannot
  * express it: /1p differs from production by hundreds of KB of in-place edits,
- * a different bundle and 15 forked feature files, so there is no set of
+ * a different bundle and 18 forked feature files, so there is no set of
  * delimited blocks that adds up to /1p. The clone is therefore DERIVED, by
  * scripts/derive-cloned-from-1p.js, and the proof is byte equality with what
  * that script generates.
  *
  * THE CENTRAL ASSERTION. Re-run the derivation in memory and byte-compare all
- * 17 outputs with the files on disk. Because the derivation only ever rewrites
+ * 20 outputs with the files on disk. Because the derivation only ever rewrites
  * lane IDENTITY (marker name, route, asset names, build token) and the seven
  * audited user-facing "1p" labels — every rule is enumerated and justified in
  * that script's header — file equality IS the statement "cloned == 1p modulo
@@ -65,10 +65,10 @@ const built = derive.generate();
 const CLONED_BUILD = built.token;
 assert(/^cloned-\d{8}-r\d+$/.test(CLONED_BUILD), `/cloned build token is malformed: ${CLONED_BUILD}`);
 
-/* 19 = the shell + the bundle + one fork per 1p-feat_*.js. It became 19 when
-   the account-scoped AI draft-tuning module was added as an independently
-   loaded, lane-derived feature. */
-assert.strictEqual(built.files.length, 19,
+/* 20 = the shell + the bundle + one fork per 1p-feat_*.js. It became 20 when
+   the first-full-pull PHI-free style bootstrap was added beside account-scoped
+   draft tuning as an independently loaded, lane-derived feature. */
+assert.strictEqual(built.files.length, 20,
   `the derivation must produce the shell, the bundle and one fork per 1p-feat_*.js; got ${built.files.length}`);
 
 const drifted = [];
@@ -86,7 +86,7 @@ assert.deepStrictEqual(drifted, [],
 /* Every 1p fork must have produced a clone counterpart, and vice versa — no
    orphan on either side. */
 const forkSources = derive.forkSources();
-assert.strictEqual(forkSources.length, 17, `expected 17 1p-feat_*.js forks, found ${forkSources.length}`);
+assert.strictEqual(forkSources.length, 18, `expected 18 1p-feat_*.js forks, found ${forkSources.length}`);
 const clonedForksOnDisk = fs.readdirSync(root).filter((n) => /^cloned-feat_[A-Za-z0-9_]+\.js$/.test(n)).sort();
 assert.deepStrictEqual(clonedForksOnDisk, forkSources.map(derive.forkOutName).sort(),
   'the cloned-feat_*.js files on disk are not exactly the derived names of the 1p-feat_*.js forks');
