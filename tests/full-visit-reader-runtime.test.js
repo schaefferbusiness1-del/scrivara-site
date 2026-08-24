@@ -95,6 +95,8 @@ function makeReader(options = {}) {
   const cachedFrame = options.cachedFrame === true;
   let detailDocVersion = 0;
   const openAttempts = {};
+  const clickAttempts = {};
+  const legacyDetailAttempts = {};
   const defaultRows = [
     {
       index: 0, date: '01/02/2026', type: 'Office visit',
@@ -149,9 +151,11 @@ function makeReader(options = {}) {
           if (!op) return [{ frameId: (details.target.frameIds || [5])[0], result: exactIdentity }];
           if (op === 'openVisits') return [{ frameId: 5, result: { ok: true } }];
           if (op === 'diagnose') return [{ frameId: 5, result: { groupCount: 1 } }];
-          if (op === 'enumerate') return [{ frameId: 5, result: { ok: true, selector: options.authoritativeEmpty ? 'verified-empty-state' : 'li.encounter-list-item', count: rows.length, indexComplete: true, authoritativeEmpty: options.authoritativeEmpty === true, rows, score: 99, strongRows: rows.length, uniqueDates: rows.length } }];
+          if (op === 'enumerate') return [{ frameId: 5, result: { ok: true, selector: options.authoritativeEmpty ? 'verified-empty-state' : (options.legacySelector === true ? 'div.visit-row' : 'li.encounter-list-item'), count: rows.length, indexComplete: true, authoritativeEmpty: options.authoritativeEmpty === true, rows, score: 99, strongRows: rows.length, uniqueDates: rows.length } }];
           if (op === 'click') {
             const binding = details.args[3];
+            const index = Number(details.args[2]);
+            clickAttempts[index] = Number(clickAttempts[index] || 0) + 1;
             return [{ frameId: 5, result: { clicked: true, binding } }];
           }
           if (op === 'closeDetailFrame') {
@@ -177,11 +181,24 @@ function makeReader(options = {}) {
           }
           if (op === 'detailFrame') {
             const i = details.args[2], binding = details.args[3];
+            if (options.missingDetailOnceIndex === i && Number(openAttempts[i] || 0) === 1) return [{ frameId: 5, result: { fullDetail: false, indexOnly: true, raw: '02/03/2026 shell', reason: 'no-bound-clinical-detail', binding } }];
             if (options.missingDetailIndex === i) return [{ frameId: 5, result: { fullDetail: false, indexOnly: true, raw: '02/03/2026 shell', reason: 'no-bound-clinical-detail', binding } }];
             const returned = options.badBindingIndex === i ? Object.assign({}, binding, { rowKey: 'enc:wrong' }) : binding;
             return [{ frameId: 5, result: {
               fullDetail: true, indexOnly: false, binding: returned, frameContract: true,
               raw: `HPI: encounter ${i}. Assessment: lumbar radiculopathy. Physical exam documented. Plan: continue treatment and follow-up.`,
+              cpt: [], icd10: ['M54.16']
+            } }];
+          }
+          if (op === 'detail') {
+            const i = details.args[2], binding = details.args[3];
+            legacyDetailAttempts[i] = Number(legacyDetailAttempts[i] || 0) + 1;
+            if ((options.missingLegacyDetailOnceIndex === i && Number(clickAttempts[i] || 0) === 1) || options.missingLegacyDetailIndex === i) {
+              return [{ frameId: 5, result: { fullDetail: false, indexOnly: true, raw: '02/03/2026 shell', reason: 'no-bound-clinical-detail', binding } }];
+            }
+            return [{ frameId: 5, result: {
+              fullDetail: true, indexOnly: false, binding,
+              raw: `HPI: legacy encounter ${i}. Assessment: lumbar radiculopathy. Physical exam documented. Plan: continue treatment and follow-up.`,
               cpt: [], icd10: ['M54.16']
             } }];
           }
@@ -234,6 +251,25 @@ function makeReader(options = {}) {
   );
   assert.strictEqual(cold.calls.filter(c => c.op === 'openDetailFrame' && c.args[2] === 0).length, 2, 'cold row did not use exactly one second-stage retry');
 
+  const coldBody = makeReader({ missingDetailOnceIndex: 0, waitMs: 300 });
+  const coldBodyGood = await coldBody.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
+  assert.strictEqual(coldBodyGood.ok, true, 'an exact bound row whose clinical body hydrates late must recover on the bounded same-row retry');
+  assert.strictEqual(coldBodyGood.receipt.parsed, 2);
+  assert.strictEqual(coldBodyGood.receipt.retryCount, 1, 'late body hydration must report exactly one retry');
+  assert.deepStrictEqual(
+    coldBody.calls.filter(c => c.op === 'click').map(c => c.args[2]),
+    [0, 0, 1],
+    'late body hydration must re-click only the same frozen row before continuing'
+  );
+
+  const legacyColdBody = makeReader({ legacySelector: true, missingLegacyDetailOnceIndex: 0, waitMs: 300 });
+  const legacyColdBodyGood = await legacyColdBody.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
+  assert.strictEqual(legacyColdBodyGood.ok, true, 'the live legacy-row no-bound-clinical-detail path must recover on its bounded same-row retry');
+  assert.strictEqual(legacyColdBodyGood.receipt.parsed, 2);
+  assert.strictEqual(legacyColdBodyGood.receipt.retryCount, 1);
+  assert.deepStrictEqual(legacyColdBody.calls.filter(c => c.op === 'click').map(c => c.args[2]), [0, 0, 1],
+    'legacy body hydration must re-click only the same frozen row');
+
   const unknownZero = makeReader({ rows: [] });
   const unknownEmpty = await unknownZero.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });
   assert.strictEqual(unknownEmpty.ok, false, 'an unexplained zero-row visit surface was reported complete');
@@ -281,7 +317,11 @@ function makeReader(options = {}) {
   assert.strictEqual(staleOk.ok, true, 'a verified stable-id match must not be refused on a stale frame name');
   assert.strictEqual(staleOk.receipt.complete, true);
 
-  const thin = makeReader({ missingDetailIndex: 1 });
+  /* These three fixtures exercise the classic exact-row refusal itself. Keep
+     their budget below the separate 42-second ax-surface recycle admission so
+     the synthetic microtask timer cannot turn that real-time wait into a hot
+     loop; ax-route recovery has its own dedicated runtime coverage. */
+  const thin = makeReader({ missingDetailIndex: 1, maxReadMs: 40000 });
   const incomplete = await thin.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });
   assert.strictEqual(incomplete.ok, false);
   assert.strictEqual(incomplete.reason, 'visit-bodies-incomplete');
@@ -291,6 +331,24 @@ function makeReader(options = {}) {
   assert.strictEqual(incomplete.receipt.complete, false);
   assert.strictEqual(incomplete.receipt.fullDetail, false);
   assert.strictEqual(incomplete.receipt.attempted, 2);
+  assert.strictEqual(incomplete.receipt.retryCount, 2, 'a persistently body-less encounter must exhaust only the two bounded retries');
+  assert.strictEqual(incomplete.receipt.stableKeysComplete, true, 'a missing body must not fabricate a stable-key failure for the valid bodies that did arrive');
+  assert(incomplete.receipt.failureDetails.some(f => f && f.reason === 'no-bound-clinical-detail'), 'the real missing-body reason was lost');
+  assert(!incomplete.receipt.failureDetails.some(f => f && f.reason === 'stable-source-keys-incomplete'), 'the partial-body receipt manufactured a false stable-key failure');
+
+  const legacyThin = makeReader({ legacySelector: true, missingLegacyDetailIndex: 1, waitMs: 300, maxReadMs: 40000 });
+  const legacyIncomplete = await legacyThin.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });
+  assert.strictEqual(legacyIncomplete.ok, false, 'a persistently body-less legacy row must remain fail-closed');
+  assert.strictEqual(legacyIncomplete.reason, 'visit-bodies-incomplete');
+  assert.strictEqual(legacyIncomplete.visits.length, 0);
+  assert.strictEqual(legacyIncomplete.receipt.retryCount, 2);
+
+  const badBinding = makeReader({ badBindingIndex: 1 });
+  const badBindingResult = await badBinding.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960' });
+  assert.strictEqual(badBindingResult.ok, false, 'a wrong returned row binding must remain fail-closed');
+  assert.strictEqual(badBindingResult.receipt.bodyComplete, false);
+  assert(badBindingResult.receipt.failureDetails.some(f => f && f.reason === 'detail-binding-mismatch'), 'the exact-row binding refusal was weakened or lost');
+  assert.strictEqual(badBinding.calls.filter(c => c.op === 'axHarvest').length, 0, 'a hard row-binding mismatch wasted time probing an alternate surface');
 
   const manyRows = Array.from({ length: 30 }, (_, i) => ({
     index: i, date: `03/${String((i % 28) + 1).padStart(2, '0')}/2026`, type: 'Office visit',

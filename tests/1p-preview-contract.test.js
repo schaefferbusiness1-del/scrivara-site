@@ -18,21 +18,22 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-const EXPECTED_BUILD = 'p1-20260815-launch-r1';
+const EXPECTED_BUILD = 'p1-20260822-r3';
 const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 /* The extension release train of 2026-08-17 (MLS Assist 3.0.62, wsg-2.0.0)
-   moved exactly TWO literals in _config.yml - the released-package include
+   originally moved exactly two literals in _config.yml - the released-package include
    name (MLS_Assist_v3.0.61 -> v3.0.62: zip, bin and the download comment) and
    its SHA-256 comment - the same lines every extension release moves
    (scripts/sweep-3062.js). The config comparison below applies those two
-   literal substitutions to the frozen baseline text, so everything else in
+    release substitutions to the frozen baseline text, so everything else in
    the file is still byte-compared. */
 /* 3.0.63 (2026-08-17): the frozen baseline text (P1_CONFIG_BASE_COMMIT) still names
    v3.0.61 / 4d77f337...; each release maps THOSE baseline literals to the current
    release (scripts/sweep-3063.js). */
 const P1_CONFIG_RELEASE_SUBS = [
-  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.77'],
-  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', '3de8327eeb2c4b0d84c464d3b47252811c2e167895a195dc64418bf4db7bf4cd']
+  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.79'],
+  ['  # The exact released MLS Assist package (owner directive 2026-07-20).\n  # SHA-256 4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775 —\n  # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical\n  # ZIPs remain excluded by the fail-closed patterns above.',
+   '  # The exact released MLS Assist 3.0.79 package (owner directive 2026-08-24).\n  # SHA-256 10716d17baad8a7b36accc623d04ba021388f61e200b2785a3baeadf83065d75 —\n  # deterministic ZIP and byte-identical .bin mirror. Candidate/historical\n  # ZIPs remain excluded by the fail-closed patterns above.']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
@@ -540,7 +541,7 @@ const baseConfigText = P1_CONFIG_RELEASE_SUBS.reduce((text, [from, to]) => text.
    the pay-era legal names stay excluded and everything else stays frozen. */
 const baseConfigTextAdjusted = baseConfigText.replace('  - "feat_mls_legalpack.js"' + String.fromCharCode(10), '');
 assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, '').replace(wyzantConfigBlock, ''), baseConfigTextAdjusted,
-  '_config.yml changed beyond the exact reviewed 1p showcase, /cloned and /wyzant traversal blocks (and the two 3.0.62 release literals)');
+  '_config.yml changed beyond the exact reviewed 1p showcase, /cloned and /wyzant traversal blocks and release-truth substitutions');
 
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');

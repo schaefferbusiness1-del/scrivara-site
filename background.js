@@ -318,6 +318,31 @@ async function mlsAthenaActionV2DriverFn(req) {
       var m = /\/(?:encounter|visit|appointment)\/(\d{3,})/i.exec(s) || /(?:encounter|appointment|visit)(?:id)?[=\/](\d{3,})/i.exec(s);
       return m ? m[1] : '';
     }
+    function encounterIdFor(frame, actionRoot, identityRoot) {
+      var values = {}, fromUrl = encounterId(frame && frame.url);
+      if (fromUrl) values[fromUrl] = 1;
+      var roots = [actionRoot, identityRoot].filter(Boolean);
+      for (var ri = 0; ri < roots.length; ri++) {
+        var nodes = [roots[ri]];
+        try { nodes = nodes.concat(deepQueryAll(roots[ri], '[data-encounter-id],[data-encounterid],[data-visit-id],[data-visitid],[encounterid],[visitid],a[href*="encounter"],a[href*="visit"]')).slice(0, 500); } catch (eNodes) {}
+        for (var ni = 0; ni < nodes.length; ni++) {
+          var raw = '';
+          try {
+            raw = nodes[ni].getAttribute('data-encounter-id') || nodes[ni].getAttribute('data-encounterid') ||
+              nodes[ni].getAttribute('data-visit-id') || nodes[ni].getAttribute('data-visitid') ||
+              nodes[ni].getAttribute('encounterid') || nodes[ni].getAttribute('visitid') || '';
+            if (!raw) {
+              var href = nodes[ni].getAttribute('href') || '';
+              var hm = /\/(?:encounter|visit)\/(\d{3,})/i.exec(href) || /(?:encounter|visit)(?:id)?[=\/:](\d{3,})/i.exec(href);
+              raw = hm ? hm[1] : '';
+            }
+          } catch (eAttr) {}
+          raw = digits(raw); if (raw && raw.length >= 3) values[raw] = 1;
+        }
+      }
+      var ids = Object.keys(values);
+      return ids.length === 1 ? ids[0] : '';
+    }
     function appointmentIdFor(frame, actionRoot, identityRoot) {
       var values = {}, url = String(frame && frame.url || '');
       var fromUrl = /\/appointment\/(\d{3,})/i.exec(url) || /(?:appointment|appointmentid|appointment_id|apptid)[=\/:](\d{3,})/i.exec(url);
@@ -641,6 +666,16 @@ async function mlsAthenaActionV2DriverFn(req) {
       assessment: /\b(?:assessment(?: narrative)?|clinical impression|impression)\b/,
       plan: /\b(?:plan|follow up|followup|recommendations?)\b/
     };
+    /* The app's visible destination is part of the reviewed payload, not
+       decoration. Keep the driver-side copy so a stale/misbuilt page cannot
+       label an HPI write as Plan (or any other named destination). */
+    var NAMED_NOTE_DESTINATIONS = {
+      hpi: 'Athena encounter > HPI',
+      ros: 'Athena encounter > Review of Systems',
+      exam: 'Athena encounter > Physical Exam',
+      assessment: 'Athena encounter > Assessment & Plan > Assessment',
+      plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up'
+    };
     function canonicalNamedNoteKey(raw) {
       var key = norm(raw).replace(/ /g, '_');
       var aliases = { note: 'note', encounter_note: 'note', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan' };
@@ -660,6 +695,25 @@ async function mlsAthenaActionV2DriverFn(req) {
       Object.keys(NAMED_NOTE_DEFS).forEach(function (key) { if (NAMED_NOTE_DEFS[key].test(desc)) keys.push(key); });
       return keys;
     }
+    var NAMED_NOTE_NESTED_EXCLUSIONS = /\b(?:procedure documentation|procedure note|operative note|orders?|billing|charges?|claims?)\b/;
+    function editorOwnedByNamedScope(editor, scope, key) {
+      var cur = editor, guard = 0, reachedScope = false;
+      /* Do not stop at an editor that also carries aria-label. That element is
+         itself in namedNoteScopes(), so stopping there would let a mislabeled
+         textarea inside another named section become a false destination. Walk
+         through the outer ancestors too and reject any conflicting label. */
+      while (cur && guard++ < 24) {
+        var desc = namedSectionDescriptor(cur), keys = namedKeysForDescriptor(desc);
+        /* Athena may render Procedure Documentation inside the wider Physical
+           Exam panel. A lone nested procedure editor is not an Exam editor,
+           even when the outer panel has an exact Physical Exam heading. */
+        if (NAMED_NOTE_NESTED_EXCLUSIONS.test(desc)) return false;
+        if (keys.length && (keys.length !== 1 || keys[0] !== key)) return false;
+        if (cur === scope) reachedScope = true;
+        cur = parentAcrossRoots(cur);
+      }
+      return reachedScope;
+    }
     function namedNoteScopes(frame, key) {
       var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label]';
       var raw = []; try { raw = deepQueryAll(frame.doc, selector); } catch (e) {}
@@ -667,7 +721,8 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (!visible(el, frame.w) || raw.indexOf(el) !== index) return false;
         var desc = namedSectionDescriptor(el), keys = namedKeysForDescriptor(desc);
         if (keys.length !== 1 || keys[0] !== key) return false;
-        return editorsIn(el, frame).length === 1;
+        var editors = editorsIn(el, frame);
+        return editors.length === 1 && editorOwnedByNamedScope(editors[0], el, key);
       });
       return collapseContainedMatches(raw);
     }
@@ -829,6 +884,9 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (noteSections.length !== 1 || executableSections.length !== 1) return { ok: false, blocked: true, reason: 'note-section-count-mismatch', error: 'One confirmed Athena note destination is required per write.' };
       requestedNoteSection = canonicalNamedNoteKey(executableSections[0].key);
       if (!requestedNoteSection) return { ok: false, blocked: true, reason: 'unknown-note-section', error: 'The requested Athena note destination is not allowlisted.' };
+      if (requestedNoteSection !== 'note' && text(executableSections[0].destination) !== NAMED_NOTE_DESTINATIONS[requestedNoteSection]) {
+        return { ok: false, blocked: true, reason: 'note-destination-mismatch', error: 'The reviewed section key and Athena destination do not match. Nothing was written.' };
+      }
       if (noteNorm(executableSections[0].text) !== reviewedNote) return { ok: false, blocked: true, reason: 'note-section-payload-mismatch', error: 'The named section payload does not match the exact reviewed text.' };
     } else if ((action === 'save_draft' || action === 'sign_encounter') && noteSections.some(function (section) { return canonicalNamedNoteKey(section && section.key) && canonicalNamedNoteKey(section && section.key) !== 'note'; })) {
       return { ok: false, blocked: true, reason: 'named-section-final-action-unsupported', error: 'Review and save independently placed named sections directly in Athena.' };
@@ -840,15 +898,13 @@ async function mlsAthenaActionV2DriverFn(req) {
 
     var frames = sameOriginFrames(), candidates = [], sawOtherPatient = false;
     for (var fi = 0; fi < frames.length; fi++) {
-      var fr = frames[fi], eid = encounterId(fr.url);
-      if (!eid) continue;
+      var fr = frames[fi];
       var chartHeader = anchoredIdentity(fr), observedIdentity = chartHeader.identity;
       if (!observedIdentity || chartHeader.ambiguous) continue;
       if (nameKey(observedIdentity.name) !== nameKey(expectedPatient.name) || dateKey(observedIdentity.dob) !== dateKey(expectedPatient.dob)) { sawOtherPatient = true; continue; }
       var wantMrn = digits(expectedPatient.mrn);
       if (wantMrn && digits(observedIdentity.mrn) !== wantMrn) { sawOtherPatient = true; continue; }
       if (expectedContext.encounterUrl && String(expectedContext.encounterUrl).split('#')[0] !== String(fr.url).split('#')[0]) continue;
-      if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) continue;
       var noteTarget = null, billTarget = null, orderTarget = null;
       if (action === 'stage_billing') { billTarget = billingField(fr); if (!billTarget.el) continue; }
       else if (action === 'place_order') { orderTarget = orderWorkspace(fr); if (!orderTarget.search) continue; }
@@ -861,6 +917,9 @@ async function mlsAthenaActionV2DriverFn(req) {
         }
       }
       var targetRoot = billTarget ? billTarget.root : (orderTarget ? orderTarget.root : noteTarget.root);
+      var eid = encounterIdFor(fr, targetRoot, observedIdentity.root);
+      if (!eid) continue;
+      if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) continue;
       var observedAppointmentId = appointmentIdFor(fr, targetRoot, observedIdentity.root);
       if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) continue;
       var encounterMeta = encounterMetadataFor(fr, targetRoot, observedIdentity.root);
@@ -955,7 +1014,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         } catch (eRb) {}
         return { ok: false, action: action, attempted: noteAttempted, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, rolledBack: rolledBack, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
       }
-      return { ok: true, action: action, attempted: noteAttempted, written: true, verified: true, draftEntered: true, draftVerified: true, reason: 'exact-note-editor-verified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: true, verified: true, alreadyPresent: alreadyExact }], noAutomaticChaining: 'no-automatic-chaining' };
+      return { ok: true, action: action, attempted: noteAttempted, written: true, verified: true, draftEntered: true, draftVerified: true, saved: false, persisted: false, signed: false, reason: 'exact-note-editor-verified-unsaved', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: true, verified: true, saved: false, persisted: false, alreadyPresent: alreadyExact }], noAutomaticChaining: 'no-automatic-chaining' };
     }
     /* ATHENA_ACTION_V2_WRITE_NOTE_END */
 
@@ -2349,8 +2408,7 @@ function mlsAthenaTeachWatcherFn(config) {
       if (!clean(p.patientId)) return { ok: false, blocked: true, reason: 'local-patient-id-required' };
       if (!clean(p.name) || !dateKey(p.dob) || !digits(p.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       if (action === 'place_order' && (!rowHash || rowHash.length > 160)) return { ok: false, blocked: true, reason: 'order-row-mismatch' };
-      if (!expectedContextShape(c, mode === 'execute') || !dateKey(c.visitDate) || !norm(c.provider) ||
-          (!digits(c.appointmentId) && !(digits(c.encounterId) && urlKey(c.encounterUrl)))) return { ok: false, blocked: true, reason: 'context-mismatch' };
+      if (!expectedContextShape(c, mode === 'execute')) return { ok: false, blocked: true, reason: 'context-mismatch' };
       if (action === 'place_order' && !checkedOrder.ok) return { ok: false, blocked: true, reason: checkedOrder.reason };
       if (action === 'place_order' && (!clientOrderId || clientOrderId.length > 160 || clientOrderId !== checkedOrder.order.clientOrderId)) return { ok: false, blocked: true, reason: 'order-client-id-mismatch' };
       if (action !== 'stage_billing' && action !== 'place_order' && !noteNorm(noteText)) return { ok: false, blocked: true, reason: 'note-content-required' };
@@ -2396,16 +2454,23 @@ function mlsAthenaTeachWatcherFn(config) {
             prior.used = true; prior.invalidated = true;
           }
         });
+        /* Execute returns the immutable context Athena discovered at probe
+           time. Bind the one-use token to that complete destination instead of
+           the caller's empty pre-probe locator. */
+        var expectedAtExecute = {
+          appointmentId: digits(probe.context.appointmentId), encounterId: digits(probe.context.encounterId),
+          encounterUrl: urlKey(probe.context.encounterUrl), visitDate: dateKey(probe.context.visitDate), provider: norm(probe.context.provider)
+        };
         var tok = tokenValue(), now = Date.now();
         tokens[tok] = {
           used: false, issuedAt: now, expiresAt: now + TOKEN_TTL_MS,
           senderTabId: sender.tab.id, athenaTabId: tab.id, action: action,
           previewHash: previewHash, patientHash: simpleHash(patientKey(p)), expectedMrn: digits(p.mrn),
-          expectedContextHash: simpleHash(expectedContextKey(c)), billingHash: simpleHash(canonicalBillingPayload), billingPayload: canonicalBillingPayload, orderHash: simpleHash(canonicalOrderKey), orderPayload: canonicalOrderKey, noteHash: noteHash, notePayload: canonicalNotePayload,
+          expectedContextHash: simpleHash(expectedContextKey(expectedAtExecute)), billingHash: simpleHash(canonicalBillingPayload), billingPayload: canonicalBillingPayload, orderHash: simpleHash(canonicalOrderKey), orderPayload: canonicalOrderKey, noteHash: noteHash, notePayload: canonicalNotePayload,
           manifestHash: manifestHash, taughtDestinationHash: simpleHash(canonicalTaughtKey), taughtDestinationPayload: canonicalTaughtKey,
           patientId: clean(p.patientId), clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', rowHash: action === 'place_order' ? rowHash : '',
           noteWriteProof: action === 'sign_encounter' ? noteWriteProofId : '',
-          expectedContext: { appointmentId: digits(c.appointmentId), encounterId: digits(c.encounterId), encounterUrl: urlKey(c.encounterUrl), visitDate: dateKey(c.visitDate), provider: norm(c.provider) },
+          expectedContext: expectedAtExecute,
           lockedContextHash: simpleHash(expectedContextKey(probe.context)),
           locked: probe.context
         };
@@ -4733,6 +4798,33 @@ async function mlsPickAthenaTab(all, opts) {
   }
 }
 self.__mlsPickAthenaTab = mlsPickAthenaTab; /* console/diag handle */
+
+/* The Patients/Easy "Pull the patient open in athenaOne" button means the
+ * patient in the Athena tab the clinician is currently looking at. The
+ * general picker is intentionally heuristic for background work, but that
+ * heuristic can choose another signed-in Athena tab when Chrome has several
+ * windows open (common on macOS). Explicit user capture therefore binds to
+ * the active Athena tab in Chrome's focused window. Existing quiet-work leases
+ * and explicit tab pins remain authoritative; an active signed-out/sleeping
+ * tab returns null rather than silently switching to a different patient. */
+async function mlsPickExplicitUserCaptureTab(all, opts) {
+  opts = opts || {};
+  if (opts.explicitUserPull !== true || opts.foregroundOk !== true ||
+      (self.__mlsQp && self.__mlsQp.active) || (self.__mlsAthPin && self.__mlsAthPin.tabId != null)) {
+    return { tab: await mlsPickAthenaTab(all, opts), activeAthena: false };
+  }
+  var focused = null;
+  try { focused = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] }); } catch (eFocus) {}
+  var activeAthena = null;
+  try {
+    var focusedTabs = (focused && focused.tabs) || [];
+    activeAthena = focusedTabs.find(function (t) {
+      return t && t.active === true && mlsAthTabHost(t) === 'athenanet.athenahealth.com';
+    }) || null;
+  } catch (eActive) {}
+  if (!activeAthena) return { tab: await mlsPickAthenaTab(all, opts), activeAthena: false };
+  return { tab: await mlsPickAthenaTab([activeAthena], opts), activeAthena: true };
+}
 
 /* ===================== v1.99 ATHENA TAB PIN (tab-picker backend) ==============
  * The user hands MLS an already-open athena tab from the in-app picker chip.
@@ -8155,6 +8247,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           await restoreFocus();
           return chartRespond({ ok: false, reason: 'exam-prep-stuck', opened: opened, briefing: true, navClicked: navClicked, polls: polls, identDiag: identDiag, version: V59, error: 'athenaOne stayed on the appointment exam-prep view (no patient banner) - the clinical chart never loaded, so nothing was captured.' });
         }
+        var identityBootstrapReceipt = null;
         if (bootstrapIdentity) {
           var bannerGrade = !!(ident && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(ident.via || '')));
           var exactNameMatched = !!(bannerGrade && exactBootstrapName(ident.name, want));
@@ -8180,20 +8273,21 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             try { self.__mlsExpectOpen = null; } catch (eClearBootstrapLease) {}
             return chartRespond({ ok: false, reason: !bannerGrade ? 'banner-identity-unverified' : (!exactNameMatched ? 'banner-name-mismatch' : (!validBannerDob ? 'banner-dob-unverified' : (!bannerCandidatesAgree ? 'banner-identity-conflict' : 'banner-navigation-frame-unverified'))), opened: opened, error: 'The exact appointment opened, but its changed Athena frame did not prove one consistent expected name and DOB. Nothing was stored.' });
           }
+          identityBootstrapReceipt = {
+            kind: 'athena-appointment-banner-identity', complete: true,
+            requestId: chartRequestId, appointmentId: expectedAppointmentId,
+            scheduleDate: expectedScheduleDate, athenaTabId: exactOpenLease.tabId,
+            appointmentIdBound: true, navigationProven: true,
+            navigationFrameIds: exactOpenLease.appointmentNavigationFrameIds.slice(),
+            exactNameMatched: true, bannerIdentity: true, dobVerified: true
+          };
           try { self.__mlsExpectOpen = null; } catch (eClearBootstrapLease2) {}
           return chartRespond({
             ok: true, opened: true, bootstrapIdentity: true,
             stageMs: { total: Date.now() - chartRequestStartedAt, identity: Date.now() - T0, polls: polls },
             appointmentId: expectedAppointmentId, athenaTabId: exactOpenLease.tabId,
             chartName: String(ident.name || ''), chartDob: String(ident.dob || ''), chartMrn: String(ident.mrn || ''), via: String(ident.via || ''),
-            identityBootstrapReceipt: {
-              kind: 'athena-appointment-banner-identity', complete: true,
-              requestId: chartRequestId, appointmentId: expectedAppointmentId,
-              scheduleDate: expectedScheduleDate, athenaTabId: exactOpenLease.tabId,
-              appointmentIdBound: true, navigationProven: true,
-              navigationFrameIds: exactOpenLease.appointmentNavigationFrameIds.slice(),
-              exactNameMatched: true, bannerIdentity: true, dobVerified: true
-            }
+            identityBootstrapReceipt: identityBootstrapReceipt
           });
         }
         const __identDoneAt = Date.now(); /* v2.9.27 stage timing: identity loop ended, text read begins */
@@ -8914,7 +9008,8 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           foregroundOk: msg.foregroundOk === true,
           appTabId: sender && sender.tab && sender.tab.id != null ? sender.tab.id : null
         };
-        const tab = await mlsPickAthenaTab(tabs, capturePickOpts);
+        const capturePick = await mlsPickExplicitUserCaptureTab(tabs, capturePickOpts);
+        const tab = capturePick && capturePick.tab;
         if (!tab) {
           if (capturePickOpts.failure && capturePickOpts.failure.reason === 'athena-tab-sleeping') {
             return sendResponse({ ok: false, reason: 'athena-tab-sleeping', error: 'The exact athenaOne tab is asleep and could not be safely restored. Click that Athena tab once, keep the patient open, then press this again. Nothing was captured.' });
@@ -9219,15 +9314,42 @@ function kaFrameTouch() {
 }
 async function kaTick() {
   var __kaTickSummary = [];
+  try { if (self.__mlsKaTickRunning === true) return; self.__mlsKaTickRunning = true; } catch (eTickLock) {}
   try {
     var cfg = await kaGetCfg();
     if (!cfg.enabled) return;
+    /* ka-pull-guard-1.0.0: 3.0.64 is the governing hidden-tab pull pace.
+       A later keep-alive train began injecting activity into every Athena
+       frame (plus three authenticated requests) every three minutes, even
+       while that exact chart/history engine was reading. The established
+       immutable read deadline and quiet-pull lease are the two authoritative
+       busy signals. Defer the whole tick while either is live so it cannot
+       perturb Athena's DOM/network during a pull; a distinct one-shot alarm
+       repays the tick after one minute without replacing the periodic alarm. */
+    function __kaPullBusyNow() {
+      try {
+        return Date.now() < Number(self.__mlsChartReadBusyUntil || 0) ||
+          !!(self.__mlsQp && self.__mlsQp.active === true);
+      } catch (eBusy) { return false; }
+    }
+    function __kaDeferForPull() {
+      try { chrome.storage.local.set({ mlsKeepAliveLastDeferredAt: Date.now() }, function () {}); } catch (eDeferredStore) {}
+      try { chrome.alarms.create('mlsKaResume', { delayInMinutes: 1 }); } catch (eDeferredAlarm) {}
+    }
+    if (__kaPullBusyNow()) {
+      __kaDeferForPull();
+      return;
+    }
     var tabs = [];
     try { tabs = await chrome.tabs.query({ url: 'https://athenanet.athenahealth.com/*' }); } catch (eQ) { return; }
     for (var ti = 0; ti < (tabs || []).length; ti++) {
       var t = tabs[ti];
       if (!t || t.id == null || t.discarded) continue;
       try { if (mlsAthIsLoginish(t)) continue; } catch (eL) {}
+      /* tabs.query is asynchronous; a chart read may have started while it
+         was settling. Re-check on the same event-loop turn immediately before
+         the injection so no keep-alive work crosses that newly acquired read. */
+      if (__kaPullBusyNow()) { __kaDeferForPull(); return; }
       try {
         var rs = await chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, func: kaFrameTouch });
         var clicked = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-clicked-continue'; });
@@ -9246,10 +9368,10 @@ async function kaTick() {
       if (kaLed.length > 48) kaLed = kaLed.slice(kaLed.length - 48);
       chrome.storage.local.set({ mlsKaLedger: kaLed }, function () {});
     } catch (eLg) {}
-  } catch (e) {}
+  } catch (e) {} finally { try { self.__mlsKaTickRunning = false; } catch (eTickUnlock) {} }
 }
 try { chrome.alarms.create('mlsKaTick', { periodInMinutes: 3, delayInMinutes: 1 }); } catch (e) {}
-try { chrome.alarms.onAlarm.addListener(function (a) { if (a && a.name === 'mlsKaTick') kaTick(); }); } catch (e) {}
+try { chrome.alarms.onAlarm.addListener(function (a) { if (a && (a.name === 'mlsKaTick' || a.name === 'mlsKaResume')) kaTick(); }); } catch (e) {}
 
 // ===========================================================================
 // csr-1.0 (3.0.39): CONTENT-SCRIPT RE-INJECTION ON INSTALL/UPDATE. Chrome
@@ -11602,6 +11724,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 legacyR = await exec(emrId, [listFrame], ['detail', cfg, i, expected]);
                 legacyDetail = bestResult(legacyR, function (r) { return (r && r.fullDetail === true && r.raw) ? r.raw.length : 0; }).result || {};
                 if (legacyDetail.fullDetail === true && legacyDetail.raw) break;
+                /* nbcd-1.0.0: this is an explicit bound-row hydration refusal,
+                   not an empty poll. Repeating the same read against the same
+                   unopened shell only burns the row window; return it now so
+                   the bounded cold lane can re-click/rebind the frozen row. */
+                if (String(legacyDetail.reason || '') === 'no-bound-clinical-detail') break;
               } while (Date.now() < legacyDeadline);
               return { detail: legacyDetail };
             }
@@ -11714,6 +11841,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               detailR = await exec(emrId, [detailFrame.frameId], ['detailFrame', detailCfg, i, expected]);
               frameDetail = bestResult(detailR, function (r) { return completeFrameDetail(r) ? String(r.raw || '').length : 0; }).result || {};
               if (completeFrameDetail(frameDetail)) break;
+              /* Same explicit refusal as the legacy lane: the exact frame is
+                 present but its bound clinical section is still a shell.
+                 Reopening the frozen row is the recovery action; hot-polling
+                 the unchanged shell until the long deadline is not. */
+              if (String(frameDetail.reason || '') === 'no-bound-clinical-detail') break;
             } while (Date.now() < detailDeadline);
             return { detail: frameDetail };
           } finally {
@@ -11723,9 +11855,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
           }
         };
-        var attempt = await runBoundAttempt(detailWaitMs);
+        /* nbcd-1.0.0 (live 2026-08-23): detailFrame can return an exact-row,
+           exact-patient result whose clinical body has not hydrated yet. That
+           result carries `no-bound-clinical-detail`, but because it arrived in
+           `attempt.detail` instead of `attempt.failure`, the cold-reopen lane
+           never saw it. Three encounters on one live chart failed this way
+           while the row/source-key safety proofs remained intact. Normalize
+           only this explicit refusal into the existing bounded retry lane;
+           no body is accepted and every click/identity/binding gate reruns. */
+        function normalizeNoBoundDetail(a) {
+          if (a && !a.failure && a.detail && a.detail.fullDetail !== true && String(a.detail.reason || '') === 'no-bound-clinical-detail') {
+            return { failure: { reason: 'no-bound-clinical-detail', d2: a.detail.d2 || null } };
+          }
+          return a;
+        }
+        var attempt = normalizeNoBoundDetail(await runBoundAttempt(detailWaitMs));
         var retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
-        var coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed|stale-encounter-surface-open|detail-close-control-missing)$/.test(retryReason);
+        var coldRetryable = /^(?:no-bound-clinical-detail|encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed|stale-encounter-surface-open|detail-close-control-missing)$/.test(retryReason);
         /* 2026-07-15 live: one cold reopen was not enough for encounter-frame-not-refreshed on slow charts (one stale body failed the whole day batch). Allow a SECOND bounded reopen for the same retryable reasons while the read deadline permits. */
         var coldTries = 0;
         while (coldRetryable && coldTries < 2 && Date.now() + 1000 < readDeadline) {
@@ -11784,9 +11930,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           emit(appTabId, frozenRequestId, 'Finishing cold encounter ' + (i + 1) + ' of ' + total + '\u2026', i, total);
           await sleepWithinReadDeadline(coldRetryPauseMs);
-          attempt = await runBoundAttempt(coldRetryWaitMs);
+          attempt = normalizeNoBoundDetail(await runBoundAttempt(coldRetryWaitMs));
           retryReason = attempt && attempt.failure && String(attempt.failure.reason || '');
-          coldRetryable = /^(?:encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed|stale-encounter-surface-open|detail-close-control-missing)$/.test(retryReason);
+          coldRetryable = /^(?:no-bound-clinical-detail|encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed|stale-encounter-surface-open|detail-close-control-missing)$/.test(retryReason);
         }
         if (attempt.failure) {
           failures.push({ index: i, reason: attempt.failure.reason || 'detail-read-failed', d2: attempt.failure.d2 || null });
@@ -11835,7 +11981,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       var clinicalTotal = Math.max(0, total - administrativeRows.length - dateSkippedRows.length);
-      var sourceKeys = {}, stableKeysComplete = visits.length === clinicalTotal;
+      /* skc-1.0.0 (live 2026-08-23): key integrity and body coverage are two
+         independent proofs. The old initializer made every missing clinical
+         body also manufacture `stable-source-keys-incomplete`, even when all
+         bodies that did arrive had unique non-empty frozen row keys. Keep key
+         integrity fail-closed in the loop; bodyComplete below separately and
+         still strictly requires visits.length === clinicalTotal. */
+      var sourceKeys = {}, stableKeysComplete = true;
       for (var sk = 0; sk < visits.length; sk++) {
         var sourceKey = String(visits[sk] && visits[sk].sourceVisitKey || '');
         if (!sourceKey || sourceKeys[sourceKey]) stableKeysComplete = false;
@@ -11857,8 +12009,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
            to clincmp-ax (usual: the grind outlasts a recycle period), a
            COMPLETE ax re-roll supersedes the partial; anything less keeps the
            classic partial - never worse than today. Time-budget-exceeded rows
-           never reach here with runway and stay with the si re-check. */
-        if (Date.now() + 15000 < readDeadline) {
+           never reach here with runway and stay with the si re-check. A hard
+           identity, row-key, or binding failure is not a hydration problem:
+           another UI cannot make that mismatch safe, so report it immediately
+           instead of spending a recycle window searching for an alternate
+           surface. */
+        var axPartialEligible = failures.length > 0 && failures.every(function (failure) {
+          return /^(?:no-bound-clinical-detail|clinical-body-incomplete|encounter-section-loading|encounter-section-empty|encounter-surface-not-open|encounter-frame-not-refreshed|accordion-not-open|accordion-trigger-missing|slideout-trigger-missing|slideout-open-failed|stale-encounter-surface-open|detail-close-control-missing)$/.test(String(failure && failure.reason || ''));
+        });
+        if (axPartialEligible && Date.now() + 15000 < readDeadline) {
           var axPartialRes = await axRouteRun(true);
           if (axPartialRes && axPartialRes.receipt && axPartialRes.receipt.complete === true) {
             axPartialRes.receipt.classicPartialSuperseded = { expected: clinicalTotal, parsed: visits.length, failures: failures.length };

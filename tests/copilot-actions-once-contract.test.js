@@ -36,7 +36,7 @@ assert(!appSource.includes('MLS.email') && !appSource.includes("email:function(t
 assert(appSource.includes('function copilotCopyEmailDraft') && appSource.includes('Nothing is sent from MLS'), 'base Copilot lost its draft-only review/copy boundary');
 assert(appSource.includes("return reply(false,{draftOnly:true},'Email sending is unavailable in MLS."), 'custom Studio widgets can still request a network email side effect');
 assert(!/\/api\/copilot\/email/.test(afterVisitSource) && !/\bSend to patient\b/.test(afterVisitSource), 'after-visit summary can still send through the generic arbitrary-recipient endpoint');
-assert(afterVisitSource.includes("var VERSION = '1.1.0'") && afterVisitSource.includes('id="mlsavsCopyEmail"') && afterVisitSource.includes('Nothing is sent from MLS.'), 'after-visit summary lost its exact-patient local draft-copy boundary');
+assert(afterVisitSource.includes("var VERSION = '1.1.1'") && afterVisitSource.includes('id="mlsavsCopyEmail"') && afterVisitSource.includes('Nothing is sent from MLS.'), 'after-visit summary lost its exact-patient local draft-copy boundary');
 assert(afterVisitSource.includes("patientBinding(activePatient()) !== els.patientBinding"), 'after-visit summary actions do not stale-block after a chart switch');
 
 const normalizeStart = appSource.indexOf('function _copilotTopPatientsByVisits');

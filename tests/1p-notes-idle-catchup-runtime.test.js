@@ -277,7 +277,17 @@ function makeHarness(options) {
       pin: (k, text) => { pins.push({ k: String(k), text: String(text) }); return true; },
       unpin: k => { pins.push({ k: String(k), text: null }); return true; }
     },
-    __mlsVisitNotesPref: { read: () => ({ state: 'off', on: false, settled: true }), write: () => true, isPrefKey: () => false },
+    /* This suite exercises the real Full Notes catch-up engine, so its
+       default fixture is explicitly ON. Tests that need the schedule-only
+       boundary pass visitNotesOn:false instead of relying on an old implicit
+       OFF fixture that can no longer reach this engine by design. */
+    __mlsVisitNotesPref: {
+      read: () => options.visitNotesOn === false
+        ? ({ state: 'off', on: false, settled: true })
+        : ({ state: 'on', on: true, settled: true }),
+      write: () => true,
+      isPrefKey: () => false
+    },
     __mlsP1AthenaReadLease: {
       version: 'fake-lease', busy: () => flags.leaseBusy,
       claim: () => '', owns: () => false, touch: () => {}, release: () => {}, ready: () => true,
@@ -631,6 +641,8 @@ async function testPullFeedsTheQueue() {
   const h = makeHarness();
   const receipt = {
     day: DAY,
+    /* Only a Full Notes ON pull can hand visit-body leftovers to this engine. */
+    visitNotesRequested: true,
     patients: [
       { patientId: 'pt-1', name: NAMES[0], todayNote: true },
       { patientId: 'pt-2', name: NAMES[1], todayNote: 'already-read' },

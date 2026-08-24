@@ -8,7 +8,9 @@
  * What it proves:
  *   1. A bound encounter reaches READY: the read-only check ungrays Confirm and
  *      binds it to exactly that row.  (deliverable 2)
- *   2. An unbound encounter stays honestly gray and names the missing fields.
+ *   2. A current/live note with complete patient identity but no local visit
+ *      locator enters the read-only discovery probe; a historical note with
+ *      the same missing locator remains honestly blocked.
  *   3. A missing three-factor identity produces the identity block text.
  *   4. A refused check leaves Confirm disabled AND records PHI-free receipts.
  *   5. The read-only fix ladder (mlsAppGotoDate -> appointment row -> re-check)
@@ -198,22 +200,64 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     probeOnlyGuard(h);
   }
 
-  /* ------------------------------------------- 2. unbound -> honest gray ---- */
+  /* ---------------- 2. live unbound -> discovery; historical -> blocked ---- */
   {
     const h = makeHarness({ calendar: [], ledger: false });
+    /* Run the post-lock handoff through the shipped PROBE ONLY enforcement so
+       this suite can inspect the exact execute-shaped payload without ever
+       issuing mode:'execute'. */
+    h.window.__mlsAthenaProbeOnly = true;
     const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: NOTE }] });
     const noteRow = manifest.rows.filter(r => r.id === 'write-note')[0];
-    assert.strictEqual(noteRow.capability, 'blocked', 'an unbound encounter produced a sendable row');
-    ['visit date', 'provider', 'appointment ID'].forEach(field => {
-      assert(noteRow.reason.indexOf(field) >= 0, 'the blocked reason does not name the missing ' + field + ': ' + noteRow.reason);
-    });
-    assert(noteRow.reason.indexOf('Nothing is sent') >= 0, 'the blocked reason does not say nothing was sent');
+    assert.strictEqual(noteRow.capability, 'ready', 'a current/live note with complete identity could not enter read-only encounter discovery: ' + noteRow.reason);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(manifest.visit)), { visitDate: '', provider: '', appointmentId: '', encounterId: '', encounterUrl: '' },
+      'the live-current fixture accidentally acquired a local visit locator');
     await settle();
     const go = h.el('mlsAthenaUnifiedGo');
-    assert.strictEqual(go.disabled, false === true, 'a blocked-only review must never enable Confirm');
-    assert.strictEqual(go.getAttribute('data-mls-athena-action'), null, 'Confirm was bound to an action with no READY row');
-    assert.strictEqual(h.athenaRequests().length, 0, 'a blocked-only review still contacted Athena');
+    const probes = h.athenaRequests();
+    assert.strictEqual(probes.length, 1, 'the live-current unbound review did not make exactly one read-only discovery probe');
+    assert.strictEqual(probes[0].mode, 'probe');
+    assert.strictEqual(probes[0].action, 'write_note');
+    assert.deepStrictEqual(probes[0].expectedContext, manifest.visit, 'the discovery probe guessed a local visit locator');
+    assert.strictEqual(go.disabled, false, 'the exact discovered encounter lock did not arm the reviewed row');
+    assert.strictEqual(go.getAttribute('data-mls-athena-action'), 'write_note');
+    const discovered = h.wf.diagnostics.state().probe;
+    assert(discovered && discovered.context, 'the exact discovery response was not frozen into review state');
+    assert.strictEqual(discovered.context.appointmentId, APPOINTMENT,
+      'validatedUnifiedProbe dropped the appointment ID Athena discovered');
+    assert.strictEqual(discovered.context.encounterId, ENCOUNTER);
+    assert.strictEqual(discovered.context.encounterUrl, ENCOUNTER_URL);
+    go.click();
+    await settle(60);
+    /* PROBE ONLY schedules a later fresh re-check after recording its receipt;
+       inspect the immediate confirm handoff, not that subsequent blank-manifest
+       re-check. */
+    const handoff = h.athenaRequests()[probes.length];
+    assert.strictEqual(handoff.mode, 'probe', 'the test-only handoff escaped PROBE ONLY');
+    assert.strictEqual(handoff.expectedContext.appointmentId, APPOINTMENT,
+      'the execute-shaped handoff lost the discovered appointment ID');
+    assert.strictEqual(handoff.expectedContext.encounterId, ENCOUNTER,
+      'the execute-shaped handoff lost the discovered encounter ID');
+    assert.strictEqual(handoff.expectedContext.encounterUrl, ENCOUNTER_URL,
+      'the execute-shaped handoff lost the discovered encounter URL');
     probeOnlyGuard(h);
+
+    const partial = makeHarness({ calendar: [], ledger: false });
+    const partialManifest = partial.wf.buildUnifiedManifest({ patient: PATIENT, sections: [{ key: 'note', text: NOTE }],
+      expectedContext: { visitDate: ATHENA_DAY, provider: '', appointmentId: APPOINTMENT } });
+    assert.strictEqual(partialManifest.rows.filter(r => r.id === 'write-note')[0].capability, 'blocked',
+      'a partial live locator bypassed the exact auto-bind path; only a wholly empty locator may enter discovery');
+
+    const historical = makeHarness({ calendar: [], ledger: false });
+    const historicalManifest = historical.wf.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: NOTE }], requireExpectedVisit: true });
+    const historicalRow = historicalManifest.rows.filter(r => r.id === 'write-note')[0];
+    assert.strictEqual(historicalRow.capability, 'blocked', 'a historical note without its saved visit locator entered discovery');
+    assert(/MLS will not guess an encounter/.test(historicalRow.reason), 'the historical refusal no longer names the no-guess encounter rule');
+    await settle();
+    assert.strictEqual(historical.athenaRequests().length, 0, 'a historical-unbound review contacted Athena instead of failing closed');
+    assert.strictEqual(historical.el('mlsAthenaUnifiedGo').getAttribute('data-mls-athena-action'), null,
+      'a historical-unbound row armed Confirm');
+    probeOnlyGuard(historical);
   }
 
   /* ------------------------------------- 3. three-factor identity missing --- */
@@ -537,5 +581,5 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     probeOnlyGuard(h2);
   }
 
-  console.log('PASS 1p Athena write-readiness: bound->READY, honest gray + reasons, PHI-free probe receipts and copyable report, read-only goto/open/re-check ladder, PROBE ONLY end-to-end with a single bridge enforcement point, and op-note -> review byte-for-byte');
+  console.log('PASS 1p Athena write-readiness: bound->READY, live-current unbound -> read-only discovery while historical-unbound stays blocked, PHI-free probe receipts and copyable report, read-only goto/open/re-check ladder, PROBE ONLY end-to-end with a single bridge enforcement point, and op-note -> review byte-for-byte');
 })().catch(error => { console.error(error); process.exitCode = 1; });

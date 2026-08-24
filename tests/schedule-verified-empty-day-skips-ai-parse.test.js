@@ -141,7 +141,7 @@ function race(p, ms, label) {
   /* 1. verified-empty day: parser never called, no parse-timeout, settles fast */
   const t0 = Date.now();
   const h1 = harness(source, verifiedEmptyScenario);
-  const r1 = await race(h1.api.pull({ date: verifiedEmptyScenario.day, includeHistory: false, onStatus: (m, k) => h1.statuses.push({ message: String(m || ''), kind: String(k || '') }) }), 12000, 'verified-empty pull');
+  const r1 = await race(h1.api.pull({ date: verifiedEmptyScenario.day, includeHistory: false, pullVisitBodies: false, onStatus: (m, k) => h1.statuses.push({ message: String(m || ''), kind: String(k || '') }) }), 12000, 'verified-empty pull');
   const dt = Date.now() - t0;
   assert.strictEqual(h1.parserCalls.length, 0, `ed-1.0.0: the AI schedule parser was called ${h1.parserCalls.length}× on a verified-empty day`);
   assert.notStrictEqual(String(r1 && r1.reason || ''), 'schedule-parse-timeout', 'a verified-empty day still refused with schedule-parse-timeout');
@@ -152,7 +152,7 @@ function race(p, ms, label) {
 
   /* 2. text-only day (no exact rows, text present): the fallback still runs */
   const h2 = harness(source, textOnlyScenario);
-  const p2 = h2.api.pull({ date: textOnlyScenario.day, includeHistory: false, onStatus: (m, k) => h2.statuses.push({ message: String(m || ''), kind: String(k || '') }) });
+  const p2 = h2.api.pull({ date: textOnlyScenario.day, includeHistory: false, pullVisitBodies: false, onStatus: (m, k) => h2.statuses.push({ message: String(m || ''), kind: String(k || '') }) });
   /* give the engine a moment to reach the parse ladder; the parser hangs by design, so do not await completion */
   await new Promise(r => setTimeout(r, 1500));
   assert.strictEqual(h2.parserCalls.length, 1, `text-only fallback must still call the parser exactly once (called ${h2.parserCalls.length}×)`);
@@ -163,7 +163,7 @@ function race(p, ms, label) {
   const prior = spawnSync('git', ['show', 'origin/main:feat_mls_schedimport_exact.js'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (prior.status === 0 && prior.stdout && prior.stdout.length > 100000 && !prior.stdout.includes('ed-1.0.0')) {
     const h3 = harness(prior.stdout, verifiedEmptyScenario);
-    const p3 = h3.api.pull({ date: verifiedEmptyScenario.day, includeHistory: false, onStatus: () => {} });
+    const p3 = h3.api.pull({ date: verifiedEmptyScenario.day, includeHistory: false, pullVisitBodies: false, onStatus: () => {} });
     await new Promise(r => setTimeout(r, 1500));
     assert(h3.parserCalls.length >= 1, 'CAUSAL CONTROL: the pre-fix engine did NOT call the parser on a verified-empty day — this test would not have caught the defect');
     p3.catch(() => {});

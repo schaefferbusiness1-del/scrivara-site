@@ -464,7 +464,7 @@ async function assertAuthorityReadRefuses(options, label, expectedReason) {
   const h = makeHarness(options);
   const before = h.store.get(h.authorityKey);
   const result = await h.api.dayPull({
-    date: DAY, provider: 'all', includeHistory: false, onStatus: h.onStatus
+    date: DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: h.onStatus
   });
   assert.strictEqual(result.ok, false, `${label}: census reported success over unreadable authority state`);
   assert.strictEqual(result.complete, false, `${label}: census reported complete over unreadable authority state`);
@@ -608,7 +608,7 @@ function assertNoProviderGuess(h, label) {
 
 async function assertRefuses(label, mutateResponse) {
   const h = makeHarness({ mutateResponse });
-  const result = await h.api.dayPull({ date: DAY, provider: 'all', includeHistory: false, onStatus: h.onStatus });
+  const result = await h.api.dayPull({ date: DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: h.onStatus });
   assert.strictEqual(result && result.ok, false, `${label}: near miss was reported ok`);
   assert.strictEqual(result && result.complete, false, `${label}: near miss was reported complete`);
   assert.strictEqual(h.savedBodies.length, 0, `${label}: near miss wrote appointment rows`);
@@ -635,7 +635,7 @@ async function main() {
     id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: true
   }).exact, true, 'the stale selected-provider snapshot was not seeded');
   const result = await exact.api.dayPull({
-    date: DAY, provider: 'all', includeHistory: false, onStatus: exact.onStatus
+    date: DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: exact.onStatus
   });
 
   assert.strictEqual(result.ok, true,
@@ -703,7 +703,7 @@ async function main() {
     noLocalPatients: true,
     chartHydrationUnavailable: true
   });
-  const buttonResult = await button.api.dayPull({ date: DAY, onStatus: button.onStatus });
+  const buttonResult = await button.api.dayPull({ date: DAY, pullVisitBodies: true, onStatus: button.onStatus });
   assert.strictEqual(buttonResult.includeHistory, true,
     'the real day button no longer defaults includeHistory to true');
   assert.strictEqual(buttonResult.ok, true,
@@ -743,7 +743,7 @@ async function main() {
   exact.backendRows[0].provider = 'Existing Clinician, MD';
   exact.backendRows[0].provider_id = 'existing-provider-777';
   const repeat = await exact.api.dayPull({
-    date: DAY, provider: 'all', includeHistory: false, onStatus: exact.onStatus
+    date: DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: exact.onStatus
   });
   assert.strictEqual(repeat.ok, true, 'an idempotent census replay did not complete');
   assert.strictEqual(repeat.complete, true, 'an idempotent census replay was reported partial');
@@ -765,7 +765,7 @@ async function main() {
   const authorityFailure = makeHarness({ failAuthoritativeWrites: true });
   seedAuthoritativeDay(authorityFailure);
   const authorityFailureResult = await authorityFailure.api.dayPull({
-    date: DAY, provider: 'all', includeHistory: false, onStatus: authorityFailure.onStatus
+    date: DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: authorityFailure.onStatus
   });
   assert.strictEqual(authorityFailureResult.ok, false,
     'census reported success when stale authority could not be cleared durably');
@@ -780,7 +780,7 @@ async function main() {
 
   const displayFailure = makeHarness({ failDisplayWrites: true });
   const displayFailureResult = await displayFailure.api.dayPull({
-    date: DAY, provider: 'all', includeHistory: false, onStatus: displayFailure.onStatus
+    date: DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: displayFailure.onStatus
   });
   assert.strictEqual(displayFailureResult.ok, false,
     'real census pull reported success when exact display snapshot persistence failed');
@@ -903,6 +903,7 @@ async function main() {
     date: DAY,
     provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: true },
     includeHistory: false,
+    pullVisitBodies: false,
     onStatus: selected.onStatus
   });
   assert.strictEqual(selectedResult.ok, false, 'selected-provider route used the census exception');
@@ -924,6 +925,7 @@ async function main() {
     date: DAY,
     provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: false },
     includeHistory: false,
+    pullVisitBodies: false,
     onStatus: detectedSelected.onStatus
   });
   assert.strictEqual(detectedSelectedResult.ok, true,
@@ -955,6 +957,7 @@ async function main() {
     date: DAY,
     provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: false },
     includeHistory: false,
+    pullVisitBodies: false,
     onStatus: wrongDetected.onStatus
   });
   assert.strictEqual(wrongDetectedResult.ok, false,
@@ -980,6 +983,7 @@ async function main() {
       rosterVerified: true
     },
     includeHistory: false,
+    pullVisitBodies: false,
     onStatus: unresolvedSelected.onStatus
   });
   assert.strictEqual(unresolvedSelectedResult.ok, false,
@@ -1004,7 +1008,7 @@ async function main() {
     mutateResponse: makeCompleteRosterUnattributed
   });
   const accountFrozenResult = await accountFrozen.api.dayPull({
-    date: DAY, includeHistory: false, onStatus: accountFrozen.onStatus
+    date: DAY, includeHistory: false, pullVisitBodies: false, onStatus: accountFrozen.onStatus
   });
   assert.strictEqual(accountFrozenResult.ok, false,
     'an account-selected pull became all-provider after its warm-up mapping changed');
@@ -1034,6 +1038,7 @@ async function main() {
     date: DAY,
     provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: true },
     includeHistory: false,
+    pullVisitBodies: false,
     onStatus: selectedResume.onStatus
   });
   assert.strictEqual(selectedResumeFirst.ok, false,
@@ -1109,7 +1114,7 @@ async function main() {
     }
   });
   const allResumeFirst = await allResume.api.dayPull({
-    date: DAY, provider: 'all', includeHistory: false, onStatus: allResume.onStatus
+    date: DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: allResume.onStatus
   });
   assert.strictEqual(allResumeFirst.ok, false,
     'all-resume fixture did not begin with an incomplete guarded Day pull');
@@ -1142,7 +1147,8 @@ async function main() {
 
   const month = makeHarness({ day: MONTH_DAY });
   const monthResult = await month.api.pullMonth({
-    month: '2026-08', dates: [MONTH_DAY], provider: 'all', includeHistory: false, onStatus: month.onStatus
+    month: '2026-08', dates: [MONTH_DAY], provider: 'all', includeHistory: false,
+    pullVisitBodies: false, onStatus: month.onStatus
   });
   assert.strictEqual(monthResult.ok, false, 'month route used the day-only census exception');
   assert.strictEqual(month.savedBodies.length, 0, 'month route wrote provider-unknown census rows');
@@ -1151,7 +1157,8 @@ async function main() {
 
   const directPull = makeHarness();
   const directPullResult = await directPull.api.pull({
-    date: DAY, provider: 'all', includeHistory: false, onStatus: directPull.onStatus
+    date: DAY, provider: 'all', includeHistory: false,
+    pullVisitBodies: false, onStatus: directPull.onStatus
   });
   assert.strictEqual(directPullResult.ok, false,
     'direct public pull used the guarded day-only census exception');

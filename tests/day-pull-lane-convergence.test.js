@@ -64,8 +64,12 @@ assert(ds.includes("var dpOpts = { date: day, includeHistory: true, onStatus: ds
   'the Visit pull button must call the guarded dayPull entry with the day, history on, and its status sink');
 assert(/var p = \(si && typeof si\.dayPull === 'function'\)\s*\r?\n?\s*\? si\.dayPull\(/.test(ds),
   'dayPull must be the PRIMARY route the visible Visit pull takes, not a branch below si.pull');
-assert(ds.includes(': si.pull({ date: day, onStatus: dsOnStatus })'),
-  'the synchronous si.pull fallback must survive for an engine that predates dayPull');
+assert(ds.includes('var legacyPullOpts = { date: day, onStatus: dsOnStatus };') &&
+  ds.includes("if (typeof DS.pullVisitBodies === 'boolean') legacyPullOpts.pullVisitBodies = DS.pullVisitBodies;") &&
+  ds.includes(': si.pull(legacyPullOpts)'),
+  'the synchronous legacy fallback must preserve a frozen Full Notes choice without adding newer engine options');
+assert(!ds.includes(': si.pull({ date: day, onStatus: dsOnStatus })'),
+  'the legacy fallback still drops the frozen Full Notes choice');
 assert(!/var p\s*=\s*si\.pull\(/.test(ds),
   'REVERTED: the Visit lane is back to the un-warmed, provider-less si.pull call');
 assert((ds.match(/si\.pull\(/g) || []).length === 1,
@@ -380,7 +384,9 @@ async function main() {
 
   h.rowDays.set(DAY, columnlessRows(DAY));
   h.rowDays.set(DAY2, taggedRows(DAY2));
-  /* includeHistory deliberately omitted: the default must be ON. */
+  /* includeHistory is omitted by the caller, but this account has explicitly
+     chosen Full Notes OFF. Admission must narrow the effective pull to the
+     schedule before any history/body reader can run. */
   const res = await h.api.dayPull({ date: DAY, onStatus: h.onStatus });
 
   assert.strictEqual(h.posted[0] && h.posted[0].type, 'mlsAthenaPresence',
@@ -410,7 +416,9 @@ async function main() {
   assert.strictEqual(pre.providerMode, 'selected', 'a resolvable account must pull SCOPED, not all-providers');
   assert.strictEqual(pre.providerResolved, true, 'the resolved scope must be disclosed');
   assert.strictEqual(pre.scopeSource, 'account', 'a Visit pull with no picker scopes from the ACCOUNT');
-  assert.strictEqual(res.includeHistory, true, 'verified history must default ON through the converged entry');
+  assert.strictEqual(res.includeHistory, false, 'Full Notes OFF did not narrow the converged entry to schedule-only');
+  assert.strictEqual(h.posted.filter(message => message.type === 'mlsAppReadAllVisits').length, 0,
+    'Full Notes OFF opened a visit-body reader through the converged entry');
 
   assert.strictEqual(res.ok, false,
     'a selected account provider must not be guessed onto a provider-blank appointment row');

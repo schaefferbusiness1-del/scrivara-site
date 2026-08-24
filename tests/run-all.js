@@ -43,6 +43,7 @@ const tests = [
      owner sees on /cloned: one-use password setup, atomic Ready semantics,
      capability-filtered onboarding, and server-owned agreement artifacts. */
   'admin-onboarding-clone-contract.test.js',
+  'setup-onboarding-network-runtime.test.js',
   /* Server-owned agreement completion, practice-BAA waiting, setup-only 428
      handling, and Enterprise-managed child access must remain fail-closed. */
   'first-login-server-state-contract.test.js',
@@ -50,6 +51,10 @@ const tests = [
      A sanitized account-owned day already in the durable importer store must
      retire the setup card after refresh; empty/invalid stores stay fail-closed. */
   'first-run-historical-pull-runtime.test.js',
+  /* First use must explicitly reach the same account-scoped five-section AI
+     format workspace as Settings; opening it is not completion and cannot
+     mutate visit data. */
+  'first-run-ai-tuning-entry-contract.test.js',
   /* The /1p Calendar repair of 2026-08-16: one pull entry point instead of
      four, the hero carrying the same caller contract the Visit strip has,
      and a per-appointment op-note action that fails closed rather than
@@ -185,6 +190,8 @@ const tests = [
      storage ceiling that pauses with the truth. Drives the real range engine
      in a VM against a fake importer; no browser, no athenaOne, no PHI. */
   '1p-range-year-readiness.test.js',
+  'full-visit-notes-choice-gates-runtime.test.js',
+  'first-login-full-visit-notes-choice-contract.test.js',
   /* The four Calendar pull-surface defects the owner reported on 2026-08-18:
      a future day's rows reading like failures, the hero's verdict printing a
      paragraph of reconciliation prose, a violet progress bar with its caption
@@ -249,12 +256,9 @@ const tests = [
   '1p-capture-before-ai-runtime.test.js',
   '1p-day-note-day-and-future-runtime.test.js',
   '1p-daynote-column-and-not-yet-runtime.test.js',
-  /* pullspeed2 (owner 2026-08-17, "any way we can make it faster? this looks
-     so clunky"): the day-note pass gets ONE total budget, the per-row ceiling
-     may only be raised by a SUCCESS, a note already read this account day is
-     never re-opened, and the background backfill asks mlsAthenaPresence before
-     it repeats the false "open your signed-in athenaOne". Causal control
-     against origin/main, and a before/after table. */
+  /* Full Notes scope: the retired OFF day-note pass/backfill stays dormant,
+     OFF opens zero patient charts and zero visit bodies, and ON performs one
+     ordinary unscoped all-visits walk without a duplicate pulled-day pass. */
   '1p-daynote-pass-budget-and-backfill-runtime.test.js',
   /* b121fork (owner's /cloned pull, 2026-08-17): the visit-backfill footer said
      "Visit backfill: <Full Patient Name> - open-failed: Open your signed-in
@@ -297,6 +301,11 @@ const tests = [
      keeps the unsaved visit and purges nothing). */
   '1p-shared-workstation-runtime.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
+  /* lpf-2.0.0 (live 2026-08-23): a schedule-born patient can miss Athena's
+     lossy name search even though the pulled row already carries an exact
+     appointment id and day. The one safe recovery re-grounds that frozen day
+     and makes exactly one appointment-bound FULL chart read; malformed ids,
+     wrong-day replies and identity-safety refusals stay fail-closed. */
   '1p-pull-resume-skip-and-cost-runtime.test.js',
   '1p-pull-honesty-and-daynote-budget-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
@@ -355,6 +364,12 @@ const tests = [
      report, the read-only goto/open/re-check ladder, PROBE ONLY end to end
      with ONE enforcement point, and the op note -> review hand-off. */
   '1p-athena-write-readiness-and-probe-only.test.js',
+  /* live-unbound-write-1.0.0: a current note with complete patient identity
+     may discover one open encounter read-only even when the local visit
+     locator is wholly empty. The extension returns authority only for exactly
+     one complete lock; zero/multiple matches and empty execute context fail
+     closed, and editor insertion is reported as read back but unsaved. */
+  'athena-live-unbound-discovery-runtime.test.js',
   '1p-copy-all-visits-full-text.test.js',
   '1p-cross-patient-door.test.js',
   '1p-day-pull-facts-capture.test.js',
@@ -503,6 +518,7 @@ const tests = [
      verified supersession record. */
   '1p-fork-parity-contract.test.js',
   '1p-pull-attempt-receipt-runtime.test.js',
+  'day-pull-terminal-receipt-runtime.test.js',
   /* nq-1.0.0: upsertNote wrote the device copy through a bare setItem BEFORE
      the encrypted server write, so a full device threw the finished note away
      instead of letting the server accept it. */
@@ -572,6 +588,8 @@ const tests = [
   'local-clinical-library-boundary.test.js',
   'local-qr-secret-boundary.test.js',
   'athena-write-contract.test.js',
+  'athena-panel-duplicate-section-runtime.test.js',
+  'athena-active-launcher-tab-runtime.test.js',
   'write-confirm-requires-change.test.js',
   'one-canonical-stop.test.js',
   'deselect-releases-the-visit.test.js',
@@ -603,6 +621,24 @@ const tests = [
      runtime one drives real prompts through the real wrapper with controls. */
   'note-defaults-reach-contract.test.js',
   'note-defaults-reach-runtime.test.js',
+  /* Every AI draft family has one bounded, account-scoped Settings bundle.
+     Hosted and per-device transports receive the same family preference,
+     while immutable clinical/legal/coding safeguards remain authoritative. */
+  'draft-tuning-contract.test.js',
+  'draft-tuning-route-reach.test.js',
+  'legal-longform-family-routing-contract.test.js',
+  'legal-report-response-contract.test.js',
+  'ime-standalone-contract.test.js',
+  'copilot-edit-family-contract.test.js',
+  'structured-note-response-contract.test.js',
+  /* A generic current encounter such as "patient is fine" may not borrow old
+     chart history to manufacture today's note, plan, or billing. */
+  'sparse-transcript-grounding-contract.test.js',
+  'athena-dual-note-contract.test.js',
+  'athena-dual-note-state-runtime.test.js',
+  'structured-note-flat-staging-contract.test.js',
+  'parse-gen-json-fail-closed-contract.test.js',
+  'freeform-family-loader-fallback-contract.test.js',
   /* Main hosted visit notes keep the backend-owned safety prompt and carry
      only a bounded structured preferences object. This executes the shipped
      collector, proves its caps, and refuses any raw browser system prompt. */
@@ -749,11 +785,21 @@ const tests = [
   'athena-order-action-runtime.test.js',
   'athena-unified-confirmation-contract.test.js',
   'athena-unified-confirmation-runtime.test.js',
+  'athena-what-goes-where-runtime.test.js',
+  'athena-launcher-clarity-contract.test.js',
   'athena-named-section-placement-runtime.test.js',
+  'athena-generated-soap-staging-runtime.test.js',
+  'athena-generated-soap-provenance-runtime.test.js',
+  'athena-inline-canonical-generation-runtime.test.js',
+  'athena-opnote-loader-boundary-contract.test.js',
   'destination-teaching-runtime.test.js',
   'athena-advanced-unified-entry-contract.test.js',
   'athena-session-preservation-contract.test.js',
   'athena-session-health-runtime.test.js',
+  /* A keep-alive tick may dispatch synthetic activity plus three authenticated
+     requests in every Athena frame. Those must never race an explicit chart/
+     history pull, but the alarm must remain useful once both pull guards clear. */
+  'athena-keepalive-pull-busy-runtime.test.js',
   'athena-confirmed-billing-contract.test.js',
   'chartautofill-guard-active-patient-runtime.test.js',
   'commercial-hardening-contract.test.js',
@@ -970,6 +1016,7 @@ const tests = [
   'extension-schedule-support-diagnostic.test.js',
   'schedule-empty-day-proof-contract.test.js',
   'schedule-history-pipeline.test.js',
+  'chart-open-failure-diagnostics-contract.test.js',
   'schedule-identity-adversarial-runtime.test.js',
   'schedule-row-demographics-adversarial.test.js',
   'schedule-visit-persistence-adversarial.test.js',
@@ -997,8 +1044,22 @@ const tests = [
   'upsert-attested-slice-travels-with-receipt.test.js',
   'mrn-preserve-and-backfill.test.js',
   'pull-visit-bodies-default-on.test.js',
+  /* p3064-1.0.0 (exact 3.0.64 forensic golden at commit 2165bc2): successful
+     scheduled rows keep the
+     proven one-ordinary-chart-read trace with no appointment-full-read/date
+     re-ground detour. The approved cold/key/retry/diagnostic/pending repairs
+     stay pinned, and Full Notes OFF/ON remains an executable history-scope
+     gate. */
+  'pull-3064-fast-path-golden-contract.test.js',
+  /* fnc-1.0.0: the SITE admits one explicit Full Notes choice for every public
+     day/month/range owner; OFF is schedule-only, relay/resume preserve it, and
+     raw scoped-reader internals stay out of the doctor-facing status/tooltip. */
+  'site-full-notes-host-contract.test.js',
+  'copilot-provider-stats-scope-runtime.test.js',
   'pull-first-attempt-convergence.test.js',
   'cross-tab-pull-shield.test.js',
+  /* onlyDate remains an ON-only catch-up capability, never an OFF/single-pull
+     permission bypass. */
   'fast-lane-saves-todays-note.test.js',
   'writeflow-duplicate-click-guard.test.js',
   'coding-suggestion-separation-contract.test.js',
@@ -1115,6 +1176,9 @@ const tests = [
   'assistant-request-ownership-runtime.test.js',
   'copilot-actions-once-contract.test.js',
   'copilot-context-pack-runtime.test.js',
+  'copilot-longitudinal-context-runtime.test.js',
+  'copilot-procedure-answer-runtime.test.js',
+  'copilot-request-preflight-runtime.test.js',
   /* 2026-08-05 Copilot Power (cpw-1.0.0): the snapshot gains providerCoverage +
      capabilities, the /api/copilot body gains an ABSOLUTE wire cap through the
      loaded wrapper, and the agentic kinds (pullProviders/draftNote) execute
@@ -1260,6 +1324,11 @@ const tests = [
      evaluated (not sliced) so an instruction spanning two array elements is read as
      the model receives it. */
   'after-visit-summary-names-the-practice-to-call.test.js',
+  /* A delayed AVS draft is safe only for the exact modal, patient, note source,
+     Athena binding and visit epoch that started it. Same-patient note edits,
+     A->B->A navigation, and close/reopen all discard the old response; an
+     unchanged visit accepts it and the model call carries family=avs. */
+  'after-visit-summary-async-binding-runtime.test.js',
   /* b824 — a patient's AGE was computed two ways. Seven surfaces adjust for the
      birthday; the Study Groups builder and its satellite subtracted birth year
      from the current year, so everyone born later in the year read ONE YEAR
@@ -1374,6 +1443,7 @@ const tests = [
   'ai-audit-safety-fixes-contract.test.js',
   'loading-vocabulary-contract.test.js',
   'late-surfaces-stay-deferred.test.js',
+  'after-visit-summary-loader-contract.test.js',
   'provider-default-is-the-signed-in-doctor.test.js',
   'copilot-loader-order-contract.test.js',
   'copilot-stable-dock-runtime.test.js',

@@ -647,6 +647,7 @@
     }
     var lockedPatient = { name: patient.name, dob: patient.dob, mrn: athMrn, patientId: S(patient.patientId).trim() };
     var lockedContext = {
+      appointmentId: contextValue(ctx, ['appointmentId', 'athenaAppointmentId'], ''),
       encounterId: contextValue(ctx, ['encounterId', 'visitId', 'id'], ''),
       encounterUrl: contextValue(ctx, ['encounterUrl', 'visitUrl', 'url'], ''),
       visitDate: contextValue(ctx, ['visitDate', 'encounterDate', 'date'], ''),
@@ -1312,21 +1313,24 @@
        get it, instead of promising a write that cannot happen. */
     var visitReady = !!visit.visitDate && !!visit.provider &&
       (!!visit.appointmentId || (!!visit.encounterId && !!visit.encounterUrl));
-    var missingVisit = [];
-    if (!visit.visitDate) missingVisit.push('visit date');
-    if (!visit.provider) missingVisit.push('provider');
-    if (!visit.appointmentId && !(visit.encounterId && visit.encounterUrl)) missingVisit.push('appointment ID (or a bound encounter ID and URL)');
-    var liveVisitBlocked = opts.requireExpectedVisit !== true && !visitReady;
-    var liveVisitBlock = liveVisitBlocked
-      ? ('This encounter is not bound yet: the ' + missingVisit.join(' and the ') + (missingVisit.length === 1 ? ' is' : ' are') +
-         ' missing, so MLS cannot name the exact Athena encounter. Pull today\'s Athena schedule binds this encounter - run the day pull, then reopen this review. Nothing is sent and nothing was changed.')
-      : '';
+    var visitHasAnyLocator = !!(visit.visitDate || visit.provider || visit.appointmentId || visit.encounterId || visit.encounterUrl);
+    /* Only a wholly unbound CURRENT visit may ask Athena to discover the one
+       open encounter read-only. A partial locator stays blocked so the
+       existing auto-bind path can finish that same locator. */
+    var liveVisitNeedsDiscovery = opts.requireExpectedVisit !== true && !visitHasAnyLocator;
+    var partialLiveVisitBlocked = opts.requireExpectedVisit !== true && visitHasAnyLocator && !visitReady;
     var exactVisitBlocked = opts.requireExpectedVisit === true &&
       (!visit.visitDate || !visit.provider ||
         (!visit.appointmentId && !(visit.encounterId && visit.encounterUrl)));
+    var partialLiveVisitReason = 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter. Use “Bind this visit to its Athena appointment — re-pulls this day” to run the Athena schedule day pull; MLS then rebuilds this review from the exact appointment. Nothing is sent.';
+    var exactVisitReason = 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.';
     var commonBlock = identityBlocked
       ? 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.'
-      : (exactVisitBlocked ? 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.' : liveVisitBlock);
+      : (partialLiveVisitBlocked ? partialLiveVisitReason : (exactVisitBlocked ? exactVisitReason : ''));
+    /* A CURRENT open encounter with complete patient identity may start with a
+       read-only Check Athena probe. The probe must discover exactly one labeled
+       date/provider/encounter, freeze the complete context, and execution must
+       re-bind that same lock. Historical reviews remain pre-bound above. */
     /* Typed place_order rows (MLS Assist 3.0.62+) share the note rows'
        identity/encounter block; without a capable extension the order rows
        fall back to manual and the block is irrelevant to them. */
@@ -1414,6 +1418,15 @@
     for (var i = 0; i < plan.length; i++) {
       var source = plan[i] || {}, kind = planKind(source.kind);
       if (kind === 'note' || kind === 'billing') continue;
+      if (source.duplicateOf && namedNoteLabels[source.duplicateOf]) {
+        var duplicateKey = source.duplicateOf;
+        addRow({ id: 'blocked-duplicate-note-' + duplicateKey + '-' + i, action: '', kind: duplicateKey,
+          label: 'Duplicate ' + namedNoteLabels[duplicateKey] + ' destinations', destination: DESTINATION[duplicateKey], capability: 'blocked',
+          reason: source.reason || 'More than one reviewed payload targets the same Athena field. Combine them explicitly before review; MLS will not merge or overwrite the field twice.',
+          consequence: 'Nothing is written for this destination.',
+          payload: { sections: Array.isArray(source.duplicateSections) && source.duplicateSections.length ? stableClone(source.duplicateSections) : [{ key: duplicateKey, text: S(source.body || source.text).trim(), execute: true, destination: DESTINATION[duplicateKey] }], noteText: S(source.body || source.text).trim(), reviewText: S(source.body || source.text).trim(), sectionKey: duplicateKey }, order: UNIFIED_ORDER.write_note + i / 1000 });
+        continue;
+      }
       if (kind === 'orders' && structuredOrderRows(source, i, addRow, orderCommonBlock)) continue;
       if (kind === 'order' && structuredOrderRows({ orderDrafts: [source.order || source], orderSuggestions: [] }, i, addRow, orderCommonBlock)) continue;
       var manual = UNIFIED_MANUAL[kind];
@@ -1457,7 +1470,7 @@
     var manifest = {
       schema: 'mls-athena-write-manifest-v1', manifestId: 'athena-manifest-' + manifestHash.replace('mls-preview-', ''),
       manifestHash: manifestHash, previewHash: previewHash, receiptSessionId: receiptSessionId,
-      patient: patient, visit: visit, requireExpectedVisit: opts.requireExpectedVisit === true, rows: rows
+      patient: patient, visit: visit, requireExpectedVisit: opts.requireExpectedVisit === true, needsVisitDiscovery: liveVisitNeedsDiscovery, rows: rows
     };
     return deepFreeze(manifest);
   }
@@ -1769,6 +1782,7 @@
       return { ok: false, error: 'The read-only Athena check did not return a complete matching patient name, DOB, and MRN. Nothing was changed.' };
     }
     var lockedContext = {
+      appointmentId: contextValue(ctx, ['appointmentId', 'athenaAppointmentId'], ''),
       encounterId: contextValue(ctx, ['encounterId', 'visitId', 'id'], ''), encounterUrl: contextValue(ctx, ['encounterUrl', 'visitUrl', 'url'], ''),
       visitDate: contextValue(ctx, ['visitDate', 'encounterDate', 'date'], ''), provider: contextValue(ctx, ['provider', 'providerName'], '')
     };
@@ -1958,7 +1972,7 @@
     else if (row.action === 'write_note') {
       verifiedWrite = rememberVerifiedWrite(probe.patient, state.manifest.previewHash, { receiptSessionId: state.manifest.receiptSessionId }, row.payload, probe.context, resp);
       status = verifiedWrite ? 'verified' : 'uncertain';
-      message = verifiedWrite ? 'The exact reviewed unsigned note was written and verified. Save, Sign, billing, orders, and prescriptions did not run.' : 'Athena did not return a verified exact-note receipt. Inspect the note before retrying; Sign remains locked.';
+      message = verifiedWrite ? 'Inserted into the exact Athena field and read back successfully. It has not been saved or signed. Save, Sign, billing, orders, and prescriptions did not run.' : 'Athena did not return a verified exact-field insertion receipt. Inspect the field before retrying; Sign remains locked.';
     } else if (row.action === 'stage_billing') {
       status = (resp.staged === true || resp.verified === true) ? 'verified' : 'uncertain';
       message = status === 'verified' ? (billingResultSummary(resp, row.payload) || 'The exact E/M and CPT/HCPCS codes were verified in the billing slate. No claim was submitted.') : 'Athena did not durably verify the billing result. Inspect the billing slate before retrying.';
@@ -2060,7 +2074,8 @@
     return {
       patient: stableClone(manifest.patient), plan: stableClone(opts.plan || []), sections: stableClone(opts.sections || []),
       expectedContext: stableClone(manifest.visit), noteTimestamp: opts.noteTimestamp || null, requireExpectedVisit: manifest.requireExpectedVisit,
-      previewHash: manifest.previewHash, receiptSessionId: manifest.receiptSessionId, statusEl: opts.statusEl || null, preferredAction: opts.preferredAction || ''
+      previewHash: manifest.previewHash, receiptSessionId: manifest.receiptSessionId, statusEl: opts.statusEl || null, preferredAction: opts.preferredAction || '',
+      generationIssue: unifiedCanonicalGenerationIssue(opts)
     };
   }
   /* srr-1.0.0 (2026-08-18): a review OPENED before the day's schedule pull
@@ -2206,7 +2221,8 @@
       return (fresh && S(fresh.appointmentId).trim()) ? o : null;
     } catch (e) { return null; }
   }
-  function wfbindFinish(btn, label) {
+  function wfbindFinish(state, btn, label) {
+    if (state) state.binding = false;
     if (!btn) return;
     try { btn.disabled = false; btn.textContent = label; } catch (e) {}
   }
@@ -2215,26 +2231,29 @@
     var timer = setInterval(function () {
       try {
         ticks++;
-        if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { clearInterval(timer); wfbindFinish(btn, label); return; }
+        if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { clearInterval(timer); wfbindFinish(state, btn, label); return; }
         var resolved = wfbindResolvedOpts(state, day);
         if (!resolved) {
           if (ticks < WFBIND_POLL_TICKS) return;
-          clearInterval(timer); wfbindFinish(btn, label);
+          clearInterval(timer); wfbindFinish(state, btn, label);
           unifiedStatus(state, 'The day pull for ' + day + ' finished, but MLS still cannot name one exact Athena appointment for this patient on that day. This review stays unsendable and nothing was written. Check that ' + day + ' is the right day and that this patient is on athenaOne’s schedule for it.', 'err');
           wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: false, reason: 'unresolved-after-pull', expectedDay: day, appointmentIdPresent: false });
           return;
         }
-        clearInterval(timer); wfbindFinish(btn, label);
+        clearInterval(timer); wfbindFinish(state, btn, label);
         wfbindLast = { day: day, at: Date.now() };
         wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: true, expectedDay: day, appointmentIdPresent: true });
         unifiedStatus(state, 'The day pull named this exact Athena appointment — rebinding this review now. Nothing was sent.', 'ok');
         openUnifiedConfirmation(resolved);
-      } catch (eTick) { try { clearInterval(timer); } catch (e2) {} wfbindFinish(btn, label); }
+      } catch (eTick) { try { clearInterval(timer); } catch (e2) {} wfbindFinish(state, btn, label); }
     }, WFBIND_POLL_MS);
     return timer;
   }
   function wfbindRun(state, day, btn) {
-    if (!state || state.closed || state.running || unifiedAthenaState !== state) return false;
+    if (!state || state.closed || unifiedAthenaState !== state) return false;
+    if (state.running) { unifiedStatus(state, 'Finish the current Athena check or action before binding this visit. No pull started and nothing was sent.', ''); return false; }
+    if (state.generating) { unifiedStatus(state, 'The five local draft fields are still generating. Let generation finish before binding this visit. No pull started and nothing was sent.', ''); return false; }
+    if (state.binding) { unifiedStatus(state, 'This review is already binding its exact Athena appointment. No second pull started and nothing was sent.', ''); return false; }
     day = wfdxDayKey(day);
     if (!day) return false;
     var label = btn ? S(btn.textContent) : '';
@@ -2251,12 +2270,16 @@
       unifiedStatus(state, 'A schedule pull is already running. Let it finish — this review rebinds itself the moment the day is named. Nothing was sent.', '');
       return false;
     }
+    state.binding = true;
     if (btn) { btn.disabled = true; btn.textContent = 'Binding — re-pulling ' + day + '…'; }
     wfbindNavigateAndPull(day, function (msg, kind) { unifiedStatus(state, msg, kind || ''); }).then(function (res) {
       res = res || { ok: false, message: 'The day re-pull did not report a result. Nothing was changed.' };
-      if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { wfbindFinish(btn, label); return; }
-      if (res.ok !== true) { wfbindFinish(btn, label); unifiedStatus(state, res.message, 'err'); return; }
+      if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) { wfbindFinish(state, btn, label); return; }
+      if (res.ok !== true) { wfbindFinish(state, btn, label); unifiedStatus(state, res.message, 'err'); return; }
       wfbindPoll(state, day, btn, label, generation);
+    }, function () {
+      wfbindFinish(state, btn, label);
+      unifiedStatus(state, 'The read-only day navigation could not be started. No pull started and nothing was sent.', 'err');
     });
     return true;
   }
@@ -2335,11 +2358,22 @@
     return btn;
   }
   /* ===== end wfbind-1.0.0 ================================================= */
-  function renderUnifiedOrderSummary(orderRows, manifest) {
+  function renderUnifiedOrderSummary(orderRows, manifest, chosen) {
     if (!orderRows.length) return '';
     var items = orderRows.map(function (row) {
       var payload = row.payload || {}, blocked = row.capability === 'blocked';
-      var statusColor = blocked ? '#8b2525' : '#7a5a16';
+      var ready = row.capability === 'ready' && !!row.action;
+      var statusColor = ready ? '#205c43' : (blocked ? '#8b2525' : '#7a5a16');
+      var statusText = ready ? 'READY · SEPARATE CONFIRMATION' : (row.capability === 'manual' ? 'MANUAL IN ATHENA' : 'BLOCKED · NOTHING SENT');
+      var howText = ready
+        ? 'Select this row, then use its own Confirm & Send. MLS places only this reviewed catalog item and runs no other action.'
+        : (row.capability === 'manual'
+          ? 'Review or copy this payload, then complete it yourself in Athena. This row never crosses the write bridge.'
+          : 'Nothing is sent from this row. Resolve the reason below before it can become a reviewed Athena action.');
+      var radioId = 'mlsAthenaOrderChoice-' + S(row.id).replace(/[^A-Za-z0-9_-]/g, '-');
+      var selectHtml = ready
+        ? '<input id="' + esc(radioId) + '" type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '"' + (chosen && chosen.id === row.id ? ' checked' : '') + ' aria-label="Select ' + esc(row.label) + ' for a separate Athena confirmation" style="margin-top:3px">'
+        : '';
       /* oa-1.0.0 (owner 2026-07-22): a proposed order stuck at "Suggestion
          only" had no accept control anywhere on this card — the clinician
          had accepted it mentally and the UI kept re-asking. Suggestion rows
@@ -2352,15 +2386,18 @@
           '<button type="button" data-mls-accept-order="' + esc(row.id) + '" style="border:0;background:#205c43;color:#fff;border-radius:9px;padding:8px 13px;font-weight:800;font-size:12px;cursor:pointer">Accept this proposed order</button>' +
           '<span style="font-size:11px;color:#52675c">Records your acceptance now — it becomes a reviewed draft and will not be asked again. Nothing is placed or executed.</span></div>'
         : '';
-      return '<div data-manifest-row="' + esc(row.id) + '" style="padding:9px 0;border-top:1px solid #e3ebe6">' +
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="color:#203b2e">' + esc(payload.orderTypeLabel || row.label) + '</b>' +
-        '<span style="font-size:10px;font-weight:850;color:' + statusColor + ';border:1px solid currentColor;border-radius:999px;padding:1px 6px">' + esc(row.capability === 'manual' ? 'COMPLETE IN ATHENA' : 'REVIEW REQUIRED') + '</span></div>' +
-        '<div style="font-size:11.5px;color:#385b49;margin-top:2px"><b>Destination:</b> ' + esc(row.destination) + '</div>' +
-        '<div style="font-size:11.5px;color:#52675c;margin-top:2px"><b>Source:</b> ' + esc(row.source || payload.sourceLabel || 'Provider-entered draft') + ' &middot; <b>Handled by:</b> ' + esc(row.capability === 'ready' ? 'MLS, after your confirm' : 'you, in athenaOne') + '</div>' +
+      return '<section data-manifest-row="' + esc(row.id) + '" style="padding:9px 0;border-top:1px solid #e3ebe6">' +
+        '<div style="display:flex;gap:8px;align-items:flex-start">' + selectHtml + '<div style="flex:1;min-width:0">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label' + (ready ? ' for="' + esc(radioId) + '"' : '') + ' style="font-weight:800;color:#203b2e' + (ready ? ';cursor:pointer' : '') + '"><b>What:</b> ' + esc(unifiedArtifactName(row)) + '</label>' +
+        '<span style="font-size:10px;font-weight:850;color:' + statusColor + ';border:1px solid currentColor;border-radius:999px;padding:1px 6px">' + esc(statusText) + '</span></div>' +
+        '<div style="font-size:11.5px;color:#385b49;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</div>' +
+        '<div style="font-size:11.5px;color:#52675c;margin-top:3px"><b>How:</b> ' + esc(howText) + '</div>' +
+        '<div style="font-size:11.5px;color:#52675c;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</div>' +
+        '<div style="font-size:11.5px;color:#52675c;margin-top:2px"><b>Source:</b> ' + esc(row.source || payload.sourceLabel || 'Provider-entered draft') + '</div></div></div>' +
         '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#204034">Review complete proposed order</summary>' +
         '<div style="font-size:10.5px;color:#52675c;margin:4px 0">Payload ' + esc(row.payloadHash) + ' | Row ' + esc(row.rowHash) + '</div>' +
         '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:190px;overflow:auto;margin:0;padding:8px;border:1px solid #dbe7e0;border-radius:8px;background:#fff;color:#1f3027;font:11.5px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(manifestPayloadText(row)) + '</pre></details>' +
-        '<div style="font-size:11.5px;color:' + statusColor + ';margin-top:5px">' + esc(row.reason) + '</div>' + acceptHtml + advancedTeachingHtml(manifest, row) + '</div>';
+        (row.reason ? '<div style="font-size:11.5px;color:' + statusColor + ';margin-top:5px"><b>Why:</b> ' + esc(row.reason) + '</div>' : '') + acceptHtml + advancedTeachingHtml(manifest, row) + '</section>';
     }).join('');
     return '<section data-mls-orders-summary="1" style="border:1px solid #cfded5;border-radius:11px;padding:10px 12px;margin-top:9px;background:#f7fbf9">' +
       '<div style="display:flex;gap:8px;align-items:center"><b style="font-size:14px;color:#204034">Orders proposed for Athena</b><span style="margin-left:auto;font-size:11px;color:#52675c">' + orderRows.length + ' item' + (orderRows.length === 1 ? '' : 's') + '</span></div>' +
@@ -2412,7 +2449,18 @@
     next.receiptSessionId = S(state.manifest.receiptSessionId);
     openUnifiedConfirmation(next);                           /* closes this review itself */
     if (unifiedAthenaState && unifiedAthenaState !== state) {
-      unifiedStatus(unifiedAthenaState, 'Acceptance recorded — "' + S(row.payload.summary).slice(0, 90) + '" is now an accepted reviewed draft and will not be asked again. Placement still happens in Athena, by you.', 'ok');
+      var acceptedRow = null, rebuiltRows = unifiedAthenaState.manifest && unifiedAthenaState.manifest.rows || [];
+      for (var ai = 0; ai < rebuiltRows.length; ai++) {
+        var rp = rebuiltRows[ai] && rebuiltRows[ai].payload || {};
+        var rebuiltText = S(rp.originalText || rp.summary || rp.order && rp.order.summary).trim().toLowerCase();
+        if (rp.category === 'order' && rebuiltText && rebuiltText === wantText) { acceptedRow = rebuiltRows[ai]; break; }
+      }
+      var acceptedNext = acceptedRow && acceptedRow.capability === 'ready' && acceptedRow.action === 'place_order'
+        ? ' Its READY order row can now be selected and separately confirmed.'
+        : (acceptedRow && acceptedRow.capability === 'blocked'
+          ? ' Its rebuilt order row remains BLOCKED until the missing catalog or required details are resolved.'
+          : ' Its rebuilt order row remains MANUAL in Athena.');
+      unifiedStatus(unifiedAthenaState, 'Acceptance recorded — "' + S(row.payload.summary).slice(0, 90) + '" is now an accepted reviewed draft and will not be asked again.' + acceptedNext + ' Nothing was sent.', 'ok');
     }
   }
   /* -----------------------------------------------------------------------
@@ -2428,6 +2476,23 @@
   function unifiedOneLine(text) {
     var one = S(text).replace(/\s+/g, ' ').trim(), stop = one.indexOf('. ');
     return stop > 0 ? one.slice(0, stop + 1) : one;
+  }
+  function unifiedArtifactName(row) {
+    var payload = row && row.payload || {}, kind = S(row && row.kind).trim();
+    if (payload.category === 'order') {
+      var orderName = S(payload.order && payload.order.displayLabel || payload.orderTypeLabel || row.label).trim() || 'Athena order';
+      return (/suggestion only/i.test(S(payload.reviewStatus)) ? 'Proposed ' : 'Reviewed ') + orderName + ' order';
+    }
+    var labels = {
+      note: 'Reviewed encounter-note draft', hpi: 'Reviewed HPI draft', ros: 'Reviewed Review of Systems draft',
+      exam: 'Reviewed Physical Exam draft', assessment: 'Reviewed assessment narrative', plan: 'Reviewed Plan / Follow-up draft',
+      billing: 'Reviewed E/M and CPT/HCPCS coding payload', dx: 'Reviewed ICD-10 diagnoses',
+      save: 'Save the reviewed encounter draft', sign: 'Sign & Save the reviewed encounter',
+      procedure: 'Reviewed procedure / operative-note draft', rx: 'Reviewed prescription draft', referrals: 'Reviewed referral draft',
+      pt: 'Reviewed physical-therapy draft', imaging: 'Reviewed imaging draft', documents: 'Reviewed document / letter draft',
+      instructions: 'Reviewed patient-instructions draft', consent: 'Reviewed consent item', handouts: 'Reviewed patient handout'
+    };
+    return labels[kind] || S(row && row.label).trim() || 'Reviewed Athena item';
   }
   function unifiedHashFooter(row) {
     return 'Payload ' + esc(row.payloadHash) + ' &middot; Row ' + esc(row.rowHash);
@@ -2454,33 +2519,40 @@
       '<label style="display:flex;gap:9px;align-items:center;cursor:pointer">' +
       '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '"' + (preChecked ? ' checked' : '') + ' aria-label="Select ' + esc(row.label) + ' for Athena review">' +
       '<span style="flex:1;min-width:0">' +
-      '<span style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#204034">' + esc(row.label) + '</b>' +
+      '<span style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#204034">What: ' + esc(unifiedArtifactName(row)) + '</b>' +
+      '<span style="font-size:10.5px;font-weight:850;color:#205c43;border:1px solid currentColor;border-radius:999px;padding:1px 7px">READY &middot; SEPARATE CONFIRMATION</span>' +
       '<span data-mls-ready-tick="' + esc(row.id) + '" style="display:none;font-size:10.5px;font-weight:850;color:#205c43;border:1px solid currentColor;border-radius:999px;padding:1px 7px">&#10003; Athena verified</span></span>' +
-      '<span style="display:block;color:#52675c;font-size:12px;margin-top:2px">' + esc(unifiedOneLine(row.consequence)) + '</span></span></label>' +
+      '<span style="display:block;color:#385b49;font-size:12px;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</span>' +
+      '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px"><b>How:</b> Select this row, then use its own Confirm &amp; Send. Only &ldquo;' + esc(row.label) + '&rdquo; runs.</span>' +
+      '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</span></span></label>' +
       unifiedPayloadDetails(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
   function unifiedManualRowHtml(manifest, row) {
     return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #f0d79a;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fffdf5">' +
-      '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#6d5010">' + esc(row.label) + '</b>' +
-      '<span style="font-size:10.5px;font-weight:850;color:#7a5a16;border:1px solid currentColor;border-radius:999px;padding:1px 7px">MANUAL &mdash; YOU FINISH THIS IN ATHENA</span></div>' +
-      '<div style="font-size:12px;color:#6d5010;margin-top:3px">Complete in Athena: ' + esc(row.destination) + '</div>' +
+      '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#6d5010">What: ' + esc(unifiedArtifactName(row)) + '</b>' +
+      '<span style="font-size:10.5px;font-weight:850;color:#7a5a16;border:1px solid currentColor;border-radius:999px;padding:1px 7px">MANUAL IN ATHENA</span></div>' +
+      '<div style="font-size:12px;color:#6d5010;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</div>' +
+      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>How:</b> Review or copy this payload here, then complete it yourself in Athena. Nothing is sent from this row.</div>' +
+      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</div>' +
       '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#6d5010;font-size:11.5px">Why?</summary>' +
       (row.reason ? '<div style="font-size:12px;color:#52675c;margin-top:4px">' + esc(row.reason) + '</div>' : '') +
-      '<div style="font-size:12px;color:#52675c;margin-top:4px"><b>Consequence:</b> ' + esc(row.consequence) + '</div></details>' +
+      '</details>' +
       unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
   function unifiedBlockedRowHtml(manifest, row) {
     return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #e7c0c0;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fdf7f7">' +
-      '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#8b2525">' + esc(row.label) + '</b>' +
-      '<span style="font-size:10.5px;font-weight:850;color:#8b2525;border:1px solid currentColor;border-radius:999px;padding:1px 7px">CANNOT SEND</span></div>' +
-      (row.reason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px">' + esc(row.reason) + '</div>' : '') +
+      '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#8b2525">What: ' + esc(unifiedArtifactName(row)) + '</b>' +
+      '<span style="font-size:10.5px;font-weight:850;color:#8b2525;border:1px solid currentColor;border-radius:999px;padding:1px 7px">BLOCKED &middot; NOTHING SENT</span></div>' +
+      '<div style="font-size:12px;color:#8b2525;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</div>' +
+      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>How:</b> Nothing is sent from this row. Resolve the reason below, then reopen the Athena review.</div>' +
+      (row.reason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px"><b>Why:</b> ' + esc(row.reason) + '</div>' : '') +
       /* wfbind-1.0.0: a row blocked ONLY for the missing appointment binding has
          a one-press cure on this same sheet. Say so where the doctor is reading
          the refusal, instead of leaving the strip to be discovered. */
       (wfbindCurableRow(manifest, row)
         ? '<div data-mls-bind-hint="' + esc(row.id) + '" style="font-size:12px;color:#204034;margin-top:5px;font-weight:700">Fixable here: press &ldquo;' + esc(WFBIND_LABEL) + '&rdquo; above. MLS re-pulls the day and re-checks this exact appointment; nothing is written.</div>'
         : '') +
-      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Consequence:</b> ' + esc(row.consequence) + '</div>' +
+      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</div>' +
       unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + '</section>';
   }
   /* ===== wfx-1.0.0 (2026-08-19) — THE WRITE-FIDELITY CONTRACT ==============
@@ -2634,17 +2706,19 @@
   /* ===== end wfx-1.0.0 ==================================================== */
   function unifiedNoteHeroHtml(manifest) {
     var noteRow = unifiedRow(manifest, 'write-note');
+    /* Named HPI/ROS/Exam/Assessment/Plan reviews have several independent
+       destinations. A generic Encounter-note hero would be false and would
+       visually duplicate those rows, so only the true generic-note lane gets
+       the full-text hero. Named sections show their own What/Where/How rows. */
+    if (!noteRow) return '';
     var who = [S(manifest.patient.name).trim() || '(patient name missing)'];
     if (manifest.patient.dob) who.push('DOB ' + S(manifest.patient.dob));
     if (manifest.patient.mrn) who.push('MRN ' + S(manifest.patient.mrn));
     if (manifest.visit.visitDate) who.push(S(manifest.visit.visitDate));
     if (manifest.visit.provider) who.push(S(manifest.visit.provider));
-    var open = '<section style="border:1px solid #dce5df;border-radius:12px;padding:14px 15px;background:#fff;min-width:0">' +
-      '<div style="font-size:13.5px;font-weight:850;color:#204034">Sending to: Athena encounter &gt; Encounter note</div>' +
+    var open = '<section style="border:1px solid #dce5df;border-radius:12px;padding:14px 15px;background:#fff;min-width:0;margin-top:12px">' +
+      '<div style="font-size:13.5px;font-weight:850;color:#204034">Review the generated encounter-note text</div>' +
       '<div style="color:#52675c;font-size:12px;margin-top:3px">' + esc(who.join(' - ')) + '</div>';
-    if (!noteRow) {
-      return open + '<div style="margin-top:12px;padding:13px;border:1px dashed #dbe7e0;border-radius:10px;color:#52675c">This review carries no note text, so nothing will be written to the encounter note.</div></section>';
-    }
     return open +
       '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;margin:11px 0 0;padding:13px;border:1px solid #dbe7e0;border-radius:10px;background:#f8fbf9;color:#1f3027;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(S(noteRow.payload.noteText)) + '</pre>' +
       '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">' +
@@ -2654,6 +2728,66 @@
   function unifiedIdentityHtml(manifest) {
     return '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">Patient, visit and manifest identity</summary>' +
       '<div style="display:grid;grid-template-columns:118px 1fr;gap:5px 9px;margin-top:7px;padding:11px 12px;background:#f7f9fb;border:1px solid #e2e8f2;border-radius:10px;overflow-wrap:anywhere"><span>Patient</span><b>' + esc(manifest.patient.name || '(missing)') + '</b><span>DOB</span><b>' + esc(manifest.patient.dob || '(missing)') + '</b><span>MRN</span><b>' + esc(manifest.patient.mrn || 'verified from Athena before writing') + '</b><span>MLS patient ID</span><b>' + esc(manifest.patient.patientId || '(missing)') + '</b><span>Expected visit</span><b>' + esc(manifest.visit.visitDate || 'unique encounter must be discovered') + '</b><span>Expected provider</span><b>' + esc(manifest.visit.provider || 'verified from Athena before writing') + '</b><span>Appointment ID</span><b>' + esc(manifest.visit.appointmentId || 'verified from Athena before writing') + '</b><span>Expected encounter</span><b>' + esc(manifest.visit.encounterId || 'verified from Athena before writing') + '</b><span>Manifest</span><b>' + esc(manifest.manifestHash) + '</b></div></details>';
+  }
+  /* A missing/stale canonical Athena sidecar is a LOCAL generation problem,
+     not an encounter-binding problem. Keep the two remedies deliberately
+     separate: wfbind may only re-pull identity; this explicit control invokes
+     the page's ordinary generation gate and then asks the ordinary Athena
+     review entrypoint to rebuild every row from persisted, validated output. */
+  function unifiedCanonicalGenerationIssue(opts) {
+    var issue = S(opts && opts.generationIssue).trim();
+    return /^(?:athena-note-|generated-soap-format$)/.test(issue) ? issue : '';
+  }
+  function unifiedCanonicalGenerationHtml(state) {
+    var issue = unifiedCanonicalGenerationIssue(state && state.sourceOpts);
+    if (!issue) return '';
+    var stale = /(?:stale|changed|malformed|format)/i.test(issue);
+    var verb = stale ? 'Regenerate' : 'Generate';
+    return '<section data-mls-canonical-generation="1" style="margin-top:12px;padding:13px 14px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:11px;color:#204034">' +
+      '<div style="font-size:13.5px;font-weight:850">' + verb + ' the five exact Athena draft fields</div>' +
+      '<div style="font-size:12px;color:#52675c;margin-top:4px">The reviewed HPI, ROS, Physical Exam, Assessment, and Plan / Follow-up draft is ' + (stale ? 'stale or malformed' : 'missing') + '. This action runs the normal MLS note-generation, validation, and local-save gate. It does not write to Athena. After success, MLS rebuilds every row and still requires the exact patient and appointment check before any Confirm button can enable.</div>' +
+      '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:10px"><button type="button" id="mlsAthenaUnifiedGenerateSections" data-mls-generate-canonical="1" style="border:0;background:#204034;color:#fff;border-radius:9px;padding:9px 13px;font-weight:800;cursor:pointer">' + verb + ' HPI, ROS, Exam, Assessment &amp; Plan</button>' +
+      '<span id="mlsAthenaUnifiedGenerateStatus" role="status" style="font-size:11.5px;color:#52675c">Nothing has been generated or sent yet.</span></div></section>';
+  }
+  function unifiedCanonicalGenerationStatus(state, text, isError) {
+    if (!state || state.closed || unifiedAthenaState !== state) return;
+    var el = null; try { el = document.getElementById('mlsAthenaUnifiedGenerateStatus'); } catch (e) {}
+    if (el) { el.textContent = S(text); el.style.color = isError ? '#8b2525' : '#385b49'; }
+  }
+  function runUnifiedCanonicalGeneration(state, button) {
+    if (!state || state.closed || unifiedAthenaState !== state || state.generating) return;
+    if (state.running) { unifiedCanonicalGenerationStatus(state, 'Finish the current Athena check or action before generating these local fields. Nothing was generated or sent.', true); return; }
+    if (state.binding || wfbindPullBusy()) { unifiedCanonicalGenerationStatus(state, 'The Athena schedule pull / appointment bind is still running. Let it finish before generating these local fields. Nothing was generated or sent.', true); return; }
+    var generate = null, reopen = null;
+    try { generate = window.generateNote; reopen = window.pushEntireVisitToAthena; } catch (e) {}
+    if (typeof generate !== 'function' || typeof reopen !== 'function') {
+      unifiedCanonicalGenerationStatus(state, 'MLS note generation is still loading. Nothing was generated or sent; wait a moment and try again.', true);
+      return;
+    }
+    state.generating = true;
+    var cancel = null, close = null;
+    try { cancel = document.getElementById('mlsAthenaUnifiedCancel'); close = document.getElementById('mlsAthenaUnifiedClose'); } catch (e0) {}
+    if (button) { button.disabled = true; button.setAttribute('aria-disabled', 'true'); button.textContent = 'Generating exact fields…'; }
+    if (cancel) cancel.disabled = true; if (close) close.disabled = true;
+    unifiedCanonicalGenerationStatus(state, 'Running the normal local generation and validation gate… nothing is being sent to Athena.', false);
+    function release(message, isError) {
+      if (state.closed || unifiedAthenaState !== state) return;
+      state.generating = false;
+      if (button) { button.disabled = false; button.removeAttribute('aria-disabled'); button.textContent = (/^(?:athena-note-(?:stale|canonical-source-changed|malformed)|generated-soap-format)/i.test(unifiedCanonicalGenerationIssue(state.sourceOpts)) ? 'Regenerate' : 'Generate') + ' HPI, ROS, Exam, Assessment & Plan'; }
+      if (cancel) cancel.disabled = false; if (close) close.disabled = false;
+      unifiedCanonicalGenerationStatus(state, message, isError);
+    }
+    Promise.resolve().then(function () { return generate(); }).then(function (ok) {
+      if (state.closed || unifiedAthenaState !== state) return;
+      if (ok !== true) { release('Generation did not complete, so the existing review stayed unchanged and nothing was sent. Correct the issue shown by MLS and try again.', true); return; }
+      unifiedCanonicalGenerationStatus(state, 'The five fields passed generation and validation. Rebuilding the exact Athena review now…', false);
+      var rebuilt = reopen(null);
+      if (state.closed || unifiedAthenaState !== state) return;
+      if (rebuilt !== true) { release('The fields were generated, but the review could not be rebuilt for the same exact patient and visit. Nothing was sent; re-open Send to Athena after fixing the binding shown here.', true); return; }
+      release('The five fields were generated. Re-open Send to Athena to review the rebuilt rows; nothing was sent.', false);
+    }).catch(function () {
+      release('Generation failed before the review could be rebuilt. The existing review stayed unchanged and nothing was sent.', true);
+    });
   }
   function renderUnifiedConfirmation(state) {
     closeActionConfirm();
@@ -2675,7 +2809,8 @@
        every existing wire and suite hook is unchanged). Everything the doctor
        must do in Athena personally lives in one collapsed drawer instead of a
        wall of groups. */
-    var rowsHtml = '';
+    var generationIssue = unifiedCanonicalGenerationIssue(state.sourceOpts);
+    var rowsHtml = generationIssue ? '' : '<div data-mls-destination-guide="1" style="margin-top:12px;padding:8px 10px;border:1px solid #dbe7e0;background:#f7fbf9;border-radius:9px;color:#385b49;font-size:12px"><b>What &rarr; Where &rarr; How.</b> Every READY item needs its own Confirm &amp; Send. MANUAL and BLOCKED items never cross the Athena write bridge.</div>';
     if (readyRows.length > 1) {
       rowsHtml += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" role="radiogroup" aria-label="What MLS sends">' +
         readyRows.map(function (row) { return unifiedReadyRowHtml(manifest, row, chosen && chosen.id === row.id); }).join('') + '</div>';
@@ -2687,10 +2822,12 @@
       /* wf3: the drawer ships OPEN — what stays manual must be VISIBLE (the
          unified-confirmation runtime pins this), it is merely grouped and
          de-emphasized below the primary action instead of interleaved. */
-      rowsHtml += '<details open style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#6d5010;font-size:12px">Complete final actions in Athena yourself (' + drawerCount + ') — nothing here is sent</summary>' +
+      var readyOrderCount = orderRows.filter(function (row) { return row.capability === 'ready' && !!row.action; }).length;
+      rowsHtml += '<details open style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#6d5010;font-size:12px">' +
+        (readyOrderCount ? ('Orders and other Athena items (' + drawerCount + ') — ' + readyOrderCount + ' order' + (readyOrderCount === 1 ? '' : 's') + ' can be sent with separate confirmation') : ('Complete final actions in Athena yourself (' + drawerCount + ') — nothing here is sent')) + '</summary>' +
         (manualRows.length ? unifiedGroupHead('You finish this in Athena', '#7a5a16', 'The exact payload stays here for you to copy. It never crosses the write bridge.') +
           manualRows.map(function (row) { return unifiedManualRowHtml(manifest, row); }).join('') : '') +
-        (orderRows.length ? renderUnifiedOrderSummary(orderRows, manifest) : '') +
+        (orderRows.length ? renderUnifiedOrderSummary(orderRows, manifest, chosen) : '') +
         (blockedRows.length ? unifiedGroupHead('Can\'t send', '#8b2525', 'MLS fails closed on these. Each one names exactly what is missing.') +
           blockedRows.map(function (row) { return unifiedBlockedRowHtml(manifest, row); }).join('') : '') +
         '</details>';
@@ -2701,17 +2838,18 @@
     var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
     card.innerHTML =
       (probeOnlyActive() ? '<div id="mlsAthenaProbeOnlyBanner" style="margin:0 0 12px;padding:10px 12px;border:2px solid #8b2525;background:#fdf2f2;color:#8b2525;border-radius:10px;font-weight:850">' + esc(PROBE_ONLY_BANNER) + '</div>' : '') +
-      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + esc(S(manifest.patient.name) || 'This note') + ' &middot; one click writes exactly what you see below. ' + (athenaFinalActionsReady() ? 'Reviewed note write, Save Draft, billing staging, and Sign &amp; Save each run only after your explicit one-click confirm; orders and prescriptions stay yours in Athena.' : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.') + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
+      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + esc(S(manifest.patient.name) || 'This note') + ' &middot; ' + (generationIssue ? 'generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.' : ('each confirmation runs exactly one selected READY item below. ' + (athenaFinalActionsReady() ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.' : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.'))) + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
       unifiedNoteHeroHtml(manifest) +
+      unifiedCanonicalGenerationHtml(state) +
       rowsHtml +
-      '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> being verified read-only now.</div>' +
-      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">Checking the exact chart read-only &mdash; nothing is sent yet.</div>' +
+      '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> ' + (generationIssue ? 'kept fail-closed while the five local draft fields are generated.' : 'being verified read-only now.') + '</div>' +
+      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">' + (generationIssue ? 'No Athena check or write has started. Generate the local fields first.' : 'Checking the exact chart read-only &mdash; nothing is sent yet.') + '</div>' +
       /* wfdx-1.0.0: a PHI-free one-liner (extension version, athenaOne tab
          count, expected day, whether an appointment id is bound, and the day
          athenaOne is really on) plus the read-only buttons that fix it. */
       '<div id="mlsAthenaUnifiedDiag" style="display:none;margin-top:6px;font-size:11.5px;color:#52675c;overflow-wrap:anywhere"></div>' +
       '<div id="mlsAthenaUnifiedFix" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>' +
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.') + '</div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (generationIssue ? 'Generate / Regenerate updates only the local MLS draft through the normal validation and persistence gate. It never binds an encounter and never writes Athena; the rebuilt review must still pass exact patient, appointment, and destination checks.' : (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.')) + '</div>' +
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
@@ -2719,8 +2857,10 @@
     ov.appendChild(card); document.body.appendChild(ov);
     var cancel = card.querySelector('#mlsAthenaUnifiedCancel'), close = card.querySelector('#mlsAthenaUnifiedClose'), go = card.querySelector('#mlsAthenaUnifiedGo');
     cancel.onclick = closeUnifiedConfirmation; close.onclick = closeUnifiedConfirmation;
-    ov.addEventListener('click', function (ev) { if (ev.target === ov && !state.running) closeUnifiedConfirmation(); });
+    ov.addEventListener('click', function (ev) { if (ev.target === ov && !state.running && !state.generating) closeUnifiedConfirmation(); });
     go.addEventListener('click', function () { executeUnifiedSelection(state); });
+    var generationButton = card.querySelector('#mlsAthenaUnifiedGenerateSections');
+    if (generationButton) generationButton.addEventListener('click', function () { runUnifiedCanonicalGeneration(state, generationButton); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
     for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function () { probeUnifiedRow(state, this.value); });
     var acceptBtns = card.querySelectorAll('[data-mls-accept-order]');
@@ -2738,7 +2878,7 @@
     state.a11yKeyHandler = function (ev) {
       if (state.closed || unifiedAthenaState !== state) return;
       if (ev.key === 'Escape' || ev.key === 'Esc') {
-        if (state.running) return;
+        if (state.running || state.generating) return;
         ev.preventDefault(); ev.stopImmediatePropagation(); closeUnifiedConfirmation(); return;
       }
       if (ev.key !== 'Tab') return;
@@ -3090,7 +3230,7 @@
     if (unifiedAthenaState) closeUnifiedConfirmation();
     var manifest = buildUnifiedManifest(opts);
     wfdxReset(manifest);
-    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, receipts: {}, running: false, halted: false, closed: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
+    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, receipts: {}, running: false, generating: false, binding: false, halted: false, closed: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
     srrArmIfUnbound(state); /* srr-1.0.0 */
     unifiedAthenaState = state;
@@ -3101,7 +3241,7 @@
     try { p1AutoBindEncounter(state); } catch (eP1AB) {}
     actionSay(opts, manifest.rows.some(function (row) { return row.capability === 'ready' && row.action; })
       ? (athenaFinalActionsReady()
-        ? 'Athena review ready. Select one ready action — note write, Save Draft, billing staging, or Sign & Save — and confirm it; MLS runs exactly that one action.'
+        ? 'Athena review ready. Select one ready action — note write, Save Draft, billing staging, Sign & Save, or one supported order — and confirm it; MLS runs exactly that one action.'
         : 'Athena review ready. Only reviewed note write or Save Draft can be selected and confirmed; complete final actions in Athena.')
       : 'Athena review ready. This payload is review-only; complete it directly in Athena.', '', { toast: false });
     return manifest;
@@ -3152,8 +3292,8 @@
     hpi: 'Athena encounter > HPI',
     ros: 'Athena encounter > Review of Systems',
     exam: 'Athena encounter > Physical Exam',
-    assessment: 'Athena encounter > Assessment narrative',
-    plan: 'Athena encounter > Plan / Follow-up',
+    assessment: 'Athena encounter > Assessment & Plan > Assessment',
+    plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up',
     orders: 'Athena Orders (manual entry)', rx: 'Athena Prescriptions (manual entry)',
     referrals: 'Athena Orders > Referral (manual entry)', pt: 'Athena Orders > PT (manual entry)',
     imaging: 'Athena Orders > Imaging (manual entry)', billing: 'Athena Billing / Charges (manual entry)',
@@ -3167,20 +3307,176 @@
     if (PREVIEW_ONLY[raw]) return { key: raw, execute: false, previewOnly: true };
     return null;
   }
+  /* Parse only a generated note that explicitly supplies the five named
+     Athena destinations. The generator supports several note styles and may
+     emit SUBJECTIVE/OBJECTIVE, a combined ASSESSMENT & PLAN, or prose; those
+     shapes are intentionally refused here rather than guessed into fields.
+     This helper only creates immutable review rows. It never opens a panel,
+     calls the bridge, or performs a write. */
+  function parseGeneratedSoapSections(text) {
+    var src = S(text).replace(/\r\n?/g, '\n').trim();
+    var required = ['hpi', 'ros', 'exam', 'assessment', 'plan'];
+    var labels = { hpi: 'HPI', ros: 'Review of Systems', exam: 'Physical Exam', assessment: 'Assessment', plan: 'Plan / Follow-up' };
+    if (!src) return { ok: false, reason: 'empty-note', sections: [] };
+    var lines = src.split('\n');
+    function rows(bodies) {
+      for (var r = 0; r < required.length; r++) {
+        var k = required[r], body = S((bodies[k] || []).join('\n')).trim();
+        if (!body) return { ok: false, reason: 'empty-' + k, sections: [] };
+      }
+      return null;
+    }
+    var bodies = {}, current = null, seen = {}, order = [];
+    var flat = /^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i;
+    var malformedDestinationHeading = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*|\d+[.)]\s*|[-•]\s+)(?:HPI|ROS|EXAM|PHYSICAL\s+EXAM|REVIEW\s+OF\s+SYSTEMS|SUBJECTIVE|OBJECTIVE|ASSESSMENT(?:\s*(?:AND|&)\s*PLAN)?|PLAN)\b\s*(?:[*_`]+)?\s*:?\s*/i;
+    var bareUnsupportedWrapperHeading = /^\s*(?:SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN)\s*:?\s*$/i;
+    var malformedNestedHeading = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*|\d+[.)]\s*|[-•]\s+)(?:CHIEF\s+COMPLAINT|HISTORY|PMH|PAST\s+MEDICAL\s+HISTORY|MEDICATIONS?|ALLERGIES|VITALS?|VITAL\s+SIGNS|FINDINGS|LABS?|IMAGING|DIAGNOS(?:IS|ES)|REVIEW\s+OF\s+SYSTEMS)\b\s*(?:[*_`]+)?\s*:?\s*/i;
+    var first = ''; for (var fi = 0; fi < lines.length; fi++) { if (S(lines[fi]).trim()) { first = lines[fi]; break; } }
+    var wrappedShape = /^\s*(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*:?/i.test(first);
+    if (!wrappedShape) for (var i = 0; i < lines.length; i++) {
+      var fm = flat.exec(lines[i]);
+      if (bareUnsupportedWrapperHeading.test(lines[i])) return { ok: false, reason: 'malformed-heading', sections: [] };
+      if (fm) {
+        var fk = fm[1].toLowerCase();
+        if (seen[fk]) return { ok: false, reason: 'duplicate-' + fk, sections: [] };
+        seen[fk] = true; order.push(fk); current = fk; bodies[fk] = [];
+        if (S(fm[2]).trim()) bodies[fk].push(fm[2]);
+      } else if (S(lines[i]).trim()) {
+        if (!current) return { ok: false, reason: 'preamble-or-unsupported-shape', sections: [] };
+        if (malformedDestinationHeading.test(lines[i])) return { ok: false, reason: 'malformed-heading', sections: [] };
+        bodies[current].push(lines[i]);
+      }
+    }
+    var flatOrder = required.every(function (key, idx) { return order[idx] === key; });
+    if (order.length === required.length && flatOrder) {
+      var flatError = rows(bodies); if (flatError) return flatError;
+    } else {
+      /* Shipped structured SOAP shape: SUBJECTIVE/OBJECTIVE/ASSESSMENT/PLAN
+         wrappers with exact nested HPI, ROS and Exam labels. We accept only the
+         canonical wrapper order and only the exact nested labels; an unlabelled
+         preamble, duplicate, combined A&P, or extra field is refused. */
+      var top = /^(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, wrapped = {}, topOrder = [], topSeen = {}, topKey = null;
+      for (var j = 0; j < lines.length; j++) {
+        var tm = top.exec(lines[j]);
+        if (tm) {
+          var tk = tm[1].toLowerCase();
+          if (topSeen[tk]) return { ok: false, reason: 'duplicate-wrapper-' + tk, sections: [] };
+          topSeen[tk] = true; topOrder.push(tk); topKey = tk; wrapped[tk] = [];
+          if (S(tm[2]).trim()) wrapped[tk].push(tm[2]);
+        } else if (S(lines[j]).trim()) {
+          if (!topKey) return { ok: false, reason: 'preamble-before-subjective', sections: [] };
+          wrapped[topKey].push(lines[j]);
+        }
+      }
+      var expectedTop = ['subjective', 'objective', 'assessment', 'plan'];
+      if (!expectedTop.every(function (key, idx) { return topOrder[idx] === key; })) return { ok: false, reason: 'wrapper-order', sections: [] };
+      var nested = { hpi: [], ros: [], exam: [], assessment: wrapped.assessment.slice(), plan: wrapped.plan.slice() };
+      var nestedHeading = /^\s*(HPI|ROS|PHYSICAL\s+EXAM|EXAM)\s*:?\s*(.*)$/i;
+      var unsupportedNestedHeading = /^\s*(CHIEF\s+COMPLAINT|HISTORY|PMH|PAST\s+MEDICAL\s+HISTORY|MEDICATIONS?|ALLERGIES|VITALS?|VITAL\s+SIGNS|FINDINGS|LABS?|IMAGING|DIAGNOS(?:IS|ES))\s*:/i;
+      function nestedParts(input, allowed) {
+        var out = {}, active = null, seenNested = {}, sequence = [];
+        for (var q = 0; q < input.length; q++) {
+          var nm = nestedHeading.exec(input[q]);
+          if (nm && allowed[nm[1].toLowerCase().replace(/\s+/g, ' ')]) {
+            var nk = nm[1].toLowerCase().replace(/\s+/g, ' '); nk = nk === 'physical exam' ? 'exam' : nk;
+            if (seenNested[nk]) return { error: 'duplicate-' + nk };
+            seenNested[nk] = true; sequence.push(nk); active = nk; out[nk] = [];
+            if (S(nm[2]).trim()) out[nk].push(nm[2]);
+          } else if (S(input[q]).trim()) {
+            if (malformedDestinationHeading.test(input[q]) || malformedNestedHeading.test(input[q])) return { error: 'malformed-heading' };
+            if (unsupportedNestedHeading.test(input[q])) return { error: 'unsupported-nested-heading' };
+            if (!active) return { error: 'preamble-before-nested-heading' };
+            out[active].push(input[q]);
+          }
+        }
+        return { out: out, sequence: sequence };
+      }
+      var subj = nestedParts(wrapped.subjective, { hpi: 1, ros: 1 });
+      if (subj.error || subj.sequence.join('|') !== 'hpi|ros') return { ok: false, reason: subj.error || 'nested-order', sections: [] };
+      var obj = nestedParts(wrapped.objective, { exam: 1, 'physical exam': 1 });
+      if (obj.error || obj.sequence.length !== 1 || obj.sequence[0] !== 'exam') return { ok: false, reason: obj.error || 'missing-exam', sections: [] };
+      nested.hpi = subj.out.hpi || []; nested.ros = subj.out.ros || []; nested.exam = obj.out.exam || [];
+      var nestedError = rows(nested); if (nestedError) return nestedError;
+      bodies = nested;
+    }
+    var out = required.map(function (key) {
+      return { key: key, text: S(bodies[key].join('\n')).trim(), execute: true, destination: DESTINATION[key], label: labels[key] };
+    });
+    return { ok: true, reason: '', sections: out };
+  }
+  /* The model's `athena_note` sidecar is deliberately stricter than the
+     display-note parser above.  It is the canonical write payload: exactly
+     five flat, top-level destinations in this order, with no wrapper,
+     preamble, duplicate, or guessed section.  Keep this parser separate so
+     an APSO/narrative/problem/H&P display note can remain clinician-friendly
+     without ever being mistaken for a five-field Athena payload. */
+  function parseCanonicalAthenaNote(text) {
+    var src = S(text).replace(/\r\n?/g, '\n').trim();
+    var required = ['hpi', 'ros', 'exam', 'assessment', 'plan'];
+    var labels = { hpi: 'HPI', ros: 'Review of Systems', exam: 'Physical Exam', assessment: 'Assessment', plan: 'Plan / Follow-up' };
+    if (!src) return { ok: false, reason: 'empty-note', sections: [] };
+    if (src.length > 50000) return { ok: false, reason: 'note-too-large', sections: [] };
+    var lines = src.split('\n'), bodies = {}, current = null, seen = {}, order = [];
+    var flat = /^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i;
+    var combinedWrapper = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*)?ASSESSMENT\s*(?:AND|&)\s*PLAN\b/i;
+    var malformed = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*|\d+[.)]\s*|[-•]\s+)?(?:HPI|ROS|EXAM|EXAMINATION|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN|CHIEF\s+COMPLAINT|HISTORY|PMH|PAST\s+MEDICAL\s+HISTORY|MEDICATIONS?|ALLERGIES|VITALS?|VITAL\s+SIGNS|FINDINGS|LABS?|IMAGING|DIAGNOS(?:IS|ES)|REVIEW\s+OF\s+SYSTEMS|PHYSICAL\s+EXAM)\b\s*(?:[*_`]+)?\s*:?(?:\s*)$/i;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], trimmed = S(line).trim();
+      if (!trimmed) continue;
+      if (combinedWrapper.test(line)) return { ok: false, reason: 'malformed-heading', sections: [] };
+      var match = flat.exec(line);
+      if (match) {
+        var key = match[1].toLowerCase();
+        if (seen[key]) return { ok: false, reason: 'duplicate-' + key, sections: [] };
+        seen[key] = true; order.push(key); current = key; bodies[key] = [];
+        if (S(match[2]).trim()) bodies[key].push(match[2]);
+      } else {
+        if (!current) return { ok: false, reason: 'preamble-or-unsupported-shape', sections: [] };
+        if (malformed.test(line)) return { ok: false, reason: 'malformed-heading', sections: [] };
+        bodies[current].push(line);
+      }
+    }
+    if (order.length !== required.length || !required.every(function (key, index) { return order[index] === key; })) return { ok: false, reason: 'missing-or-out-of-order-section', sections: [] };
+    for (var r = 0; r < required.length; r++) if (!S((bodies[required[r]] || []).join('\n')).trim()) return { ok: false, reason: 'empty-' + required[r], sections: [] };
+    return { ok: true, reason: '', text: src, sections: required.map(function (key) {
+      return { key: key, text: S(bodies[key].join('\n')).trim(), execute: true, destination: DESTINATION[key], label: labels[key] };
+    }) };
+  }
   function gatherSections(panel) {
-    var out = [], held = [], errors = [], blocked = [], byKey = {};
+    var out = [], held = [], errors = [], blocked = [], byKey = {}, duplicateByKey = {}, seenRaw = {};
     var boxes = panel.querySelectorAll('input[data-k]');
     for (var i = 0; i < boxes.length; i++) {
       var raw = S(boxes[i].getAttribute('data-k')).toLowerCase().trim();
       if (!boxes[i].checked) continue;
-      var ta = panel.querySelector('textarea[data-t="' + raw + '"]');
+      /* One textarea per normal route is the shipped shape. If an adversarial
+         panel supplies repeated controls, pair each checkbox with the same
+         occurrence instead of repeatedly reading the first textarea. */
+      var tas = panel.querySelectorAll('textarea[data-t="' + raw + '"]');
+      var occ = Number(seenRaw[raw] || 0); seenRaw[raw] = occ + 1;
+      var ta = tas[occ] || tas[0];
       var v = ta ? S(ta.value).trim() : '';
       if (!v) continue;
       var route = canonicalSectionKey(raw);
       if (!route) { errors.push(raw || '(blank)'); blocked.push({ key: raw || 'unknown', text: v }); continue; }
       if (route.previewOnly) { held.push({ key: raw, text: v, destination: DESTINATION[raw] || 'Manual destination required' }); continue; }
       if (/^follow_?up$/.test(raw) || raw === 'followup') v = 'Follow-up:\n' + v;
-      if (byKey[route.key]) byKey[route.key].text += '\n\n' + v;
+      if (duplicateByKey[route.key]) {
+        duplicateByKey[route.key].text += '\n\n' + v;
+        duplicateByKey[route.key].duplicateSections.push({ key: route.key, text: v, execute: true, destination: DESTINATION[route.key] });
+      }
+      else if (byKey[route.key]) {
+        /* A repeated canonical destination is ambiguous. Remove the first
+           executable item and retain one explicit blocked receipt carrying
+           every reviewed payload; never concatenate two HPI/ROS/Exam/
+           Assessment/Plan destinations into one write. */
+        var prior = byKey[route.key];
+        delete byKey[route.key];
+        out = out.filter(function (item) { return item !== prior; });
+        duplicateByKey[route.key] = { key: route.key, text: prior.text + '\n\n' + v,
+          duplicateSections: [{ key: route.key, text: prior.text, execute: true, destination: DESTINATION[route.key] }, { key: route.key, text: v, execute: true, destination: DESTINATION[route.key] }],
+          duplicate: true, reason: 'More than one reviewed payload targets the same Athena destination. Combine it explicitly before review; MLS will not merge or overwrite the field twice.' };
+        blocked.push(duplicateByKey[route.key]);
+      }
       else { byKey[route.key] = { key: route.key, text: v, execute: true, destination: DESTINATION[route.key] }; out.push(byKey[route.key]); }
     }
     return { sections: out, held: held, errors: errors, blocked: blocked };
@@ -3288,7 +3584,11 @@
     }
     var blocked = gathered.blocked || [];
     for (var j = 0; j < blocked.length; j++) {
-      plan.push({ kind: S(blocked[j] && blocked[j].key).trim() || 'unknown', body: S(blocked[j] && blocked[j].text).trim() });
+      var blockedKey = S(blocked[j] && blocked[j].key).trim() || 'unknown';
+      plan.push({ kind: blockedKey,
+        body: S(blocked[j] && blocked[j].text).trim(), duplicateOf: blocked[j] && blocked[j].duplicate ? blockedKey : '',
+        duplicateSections: blocked[j] && blocked[j].duplicateSections ? stableClone(blocked[j].duplicateSections) : [],
+        reason: S(blocked[j] && blocked[j].reason).trim() });
     }
     return plan;
   }
@@ -3333,36 +3633,22 @@
     if (!btn || !logEl) return; /* b111 enhancement not there yet - retry on next tick */
     panel.setAttribute('data-wf2', '1');
     panel.setAttribute('data-wf2-session', 'wf2-panel-' + Date.now() + '-' + Math.random().toString(36).slice(2));
-    btn.textContent = 'Review selected Athena routes';
-    btn.title = 'Opens the one immutable Athena destination review. Nothing changes until one exact action passes its read-only check and you click Confirm & write.';
+    btn.textContent = 'Review selected Athena actions';
+    btn.title = 'Open the one What → Where → How review for these selected sections. Nothing changes until one exact READY action passes its read-only check and you confirm it.';
     btn.setAttribute('data-mls-unified-write-review', '1');
     btn.onclick = function () { runV2(panel); };
     try {
-      var actions = document.createElement('div');
-      actions.id = 'wf2AthenaActions';
-      actions.style.cssText = 'display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;align-items:center';
-      function actionButton(id, label, action) {
-        var b = document.createElement('button');
-        b.type = 'button'; b.id = id; b.textContent = label;
-        b.className = btn.className;
-        b.style.cssText = 'flex:1 1 165px;min-height:38px';
-        if (action === 'save_draft') {
-          b.disabled = true;
-          b.title = 'This advanced panel writes separate section fields. Save the sections manually in Athena, or use the top full-note receipt for verified Save.';
-        }
-        b.onclick = function () { openPanelUnifiedConfirmation(panel, action); };
-        actions.appendChild(b);
-      }
-      actionButton('emrWbSave', 'Save draft in Athena', 'save_draft');
-      var manualFinals = document.createElement('div');
-      manualFinals.style.cssText = 'flex:1 0 100%;border:1px solid #5d7568;border-radius:10px;padding:9px 11px;color:#dceae3;font-size:11.5px;line-height:1.45';
-      manualFinals.innerHTML = '<b>Complete final actions in Athena</b><br>Review coding and proposed orders here. Billing, orders, prescriptions, electronic signature, attestation, and claim submission never run from MLS.';
-      actions.appendChild(manualFinals);
+      /* Older builds put a second disabled Save button and a competing block of
+         capability copy beneath this launcher. The unified sheet is now the
+         sole capability authority, so remove any stale copy and leave one
+         contextual entry. Its rows state What, exact Where, How and Result. */
+      var staleActions = panel.querySelector('#wf2AthenaActions');
+      if (staleActions && staleActions.parentNode) staleActions.parentNode.removeChild(staleActions);
       var explain = document.createElement('div');
-      explain.style.cssText = 'flex:1 0 100%;font-size:11.5px;line-height:1.45;color:#B9CEC2';
-      explain.textContent = 'The top Athena review freezes HPI, Exam, Assessment, Plan, coding, and proposed orders together. Only reviewed note write and Save Draft can be confirmed. Complete billing, orders, prescriptions, signature, attestation, and claim submission in Athena.';
-      actions.appendChild(explain);
-      if (btn.parentNode) btn.parentNode.insertBefore(actions, btn.nextSibling);
+      explain.id = 'wf2AthenaGuide';
+      explain.style.cssText = 'flex:1 0 100%;font-size:11.5px;line-height:1.45;color:#B9CEC2;margin-top:6px';
+      explain.innerHTML = '<b>One review, one action at a time.</b> The next sheet shows What &rarr; exact Athena Where &rarr; How. READY items each require their own confirmation; MANUAL and BLOCKED items are never sent.';
+      if (btn.parentNode) btn.parentNode.insertBefore(explain, btn.nextSibling);
     } catch (e0) {}
     try {
       var mo = new MutationObserver(function () { scrubLegacyCopy(logEl); });
@@ -3503,6 +3789,7 @@
     try { if (mo) mo.disconnect(); } catch (e) {}
     try { var b = document.getElementById('wf2OneClick'); if (b) b.remove(); } catch (e) {}
     try { var a = document.getElementById('wf2AthenaActions'); if (a) a.remove(); } catch (e2) {}
+    try { var g = document.getElementById('wf2AthenaGuide'); if (g) g.remove(); } catch (e3) {}
     closeUnifiedConfirmation();
     closeActionConfirm();
     window.__mlsWriteFlow.installed = false;
@@ -3514,7 +3801,7 @@
     startAthenaAction: startAthenaAction, writeReceiptDrafts: writeReceiptDrafts,
     buildUnifiedManifest: buildUnifiedManifest, openUnifiedConfirmation: openUnifiedConfirmation, closeUnifiedConfirmation: closeUnifiedConfirmation,
     previewHash: hashPreview, normalizeBilling: normalizeBilling,
-    canonicalSectionKey: canonicalSectionKey, destinations: DESTINATION,
+    canonicalSectionKey: canonicalSectionKey, parseGeneratedSoapSections: parseGeneratedSoapSections, parseCanonicalAthenaNote: parseCanonicalAthenaNote, destinations: DESTINATION,
     inspectSections: gatherSections,
     /* wfdx-1.0.0 / athena-probe-only-1.0.0 test + support seam (read-only) */
     diagnostics: { report: function () { return wfdxReport(unifiedAthenaState && unifiedAthenaState.manifest); },

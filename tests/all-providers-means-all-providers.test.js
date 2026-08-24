@@ -275,11 +275,11 @@ assert(/pull again/.test(notice) && /Choose a provider/.test(notice),
 assert(/var __p1ScopeNotice = p1AppointmentCensusComplete[\s\S]{0,260}providerScopeNotice\(selectedProvider\.mode\)/.test(si) &&
   /Verified complete: schedule[\s\S]{0,260}__p1ScopeNotice/.test(si),
   '"Verified complete" must append the precomputed provider/appointment-census coverage caveat');
-assert(/Schedule-only complete:[\s\S]{0,340}__p1ScopeNotice/.test(si),
+assert(/Schedule-only complete:[\s\S]{0,420}__p1ScopeNotice/.test(si),
   'the schedule-only verdict must append the same precomputed coverage caveat');
 assert(/has no appointments\." \+ freshnessNotice\(r\) \+ providerScopeNotice\(selectedProvider\.mode\)/.test(si),
   'an EMPTY day is the worst case: "nobody is coming" read off a one-provider grid is a positive clinical claim about seventeen other clinicians');
-assert(/Verified month complete:[\s\S]{0,320}providerScopeNotice\(frozenProvider === "all"/.test(si),
+assert(/Verified month complete:[\s\S]{0,450}providerScopeNotice\(frozenProvider === "all"/.test(si),
   'and the MONTH verdict needs it too — an all-provider month pull is the same painted-grid limit repeated thirty times, and "Verified month complete" is the strongest coverage claim this product makes');
 assert(/providerScope: providerScopeReceipt\(frozenProvider === "all" \? "all" : "selected"\)/.test(si),
   'the month result must carry the coverage receipt as well');

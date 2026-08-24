@@ -20,7 +20,15 @@ const end = source.indexOf('  /* ===== end oar-1.0.0 */', start);
 assert(start >= 0 && end > start, 'the 1p per-attempt pull receipt owner (oar-1.0.0) is missing');
 
 const DS = { day: '2026-08-17', lastAttemptResult: null };
-const sandbox = { DS };
+/* The production owner now files the PHI-free durable terminal receipt before
+ * returning. Keep this focused owner test independent from the DOM/storage
+ * harness; the receipt helper has its own runtime suite. */
+const sandbox = {
+  DS,
+  dsBuildTerminalReceipt(result, day) { return { target: day, status: result && result.ok ? 'complete' : 'failed' }; },
+  dsPersistTerminalReceipt() { return { durable: false, reason: 'test-only' }; },
+  dsTerminalReceiptKey() { return ''; }
+};
 vm.createContext(sandbox);
 vm.runInContext(source.slice(start, end) + '\nthis.own = ownAttemptResult;', sandbox);
 

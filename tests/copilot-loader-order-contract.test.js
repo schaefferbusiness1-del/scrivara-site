@@ -11,14 +11,14 @@ const staging = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8
 const expected = [
   ['feat_mls_copilot_unify.js', "'+(window.__MLS_AV||Date.now())"],
   ['feat_copilot_slim.js', '20260719csp211'],
-  ['feat_mls_asst_fix.js', '20260802asst145'],
+  ['feat_mls_asst_fix.js', "'+(window.__MLS_AV||Date.now())"],
   /* 2026-08-05: ca-2.1.1 — agentic-kind delegation plus the still-loading
      guard (no keyword-guess navigation before the Power module lands). */
   ['feat_mls_copilot_actions.js', "'+(window.__MLS_AV||Date.now())"],
   /* 2026-08-05: cpw-1.2.0 — round 2: the snapshot also carries avatarCheckins
      from the avatar module's event-driven cache, staleness declared. */
   ['feat_mls_copilot_power.js', '20260805cpw130'],
-  ['feat_mls_copilot_request_safety.js', '20260802crs121'],
+  ['feat_mls_copilot_request_safety.js', "'+(window.__MLS_AV||Date.now())"],
   ['feat_mls_copilot_dock_fix.js', '20260726cdf210']
 ];
 

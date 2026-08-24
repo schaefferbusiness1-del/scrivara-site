@@ -258,13 +258,19 @@ async function testStarvedPageTimerBatchResetsBusy() {
     { id: 'p2', name: 'Patient Two', dob: '02/02/1960' }
   ];
   let pageTimerCalls = 0;
+  const preferenceStore = new Map();
   const context = {
     console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp, encodeURIComponent, isFinite,
     Blob: FakeBlob, Worker: ImmediateWorker, URL: RuntimeURL, AbortController, queueMicrotask,
     setTimeout() { pageTimerCalls++; return 1; }, clearTimeout() {},
     setInterval() { return 1; }, clearInterval() {},
     location: { pathname: '/ScribeFlow-staging.html' },
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    localStorage: {
+      getItem: key => preferenceStore.has(String(key)) ? preferenceStore.get(String(key)) : null,
+      setItem: (key, value) => preferenceStore.set(String(key), String(value)),
+      removeItem: key => preferenceStore.delete(String(key))
+    },
+    uns: key => `deadline-test::${key}`,
     document: {
       readyState: 'complete', querySelectorAll: () => [], querySelector: () => null, getElementById: () => null,
       addEventListener() {}, body: {}, head: {}, documentElement: {}
@@ -278,6 +284,9 @@ async function testStarvedPageTimerBatchResetsBusy() {
     renderHistory() {}, renderProfile() {}, loadPatients() {}
   };
   context.window = context;
+  context.__mlsVisitNotesPref = require('./lib-visit-notes-resolver.js').makeResolver(context.uns, context.localStorage);
+  assert.strictEqual(context.__mlsVisitNotesPref.write(true), true,
+    'deadline harness could not persist explicit Full Notes ON');
   context.addEventListener = () => {};
   context.removeEventListener = () => {};
   context.postMessage = () => {};

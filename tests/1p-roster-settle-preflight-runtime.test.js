@@ -251,7 +251,8 @@ async function testFailedReadDoesNotPayTheWait() {
 /* ------------------------------- 5. the full dayPull receipt the owner saw */
 async function testDayPullPublishesVerifiedRoster() {
   const h = makeRuntime({ settleAfterMs: SETTLE_MS });
-  const res = await h.api.dayPull({ date: DAY, provider: Object.assign({}, PROVIDER), includeHistory: false, onStatus: () => {} });
+  const res = await h.api.dayPull({ date: DAY, provider: Object.assign({}, PROVIDER), includeHistory: false,
+    pullVisitBodies: false, onStatus: () => {} });
   ok(res && res.preflightReceipt, 'the day pull published no pre-flight receipt');
   eq(res.preflightReceipt.rosterComplete, true,
     'preflightReceipt.rosterComplete stayed false for a roster that completed - the owner\'s exact symptom');
@@ -267,11 +268,13 @@ async function testDayPullPublishesVerifiedRoster() {
 /* ----- 6. a skipped pre-flight states the live receipt, not a synthetic false */
 async function testSkippedPreflightStatesTheLiveReceipt() {
   const h = makeRuntime({ settleAfterMs: SETTLE_MS });
-  await h.api.dayPull({ date: DAY, provider: Object.assign({}, PROVIDER), includeHistory: false, onStatus: () => {} });
+  await h.api.dayPull({ date: DAY, provider: Object.assign({}, PROVIDER), includeHistory: false,
+    pullVisitBodies: false, onStatus: () => {} });
   /* second pull on the same page: _dayPreflightDone is set and the scope now
      resolves, so the pre-flight is skipped. It must not report the roster
      unverified. */
-  const res = await h.api.dayPull({ date: DAY, provider: Object.assign({}, PROVIDER), includeHistory: false, onStatus: () => {} });
+  const res = await h.api.dayPull({ date: DAY, provider: Object.assign({}, PROVIDER), includeHistory: false,
+    pullVisitBodies: false, onStatus: () => {} });
   ok(res && res.preflightReceipt, 'the second day pull published no pre-flight receipt');
   eq(res.preflightReceipt.ran, false, 'the second pull unexpectedly re-ran the pre-flight');
   eq(res.preflightReceipt.rosterComplete, true,

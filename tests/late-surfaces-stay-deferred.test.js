@@ -99,7 +99,8 @@ for (const name of [
   const positions = [
     connect.indexOf('data-mls-asset="' + name + '"'),
     connect.indexOf('var A="' + name + '"'),
-    connect.indexOf("var A='" + name + "'")
+    connect.indexOf("var A='" + name + "'"),
+    connect.indexOf("A='" + name + "'")
   ].filter((position) => position >= 0);
   assert(positions.length >= 1, name + ' loader locator is missing');
   const i = Math.min(...positions);
@@ -115,10 +116,21 @@ for (const name of TRANCHE) {
   const positions = [
     connect.indexOf('data-mls-asset="' + name + '"'),
     connect.indexOf('var A="' + name + '"'),
-    connect.indexOf("var A='" + name + "'")
+    connect.indexOf("var A='" + name + "'"),
+    connect.indexOf("A='" + name + "'")
   ].filter((position) => position >= 0);
-  assert.strictEqual(positions.length, 1, name + ' loader locator is missing or ambiguous');
-  const i = positions[0];
+  const locatorLines = [...new Set(positions.map((position) => connect.lastIndexOf('\n', position) + 1))];
+  assert.strictEqual(locatorLines.length, 1, name + ' loader locator is missing or ambiguous');
+  const i = Math.min(...positions);
+  if (name === 'feat_after_visit_summary.js') {
+    /* AVS has an action-time readiness controller so a real click can admit
+       it immediately; its idle fallback must still remain scheduler-owned. */
+    const end = connect.indexOf('/* ---- loader: feat_mls_protocol', i);
+    const block = connect.slice(i - 180, end > i ? end : i + 1800);
+    assert(block.includes('requestIdleCallback') && block.includes('s.async=true'),
+      name + ' action-time loader lost its idle+async fallback');
+    continue;
+  }
   const lineStart = connect.lastIndexOf('\n', i) + 1;
   const line = connect.slice(lineStart, connect.indexOf('\n', i));
   assert(line.indexOf('requestIdleCallback') >= 0,

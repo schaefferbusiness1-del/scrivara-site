@@ -64,6 +64,10 @@ function makeCtx(captured) {
     _acctTodayKey: () => '2026-08-11',
     window: {}
   };
+  ctx.window.__mlsVisitNotesPref = {
+    ensureChosenForBulkPull: () => Promise.resolve({ ok: true, chosen: false, on: true, reason: 'already-chosen' }),
+    choicePending: () => false
+  };
   ctx.window.__mlsSI = {
     installed: true,
     dayPull: o => { captured.push(o); return Promise.resolve({ ok: true }); }

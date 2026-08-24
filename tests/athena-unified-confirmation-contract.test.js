@@ -37,7 +37,7 @@ assert(/mode:\s*'execute'/.test(unified), 'the single confirmation entrypoint mu
 assert(/setAttribute\('data-mls-athena-action',\s*row\.action\)/.test(unified));
 assert(/setAttribute\('data-mls-preview-hash',\s*state\.manifest\.previewHash\)/.test(unified));
 assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'capability-off UI must disclose the two allowed note lanes');
-assert(/Reviewed note write, Save Draft, billing staging, and Sign &amp; Save each run only after your explicit one-click confirm/i.test(unified), 'capability-on UI must disclose the separately confirmed final-action lanes');
+assert(/Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation/i.test(unified), 'capability-on UI must disclose the separately confirmed final-action and supported-order lanes');
 /* wf3 (owner 2026-08-04, one-click rebuild): the READY row is PRE-selected and
    probed on open — "Select one" is no longer the doctor's job, so the
    one-action boundary is disclosed as what each click RUNS instead. */

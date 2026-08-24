@@ -10,8 +10,8 @@
  *   - an authenticated setup-only response never destroys the session; and
  *   - practice Enterprise coverage cannot acquire a second access override.
  *
- * This production-only hotfix is deliberately inspected in ScribeFlow.html.
- * The separately reviewed /1p and /cloned lanes stay byte-frozen.
+ * The editable source is the /1p lane. Production and /cloned are generated
+ * later, so this focused pre-derive test inspects both canonical /1p shells.
  */
 
 const assert = require('assert');
@@ -19,7 +19,8 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const shell = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+const shell = fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8');
+const twinShell = fs.readFileSync(path.join(root, '1p', 'index.html'), 'utf8');
 
 let assertions = 0;
 function ok(value, message) { assert.ok(value, message); assertions += 1; }
@@ -168,9 +169,15 @@ for (const scopeField of ['manifestId', 'manifestSha256', 'audience', 'practiceU
 const signFlow = fn('agSubmitSign');
 ok(!/bkUser\.agreements_signed_version\s*=/.test(signFlow),
   'sign success locally manufactures legacy agreement completion');
+ok(signFlow.includes('const submitEpoch=_agManifestEpoch') &&
+   signFlow.includes('submitEpoch===_agManifestEpoch') &&
+   (signFlow.match(/if\(!signingAccountStillCurrent\(\)\) return;/g) || []).length >= 6,
+  'an account switch during signature POST/read-back can advance the wrong account');
 const manifestFlow = fn('agLoadManifest');
 ok(manifestFlow.includes('setupPolicyVersion') && manifestFlow.includes('_agSetupPolicyVersion=setupPolicy'),
   'the agreement loader drops the server-owned setup policy before submission');
+ok(fn('agResetManifestState').includes('_agSetupPolicyVersion=null'),
+  'a same-tab account change can reuse the previous signer’s setup policy');
 const legacyRequest = fn('agLegacySignRequest');
 ok(legacyRequest.includes('_agSetupPolicyVersion!==0') && legacyRequest.includes('version:manifest.version'),
   'the policy-0 compatibility request is not limited to legacy accounts or does not use the verified manifest version');
@@ -439,5 +446,9 @@ ok(/adminUserById|adminCommercial|adminIsEnterprise/.test(setAccessFlow) && /\bb
   'Comp/Trial can still be sent for an Enterprise member, or the guard also prevents explicit Block');
 ok(/action\s*:\s*['"]block['"]/.test(setAccessFlow),
   'Enterprise safety removed the server-owned explicit Block transition');
+
+for (const name of ['agLoadManifest', 'agLegacySignRequest', 'agLegacySigningVerified', 'agSubmitSign']) {
+  ok(twinShell.includes(fn(name)), '1p/index.html is missing the canonical first-login flow: ' + name);
+}
 
 console.log('PASS first-login server-state safety contract: ' + assertions + ' assertions');

@@ -58,7 +58,8 @@ assert(/writeIndex\(day, x\);/.test(si) && si.indexOf('recordHistoryVerdict') < 
 
 /* it has to be CALLED, or it is exactly the dead code this codebase keeps shipping */
 {
-  const start = si.indexOf('function finalizeVerdict()');
+  const signature = /function finalizeVerdict\([^)]*\)/.exec(si);
+  const start = signature ? signature.index : -1;
   const end = si.indexOf('/* 2026-07-28 owner directive', start);
   assert(start > 0 && end > start, 'finalizeVerdict bounds must remain discoverable');
   const body = si.slice(start, end);
@@ -84,7 +85,10 @@ assert(/storedOk: storedOk/.test(si),
 {
   const at = connect.indexOf('function pullOutcome(result, day)');
   assert(at > 0, 'pullOutcome must still exist');
-  const body = connect.slice(at, at + 2600);
+  const marker = 'api.classifyPullResult = pullOutcome;';
+  const end = connect.indexOf(marker, at);
+  assert(end > at, 'pullOutcome end marker must remain discoverable');
+  const body = connect.slice(at, end + marker.length);
 
   assert(!/var hist = Number\(hr\.processed/.test(body),
     'the ready message counts hr.processed, which counts ENUMERATED ROWS rather than ' +

@@ -31,6 +31,7 @@ let assistReadCalls = 0;
 let managedLockCalls = 0;
 let grantManagedLock = true;
 let managedReleaseSignals = 0;
+const preferenceStore = new Map();
 
 const context = {
   console,
@@ -60,9 +61,11 @@ const context = {
       }
     }
   },
-  /* Full visit notes defaults OFF since b470 — this pipeline exercises the
-     bodies lane, so the harness opts IN the way a clinician would. */
-  localStorage: { getItem: (k) => (/pullVisitBodies/.test(String(k)) ? '1' : null), setItem: () => {}, removeItem: () => {} },
+  localStorage: {
+    getItem: key => preferenceStore.has(String(key)) ? preferenceStore.get(String(key)) : null,
+    setItem: (key, value) => preferenceStore.set(String(key), String(value)),
+    removeItem: key => preferenceStore.delete(String(key))
+  },
   document: {
     readyState: 'complete',
     querySelectorAll: () => [],
@@ -79,6 +82,9 @@ context.window = context;
    the next microtask. */
 context.__mlsBgSleep = () => Promise.resolve();
 context.uns = (k) => 'pipeline::' + k;
+context.__mlsVisitNotesPref = require('./lib-visit-notes-resolver.js').makeResolver(context.uns, context.localStorage);
+assert.strictEqual(context.__mlsVisitNotesPref.write(true), true,
+  'history pipeline harness could not persist explicit Full Notes ON');
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {
@@ -374,6 +380,38 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
     assert(visitCalls >= 2, 'the sweep must have issued a fresh visits read');
   }
 
+  /* lpfr-1.0.0 (live 2026-08-23): the two outer transport deadlines used to
+     stop the main walk but were absent from SWEEPABLE_REASON, so the exact
+     patient that timed out never received the larger automatic re-check
+     window. Exercise both bridge layers as real first-pass results and prove
+     the ordinary exact-identity sweep recovers them. */
+  for (const deadlineReason of ['bridge-deadline-exceeded', 'content-deadline-exceeded']) {
+    patient.visits.length = 0;
+    delete patient.athenaVisitsProof;
+    let deadlineVisitCalls = 0;
+    const baseDeadlinePost = context.postMessage;
+    context.postMessage = msg => {
+      if (!msg || msg.type !== 'mlsAppReadAllVisits') return baseDeadlinePost(msg);
+      deadlineVisitCalls++;
+      if (deadlineVisitCalls === 1) {
+        queueMicrotask(() => {
+          const failEvent = { data: { source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: msg.id, requestId: msg.requestId, ok: false, reason: deadlineReason, receipt: { complete: false, expected: 2, parsed: 0 } } };
+          Array.from(listeners).forEach(fn => fn(failEvent));
+        });
+        return;
+      }
+      return baseDeadlinePost(msg);
+    };
+    const deadlineReceipt = await context.__mlsSI._runHistoryBatch([row], [], () => {});
+    context.postMessage = baseDeadlinePost;
+    assert.strictEqual(deadlineReceipt.complete, true, deadlineReason + ' must recover on the automatic sweep');
+    assert.strictEqual(deadlineReceipt.sweepPasses, 1, deadlineReason + ' must use exactly one recovery sweep');
+    assert.strictEqual(deadlineReceipt.retry.length, 0, deadlineReason + ' left a stale retry entry');
+    assert(deadlineVisitCalls >= 2, deadlineReason + ' did not issue a fresh visit read');
+    const deadlineRecovered = deadlineReceipt.patients.find(p => p && p.sweepRecovered === 1);
+    assert(deadlineRecovered && deadlineRecovered.complete === true, deadlineReason + ' was not marked sweep-recovered');
+  }
+
   /* si-2.0.0 (owner 2026-07-23: "43 minutes for a pull is way too slow"): a
      COMPLETED body pass stamps the patient; the next pull's fresh index that
      matches the stamp carries the verified bodies WITHOUT re-reading every
@@ -415,6 +453,8 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
     assert(/sweepPass <= 3 && !receipt\.complete/.test(src), 'the sweep must be bounded to three passes and stop on completion');
     assert(/Date\.now\(\) \+ 240000 >= batchDeadlineAt/.test(src), 'the sweep must respect the frozen batch budget');
     assert(src.includes('var SWEEPABLE_REASON'), 'the sweep reason whitelist must exist');
+    assert(src.includes('bridge-deadline-exceeded') && src.includes('content-deadline-exceeded'),
+      'both transport deadline codes must remain eligible for the automatic history sweep');
     assert(/adaptiveCeilingMs\('visits', 60000, 195000, 100000\)/.test(src),
       'si-1.9.3 adaptive: main-pass visits ceiling tracks the batch median (60s floor, 195s cap)');
     assert(/adaptiveCeilingMs\('chart', 45000, 180000, 90000\)/.test(src),

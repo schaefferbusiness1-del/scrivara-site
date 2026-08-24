@@ -65,10 +65,10 @@ const built = derive.generate();
 const CLONED_BUILD = built.token;
 assert(/^cloned-\d{8}-r\d+$/.test(CLONED_BUILD), `/cloned build token is malformed: ${CLONED_BUILD}`);
 
-/* 18 = the shell + the bundle + one fork per 1p-feat_*.js. It became 18 on
-   2026-08-18 when 1p-feat_mls_b121_pack.js forked the shared visits/backfill
-   pack for p1-backfill-footer-1.0.0. */
-assert.strictEqual(built.files.length, 18,
+/* 19 = the shell + the bundle + one fork per 1p-feat_*.js. It became 19 when
+   the account-scoped AI draft-tuning module was added as an independently
+   loaded, lane-derived feature. */
+assert.strictEqual(built.files.length, 19,
   `the derivation must produce the shell, the bundle and one fork per 1p-feat_*.js; got ${built.files.length}`);
 
 const drifted = [];
@@ -86,7 +86,7 @@ assert.deepStrictEqual(drifted, [],
 /* Every 1p fork must have produced a clone counterpart, and vice versa — no
    orphan on either side. */
 const forkSources = derive.forkSources();
-assert.strictEqual(forkSources.length, 16, `expected 16 1p-feat_*.js forks, found ${forkSources.length}`);
+assert.strictEqual(forkSources.length, 17, `expected 17 1p-feat_*.js forks, found ${forkSources.length}`);
 const clonedForksOnDisk = fs.readdirSync(root).filter((n) => /^cloned-feat_[A-Za-z0-9_]+\.js$/.test(n)).sort();
 assert.deepStrictEqual(clonedForksOnDisk, forkSources.map(derive.forkOutName).sort(),
   'the cloned-feat_*.js files on disk are not exactly the derived names of the 1p-feat_*.js forks');
@@ -138,7 +138,17 @@ assert(!clonedShell.includes("s.src='mls-connect.js?v='+window.__MLS_AV"),
 /* Every published fork must be reachable from the clone: named by the clone's
    bundle, or chained from another fork (nextup rides schedimport). An orphan
    fork is a published file no page can load. */
-const reachableFrom = clonedConnect + '\n' + clonedForksOnDisk.map((n) => read(n)).join('\n');
+/* Draft tuning is deliberately assembled on first Settings/generation use so
+   it is not misclassified as part of the post-login boot burst. Its runtime
+   path is proven in draft-tuning-contract; include that one computed owner in
+   this bidirectional publication inventory. */
+const computedForks = [];
+if (clonedConnect.includes("var A = prefix + 'feat_mls_' + 'draft_tuning.js'") &&
+    clonedConnect.includes("var shell = 'ScribeFlow.html'")) {
+  computedForks.push('cloned-feat_mls_draft_tuning.js');
+}
+const reachableFrom = clonedConnect + '\n' + clonedForksOnDisk.map((n) => read(n)).join('\n') +
+  '\n' + computedForks.join('\n');
 for (const fork of clonedForksOnDisk) {
   assert(reachableFrom.includes(fork), `/cloned publishes an unreachable fork: ${fork} is named by no cloned loader`);
 }

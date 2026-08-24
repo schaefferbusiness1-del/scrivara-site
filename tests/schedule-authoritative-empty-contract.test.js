@@ -134,6 +134,7 @@ assert.strictEqual(api.authoritativeStatusForDay('2026-07-23').available, false,
 (async () => {
   const result = await api.pull({
     date: day, includeHistory: false,
+    pullVisitBodies: false,
     onStatus: (message, kind) => statuses.push({ message: String(message || ''), kind: String(kind || '') })
   });
   assert.strictEqual(result.ok, false);

@@ -268,14 +268,16 @@ const scanned = PUBLISHED.length;
    add/remove calls in syncRouteLayout(). They are O(1) route-state repairs,
    never recurring passes, and prevent a stale patient identity from showing
    while its cold record refresh waits for browser idle. */
-/* 2026-08-21: mls-connect is 32 syntactic matches. Six came with the P1 dock
+/* 2026-08-24: mls-connect is 33 syntactic matches. Six came with the P1 dock
    guard; the seventh is `var body = $('mlsEz3Body')`, a local element that the
-   broad scanner deliberately over-counts. The manifest below accounts for all
-   32 individually by operation/count and records why each is either guarded,
+   broad scanner deliberately over-counts. The review-step state marker adds
+   one contains-guarded force-toggle. The manifest below accounts for all 33
+   individually by operation/count and records why each is either guarded,
    force-toggle safe, local-element-only, or a one-shot transition/teardown.
    A new operation or changed multiplicity cannot pass by raising one number. */
 const CONNECT_BODY_SITE_AUDIT = [
   { op: "remove('empty-txt')", count: 1, reasons: ['local #mlsEpReasonBody; one explicit Edit click'] },
+  { op: "toggle('mls-review-step', open)", count: 1, reasons: ['contains() guard in explicit review-step state transition'] },
   { op: "toggle('mls-top-voice-tools', visible)", count: 1, reasons: ['contains() guard'] },
   { op: "toggle('mls-recording', live)", count: 1, reasons: ['contains() guard'] },
   { op: "toggle('ez3fl-top-owns', wantOwns)", count: 1, reasons: ['local #mlsEz3Body plus contains() guard'] },
@@ -308,10 +310,10 @@ while ((connectBodyMatch = connectBodyRe.exec(connectText))) {
   const op = connectBodyMatch[1] + '(' + connectBodyMatch[2] + ')';
   connectBodyOps.set(op, (connectBodyOps.get(op) || 0) + 1);
 }
-assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 32,
-  'mls-connect body-class audit no longer enumerates exactly 32 syntactic sites');
-assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 32,
-  'the documented mls-connect body-class audit does not account for all 32 sites');
+assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 33,
+  'mls-connect body-class audit no longer enumerates exactly 33 syntactic sites');
+assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 33,
+  'the documented mls-connect body-class audit does not account for all 33 sites');
 assert.strictEqual(connectBodyOps.size, CONNECT_BODY_SITE_AUDIT.length,
   'mls-connect gained or lost an operation shape without an explicit audit entry');
 for (const row of CONNECT_BODY_SITE_AUDIT) {
@@ -364,7 +366,7 @@ for (const row of SCRIBEFLOW_BODY_SITE_AUDIT) {
     'every ScribeFlow occurrence needs its own guard or exact exception: ' + row.op);
 }
 
-const SITES = { 'mls-connect.js': 32, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
+const SITES = { 'mls-connect.js': 33, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -409,4 +411,4 @@ assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.4'") &&
 assert(!connect.includes('20260808rd332perf2') && !connect.includes('20260804rd331'),
   'a retired hand-maintained redesign cache token is still reachable');
 
-console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 32 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');
+console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 33 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');

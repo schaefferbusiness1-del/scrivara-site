@@ -3825,12 +3825,12 @@
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.77</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.77.bin" download="MLS_Assist_v3.0.77.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.77</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.79</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.79.bin" download="MLS_Assist_v3.0.79.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.79</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Install: unzip the download, open <b>chrome://extensions</b>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>. Updating an existing install: replace the folder's contents, then press the ↻ reload arrow on the MLS Assist card. Full guide: <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.77</span></summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.77 - Open-patient pulls are more reliable on Macs: an explicit pull can safely wake and verify the exact sleeping athenaOne tab without reloading it, while quiet and background work never wakes a tab. A sleeping or temporarily unreachable tab is no longer mistaken for a sign-out. Legacy Send to Athena requests now enter the existing supervised review flow, with exact patient and encounter checks plus clinician confirmation; nothing writes automatically. Everything from earlier releases remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.79</span></summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.79 - Full Visit Notes OFF is now truly schedule-only for bulk day, month, and year pulls: MLS reads appointment rows and does not open patient charts or historical visit bodies. Full Visit Notes ON remains the explicit opt-in for full chart history. First sign-in requires a clear choice and keeps bulk pulls blocked until it is made. Pulls now end with durable complete, partial, or failed receipts and clearer retry details. Copilot uses minimum-necessary active-patient context and can answer supported longitudinal visit and procedure questions. Supervised review now generates HPI, ROS, Physical Exam, Assessment, and Plan as separate drafts, shows exactly where each will go, and inserts a clinician-confirmed draft only into its exact verified Athena section; MLS reads it back as unsaved and never saves or signs automatically. Narrative medical-legal reports now follow the supplied physician-report structure with concrete source gaps and grounded opinion sections. Athena keep-alive pauses during active pulls. Everything from earlier releases remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -6109,6 +6109,12 @@ function docPrefsBlock(){
    arbitrary system prompt to /api/generate. The backend re-validates every cap. */
 function hostedNotePreferences(){
   const out={noteStyle:'balanced',followUp:'',providerPreferences:[],billingCodes:[]};
+  /* Only ordinary SOAP is eligible for five-field Athena staging. Other note
+     styles remain useful free-form drafts and are never mislabeled as staged. */
+  try{
+    const style=(typeof getGenStyle==='function')?String(getGenStyle()||'soap'):'soap';
+    out.noteFormat=style==='soap'?'flat_hpi_ros_exam_assessment_plan_v1':style;
+  }catch(e){ out.noteFormat='flat_hpi_ros_exam_assessment_plan_v1'; }
   try{
     const style=(typeof getMlsNoteStyle==='function')?String(getMlsNoteStyle()||''):'balanced';
     out.noteStyle=(style==='concise'||style==='detailed')?style:'balanced';
@@ -6611,7 +6617,7 @@ function saveSettings(){
    written back only when this device has no value (absent/empty) — local edits
    always win. Never PHI: settings, toggles, templates, intake questions only.
    ========================================================= */
-const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact',
+const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact','draftTuningV1',
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
   'providerCred','npi','clinicAddress','clinicPhone','defaultFormat','noteStyle',
   /* b821: docspec is the SPECIALTY the doctor sets in Settings. getSpec() reads it
@@ -6817,7 +6823,7 @@ function _saveVisitDraft(){
     var soap=(typeof currentSoap!=='undefined'?currentSoap:'')||'';
     var ins=(typeof currentInsurance!=='undefined'?currentInsurance:'')||'';
     if(!String(t).trim() && !String(soap).trim() && !String(ins).trim()) return;
-    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), pt:(document.getElementById('patientLabel')||{}).value||'', ptId:(typeof getActivePtId==='function'?(getActivePtId()||''):''), ts:Date.now() }));
+    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), noteProvenance:(typeof currentNoteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(currentNoteProvenance))?currentNoteProvenance:'typed', pt:(document.getElementById('patientLabel')||{}).value||'', ptId:(typeof getActivePtId==='function'?(getActivePtId()||''):''), ts:Date.now() }));
   }catch(e){}
 }
 function _wipeVisitDraft(){ if(_visitDraftTimer){ clearTimeout(_visitDraftTimer); _visitDraftTimer=null; } _visitDirty=false; try{ sessionStorage.removeItem(_visitDraftKey()); }catch(e){} var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); }
@@ -6870,6 +6876,7 @@ function _restoreVisitDraft(){
     var tx=document.getElementById('transcript'); if(tx) tx.value=d.t||'';
     if(typeof finalText!=='undefined') finalText=d.t||'';
     if(typeof currentSoap!=='undefined') currentSoap=d.soap||'';
+    if(typeof currentNoteProvenance!=='undefined') currentNoteProvenance=(typeof d.noteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(d.noteProvenance))?d.noteProvenance:'saved';
     if(typeof currentInsurance!=='undefined') currentInsurance=d.ins||'';
     if(typeof currentFormat!=='undefined' && d.fmt) currentFormat=d.fmt;
     var pl=document.getElementById('patientLabel'); if(pl && d.pt) pl.value=d.pt;
@@ -6915,7 +6922,7 @@ function _infoDialog(title, text){
 }
 (function(){
   try{
-    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); } }, true);
+    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); if(id==='noteBox'&&typeof currentNoteProvenance!=='undefined'&&currentNoteProvenance==='generated_soap')currentNoteProvenance='edited_generated_soap'; } }, true);
     window.addEventListener('beforeunload', function(e){ if(_visitDirty || (typeof capturing!=='undefined' && capturing)){ e.preventDefault(); e.returnValue=''; return ''; } });
   }catch(e){}
 })();
@@ -10133,12 +10140,14 @@ async function generatePatientLegalReport(){
   const label=({narrative:'Narrative report',ime:'IME report',utilization_review:'Utilization review'})[type];
   toast('Drafting '+label+'… this takes a few seconds.','');
   try{
-    const r=await fetch(bkBase()+'/api/legal/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({type:type,context:context,instructions:focus})});
+    const r=await fetch(bkBase()+'/api/legal/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({type:type,context:context,instructions:focus,family:'legal_ime',draftSubtype:legalDraftSubtypeFor(type,false)})});
     const d=await r.json().catch(function(){return {};});
     if(r.status===403){ toast('Legal reports are for clinician (doctor/head) accounts.','err'); return; }
     if(!r.ok){ toast(d.error||'Could not generate the report.','err'); return; }
     const title=label+' (draft) — '+new Date().toLocaleDateString();
-    const doc=(typeof addDocToActive==='function')?addDocToActive(title, d.report||'', 'text'):null;
+    const report=(d&&typeof d.report==='string')?d.report.trim():'';
+    if(!report){ toast('The legal report came back empty or unusable. Nothing was added to the chart; please retry.','err'); return; }
+    const doc=(typeof addDocToActive==='function')?addDocToActive(title, report, 'text'):null;
     if(doc){ toast('Draft ready — review, edit, and sign it below before sending to the attorney.','ok'); if(typeof openDoc==='function') openDoc(doc.id); }
     else { toast('Report generated but could not be saved to the chart.','err'); }
   }catch(e){ toast('Could not generate the report.','err'); }
@@ -12435,7 +12444,7 @@ function newVisit(){
   try{ if(typeof _heroReset==='function') _heroReset(); }catch(e){}   // clear the record-first hero for the next patient
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
-  currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap';
+  currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap'; currentNoteProvenance='typed';
   currentAVS=''; currentReferral=''; currentRecs=null; currentHandout=''; currentIME='';
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
   currentPriorAuth=''; currentMips=''; currentOutcome=null; lastOutcomeEntryId=null;
@@ -12478,6 +12487,7 @@ function noteRecordFromState(markSigned){
     cc: (currentCoding && lastEMR && lastEMR.cc) ? lastEMR.cc : (lastEMR&&lastEMR.cc)||'—',
     transcript: document.getElementById('transcript').value,
     soap: (currentFormat==='soap'?document.getElementById('noteBox').value:currentSoap),
+    noteProvenance: (typeof currentNoteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(currentNoteProvenance))?currentNoteProvenance:'typed',
     insurance: (currentFormat==='insurance'?document.getElementById('noteBox').value:currentInsurance),
     coding: currentCoding,
     opt: currentOpt,
@@ -12873,7 +12883,8 @@ function loadRecordIntoEditor(n){
   currentNoteId=n.id;
   document.getElementById('patientLabel').value=n.patient&&n.patient!=='Unlabeled'?n.patient:'';
   document.getElementById('transcript').value=n.transcript||''; finalText=(n.transcript||'')+' ';
-  currentSoap=n.soap||''; currentInsurance=n.insurance||''; currentCoding=n.coding||null;
+  var savedNoteProvenance=(n&&typeof n.noteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(n.noteProvenance))?n.noteProvenance:'saved';
+  currentSoap=n.soap||''; currentNoteProvenance=savedNoteProvenance; currentInsurance=n.insurance||''; currentCoding=n.coding||null;
   currentOpt=n.opt||null; currentFormat='soap'; lastEMR=n.emr||null;
   currentAVS=n.avs||''; currentReferral=n.referral||''; currentRecs=null; currentHandout=n.handout||''; currentIME=n.ime||'';
   currentOrders=Array.isArray(n.orders)?n.orders.slice():[]; editingOrderId=null;
@@ -14376,6 +14387,7 @@ function loadExample(){
    ========================================================= */
 let signed=false;
 let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, currentFormat='soap';
+let currentNoteProvenance='typed';
 /* One immutable patient/visit owner for every reviewed Athena action in this editor. */
 var currentVisitAthenaBinding=null, currentVisitAthenaCompromised=false, currentVisitAthenaEpoch=0;
 /* Snapshot of the AI's ORIGINAL note draft, captured at generation time BEFORE
@@ -14654,6 +14666,38 @@ function showNote(text){
 }
 
 /* =========================================================
+   STRUCTURED NOTE RESPONSE CONTRACT
+
+   /api/generate is a structured-note transport, but the browser still keeps
+   the final mutation gate.  A malformed response must never clear or replace
+   the clinician's current draft.  Keep this check deliberately small and
+   style-neutral: every supported style still covers at least two clinical
+   sections, while arbitrary error text / empty JSON cannot reach the editor.
+   ========================================================= */
+function _mlsStructuredNoteQualityError(reason){
+  var e=new Error('The AI returned an unusable note draft.');
+  e.mlsStructuredNoteQuality=true;
+  e.mlsAi={status:502,code:'draft_quality_failed',retryable:true,detail:String(reason||'missing or malformed note').slice(0,120)};
+  return e;
+}
+function _mlsValidateStructuredNoteResult(result){
+  if(!result || typeof result!=='object' || Array.isArray(result)) throw _mlsStructuredNoteQualityError('response is not an object');
+  if(typeof result.note!=='string') throw _mlsStructuredNoteQualityError('note is not a string');
+  var note=result.note.trim();
+  if(!note) throw _mlsStructuredNoteQualityError('note is blank');
+  if(note.length>50000) throw _mlsStructuredNoteQualityError('note exceeds the browser safety bound');
+  var anchors=[
+    /\b(?:subjective|hpi|history of present illness|chief complaint)\b/i,
+    /\b(?:objective|physical exam|examination|exam|review of systems|\bros\b)\b/i,
+    /\b(?:assessment|impression|diagnos(?:is|es))\b/i,
+    /\b(?:plan|follow[- ]?up|recommendations?)\b/i
+  ];
+  var sections=anchors.reduce(function(count,re){return count+(re.test(note)?1:0);},0);
+  if(note.length<24 || sections<2) throw _mlsStructuredNoteQualityError('note is not a structured clinical draft');
+  return result;
+}
+
+/* =========================================================
    GENERATE NOTE
    ========================================================= */
 async function generateNote(){
@@ -14670,12 +14714,19 @@ async function generateNote(){
     currentVisitAthenaCompromised=!currentVisitAthenaBinding;
     currentVisitAthenaEpoch++;
   }
+  const generationBinding=currentVisitAthenaBinding;
+  const generationEpoch=currentVisitAthenaEpoch;
+  const generationFingerprint=_athenaEditorFingerprint();
+  const generationFormat=currentFormat;
+  const generationOptFingerprint=JSON.stringify(currentOpt||null);
+  const generationStyle=getGenStyle();
   const key=getKey();
   const gb=document.getElementById('genBtn');
 
   if(!hasAI()){
     if(transcript.trim()===EXAMPLE.trim()){
-      currentSoap=_reorderNoteForStyle(offlineExampleNote(), getGenStyle());
+      currentSoap=_reorderNoteForStyle(offlineExampleNote(), generationStyle);
+      currentNoteProvenance='typed';
       lastAIDraft=currentSoap; // baseline for "Teach MLS"
       currentInsurance=offlineExampleInsuranceNote();
       currentCoding=offlineExampleCoding();
@@ -14705,7 +14756,17 @@ async function generateNote(){
   gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
   try{
     const result=await callOpenAI(transcript,key);
-    currentSoap=_reorderNoteForStyle(result.note, getGenStyle());
+    /* Validate before currentSoap/currentInsurance/currentCoding or any editor
+       surface changes.  A bad model/backend response leaves the current draft
+       intact and remains explicitly retryable. */
+    _mlsValidateStructuredNoteResult(result);
+    if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)) return false;
+    if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint){
+      toast('The visit changed while the note was being generated, so MLS discarded that older result. Review the current visit and generate again. Nothing changed in Athena.','err');
+      return false;
+    }
+    currentSoap=_reorderNoteForStyle(result.note, generationStyle);
+    currentNoteProvenance=generationStyle==='soap'?'generated_soap':'generated_nonsoap';
     lastAIDraft=currentSoap; // baseline snapshot for "Teach MLS" before edits
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
@@ -15172,6 +15233,7 @@ function mapOpioidName(raw){
 
 function friendlyError(err){
   const m=(err&&err.message)||String(err);
+  if(err&&err.mlsStructuredNoteQuality) return 'The AI returned an unusable note draft. Nothing was changed. Please retry.';
   if(err&&err.noAccess) return 'Your account needs access — enter an access code (Settings) or ask the owner to enable you.';
   if(err&&err.freeform) return 'This AI helper isn\'t available in the hosted server version yet. (Note generation still works.)';
   if(/insufficient_quota|exceeded your current quota|billing/i.test(m))
@@ -15188,7 +15250,7 @@ function friendlyError(err){
 
 /* ---- Standards block reused by both prompts ---- */
 const STANDARDS=`CLINICAL FORMAT & CODING STANDARDS (follow precisely):
-- SOAP structure: SUBJECTIVE (Chief Complaint; HPI; pertinent ROS; PMH/PSH/FH/SH as relevant; Medications; Allergies), OBJECTIVE (Vitals; focused Exam by system; results of any in-visit tests), ASSESSMENT (numbered problem list, each with a working diagnosis), PLAN (per-problem: orders, meds, patient instructions, follow-up, return precautions).
+- CLINICAL CONTENT: Include only transcript-supported chief complaint/HPI, pertinent ROS, PMH/PSH/FH/SH, medications/allergies, vitals, focused exam/results, numbered assessment, and plan. The selected FORMAT instruction below exclusively controls top-level section names and order; do not add SOAP wrapper headings unless that selected format explicitly requests them.
 - ICD-10-CM format: valid alphanumeric codes, 3-7 characters, first char a letter, decimal point after the 3rd character when >3 chars (e.g. J20.9, I10, R05.9, J06.9). Code to the highest documented specificity; do not pad with unspecified digits that aren't supported.
 - CPT format: 5-digit numeric codes (e.g. 93000, 94010, 12001). List a CPT only for a procedure/service actually PERFORMED in this visit, not one merely ordered to be done elsewhere.
 - E/M selection per 2021+ AMA outpatient guidelines (revised office/outpatient 99202-99215): choose by Medical Decision Making (MDM) OR total time on the date of the encounter. MDM uses the highest 2 of 3 elements:
@@ -15213,7 +15275,7 @@ function setGenLength(v){ try{ localStorage.setItem(uns('genLength'), v); }catch
 function toggleGenFocus(){ var el=document.getElementById('genInstr'); var b=document.getElementById('genFocusToggle'); if(!el) return; var show=el.style.display==='none'; el.style.display=show?'block':'none'; if(b) b.classList.toggle('on',show); if(show) el.focus(); }
 function initGenOptions(){ _genSegSet('genStyleSeg', getGenStyle()); _genSegSet('genLenSeg', getGenLength()); }
 var GEN_STYLE_LINE={
-  soap:'FORMAT THE NOTE AS STANDARD SOAP with the section headers below.',
+  soap:'FORMAT THE NOTE AS STANDARD SOAP using EXACTLY five flat top-level sections in this exact order, each heading alone on its own line: HPI, ROS, EXAM, ASSESSMENT, PLAN. Use no SUBJECTIVE/OBJECTIVE wrapper headings, do not combine ASSESSMENT and PLAN, and do not put content on a heading line. These exact headings are required for optional five-field Athena staging.',
   apso:'FORMAT THE NOTE AS APSO: put ASSESSMENT and PLAN FIRST, then SUBJECTIVE and OBJECTIVE (same content, reordered) — clinicians scan A/P first.',
   narrative:'FORMAT THE NOTE AS A NARRATIVE paragraph-style clinical note (flowing prose with brief headers), not rigid SOAP bullets, while still covering subjective, objective, assessment and plan.',
   problem:'FORMAT THE NOTE AS A PROBLEM-ORIENTED note: organize the ASSESSMENT & PLAN BY PROBLEM (each problem numbered with its own brief assessment and plan), after a short combined subjective/objective section.',
@@ -15228,11 +15290,31 @@ var GEN_LENGTH_LINE={
    physically move Assessment & Plan to the FRONT for the APSO style. Pure
    reorder of the SAME content — never edits clinical text. Safely returns the
    original note if it can't confidently find the S/O/A/P sections. */
+function _flatSoapNote(note){
+  try{
+    const src=String(note||'').replace(/\r\n?/g,'\n').trim(); if(!src) return '';
+    const keys=['hpi','ros','exam','assessment','plan'];
+    const label={hpi:'HPI',ros:'ROS',exam:'EXAM',assessment:'ASSESSMENT',plan:'PLAN'};
+    const rows=b=>{for(const k of keys)if(!String((b[k]||[]).join('\n')).trim())return null;return keys.map(k=>label[k]+':\n'+String(b[k].join('\n')).trim()).join('\n\n');};
+    const flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, lines=src.split('\n');
+    let b={}, cur='', order=[], first=lines.find(line=>line.trim())||'';
+    if(!/^\s*(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*:?/i.test(first)) for(const line of lines){const m=flat.exec(line);if(m){const k=m[1].toLowerCase();if(b[k])return null;b[k]=[];cur=k;order.push(k);if(m[2].trim())b[k].push(m[2]);}else{if(!cur&&line.trim())return null;if(cur)b[cur].push(line);}}
+    if(order.join('|')===keys.join('|')){const out=rows(b);if(out)return out;}
+    const top=/^\s*(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, wrapped={}, topOrder=[];let topKey='';
+    for(const line of lines){const m=top.exec(line);if(m){const k=m[1].toLowerCase();if(wrapped[k])return null;wrapped[k]=[];topOrder.push(k);topKey=k;if(m[2].trim())wrapped[k].push(m[2]);}else{if(!topKey&&line.trim())return null;if(topKey)wrapped[topKey].push(line);}}
+    if(topOrder.join('|')!=='subjective|objective|assessment|plan')return null;
+    function nested(input, allowed){const out={}, seq=[], seen={};let active='';for(const line of input){const m=/^\s*(HPI|ROS|PHYSICAL\s+EXAM|EXAM)\s*:?\s*(.*)$/i.exec(line);if(m&&allowed[m[1].toLowerCase()]){let k=m[1].toLowerCase();if(k==='physical exam')k='exam';if(seen[k])return null;seen[k]=1;seq.push(k);active=k;out[k]=[];if(m[2].trim())out[k].push(m[2]);}else{if(/^\s*[A-Z][A-Z /&-]{1,32}:/.test(line)||(!active&&line.trim()))return null;if(active)out[active].push(line);}}return {out:out,seq:seq};}
+    const subj=nested(wrapped.subjective,{hpi:1,ros:1}), obj=nested(wrapped.objective,{exam:1,'physical exam':1}); if(!subj||!obj||subj.seq.join('|')!=='hpi|ros'||obj.seq.join('|')!=='exam')return null;
+    return rows({hpi:subj.out.hpi||[],ros:subj.out.ros||[],exam:obj.out.exam||[],assessment:wrapped.assessment||[],plan:wrapped.plan||[]})||null;
+  }catch(e){return null;}
+}
 function _reorderNoteForStyle(note, style){
   try{
-    if(!note || style!=='apso') return note;
-    var hdrRe=/^\s{0,6}(?:[-*•]\s*)?(subjective|objective|assessment(?:\s*(?:and|&|\/)\s*plan)?|plan|assessment)\b[^\n]*?:/i;
-    function classify(h){ h=String(h).toLowerCase(); if(/assessment/.test(h)&&/plan/.test(h)) return 'AP'; if(/assessment/.test(h)) return 'A'; if(/\bplan\b/.test(h)) return 'P'; if(/subjective/.test(h)) return 'S'; if(/objective/.test(h)) return 'O'; return 'other'; }
+    if(!note) return note;
+    if(style==='soap') return _flatSoapNote(note)||note;
+    if(style!=='apso') return note;
+    var hdrRe=/^\s{0,6}(?:[-*•]\s*)?(subjective|objective|hpi|ros|exam|physical\s+exam|assessment(?:\s*(?:and|&|\/)\s*plan)?|plan|assessment)\b[^\n]*?:/i;
+    function classify(h){ h=String(h).toLowerCase(); if(/assessment/.test(h)&&/plan/.test(h)) return 'AP'; if(/assessment/.test(h)) return 'A'; if(/\bplan\b/.test(h)) return 'P'; if(/subjective|\bhpi\b|\bros\b/.test(h)) return 'S'; if(/objective|\bexam\b|physical\s+exam/.test(h)) return 'O'; return 'other'; }
     var lines=note.split('\n'); var segs=[]; var cur={cls:'pre',lines:[]};
     lines.forEach(function(ln){ if(hdrRe.test(ln)){ segs.push(cur); cur={cls:classify(ln),lines:[ln]}; } else cur.lines.push(ln); });
     segs.push(cur);
@@ -15337,6 +15419,10 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
    --------------------------------------------------------- */
 async function aiCallRaw(sys,user,key,opts){
   opts=opts||{};
+  const noteFormat=opts.noteFormat||((typeof getGenStyle==='function')?getGenStyle():'soap')||'soap';
+  const familyAllow=['avs','referral','priorauth','opnote','legal_ime','general_draft','coding','studio_widget','hpi','copilot'];
+  const requestedFamily=String(opts.family||'').trim().toLowerCase();
+  const draftFamily=opts.freeform&&familyAllow.indexOf(requestedFamily)>=0?requestedFamily:(opts.freeform?'general_draft':(noteFormat==='soap'?'soap':'general_draft'));
   if(backendMode()){
     // Structured note generation -> /api/generate ({transcript}->{result}).
     // Free-form helpers (referral, AVS, document analysis) -> /api/complete
@@ -15345,7 +15431,7 @@ async function aiCallRaw(sys,user,key,opts){
       const r=await fetch(bkBase()+'/api/complete',{
         method:'POST',
         headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-        body:JSON.stringify({system:sys,user:user, legal:!!opts.legal, maxTokens:opts.maxTokens||undefined}),
+        body:JSON.stringify({system:sys,user:user,family:draftFamily,draftSubtype:opts.draftSubtype||undefined, legal:!!opts.legal, maxTokens:opts.maxTokens||undefined}),
         signal:opts.signal
       });
       if(r.status===401){ handle401(); throw new Error('401 unauthorized'); }
@@ -15363,7 +15449,7 @@ async function aiCallRaw(sys,user,key,opts){
     const res=await fetch(bkBase()+'/api/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():''), notePreferences:hostedNotePreferences()}),
+      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():''), notePreferences:hostedNotePreferences(), draftFamily:draftFamily}),
       signal:opts.signal
     });
     if(res.status===401){ handle401(); const e=new Error('401 unauthorized'); throw e; }
@@ -15409,7 +15495,8 @@ async function aiCallRaw(sys,user,key,opts){
 }
 
 async function postChat(sys,user,key){
-  let content=await aiCallRaw(sys,user,key);
+  const style=(typeof getGenStyle==='function'?getGenStyle():'soap');
+  let content=await aiCallRaw(sys,user,key,{noteFormat:style});
   content=content.replace(/^```json\s*/i,'').replace(/```$/,'').trim();
   return parseGenJSON(content);
 }
@@ -15448,40 +15535,41 @@ function parseGenJSON(content){
   catch(e){ return {note:content,insuranceNote:'',coding:null,emr:{cc:'—',dx:'—',meds:'—',orders:'—',fu:'—'},raw:parsed,
     red_flags:[],suggested_orders:[],differentials:[],opioids:[],recommendations:[],
     conservative_care:{tried:[],still_needed:[]},imaging_concordance:'',surgical_options:[],preop_workup:[],consent_points:{benefits:[],risks:[],alternatives:[]}}; }
+  const obj=(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))?parsed:{};
   const fmtCodes=arr=>Array.isArray(arr)?arr.map(c=>(c.code||'')+(c.desc?' — '+c.desc:'')).filter(Boolean):[];
   const arrOf=v=>Array.isArray(v)?v:[];
   return {
-    note:parsed.note||content,
-    insuranceNote:parsed.insurance_note||'',
-    patient_summary:(typeof parsed.patient_summary==='string'?parsed.patient_summary:''),
+    note:Object.prototype.hasOwnProperty.call(obj,'note')?obj.note:undefined,
+    insuranceNote:obj.insurance_note||'',
+    patient_summary:(typeof obj.patient_summary==='string'?obj.patient_summary:''),
     coding:{
-      em:parsed.em_level||'',
-      emJust:parsed.em_justification||'',
-      icd:fmtCodes(parsed.icd10),
-      cpt:fmtCodes(parsed.cpt)
+      em:obj.em_level||'',
+      emJust:obj.em_justification||'',
+      icd:fmtCodes(obj.icd10),
+      cpt:fmtCodes(obj.cpt)
     },
     emr:{
-      cc:emrText(parsed.chief_complaint),
-      dx:emrText(parsed.diagnoses),
-      meds:emrText(parsed.medications),
-      orders:emrText(parsed.orders),
-      fu:emrText(parsed.follow_up)
+      cc:emrText(obj.chief_complaint),
+      dx:emrText(obj.diagnoses),
+      meds:emrText(obj.medications),
+      orders:emrText(obj.orders),
+      fu:emrText(obj.follow_up)
     },
     // NEW backend/key fields (all default to [] so downstream auto-populate is safe)
-    red_flags:arrOf(parsed.red_flags),
-    suggested_orders:arrOf(parsed.suggested_orders),
-    differentials:arrOf(parsed.differentials),
-    opioids:arrOf(parsed.opioids),
-    recommendations:arrOf(parsed.recommendations),
+    red_flags:arrOf(obj.red_flags),
+    suggested_orders:arrOf(obj.suggested_orders),
+    differentials:arrOf(obj.differentials),
+    opioids:arrOf(obj.opioids),
+    recommendations:arrOf(obj.recommendations),
     // NEW surgical-planning fields (all optional; guarded defaults)
-    conservative_care:(parsed.conservative_care&&typeof parsed.conservative_care==='object')
-      ?{tried:arrOf(parsed.conservative_care.tried),still_needed:arrOf(parsed.conservative_care.still_needed)}
+    conservative_care:(obj.conservative_care&&typeof obj.conservative_care==='object')
+      ?{tried:arrOf(obj.conservative_care.tried),still_needed:arrOf(obj.conservative_care.still_needed)}
       :{tried:[],still_needed:[]},
-    imaging_concordance:typeof parsed.imaging_concordance==='string'?parsed.imaging_concordance:'',
-    surgical_options:arrOf(parsed.surgical_options),
-    preop_workup:arrOf(parsed.preop_workup),
-    consent_points:(parsed.consent_points&&typeof parsed.consent_points==='object')
-      ?{benefits:arrOf(parsed.consent_points.benefits),risks:arrOf(parsed.consent_points.risks),alternatives:arrOf(parsed.consent_points.alternatives)}
+    imaging_concordance:typeof obj.imaging_concordance==='string'?obj.imaging_concordance:'',
+    surgical_options:arrOf(obj.surgical_options),
+    preop_workup:arrOf(obj.preop_workup),
+    consent_points:(obj.consent_points&&typeof obj.consent_points==='object')
+      ?{benefits:arrOf(obj.consent_points.benefits),risks:arrOf(obj.consent_points.risks),alternatives:arrOf(obj.consent_points.alternatives)}
       :{benefits:[],risks:[],alternatives:[]},
     raw:parsed
   };
@@ -16087,6 +16175,8 @@ function _athenaBindingForCurrentVisit(source){
   return _athenaFreezeVisitBinding(p,{source:source||'current',visitContext:_athenaVisitContextForPatient(p)});
 }
 function _athenaCurrentMatchesBound(binding){var p=null;try{p=typeof activePatient==='function'?activePatient():null;}catch(e){}return !!(binding&&binding.patient&&_athenaSameBoundPatient(binding.patient,p));}
+function _athenaEditorFingerprint(){try{return JSON.stringify([(document.getElementById('transcript')||{}).value||'',(document.getElementById('noteBox')||{}).value||'',String(currentSoap||''),String(currentInsurance||''),currentCoding||null,Array.isArray(currentOrders)?currentOrders:[]]);}catch(e){return '';}}
+function _athenaAsyncBindingStillSafe(candidate,actionLabel,expectedEpoch){var sameBinding=!currentVisitAthenaBinding||(candidate&&currentVisitAthenaBinding.id===candidate.id);var sameEpoch=expectedEpoch==null||Number(expectedEpoch)===Number(currentVisitAthenaEpoch);if(!candidate||!sameBinding||!sameEpoch||currentVisitAthenaCompromised||!_athenaCurrentMatchesBound(candidate)){try{toast('The selected patient or visit changed while '+String(actionLabel||'the request')+' was starting, so MLS discarded that result. Start again on the correct patient. Nothing changed in Athena.','err');}catch(e){}return false;}return true;}
 function _athenaBoundVisitForAction(actionLabel,requireExactHistorical){
   var binding=currentVisitAthenaBinding;
   if(!binding||!Object.isFrozen(binding)||binding.routeBlocked||!binding.patient){try{toast('Generate or reopen this note inside one verified patient visit before '+String(actionLabel||'continuing')+'. Nothing was sent to Athena.','err');}catch(e){}return null;}
@@ -16162,8 +16252,25 @@ function _athenaBuildPlan(binding){
   var who=p?p.name:'this patient';
   // One plan: each piece → its intended manual Athena destination.
   var plan=[]; var lines=[];
-  plan.push({kind:'note', body:'NOTE TEXT:\n'+noteText});
-  lines.push(ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest);
+  var parsedSoap=null;
+  try{
+    var parser=window.__mlsWriteFlow&&window.__mlsWriteFlow.parseGeneratedSoapSections;
+    if(typeof parser==='function') parsedSoap=parser(noteText);
+  }catch(eSoap){ parsedSoap=null; }
+  var parsedSoapValid=!!(parsedSoap&&parsedSoap.ok&&Array.isArray(parsedSoap.sections)&&parsedSoap.sections.length===5);
+  if(parsedSoapValid){
+    var parsedSoapKeys={};
+    parsedSoapValid=parsedSoap.sections.every(function(s){ var key=String(s&&s.key||'').trim().toLowerCase(); if(!/^(hpi|ros|exam|assessment|plan)$/.test(key)||parsedSoapKeys[key]||typeof s.text!=='string'||!s.text.trim())return false; parsedSoapKeys[key]=1; return true; });
+  }
+  if(parsedSoapValid){
+    parsedSoap.sections.forEach(function(s){ plan.push({kind:s.key,body:s.text,generatedSoap:true}); });
+    lines.push('📝 SOAP sections  →  five exact Athena clinical destinations');
+  }else if(typeof currentNoteProvenance!=='undefined'&&(currentNoteProvenance==='generated_soap'||currentNoteProvenance==='edited_generated_soap')){
+    return { plan:[], lines:lines, who:who, noteText:noteText, blocked:true, blockReason:'generated-soap-format' };
+  }else{
+    plan.push({kind:'note', body:'NOTE TEXT:\n'+noteText});
+    lines.push(ATHENA_SECTIONS.note.icon+' NOTE  →  '+ATHENA_SECTIONS.note.dest);
+  }
   if(c&&c.icd&&c.icd.length){ plan.push({kind:'dx', body:'ICD-10 DIAGNOSES (add each):\n• '+c.icd.join('\n• ')}); lines.push(''); lines.push(ATHENA_SECTIONS.dx.icon+' DIAGNOSES  →  '+ATHENA_SECTIONS.dx.dest+'  ('+c.icd.length+'):'); c.icd.forEach(function(x){ lines.push('      • '+x); }); }
   var hasBill=(c&&c.em)||(c&&c.cpt&&c.cpt.length);
   if(hasBill){ var bb='BILLING:\n'+(c&&c.em?('E/M level: '+c.em+'\n'):'')+((c&&c.cpt&&c.cpt.length)?('CPT charges:\n• '+c.cpt.join('\n• ')+'\n'):'')+((c&&c.icd&&c.icd.length)?('Attach these diagnoses to the charges: '+c.icd.join('; ')):''); plan.push({kind:'billing', body:bb, billing:_athenaCanonicalBilling(c)}); lines.push(''); lines.push(ATHENA_SECTIONS.billing.icon+' CHARGES  →  '+ATHENA_SECTIONS.billing.dest+':'); if(c&&c.em) lines.push('      • E/M  '+c.em); if(c&&c.cpt&&c.cpt.length) c.cpt.forEach(function(x){ lines.push('      • CPT  '+x); }); }
@@ -16183,6 +16290,7 @@ function pushEntireVisitToAthena(btn){
   if(!currentSoap){ try{ toast('Generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
   var binding=_athenaBoundVisitForAction('note',false); if(!binding)return;
   var built=_athenaBuildPlan(binding);
+  if(built&&built.blocked){ try{ toast('The generated SOAP note is not in the exact five-field Athena format. Nothing was opened or written; regenerate or edit it, then review again.','err'); }catch(eBlocked){} return; }
   if(!built.noteText.trim()){ try{ toast('Nothing to review yet.','err'); }catch(e){} return; }
   _athenaPushPlan(built.plan,built.who,binding.patient,binding.visitContext||{historical:false,noteTimestamp:binding.noteTimestamp||null});
 }
@@ -16217,7 +16325,7 @@ function _athenaItemsOf(s){
   var out=[]; String(s.body||'').split('\n').forEach(function(ln){ ln=ln.trim(); if(ln.indexOf('•')===0) out.push(ln.replace(/^•\s*/,'')); else if(/^E\/M level:/i.test(ln)) out.push(ln); else if(/^Attach these (diagnoses|ICD)/i.test(ln)) out.push(ln); }); return out;
 }
 function _athenaPushPlan(sections, who, immutablePatient, visitContext){
-  var allowed={note:1,dx:1,billing:1,orders:1};
+  var allowed={note:1,hpi:1,ros:1,exam:1,assessment:1,plan:1,dx:1,billing:1,orders:1};
   sections=(sections||[]).filter(function(s){return s&&s.body&&String(s.body).trim();});
   if(!sections.length){try{toast('Nothing to review.','');}catch(e){}return null;}
   if(sections.some(function(s){return !allowed[s.kind];})){try{toast('The review contains an unsupported Athena destination. Nothing was sent.','err');}catch(e2){}return null;}
@@ -16255,15 +16363,23 @@ function _athenaPushPlan(sections, who, immutablePatient, visitContext){
     return copy;
   });
   try{Object.freeze(frozenPlan);}catch(e6){}
+  var namedDest={hpi:'Athena encounter > HPI',ros:'Athena encounter > Review of Systems',exam:'Athena encounter > Physical Exam',assessment:'Athena encounter > Assessment & Plan > Assessment',plan:'Athena encounter > Assessment & Plan > Plan / Follow-up'};
+  var namedSections=[], genericPlan=[];
+  frozenPlan.forEach(function(section){
+    var key=String(section.kind||'').toLowerCase();
+    if(namedDest[key]) namedSections.push(Object.freeze({key:key,text:String(section.body||'').trim(),execute:true,destination:(wf.destinations&&wf.destinations[key])||namedDest[key]}));
+    else genericPlan.push(section);
+  });
+  try{Object.freeze(namedSections);Object.freeze(genericPlan);}catch(e7){}
   var exactPatient=Object.freeze({patientId:String(patient.patientId),name:String(patient.name),dob:String(patient.dob),mrn:String(patient.mrn||'')});
   var expectedContext=Object.freeze({visitDate:String(ctx.visitDate),provider:String(ctx.provider),appointmentId:String(ctx.appointmentId||''),encounterId:String(ctx.encounterId||''),encounterUrl:String(ctx.encounterUrl||'')});
   var manifest=wf.openUnifiedConfirmation({
-    patient:exactPatient,plan:frozenPlan,expectedContext:expectedContext,
+    patient:exactPatient,plan:genericPlan,sections:namedSections,expectedContext:expectedContext,
     noteTimestamp:Number(ctx.noteTimestamp||0)||null,requireExpectedVisit:true,
     receiptSessionId:'visit-review-'+String((currentVisitAthenaBinding&&currentVisitAthenaBinding.id)||Date.now()),
     preferredAction:''
   });
-  if(manifest)try{toast('Athena review opened. Nothing changes until you choose and confirm an action.','');}catch(e7){}
+  if(manifest)try{toast('Athena review opened. Nothing changes until you choose and confirm an action.','');}catch(e8){}
   return manifest||null;
 }
 /* RECEIPT — a clear after-the-fact confirmation of EXACTLY what was sent to Athena and where. */
@@ -19478,34 +19594,34 @@ async function generateIME(){
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
     const pctx=buildPatientContext();
-    const sys=`You are drafting an INDEPENDENT MEDICAL EXAMINATION (IME) report in correct medico-legal format for a physician examiner. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Use UPPERCASE section headers exactly as listed, in this order, each on its own line:
+    const sys=`You are drafting an INDEPENDENT MEDICAL EXAMINATION (IME) report in correct medico-legal format for a physician examiner. Output CLEAN PROFESSIONAL TEXT ONLY — no markdown, no asterisks, no code fences. Use these exact UPPERCASE section headers, in this exact order, each on its own unnumbered line:
 
-1. Header block (label each on its own line): Examinee name; Date of birth; Date of examination; Examiner [name, credentials]; Referral source; Claim/Case number; Date of injury/onset.
-2. PURPOSE OF EXAMINATION — the reason for the exam and the specific referral questions being addressed.
-3. RECORDS REVIEWED — list the records the note/transcript indicates were reviewed; bracket if none are documented.
-4. HISTORY — history of the injury/illness, current subjective complaints, and pertinent past medical/surgical/medication/social/occupational history. Include ONLY what is documented.
-5. PHYSICAL EXAMINATION — objective findings from the note only.
-6. DIAGNOSTIC STUDIES REVIEWED — imaging/labs mentioned in the record.
-7. DIAGNOSES / IMPRESSIONS.
-8. CAUSATION — opinion on the relationship of the condition to the claimed injury, stated "to a reasonable degree of medical probability," with reasoning. If the record does not support a causation determination, write a bracketed placeholder stating it is undeterminable from the record provided.
-9. MAXIMUM MEDICAL IMPROVEMENT (MMI) — status; bracket if not determinable.
-10. IMPAIRMENT RATING — reference the AMA Guides and state the edition is jurisdiction-dependent: "[per the applicable AMA Guides edition]". DO NOT invent any percentage; provide the rating framework and leave a [placeholder — examiner to determine] for the figure.
-11. WORK STATUS / FUNCTIONAL RESTRICTIONS.
-12. APPORTIONMENT — address if applicable; otherwise state not applicable or that there is insufficient information.
-13. ANSWERS TO REFERRAL QUESTIONS — address each referral question; bracket the questions if none are documented.
-14. EXAMINER ATTESTATION — a certification that the examination was performed for evaluation purposes only, that no physician-patient treating relationship is established, and that the opinions are the examiner's own and held to a reasonable degree of medical certainty; followed by a signature/credentials/date block (use bracketed placeholders for the signature, name, credentials, and date).
+IDENTIFICATION & PURPOSE OF EXAMINATION — identify the examinee, examination date, examiner, referral source, claim/case number, date of injury/onset, purpose, and referral questions. Use bracketed placeholders when any item is not documented.
+RECORDS REVIEWED — list only records the supplied note/transcript/background identifies as reviewed; otherwise state [not documented in records provided].
+HISTORY (PER RECORDS) — summarize the history and current complaints only as documented in the supplied records, distinguishing reported history from record-derived facts.
+EXAMINATION FINDINGS — include only examination findings actually documented in the supplied materials; never fabricate measurements, vitals, or findings.
+DIAGNOSES — list only documented diagnoses or clearly label an item as a differential/placeholder when the record does not establish it.
+CAUSATION ANALYSIS — address causation only when the supplied materials document both mechanism and chronology. Use "to a reasonable degree of medical probability" and any standard causation form only in that supported case; otherwise state that causation cannot be determined from the record and do not force the probability sentence.
+MAXIMUM MEDICAL IMPROVEMENT (MMI) STATUS — state the documented status or [not documented in records provided].
+IMPAIRMENT RATING DISCUSSION — discuss impairment only when the supplied data supports it, identify the applicable AMA Guides edition as jurisdiction-dependent, and never invent a percentage.
+WORK RESTRICTIONS / FUNCTIONAL CAPACITY — state only documented restrictions or capacity; otherwise identify the missing source.
+OPINIONS — state supported opinions to a reasonable degree of medical certainty, identify the evidence and limitations, and say when an opinion cannot be determined from the supplied records.
+
+The output must contain exactly these ten headings in this order and no old IME headings, numbering, or substitute labels. End with this exact final non-empty line: Draft for the examining physician's review, editing, and signature; not final until signed.
 
 CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the note/transcript/background. NEVER fabricate findings, history, causation, impairment percentages, MMI status, restrictions, or records. For anything not present in the record, use a clearly [bracketed placeholder]. This is a DRAFT for the examining physician to verify, complete, and sign — do not present uncertain items as established fact.`+docPrefsBlock();
     const user='CLINICAL NOTE:\n'+currentNoteText()+(tr?('\n\nRAW TRANSCRIPT (for additional context):\n'+tr):'')+(pctx?('\n\nPATIENT BACKGROUND (chart history — context only, do not invent new findings):\n'+pctx):'');
-    currentIME=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true,legal:true,family:'legal_ime',draftSubtype:legalDraftSubtypeFor('Independent Medical Exam (IME)',false)});
+    const imeText=typeof raw==='string'?raw.replace(/^```\w*\s*/,'').replace(/```$/,'').trim():'';
+    if(!imeText){ const qualityError=new Error('The IME draft response was empty or malformed. Please retry.'); qualityError.legalQualityFailure=true; throw qualityError; }
+    currentIME=imeText;
     showExtra('imeCard','imeBody',currentIME);
     toast('IME report drafted. DRAFT — verify, complete, and sign before use.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='🧾 IME report'; }
 }
 function offlineIME(){
-  return `INDEPENDENT MEDICAL EXAMINATION REPORT [Offline example]
-
+  return `IDENTIFICATION & PURPOSE OF EXAMINATION
 Examinee name: [Examinee name]
 Date of birth: [DOB]
 Date of examination: ${new Date().toLocaleDateString()}
@@ -19513,52 +19629,36 @@ Examiner: [Examiner name, credentials]
 Referral source: [Referral source]
 Claim/Case number: [Claim/Case number]
 Date of injury/onset: [Date of injury/onset]
-
-PURPOSE OF EXAMINATION
-This independent medical examination was requested to address [the specific referral questions]. The examinee was evaluated for an ongoing chest/respiratory complaint documented as a persistent productive cough.
+Purpose/referral questions: [not documented in records provided]
 
 RECORDS REVIEWED
-[No prior records were provided for review in the record supplied. List records here when available.]
+[No prior records were provided for review in the record supplied.]
 
-HISTORY
-The examinee reports an approximately two-week history of a productive cough with yellow-green sputum, worse at night. Past medical history: essential hypertension on lisinopril 10 mg daily. Allergies: penicillin (rash). Social/occupational history: [not documented].
+HISTORY (PER RECORDS)
+The supplied example records describe an approximately two-week history of a productive cough with yellow-green sputum, worse at night. Past medical history and allergy information are included only as documented; social and occupational history is [not documented in records provided].
 
-PHYSICAL EXAMINATION
-Vital signs: Temp 99.1F, BP 128/80, HR 78, SpO2 97% on room air. Lungs: coarse breath sounds at the right base. Remainder of exam [not documented].
+EXAMINATION FINDINGS
+The supplied example records document vital signs and coarse breath sounds at the right base; all other examination findings are [not documented in records provided].
 
-DIAGNOSTIC STUDIES REVIEWED
-Chest X-ray ordered; results [not yet documented].
+DIAGNOSES
+Acute bronchitis; rule out early pneumonia, as documented in the supplied example.
 
-DIAGNOSES / IMPRESSIONS
-1. Acute bronchitis; rule out early pneumonia.
+CAUSATION ANALYSIS
+Causation cannot be determined from the record because a mechanism and chronology for a claimed injury are not documented. Do not infer causation from the clinical diagnosis alone.
 
-CAUSATION
-[Causation in relation to any claimed injury is undeterminable from the record provided.] Any opinion offered must be stated to a reasonable degree of medical probability.
+MAXIMUM MEDICAL IMPROVEMENT (MMI) STATUS
+[MMI status not documented in records provided.]
 
-MAXIMUM MEDICAL IMPROVEMENT (MMI)
-[MMI status not determinable from the record provided.]
+IMPAIRMENT RATING DISCUSSION
+An impairment rating cannot be determined from the supplied example. Any rating must use [the applicable AMA Guides edition] and requires examiner review; no percentage is assigned here.
 
-IMPAIRMENT RATING
-Any impairment rating is to be assigned [per the applicable AMA Guides edition], which is jurisdiction-dependent. [Placeholder — examiner to determine the impairment percentage.]
+WORK RESTRICTIONS / FUNCTIONAL CAPACITY
+[Work restrictions and functional capacity are not documented in records provided.]
 
-WORK STATUS / FUNCTIONAL RESTRICTIONS
-[Work status and functional restrictions not documented.]
+OPINIONS
+No additional opinion can be determined from the supplied example without the records and examination information required for an IME. The examiner must review, complete, and sign the report.
 
-APPORTIONMENT
-Not applicable / insufficient information to apportion.
-
-ANSWERS TO REFERRAL QUESTIONS
-[Referral questions not documented in the record provided.]
-
-EXAMINER ATTESTATION
-This examination was performed for evaluation purposes only. No physician-patient treating relationship is established by this examination. The opinions expressed are my own and are held to a reasonable degree of medical certainty based solely on the information made available to me.
-
-_______________________________
-[Examiner signature]
-[Examiner name, credentials]
-Date: [Date]
-
-[Offline example — add your OpenAI key for AI-drafted IME reports. DRAFT for the examining physician to verify, complete, and sign.]`;
+Draft for the examining physician's review, editing, and signature; not final until signed.`;
 }
 
 /* =========================================================
@@ -19580,6 +19680,25 @@ function openLegal(){
 }
 function closeLegal(){ const m=document.getElementById('legalModal'); if(m) m.classList.remove('show'); }
 
+/* One explicit subtype travels with every legal-family request. The server may
+   add a stricter contract for these labels later; the browser must never fall
+   back to an unclassified legal request in the meantime. */
+function legalDraftSubtypeFor(docType, sectionOnly){
+  if(sectionOnly===true) return 'legal_section';
+  const t=String(docType||'').toLowerCase().trim();
+  if(/^(?:narrative|narrative medical report)$/.test(t)||/treating[- ]physician narrative|narrative report/.test(t)) return 'narrative_medical_report';
+  if(/^(?:ime|independent medical exam(?:ination)?)$/.test(t)||/\bime\b|independent medical/.test(t)) return 'ime';
+  if(/bill[\s_/-]*review|medical[\s_/-]*necessity|utilization[\s_/-]*review/.test(t)) return 'utilization_review';
+  return 'legal_report';
+}
+function legalSectionRetryable(error){
+  if(error&&error.legalQualityFailure===true) return true;
+  const ai=error&&error.mlsAi;
+  if(ai&&ai.code==='draft_quality_failed') return true;
+  if(ai&&typeof ai.retryable==='boolean') return ai.retryable===true;
+  return /draft_quality_failed|quality|retryable|temporar|timeout|network|\b(?:429|500|502|503|504)\b/i.test(String(error&&error.message||''));
+}
+
 /* Per-type professional format guidance for medical-legal documents. Returns the
    correct section structure + required wording for the chosen document type so each
    output matches accepted medico-legal practice (IME, expert report under FRCP 26,
@@ -19591,7 +19710,7 @@ function legalTypeGuidance(docType){
     return '\n\nFORMAT — INDEPENDENT MEDICAL EXAMINATION (IME): Use these sections: Who requested the IME; Examinee identifiers; Date/time/location of examination [bracket if not documented]; Records reviewed; History as related by the examinee; Past medical history; Physical examination findings; Imaging reviewed (state whether you personally reviewed images or relied on the radiology report only); Diagnoses; Causation opinion; Maximum medical improvement (MMI) status; Work restrictions; Need for further treatment; Point-by-point Answers to the attorney\'s questions; Signature block. INCLUDE VERBATIM: "This was an independent medical examination. No treating physician-patient relationship was established beyond the purpose of this evaluation."'+HIPAA;
   }
   if(/expert report|retained expert/.test(t)){
-    return '\n\nFORMAT — RETAINED EXPERT REPORT (model on Fed. R. Civ. P. 26(a)(2)(B)): Use numbered sections: 1 Assignment; 2 Qualifications [bracket — attach CV]; 3 Materials Reviewed; 4 Summary of Relevant Facts; 5 Medical History; 6 Examination Findings (if applicable); 7 Opinions; 8 Basis and Reasoning for Each Opinion; 9 Differential Diagnosis / Alternative Causes; 10 Future Medical Care; 11 Limitations; 12 Exhibits; 13 Compensation [bracket]; 14 Prior Testimony in the prior 4 years [bracket]; 15 Publications in the prior 10 years [bracket]; 16 Signature. State each opinion to a reasonable degree of medical probability with its complete basis.'+HIPAA;
+    return '\n\nFORMAT — RETAINED EXPERT REPORT (model on Fed. R. Civ. P. 26(a)(2)(B)): Use numbered sections: 1 Assignment; 2 Qualifications [bracket — attach CV]; 3 Materials Reviewed; 4 Summary of Relevant Facts; 5 Medical History; 6 Examination Findings (if applicable); 7 Opinions; 8 Basis and Reasoning for Each Opinion; 9 Differential Diagnosis / Alternative Causes; 10 Future Medical Care; 11 Limitations; 12 Exhibits; 13 Compensation [bracket]; 14 Prior Testimony in the prior 4 years [bracket]; 15 Publications in the prior 10 years [bracket]; 16 Signature. State supported opinions with their complete basis. For causation, use reasonable-degree-of-medical-probability language and the standard causation form ONLY when the supplied materials document both the mechanism and chronology; otherwise state that causation cannot be determined from the record and do not force that form.'+HIPAA;
   }
   if(/affidavit|declaration/.test(t)){
     return '\n\nFORMAT — AFFIDAVIT / DECLARATION: Use: Affiant identity and credentials; Patient / case identification; Facts and records reviewed; Numbered Opinions; a sworn statement. CLOSE VERBATIM with: "I declare under penalty of perjury that the foregoing is true and correct to the best of my knowledge and belief. Executed on [Date]." followed by a signature line ([Physician signature] / [Name, credentials]) and, for an affidavit, a [Notary acknowledgment] block.'+HIPAA;
@@ -19600,7 +19719,7 @@ function legalTypeGuidance(docType){
     return '\n\nFORMAT — IMPAIRMENT / DISABILITY RATING: Use: Date of maximum medical improvement (MMI); Diagnoses; Examination findings; Rating method used — NOTE that the correct method is jurisdiction-specific (e.g., AMA Guides edition or the applicable state workers\'-comp schedule); if the method is not specified in the materials, insert a [bracketed placeholder] and do NOT assume one; Whole-person impairment percentage [bracket if not determinable from the record]; Work restrictions; Permanent restrictions; Need for future care; Signature. Never fabricate a percentage or rating.'+HIPAA;
   }
   if(/causation/.test(t)){
-    return '\n\nFORMAT — CAUSATION OPINION: Identify the injury/condition; the claimed cause (the incident and its date); and the medical reasoning (mechanism of injury, temporal relationship of symptoms, imaging, and examination correlation). Expressly address any pre-existing condition and whether the incident caused or aggravated it. State the opinion to a reasonable degree of medical probability. Use the standard form: "Based on the history, the records reviewed, the examination findings, the diagnostic studies, the mechanism and timing, and my training and experience, it is my opinion to a reasonable degree of medical probability that [condition] was [caused by / aggravated by / not caused by] the incident of [date]," then list the supporting reasons.'+HIPAA;
+    return '\n\nFORMAT — CAUSATION OPINION: Identify the injury/condition; the claimed cause (the incident and its date); and the medical reasoning (mechanism of injury, temporal relationship of symptoms, imaging, and examination correlation). Expressly address any pre-existing condition and whether the incident caused or aggravated it. Use reasonable-degree-of-medical-probability language and the standard form ONLY when the supplied materials document both a mechanism and a chronology. If either is absent or not documented, explicitly state that causation cannot be determined from the record and do not use the probability/form sentence. Never infer causation from degeneration or imaging alone. Then list the supporting reasons.'+HIPAA;
   }
   if(/diagnosis|prognosis/.test(t)){
     return '\n\nFORMAT — DIAGNOSIS & PROGNOSIS REPORT: Use: Diagnoses; Current symptoms; Objective findings; Treatment response to date; Prognosis (good / guarded / poor / uncertain, with reasoning); Future care that is medically reasonable. State whether the examinee has reached MMI if determinable.'+HIPAA;
@@ -19663,7 +19782,7 @@ async function generateExpertReportSections(ctx){
     ['V. PAST MEDICAL HISTORY AND PERTINENT BACKGROUND','Detail the relevant prior medical history, prior injuries to the same body region, surgeries, and medications if documented — or state expressly that none are documented in the records reviewed. Address pertinent negatives. Multiple paragraphs.'],
     ['VI. PHYSICAL EXAMINATION AND DIAGNOSTIC FINDINGS','Detail every objective examination finding and every diagnostic study (X-ray, MRI, CT, EMG) by date, reciting the specific measurements, positive and negative findings, and radiologic impressions documented. State whether imaging films were personally reviewed or whether reliance was on the radiology report. Multiple paragraphs.'],
     ['VII. DIAGNOSES','Enumerate each diagnosis, with the ICD-10 code where documented, and the specific clinical and radiographic findings that support each diagnosis.'],
-    ['VIII. EXPERT OPINIONS','State each opinion as a separately numbered paragraph, each expressly held "to a reasonable degree of medical probability." Cover, as supported by the record: diagnosis, causation, the medical necessity and reasonableness of the treatment rendered, maximum medical improvement status, permanent impairment, work restrictions, and the need for future care.'],
+    ['VIII. EXPERT OPINIONS','State each supported opinion as a separately numbered paragraph with its complete basis. Use "to a reasonable degree of medical probability" only when the supplied evidence supports that standard. For causation specifically, use that probability language and the standard form only when the supplied materials document both mechanism and chronology; otherwise state that causation cannot be determined and do not force the form. Cover, as supported by the record: diagnosis, causation, the medical necessity and reasonableness of the treatment rendered, maximum medical improvement status, permanent impairment, work restrictions, and the need for future care.'],
     ['IX. BASIS AND REASONING FOR EACH OPINION','This is the central and LONGEST section. For EACH numbered opinion above, provide a detailed, multi-paragraph explanation of the basis and reasoning — tied to specific records, the mechanism and timing of injury, clinical-radiographic correlation, and accepted medical principles. Do not be conclusory; show the reasoning.'],
     ['X. CAUSATION ANALYSIS','Provide a dedicated, rigorous causation analysis: mechanism of injury, temporal relationship between the incident and symptom onset, biological plausibility, internal consistency of the record, and the exclusion of alternative causes. Address aggravation of any pre-existing condition expressly.'],
     ['XI. DIFFERENTIAL DIAGNOSIS AND ALTERNATIVE CAUSES','Identify the alternative diagnoses and alternative causes that were considered, and explain, with reference to the record, why each was accepted or excluded. Multiple paragraphs.'],
@@ -19672,10 +19791,10 @@ async function generateExpertReportSections(ctx){
     ['XIV. LIMITATIONS AND RESERVATION OF OPINIONS','State the limitations of these opinions given the materials available and reserve the right to supplement or amend upon receipt of additional records, imaging, or testimony. 1-2 paragraphs.'],
     ['XV. COMPENSATION (FRCP 26(a)(2)(B)(vi))','State the compensation for the study and testimony using [bracketed placeholders] (e.g., hourly rate for review, report, deposition, and trial).'],
     ['XVI. PRIOR TESTIMONY AND PUBLICATIONS (FRCP 26(a)(2)(B)(iv)-(v))','Reference, as [bracketed placeholders] pointing to attached exhibits, the list of all cases in which the expert testified as an expert at trial or by deposition during the previous 4 years, and a list of all publications authored in the previous 10 years.'],
-    ['XVII. CERTIFICATION AND SIGNATURE','Provide a certification that the opinions are held to a reasonable degree of medical probability and are complete, followed by a signature block with [bracketed placeholders] ([Physician signature], [Name, credentials], [NPI], Date: [Date]).']
+    ['XVII. CERTIFICATION AND SIGNATURE','Provide a certification that supported opinions are complete and use the applicable certainty standard only where supported, followed by a signature block with [bracketed placeholders] ([Physician signature], [Name, credentials], [NPI], Date: [Date]).']
   ];
   const sysFor=function(header,instruction){
-    return 'You are a board-certified physician retained as an independent EXPERT WITNESS, drafting ONE SECTION of a formal expert report under Federal Rule of Civil Procedure 26(a)(2)(B). Output CLEAN PROFESSIONAL PROSE ONLY — no markdown, no asterisks, no code fences, and do NOT restate the section title. Write ONLY the body of the section "'+header+'". '+instruction+' Be thorough, specific, and detailed; cite records by provider and date. CRITICAL: never fabricate facts, findings, diagnoses, dates, credentials, impairment percentages, restrictions, testimony, or publications — for anything not in the materials provided, insert a clearly marked [bracketed placeholder]. This is a DRAFT the physician must verify and sign.';
+    return 'You are a board-certified physician retained as an independent EXPERT WITNESS, drafting ONE SECTION of a formal expert report under Federal Rule of Civil Procedure 26(a)(2)(B). Output CLEAN PROFESSIONAL PROSE ONLY — no markdown, no asterisks, no code fences, and do NOT restate the section title. Write ONLY the body of the section "'+header+'". '+instruction+' Be thorough, specific, and detailed; cite records by provider and date. For any causation opinion, use reasonable-degree-of-medical-probability language and the standard form ONLY when the supplied materials document both mechanism and chronology; otherwise state that causation cannot be determined and do not force that form. CRITICAL: never fabricate facts, findings, diagnoses, dates, credentials, impairment percentages, restrictions, testimony, or publications — for anything not in the materials provided, insert a clearly marked [bracketed placeholder]. This is a DRAFT the physician must verify and sign.';
   };
   const btn=ctx.btn;
   let outParts=[caption];
@@ -19683,11 +19802,19 @@ async function generateExpertReportSections(ctx){
     const header=sections[i][0], instr=sections[i][1];
     if(btn) btn.innerHTML='<span class="spin"></span> Drafting expert report… '+(i+1)+'/'+sections.length;
     let part='';
-    try{
-      part=(await aiCallRaw(sysFor(header,instr), caseContext+'\n\nNow write the "'+header+'" section in full.', getKey(), {freeform:true,legal:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
-      // Strip a duplicated leading title if the model emitted one.
-      part=part.replace(new RegExp('^'+header.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*[:\\-]?\\s*','i'),'').trim();
-    }catch(e){ part='[This section could not be generated automatically — please complete. ('+((e&&e.message)||'error')+')]'; }
+    for(let attempt=1;attempt<=2;attempt++){
+      if(attempt===2 && btn) btn.innerHTML='<span class="spin"></span> Retrying expert report section… '+(i+1)+'/'+sections.length;
+      try{
+        part=(await aiCallRaw(sysFor(header,instr), caseContext+'\n\nNow write the "'+header+'" section in full.', getKey(), {freeform:true,legal:true,family:'legal_ime',draftSubtype:legalDraftSubtypeFor(ctx.docType,true)})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+        // Strip a duplicated leading title if the model emitted one.
+        part=part.replace(new RegExp('^'+header.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*[:\\-]?\\s*','i'),'').trim();
+        if(!part){ const qualityError=new Error('empty section response'); qualityError.legalQualityFailure=true; throw qualityError; }
+        break;
+      }catch(e){
+        if(attempt===2 || !legalSectionRetryable(e)) break;
+      }
+    }
+    if(!part) throw new Error('Expert report section '+(i+1)+' could not be generated; retry the complete report.');
     outParts.push(header+'\n'+part);
   }
   return outParts.join('\n\n');
@@ -19756,9 +19883,9 @@ async function generateLegalReport(){
 4. RELEVANT HISTORY AND CURRENT STATUS — history of the injury/illness, course, current subjective complaints, and pertinent past history. Include ONLY what is documented.
 5. EXAMINATION / CLINICAL FINDINGS — objective findings drawn from the patient record/note ONLY.
 6. DIAGNOSES.
-7. OPINIONS — your medical opinions, each explicitly stated "to a reasonable degree of medical probability" (or "medical certainty"), with the reasoning tied to the documented record. For a Causation opinion, address the relationship of the condition to the claimed injury. For a Disability/work-status report, address restrictions and work capacity. For a Records review, summarize and critique the records. For a Deposition summary, summarize the testimony/record. Where the record does not support an opinion, state that it is undeterminable from the record provided.
+7. OPINIONS — state each supported opinion with reasoning tied to the documented record and use the applicable certainty standard only when supported. For a Causation opinion, use "to a reasonable degree of medical probability" and the standard form only when the supplied material documents both mechanism and chronology; otherwise state that causation is undeterminable and do not force that sentence. For a Disability/work-status report, address restrictions and work capacity. For a Records review, summarize and critique the records. For a Deposition summary, summarize the testimony/record. Where the record does not support an opinion, state that it is undeterminable from the record provided.
 8. ANSWERS TO LEGAL QUESTIONS — restate and explicitly answer EACH question counsel posed, one by one. If no questions were provided, write a bracketed placeholder.
-9. SIGNATURE BLOCK — a signature/credentials/date block using bracketed placeholders ([Physician signature], [Name, credentials], [NPI], Date: [Date]) and a certification that the opinions are held to a reasonable degree of medical probability/certainty.
+9. SIGNATURE BLOCK — a signature/credentials/date block using bracketed placeholders ([Physician signature], [Name, credentials], [NPI], Date: [Date]) and a certification using the applicable certainty standard only for supported opinions.
 
 CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient record/note/background and the request details provided. NEVER fabricate findings, history, diagnoses, causation, impairment percentages, disability ratings, restrictions, dates, or records. For ANYTHING not present in the record, insert a clearly [bracketed placeholder] for the physician to complete. Do not present uncertain items as established fact. This is a DRAFT the physician must verify, complete, and SIGN before any legal use.`
       +(haveCounsel?(haveChart
@@ -19784,10 +19911,12 @@ CRITICAL GUARDRAILS: Base the report ONLY on what is documented in the patient r
     if(/expert report/i.test(docType)){
       // Long-form retained-expert report — generated section by section to reach the
       // depth (10-40+ pages) of a real FRCP 26 expert disclosure.
-      out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(haveChart?pctx:''),ownRecord:haveMyRecord,cv:(typeof _legalCvText!=='undefined'?_legalCvText:''),note:((!haveMyRecord&&useChart)?note:''),today:today,btn:btn});
+      out=await generateExpertReportSections({attorney:attorney,caseNo:caseNo,doi:doi,jurisdiction:jurisdiction,questions:questions,patientRef:patientRef,recordsBlock:(haveCounsel?legalReqFilesText.trim():''),chartBlock:(haveChart?pctx:''),ownRecord:haveMyRecord,cv:(typeof _legalCvText!=='undefined'?_legalCvText:''),note:((!haveMyRecord&&useChart)?note:''),today:today,btn:btn,docType:docType});
     } else {
-      out=(await aiCallRaw(sys,user,getKey(),{freeform:true,legal:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+      out=(await aiCallRaw(sys,user,getKey(),{freeform:true,legal:true,family:'legal_ime',draftSubtype:legalDraftSubtypeFor(docType,false)})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     }
+    if(typeof out!=='string'||!out.trim()){ toast('The legal report came back empty or unusable. Nothing changed; please retry.','err'); return; }
+    out=out.trim();
     currentLegal=out;
     const card=document.getElementById('legalCard');
     const body=document.getElementById('legalBody');
@@ -24224,6 +24353,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1047';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1049';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

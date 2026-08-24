@@ -20,10 +20,10 @@
  *  HOW
  *  ---
  *  1) It wraps the app's REAL data-load entry points (loadCalendar, loadPatientsFromServer,
- *     pullScheduleViaAssist, importPatients, _importPulledSchedule) so that AFTER a pull the
- *     picker and active heavy view are re-rendered from the freshly-loaded stores. Hidden
- *     Patients / Calendar views defer to their normal view-entry renderers, and the Calendar
- *     retains the same "pulled day" the picker is showing.
+ *     pullScheduleViaAssist, importPatients, _importPulledSchedule) so that the picker and
+ *     active heavy view are re-rendered from the freshly-loaded stores. Only genuine pull /
+ *     import entry points may focus the Calendar on the pulled day. Ordinary refreshes keep
+ *     the doctor's current month/week/day layout and day-panel state intact.
  *  2) It wraps the app's TWO real selection funnels (openPatient -- used by the picker; and
  *     selectPatient -- used by the Patients list and calendar appt clicks) so that picking a
  *     patient anywhere re-highlights the picker cards, refreshes the patient context bar, and
@@ -42,7 +42,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "link-1.1.0";
+  var VERSION = "link-1.1.2";
   try { if (window.__mlsLink && window.__mlsLink.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -268,6 +268,7 @@
       if (!_stopped) syncAll(why, false);
     }, 80);
   }
+  function scheduleRefresh() { scheduleData("data-refresh"); }
   var _externalT = null, _externalIdle = false, _externalReason = "storage";
   function inputPending() {
     try {
@@ -333,12 +334,50 @@
     return true;
   }
 
+  /* A read refresh has an authoritative completion receipt. Reconcile once,
+     after that receipt settles, instead of guessing at +900/+2400 ms. Most
+     importantly, a refused/superseded Calendar read must not repaint stale
+     in-memory rows over the honest error/loading state it just rendered. */
+  function wrapSettled(name, after) {
+    if (!isFn(name)) return false;
+    var cur = window[name];
+    if (cur && cur.__mlsLinkWrapped) return true;
+    var orig = cur;
+    ORIG[name] = orig;
+    var w = function () {
+      var r;
+      try { r = orig.apply(this, arguments); } catch (e) { return undefined; }
+      var finish = function (value) { try { after(value); } catch (e2) {} };
+      try {
+        if (r && typeof r.then === "function") Promise.resolve(r).then(finish, function () {});
+        else finish(r);
+      } catch (e3) {}
+      return r;
+    };
+    w.__mlsLinkWrapped = true;
+    try { for (var k in cur) { if (!(k in w)) { try { w[k] = cur[k]; } catch (e4) {} } } } catch (e5) {}
+    window[name] = w;
+    return true;
+  }
+
   var SELECT_FNS = ["openPatient", "selectPatient"];
-  var PULL_FNS = ["pullScheduleViaAssist", "loadCalendar", "loadPatientsFromServer", "importPatients", "_importPulledSchedule"];
+  /* A plain server refresh is not a pull. Treating loadCalendar as one used to
+     schedule syncAll("pull", true) at +900 ms and +2400 ms. That automatic
+     focus calls calOpenDay(), so a doctor who had just switched to Month saw
+     the day panel reopen and the grid collapse into the narrow split layout.
+     Reconcile an ordinary read only after its own Promise settles, and only
+     apply Calendar reconciliation when the loader's authoritative receipt
+     says it actually applied rows. A real pull still reaches one of the
+     pull/import entry points below and keeps its existing post-pull focus. */
+  var PULL_FNS = ["pullScheduleViaAssist", "importPatients", "_importPulledSchedule"];
 
   function installHooks() {
     var i;
     for (i = 0; i < SELECT_FNS.length; i++) wrap(SELECT_FNS[i], scheduleReflect, false);
+    wrapSettled("loadCalendar", function (receipt) {
+      if (receipt && receipt.applied === true) scheduleData("calendar-refresh");
+    });
+    wrapSettled("loadPatientsFromServer", scheduleRefresh);
     for (i = 0; i < PULL_FNS.length; i++) wrap(PULL_FNS[i], schedulePull, true);
   }
 

@@ -1,4 +1,4 @@
-/* feat_after_visit_summary.js -> window.__mlsAfterVisitSummary (v1.1.0)
+/* feat_after_visit_summary.js -> window.__mlsAfterVisitSummary (v1.1.1)
  *
  * AFTER-VISIT PATIENT SUMMARY (additive, self-contained, fully reversible).
  *
@@ -14,7 +14,7 @@
  * and does NOT call the model on empty content.
  *
  * REUSE (no new infrastructure):
- *   - generation : window.aiCallRaw(sys,user,getKey(),{freeform:true}) -- the
+ *   - generation : window.aiCallRaw(sys,user,getKey(),{freeform:true,family:'avs'}) -- the
  *                  existing OpenAI proxy / note-gen path. It auto-selects the
  *                  strong note model (getNoteModel(), e.g. gpt-4o).
  *   - email draft: local clipboard copy only; arbitrary-recipient network email
@@ -37,7 +37,7 @@
   'use strict';
   try { if (window.__mlsAfterVisitSummary && window.__mlsAfterVisitSummary.installed) return; } catch (e) {}
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1';
   var ASSET = 'feat_after_visit_summary.js';
   var STYLE_ID = 'mlsavsStyle';
   var BTN_ID = 'mlsavsBtn';
@@ -82,6 +82,46 @@
     var fields = ['id', 'athenaId', 'athena_id', 'patient_external_id', 'external_id', 'mrn'];
     var ids = fields.map(function (key) { return key + ':' + S(pt[key]).trim(); }).filter(function (row) { return !/:$/.test(row); });
     return ids.length ? ids.join('|') : ('fallback:' + S(pt.name).trim().toLowerCase() + '|' + S(pt.dob).trim());
+  }
+
+  function currentVisitBinding() {
+    return safe(function () {
+      if (typeof currentVisitAthenaBinding !== 'undefined') return currentVisitAthenaBinding || null;
+      return window.currentVisitAthenaBinding || null;
+    }, null);
+  }
+
+  function currentVisitEpochValue() {
+    return safe(function () {
+      var raw = (typeof currentVisitAthenaEpoch !== 'undefined') ? currentVisitAthenaEpoch : window.currentVisitAthenaEpoch;
+      if (raw == null || raw === '') return null;
+      var n = Number(raw);
+      return isFinite(n) ? n : null;
+    }, null);
+  }
+
+  function visitBindingIdentity(binding) {
+    if (!binding) return '';
+    return [
+      S(binding.id || binding.visitId || binding.appointmentId).trim(),
+      S(binding.patientId || (binding.patient && (binding.patient.patientId || binding.patient.id))).trim(),
+      S(binding.departmentId || (binding.visitContext && binding.visitContext.departmentId)).trim()
+    ].join('|');
+  }
+
+  function visitTokenStillSafe(binding, epoch) {
+    if (binding) {
+      if (typeof window._athenaAsyncBindingStillSafe === 'function') {
+        return safe(function () {
+          return window._athenaAsyncBindingStillSafe(binding, 'after-visit summary drafting', epoch) === true;
+        }, false);
+      }
+      var current = currentVisitBinding();
+      var expectedIdentity = visitBindingIdentity(binding);
+      if (!current || (current !== binding && (!expectedIdentity || visitBindingIdentity(current) !== expectedIdentity))) return false;
+    }
+    var nowEpoch = currentVisitEpochValue();
+    return epoch == null || (nowEpoch != null && Number(nowEpoch) === Number(epoch));
   }
 
   function ensureBoundPatient(action) {
@@ -152,6 +192,19 @@
     return lines.join('\n');
   }
 
+  function noteIdentity(note) {
+    if (!note) return '';
+    return [
+      S(note.id || note.noteId || note.visitId || note.appointmentId).trim(),
+      S(note.version || note.revision || note.updated || note.created).trim(),
+      S(note.text).trim()
+    ].join('|');
+  }
+
+  function sourceFingerprint(pt, note) {
+    return patientBinding(pt) + '\n' + noteIdentity(note) + '\n' + buildSource(pt, note);
+  }
+
   /* Settings is the one source for both. Read live on every call, so a doctor who
      fills these in mid-session gets them in the next summary without a reload. */
   function avsPracticeName() {
@@ -218,7 +271,7 @@
     if (!aiAvailable()) return Promise.reject(new Error('AI is not available right now.'));
     var key = safe(function () { return (typeof window.getKey === 'function') ? window.getKey() : null; }, null);
     var src = buildSource(pt, note);
-    return Promise.resolve(window.aiCallRaw(SYS_PROMPT, src, key, { freeform: true })).then(function (r) {
+    return Promise.resolve(window.aiCallRaw(SYS_PROMPT, src, key, { freeform: true, family: 'avs' })).then(function (r) {
       var out = extractText(r);
       if (!out) throw new Error('The summary came back empty. Please try again.');
       return out;
@@ -288,11 +341,14 @@
 
   // ---------------- the review / local-export modal ----------------
   var els = {};
+  var modalSerial = 0;
+  var requestSerial = 0;
   function openModal() {
     var pt = activePatient();
     if (!pt) { toast('Open a patient first.'); return; }
     injectStyle();
     closeModal();
+    var modalToken = ++modalSerial;
     var note = latestNoteFor(pt);
 
     var overlay = ce('div', 'mlsavs-overlay'); overlay.id = MODAL_ID;
@@ -333,7 +389,7 @@
       status: q('#mlsavsStatus', overlay),
       close: q('#mlsavsClose', overlay)
     };
-    els.pt = pt; els.note = note; els.patientBinding = patientBinding(pt);
+    els.pt = pt; els.note = note; els.patientBinding = patientBinding(pt); els.modalToken = modalToken;
 
     els.close.addEventListener('click', closeModal);
     overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
@@ -351,6 +407,8 @@
   }
 
   function closeModal() {
+    modalSerial += 1;
+    requestSerial += 1;
     try { var m = document.getElementById(MODAL_ID); if (m && m.parentNode) m.parentNode.removeChild(m); } catch (e) {}
     els = {};
   }
@@ -372,17 +430,41 @@
     if (!ensureBoundPatient('generating')) return;
     if (!els.note) { setStatus('No visit note to summarize.', 'err'); return; }
     var binding = els.patientBinding;
+    var requestToken = ++requestSerial;
+    var modalToken = els.modalToken;
+    var modal = els.overlay;
+    var pt = els.pt;
+    var note = els.note;
+    var fingerprint = sourceFingerprint(pt, note);
+    var visitBinding = currentVisitBinding();
+    var visitEpoch = currentVisitEpochValue();
+    function ownsCurrentModal() {
+      return requestToken === requestSerial && els.modalToken === modalToken && els.overlay === modal;
+    }
+    function refuseStaleDraft() {
+      if (!ownsCurrentModal()) return;
+      setStatus('The patient or visit note changed while this summary was being written. Generate it again from the current visit.', 'err');
+      if (els.gen) els.gen.disabled = false;
+    }
     els.gen.disabled = true;
     setStatus('Writing a patient-friendly summary from this visit\'s note...', 'run');
-    generateSummary(els.pt, els.note).then(function (txt) {
-      if (!els.text) return;
-      if (els.patientBinding !== binding || !ensureBoundPatient('using this generated draft')) return;
+    generateSummary(pt, note).then(function (txt) {
+      if (!ownsCurrentModal()) return;
+      var currentPatient = activePatient();
+      var currentNote = latestNoteFor(currentPatient);
+      if (!els.text || els.patientBinding !== binding || patientBinding(currentPatient) !== binding ||
+          !currentNote || sourceFingerprint(currentPatient, currentNote) !== fingerprint ||
+          !visitTokenStillSafe(visitBinding, visitEpoch)) {
+        refuseStaleDraft();
+        return;
+      }
       els.text.value = txt;
       setStatus('Draft ready. Review and edit, then copy or download.', 'ok');
       els.gen.textContent = 'Regenerate';
       els.gen.disabled = false;
       refreshDraftState();
     }).catch(function (err) {
+      if (!ownsCurrentModal()) return;
       setStatus('Could not generate the summary: ' + (err && err.message ? err.message : err), 'err');
       els.gen.disabled = false;
     });
@@ -537,7 +619,8 @@
   window.__mlsAfterVisitSummary = {
     installed: true, version: VERSION, asset: ASSET,
     open: openModal, generate: generateSummary, buildSource: buildSource,
-    _activePatient: activePatient, _latestNoteFor: latestNoteFor, revert: revert
+    _activePatient: activePatient, _latestNoteFor: latestNoteFor,
+    _sourceFingerprint: sourceFingerprint, revert: revert
   };
 
   try {

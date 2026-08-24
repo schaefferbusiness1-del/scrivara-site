@@ -815,7 +815,7 @@
     var heading = settingsHeading(section);
     if (/Account & access|Security & privacy/i.test(heading)) return 'account';
     if (/Practice & provider/i.test(heading)) return 'practice';
-    if (/Note defaults|AI personalization|Provider preferences/i.test(heading)) return 'notes';
+    if (/Note defaults|AI personalization|AI draft tuning|Provider preferences/i.test(heading)) return 'notes';
     if (/Display/i.test(heading)) return 'display';
     if (/Features|App tabs/i.test(heading)) return 'features';
     if (/Legal expert profile/i.test(heading)) return 'legal';
@@ -1955,12 +1955,26 @@
     }, 250);
   }
 
-  function openAfterVisitSummary() {
+  function openAfterVisitSummaryReady() {
     var avs = safe(function () { return W.__mlsAfterVisitSummary; }, null);
     if (avs && typeof avs.open === 'function') { safe(function () { avs.open(); }); return; }
     var real = byId('mlsavsBtn');
     if (real) { safe(function () { real.click(); }); return; }
     toast('After-visit summary is still loading. Try again in a moment.', 'err');
+  }
+
+  function openAfterVisitSummary() {
+    var ensure = safe(function () { return W.__mlsEnsureAfterVisitSummary; });
+    if (typeof ensure === 'function') {
+      try {
+        var pending = ensure();
+        if (pending && typeof pending.then === 'function') {
+          pending.then(openAfterVisitSummaryReady, function () { toast('After-visit summary is still loading. Try again in a moment.', 'err'); });
+          return;
+        }
+      } catch (e) {}
+    }
+    openAfterVisitSummaryReady();
   }
 
   function refreshOrdersPopup(ui) {

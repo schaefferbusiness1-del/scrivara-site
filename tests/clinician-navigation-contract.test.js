@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..');
 const redesign = fs.readFileSync(path.join(root, 'feat_mls_redesign.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const topbar = fs.readFileSync(path.join(root, 'feat_mls_topbar_unify.js'), 'utf8');
+const shell = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
 function between(source, start, end) {
   const at = source.indexOf(start);
@@ -56,6 +57,45 @@ assert(/SECONDARY_NAV=\['nav_staffpull','mlsPtab_reviews','mlsPtab_send','nav_he
   'secondary duplicate list is incomplete');
 assert(/body\.mls-redesign #mlsRdNav \.mainnav > \.navtab\[data-mlsrd-primary-hidden='1'\]\{ display:none !important; \}/.test(redesign),
   'a legacy force-visible rail rule can override hidden secondary routes');
+
+/* Calendar is a clinician route, not an owner/admin clinical surface. Keep the
+ * policy and its deep-link fail-closed behavior executable in this contract so
+ * role switches, settings refreshes, and saved calendar URLs cannot regress to
+ * either a missing clinician route or leaked owner schedule data. */
+assert(shell.includes('id="nav_calendar"'), 'Calendar route node disappeared from the shell');
+assert(shell.includes('function _mlsCalendarNavAllowed'), 'Calendar access policy is not centralized');
+assert(shell.includes("window.__mlsCalendarHydration='denied'"), 'forced owner/admin Calendar route lacks a settled no-access state');
+assert(shell.includes('if(_calUser && !_calCalendarAllowed)'), 'Calendar deep links do not fail closed for denied accounts');
+assert(connect.includes("calHydration === 'denied'"), 'Visit does not render the owner/admin no-access state');
+assert(connect.includes('window.__mlsCalendarHydrationAt'), 'Calendar loading state has no bounded readiness timestamp');
+assert(connect.includes("mls:calendar-hydrated"), 'Visit does not repaint when Calendar hydration settles');
+assert(connect.includes("hydrationAge < 15000") && connect.includes('Calendar is taking longer than expected to load.'),
+  'Calendar loading copy can remain indefinite after the hydration budget expires');
+assert(/function _calInit\(\)[\s\S]{0,260}_acctTodayKey\(\)/.test(shell),
+  'Calendar month initialization is not anchored to the account-local day');
+assert(/S\.visitDay\s*=\s*todayLocal\(\)/.test(connect),
+  'Visit account reload does not reset to the account-local day');
+const calendarPolicyMatch = shell.match(/function _mlsCalendarNavAllowed\([\s\S]*?\n}\nfunction applyAccessUI/);
+assert(calendarPolicyMatch, 'could not isolate Calendar access policy');
+const calendarPolicyContext = {};
+vm.createContext(calendarPolicyContext);
+vm.runInContext(`${calendarPolicyMatch[0].replace(/\nfunction applyAccessUI[\s\S]*$/, '')}\nthis.calendarAllowed=_mlsCalendarNavAllowed;`, calendarPolicyContext,
+  { filename: 'calendar-access-policy.js' });
+const calendarAllowed = calendarPolicyContext.calendarAllowed;
+assert.strictEqual(calendarAllowed({ role: 'doctor', isAdmin: false }, { scheduling: true }, true, false), true,
+  'clinician Calendar disappeared when the legacy calendar setting is false');
+assert.strictEqual(calendarAllowed({ role: 'head', isAdmin: false }, { scheduling: true }, true, false), true,
+  'head clinician Calendar disappeared after account/settings refresh');
+assert.strictEqual(calendarAllowed({ role: 'owner', isAdmin: true }, { scheduling: true }, true, true), false,
+  'owner/admin was granted clinical Calendar access');
+assert.strictEqual(calendarAllowed({ role: 'doctor', isAdmin: true }, { scheduling: true }, true, true), false,
+  'admin clinician account bypassed the owner/admin Calendar boundary');
+assert.strictEqual(calendarAllowed({ role: 'doctor', isAdmin: false }, { scheduling: false }, true, true), false,
+  'server scheduling capability was bypassed');
+assert.strictEqual(calendarAllowed({ role: 'doctor', isAdmin: false }, {}, false, false), true,
+  'local/demo clinician Calendar route disappeared');
+assert.strictEqual(calendarAllowed({ role: 'owner', isAdmin: true }, {}, false, false), false,
+  'local/demo owner/admin Calendar route was forced visible');
 
 /* The rail only hides a duplicate after its alternate real surface exists. */
 assert(topbar.includes('Staff prep & Athena month pull') &&

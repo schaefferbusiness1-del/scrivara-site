@@ -4,6 +4,8 @@
  *
  * The owner's constraint on the whole UI rework is: "ease of use without losing
  * any features." This suite is what makes that mechanical instead of a promise.
+ * Public/phone/popup/1p/cloned surfaces are inventoried here too, but are not
+ * falsely treated as reachable through the clinician shell's dock map.
  *
  * It regenerates the control inventory, refuses a stale committed manifest, and
  * then asserts that EVERY active control resolves to at least one reach path in
@@ -49,7 +51,7 @@ const fresh = inventory.build();
  * the moment a reach path has to be decided. */
 function fingerprint(m) {
   return m.controls.map(function (c) {
-    return [c.file, c.kind, c.view, c.gated ? 'G' : 'A', c.label].join('|');
+    return [c.file, c.kind, c.view, c.route, c.surface, c.gated ? 'G' : 'A', c.label].join('|');
   }).sort().join('\n');
 }
 
@@ -96,7 +98,24 @@ function resolve(control, shellName) {
   return [];
 }
 
-const active = fresh.controls.filter(function (c) { return !c.gated; });
+const active = fresh.controls.filter(function (c) { return !c.gated && c.shellChecked !== false; });
+const checkedGated = fresh.controls.filter(function (c) { return c.gated && c.shellChecked !== false; });
+
+const extraSurfaces = fresh.controls.filter(function (c) { return c.shellChecked === false; });
+if (!extraSurfaces.length || !extraSurfaces.every(function (c) { return c.route && c.route !== 'dynamic' && c.surface; })) {
+  fail('Public/phone/popup/1p/cloned controls are missing explicit surface and route attribution.');
+}
+if (fresh.controls.some(function (c) { return c.view === 'dynamic' && (!c.route || c.route === 'dynamic'); })) {
+  fail('Dynamic controls still carry an unscoped dynamic route.');
+}
+const clinicianJs = fresh.controls.filter(function (c) {
+  return c.file === 'mls-connect.js' || /^feat_.*\.js$/.test(c.file);
+});
+if (!clinicianJs.length || clinicianJs.some(function (c) {
+  return c.shellChecked === false || c.surface !== 'clinician';
+})) {
+  fail('Clinician-owned JavaScript controls are excluded from shell reach coverage or attributed to a public surface.');
+}
 
 for (const shellName of shellNames) {
   const orphans = [];
@@ -256,6 +275,7 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('PASS ui-control-coverage: ' + active.length + ' active controls (' +
-  (fresh.totals.controls - active.length) + ' gated) reach-checked across ' +
+console.log('PASS ui-control-coverage: ' + active.length + ' active clinician controls (' +
+  checkedGated.length + ' clinician gated; ' + extraSurfaces.length +
+  ' other-surface controls attributed but not shell reach-checked) across ' +
   shellNames.length + ' shells [' + shellNames.join(', ') + ']');

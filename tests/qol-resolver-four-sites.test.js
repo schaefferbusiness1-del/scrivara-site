@@ -30,7 +30,7 @@ function extractUnique(src, startMarker, endMarker, label) {
 
 /* ---- site 1: si batch reader ---- */
 {
-  const block = extractUnique(si, 'var pullVisitBodies = safe(function () {', '}, true);', 'si reader');
+  const block = extractUnique(si, 'var pullVisitBodies = safe(function () {', '}, false);', 'si reader');
   function run(on) {
     const ctx = vm.createContext({
       safe: (fn, fb) => { try { return fn(); } catch (e) { return fb; } },
@@ -57,12 +57,11 @@ function extractUnique(src, startMarker, endMarker, label) {
   assert.strictEqual(run(false), false, 'site 2 (triOn): resolver OFF -> full leg blocked');
 }
 
-/* ---- site 3: the fourth reader (history batch) — resolver drives it AND
-        OFF now runs the day-scoped read (the previously-missing day-note
-        guarantee), executed with a capturing vp2 ---- */
+/* ---- site 3: the fourth reader (history batch) — resolver drives it;
+        ON runs the unscoped full-visit reader and OFF opens no note body ---- */
 {
   const block = extractUnique(mc, 'var fullLeg = Promise.resolve();', '} catch (eV) {}', 'fourth reader');
-  assert(/onlyDate/.test(block), 'site 3: the OFF branch must exist and be day-scoped');
+  assert(!/onlyDate/.test(block), 'site 3: the OFF branch still opens the pulled-day note body');
   function run(on) {
     const calls = [];
     const ctx = vm.createContext({
@@ -83,11 +82,7 @@ function extractUnique(src, startMarker, endMarker, label) {
   assert.strictEqual(onCalls.length, 1, 'site 3: resolver ON -> the full every-visit leg runs');
   assert.strictEqual(onCalls[0], null, 'site 3: the ON leg is NOT day-scoped');
   const offCalls = run(false);
-  assert.strictEqual(offCalls.length, 1, 'site 3: resolver OFF -> the day-scoped read still runs (the pulled-day note is guaranteed)');
-  /* field compare, not deepStrictEqual: the object was born inside the vm
-     context and carries that context's Object.prototype */
-  assert.strictEqual(offCalls[0] && offCalls[0].onlyDate, '2026-07-07', 'site 3: OFF is scoped to exactly the pulled day');
-  assert.strictEqual(Object.keys(offCalls[0]).length, 1, 'site 3: the day scope is the ONLY option passed');
+  assert.strictEqual(offCalls.length, 0, 'site 3: resolver OFF still opened a visit-note body');
 }
 
 /* ---- site 4: __mlsVisitSavePref.enabled() ---- */
@@ -115,4 +110,4 @@ function extractUnique(src, startMarker, endMarker, label) {
 assert(/_vr = \(window\.__mlsVisitNotesPref/.test(mc), 'site 5 (relay payload) consults the resolver');
 assert(/vr3 = \(window\.__mlsVisitNotesPref/.test(mc), 'site 6 (dedupe identity) consults the resolver');
 
-console.log('qol-resolver-four-sites: OK (4 sites executed and flipped by the resolver against poisoned storage; OFF day-note guarantee executed; payload+dedupe consult pinned)');
+console.log('qol-resolver-four-sites: OK (4 sites executed and flipped by the resolver against poisoned storage; OFF opens no note body; payload+dedupe consult pinned)');

@@ -7,6 +7,10 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+const connectSources = ['1p-mls-connect.js', 'mls-connect.js', 'cloned-mls-connect.js'].map(file => ({
+  file,
+  source: fs.readFileSync(path.join(root, file), 'utf8')
+}));
 
 function extractFunction(text, name) {
   const start = text.indexOf('function ' + name + '(');
@@ -202,5 +206,15 @@ assert(!/preferredAction\s*:\s*['"]place_order['"]/.test(placeSource), 'button b
 assert(!/startAthenaAction|sendToEMRviaAssist|sendMessage\s*\(/.test(placeSource), 'row button contains a direct or generic Athena write path');
 assert(/openUnifiedConfirmation/.test(placeSource), 'row button does not use the immutable unified review');
 assert(/one-click confirm/.test(placeSource) && /places only it/.test(placeSource) && /nothing was placed/i.test(placeSource), 'row review lost its capable consequence or truthful pre-confirm status');
+
+for (const lane of connectSources) {
+  assert(!/Orders — drafts only, always/.test(lane.source), lane.file + ' still labels the enabled supervised order lane as permanently draft-only');
+  assert(!/MLS NEVER places or sends an order/.test(lane.source), lane.file + ' still claims supervised order placement never occurs');
+  assert(!/Clinical orders are NEVER auto-sent\. You place those yourself, always\./.test(lane.source), lane.file + ' still carries the pre-placement onboarding promise');
+  assert(!/orders are never sent/i.test(lane.source), lane.file + ' still uses an unscoped blanket order refusal');
+  assert(/never places orders automatically/.test(lane.source), lane.file + ' does not preserve the no-automatic-order safety promise');
+  assert(/one exact supported order can be placed only after your separate confirmation/.test(lane.source), lane.file + ' does not explain the enabled one-order confirmation path');
+  assert(/this visit action never sends an order/.test(lane.source), lane.file + ' does not distinguish visit writeback from the separately confirmed order action');
+}
 
 console.log('PASS order review UI: one exact immutable patient/visit payload, unsafe rows blocked, capable one-confirm order routing, older-client manual fallback, and no direct placement action');

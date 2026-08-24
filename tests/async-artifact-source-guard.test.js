@@ -313,6 +313,18 @@ async function run() {
   await assertSourceChangeDiscarded('generateIME', (ctx) => { ctx.__prefs = 'preferences B'; }, 'new IME');
   await assertSourceChangeDiscarded('generateRecommendations', (ctx) => { ctx.currentCoding = { em: '99215', icd: ['G89.4'], cpt: [] }; }, '{"care_gaps":["new"],"interactions":[],"follow_up":[],"documentation":[]}');
 
+  // A provider response is untrusted even when the visit is still current:
+  // missing, non-string, and blank IME results must remain a retryable quality
+  // failure and must never replace the prior report.
+  for (const malformed of [undefined, null, 42, {}, '   \n']) {
+    const h = artifactHarness('generateIME');
+    const pending = h.context.generateIME();
+    h.ai.resolve(malformed);
+    await pending;
+    assert.strictEqual(h.context.currentIME, 'OLD_IME', `generateIME accepted malformed response ${String(malformed)}`);
+    assert.strictEqual(h.context.__artifactMutations, 0, 'generateIME rendered a malformed response');
+  }
+
   await assertEpochChangeDiscarded('runRedFlagScan', 'epoch-stale red flags');
   await assertEpochChangeDiscarded('generateDifferentials', 'epoch-stale differential');
   await assertEpochChangeDiscarded('generateHandout', 'epoch-stale handout');

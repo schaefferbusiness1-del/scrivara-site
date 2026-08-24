@@ -30,7 +30,7 @@ for (const label of expectedGroups) {
 }
 
 assert(ui.includes("if (/Account & access|Security & privacy/i.test(heading)) return 'account'"), 'account and security must share one destination');
-assert(ui.includes("if (/Note defaults|AI personalization|Provider preferences/i.test(heading)) return 'notes'"), 'note and AI preferences must share one destination');
+assert(ui.includes("if (/Note defaults|AI personalization|AI draft tuning|Provider preferences/i.test(heading)) return 'notes'"), 'note defaults, AI personalization, draft tuning, and provider preferences must share one destination');
 assert(ui.includes("if (/Features|App tabs/i.test(heading)) return 'features'"), 'features and navigation must share one destination');
 
 assert(ui.includes("markHidden(legacyNameField, 'duplicate-provider-name')"), 'duplicate provider identity field must be hidden');

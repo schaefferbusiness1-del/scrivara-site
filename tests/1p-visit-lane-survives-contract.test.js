@@ -198,6 +198,19 @@ function harness() {
         const cs = getComputedStyle(e);
         return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
       };
+      const fmt = Array.from(document.querySelectorAll('.mls-fp-fmt')).map((w) => {
+        const ta = w.nextElementSibling;
+        const cs = getComputedStyle(w);
+        const r = w.getBoundingClientRect();
+        const body = w.querySelector('.fmt-body');
+        return {
+          owner: ta && ta.id || '',
+          display: cs.display,
+          visible: r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden',
+          actionable: !!(w.querySelector('.fmt-edit') && body && getComputedStyle(body).display !== 'none')
+        };
+      });
+      const noteFmt = fmt.filter((x) => x.owner === 'ez3flNote' || x.owner === 'noteBox');
       let phase = '', emode = '', screen = '';
       try {
         const st = window.__mlsEasyV32 && window.__mlsEasyV32.state ? window.__mlsEasyV32.state() : null;
@@ -219,7 +232,17 @@ function harness() {
         glowId: (g.lit[0] || {}).id || '',
         glowText: ((g.lit[0] || {}).text || '').slice(0, 40),
         glowVisible: !!(g.lit[0] || {}).visible,
-        glowCount: g.count
+        glowCount: g.count,
+        reviewMarker: document.body.classList.contains('mls-review-step'),
+        advanced: document.body.classList.contains('ez3adv'),
+        formatted: {
+          total: noteFmt.length,
+          visibleOwners: noteFmt.filter((x) => x.visible).map((x) => x.owner),
+          actionableOwners: noteFmt.filter((x) => x.visible && x.actionable).map((x) => x.owner),
+          top: noteFmt.find((x) => x.owner === 'ez3flNote') || null,
+          lower: noteFmt.find((x) => x.owner === 'noteBox') || null
+        },
+        noteWrapVisible: vis(document.getElementById('ez3flNoteWrap'))
       };
     }
   };
@@ -302,7 +325,11 @@ async function runtime() {
     /* ---- 3. THE RECORDER STOPS SOMEWHERE ELSE --------------------------- */
     await page.evaluate(() => window.__vlT.capture(true));
     await page.evaluate(() => window.__vlT.set('transcript', 'Doctor: hello. Patient: my back hurts.'));
-    s = await until(page, (x) => x.recordingClass, 6000);
+    /* The lane and the independent glow owner observe the same capture-button
+       mutation in separate microtasks. Wait for the user-visible invariant,
+       not the intermediate frame where the body class has landed but the
+       glow's zero-delay refresh has not painted yet. */
+    s = await until(page, (x) => x.recordingClass && /pause|stop/i.test(x.glowText), 6000);
     ok(s.recordingClass, 'body.mls-recording was never set while capture was live');
     ok(/pause|stop/i.test(s.glowText),
       `while recording, the glow is on "${s.glowText}" — it must be the pause/stop control`);
@@ -319,7 +346,19 @@ async function runtime() {
     eq(s.glowId, 'ez3flGen', `paused with a transcript, the next step is ${s.glowId || '(nothing)'}, expected ez3flGen`);
 
     /* ---- 4. THE `note` PHASE — THE 2026-08-18 BLOCKER ------------------- */
-    await page.evaluate(() => window.__vlT.set('noteBox', 'SUBJECTIVE: back pain.\nPLAN: injection.'));
+    const generatedNote = [
+      'SUBJECTIVE:',
+      'Patient reports persistent low back pain after prolonged standing and walking.',
+      'HISTORY:',
+      'Symptoms have continued despite home exercise and prior conservative care.',
+      'OBJECTIVE:',
+      'Gait is steady; lumbar range of motion is limited by pain; no acute distress is observed.',
+      'ASSESSMENT:',
+      'Mechanical low back pain remains documented for today\'s visit.',
+      'PLAN:',
+      'Continue the documented conservative plan, review precautions, and reassess response at follow-up.'
+    ].join('\n\n');
+    await page.evaluate((note) => window.__vlT.set('noteBox', note), generatedNote);
     s = await until(page, (x) => x.phase === 'note' && x.screen === 'doctor' && x.lane, 15000);
     eq(s.phase, 'note', 'the engine never reached the note phase, so this suite did not measure the state the blocker lived in');
     eq(s.screen, 'doctor', 'the note phase was reached on a screen other than the visit room');
@@ -328,6 +367,59 @@ async function runtime() {
     ok(s.review, 'the note is drafted and "Next: Review & send to Athena" is not on screen');
     s = await until(page, (x) => x.glowId === 'ez3flReview', 8000);
     eq(s.glowId, 'ez3flReview', `with a drafted note the next step is ${s.glowId || '(nothing)'}, expected ez3flReview`);
+
+    /* ---- 4a. REVIEW TRANSITION: ONE ACTIONABLE FORMATTED NOTE ------------ */
+    /* Touch the visible flow copy exactly as a clinician's generated-note
+       mirror does. This makes the upper formatter mount deterministic even
+       when the deferred preview bus scanned the new lane before its value was
+       copied; the production transition below still owns the hide/show. */
+    await page.evaluate((note) => window.__vlT.set('ez3flNote', note), generatedNote);
+    s = await until(page, (x) => x.formatted && x.formatted.top && x.formatted.top.visible, 10000, 'formatted preview');
+    ok(s.formatted.total >= 2,
+      `the generated note did not mount both expected formatter owners before review (${JSON.stringify(s.formatted)})`);
+    ok(s.formatted.visibleOwners.includes('ez3flNote'),
+      `the prior-step formatted note is not visible before review (${JSON.stringify(s.formatted)})`);
+    ok(s.noteWrapVisible, 'the prior-step note card is not visible before review');
+    const reviewStart = await page.evaluate(() => {
+      window.scrollTo(0, Math.min(180, Math.max(0, document.documentElement.scrollHeight - window.innerHeight)));
+      const before = window.scrollY;
+      window.__vlScrollProbe = { calls: 0, original: Element.prototype.scrollIntoView };
+      Element.prototype.scrollIntoView = function () { window.__vlScrollProbe.calls++; };
+      const button = document.getElementById('ez3flReview');
+      if (!button) throw new Error('missing #ez3flReview before transition');
+      button.click();
+      return before;
+    });
+    s = await until(page, (x) => x.advanced && x.reviewMarker, 5000, 'review transition');
+    await page.waitForTimeout(1200);
+    const reviewEnd = await page.evaluate(() => {
+      const probe = window.__vlScrollProbe || {};
+      if (probe.original) Element.prototype.scrollIntoView = probe.original;
+      delete window.__vlScrollProbe;
+      return { scrollY: window.scrollY, scrollCalls: probe.calls || 0, state: window.__vlT.state() };
+    });
+    ok(Math.abs(reviewEnd.scrollY - reviewStart) <= 2,
+      `Review & send moved the page (${reviewStart} -> ${reviewEnd.scrollY}, scrollIntoView calls=${reviewEnd.scrollCalls}, state=${JSON.stringify(reviewEnd.state)}); it must leave the viewport where the doctor is`);
+    eq(reviewEnd.scrollCalls, 0,
+      'Review & send called scrollIntoView; the quiet transition must not walk the doctor to the lower note');
+    eq(reviewEnd.state.formatted.visibleOwners.length, 1,
+      `review/send has ${reviewEnd.state.formatted.visibleOwners.length} visible formatted-note mounts (${JSON.stringify(reviewEnd.state.formatted)}), expected one`);
+    eq(reviewEnd.state.formatted.visibleOwners[0], 'noteBox',
+      `the visible review/send formatted mount is ${reviewEnd.state.formatted.visibleOwners[0] || '(none)'}, expected the actionable lower #noteBox`);
+    ok(reviewEnd.state.formatted.actionableOwners.includes('noteBox'),
+      `the lower #noteBox formatted mount is not actionable on review/send (${JSON.stringify(reviewEnd.state.formatted)})`);
+    ok(reviewEnd.state.formatted.top && !reviewEnd.state.formatted.top.visible,
+      `the upper #ez3flNote formatted duplicate remained visible on review/send (${JSON.stringify(reviewEnd.state.formatted.top)})`);
+    ok(!reviewEnd.state.noteWrapVisible,
+      'the upper #ez3flNoteWrap prior-step card remained visible on review/send');
+
+    await page.evaluate(() => { const b = document.getElementById('ez3Adv'); if (b) b.click(); });
+    s = await until(page, (x) => !x.advanced && !x.reviewMarker && x.formatted &&
+      x.formatted.top && x.formatted.top.visible, 10000, 'Back restores prior formatted view');
+    ok(!s.reviewMarker, 'Back left the review-step marker set');
+    ok(s.formatted.top && s.formatted.top.visible,
+      `Back did not restore the required prior-page formatted note (${JSON.stringify(s.formatted)})`);
+    ok(s.noteWrapVisible, 'Back did not restore the required prior-step note card');
 
     /* ---- 5. IT REBUILDS ITSELF, WITH NO USER INPUT AT ALL ---------------- */
     const razed = await page.evaluate(() => window.__vlT.razeLane());

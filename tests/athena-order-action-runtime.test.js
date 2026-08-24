@@ -259,8 +259,12 @@ function send(message) {
   assert(p1.ok && p1.actionToken && p1.readOnly, 'order probe did not return a read-only one-use token');
   assert.strictEqual(p1.rowHash, probeMessage.rowHash, 'probe did not echo its exact immutable row binding');
   assert.strictEqual(p1.clientOrderId, exactOrder.clientOrderId, 'probe did not echo its exact local order ID');
+  const executeContext = {
+    appointmentId: p1.context.appointmentId, encounterId: p1.context.encounterId,
+    encounterUrl: p1.context.encounterUrl, visitDate: p1.context.visitDate, provider: p1.context.provider
+  };
   const executeBase = {
-    ...probeMessage, mode: 'execute', actionToken: p1.actionToken, expectedContext: { ...probeMessage.expectedContext },
+    ...probeMessage, mode: 'execute', actionToken: p1.actionToken, expectedContext: executeContext,
     probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-click-1',
     gestureRowHash: probeMessage.rowHash, gestureClientOrderId: exactOrder.clientOrderId
   };
@@ -309,6 +313,10 @@ function send(message) {
   assert(encounterProbe.ok, 'encounter-only exact context could not be probed');
   const encounterSuccess = await send({
     ...encounterProbeMessage, mode: 'execute', actionToken: encounterProbe.actionToken,
+    expectedContext: {
+      appointmentId: encounterProbe.context.appointmentId, encounterId: encounterProbe.context.encounterId,
+      encounterUrl: encounterProbe.context.encounterUrl, visitDate: encounterProbe.context.visitDate, provider: encounterProbe.context.provider
+    },
     probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-encounter-only',
     gestureRowHash: encounterProbeMessage.rowHash, gestureClientOrderId: encounterOrder.clientOrderId
   });

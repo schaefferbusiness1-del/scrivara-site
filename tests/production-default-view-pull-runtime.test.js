@@ -347,6 +347,7 @@ async function withWatchdog(promise, label, ms = 12000) {
     date: DAY,
     provider: 'all',
     includeHistory: true,
+    pullVisitBodies: true,
     onStatus: message => statuses.push(String(message || ''))
   }), 'production default-view pull');
 
@@ -423,6 +424,7 @@ async function withWatchdog(promise, label, ms = 12000) {
     date: DAY,
     provider: 'all',
     includeHistory: true,
+    pullVisitBodies: false,
     onStatus: () => {}
   }), 'direct all-provider refusal');
   assert.strictEqual(direct.ok, false, 'the public pull API minted appointment-census authority');
@@ -443,7 +445,7 @@ async function withWatchdog(promise, label, ms = 12000) {
   const historyBeforeMonth = historyReads;
   const month = await withWatchdog(context.__mlsSI.pullMonth({
     month: '2026-08', dates: ['2026-08-12'], provider: 'all',
-    includeHistory: true, onStatus: () => {}
+    includeHistory: true, pullVisitBodies: false, onStatus: () => {}
   }), 'month all-provider refusal');
   assert.strictEqual(month.ok, false, 'month pull widened through incomplete provider proof');
   assert.strictEqual(month.complete, false);
@@ -465,6 +467,7 @@ async function withWatchdog(promise, label, ms = 12000) {
       name: 'Provider Alpha, MD', rosterVerified: true
     },
     includeHistory: true,
+    pullVisitBodies: false,
     onStatus: () => {}
   }), 'selected-provider refusal');
 

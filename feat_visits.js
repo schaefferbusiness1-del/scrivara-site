@@ -322,7 +322,11 @@
       id: v.id || _uid(),
       date: _svcToYMD(v.date || v.serviceDate || v.dos || v.dateOfService || (typeof raw === 'string' ? text : '')) || trim(v.date || ''),
       type: trim(v.type || v.procedure || v.visitType || v.encounterType || v.reason || stringType || ''),
-      cpt: (Array.isArray(v.cpt) ? v.cpt.slice() : _cpt(blob)),
+      /* Preserve structured procedure text/codes alongside the historical
+         visit type. Copilot can then answer a procedure-list question from
+         normalized evidence even when a source supplied a generic type. */
+      procedureName: trim(v.procedureName || v.procedure || v.proc || v.performedProcedure || v.procedureType || ''),
+      cpt: (Array.isArray(v.cpt) ? v.cpt.slice() : (Array.isArray(v.procedureCodes) ? v.procedureCodes.slice() : (v.procedureCode ? [v.procedureCode] : (v.codes && Array.isArray(v.codes.cpt) ? v.codes.cpt.slice() : _cpt(blob))))),
       icd10: (Array.isArray(v.icd10) ? v.icd10.slice() : _icd10(blob)),
       meds: (Array.isArray(v.meds) ? v.meds.slice() : (v.meds ? [S(v.meds)] : [])),
       findings: trim(v.findings || v.exam || ''),

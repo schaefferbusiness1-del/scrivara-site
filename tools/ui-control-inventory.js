@@ -2,7 +2,8 @@
 
 /* UI control inventory — slice S0 of UI_CHARTER_CALM_SHELL_2026-07-24.md.
  *
- * Walks ScribeFlow.html, mls-connect.js and every feat_*.js module and records EVERY control a
+ * Walks the clinician shells, public/phone/popup/1p/cloned HTML surfaces,
+ * mls-connect.js and every feat_*.js module and records EVERY control a
  * doctor can reach: buttons, nav tabs, and any element carrying an inline
  * handler. The result is the receipt behind the owner's binding constraint —
  * "ease of use without losing any features". The Calm Shell relocates controls;
@@ -29,11 +30,59 @@ const APP_CONNECT = 'mls-connect.js';
 const MANIFEST_PATH = path.join(ROOT, 'tests', 'fixtures', 'ui-control-manifest.json');
 
 function sourceFiles() {
-  const files = [APP_HTML, APP_CONNECT];
+  /* Keep snapshots/design fragments out, but do not silently narrow the
+   * authoritative surface to the clinician shell again. The publication
+   * inventory has root HTML pages plus the two shipped alternate shells. */
+  const files = fs.readdirSync(ROOT)
+    .filter(name => /\.html$/i.test(name) && !/^_/.test(name))
+    .sort();
+  for (const dir of ['1p', 'cloned']) {
+    const full = path.join(ROOT, dir, 'index.html');
+    if (fs.existsSync(full)) files.push(path.join(dir, 'index.html'));
+  }
+  files.push(APP_CONNECT);
   for (const name of fs.readdirSync(ROOT)) {
     if (/^feat_.*\.js$/.test(name)) files.push(name);
   }
   return files;
+}
+
+function isClinicianShell(file) {
+  return ['ScribeFlow.html', 'ScribeFlow-staging.html', 'ScribeFlow_test.html', '1pScribeFlow.html'].includes(file);
+}
+
+/* The root connect bundle and root feat_* satellites execute inside the
+ * clinician shell. They are not public pages merely because their controls are
+ * assembled from JavaScript instead of declared in ScribeFlow.html. Keep this
+ * separate from isClinicianShell(): alternate/public HTML pages still need an
+ * explicit non-shell disposition, while clinician-owned runtime controls must
+ * remain in the shell reach audit. */
+function isClinicianOwned(file) {
+  return isClinicianShell(file) || file === APP_CONNECT || /^feat_.*\.js$/i.test(file);
+}
+
+function surfaceForFile(file) {
+  if (isClinicianOwned(file)) return 'clinician';
+  if (/^1p[\\/]/.test(file)) return '1p';
+  if (/^cloned[\\/]/.test(file)) return 'cloned';
+  if (/phone/i.test(file)) return 'phone';
+  if (/popup/i.test(file)) return 'popup';
+  return 'public';
+}
+
+function dynamicRoute(file) {
+  const name = file.toLowerCase();
+  /* This satellite paints the desktop clinician's global phone invitation;
+   * phone.html is the actual standalone phone surface. */
+  if (name === 'feat_mls_phone_ui.js') return 'global';
+  if (/phone/.test(name)) return 'phone';
+  if (/legal|ime/.test(name)) return 'legalReqView';
+  if (/studio|widget|copilot|assistant/.test(name)) return 'studioView';
+  if (/calendar|calpro|sched|provider|agenda|day/.test(name)) return 'calendarView';
+  if (/patient|history|profile|snapshot/.test(name)) return 'patientsView';
+  if (/opnote|visit|note|voice|dictat|writeflow/.test(name)) return 'visitView';
+  if (/analysis|study|outcome|comp/.test(name)) return 'analysisView';
+  return 'global';
 }
 
 /* Labels arrive full of emoji, entities, nested markup and JS string
@@ -182,7 +231,13 @@ function slug(s) {
 function collect(file) {
   const text = fs.readFileSync(path.join(ROOT, file), 'utf8');
   const lineAt = lineIndexer(text);
-  const viewAt = file === APP_HTML ? containerIndexer(text) : function () { return 'dynamic'; };
+  const isHtml = /\.html$/i.test(file);
+  const viewAt = isClinicianShell(file) ? containerIndexer(text) : function () { return isHtml ? 'page:' + file : 'dynamic'; };
+  const routeAt = isClinicianShell(file) ? function (index) {
+    const view = viewAt(index);
+    return view === 'dynamic' ? dynamicRoute(file) : view;
+  } : function () { return isHtml ? 'page:' + file : dynamicRoute(file); };
+  const surface = surfaceForFile(file);
   const out = [];
   const seen = new Set();
 
@@ -220,6 +275,9 @@ function collect(file) {
       tag: tag.toLowerCase(),
       domId: domId || null,
       view: viewAt(index),
+      route: routeAt(index),
+      surface: surface,
+      shellChecked: isClinicianOwned(file),
       file: file,
       line: line,
       gated: isGated(attrs),
@@ -259,9 +317,13 @@ function build() {
 
   const byKind = {};
   const byView = {};
+  const byRoute = {};
+  const bySurface = {};
   for (const c of controls) {
     byKind[c.kind] = (byKind[c.kind] || 0) + 1;
     byView[c.view] = (byView[c.view] || 0) + 1;
+    byRoute[c.route] = (byRoute[c.route] || 0) + 1;
+    bySurface[c.surface] = (bySurface[c.surface] || 0) + 1;
   }
 
   return {
@@ -275,6 +337,8 @@ function build() {
       byKind: byKind
     },
     views: byView,
+    routes: byRoute,
+    surfaces: bySurface,
     controls: controls
   };
 }

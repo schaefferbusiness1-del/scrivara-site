@@ -262,7 +262,7 @@ async function testUnload(app, label) {
 }
 
 function testSnapshot(app, label) {
-  const fn = between(app, 'function copilotSnapshot(){', 'var COPILOT_STARTERS = [');
+  const fn = between(app, 'function _copilotClinicalText(', 'var COPILOT_STARTERS = [');
   const fullPatientCount = 1518;
   /* The real Studio snapshot intentionally carries at most 800 detailed rows
      while patientCount preserves the full roster denominator. */
@@ -285,6 +285,7 @@ function testSnapshot(app, label) {
     document: { getElementById: id => (id === 'transcript' ? { value: `current visit ${'t'.repeat(5000)}` } : null) },
     currentSoap: `current note ${'n'.repeat(6000)}`, currentCoding: { icd10: ['M54.16'], cpt: ['99214'], em: '99214' }, capturing: false
   };
+  ctx.window = ctx;
   vm.runInNewContext(`${fn}\nthis.__snapshot=copilotSnapshot();`, ctx, { filename: `${label}#copilot-snapshot` });
   const snap = ctx.__snapshot;
   const wire = JSON.stringify(snap);

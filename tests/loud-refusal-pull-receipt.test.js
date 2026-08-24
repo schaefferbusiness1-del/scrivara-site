@@ -50,6 +50,12 @@ function extractBraced(src, startToken, from) {
 const psvaSrc = extractBraced(html, 'function pullScheduleViaAssist(');
 
 function buildPsva(ctx) {
+  if (!ctx.window.__mlsVisitNotesPref) {
+    ctx.window.__mlsVisitNotesPref = {
+      ensureChosenForBulkPull: () => Promise.resolve({ ok: true, chosen: false, on: true, reason: 'already-chosen' }),
+      choicePending: () => false
+    };
+  }
   const f = new Function('ctx',
     'var document = ctx.document;\n' +
     'var toast = ctx.toast;\n' +

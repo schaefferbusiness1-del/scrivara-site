@@ -260,7 +260,7 @@ async function terminalClearRun() {
   /* nav-failed is terminal: the record must NOT survive it. This is the exact
      record that hijacked 2026-08-17. */
   const nav = monthWorld({ gotoResult: () => ({ ok: false, error: 'athena week strip shows no selected day instead of ' + MONTH_DAY, diag: { rounds: 3, initFound: false, tabPath: '/x' } }), athenaTabs: 3 });
-  const navRes = await nav.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: nav.onStatus });
+  const navRes = await nav.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: nav.onStatus });
   eq(navRes.reason, 'nav-failed', 'the nav fixture did not produce nav-failed');
   eq(nav.store.has(resumeKeyOf(nav)), false,
     'a nav-failed pull kept its resume record - this is what came back to life on another day');
@@ -268,13 +268,13 @@ async function terminalClearRun() {
 
   /* a COMPLETE pull clears it too (pre-existing behaviour, pinned) */
   const done = monthWorld({});
-  const doneRes = await done.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: done.onStatus });
+  const doneRes = await done.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: done.onStatus });
   eq(doneRes.complete, true, 'the clean fixture did not complete');
   eq(done.store.has(resumeKeyOf(done)), false, 'a complete pull kept its resume record');
 
   /* an honest PARTIAL still keeps it - pr-1.0.0 exists for exactly this */
   const partial = monthWorld({ scheduleResult: base => Object.assign({}, base, { receipt: Object.assign({}, base.receipt, { complete: false, parsedCount: 1 }) }) });
-  const partialRes = await partial.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: partial.onStatus });
+  const partialRes = await partial.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: partial.onStatus });
   eq(partialRes.complete, false, 'the partial fixture completed');
   eq(partial.api._resumeVerdictIsTerminal(partialRes), false,
     'schedule-incomplete was classified terminal - an honest partial must stay resumable');
@@ -292,7 +292,7 @@ async function busyAthenaRun() {
     gotoResult: () => { gotoCalls++; return gotoCalls === 1 ? { ok: false, reason: 'no-athena-tab', error: 'No athenaOne tab open.' } : null; },
     presenceResult: () => ({ ok: true, athenaOpen: true, certain: true, reason: 'presence-verified' })
   });
-  const res = await busy.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: busy.onStatus });
+  const res = await busy.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: busy.onStatus });
   eq(res.complete, true, 'a transient no-athena-tab ended the pull even though athena was proven present');
   ok(gotoCalls >= 2, 'the goto leg was never retried (calls=' + gotoCalls + ')');
   eq(busy.presenceCalls.length >= 1, true, 'the presence verb was never asked');
@@ -306,7 +306,7 @@ async function busyAthenaRun() {
     gotoResult: () => { calls2++; return { ok: false, reason: 'no-athena-tab', error: 'No athenaOne tab open.' }; },
     presenceResult: () => ({ ok: true, athenaOpen: false, certain: true, reason: 'no-athena-tab' })
   });
-  const goneRes = await gone.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: gone.onStatus });
+  const goneRes = await gone.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: gone.onStatus });
   eq(goneRes.ok, false, 'an absent athena produced a successful pull');
   eq(goneRes.reason, 'nav-failed', 'an absent athena did not end with the nav verdict');
   eq(Number(goneRes.athenaBusyRetries || 0), 0,
@@ -319,7 +319,7 @@ async function busyAthenaRun() {
     gotoResult: () => { calls3++; return { ok: false, reason: 'no-athena-tab', error: 'No athenaOne tab open.' }; },
     presenceResult: () => ({ ok: true, athenaOpen: true, certain: true, reason: 'presence-verified' })
   });
-  const stuckRes = await stuck.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: stuck.onStatus });
+  const stuckRes = await stuck.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: stuck.onStatus });
   eq(stuckRes.ok, false, 'a permanently unreachable athena reported success');
   eq(Number(stuckRes.athenaBusyRetries || 0), 3, 'the busy budget is not exactly 3 retries');
   ok(calls3 <= 8, 'the settle ladder multiplied the busy retries (' + calls3 + ' goto calls)');
@@ -331,7 +331,7 @@ async function navAdviceRun() {
     athenaTabs: 3,
     gotoResult: () => ({ ok: false, error: 'athena week strip shows no selected day instead of ' + MONTH_DAY, diag: { rounds: 3, initFound: false, tabPath: '/1/13/calendar' } })
   });
-  const res = await strip.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: strip.onStatus });
+  const res = await strip.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: strip.onStatus });
   eq(res.reason, 'nav-failed', 'the empty-strip fixture did not fail navigation');
   ok(/isn't showing a week strip/.test(String(res.navAdvice || '')),
     'the nav refusal did not name the empty week strip: ' + JSON.stringify(res.navAdvice));
@@ -346,20 +346,20 @@ async function navAdviceRun() {
 
   /* a nav failure that is NOT an empty strip keeps the old honest wording */
   const other = monthWorld({ gotoResult: () => ({ ok: false, error: 'No athenaOne tab open.', sessionLikelyExpired: true }) });
-  const otherRes = await other.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: other.onStatus });
+  const otherRes = await other.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: other.onStatus });
   eq(otherRes.navAdvice, undefined, 'a missing-tab nav failure was given the one-tab strip advice');
 
   /* PREFLIGHT: the same advice up front, before a 60 s failure */
   const pre = makeMonthHarness({ today: MONTH_DAY, athenaTabs: 4, presenceResult: () => ({ ok: true, athenaOpen: false, certain: false, reason: 'athena-tab-unverified' }) });
   pre.seedDay(MONTH_DAY, 2);
-  await pre.api.dayPull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: pre.onStatus });
+  await pre.api.dayPull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: pre.onStatus });
   ok(pre.statusLines.some(l => /4 Athena tabs are open/.test(l)),
     'the multi-tab preflight said nothing: ' + JSON.stringify(pre.statusLines.slice(0, 5)));
 
   /* and it is SILENT on a healthy single tab */
   const quiet = makeMonthHarness({ today: MONTH_DAY, athenaTabs: 1 });
   quiet.seedDay(MONTH_DAY, 2);
-  await quiet.api.dayPull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: quiet.onStatus });
+  await quiet.api.dayPull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: quiet.onStatus });
   eq(quiet.statusLines.some(l => /Athena tabs are open|isn't showing a week strip/.test(l)), false,
     'the preflight nagged a healthy single-tab machine');
 }
@@ -383,10 +383,10 @@ async function busyClickRun() {
     if (msg && msg.type === 'mlsAppGotoDate' && firstGoto) { firstGoto = false; held.then(() => post.call(this, msg)); return; }
     return post.apply(this, arguments);
   };
-  const first = h.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: h.onStatus });
+  const first = h.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: h.onStatus });
   await flush(4);
   const beforeSecond = h.api._lastPullResult();
-  const second = await h.api.dayPull({ date: MONTH_DAY, provider: 'all', includeHistory: false, onStatus: h.onStatus });
+  const second = await h.api.dayPull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: h.onStatus });
   eq(second.reason, 'pull-in-flight', 'the second click was not refused by the engine');
   eq(second.busyInFlight, true, 'the busy refusal is not marked as a refusal-to-start');
   ok(/already running/.test(String(second.error)), 'the busy refusal still speaks in receipt language: ' + second.error);
@@ -479,6 +479,23 @@ function dayNoteHarness(options) {
 }
 
 async function dayNoteRun() {
+  /* The old body below measured a dedicated pulled-day-note pass while Full
+     visit notes was OFF. That product shape is retired. Keep this gate's
+     resume/terminal/lease/navigation coverage above, and make its note-mode
+     assertion match the current hard boundary: OFF performs zero body work
+     and creates no deferred body queue. ON is exercised by the dedicated
+     full-notes host/runtime contracts as one unscoped all-visits walk. */
+  const off = dayNoteHarness();
+  const offReceipt = await off.api._runHistoryBatch(off.rows, [], off.onStatus, {});
+  eq(offReceipt.visitNotesRequested, false, 'the OFF batch lost its frozen note choice');
+  eq(off.noteCalls.length, 0, 'Full visit notes OFF opened a pulled-day note body');
+  eq(Number(offReceipt.todayNoteAttempts || 0), 0, 'OFF claims note-body attempts');
+  eq(Number(offReceipt.todayNoteFailures || 0), 0, 'OFF counts intentionally skipped notes as failures');
+  eq(Number(off.api._todayNoteDeferred().queued || 0), 0, 'OFF created a deferred note-body queue');
+  ok(/var pulledDayNoteLaneEnabled = false;/.test(SRC), 'the retired inline day-note lane is enabled');
+  ok(/var pulledDayNoteTailEnabled = false;/.test(SRC), 'the retired tail day-note lane is enabled');
+  return;
+
   /* ---- the deferred round must actually take these rows -------------------- */
   const api = makeHarness({ day: DN_DAY, today: '2026-08-17', rows: 1 }).api;
   eq(typeof api._todayNoteDeferred, 'function', 'the deferred queue is not observable');
@@ -659,5 +676,5 @@ const watchdog = setTimeout(() => {
   await dayNoteRun();
   clearTimeout(watchdog);
   try { fs.rmSync(CONTROL_DIR, { recursive: true, force: true }); } catch (eRm) {}
-  console.log('PASS 1p-pull-honesty-and-daynote-budget: ' + checks + ' checks - a resume is offered for the SELECTED day only and never starts itself (causal control: origin/main mounts the foreign-day card and starts that pull), terminal verdicts clear the record while honest partials keep it, a no-athena-tab leg is re-checked against the lease-free presence verb and bounded at 3, the empty-week-strip refusal names the one-tab fix and the measured tab count, a second click can no longer overwrite the running pull\'s receipt, the "Full visit notes" checkbox follows a same-tab write (causal control: origin/main stays checked), and the day-note leg measures its own budget, keeps ONE chart open per patient, defers only retryable refusals, re-stamps every row the retry recovers, and stops claiming 100%');
+  console.log('PASS 1p-pull-honesty-and-daynote-budget: ' + checks + ' checks - a resume is offered for the SELECTED day only and never starts itself (causal control: origin/main mounts the foreign-day card and starts that pull), terminal verdicts clear the record while honest partials keep it, a no-athena-tab leg is re-checked against the lease-free presence verb and bounded at 3, the empty-week-strip refusal names the one-tab fix and the measured tab count, a second click can no longer overwrite the running pull\'s receipt, the "Full visit notes" checkbox follows a same-tab write (causal control: origin/main stays checked), and OFF opens no note body or deferred day-note lane');
 })().catch(err => { clearTimeout(watchdog); console.error(err); process.exit(1); });

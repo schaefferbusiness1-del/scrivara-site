@@ -152,6 +152,10 @@ function freshContext(opts) {
     _acctTodayKey: () => '2026-08-16',
     _calRefDate: '',
     __mlsProviderRoster: { resolve: (label) => rosterResolveImpl(label) },
+    __mlsVisitNotesPref: {
+      ensureChosenForBulkPull: () => Promise.resolve({ ok: true, chosen: false, on: true, reason: 'already-chosen' }),
+      choicePending: () => false
+    },
     __mlsSI: {
       installed: true,
       dayPull: (opts2) => { dayPullCalls.push(opts2); return Promise.resolve(dayPullImpl(opts2)); }
@@ -201,6 +205,7 @@ function fireScheduled(index) {
   assert.strictEqual(ev.defaultPrevented, true, 'the hero click must call preventDefault');
   await flush();
   assert.strictEqual(dayPullCalls.length, 1, 'the interceptor must call window.__mlsSI.dayPull exactly once for a plain click');
+  assert.strictEqual(dayPullCalls[0].pullVisitBodies, true, 'the admitted full-visit-notes choice must reach dayPull exactly');
   console.log('PASS 1/7: capture-phase interception replaces the frozen onclick');
 })().then(run2).catch(fail);
 

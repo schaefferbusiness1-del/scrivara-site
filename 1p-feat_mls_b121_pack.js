@@ -3415,6 +3415,19 @@
   }
 
   /* ------------------------------- enqueue --------------------------------- */
+  function backfillScopeAllowsVisitBodies(run) {
+    /* Prefer the frozen receipt/state when present; fall back to the one shared
+       setting for older pull states. OFF/unset/missing is fail-closed so a
+       falling-edge watcher can never reopen charts after a schedule-only run. */
+    if (run && run.visitNotesRequested === true) return true;
+    if (run && run.visitNotesRequested === false) return false;
+    return bfSafe(function () {
+      var pref = window.__mlsVisitNotesPref;
+      var choice = pref && typeof pref.read === 'function' ? pref.read() : null;
+      return !!(choice && choice.on === true && choice.state !== 'unset');
+    }, false);
+  }
+
   function enqueueOne(entry, opts) {
     opts = opts || {};
     var name = S(entry && entry.name != null ? entry.name : entry).trim();
@@ -3445,7 +3458,9 @@
    * never retried here (wf_9 #1). ok rows first: their charts proved openable. */
   function enqueueFromRun(rows, opts) {
     opts = opts || {};
-    if (!rows) { var st = pullState(); rows = (st && st.rows) ? st.rows.slice() : []; }
+    var st = opts.receipt || opts.pullState || pullState();
+    if (!backfillScopeAllowsVisitBodies(st)) return 0;
+    if (!rows) { rows = (st && st.rows) ? st.rows.slice() : []; }
     var okRows = [], badRows = [], added = 0, i;
     for (i = 0; i < rows.length; i++) {
       var r = rows[i];
@@ -3568,7 +3583,7 @@
  * MLS Scribe - PULL A SPECIFIC DAY  (__mlsPullAnyDay) v1.0.0  2026-07-10 (b121)
  *
  * Staff-prep gains ONE row under the month-pull section: pick a DATE, press
- * "Pull this day (schedule + charts)" and MLS does the whole flow:
+ * "Pull this day from Athena" and MLS does the whole flow selected in Settings:
  *   LEG 1 - import that day's athenaOne schedule for the Doctor picked above
  *           (exact replication of the proven month engine's per-day import:
  *           gotoDate -> read -> verify the read came FROM ATHENA -> verify the
@@ -4267,7 +4282,7 @@
         '<div id="mlsPadHead">📅 Pull a specific day</div>' +
         '<div id="mlsPadCtl">' +
           '<input type="date" id="mlsPadDate">' +
-          '<button type="button" id="mlsPadBtn">📅 Pull this day (schedule + charts)</button>' +
+          '<button type="button" id="mlsPadBtn">📅 Pull this day from Athena</button>' +
         '</div>' +
         '<div id="mlsPadNote"></div>';
       card.appendChild(row);

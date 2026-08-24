@@ -31,6 +31,8 @@ const SI = fs.readFileSync(path.join(ROOT, '1p-feat_mls_schedimport_exact.js'), 
 const SHELL = fs.readFileSync(path.join(ROOT, '1pScribeFlow.html'), 'utf8');
 const TWIN = fs.readFileSync(path.join(ROOT, '1p', 'index.html'), 'utf8');
 const MC = fs.readFileSync(path.join(ROOT, '1p-mls-connect.js'), 'utf8');
+const EMPTY_VISITS = () => ({ ok: true, visits: 0, authoritativeEmpty: true });
+const GOOD_CHART = () => ({ problems: 'Synthetic problem', meds: 'Synthetic med', summary: 'Synthetic summary' });
 
 let checks = 0;
 function ok(v, m) { assert.ok(v, m); checks++; }
@@ -78,7 +80,7 @@ function testShellAttachesFindDiag() {
 async function testEngineCensusesFindReasons() {
   const CLASSES = ['no-results', 'no-name-match', 'blank-error', 'rows-not-rendered'];
   const h = makeHarness({
-    day: '2026-08-27', today: '2026-08-28', rows: 8,
+    day: '2026-08-27', today: '2026-08-28', rows: 8, visitNotesOn: true,
     /* the class is a property of the PATIENT, not of the attempt: the engine
        retries a failed chart read once, so a per-call cycle would only ever
        record the second attempt's code. */
@@ -102,7 +104,7 @@ async function testEngineCensusesFindReasons() {
 
   /* rows-not-rendered earns an ACTIONABLE hint; no-results must not. */
   const hRows = makeHarness({
-    day: '2026-08-27', today: '2026-08-28', rows: 6,
+    day: '2026-08-27', today: '2026-08-28', rows: 6, visitNotesOn: true,
     chartResult: () => ({ __throw: 'athenaOne patient search found no matching patient.',
       mlsFind: { findReason: 'rows-not-rendered', route: 'findpatient', candidates: 0 } })
   });
@@ -115,7 +117,7 @@ async function testEngineCensusesFindReasons() {
     'the hint carries a patient name or DOB - it must be counts and tab state only');
 
   const hNo = makeHarness({
-    day: '2026-08-27', today: '2026-08-28', rows: 6,
+    day: '2026-08-27', today: '2026-08-28', rows: 6, visitNotesOn: true,
     chartResult: () => ({ __throw: 'athenaOne patient search found no matching patient.',
       mlsFind: { findReason: 'no-results', route: 'findpatient', candidates: 0 } })
   });
@@ -128,15 +130,17 @@ async function testEngineCensusesFindReasons() {
 async function testStopEndsEverything() {
   const DAY = '2026-08-17';
   let stopAt = null;
+  let notesAtStop = null;
   const h = makeHarness({
-    day: DAY, today: DAY, rows: 12,
+    day: DAY, today: DAY, rows: 12, visitNotesOn: true, noteResult: EMPTY_VISITS,
+    chartCoverage: true, parseResult: GOOD_CHART,
     /* syn-04's chart read never succeeds (both attempts fail), so its day-note
        is still UNREAD when the doctor presses Stop on the way to syn-05 - the
        exact state the tail pass used to walk through minutes after the Stop. */
     chartResult: (target) => {
       const id = String(target.patientId);
       if (id === 'syn-04') return { __throw: 'chart-read-failed-fixture' };
-      if (id === 'syn-05') { stopAt = id; h.rt.window.__mlsPullStopRequested = true; return null; }
+      if (id === 'syn-05') { stopAt = id; notesAtStop = h.noteCalls.length; h.rt.window.__mlsPullStopRequested = true; return null; }
       return null;
     }
   });
@@ -149,14 +153,14 @@ async function testStopEndsEverything() {
     'the rows the doctor stopped are not honestly marked stopped-by-user');
   eq(stopAt, 'syn-05', 'the fixture did not press Stop where it intended');
 
-  /* the today-note TAIL pass did not run for the row it had left unread */
-  eq(Number(receipt.todayNoteStoppedRows || 0), 1,
-    'the stop did not account for the day-note it left un-run (got ' + receipt.todayNoteStoppedRows + ')');
-  const stoppedRow = receipt.patients.find(p => p.patientId === 'syn-04');
-  ok(stoppedRow && stoppedRow.todayNote === false && stoppedRow.todayNoteReason === 'stopped-by-user',
-    'the row whose day-note the stop skipped carries no honest reason');
-  eq(h.noteCalls.filter(c => c.patientId === 'syn-04').length, 0,
-    'the today-note tail pass READ a chart after the doctor pressed Stop');
+  /* The current chart may finish, but Stop must not start another chart/body
+     or invent a separate pulled-day tail failure. */
+  eq(Number(receipt.todayNoteStoppedRows || 0), 0,
+    'Stop invented a separate pulled-day note failure');
+  eq(h.noteCalls.length, Number(notesAtStop || 0) + 1,
+    'Stop did not finish exactly the in-flight chart body before halting');
+  ok(h.noteCalls.every(c => ['syn-01', 'syn-02', 'syn-03', 'syn-05'].includes(String(c.patientId))),
+    'a visit body started after the in-flight chart completed');
 
   /* the SWEEP did not run */
   eq(receipt.sweepPasses, undefined, 'the automatic sweep ran after the doctor pressed Stop');
@@ -171,22 +175,22 @@ async function testStopEndsEverything() {
   ok(receipt.processed >= 5, 'the stop lost the processed count of the work that finished');
   eq(receipt.retry.filter(r => r.reason === 'stopped-by-user').length, 7,
     'the seven rows never started are not all queued as stopped-by-user');
-  ok(notesBeforeStop() >= 4, 'the day-notes read BEFORE the stop were thrown away');
+  eq(notesBeforeStop(), 4, 'the completed ON visit-body work before Stop was lost or over-run');
 
   /* nothing is latched: stopPull() reports what it did and drains its queue */
   const s1 = h.api.stopPull();
   eq(s1.requested, true, 'stopPull no longer reports what it did');
   eq(typeof s1.deferredTodayNotesDropped, 'number', 'stopPull does not report the dropped notes');
 
-  /* NON-VACUITY: with the stop flag DOWN the same fixture runs the tail pass
-     for syn-04 - so the assertions above are about the stop, not the fixture. */
+  /* NON-VACUITY: with the stop flag DOWN the same ON fixture walks the whole day. */
   const h2 = makeHarness({
-    day: DAY, today: DAY, rows: 12,
+    day: DAY, today: DAY, rows: 12, visitNotesOn: true, noteResult: EMPTY_VISITS,
+    chartCoverage: true, parseResult: GOOD_CHART,
     chartResult: (target) => (String(target.patientId) === 'syn-04' ? { __throw: 'chart-read-failed-fixture' } : null)
   });
   const r2 = await h2.api._runHistoryBatch(h2.rows, [], h2.onStatus);
-  eq(h2.noteCalls.filter(c => c.patientId === 'syn-04').length, 1,
-    'without a Stop the tail pass does NOT read the missed row - the fixture proves nothing');
+  eq(h2.noteCalls.length, 11,
+    'without a Stop, the control did not complete every chart body except the failed chart');
   eq(r2.patients.length, 12, 'the un-stopped control did not walk the whole day');
 }
 
@@ -219,7 +223,7 @@ async function testVerdictIsAStoreCensus() {
   /* every chart read "succeeds" but the fake writer stores nothing, so the
      walk counters are perfect and the STORE is byte-identical - the exact
      shape tests/pull-verdict-is-a-store-census.test.js proved. */
-  const h = makeHarness({ day: '2026-08-17', today: '2026-08-17', rows: 5 });
+  const h = makeHarness({ day: '2026-08-17', today: '2026-08-17', rows: 5, visitNotesOn: true, noteResult: EMPTY_VISITS });
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
   ok(receipt.storeCensus, 'the receipt carries no store census at all');
   eq(receipt.storeCensus.measured === true || receipt.storeCensus.measured === false, true,
@@ -249,7 +253,7 @@ async function main() {
   testStopReleasesTheLease();
   await testVerdictIsAStoreCensus();
   await flush(5);
-  console.log('PASS 1p-pull-stop-and-find-census: ' + checks + ' checks - the chart-open refusal now carries the extension\'s own PHI-free findReason and the engine censuses the four outcomes background.js collapses into one sentence (with an actionable hint ONLY for rows-not-rendered); STOP ends the chart loop, the today-note tail pass, the sweep and the deferred round, leaves an honest partial receipt, and latches nothing; and the pull\'s completeness claim is gated on a MEASURED store census, not on walk counters');
+  console.log('PASS 1p-pull-stop-and-find-census: ' + checks + ' checks - the chart-open refusal keeps the extension\'s PHI-free findReason; STOP finishes only the in-flight ON chart/body, then ends chart, sweep and deferred work with an honest partial receipt and no latch; and completeness is gated on a measured store census');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-pull-stop-and-find-census did not finish')); process.exit(1); }, 60000);

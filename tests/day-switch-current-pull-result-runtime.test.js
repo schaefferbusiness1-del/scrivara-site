@@ -32,6 +32,17 @@ function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function operationDateLeaks(value, path = 'report', out = []) {
+  if (!value || typeof value !== 'object') return out;
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${path}.${key}`;
+    if (/^(?:day|target|targetDate|schedDate|visitDate|observedDay)$/.test(key) &&
+        String(child || '') === OTHER_DAY) out.push(childPath);
+    if (child && typeof child === 'object') operationDateLeaks(child, childPath, out);
+  }
+  return out;
+}
+
 function makeNode(tag) {
   const attrs = Object.create(null);
   const node = {
@@ -199,7 +210,9 @@ const context = {
   __mlsVisitNotesPref: {
     read() { return { state: 'on', on: true, settled: true }; },
     write() { return true; },
-    isPrefKey() { return false; }
+    isPrefKey() { return false; },
+    ensureChosenForBulkPull() { return Promise.resolve({ ok: true, chosen: false, on: true, reason: 'already-chosen' }); },
+    choicePending() { return false; }
   },
   __mlsPullShieldForeign: () => false,
   __mlsPullShieldTick() {},
@@ -261,8 +274,8 @@ async function flush() {
     'the copied report combined the current selected day with another operation\'s target');
   assert.strictEqual(report.result.ok, false);
   assert.strictEqual(report.result.complete, false);
-  assert(!JSON.stringify(report).includes(OTHER_DAY),
-    'the current-click report leaked the unrelated engine operation date');
+  assert.deepStrictEqual(operationDateLeaks(report), [],
+    'the current-click report leaked the unrelated engine operation date into a scoped date field');
   assert.strictEqual(report.result.error, visibleBusyExplanation,
     'the report omitted the explicit busy explanation shown for this click');
   assert(/another pull|already running/i.test(String(report.result.error || '')),

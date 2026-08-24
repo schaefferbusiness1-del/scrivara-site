@@ -366,9 +366,9 @@ function probeReply(requestId, over) {
     ok(noteRow1.payload.noteText.split('\n').length === NOTE_CORE.split('\n').length,
       'no line may be added or dropped');
 
-    /* (b) the op-note route: pushHistoryNoteToAthena ships the body with a
-       'NOTE TEXT:\n' prefix, which receiptNoteSections strips. Prove the round
-       trip on the REAL plan shape, not a paraphrase of it. */
+    /* (b) the generic-note plan route still uses the NOTE TEXT prefix, which
+       receiptNoteSections strips. Procedure / operative notes are verified
+       separately below because they must never fall back to this editor. */
     const m2 = wf.buildUnifiedManifest({
       patient: PATIENT, requireExpectedVisit: true,
       expectedContext: { visitDate: DAY, provider: PROVIDER, appointmentId: '70000888' },
@@ -376,9 +376,9 @@ function probeReply(requestId, over) {
     });
     const noteRow2 = m2.rows.filter(r => r.id === 'write-note')[0];
     ok(noteRow2.payload.noteText === NOTE_CORE,
-      'an op note staged through the plan route must be byte-identical to the drafted text');
+      'a generic note staged through the plan route must be byte-identical to the drafted text');
     ok(noteRow2.payload.noteText === noteRow1.payload.noteText,
-      'the sections route and the op-note plan route must stage the SAME bytes');
+      'the sections route and the generic-note plan route must stage the SAME bytes');
 
     /* THE WHOLE OP-NOTE CHAIN, link by link, in the shell that ships it.
        The textarea IS row.note (opPrepRender binds it both ways), so these four
@@ -391,11 +391,25 @@ function probeReply(requestId, over) {
       'opPrepSave must store the drafted note verbatim when creating a record');
     ok(/var bundle=String\(n\.text\|\|n\.soap\|\|''\);/.test(shell),
       'pushHistoryNoteToAthena must read the record text verbatim');
-    ok(shell.indexOf("var plan=[{kind:'note', body:'NOTE TEXT:\\n'+bundle}]") > 0,
-      'pushHistoryNoteToAthena must still ship the note body under the NOTE TEXT prefix');
+    ok(/var noteRoute=n\.kind==='opnote'\?'procedure':'note';/.test(shell),
+      'pushHistoryNoteToAthena must classify an operative note as procedure documentation');
+    ok(/var plan=\[\{kind:noteRoute, body:\(noteRoute==='note'\?'NOTE TEXT:\\n':'PROCEDURE \/ OPERATIVE NOTE:\\n'\)\+bundle\}\]/.test(shell),
+      'generic notes must retain NOTE TEXT while operative notes retain their exact procedure destination');
+    const procedureManifest = wf.buildUnifiedManifest({
+      patient: PATIENT, requireExpectedVisit: true,
+      expectedContext: { visitDate: DAY, provider: PROVIDER, appointmentId: '70000888' },
+      plan: [{ kind: 'procedure', body: 'PROCEDURE / OPERATIVE NOTE:\n' + NOTE_RAW }]
+    });
+    const procedureRow = procedureManifest.rows.find(r => r.kind === 'procedure');
+    ok(procedureRow && procedureRow.capability === 'manual',
+      'an operative note must remain manual until the exact Procedure Documentation adapter is proven');
+    ok(!procedureManifest.rows.some(r => r.id === 'write-note'),
+      'an operative note must never silently fall back to the generic encounter-note write');
+    ok(procedureRow.payload.body === ('PROCEDURE / OPERATIVE NOTE:\n' + NOTE_RAW).trim(),
+      'the manual Procedure Documentation payload must preserve the drafted note bytes with only the whole payload ends trimmed');
     /* and the room's one-press send runs save THEN push, and only pushes a
        record it can actually see filed */
-    ok(/🚀 Save & send to Athena/.test(shell), 'the op-note room must offer a one-press save-and-send');
+    ok(/💾 Save & review for Athena/.test(shell), 'the op-note room must offer a one-press save-and-open-review action without claiming it already sent');
     ok(/var rec2 = filedRecord\(rows\(\)\[sel\]\);\s*\n\s*if \(!rec2\) return;/.test(shell),
       'the op-note send must verify the save landed as a NON-DRAFT record before pushing');
     /* execute the fork's real stripper, never a re-typed copy of it */
@@ -405,7 +419,7 @@ function probeReply(requestId, over) {
       'the executed stripper must round-trip the note exactly');
 
     /* (c) orders / plan sections stage their body byte-exact */
-    const ORDER_BODY = 'REVIEWED ORDER DRAFTS (manual entry only):\n• MRI lumbar spine without contrast\n• PT eval — 2x/week x 4 weeks';
+    const ORDER_BODY = 'REVIEWED ORDER DRAFTS:\n• MRI lumbar spine without contrast\n• PT eval — 2x/week x 4 weeks';
     const m3 = wf.buildUnifiedManifest({
       patient: PATIENT, requireExpectedVisit: true,
       expectedContext: { visitDate: DAY, provider: PROVIDER, appointmentId: '70000888' },
@@ -433,8 +447,9 @@ function probeReply(requestId, over) {
     ok(a.manifestHash === b.manifestHash, 'the manifest hash must be deterministic');
     ok(a.previewHash === b.previewHash, 'the preview hash must be deterministic');
     /* the evidence panel is render-time only: it must not appear in any hash input */
-    ok(Object.keys(a).sort().join(',') === 'manifestHash,manifestId,patient,previewHash,receiptSessionId,requireExpectedVisit,rows,schema,visit',
+    ok(Object.keys(a).sort().join(',') === 'manifestHash,manifestId,needsVisitDiscovery,patient,previewHash,receiptSessionId,requireExpectedVisit,rows,schema,visit',
       'the manifest shape must be unchanged by the evidence panel (got ' + Object.keys(a).sort().join(',') + ')');
+    ok(a.needsVisitDiscovery === false, 'a fully bound historical manifest was mislabeled as live encounter discovery');
     ['tally', 'contradictions', 'staleness', 'evidence', 'data-mls-wfx'].forEach(function (k) {
       ok(JSON.stringify(a).indexOf(k) < 0, 'the manifest must not carry evidence field "' + k + '"');
     });

@@ -29,7 +29,9 @@ const assets = [
      follows the build number and cannot go stale again. */
   ['feat_b18_qa.js', '20260808b18v14perf2', '20260808b18v13perf1'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
-  ['feat_mls_asst_fix.js', '20260802asst145', '20260719asst143'],
+  /* feat_mls_asst_fix.js now follows the shared build token. Its account and
+     provider-readiness fixes change with the release and must not depend on a
+     second hand-maintained URL. */
   ['feat_mls_assistant_exact.js', '20260820asst220perf2', '20260808asst220perf1'],
   /* feat_mls_b121_pack.js left this list on 2026-08-07 (px train): the pack
      changed (matchRow lost its name-only merge leg - the cross-patient weld)
@@ -37,7 +39,7 @@ const assets = [
      that bit copilot_actions, its loader now follows the build number. The
      build-form + dead-literal assertions live below with feat_visits'. */
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
-  ['feat_mls_checker.js', '20260820chk3077', '20260820chk3076'],
+  ['feat_mls_checker.js', '20260823chk3079', '20260822chk3078'],
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
@@ -56,11 +58,12 @@ const assets = [
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260808cmd106perf2', '20260808cmd105perf1'],
-  ['feat_mls_copilot_request_safety.js', '20260802crs121', '20260718crs111'],
+  /* feat_mls_copilot_request_safety.js now follows the shared build token so
+     request-ownership repairs cannot sit behind a frozen URL. */
   ['feat_mls_copilot_dock_fix.js', '20260726cdf210', '20260716cdf200'],
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
-  ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
+  ['feat_mls_progress_stages.js', '20260823ps132', '20260722ps131'],
   /* feat_task3_frontsync.js now follows the shared build token. It is derived
      across lanes and changes too often for a second hand-maintained token. */
   ['feat_mls_upnow_activeselect.js', '20260808uas5perf1', '20260804uas4'],
@@ -155,11 +158,19 @@ for (const [asset, token, retired] of assets) {
 
 /* feat_visits.js: the form is the pin now, and both retired tokens stay dead. */
 for (const [label, text] of [['production', connect], ['staging', staging]]) {
+  assert(text.includes("feat_mls_asst_fix.js?v='+(window.__MLS_AV||Date.now())"),
+    label + ': Assistant readiness fixes must follow the shared build cache token');
+  assert(!text.includes('20260802asst145') && !text.includes('20260719asst143'),
+    label + ': a retired hand-maintained Assistant-fix token is still reachable');
   assert(text.includes("feat_visits.js?v='+(window.__MLS_AV||Date.now())"),
     label + ': feat_visits must load with the build-number cache-buster');
   assert(!/feat_visits\.js\?v=20\d{6}/.test(text),
     label + ': a hand-maintained feat_visits token came back — it will go stale at the next change');
 }
+assert(connect.includes("feat_mls_copilot_request_safety.js?v='+(window.__MLS_AV||Date.now())"),
+  'production: Copilot request ownership must follow the shared build cache token');
+assert(!connect.includes('20260802crs121') && !connect.includes('20260718crs111'),
+  'production: a retired Copilot request-safety token is still reachable');
 
 /* These high-churn performance owners follow the shared build token. That
    makes the cache URL move with every release instead of relying on a second
@@ -254,7 +265,7 @@ for (const dead of ['20260807av567', '20260807av566']) {
   assert(!connect.includes(dead), 'retired avatar cache token ' + dead + ' is back in the loader');
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260820chk3077'),
+assert(staging.includes('feat_mls_checker.js?v=20260823chk3079'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');

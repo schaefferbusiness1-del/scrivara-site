@@ -289,7 +289,7 @@ const connect = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'u
 const lbLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_loading_calm.js',V='lb-2.1.0'")) || '';
 const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.3.0'")) || '';
 assert(lbLoader.includes("s.src=A+'?v=20260719lb204'") && lbLoader.includes("s.setAttribute('data-mls-version',V)"), 'lb loader lost its exact version-aware cache token/tag');
-assert(psLoader.includes("s.src=A+'?v=20260722ps131'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
+assert(psLoader.includes("s.src=A+'?v=20260823ps132'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
 assert(lbLoader.includes("api.revert") && lbLoader.includes("data-mls-retired-asset"), 'lb loader does not retire the stale owner/tag');
 assert(psLoader.includes("api.revert") && psLoader.includes("data-mls-retired-asset"), 'ps loader does not retire the stale owner/tag');
 const lbAt = connect.indexOf(lbLoader);

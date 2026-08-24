@@ -67,8 +67,8 @@ const vf = fs.readFileSync(path.join(root, 'feat_mls_visit_focus.js'), 'utf8');
 assert(tn.includes('labelledForPrompt: function () {'), 'the turn engine must offer the sidecar block');
 assert(app.includes('SPEAKER-TURN HYPOTHESES (UNVERIFIED'),
   'the sidecar must carry its caveat INSIDE the user block - the one field the hosted transport keeps');
-assert(app.includes("return await postChat(sys,'Visit transcript:\\n\\n'+transcript+ctxLine+turnsBlock,key);"),
-  'the sidecar must ride the user payload, never rewrite the transcript');
+assert(app.includes("return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\\n'+transcript+'\\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock,key,{draftTuning:getGenSectionProfileOverrides()});"),
+  'the sidecar must ride the wrapped user payload after the unchanged transcript and before draft-tuning options');
 assert(app.includes("noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',"),
   'Copilot must receive the NOTE, not a word count');
 assert(app.includes('codes: coding?{ icd10:(coding.icd10||[]).slice(0,20)'),

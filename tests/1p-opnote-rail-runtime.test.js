@@ -762,9 +762,10 @@ async function runtime() {
        able to put right into athena to"): a finished op note used to need two
        presses — Save, then a Send control that only existed once the save had
        landed. The one action now saves AND opens the ordinary Athena confirm
-       sheet, so the label promises both. The save half is unchanged and is
+       sheet, so the label promises both without implying that the review
+       itself already sent anything. The save half is unchanged and is
        still proven by step (d) below. */
-    ok(/Save & send to Athena/.test(go2), `after a clean draft the one action is "${go2}", not Save & send`);
+    ok(/Save & review for Athena/.test(go2), `after a clean draft the one action is "${go2}", not Save & review for Athena`);
 
     /* THE NOTE COMES EXPANDED, AND THE GREEN BAR IS GONE ------------- */
     let open7 = await page.evaluate(() => ({
@@ -1129,7 +1130,7 @@ async function runtime() {
     await glowIs('mlsOpnGo', 'patient selected, no note yet');
     eq(await page.evaluate(() => (document.getElementById('mlsOpnGo') || {}).textContent || ''),
       '✨ Draft this op note', 'the glowing control on an undrafted patient is not the Draft action');
-    /* c) drafted and unsaved -> Save & send to Athena (opnsend-1.0.0) */
+    /* c) drafted and unsaved -> Save & review for Athena (opnsend-1.0.0) */
     await page.evaluate(async () => {
       const r = (window._opPrep || [])[0];
       r.gen = true; r._genPass = true; r.note = 'PROCEDURE: Lumbar medial branch block\nFINDINGS: documented';
@@ -1139,8 +1140,8 @@ async function runtime() {
     });
     await page.waitForTimeout(900);
     await glowIs('mlsOpnGo', 'note drafted, not yet in the chart');
-    ok(/Save & send to Athena/.test(await page.evaluate(() => (document.getElementById('mlsOpnGo') || {}).textContent || '')),
-      'the glowing control on a finished draft is not Save & send');
+    ok(/Save & review for Athena/.test(await page.evaluate(() => (document.getElementById('mlsOpnGo') || {}).textContent || '')),
+      'the glowing control on a finished draft is not Save & review for Athena');
     /* d) saved -> the BIG "Open in History", through the app's OWN save */
     const saved = await page.evaluate(async () => {
       document.getElementById('mlsOpnGo').click();
@@ -1731,6 +1732,81 @@ async function runtime() {
       assert.deepStrictEqual(remounted, [],
         `these room surfaces were rebuilt by 20 repaints instead of surviving them: ${JSON.stringify(ident)}`);
       checks++;
+
+      /* Stable appointment identity, not array position, owns each rail node.
+         Reorder the live source array in place, then partially damage the host:
+         the selected appointment and every unaffected node must survive, while
+         the missing row alone is recreated in the exact expected order. */
+      const keyedRepair = await page.evaluate(() => {
+        const api = window.__mlsOpDay;
+        const rows = window._opPrep || [];
+        api.search('');
+        const originalIndex = Math.min(3, Math.max(0, rows.length - 1));
+        api.openNote(originalIndex);
+        const selectedRow = rows[originalIndex];
+        const selectedKey = selectedRow && (selectedRow.opKey || selectedRow.__mlsOpRailKey);
+        const selectedNode = document.getElementById('mlsOpnRow' + originalIndex);
+        if (selectedNode) selectedNode.__mlsKeyedSurvivor = 'selected';
+
+        rows.reverse();
+        if (typeof window.opPrepRender === 'function') window.opPrepRender();
+        api.search('');
+        const newIndex = rows.indexOf(selectedRow);
+        const movedNode = document.getElementById('mlsOpnRow' + newIndex);
+        const reordered = {
+          originalIndex, newIndex, selected: api.selected(),
+          sameNode: movedNode === selectedNode,
+          marker: movedNode && movedNode.__mlsKeyedSurvivor,
+          current: movedNode && movedNode.getAttribute('aria-current'),
+          selectedKey, rowKey: rows[newIndex] && (rows[newIndex].opKey || rows[newIndex].__mlsOpRailKey)
+        };
+
+        const grid = document.getElementById('mlsOpDayGrid');
+        const expectedKeys = Array.from(grid.children).map((n) => n.getAttribute('data-mls-row-key'));
+        const victim = Array.from(grid.children).find((n) => n !== movedNode);
+        const survivor = Array.from(grid.children).find((n) => n !== movedNode && n !== victim);
+        const victimKey = victim && victim.getAttribute('data-mls-row-key');
+        if (survivor) survivor.__mlsKeyedSurvivor = 'unaffected';
+        if (victim) victim.remove();
+        api.search('');
+        const repairedVictim = Array.from(grid.children).find((n) => n.getAttribute('data-mls-row-key') === victimKey);
+        const repaired = {
+          count: grid.children.length,
+          expectedCount: expectedKeys.length,
+          order: Array.from(grid.children).map((n) => n.getAttribute('data-mls-row-key')),
+          expectedKeys,
+          victimRecreated: !!victim && !!repairedVictim && repairedVictim !== victim,
+          selectedSurvived: document.getElementById('mlsOpnRow' + newIndex) === selectedNode,
+          unaffectedSurvived: !survivor || survivor.__mlsKeyedSurvivor === 'unaffected'
+        };
+
+        rows.reverse();
+        if (typeof window.opPrepRender === 'function') window.opPrepRender();
+        api.search('');
+        const restoredNode = document.getElementById('mlsOpnRow' + originalIndex);
+        const restored = {
+          selected: api.selected(), sameNode: restoredNode === selectedNode,
+          current: restoredNode && restoredNode.getAttribute('aria-current'),
+          rowKey: rows[originalIndex] && (rows[originalIndex].opKey || rows[originalIndex].__mlsOpRailKey)
+        };
+        return { reordered, repaired, restored };
+      });
+      eq(keyedRepair.reordered.selected, keyedRepair.reordered.newIndex,
+        `selection stayed on an array position after reorder: ${JSON.stringify(keyedRepair)}`);
+      eq(keyedRepair.reordered.rowKey, keyedRepair.reordered.selectedKey,
+        `the selected appointment identity changed after reorder: ${JSON.stringify(keyedRepair)}`);
+      ok(keyedRepair.reordered.sameNode && keyedRepair.reordered.marker === 'selected' && keyedRepair.reordered.current === 'true',
+        `the selected keyed row was rebuilt or lost aria-current after reorder: ${JSON.stringify(keyedRepair)}`);
+      eq(keyedRepair.repaired.count, keyedRepair.repaired.expectedCount,
+        `a partially removed rail did not restore its exact row count: ${JSON.stringify(keyedRepair)}`);
+      assert.deepStrictEqual(keyedRepair.repaired.order, keyedRepair.repaired.expectedKeys,
+        `a partially removed rail did not restore exact key order: ${JSON.stringify(keyedRepair)}`);
+      checks++;
+      ok(keyedRepair.repaired.victimRecreated && keyedRepair.repaired.selectedSurvived && keyedRepair.repaired.unaffectedSurvived,
+        `host repair rebuilt unaffected keyed rows or failed to recreate the missing row: ${JSON.stringify(keyedRepair)}`);
+      ok(keyedRepair.restored.sameNode && keyedRepair.restored.selected === keyedRepair.reordered.originalIndex &&
+          keyedRepair.restored.current === 'true' && keyedRepair.restored.rowKey === keyedRepair.reordered.selectedKey,
+        `restoring source order lost the selected appointment/node: ${JSON.stringify(keyedRepair)}`);
 
       /* THE BLOCK'S OWN GUARDS, read out of the shipped shell so a future
          edit that removes them fails here rather than in the owner's room. */

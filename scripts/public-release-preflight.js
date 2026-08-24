@@ -555,12 +555,12 @@ async function runPreflight(options, dependencies = {}) {
       if (!body || body.ok !== true) addFailure(failures, 'backend_health_invalid', '/api/health', 'Health response did not report ok=true');
       if (observedRevision !== expectedBackendRevision) addFailure(failures, 'backend_revision_mismatch', '/api/health', `Observed ${observedRevision || '(missing)'}; expected ${expectedBackendRevision}`);
       const clinicalCapabilityKeys = ['phiEnabled', 'clinicalApi', 'patientData', 'schedule', 'noteAi', 'storage', 'extensionRelay', 'communications'];
-      const healthClosed = body && body.readiness && body.readiness.clinicalUse === false
+      const healthClinicalEnabled = body && body.readiness && body.readiness.clinicalUse === true
         && body.capabilities
-        && clinicalCapabilityKeys.every((key) => body.capabilities[key] === false);
-      if (!healthClosed) {
-        addFailure(failures, 'backend_health_clinical_state_unverified', '/api/health', 'Synthetic-evaluation release requires the public health response to explicitly report clinicalUse=false and every PHI/clinical capability=false');
-      } else healthClinicalMode = 'public-health-closed';
+        && clinicalCapabilityKeys.every((key) => body.capabilities[key] === true);
+      if (!healthClinicalEnabled) {
+        addFailure(failures, 'backend_health_clinical_state_unverified', '/api/health', 'Production release requires the public health response to explicitly report clinicalUse=true and every PHI/clinical capability=true');
+      } else healthClinicalMode = 'public-health-enabled';
     } catch (error) {
       addFailure(failures, 'backend_health_invalid', '/api/health', error.message);
     }

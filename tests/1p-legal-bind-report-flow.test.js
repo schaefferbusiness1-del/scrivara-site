@@ -118,13 +118,33 @@ function wholeReportResponse(request, mutate) {
   const evidenceIds = promptJson(request, 'Evidence-ID allowlist: ', '.');
   const nameMatch = /\[P000\] EXACT ACTIVE PATIENT BINDING\s*\nName:\s*([^\n]+)/.exec(String(request.user || ''));
   const patientName = nameMatch ? nameMatch[1].trim() : 'the bound patient';
+  const encounterMatch = /\[(E\d+)\]\s+(\d{4}-\d{2}-\d{2})\s+·\s+([^·]+?)\s+·\s+[^\n]+/.exec(String(request.user || ''));
+  const encounterId = encounterMatch && evidenceIds.includes(encounterMatch[1]) ? encounterMatch[1] : evidenceIds.find(id => /^E/.test(id));
+  const encounterDate = encounterMatch ? encounterMatch[2] : '2025-02-02';
+  const encounterType = encounterMatch ? encounterMatch[3].trim() : 'Office visit';
+  const imagingEncounter = /(?:\bmri\b|\bct\b|x[- ]?ray|radiograph|radiology|imaging|ultrasound|scan)/i.test(encounterType);
+  const procedureEncounter = /(?:procedure|injection|block|ablation|epidural|facet|surgery|operative|operation)/i.test(encounterType);
+  const hasConcreteGapPacket = /source supplied[\s\S]{0,220}unsigned summary[\s\S]{0,260}(?:accident history|original radiology)|(?:treatment\s+response|response\s+details)\s+(?:was|were|are|is)\s+not\s+documented/i.test(String(request.user || ''));
+  const missingOpinion = (label, missing, detail) => ({
+    text: label + ': Undeterminable on the record reviewed because ' + missing + (detail ? ' ' + detail : '') + '.', evidenceIds: []
+  });
   const report = { sections: specs.map((spec, index) => ({
     heading: spec.heading,
-    paragraphs: index === 0 && evidenceIds.includes('P000')
-      ? [{ text: spec.heading === 'PURPOSE AND SCOPE'
-          ? 'This physician narrative addresses the requested medical issues for ' + patientName + ' using only the records provided, with source limitations requiring clinician verification.'
-          : 'The frozen patient binding identifies ' + patientName + ' by name.', evidenceIds: ['P000'] }]
-      : [{ text: 'The records reviewed do not document sufficient evidence for requested item ' + (index + 1) + '; clinician verification is required.', evidenceIds: [] }]
+    paragraphs: spec.heading === 'PURPOSE AND SCOPE' && evidenceIds.includes('P000')
+      ? [{ text: hasConcreteGapPacket
+          ? 'This physician narrative addresses the requested medical issues for ' + patientName + '. The source supplied is an unsigned summary rather than the complete underlying chart; the accident history, original radiology report, selected contemporaneous examination details, and treatment details should be verified before adoption.'
+          : 'This physician narrative addresses the requested medical issues for ' + patientName + ' using only the records provided, with source limitations requiring clinician verification.', evidenceIds: ['P000'] }]
+      : spec.heading === 'SUMMARY OF OPINIONS'
+        ? [missingOpinion('Causation', 'the mechanism and chronology'), missingOpinion('Neuropathy', 'objective neurologic testing or a formally documented diagnosis'), { text: 'Permanent and Stationary / Maximum Medical Improvement: Not formally established because the latest condition and pending care are not documented.', evidenceIds: [] }, missingOpinion('Future Care', 'the records do not establish a documented recommendation, schedule, or trigger')]
+      : spec.heading === 'MEDICAL OPINIONS'
+          ? [missingOpinion('Causation', 'the mechanism and chronology', 'in the detailed medical analysis'), missingOpinion('Neuropathy', 'objective neurologic testing or a formally documented diagnosis', 'for the requested issue'), { text: 'Permanent and Stationary / Maximum Medical Improvement: Not formally established because the latest condition and pending care remain undocumented in the detailed review.', evidenceIds: [] }]
+        : spec.heading === 'HISTORY AND COURSE OF TREATMENT' && encounterId
+            ? [{ text: encounterDate + ' - ' + encounterType + (imagingEncounter
+                ? ': The documented MRI result is limited to the supplied impression; treatment response was not documented.'
+                : procedureEncounter
+                  ? ': The documented procedure and technique are identified in the supplied record; response was not documented.'
+                  : ': History: Not documented in the records reviewed. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.'), evidenceIds: [encounterId] }]
+            : [{ text: 'The records reviewed do not document sufficient evidence for requested item ' + (index + 1) + '; clinician verification is required.', evidenceIds: [] }]
   })) };
   if (mutate) mutate(report, { specs, evidenceIds, patientName });
   return JSON.stringify(report);
@@ -693,18 +713,78 @@ function makeRuntime(options = {}) {
     ok(/^NARRATIVE MEDICAL REPORT$/m.test(r.ids.mlsP1LegalDraft.value), 'the report does not use the reference-form narrative title');
     ok(/^DOB: 01\/02\/1980$/m.test(r.ids.mlsP1LegalDraft.value) && /^MRN: TEST-A$/m.test(r.ids.mlsP1LegalDraft.value),
       'the narrative header omitted the frozen patient metadata');
+    ok(/^To Whom It May Concern:$/m.test(r.ids.mlsP1LegalDraft.value), 'the narrative header omitted its deterministic addressee');
     ['PURPOSE AND SCOPE', 'SUMMARY OF OPINIONS', 'HISTORY AND COURSE OF TREATMENT', 'MEDICAL OPINIONS',
       'LIKELY FUTURE CARE', 'REASONABLENESS AND NECESSITY', 'CONCLUSION'].forEach(heading => {
-      ok(new RegExp('^' + heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm').test(r.ids.mlsP1LegalDraft.value),
+      const pattern = heading === 'HISTORY AND COURSE OF TREATMENT'
+        ? /^HISTORY AND COURSE OF (?:[A-Z]+ )?TREATMENT$/m
+        : new RegExp('^' + heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm');
+      ok(pattern.test(r.ids.mlsP1LegalDraft.value),
         'the narrative omitted ' + heading);
     });
+    ['Causation:', 'Neuropathy:', 'Permanent and Stationary / Maximum Medical Improvement:', 'Future Care:'].forEach(label => {
+      ok(r.ids.mlsP1LegalDraft.value.includes(label), 'the narrative omitted required opinion label ' + label);
+    });
+    ok(/History: .*Pertinent Examination: .*Assessment and Plan:/.test(r.ids.mlsP1LegalDraft.value),
+      'the narrative history omitted the dated History/examination/assessment-plan labels');
     ok(!/XIV\. OPINIONS/.test(r.ids.mlsP1LegalDraft.value), 'the narrative report printed an OPINIONS section');
     ok(/NARRATIVE FORM: Aim for the density of a polished four-to-seven-page physician narrative/.test(r.pendingAi[0].sys),
       'the Luna prompt does not carry the compact reference-report form');
-    ok(/select only clinically meaningful events/.test(r.pendingAi[0].sys) && /a complaint alone is not an independent diagnosis/.test(r.pendingAi[0].sys),
+    ok(/select only clinically meaningful events/.test(r.pendingAi[0].sys) && /a complaint alone is not an independent diagnosis/.test(r.pendingAi[0].sys) &&
+      /enumerate every concrete source gap/.test(r.pendingAi[0].sys) && /Pertinent Examination:/.test(r.pendingAi[0].sys),
       'the narrative prompt lost selective chronology or diagnostic-reasoning guidance');
+    eq(r.pendingAi[0].opts.family, 'legal_ime', 'the narrative request did not use the legal_ime family');
+    eq(r.pendingAi[0].opts.draftSubtype, 'narrative_medical_report', 'the narrative request did not use its explicit subtype');
     ok(/^ATTESTATION$/m.test(r.ids.mlsP1LegalDraft.value),
       'the narrative report lost its unnumbered signature attestation');
+    ok(/This is an unsigned draft for clinician review\. It does not constitute a final medical-legal opinion unless verified, adopted, and signed by/.test(r.ids.mlsP1LegalDraft.value),
+      'the narrative report lost its deterministic target-style unsigned guard');
+  }
+
+  /* Concrete source limitations named by a supplied record must survive as
+     concrete PURPOSE language. A generic "source limitations" sentence is
+     rejected once the packet itself identifies the missing source categories. */
+  {
+    const r = makeRuntime();
+    r.api.open(); r.api.pickReport('narrative');
+    r.api.addFiles([{ name: 'source-limitations.txt', type: 'text/plain', size: 240, text: () => Promise.resolve(
+      'The source supplied for this report is an unsigned summary rather than the complete underlying chart. The accident history, original radiology report, and selected contemporaneous examination and treatment details should be verified before adoption or signing.'
+    ) }]);
+    await flush();
+    eq(r.api.state().sourceCount, 1, 'the concrete source-gap fixture did not settle into the packet');
+    const promise = r.api.generateDraft(); await flush();
+    eq(r.pendingAi.length, 1, 'the source-gap narrative did not make one initial coherent request');
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], report => {
+      report.sections.find(section => section.heading === 'PURPOSE AND SCOPE').paragraphs = [{
+        text: 'This physician narrative addresses the requested medical issues using the records provided, with source limitations requiring clinician verification.', evidenceIds: ['P000']
+      }];
+    }));
+    await flush();
+    eq(r.pendingAi.length, 2, 'a generic source-limit sentence was not rejected when the packet named concrete gaps');
+    ok(/concrete source gap|source summary|accident history|original radiology/i.test(r.pendingAi[1].sys),
+      'the source-gap repair did not name the concrete missing categories');
+    r.pendingAi[1].resolve(wholeReportResponse(r.pendingAi[1]));
+    eq(await promise, true, 'the source-gap narrative did not complete after its bounded repair');
+  }
+
+  /* Imaging/procedure entries retain natural evidence prose. They must not be
+     padded with clinical-encounter labels that imply an examination occurred
+     or that a plan was documented. */
+  {
+    const r = makeRuntime({ patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [
+      { date: '2025-02-02', type: 'Lumbar MRI', provider: 'M Synthetic', detail: 'Lumbar MRI demonstrated a documented disc finding; treatment response was not documented.' }
+    ], docs: [] }, { id: 'B', name: 'Synthetic Beta', dob: '03/04/1990', mrn: 'TEST-B', visits: [] }, { id: 'C', name: 'Synthetic Gamma', dob: '05/06/1975', mrn: 'MRN-9001', visits: [] }] });
+    r.api.open(); r.api.pickReport('narrative');
+    const promise = r.api.generateDraft(); await flush();
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], (report, meta) => {
+      const history = report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT');
+      history.paragraphs = [{ text: '2025-02-02 - Lumbar MRI: History: Not documented in the records reviewed. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.', evidenceIds: [meta.evidenceIds.find(id => /^E/.test(id))] }];
+    }));
+    await flush();
+    eq(r.pendingAi.length, 2, 'imaging boilerplate was accepted as a clinical encounter paragraph');
+    ok(/imaging\/procedure entry|clinical-label boilerplate/i.test(r.pendingAi[1].sys), 'the imaging repair did not name the natural-entry defect');
+    r.pendingAi[1].resolve(wholeReportResponse(r.pendingAi[1]));
+    eq(await promise, true, 'the imaging narrative did not complete after its bounded repair');
   }
 
   /* Strict JSON alone used to let polished-looking nonsense through. The
@@ -777,6 +857,193 @@ function makeRuntime(options = {}) {
       }
     },
     {
+      name: 'unsupported diagnosis hidden behind generic overlap', error: /clinical diagnosis, finding, or procedure not present/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: The patient had diabetes and reported pain during follow-up. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'uncommon Parkinson diagnosis hidden behind generic overlap', error: /diagnosis concept not present/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: The patient had Parkinson disease and reported pain during follow-up. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'uncommon Ehlers-Danlos diagnosis hidden behind generic overlap', error: /diagnosis concept not present/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: The patient was diagnosed with Ehlers-Danlos syndrome and reported pain during follow-up. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'record-establishes uncommon diagnosis', error: /diagnosis concept not present/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: The records establish Parkinson disease, and the patient reported pain during follow-up. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'reverse documented uncommon diagnosis', error: /diagnosis concept not present/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: Parkinson disease is documented, and the patient reported pain during follow-up. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'uncued possessive diagnosis', error: /diagnosis concept not present/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: The patient\'s Parkinson disease caused persistent symptoms during follow-up. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'uncued affirmative disease concept', error: /diagnosis concept not present/i,
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: Parkinson disease caused persistent symptoms during follow-up. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'affirmative diagnosis from negated source', error: /supported only by negated evidence/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: 'No Parkinson disease was documented. The patient had lumbar radiculopathy.'
+      }] }] },
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: Parkinson disease is documented. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'affirmative diagnosis from possible evaluation', error: /supported only by uncertain evidence/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: 'The patient was evaluated for possible Parkinson disease and found to have lumbar radiculopathy.'
+      }] }] },
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: Parkinson disease is documented. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'affirmative diagnosis from suspected source', error: /supported only by uncertain evidence/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: 'Parkinson disease was suspected; lumbar radiculopathy was documented.'
+      }] }] },
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: Parkinson disease is documented. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'affirmative diagnosis from differential source', error: /supported only by uncertain evidence/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: 'Parkinson disease was listed in the differential diagnosis; lumbar radiculopathy was documented.'
+      }] }] },
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: Parkinson disease is documented. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'affirmative diagnosis from rule-out source', error: /supported only by (?:negated|uncertain) evidence/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: 'The record documents rule-out Parkinson disease; lumbar radiculopathy was documented.'
+      }] }] },
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: Parkinson disease is documented. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'unsupported laterality', error: /laterality not present/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: 'The patient has right lumbar radiculopathy. Moderate pain was documented.'
+      }] }] },
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: The patient had left lumbar radiculopathy. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'unsupported severity', error: /severity not present/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: 'The patient has lumbar radiculopathy. Moderate pain was documented.'
+      }] }] },
+      mutate(report, meta) {
+        report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+          text: '2025-02-02 - Office visit: History: The patient had severe lumbar radiculopathy. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+          evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+        }];
+      }
+    },
+    {
+      name: 'unsupported negative causation', error: /negative causation opinion without explicit support/i,
+      mutate(report, meta) {
+        const ids = meta.evidenceIds.filter(id => /^E/.test(id));
+        const summary = report.sections.find(section => section.heading === 'SUMMARY OF OPINIONS');
+        summary.paragraphs = [{
+          text: 'Causation: To a reasonable degree of medical certainty, the documented lumbar strain is not causally related to the supplied records.', evidenceIds: ids
+        }].concat(summary.paragraphs.filter(paragraph => !/^Causation:/i.test(paragraph.text)));
+      }
+    },
+    {
+      name: 'unsupported negative necessity', error: /negative necessity opinion without explicit support/i,
+      mutate(report, meta) {
+        const ids = meta.evidenceIds.filter(id => /^E/.test(id));
+        const opinions = report.sections.find(section => section.heading === 'MEDICAL OPINIONS');
+        opinions.paragraphs = [{
+          text: 'Medical Necessity: To a reasonable degree of medical certainty, the documented therapy was not medically necessary.', evidenceIds: ids
+        }].concat(opinions.paragraphs);
+      }
+    },
+    {
+      name: 'conditional negative necessity without support', error: /negative necessity opinion without explicit support/i,
+      mutate(report, meta) {
+        const ids = meta.evidenceIds.filter(id => /^E/.test(id));
+        const opinions = report.sections.find(section => section.heading === 'MEDICAL OPINIONS');
+        opinions.paragraphs = [{
+          text: 'Medical Necessity: Conditional upon the current record, the documented therapy is not medically necessary unless later records show a qualifying indication.', evidenceIds: ids
+        }].concat(opinions.paragraphs);
+      }
+    },
+    {
+      name: 'affirmative causation without causation evidence', error: /affirmative causation opinion without explicit support/i,
+      mutate(report, meta) {
+        const ids = meta.evidenceIds.filter(id => /^E/.test(id));
+        const summary = report.sections.find(section => section.heading === 'SUMMARY OF OPINIONS');
+        summary.paragraphs = [{
+          text: 'Causation: To a reasonable degree of medical certainty, the documented lumbar strain, pain, and therapy are causally related.', evidenceIds: ids
+        }].concat(summary.paragraphs.filter(paragraph => !/^Causation:/i.test(paragraph.text)));
+      }
+    },
+    {
       name: 'unauthored first-person examination', error: /first-person examination or treatment claim/i,
       mutate(report, meta) {
         report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
@@ -796,14 +1063,20 @@ function makeRuntime(options = {}) {
     },
     {
       name: 'conclusion reverses opinion polarity', error: /CONCLUSION reversed the polarity of the causation opinion/i,
+      runtime: { patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+        date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic',
+        detail: 'The documented incident caused a lumbar strain and was recorded as causally related. Pain and therapy continued.'
+      }] }] },
       mutate(report, meta) {
         const ids = meta.evidenceIds.filter(id => /^E/.test(id));
-        report.sections.find(section => section.heading === 'SUMMARY OF OPINIONS').paragraphs = [{
+        const summary = report.sections.find(section => section.heading === 'SUMMARY OF OPINIONS');
+        const opinions = report.sections.find(section => section.heading === 'MEDICAL OPINIONS');
+        summary.paragraphs = [{
           text: 'Causation: To a reasonable degree of medical certainty, the documented lumbar strain is causally related to the course represented in the supplied evidence.', evidenceIds: ids
-        }];
-        report.sections.find(section => section.heading === 'MEDICAL OPINIONS').paragraphs = [{
+        }].concat(summary.paragraphs.filter(paragraph => !/^Causation:/i.test(paragraph.text)));
+        opinions.paragraphs = [{
           text: 'Causation: To a reasonable degree of medical certainty, pain and therapy records support the relationship for the lumbar strain.', evidenceIds: ids
-        }];
+        }].concat(opinions.paragraphs.filter(paragraph => !/^Causation:/i.test(paragraph.text)));
         report.sections.find(section => section.heading === 'CONCLUSION').paragraphs = [{
           text: 'Causation: To a reasonable degree of medical certainty, the lumbar strain is not related to the documented pain and therapy.', evidenceIds: ids
         }];
@@ -828,7 +1101,7 @@ function makeRuntime(options = {}) {
       }
     }
   ]) {
-    const r = makeRuntime(); r.api.open(); r.api.pickReport('narrative');
+    const r = makeRuntime(adversarial.runtime || {}); r.api.open(); r.api.pickReport('narrative');
     const promise = r.api.generateDraft(); await flush();
     r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], adversarial.mutate));
     await flush();
@@ -838,6 +1111,68 @@ function makeRuntime(options = {}) {
     r.pendingAi[1].resolve(wholeReportResponse(r.pendingAi[1]));
     eq(await promise, true, adversarial.name + ': valid bounded repair did not complete');
     eq(r.pendingAi.length, 2, adversarial.name + ': repair escaped its one-attempt bound');
+  }
+
+  /* Concept grounding is normalized on both sides of the evidence boundary:
+     a faithful Parkinson's/Parkinson spelling variant and an uncommon
+     Ehlers-Danlos diagnosis are valid when the cited chart actually contains
+     the same concepts. */
+  for (const supported of [
+    { label: 'Parkinson possessive normalization', source: 'The patient has Parkinson\'s disease documented.', claim: 'Parkinson disease is documented.' },
+    { label: 'Ehlers-Danlos supported concept', source: 'The patient has Ehlers-Danlos syndrome documented.', claim: 'Ehlers-Danlos syndrome is documented.' },
+    { label: 'later explicit Parkinson confirmation', source: 'The patient was evaluated for possible Parkinson disease. A later report confirmed Parkinson disease.', claim: 'Parkinson disease is documented.' },
+    { label: 'confirmed diagnosis with unrelated negation', source: 'Parkinson disease was documented, with no fever.', claim: 'Parkinson disease is documented.' },
+    { label: 'uncued possessive supported concept', source: 'The patient\'s Parkinson disease was documented.', claim: 'The patient\'s Parkinson disease caused persistent symptoms.' }
+  ]) {
+    const r = makeRuntime({ patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+      date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: supported.source
+    }] }] });
+    r.api.open(); r.api.pickReport('narrative');
+    const promise = r.api.generateDraft(); await flush();
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], (report, meta) => {
+      report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
+        text: '2025-02-02 - Office visit: History: ' + supported.claim + ' Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.',
+        evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
+      }];
+    }));
+    await flush();
+    eq(await promise, true, supported.label + ' was incorrectly rejected');
+    eq(r.pendingAi.length, 1, supported.label + ' triggered a needless repair');
+  }
+
+  /* Negative opinions are allowed only when the cited record explicitly
+     supports that issue. */
+  for (const supported of [
+    {
+      label: 'supported negative causation',
+      source: 'The record documents that the lumbar strain was not causally related to the reported incident.',
+      heading: 'SUMMARY OF OPINIONS',
+      text: 'Causation: To a reasonable degree of medical certainty, the lumbar strain is not causally related to the reported incident.'
+    },
+    {
+      label: 'supported negative necessity',
+      source: 'The record documents that the therapy was not medically necessary because no indication was documented.',
+      heading: 'MEDICAL OPINIONS',
+      text: 'Medical Necessity: To a reasonable degree of medical certainty, the therapy was not medically necessary.'
+    }
+  ]) {
+    const r = makeRuntime({ patients: [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A', visits: [{
+      date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic', detail: supported.source
+    }] }] });
+    r.api.open(); r.api.pickReport('narrative');
+    const promise = r.api.generateDraft(); await flush();
+    r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], (report, meta) => {
+      const section = report.sections.find(candidate => candidate.heading === supported.heading);
+      section.paragraphs = [{ text: supported.text, evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id)) }].concat(section.paragraphs.filter(paragraph => supported.label === 'supported negative causation' ? !/^Causation:/i.test(paragraph.text) : true));
+      if (supported.label === 'supported negative causation') {
+        const opinions = report.sections.find(candidate => candidate.heading === 'MEDICAL OPINIONS');
+        opinions.paragraphs = [{ text: 'Causation: To a reasonable degree of medical certainty, the documented lumbar strain is not causally related to the reported incident based on the cited evidence.', evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id)) }].concat(opinions.paragraphs.filter(paragraph => !/^Causation:/i.test(paragraph.text)));
+        report.sections.find(candidate => candidate.heading === 'CONCLUSION').paragraphs = [{ text: 'Causation: The supplied record is not causally related to the lumbar strain.', evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id)) }];
+      }
+    }));
+    await flush();
+    eq(await promise, true, supported.label + ' was incorrectly rejected');
+    eq(r.pendingAi.length, 1, supported.label + ' triggered a needless repair');
   }
 
   /* First person remains available when the cited record actually names the
@@ -854,7 +1189,7 @@ function makeRuntime(options = {}) {
     const promise = r.api.generateDraft(); await flush();
     r.pendingAi[0].resolve(wholeReportResponse(r.pendingAi[0], (report, meta) => {
       report.sections.find(section => section.heading === 'HISTORY AND COURSE OF TREATMENT').paragraphs = [{
-        text: '2025-02-02 - Office visit: I examined and treated Synthetic Alpha for documented lumbar strain with therapy.',
+        text: '2025-02-02 - Office visit: History: I examined and treated Synthetic Alpha for documented lumbar strain with therapy. Pertinent Examination: I documented the examination. Assessment and Plan: I continued therapy.',
         evidenceIds: meta.evidenceIds.filter(id => /^E/.test(id))
       }];
     }));

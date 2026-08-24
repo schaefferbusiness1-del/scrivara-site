@@ -278,7 +278,7 @@ function harness() {
       try { showView('history'); } catch (e) {}
       document.body.removeAttribute('data-p1-pull-landed');
       var btn = document.getElementById('pullChartBtn');
-      return Promise.resolve(window.pullPatientChartViaAssist(btn, {})).then(function (r) { return r === true; },
+      return Promise.resolve(window.pullPatientChartViaAssist(btn, {})).then(function (r) { return r === true || !!(r && r.chartSaved === true); },
         function () { return false; });
     },
     /* The empty-state notice's own pull button. That notice is REMOVED by

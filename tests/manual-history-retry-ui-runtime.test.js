@@ -82,6 +82,7 @@ let resolvePull;
 let resolveRetry;
 let retryCalls = 0;
 let retrySource = null;
+let visitNotesChoiceCalls = 0;
 /* The day strip's target day comes from todayKey(), which prefers the practice
    time-zone seam window._acctTodayKey and only falls back to the machine clock.
    Pinning that seam makes this suite deterministic: it previously asserted the
@@ -99,6 +100,12 @@ const context = {
   _calAppts: [],
   __mlsSI: {
     pull() { return new Promise(resolve => { resolvePull = resolve; }); }
+  },
+  __mlsVisitNotesPref: {
+    ensureChosenForBulkPull() {
+      visitNotesChoiceCalls += 1;
+      return Promise.resolve({ ok: true, on: true, state: 'on', settled: true });
+    }
   },
   MLSScheduleImporter: {
     retryFailedHistory(sourceReceipt, onStatus) {
@@ -132,6 +139,9 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   };
 
   pullButton.onclick();
+  await flush();
+  assert.strictEqual(visitNotesChoiceCalls, 1, 'manual pull did not confirm the full-visit-notes choice exactly once');
+  assert.strictEqual(typeof resolvePull, 'function', 'manual pull did not start after the full-visit-notes choice settled');
   assert.strictEqual(retryCalls, 0, 'starting a pull must not trigger a history retry');
   resolvePull(partialPull);
   await flush();

@@ -1,6 +1,6 @@
 'use strict';
 
-/* 2026-07-28 — VISIT BODIES DEFAULT ON, by execution not by source-grep.
+/* 2026-07-28 / 2026-08-24 — VISIT BODIES CHOICE, by execution not by source-grep.
  *
  * Live store measurement: 47 of 51 snapshot patients carried ONLY index-only
  * visit stubs — encounter bodies were never read — because both visit-body
@@ -9,7 +9,10 @@
  * encounter bodies is not "complete available history" (owner bar 2026-07-28:
  * first-pull completeness, no silent omissions).
  *
- * Law: absence of a recorded HUMAN choice means ON, at every reader.
+ * Law now: Settings may paint the completeness-first ON default while the
+ * account is unset, but no reader may open encounter bodies until public
+ * admission records an explicit human choice. Every low-level reader fails
+ * closed while unset; an operation-scoped explicit boolean remains frozen.
  * qol-2.0: every reader now delegates to the ONE resolver
  * (window.__mlsVisitNotesPref, mls-connect.js) — so the law is proven by
  * executing each shipped call site WITH the real shipped resolver:
@@ -45,7 +48,7 @@ const UNS = k => 'acct::' + k;
 /* ---- 1. the schedimport batch reader, executed through the REAL resolver ---- */
 {
   const src = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
-  const block = extract(src, 'var pullVisitBodies = safe(function () {', '}, true);', 'schedimport reader');
+  const block = extract(src, 'var pullVisitBodies = safe(function () {', '}, false);', 'schedimport reader');
   assert(/__mlsVisitNotesPref/.test(block), 'the batch reader consults the ONE resolver (qol-2.0)');
   function evalReader(storageMap, override) {
     const storage = makeStorage(storageMap);
@@ -59,15 +62,16 @@ const UNS = k => 'acct::' + k;
     vm.runInContext(block + '\nthis.__pv = pullVisitBodies;', ctx, { filename: 'schedimport:pullVisitBodies' });
     return ctx.__pv;
   }
-  assert.strictEqual(evalReader({}), true, 'schedimport: no keys -> bodies ON');
-  assert.strictEqual(evalReader({ 'acct::pullVisitBodies': '0' }), true,
-    'schedimport: legacy code-authored 0 without the marker is ignored -> ON');
+  assert.strictEqual(evalReader({}), false, 'schedimport: unset account must fail closed before public admission');
+  assert.strictEqual(evalReader({ 'acct::pullVisitBodies': '0' }), false,
+    'schedimport: legacy code-authored 0 without a settled choice must fail closed');
   assert.strictEqual(evalReader({ 'acct::pullVisitBodies': '0', 'acct::pullVisitBodiesSet': '1' }), false,
     'schedimport: an explicit human OFF is respected');
   assert.strictEqual(evalReader({ 'acct::pullVisitBodies': '1', 'acct::pullVisitBodiesSet': '1' }), true,
     'schedimport: an explicit human ON is respected');
   assert.strictEqual(evalReader({ 'acct::visitNotesModeV2': 'off' }), false,
     'schedimport: the canonical one-key OFF is respected');
+  assert.strictEqual(evalReader({}, true), true, 'schedimport: an explicit frozen ON override outranks unset local state');
   assert.strictEqual(evalReader({}, false), false, 'schedimport: an explicit per-pull override still outranks everything');
   assert.strictEqual(evalReader({ 'acct::pullVisitBodies': '1', 'acct::pullVisitBodiesSet': '1' }, false), false,
     'schedimport: phone-relay override wins over stored ON');
@@ -89,7 +93,7 @@ const UNS = k => 'acct::' + k;
     vm.runInContext(iife + '\nthis.__enabled = enabled;', ctx, { filename: 'mls-connect:vpEnabled' });
     return ctx.__enabled();
   }
-  assert.strictEqual(evalEnabled({}), true, 'vp: absent key -> bodies ON');
+  assert.strictEqual(evalEnabled({}), false, 'vp: absent key -> reader remains closed until admission records a choice');
   assert.strictEqual(evalEnabled({ 'mls_save_every_athena_visit': '0' }), false,
     'vp: a stored 0 is only ever human-written -> OFF respected (resolver adopts the legacy global)');
   assert.strictEqual(evalEnabled({ 'mls_save_every_athena_visit': '1' }), true, 'vp: stored 1 -> ON');

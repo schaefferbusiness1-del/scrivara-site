@@ -155,7 +155,7 @@ const namedWriteRows = namedManifest.rows.filter(row => row.action === 'write_no
 assert.deepStrictEqual(Array.from(namedWriteRows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan'], 'named note sections were not split into exact destination rows');
 assert.deepStrictEqual(Array.from(namedWriteRows, row => row.destination), [
   'Athena encounter > HPI', 'Athena encounter > Review of Systems', 'Athena encounter > Physical Exam',
-  'Athena encounter > Assessment narrative', 'Athena encounter > Plan / Follow-up'
+  'Athena encounter > Assessment & Plan > Assessment', 'Athena encounter > Assessment & Plan > Plan / Follow-up'
 ], 'named note rows advertise the wrong Athena destinations');
 for (const row of namedWriteRows) {
   assert.strictEqual(row.payload.sections.length, 1, `${row.kind} row carried another destination`);
@@ -198,7 +198,7 @@ assert.strictEqual(procedureRow.destination, 'Athena encounter > Physical Exam >
 assert(!procedureManifest.rows.some(row => row.action === 'write_note' || row.id === 'write-note'), 'procedure/op note fell through to the generic note writer');
 const pushHistorySource = /function pushHistoryNoteToAthena\(id\)\{[\s\S]*?\n\}/.exec(appSource);
 assert(pushHistorySource && /n\.kind==='opnote'\?'procedure':'note'/.test(pushHistorySource[0]), 'saved op-note route discarded its artifact type');
-assert(/var allowed=\{note:1,procedure:1,dx:1,billing:1,orders:1\}/.test(appSource), 'the app blocks the explicit manual Procedure Documentation row before review');
+assert(/var allowed=\{note:1,hpi:1,ros:1,exam:1,assessment:1,plan:1,procedure:1,dx:1,billing:1,orders:1\}/.test(appSource), 'the app blocks the explicit manual Procedure Documentation row before review and admits only exact named SOAP rows');
 assert(!/var noteRoute=n\.kind==='opnote'\?'note'/.test(appSource), 'saved op notes explicitly fall back to the generic note route');
 const taughtBinding = window.__mlsShowAsst.contextFor(teachManifest, taughtRow);
 const taughtTarget = {

@@ -46,6 +46,11 @@ function makeHarness(options) {
 
   const noteCalls = [];
   const chartCalls = [];
+  /* Optional exact-appointment recovery seam. Existing fixtures never post a
+     goto-date message while running _runHistoryBatch, so recording/answering
+     it here is additive and lets a focused suite observe the real engine's
+     recovery sequence without a browser, Athena, or patient data. */
+  const gotoCalls = [];
   const statusLines = [];
   let callSeq = 0;               /* shared monotonic order for chart + note reads */
 
@@ -159,7 +164,12 @@ function makeHarness(options) {
     renderTodayPicker: () => {}, renderHistory: () => {}, renderProfile: () => {}, loadPatients: () => {},
     __mlsBgSleep: () => Promise.resolve(),
     fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
-    __mlsVisitNotesPref: { read: () => ({ state: 'off', on: false, settled: true }), write: () => true, isPrefKey: () => false },
+    __mlsVisitNotesPref: {
+      read: () => ({ state: options.visitNotesOn === true ? 'on' : 'off', on: options.visitNotesOn === true, settled: true }),
+      ensureChosenForBulkPull: () => Promise.resolve({ ok: true, on: options.visitNotesOn === true, reason: options.visitNotesOn === true ? 'test-choice-on' : 'test-choice-off' }),
+      write: () => true,
+      isPrefKey: () => false
+    },
     __mlsP1AthenaReadLease: {
       version: 'harness-lease', busy: () => leaseBusy,
       claim: () => 'harness-token', owns: () => true, touch: () => {}, release: () => {}, ready: () => true,
@@ -190,6 +200,43 @@ function makeHarness(options) {
         return Promise.resolve(answer);
       }
     },
+    __mlsVisitModel: {
+      addVisit(id, raw) {
+        const key = id && typeof id === 'object' ? id.id : id;
+        const p = patients.find(x => String(x.id) === String(key));
+        if (!p) return null;
+        p.visits = Array.isArray(p.visits) ? p.visits : [];
+        if (!p.visits.some(v => String(v.sourceVisitKey || '') === String(raw && raw.sourceVisitKey || ''))) p.visits.push(raw);
+        return raw;
+      },
+      getVisits(ref) {
+        const key = ref && typeof ref === 'object' ? ref.id : ref;
+        const p = patients.find(x => String(x.id) === String(key));
+        return p && Array.isArray(p.visits) ? p.visits : [];
+      },
+      reconcileVerifiedAthenaVisits: () => ({ complete: true, removed: 0, retained: 0 }),
+      organizePatientHistory: () => ({ ok: true, complete: true, verifiedVisits: 1 })
+    },
+    __mlsCopyVisits: {
+      _saveVisits(p, _identity, visits) {
+        const key = p && typeof p === 'object' ? p.id : p;
+        const target = patients.find(x => String(x.id) === String(key));
+        let added = 0;
+        if (!target) return 0;
+        target.visits = Array.isArray(target.visits) ? target.visits : [];
+        visits.forEach(v => {
+          if (!target.visits.some(old => String(old.sourceVisitKey || '') === String(v.sourceVisitKey || ''))) {
+            target.visits.push(Object.assign({}, v, {
+              source: 'athena-schedule-history', identityVerified: true, identityBinding: target.id,
+              indexOnly: false, fullDetail: true, bodyComplete: true
+            }));
+            added++;
+          }
+        });
+        return added;
+      },
+      _visitIdentityAgrees: () => true
+    },
     _athenaHistoryTargetSnapshot(ref) {
       const p = patients.find(x => String(x.id) === String(ref && ref.patientId));
       if (!p) return null;
@@ -200,8 +247,16 @@ function makeHarness(options) {
       });
     },
     _assistReadChart(target, _say, opts) {
-      chartCalls.push({ patientId: target && target.patientId, requestId: opts && opts.requestId, at: now, seq: ++callSeq });
-      const r = options.chartResult ? options.chartResult(target, chartCalls.length) : null;
+      const call = {
+        patientId: target && target.patientId,
+        appointmentId: String(target && target.appointmentId || ''),
+        scheduleDate: String(target && target.scheduleDate || ''),
+        requestId: opts && opts.requestId,
+        exactAppointmentFullRead: !!(opts && opts.exactAppointmentFullRead === true),
+        at: now, seq: ++callSeq
+      };
+      chartCalls.push(call);
+      const r = options.chartResult ? options.chartResult(target, chartCalls.length, opts || {}) : null;
       if (r && r.__never) return new Promise(() => {});
       if (r && r.__throw) {
         const err = new Error(String(r.__throw));
@@ -329,6 +384,66 @@ function makeHarness(options) {
       const ev = { data: { source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: JSON.parse(JSON.stringify(answer)) } };
       Array.from(listeners).forEach(fn => fn(ev));
     });
+    if (msg && msg.type === 'mlsAppGotoDate') queueMicrotask(() => {
+      const call = {
+        date: String(msg.date || ''), requestId: String(msg.requestId || msg.id || ''),
+        deadlineAt: Number(msg.deadlineAt || 0)
+      };
+      gotoCalls.push(call);
+      const supplied = typeof options.gotoResult === 'function'
+        ? options.gotoResult(call.date, gotoCalls.length, call)
+        : { ok: true, schedDate: call.date };
+      if (supplied === null) return;
+      const resp = Object.assign({
+        id: call.requestId, requestId: call.requestId, ok: false, schedDate: ''
+      }, supplied || {});
+      const ev = { data: {
+        source: 'mls-ext', type: 'mlsAppGotoDateResult', id: call.requestId,
+        requestId: call.requestId, resp
+      } };
+      Array.from(listeners).forEach(fn => fn(ev));
+    });
+    /* Full Notes ON uses the extension bridge's ordinary unscoped all-visits
+       verb. Keep the day harness honest by answering that verb directly; the
+       old OFF-onlyDate helper is intentionally not involved. */
+    if (msg && msg.type === 'mlsAppReadAllVisits') queueMicrotask(() => {
+      const patientId = String((chartCalls.length && chartCalls[chartCalls.length - 1].patientId) || '');
+      const call = { patientId, onlyDate: undefined, at: now, seq: ++callSeq };
+      noteCalls.push(call);
+      const delay = typeof options.noteDelayMs === 'function'
+        ? Number(options.noteDelayMs(noteCalls.length, patientId) || 0)
+        : Number(options.noteDelayMs || 0);
+      call.costMs = delay;
+      if (delay) now += delay;
+      const answer = options.noteResult
+        ? options.noteResult(patientId, undefined, noteCalls.length)
+        : { ok: true, visits: 1 };
+      if (answer && answer.__never) return;
+      const requestId = String(msg.requestId || msg.id || '');
+      if (answer && answer.__throw) {
+        const ev = { data: { source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: requestId, requestId,
+          ok: false, reason: String(answer.__throw) } };
+        Array.from(listeners).forEach(fn => fn(ev));
+        return;
+      }
+      const count = Array.isArray(answer && answer.visits) ? answer.visits.length : Math.max(0, Number(answer && answer.visits || 0));
+      const visits = Array.isArray(answer && answer.visits) ? answer.visits : Array.from({ length: count }, (_v, index) => ({
+        date: '2026-01-' + String(index + 1).padStart(2, '0'), type: 'Office visit',
+        raw: 'Synthetic prior visit with substantive clinical detail.', fullDetail: true,
+        sourceVisitKey: 'row:syn-prior-' + (index + 1)
+      }));
+      const resp = Object.assign({
+        source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: requestId, requestId,
+        ok: !(answer && answer.ok === false), visits,
+        identity: { name: String(msg.hint && (msg.hint.name || msg.hint.patient) || ''),
+          dob: String(msg.hint && msg.hint.dob || ''), mrn: String(msg.hint && (msg.hint.athenaId || msg.hint.mrn) || '') },
+        receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true,
+          stableKeysComplete: true, expected: visits.length, parsed: visits.length, cap: 500,
+          authoritativeEmpty: visits.length === 0 && !!(answer && answer.authoritativeEmpty === true),
+          readerVersion: '2.9.22-visits-r4-two-stage' }, readerVersion: '2.9.22-visits-r4-two-stage'
+      }, answer && answer.ok === false ? { reason: String(answer.reason || 'visits-read-failed') } : {});
+      Array.from(listeners).forEach(fn => fn({ data: resp }));
+    });
   };
 
   /* options.importerPath boots a DIFFERENT copy of the importer in the same
@@ -360,7 +475,7 @@ function makeHarness(options) {
 
   return {
     rt, api: rt.__mlsSI, rows, patients, day,
-    noteCalls, chartCalls, statusLines, presenceCalls, clock, timers, intervals, fireIntervals, runDueTimers, store,
+    noteCalls, chartCalls, gotoCalls, statusLines, presenceCalls, clock, timers, intervals, fireIntervals, runDueTimers, store,
     parseCalls, saveCalls, cardCoverage,
     /* the live progress state the pull panel reads (window.__mlsDayHistoryPull) */
     ppState: () => (rt.__mlsDayHistoryPull && rt.__mlsDayHistoryPull.state) || null,
@@ -585,7 +700,12 @@ function makeMonthHarness(options) {
     renderTodayPicker: () => {}, renderHistory: () => {}, renderProfile: () => {}, loadPatients: () => {},
     dispatchEvent: () => true,
     __mlsBgSleep: () => Promise.resolve(),
-    __mlsVisitNotesPref: { read: () => ({ state: 'off', on: false, settled: true }), write: () => true, isPrefKey: () => false },
+    __mlsVisitNotesPref: {
+      read: () => ({ state: options.visitNotesOn === true ? 'on' : 'off', on: options.visitNotesOn === true, settled: true }),
+      ensureChosenForBulkPull: () => Promise.resolve({ ok: true, on: options.visitNotesOn === true, reason: options.visitNotesOn === true ? 'test-choice-on' : 'test-choice-off' }),
+      write: () => true,
+      isPrefKey: () => false
+    },
     __mlsVisitSavePref: {
       runForPatient(p, _onStatus, opts) {
         noteCalls.push({ patientId: p && p.id, onlyDate: opts && opts.onlyDate, at: nowValue });

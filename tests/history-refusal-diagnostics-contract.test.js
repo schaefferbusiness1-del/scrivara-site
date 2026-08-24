@@ -62,20 +62,26 @@ function extractFn(name) {
 }
 const normDateFn = si.match(/function normDate\(d\) \{[^\r\n]*\}/);
 assert(normDateFn, 'could not extract canonical normDate');
+const rowAppointmentIdFn = si.match(/function rowAppointmentId\(a\) \{[^\r\n]*\}/);
+assert(rowAppointmentIdFn, 'could not extract canonical rowAppointmentId');
 const helpers = new Function('gfn',
-  normDateFn[0] + '\n' + extractFn('normDob') + '\n' + extractFn('normMrn') + '\n' +
+  normDateFn[0] + '\n' + extractFn('normDob') + '\n' + extractFn('normMrn') + '\n' + extractFn('firstField') + '\n' + rowAppointmentIdFn[0] + '\n' +
   extractFn('frozenRetryEntry') + '\n' + extractFn('historyDiagSuffix') + '\n' +
   'return { frozenRetryEntry: frozenRetryEntry, historyDiagSuffix: historyDiagSuffix };'
 )(() => null);
 
 const plain = helpers.frozenRetryEntry({ name: 'X' }, { patientId: 'p1', dob: '2000-01-02', mrn: 'm1' }, 'visit-bodies-incomplete');
 assert.strictEqual(plain.diag, undefined, 'no evidence -> no diag key');
-assert.deepStrictEqual(Object.keys(plain).sort(), ['frozenDob', 'frozenMrn', 'patientId', 'reason', 'scheduleDate']);
+assert.deepStrictEqual(Object.keys(plain).sort(), ['appointmentId', 'frozenDob', 'frozenMrn', 'patientId', 'reason', 'scheduleDate']);
+assert.strictEqual(plain.appointmentId, '', 'a missing appointment id was not represented honestly');
 assert.strictEqual(plain.scheduleDate, '', 'a missing schedule day was not represented honestly');
 
 const scoped = helpers.frozenRetryEntry({ name: 'X', date: '2026-08-05T09:00:00Z' },
   { patientId: 'p1', dob: '2000-01-02', mrn: 'm1' }, 'visit-bodies-incomplete');
 assert.strictEqual(scoped.scheduleDate, '2026-08-05', 'retry entry lost its frozen exact day scope');
+const appointmentBound = helpers.frozenRetryEntry({ name: 'X', athena_appointment_id: 'appt_123' },
+  { patientId: 'p1' }, 'visit-bodies-incomplete');
+assert.strictEqual(appointmentBound.appointmentId, 'appt_123', 'retry entry lost its strongest Athena appointment binding');
 
 const rich = helpers.frozenRetryEntry({ name: 'X' }, { patientId: 'p1' }, 'visit-bodies-incomplete', {
   visitsFailedHistogram: { 'encounter-section-loading': 6 },

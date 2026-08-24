@@ -277,11 +277,13 @@ async function testCensusRunsHistoryAsPhaseTwo() {
   async function run(opts) {
     const calls = [];
     const said = [];
-    const fn = new Function('includeHistory', 'p1CensusHistoryDeferred', 'res', 'date',
+    const fn = new Function('includeHistory', 'p1CensusHistoryDeferred', 'fullNotesOff', 'visitNotesRequested', 'res', 'date',
       'runHistoryBatch', 'onStatus',
       'return (async function () {' + src + '\nreturn historyReceipt; })();');
     const receipt = await fn(
       opts.includeHistory, opts.deferred,
+      opts.fullNotesOff === true,
+      typeof opts.visitNotesRequested === 'boolean' ? opts.visitNotesRequested : true,
       { historyTargets: opts.targets, historyUnresolved: [] },
       '2026-08-17',
       function (rows, unresolved, onStatus, sweepOpts) {
@@ -322,6 +324,15 @@ async function testCensusRunsHistoryAsPhaseTwo() {
   const notRequested = await run({ includeHistory: false, deferred: false, targets: [{}, {}] });
   eq(notRequested.calls.length, 0, 'a schedule-only pull started reading history');
   eq(notRequested.receipt.reason, 'not-requested', 'a schedule-only pull lost its honest reason');
+
+  /* an explicit Full Notes OFF choice is stronger than includeHistory=false:
+     it records the choice and proves the phase opens zero charts. */
+  const fullNotesOff = await run({ includeHistory: false, deferred: true, fullNotesOff: true,
+    visitNotesRequested: false, targets: [{}, {}] });
+  eq(fullNotesOff.calls.length, 0, 'Full Notes OFF started a chart/history batch');
+  eq(fullNotesOff.receipt.reason, 'full-notes-off', 'Full Notes OFF lost its explicit skip reason');
+  eq(fullNotesOff.receipt.visitNotesRequested, false, 'Full Notes OFF receipt did not preserve the frozen choice');
+  eq(fullNotesOff.receipt.chartReads, 0, 'Full Notes OFF claimed or performed chart reads');
 }
 
 async function main() {

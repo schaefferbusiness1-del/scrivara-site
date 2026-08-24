@@ -1136,7 +1136,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '📋 Paste a transcript — already have text? Paste it and generate.',
         '📱 Record on phone — scan a QR code and use your phone as the mic. No app needed.',
         '📄 After-visit summary — a patient-friendly summary of the visit.',
-        '📦 Orders — draft orders for your review (drafts only — MLS never places orders).'
+        '📦 Orders — reviewed drafts first. MLS never places orders automatically; one exact supported order can be placed only after your separate confirmation.'
       ])
     },
     {
@@ -1155,7 +1155,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ], [
         'MLS verifies patient identity (ID + DOB, not just name) before any write.',
         'You confirm the note inside the EMR itself — MLS never signs there for you.',
-        'Clinical orders are NEVER auto-sent. You place those yourself, always.',
+        'Clinical orders are NEVER auto-sent. MLS can place one exact supported order only after you review and separately confirm that order.',
         'If anything does not match, MLS refuses to write rather than guess.'
       ])
     },
@@ -1219,12 +1219,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ])
     },
     {
-      key: 'orders', badge: 'Orders', title: 'Orders — drafts only, always',
+      key: 'orders', badge: 'Orders', title: 'Orders — draft, review, then confirm one',
       view: 'orders', target: ['#nav_orders', '[data-view="orders"]'],
       body: textBody([
         'The Orders screen drafts labs, imaging, meds, and prior-auth paperwork from the visit — for your review.'
       ], [
-        'MLS NEVER places or sends an order. You place every order yourself, in your EMR.',
+        'MLS never places an order automatically. For a supported reviewed draft, your separate confirmation can place exactly that one order.',
         'Drafts wait here until you use or discard them.'
       ])
     },
@@ -4345,8 +4345,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var b = null;
         try { b = JSON.parse(init.body); } catch (e) { b = null; }
         if (b && typeof b === 'object') {
-          if (!b.context || typeof b.context !== 'object') b.context = {};
-          b.context.providerStats = computeStats();
+          /* Active-patient requests are deliberately narrow.  Practice-wide
+             providerStats can answer roster questions, but attaching it to a
+             single-patient request widens the evidence scope and can leak
+             unrelated practice facts into the model context. */
+          var requestScope = String(b.requestScope || (b.context && b.context.requestScope) || '').toLowerCase();
+          if (requestScope !== 'active-patient') {
+            if (!b.context || typeof b.context !== 'object') b.context = {};
+            b.context.providerStats = computeStats();
+          }
           var newBody = JSON.stringify(b);
           if (newBody.length <= 98000) { /* stay under the server's bounded 100K context cap (was a blind 60K slice) */
             init = Object.assign({}, init, { body: newBody });
@@ -4972,7 +4979,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               visit had not produced yet could not be read. History verdict on
               the left, note verdict in its own cell. */
       var why = good ? (r.sp === true ? 'saved · summary pending' : (r.axe === 'body-depth' ? 'saved (1 redo)' : 'saved'))
-        : pending ? (/^re-checking/.test(raw) ? 're-checking…' : 'reading…')
+        : pending ? (/^queued-for-automatic-recheck/.test(raw) ? 'chart saved — full visit notes queued for automatic re-check' : (/^re-checking/.test(raw) ? 're-checking…' : 'reading…'))
         : (r.cs === true ? 'chart saved \u2014 visit notes incomplete' : ppHumanWhy(raw));
       var cls = good ? 'pp-ok' : (pending ? 'pp-wait' : 'pp-bad');
       var glyph = good ? '✓ ' : (pending ? '' : '⚠ ');
@@ -5001,7 +5008,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           : 'today’s note not read this time (chart saved)';
         /* ===== end fdw-1.0.0 ===== */
         var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day' || dnRetrying) ? 'pp-wait' : 'pp-bad');
-        var dnTitle = (dnRaw.indexOf('unread:') === 0 || dnRetrying) ? ' title="' + esc(dnRaw.slice(dnRetrying ? 9 : 7, 207)) + '"' : '';
+        /* fnc-1.0.0: the raw scoped-reader reason belongs in the durable
+           receipt, not in a doctor-facing tooltip. In particular an OFF-mode
+           onlyDate refusal could expose internals such as
+           visit-bodies-incomplete/no-bound-clinical-detail even though this
+           cell's honest verdict is simply that today's note was not read. */
+        var dnTitle = (dnRaw.indexOf('unread:') === 0 || dnRetrying)
+          ? ' title="' + esc(dnRetrying
+            ? 'Today’s note is queued for another automatic read.'
+            : 'The chart was saved. Today’s note could not be read this time; pull again later.') + '"'
+          : '';
         dnCell = '<span class="' + dnCls + '"' + dnTitle + ' style="opacity:.8">' + esc(dnWhy) + '</span>';
       }
       return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '"' + title + '>' + glyph + esc(why) + '</span>' + dnCell + '</div>';
@@ -6479,10 +6495,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * MLS Scribe - EMR SECTIONS -> ATHENAONE PER-SECTION WRITE  (__mlsEmrSectionsWrite)
  * v1.0.0  2026-07-10 (b111)
  *
- * Completes the "EMR sections - review & confirm" console: its footer said
- * "Per-field placement into athenaOne is the next extension step" - this is
- * that step. Adds to #emrPanel:
- *   - a "🏥 Insert confirmed to athenaOne" button (next to Insert-into-note)
+ * Keeps the local "EMR sections - review & confirm" console connected to the
+ * one unified Athena review. Adds to #emrPanel:
+ *   - one contextual "Review Athena actions" entry that delegates to the
+ *     canonical visit launcher
  *   - a Billing/charges card (review surface; routed via the Billing slate
  *     autopilot only on a real run - never in verify mode)
  *   - a per-section result log fed by the extension's verified write
@@ -6594,13 +6610,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var host = insBtn.parentElement;
     var b = document.createElement('button'); b.id = 'emrWbAthena';
     b.style.cssText = 'background:#d97706;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800';
-    b.textContent = '👁 Review confirmed Athena routes';
-    b.onclick = function () { run(panel, false); };
+    b.textContent = 'Review Athena actions';
+    b.title = 'Open the one unified review of exact Athena destinations. This does not update the local draft first.';
+    b.onclick = function () {
+      if (typeof window.pushEntireVisitToAthena === 'function') {
+        try { panel.remove(); } catch (e) {}
+        window.pushEntireVisitToAthena(null);
+        return;
+      }
+      run(panel, false);
+    };
     host.appendChild(b);
     var wrap = insBtn.closest ? (insBtn.closest('div[style*="justify-content"]') || host) : host;
     var log = document.createElement('div'); log.id = 'emrWbLog';
-    log.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;background:#FCFBF8;border:1px solid rgba(143,216,190,.25);border-radius:10px;padding:10px 12px;font:12.5px/1.5 system-ui;color:#EAF1EE;display:block';
-    log.innerHTML = '<div style="color:#B9CEC2">Per-section write log — identity-gated; orders/prescriptions are never sent; MLS never clicks Save/Sign.</div>';
+    log.style.cssText = 'margin-top:10px;max-height:220px;overflow:auto;background:#FCFBF8;border:1px solid #cfded5;border-radius:10px;padding:10px 12px;font:12.5px/1.5 system-ui;color:#203b2e;display:block';
+    log.innerHTML = '<div style="color:#52675c">This section sorter updates only the local MLS draft. Use Review Athena actions for the one exact-destination review.</div>';
     (wrap.parentElement || host).appendChild(log);
   }
 
@@ -7259,7 +7283,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      typed transcript must never render "Resume recording"/"Recording stopped"
      when no recording ever ran in this tab. */
   var _recSessionSeen = false;
+  /* visit-review-1.0.0: the flow lane owns the pre-review copy of the note;
+     once Review & send opens, the advanced #noteBox is the sole actionable
+     formatted view. This marker is state, not a scroll or visual redesign. */
+  var _reviewStepOpen = false;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function setReviewStepOpen(open) {
+    open = !!open;
+    var changed = _reviewStepOpen !== open;
+    _reviewStepOpen = open;
+    try {
+      var body = document.body;
+      if (body && body.classList.contains('mls-review-step') !== open) {
+        body.classList.toggle('mls-review-step', open);
+        changed = true;
+      }
+    } catch (eClass) {}
+    if (!changed) return;
+    try {
+      var ev = (typeof CustomEvent === 'function')
+        ? new CustomEvent('mls:review-step', { detail: { open: open } })
+        : (function () { var ce = document.createEvent('CustomEvent'); ce.initCustomEvent('mls:review-step', false, false, { open: open }); return ce; }());
+      window.dispatchEvent(ev);
+    } catch (eEvent) {}
+  }
   /* visitlane-1.0.0 — THE SCREEN'S MODE IS A STATE, NOT A HEADING.
      This one answer decides whether the doctor's ENTIRE visit lane is removed
      (see the kill list in ensure() below: `staff ? '...,.ez3fl-record' : ...`).
@@ -7523,14 +7570,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
     var wasOpen = false;
     try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
+    var reviewScrollX = 0, reviewScrollY = null;
+    try { reviewScrollX = window.scrollX || 0; reviewScrollY = window.scrollY || 0; } catch (eScroll) {}
+    function restoreReviewScroll() {
+      if (reviewScrollY == null) return;
+      try {
+        if (Math.abs((window.scrollY || 0) - reviewScrollY) > 1) window.scrollTo(reviewScrollX, reviewScrollY);
+      } catch (eRestore) {}
+    }
     /* owner 2026-07-16: the advanced workspace only needs to EXIST so the send
        button is live — do NOT move the viewport to it. The flow lane up top
        already shows everything; jumping the page down to "Advanced tools" on
        review/send was disorienting. Focus without scrolling keeps
        Enter-to-send working from where the doctor already is. */
     if (!wasOpen) { try { window.__mlsAdvQuietOpen = true; var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
+    /* Mark the actual transition after the advanced toggle has been requested.
+       The flow lane yields its entire prior-step note block in this state and
+       the shared formatter keeps only the lower #noteBox mount actionable; no
+       scrollIntoView is used, and the marker is cleared when Back closes it. */
+    /* The standalone handoff contract extracts this function with a tiny
+       sandbox; the live module always provides the transition helper. */
+    if (typeof setReviewStepOpen === 'function') setReviewStepOpen(true);
+    /* Opening the advanced card changes document height. Restore the exact
+       pre-click viewport after that synchronous layout pass and again when the
+       engine's delayed render settles; this prevents scroll anchoring/focus
+       from walking the doctor to the lower note. */
+    restoreReviewScroll();
+    setTimeout(restoreReviewScroll, wasOpen ? 100 : 700);
     setTimeout(function () {
       try {
+        restoreReviewScroll();
         var send = $('pushAllEmrBtn');
         if (send) {
           /* The 2026-07-16 decision above was against JUMPING the page down to
@@ -7699,6 +7768,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { control.click(); } catch (e) { flowToast(label + ' could not open. Try again.', 'err'); }
   }
   function syncTopLane(rec) {
+    /* Back closes the advanced workspace synchronously, while this lane is the
+       durable observer of that engine-owned transition. Restore the upper
+       formatted view on the next sync, including a real Back navigation. */
+    var advOpen = false;
+    try { advOpen = document.body.classList.contains('ez3adv'); } catch (eAdv) {}
+    if (_reviewStepOpen && !advOpen) setReviewStepOpen(false);
     if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
       if (!rec || !rec.parentNode) return;
       var previewRecord = rec.querySelector('.ez3fl-recbtn');
@@ -7795,7 +7870,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       else if (txMirror && text.length > topTx.value.length && text.slice(0, topTx.value.length) === topTx.value) txMirror.set(topTx, text);
     }
     if (count) { var words = text.trim() ? text.trim().split(/\s+/).length : 0; setLaneText(count, words + ' word' + (words === 1 ? '' : 's') + ' captured'); }
-    setLaneHidden(noteWrap, !noteText.trim());
+    /* Review/send owns the lower #noteBox card. Remove the entire prior-step
+       note block while that workspace is open so its label, button, textarea,
+       and formatted wrapper cannot leave a blank or duplicate shell behind;
+       syncTopLane restores it when Back closes the workspace. */
+    setLaneHidden(noteWrap, _reviewStepOpen || !noteText.trim());
     if (topNote && note && document.activeElement !== topNote && topNote.value !== noteText) topNote.value = noteText;
   }
   function scheduleLaneSync() {
@@ -7816,6 +7895,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function laneViewChanged(ev) {
     var view=''; try { view=String(ev&&ev.detail&&ev.detail.view||window.__mlsCurrentView||''); } catch (e) {}
     if(view==='visit'){ scheduleLaneSync(); return; }
+    if (view && _reviewStepOpen) setReviewStepOpen(false);
     try {
       if(_laneRaf!=null){ if(window.cancelAnimationFrame) window.cancelAnimationFrame(_laneRaf); else clearTimeout(_laneRaf); _laneRaf=null; }
     } catch (e2) {}
@@ -8022,7 +8102,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
           var avsQuick = mkq('&#128196; After-visit summary', 'A patient-friendly summary of this visit - preview first, nothing sends by itself', function () {
             openWorkspace(false);
-            setTimeout(function () { try { var ab = $('mlsavsBtn'); if (ab) { ab.click(); } else if (typeof window.toast === 'function') { window.toast('After-visit summary is not available on this build.', 'err'); } } catch (e) {} }, 800);
+            afterVisitSummaryWhenReady(function () { try { var ab = $('mlsavsBtn'); if (ab) { ab.click(); } else if (window.__mlsAfterVisitSummary && isFn(window.__mlsAfterVisitSummary.open)) { window.__mlsAfterVisitSummary.open(); } else if (typeof window.toast === 'function') { window.toast('After-visit summary is not available on this build.', 'err'); } } catch (e) {} });
           });
           avsQuick.id = 'ez3flAvs';
           mkq('&#128221; Orders', 'See or edit the orders that ride along when you send the visit to Athena', function () {
@@ -8272,6 +8352,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsEz3Flow = {
     installed: true, version: VERSION,
     revert: function () {
+      try { setReviewStepOpen(false); } catch (e0) {}
       try { if (_obs) _obs.disconnect(); } catch (e) {}
       try { if (_capObs) { _capObs.disconnect(); _capObs = null; } } catch (e) {}
       try { if (_iv) clearInterval(_iv); } catch (e) {}
@@ -8439,7 +8520,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       targets: ["#pushAllEmrBtn", "#emrBtn"],
       title: "Send to Athena",
       body: "Tap <b>\ud83d\ude80 Send to Athena</b>. Athena\u2019s <b>own review &amp; confirm screen</b> opens \u2014 nothing is " +
-            "written to the chart until you confirm it there, and <b>orders are never sent</b>. Then move on to the next patient.",
+            "written to the chart until you confirm it there, and <b>this visit action never sends an order</b>. Each supported order uses its own exact review and separate confirmation. Then move on to the next patient.",
       badge: "\ud83d\udd12 Safe by design"
     },
     {
@@ -10856,27 +10937,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* ---- entry points -------------------------------------------------------- */
 
-  /* (a) Persistent button in the base note card, right beside the real
-     "Review Athena actions" (#pushAllEmrBtn). Survives ez3 hiding the
-     card (it is only display:none'd, never removed). */
+  /* (a) The base note card already owns #pushAllEmrBtn. Older builds could
+     briefly add an adjacent preview proxy while capabilities were loading;
+     remove it in every state so there is always one visible launcher. */
   function ensureNoteCardBtn() {
     safe(function () {
-      var push = document.getElementById('pushAllEmrBtn');
       var existing = document.getElementById('mlsApvNoteBtn');
-      if (!push) { return; }
-      /* The canonical top button already opens the actionable receipt. Do not
-         leave a second adjacent button with the same label/behavior. */
-      if (actionableReviewReady()) { if (existing && existing.parentNode) existing.parentNode.removeChild(existing); return; }
-      if (existing) { existing.textContent = actionableReviewReady() ? 'Review Athena actions' : 'Preview what goes to Athena'; existing.onclick = open; return; }
-      var b = document.createElement('button');
-      b.id = 'mlsApvNoteBtn';
-      b.type = 'button';
-      b.className = push.className || 'btn-ghost';
-      b.style.cssText = 'margin-left:8px';
-      b.textContent = '👁 Preview what goes to Athena';
-      b.onclick = open;
-      b.textContent = actionableReviewReady() ? 'Review Athena actions' : 'Preview what goes to Athena';
-      push.parentNode.insertBefore(b, push);
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
     });
   }
 
@@ -10889,6 +10956,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     safe(function () {
       var wrapEl = document.getElementById('ez3Wrap');
       var existing = document.getElementById(ROW_ID);
+      var contextual = wrapEl && wrapEl.querySelector('#ez3Send');
+      /* Easy mode already owns a patient-bound launcher in its note state.
+         Keep that one contextual entry and remove this retired preview proxy. */
+      if (contextual) {
+        if (!/Review Athena actions/i.test(contextual.textContent || '')) {
+          contextual.innerHTML = 'Review Athena actions<small>See exact destinations, then confirm one action</small>';
+        }
+        if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
+        return;
+      }
       var show = wrapEl && !!wrapEl.querySelector('#ez3Change') && noteExists();
       if (!show) {
         if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
@@ -12121,15 +12198,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try {
         var vp = window.__mlsVisitSavePref;
         var pFull = patientForTarget(target);
-        /* 2026-07-28 invariant fix: with the tri-state Full-visit-notes OFF,
-           this legacy leg must not run a FULL every-visit read off the OTHER
-           preference key - it scopes to the pulled day, same as the exact
-           importer. */
+        /* Full Notes is the scope boundary for this legacy reader too. ON uses
+           one ordinary, unscoped every-visit walk. OFF does not open even the
+           pulled day's encounter body; schedule/booking is the entire scope. */
         var triOn = (function () { try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') return vnp.read().on === true; } catch (e) {} return true; })(); /* qol-2.0 ONE RESOLVER */
         if (vp && vp.enabled && pFull && (triOn ? vp.enabled() : false)) {
           row.fullVisits = await vp.runForPatient(pFull, function () {});
-        } else if (vp && typeof vp.runForPatient === 'function' && pFull && !triOn) {
-          try { if (vdayKnown) { row.todayNote = await vp.runForPatient(pFull, function () {}, { onlyDate: vdayKnown }); } else { row.todayNote = { ok: false, reason: 'pulled-day-unknown' }; } } catch (eTn) { row.todayNoteError = String((eTn && eTn.message) || eTn).slice(0, 80); }
         }
       } catch (eFull) { row.fullVisitsError = String((eFull && eFull.message) || eFull).slice(0, 100); }
       var pf = patientForTarget(target);
@@ -18091,7 +18165,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<span>Read the note. <span class="h2-btn">\u270F\uFE0F Edit note</span> to change anything, <span class="h2-btn">\uD83D\uDD04 Regenerate</span> for a fresh draft. <span class="h2-btn">\u2714 Review &amp; Sign</span> signs and saves the note in MLS \u2014 it never signs anything in Athena (or <span class="h2-btn">Send without signing</span>). One tap away: <span class="h2-btn">\uD83D\uDCE4 Send to patient</span>, <span class="h2-btn">\uD83E\uDD16 Ask Copilot</span>, <span class="h2-btn">\uD83D\uDCA1 Recommendations</span>.</span></div></div>' +
 
       '<div class="h2-step"><span class="h2-n">5</span><div><b>Send to Athena</b>' +
-      '<span>Tap <span class="h2-btn">\uD83D\uDE80 Send to Athena</span>. Athena\u2019s own review &amp; confirm screen opens \u2014 nothing is written to the chart until you confirm it there, and orders are never sent. Then <span class="h2-btn">\u27A1 Next patient</span>.</span></div></div>' +
+      '<span>Tap <span class="h2-btn">\uD83D\uDE80 Send to Athena</span>. Athena\u2019s own review &amp; confirm screen opens \u2014 nothing is written to the chart until you confirm it there, and this visit action never sends an order. Each supported order uses its own exact review and separate confirmation. Then <span class="h2-btn">\u27A1 Next patient</span>.</span></div></div>' +
 
       '<div class="h2-box"><b>\uD83D\uDDC2 Doctor | Staff \u2014 the pill at the top of the Visit tab.</b><br>' +
       '<b>Doctor room</b> (default) is the five steps above.<br>' +
@@ -21752,13 +21826,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        account clearly has data but the calendar cache is still empty during
        the boot window, say LOADING — the imported-day claim only renders once
        the calendar has actually hydrated (or hydration has clearly settled). */
-    var calEmpty = false, hasData = false;
+    var calEmpty = false, hasData = false, calHydration = '';
     try { calEmpty = !window._calAppts || !window._calAppts.length; } catch (e) { calEmpty = false; }
     try { hasData = ((typeof getPatients === 'function' ? (getPatients() || []) : []).length) > 0; } catch (e) { hasData = false; }
-    var bootMs = 0; try { bootMs = (window.performance && performance.now()) || 0; } catch (e) { bootMs = 0; }
-    if (calEmpty && hasData && bootMs > 0 && bootMs < 180000) {
-      return '<div class="ez3-empty" id="ez3DayEmpty" role="status" aria-busy="true"><b>Loading your calendar…</b><br>' +
-             'Your saved appointments for ' + esc(dayLabel) + ' are syncing from MLS.</div>';
+    try { calHydration = String(window.__mlsCalendarHydration || ''); } catch (eHyd) { calHydration = ''; }
+    if (calHydration === 'denied') {
+      return '<div class="ez3-empty" id="ez3DayEmpty" role="status"><b>Calendar is not available for this account.</b><br>No clinical schedule was loaded.</div>';
+    }
+    var hydrationAge = 0;
+    try { hydrationAge = Date.now() - Number(window.__mlsCalendarHydrationAt || 0); } catch (e) { hydrationAge = 0; }
+    if (calEmpty && hasData && calHydration === 'loading') {
+      if (hydrationAge >= 0 && hydrationAge < 15000) {
+        return '<div class="ez3-empty" id="ez3DayEmpty" role="status" aria-busy="true"><b>Loading your calendar…</b><br>' +
+               'Your saved appointments for ' + esc(dayLabel) + ' are syncing from MLS.</div>';
+      }
+      return '<div class="ez3-empty" id="ez3DayEmpty" role="status"><b>Calendar is taking longer than expected to load.</b><br>Use Refresh to try again.</div>';
     }
     return (visitIsToday() && S.autoPull === 'failed' && S.autoPullNote ? '<div class="ez3-warnbar">⚠️ ' + esc(S.autoPullNote) + '</div>' : '') +
            '<div class="ez3-empty" id="ez3DayEmpty" role="status"><b>No appointments imported for ' + esc(dayLabel) + '.</b><br>' +
@@ -21797,7 +21879,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="chart" data-k="' + esc(k) + '">📖 Pull Chart Context<small>Read-only, this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="gen" data-k="' + esc(k) + '">✨ Generate Note<small>From the captured visit</small></button>' +
-          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">🚀 Send to Athena<small>Review &amp; confirm</small></button>' +
+          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">Review Athena actions<small>Exact destinations &amp; separate confirmation</small></button>' +
         '</div>' +
         '<div class="ez3-safety' + (g.on ? '' : ' off') + '">🛡 <span>' + (g.on ?
           'Identity guards active — a chart that doesn’t match this patient is blocked. Recording, the note, and any send stay locked to ' + esc(a.name || 'this patient') + '.' :
@@ -21980,8 +22062,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function clickCanonicalControl(id, unavailable) {
     var control = $(id);
     if (control && isFn(control.click)) { control.click(); return true; }
+    if (id === 'mlsavsBtn' && window.__mlsAfterVisitSummary && isFn(window.__mlsAfterVisitSummary.open)) { window.__mlsAfterVisitSummary.open(); return true; }
     toast(unavailable || 'That tool is still loading. Try again in a moment.');
     return false;
+  }
+  function afterVisitSummaryWhenReady(run) {
+    var ensure = window.__mlsEnsureAfterVisitSummary;
+    if (!isFn(ensure)) { try { run(); } catch (e0) {} return; }
+    try {
+      var pending = ensure();
+      if (pending && isFn(pending.then)) {
+        pending.then(function () { try { run(); } catch (e1) {} }, function () { toast('After-visit summary is unavailable on this build.'); });
+      } else run();
+    } catch (e2) { toast('After-visit summary is unavailable on this build.'); }
   }
   function withAdvancedWorkspace(fn) {
     if (!S.advOpen) {
@@ -21989,7 +22082,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { document.body.classList.add('ez3adv'); } catch (e) {}
       render();
     }
-    setTimeout(function () { try { fn(); } catch (e2) { toast('That tool could not open. Try again.'); } }, 80);
+    var later = window.requestAnimationFrame || function (cb) { Promise.resolve().then(cb); };
+    later(function () { try { fn(); } catch (e2) { toast('That tool could not open. Try again.'); } });
   }
   /* UI rework (owner /goal 2026-07-24: "free the doctor from all the
      buttons"): the core loop advances itself. When the doctor STOPS a
@@ -22066,7 +22160,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
 
     on('ez3QAvs', function () {
-      withAdvancedWorkspace(function () { clickCanonicalControl('mlsavsBtn', 'After-visit summary is not available on this build.'); });
+      withAdvancedWorkspace(function () { afterVisitSummaryWhenReady(function () { clickCanonicalControl('mlsavsBtn', 'After-visit summary is not available on this build.'); }); });
     });
     on('ez3QOrders', function () {
       withAdvancedWorkspace(function () {
@@ -22176,7 +22270,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3SkipSign">Send without signing →</button></div>';
       } else {
         h += (signedNow ? '<p class="ez3-status" style="color:#9fd8bd;margin:0 0 8px">✔ Signed &amp; saved in MLS.</p>' : '') +
-             '<button type="button" class="ez3-big ok" id="ez3Send">🚀 Send to Athena' +
+             '<button type="button" class="ez3-big ok" id="ez3Send">Review Athena actions' +
              '<small>Opens Athena’s review &amp; confirm screen — nothing is written until you confirm there</small></button>' +
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3NextPt">➡ Next patient</button></div>';
         /* 2026-07-28 owner feature: one quiet post-sign offer. Renders only
@@ -22790,6 +22884,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* pull-run state */
   var P = null;
+  var staffVisitChoicePending = false;
   function pullMonthRange(ym) { /* ym = 'YYYY-MM' */
     var m2 = /^(\d{4})-(\d{2})$/.exec(String(ym || '')); if (!m2) return null;
     var y = +m2[1], mo = +m2[2] - 1;
@@ -23056,8 +23151,51 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   /* the ONE human toggle for full visit notes lives in this same card */
   function p1RangeFullNotes() {
+    try {
+      var pref = window.__mlsVisitNotesPref;
+      var current = pref && typeof pref.read === 'function' ? pref.read() : null;
+      if (current && current.settled === true && (current.state === 'on' || current.state === 'off')) return current.on === true;
+    } catch (ePref) {}
     var box = $('mlsP1YearFullNotes');
     return !!(box && box.checked === true);
+  }
+  function staffVisitChoiceMessage(reason) {
+    reason = String(reason || 'choice-check-failed');
+    if (reason === 'choice-cancelled') return 'Pull not started — choose how full visit notes should be handled, then try again.';
+    if (reason === 'account-namespace-not-settled') return 'Pull not started — your account settings are still loading. Try again in a moment.';
+    if (reason === 'choice-write-failed' || reason === 'choice-readback-failed') return 'Pull not started — MLS could not save your full-visit-notes choice. Nothing was read from Athena. Try again.';
+    return 'Pull not started — MLS could not confirm your full-visit-notes choice. Nothing was read from Athena. Refresh and try again.';
+  }
+  function admitStaffVisitChoice(onReady) {
+    var pref = safe(function () { return window.__mlsVisitNotesPref; }, null);
+    if (!pref || !isFn(pref.ensureChosenForBulkPull)) {
+      pSet('ez3PullNow', staffVisitChoiceMessage('choice-dialog-unavailable'));
+      pSet('ez3PullNow2', 'The pull did not start.');
+      return true;
+    }
+    if (staffVisitChoicePending) {
+      pSet('ez3PullNow', 'Waiting for your full-visit-notes choice…');
+      pSet('ez3PullNow2', 'Nothing has been read from Athena yet.');
+      return true;
+    }
+    staffVisitChoicePending = true;
+    pSet('ez3PullNow', 'Choose whether schedule pulls should include every full visit note.');
+    pSet('ez3PullNow2', 'Nothing has been read from Athena yet.');
+    Promise.resolve(pref.ensureChosenForBulkPull()).then(function (choice) {
+      staffVisitChoicePending = false;
+      if (!choice || choice.ok !== true || typeof choice.on !== 'boolean') {
+        pSet('ez3PullNow', staffVisitChoiceMessage(choice && choice.reason));
+        pSet('ez3PullNow2', 'The pull did not start.');
+        return;
+      }
+      var box = $('mlsP1YearFullNotes'); if (box) box.checked = choice.on === true;
+      onReady(choice.on === true);
+    }, function () {
+      staffVisitChoicePending = false;
+      pSet('ez3PullNow', staffVisitChoiceMessage('choice-check-failed'));
+      pSet('ez3PullNow2', 'The pull did not start.');
+    });
+    return true;
   }
   function p1RangeReceiptLine(st) {
     var s = (st && st.summary) || null, run = (st && st.run) || null;
@@ -23227,7 +23365,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     p1RangeRun(api.resume({ onStatus: p1RangeStatus }));
     return true;
   }
-  function p1RangeStartMonth(monthKey, range, gate) {
+  function p1RangeStartMonth(monthKey, range, gate, fullNotesChoice) {
     var api = p1RangeApi();
     if (!api) return false;
     var saved = p1RangeState();
@@ -23247,15 +23385,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     p1RangeRun(api.startMonth(monthKey, {
       provider: p1RangeProviderRequest(gate),
       includeHistory: true,
-      pullVisitBodies: p1RangeFullNotes(),
-      fullNotes: p1RangeFullNotes(),
+      pullVisitBodies: fullNotesChoice === true,
+      fullNotes: fullNotesChoice === true,
       onStatus: p1RangeStatus
     }));
     return true;
   }
   /* ===== end p1-durable-month-1.0.0 ===== */
-  function startMonthPull(retryOnly, rosterRetried) {
+  function startMonthPull(retryOnly, rosterRetried, choiceAdmitted, fullNotesChoice) {
     if (P && P.running) return;
+    if (retryOnly !== true && choiceAdmitted !== true) {
+      admitStaffVisitChoice(function (on) { startMonthPull(retryOnly, rosterRetried, true, on); });
+      return;
+    }
     var exact = safe(function () { return window.__mlsSI; }, null);
     var exactMonthEl = $('ez3sMonth'), exactMonth = exactMonthEl ? exactMonthEl.value : prevYm();
     var exactRange = pullMonthRange(exactMonth);
@@ -23284,7 +23426,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return rosterCurrent(canonicalR,ownedRosterR.owner)?readSchedule(null,ownedRosterR.requestId):null;
         }).then(function (r0) {
           if (rosterCurrent(canonicalR,ownedRosterR.owner)&&r0 && r0.ok === true && isFn(canonicalR.ingestResp)) safe(function () { canonicalR.ingestResp(r0,ownedRosterR.owner); });
-        }).then(null, function () {}).then(function () { if(rosterCurrent(canonicalR,ownedRosterR.owner))startMonthPull(retryOnly, true); });
+        }).then(null, function () {}).then(function () { if(rosterCurrent(canonicalR,ownedRosterR.owner))startMonthPull(retryOnly, true, choiceAdmitted, fullNotesChoice); });
         return;
       }
       pSet('ez3PullNow', (exactGate && exactGate.error) || 'Athena did not return a verifiable provider list for this pull.');
@@ -23298,12 +23440,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        the engine call and the fallback when the range engine is absent. */
     if (p1RangeApi()) {
       if (retryOnly === true) { if (p1RangeResume()) return; }
-      else if (p1RangeStartMonth(exactMonth, exactRange, exactGate)) return;
+      else if (p1RangeStartMonth(exactMonth, exactRange, exactGate, fullNotesChoice === true)) return;
     }
     /* Keep the progress owner's protocol value canonical. The narrower
        default wording belongs only in rendered labels above. */
     var exactProviderLabel = exactGate.provider === 'all' ? 'all' : exactGate.provider.name;
-    P = freshPull(exactRange, exactProviderLabel); P.running = true; P.cancelled = false;
+    P = freshPull(exactRange, exactProviderLabel); P.running = true; P.cancelled = false; P.pullVisitBodies = typeof fullNotesChoice === 'boolean' ? fullNotesChoice : p1RangeFullNotes();
     if (retryDates) {
       pSet('ez3PullNow', 'Retrying ' + retryDates.length + ' failed day' + (retryDates.length === 1 ? '' : 's') + '...');
       pSet('ez3PullNow2', 'Only the days that did not verify are re-pulled; verified days are left alone.');
@@ -23317,6 +23459,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dates: retryDates || undefined,
       provider: exactGate.provider,
       includeHistory: true,
+      pullVisitBodies: P.pullVisitBodies === true,
       onStatus: function (m, kind) { pSet('ez3PullNow', String(m || '')); if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '')); }
     })).then(function (res) {
       res = res || {}; var totals = res.totals || {}, retry = res.retry || {};
@@ -23395,8 +23538,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      range instead of a month range, so the day view renders the identical
      progress log the month pull already shows. The month pull itself is
      unchanged. Read-only toward Athena. */
-  function startDayPull(retryOnly, rosterRetried) {
+  function startDayPull(retryOnly, rosterRetried, choiceAdmitted, fullNotesChoice) {
     if (P && P.running) return;
+    if (retryOnly !== true && choiceAdmitted !== true) {
+      admitStaffVisitChoice(function (on) { startDayPull(retryOnly, rosterRetried, true, on); });
+      return;
+    }
     var exact = safe(function () { return window.__mlsSI; }, null), exactDay = todayLocal();
     if (!(exact && isFn(exact.pull) && isFn(exact._resolveProviderRequest))) { pSet('ez3PullNow', "The Athena pull is not ready yet. Give it a moment, then try again."); return; }
     var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: false, allowDetectedProvider: true });
@@ -23414,7 +23561,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return rosterCurrent(canonicalD,ownedRosterD.owner)?readSchedule(null,ownedRosterD.requestId):null;
         }).then(function (r0) {
           if (rosterCurrent(canonicalD,ownedRosterD.owner)&&r0 && r0.ok === true && isFn(canonicalD.ingestResp)) safe(function () { canonicalD.ingestResp(r0,ownedRosterD.owner); });
-        }).then(null, function () {}).then(function () { if(rosterCurrent(canonicalD,ownedRosterD.owner))startDayPull(retryOnly, true); });
+        }).then(null, function () {}).then(function () { if(rosterCurrent(canonicalD,ownedRosterD.owner))startDayPull(retryOnly, true, choiceAdmitted, fullNotesChoice); });
         return;
       }
       pSet('ez3PullNow', (exactGate && exactGate.error) || 'The selected provider is not verified.');
@@ -23422,13 +23569,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     var exactRange = { ym: null, from: exactDay, to: exactDay, keys: [exactDay], label: 'Today' };
-    P = freshPull(exactRange, exactGate.provider === 'all' ? 'all' : exactGate.provider.name); P.running = true; P.cancelled = false;
+    P = freshPull(exactRange, exactGate.provider === 'all' ? 'all' : exactGate.provider.name); P.running = true; P.cancelled = false; P.pullVisitBodies = typeof fullNotesChoice === 'boolean' ? fullNotesChoice : p1RangeFullNotes();
     pSet('ez3PullNow', 'Starting verified exact day pull...'); pSet('ez3PullNow2', 'History and old visits are required for every exact patient.'); pCounts();
     Promise.resolve(exact.pull({
       date: exactDay,
       provider: exactGate.provider,
       __p1DetectedProvider: !!(exactGate.provider && exactGate.provider !== 'all' && exactGate.provider.detectedOnly === true),
       includeHistory: true,
+      pullVisitBodies: P.pullVisitBodies === true,
       onStatus: function (m, kind) { pSet('ez3PullNow', String(m || '')); if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '')); }
     })).then(function (res) {
       res = res || {}; var cr = res.calendarReceipt || {}, hr = res.historyReceipt || {};
@@ -23826,6 +23974,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   window.addEventListener('mls:session-boundary', resetEasySession);
   cleanup.push(function () { window.removeEventListener('mls:session-boundary', resetEasySession); });
+  /* Calendar hydration can settle after the Visit shell has already rendered
+     its empty state. Repaint that one owner when the authoritative calendar
+     request settles so a successful empty result cannot look indefinitely
+     busy, and a failed result can say what action remains. */
+  function onCalendarHydrated() { try { render(); } catch (e) {} }
+  window.addEventListener('mls:calendar-hydrated', onCalendarHydrated);
+  cleanup.push(function () { window.removeEventListener('mls:calendar-hydrated', onCalendarHydrated); });
 
   /* ---------------- boot --------------------------------------------------- */
   function boot() { mount(); startPoll(); }
@@ -25102,6 +25257,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       orig._pullAllHistories = window._pullAllHistories;
       var pull = function (appts) {
         var ms = mlsStatus();
+        /* This legacy entry used to open the six-card chart before consulting
+           Full Notes. Fail closed at the door: OFF (and an unsettled choice)
+           is schedule/booking-only, so neither chart facts nor encounter
+           bodies may be opened from this helper. */
+        var fullNotesOn = safe(function () {
+          var pref = window.__mlsVisitNotesPref;
+          var choice = pref && typeof pref.read === 'function' ? pref.read() : null;
+          return !!(choice && choice.on === true && choice.state !== 'unset');
+        }, false);
+        if (!fullNotesOn) {
+          progressSay('Full Notes is off — patient charts and visit notes were not opened. Turn it on in Settings before pulling chart histories.');
+          return Promise.resolve({ ok: true, complete: true, reason: 'visit-notes-off', visitNotesRequested: false, historiesRequested: 0 });
+        }
         return (function run(list, isRetry) {
           if (!list || !list.length) return Promise.resolve();
           /* Resolve one immutable MLS patient id before any delayed Athena read. */
@@ -25142,21 +25310,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                     });
                     var fullLeg = Promise.resolve();
                     try {
-                      /* qol-2.0 ONE RESOLVER + the missing day-note guarantee:
-                         with Full-visit-notes OFF this site used to skip the
-                         full leg AND save no pulled-day note at all - the only
-                         lane where the day's own note never arrived (a run
-                         could end all-green with the one guaranteed body
-                         missing). OFF now runs the day-scoped read, same as
-                         the exact importer and the follow leg above. */
+                      /* qol-2.0 ONE RESOLVER. Full visit notes OFF is a hard
+                         schedule/chart-facts boundary: this legacy history
+                         helper may save the chart facts it was explicitly
+                         asked to read, but it must not open any encounter body
+                         (including the pulled day's note). ON retains the
+                         unscoped every-visit reader. */
                       var vp2 = window.__mlsVisitSavePref;
                       var on2 = (function () { try { var vnp2 = window.__mlsVisitNotesPref; if (vnp2 && typeof vnp2.read === 'function') return vnp2.read().on === true; } catch (e2) {} return true; })();
                       if (vp2 && typeof vp2.runForPatient === 'function' && pSaved) {
                         if (on2) { fullLeg = vp2.runForPatient(pSaved, function (m) { if (m) progressSay(m); }); }
-                        else {
-                          var dayA = String((a && (a.date || a.visit_date || a.day)) || '').slice(0, 10);
-                          if (/^\d{4}-\d{2}-\d{2}$/.test(dayA)) fullLeg = Promise.resolve(vp2.runForPatient(pSaved, function () {}, { onlyDate: dayA })).then(null, function () {});
-                        }
                       }
                     } catch (eV) {}
                     return Promise.resolve(fullLeg).then(function () {
@@ -27283,7 +27446,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="chart" data-k="' + esc(k) + '">📖 Pull Chart Context<small>Read-only, this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="gen" data-k="' + esc(k) + '">✨ Generate Note<small>From the captured visit</small></button>' +
-          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">🚀 Send to Athena<small>Review &amp; confirm</small></button>' +
+          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">Review Athena actions<small>Exact destinations &amp; separate confirmation</small></button>' +
         '</div>' +
         '<div class="ez3-safety' + (g.on ? '' : ' off') + '">🛡 <span>' + (g.on ?
           'Identity guards active — a chart that doesn’t match this patient is blocked. Recording, the note, and any send stay locked to ' + esc(a.name || 'this patient') + '.' :
@@ -27490,7 +27653,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3SkipSign">Send without signing →</button></div>';
       } else {
         h += (signedNow ? '<p class="ez3-status" style="color:#9fd8bd;margin:0 0 8px">✔ Signed &amp; saved in MLS.</p>' : '') +
-             '<button type="button" class="ez3-big ok" id="ez3Send">🚀 Send to Athena' +
+             '<button type="button" class="ez3-big ok" id="ez3Send">Review Athena actions' +
              '<small>Opens Athena’s review &amp; confirm screen — nothing is written until you confirm there</small></button>' +
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3NextPt">➡ Next patient</button></div>';
       }
@@ -29353,7 +29516,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="chart" data-k="' + esc(k) + '">📖 Pull Chart Context<small>Read-only, this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="gen" data-k="' + esc(k) + '">✨ Generate Note<small>From the captured visit</small></button>' +
-          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">🚀 Send to Athena<small>Review &amp; confirm</small></button>' +
+          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">Review Athena actions<small>Exact destinations &amp; separate confirmation</small></button>' +
         '</div>' +
         '<div class="ez3-safety' + (g.on ? '' : ' off') + '">🛡 <span>' + (g.on ?
           'Identity guards active — a chart that doesn’t match this patient is blocked. Recording, the note, and any send stay locked to ' + esc(a.name || 'this patient') + '.' :
@@ -29597,7 +29760,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3SkipSign">Send without signing →</button></div>';
       } else {
         h += (signedNow ? '<p class="ez3-status" style="color:#9fd8bd;margin:0 0 8px">✔ Signed &amp; saved in MLS.</p>' : '') +
-             '<button type="button" class="ez3-big ok" id="ez3Send">🚀 Send to Athena' +
+             '<button type="button" class="ez3-big ok" id="ez3Send">Review Athena actions' +
              '<small>Opens Athena’s review &amp; confirm screen — nothing is written until you confirm there</small></button>' +
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3NextPt">➡ Next patient</button></div>';
       }
@@ -31070,7 +31233,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="chart" data-k="' + esc(k) + '">📖 Pull Chart Context<small>Read-only, this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="gen" data-k="' + esc(k) + '">✨ Generate Note<small>From the captured visit</small></button>' +
-          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">🚀 Send to Athena<small>Review &amp; confirm</small></button>' +
+          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">Review Athena actions<small>Exact destinations &amp; separate confirmation</small></button>' +
         '</div>' +
         '<div class="ez3-safety' + (g.on ? '' : ' off') + '">🛡 <span>' + (g.on ?
           'Identity guards active — a chart that doesn’t match this patient is blocked. Recording, the note, and any send stay locked to ' + esc(a.name || 'this patient') + '.' :
@@ -31172,7 +31335,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3SkipSign">Send without signing →</button></div>';
       } else {
         h += (signedNow ? '<p class="ez3-status" style="color:#9fd8bd;margin:0 0 8px">✔ Signed &amp; saved in MLS.</p>' : '') +
-             '<button type="button" class="ez3-big ok" id="ez3Send">🚀 Send to Athena' +
+             '<button type="button" class="ez3-big ok" id="ez3Send">Review Athena actions' +
              '<small>Opens Athena’s review &amp; confirm screen — nothing is written until you confirm there</small></button>' +
              '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3NextPt">➡ Next patient</button></div>';
       }
@@ -32671,7 +32834,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<button type="button" class="ez3-exbtn rec" data-act="rec" data-k="' + esc(k) + '">🎙 Start Recording<small>Activates this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="chart" data-k="' + esc(k) + '">📖 Pull Chart Context<small>Read-only, this patient</small></button>' +
           '<button type="button" class="ez3-exbtn" data-act="gen" data-k="' + esc(k) + '">✨ Generate Note<small>From the captured visit</small></button>' +
-          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">🚀 Send to Athena<small>Review &amp; confirm</small></button>' +
+          '<button type="button" class="ez3-exbtn send" data-act="send" data-k="' + esc(k) + '">Review Athena actions<small>Exact destinations &amp; separate confirmation</small></button>' +
         '</div>' +
         '<div class="ez3-safety' + (g.on ? '' : ' off') + '">🛡 <span>' + (g.on ?
           'Identity guards active — a chart that doesn’t match this patient is blocked. Recording, the note, and any send stay locked to ' + esc(a.name || 'this patient') + '.' :
@@ -32765,7 +32928,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                '<button type="button" class="ez3-sm" id="ez3Copy">📋 Copy for Athena</button>' +
              '</div>' +
            '</div>' +
-           '<button type="button" class="ez3-big ok" id="ez3Send">🚀 Send to Athena' +
+             '<button type="button" class="ez3-big ok" id="ez3Send">Review Athena actions' +
              '<small>Opens Athena’s review &amp; confirm screen — nothing is written until you confirm there</small></button>' +
            '<div class="ez3-row2"><button type="button" class="ez3-sm" id="ez3NextPt">➡ Next patient</button></div>';
     } else { /* idle / stopped */
@@ -35024,7 +35187,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown or hidden under Settings -> What you see.' },
     { k: 'guide tour how to help', name: '📖 How-to guide + tour', where: 'Top bar ❓ Help / Menu → How-To Guide', how: 'The one current guide; the spotlight tour walks the real UI.' },
     { k: 'qr phone mobile record', name: '📱 Phone recording', where: 'Patient page — phone mic button', how: 'Click it to SHOW the QR; scan with your phone to record there (crash-proof, auto-retry).' },
-    { k: 'send athena writeback emr sign billing save', name: 'Review Athena actions', where: 'Visit flow step 4 / Athena review', how: 'See every destination. The reviewed note write and Save Draft each require an exact-encounter check and separate confirmation. Billing, orders, prescriptions, signature, attestation, and claim submission are review-only here and are completed by you in Athena.' },
+    { k: 'send athena writeback emr sign billing save', name: 'Review Athena actions', where: 'Visit flow step 4 / Athena review', how: 'See every destination. Note write, Save Draft, billing, signing, and each supported non-medication order use exact encounter checks and separate confirmations. Prescriptions, attestations, and claim submission remain manual in Athena.' },
     { k: 'study group research cohort', name: 'Study Groups PRO', where: 'AI Studio → advanced section', how: 'Build cohorts by procedure, auto-format all patients, run a study (graph/Excel/PDF + premium AI narrative).' },
     { k: 'pay report money premium billing', name: '💵 Pay Reports', where: 'Top of AI Studio and Calendar', how: 'Premium feature — per-provider payment reporting.' },
     { k: 'agenda today schedule quick pick', name: "Today's Agenda / quick-pick", where: 'Home hero strip', how: 'Shows the selected doctor\'s patients (scoped like Who\'s Next). Chips show 🎂 birthdays and 12-hour times.' },
@@ -37128,14 +37291,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'MLS turns the conversation into a structured note in the <b>Note</b> card. Read it over and edit ' +
       'anything you like — it’s your note. You can also <b>Prep op note</b> or apply your own ' +
       '<b>templates</b> from the “Notes & templates” card.'],
-    ['🗂️', 'Review EMR sections & confirm',
-      'Open <b>EMR sections</b> to see the “review & confirm” window. A 5-step bar guides you: ' +
-      '<b>record → MLS auto-sorts → review & edit → confirm approved → insert to athenaOne</b>. ' +
-      'The <b>⚙ Writeback destination</b> gear (top-right of that window) sets where each section lands ' +
-      'in the chart. Tick the sections you approve. <b>Nothing is written until you confirm and Insert.</b>'],
+    ['🗂️', 'Organize the local MLS draft',
+      'Open <b>EMR sections</b> to organize the generated note locally. A 5-step bar guides you: ' +
+      '<b>record → MLS auto-sorts → review & edit → confirm approved → update local draft</b>. ' +
+      '<b>Update local MLS draft never writes to Athena.</b> When the draft is ready, use the one ' +
+      '<b>Review Athena actions</b> entry to see the fixed, fail-closed destinations.'],
     ['Athena', 'Review the Athena actions',
       'When the note and sections look right, use <b>Review Athena actions</b>. The receipt shows every destination. ' +
-      '<b>Write reviewed note</b> and <b>Save draft</b> each require their own exact-encounter check and confirmation. Billing, orders, prescriptions, signature, attestation, and claim submission stay visible for review but are completed by you in Athena. Nothing runs automatically.'],
+      'Every <b>READY</b> row names What, exact Where, How and Result, and requires its own exact-encounter check and confirmation. With a capable MLS Assist version, READY can include reviewed note sections, Save Draft, billing staging, Sign &amp; Save, and one catalog-bound imaging, PT, referral or DME order. Medication/injection orders, unaccepted suggestions, prescriptions, attestation and claim submission stay manual. Nothing runs automatically or chains.'],
     ['📅', 'Calendar & schedule',
       'The <b>Calendar</b> tab shows the month, a day panel and <b>Who’s Next</b>. Pick any day to see ' +
       'that day’s patients, then tap one to jump straight into the visit with them loaded.'],
@@ -37350,24 +37513,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   function makeCta(){
-    var bar = $('#mls-rt-bar'), real = $('#pushAllEmrBtn');
-    if(!bar || !real || state.ctaBtn) return;
-    var b = document.createElement('button');
-    b.className = CLS+'-send';
-    b.type = 'button';
-    b.title = 'Review every Athena destination, then choose one independent confirmation-gated action.';
-    b.innerHTML = 'Review Athena actions';
-    b.addEventListener('click', function(){
-      var r = $('#pushAllEmrBtn');
-      if(!r){ b.textContent = 'Open a visit note first'; setTimeout(function(){ b.innerHTML='Review Athena actions'; },1800); return; }
-      var noteCard = $('#noteCard');
-      if(noteCard) noteCard.scrollIntoView({behavior:'smooth', block:'center'});
-      r.classList.add(CLS+'-pulse');
-      setTimeout(function(){ r.classList.remove(CLS+'-pulse'); }, 2600);
-      r.click();
-    });
-    bar.appendChild(b);
-    state.ctaBtn = b;
+    /* The note card already owns #pushAllEmrBtn. Retire any stale guided-bar
+       proxy instead of rendering a second simultaneous Athena launcher. */
+    var stale = state.ctaBtn || document.querySelector('.'+CLS+'-send');
+    if(stale && stale.parentNode) stale.parentNode.removeChild(stale);
+    state.ctaBtn = null;
   }
 
   function boot(){
@@ -37430,26 +37580,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 /* ===== MLS EMR-sections clarity b28 (additive, guarded, reversible) =====
    Prepended to scrivara-site/mls-connect.js (b28). Builds on b27's __mlsUiCleanupB26 (the
-   "⚙ Writeback destination" gear inside #emrPanel) — does NOT touch it.
+   retired destination-routing gear inside #emrPanel) — removes it because the
+   fail-closed typed writer owns fixed destinations.
 
    Problem (KNOWN_BUGS #4): the "EMR sections – review & confirm" modal (#emrPanel) shows nine/ten
    identical "(nothing captured for X)" boxes with a bare "confirm" checkbox each, and a one-line
    hint. It's unclear what the modal is FOR, what "confirm" / "Confirm all" / "Insert confirmed" do,
-   how the ⚙ Writeback destination relates, and what the user should do next.
+   what is local versus in Athena, and what the user should do next.
 
    This module (UI-only, no functional/ID changes):
    1. Flow stepper — a plain numbered header explaining the journey:
-      1 Record/generate → 2 MLS auto-sorts → 3 Review & edit → 4 Confirm approved → 5 Insert to athenaOne,
-      with a one-line note that confirmed sections write to athenaOne at the ⚙ Writeback destination.
+      1 Record/generate → 2 MLS auto-sorts → 3 Review & edit → 4 Confirm approved → 5 Update local draft,
+      with a one-line note that this never writes to Athena.
    2. Better empty state — when nothing is captured, hide the ten identical empty boxes and show one
       clear call-to-action (+ an "or type sections manually" reveal). When content exists, show the
       populated sections and COLLAPSE the empty ones (with a "show empty sections" toggle).
-   3. Clarify controls — hover tooltips on AI sort / Confirm all / Insert confirmed / Close / the gear
+   3. Clarify controls — hover tooltips on AI sort / Confirm all / Update local draft / Close
       and every per-section "confirm" checkbox, explaining exactly what each does.
    4. Tidy spacing, dark-modal-friendly blue accents consistent with the app.
 
    Existing IDs/behaviour untouched: #emrAi #emrClose #emrAll #emrIns #emrBody #emrHint #emrCount,
-   the .mlsWbGear, textareas and confirm checkboxes all keep working. Purely presentational overlay.
+   Textareas and confirm checkboxes all keep working. Purely presentational overlay.
 
    Revert: window.__mlsEmrClarityB28_revert()
    ===== */
@@ -37461,7 +37612,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     ['2','MLS auto-sorts','Content is split into the sections below'],
     ['3','Review &amp; edit','Check each section, fix anything'],
     ['4','Confirm approved','Tick “confirm” on the ones you approve'],
-    ['5','Insert to athenaOne','“Insert confirmed” writes them in']
+    ['5','Update local draft','Never writes to Athena']
   ];
 
   function css(){
@@ -37531,9 +37682,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(i<STEPS.length-1) row+='<span class="mlsEmrArrow">›</span>';
     }
     row+='</div>';
-    row+='<div id="mlsEmrStepNote">Confirmed sections are written into <b>athenaOne</b> at the '
-       +'destinations set under <b>⚙ Writeback destination</b> (top of this window). '
-       +'Nothing is sent until you tick <b>confirm</b> and press <b>Insert confirmed</b>.</div>';
+    row+='<div id="mlsEmrStepNote">Confirmed sections update only the <b>local MLS draft</b>. '
+       +'This window never writes or sends anything to Athena. When ready, close it and use '
+       +'<b>Review Athena actions</b> to see the fixed destinations.</div>';
     box.innerHTML=row;
     if(head.nextSibling) card.insertBefore(box, head.nextSibling); else card.appendChild(box);
   }
@@ -37546,7 +37697,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +'<p>Record or generate a note first. MLS automatically sorts the content into these sections: '
       +'<span class="mlsEmrSecList">History, Physical exam, Assessment, Plan, Orders, Prescriptions, '
       +'Referrals, PT orders, Imaging orders</span>. Then review each one, tick <b>confirm</b> on the '
-      +'sections you approve, and <b>Insert confirmed</b> writes them into athenaOne.</p>'
+      +'sections you approve, and <b>Update local MLS draft</b>. This never writes to Athena.</p>'
       +'<span id="mlsEmrCtaManual" role="button" tabindex="0">Or type sections manually</span>';
     hint.parentNode.insertBefore(c, hint.nextSibling);
     var m=c.querySelector('#mlsEmrCtaManual');
@@ -37584,13 +37735,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     emrAi:'Automatically sort the recorded/generated note into the sections below.',
     emrClose:'Close this window. Nothing is written to athenaOne.',
     emrAll:'Tick every section’s “confirm” box at once. Review the content first.',
-    emrIns:'Write the confirmed sections into athenaOne at your ⚙ Writeback destinations. This is the only step that writes.'
+    emrIns:'Update only the local MLS note draft with the confirmed sections. This never writes or sends anything to Athena.'
   };
   function tooltips(card){
-    Object.keys(TIPS).forEach(function(id){ var e=document.getElementById(id); if(e&&!e.title) e.title=TIPS[id]; });
-    var gear=card.querySelector('.mlsWbGear'); if(gear&&!gear.title) gear.title='Set where each section writes into athenaOne (tab, section, template).';
+    Object.keys(TIPS).forEach(function(id){ var e=document.getElementById(id); if(e) e.title=TIPS[id]; });
     var boxes=card.querySelectorAll('#emrBody input[type=checkbox]');
-    for(var i=0;i<boxes.length;i++){ var lab=boxes[i].closest('label')||boxes[i]; if(!lab.title) lab.title='Approve this section to be included when you press “Insert confirmed”.'; }
+    for(var i=0;i<boxes.length;i++){ var lab=boxes[i].closest('label')||boxes[i]; if(!lab.title) lab.title='Approve this section to be included when you update the local MLS draft.'; }
   }
 
   function state(card){
@@ -37637,6 +37787,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var s=document.createElement('style'); s.id='mlsUiCleanupB26Css';
     s.textContent=[
       '.mlswbc-launch{display:none !important;}',
+      '.mlsWbGear{display:none !important;}',
       '#mlsAthenaStatusDot{display:none !important;}',
       '#mlsP1AgFab{right:16px !important;bottom:16px !important;left:auto !important;top:auto !important;}',
       '#mlsAddPtLauncher{right:16px !important;bottom:70px !important;left:auto !important;top:auto !important;}',
@@ -37646,15 +37797,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function injectGear(){
     var panel=document.getElementById('emrPanel'); if(!panel) return;
-    var ai=document.getElementById('emrAi'); if(!ai||!ai.parentNode) return;
-    if(panel.querySelector('.mlsWbGear')) return;
-    var g=document.createElement('button');
-    g.type='button'; g.className='mlsWbGear';
-    g.textContent='\u2699 Writeback destination';
-    g.title='Configure where each section writes into athenaOne';
-    g.style.cssText='margin-right:8px;font:inherit;font-weight:700;padding:6px 12px;border-radius:8px;border:1px solid rgba(160,180,240,.5);background:rgba(120,150,230,.18);color:#EAF1EE;cursor:pointer;';
-    g.addEventListener('click',function(ev){ ev.preventDefault(); ev.stopPropagation(); try{ window.__mlsWbConsole && window.__mlsWbConsole.open(); }catch(e){} });
-    ai.parentNode.insertBefore(g, ai);
+    var gears=panel.querySelectorAll('.mlsWbGear');
+    for(var i=0;i<gears.length;i++){ if(gears[i]&&gears[i].parentNode) gears[i].parentNode.removeChild(gears[i]); }
   }
   function layout(){
     [['mlsP1AgFab',16],['mlsAddPtLauncher',70],['mlsVoiceFab',124]].forEach(function(p){
@@ -37729,7 +37873,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'main-20260820-r6';
+  window.__MLS_AV = window.__MLS_AV || 'main-20260823-r2';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -38072,7 +38216,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='main-20260820-r6';
+  var MLS_APP_BUILD='main-20260823-r2';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -38535,7 +38679,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if(b._unsorted) rows+='<div style="background:#24332A;border:1px dashed rgba(217,119,6,.5);border-radius:12px;padding:12px 14px;margin-bottom:10px"><b style="color:#ffcf8f">Unsorted</b><div style="font-size:12px;color:#B9CEC2;margin:2px 0 6px">Could not confidently place these - move into a section above.</div><textarea style="width:100%;min-height:46px;background:#1E2B24;'+CS+';resize:vertical">'+String(b._unsorted).replace(/</g,'&lt;')+'</textarea></div>';
     host.querySelector('#emrBody').innerHTML=rows;
     var any=S.some(function(s){return b[s.k];})||!!b._unsorted;
-    host.querySelector('#emrHint').innerHTML=any?'Organized from the current note. Edit anything, then confirm each section. Nothing is placed into the note until you confirm it.':'No sections detected yet - generate the note first, or type into any section. Try AI sort.';
+    host.querySelector('#emrHint').innerHTML=any?'Organized from the current note. Edit anything, then confirm each section. Nothing changes in the local MLS draft until you update it; this never writes to Athena.':'No sections detected yet - generate the note first, or type into any section. This window updates only the local MLS draft.';
     count(host);
   }
   function render(){
@@ -38543,7 +38687,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var host=document.createElement('div'); host.id='emrPanel';
     host.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(6,10,24,.72);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px';
     var B='border:1px solid rgba(143,216,190,.3);border-radius:10px;cursor:pointer';
-    host.innerHTML='<div style="max-width:760px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.3);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#EAF1EC">EMR sections - review &amp; confirm</div><div style="display:flex;gap:8px"><button id="emrAi" style="background:#7A5CC0;border:none;color:#fff;'+B+';padding:6px 12px;font-weight:700">AI sort</button><button id="emrClose" style="background:transparent;color:#EAF1EC;'+B+';padding:6px 10px">Close</button></div></div><div id="emrHint" style="font-size:12.5px;color:#B9CEC2;margin-bottom:12px"></div><div id="emrBody"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><span id="emrCount" style="font-size:13px;color:#B9CEC2"></span><div style="display:flex;gap:10px;flex-wrap:wrap"><button id="emrAll" style="background:transparent;color:#EAF1EC;'+B+';padding:10px 14px;font-weight:700">Confirm all</button><button id="emrIns" style="background:#2E6A4B;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800">Insert confirmed into note</button></div></div><div style="font-size:11.5px;color:#B9CEC2;margin-top:8px">MLS never submits medical actions on its own. Review, confirm, then send. Per-field placement into athenaOne is the next extension step.</div></div>';
+    host.innerHTML='<div style="max-width:760px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.3);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#EAF1EC">MLS draft sections - review &amp; confirm</div><div style="display:flex;gap:8px"><button id="emrAi" style="background:#7A5CC0;border:none;color:#fff;'+B+';padding:6px 12px;font-weight:700">AI sort</button><button id="emrClose" style="background:transparent;color:#EAF1EC;'+B+';padding:6px 10px">Close</button></div></div><div id="emrHint" style="font-size:12.5px;color:#B9CEC2;margin-bottom:12px"></div><div id="emrBody"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><span id="emrCount" style="font-size:13px;color:#B9CEC2"></span><div style="display:flex;gap:10px;flex-wrap:wrap"><button id="emrAll" style="background:transparent;color:#EAF1EC;'+B+';padding:10px 14px;font-weight:700">Confirm all</button><button id="emrIns" style="background:#2E6A4B;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800">Update local MLS draft</button></div></div><div style="font-size:11.5px;color:#B9CEC2;margin-top:8px"><b>This updates only the local MLS note draft; it never writes or sends anything to Athena.</b> Use Review Athena actions afterward to see exactly what goes where.</div></div>';
     document.body.appendChild(host);
     fill(host,organize(noteText()));
     host.addEventListener('change',function(e){ var k=e.target.getAttribute&&e.target.getAttribute('data-k'); if(k){ conf[k]=e.target.checked; count(host); } });
@@ -38564,7 +38708,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(!parts.length){ (window.toast||window.alert)('Confirm at least one section first.','err'); return; }
       var out=parts.join('\n\n'), note=document.getElementById('mls-note');
       if(note){ if(note.value!=null){ note.value=out; note.dispatchEvent(new Event('input',{bubbles:true})); } else note.textContent=out; }
-      var b=host.querySelector('#emrIns'); b.textContent='Inserted'; setTimeout(function(){ b.textContent='Insert confirmed into note'; },1400);
+      var b=host.querySelector('#emrIns'); b.textContent='Local draft updated'; setTimeout(function(){ b.textContent='Update local MLS draft'; },1400);
     };
   }
   function addBtn(){ if(document.getElementById('emrBtn')) return; var b=document.createElement('button'); b.id='emrBtn'; b.type='button'; b.textContent='EMR sections'; b.style.cssText='position:fixed;left:12px;bottom:96px;z-index:99998;background:#2E6A4B;border:none;color:#fff;border-radius:11px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)'; b.onclick=function(){ conf={}; render(); }; document.body.appendChild(b); }
@@ -40268,15 +40412,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var DRAFTS = [
     { label:'✍️ Draft op note', native:function(){ try{ if(typeof window.openOpPrepForPatient==='function'){ window.openOpPrepForPatient(); return true; } }catch(e){} return false; }, prompt:function(n){ return 'Draft a complete operative note for '+(n||'the active patient')+' for their planned/most recent procedure. Use standard operative-note structure: Preoperative diagnosis, Postoperative diagnosis, Procedure, Surgeon, Assistant, Anesthesia, Indications, Findings, Technique (numbered operative steps), Implants/Instrumentation, Estimated blood loss, Complications, Specimens, Disposition. Pull the procedure and clinical details from this patient’s record; wherever a specific detail is not documented, insert a clearly-marked [fill in] placeholder rather than inventing it.'; } },
     { label:'✍️ After-visit summary', native:function(){ try{
-        var ab=document.getElementById('mlsavsBtn'); if(ab){ ab.click(); return true; }
-        /* the real AVS button lives in the visit workspace — reveal it first,
-           then click (the proven b235 quick-chip pattern, same 800ms) */
-        var adv=document.getElementById('ez3Adv');
-        if(adv && document.body && !document.body.classList.contains('ez3adv')){
-          adv.click();
-          setTimeout(function(){ try{ var b2=document.getElementById('mlsavsBtn'); if(b2) b2.click(); else if(typeof window.toast==='function') window.toast('After-visit summary is not available on this build.','err'); }catch(e){} }, 800);
+        var open=function(){
+          var ab=document.getElementById('mlsavsBtn'); if(ab){ ab.click(); return true; }
+          var avsApi=window.__mlsAfterVisitSummary; if(avsApi&&typeof avsApi.open==='function'){ avsApi.open(); return true; }
+          /* The real AVS button lives in the visit workspace. Reveal it, then
+             wait for the next paint rather than guessing at a fixed delay. */
+          var adv=document.getElementById('ez3Adv');
+          if(adv && document.body && !document.body.classList.contains('ez3adv')){
+            adv.click();
+            var later=window.requestAnimationFrame||function(cb){Promise.resolve().then(cb);};
+            later(function(){ try{ var b2=document.getElementById('mlsavsBtn'); if(b2) b2.click(); else if(typeof window.toast==='function') window.toast('After-visit summary is not available on this build.','err'); }catch(e2){} });
+            return true;
+          }
+          return false;
+        };
+        if(typeof window.__mlsEnsureAfterVisitSummary==='function'){
+          afterVisitSummaryWhenReady(open);
           return true;
         }
+        return open();
       }catch(e){} return false; }, prompt:function(n){ return 'Write a clear, patient-friendly after-visit summary for '+(n||'the active patient')+' based on their record and today’s visit: what we discussed, any diagnosis in plain language, medication changes, instructions/precautions, and next steps / follow-up. Warm, plain English, no jargon.'; } },
     { label:'✍️ Referral letter', prompt:function(n){ return 'Draft a referral letter to physical therapy for '+(n||'the active patient')+' based on their spine/pain diagnoses and history. Include the referring diagnosis with ICD-10 if known, brief relevant history and exam, precautions, and specific PT goals/frequency. Professional letter format.'; } }
   ];
@@ -45934,7 +46088,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_fab_layout.js"]'))return;var s=document.createElement('script');s.src='feat_fab_layout.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_fab_layout.js');document.head.appendChild(s);}catch(e){}})();
 /* The legacy provider picker is intentionally not loaded in P1: its missing-
    attribution fallback can widen a selected-provider pull to every row. */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_after_visit_summary.js"]'))return;var s=document.createElement('script');s.src='/feat_after_visit_summary.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_after_visit_summary.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{
+  var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};
+  var A='feat_after_visit_summary.js',V='avs-loader-1.0.1',K='__mlsAfterVisitSummaryLoader';
+  var prior=window[K];
+  if(prior&&prior.installed===true&&prior.version===V&&typeof prior.ensure==='function'){
+    window.__mlsEnsureAfterVisitSummary=prior.ensure; prior.ensure(); return;
+  }
+  var pending=null;
+  function owner(){try{var api=window.__mlsAfterVisitSummary;return api&&api.installed===true?api:null;}catch(e){return null;}}
+  function ensure(){
+    var api=owner(); if(api)return Promise.resolve(api);
+    if(pending)return pending;
+    pending=new Promise(function(resolve,reject){
+      var s=document.querySelector('script[data-mls-asset="'+A+'"]'),done=false,loadTimer=0;
+      function settle(ok){if(done)return;done=true;if(loadTimer)clearTimeout(loadTimer);pending=null;var ready=ok?owner():null;if(ready){if(s&&s.setAttribute)s.setAttribute('data-mls-avs-load-state','loaded');resolve(ready);return;}if(s&&s.parentNode)try{s.parentNode.removeChild(s);}catch(_removeError){}reject(new Error('after-visit summary failed to load'));}
+      var state=s&&s.getAttribute?s.getAttribute('data-mls-avs-load-state'):'';
+      var terminal=s&&((state==='error')||(state==='loaded'&&!owner())||(s.readyState&&/loaded|complete/.test(String(s.readyState))&&!owner()));
+      if(terminal){try{if(s.parentNode)s.parentNode.removeChild(s);}catch(_staleRemoveError){}s=null;}
+      var fresh=!s;
+      if(fresh){s=document.createElement('script');s.src='/'+A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-avs-load-state','loading');s.async=true;}
+      s.addEventListener('load',function(){settle(true);},{once:true});
+      s.addEventListener('error',function(){settle(false);},{once:true});
+      if(fresh)(document.body||document.head||document.documentElement).appendChild(s);
+      if(owner()){if(s&&s.setAttribute)s.setAttribute('data-mls-avs-load-state','loaded');settle(true);}
+      else loadTimer=setTimeout(function(){settle(false);},10000);
+    });
+    return pending;
+  }
+  var loader={installed:true,version:V,asset:A,ensure:ensure}; window[K]=loader; window.__mlsEnsureAfterVisitSummary=ensure;
+  sched(function(){ensure().catch(function(){});},{timeout:2500,asset:A});
+}catch(e){}})(); /* action-time AVS readiness: idle fallback remains, direct triggers load and wait for evaluation */
 /* ---- loader: feat_mls_protocol (MLS Easy protocol: auto-advance to NEXT UP Slide 2, record textbox, full ordered flow, provider-name-everywhere, sizing/readability; additive, reversible) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol.js"]'))return;var s=document.createElement('script');s.src='feat_mls_protocol.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_protocol.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_protocol_pickfix.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_mls_protocol_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
@@ -46084,7 +46268,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patients_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patients_exact.js?v=20260727px130';s.setAttribute('data-mls-asset','feat_mls_patients_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patients_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_history_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_exact.js?v=20260726dkn1';s.setAttribute('data-mls-asset','feat_mls_history_exact.js');s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe feat_mls_history_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);},A='feat_mls_history_exact.js',load=function(){if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260726dkn1';s.setAttribute('data-mls-asset',A);s.async=true;(document.head||document.documentElement).appendChild(s);},isHistory=function(e){var d=e&&e.detail||{};return d.view==='history'||window.__mlsCurrentView==='history';};window.addEventListener('mls:view-changed',function(e){if(isHistory(e))load();},false);if(isHistory())setTimeout(load,0);sched(load,{timeout:2500,asset:A});}catch(e){}})(); /* History renderer: idle fallback plus immediate route admission; additive, reversible */
 
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_orders_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_exact.js?v=20260726dkn1';s.setAttribute('data-mls-asset','feat_mls_orders_exact.js');s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe feat_mls_orders_exact.js (STAGING ONLY) — additive, reversible */
 
@@ -46109,7 +46293,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_notetools_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_notetools_exact.js?v=20260624nt1c1';s.setAttribute('data-mls-asset','feat_mls_notetools_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_notetools_exact.js (PROD) - note+tools legibility, additive, reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_widgetinsert.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widgetinsert.js?v=20260802wi4';s.setAttribute('data-mls-asset','feat_mls_widgetinsert.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* FIX 2: robust custom-widget Add-to-note (body/mirror fallback) + surface generated widgets (PROD) - additive, reversible */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A='feat_mls_datalink_exact.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe link-1.1.0 event-driven cross-surface data link; shared build token prevents stale polling code (additive, reversible) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A='feat_mls_datalink_exact.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe link-1.1.2 event-driven cross-surface data link; shared build token prevents stale polling code (additive, reversible) */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260820asst220perf2';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_saveshield.js"]'))return;var s=document.createElement('script');s.src='feat_mls_saveshield.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_saveshield.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e2){}},{timeout:4000});}catch(e){}})(); /* MLSscribe feat_mls_saveshield.js svs-1.2.0 - stale-lineage protection stays exact while cooperative bulk checks run in input-aware slices; refusals counted and visible (the 2026-08-08 twin-tab clobber, 98/153 healed rows) */
@@ -46143,13 +46327,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_offtab_navhide.js"]'))return;var s=document.createElement('script');s.src='feat_mls_offtab_navhide.js?v=20260625oth1c1';s.setAttribute('data-mls-asset','feat_mls_offtab_navhide.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item13: off App-tabs disappear from nav (kept in Menu) -- 6b nav half (additive, reversible) */
 ;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;}catch(e){}})(); /* canonical template-driven op-note Fields workflow owns this feature; competing legacy quick action retired */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_baricon.js"]'))return;var s=document.createElement('script');s.src='feat_mls_baricon.js?v=20260727bi121';s.setAttribute('data-mls-asset','feat_mls_baricon.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item15: patient-bar Chart/Visit/History/Schedule -> icons (additive, reversible) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_avs.js?v=20260625havs1c1';s.setAttribute('data-mls-asset','feat_mls_history_avs.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);},A='feat_mls_history_avs.js',load=function(){try{if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625havs1c1';s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},isHistory=function(e){var d=e&&e.detail||{};return d.view==='history'||window.__mlsCurrentView==='history';};window.addEventListener('mls:view-changed',function(e){if(isHistory(e))load();},false);if(isHistory())setTimeout(load,0);sched(load,{timeout:2500,asset:A});}catch(e){}})(); /* History AVS: idle fallback plus immediate route admission */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1c1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* unify-1.2.0: one Copilot conversation plus O(1) active-id no-patient hints, request-specific pending state and event-driven context */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_copilot_slim.js"]'))return;var s=document.createElement('script');s.src='feat_copilot_slim.js?v=20260719csp211';s.setAttribute('data-mls-asset','feat_copilot_slim.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* loss-aware Copilot context packing: keeps identities, counts, appointments and structured metrics */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260802asst145';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */ /* 1p b121 fork (p1-backfill-footer-1.0.0): canonical data-mls-asset identity kept for dedupe/adoption, isolated preview source; the shared production pack is untouched. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting; ca-2.1.0 delegates agentic kinds to __mlsCopilotPower */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return f();};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_copilot_power.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_power.js?v=20260805cpw130';s.setAttribute('data-mls-asset','feat_mls_copilot_power.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;},{timeout:2500,priority:0,asset:'feat_mls_copilot_power.js'});}catch(e){}})(); /* pre-action integrity: secure-gate priority lane installs bounded large-roster Copilot context and provider coverage before the first request */
@@ -46582,7 +46766,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})();
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260820chk3077';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260823chk3079';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
@@ -48197,7 +48381,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.4.0 exact-key generation fallback; normal builds install the cache at byte zero before boot work */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pcs-1.2.1: synchronous ownership swap, idle-coalesced identity lookup, frame-coalesced conversation mirrors; no roster poll (additive, reversible) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v=20260802crs121';s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260802rs112';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260802ne113';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
 ;(function(){try{var A='feat_mls_writeback_safety.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* wbs-1.2.0: event-driven cached preview plus a fresh fail-closed write-click gate; shared build token */
@@ -49057,10 +49241,109 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
   var DS_AUTO_RETRY = {}; /* private identity; public pullDay(true) is still manual */
-  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, lastAttemptResult: null, sessionSerial: 0,
+  var DS_PREF_READY = {}; /* private identity; first-use choice completed, still a manual pull */
+  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, lastAttemptResult: null, terminalReceipt: null, terminalReceiptKey: '', sessionSerial: 0,
     pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null,
+    preferenceGatePending: false, pullVisitBodies: null,
     /* dsdiag-1.1.0: minted at every pull entry, quoted by the copyable report */
     pullId: '', pullStartedAt: 0 };
+
+  /* ===== dtr-1.0.0 (durable, PHI-free day-pull terminal receipt) ==========
+     The visible DaySwitch result used to live only in DS.lastAttemptResult.
+     A reload therefore erased the answer to the doctor's basic question:
+     complete, partial, or failed? Store only bounded counts and closed reason
+     codes under the account namespace. Never fall back to a global key: an
+     unsettled uns() value is an anonymous/device namespace and must not carry
+     another account's clinical-work status. */
+  var DS_TERMINAL_RECEIPT_SUFFIX = 'dayPullTerminalReceiptV1';
+  function dsTerminalReceiptKey() {
+    var key = '';
+    try { if (window && typeof window.uns === 'function') key = String(window.uns(DS_TERMINAL_RECEIPT_SUFFIX) || ''); } catch (e) { key = ''; }
+    if (!key || /::_::|::undefined::/.test(key)) return '';
+    return key;
+  }
+  function dsReceiptDay(value) {
+    var day = String(value == null ? '' : value).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '';
+  }
+  function dsReceiptCount(value) {
+    var n = Number(value || 0);
+    return isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  }
+  function dsReceiptCode(value, fallback) {
+    var code = String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+    return code || String(fallback || 'unclassified');
+  }
+  function dsTerminalStatus(result) {
+    var r = result && typeof result === 'object' ? result : null;
+    if (r && r.ok === true && r.complete === true) return 'complete';
+    var sr = r && r.scheduleReceipt && typeof r.scheduleReceipt === 'object' ? r.scheduleReceipt : {};
+    var hr = r && r.historyReceipt && typeof r.historyReceipt === 'object' ? r.historyReceipt : {};
+    var cr = r && r.calendarReceipt && typeof r.calendarReceipt === 'object' ? r.calendarReceipt : {};
+    var historySkipped = hr.skipped === true || hr.reason === 'full-notes-off' || hr.reason === 'not-requested';
+    var evidence = sr.complete === true || cr.complete === true || (!historySkipped && hr.complete === true) ||
+      dsReceiptCount(sr.parsedCount || sr.mergedRows) > 0 || dsReceiptCount(hr.processed) > 0 ||
+      dsReceiptCount(cr.accounted || cr.mapped || cr.created || cr.repaired) > 0;
+    return evidence ? 'partial' : 'failed';
+  }
+  function dsBuildTerminalReceipt(result, day) {
+    var r = result && typeof result === 'object' ? result : {};
+    var hr = r.historyReceipt && typeof r.historyReceipt === 'object' ? r.historyReceipt : {};
+    var sr = r.scheduleReceipt && typeof r.scheduleReceipt === 'object' ? r.scheduleReceipt : {};
+    var cr = r.calendarReceipt && typeof r.calendarReceipt === 'object' ? r.calendarReceipt : {};
+    var requested = typeof r.visitNotesRequested === 'boolean' ? r.visitNotesRequested
+      : (typeof hr.visitNotesRequested === 'boolean' ? hr.visitNotesRequested : null);
+    var target = dsReceiptDay(day) || dsReceiptDay(r.target) || dsReceiptDay(hr.day) || dsReceiptDay(sr.schedDate);
+    return {
+      v: 1, kind: 'day-pull-terminal', target: target, status: dsTerminalStatus(r),
+      at: Date.now(), pullId: dsReceiptCode(r.pullId, ''),
+      reason: dsReceiptCode(r.reason, dsTerminalStatus(r)), durable: false,
+      schedule: { complete: sr.complete === true, expected: dsReceiptCount(sr.expectedCount || sr.candidateCount), parsed: dsReceiptCount(sr.parsedCount || sr.mergedRows) },
+      history: { requested: dsReceiptCount(hr.requested), processed: dsReceiptCount(hr.processed), complete: hr.complete === true, failures: dsReceiptCount(hr.failures), retry: Array.isArray(hr.retry) ? hr.retry.length : 0 },
+      visitNotes: { requested: requested, mode: requested === true ? 'full' : (requested === false ? 'not-requested' : 'unknown'), read: dsReceiptCount(hr.todayNoteRead), failures: dsReceiptCount(hr.todayNoteFailures), notRequested: dsReceiptCount(hr.todayNoteNotRequested) }
+    };
+  }
+  function dsPersistTerminalReceipt(receipt) {
+    var key = dsTerminalReceiptKey();
+    if (!key) return { ok: false, durable: false, reason: 'account-namespace-unsettled' };
+    try {
+      var saved = {}, k;
+      for (k in receipt) if (Object.prototype.hasOwnProperty.call(receipt, k)) saved[k] = receipt[k];
+      saved.durable = true;
+      var raw = JSON.stringify(saved), store = window.localStorage;
+      if (!store || typeof store.setItem !== 'function' || typeof store.getItem !== 'function') return { ok: false, durable: false, reason: 'storage-unavailable' };
+      store.setItem(key, raw);
+      var back = JSON.parse(store.getItem(key) || 'null');
+      var confirmed = !!(back && back.v === 1 && back.kind === 'day-pull-terminal' && back.target === receipt.target && back.status === receipt.status && back.durable === true);
+      return { ok: confirmed, durable: confirmed, reason: confirmed ? '' : 'storage-readback-failed' };
+    } catch (e) { return { ok: false, durable: false, reason: 'storage-write-failed' }; }
+  }
+  function dsLoadTerminalReceipt(day) {
+    var key = dsTerminalReceiptKey(), want = dsReceiptDay(day);
+    if (!key || !want) return null;
+    try {
+      var store = window.localStorage, x = store && typeof store.getItem === 'function' ? JSON.parse(store.getItem(key) || 'null') : null;
+      if (!x || x.v !== 1 || x.kind !== 'day-pull-terminal' || x.target !== want) return null;
+      if (x.status !== 'complete' && x.status !== 'partial' && x.status !== 'failed') return null;
+      return x;
+    } catch (e) { return null; }
+  }
+  function dsTerminalReceiptLine(receipt) {
+    if (!receipt) return '';
+    var status = receipt.status === 'complete' ? 'complete' : (receipt.status === 'partial' ? 'partial' : 'failed');
+    var line = 'Pull ' + status + ' for ' + fmtDay(receipt.target || DS.day) + '.';
+    if (receipt.visitNotes && receipt.visitNotes.requested === false) line += ' Full visit notes were intentionally skipped (Full Notes is off).';
+    if (receipt.durable !== true) line += ' Status could not be saved for reload; it is available in this tab only.';
+    return line;
+  }
+  function dsHydrateTerminalReceipt() {
+    var key = dsTerminalReceiptKey();
+    if (!key) { DS.terminalReceiptKey = ''; DS.terminalReceipt = null; return null; }
+    if (DS.terminalReceiptKey === key && DS.terminalReceipt && DS.terminalReceipt.target === DS.day) return DS.terminalReceipt;
+    DS.terminalReceiptKey = key;
+    DS.terminalReceipt = dsLoadTerminalReceipt(DS.day);
+    return DS.terminalReceipt;
+  }
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -49178,6 +49461,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function syncStrip() {
     var lb = $('mlsDsDayLbl'), tb = $('mlsDsTodayBtn');
     var isToday = (DS.day === todayKey());
+    var hydratedTerminal = dsHydrateTerminalReceipt();
     var desiredDayLabel = (isToday ? '<b>Today</b> - ' : '') + esc(fmtDay(DS.day));
     if (lb && lb.innerHTML !== desiredDayLabel) lb.innerHTML = desiredDayLabel;
     try {
@@ -49214,6 +49498,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* The split other-day UI is retired; the native Easy workspace remains
        visible for every selected date. */
     try { var body = $('mlsEz3Body'); if (body && body.classList.contains('mls-ds-otherday')) body.classList.remove('mls-ds-otherday'); } catch (e) {}
+    /* A reload has no live pull promise to paint. Restore only this account's
+       receipt for the selected day, and never overwrite an active pull's
+       progress or a newer in-memory result. */
+    try {
+      var statusNode = $('mlsDsStatus');
+      if (statusNode && hydratedTerminal && !DS.pulling && !DS.retrying && DS.__autoRetrying !== true && !DS.preferenceGatePending) {
+        statusNode.style.display = 'block';
+        statusNode.textContent = dsTerminalReceiptLine(hydratedTerminal);
+        dsSyncDiagBtn(hydratedTerminal.status === 'failed');
+      }
+    } catch (eReceiptPaint) {}
   }
   function setDay(k) {
     k = String(k || '').slice(0, 10);
@@ -49559,6 +49854,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       pullId: String(DS.pullId || ''),
       pullStartedAt: DS.pullStartedAt ? new Date(Number(DS.pullStartedAt)).toISOString() : '',
       user: dsAccountReceipt(),
+      /* dtr-1.0.0: a reload may have only the PHI-free durable terminal
+         receipt, not the in-memory engine result. Keep that answer in the
+         copied report without falling back to another day's raw receipt. */
+      terminalReceipt: DS.terminalReceipt || null,
       storage: dsStorageReceipt(),
       client: dsClientReceipt(),
       env: {
@@ -49747,9 +50046,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          say "history checked for 19 patients" with zero histories stored, which
          is exactly the success the owner was shown while 15 patients had nothing. */
       var hist = ((hr.patients || []).filter(function (p) { return p && p.complete === true; })).length;
-      var histGap = (rows > 0 && hist < rows) ? (rows - hist) : 0;
+      var historyIntentionallySkipped = hr.visitNotesRequested === false || hr.skipped === true ||
+        hr.reason === 'full-notes-off' || r.historyRequested === false || r.includeHistory === false;
+      var histGap = (!historyIntentionallySkipped && rows > 0 && hist < rows) ? (rows - hist) : 0;
+      var histLine = (!historyIntentionallySkipped && hr.requested != null)
+        ? ('history read for ' + hist + ' of ' + rows + ' as the reader counted it') : '';
       var recon = pullReconLine(r);
-      return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (hr.requested != null ? (', history read for ' + hist + ' of ' + rows + ' as the reader counted it') : '') + '.' + (histGap ? (' ' + histGap + ' patient' + (histGap === 1 ? ' has' : 's have') + ' no chart yet - use Retry failed histories to finish them.') : '') + censusLine(hr) + (function () { var tf = Number(hr.todayNoteFailures || 0); return tf ? (' ' + tf + ' pulled-day note' + (tf === 1 ? ' was' : 's were') + ' not read (fast lane); the charts themselves saved \u2014 see the pull panel rows.') : ''; })() + (recon ? ' [' + recon + ']' : '') };
+      var visitNotesMessage = hr.visitNotesRequested === false
+        ? ' Full visit notes were intentionally skipped (Full Notes is off).'
+        : (function () { var tf = Number(hr.todayNoteFailures || 0); return tf ? (' ' + tf + ' pulled-day note' + (tf === 1 ? ' was' : 's were') + ' not read (fast lane); the charts themselves saved \u2014 see the pull panel rows.') : ''; })();
+      return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (histLine ? (', ' + histLine) : '') + '.' + (histGap ? (' ' + histGap + ' patient' + (histGap === 1 ? ' has' : 's have') + ' no chart yet - use Retry failed histories to finish them.') : '') + censusLine(hr) + visitNotesMessage + (recon ? ' [' + recon + ']' : '') };
     }
     var terminalCoverage = r && r.providerRosterReceipt && dsSafeAttributionCoverage(r.providerRosterReceipt.attributionCoverage);
     if (dsFullyRowUnattributed(r, terminalCoverage)) {
@@ -49843,6 +50149,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   api.classifyPullResult = pullOutcome;
   api._safeReasonCounts = dsSafeReasonCounts;
+  /* Focused runtime seam for the PHI-free, account-scoped terminal receipt;
+     production callers continue to use the DaySwitch surface below. */
+  api._terminalReceipt = {
+    key: dsTerminalReceiptKey,
+    build: dsBuildTerminalReceipt,
+    persist: dsPersistTerminalReceipt,
+    load: dsLoadTerminalReceipt,
+    status: dsTerminalStatus,
+    line: dsTerminalReceiptLine
+  };
 
   /* ===== oar-1.0.0 (ported from production mls-connect.js:46708-46718)
      THIS surface owns the receipt returned to THIS DaySwitch attempt. Without
@@ -49859,6 +50175,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!owned.reason) owned.reason = fallbackReason || 'unverified-result';
     if (!owned.target) owned.target = String(day || DS.day || '');
     if (!owned.error && fallbackError) owned.error = String(fallbackError);
+    /* dtr-1.0.0: file a bounded terminal answer before any later UI branch
+       can return or schedule an automatic retry. Storage failure is retained
+       as an honest tab-only state; it is never reported as durable. */
+    var terminal = dsBuildTerminalReceipt(owned, day || DS.day || '');
+    var persisted = dsPersistTerminalReceipt(terminal);
+    terminal.durable = persisted.durable === true;
+    terminal.persistenceReason = String(persisted.reason || '');
+    owned.terminalStatus = terminal.status;
+    owned.terminalReceiptDurable = terminal.durable === true;
+    DS.terminalReceipt = terminal;
+    DS.terminalReceiptKey = dsTerminalReceiptKey();
     DS.lastAttemptResult = owned;
     return owned;
   }
@@ -50183,8 +50510,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
 
+  function dsPreferenceRefusal(reason) {
+    reason = String(reason || 'choice-check-failed');
+    if (reason === 'choice-cancelled') return 'Pull not started — choose how full visit notes should be handled, then try again.';
+    if (reason === 'account-namespace-not-settled') return 'Pull not started — your account settings are still loading. Try again in a moment.';
+    if (reason === 'choice-write-failed' || reason === 'choice-readback-failed') return 'Pull not started — MLS could not save your full-visit-notes choice. Nothing was read from Athena. Try again.';
+    if (reason === 'choice-dialog-unavailable') return 'Pull not started — the full-visit-notes choice is not ready on this build. Refresh MLS and try again.';
+    return 'Pull not started — MLS could not confirm your full-visit-notes choice. Nothing was read from Athena. Try again.';
+  }
+
   function startPull(autoRetry) {
     var automaticRetry = autoRetry === DS_AUTO_RETRY;
+    var preferenceReady = autoRetry === DS_PREF_READY;
     /* 2026-07-29 (measured live): this guard used to return SILENTLY, so a
        press while an earlier pull or its automatic history re-check was still
        running did nothing at all - no message, no spinner, no refusal. The
@@ -50196,6 +50533,44 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         : "This pull is already running - watch the progress just below.";
       if (stB) { stB.style.display = "block"; stB.textContent = msgB; }
       try { if (typeof window.toast === "function") window.toast(msgB, ""); } catch (eB) {}
+      return;
+    }
+    /* A first NEW human day/bulk pull must choose completeness before this
+       function reads the relay, importer, provider roster, or Athena bridge.
+       The per-entry latch is separate from the resolver's shared Promise: one
+       shared answer may have many listeners, but only this listener may start
+       this one pull. Automatic retries reuse the frozen boolean and never ask. */
+    if (!automaticRetry && !preferenceReady) {
+      var prefApi = window.__mlsVisitNotesPref;
+      var prefStatus = $('mlsDsStatus');
+      if (!prefApi || typeof prefApi.ensureChosenForBulkPull !== 'function') {
+        var prefUnavailable = dsPreferenceRefusal('choice-dialog-unavailable');
+        if (prefStatus) { prefStatus.style.display = 'block'; prefStatus.textContent = prefUnavailable; }
+        try { if (typeof window.toast === 'function') window.toast(prefUnavailable, 'err'); } catch (ePref0) {}
+        return;
+      }
+      if (DS.preferenceGatePending) {
+        if (prefStatus) { prefStatus.style.display = 'block'; prefStatus.textContent = 'Waiting for your full-visit-notes choice — the pull has not started yet.'; }
+        return;
+      }
+      DS.preferenceGatePending = true;
+      if (prefStatus) { prefStatus.style.display = 'block'; prefStatus.textContent = 'Choose whether schedule pulls should include every full visit note. Nothing has been read from Athena yet.'; }
+      Promise.resolve(prefApi.ensureChosenForBulkPull()).then(function (choice) {
+        DS.preferenceGatePending = false;
+        if (!choice || choice.ok !== true || typeof choice.on !== 'boolean') {
+          var refused = dsPreferenceRefusal(choice && choice.reason);
+          if (prefStatus) { prefStatus.style.display = 'block'; prefStatus.textContent = refused; }
+          if (!choice || choice.reason !== 'choice-cancelled') { try { if (typeof window.toast === 'function') window.toast(refused, 'err'); } catch (ePref1) {} }
+          return;
+        }
+        DS.pullVisitBodies = choice.on === true;
+        startPull(DS_PREF_READY);
+      }, function () {
+        DS.preferenceGatePending = false;
+        var refused = dsPreferenceRefusal('choice-check-failed');
+        if (prefStatus) { prefStatus.style.display = 'block'; prefStatus.textContent = refused; }
+        try { if (typeof window.toast === 'function') window.toast(refused, 'err'); } catch (ePref2) {}
+      });
       return;
     }
     /* A new clinician action never inherits the capability captured by an
@@ -50213,7 +50588,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     } catch (eF) {}
     var sessionSerial = DS.sessionSerial, pullSerial = DS.pullSerial;
-    DS.lastAttemptResult = null;                          /* oar-1.0.0: a new attempt owns its own receipt */
+    DS.lastAttemptResult = null; DS.terminalReceipt = null; DS.terminalReceiptKey = ''; /* oar-1.0.0: a new attempt owns its own receipt */
     syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
     if (!automaticRetry) {
@@ -50260,26 +50635,46 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         } catch (e) {}
       };
       paintRelayBar('');
-      window.__mlsRelayLink.pullDay(rday, {
+      try {
+        window.__mlsRelayLink.pullDay(rday, {
+        pullVisitBodies: DS.pullVisitBodies,
         onStatus: function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (rstat) rstat.textContent = String(m); } catch (e) {} dsStatusLog(m); try { paintRelayBar(m); } catch (e2) {} },
         onDone: function (ok, msg) {
           if (sessionSerial !== DS.sessionSerial) return;
           DS.pulling = false;
-          ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || '') }, rday);
+          ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || ''), visitNotesRequested: DS.pullVisitBodies === true }, rday);
           dsStatusLog(msg);
           dsSyncDiagBtn(!ok);
           if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
-          if (rstat) { rstat.style.display = ok ? 'none' : 'block'; if (!ok && msg) rstat.textContent = String(msg); }
+          if (rstat) { rstat.style.display = 'block'; rstat.textContent = String(msg || (ok ? (fmtDay(rday) + ' pull completed successfully.') : (fmtDay(rday) + ' pull failed. Try again.'))); }
           try { var rb = document.getElementById('mlsDsPullBar'); if (rb) rb.style.display = 'none'; } catch (e3) {}
           try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
           renderList();
         }
-      });
+        });
+      } catch (relayStartError) {
+        /* A synchronous relay bridge throw is still a terminal attempt.  Do
+           not leave the strip spinning with no durable answer. */
+        DS.pulling = false;
+        var relayStartMsg = 'The office-computer pull could not start. ' + String((relayStartError && relayStartError.message) || relayStartError || 'relay-start-failed');
+        ownAttemptResult(null, rday, 'pull-start-failed', relayStartMsg);
+        dsStatusLog(relayStartMsg);
+        dsSyncDiagBtn(true);
+        if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
+        if (rstat) { rstat.style.display = 'block'; rstat.textContent = relayStartMsg; }
+        try { var rbErr = document.getElementById('mlsDsPullBar'); if (rbErr) rbErr.style.display = 'none'; } catch (eRelayBar) {}
+        try { if (typeof window.toast === 'function') window.toast(relayStartMsg, 'err'); } catch (eRelayToast) {}
+        renderList();
+      }
       return;
     }
     var si = window.__mlsSI;
     if (!si || typeof si.pull !== 'function') {
-      try { if (typeof window.toast === 'function') window.toast('The Athena day-pull engine is not available on this build.', 'err'); } catch (e) {}
+      var unavailableMsg = 'Pull not started — the Athena day-pull engine is not available on this build. Refresh MLS and try again.';
+      var unavailableStat = $('mlsDsStatus');
+      if (unavailableStat) { unavailableStat.style.display = 'block'; unavailableStat.textContent = unavailableMsg; }
+      ownAttemptResult(null, DS.day, 'pull-engine-unavailable', unavailableMsg);
+      try { if (typeof window.toast === 'function') window.toast(unavailableMsg, 'err'); } catch (e) {}
       return;
     }
     DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
@@ -50297,7 +50692,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dsStatusLog(msg);
       dsSyncDiagBtn(!ok); /* a failed pull earns the copyable error report */
       if (btn) { btn.disabled = false; btn.innerHTML = '📥 ' + esc(dsPullVerb()); }
-      if (stat) { stat.style.display = (keepStatus || !ok) ? 'block' : 'none'; if (keepStatus || !ok) stat.textContent = msg; }
+      if (stat) { stat.style.display = 'block'; stat.textContent = String(msg || (ok ? (fmtDay(day) + ' pull completed successfully.') : (fmtDay(day) + ' pull failed. Try again.'))); }
       /* "select Retry" must point at a REAL visible control beside the
          message: one Retry button, shown only for the sign-in state, wired to
          the same pull. It disappears the moment any pull starts (recovery
@@ -50359,6 +50754,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          every refusal and receipt intact. An engine that predates dayPull keeps
          the previous single call, made synchronously on the click. */
       var dpOpts = { date: day, includeHistory: true, onStatus: dsOnStatus };
+      if (typeof DS.pullVisitBodies === 'boolean') dpOpts.pullVisitBodies = DS.pullVisitBodies;
       /* p1-provider-owner-1.0.0: the Visit provider selector is the visible
          owner of this Day pull. Leaving provider absent made dayPull fall
          back to the signed-in account provider even while the UI explicitly
@@ -50385,9 +50781,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          `all` remains explicitly all; selected/missing scopes can never be
          widened by rereading mutable UI or by a later-attempt override. */
       if (DS.pullProviderScope !== null) dpOpts.provider = DS.pullProviderScope;
+      var legacyPullOpts = { date: day, onStatus: dsOnStatus };
+      if (typeof DS.pullVisitBodies === 'boolean') legacyPullOpts.pullVisitBodies = DS.pullVisitBodies;
       var p = (si && typeof si.dayPull === 'function')
         ? si.dayPull(dpOpts)
-        : si.pull({ date: day, onStatus: dsOnStatus });
+        : si.pull(legacyPullOpts);
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
           /* oar-1.0.0: own this attempt's receipt BEFORE anything reads it, so
@@ -50771,6 +51169,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || k === DS.day) return;
       DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
     DS.lastAttemptResult = null; /* oar-1.0.0: a receipt belongs to ONE day */
+      DS.terminalReceipt = null; DS.terminalReceiptKey = '';
       DS.day = k; DS.followToday = (k === todayKey());
       syncStrip();
     } catch (e) {}
@@ -50785,7 +51184,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resetDaySwitchSession() {
     DS.sessionSerial++; DS.pullSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
-    DS.lastResult = null; DS.lastAttemptResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
+    DS.lastResult = null; DS.lastAttemptResult = null; DS.terminalReceipt = null; DS.terminalReceiptKey = ''; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
     DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.pullProviderScope = null;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {
@@ -50902,6 +51301,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   if (window.__mlsVisitNotesPref) return;
   function nk(k) { try { return (typeof window.uns === 'function') ? window.uns(k) : ''; } catch (e) { return ''; } }
+  function settledNamespaceKey(key) {
+    key = String(key || '');
+    return !!key && key.indexOf('::_::') < 0 && key.indexOf('::undefined::') < 0;
+  }
   function read() {
     try {
       var kM = nk('visitNotesModeV2');
@@ -50913,24 +51316,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          views must re-read after the session settles (live b1016/b1022:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
-      var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;
+      var settledNs = settledNamespaceKey(kM);
       var v2 = kM ? localStorage.getItem(kM) : null;
-      if (v2 === 'on' || v2 === 'off') return { state: v2, on: v2 === 'on', settled: true };
+      if (v2 === 'on' || v2 === 'off') return { state: v2, on: v2 === 'on', settled: settledNs };
       var kV = nk('pullVisitBodies'), kS = nk('pullVisitBodiesSet');
       if (kV && kS && localStorage.getItem(kS) === '1') {
         var on1 = localStorage.getItem(kV) !== '0';
-        try { if (kM) localStorage.setItem(kM, on1 ? 'on' : 'off'); } catch (eM1) {}
+        try { if (settledNs) localStorage.setItem(kM, on1 ? 'on' : 'off'); } catch (eM1) {}
         return { state: on1 ? 'on' : 'off', on: on1, settled: settledNs };
       }
       var legacy = null; try { legacy = localStorage.getItem('mls_save_every_athena_visit'); } catch (eL) {}
       if (legacy === '0' || legacy === '1') {
         var on2 = legacy === '1';
-        try {
-          if (kM) localStorage.setItem(kM, on2 ? 'on' : 'off');
-          if (kV && kS) { localStorage.setItem(kV, legacy); localStorage.setItem(kS, '1'); }
-          localStorage.removeItem('mls_save_every_athena_visit');
-        } catch (eM2) {}
-        return { state: on2 ? 'on' : 'off', on: on2, settled: true };
+        if (settledNs) {
+          try {
+            localStorage.setItem(kM, on2 ? 'on' : 'off');
+            if (kV && kS) { localStorage.setItem(kV, legacy); localStorage.setItem(kS, '1'); }
+            localStorage.removeItem('mls_save_every_athena_visit');
+          } catch (eM2) {}
+        }
+        return { state: on2 ? 'on' : 'off', on: on2, settled: settledNs };
       }
       return { state: 'unset', on: true, settled: settledNs };
     } catch (e) { return { state: 'unset', on: true, settled: false }; }
@@ -50939,7 +51344,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var want = on === true ? 'on' : 'off';
     try {
       var kM = nk('visitNotesModeV2');
-      if (!kM) return false;
+      if (!settledNamespaceKey(kM)) return false;
       localStorage.setItem(kM, want);
       /* qol-2.0.1 CHOSEN SEMANTICS for a failed legacy-pair write: success is
          claimed on the CANONICAL key alone (current code reads only it), the
@@ -50977,7 +51382,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) { return false; }
   }
   function isPrefKey(k) { try { var s = String(k || ''); if (!s) return false; return s === nk('visitNotesModeV2') || s === nk('pullVisitBodies') || s === nk('pullVisitBodiesSet') || s === 'mls_save_every_athena_visit'; } catch (e) { return false; } }
-  var api = { installed: true, version: '2.1.0', read: read, write: write, isPrefKey: isPrefKey, lastWrite: null };
+  /* A bulk pull may be the first time this account has had to make the
+     speed/completeness choice. Keep the legacy default-on READ semantics for
+     background/old callers, but require an explicit choice at each NEW human
+     bulk-pull admission site. One Promise owns the dialog across the tab so
+     two buttons cannot open two asks. Callers still need their own admission
+     latch so two .then handlers cannot start two pulls from this one answer. */
+  var choiceInFlight = null;
+  function explicitChoice(pref) { return !!(pref && pref.settled === true && (pref.state === 'on' || pref.state === 'off')); }
+  function waitForSettledChoice(maxWaitMs, pollMs) {
+    return new Promise(function (resolve) {
+      var started = Date.now();
+      function inspect() {
+        var pref = read();
+        if (pref && pref.settled === true) { resolve(pref); return; }
+        if ((Date.now() - started) >= maxWaitMs) { resolve(null); return; }
+        setTimeout(inspect, pollMs);
+      }
+      inspect();
+    });
+  }
+  function ensureChosenForBulkPull(opts) {
+    opts = opts || {};
+    var current = read();
+    if (explicitChoice(current)) return Promise.resolve({ ok: true, chosen: false, on: current.on === true, reason: 'already-chosen' });
+    if (choiceInFlight) return choiceInFlight;
+    var maxWaitMs = Number(opts.settleTimeoutMs);
+    if (!(maxWaitMs >= 0)) maxWaitMs = 4000;
+    var pollMs = Number(opts.pollMs);
+    if (!(pollMs > 0)) pollMs = 50;
+    choiceInFlight = waitForSettledChoice(maxWaitMs, pollMs).then(function (settled) {
+      if (!settled) return { ok: false, chosen: false, on: null, reason: 'account-namespace-not-settled' };
+      if (explicitChoice(settled)) return { ok: true, chosen: false, on: settled.on === true, reason: 'already-chosen' };
+      var choose = (typeof opts.choose === 'function') ? opts.choose : window._mlsVisitNotesChoice;
+      if (typeof choose !== 'function') return { ok: false, chosen: false, on: null, reason: 'choice-dialog-unavailable' };
+      return Promise.resolve(choose()).then(function (answer) {
+        if (answer !== true && answer !== false) return { ok: false, chosen: false, on: null, reason: 'choice-cancelled' };
+        if (write(answer) !== true) return { ok: false, chosen: false, on: null, reason: 'choice-write-failed' };
+        var confirmed = read();
+        if (!explicitChoice(confirmed) || confirmed.on !== (answer === true)) return { ok: false, chosen: false, on: null, reason: 'choice-readback-failed' };
+        return { ok: true, chosen: true, on: answer === true, reason: 'choice-saved' };
+      }, function () { return { ok: false, chosen: false, on: null, reason: 'choice-dialog-failed' }; });
+    }, function () { return { ok: false, chosen: false, on: null, reason: 'choice-check-failed' }; });
+    choiceInFlight = choiceInFlight.then(function (result) { choiceInFlight = null; return result; }, function () {
+      choiceInFlight = null;
+      return { ok: false, chosen: false, on: null, reason: 'choice-check-failed' };
+    });
+    return choiceInFlight;
+  }
+  var api = { installed: true, version: '2.2.1', read: read, write: write, isPrefKey: isPrefKey,
+    ensureChosenForBulkPull: ensureChosenForBulkPull, choicePending: function () { return !!choiceInFlight; }, lastWrite: null };
   window.__mlsVisitNotesPref = api;
 })();
 /* ===== __mlsVisitNotesPref RESOLVER END =================================== */
@@ -50991,12 +51445,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var api = { installed: true, version: '1.0.0', running: false, current: null };
   window.__mlsVisitSavePref = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
-  /* 2026-07-28: an ABSENT key now means ON — "the normal chart pull always
-     saves the organized history" left every encounter body behind for any
-     account that never found this toggle (index-only stubs on 47 of 51 live
-     snapshot patients). An explicit stored '0' — only ever written by a
-     human clicking the toggle — still means OFF. */
-  function enabled() { /* qol-2.0 ONE RESOLVER: delegates. Legacy-key adoption (incl. the retired un-namespaced global, qol-1.1b) lives in the resolver now. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') return vnp.read().on === true; } catch (e) {} return true; }
+  /* Only an explicit ON may open encounter bodies. First-run/public admission
+     owns asking; low-level and legacy callers fail closed while unset. */
+  function enabled() { /* qol-2.0 ONE RESOLVER: delegates. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') { var choice = vnp.read(); return !!(choice && choice.state === 'on' && choice.on === true); } } catch (e) {} return false; }
   function setEnabled(v) { /* qol-2.0: write-through the resolver with read-back; returns confirmed true/false - false means NOTHING CHANGED. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.write === 'function') return vnp.write(v === true) === true; } catch (e) {} return false; }
   function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
   function activeP() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
@@ -51008,13 +51459,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api._spv = { visitLeg: function (p, target) { return spvVisitLeg(p, target); }, count: function (p) { return spvVisitCount(p); } };
   api.runForPatient = function (p, onStatus, runOpts) {
     runOpts = runOpts && typeof runOpts === 'object' ? runOpts : null;
-    /* 2026-07-28: a DAY-SCOPED read (runOpts.onlyDate) is the fast lane's own
-       guarantee — the pulled day's note saves even with the preference off —
-       so the preference gate applies only to the full every-visit read. */
-    /* spv-1.1 (owner, 2026-08-20): the preference governs DAY/BULK pulls. A
-       single-patient button press is the doctor asking for THIS chart complete
-       - it always reads visit notes (runOpts.singlePull), like onlyDate. */
-    if (!enabled() && !(runOpts && (runOpts.onlyDate || runOpts.singlePull === true))) return Promise.resolve({ ok: true, skipped: 'preference-off' });
+    /* Full Notes is a hard boundary for every reader option. onlyDate remains
+       useful to an explicitly ON catch-up operation; it is not a permission
+       bypass. singlePull is likewise scoped by the setting. */
+    if (!enabled()) return Promise.resolve({ ok: true, skipped: 'preference-off' });
     if (!p || !p.id || !p.name) return Promise.reject(new Error('No patient is selected for the full-visit pull.'));
     if (api.running && api.current) return api.current;
     var cv = window.__mlsCopyVisits;
@@ -51083,6 +51531,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function spvPublish(receipt) {
     try { window.__mlsSinglePullVisits = receipt; } catch (e) {}
     try { if (receipt && receipt.message) toast(receipt.message, receipt.ok ? 'ok' : ''); } catch (e2) {}
+    /* The core chart step leaves #pullChartStatus at "Checking prior visit
+       notes…". This end-to-end owner must replace that intermediate line with
+       the visit leg's actual terminal receipt, including partial failures. */
+    try {
+      var line = $('pullChartStatus');
+      if (line && receipt) {
+        line.style.display = 'block';
+        line.style.color = receipt.ok === true ? '#205c43' : '#9f2d2d';
+        line.textContent = String(receipt.message || (receipt.ok === true ? 'Patient pull completed.' : 'Patient pull finished with missing visit notes.'));
+      }
+    } catch (eLine) {}
     /* doorbar-1.0: every single-pull outcome lands here - finish the bar the
        chart steps started, with the same honest sentence the toast carries. */
     try { var pb = window.__mlsPullBar; if (pb && receipt) pb.finish(receipt.ok === true, String(receipt.message || '')); } catch (e3) {}
@@ -51163,7 +51622,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }
         if(!target)return r;
         var ps=(typeof window.getPatients==='function'?(window.getPatients()||[]):[]),p=ps.filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
-        return spvVisitLeg(p, target).then(function () { return r; }, function () { return r; });
+        return spvVisitLeg(p, target).then(function (receipt) {
+          if (receipt && receipt.ok === true) return r;
+          return { ok: false, partial: true, chartSaved: true, reason: String(receipt && receipt.reason || 'visit-leg-failed'), visitReceipt: receipt || null };
+        }, function (e3) {
+          return { ok: false, partial: true, chartSaved: true, reason: 'visit-leg-failed', error: String((e3 && e3.message) || e3 || '').slice(0, 120), visitReceipt: null };
+        });
       });
     };
     w.__mlsFullVisitPref = true;
@@ -53340,10 +53804,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            clinician's stored preference on the runner. Resolve the per-account
            tri-state instead; the DOM is only a fallback when storage is
            unreadable. */
-        var _bv = null;
+        /* The user-action owner freezes the chosen boolean before admission.
+           That exact value outranks every later storage/DOM repaint. Older
+           callers may omit it and retain the resolver fallback below. */
+        /* `hooks` is optional for the desktop relay caller. Guard the
+           identifier itself so the storage resolver still runs when this
+           capture block is evaluated without relay hooks. */
+        var _bv = (typeof hooks !== 'undefined' && hooks && typeof hooks.pullVisitBodies === 'boolean') ? hooks.pullVisitBodies : null;
+        var _vr = null;
         try {
-          var _vr = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null;
-          if (_vr && _vr.state !== 'unset') _bv = _vr.on === true; /* qol-2.0 ONE RESOLVER */
+          _vr = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null;
+          if (_bv === null && _vr && _vr.state !== 'unset') _bv = _vr.on === true; /* qol-2.0 ONE RESOLVER */
         } catch (e0) {}
         if (_bv === null && _vr && _vr.state === 'unset') { var _bt = document.getElementById('mlsDsVisitBodies'); if (_bt && typeof _bt.checked === 'boolean') _bv = !!_bt.checked; }
         if (typeof _bv === 'boolean') jobPayload.pullVisitBodies = _bv;
@@ -53361,15 +53832,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            result as a success — the toast would say done while the notes the
            clinician asked for were never fetched. */
         dedupeKey: 'pullDay|' + date + '|' + (provider && (provider.stableKey || provider.name) || 'all')
+          /* Contract shape retained: jobPayload.pullVisitBodies === true ? '1' : (jobPayload.pullVisitBodies === false ? '0' : 'u') */
           + '|b' + (function () {
-              try {
-                var vr3 = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null; /* qol-2.0 ONE RESOLVER */
-                if (vr3 && vr3.state !== 'unset') return vr3.on === true ? '1' : '0';
-                if (vr3 === null) return '0';
-                var t = document.getElementById('mlsDsVisitBodies'); return (t && t.checked) ? '1' : '0';
-              }
-              catch (e) { return '0'; }
-            })()
+            try {
+              var vr3 = jobPayload.pullVisitBodies;
+              var legacyDedupeChoice = jobPayload.pullVisitBodies === true ? '1' : (jobPayload.pullVisitBodies === false ? '0' : 'u');
+              if (typeof vr3 === 'boolean') return vr3 ? '1' : '0';
+              vr3 = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null;
+              if (vr3 && vr3.state !== 'unset') return vr3.on === true ? '1' : '0';
+            } catch (e3) {}
+            return legacyDedupeChoice;
+          })()
       }) })
         .then(function (r) { return r.json(); })
         .then(function (j) {
@@ -54607,7 +55080,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     api.installed = false; delete window.__mlsExtHealth;
   };
 })();
-;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.3.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260722ps131';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.3.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260823ps132';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{
   var A='feat_mls_cross_day_context.js',V='xdc-2.0.4',old=window.__mlsCrossDayContext||null;
@@ -54643,17 +55116,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A='feat_mls_premium_gate.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260718pmg110';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pmg-1.1.0: plan-level truth - Pay Report + Reviews + widget-deck builder openers upsell instead of opening for signed-in non-Premium; demo/logged-out untouched */
 ;(function(){try{var A='feat_mls_pull_device_picker.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260729pdp110';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pdp-1.0.0: choose which registered computer runs Athena pulls (office/secondary); relay targets exact deviceId; phones excluded as pullers */
 
-/* br-1.0.0 boot-readiness strip (loading lane slice 2, owner directive: no
+/* br-1.2.0 boot-readiness strip (loading lane slice 2, owner directive: no
    surface may look ready before it is). After sign-in there is a window where
    buttons exist but the satellite module train is still installing; this thin
    strip names that state honestly and removes itself the moment the core
    engines are live (or after 30s, whichever comes first - it never wedges). */
 ;(function(){try{
-  if(window.__mlsBootReadiness)return;window.__mlsBootReadiness={installed:true,version:'br-1.1.0'};
+  if(window.__mlsBootReadiness)return;window.__mlsBootReadiness={installed:true,version:'br-1.2.0'};
+  /* Only local prerequisites block readiness. Assistant and Copilot Voice are
+     optional satellites: holding the whole shell hostage to either one made a
+     normal no-patient Visit look like it was still booting. */
   var CORE=[['Athena pull engine',function(){return !!(window.__mlsSI&&window.__mlsSI.pull)}],
-            ['Assistant',function(){return !!(window.__mlsAsstFix&&window.__mlsAsstFix.installed)}],
-            ['Copilot Voice',function(){return !!(window.__mlsCopilotVoiceV2&&window.__mlsCopilotVoiceV2.installed)}],
             ['Patient safety locks',function(){return !!window.__mlsPatientLock}]];
+  var settled=false,iv=null;
   var el=null,t0=Date.now();
   /* br-1.2.0 (owner 2026-08-16, from a phone screenshot): this strip painted on
      EVERY boot, in engineering language, pinned over the app header where it
@@ -54678,6 +55153,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     el.textContent = (Date.now()-t0 > 12000) ? 'Still starting up…' : 'Starting up…';
   }
   function gone(){if(el){el.style.opacity='0';setTimeout(function(){try{el.remove()}catch(e){}},450);el=null;}}
+  function settle(reason){settled=true;try{window.__mlsBootReadiness.settledAt=Date.now();window.__mlsBootReadiness.settledReason=reason||'core';}catch(e){}if(iv)clearInterval(iv);gone();}
+  window.addEventListener('mls:ui-ready',function(){settle('ui-ready');},{once:true});
   /* br-1.1.0 (owner 5s bar): the boot gets a CLOCK. Each engine's first
      live transition stamps a performance.mark, all-live stamps the summary,
      and __mlsBootTimeline() answers when the doctor could actually work. */
@@ -54692,9 +55169,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     out.underFiveSeconds=(out.readyAtMs!=null&&out.readyAtMs<5000);
     return out;
   };
-  var iv=setInterval(function(){try{
+  iv=setInterval(function(){try{
     var n=0;for(var i=0;i<CORE.length;i++){try{if(CORE[i][1]()){n++;_brMark('engine-'+CORE[i][0].toLowerCase().replace(/[^a-z]+/g,'-'));}}catch(e){}}
-    if(n>=CORE.length||Date.now()-t0>30000){if(n>=CORE.length)_brMark('all-engines-live');clearInterval(iv);gone();return}
+    if(settled){clearInterval(iv);return}
+    if(n>=CORE.length||Date.now()-t0>30000){if(n>=CORE.length)_brMark('all-engines-live');settle(n>=CORE.length?'core':'deadline');return}
     if(document.body)paint(n,CORE.length);
   }catch(e2){try{clearInterval(iv)}catch(e3){}gone();}},400);
 }catch(e){}})();
@@ -56217,6 +56695,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var busy = false;
   var autoRetryCount = 0;
   var sessionSerial = 0;
+  var choicePending = false;
+  var activeFullNotes = null;
 
   function todayKey() {
     var acct = safe(function () { return isFn(window._acctTodayKey) ? String(window._acctTodayKey() || '') : ''; }, '');
@@ -56494,15 +56974,59 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return { ok: false, message: 'Pull refused (' + reason + '): ' + String((result && result.error) || 'no detail was given.') };
   }
 
-  function runHeroPull(el, isAutoRetry) {
+  function heroPreferenceRefusal(reason) {
+    reason = String(reason || 'choice-check-failed');
+    if (reason === 'choice-cancelled') return 'Pull not started — choose how full visit notes should be handled, then try again.';
+    if (reason === 'account-namespace-not-settled') return 'Pull not started — your account settings are still loading. Try again in a moment.';
+    if (reason === 'choice-write-failed' || reason === 'choice-readback-failed') return 'Pull not started — MLS could not save your full-visit-notes choice. Nothing was read from Athena. Try again.';
+    return 'Pull not started — MLS could not confirm your full-visit-notes choice. Nothing was read from Athena. Refresh and try again.';
+  }
+
+  function runHeroPull(el, isAutoRetry, choiceAdmitted) {
     if (!el) return;
     if (busy) {
       try { if (isFn(window.toast)) window.toast('This pull is already running — watch the progress just below.', ''); } catch (e) {}
       return;
     }
+    if (!isAutoRetry && choiceAdmitted !== true) {
+      var pref = window.__mlsVisitNotesPref;
+      if (!pref || !isFn(pref.ensureChosenForBulkPull)) {
+        var noPref = heroPreferenceRefusal('choice-dialog-unavailable');
+        paint(el, noPref, 'err');
+        try { if (isFn(window.toast)) window.toast(noPref, 'err'); } catch (eP0) {}
+        return;
+      }
+      if (choicePending) { paint(el, 'Waiting for your full-visit-notes choice — the pull has not started yet.', ''); return; }
+      choicePending = true;
+      try { el.disabled = true; } catch (ePd0) {}
+      paint(el, 'Choose whether schedule pulls should include every full visit note. Nothing has been read from Athena yet.', '');
+      Promise.resolve(pref.ensureChosenForBulkPull()).then(function (choice) {
+        choicePending = false;
+        if (!choice || choice.ok !== true || typeof choice.on !== 'boolean') {
+          try { el.disabled = false; } catch (ePd1) {}
+          var refused = heroPreferenceRefusal(choice && choice.reason);
+          paint(el, refused, choice && choice.reason === 'choice-cancelled' ? '' : 'err');
+          if (!choice || choice.reason !== 'choice-cancelled') { try { if (isFn(window.toast)) window.toast(refused, 'err'); } catch (eP1) {} }
+          return;
+        }
+        activeFullNotes = choice.on === true;
+        runHeroPull(el, false, true);
+      }, function () {
+        choicePending = false;
+        try { el.disabled = false; } catch (ePd2) {}
+        var refused = heroPreferenceRefusal('choice-check-failed');
+        paint(el, refused, 'err');
+        try { if (isFn(window.toast)) window.toast(refused, 'err'); } catch (eP2) {}
+      });
+      return;
+    }
     var si = window.__mlsSI;
     if (!si || si.installed === false || !isFn(si.dayPull)) {
-      try { if (isFn(window.toast)) window.toast('The Athena pull engine is not available on this build.', 'err'); } catch (e) {}
+      var engineUnavailable = 'Pull not started — the Athena pull engine is not available on this build. Refresh MLS and try again.';
+      try { el.disabled = false; } catch (e0) {}
+      paint(el, engineUnavailable, 'err');
+      activeFullNotes = null;
+      try { if (isFn(window.toast)) window.toast(engineUnavailable, 'err'); } catch (e) {}
       return;
     }
     busy = true;
@@ -56524,6 +57048,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     paint(el, isAutoRetry ? ('Re-reading ' + day + ' automatically…') : ('Starting the Athena pull for ' + day + '…'), '');
     var onStatus = function (m) { if (mySerial !== sessionSerial) return; if (!barStartedAt) barStartedAt = Date.now(); paint(el, String(m || ''), ''); };
     var dpOpts = { date: day, includeHistory: true, onStatus: onStatus };
+    if (typeof activeFullNotes === 'boolean') dpOpts.pullVisitBodies = activeFullNotes;
     var scope = calendarChipProviderScope();
     if (scope) dpOpts.provider = scope;
     Promise.resolve(si.dayPull(dpOpts)).then(function (result) {
@@ -56561,6 +57086,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       paint(el, heroBusy, '');
       try { if (isFn(window.toast)) window.toast(heroBusy, ''); } catch (eHb) {}
       clearDiag();
+      activeFullNotes = null;
       return;
     }
     var outcome = classify(result, day);
@@ -56570,6 +57096,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var vParts = paintVerdict(el, outcome.message, outcome.ok ? 'ok' : 'err', result);
     try { if (isFn(window.toast)) window.toast(vParts ? vParts.head : outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}
     if (!outcome.ok) armDiag(el, result, day); else clearDiag();
+    activeFullNotes = null;
     try { if (isFn(window.loadCalendar)) window.loadCalendar(); } catch (e) {}
   }
 
@@ -56789,9 +57316,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        window._calRefDate (its calRefDate(), :222), so whatever moves
        _calRefDate moves the hero - and chp-1.0.0's targetDay() above
        dispatches the pull on that same global;
-     - feat_mls_datalink_exact.js wraps pullScheduleViaAssist, loadCalendar and
-       _importPulledSchedule (PULL_FNS, :339) and 900 ms + 2400 ms after any of
-       them fires runs syncAll("pull", true) -> focusCalDay(pulledDate());
+     - feat_mls_datalink_exact.js wraps genuine pull/import entry points and
+       900 ms + 2400 ms after any of them fires runs
+       syncAll("pull", true) -> focusCalDay(pulledDate()). Since link-1.1.2,
+       ordinary loadCalendar refreshes repaint without opening a day panel;
      - pulledDate() (:115) returns TODAY whenever today has any appointment at
        all. It is not the day that was pulled - it is "today, if today is
        busy";
@@ -56985,3 +57513,44 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsCalDaySel = api;
 })();
 /* ===== end caldaysel-1.0.0 =============================================== */
+/* draft-tuning-1.0.0: first-use loader. The account preference module is not
+   part of this boot bundle; Settings and generation call this Promise. */
+window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
+  if (window.__mlsDraftTuning && window.__mlsDraftTuning.installed) return Promise.resolve(window.__mlsDraftTuning);
+  if (window.__mlsDraftTuningLoad) return window.__mlsDraftTuningLoad;
+  var request = new Promise(function (resolve) {
+    /* Derive the immutable asset prefix from this lane's canonical route. The
+       derivation scripts rename the marker and route together, so preview,
+       production and clone resolve to 1p-, empty and cloned- respectively. */
+    var lane = window.__MLS_MAIN || {};
+    var route = String(lane.route || '');
+    var segment = route.split('/')[1] || '';
+    var shell = 'ScribeFlow.html';
+    var stem = segment.slice(-shell.length) === shell ? segment.slice(0, -shell.length) : segment;
+    var prefix = stem ? stem.replace(/-?$/, '-') : '';
+    var A = prefix + 'feat_mls_' + 'draft_tuning.js';
+    var old = document.querySelector('script[data-mls-asset="' + A + '"]');
+    var settled = false;
+    var done = function (value) { if (!settled) { settled = true; resolve(value || null); } };
+    var loaded = function () { done(window.__mlsDraftTuning || null); };
+    var failed = function () { done(null); };
+    if (old) {
+      if (old.getAttribute('data-mls-loaded') === '1' || window.__mlsDraftTuning) { loaded(); return; }
+      old.addEventListener('load', loaded, { once: true });
+      old.addEventListener('error', failed, { once: true });
+      setTimeout(function () { if (window.__mlsDraftTuning) loaded(); else failed(); }, 5000);
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = A + '?v=' + (window.__MLS_AV || Date.now()); s.async = true; s.setAttribute('data-mls-asset', A);
+    s.onload = function () { s.setAttribute('data-mls-loaded', '1'); loaded(); };
+    s.onerror = function () { try { s.remove(); } catch (_) {} failed(); };
+    (document.body || document.head || document.documentElement).appendChild(s);
+  });
+  window.__mlsDraftTuningLoad = request.then(function (api) {
+    /* A transient fetch failure must not poison generation for the whole tab. */
+    if (!api) window.__mlsDraftTuningLoad = null;
+    return api;
+  });
+  return window.__mlsDraftTuningLoad;
+};

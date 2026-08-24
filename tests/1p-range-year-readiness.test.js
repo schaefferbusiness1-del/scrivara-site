@@ -73,6 +73,15 @@ function makeHost(options) {
     __mlsSessionAccount: 'doc@example.test',
     session: { email: 'doc@example.test', token: 'tok' },
     __mlsSessionToken: 'tok',
+    /* Range admission now requires one settled first-use choice.  This
+       readiness harness is not testing the chooser UI, so model a user who
+       has explicitly selected Full Visit Notes OFF. */
+    __mlsVisitNotesPref: {
+      read() { return { state: 'off', on: false, settled: true }; },
+      ensureChosenForBulkPull() {
+        return Promise.resolve({ ok: true, on: false, reason: 'test-choice-off' });
+      }
+    },
     location: { hostname: 'mlsscribe.com' },
     addEventListener(t, f) { (listeners[t] = listeners[t] || []).push(f); },
     removeEventListener() {},

@@ -36,6 +36,7 @@ function eq(a, b, m) { assert.strictEqual(a, b, m); checks++; }
 /* the live failure, reproduced at the seam the shell now defines */
 const UPSTREAM_502 = () => ({ __throw: '502 Upstream request failed', __ai: { status: 502, code: 'upstream_unavailable', retryable: true, detail: 'Upstream request failed' } });
 const GOOD_CHART = { problems: 'Synthetic problem', meds: 'Synthetic med', summary: 'Synthetic summary' };
+const EMPTY_VISITS = () => ({ ok: true, visits: 0, authoritativeEmpty: true });
 
 /* --------------------------------------------------------------- static -- */
 {
@@ -86,8 +87,8 @@ const GOOD_CHART = { problems: 'Synthetic problem', meds: 'Synthetic med', summa
 async function testAiOutageDoesNotLoseTheCapture() {
   const DAY = '2026-08-17';
   const h = makeHarness({
-    day: DAY, today: DAY, rows: 9,
-    chartCoverage: true,
+    day: DAY, today: DAY, rows: 9, visitNotesOn: true,
+    chartCoverage: true, noteResult: EMPTY_VISITS,
     parseResult: () => UPSTREAM_502()
   });
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
@@ -141,8 +142,8 @@ async function testTheSummaryIsFilledFromTheStoredCapture() {
   const DAY = '2026-08-17';
   let aiDown = true;
   const h = makeHarness({
-    day: DAY, today: DAY, rows: 4,
-    chartCoverage: true,
+    day: DAY, today: DAY, rows: 4, visitNotesOn: true,
+    chartCoverage: true, noteResult: EMPTY_VISITS,
     parseResult: () => (aiDown ? UPSTREAM_502() : GOOD_CHART)
   });
   const first = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
@@ -177,8 +178,8 @@ async function testTheGatesStillRefuse() {
 
   /* (a) the chart echoes a DIFFERENT patient's DOB - no capture may be stored */
   const h = makeHarness({
-    day: DAY, today: DAY, rows: 3,
-    chartCoverage: true,
+    day: DAY, today: DAY, rows: 3, visitNotesOn: true,
+    chartCoverage: true, noteResult: EMPTY_VISITS,
     parseResult: () => GOOD_CHART
   });
   h.rt._athenaHistoryProofMatches = () => false;   /* the identity gate refuses */
@@ -192,8 +193,8 @@ async function testTheGatesStillRefuse() {
 
   /* (b) a SINK refusal (not an AI failure) is still an honest failure */
   const h2 = makeHarness({
-    day: DAY, today: DAY, rows: 3,
-    chartCoverage: true,
+    day: DAY, today: DAY, rows: 3, visitNotesOn: true,
+    chartCoverage: true, noteResult: EMPTY_VISITS,
     parseResult: () => GOOD_CHART
   });
   h2.rt._savePatientChart = () => false;           /* the six-card sink refuses */
@@ -205,8 +206,8 @@ async function testTheGatesStillRefuse() {
 
   /* (c) QUOTA: a store that is already refusing writes gets no raw text. */
   const h3 = makeHarness({
-    day: DAY, today: DAY, rows: 3,
-    chartCoverage: true,
+    day: DAY, today: DAY, rows: 3, visitNotesOn: true,
+    chartCoverage: true, noteResult: EMPTY_VISITS,
     parseResult: () => UPSTREAM_502()
   });
   h3.rt.__mlsStoreWriteFailed = { at: h3.clock.now() - 1000, reason: 'quota-exceeded' };
@@ -244,7 +245,7 @@ async function testScheduleLandedRecordAndNavVeto() {
   checks += 0;
 
   /* runtime: a completed schedule read stamps the landed record */
-  const h = makeHarness({ day: '2026-08-17', today: '2026-08-17', rows: 2, chartCoverage: true, parseResult: () => GOOD_CHART });
+  const h = makeHarness({ day: '2026-08-17', today: '2026-08-17', rows: 2, visitNotesOn: true, chartCoverage: true, noteResult: EMPTY_VISITS, parseResult: () => GOOD_CHART });
   eq(h.api._scheduleLandedFor('2026-08-17'), null, 'a day nothing has read is already reported as landed');
 }
 

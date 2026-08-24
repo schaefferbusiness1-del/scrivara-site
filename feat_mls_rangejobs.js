@@ -82,6 +82,9 @@
     'month-partial': 1, 'stopped-by-user': 1,
     'not-attempted-after-systemic-failure': 1, 'not-attempted': 1,
     exception: 1, 'no-result': 1, 'pull-failed': 1,
+    'choice-cancelled': 1, 'choice-dialog-unavailable': 1, 'choice-dialog-failed': 1,
+    'choice-write-failed': 1, 'choice-readback-failed': 1, 'choice-check-failed': 1,
+    'account-namespace-not-settled': 1,
     'range-lock-unavailable': 1, 'range-lock-denied': 1,
     'manifest-invalid': 1, 'importer-not-ready': 1,
     /* ===== p1-range-reasons-1.0.0 (the day's own verdict, not a generic) =====
@@ -914,9 +917,56 @@
     value = String(value == null ? '' : value).trim();
     return { target: value, opts: opts };
   }
+  /* fnc-1.0.0: direct API callers must not let createManifest manufacture an
+     implicit OFF value before the shared importer can ask the first-use
+     question. Resolve once here, then persist the same explicit boolean in
+     both compatibility fields for every month/day after reload or resume. */
+  function rangeVisitNotesChoiceRefusal(opts, reason) {
+    reason = String(reason || 'choice-check-failed');
+    var message = reason === 'choice-cancelled'
+      ? 'Range pull not started — choose how full visit notes should be handled, then try again.'
+      : (reason === 'account-namespace-not-settled'
+        ? 'Range pull not started — your account settings are still loading. Try again in a moment.'
+        : 'Range pull not started — MLS could not confirm your full-visit-notes choice. Nothing was read from Athena.');
+    safe(function () { if (opts && isFn(opts.onStatus)) opts.onStatus(message, reason === 'choice-cancelled' ? '' : 'err'); });
+    return { ok: false, complete: false, status: 'refused', reason: reason,
+      gate: 'visit-notes-choice', error: message, retry: {} };
+  }
+  function admitRangeVisitNotesChoice(kind, target, opts) {
+    opts = opts && typeof opts === 'object' ? opts : {};
+    var explicit = typeof opts.pullVisitBodies === 'boolean'
+      ? opts.pullVisitBodies : (typeof opts.fullNotes === 'boolean' ? opts.fullNotes : null);
+    if (typeof explicit === 'boolean') {
+      if (opts.pullVisitBodies === explicit && opts.fullNotes === explicit) return null;
+      var normalized = {};
+      for (var nk in opts) if (Object.prototype.hasOwnProperty.call(opts, nk)) normalized[nk] = opts[nk];
+      normalized.pullVisitBodies = explicit;
+      normalized.fullNotes = explicit;
+      return Promise.resolve(start(kind, target, normalized));
+    }
+    var pref = safe(function () { return window.__mlsVisitNotesPref; }, null);
+    if (!(pref && isFn(pref.ensureChosenForBulkPull))) {
+      return Promise.resolve(rangeVisitNotesChoiceRefusal(opts, 'choice-dialog-unavailable'));
+    }
+    var request = null;
+    try { request = pref.ensureChosenForBulkPull(); }
+    catch (eRangeChoice) { return Promise.resolve(rangeVisitNotesChoiceRefusal(opts, 'choice-check-failed')); }
+    return Promise.resolve(request).then(function (choice) {
+      if (!(choice && choice.ok === true && typeof choice.on === 'boolean')) {
+        return rangeVisitNotesChoiceRefusal(opts, choice && choice.reason);
+      }
+      var frozen = {};
+      for (var key in opts) if (Object.prototype.hasOwnProperty.call(opts, key)) frozen[key] = opts[key];
+      frozen.pullVisitBodies = choice.on === true;
+      frozen.fullNotes = choice.on === true;
+      return start(kind, target, frozen);
+    }, function () { return rangeVisitNotesChoiceRefusal(opts, 'choice-check-failed'); });
+  }
   function start(kind, value, opts) {
     var parsed = parseStartArgs(value, opts, kind), key = currentManifestKey();
     if (!key || !sessionReady()) return Promise.resolve(refusal('signin'));
+    var visitNotesAdmission = admitRangeVisitNotesChoice(kind, parsed.target, parsed.opts);
+    if (visitNotesAdmission) return visitNotesAdmission;
     if (!lockApi()) return Promise.resolve(refusal('range-lock-unavailable'));
     var provider = normalizeStartProvider(parsed.opts.provider == null ? 'all' : parsed.opts.provider);
     if (!provider.ok) return Promise.resolve(refusal(provider.reason));
@@ -1117,6 +1167,13 @@
     'provider-roster-incomplete': 'The Athena provider list is incomplete. Refresh providers before continuing.',
     'provider-roster-unbound': 'The Athena provider list is not bound to this signed-in account. Sign in again, then retry.',
     'invalid-range': 'Choose one of the available years before starting.',
+    'choice-cancelled': 'Pull not started — choose how full visit notes should be handled, then try again.',
+    'choice-dialog-unavailable': 'Pull not started — the full-visit-notes choice is not ready on this build. Refresh MLS and try again.',
+    'choice-dialog-failed': 'Pull not started — the full-visit-notes choice could not open. Refresh MLS and try again.',
+    'choice-write-failed': 'Pull not started — MLS could not save your full-visit-notes choice. Nothing was read from Athena.',
+    'choice-readback-failed': 'Pull not started — MLS could not verify the saved full-visit-notes choice. Nothing was read from Athena.',
+    'choice-check-failed': 'Pull not started — MLS could not confirm your full-visit-notes choice. Nothing was read from Athena.',
+    'account-namespace-not-settled': 'Pull not started — your account settings are still loading. Try again in a moment.',
     signin: 'Sign in to MLS and athenaOne before continuing.',
     'signin-expired': 'Athena sign-in expired. Sign in again, then Resume.',
     'session-expired': 'The MLS session expired. Sign in again, then Resume.',
@@ -1250,6 +1307,21 @@
   function releaseUiActionAfterAdmission(sequence, kind, attempt) {
     if (sequence !== uiActionSequence || uiAction !== kind || !installedApi || installedApi.installed !== true) return;
     var manifest = state(), admitted = manifest && (manifest.status === 'running' || manifest.status === 'pending');
+    /* A first-use choice is an admission step, not a one-second timeout. If
+       the clinician takes longer than the old 40x25ms polling window, keep
+       Start latched until the shared resolver settles. Releasing here would
+       let a second click attach a second startYear() continuation to the same
+       dialog Promise, creating two start attempts from one answer. */
+    var waitingForChoice = false;
+    try {
+      var pref = window.__mlsVisitNotesPref;
+      waitingForChoice = kind === 'start' && pref && isFn(pref.choicePending) && pref.choicePending() === true;
+    } catch (eChoice) { waitingForChoice = false; }
+    if (waitingForChoice) {
+      clearUiAdmissionTimer();
+      uiAdmissionTimer = setTimeout(function () { uiAdmissionTimer = null; releaseUiActionAfterAdmission(sequence, kind, attempt); }, 100);
+      return;
+    }
     if (admitted || (kind !== 'start' && kind !== 'resume') || attempt >= 40) {
       clearUiAdmissionTimer(); uiAction = ''; queueUiRefresh(0); return;
     }
@@ -1276,7 +1348,16 @@
   }
   function wireYearUi(root) {
     var full = root.querySelector('#mlsP1YearFullNotes');
-    if (full) full.onchange = function () { uiFullNotesChoice = full.checked === true; uiFullNotesInitialized = true; };
+    if (full) full.onchange = function () {
+      var wanted = full.checked === true, pref = safe(function () { return window.__mlsVisitNotesPref; }, null);
+      if (!pref || !isFn(pref.write) || pref.write(wanted) !== true) {
+        var current = pref && isFn(pref.read) ? safe(function () { return pref.read(); }, null) : null;
+        full.checked = !!(current && current.on === true);
+        uiNotice = 'The full-visit-notes choice could not be saved. Nothing changed.';
+        queueUiRefresh(0); return;
+      }
+      uiFullNotesChoice = wanted; uiFullNotesInitialized = true; uiNotice = ''; queueUiRefresh(0);
+    };
     var yearSelect = root.querySelector('#mlsP1YearChoice');
     if (yearSelect) yearSelect.onchange = function () {
       var choices = uiYearOptions(state()), next = String(yearSelect.value || '');
@@ -1290,12 +1371,19 @@
       var year = String(yearSelect && yearSelect.value || uiYearChoice || '');
       if (!selected.ok || choices.indexOf(year) < 0) { uiNotice = uiReasonCopy(selected.reason || 'invalid-range'); queueUiRefresh(0); return; }
       uiYearChoice = year;
-      uiFullNotesChoice = !!(full && full.checked);
-      runUiAction('start', function () { return installedApi.startYear(year, {
-        provider: selected.provider, includeHistory: true,
-        fullNotes: uiFullNotesChoice, pullVisitBodies: uiFullNotesChoice,
-        onStatus: function () { queueUiRefresh(0); }
-      }); });
+      runUiAction('start', function () {
+        var pref = safe(function () { return window.__mlsVisitNotesPref; }, null);
+        if (!pref || !isFn(pref.ensureChosenForBulkPull)) return Promise.resolve({ ok: false, status: 'refused', reason: 'choice-dialog-unavailable' });
+        return Promise.resolve(pref.ensureChosenForBulkPull()).then(function (choice) {
+          if (!choice || choice.ok !== true || typeof choice.on !== 'boolean') return { ok: false, status: 'refused', reason: String(choice && choice.reason || 'choice-check-failed') };
+          uiFullNotesChoice = choice.on === true; uiFullNotesInitialized = true; if (full) full.checked = uiFullNotesChoice;
+          return installedApi.startYear(year, {
+            provider: selected.provider, includeHistory: true,
+            fullNotes: uiFullNotesChoice, pullVisitBodies: uiFullNotesChoice,
+            onStatus: function () { queueUiRefresh(0); }
+          });
+        }, function () { return { ok: false, status: 'refused', reason: 'choice-check-failed' }; });
+      });
     };
     var pause = root.querySelector('#mlsP1YearPause');
     if (pause) pause.onclick = function () { runUiAction('pause', function () { return installedApi.pause(); }); };
@@ -1327,7 +1415,10 @@
     if (blocksStart && manifest && manifest.options) {
       uiFullNotesChoice = manifest.options.fullNotes === true; uiFullNotesInitialized = true;
     } else if (!uiFullNotesInitialized) {
-      uiFullNotesChoice = !!(terminal && manifest && manifest.options && manifest.options.fullNotes === true);
+      var pref = safe(function () { return window.__mlsVisitNotesPref; }, null);
+      var current = pref && isFn(pref.read) ? safe(function () { return pref.read(); }, null) : null;
+      var explicit = current && current.settled === true && (current.state === 'on' || current.state === 'off');
+      uiFullNotesChoice = explicit ? current.on === true : !!(terminal && manifest && manifest.options && manifest.options.fullNotes === true);
       uiFullNotesInitialized = true;
     }
     if (full) { full.checked = uiFullNotesChoice; full.disabled = blocksStart || !!uiAction; }

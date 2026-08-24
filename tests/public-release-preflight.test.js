@@ -77,16 +77,16 @@ function successfulResponses() {
     ok: true,
     revision: REVISION,
     capabilities: {
-      phiEnabled: false,
-      clinicalApi: false,
-      patientData: false,
-      schedule: false,
-      noteAi: false,
-      storage: false,
-      extensionRelay: false,
-      communications: false,
+      phiEnabled: true,
+      clinicalApi: true,
+      patientData: true,
+      schedule: true,
+      noteAi: true,
+      storage: true,
+      extensionRelay: true,
+      communications: true,
     },
-    readiness: { clinicalUse: false, reason: 'phi_gate_not_enabled', configurationState: 'disabled' },
+    readiness: { clinicalUse: true, reason: 'ready', configurationState: 'enabled' },
   }));
   responses.set(`${BACKEND}/api/readiness`, json({ error: 'Not authenticated' }, 401));
   responses.set(`${BACKEND}/api/agreements/signup-manifest`, json(validManifest()));
@@ -134,7 +134,7 @@ function codes(report) {
   assert.strictEqual(good.report.ok, true, JSON.stringify(good.report.failures));
   assert.strictEqual(good.report.expected.build, JSON.parse(snapshot.artifacts.find((item) => item.file === 'app-version.json').bytes).build);
   assert.strictEqual(good.report.backend.observedRevision, REVISION);
-  assert.strictEqual(good.report.backend.healthClinicalMode, 'public-health-closed');
+  assert.strictEqual(good.report.backend.healthClinicalMode, 'public-health-enabled');
   assert.strictEqual(good.report.backend.readinessMode, 'auth-protected');
   assert.strictEqual(good.report.public.artifacts.length, 5);
   assert(good.report.public.artifacts.every((item) => item.match), 'exact public/local artifact equality was not recorded');
@@ -185,25 +185,25 @@ function codes(report) {
   assert.strictEqual(openReadinessResult.report.ok, false);
   assert(codes(openReadinessResult.report).includes('backend_readiness_open'));
 
-  const openHealth = successfulResponses();
-  openHealth.set(`${BACKEND}/api/health`, json({
+  const closedHealth = successfulResponses();
+  closedHealth.set(`${BACKEND}/api/health`, json({
     ok: true,
     revision: REVISION,
     capabilities: {
-      phiEnabled: true,
-      clinicalApi: true,
-      patientData: true,
-      schedule: true,
-      noteAi: true,
-      storage: true,
-      extensionRelay: true,
-      communications: true,
+      phiEnabled: false,
+      clinicalApi: false,
+      patientData: false,
+      schedule: false,
+      noteAi: false,
+      storage: false,
+      extensionRelay: false,
+      communications: false,
     },
-    readiness: { clinicalUse: true, reason: 'ready', configurationState: 'enabled' },
+    readiness: { clinicalUse: false, reason: 'phi_gate_not_enabled', configurationState: 'disabled' },
   }));
-  const openHealthResult = await check(openHealth);
-  assert.strictEqual(openHealthResult.report.ok, false);
-  assert(codes(openHealthResult.report).includes('backend_health_clinical_state_unverified'), 'PHI-open public health response was not rejected');
+  const closedHealthResult = await check(closedHealth);
+  assert.strictEqual(closedHealthResult.report.ok, false);
+  assert(codes(closedHealthResult.report).includes('backend_health_clinical_state_unverified'), 'clinical-disabled public health response was not rejected');
 
   const missingManifest = successfulResponses();
   missingManifest.set(`${BACKEND}/api/agreements/signup-manifest`, html(Buffer.from('Cannot GET /api/agreements/signup-manifest'), 404));

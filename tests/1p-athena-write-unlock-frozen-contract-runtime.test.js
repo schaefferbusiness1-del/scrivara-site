@@ -36,8 +36,9 @@ vm.runInContext(source, context, { filename: '1p-feat_mls_writeflow.js' });
 const api = window.__mlsP1AutoBind && window.__mlsP1AutoBind._test;
 assert(api && typeof api.candidates === 'function' && typeof api.validateProbe === 'function', 'p1 auto-bind test seam missing');
 
-const manifest = window.__mlsWriteFlow.buildUnifiedManifest({ patient: PATIENT, sections: [{ key: 'note', text: 'Reviewed note body.' }], visitTimestamp: Date.parse(DAY + 'T14:00:00Z') });
-assert.strictEqual(manifest.visit.appointmentId, '', 'provider-unknown census must remain blocked before candidate probing');
+const manifest = window.__mlsWriteFlow.buildUnifiedManifest({ patient: PATIENT, sections: [{ key: 'note', text: 'Reviewed note body.' }],
+  visitTimestamp: Date.parse(DAY + 'T14:00:00Z'), expectedContext: { appointmentId: APPOINTMENT_ID, visitDate: DAY, provider: '' } });
+assert.strictEqual(manifest.visit.appointmentId, APPOINTMENT_ID, 'provider-unknown census lost its exact partial appointment before candidate probing');
 assert.strictEqual(manifest.visit.provider, '');
 
 function receiptSource() {
@@ -119,11 +120,17 @@ assert.strictEqual(api.validateProbe(PATIENT, candidate, wrongIdentity).ok, fals
 assert.strictEqual(api.validateProbe(PATIENT, candidate, wrongIdentity).indeterminate, true, 'claimed success with the wrong identity could be counted as a safe negative');
 assert.strictEqual(api.samePatient(PATIENT, Object.assign({}, PATIENT, { patientId: 'patient-2' })), false, 'patient switch accepted');
 
-/* Frozen extension pre-gate is part of this contract: every candidate has the
- * required date/provider/appointment tuple, while null context cannot pass. */
+/* Provider-candidate probes remain fully bound even though the current/live
+ * discovery lane separately admits a wholly empty read-only context. Partial
+ * context must still fail, and execute must still require a full lock. */
 const frozenBackground = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const gateAt = frozenBackground.indexOf("if (!expectedContextShape(c, mode === 'execute')");
-assert(gateAt > 0 && frozenBackground.slice(gateAt, gateAt + 300).includes("(!digits(c.appointmentId)"), 'frozen 3.0.61 pre-gate contract changed');
+assert(gateAt > 0 && frozenBackground.slice(gateAt, gateAt + 180).includes("reason: 'context-mismatch'"), 'Athena action context pre-gate changed');
+const shapeAt = frozenBackground.indexOf('function expectedContextShape(c, requireEncounter)');
+const shapeBody = frozenBackground.slice(shapeAt, shapeAt + 1300);
+assert(shapeAt > 0 && shapeBody.includes('if (!hasAny) return true;'), 'wholly empty read-only discovery context is not admitted');
+assert(shapeBody.includes('if (requireEncounter) return') && shapeBody.includes('if (!dateKey(c.visitDate) || !norm(c.provider)) return false;'),
+  'partial probe context or incomplete execute context no longer fails closed');
 verified.candidates.forEach(c => { assert(c.visitDate && c.provider && /^\d+$/.test(c.appointmentId), 'candidate would fail frozen pre-gate'); });
 const autoBindBody = source.slice(source.indexOf('function p1AutoBindEncounter'), source.indexOf('function openUnifiedConfirmation'));
 assert(autoBindBody.includes('var probeSequence = Promise.resolve()') && !autoBindBody.includes('Promise.all('), 'provider probes are not strictly sequential');
@@ -142,7 +149,8 @@ assert(autoBindBody.includes('result.indeterminate === true') && autoBindBody.in
   context.setTimeout = (fn, ms) => { if (Number(ms) >= 20000) Promise.resolve().then(fn); return 1; };
   context.clearTimeout = () => {};
   document.body = null; // keep this test on the state machine, not the visual renderer
-  window.__mlsWriteFlow.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: 'Reviewed note body.' }], visitTimestamp: Date.parse(DAY + 'T14:00:00Z') });
+  window.__mlsWriteFlow.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: 'Reviewed note body.' }],
+    visitTimestamp: Date.parse(DAY + 'T14:00:00Z'), expectedContext: { appointmentId: APPOINTMENT_ID, visitDate: DAY, provider: '' } });
   for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve));
   const probes = posted.filter(msg => msg.type === 'mlsAppAthenaActionV2' && msg.mode === 'probe');
   assert.strictEqual(probes.length, 1, 'a timed-out first provider allowed a second background probe to overlap');
@@ -166,7 +174,8 @@ assert(autoBindBody.includes('result.indeterminate === true') && autoBindBody.in
       source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: msg.requestId, resp: response
     } })));
   };
-  window.__mlsWriteFlow.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: 'Reviewed note body.' }], visitTimestamp: Date.parse(DAY + 'T14:00:00Z') });
+  window.__mlsWriteFlow.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: 'Reviewed note body.' }],
+    visitTimestamp: Date.parse(DAY + 'T14:00:00Z'), expectedContext: { appointmentId: APPOINTMENT_ID, visitDate: DAY, provider: '' } });
   for (let i = 0; i < 18; i++) await new Promise(resolve => setImmediate(resolve));
   const completedProbes = completedPosts.filter(msg => msg.type === 'mlsAppAthenaActionV2' && msg.mode === 'probe');
   assert.deepStrictEqual(completedProbes.map(msg => msg.expectedContext.provider), ['Header One, MD', 'Header Two, MD'], 'definitive negative did not advance sequentially to the one successful provider');

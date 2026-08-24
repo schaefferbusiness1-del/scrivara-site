@@ -83,6 +83,11 @@ context.window = context;
 /* qol-2.0: the engine resolves the bodies preference through the ONE
    resolver — install the REAL shipped resolver over this harness's store. */
 context.__mlsVisitNotesPref = require('./lib-visit-notes-resolver.js').makeResolver(context.uns, context.localStorage);
+/* Every low-level history call in this identity-focused harness must carry a
+   real, settled choice. Unset is deliberately a no-read state now. */
+assert.strictEqual(context.__mlsVisitNotesPref.write(true), true,
+  'identity harness could not persist explicit Full Notes ON');
+assert.strictEqual(context.__mlsVisitNotesPref.read().state, 'on');
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {
@@ -452,9 +457,8 @@ assert(api && api.version === canonicalVersion[1],
   assert.strictEqual(mutations.length, 0, 'provider-id conflict mutated the backend appointment');
   assert.strictEqual(backendRows[0].athena_provider_id, 'provider-exact');
 
-  /* Full visit notes defaults OFF since b470; these sections exercise the
-     full bodies lane, so opt in exactly as a clinician would. */
-  store.set('identity-test::pullVisitBodies', '1');
+  /* The harness already froze Full Notes ON through the shipped resolver;
+     these sections exercise complete chart and encounter-body proofs. */
   const historyRow = {
     patient_external_id: patients[0].id, _mlsTargetPatientId: patients[0].id,
     _mlsTargetDob: patients[0].dob, _mlsTargetMrn: patients[0].mrn,
@@ -493,17 +497,14 @@ assert(api && api.version === canonicalVersion[1],
   assert(failedStamps && Number.isFinite(failedStamps.chartMs), 'failed patients must still carry chart-stage timing evidence');
   assert.notStrictEqual(proven.patients[0].parsePipelined, true, 'full-visit batches must stay strictly sequential (the visits reader needs THIS chart on screen)');
 
-  /* si-1.7.4 PIPELINED PARSE (visit bodies skipped only): patient N's server
-     parse+persist overlaps patient N+1's chart open. Every identity gate
-     still runs; a failed pipelined parse gets exactly ONE deferred full
-     re-run (fresh chart open + verify + sequential parse) after the sweep;
-     receipt order and honest failure semantics are unchanged. */
+  /* Full Notes OFF is now a true schedule-only boundary. The retired
+     chart-without-bodies lane must not be reachable through the public or
+     low-level history seams: no patient chart opens and no parse/save runs. */
   {
-    store.set('identity-test::pullVisitBodies', '0');
-    /* 2026-07-28: bodies default ON; the skip lane now requires a RECORDED
-       human choice (the ...Set marker), which this scenario simulates. */
-    store.set('identity-test::pullVisitBodiesSet', '1');
-    assistMode = 'missing-coverage-once'; /* first chart read lacks coverage -> pipelined parse fails -> deferred re-run heals */
+    assert.strictEqual(context.__mlsVisitNotesPref.write(false), true,
+      'identity harness could not persist explicit Full Notes OFF');
+    assert.strictEqual(context.__mlsVisitNotesPref.read().state, 'off');
+    assistMode = 'missing-coverage-once';
     const rowA = {
       patient_external_id: patients[0].id, _mlsTargetPatientId: patients[0].id,
       _mlsTargetDob: patients[0].dob, _mlsTargetMrn: patients[0].mrn,
@@ -515,30 +516,21 @@ assert(api && api.version === canonicalVersion[1],
       name: patients[1].name, dob: patients[1].dob, mrn: patients[1].mrn
     };
     const callsBefore = assistCalls;
-    const piped = await api._runHistoryBatch([rowA, rowB], [], () => {});
-    assert.strictEqual(piped.complete, true, 'pipelined batch with one deferred-healed parse must end complete');
-    assert.strictEqual(piped.patients.length, 2);
-    assert.strictEqual(piped.patients[0].patientId, patients[0].id, 'pipelined receipts must keep batch order');
-    assert.strictEqual(piped.patients[0].parsePipelined, true, 'skip-visits batches must pipeline the parse');
-    assert.strictEqual(piped.patients[1].parsePipelined, true);
-    assert.strictEqual(piped.patients[0].parseDeferredRetried, true, 'failed pipelined parse must get its one deferred full re-run');
-    assert.strictEqual(piped.patients[0].complete, true, 'the deferred re-run must heal the patient honestly');
-    assert.strictEqual(piped.patients[1].complete, true);
-    assert.strictEqual(piped.patients[0].visitsSkipped, true, 'skipping visits must stay honestly recorded');
-    assert.strictEqual(assistCalls - callsBefore, 3, 'exactly one deferred fresh chart re-read (2 first-pass + 1 retry), never more');
-    const pipedStamps = piped.patients[0].stageMs;
-    assert(pipedStamps && Number.isFinite(pipedStamps.parseSaveMs) && pipedStamps.totalMs >= pipedStamps.chartMs, 'pipelined receipts must carry self-time stage stamps');
-    /* Ambiguity/regression guard: a pipelined parse failure that CANNOT heal
-       still fails closed with an honest reason and a retry entry. */
-    assistMode = 'missing-coverage';
-    const failedPiped = await api._runHistoryBatch([rowA], [], () => {});
-    assert.strictEqual(failedPiped.complete, false, 'an unhealable pipelined parse must stay failed');
-    assert.strictEqual(failedPiped.patients[0].reason, 'chart-coverage-unproven', 'pipelined failures must keep their exact reason');
-    assert.strictEqual(failedPiped.failures >= 1, true, 'pipelined failures must land in the retry lane');
+    const savesBefore = chartSaves;
+    const offReceipt = await api._runHistoryBatch([rowA, rowB], [], () => {});
+    assert.strictEqual(offReceipt.complete, true, 'explicit OFF did not settle as a clean no-op');
+    assert.strictEqual(offReceipt.historyRequested, false);
+    assert.strictEqual(offReceipt.visitNotesRequested, false);
+    assert.strictEqual(offReceipt.reason, 'visit-notes-off');
+    assert.strictEqual(offReceipt.requested, 0);
+    assert.strictEqual(offReceipt.processed, 0);
+    assert.strictEqual(offReceipt.notRequestedRows, 2);
+    assert.strictEqual(offReceipt.patients.length, 0);
+    assert.strictEqual(offReceipt.retry.length, 0);
+    assert.strictEqual(assistCalls, callsBefore, 'Full Notes OFF opened an Athena chart');
+    assert.strictEqual(chartSaves, savesBefore, 'Full Notes OFF parsed or saved a chart');
     assistMode = 'complete';
-    store.delete('identity-test::pullVisitBodies');
-    store.delete('identity-test::pullVisitBodiesSet');
   }
 
-  console.log('PASS adversarial schedule identity, source-proof history binding, fresh chart coverage, and full visit-reader receipt');
+  console.log('PASS adversarial schedule identity, source-proof history binding, fresh chart coverage, full visit-reader receipt, and zero-read Full Notes OFF');
 })().catch(err => { console.error(err); process.exit(1); });

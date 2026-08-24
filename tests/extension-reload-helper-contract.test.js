@@ -15,13 +15,13 @@ assert(checker.includes("type: 'mlsDevReload'"), 'reload control must use the tr
 assert(checker.includes("data.type !== 'mlsDevReloadResult'"), 'reload control must wait for the exact acknowledgement type');
 assert(checker.includes('No automatic retry was attempted.'), 'reload failure must stay one-shot and honest');
 assert(!checker.includes('setInterval(function () { window.postMessage'), 'reload must never run from an interval');
-/* token moved 20260820chk3076 -> 20260820chk3077 deliberately with the 3.0.77
+/* token moved 20260822chk3078 -> 20260823chk3079 deliberately with the 3.0.79
    release: feat_mls_checker.js carries SERVER_EXT_VERSION, so its immutable
    loader URL must change whenever the published version does or a returning
    browser keeps announcing the old one. The reload-control behavior this suite
    pins is unchanged. */
-assert(liveLoader.includes('feat_mls_checker.js?v=20260820chk3077'), 'live checker loader must cache-bust the reload control');
-assert(stagingLoader.includes('feat_mls_checker.js?v=20260820chk3077'), 'staging checker loader must match live');
+assert(liveLoader.includes('feat_mls_checker.js?v=20260823chk3079'), 'live checker loader must cache-bust the reload control');
+assert(stagingLoader.includes('feat_mls_checker.js?v=20260823chk3079'), 'staging checker loader must match live');
 assert(checker.includes("panel.className = 'mls-login-keep'"), 'reload control must remain visible on the MLS login gate');
 
 console.log('PASS extension reload helper: query-gated, one-click, exact acknowledgement, no retry loop');

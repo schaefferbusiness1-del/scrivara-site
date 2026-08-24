@@ -29,8 +29,9 @@ const save = between(app, 'function opPrepSave', 'function openTemplates');
 assert(appts.includes('patientId:String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||\'\')'), 'schedule op-note rows omit the immutable patient id');
 assert(openPatient.includes('_opDobKey(a.dob)===_opDobKey(p.dob)'), 'chart op-note reason can still match a same-name/different-DOB appointment');
 /* b717: the builder call gained the auto-name date key; the pin still requires
-   the immutable patient id in the SAME call, now alongside that key. */
-assert(openPatient.includes('p.id, null, _acctTodayKey()) ]'), 'patient-chart op-note row omits its immutable patient id (or lost the b717 date key)');
+   the immutable patient id in the SAME call, now alongside that key. The final
+   zero is the deterministic single-patient row ordinal. */
+assert(openPatient.includes('p.id, null, _acctTodayKey(), 0) ]'), 'patient-chart op-note row omits its immutable patient id, date key, or deterministic ordinal');
 assert(generate.includes('_opPatientCtx(row.appt.name,row.appt.dob,row.patientId)'), 'generation still resolves patient context by display name only');
 assert(generate.includes('if(!ctx.patientId)'), 'generation does not fail closed when exact identity is unavailable');
 assert(genAi.includes('_opResolvePatient(name,ctx.dob,ctx.patientId)'), '_genOpNote does not independently re-verify immutable patient ownership');

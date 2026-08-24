@@ -1,49 +1,23 @@
-/* qol-1.5 control: THE OFF LANE'S DAY-NOTE PASS CAN NEVER KILL THE DAY VERDICT.
-   The pass read the UNDECLARED todayNoteExtOk (and called an undefined
-   safeAsync) at function-body level outside any try/catch: the first
-   visits-skipped patient threw ReferenceError, finalizeVerdict() and the sweep
-   never ran, and the progress panel span forever. Found by the supervising
-   session's 11-agent audit, 2026-08-10; consistent with the day's store
-   forensics once presence was separated from provenance. */
 'use strict';
+/* Full visit notes OFF has no day-note lane to crash. This retains the old
+   regression filename while pinning the stronger modern boundary. */
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const si = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'latin1');
+const si = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'utf8');
 
-/* the identifiers are declared before first use */
-const declIdx = si.indexOf('var todayNoteExtOk = null;');
-const helperIdx = si.indexOf('var safeAsync = async function (fn, fb)');
-const useIdx = si.indexOf('if (todayNoteExtOk === null)');
-assert.ok(declIdx > 0, 'todayNoteExtOk is declared');
-assert.ok(helperIdx > 0, 'safeAsync is defined');
-assert.ok(declIdx < useIdx && helperIdx < useIdx, 'declarations precede first use');
+assert.ok(si.includes('var fullNotesOff = visitNotesRequested === false;'),
+  'the explicit OFF admission state is missing');
+assert.ok(si.includes('var includeHistory = opts.includeHistory !== false && !fullNotesOff;'),
+  'OFF can still admit the chart/history batch');
+assert.ok(si.includes('var pulledDayNoteLaneEnabled = false;'),
+  'the retired inline day-note lane is enabled');
+assert.ok(si.includes('var pulledDayNoteTailEnabled = false;'),
+  'the retired tail day-note lane is enabled');
+assert.ok(si.includes('reason: historySkipReason') && si.includes('historySkipReason = fullNotesOff ? "full-notes-off"'),
+  'OFF lacks an honest terminal skip receipt');
+assert.ok(si.indexOf('finalizeVerdict();') > 0,
+  'the history verdict finalizer disappeared');
 
-/* the whole pass is fenced so the day verdict is reachable on every path */
-const fenceIdx = si.indexOf('} catch (eTodayNotePass) {');
-const finalizeIdx = si.indexOf('finalizeVerdict();', fenceIdx);
-assert.ok(fenceIdx > useIdx, 'the pass is wrapped in a try/catch');
-assert.ok(finalizeIdx > fenceIdx, 'finalizeVerdict() remains reachable after the fence');
-const afterFence = si.slice(fenceIdx, finalizeIdx);
-const phaseIdx = afterFence.indexOf('ppPhase(null)');
-const currentIdx = afterFence.indexOf('ppCurrent("finishing');
-const aggregateIdx = afterFence.indexOf('tnAggregate();');
-const ledgerIdx = afterFence.indexOf('recordHistoryVerdict(dnLedgerDay, receipt, rows.length)');
-assert.ok(phaseIdx > 0 && currentIdx > phaseIdx && aggregateIdx > currentIdx && ledgerIdx > aggregateIdx,
-  'only the synchronous finish narration and final day-note ledger write precede the verdict');
-assert.ok(!/\bawait\b|setTimeout\s*\(|runForPatient\s*\(|\bbridge\s*\(/.test(afterFence),
-  'no asynchronous or Athena-driving work can strand finalizeVerdict() after a fenced failure');
-assert.ok(si.indexOf('receipt.todayNotePassError') > 0, 'a fenced failure is recorded, not swallowed');
-
-/* executed non-vacuity: the OLD shape (undeclared read) throws ReferenceError */
-const oldShape = new Function('return (async function () { if (someUndeclaredIdentifier === null) { return 1; } return 2; })()');
-let threw = null;
-const p = oldShape().then(() => { threw = false; }, e => { threw = e instanceof ReferenceError; });
-const newShape = new Function('return (async function () { var someDeclaredIdentifier = null; if (someDeclaredIdentifier === null) { return 1; } return 2; })()');
-const p2 = newShape().then(v => assert.strictEqual(v, 1, 'declared shape runs'));
-
-Promise.all([p, p2]).then(() => {
-  assert.strictEqual(threw, true, 'non-vacuity: reading an undeclared identifier throws ReferenceError — the crash the fence exists for');
-  console.log('qol-off-lane-never-crashes: OK (identifiers declared, pass fenced, synchronous ledger preserved, verdict always reachable; old shape throws by name)');
-}).catch(e => { console.error(e); process.exit(1); });
+console.log('qol-off-lane-never-crashes: OK (OFF never enters either retired day-note lane, records full-notes-off, and retains the terminal verdict path)');

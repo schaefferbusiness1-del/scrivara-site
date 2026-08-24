@@ -352,12 +352,18 @@
     for (var i = 0; i < msgs.length; i++) {
       var m = msgs[i];
       var role = m.role === "user" ? "user" : (m.role === "pending" ? "ai pending" : "ai");
-      html += '<div class="as-msg ' + role + '"><div class="as-bub">' + esc(m.text) + "</div></div>";
+      var evidence = "";
+      if (m.role === "ai") {
+        evidence += safe(function () { return isFn(window._copilotCitationsHtml) ? window._copilotCitationsHtml(m) : ""; }, "");
+        evidence += safe(function () { return isFn(window._copilotChartHtml) ? window._copilotChartHtml(m, i, "assistant") : ""; }, "");
+      }
+      html += '<div class="as-msg ' + role + '"><div class="as-bub">' + esc(m.text) + evidence + "</div></div>";
     }
     chatSelfRender = true;
     t.innerHTML = html;
     try { t.setAttribute(THREAD_MARK, String(msgs.length)); } catch (e) {}
     chatSelfRender = false;
+    safe(function () { if (isFn(window._copilotHydrateCharts)) window._copilotHydrateCharts("assistant", msgs); });
     var b = bodyEl(); if (b) b.scrollTop = b.scrollHeight;
   }
   function addUser(text) { var s = CONVO(); if (s) { safe(function () { s.append("user", text); }); } else { chatLog.push({ role: "user", text: text }); renderThread(); } }
@@ -424,12 +430,27 @@
   function cloneJson(value) {
     return safe(function () { return JSON.parse(JSON.stringify(value == null ? {} : value)); }, {});
   }
+  function copyResponseField(data, key) {
+    if (!data || !Object.prototype.hasOwnProperty.call(data, key)) return { present: false, value: undefined };
+    var value = data[key];
+    if (value == null) return { present: true, value: value };
+    return { present: true, value: safe(function () { return JSON.parse(JSON.stringify(value)); }, value) };
+  }
   function convoHistoryRef() {
     return safe(function () { return Array.isArray(window._copilotHistory) ? window._copilotHistory : chatLog; }, chatLog);
   }
-  function captureAiOwner() {
+  function captureAiOwner(question) {
     reconcilePatient("assistant-copilot-send");
     var store = CONVO();
+    var rawContext = cloneJson(safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot(question) : {}; }, {}));
+    var prepared = safe(function () { return isFn(window._copilotPrepareRequest) ? window._copilotPrepareRequest(question, rawContext) : null; }, null);
+    if (!prepared || typeof prepared !== "object") prepared = {
+      context: rawContext,
+      localAnswer: isFn(window._copilotProcedureAnswerForQuestion) ? safe(function () { return window._copilotProcedureAnswerForQuestion(question, rawContext); }, null) : null,
+      chart: safe(function () { return isFn(window._copilotChartForQuestion) ? window._copilotChartForQuestion(question, rawContext) : null; }, null)
+    };
+    var context = cloneJson(prepared.context || {});
+    var chart = cloneJson(prepared.chart || null);
     return {
       id: ++aiRequestSeq,
       activeId: activePatientId(),
@@ -438,7 +459,9 @@
       epoch: visitBindingEpoch(),
       history: convoHistoryRef(),
       rev: store && isFn(store.rev) ? Number(store.rev()) : -1,
-      context: cloneJson(safe(function () { return isFn(window.copilotSnapshot) ? window.copilotSnapshot() : {}; }, {})),
+      context: context,
+      chart: chart,
+      localAnswer: prepared.localAnswer ? cloneJson(prepared.localAnswer) : null,
       controller: (typeof AbortController === "function") ? new AbortController() : null,
       pending: null,
       stale: false,
@@ -632,12 +655,15 @@
       var f = String(rawFollowups[j] || "").trim(); if (!f) continue;
       var fk = f.toLowerCase(); if (seen["f:" + fk]) continue; seen["f:" + fk] = true; followups.push(f);
     }
-    return {
+    var meta = {
       requestId: requestId,
       actions: actions,
       followups: followups,
       artifact: d && d.artifact && typeof d.artifact === "object" ? d.artifact : null
     };
+    var citations = copyResponseField(d, "citations");
+    if (citations.present) meta.citations = citations.value;
+    return meta;
   }
   function busyNotice() {
     safe(function () { if (isFn(window.toast)) window.toast("Copilot is finishing the current answer. Please wait a moment.", ""); });
@@ -650,13 +676,33 @@
       return !!(bm && tok);
     }, false);
     if (!ready) { addAi("Sign in to your MLS account to use AI answers. Schedule, patient, and connection commands still work here."); return true; }
-    var req = captureAiOwner();
+    var req = captureAiOwner(q);
     activeAiRequest = req;
     startAiStalePoll(req);
     setAiBusy(true);
     req.pending = addPending("Reading the selected patient and practice context...", { requestId: req.id, requestOwner: req.ownerId, requestEpoch: req.epoch });
     var storeAtSend = CONVO();
     req.rev = storeAtSend && isFn(storeAtSend.rev) ? Number(storeAtSend.rev()) : -1;
+    /* A verified procedure answer or patient-subject refusal is complete local
+       evidence. Finish it on this immutable owner and do not call the model. */
+    if (req.localAnswer && typeof req.localAnswer === "object") {
+      if (aiOwnerStillCurrent(req, true)) {
+        var localMeta = {
+          requestId: req.id, actions: [], followups: [], artifact: null,
+          citations: Array.isArray(req.localAnswer.citations) ? cloneJson(req.localAnswer.citations) : [],
+          localAnswer: cloneJson(req.localAnswer)
+        };
+        if (req.localAnswer.kind === "patient-procedure-list") localMeta.procedureAnswer = cloneJson(req.localAnswer);
+        addAi(String(req.localAnswer.message || "No verified patient evidence was available."), localMeta, req.pending);
+        req.pending = null;
+      } else req.stale = true;
+      stopAiStalePoll(req);
+      dropPending(req.pending); req.pending = null;
+      if (activeAiRequest === req) { activeAiRequest = null; setAiBusy(false); }
+      reconcilePatient("assistant-copilot-local-finished");
+      renderThread();
+      return true;
+    }
     var base = safe(function () { return window.bkBase(); }, "");
     var tok = safe(function () { return window.bkToken(); }, "");
     /* history from the shared store when present (so it matches Studio exactly),
@@ -684,7 +730,9 @@
       else if (r.status === 503) message = "Copilot's AI service is temporarily unavailable. Your local schedule and patient commands still work.";
       else if (!r.ok) message = String(d.error || ("Copilot could not answer (server status " + r.status + "). Try again."));
       else message = String(d.reply || d.text || d.answer || "").trim() || "Copilot returned no answer. Try rephrasing the question.";
-      addAi(message, r.ok ? uniqueResponseMeta(d, req.id) : { requestId: req.id, actions: [], followups: [], artifact: null }, req.pending);
+      var responseMeta=r.ok ? uniqueResponseMeta(d, req.id) : { requestId: req.id, actions: [], followups: [], artifact: null };
+      if(r.ok&&req.chart&&req.chart.kind) responseMeta.chart=req.chart;
+      addAi(message, responseMeta, req.pending);
       req.pending = null;
     }).catch(function (err) {
       if (!aiOwnerStillCurrent(req, false) || req.stale || (err && err.name === "AbortError")) { req.stale = !req.reverted; return; }

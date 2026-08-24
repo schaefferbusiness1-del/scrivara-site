@@ -56,6 +56,10 @@ function part2() {
   assert(routedConnect >= 5, 'mls-connect must route its raw pull sleeps through __mlsBgSleep (found ' + routedConnect + ')');
   const routedSched = (sched.match(/__mlsBgSleep/g) || []).length;
   assert(routedSched >= 3, 'schedimport settle waits must route through __mlsBgSleep (found ' + routedSched + ')');
+  assert(sched.includes('oneQueuedForSweep') && sched.includes('queued-for-automatic-recheck'),
+    'a transient first-pass row must stay pending until its automatic re-check settles');
+  assert(connect.includes("queued-for-automatic-recheck") && connect.includes('full visit notes queued for automatic re-check'),
+    'the progress panel must explain the pending automatic re-check instead of painting a final failure');
 
   /* ---- 3. auto-convergence, EXECUTED ---- */
   const s = connect.indexOf('var DS_BODIES_REASON');

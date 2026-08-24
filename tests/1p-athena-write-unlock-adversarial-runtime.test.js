@@ -116,6 +116,7 @@ function makeHarness(options) {
   function open() {
     return window.__mlsWriteFlow.openUnifiedConfirmation({
       patient: clone(PATIENT), preferredAction: 'write_note', visitTimestamp: Date.parse(DAY + 'T14:00:00Z'),
+      expectedContext: { appointmentId: APPOINTMENT, visitDate: DAY, provider: '' },
       sections: [{ key: 'note', text: 'Synthetic reviewed note body.' }]
     });
   }
@@ -168,7 +169,8 @@ function success(provider, token) {
   {
     const h = makeHarness();
     const initial = h.open();
-    assert.strictEqual(initial.visit.appointmentId, '', 'control manifest unexpectedly began bound');
+    assert.strictEqual(initial.visit.appointmentId, APPOINTMENT, 'control manifest lost its exact partial appointment binding');
+    assert.strictEqual(initial.visit.provider, '', 'control manifest unexpectedly began fully bound');
     await h.settle();
     assert.strictEqual(h.posted.length, 1, 'all provider probes started concurrently');
     assert.strictEqual(h.posted[0].mode, 'probe');
@@ -192,13 +194,15 @@ function success(provider, token) {
     const h = makeHarness(); h.open(); await h.settle();
     h.deliver(h.posted[0], negative()); await h.settle();
     h.deliver(h.posted[1], negative()); await h.settle(10);
-    assert.strictEqual(h.state().manifest.visit.appointmentId, '', 'zero matches bound an encounter');
+    assert.strictEqual(h.state().manifest.visit.appointmentId, APPOINTMENT, 'zero matches changed the frozen appointment');
+    assert.strictEqual(h.state().manifest.visit.provider, '', 'zero matches bound a provider');
   }
   {
     const h = makeHarness(); h.open(); await h.settle();
     h.deliver(h.posted[0], success('Synthetic Clinician One, MD', 'discard-one')); await h.settle();
     h.deliver(h.posted[1], success('Synthetic Clinician Two, MD', 'discard-two')); await h.settle(10);
-    assert.strictEqual(h.state().manifest.visit.appointmentId, '', 'ambiguous provider matches picked one');
+    assert.strictEqual(h.state().manifest.visit.appointmentId, APPOINTMENT, 'ambiguous provider matches changed the frozen appointment');
+    assert.strictEqual(h.state().manifest.visit.provider, '', 'ambiguous provider matches picked one');
     assert(!JSON.stringify(h.state()).includes('discard-one') && !JSON.stringify(h.state()).includes('discard-two'), 'ambiguous tokens entered review state');
   }
 
@@ -212,7 +216,8 @@ function success(provider, token) {
     const h = makeHarness(); h.open(); await h.settle();
     h.deliver(h.posted[0], uncertain); await h.settle(10);
     assert.strictEqual(h.posted.length, 1, 'an indeterminate probe started another provider read: ' + JSON.stringify(uncertain));
-    assert.strictEqual(h.state().manifest.visit.appointmentId, '', 'an indeterminate provider was counted as a safe negative');
+    assert.strictEqual(h.state().manifest.visit.appointmentId, APPOINTMENT, 'an indeterminate provider changed the frozen appointment');
+    assert.strictEqual(h.state().manifest.visit.provider, '', 'an indeterminate provider was counted as a safe negative');
   }
 
   /* Source replacement, patient switch, stale generation, and closure cancel
@@ -222,19 +227,22 @@ function success(provider, token) {
     h.replaceSource(sourceReceipt());
     h.deliver(h.posted[0], negative()); await h.settle(10);
     assert.strictEqual(h.posted.length, 1, 'a stale pull response was used for the next provider');
-    assert.strictEqual(h.state().manifest.visit.appointmentId, '');
+    assert.strictEqual(h.state().manifest.visit.appointmentId, APPOINTMENT);
+    assert.strictEqual(h.state().manifest.visit.provider, '');
   }
   {
     const h = makeHarness(); h.open(); await h.settle();
     h.setActive(OTHER); h.deliver(h.posted[0], negative()); await h.settle(10);
     assert.strictEqual(h.posted.length, 1, 'patient switch did not cancel remaining probes');
-    assert.strictEqual(h.state().manifest.visit.appointmentId, '');
+    assert.strictEqual(h.state().manifest.visit.appointmentId, APPOINTMENT);
+    assert.strictEqual(h.state().manifest.visit.provider, '');
   }
   {
     const h = makeHarness(); h.open(); await h.settle();
     h.state().probeGeneration += 1; h.deliver(h.posted[0], negative()); await h.settle(10);
     assert.strictEqual(h.posted.length, 1, 'stale generation started another probe');
-    assert.strictEqual(h.state().manifest.visit.appointmentId, '');
+    assert.strictEqual(h.state().manifest.visit.appointmentId, APPOINTMENT);
+    assert.strictEqual(h.state().manifest.visit.provider, '');
   }
   {
     const h = makeHarness(); h.open(); await h.settle();
@@ -265,7 +273,8 @@ function success(provider, token) {
     h.deliver(first, success('Synthetic Clinician One, MD'), 'replayed-foreign-request-id');
     await h.settle(10);
     assert.strictEqual(h.posted.length, 1, 'a replayed response advanced the provider sequence');
-    assert.strictEqual(h.state().manifest.visit.appointmentId, '', 'a replayed response bound an encounter');
+    assert.strictEqual(h.state().manifest.visit.appointmentId, APPOINTMENT, 'a replayed response changed the frozen appointment');
+    assert.strictEqual(h.state().manifest.visit.provider, '', 'a replayed response bound a provider');
     h.state().closed = true;
   }
 

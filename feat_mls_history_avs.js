@@ -17,12 +17,26 @@
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
 
-  function trigger() {
+  function triggerReady() {
     var avs = safe(function () { return window.__mlsAfterVisitSummary; });
     if (avs && typeof avs.open === "function") { safe(function () { avs.open(); }); return; }
     var b = safe(function () { return document.getElementById("mlsavsBtn"); });
     if (b) { safe(function () { b.click(); }); return; }
     safe(function () { if (window.toast) window.toast("After-visit summary is unavailable right now."); });
+  }
+
+  function trigger() {
+    var ensure = safe(function () { return window.__mlsEnsureAfterVisitSummary; });
+    if (typeof ensure === "function") {
+      try {
+        var pending = ensure();
+        if (pending && typeof pending.then === "function") {
+          pending.then(triggerReady, function () { safe(function () { if (window.toast) window.toast("After-visit summary is unavailable right now."); }); });
+          return;
+        }
+      } catch (e) {}
+    }
+    triggerReady();
   }
 
   function ensureBtn() {

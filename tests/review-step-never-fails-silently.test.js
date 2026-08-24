@@ -260,10 +260,13 @@ assert.ok(
    * the owner instruction unshippable. What replaces it is stronger in the one
    * direction that still matters: no viewport movement may return to this
    * handler by accident, and if a scroll is ever reinstated by an owner
-   * decision it must not be block:'nearest' — that parks the control flush
-   * with the viewport bottom, which is the b668 defect. */
+  * decision it must not be block:'nearest' — that parks the control flush
+  * with the viewport bottom, which is the b668 defect. */
+  const executableReviewStep = fn[0]
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
   assert.ok(
-    !/scrollIntoView/.test(fn[0]),
+    !/scrollIntoView/.test(executableReviewStep),
     'openReviewStep moves the viewport again. The owner ruled on 2026-07-27 that ' +
     'pressing Review must not scroll the page: the visible effect is the message ' +
     'plus the focus move, never a jump. A scroll here needs a fresh owner ' +
@@ -272,7 +275,7 @@ assert.ok(
     'rest flush with the viewport bottom.'
   );
   assert.ok(
-    !/block: 'nearest'/.test(fn[0]) && !/block: 'center'/.test(fn[0]),
+    !/block: 'nearest'/.test(executableReviewStep) && !/block: 'center'/.test(executableReviewStep),
     'a scroll block position is back in openReviewStep. Nothing in this handler ' +
     'may position the viewport.'
   );

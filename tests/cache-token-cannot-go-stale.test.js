@@ -57,7 +57,12 @@ const root = path.resolve(__dirname, '..');
 const SEED = 'ffca4c9f';
 
 function git(args) {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: 16 * 1024 * 1024
+  });
 }
 
 let historyAvailable = true;
@@ -86,9 +91,20 @@ const sources = ['mls-connect.js', 'ScribeFlow.html']
 /* Hand-maintained tokens only. The `?v=' + (window.__MLS_AV...)` form is a
    concatenation, so it never matches this quoted-literal pattern. */
 const pins = new Map();
-const RE = /['"]([A-Za-z0-9_.-]+\.js)\?v=([A-Za-z0-9._-]+)['"]/g;
+const LOCAL_JS = String.raw`(?:(?:\.\.?\/)|\/)?(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.js`;
+const RE = new RegExp(`['"](${LOCAL_JS})\\?v=([A-Za-z0-9._-]+)['"]`, 'g');
 let m;
-while ((m = RE.exec(sources))) if (!pins.has(m[1])) pins.set(m[1], m[2]);
+function normalizeLocalAsset(asset) {
+  return String(asset || '').replace(/^(?:\.\/|\/)+/, '');
+}
+function collectDirectPins(text, into) {
+  RE.lastIndex = 0;
+  while ((m = RE.exec(text))) {
+    const asset = normalizeLocalAsset(m[1]);
+    if (!into.has(asset)) into.set(asset, m[2]);
+  }
+}
+collectDirectPins(sources, pins);
 
 /* 2026-08-02: the SPLIT loader form was INVISIBLE to the pattern above —
  *   var A="feat_x.js"; ... s.src=A+"?v=20260727fp115";
@@ -101,11 +117,58 @@ while ((m = RE.exec(sources))) if (!pins.has(m[1])) pins.set(m[1], m[2]);
  * captured; if a third loader spelling ever appears, extend this — the
  * assertion below counts BOTH forms so a silent regression in either shrinks
  * the checked set and fails the floor. */
-const SPLIT_RE = /var A=(['"])([A-Za-z0-9_.-]+\.js)\1;(?:(?!var A=)[\s\S]){0,2000}?s\.src=A\+\1\?v=([A-Za-z0-9._-]+)\1/g;
-while ((m = SPLIT_RE.exec(sources))) if (!pins.has(m[2])) pins.set(m[2], m[3]);
+/* Route-aware loaders also declare the asset after another `var` binding:
+ *   var sched=...,A="feat_x.js",load=function(){...s.src=A+"?v=token";};
+ * The old scanner required the exact bytes `var A=...;`, so those safer
+ * immediate-on-route loaders silently left this guard. Match any local asset
+ * variable declared either first or later in a `var` declaration, and bind the
+ * same identifier at the src assignment. */
+const SPLIT_RE = new RegExp(
+  `(?:\\bvar\\s+|,)\\s*([A-Za-z_$][\\w$]*)=(['"])(${LOCAL_JS})\\2[;,]` +
+  `(?:(?!\\1\\s*=)[\\s\\S]){0,2000}?s\\.src=\\1\\+\\2\\?v=([A-Za-z0-9._-]+)\\2`,
+  'g'
+);
+function collectSplitPins(text, into) {
+  SPLIT_RE.lastIndex = 0;
+  while ((m = SPLIT_RE.exec(text))) {
+    const asset = normalizeLocalAsset(m[3]);
+    if (!into.has(asset)) into.set(asset, m[4]);
+  }
+}
+collectSplitPins(sources, pins);
 
-assert.ok(pins.size >= 120,
-  'the pin scanner found only ' + pins.size + ' tokens — it used to find 130 (83 quoted + 47 split). ' +
+/* Scanner self-test: both historical spellings must remain visible. This is
+   deliberately independent of the current fleet so a future loader rewrite
+   cannot make the guard green by shrinking what it sees. */
+const splitScannerProof = new Map();
+collectSplitPins(
+  "var A='feat_first.js';s.src=A+'?v=first1';" +
+  "var sched=1,A='/feat_later.js',load=function(){s.src=A+'?v=later2';};" +
+  "var lib='vendor/example.min.js';s.src=lib+'?v=vendor3';",
+  splitScannerProof
+);
+assert.deepStrictEqual(Array.from(splitScannerProof.entries()), [
+  ['feat_first.js', 'first1'],
+  ['feat_later.js', 'later2'],
+  ['vendor/example.min.js', 'vendor3']
+], 'the split-token scanner must cover first/later declarations plus root- and directory-qualified local assets');
+
+/* A release is tested before it is committed. A brand-new worktree token is
+   already a valid cache bust: the deployed URL will differ from HEAD, so no
+   browser can reuse the old response. Compare asset/token PAIRS against HEAD
+   and treat only those genuinely new pairs as fresh-in-this-release. Without
+   this, the gate paradoxically rejects the exact uncommitted bump it asks the
+   developer to make. */
+const headPins = new Map();
+for (const f of ['mls-connect.js', 'ScribeFlow.html']) {
+  let text = '';
+  try { text = git(['show', 'HEAD:' + f]); } catch (e) { text = ''; }
+  collectDirectPins(text, headPins);
+  collectSplitPins(text, headPins);
+}
+
+assert.ok(pins.size >= 134,
+  'the pin scanner found only ' + pins.size + ' tokens — the reviewed floor is 134 across direct, split, root-qualified and vendor loaders. ' +
   'A loader spelling probably changed and part of the fleet just left this guard.');
 
 assert.ok(pins.size > 0, 'no hand-maintained cache tokens were found at all — the pattern has drifted');
@@ -162,8 +225,14 @@ const startedAt = Date.now();
 const stale = [];
 const checked = [];
 let skippedUntouched = 0;
+let freshWorktreeTokens = 0;
 for (const [asset, token] of pins) {
   if (!fs.existsSync(path.join(root, asset))) continue;
+  if (headPins.get(asset) !== token) {
+    checked.push(asset);
+    freshWorktreeTokens++;
+    continue;
+  }
   const sinceSeed = assetCommitsSinceSeed(asset);
   if (!sinceSeed) { skippedUntouched++; continue; }   /* cannot be stale; no pickaxe */
 
@@ -204,4 +273,5 @@ assert.deepStrictEqual(stale, [],
 
 console.log('PASS cache token cannot go stale: ' + checked.length + ' hand-maintained token(s) checked ' +
   'commit-precisely against their own file history (of ' + pins.size + ' found; ' + skippedUntouched +
-  ' untouched since the seed and skipped), 0 stale, ' + scanSeconds + 's.');
+  ' untouched since the seed and skipped; ' + freshWorktreeTokens +
+  ' fresh worktree token bump(s)), 0 stale, ' + scanSeconds + 's.');

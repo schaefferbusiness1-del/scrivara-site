@@ -1,7 +1,7 @@
 /* =============================================================================
  * feat_mls_firstrun.js  ->  window.__mlsFirstRun   (fr-2.0.0, 2026-07-28)
  * -----------------------------------------------------------------------------
- * A new doctor signs in and has to discover three separate things before MLS
+ * A new doctor signs in and has to discover four separate things before MLS
  * can do anything at all: the MLS Assist extension has to be installed and
  * answering, athenaOne has to be open and signed in, and the day has to be
  * pulled. Nothing on the screen said that, so a first run could look broken
@@ -24,11 +24,13 @@
  *   3. "Pull your first day"
  *        window.__mlsSI.authoritativeStatusForDay(todayIso()).available===true
  *        fallback: any row in window._calAppts
+ *   4. "Configure AI note formats"
+ *        account-scoped draftTuningV1 contains a saved, valid section state
  *
  * SURFACE B -- an anchored guided tour, __mlsFirstRun.tour() (reworked to
  * fr-2.0.0 on 2026-07-28). Eight coach-mark steps spotlight the ACTUAL
  * controls -- the dock tabs, Pull today, the Start visit CTA, Start Recording,
- * Generate, Review, Templates, and the Settings extension link -- with a
+ * Generate, Review, Templates, and Settings (including AI note formats) -- with a
  * dimmed backdrop, a positioned brand card (title, one to two sentences, step
  * dots, Back / Next / Skip), and keyboard support (Esc closes, arrow keys
  * navigate). Every step looks its anchor up AT SHOW TIME, because these
@@ -76,6 +78,8 @@
   var DIM_ID = 'mlsFrDim';
   var SESSION_KEY = 'mls_fr_shown';
   var DONE_KEY = 'firstRunDone';
+  var DRAFT_TUNING_KEY = 'draftTuningV1';
+  var DRAFT_TUNING_FAMILIES = ['hpi', 'ros', 'exam', 'assessment', 'plan'];
   var DOCK_CLEAR = 96;          /* px of bottom clearance for the fixed dock */
   var SHEET_BP = 700;           /* below this width the tour card is a bottom sheet */
   var LADDER = [800, 2500, 6000];
@@ -166,6 +170,20 @@
   }
   function markDone() {
     safe(function () { localStorage.setItem(unsKey(DONE_KEY), '1'); });
+  }
+  function draftTuningTruth() {
+    return safe(function () {
+      var raw = localStorage.getItem(unsKey(DRAFT_TUNING_KEY));
+      if (raw == null || raw === '') return 'bad';
+      var state = JSON.parse(raw);
+      var families = state && state.schemaVersion === 1 && state.families;
+      if (!families || typeof families !== 'object' || Array.isArray(families)) return 'bad';
+      for (var i = 0; i < DRAFT_TUNING_FAMILIES.length; i++) {
+        var id = DRAFT_TUNING_FAMILIES[i];
+        if (!families[id] || typeof families[id] !== 'object' || Array.isArray(families[id])) return 'bad';
+      }
+      return 'ok';
+    }, 'wait');
   }
   function sessionShown() {
     return safe(function () { return sessionStorage.getItem(SESSION_KEY) === '1'; }, false);
@@ -436,7 +454,8 @@
   var ROWS = [
     { key: 'conn', label: 'MLS Assist installed and answering', hint: 'Install or enable the MLS Assist extension, then reload this page.' },
     { key: 'ath', label: 'athenaOne signed in', hint: 'Open athenaOne in another tab and sign in there.' },
-    { key: 'day', label: 'Pull your first day', hint: '' }
+    { key: 'day', label: 'Pull your first day', hint: '' },
+    { key: 'tuning', label: 'Configure AI note formats', hint: 'Choose and save your reusable HPI, ROS, Exam, Assessment and Plan formats.' }
   ];
 
   function mount() {
@@ -450,7 +469,7 @@
     card.setAttribute('role', 'region');
     card.setAttribute('aria-label', 'MLS setup checklist');
     var html = '<div class="mlsfr-head">' +
-      '<div class="mlsfr-title" id="mlsFrTitle">Get MLS working - 0 of 3 done</div>' +
+      '<div class="mlsfr-title" id="mlsFrTitle">Get MLS working - 0 of 4 done</div>' +
       '<button type="button" id="mlsFrDismiss">Dismiss</button>' +
       '</div><div class="mlsfr-rows">';
     for (var i = 0; i < ROWS.length; i++) {
@@ -458,6 +477,7 @@
         '<span class="mlsfr-mark" aria-hidden="true"></span>' +
         '<span class="mlsfr-text"><span class="mlsfr-label">' + ROWS[i].label + '</span>' +
         (ROWS[i].key === 'day' ? '<button type="button" class="mlsfr-pull" id="mlsFrPullBtn">Pull today</button>' : '') +
+        (ROWS[i].key === 'tuning' ? '<button type="button" class="mlsfr-pull" id="mlsFrAiBtn">Configure</button>' : '') +
         '<span class="mlsfr-hint">' + ROWS[i].hint + '</span></span></div>';
     }
     html += '</div><div class="mlsfr-foot">' +
@@ -475,6 +495,7 @@
 
     on(byId('mlsFrDismiss'), 'click', onDismiss);
     on(byId('mlsFrTourBtn'), 'click', onTourClick);
+    on(byId('mlsFrAiBtn'), 'click', onAiClick);
     on(byId('mlsFrPullBtn'), 'click', onPullClick);
     return true;
   }
@@ -484,6 +505,7 @@
     if (!card) return;
     offOne(byId('mlsFrDismiss'), 'click', onDismiss);
     offOne(byId('mlsFrTourBtn'), 'click', onTourClick);
+    offOne(byId('mlsFrAiBtn'), 'click', onAiClick);
     offOne(byId('mlsFrPullBtn'), 'click', onPullClick);
     safe(function () { card.parentNode.removeChild(card); });
   }
@@ -496,10 +518,10 @@
        have standing to call it signed out - show 'checking', never a red
        accusation the doctor can see is false. */
     var athShown = (athState === 'bad' && pongTruth()) ? 'wait' : athState;
-    var states = { conn: connTruth(), ath: athShown, day: dayTruth() };
+    var states = { conn: connTruth(), ath: athShown, day: dayTruth(), tuning: draftTuningTruth() };
     var done = 0, k;
     for (k in states) { if (states.hasOwnProperty(k) && states[k] === 'ok') done++; }
-    setText(byId('mlsFrTitle'), 'Get MLS working - ' + done + ' of 3 done');
+    setText(byId('mlsFrTitle'), 'Get MLS working - ' + done + ' of 4 done');
     for (var i = 0; i < ROWS.length; i++) {
       var key = ROWS[i].key;
       var row = byId('mlsFrRow_' + key);
@@ -510,7 +532,7 @@
     var pull = byId('mlsFrPullBtn');
     if (pull) { var wantHide = (states.day === 'ok'); if (pull.hidden !== wantHide) pull.hidden = wantHide; }
 
-    if (done === 3) { markDone(); removeCard(); return states; }
+    if (done === 4) { markDone(); removeCard(); return states; }
     kickPong();
     kickConnCheck();
     kickAthProbe();
@@ -519,6 +541,16 @@
 
   function onDismiss() { markDone(); removeCard(); closeTour(); }
   function onTourClick() { openTour(); }
+  function onAiClick() {
+    /* Reuse the canonical Settings entry. It starts the first-use draft
+       tuning loader and opens the same account-scoped AI section controls;
+       this CTA never marks setup complete and never carries visit data. */
+    safe(function () {
+      if (isFn(window.openSettings)) { window.openSettings(); return; }
+      var fallback = byId('rectab_settings') || qs('#mlsDock button[data-dest="tools"]');
+      if (fallback && isFn(fallback.click)) fallback.click();
+    });
+  }
   function onPullClick() {
     if (pullBusy() || recording()) return;
     var b = byId('mlsDsPullBtn');
@@ -593,7 +625,7 @@
       key: 'settings',
       targets: ['[data-mls-extension-version]', '#mlsDock button[data-dest="tools"]', '#rectab_settings'],
       title: 'Settings and MLS Assist',
-      body: 'Settings holds the MLS Assist extension link, the bridge that lets MLS read athenaOne. Keep it installed and the status stays green.'
+      body: 'Settings holds the MLS Assist extension link and AI note formats for HPI, ROS, Exam, Assessment and Plan. Keep the bridge installed; choose a saved format only when its documented circumstance applies.'
     }
   ];
 
@@ -912,7 +944,7 @@
       pullBusy: pullBusy, recording: recording,
       sessionShown: sessionShown, pass: gatesPass
     },
-    _truth: { conn: connTruth, athena: function () { return athState; }, day: dayTruth, todayIso: todayIso },
+    _truth: { conn: connTruth, athena: function () { return athState; }, day: dayTruth, tuning: draftTuningTruth, todayIso: todayIso },
     _refresh: refresh,
     /* drops the throttles so a caller can force a fresh readiness/signed-in
        reading; a cached verdict is not evidence of the current state */
@@ -922,7 +954,8 @@
         'step anchored guided tour: spotlight ring on the real controls, dimmed ' +
         'backdrop, brand coach card with step dots and Back / Next / Skip, Esc ' +
         'closes and arrow keys navigate. Anchors are looked up at show time and ' +
-        'a missing or hidden anchor skips its step silently. Rows read live ' +
+        'a missing or hidden anchor skips its step silently. Settings also exposes ' +
+        'bounded account-scoped conditional AI section formats and one-visit overrides. Rows read live ' +
         'truth only: __mlsConnTruth readiness, __mlsAthenaGuard signed in probe ' +
         '(certain negatives only), and the account-scoped __mlsSI authoritative ' +
         'day store for any completed first pull. Gated on done flag, session, setup modal, pull busy, ' +

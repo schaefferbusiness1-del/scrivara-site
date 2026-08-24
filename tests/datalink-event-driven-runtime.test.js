@@ -62,8 +62,9 @@ function timerHarness() {
 const clock = timerHarness();
 const idle = timerHarness();
 const localStorage = {};
-const calls = { roster: 0, bar: 0, nav: 0, calendar: 0, calendarChrome: 0 };
+const calls = { roster: 0, bar: 0, nav: 0, calendar: 0, calendarOpen: 0, calendarChrome: 0 };
 let activeId = 'p-1';
+let calendarApplied = true;
 const views = {
   patientsView: { offsetParent: null },
   calendarView: { offsetParent: null }
@@ -88,7 +89,12 @@ const context = eventTarget({
   renderPatientBar() { calls.bar++; },
   updateNavCounts() { calls.nav++; },
   renderCalendar() { calls.calendar++; },
-  calOpenDay() { calls.calendar++; },
+  calOpenDay(key) { calls.calendar++; calls.calendarOpen++; this._calSelDay = key; },
+  loadCalendar() { return { applied: calendarApplied }; },
+  loadPatientsFromServer() { return Promise.resolve([]); },
+  pullScheduleViaAssist() { return Promise.resolve({ ok: true }); },
+  importPatients() { return Promise.resolve({ ok: true }); },
+  _importPulledSchedule() { return Promise.resolve({ ok: true }); },
   __mlsCx: { build() { calls.calendarChrome++; } },
   getComputedStyle() { return { display: 'none' }; },
   setTimeout: clock.setTimeout,
@@ -103,7 +109,7 @@ context.window = context;
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_datalink_exact.js', timeout: 1000 });
 
-assert(context.__mlsLink && context.__mlsLink.version === 'link-1.1.0', 'event-driven data-link did not install');
+assert(context.__mlsLink && context.__mlsLink.version === 'link-1.1.2', 'event-driven data-link did not install');
 assert.strictEqual(calls.roster, 0, 'data-link read the full roster during idle boot');
 assert.deepStrictEqual(clock.intervalDelays, [700], 'data-link installed an interval beyond its bounded hook-discovery retry');
 assert(!clock.intervalDelays.includes(2000), 'legacy two-second data signature poll survived');
@@ -157,6 +163,40 @@ assert(calls.calendar > 0 && calls.calendarChrome > 0, 'visible Calendar no long
 context.emit('pageshow');
 assert.strictEqual(clock.timeoutCount, 0, 'page resume entered the timer/click lane');
 assert.strictEqual(idle.timeoutCount, 1, 'visible page resume did not schedule one idle reconciliation');
+
+/* A successful calendar/server refresh must repaint shared chrome without
+ * behaving like a fresh Athena pull. The historical wrapper scheduled two
+ * post-pull focus passes, and each could reopen #calDayPanel after Month was
+ * selected. Drain the settled refresh: it may render, never open a day. */
+while (idle.runTimeout()) {}
+const opensBeforeRefresh = calls.calendarOpen;
+const rendersBeforeRefresh = calls.calendar;
+context.loadCalendar();
+while (clock.runTimeout()) {}
+assert.strictEqual(calls.calendarOpen, opensBeforeRefresh,
+  'an ordinary loadCalendar refresh auto-opened a Calendar day panel');
+assert(calls.calendar > rendersBeforeRefresh,
+  'a successful ordinary loadCalendar refresh stopped reconciling shared Calendar chrome');
+
+/* A failed/superseded refresh owns the small honest state it just painted.
+ * Re-rendering stale _calAppts here caused an 838px late layout jump. */
+calendarApplied = false;
+const rendersBeforeRefusal = calls.calendar;
+context.loadCalendar();
+while (clock.runTimeout()) {}
+assert.strictEqual(calls.calendar, rendersBeforeRefusal,
+  'a non-applied loadCalendar receipt repainted stale in-memory rows');
+calendarApplied = true;
+
+/* The behavior was split, not deleted: a genuine schedule import still owns
+ * the post-pull focus path. */
+context._calSelDay = '';
+const opensBeforePull = calls.calendarOpen;
+context._importPulledSchedule([]);
+while (clock.runTimeout()) {}
+assert(calls.calendarOpen > opensBeforePull,
+  'a genuine pulled-schedule import no longer focuses the pulled day');
+
 context.__mlsLink.revert();
 assert.strictEqual(clock.timeoutCount, 0, 'revert left scheduled data-link work alive');
 assert.strictEqual(idle.timeoutCount, 0, 'revert left scheduled idle data-link work alive');

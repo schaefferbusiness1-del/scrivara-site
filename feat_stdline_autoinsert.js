@@ -272,7 +272,10 @@
     var call = window.aiCallRaw;
     if (!isFn(call)) return Promise.resolve(null);
     var p;
-    try { p = call(SYS, buildUser(before, line), null, { freeform: true }); }
+    // This is a generic note-preserving weave. Its safety prompt mentions
+    // procedure/operative notes as one possible destination, but that wording
+    // must not route every standard-line insertion into the op-note family.
+    try { p = call(SYS, buildUser(before, line), null, { freeform: true, family: 'general_draft' }); }
     catch (e) { return Promise.resolve(null); }
     return Promise.resolve(p).then(function (res) {
       var out = normalizeAi(res);

@@ -458,6 +458,20 @@ const VISITS_OK = {
 };
 const ended = (h) => () => { const s = h.api().state; return !s.running && s.done > 0; };
 
+async function autoBackfillHonorsFullNotesScope() {
+  const h = makeSandbox({ openResult: () => OPEN_OK, readResult: () => VISITS_OK });
+  const api = h.api();
+  h.sandbox.__mlsVisitNotesPref = { read: () => ({ state: 'off', on: false }) };
+  eq(api.enqueueFromRun([{ name: NAME, ok: true }], { receipt: { visitNotesRequested: false } }), 0,
+    'an OFF pull receipt armed the automatic individual-visits backfill');
+  eq(api.enqueueFromRun([{ name: NAME, ok: true }]), 0,
+    'the falling-edge path ignored the shared Full Notes OFF setting');
+  h.sandbox.__mlsVisitNotesPref = { read: () => ({ state: 'on', on: true }) };
+  eq(api.enqueueFromRun([{ name: NAME, ok: true }], { receipt: { visitNotesRequested: true } }), 1,
+    'an explicit ON receipt could not arm the backfill control case');
+  api.stop();
+}
+
 /* ---- 6a  the footer never prints a patient name -------------------------- */
 async function footerIsPhiFree() {
   const h = makeSandbox({
@@ -693,6 +707,7 @@ async function legacyMutationIsCaught() {
     await noProbeMeansNoRetry();
     await retryIsBounded();
     await quietByConstruction();
+    await autoBackfillHonorsFullNotesScope();
   }
 
   clearTimeout(watchdog);
@@ -702,5 +717,5 @@ async function legacyMutationIsCaught() {
     'no-athena-tab refusal asks __mlsSI._athenaPresenceProbe and is re-driven ONLY while presence is verified (2 s then ' +
     '6 s, two rounds, then stop), absent or unknowable presence re-drives nothing, reason codes come from ' +
     '_todayNoteReasonCode, and the real quietnotify classifier keeps both sentences quiet while the replaced footer is a ' +
-    'live action-class negative control');
+    'live action-class negative control; OFF receipts/settings cannot arm automatic visit backfill while an explicit ON receipt can');
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -133,11 +133,15 @@ for (const route of proxyInventory) {
 }
 
 function actionSources(html) {
+  const todayEvidenceMarker = 'function _mlsTranscriptHasDraftableTodayEvidence(';
   return {
     helper: between(html, 'function _mlsExactScheduledClinicalAction(', '\nfunction toggleCapture()', 'exact scheduled engine helper'),
     capture: between(html, 'function startCapture()', '\nfunction stopCapture()', 'recording sink'),
     phone: between(html, 'async function startPhoneMic(', '\nasync function pollPhoneMic()', 'phone recording sink'),
     generate: between(html, 'async function generateNote()', '\nfunction autoPopulateExtras(', 'note-generation sink'),
+    draftable: html.includes(todayEvidenceMarker)
+      ? between(html, todayEvidenceMarker, '\nasync function callOpenAI(', 'today-evidence gate')
+      : '',
     hero: between(html, 'function heroStartVisit()', '\nfunction emrConnectFromHero()', 'legacy hero proxy'),
     regenerate: between(html, 'function regenerateNote()', '\n\n/* =========================================================', 'full-note regeneration proxy'),
     review: between(html, 'function pushEntireVisitToAthena(btn)', '\n/* Legacy natural-language autopilot', 'Athena review route')
@@ -202,7 +206,7 @@ function makeEngineHarness(blocks, gate) {
     document: {
       getElementById(id) {
         calls.dom.push(id);
-        if (id === 'transcript') return { value: 'Synthetic visit transcript.' };
+        if (id === 'transcript') return { value: 'Patient reports new knee pain with exam and treatment plan today.' };
         throw new Error(`unsafe DOM effect reached: ${id}`);
       }
     },
@@ -216,6 +220,7 @@ function makeEngineHarness(blocks, gate) {
     blocks.capture,
     blocks.phone,
     blocks.generate,
+    blocks.draftable,
     'this.actions={guard:_mlsExactScheduledClinicalAction,startCapture:startCapture,startPhoneMic:startPhoneMic,generateNote:generateNote};'
   ].join('\n'), context, { filename: 'visible-clinical-action-engine.js' });
   return { context, calls };

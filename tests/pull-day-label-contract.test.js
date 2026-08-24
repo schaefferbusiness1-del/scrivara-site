@@ -27,7 +27,10 @@ const ds = connect.slice(dsStart, dsEnd);
 
 // ---- one selected-day source everywhere -------------------------------------
 assert(ds.includes('var day = DS.day;'), 'the pull job must read the strip-selected day');
-assert(/si\.pull\(\{ date: day/.test(ds), 'the pull engine must be invoked with the SAME selected day');
+assert(/var dpOpts\s*=\s*\{\s*date:\s*day\b/.test(ds) && /si\.dayPull\(dpOpts\)/.test(ds),
+  'the canonical day-pull engine must receive the SAME selected day');
+assert(/var legacyPullOpts\s*=\s*\{\s*date:\s*day\b/.test(ds) && /si\.pull\(legacyPullOpts\)/.test(ds),
+  'the guarded legacy fallback must retain the SAME selected day');
 assert(ds.includes("$('mlsDsPullBtn').onclick = startPull;") || connect.includes("$('mlsDsPullBtn').onclick = startPull;"),
   'the strip pull button must own the pull handler');
 assert(/rowsFor\(/.test(ds) && ds.includes('if (d !== dayK) continue;'),

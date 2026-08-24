@@ -318,7 +318,7 @@ async function runImporterPull({ scheduleReceiptRequestId, rosterEcho, wrongRost
     }, msg.id));
   };
   vm.runInNewContext(siSrc, rt, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
-  return rt.__mlsSI.pull({ date: '2026-07-15', provider: 'all', includeHistory: false, onStatus: (m, k) => statuses.push({ m, k }) });
+  return rt.__mlsSI.pull({ date: '2026-07-15', provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: (m, k) => statuses.push({ m, k }) });
 }
 
 (async () => {

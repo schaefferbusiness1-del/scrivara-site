@@ -42,6 +42,8 @@ function fixture(options = {}) {
   const omit = new Set(options.omit || []);
   const duplicate = new Set(options.duplicate || []);
   const combinedAssessmentPlan = options.combinedAssessmentPlan === true;
+  const nestedProcedureOnly = options.nestedProcedureOnly === true;
+  const mislabeledNestedEditor = options.mislabeledNestedEditor === true;
   const section = (key, label, id) => {
     if (omit.has(key)) return '';
     const one = `<section data-testid="${key}-section" aria-label="${label}"><h2>${label}</h2><textarea id="${id}" data-appointment-id="8812345" aria-label="${label} editor"></textarea></section>`;
@@ -54,18 +56,30 @@ function fixture(options = {}) {
       <div aria-label="Date of service">08/22/2026</div>
       <div aria-label="Rendering provider">Synthetic Clinician, MD</div>
       <section data-testid="encounter-note-workspace" aria-label="Encounter note workspace"><h2>Encounter note</h2><textarea id="generic-note" data-appointment-id="8812345" aria-label="Visit narrative field"></textarea></section>
-      ${section('hpi', 'History of Present Illness', 'hpi-editor')}
+      ${mislabeledNestedEditor
+        ? '<section data-testid="exam-section" aria-label="Physical Examination"><h2>Physical Examination</h2><textarea id="mislabeled-hpi-editor" data-appointment-id="8812345" aria-label="HPI editor"></textarea></section>'
+        : section('hpi', 'History of Present Illness', 'hpi-editor')}
       ${section('ros', 'Review of Systems', 'ros-editor')}
-      ${section('exam', 'Physical Examination', 'exam-editor')}
+      ${nestedProcedureOnly
+        ? '<section data-testid="exam-section" aria-label="Physical Examination"><h2>Physical Examination</h2><section data-testid="procedure-documentation" aria-label="Procedure Documentation"><h3>Procedure Documentation</h3><textarea id="procedure-editor" data-appointment-id="8812345" aria-label="Procedure Documentation editor"></textarea></section></section>'
+        : section('exam', 'Physical Examination', 'exam-editor')}
       ${combinedAssessmentPlan ? '<section data-testid="assessment-plan-section" aria-label="Assessment and Plan"><h2>Assessment & Plan</h2><textarea id="assessment-plan-editor" data-appointment-id="8812345"></textarea></section>' : section('assessment', 'Assessment', 'assessment-editor') + section('plan', 'Plan', 'plan-editor')}
     </main></body></html>`;
 }
 
 function request(key, text, over = {}) {
+  const destinations = {
+    note: 'Athena encounter > Encounter note',
+    hpi: 'Athena encounter > HPI',
+    ros: 'Athena encounter > Review of Systems',
+    exam: 'Athena encounter > Physical Exam',
+    assessment: 'Athena encounter > Assessment & Plan > Assessment',
+    plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up'
+  };
   return Object.assign({
     mode: 'execute', action: 'write_note', expectedPatient: patient,
     expectedContext: context, noteText: text,
-    sections: [{ key, text, execute: true, destination: `Synthetic ${key} destination` }],
+    sections: [{ key, text, execute: true, destination: destinations[key] || `Synthetic ${key} destination` }],
     notePolicy: 'empty_only', locked: null
   }, over);
 }
@@ -109,10 +123,15 @@ async function values(page) {
         if (result.ok !== true) result.debug = await diagnose(page, request(key, text));
         assert.strictEqual(result.ok, true, `${key} write was refused: ${JSON.stringify(result)}`);
         assert.strictEqual(result.results[0].key, key, `${key} receipt lost its destination`);
+        assert.strictEqual(result.saved, false, `${key} receipt falsely claims the editor write was saved`);
+        assert.strictEqual(result.persisted, false, `${key} receipt falsely claims the editor write persisted`);
+        assert.strictEqual(result.reason, 'exact-note-editor-verified-unsaved', `${key} receipt lacks an explicit unsaved reason`);
+        assert.strictEqual(result.results[0].saved, false, `${key} result falsely claims the section was saved`);
+        assert.strictEqual(result.results[0].persisted, false, `${key} result falsely claims the section persisted`);
         const got = await values(page);
         assert.strictEqual(got[expectedField], text, `${key} did not land in its named editor`);
         for (const [other, value] of Object.entries(got)) if (other !== expectedField) assert.strictEqual(value, '', `${key} leaked into ${other}`);
-        checks += 8;
+        checks += 13;
       });
     }
 
@@ -153,6 +172,43 @@ async function values(page) {
       checks += 6;
     });
 
+    await withPage(browser, fixture({ nestedProcedureOnly: true }), async page => {
+      const result = await drive(page, request('exam', 'This must never land in Procedure Documentation.'));
+      assert.strictEqual(result.ok, false, 'an Exam request accepted a nested Procedure Documentation editor');
+      assert.strictEqual(result.reason, 'context-unverified');
+      assert.strictEqual(await page.locator('#procedure-editor').inputValue(), '', 'the refused Exam request mutated Procedure Documentation');
+      assert.strictEqual((await values(page)).note, '', 'the refused Exam request fell back to the generic note');
+      checks += 4;
+    });
+
+    await withPage(browser, fixture({ omit: ['exam'] }), async page => {
+      await page.evaluate(() => {
+        const outer = document.createElement('section');
+        outer.setAttribute('data-testid', 'exam-section');
+        outer.setAttribute('aria-label', 'Physical Examination');
+        outer.innerHTML = '<h2>Physical Examination</h2><div id="exam-shadow-host"></div>';
+        document.getElementById('encounter-shell').appendChild(outer);
+        const shadow = outer.querySelector('#exam-shadow-host').attachShadow({ mode: 'open' });
+        shadow.innerHTML = '<section aria-label="Procedure Documentation"><h3>Procedure Documentation</h3><textarea id="shadow-procedure-editor" data-appointment-id="8812345" aria-label="Procedure Documentation editor"></textarea></section>';
+      });
+      const result = await drive(page, request('exam', 'A shadow-nested procedure editor must refuse.'));
+      assert.strictEqual(result.ok, false, 'an Exam request crossed an open shadow root into Procedure Documentation');
+      assert.strictEqual(result.reason, 'context-unverified');
+      assert.strictEqual(await page.evaluate(() => document.querySelector('#exam-shadow-host').shadowRoot.querySelector('#shadow-procedure-editor').value), '',
+        'the shadow-nested Procedure Documentation editor was mutated');
+      assert.strictEqual((await values(page)).note, '', 'the shadow-nested refusal fell back to the generic note');
+      checks += 4;
+    });
+
+    await withPage(browser, fixture({ mislabeledNestedEditor: true }), async page => {
+      const result = await drive(page, request('hpi', 'A mislabeled nested editor must refuse.'));
+      assert.strictEqual(result.ok, false, 'a mislabeled HPI textarea nested in Physical Exam was accepted');
+      assert.strictEqual(result.reason, 'context-unverified');
+      assert.strictEqual(await page.locator('#mislabeled-hpi-editor').inputValue(), '', 'the mislabeled nested editor was mutated');
+      assert.strictEqual((await values(page)).note, '', 'the mislabeled nested editor fell back to generic note');
+      checks += 4;
+    });
+
     await withPage(browser, fixture(), async page => {
       const unknown = await drive(page, request('procedure', 'Unknown destination.'));
       assert.strictEqual(unknown.ok, false);
@@ -172,6 +228,14 @@ async function values(page) {
       assert.strictEqual(mismatch.reason, 'note-section-payload-mismatch');
       assert.deepStrictEqual(await values(page), { note: '', hpi: '', ros: '', exam: '', assessment: '', plan: '' });
       checks += 9;
+
+      const destinationMismatch = await drive(page, request('hpi', 'Destination mismatch must refuse.', { sections: [
+        { key: 'hpi', text: 'Destination mismatch must refuse.', execute: true, destination: 'Athena encounter > Assessment & Plan > Plan / Follow-up' }
+      ] }));
+      assert.strictEqual(destinationMismatch.ok, false, 'a key/destination mismatch crossed the named write boundary');
+      assert.strictEqual(destinationMismatch.reason, 'note-destination-mismatch');
+      assert.deepStrictEqual(await values(page), { note: '', hpi: '', ros: '', exam: '', assessment: '', plan: '' });
+      checks += 3;
     });
   } finally {
     await browser.close();

@@ -469,7 +469,34 @@
           mlsRelayRetry({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, appointmentId: chartAppointmentId, bootstrapIdentity: chartBootstrapIdentity, scheduleDate: chartScheduleDate, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
             var openErr = chrome.runtime.lastError;
             if (openErr || !opened || !opened.opened) {
-              finishChart({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient chart.' });
+              /* lpf-1.0.0: keep the worker's PHI-free refusal evidence across
+                 this last bridge. The old two-field object collapsed an
+                 Athena renderer failure, a true no-result, and an exact-row
+                 miss into the same orange sentence, so the importer could not
+                 choose the safe bounded retry. Copy only closed codes, booleans
+                 and counts — never the opened result row, DOB, MRN or name. */
+              var openedSafe = (opened && typeof opened === 'object') ? opened : {};
+              var openedDiag = (openedSafe.diag && typeof openedSafe.diag === 'object') ? openedSafe.diag : {};
+              function openCode(value) { return mlsStr(value, 40).toLowerCase().replace(/[^a-z0-9_-]/g, ''); }
+              var openFindReason = openCode(openedSafe.findReason || openedDiag.findReason);
+              if (!openFindReason && /no matching patient was found in the results/i.test(String(openedSafe.error || ''))) openFindReason = 'legacy-no-match';
+              var openRoute = openCode(openedSafe.via || openedDiag.route);
+              var safeDiag = { findReason: openFindReason, route: openRoute };
+              ['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown'].forEach(function (key) {
+                var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = value;
+              });
+              safeDiag.rowMrnMatched = openedDiag.rowMrnMatched === true;
+              finishChart({
+                ok: false,
+                opened: false,
+                reason: openFindReason || openCode(openedSafe.reason) || 'open-failed',
+                findReason: openFindReason,
+                via: openRoute,
+                candidates: Math.max(0, Number(openedSafe.candidates || 0) || 0),
+                sessionLikelyExpired: openedSafe.sessionLikelyExpired === true,
+                diag: safeDiag,
+                error: (openErr && openErr.message) || openedSafe.error || 'Could not safely open the requested patient chart.'
+              });
               return;
             }
             if (chartBootstrapIdentity && !(opened.appointmentIdBound === true && opened.appointmentId === chartAppointmentId)) {

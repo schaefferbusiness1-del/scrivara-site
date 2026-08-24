@@ -68,8 +68,8 @@ assert(/payload: jobPayload/.test(queueBlock), 'the queued job must send the fro
 /* ---- hop 1b: the choice is part of the request identity ----
  * Without this, asking for the same day with notes ON coalesces onto an earlier
  * OFF job and returns the smaller result as a success. */
-assert(/dedupeKey:[\s\S]{0,700}mlsDsVisitBodies/.test(queueBlock) && /dedupeKey:[\s\S]{0,700}__mlsVisitNotesPref/.test(queueBlock),
-  'the dedupe key must include the body-notes choice (resolved, DOM fallback), or an ON ' +
+assert(/dedupeKey:[\s\S]{0,500}jobPayload\.pullVisitBodies === true \? '1' : \(jobPayload\.pullVisitBodies === false \? '0' : 'u'\)/.test(queueBlock),
+  'the dedupe key must include the exact frozen payload choice as ON/OFF/unspecified, or an ON ' +
   'request silently reuses an earlier OFF result and reports success');
 
 /* ---- hop 2: the relay agent forwards it into the pull options ---- */
@@ -114,13 +114,12 @@ assert(resolverPos > 0, 'the device preference resolution vanished');
 assert(overridePos < resolverPos,
   'the override must be consulted BEFORE this device\'s resolved preference, or it is dead code');
 
-/* ---- with no override, the ONE resolver governs (2026-07-28: default ON;
-   a recorded human choice is respected; the legacy code-authored '0' is
-   ignored — all execution-proven on the shipped resolver in
-   pull-visit-bodies-default-on). The per-pull override above still outranks
-   everything, which is this suite's actual subject. ---- */
-assert(/return vnp\.read\(\)\.on === true/.test(readBlock),
-  'with no override the resolved tri-state must govern (default ON, human choice respected)');
+/* ---- with no override, the ONE resolver governs. Only an explicit, settled
+   ON may open visit bodies; first-run admission owns asking when the state is
+   unset. The per-pull override above still outranks the local resolver, which
+   is this suite's actual subject. ---- */
+assert(/return !!\(choice && choice\.on === true && choice\.state !== "unset"\);/.test(readBlock),
+  'with no override the resolved tri-state must require an explicit settled ON');
 
 console.log('PASS relay full-notes choice travels: phone control -> payload -> agent -> pull() -> importer, ' +
   'override consulted before the device preference, scoped to one pull, cleared on success and failure, ' +

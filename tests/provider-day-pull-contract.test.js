@@ -348,6 +348,11 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
     _visitIdentityAgrees: () => true
   };
   rt.window = rt;
+  /* This harness calls the low-level history seam after the public pull. Give
+     that diagnostic call the same explicit, settled Full Notes ON choice a
+     clinician would have made; an unset resolver must now fail closed. */
+  rt.__mlsVisitNotesPref = require('./lib-visit-notes-resolver.js').makeResolver(rt.uns, rt.localStorage);
+  assert.strictEqual(rt.__mlsVisitNotesPref.write(true), true, 'provider-day harness could not persist explicit Full Notes ON');
   let armedRosterOperation = null;
   rt.__mlsProviderRoster = {
     list: () => rt._calProviders.map(p => Object.assign({ stableKey: `backend:${p.id}`, rosterVerified: true }, p)),
@@ -402,7 +407,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   };
 
   vm.runInNewContext(siSource, rt, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
-  const promise = rt.__mlsSI.pullCalendarSelection({ onStatus: () => {} });
+  const promise = rt.__mlsSI.pullCalendarSelection({ includeHistory: true, pullVisitBodies: true, onStatus: () => {} });
   // Mutate the live calendar immediately; the in-flight request must retain its snapshot.
   runtimeNodes.calProvFilter.value = '8';
   rt._calRefDate = '2026-07-20';
@@ -426,13 +431,13 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   const visitsBeforeScheduleOnly = posted.filter(m => m.type === 'mlsAppReadAllVisits').length;
   runtimeNodes.calProvFilter.value = '7';
   rt._calMode = 'day'; rt._calRefDate = '2026-07-15'; runtimeNodes.calDayPanel.style.display = 'block';
-  const scheduleOnly = await withWatchdog(rt.__mlsSI.pullCalendarSelection({ includeHistory: false, onStatus: () => {} }), 'provider-day schedule-only pull');
+  const scheduleOnly = await withWatchdog(rt.__mlsSI.pullCalendarSelection({ includeHistory: false, pullVisitBodies: false, onStatus: () => {} }), 'provider-day schedule-only pull');
   assert.strictEqual(scheduleOnly.ok, true);
   assert.strictEqual(scheduleOnly.complete, true);
   assert.strictEqual(scheduleOnly.includeHistory, false);
   assert.strictEqual(scheduleOnly.reason, 'complete-schedule-only');
   assert.strictEqual(scheduleOnly.historyReceipt.skipped, true);
-  assert.strictEqual(scheduleOnly.historyReceipt.reason, 'not-requested');
+  assert.strictEqual(scheduleOnly.historyReceipt.reason, 'full-notes-off');
   assert.strictEqual(posted.filter(m => m.type === 'mlsAppReadAllVisits').length, visitsBeforeScheduleOnly, 'schedule-only mode must not read Athena history/visits');
 
   const blockedNameOnly = await withWatchdog(rt.__mlsSI._runHistoryBatch([{ name: patient.name }], [], () => {}), 'provider-day name-only rejection');

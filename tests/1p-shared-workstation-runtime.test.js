@@ -141,6 +141,8 @@ function boot(opts) {
   const shell = fs.readFileSync(path.join(root, opts.shell || '1pScribeFlow.html'), 'utf8');
   const source = [
     'var session=null, bkUser=null, _legalGenerating=false;',
+    opts.omitVisitChoiceFlag ? '' :
+      `var sfVisitNotesFirstChoicePending=${opts.visitChoicePending === true ? 'true' : 'false'};`,
     slice(shell, 'function bkToken(){', 'let bkUser=null;', 'token helpers'),
     slice(shell, 'function unsEmail(){', 'function unsResolved()', 'unsEmail'),
     "function uns(suffix){ return 'sf_u::'+(unsEmail()||'_')+'::'+suffix; }",
@@ -429,6 +431,18 @@ function signIn(c, email) {
 
 /* ============================================== 12. the first-run prompt ---- */
 {
+  const waiting = boot({ confirmAnswer: true, visitChoicePending: true });
+  eq(waiting.swMaybeFirstRunPrompt(), false,
+    'the shared-workstation prompt raced ahead of the required visit-notes choice');
+  eq(waiting._calls.confirm.length, 0,
+    'the shared-workstation prompt opened while the visit-notes choice was pending');
+
+  const compact = boot({ confirmAnswer: true, omitVisitChoiceFlag: true });
+  eq(compact.swMaybeFirstRunPrompt(), true,
+    'a compact/legacy shell without the optional visit-notes flag silently lost the shared-workstation question');
+  eq(compact._calls.confirm.length, 1,
+    'a compact/legacy shell without the optional visit-notes flag did not ask exactly one shared-workstation question');
+
   const c = boot({ confirmAnswer: true });
   eq(c.swMaybeFirstRunPrompt(), true, 'the first-run question was never asked');
   eq(c._calls.confirm.length, 1, 'the first-run question was not a question');

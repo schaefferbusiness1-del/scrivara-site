@@ -19,7 +19,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function makeHarness(prompt = 'summarize this patient') {
+function makeHarness(prompt = 'summarize this patient', options = {}) {
   const input = { value: prompt, style: {} };
   const chips = { innerHTML: '' };
   const send = { disabled: false };
@@ -28,6 +28,8 @@ function makeHarness(prompt = 'summarize this patient') {
   const toasts = [];
   const calls = [];
   const requestOptions = [];
+  const snapshotQuestions = [];
+  const preflightQuestions = [];
   const handlers = {};
   let active = 'A';
   let owner = 'A';
@@ -42,7 +44,20 @@ function makeHarness(prompt = 'summarize this patient') {
     copilotAsk() { throw new Error('unguarded original should be replaced'); },
     backendMode() { return true; }, bkToken() { return 'token'; }, bkBase() { return 'https://example.test'; },
     getActivePtId() { return active; },
-    copilotSnapshot() { return { activePatient: { id: active } }; },
+    copilotSnapshot(question) {
+      snapshotQuestions.push(question);
+      return { activePatient: { id: active, name: 'Patient ' + active }, patients: [{ id: active, name: 'Patient ' + active }, { id: 'FOREIGN', name: 'Foreign Patient', summary: 'FOREIGN_CONTEXT_SENTINEL' }], panel: { foreign: true } };
+    },
+    _copilotPrepareRequest(question, raw) {
+      preflightQuestions.push(question);
+      const activeRow = raw.patients.find(p => p.id === raw.activePatient.id);
+      return {
+        context: { activePatient: activeRow, patients: [activeRow], requestScope: 'active-patient' },
+        localAnswer: options.localAnswer || null,
+        chart: options.localAnswer ? null : { kind: 'patient-injection-trend', status: 'ready', patientId: activeRow.id, question }
+      };
+    },
+    _copilotChartForQuestion(question, context) { return { kind: 'patient-injection-trend', status: 'ready', patientId: context.activePatient.id, question }; },
     _copilotRenderThread() {}, _copilotRenderChips() {}, _copilotSaveHist() {},
     toast(message) { toasts.push(message); },
     __mlsPtCtxSafety: { owner() { return owner; }, reconcile() {} },
@@ -63,7 +78,7 @@ function makeHarness(prompt = 'summarize this patient') {
   vm.runInContext(normalizeSource, context, { filename: 'ScribeFlow-copilot-normalizer.js' });
   vm.runInContext(source, context, { filename: 'feat_mls_copilot_request_safety.js' });
   return {
-    context, request, calls, requestOptions, toasts,
+    context, request, calls, requestOptions, snapshotQuestions, preflightQuestions, toasts,
     switchToB() {
       active = 'B'; owner = 'B';
       context.__switchVisitForTest('visit-b', 2);
@@ -92,13 +107,21 @@ function makeHarness(prompt = 'summarize this patient') {
   stable.request.resolve({ ok: true, status: 200, json: () => Promise.resolve({
     reply: 'Safe answer',
     actions: [{ kind: 'navigate', arg: 'visit', label: 'Open visit' }, { kind: 'navigate', arg: 'visit', label: 'Open visit' }],
-    followups: ['What next?', 'What next?']
+    followups: ['What next?', 'What next?'],
+    citations: [{ visitId: 'visit-a', label: '2026-08-20 visit' }]
   }) });
   assert.strictEqual(await stableRun, true);
+  assert.deepStrictEqual(stable.snapshotQuestions, ['summarize this patient'], 'request-safety owner did not pass the submitted question into copilotSnapshot');
+  assert.deepStrictEqual(stable.preflightQuestions, ['summarize this patient'], 'request-safety owner bypassed canonical request preflight');
+  assert.strictEqual(stable.calls[0].context.requestScope, 'active-patient');
+  assert.deepStrictEqual(stable.calls[0].context.patients.map(p => p.id), ['A'], 'request-safety owner sent another patient after preflight');
+  assert(!JSON.stringify(stable.calls[0]).includes('FOREIGN_CONTEXT_SENTINEL'), 'request-safety owner sent a stripped foreign sentinel');
   assert(stable.context._copilotHistory.some(m => m.role === 'ai' && m.text === 'Safe answer'));
   const safeAnswer = stable.context._copilotHistory.find(m => m.role === 'ai' && m.text === 'Safe answer');
   assert.strictEqual(safeAnswer.actions.length, 1, 'duplicate Copilot response action survived normalization');
   assert.strictEqual(safeAnswer.followups.length, 1, 'duplicate Copilot follow-up survived normalization');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(safeAnswer.chart)), { kind: 'patient-injection-trend', status: 'ready', patientId: 'A', question: 'summarize this patient' }, 'patient-bound local chart metadata was not preserved on the accepted response');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(safeAnswer.citations)), [{ visitId: 'visit-a', label: '2026-08-20 visit' }], 'citation metadata was not preserved on the accepted response');
   assert.strictEqual(stable.context._copilotHistory.some(m => m.role === 'pending'), false);
 
   const localTop = makeHarness('Who are my top patients by visit count?');
@@ -110,6 +133,7 @@ function makeHarness(prompt = 'summarize this patient') {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(localTopAnswer.actions)), [
     { label: 'View Top Patients', kind: 'navigate', arg: 'patients' }
   ], 'production request-safety owner bypassed the top-patient action normalizer');
+  assert.deepStrictEqual(localTop.snapshotQuestions, ['Who are my top patients by visit count?']);
 
   const limited = makeHarness();
   const limitedRun = limited.context.copilotAsk();
@@ -117,7 +141,30 @@ function makeHarness(prompt = 'summarize this patient') {
   assert.strictEqual(await limitedRun, true, 'handled high-demand response was not completed cleanly');
   assert(limited.context._copilotHistory.some(m => /unusually high demand/i.test(m.text || '')), '429 response was not distinguished from a generic failure');
 
-  console.log('PASS Copilot request binding: abort/stale ownership, double-click lock, response dedupe, and distinct service status');
+  const localProcedure = makeHarness('What procedures did he get done?', {
+    localAnswer: {
+      kind: 'patient-procedure-list', status: 'ready', patientId: 'A',
+      message: 'Documented procedure for Patient A.',
+      citations: [{ ref: 'V1', date: '2026-01-10', type: 'Injection', source: 'athena-visits' }]
+    }
+  });
+  assert.strictEqual(await localProcedure.context.copilotAsk(), true, 'guarded owner did not complete deterministic procedure answer');
+  assert.strictEqual(localProcedure.calls.length, 0, 'deterministic procedure answer reached /api/copilot');
+  const procedureAnswer = localProcedure.context._copilotHistory.find(m => m.role === 'ai' && /Documented procedure/.test(m.text || ''));
+  assert(procedureAnswer && procedureAnswer.procedureAnswer && procedureAnswer.citations.length === 1,
+    'guarded owner lost deterministic procedure evidence metadata');
+  assert.strictEqual(localProcedure.context._copilotBusy, false, 'local answer left guarded Copilot busy');
+  assert.strictEqual(localProcedure.context._copilotHistory.some(m => m.role === 'pending'), false, 'local answer left a pending row');
+
+  const mismatch = makeHarness('Tell me about Another Person last visit', {
+    localAnswer: { kind: 'patient-subject-mismatch', status: 'blocked', patientId: 'A', message: 'Open the named patient chart and ask again.', citations: [] }
+  });
+  assert.strictEqual(await mismatch.context.copilotAsk(), true);
+  assert.strictEqual(mismatch.calls.length, 0, 'named-subject refusal reached /api/copilot');
+  assert(mismatch.context._copilotHistory.some(m => m.localAnswer && m.localAnswer.kind === 'patient-subject-mismatch'),
+    'guarded owner did not preserve the subject-mismatch refusal');
+
+  console.log('PASS Copilot request binding: abort/stale ownership, preflight scoping, zero-fetch deterministic answers, response dedupe, and distinct service status');
 })().catch(error => {
   console.error(error);
   process.exit(1);

@@ -922,7 +922,7 @@
       remember(wrap);
       var body = wrap.querySelector('.fmt-body');
       var btn = wrap.querySelector('button');
-      var entry = { ta: ta, wrap: wrap, body: body, hidden: false, lastValue: null, lastShow: null, lastHtml: null, render: null };
+      var entry = { ta: ta, wrap: wrap, body: body, hidden: false, lastValue: null, lastShow: null, lastHtml: null, lastReviewHide: null, lastReviewLower: null, render: null };
       ta.__fpFmt = entry;
       previewEntries.push(entry);
       var taPriorDisplay = ta.style.display || '';
@@ -931,7 +931,12 @@
       }
       function rerender(force) {
         var t = ta.value || '';
-        var show = looksStructured(t) && t.length > 60;
+        /* visit-review-1.0.0: the flow lane is the prior-step copy. Once the
+           doctor has entered Review & send, the actionable #noteBox preview is
+           the sole formatted mount. Keep the source textarea hidden too: an
+           Edit state must not resurrect the upper duplicate on this page. */
+        var reviewHide = ta.id === 'ez3flNote' && document.body.classList.contains('mls-review-step');
+        var show = !reviewHide && looksStructured(t) && t.length > 60;
         /* onenote-1.0.0 part B (owner 2026-08-20: the "Review the note" card
            repeats the whole note the doctor just reviewed up top): when THIS
            textarea is the advanced card's #noteBox and the flow lane's
@@ -947,15 +952,26 @@
             dup = !!(fl && fl.offsetParent !== null && String(fl.value || '').trim() === t.trim());
           } catch (eDup) { dup = false; }
         }
-        if (!force && t === entry.lastValue && show === entry.lastShow && dup === entry.lastDup) return;
+        var reviewLower = ta.id === 'noteBox' && document.body.classList.contains('mls-review-step');
+        if (!force && t === entry.lastValue && show === entry.lastShow && dup === entry.lastDup && reviewHide === entry.lastReviewHide && reviewLower === entry.lastReviewLower) return;
         entry.lastValue = t;
         entry.lastShow = show;
         entry.lastDup = dup;
+        entry.lastReviewHide = reviewHide;
+        entry.lastReviewLower = reviewLower;
         var wantDisplay = show ? 'block' : 'none';
-        if (wrap.style.display !== wantDisplay) wrap.style.display = wantDisplay;
+        /* The visit-focus surface deliberately suppresses the lower formatter
+           in the ordinary note state. Review/send is the one state where that
+           card is the actionable destination, so outrank that existing rule
+           only for #noteBox and release the priority on Back. */
+        if (reviewLower) wrap.style.setProperty('display', wantDisplay, 'important');
+        else {
+          if (wrap.style.getPropertyPriority('display') === 'important') wrap.style.removeProperty('display');
+          if (wrap.style.display !== wantDisplay) wrap.style.display = wantDisplay;
+        }
         /* ONE view: formatted shown => textarea hidden (unless the doctor is
            editing); formatted absent => textarea back. */
-        setTaVisible(!show || entry.hidden);
+        setTaVisible(reviewHide ? false : (!show || entry.hidden));
         if (!show || entry.hidden) return;
         if (dup) {
           var dupHtml = '<div class="fmt-dup">This sends the note exactly as reviewed above. <button type="button" class="fmt-dup-show">Show it here anyway</button></div>';
@@ -1146,7 +1162,7 @@
        mls:generation-complete below; schedule/calendar repaints are caught by
        this bus's own MutationObserver on #calendarView/#mlsAgendaChip. */
     ['mls:ui-ready', 'mls:view-changed', 'mls:active-patient-changed',
-      'mls:generation-complete'].forEach(function (name) {
+      'mls:generation-complete', 'mls:review-step'].forEach(function (name) {
       listen(window, name, function () { queueRefresh(document, name, 40); }, false);
     });
     /* Generation settled (success OR failure): stop the generation burst —

@@ -34,6 +34,9 @@ for (const src of [conn, app]) {
 assert(loaded.size > 100, 'loader scan looks broken — only ' + loaded.size + ' scripts found');
 
 const offenders = [];
+const nativeDialogCall = /(?:^|[^.\w"'])(?:window\.)?(confirm|prompt|alert)\((?!\?:)/;
+assert(nativeDialogCall.test("if (ready) confirm('continue?');"), 'native-dialog scanner positive control is broken');
+assert(!nativeDialogCall.test('var diagnosisCue = /confirm(?:s|ed)?/i;'), 'native-dialog scanner mistakes a regex non-capturing group for a call');
 function scan(name, source) {
   source.split('\n').forEach((line, i) => {
     if (/\(window\.toast\|\|window\.alert\)/.test(line)) return;
@@ -42,7 +45,7 @@ function scan(name, source) {
     if (/typeof window\.toast === ['"]function['"]/.test(line)) return;
     if (/mlsConfirm|mlsPrompt/.test(line)) return;
     const code = line.replace(/\/\/.*$/, '');
-    if (/(?:^|[^.\w"'])(?:window\.)?(confirm|prompt|alert)\(/.test(code) &&
+    if (nativeDialogCall.test(code) &&
         !/PromptForChoice|prompt\(\)|confirm\(\)|alert\(\)/.test(code)) {
       offenders.push(name + ':' + (i + 1) + ': ' + line.trim().slice(0, 110));
     }

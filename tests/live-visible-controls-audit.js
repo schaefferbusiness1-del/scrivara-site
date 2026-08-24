@@ -252,6 +252,31 @@ async function openRoute(cdp, route) {
     await click(cdp, route.entry);
   }
   await wait(cdp, `${route.label} route`, `window.__mlsCurrentView===${JSON.stringify(route.route)}`);
+  if (route.route === 'history') {
+    /* History's chip and AVS owners are deliberately deferred by the production
+       loader. Inventorying before they mount, then comparing with their owned
+       controls after a revisit, reports a fake route inconsistency. Wait on the
+       renderers' explicit installed/skipped state and owned DOM instead of
+       guessing with a longer sleep. */
+    try {
+      await wait(cdp, 'settled History control renderers', `(() => {
+        const script=document.querySelector('script[data-mls-asset="feat_mls_history_exact.js"]');
+        const avsScript=document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]');
+        const owner=window.__mlsHy,avsOwner=window.__mlsHistoryAvs;
+        const select=document.getElementById('histFilter');
+        if(!script||!avsScript||!owner||!avsOwner||!select)return false;
+        if(avsOwner.installed!==true||!document.getElementById('mlsHistAvsBtn'))return false;
+        if(owner.installed===false)return true;
+        const chips=document.getElementById('hyChips'),style=getComputedStyle(select);
+        return owner.installed===true&&!!chips&&style.display==='none';
+      })()`, 10000);
+    } catch (error) {
+      const readiness = await evalJs(cdp, `(() => {const ids=['histSearchRow','histFilter','hyChips','mlsHistAvsBtn'];const nodes={};ids.forEach(id=>{const el=document.getElementById(id);nodes[id]=el?{connected:el.isConnected,parent:el.parentElement&&el.parentElement.id||'',display:getComputedStyle(el).display}:null});return{view:window.__mlsCurrentView||'',historyExact:window.__mlsHy||null,historyAvs:window.__mlsHistoryAvs||null,exactScript:!!document.querySelector('script[data-mls-asset="feat_mls_history_exact.js"]'),avsScript:!!document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]'),nodes}})()`);
+      error.message += `; readiness=${JSON.stringify(readiness)}`;
+      throw error;
+    }
+    await evalJs(cdp, `new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))`, true);
+  }
 }
 
 async function fill(cdp, selector, value) {
@@ -491,6 +516,24 @@ async function markByFingerprint(cdp, fp, marker) {
   return evalJs(cdp, `(() => {const shown=el=>{if(!el||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};const norm=v=>String(v||'').replace(/\\s+/g,' ').trim();const name=el=>{const by=el.getAttribute('aria-labelledby');return norm(el.getAttribute('aria-label')||(by&&by.split(/\\s+/).map(id=>(document.getElementById(id)||{}).textContent||'').join(' '))||[...(el.labels||[])].map(x=>x.textContent||'').join(' ')||el.getAttribute('title')||el.innerText||el.textContent||el.value||el.placeholder)};const rows=[...document.querySelectorAll('button,a[href],[role="button"],[role="menuitem"],[role="tab"],[tabindex]:not([tabindex="-1"])')].filter(shown).filter(el=>[el.tagName,el.id||'',name(el),el.getAttribute('data-action')||'',el.getAttribute('data-act')||'',el.getAttribute('data-view')||''].join('|')===${JSON.stringify(fp)});if(rows.length!==1)return{ok:false,count:rows.length};rows[0].setAttribute('data-control-audit-marker',${JSON.stringify(marker)});return{ok:true};})()`);
 }
 
+/* A visible control may be remounted between route inventory, disclosure
+   opening, and the click (the phone invitation is intentionally withdrawn
+   when it would cover a control). Resolve by its stable id/label immediately
+   before marking and clicking so the audit never holds an old DOM node or
+   stale fingerprint. */
+async function resolveLiveFingerprint(cdp, candidate) {
+  return evalJs(cdp, `(() => {
+    const shown=el=>{if(!el||el.hidden||el.closest('[inert],[aria-hidden="true"]'))return false;const s=getComputedStyle(el),r=el.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)!==0&&r.width>0&&r.height>0};
+    const norm=v=>String(v||'').replace(/\\s+/g,' ').trim();
+    const name=el=>{const by=el.getAttribute('aria-labelledby');return norm(el.getAttribute('aria-label')||(by&&by.split(/\\s+/).map(id=>(document.getElementById(id)||{}).textContent||'').join(' '))||[...(el.labels||[])].map(x=>x.textContent||'').join(' ')||el.getAttribute('title')||el.innerText||el.textContent||el.value||el.placeholder)};
+    const all=[...document.querySelectorAll('button,a[href],[role="button"],[role="menuitem"],[role="tab"],[tabindex]:not([tabindex="-1"])')].filter(shown);
+    const rows=all.filter(el=>${JSON.stringify(candidate.id || '')}?el.id===${JSON.stringify(candidate.id || '')}:name(el)===${JSON.stringify(candidate.label || '')});
+    if(rows.length!==1)return{ok:false,count:rows.length};
+    const el=rows[0],fp=[el.tagName,el.id||'',name(el),el.getAttribute('data-action')||'',el.getAttribute('data-act')||'',el.getAttribute('data-view')||''].join('|');
+    return{ok:true,fp};
+  })()`);
+}
+
 /* Controls such as the active-patient Snapshot button can be legitimately
    remounted by a bounded card refresh. Resolve its stable fingerprint in the
    same live DOM turn that obtains the click point instead of trusting a
@@ -519,6 +562,8 @@ async function exerciseCandidate(cdp, route, candidate, artifactDir, serial) {
   let marked = null;
   let disclosureOpened = null;
   while (Date.now() - setupStarted < setupBudgetMs) {
+    const resolved = await resolveLiveFingerprint(cdp, candidate);
+    if (resolved && resolved.ok) candidate.fp = resolved.fp;
     marked = await markByFingerprint(cdp, candidate.fp, marker);
     if (marked.ok || marked.count > 1) break;
     /* FOLDED IS NOT MISSING.
@@ -559,6 +604,9 @@ async function exerciseCandidate(cdp, route, candidate, artifactDir, serial) {
   }
   const setupWaitMs = Date.now() - setupStarted;
   if (!marked || !marked.ok) {
+    if (marked && marked.count === 0 && /^got it — do not show this again$/i.test(String(candidate.label || '').trim())) {
+      return { status: 'SKIP', kind: 'transient-control-withdrawn-before-interaction', route: route.route, control: candidate, setupWaitMs, setupBudgetMs, disclosuresOpened: disclosureOpened || [], detail: marked || {} };
+    }
     const readiness = candidate.id === 'mlsB39SgHead' ? await evalJs(cdp, `(() => {const s=document.querySelector('script[data-mls-asset="feat_mls_studygroups.js"]'),h=document.getElementById('mlsB39SgHead'),cs=h&&getComputedStyle(h),r=h&&h.getBoundingClientRect();return{ownerScript:!!s,ownerSrc:s&&s.src||'',apiReady:!!window.__mlsStudyGroups,rootReady:!!document.getElementById('mls-sg-root'),wrapperReady:!!document.getElementById('mlsB39SgWrap'),headReady:!!h,headName:h&&String(h.innerText||h.textContent||'').replace(/\s+/g,' ').trim()||'',headDisplay:cs&&cs.display||'',headVisibility:cs&&cs.visibility||'',headRect:r?{left:r.left,top:r.top,width:r.width,height:r.height}:null,launcherReady:!!document.getElementById('mls-sg-launch'),view:window.__mlsCurrentView||''}})()`) : null;
     return { status: 'FAIL', kind: 'route-inconsistent-control', route: route.route, control: candidate, setupWaitMs, setupBudgetMs, disclosuresOpened: disclosureOpened || [], detail: Object.assign({}, marked || {}, readiness ? { readiness } : {}) };
   }
@@ -638,8 +686,21 @@ async function main() {
       window.prompt=function(value){window.__controlAuditDialogs.push({type:'prompt-denied',text:String(value||'')});return null;};
     ` });
     const appUrl = `${hosted.origin}/ScribeFlow.html?demo=1&visibleControlsAudit=20260718`;
-    await cdp.send('Page.navigate', { url: appUrl }); await wait(cdp, 'auth page', `document.readyState==='complete'&&!!document.getElementById('tabSignup')`, 30000);
-    await evalJs(cdp, `localStorage.clear();sessionStorage.clear();location.reload();true`); await wait(cdp, 'clean auth page', `document.readyState==='complete'&&!!document.getElementById('tabSignup')`, 30000);
+    /* Reset this fresh profile before the first app navigation. The former
+       in-page clear + location.reload sequence could satisfy its own readiness
+       wait against the old document in the few milliseconds before unload,
+       then attempt to click a now-hidden auth tab. Storage-domain clearing is
+       synchronous for the target origin and the visibility predicate proves
+       the clean auth surface—not merely a still-present DOM node—is ready. */
+    await cdp.send('Storage.clearDataForOrigin', { origin: hosted.origin, storageTypes: 'all' });
+    await cdp.send('Page.navigate', { url: appUrl });
+    await wait(cdp, 'clean visible auth page', `(() => {
+      if(document.readyState!=='complete')return false;
+      const auth=document.getElementById('authScreen'),tab=document.getElementById('tabSignup');
+      if(!auth||!tab||tab.disabled||tab.hidden||tab.closest('[inert],[aria-hidden="true"]'))return false;
+      const as=getComputedStyle(auth),ts=getComputedStyle(tab),r=tab.getBoundingClientRect();
+      return as.display!=='none'&&as.visibility!=='hidden'&&ts.display!=='none'&&ts.visibility!=='hidden'&&r.width>0&&r.height>0;
+    })()`, 30000);
     await click(cdp, '#tabSignup');
     await wait(cdp, 'local synthetic agreement manifest', `document.getElementById('authSignupAssentFields')&&!document.getElementById('authSignupAssentFields').disabled`, 10000);
     await fill(cdp, '#authEmail', ACCOUNT.email); await fill(cdp, '#authPass', ACCOUNT.password); await fill(cdp, '#authPass2', ACCOUNT.password);

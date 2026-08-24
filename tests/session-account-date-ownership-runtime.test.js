@@ -82,6 +82,7 @@ for (const file of files) {
   };
   const context = {
     session: { email: 'a@example.com' },
+    sfSessionUiEpoch: 7,
     sfSessionUiAccount: 'a@example.com',
     sfNormalizeSessionAccount(value) { return String(value || '').trim().toLowerCase(); },
     getSessionEmail() { return context.session && context.session.email || ''; },

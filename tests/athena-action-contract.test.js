@@ -59,6 +59,7 @@ for (const label of ['Patient', 'DOB', 'MRN', 'Encounter date', 'Provider', 'Ath
 assert(/setAttribute\(['"]data-mls-athena-action['"],\s*action\)/.test(appConfirm));
 assert(/setAttribute\(['"]data-mls-preview-hash['"],\s*previewHash\)/.test(appConfirm), 'the trusted confirmation click must be bound to the visible preview');
 assert(/(?:expectedContext|probeContext|context)\s*:\s*[a-zA-Z_$][\w$]*/.test(appConfirm), 'execute must carry the probed encounter context fingerprint');
+assert(/var lockedContext\s*=\s*\{[\s\S]*?appointmentId\s*:\s*contextValue\(ctx,\s*\[['"]appointmentId['"],\s*['"]athenaAppointmentId['"]\]/.test(appConfirm), 'execute must retain the appointment ID discovered by the read-only probe');
 assert(/(?:expectedContext|context)\s*:\s*[a-zA-Z_$][\w$]*/.test(appProbe), 'probe must carry visit date and provider context');
 assert(/No claim is submitted/.test(appActions));
 

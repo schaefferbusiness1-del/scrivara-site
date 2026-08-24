@@ -933,8 +933,16 @@ async function runtime() {
       const gw = () => { const n = document.getElementById('calGrid'); return n ? Math.round(n.getBoundingClientRect().width) : null; };
       const out = {};
 
-      window.calSetMode('month'); await sleep(800);
+      /* A plain Calendar refresh used to be wrapped as a fresh Athena pull:
+         +900 ms and +2400 ms later it called calOpenDay(), re-opened the day
+         panel after Month was selected, and squeezed this grid. Start that
+         exact refresh, choose Month, and wait through both delayed passes. */
+      const refreshed = window.loadCalendar();
+      window.calSetMode('month');
+      await Promise.resolve(refreshed);
+      await sleep(2800);
       out.month = { chips: C.calChips().length, clipped: C.calClipped(), gridW: gw(),
+        panelShown: C.shown('#calDayPanel'),
         sample: C.calChips().slice(0, 3).map((c) => (c.textContent || '').trim()) };
 
       /* DIFFERENTIAL, the same shape as the CLUNKY 34 guard above: this
@@ -999,9 +1007,13 @@ async function runtime() {
       `the seeded month rendered only ${calx.month.chips} chips - the grid is not reading the appointments and the CLUNKY 34/35 checks would pass vacuously`);
     eq(calx.month.clipped, 0,
       `${calx.month.clipped} of ${calx.month.chips} month chips are still clipped (e.g. ${JSON.stringify(calx.month.sample)}) - the month is unreadable again (CLUNKY 34)`);
+    eq(calx.month.panelShown, false,
+      'an ordinary Calendar refresh re-opened the day panel after Month was selected, squeezing the month grid into the split layout');
     /* The differential is only evidence if both reads saw the same layout. */
     eq(calx.panelOn, calx.panelOff,
       `the CLUNKY 34 differential read #calGrid in two different layouts after ${calx.tries} attempts (day panel visible on:${calx.panelOn} off:${calx.panelOff}) - the ~400px two-column split would swamp the rail track this is measuring`);
+    eq(calx.panelOn, false,
+      'the CLUNKY 34 differential stabilized with the day panel open; equal reads in the wrong two-column layout are not evidence');
     ok(calx.gridOn >= calx.gridOff - 2,
       `caldata's stylesheet NARROWS #calGrid: ${calx.gridOff}px without it, ${calx.gridOn}px with it - the rail is a layout track and this fix must only ever give the grid room (CLUNKY 34 guard)`);
     ok(calx.gridOn > calx.gridOff,

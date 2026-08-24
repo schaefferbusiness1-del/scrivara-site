@@ -327,7 +327,9 @@ assert.strictEqual(ctx.censusDelta(blind, beforeCensus).measured, false,
 /* ------------------------------------------------------------------ *
  * 2. STRUCTURE: the verdict is derived from the census, not the walk.
  * ------------------------------------------------------------------ */
-const rhb = si.slice(si.indexOf('async function runHistoryBatch('), si.indexOf('function finalizeVerdict()'));
+const finalizeSignature = /function finalizeVerdict\([^)]*\)/.exec(si);
+const fvAt = finalizeSignature ? finalizeSignature.index : -1;
+const rhb = si.slice(si.indexOf('async function runHistoryBatch('), fvAt);
 assert(rhb.length > 1000, 'runHistoryBatch must still exist ahead of finalizeVerdict');
 assert(/receipt\.storeCensusBefore = storedContentCensus\(rows, unresolved\);/.test(rhb),
   'the store must be measured BEFORE the first chart is opened. One census taken after the ' +
@@ -336,9 +338,10 @@ assert(/receipt\.storeCensusBefore = storedContentCensus\(rows, unresolved\);/.t
 assert(rhb.indexOf('receipt.storeCensusBefore') < rhb.indexOf('ppStart((sweepProgressTotal'),
   'the before-census must be taken before the per-patient loop starts');
 
-const fvAt = si.indexOf('function finalizeVerdict()');
 assert(fvAt > 0, 'finalizeVerdict must still exist');
-const fv = si.slice(fvAt, si.indexOf('\n    }', fvAt) + 6);
+const fvEnd = si.indexOf('/* 2026-07-28 owner directive', fvAt);
+assert(fvEnd > fvAt, 'finalizeVerdict end marker must remain discoverable');
+const fv = si.slice(fvAt, fvEnd);
 
 assert(/receipt\.storeCensus = storedContentCensus\(rows, unresolved\);/.test(fv),
   'finalizeVerdict must MEASURE THE STORE, and the census must be handed the days unresolved ' +
@@ -491,7 +494,11 @@ assert(!/0 of 19/.test(unmeasuredLine), 'it must not report a zero it never meas
 assert.strictEqual(cctx.censusLine({}), '', 'a receipt with no census must say nothing');
 assert.strictEqual(cctx.censusLine(null), '', 'a missing receipt must not throw');
 
-const po = connect.slice(connect.indexOf('function pullOutcome(result, day)'), connect.indexOf('function pullOutcome(result, day)') + 2700);
+const poAt = connect.indexOf('function pullOutcome(result, day)');
+const poMarker = 'api.classifyPullResult = pullOutcome;';
+const poEnd = connect.indexOf(poMarker, poAt);
+assert(poAt >= 0 && poEnd > poAt, 'pullOutcome bounds must remain discoverable');
+const po = connect.slice(poAt, poEnd + poMarker.length);
 assert(/\+ censusLine\(hr\)/.test(po),
   'the ready message must actually call the census line - an uncalled reporter is the ' +
   'present-but-unreachable pattern this codebase has shipped repeatedly');

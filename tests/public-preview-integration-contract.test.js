@@ -95,7 +95,13 @@ assert(bundle.includes('function startPoll()') &&
   bundle.includes('if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) return;') &&
   bundle.includes('if (!(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true)) {'),
   'preview still installs legacy clock/status or record-lane repaint intervals');
-assert(/function syncTopLane\(rec\) \{[\s\S]{0,400}__MLS_PUBLIC_PREVIEW[\s\S]{0,900}Recording off in preview/.test(bundle),
+const syncTopLaneAt = bundle.indexOf('function syncTopLane(rec) {');
+const liveRecordLaneAt = bundle.indexOf('var live = recordingNow();', syncTopLaneAt);
+const previewRecordGuard = bundle.slice(syncTopLaneAt, liveRecordLaneAt);
+assert(syncTopLaneAt >= 0 && liveRecordLaneAt > syncTopLaneAt &&
+  previewRecordGuard.includes('__MLS_PUBLIC_PREVIEW') &&
+  previewRecordGuard.includes('Recording off in preview') &&
+  /Sample workspace only[^;]+;\s*return;/.test(previewRecordGuard),
   'the primary record-lane owner can repaint live recording copy over the preview boundary');
 for (const asset of [
   'feat_task3_frontsync.js', 'feat_copilot_slim.js', 'feat_b18_qa.js',

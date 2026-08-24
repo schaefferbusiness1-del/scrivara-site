@@ -313,10 +313,10 @@ async function runtime() {
        is the real shape: the pull hands over a row it could not read, and the
        background engine later reports it read. */
     const fileDeferred = (pid, day) => page.evaluate(([pid, day]) => window.__mlsSI._notesIdleSyncFromReceipt(
-      { patients: [{ patientId: pid, todayNote: false, todayNoteReason: 'pulled-day-note-deadline-exceeded' }] }, day
+    { visitNotesRequested: true, patients: [{ patientId: pid, todayNote: false, todayNoteReason: 'pulled-day-note-deadline-exceeded' }] }, day
     ), [pid, day]);
     const fileRead = (pid, day) => page.evaluate(([pid, day]) => window.__mlsSI._notesIdleSyncFromReceipt(
-      { patients: [{ patientId: pid, todayNote: true }] }, day
+    { visitNotesRequested: true, patients: [{ patientId: pid, todayNote: true }] }, day
     ), [pid, day]);
     /* HOLD THE ENGINE IN ITS OWN PAUSED STATE while the CARD is the subject.
        niGate opens after NI_IDLE_MS (20 s) of no user input, and this suite

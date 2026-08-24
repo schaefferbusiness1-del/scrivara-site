@@ -185,7 +185,10 @@ const stagingConnect = fs.readFileSync(path.join(root, 'mls-connect.staging.js')
 for (const [file, tag] of freshHardcodedLoaderTags) {
   assert(connect.includes(`${file}?v=${tag}`) || connect.includes(`${file}\";`) && connect.includes(`\"?v=${tag}\"`), `${file} loader cache tag was not advanced to ${tag}`);
 }
-assert(/feat_after_visit_summary\.js[^\n]+__MLS_AV/.test(connect), 'after-visit summary must inherit the final app cache version');
+const afterVisitLoader = connect.match(/var A='feat_after_visit_summary\.js'[\s\S]{0,3000}?\/\* action-time AVS readiness:[^\n]*/)?.[0] || '';
+assert(afterVisitLoader, 'after-visit summary action-time loader must remain reachable');
+assert(/s\.src='\/'\+A\+'\?v='\+\(window\.__MLS_AV\|\|Date\.now\(\)\)/.test(afterVisitLoader),
+  'after-visit summary must inherit the final app cache version');
 assert(/feat_fullhistory_pdf\.js[\s\S]{0,300}__MLS_AV/.test(connect), 'full-history PDF must inherit the final app cache version');
 assert(stagingHtml.includes('mls-connect.staging.js'), 'staging entry point must reach its adjunct loader bundle');
 for (const [file, tag] of freshStagingLoaderTags) {

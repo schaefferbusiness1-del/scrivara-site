@@ -1,17 +1,15 @@
 'use strict';
 
-/* p1-todaynote-deferred-retry-1.0.0
+/* p1-todaynote-deferred-retry-2.0.0
  *
- * Owner report 2026-08-16 (day 2026-08-21, ext 3.0.61): schedule 6/6, roster
- * complete, history 6/6 processed - and todayNoteFailures:6, every one
- * "pull-in-flight: another Athena read or schedule pull is active. Nothing
- * started." The today-note reads were launched while the day pull still held
- * the Athena lease. p1-lease-loan-1.0.0 removed the cause; the fuse was still
- * too narrow, so all six were attempt-once and terminal.
- *
- * This executes the REAL 1p importer's history batch against a FAKE lease that
- * is busy during the batch and free afterwards. Synthetic names/DOB/MRN only;
- * no network, no extension, no PHI. */
+ * The old fixture drove the low-level history batch and expected its retired
+ * OFF-mode date-scoped reader to run. Full Notes OFF is now schedule-only, and
+ * Full Notes ON uses the all-visits body reader instead. This suite exercises
+ * the live exported notes-idle/deferred-body lane instead: it is explicitly
+ * gated by the Full Notes preference, keeps the patient/day binding, retries a
+ * transient body refusal with the bounded queue ladder, and never persists
+ * names, DOBs, MRNs, or reader text.
+ */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -22,8 +20,8 @@ const root = path.resolve(__dirname, '..');
 const importer = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
 
 const DAY = '2026-08-21';
+const PATIENT = 'pt-1';
 const PULL_IN_FLIGHT = 'pull-in-flight: another Athena read or schedule pull is active. Nothing started.';
-const ROWS = 6;
 
 let checks = 0;
 function ok(value, message) { assert.ok(value, message); checks++; }
@@ -31,17 +29,17 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
 
 /* ---------------------------------------------------------------- static */
 {
-  const a = importer.indexOf('/* ===== p1-todaynote-deferred-retry-1.0.0 =====');
-  const b = importer.indexOf('/* ===== end p1-todaynote-deferred-retry-1.0.0 ===== */');
-  ok(a >= 0 && b > a, 'the p1-todaynote-deferred-retry-1.0.0 block is missing or unclosed');
-  const block = importer.slice(a, b);
-  ok(/setTimeout\(/.test(block) && !/requestAnimationFrame/.test(block),
-    'the deferred round is not setTimeout-based (rAF never fires in a hidden tab)');
-  ok(/TN_DEFER_LEASE_WAITS/.test(block), 'the deferred round has no bounded wait budget');
-  ok(!/claim\(|release\(/.test(block), 'the deferred round touches lease claim/release - it must not');
+  const ni = importer.slice(importer.indexOf('/* ===== notes-idle-1.0.0'), importer.indexOf('/* ===== end notes-idle-1.0.0'));
+  ok(ni.includes('function niEnqueue'), 'the notes-idle queue owner is missing');
+  ok(ni.includes('function niReadNow'), 'the explicit one-row retry seam is missing');
+  ok(ni.includes('function niTick'), 'the bounded idle tick seam is missing');
+  ok(/visit-notes-off/.test(ni), 'the notes-idle lane has no Full Notes OFF gate');
+  ok(/NI_MAX_ATTEMPTS/.test(ni) && /NI_BACKOFF_MS/.test(ni),
+    'the notes-idle lane has no bounded retry ladder');
+  ok(/patientId: r\.p, day: r\.d/.test(ni),
+    'the test-visible notes-idle receipt does not expose only opaque patient/day bindings');
 }
 
-/* ---------------------------------------------------------------- runtime */
 function makeHarness(options) {
   options = options || {};
   const store = new Map();
@@ -49,41 +47,29 @@ function makeHarness(options) {
   const elements = new Map();
   const timers = [];
   let timerSeq = 0;
-  let leaseBusy = true;
+  let leaseBusy = options.leaseBusy !== false;
+  let outcomeAt = 0;
   const noteCalls = [];
 
-  const patients = Array.from({ length: ROWS }, (_, i) => ({
-    id: 'pt-' + (i + 1),
-    name: 'Synthetic Row ' + String(i + 1).padStart(2, '0'),
-    dob: '01/0' + (i + 1) + '/1970',
-    mrn: 'SYN-MRN-' + String(i + 1).padStart(2, '0'),
+  const patients = [{
+    id: PATIENT,
+    name: 'Synthetic Patient',
+    dob: '01/02/1970',
+    mrn: 'SYN-MRN-01',
     visits: []
-  }));
-  const rows = patients.map((p, i) => ({
-    _mlsTargetPatientId: p.id, patient_external_id: p.id,
-    name: p.name, dob: p.dob, mrn: p.mrn,
-    athenaAppointmentId: 'appt-' + DAY + '-' + (i + 1),
-    appointmentId: 'appt-' + DAY + '-' + (i + 1),
-    date: DAY, scheduleDate: DAY,
-    /* tny-1.0.0 reads the ACCOUNT clock: an appointment whose start is later
-       than now is 'not yet seen' and skipped, not refused. This fixture tests
-       the deferral lane, so its appointments must already have started at any
-       hour the gate runs - 00:00, never 08:0x (that made the suite fail every
-       morning before 8 AM ET). */
-    start_local: '00:00', time: '00:00', reason: 'Deferred note test'
-  }));
+  }];
 
   function fakeElement(tag, id) {
     const node = {
       tagName: String(tag || 'div').toUpperCase(), id: id || '', style: {}, children: [],
-      parentNode: null, onclick: null, textContent: '',
+      parentNode: null, onclick: null, textContent: '', classList: { contains: () => false },
       setAttribute(n, v) { this[n] = String(v); if (n === 'id') { this.id = String(v); elements.set(this.id, this); } },
       appendChild(c) { if (c) { c.parentNode = this; this.children.push(c); if (c.id) elements.set(c.id, c); } return c; },
       remove() { if (this.id) elements.delete(this.id); if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(x => x !== this); }
     };
     Object.defineProperty(node, 'innerHTML', {
       get() { return this._innerHTML || ''; },
-      set(v) { this._innerHTML = String(v || ''); for (const m of this._innerHTML.matchAll(/\bid="([^"]+)"/g)) this.appendChild(fakeElement('button', m[1])); }
+      set(v) { this._innerHTML = String(v || ''); }
     });
     if (node.id) elements.set(node.id, node);
     return node;
@@ -93,8 +79,7 @@ function makeHarness(options) {
   const rt = {
     console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number,
     Boolean, RegExp, Error, TypeError, encodeURIComponent, decodeURIComponent, queueMicrotask,
-    /* a controllable clock so the bounded deferred ladder is measurable */
-    setTimeout(fn, ms) { const t = { id: ++timerSeq, fn, ms: Number(ms) || 0, canceled: false }; timers.push(t); return t.id; },
+    setTimeout(fn, ms) { const t = { id: ++timerSeq, fn, ms: Number(ms) || 0, canceled: false, fired: false }; timers.push(t); return t.id; },
     clearTimeout(id) { const t = timers.find(x => x.id === id); if (t) t.canceled = true; },
     setInterval: () => 1, clearInterval: () => {},
     CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init && init.detail; },
@@ -113,9 +98,6 @@ function makeHarness(options) {
     _calMode: 'day', _calRefDate: DAY, _calSelDay: '', _calAppts: [], _calProviders: [], _calMe: null,
     backendMode: () => false, bkToken: () => '', bkBase: () => 'https://local.invalid',
     uns: key => 'p1-defer-test::' + key,
-    /* fd-1.0.0 (2026-08-17): the day-note leg now skips days AFTER the
-       account's today, so this fixture must state that DAY is today - it is
-       testing the deferral lane, not the future-day lane. */
     _acctTodayKey: () => DAY,
     _normDate: v => String(v || '').slice(0, 10),
     _normTime: v => String(v || ''),
@@ -124,180 +106,139 @@ function makeHarness(options) {
     loadCalendar: () => Promise.resolve(),
     renderTodayPicker: () => {}, renderHistory: () => {}, renderProfile: () => {}, loadPatients: () => {},
     __mlsBgSleep: () => Promise.resolve(),
-    fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
-    /* the visits preference: OFF, which is the lane the today-note pass serves */
-    __mlsVisitNotesPref: { read: () => ({ state: 'off', on: false, settled: true }), write: () => true, isPrefKey: () => false },
-    /* the single-owner Athena read lease, faked: BUSY during the batch */
+    __mlsVisitNotesPref: {
+      read: () => options.fullNotesOn === true
+        ? { state: 'on', on: true, settled: true }
+        : { state: 'off', on: false, settled: true },
+      write: () => true, isPrefKey: () => false
+    },
     __mlsP1AthenaReadLease: {
       version: 'fake-lease', busy: () => leaseBusy,
       claim: () => '', owns: () => false, touch: () => {}, release: () => {}, ready: () => true,
       state: () => ({ kind: leaseBusy ? 'p1-si-managed' : '', draining: leaseBusy, webHeld: false, deadlineAt: 0 })
     },
-    /* the today-note reader: refuses with pull-in-flight while the lease is
-       held, succeeds once it is free - exactly the live shape. */
     __mlsVisitSavePref: {
       runForPatient(p, _onStatus, opts) {
         noteCalls.push({ patientId: p && p.id, onlyDate: opts && opts.onlyDate, leaseBusy });
-        if (leaseBusy) return Promise.resolve({ ok: false, reason: PULL_IN_FLIGHT });
-        if (options.deferredAlsoFails) return Promise.resolve({ ok: false, reason: 'scoped-read-unverified' });
-        return Promise.resolve({ ok: true, visits: 1 });
+        const outcomes = Array.isArray(options.outcomes) ? options.outcomes : [];
+        const result = outcomes[outcomeAt++] || { ok: true, visits: 1 };
+        return Promise.resolve(result);
       }
     },
-    _athenaHistoryTargetSnapshot(ref) {
-      const p = patients.find(x => String(x.id) === String(ref && ref.patientId));
-      if (!p) return null;
-      return Object.freeze({ patientId: p.id, name: p.name, dob: p.dob, mrn: p.mrn,
-        appointmentId: String((ref && ref.appointmentId) || ''), scheduleDate: String((ref && ref.scheduleDate) || '') });
-    },
-    _assistReadChart(target) {
-      return Promise.resolve({ ok: true, chartName: target.name, chartDob: target.dob, chartMrn: target.mrn,
-        text: 'Synthetic chart for ' + target.name, sections: {} });
-    }
+    _athenaHistoryTargetSnapshot: () => null,
+    _assistReadChart: () => Promise.resolve({ ok: true })
   };
   rt.window = rt;
-  rt.addEventListener = (_t, fn) => listeners.add(fn);
-  rt.removeEventListener = (_t, fn) => listeners.delete(fn);
+  rt.addEventListener = (_type, fn) => listeners.add(fn);
+  rt.removeEventListener = (_type, fn) => listeners.delete(fn);
   rt.dispatchEvent = () => true;
   rt.postMessage = msg => {
-    if (msg && msg.type === 'mlsPing') queueMicrotask(() => {
-      const ev = { data: { source: 'mls-ext', type: 'mlsPong', id: msg.id || '', resp: { ok: true, version: '3.0.61' } } };
-      Array.from(listeners).forEach(fn => fn(ev));
+    if (!msg) return;
+    queueMicrotask(() => {
+      let ev = null;
+      if (msg.type === 'mlsPing') {
+        ev = { data: { source: 'mls-ext', type: 'mlsPong', id: msg.id || '', resp: { ok: true, version: '3.0.61' } } };
+      } else if (msg.type === 'mlsAthenaPresence') {
+        ev = { data: { source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: { athenaOpen: true, reason: 'presence-verified' } } };
+      }
+      if (ev) Array.from(listeners).forEach(fn => fn(ev));
     });
   };
 
   vm.runInNewContext(importer, rt, { filename: '1p-feat_mls_schedimport_exact.js', timeout: 5000 });
+  return {
+    rt, api: rt.__mlsSI, noteCalls,
+    setLeaseBusy(v) { leaseBusy = !!v; },
+    persisted() { return rt.localStorage.getItem('p1-defer-test::p1NotesIdleQueueV1'); }
+  };
+}
 
-  function pendingTimers() { return timers.filter(t => !t.canceled && !t.fired); }
-  function runDueTimers(max) {
-    let ran = 0;
-    for (let guard = 0; guard < (max == null ? 50 : max); guard++) {
-      const t = timers.find(x => !x.canceled && !x.fired);
-      if (!t) break;
-      t.fired = true; ran++;
-      try { t.fn(); } catch (e) {}
-    }
-    return ran;
+async function flush(turns = 20) {
+  while (turns-- > 0) { await Promise.resolve(); await new Promise(r => setImmediate(r)); }
+}
+
+/* ---- 1. Full Notes OFF is schedule-only ------------------------------- */
+async function testOffDoesNotReadBodies() {
+  const h = makeHarness({ fullNotesOn: false });
+  ok(h.api._notesIdleEnqueue(PATIENT, DAY, 'pull-in-flight'), 'OFF fixture did not accept a synthetic queued row');
+  const result = await h.api.notesIdleReadNow();
+  await flush();
+  eq(h.noteCalls.length, 0, 'Full Notes OFF drove a visit-body read');
+  eq(result, null, 'OFF gate returned a body-read result instead of pausing');
+  const receipt = h.api._notesIdle();
+  eq(receipt.gateReason, 'visit-notes-off', 'OFF gate did not name the schedule-only boundary');
+  eq(receipt.queued, 1, 'OFF gate discarded queued work instead of preserving it for an explicit ON choice');
+}
+
+/* ---- 2. ON retries the exact patient/day after a transient refusal ----- */
+async function testOnRetriesBoundedAndRecovers() {
+  const h = makeHarness({ fullNotesOn: true, leaseBusy: false, outcomes: [
+    { ok: false, reason: PULL_IN_FLIGHT },
+    { ok: true, visits: 1 }
+  ] });
+  ok(h.api._notesIdleEnqueue(PATIENT, DAY, 'pull-in-flight'), 'ON fixture did not enqueue the exact patient/day');
+
+  const first = await h.api.notesIdleReadNow();
+  await flush();
+  eq(first.ok, false, 'the transient first body refusal was not surfaced');
+  eq(h.noteCalls.length, 1, 'the first ON body attempt did not run exactly once');
+  eq(h.noteCalls[0].patientId, PATIENT, 'the first body attempt drifted to another patient');
+  eq(h.noteCalls[0].onlyDate, DAY, 'the first body attempt lost its exact day binding');
+  eq(h.api._notesIdle().queued, 1, 'a transient body refusal was not retained for bounded retry');
+  eq(h.api._notesIdle().rows[0].attempts, 1, 'the first refusal did not consume exactly one attempt');
+
+  const second = await h.api.notesIdleReadNow(); /* explicit force bypasses backoff for this deterministic test */
+  await flush();
+  eq(second.ok, true, 'the bounded ON retry did not recover the body read');
+  eq(h.noteCalls.length, 2, 'the ON retry performed more than one follow-up attempt');
+  ok(h.noteCalls.every(c => c.patientId === PATIENT && c.onlyDate === DAY),
+    'the deferred retry changed patient or day scope');
+  eq(h.api._notesIdle().read, 1, 'the recovered body was not marked read');
+  eq(h.api._notesIdle().queued, 0, 'the recovered row remained queued');
+
+  const raw = h.persisted();
+  ok(raw, 'the ON queue state was not durably written');
+  ok(!/Synthetic Patient|01\/02\/1970|SYN-MRN-01|Athena|chart|text/i.test(raw),
+    'the durable/test-visible queue state contains patient demographics or reader text');
+  const saved = JSON.parse(raw);
+  ok(Array.isArray(saved.rows) && saved.rows.length === 1, 'the durable queue shape changed unexpectedly');
+  ok(Object.keys(saved.rows[0]).every(k => ['p', 'd', 'a', 'c', 's', 'n'].includes(k)),
+    'the durable queue row gained a non-PHI contract field');
+}
+
+/* ---- 3. lease busy is a gate, not an attempt/retry spin --------------- */
+async function testBusyLeaseDoesNotSpin() {
+  const h = makeHarness({ fullNotesOn: true, leaseBusy: true });
+  ok(h.api._notesIdleEnqueue(PATIENT, DAY, 'pull-in-flight'), 'busy fixture did not enqueue the exact patient/day');
+  for (let i = 0; i < 20; i++) {
+    const result = await h.api.notesIdleReadNow();
+    eq(result, null, 'a held lease started a body read on busy iteration ' + i);
   }
-  return { rt, api: rt.__mlsSI, rows, patients, noteCalls, pendingTimers, runDueTimers,
-    setLeaseBusy(v) { leaseBusy = !!v; }, timers };
-}
+  await flush();
+  eq(h.noteCalls.length, 0, 'a held lease caused a visit-body attempt');
+  eq(h.api._notesIdle().queued, 1, 'a held lease discarded deferred work');
+  eq(h.api._notesIdle().rows[0].attempts, 0, 'a held lease consumed retry budget without reading');
+  eq(h.api._notesIdle().gateReason, 'pull-running', 'busy lease was not surfaced as pull-running');
 
-async function flush(turns = 60) { while (turns-- > 0) { await Promise.resolve(); await new Promise(r => setImmediate(r)); } }
-
-/* ---- 1. six pull-in-flight refusals are DEFERRED, then recovered --------- */
-async function testDeferredRoundRecoversTheDay() {
-  const h = makeHarness();
-  const receipt = await h.api._runHistoryBatch(h.rows, [], () => {});
-  ok(receipt && Array.isArray(receipt.patients) && receipt.patients.length === ROWS,
-    'the history batch did not reach all ' + ROWS + ' synthetic rows (got ' +
-    ((receipt && receipt.patients && receipt.patients.length) || 0) + ')');
-  const refused = receipt.patients.filter(p => p && p.todayNote === false);
-  eq(refused.length, ROWS, 'the fixture did not reproduce six refused today-note reads');
-  ok(refused.every(p => /pull-in-flight/.test(String(p.todayNoteReason || ''))),
-    'the refusals were not the pull-in-flight class the owner reported');
-  eq(receipt.todayNoteFailures, ROWS, 'the receipt did not aggregate the six refusals');
-
-  /* every refused row is QUEUED, not terminal */
-  const q0 = h.api._todayNoteDeferred();
-  eq(q0.queued, ROWS, 'a pull-in-flight refusal was still treated as terminal instead of deferred');
-  ok(receipt.todayNoteDeferred && receipt.todayNoteDeferred.queued === ROWS,
-    'the receipt does not state how many rows were deferred');
-
-  /* the lease is released when the pull ends; drive the round */
   h.setLeaseBusy(false);
-  const before = h.noteCalls.length;
-  await h.api._runDeferredTodayNotes();
+  const recovered = await h.api.notesIdleReadNow();
   await flush();
-
-  eq(h.noteCalls.length - before, ROWS, 'the deferred round did not re-run exactly the six deferred rows');
-  ok(h.noteCalls.slice(before).every(c => c.onlyDate === DAY),
-    'a deferred re-run drifted off the pulled day');
-  eq(receipt.patients.filter(p => p && p.todayNote === true).length, ROWS,
-    'the deferred round did not recover every today-note read');
-  eq(receipt.todayNoteFailures, 0,
-    'a fully recovered day still reports today-note failures');
-  eq(Object.keys(receipt.todayNoteReasons || {}).length, 0,
-    'a fully recovered day still carries today-note failure reasons');
-  eq(receipt.todayNoteDeferred.recovered, ROWS, 'the deferred receipt did not count the recovery');
-  eq(receipt.todayNoteDeferred.remaining, 0, 'the deferred receipt still reports remaining failures');
-  eq(h.api._todayNoteDeferred().queued, 0, 'the deferred queue was not drained');
-
-  /* the persisted day ledger moved with it */
-  const ledgerRaw = h.rt.localStorage.getItem('p1-defer-test::schedImportIndexV1::' + DAY);
-  ok(ledgerRaw, 'the day ledger was never written');
-  const ledger = JSON.parse(ledgerRaw);
-  ok(ledger.history, 'the day ledger holds no history verdict');
-  eq(Number(ledger.history.todayNoteFailures), 0,
-    'the persisted day ledger still records the six today-note failures after full recovery');
-  eq(Object.keys(ledger.history.todayNoteRefused || {}).length, 0,
-    'the persisted day ledger still names refused patients after full recovery');
-  eq(Number(ledger.history.todayNoteDeferred && ledger.history.todayNoteDeferred.recovered), ROWS,
-    'the persisted day ledger does not record what the deferred round recovered');
-}
-
-/* ---- 2. exactly ONE deferred attempt per row ---------------------------- */
-async function testAttemptOncePerRow() {
-  const h = makeHarness({ deferredAlsoFails: true });
-  const receipt = await h.api._runHistoryBatch(h.rows, [], () => {});
-  eq(h.api._todayNoteDeferred().queued, ROWS, 'the failing-deferral fixture did not queue');
-  h.setLeaseBusy(false);
-  const before = h.noteCalls.length;
-  await h.api._runDeferredTodayNotes();
-  await flush();
-  eq(h.noteCalls.length - before, ROWS, 'the deferred round did not run once per row');
-  eq(h.api._todayNoteDeferred().queued, 0, 'a failed deferred attempt was re-queued for another round');
-  await h.api._runDeferredTodayNotes();
-  await flush();
-  eq(h.noteCalls.length - before, ROWS, 'a second deferred round re-read rows that already had their one attempt');
-  eq(receipt.todayNoteFailures, ROWS, 'a deferred attempt that failed was reported as a recovery');
-  ok(Object.keys(receipt.todayNoteReasons || {}).indexOf('scoped-read-unverified') >= 0,
-    'the deferred failure reason did not replace the pull-in-flight placeholder');
-}
-
-/* ---- 3. a lease that never frees is bounded, never a busy loop ---------- */
-async function testNeverFreeLeaseIsBounded() {
-  const h = makeHarness();
-  const receipt = await h.api._runHistoryBatch(h.rows, [], () => {});
-  eq(h.api._todayNoteDeferred().queued, ROWS, 'the never-free fixture did not queue');
-  /* lease stays BUSY. Drive the round repeatedly; it must re-arm a bounded
-     number of times and then drop the queue instead of spinning. */
-  let rounds = 0;
-  for (let i = 0; i < 20 && h.api._todayNoteDeferred().queued > 0; i++) {
-    rounds++;
-    await h.api._runDeferredTodayNotes();
-    await flush(4);
-  }
-  eq(h.api._todayNoteDeferred().queued, 0, 'the deferred queue never drained against a permanently held lease');
-  ok(rounds <= 7, 'the bounded wait took ' + rounds + ' rounds - the budget is 5 re-arms plus the drop');
-  eq(h.noteCalls.filter(c => c.leaseBusy === false).length, 0,
-    'a deferred read ran while the Athena lease was still held');
-  eq(receipt.todayNoteFailures, ROWS, 'a dropped queue must still report its failures honestly');
-  eq(receipt.todayNoteDeferred.reason, 'lease-still-held',
-    'the receipt does not name why the deferred round could not run');
-}
-
-/* ---- 4. only pull-in-flight defers; other reasons stay terminal --------- */
-async function testOnlyPullInFlightDefers() {
-  const h = makeHarness();
-  h.rt.__mlsVisitSavePref.runForPatient = () => Promise.resolve({ ok: false, reason: 'identity-mismatch' });
-  const receipt = await h.api._runHistoryBatch(h.rows, [], () => {});
-  eq(receipt.todayNoteFailures, ROWS, 'the identity-mismatch fixture did not fail');
-  eq(h.api._todayNoteDeferred().queued, 0,
-    'a non-pull-in-flight refusal was queued for a deferred retry - the class must stay narrow');
+  eq(recovered.ok, true, 'the queued body did not run after the lease released');
+  eq(h.noteCalls.length, 1, 'lease release caused more than one body attempt');
+  eq(h.api._notesIdle().queued, 0, 'the queue did not drain after lease release');
 }
 
 async function main() {
-  await testDeferredRoundRecoversTheDay();
-  await testAttemptOncePerRow();
-  await testNeverFreeLeaseIsBounded();
-  await testOnlyPullInFlightDefers();
-  console.log('PASS 1p-todaynote-deferred-retry: ' + checks + ' checks - a pull-in-flight today-note refusal is a DEFERRED class that gets exactly one re-run after the pull releases the Athena lease; a fully recovered day reports zero today-note failures in the receipt AND in the persisted day ledger; a permanently held lease drops the queue after a bounded ladder without ever reading under a live lease; and no other refusal class defers');
+  await testOffDoesNotReadBodies();
+  await testOnRetriesBoundedAndRecovers();
+  await testBusyLeaseDoesNotSpin();
+  console.log('PASS 1p-todaynote-deferred-retry: ' + checks + ' checks - Full Notes OFF is schedule-only; explicit ON retries one exact patient/day through the bounded notes-idle body lane; busy leases never consume retry budget or spin; durable queue state is PHI-free');
 }
 
 const watchdog = setTimeout(() => {
   console.error(new Error('1p-todaynote-deferred-retry runtime test did not finish'));
   process.exit(1);
-}, 30000);
+}, 10000);
 main().then(() => clearTimeout(watchdog), error => {
   clearTimeout(watchdog);
   console.error(error);

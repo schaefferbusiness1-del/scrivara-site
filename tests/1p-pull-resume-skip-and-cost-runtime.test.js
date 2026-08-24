@@ -74,7 +74,7 @@ function seedVerifiedDay(h, day, patientIds) {
 /* ------------------------------- 1. a verified row is skipped, not re-read */
 async function testVerifiedRowsSkip() {
   const DAY = '2026-08-17';
-  const h = makeHarness({ day: DAY, today: DAY, rows: 10 });
+  const h = makeHarness({ day: DAY, today: DAY, rows: 10, visitNotesOn: true });
   seedVerifiedDay(h, DAY, h.patients.slice(0, 6).map(p => p.id));
 
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
@@ -90,7 +90,7 @@ async function testVerifiedRowsSkip() {
     'a proved row did not stay complete across the re-run');
 
   /* MEASURED DELTA: the same day with the skip turned OFF re-reads everything */
-  const h2 = makeHarness({ day: DAY, today: DAY, rows: 10 });
+  const h2 = makeHarness({ day: DAY, today: DAY, rows: 10, visitNotesOn: true });
   seedVerifiedDay(h2, DAY, h2.patients.slice(0, 6).map(p => p.id));
   h2.rt.window.__mlsP1SkipVerifiedToday = false;
   await h2.api._runHistoryBatch(h2.rows, [], h2.onStatus);
@@ -108,7 +108,7 @@ async function testTheBarIsNotAMarker() {
 
   /* (a) a day whose census was NOT measured must be re-read */
   {
-    const h = makeHarness({ day: DAY, today: DAY, rows: 4 });
+    const h = makeHarness({ day: DAY, today: DAY, rows: 4, visitNotesOn: true });
     const key = 'p1-harness::schedImportIndexV1::' + DAY;
     h.rt.localStorage.setItem(key, JSON.stringify({ v: 1, rows: {}, history: {
       at: h.clock.now(), contentMeasured: false, contentVerified: true,
@@ -120,7 +120,7 @@ async function testTheBarIsNotAMarker() {
 
   /* (b) a stale verdict (yesterday) must be re-read */
   {
-    const h = makeHarness({ day: DAY, today: DAY, rows: 4 });
+    const h = makeHarness({ day: DAY, today: DAY, rows: 4, visitNotesOn: true });
     const key = 'p1-harness::schedImportIndexV1::' + DAY;
     h.rt.localStorage.setItem(key, JSON.stringify({ v: 1, rows: {}, history: {
       at: h.clock.now() - 30 * 3600 * 1000, contentMeasured: true, contentVerified: true,
@@ -132,7 +132,7 @@ async function testTheBarIsNotAMarker() {
 
   /* (c) a record that no longer holds content must be re-read */
   {
-    const h = makeHarness({ day: DAY, today: DAY, rows: 4 });
+    const h = makeHarness({ day: DAY, today: DAY, rows: 4, visitNotesOn: true });
     seedVerifiedDay(h, DAY, h.patients.map(p => p.id));
     h.patients.forEach(p => { delete p.problems; delete p.summary; });
     await h.api._runHistoryBatch(h.rows, [], h.onStatus);
@@ -141,7 +141,7 @@ async function testTheBarIsNotAMarker() {
 
   /* (d) an identity that drifted must be re-read */
   {
-    const h = makeHarness({ day: DAY, today: DAY, rows: 4 });
+    const h = makeHarness({ day: DAY, today: DAY, rows: 4, visitNotesOn: true });
     seedVerifiedDay(h, DAY, h.patients.map(p => p.id));
     h.patients.forEach(p => { p.dob = '12/31/1999'; });
     await h.api._runHistoryBatch(h.rows, [], h.onStatus);
@@ -153,30 +153,36 @@ async function testTheBarIsNotAMarker() {
 /* ---------------------------- 3. the cost breakdown is on every receipt -- */
 async function testCostBreakdown() {
   const DAY = '2026-08-17';
-  /* dnp2-1.0.0: a 5-row day gets the 60 s floor budget, so 5 reads have to
-     fit inside it for this case to measure the COST BREAKDOWN rather than the
-     budget. 11 s x 5 = 55 s fits. */
-  const h = makeHarness({ day: DAY, today: DAY, rows: 5, noteDelayMs: 11000 });
+  /* OFF is a clean no-op even when this internal compatibility seam is called
+     directly: neither charts nor note bodies may open. */
+  const off = makeHarness({ day: DAY, today: DAY, rows: 5, noteDelayMs: 11000 });
+  const offReceipt = await off.api._runHistoryBatch(off.rows, [], off.onStatus);
+  eq(offReceipt.reason, 'visit-notes-off', 'the direct OFF history seam did not refuse cleanly');
+  eq(off.chartCalls.length, 0, 'the direct OFF history seam opened patient charts');
+  eq(off.noteCalls.length, 0, 'the direct OFF history seam opened visit bodies');
+
+  /* Cost accounting itself is an explicit ON history run. */
+  const h = makeHarness({ day: DAY, today: DAY, rows: 5, visitNotesOn: true, noteDelayMs: 11000 });
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
   const cb = receipt.costBreakdown;
   ok(cb, 'the receipt carries no per-row cost breakdown');
   eq(cb.rows, 5, 'the cost breakdown counted the wrong number of rows');
-  eq(cb.todayNoteMs, 5 * 11000, 'the day-note leg cost is not aggregated');
-  eq(cb.perRowTodayNoteMs, 11000, 'the per-row day-note cost is wrong');
+  eq(cb.todayNoteMs, 0, 'the retired separate pulled-day lane reported time');
+  eq(cb.perRowTodayNoteMs, 0, 'the retired separate pulled-day per-row lane reported time');
+  eq(h.noteCalls.length, 5, 'Full Notes ON did not perform one unscoped visit walk per patient');
   eq(typeof cb.chartMs, 'number', 'the chart-read cost is missing');
   eq(typeof cb.parseSaveMs, 'number', 'the parse/save cost is missing');
-  eq(cb.visitsMs, 0, 'bodies were OFF but the visits stage reported time');
+  ok(cb.visitsMs > 0, 'Full Notes ON did not account for visit-body time');
   eq(cb.skippedVerifiedToday, 0, 'the breakdown mis-reports skipped rows on a first run');
-  /* the finding the owner needs: with bodies OFF the day-note leg dominates. */
-  ok(cb.todayNoteMs > cb.chartMs + cb.parseSaveMs + cb.visitsMs,
-    'the fixture did not reproduce the day-note leg as the dominant cost');
+  ok(cb.chartMs + cb.parseSaveMs >= 0,
+    'the non-body cost lanes no longer produce numeric receipt data');
 }
 
 async function main() {
   await testVerifiedRowsSkip();
   await testTheBarIsNotAMarker();
   await testCostBreakdown();
-  console.log('PASS 1p-pull-resume-skip-and-cost: ' + checks + ' checks - a re-run skips only rows this same account day already proved AND stored with content under an unchanged identity (every other clause re-reads, proved four ways), the saving is measured against an A/B control with the lever off, and every receipt carries the per-row cost breakdown that shows where the seconds go');
+  console.log('PASS 1p-pull-resume-skip-and-cost: ' + checks + ' checks - a Full Notes ON re-run skips only rows this same account day already proved and stored with content under an unchanged identity, the saving is measured against an A/B control, the OFF compatibility seam opens zero charts/bodies, and the ON receipt accounts for one unscoped visit walk per patient');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-pull-resume-skip-and-cost did not finish')); process.exit(1); }, 60000);

@@ -94,8 +94,7 @@ async function testWholeMonthReplay() {
      never settles; the other 25 days are verified EMPTY. */
   h.seedDay('2026-02-03', 3);
   h.seedDay('2026-02-10', 4);
-  h.chartFail.add('2026-02-10|syn-01');
-  h.chartFail.add('2026-02-10|syn-02');
+  h.scheduleErrorDays.add('2026-02-10');
   h.incompleteDays.add('2026-02-17');
 
   const tap = { calls: [], results: [] };
@@ -127,14 +126,14 @@ async function testWholeMonthReplay() {
   const byDate = Object.fromEntries(states.map(s => [s.date, s]));
   eq(states.filter(s => s.status === 'complete').length, 26, 'the month did not durably complete 26 days');
   eq(byDate['2026-02-03'].status, 'complete', 'a clean 3-row day did not checkpoint complete');
-  eq(byDate['2026-02-03'].reason, 'complete', 'a day with appointments lost its verdict');
+  eq(byDate['2026-02-03'].reason, 'complete-schedule-only', 'a schedule-only day with appointments lost its verdict');
   eq(byDate['2026-02-01'].reason, 'provider-empty', 'a verified-empty day is indistinguishable from a day with patients');
   /* three genuine attempts, then the day is SETTLED as needs-attention with
      its own cause - never retried forever, never silently dropped */
   eq(byDate['2026-02-10'].status, 'needs-attention', 'a day that lost two charts three times is still being retried');
   eq(byDate['2026-02-10'].attempts, 3, 'the attempt cap is not 3 (got ' + byDate['2026-02-10'].attempts + ')');
-  eq(byDate['2026-02-10'].reason, 'history-partial',
-    'the failed day did not keep the importer\'s own cause (got ' + byDate['2026-02-10'].reason + ')');
+  eq(byDate['2026-02-10'].reason, 'no-read',
+    'the schedule-read failure did not keep the importer\'s own cause (got ' + byDate['2026-02-10'].reason + ')');
   eq(byDate['2026-02-17'].reason, 'schedule-incomplete',
     'the unsettled-grid day did not keep its own cause (got ' + byDate['2026-02-17'].reason + ')');
   ok(byDate['2026-02-10'].reason !== byDate['2026-02-17'].reason,
@@ -151,16 +150,16 @@ async function testWholeMonthReplay() {
   eq(summary.needsAttention, 2, 'the receipt miscounted days needing attention');
   eq(summary.pending, 0, 'a day was left unaccounted for');
   eq(summary.attention.map(a => a.date + ':' + a.reason).join(','),
-    '2026-02-10:history-partial,2026-02-17:schedule-incomplete',
+    '2026-02-10:no-read,2026-02-17:schedule-incomplete',
     'the receipt does not LIST the days needing attention with their own reasons');
   eq(h.manifest().run.skippedComplete, 0, 'a first run claimed it skipped verified work');
   eq(h.manifest().run.plannedDays, 28, 'a first run did not plan every day');
 
   /* --- the store: no duplicate appointment, one row per seeded slot ----- */
   const census = h.census();
-  eq(census.rows, 7, 'the month did not import exactly the 7 seeded appointments');
-  eq(census.uniqueIds, 7, 'the backend holds duplicate appointment ids');
-  eq(census.uniqueAppointments, 7, 'the same Athena appointment was stored twice');
+  eq(census.rows, 3, 'the schedule-only month did not import the one readable day');
+  eq(census.uniqueIds, 3, 'the backend holds duplicate appointment ids');
+  eq(census.uniqueAppointments, 3, 'the same Athena appointment was stored twice');
 
   /* --- empty days are not paid for: ed-1.0.0 over a whole month --------- */
   const emptyDays = h.gotoDates.filter(d => !['2026-02-03', '2026-02-10', '2026-02-17'].includes(d));
@@ -174,19 +173,16 @@ async function testWholeMonthReplay() {
   ok(elapsed < 45000, 'the 28-day replay took ' + elapsed + ' ms - the empty-day path is no longer free');
 
   /* ================================ RESUME: only the failures re-run ==== */
-  h.chartFail.clear();
+  h.scheduleErrorDays.clear();
   h.incompleteDays.clear();
   const navBefore = h.gotoDates.length;
-  const cleanDayChartsBefore = h.chartCalls.filter(c => c.day === '2026-02-03').length;
   const resumed = await range.resume({ onStatus: () => {} });
   const revisited = h.gotoDates.slice(navBefore);
 
   eq(resumed.complete, true, 'the month did not finish after its two failures recovered');
   eq(revisited.length, 2, 'resume re-visited ' + revisited.length + ' days; only the 2 failed ones were unproved');
   eq(revisited.sort().join(','), '2026-02-10,2026-02-17', 'resume re-pulled a day it had already verified');
-  ok(cleanDayChartsBefore > 0, 'the fixture never opened a chart on the clean day - the next check is vacuous');
-  eq(h.chartCalls.filter(c => c.day === '2026-02-03').length, cleanDayChartsBefore,
-    'resume re-opened charts on an already-verified day');
+  eq(h.chartCalls.length, 0, 'Full Notes OFF opened a patient chart during the resumed schedule-only pull');
   const resumedManifest = h.manifest();
   eq(resumedManifest.status, 'complete', 'the recovered month did not reach a terminal complete state');
   eq(resumedManifest.summary.complete, 28, 'the receipt did not account for every day after recovery');
@@ -224,7 +220,10 @@ async function testWholeMonthReplay() {
  * from an unsettled Athena grid.
  * ========================================================================== */
 async function testPreFixFlattensEveryFailureReason() {
-  const h = makeMonthHarness({ today: '2026-03-15' });
+  /* This causal control intentionally opts into Full Notes so the chart-loss
+     fixture remains a real history failure; the main replay above is the OFF
+     schedule-only contract. */
+  const h = makeMonthHarness({ today: '2026-03-15', visitNotesOn: true, chartCoverage: true, identityEcho: true });
   h.seedDay('2026-02-10', 4);
   h.chartFail.add('2026-02-10|syn-01');
   h.incompleteDays.add('2026-02-17');
@@ -395,7 +394,7 @@ async function testLoginExpiryMidRun() {
 
 /* ======================================================================== 5 ==
  * The current month stops at TODAY: no future day is queued, navigated, or
- * given a day-note read - and today's own note is still read (fd-1.0.0).
+ * given a chart or day-note read (Full Notes OFF is schedule-only).
  * ========================================================================== */
 async function testNoFutureDayIsTouched() {
   const h = makeMonthHarness({ today: '2026-03-15' });
@@ -411,10 +410,10 @@ async function testNoFutureDayIsTouched() {
   eq(states.filter(s => s.date > '2026-03-15').length, 0, 'a future day was queued');
   eq(h.gotoDates.filter(d => d > '2026-03-15').length, 0, 'Athena was navigated to a future day');
   eq(h.noteCalls.filter(c => String(c.onlyDate) > '2026-03-15').length, 0, 'a day-note was read on a future day');
-  /* non-vacuity: TODAY's own note IS read, so the assertion above is a
-     boundary, not a dead branch. */
-  eq(h.noteCalls.filter(c => c.onlyDate === '2026-03-15').length, 2, 'today\'s own day-note was not read');
-  eq(h.noteCalls.filter(c => c.onlyDate === '2026-03-09').length, 2, 'a past day\'s own day-note was not read');
+  /* Full Notes OFF is explicit schedule/booking-only mode: neither today's
+     appointment nor a past appointment may open a chart or note body. */
+  eq(h.chartCalls.length, 0, 'Full Notes OFF opened a patient chart');
+  eq(h.noteCalls.length, 0, 'Full Notes OFF opened a visit-note body');
 
   /* a future month cannot be started at all */
   await range.cancel();

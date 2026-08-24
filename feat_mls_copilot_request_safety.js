@@ -49,6 +49,12 @@
   function cloneJson(value) {
     return safe(function () { return JSON.parse(JSON.stringify(value == null ? {} : value)); }, {});
   }
+  function copyResponseField(data, key) {
+    if (!data || !Object.prototype.hasOwnProperty.call(data, key)) return { present: false, value: undefined };
+    var value = data[key];
+    if (value == null) return { present: true, value: value };
+    return { present: true, value: safe(function () { return JSON.parse(JSON.stringify(value)); }, value) };
+  }
   function uniqueMeta(data, requestId) {
     var seen = {}, actions = [], followups = [];
     var aa = data && Array.isArray(data.actions) ? data.actions : [];
@@ -62,8 +68,11 @@
       var f = String(ff[j] || "").trim(); if (!f) continue;
       var fk = f.toLowerCase(); if (seen["f:" + fk]) continue; seen["f:" + fk] = true; followups.push(f);
     }
-    return { requestId: requestId, actions: actions, followups: followups,
+    var meta = { requestId: requestId, actions: actions, followups: followups,
       artifact: data && data.artifact && typeof data.artifact === "object" ? data.artifact : null };
+    var citations = copyResponseField(data, "citations");
+    if (citations.present) meta.citations = citations.value;
+    return meta;
   }
   var requestSeq = 0, activeRequest = null, ownerEvents = [];
   function resetEpoch() { return safe(function () { return Number(window._copilotResetEpoch || 0); }, 0); }
@@ -180,9 +189,39 @@
 
       var hist = ownerHistory.filter(function (m) { return m && (m.role === "user" || m.role === "ai"); })
         .map(function (m) { return { role: m.role === "user" ? "user" : "ai", text: m.text }; });
-      var context = cloneJson(isFn(window.copilotSnapshot) ? window.copilotSnapshot() : {});
+      var rawContext = cloneJson(isFn(window.copilotSnapshot) ? window.copilotSnapshot(q) : {});
+      var prepared = isFn(window._copilotPrepareRequest)
+        ? safe(function () { return window._copilotPrepareRequest(q, rawContext); }, null)
+        : null;
+      if (!prepared || typeof prepared !== "object") prepared = {
+        context: rawContext,
+        localAnswer: isFn(window._copilotProcedureAnswerForQuestion) ? safe(function () { return window._copilotProcedureAnswerForQuestion(q, rawContext); }, null) : null,
+        chart: isFn(window._copilotChartForQuestion) ? safe(function () { return window._copilotChartForQuestion(q, rawContext); }, null) : null
+      };
+      var context = cloneJson(prepared.context || {});
       token.context = context;
+      token.chart = cloneJson(prepared.chart || null);
       if (!stillCurrent(token)) { aborted = true; return false; }
+
+      /* Deterministic patient evidence and subject-mismatch refusals finish on
+         the immutable request owner, before any network call. The same finally
+         block below releases busy state and this request's pending token. */
+      var localAnswer = prepared.localAnswer;
+      if (localAnswer && typeof localAnswer === "object") {
+        dropPending(ownerHistory, pending);
+        token.pending = null;
+        var localMessage = {
+          role: "ai",
+          text: String(localAnswer.message || "No verified patient evidence was available."),
+          requestId: token.id,
+          actions: [], followups: [], artifact: null,
+          citations: Array.isArray(localAnswer.citations) ? cloneJson(localAnswer.citations) : [],
+          localAnswer: cloneJson(localAnswer)
+        };
+        if (localAnswer.kind === "patient-procedure-list") localMessage.procedureAnswer = cloneJson(localAnswer);
+        ownerHistory.push(localMessage);
+        return true;
+      }
 
       var options = {
         method: "POST",
@@ -216,8 +255,11 @@
         var meta = uniqueMeta(data, token.id);
         var normalizedActions = isFn(window._copilotNormalizeActions)
           ? window._copilotNormalizeActions(q, meta.actions) : meta.actions;
-        ownerHistory.push({ role: "ai", text: data.reply || "Copilot returned no answer. Try rephrasing the question.", requestId: token.id,
-          actions: normalizedActions, followups: meta.followups, artifact: meta.artifact });
+        var answer = { role: "ai", text: data.reply || "Copilot returned no answer. Try rephrasing the question.", requestId: token.id,
+          actions: normalizedActions, followups: meta.followups, artifact: meta.artifact };
+        if (token.chart && token.chart.kind) answer.chart = token.chart;
+        if (Object.prototype.hasOwnProperty.call(meta, "citations")) answer.citations = meta.citations;
+        ownerHistory.push(answer);
       }
       return true;
     } catch (e1) {

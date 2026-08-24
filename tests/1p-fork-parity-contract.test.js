@@ -154,6 +154,11 @@ const BASELINE_ABSENCES = {
      the empty baselines make any later called-function loss fail loudly. */
   'feat_mls_marketing.js': [],
   'feat_mls_mobile_encounter.js': [],
+  /* 2026-08-22 draft-tuning fork: measured byte-identical at introduction
+     (31 declared functions in each file, zero called production functions
+     absent from 1p). Keep the explicit empty baseline so later drift cannot
+     hide behind automatic fork-pair discovery. */
+  'feat_mls_draft_tuning.js': [],
   'feat_mls_rangejobs.js': [],
   'feat_mls_schedimport_exact.js': [
     'exactNonnegativeInteger', 'exactProviderUnknownCensusRows', 'legacyResumeKey',

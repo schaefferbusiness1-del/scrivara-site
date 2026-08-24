@@ -30,7 +30,9 @@ assert(!/mode\s*:\s*['"]execute['"]/.test(advanced), 'advanced entry must not ex
 const takeover = between(flow, 'function enhancePanel(panel)', '/* ------------------------- suggested orders chips');
 assert(/querySelector\(['"]#emrWbAthena['"]\)/.test(takeover), 'test did not locate #emrWbAthena');
 assert(/btn\.onclick\s*=\s*function\s*\(\)\s*\{\s*runV2\(panel\)/.test(takeover), '#emrWbAthena must enter runV2');
-assert(/b\.onclick\s*=\s*function\s*\(\)\s*\{\s*openPanelUnifiedConfirmation\(panel, action\)/.test(takeover), 'advanced action buttons must enter the same unified review');
+assert(/btn\.textContent\s*=\s*['"]Review selected Athena actions['"]/.test(takeover), 'advanced workspace must name its one contextual unified-review launcher clearly');
+assert(/id\s*=\s*['"]wf2AthenaGuide['"]/.test(takeover), 'advanced workspace must explain What, exact Where, and separate confirmation beside its one launcher');
+assert(!/emrWbSave|actionButton\s*\(/.test(takeover), 'advanced workspace must not render a competing Save or action launcher');
 assert(!/bridge\(\s*['"]mlsAppWriteV2['"]/.test(takeover), 'enhancePanel must not retain a direct-write bypass');
 assert(!/startAthenaAction\s*\(/.test(takeover), 'enhancePanel must not retain an older confirmation bypass');
 
@@ -53,4 +55,4 @@ const unified = between(flow, '/* ---------------- unified Athena manifest revie
 assert(/mode:\s*'probe'/.test(unified), 'unified entry must perform its read-only probe');
 assert.strictEqual((between(unified, 'function executeUnifiedSelection(state)', 'function reopenOptions').match(/mode:\s*'execute'/g) || []).length, 1, 'one Confirm & write path must contain exactly one typed execute');
 
-console.log('PASS advanced Athena entry: #emrWbAthena and action buttons use one immutable review; direct writer is disabled end-to-end');
+console.log('PASS advanced Athena entry: #emrWbAthena is the sole contextual launcher into one immutable review; direct writer is disabled end-to-end');

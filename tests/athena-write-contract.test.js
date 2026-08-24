@@ -101,7 +101,7 @@ assert.strictEqual(appRoutes.canonicalSectionKey('unknown_route'), null);
 const gather = between(writeflow, 'function gatherSections(panel)', '/* --------------------------- result rendering');
 assert(/errors\.push/.test(gather), 'unknown checked keys must be collected as hard errors');
 assert(/held\.push/.test(gather), 'structured actions must remain held for manual review');
-assert(/Follow-up:/.test(gather) && /byKey\[route\.key\]\.text \+=/.test(gather), 'follow-up must merge into the canonical Plan payload');
+assert(/Follow-up:/.test(gather) && /duplicateByKey/.test(gather) && /out = out\.filter/.test(gather), 'canonical duplicate destinations must fail closed instead of merging into one payload');
 
 const runV2 = between(writeflow, 'function runV2(panel)', '/* -------------------- panel takeover');
 assert(runV2.includes('openPanelUnifiedConfirmation'), 'advanced workspace must delegate to the unified manifest review');

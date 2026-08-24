@@ -596,16 +596,42 @@
      Wrapping is how the mirror learns about the toggles that do NOT come from a
      click on #ptMoreBtn (the app calls it directly in a few places). The
      original is always called first and its return value preserved. */
-  var wrapped = null, origToggle = null;
-  function wrapToggle() {
-    if (!isFn(window.togglePtMore) || wrapped === window.togglePtMore) return;
-    origToggle = window.togglePtMore;
-    wrapped = function () {
-      var out = origToggle.apply(this, arguments);
-      try { sync(); } catch (e) {}
-      return out;
+  var togglePtMoreChain = null;
+  var TOGGLE_CHAIN_OWNER = 'visit-focus';
+  function getTogglePtMoreChain() {
+    if (window.__mlsTogglePtMoreChain && window.__mlsTogglePtMoreChain.version === '1.0.0') return window.__mlsTogglePtMoreChain;
+    var base = null, wrapper = null, owners = Object.create(null);
+    function ensure() {
+      var current = window.togglePtMore;
+      if (!isFn(current)) return false;
+      if (current === wrapper) return true;
+      if (current.__mlsTogglePtMoreChainWrapper === true) { wrapper = current; return true; }
+      base = current;
+      wrapper = function () {
+        var result = base.apply(this, arguments);
+        Object.keys(owners).forEach(function (key) { try { owners[key](); } catch (e) {} });
+        return result;
+      };
+      wrapper.__mlsTogglePtMoreChainWrapper = true;
+      window.togglePtMore = wrapper;
+      return true;
+    }
+    var chain = {
+      version: '1.0.0',
+      install: function (owner, callback) { owners[owner] = callback; ensure(); return true; },
+      remove: function (owner) {
+        delete owners[owner];
+        if (!Object.keys(owners).length && wrapper && window.togglePtMore === wrapper) window.togglePtMore = base;
+        return true;
+      },
+      ensure: ensure
     };
-    window.togglePtMore = wrapped;
+    window.__mlsTogglePtMoreChain = chain;
+    return chain;
+  }
+  function wrapToggle() {
+    togglePtMoreChain = getTogglePtMoreChain();
+    togglePtMoreChain.install(TOGGLE_CHAIN_OWNER, sync);
   }
 
   /* ---------------------------------------------------------------- boot --
@@ -711,7 +737,8 @@
       try { if (noteFrame) window.cancelAnimationFrame(noteFrame); } catch (e) {}
       noteFrame = 0;
       try { document.body.classList.toggle(NOTE, false); } catch (e) {}
-      try { if (wrapped && window.togglePtMore === wrapped) window.togglePtMore = origToggle; } catch (e) {}
+      try { if (togglePtMoreChain) togglePtMoreChain.remove(TOGGLE_CHAIN_OWNER); } catch (e) {}
+      togglePtMoreChain = null;
       try {
         /* Only clear the wrap-once flag when our wrapper actually came OFF the
            chain. If another module wrapped over us we are still an orig in

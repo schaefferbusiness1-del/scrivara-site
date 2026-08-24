@@ -182,7 +182,7 @@ for (const name of SHELLS) {
      msl-autodraft refuses when #opPrepGenAllBtn's offsetParent is null, so a
      registry that folds it turns automatic drafting off silently. */
   const day = src.slice(src.indexOf('<!-- ===== opnote-day-4.0.0'), src.indexOf('<!-- ===== end opnote-day-4.0.0'));
-  ok(day.includes("VERSION = 'opnote-day-4.0.0'"), `${name}: the op-note room block lost its version`);
+  ok(day.includes("VERSION = 'opnote-day-4.0.1'"), `${name}: the op-note room block lost its version`);
   /* PIN INVERTED 2026-08-18 (op-notes lane). 1.0.0 and 2.0.0 FOLDED
      #oprDayRail and this line pinned that fold. The owner has since ruled the
      other way — "that LEFT SIDE SELECTOR THING was great, add it back" — so
@@ -1995,7 +1995,15 @@ async function runtime() {
 
     /* -- 11: the op-note room's typed controls are 40px targets at 360 ----- */
     await page.evaluate(() => window.__uiContract.openRoom());
-    await page.waitForTimeout(600);
+    /* openRoom() intentionally yields its expensive schedule render so the
+       dialog can paint first.  A fixed sleep raced that deferred pass under a
+       loaded full gate: the test opened the disclosures, then the still-busy
+       pass returned the room to its list state and all three controls measured
+       as hidden.  Wait for the shipped busy receipt to clear before acting. */
+    await page.waitForFunction(() => {
+      const m = document.getElementById('opPrepModal');
+      return !!(m && m.classList.contains('show') && !m.classList.contains('mls-opnote-busy'));
+    }, null, { timeout: 60000 });
     /* These three live INSIDE the patient's card, behind the note surface's two
        disclosures. Measured from the day list they are display:none, every
        filter drops them, and the section would pass by measuring nothing. */
@@ -2004,8 +2012,11 @@ async function runtime() {
       window.__mlsOpDay.setDetails(true);
       window.__mlsOpDay.setTemplate(true);
     });
-    await page.waitForTimeout(700);
     const TAP = ['#opPrepProc_0', '#opPrepTpl_0', '[onclick^="_opAutoTpl(0)"]'];
+    await page.waitForFunction((sels) => sels.every((s) => {
+      const e = document.querySelector(s);
+      return !!(e && window.__uiContract.visible(e));
+    }), TAP, { timeout: 60000 });
     const tapSeen = await page.evaluate((sels) => sels.filter((s) => {
       const e = document.querySelector(s);
       return e && window.__uiContract.visible(e);

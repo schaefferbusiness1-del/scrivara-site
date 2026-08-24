@@ -45,8 +45,39 @@
   var door = null;
   var doorSnapshot = null;
   var doorClick = null;
-  var originalTogglePtMore = null;
-  var wrappedTogglePtMore = null;
+  var togglePtMoreChain = null;
+  var TOGGLE_CHAIN_OWNER = 'p1-legalpack';
+  function getTogglePtMoreChain() {
+    if (window.__mlsTogglePtMoreChain && window.__mlsTogglePtMoreChain.version === '1.0.0') return window.__mlsTogglePtMoreChain;
+    var base = null, wrapper = null, owners = Object.create(null);
+    function ensure() {
+      var current = window.togglePtMore;
+      if (!isFn(current)) return false;
+      if (current === wrapper) return true;
+      if (current.__mlsTogglePtMoreChainWrapper === true) { wrapper = current; return true; }
+      base = current;
+      wrapper = function () {
+        var result = base.apply(this, arguments);
+        Object.keys(owners).forEach(function (key) { try { owners[key](); } catch (e) {} });
+        return result;
+      };
+      wrapper.__mlsTogglePtMoreChainWrapper = true;
+      window.togglePtMore = wrapper;
+      return true;
+    }
+    var chain = {
+      version: '1.0.0',
+      install: function (owner, callback) { owners[owner] = callback; ensure(); return true; },
+      remove: function (owner) {
+        delete owners[owner];
+        if (!Object.keys(owners).length && wrapper && window.togglePtMore === wrapper) window.togglePtMore = base;
+        return true;
+      },
+      ensure: ensure
+    };
+    window.__mlsTogglePtMoreChain = chain;
+    return chain;
+  }
   var api = null;
   var apiLive = true;
   var state = {
@@ -165,22 +196,15 @@
   }
   function installDoorHook() {
     try {
-      if (!wrappedTogglePtMore && isFn(window.togglePtMore)) {
-        originalTogglePtMore = window.togglePtMore;
-        wrappedTogglePtMore = function () {
-          var result = originalTogglePtMore.apply(this, arguments);
-          syncDoor();
-          return result;
-        };
-        window.togglePtMore = wrappedTogglePtMore;
-      }
+      togglePtMoreChain = getTogglePtMoreChain();
+      togglePtMoreChain.install(TOGGLE_CHAIN_OWNER, syncDoor);
     } catch (e) {}
     syncDoor();
   }
   function removeDoorHook() {
     releaseDoor();
-    try { if (wrappedTogglePtMore && window.togglePtMore === wrappedTogglePtMore) window.togglePtMore = originalTogglePtMore; } catch (e) {}
-    wrappedTogglePtMore = null; originalTogglePtMore = null;
+    try { if (togglePtMoreChain) togglePtMoreChain.remove(TOGGLE_CHAIN_OWNER); } catch (e) {}
+    togglePtMoreChain = null;
   }
   function makeAbortController() {
     try { if (typeof AbortController === 'function') return new AbortController(); } catch (e) {}
@@ -1223,6 +1247,13 @@
         'represent an independent examination and states no independent medical-legal opinions. The clinician must ' +
         'verify completeness and accuracy against every original source before signing or use.\n\n' + signature;
     }
+    if (key === 'narrative') {
+      return 'ATTESTATION\n' +
+        'This is an unsigned draft for clinician review. It does not constitute a final medical-legal opinion unless ' +
+        'verified, adopted, and signed by ' + signatureName(lh) + '. It rests solely on the records and findings ' +
+        'identified above, does not represent that an independent examination occurred unless expressly documented, and ' +
+        'is subject to revision if additional records, imaging, or examination findings are provided.\n\n' + signature;
+    }
     return (key === 'ime' ? 'XV. ATTESTATION\n' : 'ATTESTATION\n') +
       'Any opinions actually stated in this draft are held ' + CERTAINTY_STANDARD + ' (more likely than not) and rest ' +
       'solely on the records and findings specifically identified above. This draft does not represent that an independent ' +
@@ -1287,6 +1318,57 @@
     ['REASONABLENESS AND NECESSITY', 'Address supported past care separately from proposed future care and state precisely why any item cannot be assessed from the supplied record.'],
     ['CONCLUSION', 'Provide a short integrated synthesis of the supported opinions and decisive limitations without repeating the chronology or adding new facts.']
   ];
+  /* The seven schema keys stay stable for validation and counsel ordering. A
+     condition-specific display heading is derived later from the immutable
+     evidence packet, so a lumbar report can read like the supplied reference
+     without baking lumbar into the reusable contract. */
+  var NARRATIVE_REQUIRED_OPINIONS = [
+    { key: 'causation', label: 'Causation', pattern: /^(?:Causation)\s*:/i },
+    { key: 'neuropathy', label: 'Neuropathy', pattern: /^(?:Neuropathy)\s*:/i },
+    { key: 'permanency', label: 'Permanent and Stationary / Maximum Medical Improvement', pattern: /^(?:Permanent and Stationary\s*\/\s*Maximum Medical Improvement|P&S\s*\/\s*MMI|MMI\s*\/\s*P&S|Permanent and Stationary|Maximum Medical Improvement)\s*:/i }
+  ];
+  var NARRATIVE_SUMMARY_ONLY_OPINIONS = [
+    { key: 'future-care', label: 'Future Care', pattern: /^(?:Future Care)\s*:/i }
+  ];
+  var NARRATIVE_REGION_TERMS = [
+    ['lumbar', 'LUMBAR'], ['cervical', 'CERVICAL'], ['thoracic', 'THORACIC'],
+    ['sacral', 'SACRAL'], ['shoulder', 'SHOULDER'], ['knee', 'KNEE'],
+    ['hip', 'HIP'], ['wrist', 'WRIST'], ['ankle', 'ANKLE'], ['elbow', 'ELBOW']
+  ];
+  /* Only source-language limitations are promoted into a required checklist.
+     A merely absent term is not treated as proof that a source was missing. */
+  var NARRATIVE_SOURCE_GAP_RULES = [
+    { key: 'source summary', source: /(?:unsigned\s+(?:summary|draft)|summary\s+rather\s+than\s+(?:the\s+)?complete\s+underlying\s+chart|complete\s+underlying\s+chart)/i, output: /(?:unsigned\s+(?:summary|draft)|summary\s+rather\s+than\s+(?:the\s+)?complete\s+underlying\s+chart|complete\s+underlying\s+chart)/i },
+    { key: 'accident history or mechanism', source: /(?:accident\s+history|injury\s+mechanism|mechanism\s+of\s+(?:injury|accident))/i, output: /(?:accident\s+history|injury\s+mechanism|mechanism\s+of\s+(?:injury|accident))/i },
+    { key: 'original radiology', source: /(?:original\s+radiology|original\s+radiology\s+report|radiology\s+report)/i, output: /(?:original\s+radiology|original\s+radiology\s+report|radiology\s+report)/i },
+    { key: 'contemporaneous examination details', source: /(?:contemporaneous\s+(?:examination|exam)|selected\s+(?:contemporaneous\s+)?(?:examination|exam)\s+details|examination\s+details)/i, output: /(?:contemporaneous\s+(?:examination|exam)|selected\s+(?:contemporaneous\s+)?(?:examination|exam)\s+details|examination\s+details)/i },
+    { key: 'treatment details or response', source: /(?:treatment\s+details|treatment\s+response|response\s+details)/i, output: /(?:treatment\s+details|treatment\s+response|response\s+details)/i }
+  ];
+  function narrativeSourceGapRequirements(sourceText) {
+    var clauses = String(sourceText || '').split(/(?:\r?\n|[.!?]+\s+)/).map(clean).filter(Boolean);
+    var limitation = /(?:verify|verified|verification|missing|not\s+(?:available|provided|documented)|unsigned|source\s+supplied|limited|limitation|should\s+be\s+verified)/i;
+    return NARRATIVE_SOURCE_GAP_RULES.filter(function (rule) {
+      return clauses.some(function (clause) { return limitation.test(clause) && rule.source.test(clause); });
+    });
+  }
+  function narrativeEvidenceText(contextReceipt) {
+    var map = contextReceipt && contextReceipt.evidenceMap || {};
+    return Object.keys(map).filter(function (id) { return id !== 'P000'; }).map(function (id) { return map[id]; }).join('\n');
+  }
+  function narrativeDisplayHeading(heading, contextReceipt) {
+    if (heading !== 'HISTORY AND COURSE OF TREATMENT') return heading;
+    var source = narrativeEvidenceText(contextReceipt), found = {};
+    NARRATIVE_REGION_TERMS.forEach(function (term) { if (new RegExp('\\b' + term[0] + '\\b', 'i').test(source)) found[term[1]] = true; });
+    var regions = Object.keys(found);
+    return regions.length === 1 ? 'HISTORY AND COURSE OF ' + regions[0] + ' TREATMENT' : heading;
+  }
+  function narrativeDraftSubtype(reportKey) {
+    var key = clean(reportKey || '').toLowerCase();
+    if (key === 'narrative') return 'narrative_medical_report';
+    if (key === 'ime') return 'ime';
+    if (key === 'records') return 'records_review';
+    return 'legal_report';
+  }
   var NARRATIVE_COUNSEL_SECTION = ['ANSWERS TO THE QUESTIONS PRESENTED',
     'Answer each supplied question directly and in order after the medical analysis, without copying prior paragraphs. Cite the controlling evidence and use the exact undeterminable formulation when the record cannot support an answer.'];
   var RECORDS_SECTIONS = [
@@ -1549,9 +1631,9 @@
     var repair = repairErrors && repairErrors.length ? '\nA prior response was rejected for these exact reasons; correct every one:\n- ' + repairErrors.join('\n- ') : '';
     var narrativeForm = report.key === 'narrative' ?
       ' NARRATIVE FORM: Aim for the density of a polished four-to-seven-page physician narrative, not a bloated IME template. ' +
-      'Open with the exact purpose, requested issues, source limits, and decisive missing records; then give a concise labeled opinion summary before the history. ' +
-      'In HISTORY AND COURSE OF TREATMENT, select only clinically meaningful events that add a new finding, diagnostic result, treatment decision, procedure, response, or material change; omit routine encounters that merely repeat the prior state. Begin every supported encounter paragraph with its documented date and encounter type. Synthesize history, pertinent examination, assessment, plan, procedure or imaging result, and response only when each is documented; identify conflicts and missing response details at the encounter where they matter. Never average a conflict or silently choose one side. Do not repeat the full chronology in later sections. ' +
-      'In SUMMARY OF OPINIONS and MEDICAL OPINIONS, use short plain-text issue labels such as "Causation:" or "MMI/P&S:" at the start of paragraphs. Address only issues raised by the evidence or supplied questions. For causation, distinguish an underlying condition from a documented aggravation and name every missing predicate before giving a conditional conclusion. For neuropathy or another diagnostic label, distinguish symptoms, objective findings, testing, and a formally documented diagnosis; a complaint alone is not an independent diagnosis. For MMI/P&S, state whether it was formally established and account for the latest condition, pending care, and missing treatment-response evidence. ' +
+      'Open with the exact purpose, requested issues, source limits, and decisive missing records; enumerate every concrete source gap explicitly named in the packet (including an unsigned or summary-only source, absent accident history or mechanism, unavailable original radiology, examination details, or treatment-response details) instead of collapsing those gaps into a generic limitation. Then give a concise labeled opinion summary before the history. ' +
+      'In HISTORY AND COURSE OF TREATMENT, select only clinically meaningful events that add a new finding, diagnostic result, treatment decision, procedure, response, or material change; omit routine encounters that merely repeat the prior state. Begin every supported encounter paragraph with its documented date and encounter type. For an evaluation or follow-up clinical encounter, use the labels exactly "History:", "Pertinent Examination:", and "Assessment and Plan:"; if a component is absent in the cited record, keep its label and write "Not documented in the records reviewed" or another equally explicit unavailable statement. For an imaging-only or procedure-only entry, write a concise natural evidence paragraph covering only the supported finding, result, technique, response, or limitation; do not add empty History, Pertinent Examination, or Assessment and Plan boilerplate. Never infer a normal examination, negative symptom, or plan. Identify conflicts and missing response details at the encounter where they matter. Never average a conflict or silently choose one side. Do not repeat the full chronology in later sections. ' +
+      'In SUMMARY OF OPINIONS, include exactly one concise issue-labeled paragraph for each required issue: "Causation:", "Neuropathy:", "Permanent and Stationary / Maximum Medical Improvement:" ("P&S/MMI:" is acceptable only as a label alias), and "Future Care:". In MEDICAL OPINIONS, include exactly one concise issue-labeled paragraph for Causation, Neuropathy, and Permanent and Stationary / Maximum Medical Improvement, but expand future care only in LIKELY FUTURE CARE. Address each issue even when the record cannot answer it. For causation, distinguish an underlying condition from a documented aggravation and name every missing predicate before giving a conditional conclusion. For neuropathy or another diagnostic label, distinguish symptoms, objective findings, testing, and a formally documented diagnosis; a complaint alone is not an independent diagnosis. For MMI/P&S, state whether it was formally established and account for the latest condition, pending care, and missing treatment-response evidence. ' +
       'State each supported medical opinion ' + CERTAINTY_STANDARD + ' (or to a reasonable degree of medical probability). If the necessary predicate is missing, say "Undeterminable on the record reviewed because ..."; a conditional opinion must begin by naming the condition that must be confirmed. ' +
       'In LIKELY FUTURE CARE, use one separately numbered plain-text paragraph per item and distinguish scheduled, recommended, conditional, and unsupported care. Pair every conditional intervention with the documented symptom, finding, failed response, or diagnostic prerequisite that would trigger it; omit an intervention when no supported trigger exists. Do not introduce surgery, testing, restrictions, or treatment merely because it is common. In REASONABLENESS AND NECESSITY, separate supported completed care from future care, tie each judgment to specific cited findings and response evidence, and explain any inability to assess. ' +
       'Use first-person treating-physician language only if cited evidence proves the report author personally treated or examined the patient; otherwise use neutral physician-review language. Keep the summary, full analysis, and conclusion logically consistent; never reverse the polarity or certainty of an opinion between sections. Keep the CONCLUSION to one or two paragraphs, synthesize rather than copy the summary, and add no new fact or opinion. ' : '';
@@ -1599,7 +1681,7 @@
       .map(function (clause) { return clean(clause.replace(/<DOT>/g, '.')); }).filter(Boolean);
   }
   function missingClauseOnly(text) {
-    var clause = clean(text).replace(/^[A-Z][A-Za-z0-9 &/()\-]{2,48}:\s*/, '');
+    var clause = clean(text).replace(/^[A-Z][A-Za-z0-9 &/()\-]{2,96}:\s*/, '');
     return /(?:records reviewed do not document|undeterminable on the record reviewed|record is silent|not documented in the records|not formally established|cannot be determined from the records)/i.test(clause) ||
       /^(?:clinician verification is required|additional [^.]{1,100} (?:is|are) (?:needed|required|unavailable)|no [^.]{1,100} (?:was|were) (?:provided|available)|the missing [^.]{1,100} prevents|further [^.]{1,100} (?:is|are) required)/i.test(clause);
   }
@@ -1630,15 +1712,89 @@
     return out;
   }
   function clinicalEntityWords(text) {
-    var lex = { ablation:1, arthrodesis:1, arthritis:1, brace:1, cane:1, compression:1, discectomy:1, epidural:1, fracture:1, fusion:1,
-      gait:1, headache:1, headaches:1, herniation:1, imaging:1, impairment:1, injection:1, laminectomy:1, medication:1, mri:1,
-      myelopathy:1, numbness:1, neuropathy:1, prognosis:1, radiograph:1, radiculopathy:1, reflex:1, restriction:1, sprain:1,
-      stenosis:1, strain:1, surgery:1, surgical:1, tenderness:1, therapy:1, weakness:1, wheelchair:1 };
+    var lex = { ablation:1, arthrodesis:1, arthritis:1, brace:1, cancer:1, cane:1, compression:1, diabetes:1, diabetic:1, discectomy:1, epidural:1,
+      fracture:1, fusion:1, gait:1, headache:1, headaches:1, herniation:1, hypertension:1, imaging:1, impairment:1, infection:1, injection:1,
+      laminectomy:1, malignancy:1, medication:1, migraine:1, mri:1, myelopathy:1, neuritis:1, numbness:1, neuropathy:1, prognosis:1,
+      radiograph:1, radiculopathy:1, reflex:1, restriction:1, sprain:1, stenosis:1, strain:1, surgery:1, surgical:1, tenderness:1, therapy:1,
+      tumor:1, weakness:1, wheelchair:1 };
     var words = String(text || '').toLowerCase().match(/[a-z][a-z'\-]{2,}/g) || [], out = {};
     words.forEach(function (word) {
       word = word.replace(/'s$/, '');
       if (lex[word] || /(?:ectomy|otomy|plasty|desis|opathy|algia|paresis|itis|osis)$/.test(word)) out[word] = 1;
     });
+    return out;
+  }
+  /* Diagnosis concepts are grounded from the sentence grammar rather than an
+     exhaustive disease lexicon.  This catches uncommon labels (for example,
+     Parkinson disease or Ehlers-Danlos syndrome) even when the cited record
+     shares only generic words such as "patient" and "has".  Modifiers are
+     checked separately so a supported diagnosis cannot silently change side
+     or severity in the generated prose. */
+  function diagnosisConceptClauses(text) {
+    var source = String(text || ''), out = [], match;
+    var cue = /(?:diagnosed\s+with|diagnosis\s*(?::|is|of)|assessment\s*(?::|is)|impression\s*(?::|is))\s*|(?:\b(?:patient|claimant|examinee|he|she|they)\b)\s+(?:has|have|had|suffers?\s+from|was\s+diagnosed\s+with)\s+|(?:\b(?:records?|evidence|chart|documentation|notes?)\b)\s+(?:show|shows|showed|document(?:s|ed)?|demonstrat(?:e|es|ed)|establish(?:es|ed)?|confirm(?:s|ed)?|identif(?:y|ies|ied)|note(?:s|d)?|support(?:s|ed)?)\s+/gi;
+    while ((match = cue.exec(source))) {
+      var rest = source.slice(cue.lastIndex), stop = rest.search(/(?:[.;!?]|,\s*(?:and|but)\b|\s+(?:and|but|while|during|with|for|on|reported|complained|continues?|continued|denies|without)\b)/i);
+      var clause = clean(stop >= 0 ? rest.slice(0, stop) : rest);
+      if (clause && !/^(?:and\s+plan|not\s+documented|not\s+available|not\s+provided|not\s+recorded)\b/i.test(clause)) out.push(clause);
+      cue.lastIndex += stop >= 0 ? stop : rest.length;
+    }
+    var reverse = /(?:^|[.;!?:]\s*)([a-z][a-z0-9'/-]*(?:\s+[a-z][a-z0-9'/-]*){0,5})\s+(?:is|was)\s+(?:documented|diagnosed|present|established|confirmed|noted|identified)\b/gi;
+    while ((match = reverse.exec(source))) {
+      var reverseClause = clean(match[1]).replace(/^(?:the|patient|claimant|examinee)\s+/i, '');
+      if (reverseClause && !/^(?:records?|evidence|chart|documentation|history|assessment|impression)\b/i.test(reverseClause)) out.push(reverseClause);
+    }
+    /* Conservative uncued fallback: a named modifier plus disease/syndrome
+       is still a diagnosis concept even when the prose uses no reporting cue
+       (for example, "the patient's Parkinson disease caused ..."). */
+    var fallback = /\b((?:[a-z][a-z0-9'/-]{2,})(?:\s+[a-z][a-z0-9'/-]{2,}){0,2})\s+(?:disease|syndrome)\b/gi;
+    while ((match = fallback.exec(source))) {
+      var fallbackClause = clean(match[1]);
+      if (Object.keys(diagnosisConceptWords(fallbackClause)).length) out.push(fallbackClause + ' ' + (/(?:syndrome)\b/i.test(match[0]) ? 'syndrome' : 'disease'));
+    }
+    return out;
+  }
+  function diagnosisConceptWords(text) {
+    var stop = { a:1, an:1, and:1, are:1, as:1, at:1, be:1, been:1, being:1, bilateral:1, chronic:1, condition:1,
+      disease:1, disorder:1, diagnosed:1, diagnosis:1, examination:1, finding:1, findings:1, history:1, impression:1,
+      left:1, mild:1, moderate:1, marked:1, minimal:1, of:1, on:1, patient:1, right:1, severe:1, syndrome:1,
+      the:1, this:1, unilateral:1, was:1, with:1, has:1, have:1, had:1, records:1, record:1, establish:1, establishes:1,
+      established:1, document:1, documents:1, documented:1, relationship:1, causation:1, necessity:1, care:1, treatment:1,
+      plan:1, follow:1, future:1, opinion:1, status:1, response:1, recommendation:1, recommendations:1, therapy:1,
+      medication:1, medications:1, course:1, possible:1, suspected:1, listed:1, present:1, no:1 };
+    var words = String(text || '').toLowerCase().replace(/([a-z])[’']s\b/g, '$1').replace(/[’']/g, '').match(/[a-z][a-z0-9-]{2,}/g) || [], out = {};
+    words.forEach(function (word) { if (!stop[word]) out[word] = 1; });
+    return out;
+  }
+  function diagnosisConceptStatus(concept, support) {
+    var wanted = Object.keys(diagnosisConceptWords(concept));
+    if (!wanted.length) return 'unknown';
+    var sentences = String(support || '').split(/[.!?;]+/).map(clean).filter(Boolean), sawNegated = false, sawUncertain = false, sawConfirmed = false;
+    function esc(value) { return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    sentences.forEach(function (sentence) {
+      var words = diagnosisConceptWords(sentence), hasAll = wanted.every(function (word) { return words[word]; });
+      if (!hasAll) return;
+      var first = new RegExp('\\b' + esc(wanted[0]) + "(?:['’]s)?\\b", 'i').exec(sentence);
+      if (!first) return;
+      var before = sentence.slice(Math.max(0, first.index - 72), first.index), after = sentence.slice(first.index, first.index + 120);
+      var negated = /(?:\bno\b|\bwithout\b|\bnever\b|\bden(?:y|ies|ied)\b|\bnegative\s+for\b|\brule[- ]?out\b|\bruled[- ]out\b|\babsence\s+of\b|\bdoes\s+not\b|\bdid\s+not\b)/i.test(before) || /(?:\bnot\s+(?:documented|diagnosed|present|established|confirmed|identified|noted)\b|\babsent\b|\brule[- ]?out\b|\bruled[- ]out\b)/i.test(after);
+      var uncertain = /(?:\bpossible\b|\bsuspect(?:ed)?\b|\bsuspicion\s+of\b|\bquestion\s+of\b|\bevaluated?\s+for\b|\bdifferential(?:\s+diagnosis)?\b|\bconcern\s+for\b|\bcannot\s+exclude\b|\bconsider(?:ed)?\b|\brule[- ]?out\b|\bruled[- ]out\b)/i.test(before + ' ' + after);
+      var affirmative = /(?:\b(?:has|have|had|diagnosed\s+with|diagnosis\s+of|confirm(?:ed|s)?|establish(?:ed|es)?|document(?:ed|s)?|note(?:d|s)?|identif(?:ied|ies|y)|found\s+to\s+have)\b)/i.test(before) || /(?:\b(?:is|was)\s+(?:documented|diagnosed|present|established|confirmed|noted|identified)\b|\b(?:documented|diagnosed|confirmed|established|noted|identified)\b)/i.test(after);
+      if (negated) sawNegated = true;
+      else if (affirmative) sawConfirmed = true;
+      else if (uncertain) sawUncertain = true;
+    });
+    if (sawConfirmed) return 'confirmed';
+    if (sawNegated) return 'negated';
+    if (sawUncertain) return 'uncertain';
+    return 'unknown';
+  }
+  function lateralityClaims(text) {
+    var out = {}; (String(text || '').toLowerCase().match(/\b(?:left|right|bilateral|unilateral|midline|central|axial)\b/g) || []).forEach(function (word) { out[word] = 1; });
+    return out;
+  }
+  function severityClaims(text) {
+    var out = {}; (String(text || '').toLowerCase().match(/\b(?:mild|moderate|severe|marked|trace|minimal|significant)\b/g) || []).forEach(function (word) { out[word] = 1; });
     return out;
   }
   function firstPersonClinicalClaim(text) {
@@ -1654,6 +1810,13 @@
     var dates = Object.keys(canonicalDateClaims(match[1]));
     return dates.length ? { date: dates[0], title: clean(match[2]) } : null;
   }
+  function narrativeEncounterKind(title) {
+    var value = String(title || '').toLowerCase();
+    if (/(?:follow[- ]?up|office\s+visit|evaluation|examination|consult(?:ation)?|recheck|clinic)/i.test(value)) return 'clinical';
+    if (/(?:\bmri\b|\bct\b|\bx[- ]?ray\b|radiograph|radiology|imaging|ultrasound|diagnostic study|scan)/i.test(value)) return 'imaging';
+    if (/(?:procedure|injection|block|ablation|epidural|facet|surgery|operative|operation|arthroscopy)/i.test(value)) return 'procedure';
+    return 'clinical';
+  }
   function leadingDateReceipt(text) {
     var match = /^(?:On\s+)?(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|(?:January|February|March|April|May|June|July|August|September|Sept|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4})\s*(?:[-,:]\s*|\s+)/i.exec(String(text || ''));
     if (!match) return null;
@@ -1662,7 +1825,7 @@
   }
   function issueKey(text) {
     var value = String(text || '').toLowerCase();
-    if (/caus/.test(value)) return 'causation';
+    if (/\bcausation\b|\bcausal(?:ly)?\b/.test(value)) return 'causation';
     if (/\bmmi\b|maximum medical|\bp&s\b|permanen/.test(value)) return 'permanency';
     if (/necess/.test(value)) return 'necessity';
     if (/future care|future treatment/.test(value)) return 'future-care';
@@ -1679,6 +1842,36 @@
     if (/subject to confirmation|conditional upon|conditioned upon/i.test(value)) return 'conditional';
     if (/reasonable degree of medical (?:certainty|probability)|more likely than not|causally related|medically necessary/i.test(value)) return 'affirmative';
     return '';
+  }
+  function opinionEvidenceSupports(issue, support) {
+    var value = String(support || '');
+    var patterns = {
+      causation: /\b(?:caus(?:e|ed|al|ally|ation)?|related|relationship|attribut(?:e|ed|able)|due\s+to|result(?:ed|ing)?\s+from|mechanism|accident|incident|injur(?:y|ed)|onset|following)\b/i,
+      permanency: /\b(?:permanent|stationary|maximum\s+medical\s+improvement|m\.?m\.?i\.?|impairment|plateau(?:ed)?)\b/i,
+      necessity: /\b(?:medically\s+necessary|necess(?:ary|ity)|indicat(?:e|ed|ion)|recommend(?:ed|ation)?|appropriate|required|reasonable)\b/i,
+      'future-care': /\b(?:future|recommend(?:ed|ation)?|plan(?:ned)?|follow[- ]?up|scheduled?|continue|ongoing|anticipated|return\s+in)\b/i,
+      diagnosis: /\b(?:diagnos(?:is|ed)|assessment|impression|condition|syndrome|disease|radicul\w*|neuropath\w*|stenos\w*|sprain|strain)\b/i,
+      impairment: /\b(?:impair(?:ment|ed)|disab(?:ility|led)|functional\s+(?:loss|limit)|restriction)\b/i,
+      'work-status': /\b(?:work\s+status|return\s+to\s+work|off\s+work|light\s+duty|restriction|modified\s+duty)\b/i,
+      prognosis: /\b(?:prognos(?:is|tic)|expected\s+(?:course|recovery)|outlook|recovery)\b/i
+    };
+    return !patterns[issue] || patterns[issue].test(value);
+  }
+  function narrativeHistoryLabelValue(text, label) {
+    var names = String(label || '') === 'History' ? ['History', 'Hx'] : [String(label || '')];
+    var escaped = names.map(function (name) { return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|');
+    var re = new RegExp('(?:^|[\\r\\n]|\\s)(?:' + escaped + ')\\s*:\\s*([\\s\\S]*?)(?=(?:[\\r\\n]|\\s+)(?:History|Hx|Pertinent Examination|Assessment and Plan)\\s*:|$)', 'i');
+    var match = re.exec(String(text || ''));
+    return match ? clean(match[1]) : '';
+  }
+  function narrativeHistoryUnavailable(value) {
+    return /(?:not documented|not available|not provided|not recorded|record is silent|cannot be assessed|unable to assess|unavailable|unknown)/i.test(String(value || ''));
+  }
+  function narrativeHistoryComponentSupported(label, support) {
+    var value = String(support || ''), key = String(label || '').toLowerCase();
+    if (key === 'hx' || key === 'history') return /(?:history|reported|complaint|symptom|pain|follow[- ]?up|onset|since|examined|treated)/i.test(value);
+    if (key === 'pertinent examination') return /(?:exam(?:ination|ined)?|tender|gait|strength|reflex|range of motion|neural|slump|straight[- ]leg|negative|normal)/i.test(value);
+    return /(?:assessment|plan|recommend|continue|follow[- ]?up|return|schedule|diagnos|treatment|therapy|medication|injection|procedure)/i.test(value);
   }
   function parseValidatedReport(raw, report, sections, contextReceipt) {
     var source = String(raw || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim(), parsed;
@@ -1724,6 +1917,10 @@
         var support = cited.map(function (id) { return allowed[id]; }).join(' ');
         var clinicalSupport = cited.filter(function (id) { return id !== 'P000'; }).map(function (id) { return allowed[id]; }).join(' ');
         if (claimText) {
+          var opinionIssue = issueKey(claimText), claimPolarity = opinionPolarity(claimText);
+          if (opinionIssue && (claimPolarity === 'affirmative' || claimPolarity === 'conditional' || claimPolarity === 'negative') && !opinionEvidenceSupports(opinionIssue, support)) {
+            throw new Error(expected + ' stated an ' + claimPolarity + ' ' + opinionIssue + ' opinion without explicit support for that issue in its cited evidence.');
+          }
           var supportDates = canonicalDateClaims(support), paragraphDates = canonicalDateClaims(text);
           Object.keys(paragraphDates).forEach(function (date) { if (!supportDates[date]) throw new Error(expected + ' stated a date not present in its cited evidence: ' + date + '.'); });
           var supportCodes = codedClaims(support), paragraphCodes = codedClaims(text);
@@ -1733,8 +1930,25 @@
             if (!clinicalSupport || normalizedClinicalSupport.indexOf(provider) < 0) throw new Error(expected + ' stated a provider not present in its cited clinical evidence: ' + providers[provider] + '.');
           });
           var entities = clinicalEntityWords(claimText), supportEntities = meaningfulWords(clinicalSupport);
+          Object.keys(clinicalEntityWords(clinicalSupport)).forEach(function (entity) { supportEntities[entity] = 1; });
           Object.keys(entities).forEach(function (entity) {
             if (!supportEntities[entity]) throw new Error(expected + ' stated a clinical diagnosis, finding, or procedure not present in its cited clinical evidence: ' + entity + '.');
+          });
+          var supportConceptWords = diagnosisConceptWords(clinicalSupport);
+          diagnosisConceptClauses(claimText).forEach(function (concept) {
+            var conceptWords = diagnosisConceptWords(concept), missingConceptWords = Object.keys(conceptWords).filter(function (word) { return !supportConceptWords[word]; });
+            if (!Object.keys(conceptWords).length) return;
+            if (missingConceptWords.length) throw new Error(expected + ' stated a diagnosis concept not present in its cited clinical evidence: ' + missingConceptWords.join(', ') + '.');
+            var conceptStatus = diagnosisConceptStatus(concept, clinicalSupport);
+            if (conceptStatus !== 'confirmed') throw new Error(expected + ' stated a diagnosis concept supported only by ' + conceptStatus + ' evidence: ' + Object.keys(conceptWords).join(', ') + '.');
+          });
+          var claimLaterality = lateralityClaims(claimText), supportLaterality = lateralityClaims(clinicalSupport);
+          Object.keys(claimLaterality).forEach(function (side) {
+            if (!supportLaterality[side]) throw new Error(expected + ' stated a laterality not present in its cited clinical evidence: ' + side + '.');
+          });
+          var claimSeverity = severityClaims(claimText), supportSeverity = severityClaims(clinicalSupport);
+          Object.keys(claimSeverity).forEach(function (severity) {
+            if (!supportSeverity[severity]) throw new Error(expected + ' stated a severity not present in its cited clinical evidence: ' + severity + '.');
           });
           if (affirmativeClinicalSyntax(claimText) || Object.keys(entities).length) {
             if (!clinicalSupport) throw new Error(expected + ' used patient-identity evidence as support for an affirmative clinical claim.');
@@ -1768,13 +1982,23 @@
       }
       ['SUMMARY OF OPINIONS', 'MEDICAL OPINIONS'].forEach(function (heading) {
         nSupportedParagraphs(heading).forEach(function (paragraph) {
-          if (!/^[A-Z][A-Za-z0-9 &/()\-]{2,48}:\s/.test(paragraph)) throw new Error(heading + ' did not use one issue-labeled paragraph per opinion.');
+          if (!/^[A-Z][A-Za-z0-9 &/()\-]{2,96}:\s/.test(paragraph)) throw new Error(heading + ' did not use one issue-labeled paragraph per opinion.');
           if (!/reasonable degree of medical (?:certainty|probability)|subject to confirmation|conditional upon/i.test(paragraph)) {
             throw new Error(heading + ' stated an opinion without its certainty standard or explicit condition.');
           }
         });
       });
-      nSupportedParagraphs('HISTORY AND COURSE OF TREATMENT').forEach(function (paragraph) {
+      NARRATIVE_REQUIRED_OPINIONS.forEach(function (required) {
+        ['SUMMARY OF OPINIONS', 'MEDICAL OPINIONS'].forEach(function (heading) {
+          var found = (narrativeByHeading[heading] || []).some(function (paragraph) { return required.pattern.test(paragraph); });
+          if (!found) throw new Error(heading + ' omitted the required ' + required.label + ' opinion label.');
+        });
+      });
+      NARRATIVE_SUMMARY_ONLY_OPINIONS.forEach(function (required) {
+        var found = (narrativeByHeading['SUMMARY OF OPINIONS'] || []).some(function (paragraph) { return required.pattern.test(paragraph); });
+        if (!found) throw new Error('SUMMARY OF OPINIONS omitted the required ' + required.label + ' opinion label.');
+      });
+      (narrativeByHeading['HISTORY AND COURSE OF TREATMENT'] || []).forEach(function (paragraph) {
         var originalSection = parsed.sections.filter(function (section) { return clean(section.heading) === 'HISTORY AND COURSE OF TREATMENT'; })[0];
         var originalParagraph = originalSection && originalSection.paragraphs.filter(function (candidate) { return clean(candidate && candidate.text) === paragraph; })[0];
         var historyIds = originalParagraph && Array.isArray(originalParagraph.evidenceIds) ? originalParagraph.evidenceIds.map(clean) : [];
@@ -1788,6 +2012,26 @@
           return Object.keys(meaningfulWords(receipt.title)).some(function (word) { return !!leadWords[word]; });
         });
         if (!matching.length || !typed) throw new Error('HISTORY AND COURSE OF TREATMENT did not begin each supported dated encounter paragraph with its documented date and encounter type.');
+        var encounterKinds = matching.map(function (receipt) { return narrativeEncounterKind(receipt.title); });
+        if (encounterKinds.every(function (kind) { return kind !== 'clinical'; })) {
+          if (/(?:History|Hx|Pertinent Examination|Assessment and Plan)\s*:/i.test(paragraph)) {
+            throw new Error('HISTORY AND COURSE OF TREATMENT imaging/procedure entry used empty clinical-label boilerplate.');
+          }
+          if (!/(?:showed|revealed|demonstrated|identified|finding|result|technique|performed|administered|response|relief|improv|worsen|tolerated|not documented|not available|not provided|record is silent|undeterminable|cannot be assessed|unable to assess|unavailable|unknown)/i.test(paragraph)) {
+            throw new Error('HISTORY AND COURSE OF TREATMENT imaging/procedure entry omitted its supported finding, result, technique, response, or limitation.');
+          }
+          return;
+        }
+        var historySupport = historyIds.map(function (id) { return allowed[id]; }).join(' ');
+        if (!/^\s*(?:On\s+)?(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|(?:January|February|March|April|May|June|July|August|September|Sept|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:st|nd|rd|th)?[,]?\s+\d{4})[\s\S]*\bHistory\s*:/i.test(paragraph)) {
+          throw new Error('HISTORY AND COURSE OF TREATMENT omitted the canonical History: label for a clinical encounter.');
+        }
+        ['History', 'Pertinent Examination', 'Assessment and Plan'].forEach(function (label) {
+          var value = narrativeHistoryLabelValue(paragraph, label);
+          if (!value || (!narrativeHistoryComponentSupported(label, historySupport) && !narrativeHistoryUnavailable(value))) {
+            throw new Error('HISTORY AND COURSE OF TREATMENT omitted the required ' + label + ': label or left it without an explicit documented/unavailable statement.');
+          }
+        });
       });
       nSupportedParagraphs('LIKELY FUTURE CARE').forEach(function (paragraph) {
         if (!/^\d+\.\s/.test(paragraph)) throw new Error('LIKELY FUTURE CARE did not use one separately numbered paragraph per item.');
@@ -1799,6 +2043,9 @@
       if (!nMissing(necessity) && !/(?:reasonable|necessary|necessity|cannot be assessed|unable to assess)/i.test(necessity)) {
         throw new Error('REASONABLENESS AND NECESSITY did not actually address necessity.');
       }
+      narrativeSourceGapRequirements(narrativeEvidenceText(contextReceipt)).forEach(function (gap) {
+        if (!gap.output.test(purpose)) throw new Error('PURPOSE AND SCOPE omitted the concrete source gap: ' + gap.key + '.');
+      });
       if ((narrativeByHeading.CONCLUSION || []).length > 2) throw new Error('CONCLUSION exceeded the compact two-paragraph narrative limit.');
       var opinionHeadings = ['SUMMARY OF OPINIONS', 'MEDICAL OPINIONS'], opinionText = opinionHeadings.map(nText).join('\n'), opinionIssues = {};
       opinionHeadings.forEach(function (heading) {
@@ -1861,7 +2108,7 @@
       var raw;
       try {
         raw = window.aiCallRaw(draftSystem(section[0], section[1]), context + '\n\nWrite only ' + section[0] + '.',
-          isFn(window.getKey) ? window.getKey() : '', { freeform: true, legal: true, signal: controller.signal, model: state.aiModel || '' });
+          isFn(window.getKey) ? window.getKey() : '', { freeform: true, legal: true, family: 'legal_ime', draftSubtype: narrativeDraftSubtype(state.reportType || 'ime'), signal: controller.signal, model: state.aiModel || '' });
       } catch (error) { finish(false, error); return; }
       Promise.resolve(raw).then(function (value) { finish(true, value); }, function (error) { finish(false, error); });
     });
@@ -1888,7 +2135,7 @@
       try {
         raw = window.aiCallRaw(wholeDraftSystem(report, sections, contextReceipt.evidenceIds, repairErrors),
           contextReceipt.text + '\n\nReturn only the strict JSON report object for the expected sections.',
-          isFn(window.getKey) ? window.getKey() : '', { freeform: true, legal: true, signal: controller.signal, model: state.aiModel || '', maxTokens: 14000 });
+          isFn(window.getKey) ? window.getKey() : '', { freeform: true, legal: true, family: 'legal_ime', draftSubtype: narrativeDraftSubtype(report.key), signal: controller.signal, model: state.aiModel || '', maxTokens: 14000 });
       } catch (error) { finish(false, error); return; }
       Promise.resolve(raw).then(function (value) { finish(true, value); }, function (error) { finish(false, error); });
     });
@@ -1946,7 +2193,8 @@
         'Patient: ' + (binding.name || '[not documented]'),
         'DOB: ' + (binding.dob || '[not documented]'),
         'MRN: ' + (binding.mrn || '[not documented]'),
-        'Report date: ' + new Date().toLocaleDateString()];
+        'Report date: ' + new Date().toLocaleDateString(),
+        'To Whom It May Concern:'];
       modelReceiptAt = output.length;
     } else {
       output = [letterheadBlock(),
@@ -1984,7 +2232,9 @@
     }
     return requestCoherentReport(null).then(function (rendered) {
       if (!runOwned(run)) throw abortError('stale-run', 'Draft run is no longer current.');
-      rendered.forEach(function (section) { output.push(section.heading + '\n' + section.paragraphs.join('\n\n')); });
+      rendered.forEach(function (section) {
+        output.push(narrativeDisplayHeading(section.heading, contextReceipt) + '\n' + section.paragraphs.join('\n\n'));
+      });
       /* p1-legal-letterhead-1.0.0: the attestation is written here, not by the
          model - a closing certainty statement and a signature line must say
          exactly what they say, every time. */

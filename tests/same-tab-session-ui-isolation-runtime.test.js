@@ -198,7 +198,10 @@ function testSessionBoundary(pageName) {
   context.addEventListener('mls:session-boundary', event => boundaryEvents.push(event.detail));
 
   const roleSource = sliceBetween(html, 'var _mlsRoleDisplayOwned=[];', 'function isLawyerUser', pageName);
-  const boundarySource = sliceBetween(html, 'var sfSessionUiEpoch=0', 'function startSession', pageName);
+  const boundaryStart = html.includes('var sfVisitNotesFirstChoicePending=false')
+    ? 'var sfVisitNotesFirstChoicePending=false'
+    : 'var sfSessionUiEpoch=0';
+  const boundarySource = sliceBetween(html, boundaryStart, 'function startSession', pageName);
   const setupSource = sliceBetween(html, 'function maybePromptSetup()', '/* ===== MLS Help', pageName);
   const assistSource = sliceBetween(html, 'function maybePromptInstallAssist(', 'function _dismissAssistPrompt', pageName);
   vm.runInNewContext([roleSource, boundarySource, setupSource, assistSource].join('\n'), context, { filename: `${pageName}-session-boundary.js` });
@@ -432,6 +435,6 @@ testSessionBoundary('ScribeFlow.html');
 testSessionBoundary('ScribeFlow-staging.html');
 testMenuReconciliation();
 testLexicalBkUserBridge();
-assert(read('ScribeFlow.html').includes("window.__MLS_AV='b1047'"), 'web asset stamp changed from b1047');
+assert(read('ScribeFlow.html').includes("window.__MLS_AV='b1049'"), 'web asset stamp changed from b1049');
 assert(read('sw.js').includes("const CACHE = 'mls-v206'"), 'service-worker cache stamp changed from v206');
 console.log('PASS same-tab UI account isolation: A -> logout -> B clears PHI/modals/intake/prompts, restores role markup, and reconciles account-gated menu rows');

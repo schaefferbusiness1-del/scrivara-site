@@ -1,13 +1,8 @@
 'use strict';
 
-/* 2026-07-28 owner directive: "even a normal history pull with visit notes
- * checked off should still save that upcoming visit's note" — op-notes for
- * the day's visit depend on it. The thread: schedimport fast-lane branch ->
- * vp.runForPatient(p, cb, {onlyDate}) [preference gate bypassed for the
- * day-scoped read] -> cv.run payload hint.onlyDate -> extension reader files
- * rows outside the day as narrated index-only entries EXCLUDED from its
- * exact-count completeness arithmetic, so the site's all-or-nothing gate
- * still closes on the one day that was read. */
+/* Full Notes scope regression: the date-scoped reader remains available for an
+ * explicitly ON catch-up, but OFF is schedule-only and cannot use onlyDate or
+ * singlePull as a permission bypass. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -43,16 +38,17 @@ assert(bg.includes('total - administrativeRows.length - dateSkippedRows.length')
 assert(bg.includes('dateSkippedRows: dateSkippedRows.length'), 'the receipt must say exactly what was scoped out');
 assert(bg.includes('(outside the requested day - body not read)'), 'skips are narrated, never silent');
 
-/* ---- 3. vp gate: the day-scoped read bypasses the preference, EXECUTED ---- */
+/* ---- 3. vp gate: every reader option honors the preference, EXECUTED ---- */
 {
   const s = mc.indexOf('api.runForPatient = function (p, onStatus, runOpts) {');
   const e = mc.indexOf('function ensureSettings', s);
   assert(s > 0 && e > s, 'runForPatient block missing');
   const block = mc.slice(s, e);
   const calls = [];
+  let isOn = false;
   const ctx = vm.createContext({
     api: { running: false, current: null },
-    enabled: () => false,
+    enabled: () => isOn,
     window: { __mlsCopyVisits: { run: (cb, p, opts) => { calls.push(opts || null); return Promise.resolve(3); } } },
     Promise, Error
   });
@@ -62,8 +58,16 @@ assert(bg.includes('(outside the requested day - body not read)'), 'skips are na
     .then(r => assert.strictEqual(r && r.skipped, 'preference-off', 'full read stays gated by the preference'))
     .then(() => { ctx.api.running = false; ctx.api.current = null; })
     .then(() => ctx.api.runForPatient({ id: 'p1', name: 'Zz' }, null, { onlyDate: '2026-07-28' }))
+    .then(r => assert.strictEqual(r && r.skipped, 'preference-off', 'onlyDate bypassed Full Notes OFF'))
+    .then(() => ctx.api.runForPatient({ id: 'p1', name: 'Zz' }, null, { singlePull: true }))
     .then(r => {
-      assert(r && r.ok === true, 'day-scoped read must run despite preference-off');
+      assert.strictEqual(r && r.skipped, 'preference-off', 'singlePull bypassed Full Notes OFF');
+      assert.strictEqual(calls.length, 0, 'OFF invoked the visit reader');
+      isOn = true;
+    })
+    .then(() => ctx.api.runForPatient({ id: 'p1', name: 'Zz' }, null, { onlyDate: '2026-07-28' }))
+    .then(r => {
+      assert(r && r.ok === true, 'an explicitly ON date-scoped catch-up did not run');
       assert.strictEqual(calls.length, 1, 'cv.run invoked exactly once');
       assert(calls[0] && calls[0].onlyDate === '2026-07-28', 'onlyDate forwarded to cv.run');
       part4();
@@ -73,17 +77,13 @@ assert(bg.includes('(outside the requested day - body not read)'), 'skips are na
 }
 
 function part4() {
-  /* ---- 4. site payload + fast-lane wiring (source pins) ---- */
+  /* ---- 4. date capability remains, but every OFF auto-lane is fused ---- */
   assert(fv.includes("onlyDate: String(runOpts.onlyDate || '')"), 'cv payload must carry onlyDate');
   assert(fv.includes('function run(onStatus, patientOverride, runOpts)'), 'cv.run accepts opts');
-  assert(si.includes('function tnBoundedRead(vp, p, day, opts)'), 'the bounded pulled-day-note reader is missing');
-  assert(si.includes('vp.runForPatient(p, function () {}, { onlyDate: String(day) })'),
-    'the bounded reader must pass the exact day scope to runForPatient');
-  assert(si.includes('await tnBoundedRead(dnVp, dnP, dnDay)') &&
-    si.includes('await tnBoundedRead(vpToday, tnP, tnDay)'),
-  'both inline and post-sweep fast lanes must use the same day-scoped bounded reader');
-  assert(si.includes('todayNoteReason'), 'the scoped read reports honestly');
-  assert(si.includes('FULLY AWAITED'), 'the scoped reads must run post-sweep, never racing the batch for the athena tab');
+  assert(si.includes('var pulledDayNoteLaneEnabled = false;'), 'the inline OFF body lane is not fused off');
+  assert(si.includes('var pulledDayNoteTailEnabled = false;'), 'the OFF tail body lane is not fused off');
+  assert(si.includes('if (receipt.visitNotesRequested !== true) return 0;'),
+    'an OFF receipt can still arm deferred note-body work');
   const skipIdx = si.indexOf('one.visitsSkipped = true');
   const win = si.slice(skipIdx - 300, skipIdx + 300);
   assert(!/parsedVisits|visitCount|persistedVisits/.test(win), 'the skip path must still never fabricate visit evidence');

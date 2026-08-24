@@ -194,7 +194,7 @@ vm.runInContext(providerCode, providerContext);
 assert.strictEqual(providerReverts, 1, 'idempotent provider load reverted the retired owner twice');
 assert.strictEqual(providerContext.window.__mlsProvMonthPull, providerApi, 'idempotent provider load replaced the live compatibility engine');
 
-const canonicalMonthStart = source.indexOf('  function startMonthPull(retryOnly, rosterRetried) {');
+const canonicalMonthStart = source.indexOf('  function startMonthPull(retryOnly, rosterRetried');
 const canonicalMonth = source.slice(canonicalMonthStart, source.indexOf('  function renderStaff()', canonicalMonthStart));
 assert(canonicalMonthStart >= 0, 'active canonical Staff Prep month engine missing');
 assert(canonicalMonth.includes('includeHistory: true'), 'canonical Staff Prep month pull lost full-history loading');

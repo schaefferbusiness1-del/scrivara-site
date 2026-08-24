@@ -95,17 +95,27 @@ function harness() {
   /* The configured MLS AI path, answered locally. Derive the one whole-report
      JSON receipt from the request itself so this browser press follows the
      same exact section/order boundary as production. */
-  window.aiCallRaw = function (sys) {
+  window.aiCallRaw = function (sys, user, key, opts) {
     const marker = 'Expected sections: ', allow = '. Evidence-ID allowlist: ';
     const start = String(sys || '').indexOf(marker), end = String(sys || '').indexOf(allow, start + marker.length);
     const specs = start >= 0 && end > start ? JSON.parse(String(sys).slice(start + marker.length, end)) : [];
+    const evidenceIds = start >= 0 && end > start ? JSON.parse(String(sys).slice(end + allow.length, String(sys).indexOf('.', end + allow.length))) : [];
+    const narrative = opts && opts.draftSubtype === 'narrative_medical_report';
+    const encounter = /\[(E\d+)\]\s+(\d{4}-\d{2}-\d{2})\s+·\s+([^·]+?)\s+·\s+[^\n]+/.exec(String(user || ''));
+    const encounterId = encounter && evidenceIds.includes(encounter[1]) ? encounter[1] : evidenceIds.find((id) => /^E/.test(id));
+    const missing = (label, detail) => ({
+      text: label + ': Undeterminable on the record reviewed because ' + detail + '.', evidenceIds: []
+    });
     C.push({ k: 'ai', sections: specs.map((spec) => spec.heading) });
     return Promise.resolve(JSON.stringify({ sections: specs.map((spec, index) => ({
       heading: spec.heading,
-      paragraphs: [{
-        text: 'The records reviewed do not document sufficient evidence for requested item ' + (index + 1) + '; clinician verification is required.',
-        evidenceIds: []
-      }]
+      paragraphs: narrative && spec.heading === 'SUMMARY OF OPINIONS'
+        ? [missing('Causation', 'the mechanism and chronology'), missing('Neuropathy', 'objective neurologic testing or a formally documented diagnosis'), { text: 'Permanent and Stationary / Maximum Medical Improvement: Not formally established because the latest condition and pending care are not documented.', evidenceIds: [] }, missing('Future Care', 'the records do not establish a documented recommendation, schedule, or trigger')]
+        : narrative && spec.heading === 'MEDICAL OPINIONS'
+          ? [missing('Causation', 'the mechanism and chronology in the detailed analysis'), missing('Neuropathy', 'objective neurologic testing or a formally documented diagnosis for this issue'), { text: 'Permanent and Stationary / Maximum Medical Improvement: Not formally established because the latest condition and pending care remain undocumented in the detailed review.', evidenceIds: [] }]
+        : narrative && spec.heading === 'HISTORY AND COURSE OF TREATMENT' && encounterId
+            ? [{ text: encounter[2] + ' - ' + encounter[3].trim() + ': History: Not documented in the records reviewed. Pertinent Examination: Not documented in the records reviewed. Assessment and Plan: Not documented in the records reviewed.', evidenceIds: [encounterId] }]
+            : [{ text: 'The records reviewed do not document sufficient evidence for requested item ' + (index + 1) + '; clinician verification is required.', evidenceIds: [] }]
     })) }));
   };
   window.getKey = function () { return 'synthetic-local-key'; };
@@ -379,7 +389,9 @@ const measured = {};
     await page.evaluate(() => window.__lgApi.press('.p1l-raw'));
 
     /* --------------------------------------------------------------------
-       5. PICK EVERY REPORT TYPE, THEN GENERATE THE IME.
+       5. PICK EVERY REPORT TYPE, GENERATE THE TARGET-FORM NARRATIVE, THEN
+          generate the IME. The narrative used to be selected here but never
+          actually exercised; keep both report paths measured.
        -------------------------------------------------------------------- */
     measured.reportTypes = {};
     for (const key of ['narrative', 'records', 'chronology', 'ime']) {
@@ -393,6 +405,21 @@ const measured = {};
       document.getElementById('mlsP1LegalQuestions').value = 'Is the lumbar radiculopathy causally related to the collision of 01-20-2026?';
       document.getElementById('mlsP1LegalLetterheadEmail').value = 'office@sample.test';
     });
+    await page.evaluate(() => window.__lgApi.press('#mlsP1LegalReport_narrative'));
+    const narrativeGen = await page.evaluate(() => window.__lgApi.press('#mlsP1LegalGenerate'));
+    eq(narrativeGen.disabled, false, 'the dedicated narrative Generate was disabled after selecting narrative');
+    await page.waitForFunction(() => (document.getElementById('mlsP1LegalDraft') || {}).value, null, { timeout: 90000 });
+    await page.waitForTimeout(300);
+    measured.narrativeDraft = await page.evaluate(() => window.__lgApi.draft());
+    ok(/^NARRATIVE MEDICAL REPORT$/m.test(measured.narrativeDraft), 'the browser flow did not produce a narrative report');
+    ok(/^To Whom It May Concern:$/m.test(measured.narrativeDraft), 'the browser narrative omitted its deterministic addressee');
+    ok(/^HISTORY AND COURSE OF LUMBAR TREATMENT$/m.test(measured.narrativeDraft), 'the browser narrative did not derive the lumbar history heading');
+    ['Causation:', 'Neuropathy:', 'Permanent and Stationary / Maximum Medical Improvement:', 'Future Care:', 'History:', 'Pertinent Examination:', 'Assessment and Plan:']
+      .forEach((label) => ok(measured.narrativeDraft.indexOf(label) >= 0, 'the browser narrative omitted ' + label));
+    ok(/This is an unsigned draft for clinician review\. It does not constitute a final medical-legal opinion unless verified, adopted, and signed by/.test(measured.narrativeDraft),
+      'the browser narrative omitted the deterministic unsigned-provider guard');
+    /* Return to the IME type for the existing export and counsel-order proof. */
+    await page.evaluate(() => window.__lgApi.press('#mlsP1LegalReport_ime'));
     const gen = await page.evaluate(() => window.__lgApi.press('#mlsP1LegalGenerate'));
     eq(gen.disabled, false, 'Generate was disabled on a bound patient with a report type picked');
     eq(gen.disabledAfter, true, 'Generate stayed pressable while its own run was starting');

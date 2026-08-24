@@ -376,7 +376,9 @@ function createHarness(options) {
     __mlsVisitNotesPref: {
       read() { return { state: 'on', on: true, settled: true }; },
       write() { return true; },
-      isPrefKey() { return false; }
+      isPrefKey() { return false; },
+      ensureChosenForBulkPull() { return Promise.resolve({ ok: true, chosen: false, on: true, reason: 'already-chosen' }); },
+      choicePending() { return false; }
     },
     __mlsPullShieldForeign() { return foreign; },
     __mlsPullShieldTick() {},

@@ -514,7 +514,13 @@ async function runtime() {
 
     /* the state changes OUT OF BAND — another tab, a boot resume, a session
        boundary. This is the case the panel could not see. */
-    await page.evaluate(() => window.__mlsP1RangeJobs.startMonth('2026-08', { provider: 'all' }));
+    /* This fixture measures the out-of-band job-card repaint, not the
+       first-use Full Notes question. Freeze the synthetic job OFF so the
+       production admission gate cannot leave headless Chrome waiting for a
+       human choice that this probe intentionally does not exercise. */
+    await page.evaluate(() => window.__mlsP1RangeJobs.startMonth('2026-08', {
+      provider: 'all', pullVisitBodies: false, fullNotes: false
+    }));
     await page.waitForTimeout(400);
     await page.evaluate(() => window.__mlsP1RangeJobs.pause());
     await page.waitForTimeout(2500);
@@ -561,10 +567,10 @@ async function runtime() {
     await dp.evaluate(() => window.__cal.seedMonth());
     await dp.evaluate(() => window.__cal.nav('nav_calendar'));
     await dp.waitForTimeout(1200);
-    /* == THE DAY THE DOCTOR CLICKS SURVIVES THE CALENDAR'S OWN SETTLING ==
-     * feat_mls_datalink_exact.js runs focusCalDay through syncAll twice after
-     * the Calendar is entered (MEASURED at +1071ms and +2561ms), and each pass
-     * drags the selection back to today. caldaysel-1.0.0's capture-phase
+    /* == THE DAY THE DOCTOR CLICKS SURVIVES A REAL POST-PULL FOCUS ==
+     * A plain loadCalendar refresh no longer masquerades as a pull. Exercise
+     * the genuine post-pull focus explicitly after the click below.
+     * caldaysel-1.0.0's capture-phase
      * onNavClick is what stops it: a click on a control whose own onclick
      * names calOpenDay stamps window.__mlsCalUserDayAt, which focusCalDay
      * already honours for five minutes.
@@ -583,8 +589,7 @@ async function runtime() {
         .find((n) => /calOpenDay\('2026-08-21'\)/.test(n.getAttribute('onclick') || ''));
       if (cell) cell.scrollIntoView({ block: 'center' });
     });
-    /* 1400ms is deliberate: it sits between datalink's two syncAll passes. */
-    await dp.waitForTimeout(1400);
+    await dp.waitForTimeout(400);
     const pin = await dp.evaluate(() => {
       const cell = Array.prototype.slice.call(document.querySelectorAll('#calGrid [onclick]'))
         .find((n) => /calOpenDay\('2026-08-21'\)/.test(n.getAttribute('onclick') || ''));
@@ -611,7 +616,8 @@ async function runtime() {
     ok(pin && pin.h > 0, 'the Aug 21 day cell could not be found, so the day pin is unmeasured');
     ok(pin.hits, `no point inside the Aug 21 cell resolves to its own day control (tried ${pin.tried}) — the measurement would be meaningless`);
     await dp.mouse.click(pin.x, pin.y);
-    await dp.waitForTimeout(4000);
+    await dp.evaluate(() => window.__mlsLink.syncAll('pull', true));
+    await dp.waitForTimeout(1800);
     const pinned = await dp.evaluate(() => ({
       sel: window._calSelDay, ref: window._calRefDate,
       stamped: !!window.__mlsCalUserDayAt,

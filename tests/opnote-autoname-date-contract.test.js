@@ -47,9 +47,9 @@ assert.strictEqual(garbage, '', 'an unparseable dateKey must contribute an empty
 assert.strictEqual(nul, '', 'a null row must contribute an empty segment');
 
 /* 3 - both row builders actually deliver the key. */
-assert(app.includes('_opDayStr(dayKey), a.patientId, a, dayKey); });'),
+assert(app.includes('_opDayStr(dayKey), a.patientId, a, dayKey, i); });'),
   'the day-sweep builder must pass dayKey into _opNewRow');
-assert(app.includes('p.id, null, _acctTodayKey()) ];'),
+assert(app.includes('p.id, null, _acctTodayKey(), 0) ];'),
   'the single-patient builder must pass the account today-key into _opNewRow');
 assert(app.includes("dateKey:String(dateKey||'')"),
   '_opNewRow must store the key on the row');

@@ -393,6 +393,7 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
       'var p1MetadataRefusal = function () { return null; };\n' +
       'var providerScopeReceipt = function () { return {}; };\n' +
       'var providerScopeNotice = function () { return ""; };\n' +
+      'var admitFrozenVisitNotesChoice = function () { return null; };\n' +
       'var pull = ctx.pull;\n' +
       adjSrc + '\n' +
       monthPrefix + '\n' +

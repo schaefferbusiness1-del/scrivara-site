@@ -27,6 +27,8 @@ const root = path.join(__dirname, '..');
 const candidateChain = ['3.0.45', '3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
 const bgPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
 const background = fs.readFileSync(bgPath, 'utf8');
+const activeBackgroundPath = path.join(root, 'background.js');
+const activeBackground = fs.readFileSync(activeBackgroundPath, 'utf8');
 
 let n = 0;
 function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
@@ -109,16 +111,24 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
 
 /* ---- 4. CE note write round-trips newlines and rolls back on failure ---- */
 {
-  assert.ok(background.indexOf("_ceDoc.createElement('br')") !== -1, 'CE write builds text+<br> nodes');
-  assert.ok(background.indexOf('while (el.firstChild) el.removeChild(el.firstChild);') !== -1, 'CE write clears prior children');
-  assert.ok(background.indexOf('rolledBack: rolledBack,') !== -1, 'failed verification reports rolledBack');
-  const rbIdx = background.indexOf('The empty-editor precheck above means rollback == clearing back to empty');
+  assert.ok(activeBackground.indexOf("_ceDoc.createElement('br')") !== -1, 'active CE write builds text+<br> nodes');
+  assert.ok(activeBackground.indexOf('while (el.firstChild) el.removeChild(el.firstChild);') !== -1, 'active CE write clears prior children');
+  assert.ok(activeBackground.indexOf('rolledBack: rolledBack,') !== -1, 'active failed verification reports rolledBack');
+  const rbIdx = activeBackground.indexOf('The empty-editor precheck above means rollback == clearing back to empty');
   assert.ok(rbIdx > 0, 'rollback rationale present');
   /* rollback must be gated on noteAttempted && !alreadyExact so a pre-existing
      exact note is never cleared */
-  assert.ok(background.indexOf('if (noteAttempted && !alreadyExact) {') !== -1,
+  assert.ok(activeBackground.indexOf('if (noteAttempted && !alreadyExact) {') !== -1,
     'rollback never clears a note that was already present');
-  ok('CE write: newline round-trip + fail-closed rollback to empty');
+  const activeDriverStart = activeBackground.indexOf('async function mlsAthenaActionV2DriverFn(');
+  const activeDriverEnd = activeBackground.indexOf('/* ATHENA_ACTION_V2_DRIVER_END */', activeDriverStart);
+  assert.ok(activeDriverStart >= 0 && activeDriverEnd > activeDriverStart, 'active ActionV2 driver source is available');
+  const activeDriver = activeBackground.slice(activeDriverStart, activeDriverEnd);
+  assert.ok(activeDriver.indexOf("reason: 'exact-note-editor-verified-unsaved'") !== -1,
+    'active named write receipt has an explicit unsaved reason');
+  assert.ok(activeDriver.indexOf('saved: false, persisted: false, signed: false') !== -1,
+    'active named write receipt does not claim save or persistence');
+  ok('active CE rollback + named write: newline round-trip, fail-closed rollback, and explicit unsaved receipt');
 }
 
 console.log('# athena-write-verification-contract: ' + n + ' checks passed');

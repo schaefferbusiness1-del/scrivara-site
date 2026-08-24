@@ -193,6 +193,10 @@ function createHarness() {
     },
     backendMode: () => true, bkToken: () => 'test-token', bkBase: () => 'https://local.invalid',
     uns: key => `provider-month-test::${key}`,
+    __mlsVisitNotesPref: {
+      read: () => ({ state: 'on', on: true, settled: true }),
+      ensureChosenForBulkPull: () => Promise.resolve({ ok: true, on: true, reason: 'test-choice-on' })
+    },
     _normDate: value => String(value || '').slice(0, 10),
     _normTime: normTime,
     _apptKey: (name, date, time) => `${String(name || '').trim().toLowerCase()}|${date}|${time}`,
@@ -655,26 +659,21 @@ async function main() {
       'the breaker exit must emit its day-end line');
   }
 
-  // vb-1.0 (owner 2026-08-09, verbatim: "we do pull the upcoming visit even
-  // with visit history turned off so that it can do a better job with that
-  // visit and op notes and stuff"): verified in source and pinned
-  // BEHAVIORALLY. With pullVisitBodies:false the chart is still READ and
-  // parsed+persisted for every scheduled patient (the op-note context); only
-  // the encounter-bodies stage is skipped, recorded honestly as
-  // visitsSkipped with the row still complete. A refactor that treats
-  // bodies-off as nothing-to-read kills the chart read and fails this.
+  // Full Notes OFF is schedule/booking-only. Even if an old caller supplies
+  // includeHistory:true, the explicit frozen false narrows the operation before
+  // any chart or visit-body reader can open.
   {
     const realRead = h.rt._assistReadChart;
     let bodiesOffReads = 0;
     h.rt._assistReadChart = function () { bodiesOffReads++; return realRead.apply(null, arguments); };
+    const allVisitsBefore = h.posted.filter(message => message.type === 'mlsAppReadAllVisits').length;
     const bodiesOff = await api.pull({ date: '2026-02-03', provider: h.providerAlpha, includeHistory: true, pullVisitBodies: false });
     h.rt._assistReadChart = realRead;
-    assert(bodiesOffReads >= 1, 'bodies-off must still READ the chart (op-note context), got ' + bodiesOffReads + ' reads');
-    const boPats = (bodiesOff.historyReceipt && bodiesOff.historyReceipt.patients) || [];
-    assert(boPats.length >= 1, 'bodies-off must still process the scheduled patient');
-    const bo = boPats[0];
-    assert(bo.complete === true, 'a bodies-off chart read is a SUCCESS, not a skip-failure, got ' + (bo.reason || 'complete=' + bo.complete));
-    assert(bo.visitsSkipped === true, 'the skipped bodies stage is recorded honestly on the receipt');
+    assert.strictEqual(bodiesOff.includeHistory, false, 'explicit Full Notes OFF did not narrow includeHistory');
+    assert.strictEqual(bodiesOff.historyRequested, false, 'explicit Full Notes OFF still claims history requested');
+    assert.strictEqual(bodiesOffReads, 0, 'Full Notes OFF opened a patient chart');
+    assert.strictEqual(h.posted.filter(message => message.type === 'mlsAppReadAllVisits').length, allVisitsBefore,
+      'Full Notes OFF opened a visit-body reader');
   }
 
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');

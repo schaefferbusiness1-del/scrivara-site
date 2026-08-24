@@ -129,7 +129,8 @@ assert(syncStripSource.includes('tb.disabled = !!isToday;'),
     $(id) { if (id === 'mlsDsDayLbl') return label; if (id === 'mlsDsTodayBtn') return todayButton; return null; },
     todayKey() { return '2026-07-19'; },
     fmtDay(day) { return day; },
-    esc(value) { return String(value); }
+    esc(value) { return String(value); },
+    dsHydrateTerminalReceipt() { return null; }
   };
   vm.createContext(ctx);
   vm.runInContext(`${syncStripSource}\nthis.syncStrip = syncStrip;`, ctx,

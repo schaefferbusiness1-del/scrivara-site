@@ -147,6 +147,16 @@ function runtime(options = {}) {
     },
     __mlsSessionAccount: account,
     session: { email: account },
+    /* Most range-engine cases exercise scheduling, persistence, or recovery,
+       not the first-use chooser.  Give them the settled OFF choice a real
+       signed-in account would expose; chooser refusal is covered separately
+       by the focused host contract. */
+    __mlsVisitNotesPref: {
+      read() { return { state: 'off', on: false, settled: true }; },
+      ensureChosenForBulkPull() {
+        return Promise.resolve({ ok: true, on: false, reason: 'test-choice-off' });
+      }
+    },
     uns(suffix) { return `sf_u::${account || '_'}::${suffix}`; }
   };
   sandbox.window = sandbox;
@@ -507,6 +517,12 @@ function rangeUiFixtureHtml() {
     window.__MLS_P1_PREVIEW={enabled:true,route:'/1p/',build:'synthetic-p1-ui-build'};
     window.__mlsSessionEpoch=1;window.__mlsSessionAccount=account;window.session={email:account};
     window.uns=function(suffix){return 'sf_u::'+window.__rangeFixture.account+'::'+suffix;};
+    window.__mlsVisitNotesPref={
+      read:function(){var v=localStorage.getItem(window.uns('visitNotesModeV2'));return v==='on'||v==='off'?{state:v,on:v==='on',settled:true}:{state:'unset',on:true,settled:true};},
+      write:function(on){var v=on===true?'on':'off';localStorage.setItem(window.uns('visitNotesModeV2'),v);return localStorage.getItem(window.uns('visitNotesModeV2'))===v;},
+      ensureChosenForBulkPull:function(){var current=this.read();if(current.state==='on'||current.state==='off')return Promise.resolve({ok:true,chosen:false,on:current.on,reason:'already-chosen'});return Promise.resolve({ok:false,chosen:false,on:null,reason:'choice-cancelled'});},
+      choicePending:function(){return false;}
+    };
     nativeSet.call(localStorage,'sf_bk_token','synthetic-browser-token');
     nativeSet.call(localStorage,window.uns('acctTz'),'America/New_York');
     var entry={id:'provider-7',stableKey:'stable-provider-7',name:'Dr Synthetic Provider',raw:'Synthetic Provider, MD',rosterVerified:true};
@@ -1031,7 +1047,7 @@ async function testDoctorFacingYearPullUi() {
     await errorPage.waitForFunction(() => window.__mlsP1RangeJobs && window.__mlsP1RangeJobs.installed === true);
     await errorPage.evaluate(() => window.mountStaff('all'));
     await errorPage.waitForSelector('#mlsP1YearPull');
-    await errorPage.evaluate(() => { window.__rangeFixture.failWrites = true; });
+    await errorPage.evaluate(() => { window.__mlsVisitNotesPref.write(false); window.__rangeFixture.failWrites = true; });
     await errorPage.click('#mlsP1YearStart');
     await errorPage.waitForFunction(() => document.getElementById('mlsP1YearPull').dataset.error === 'true');
     const storageError = await errorPage.evaluate(() => ({
@@ -1091,6 +1107,7 @@ async function testDoctorFacingYearPullUi() {
     await boundary.waitForFunction(() => window.__mlsP1RangeJobs && window.__mlsP1RangeJobs.installed === true);
     await boundary.evaluate(() => window.mountStaff('selected'));
     await boundary.waitForSelector('#mlsP1YearPull');
+    await boundary.evaluate(() => window.__mlsVisitNotesPref.write(false));
     await boundary.click('#mlsP1YearStart');
     await boundary.waitForFunction(() => window.__rangeFixture.calls.length === 1);
     const boundaryDate = await boundary.evaluate(() => window.__fixtureCall(0).dates[0]);

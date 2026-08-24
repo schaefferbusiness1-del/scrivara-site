@@ -226,13 +226,15 @@ const PHONE = '(555) 123-4567';
 /* ---- 5. IT REACHES A BROWSER ------------------------------------------ */
 {
   const connect = read('mls-connect.js');
-  const loader = connect.split('\n').filter((l) => l.includes('feat_after_visit_summary.js') && l.includes("createElement('script')"));
-  assert(loader.length > 0, 'feat_after_visit_summary.js has no script-creating loader in mls-connect.js');
-  for (const l of loader) {
-    assert(/window\.__MLS_AV/.test(l),
-      'the after-visit summary is loaded without tying its URL to the app build number, so bumping the ' +
-      'build no longer busts its cache and this change ships invisibly. Loader: ' + l.trim().slice(0, 160));
-  }
+  const loaderAt = connect.indexOf("var A='feat_after_visit_summary.js'");
+  const loaderEnd = connect.indexOf('/* ---- loader: feat_mls_protocol', loaderAt);
+  assert(loaderAt >= 0 && loaderEnd > loaderAt, 'feat_after_visit_summary.js has no bounded loader in mls-connect.js');
+  const loader = connect.slice(loaderAt, loaderEnd);
+  assert(loader.includes("document.createElement('script')"), 'the after-visit summary loader no longer creates its script after a missing/stale owner');
+  assert(loader.includes("s.src='/'+A+'?v='+(window.__MLS_AV||Date.now())"),
+    'the after-visit summary is loaded without tying its URL to the app build number, so bumping the build no longer busts its cache');
+  assert(loader.includes("function ensure()") && loader.includes("window.__mlsEnsureAfterVisitSummary=ensure"),
+    'the action-time idempotent after-visit summary readiness hook is missing');
 }
 
 console.log('PASS after-visit summary names the practice to call: the handout ended by telling the ' +
