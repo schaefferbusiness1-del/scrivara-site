@@ -6752,7 +6752,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         document.body.appendChild(el);
       }
       var nm = String(ap.name || '').trim(); var parts = nm.split(/\s+/);
-      var lastFirst = parts.length >= 2 ? (parts[parts.length - 1] + ', ' + parts.slice(0, parts.length - 1).join(' ')) : nm;
+      /* Athena identities already stored as Last,First are authoritative.
+         Reversing them again produced "First,Last, ..." in the extension
+         beacon and could make an otherwise correct chart look mismatched. */
+      var lastFirst = nm.indexOf(',') >= 0 ? nm.replace(/\s*,\s*/, ', ')
+        : (parts.length >= 2 ? (parts[parts.length - 1] + ', ' + parts.slice(0, parts.length - 1).join(' ')) : nm);
       var txt = 'Patient: ' + lastFirst + '\nDOB: ' + (ap.dob || '') + (ap.mrn ? '\nMRN: ' + ap.mrn : '');
       if (el.textContent !== txt) el.textContent = txt;
     } catch (e) {}
@@ -20897,17 +20901,49 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* 2026-07-29 (owner: "this deselect button doesnt work"): the chip fired and
      deselectPatient() ran, but this engine had NO listener for
      mls:active-patient-changed, so S.appt/S.locked survived and the visit room
-     kept showing the patient the app had just released. Clear our own lock on
-     the EMPTY transition only, never mid-recording, never touching note text. */
+     kept showing the patient the app had just released.
+
+     b1058 live regression (2026-08-24): Recent correctly selected patient B,
+     but this listener ignored every non-empty transition. The Easy engine
+     therefore kept patient A's S.appt/S.locked, and Start visit for B painted
+     A's appointment beneath B's banner. Keep the binding only when the newly
+     active patient actually owns it; otherwise release it exactly like
+     Deselect. Never release mid-recording and never touch note text here. */
+  function visitBindingOwnsPatient(nextId) {
+    if (!nextId || !S || !S.appt) return false;
+    try {
+      var a = S.appt, p = patientById(nextId), owns = false;
+      if (a._pt && a._patientId && String(a._patientId) === String(nextId)) owns = true;
+      else if (a.patient_external_id && String(a.patient_external_id) === String(nextId)) owns = true;
+      else if (p && a.name && p.name && nameMatch(a.name, p.name)) {
+        var ad = String(dobOf(a) || '').replace(/\D/g, '');
+        var pd = String(dobOf(p) || '').replace(/\D/g, '');
+        owns = !(ad && pd && ad !== pd);
+      }
+      if (!owns) return false;
+      /* S.appt and S.locked are written together. If they ever disagree,
+         prefer releasing the binding over preserving a mixed-patient room. */
+      if (p && S.locked && S.locked.name && !nameMatch(S.locked.name, p.name)) return false;
+      if (p && S.locked) {
+        var ld = String(S.locked.dob || '').replace(/\D/g, '');
+        var pd2 = String(dobOf(p) || '').replace(/\D/g, '');
+        if (ld && pd2 && ld !== pd2) return false;
+      }
+      return true;
+    } catch (e) { return false; }
+  }
   try {
     window.addEventListener('mls:active-patient-changed', function (evD) {
       try {
-        var nextId = '';
-        try { nextId = String((evD && evD.detail && evD.detail.patientId) || ''); } catch (eD) {}
-        if (nextId) return;
+        var nextId = '', detail = evD && evD.detail;
+        try {
+          if (detail && Object.prototype.hasOwnProperty.call(detail, 'patientId')) nextId = String(detail.patientId || '');
+          else if (isFn(window.getActivePtId)) nextId = String(window.getActivePtId() || '');
+        } catch (eD) {}
         if (!S || (!S.appt && !S.locked)) return;
+        if (nextId && visitBindingOwnsPatient(nextId)) return;
         if (isRecording()) {
-          S.lastWarn = 'Recording is still running, so this visit stays open. Stop the recording first, then clear the patient.';
+          S.lastWarn = 'Recording is still running, so this visit stays open. Stop the recording before switching or clearing the patient.';
           try { toast(S.lastWarn, 'err'); } catch (eT) {}
           try { render(); } catch (eR) {}
           return;

@@ -35037,7 +35037,14 @@ function agDeliveryMessage(delivery){
    has passed the exact browser-evidence check above. Policy-2 accounts continue
    to send only the strict manifest contract; no browser PDF is authoritative. */
 function agLegacySignRequest(manifest,name,signatureImg){
-  if(_agSetupPolicyVersion!==0||!manifest||manifest.version!==AGREEMENTS_VERSION) return null;
+  /* The manifest is fetched no-store and agValidateServerManifest has already
+     checked every document id, title, and SHA-256 against this release.  The
+     server owns the compatibility version for legacy accounts; comparing it
+     to a page-baked constant made an otherwise valid first-login ceremony
+     fail after a backend legal-release rotation (the visible
+     "version mismatch" dead end).  Keep the policy guard, but post the
+     verified manifest version that the server returned. */
+  if(_agSetupPolicyVersion!==0||!manifest||!manifest.version) return null;
   return {
     version:manifest.version,
     name:name,
@@ -39741,7 +39748,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1057';
+  window.__MLS_AV='b1058';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

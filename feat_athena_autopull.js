@@ -36,6 +36,12 @@
   'use strict';
   if (window.__mlsAthenaAutoPull && window.__mlsAthenaAutoPull.installed) return;
   var VERSION = '1.2.0';
+  /* A patient pull must always reach a terminal state. The cooperative store
+     normally resolves this flush quickly, but a stalled writer used to leave
+     the UI at "finishing the local save" forever after Athena had finished.
+     Keep this bound deliberately generous for large panels while making the
+     failure explicit instead of claiming a save that was never confirmed. */
+  var SAVE_FLUSH_TIMEOUT_MS = 30000;
 
   function S(x) { return x == null ? '' : String(x); }
   function trim(x) { return S(x).trim(); }
@@ -302,6 +308,27 @@
   function refreshAthena(readTabId, briefingUrl, ms) {
     return bridgeOnce('mlsAppAthenaRefreshV1', 'mlsAppAthenaRefreshV1Result',
       { readTabId: Number(readTabId) || 0, briefingUrl: S(briefingUrl).slice(0, 300) }, ms || 40000);
+  }
+  function awaitBounded(value, ms, message) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        reject(new Error(message || 'Timed out'));
+      }, ms);
+      Promise.resolve(value).then(function (result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      }, function (error) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
   }
 
   /* ---------- pullbar-1.0.0: a real progress bar for the single pull ----------
@@ -604,9 +631,12 @@
         settleRun(false, (e && e.message || 'Save failed') + '.', { reason: 'visit-save-rejected' }); hideChipLater(); return;
       }
       status(onStatus, 'Encounter details verified — finishing the local save…');
-      try { await Promise.resolve(saveBatchApi.end(saveBatchToken, 'athena-autopull-visit-save')); }
+      try {
+        await awaitBounded(saveBatchApi.end(saveBatchToken, 'athena-autopull-visit-save'), SAVE_FLUSH_TIMEOUT_MS,
+          'The local patient save did not respond before the safety timeout');
+      }
       catch (eBatchEnd) {
-        settleRun(false, 'The encounter read finished, but the local save did not become durable. Nothing is being reported as saved; reload and retry.', {
+        settleRun(false, 'The encounter read finished, but the local save did not become durable or respond in time. Nothing is being reported as saved; reload and retry.', {
           reason: 'patient-save-flush-failed', saved: saved
         });
         hideChipLater(16000); return;

@@ -24,7 +24,7 @@ async function makeHarness(browser, saveMode) {
        cycle B can deliberately pause in capture across cycle A's deadline. */
     const nativeSetTimeout = window.setTimeout.bind(window);
     window.setTimeout = (fn, ms, ...args) => nativeSetTimeout(fn,
-      Number(ms) === 2500 || Number(ms) === 16000 ? 250 : ms, ...args);
+      Number(ms) === 2500 || Number(ms) === 16000 || Number(ms) === 30000 ? 250 : ms, ...args);
 
     window.__saveMode = mode;
     window.__store = [];
@@ -95,6 +95,9 @@ async function makeHarness(browser, saveMode) {
             window.__resolveBatchEnd = () => { window.__saveCommitted = true; resolve({ flushes: 1 }); };
             window.__rejectBatchEnd = reject;
           });
+        }
+        if (window.__saveMode === 'flush-timeout' && window.__saveApplied) {
+          return new Promise(() => {});
         }
         if (window.__saveApplied) window.__saveCommitted = true;
         return Promise.resolve({ flushes: window.__saveApplied ? 1 : 0 });
@@ -362,7 +365,25 @@ async function startAndPause(page) {
     assert(!/^✓|\bSaved \d|\bDone\b/i.test(flushFailure.text), 'a rejected durable flush displayed success');
     await flushFailurePage.close();
 
-    console.log('PASS Athena auto-pull terminal receipt: owned progress, full-detail receipt forwarding, durable exact-row confirmation, bounded failures, timer isolation, and no late saving-state resurrection');
+    /* A hanging cooperative writer must not strand the pull at "saving…".
+       The bounded flush should produce the same explicit failed terminal as a
+       rejected flush, and release the single-flight lane for a retry. */
+    const flushTimeoutPage = await makeHarness(browser, 'flush-timeout');
+    await startAndPause(flushTimeoutPage);
+    await flushTimeoutPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
+    await flushTimeoutPage.evaluate(() => window.__runPromise);
+    const flushTimeout = await flushTimeoutPage.evaluate(() => ({
+      busy: window.__mlsAthenaAutoPull.isBusy(),
+      receipt: window.__mlsAthenaAutoPull.terminalReceipt(),
+      text: document.querySelector('#mlsPullBar [data-text]').textContent
+    }));
+    assert.strictEqual(flushTimeout.busy, false, 'a stalled local flush left the pull lane busy');
+    assert(flushTimeout.receipt && flushTimeout.receipt.ok === false && flushTimeout.receipt.reason === 'patient-save-flush-failed',
+      'a stalled durable flush did not settle as an explicit failure');
+    assert(!/^✓|\bSaved \d|\bDone\b/i.test(flushTimeout.text), 'a stalled durable flush displayed success');
+    await flushTimeoutPage.close();
+
+    console.log('PASS Athena auto-pull terminal receipt: owned progress, full-detail receipt forwarding, durable exact-row confirmation, bounded failures, stalled-flush timeout, timer isolation, and no late saving-state resurrection');
   } finally {
     await browser.close();
   }

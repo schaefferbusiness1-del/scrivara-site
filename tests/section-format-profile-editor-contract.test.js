@@ -64,6 +64,11 @@ for (const control of ['mlsDtSectionName', 'mlsDtSectionAdd', 'mlsDtSectionDelet
   assert.ok(source.includes('id="' + control + '"'),
     'Settings is missing the named reusable-format control: ' + control);
 }
+assert.ok(source.includes('mls-dt-short-field'),
+  'short saved-format controls do not have a compact-field class');
+assert.ok(/id="mlsDtSectionName"[^>]*style="[^"]*min-height:0[^\"]*height:42px/.test(source) &&
+  /id="mlsDtSectionWhen"[^>]*style="[^"]*min-height:0[^\"]*height:42px/.test(source),
+  'format name and automatic-use controls still inherit the tall note editor height');
 
 const sections = ['hpi', 'ros', 'exam', 'assessment', 'plan'];
 const marker = section => ({

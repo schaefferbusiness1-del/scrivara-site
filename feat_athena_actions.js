@@ -32,7 +32,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = '1.0.1';
+  var VERSION = '1.0.2';
   if (window.__mlsAthenaActions && window.__mlsAthenaActions.installed) return;
 
   // ---- small helpers ------------------------------------------------------
@@ -362,7 +362,11 @@
     }
     window.addEventListener('message', onMsg, true);
     try {
-      window.postMessage({ source: 'mls-app', type: 'mlsAppSearchOpenPatient', name: lf, raw: name }, '*');
+      /* The background driver, not this display helper, owns Athena's exact
+         Last,First search shape. Send the raw identity so its first/last and
+         compound-surname retry can produce e.g. "B1050 769189,MLS". Sending
+         `lf` here made the comma look authoritative and disabled that retry. */
+      window.postMessage({ source: 'mls-app', type: 'mlsAppSearchOpenPatient', name: name, raw: name, displayName: lf }, '*');
     } catch (e) {}
     timer = setTimeout(function () {
       window.removeEventListener('message', onMsg, true);

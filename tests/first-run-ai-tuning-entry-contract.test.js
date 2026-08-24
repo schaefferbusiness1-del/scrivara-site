@@ -23,6 +23,10 @@ assert(/function onAiClick\(\)[\s\S]{0,700}window\.openSettings/.test(firstRun),
   'AI formats CTA does not reuse canonical Settings');
 const aiHandler = firstRun.slice(firstRun.indexOf('function onAiClick()'), firstRun.indexOf('function onPullClick()'));
 assert(!/markDone\s*\(/.test(aiHandler), 'AI formats CTA must not dismiss or complete setup');
+assert(/function focusAiFormats\([\s\S]{0,1400}mlsDraftTuningSection/.test(firstRun),
+  'AI formats CTA does not target the mounted draft-tuning section');
+assert(/data-mls-settings-group=\\?['"]notes/.test(firstRun) && /scrollIntoView/.test(firstRun) && /\.focus/.test(firstRun),
+  'AI formats CTA does not select Notes & AI and focus the format controls');
 assert(/AI note formats for HPI, ROS, Exam, Assessment and Plan/.test(firstRun),
   'Settings tour step does not identify all configurable note sections');
 assert(/documented circumstance applies/.test(firstRun),

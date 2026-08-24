@@ -33,11 +33,31 @@ const live = src.indexOf("document.addEventListener('click', ez3Click, true);");
 assert(live > 0, 'could not locate the live engine click wiring');
 assert(first < live, 'the listener must be inside the LIVE engine copy, before its click wiring');
 
-const block = src.slice(first, first + 1400);
+const block = src.slice(first, live);
 
-/* 1. EMPTY transition only — an A->B switch is owned by the lock paths. */
-assert(/if \(nextId\) return;/.test(block),
-  'the listener must ignore a patient-to-patient switch and act only on the EMPTY transition');
+/* 1. Keep a non-empty transition only when that patient owns this visit.
+      A Recent/Profile A->B switch must release A's stale appointment, while
+      calStartVisit's matching activation must keep its just-installed row. */
+assert(/if \(nextId && visitBindingOwnsPatient\(nextId\)\) return;/.test(block),
+  'the listener must keep a non-empty switch only when the new patient owns the visit binding');
+assert(!/if \(nextId\) return;/.test(block),
+  'a blanket non-empty return resurrects the live mixed-patient Start visit bug');
+
+const ownerStart = src.indexOf('function visitBindingOwnsPatient(nextId)');
+assert(ownerStart > 0 && ownerStart < first,
+  'the live engine needs an explicit patient-to-visit ownership check before its lifecycle listener');
+const ownerBlock = src.slice(ownerStart, first);
+assert(/a\._pt && a\._patientId/.test(ownerBlock) && /a\.patient_external_id/.test(ownerBlock),
+  'ownership must preserve both a search-picked patient row and an exact linked appointment activation');
+assert(/patientById\(nextId\)/.test(ownerBlock) && /nameMatch\(a\.name, p\.name\)/.test(ownerBlock),
+  'ownership needs the active local patient identity when an appointment has no exact external id');
+assert(/ad && pd && ad !== pd/.test(ownerBlock),
+  'same-name patients must not share a visit when both DOBs disagree');
+assert(/S\.locked && S\.locked\.name/.test(ownerBlock) && /S\.locked\.dob/.test(ownerBlock),
+  'an inconsistent Easy lock must not preserve an otherwise matching appointment');
+
+assert(/hasOwnProperty\.call\(detail, 'patientId'\)/.test(block) && /window\.getActivePtId\(\)/.test(block),
+  'events without identity detail must fall back to the canonical active patient instead of impersonating Deselect');
 
 /* 2. Never mid-recording. This is the b791 lesson: a refusal must not reset. */
 assert(/if \(isRecording\(\)\) \{/.test(block),
@@ -63,4 +83,4 @@ assert(!/noteBox|currentSoap|transcript|newVisit\(/.test(block),
 assert(src.indexOf("closest('#ptDeselectChip')") > 0,
   'dd-1.0.0 capture delegation for the Deselect chip is gone');
 
-console.log('PASS deselect releases the visit: the live engine now listens for mls:active-patient-changed and, on the EMPTY transition only, drops S.appt/S.locked and returns home - refusing with an explanation while recording, guard ordered BEFORE any clear, and never touching note or transcript text');
+console.log('PASS patient lifecycle releases the visit: empty or mismatched non-empty transitions drop stale S.appt/S.locked, matching activations keep their row, recording refuses before any clear, and note/transcript text is never touched');

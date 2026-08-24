@@ -541,14 +541,45 @@
 
   function onDismiss() { markDone(); removeCard(); closeTour(); }
   function onTourClick() { openTour(); }
+  function focusAiFormats(attempt) {
+    attempt = Number(attempt) || 0;
+    var section = byId('mlsDraftTuningSection');
+    var modal = byId('settingsModal');
+    if (!section || !modal || !modal.classList.contains('show')) {
+      /* Draft tuning is a first-use asset and may arrive just after the
+         settings modal opens. Keep this bounded and retry only while the
+         section is genuinely not mounted. */
+      if (attempt < 20) later(function () { focusAiFormats(attempt + 1); }, 100);
+      return;
+    }
+    /* The settings cleanup owner groups AI draft tuning with Notes & AI. Use
+       its real tab when present so the CTA never leaves the section hidden
+       behind whichever tab happened to be active. */
+    var notesTab = qs('#settingsTabBar [data-mls-settings-group="notes"]');
+    if (notesTab && isFn(notesTab.click)) safe(function () { notesTab.click(); });
+    else {
+      section.classList.remove('set-tab-hidden');
+      section.style.display = '';
+    }
+    safe(function () { section.scrollIntoView({ block: 'start', inline: 'nearest' }); });
+    var first = byId('mlsDtFamily') || byId('mlsDtSectionName');
+    safe(function () { if (first && isFn(first.focus)) first.focus({ preventScroll: true }); });
+  }
   function onAiClick() {
     /* Reuse the canonical Settings entry. It starts the first-use draft
        tuning loader and opens the same account-scoped AI section controls;
        this CTA never marks setup complete and never carries visit data. */
     safe(function () {
-      if (isFn(window.openSettings)) { window.openSettings(); return; }
+      if (isFn(window.openSettings)) {
+        window.openSettings();
+        focusAiFormats(0);
+        return;
+      }
       var fallback = byId('rectab_settings') || qs('#mlsDock button[data-dest="tools"]');
-      if (fallback && isFn(fallback.click)) fallback.click();
+      if (fallback && isFn(fallback.click)) {
+        fallback.click();
+        focusAiFormats(0);
+      }
     });
   }
   function onPullClick() {

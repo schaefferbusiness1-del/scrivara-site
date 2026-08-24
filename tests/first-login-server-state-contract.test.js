@@ -197,8 +197,17 @@ const legacyManifest = {
 };
 eq(legacyRequestFor(2, legacyManifest.version)(legacyManifest, 'Synthetic Signer', 'data:image/png;base64,AA=='), null,
   'a policy-2 account can be downgraded to the legacy signing request');
-eq(legacyRequestFor(0, 'stale-version')(legacyManifest, 'Synthetic Signer', 'data:image/png;base64,AA=='), null,
-  'a legacy request can post a manifest that does not match this deployed form set');
+assert.deepStrictEqual(
+  legacyRequestFor(0, 'stale-version')(legacyManifest, 'Synthetic Signer', 'data:image/png;base64,AA=='),
+  {
+    version: '2026-07-21',
+    name: 'Synthetic Signer',
+    agreements: [{ title: 'One-party form' }, { title: 'Practice BAA' }],
+    signatureImg: 'data:image/png;base64,AA==',
+    requiresCountersign: true,
+  },
+  'a legacy request must use the verified server manifest version rather than a stale page constant'
+);
 assert.deepStrictEqual(
   legacyRequestFor(0, legacyManifest.version)(legacyManifest, 'Synthetic Signer', 'data:image/png;base64,AA=='),
   {
