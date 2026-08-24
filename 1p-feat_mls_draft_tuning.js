@@ -843,7 +843,12 @@
     }
     sectionImportSession = null;
     var panel = q('mlsDtSectionImportPanel'), preview = q('mlsDtSectionImportPreview'), file = q('mlsDtSectionImportFile');
-    if (panel && hide !== false) panel.style.display = 'none';
+    var openButton = q('mlsDtSectionImportOpen');
+    if (panel && hide !== false) {
+      panel.hidden = true;
+      panel.style.display = 'none';
+    }
+    if (openButton && hide !== false) openButton.setAttribute('aria-expanded', 'false');
     if (preview) preview.style.display = 'none';
     ['mlsDtSectionImportExample', 'mlsDtSectionImportNamePreview', 'mlsDtSectionImportTemplatePreview', 'mlsDtSectionImportCommentsPreview'].forEach(function (id) {
       var el = q(id); if (el) el.value = '';
@@ -862,7 +867,9 @@
     sectionImportSession = exampleImporter(activeFamily, profile);
     panel.setAttribute('data-family', activeFamily);
     panel.setAttribute('data-profile', profile);
+    panel.hidden = false;
     panel.style.display = '';
+    q('mlsDtSectionImportOpen').setAttribute('aria-expanded', 'true');
     sectionImportStatus('Choose a file or paste an example draft. Nothing is saved until you apply the preview and save Settings.', false);
   }
   async function onSectionImportFile(event) {
@@ -943,7 +950,7 @@
         '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
       '</div>' +
       '<div class="field" id="mlsDtSectionTemplateTextHost"><label for="mlsDtSectionTemplateText">Template / outline for this saved format</label><textarea class="note-box" id="mlsDtSectionTemplateText" maxlength="2000" placeholder="Enter the headings, order, labels, or example structure MLS should follow. Do not put patient facts here."></textarea><p class="mini">The AI treats this as a format scaffold, never as evidence about the patient. 2,000 characters maximum.</p></div>' +
-      '<div class="field" id="mlsDtSectionImportHost"><button type="button" class="btn-ghost" id="mlsDtSectionImportOpen">Import an example draft, document, or image</button><div id="mlsDtSectionImportPanel" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px">' +
+      '<div class="field" id="mlsDtSectionImportHost"><button type="button" class="btn-ghost" id="mlsDtSectionImportOpen" aria-controls="mlsDtSectionImportPanel" aria-expanded="false">Import an example draft, document, or image</button><div id="mlsDtSectionImportPanel" hidden style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px">' +
         '<p class="mini" style="margin-top:0">Paste an example draft, or choose a document file or image (text, Word, PDF, PNG, JPEG, WebP, or GIF). MLS privately reads it, removes patient-specific content, and creates a reusable format preview. The example itself is never saved in these settings.</p>' +
         '<input type="file" id="mlsDtSectionImportFile" accept=".txt,.text,.md,.markdown,.rtf,.doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif">' +
         '<textarea class="note-box" id="mlsDtSectionImportExample" maxlength="20000" placeholder="Or paste an example draft here…" style="margin-top:8px;min-height:120px"></textarea>' +
@@ -1043,6 +1050,8 @@
       if (!working) working = read();
       working.families[activeFamily] = familyDefaults(activeFamily);
       loadUi(activeFamily);
+      var resetStatus = q('mlsDtResetStatus');
+      if (resetStatus) resetStatus.textContent = 'Restored MLS defaults for ' + FAMILY_LABELS[activeFamily] + '. Save changes to keep this reset.';
     });
     try { if (typeof window.mlsBuildSettingsTabs === 'function') window.mlsBuildSettingsTabs(); } catch (e) {}
     try { if (window.__mlsUiUnification && typeof window.__mlsUiUnification.reconcileSettings === 'function') window.__mlsUiUnification.reconcileSettings(); } catch (e2) {}
@@ -1111,11 +1120,16 @@
     var button = q('mlsDtReset'), status = q('mlsDtResetStatus');
     if (!button) return;
     var current = working && working.families ? sanitizeFamily(activeFamily, working.families[activeFamily]) : familyDefaults(activeFamily);
-    var changed = JSON.stringify(current) !== JSON.stringify(familyDefaults(activeFamily));
+    /* Compare canonical sanitized values. The raw defaults and sanitized
+       values can carry identical profile fields in a different property
+       order; order-sensitive JSON comparison made Reset appear available at
+       semantic defaults and then look like it did nothing. */
+    var defaults = sanitizeFamily(activeFamily, familyDefaults(activeFamily));
+    var changed = JSON.stringify(current) !== JSON.stringify(defaults);
     button.disabled = !changed;
     button.setAttribute('aria-disabled', changed ? 'false' : 'true');
     button.title = changed ? 'Restore the defaults for this draft type' : 'This draft type is already at its defaults';
-    if (status) status.textContent = changed ? 'Edits made — reset is available.' : 'Reset is unavailable because this draft type is already using its defaults.';
+    if (status) status.textContent = changed ? 'Edits made — reset is available.' : 'Reset unavailable — already using MLS defaults.';
   }
   function loadUi(id) {
     if (!mountSettings()) return;

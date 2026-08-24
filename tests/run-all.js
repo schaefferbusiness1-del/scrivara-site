@@ -55,6 +55,20 @@ const tests = [
      format workspace as Settings; opening it is not completion and cannot
      mutate visit data. */
   'first-run-ai-tuning-entry-contract.test.js',
+  /* Recent production regressions must be part of the full release gate, not
+     only ad-hoc focused runs: every draft family keeps its own format, the
+     first full Athena pull safely seeds local starter structures, mixed
+     procedure/HPI destinations remain separate, Athena search uses Last,
+     First, generation failures stay truthful, history cleanup terminates,
+     and an empty stopped transcript keeps one honest owner. */
+  'all-draft-family-profile-coverage.test.js',
+  'first-pull-style-bootstrap-runtime.test.js',
+  'first-pull-style-loader-contract.test.js',
+  'athena-mixed-procedure-staging-runtime.test.js',
+  'athena-name-search-format-contract.test.js',
+  'generation-quality-error-contract.test.js',
+  'visit-history-cleaning-status-runtime.test.js',
+  'zero-word-stopped-transcript-owner-runtime.test.js',
   /* The /1p Calendar repair of 2026-08-16: one pull entry point instead of
      four, the hero carrying the same caller contract the Visit strip has,
      and a per-appointment op-note action that fails closed rather than

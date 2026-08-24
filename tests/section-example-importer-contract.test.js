@@ -80,11 +80,30 @@ try {
   await page.addScriptTag({ path: path.join(root, 'feat_mls_draft_tuning.js') });
   await page.waitForFunction(() => window.__mlsDraftTuning && document.getElementById('mlsDtFamily'));
 
+  // A fresh family is semantically at defaults. Reset must not be enabled by
+  // object-key ordering, and an actual edit/reset must give a visible receipt
+  // without persisting anything until the Settings footer is saved.
+  assert.ok(await page.locator('#mlsDtReset').isDisabled(), 'Reset is enabled even though SOAP is already at semantic defaults');
+  assert.match(await page.textContent('#mlsDtResetStatus') || '', /already using MLS defaults/i,
+    'the default Reset state does not explain why the action is unavailable');
+  const storageBeforeReset = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)])));
+  await page.selectOption('#mlsDtLength', 'detailed');
+  assert.ok(await page.locator('#mlsDtReset').isEnabled(), 'editing a draft family did not enable Reset');
+  await page.click('#mlsDtReset');
+  assert.ok(await page.locator('#mlsDtReset').isDisabled(), 'Reset did not return the family to semantic defaults');
+  assert.strictEqual(await page.inputValue('#mlsDtLength'), 'standard', 'Reset did not restore the SOAP detail default');
+  assert.match(await page.textContent('#mlsDtResetStatus') || '', /restored MLS defaults.*save changes/i,
+    'Reset completed without a visible save-required receipt');
+  assert.strictEqual(await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)]))), storageBeforeReset,
+    'Reset persisted before the Settings footer was saved');
+
   await page.selectOption('#mlsDtFamily', 'hpi');
   for (const id of CONTROL_IDS) {
     assert.strictEqual(await page.locator('#' + id).count(), 1, 'HPI example control is not mounted: ' + id);
   }
   await page.click('#mlsDtSectionImportOpen');
+  assert.strictEqual(await page.getAttribute('#mlsDtSectionImportOpen', 'aria-expanded'), 'true',
+    'example importer did not expose its expanded state');
   await page.waitForFunction(() => {
     const panel = document.getElementById('mlsDtSectionImportPanel');
     return panel && getComputedStyle(panel).display !== 'none' && !panel.hidden;
@@ -102,6 +121,8 @@ try {
   // previously the controls rendered for all families but the click silently
   // returned outside HPI/ROS/Exam/Assessment/Plan.
   await page.click('#mlsDtSectionImportCancel');
+  assert.strictEqual(await page.getAttribute('#mlsDtSectionImportOpen', 'aria-expanded'), 'false',
+    'Cancel did not expose the importer as collapsed');
   const familyIds = await page.evaluate(() => window.__mlsDraftTuning.familyIds.slice());
   for (const family of familyIds) {
     await page.selectOption('#mlsDtFamily', family);

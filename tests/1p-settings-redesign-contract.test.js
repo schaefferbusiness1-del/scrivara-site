@@ -447,6 +447,21 @@ async function runtime() {
           const again = await page.evaluate((s) => window.__t2.end(s), c.sel);
           res.wrote = res.wrote.filter((k) => again.wrote.indexOf(k) >= 0);
         }
+        /* Settings search is a view filter, not a durable setting. Leaving the
+           probe in it hides the remaining sections while this loop continues
+           clicking selectors captured from the old visible inventory. That
+           measures hidden controls and can call a working action inert. Clear
+           the probe before continuing so every later press is visible. */
+        if (c.id === 'settingsSearch' && res.modalOpen) {
+          await page.evaluate(() => {
+            const search = document.getElementById('settingsSearch');
+            if (!search) return;
+            search.value = '';
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+            search.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          await page.waitForTimeout(250);
+        }
         inventory.push(Object.assign({ tab: t.label, did }, c, res));
         if (!res.modalOpen) {
           await page.evaluate(() => { try { openSettings(); } catch (e) {} });

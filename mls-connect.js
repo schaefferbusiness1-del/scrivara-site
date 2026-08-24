@@ -57797,19 +57797,65 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   });
   return window.__mlsDraftTuningLoad;
 };
-/* first-pull-style-1.0.0: load the account-local, PHI-free starter-format
-   bootstrap beside draft tuning. It listens for the successful full-history
-   receipt and stays inert until that event; it never opens Athena or writes it. */
+/* first-pull-style-1.1.0: define the account-local, PHI-free starter-format
+   loader at boot, but do not fetch or execute the learner then. The verified
+   full-history receipt calls this first-use seam; its asset insertion is routed
+   through window.__mlsDeferAsset() so it cannot join the post-login burst. */
 (function () {
   try {
     var A = 'feat_mls_first_pull_style.js';
-    if (window.__mlsFirstPullStyle || document.querySelector('script[data-mls-asset="' + A + '"]')) return;
-    var s = document.createElement('script');
-    s.src = A + '?v=' + (window.__MLS_AV || Date.now());
-    s.async = true;
-    s.setAttribute('data-mls-asset', A);
-    s.onload = function () { s.setAttribute('data-mls-loaded', '1'); };
-    s.onerror = function () { try { s.remove(); } catch (_) {} };
-    (document.body || document.head || document.documentElement).appendChild(s);
+    var V = 'first-pull-style-1.1.0';
+    var inFlight = false, generation = 0;
+    function valid(api) {
+      return !!(api && api.installed === true && api.version === V && typeof api.bootstrap === 'function');
+    }
+    function mark(state) {
+      try { document.documentElement.setAttribute('data-mls-first-pull-style-loader', state); } catch (_) {}
+    }
+    function retire(node) { try { if (node && typeof node.remove === 'function') node.remove(); } catch (_) {} }
+    function load(attempt) {
+      var token = ++generation, settled = false, watchdog = null;
+      var s = document.createElement('script');
+      s.src = A + '?v=' + (attempt ? Date.now() : (window.__MLS_AV || Date.now()));
+      s.async = true;
+      s.setAttribute('data-mls-asset', A);
+      s.setAttribute('data-mls-load-attempt', String(attempt + 1));
+      function settle(kind) {
+        if (settled || token !== generation) return;
+        settled = true;
+        if (watchdog) { try { clearTimeout(watchdog); } catch (_) {} }
+        var ready = kind === 'loaded' && valid(window.__mlsFirstPullStyle);
+        if (kind === 'loaded') s.setAttribute('data-mls-loaded', '1');
+        var failureState = kind === 'loaded' ? 'missing-api' : kind === 'timeout' ? 'network-timeout' : 'network-error';
+        s.setAttribute('data-mls-install-state', ready ? 'ready' : failureState);
+        if (ready) { inFlight = false; mark('ready'); return; }
+        retire(s);
+        if (attempt < 1) { mark(failureState); setTimeout(function () { if (token === generation) load(attempt + 1); }, 250); }
+        else { inFlight = false; mark('failed-bounded'); }
+      }
+      s.onload = function () { settle('loaded'); };
+      s.onerror = function () { settle('error'); };
+      watchdog = setTimeout(function () { settle('timeout'); }, 12000);
+      (document.body || document.head || document.documentElement).appendChild(s);
+    }
+    function ensure() {
+      if (valid(window.__mlsFirstPullStyle)) { mark('ready'); return true; }
+      if (inFlight) return false;
+      /* A downloaded tag without a valid owner must never poison this tab.
+         Retire it before taking a fresh, bounded two-attempt ownership lane. */
+      var stale = document.querySelector('script[data-mls-asset="' + A + '"]');
+      if (stale) retire(stale);
+      inFlight = true;
+      mark('queued');
+      var begin = function () {
+        if (valid(window.__mlsFirstPullStyle)) { inFlight = false; mark('ready'); return; }
+        mark('loading');
+        load(0);
+      };
+      if (typeof window.__mlsDeferAsset === 'function') window.__mlsDeferAsset(begin);
+      else setTimeout(begin, 0);
+      return false;
+    }
+    window.__mlsEnsureFirstPullStyle = ensure;
   } catch (_) {}
 })();

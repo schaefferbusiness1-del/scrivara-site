@@ -12,9 +12,10 @@
  */
 (function (root) {
   'use strict';
-  if (!root || root.__mlsFirstPullStyle) return;
-
-  var VERSION = 'first-pull-style-1.0.0';
+  var VERSION = 'first-pull-style-1.1.0';
+  if (!root) return;
+  var priorApi = root.__mlsFirstPullStyle;
+  if (priorApi && priorApi.installed === true && priorApi.version === VERSION && typeof priorApi.bootstrap === 'function') return;
   var MARKER = 'firstPullStyleBootstrapV1';
   var PENDING = 'firstPullStylePendingV1';
   var LOCK = 'firstPullStyleBootstrapLockV1';
@@ -41,6 +42,23 @@
   }
   function sectionBlock(raw, family) {
     raw = clean(raw, 120000); if (!raw) return '';
+    /* Athena exports both line-oriented notes and flattened bodies such as
+       "HPI: ... Assessment: ... Plan: ...". Prefer explicit colon headings
+       and sentence/newline boundaries so the common flattened representation
+       seeds formats too, without treating ordinary clinical prose as a label. */
+    var headingNames = ORDER.slice().sort(function (a, b) { return b.length - a.length; });
+    var escaped = headingNames.map(function (name) { return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|');
+    var inlineRe = new RegExp('(^|[\\r\\n]+|[.!?]\\s+|\\s{2,})(' + escaped + ')\\s*[:：]\\s*', 'gim');
+    var spans = [], match;
+    while ((match = inlineRe.exec(raw))) spans.push({ heading: String(match[2] || '').toUpperCase(), bodyStart: inlineRe.lastIndex, boundaryStart: match.index });
+    if (spans.length) {
+      var wanted = HEADING[family] || [];
+      for (var si = 0; si < spans.length; si++) {
+        if (wanted.indexOf(spans[si].heading) < 0) continue;
+        var inlineBody = clean(raw.slice(spans[si].bodyStart, si + 1 < spans.length ? spans[si + 1].boundaryStart : raw.length), 4500);
+        if (inlineBody) return spans[si].heading + ':\n' + inlineBody;
+      }
+    }
     var heads = HEADING[family] || [], lines = raw.split('\n'), start = -1, found = '';
     function headingLine(line) {
       var value = String(line || '').replace(/^\s+|\s+$/g, '').replace(/[:：-]\s*$/, '').toUpperCase();
@@ -102,8 +120,20 @@
     return out;
   }
   function genericStructureWordsOnly(value) {
-    var words = String(value || '').toLowerCase().match(/[a-z][a-z-]{1,}/g) || [];
+    var raw = String(value || '').toLowerCase().replace(/[\[\]]/g, ' ').trim();
+    /* Reject the whole label when any digit, non-Latin token or unapproved
+       punctuation remains. The old word-only matcher silently ignored dates,
+       initials and levels such as L4-L5, then persisted the original label. */
+    if (!raw || /[^a-z\s/&()+.'’\-]/.test(raw)) return false;
+    var words = raw.replace(/[\/&()+.'’\-]+/g, ' ').match(/[a-z]+/g) || [];
     return !!words.length && words.every(function (word) { return !!GENERIC_STRUCTURE_WORDS[word]; });
+  }
+  function genericStructureLabel(value) {
+    if (!genericStructureWordsOnly(value)) return '';
+    var words = String(value || '').toLowerCase().replace(/[^a-z]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    return words.map(function (word) {
+      return /^(hpi|ros|bmi)$/.test(word) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1);
+    }).join(' ');
   }
   function structuralTemplate(family, value) {
     var heads = HEADING[family] || [], sawFamilyHeading = false, lines = clean(value, 2000).split('\n');
@@ -132,8 +162,9 @@
       var s = String(line || '').trim();
       if (!s) { proseOpen = false; return; }
       var labeled = s.match(/^(?:[-*•]|\d+[.)])?\s*([^:]{1,64}):/);
-      if (labeled && genericStructureWordsOnly(labeled[1])) {
-        out.push(labeled[1].trim() + ': [DOCUMENTED FINDING]');
+      var safeLabel = labeled ? genericStructureLabel(labeled[1]) : '';
+      if (safeLabel) {
+        out.push(safeLabel + ': [DOCUMENTED FINDING]');
         structuralRows += 1; proseOpen = false; return;
       }
       if (/^[-*•]\s+/.test(s)) {
@@ -282,6 +313,11 @@
   }
   var api = { installed: true, version: VERSION, bootstrap: bootstrap, _examples: examples, _sectionBlock: sectionBlock, _fallback: fallback, _safeDerived: safeDerived };
   root.__mlsFirstPullStyle = api;
+  /* Live QA must be able to prove execution without reading app globals from
+     the browser automation sandbox. The loader's onload bit proves only that
+     bytes arrived; this DOM marker is written by the module itself after its
+     API is installed. It contains no account or patient data. */
+  try { root.document.documentElement.setAttribute('data-mls-first-pull-style-ready', VERSION); } catch (e) {}
   function onPull(ev) {
     var pending = readPending(), d = pending || ev && ev.detail || {};
     /* Draft tuning is intentionally lazy. A pull can finish before Settings or

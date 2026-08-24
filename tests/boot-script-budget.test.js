@@ -461,7 +461,14 @@ const LOADER = 'mls-connect.js';
  * use scheduler + exact first-use admission, so EAGER_CEILING does not move;
  * the two broad observers were removed/scoped, so OBSERVER_CEILING does not
  * move either. */
-const CEILING = 265;
+/* 265 -> 266 at b1061 for feat_mls_first_pull_style.js. This is an account-
+ * local starter-format learner that must remain separately revertible from
+ * draft tuning because it owns the one-time admission/lock/replay boundary.
+ * It performs zero startup work: only the small ensure function is defined at
+ * boot, while the verified full-history receipt calls it later and the actual
+ * script insertion goes through __mlsDeferAsset. It removes setup work by
+ * deriving blank starter formats automatically; EAGER_CEILING does not move. */
+const CEILING = 266;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

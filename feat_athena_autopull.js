@@ -673,6 +673,11 @@
         window.localStorage.setItem(firstPullPendingKey, JSON.stringify({
           patientId: String(patient.id || ''), saved: Number(saved) || 0, at: Date.now()
         }));
+        /* If startup networking failed earlier, give the bounded learner
+           loader one fresh ownership attempt now. The durable receipt above
+           makes a late install safe: it will replay without putting identity
+           or clinical text on the public event seam. */
+        if (typeof window.__mlsEnsureFirstPullStyle === 'function') window.__mlsEnsureFirstPullStyle();
         var firstPullEvent = typeof window.CustomEvent === 'function'
           ? new CustomEvent('mls:athena-full-history-pull-complete', { detail: { saved: Number(saved) || 0 } })
           : null;

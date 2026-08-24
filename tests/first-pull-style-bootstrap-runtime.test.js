@@ -11,7 +11,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, '1p-feat_mls_first_pull_style.js'), 'utf8');
 
-function makeHarness({ custom = false, pending = false } = {}) {
+function makeHarness({ custom = false, pending = false, inline = false } = {}) {
   const store = new Map();
   const listeners = {};
   const updates = [];
@@ -20,12 +20,15 @@ function makeHarness({ custom = false, pending = false } = {}) {
   const visit = {
     id: 'v-1', date: '2026-08-20', identityVerified: true, identityBinding: 'p-qa',
     fullDetail: true, bodyComplete: true, indexOnly: false,
-    raw: 'Patient: Jane Example\nHPI:\nPatient reports low back pain for 3 days.\nROS:\nMusculoskeletal: denies weakness.\nEXAM:\nGait: normal.\nASSESSMENT:\nLumbar pain.\nPLAN:\nContinue therapy.'
+    raw: inline
+      ? 'Patient: Jane Example. HPI: Patient reports low back pain for 3 days. ROS: Musculoskeletal symptoms reviewed. EXAM: Gait documented. ASSESSMENT: Lumbar condition documented. PLAN: Continue documented therapy.'
+      : 'Patient: Jane Example\nHPI:\nPatient reports low back pain for 3 days.\nROS:\nMusculoskeletal: denies weakness.\nEXAM:\nGait: normal.\nASSESSMENT:\nLumbar pain.\nPLAN:\nContinue therapy.'
   };
   const context = {
     console,
     setTimeout,
     clearTimeout,
+    document: { documentElement: { setAttribute: (name, value) => { context.documentMarker = { name, value }; } } },
     localStorage: { getItem: k => store.get(k) || null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) },
     uns: k => 'acct::' + k,
     findPatient: id => id === patient.id ? patient : null,
@@ -58,6 +61,7 @@ function makeHarness({ custom = false, pending = false } = {}) {
   h.dispatch();
   await new Promise(r => setTimeout(r, 10));
   assert.equal(h.updates.length, 5, 'all five clinical starter formats were not created');
+  assert.deepEqual(h.context.documentMarker, { name: 'data-mls-first-pull-style-ready', value: 'first-pull-style-1.1.0' }, 'module execution did not publish its PHI-free live-QA marker');
   assert.ok(h.updates.every(x => x.changes.templateText.includes('[')), 'starter template lacks a neutral placeholder');
   assert.ok(h.updates.every(x => /^Learned [A-Z]+ format$/.test(x.changes.label)), 'model-authored format name reached durable settings');
   assert.ok(h.updates.every(x => !x.changes.instructions.includes('Model prose')), 'model-authored instructions reached durable settings');
@@ -88,6 +92,15 @@ function makeHarness({ custom = false, pending = false } = {}) {
   assert.ok(local.updates.every(x => /DOCUMENTED|not documented/i.test(x.changes.templateText)), 'fallback contains patient-specific prose');
   assert.equal(local.context.__mlsFirstPullStyle._safeDerived('hpi', { name: 'Unsafe', templateText: 'HPI:\n[PRESENTING CONCERN]\nLumbar pain', instructions: 'Preserve documented source facts.' }, 'HPI:\nLumbar pain for 3 days.'), null, 'AI-derived template accepted source-specific clinical prose');
   assert.equal(local.context.__mlsFirstPullStyle._safeDerived('hpi', { name: 'Unsafe', templateText: 'HPI:\n[PRESENTING CONCERN]\nCervical radiculopathy', instructions: 'Preserve documented source facts.' }, 'HPI:\nLumbar pain for 3 days.'), null, 'AI-derived template accepted hallucinated clinical prose absent from the source');
+  const hostileLabels = local.context.__mlsFirstPullStyle._fallback('exam', 'EXAM:\nDate 08/20/2026: confidential\nPatient A B 1234: secret\nExam L4-L5: abnormal\nGait: normal').templateText;
+  assert.ok(!/08|2026|1234|L4|L5|Patient A B/i.test(hostileLabels), 'date, initials, identifier or anatomy level survived into the durable structural template');
+  assert.ok(/Gait: \[DOCUMENTED FINDING\]/.test(hostileLabels), 'strict PHI rejection also discarded a safe generic field label');
+
+  const inline = makeHarness({ inline: true });
+  inline.dispatch();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(inline.updates.length, 5, 'flattened Athena note headings did not seed all five starter formats');
+  assert.ok(!JSON.stringify(inline.context.__mlsFirstPullStyle._examples('p-qa')).includes('low back pain'), 'flattened Athena note leaked clinical prose into a starter template');
 
   const replay = makeHarness({ pending: true });
   await new Promise(r => setTimeout(r, 10));

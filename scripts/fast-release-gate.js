@@ -10,7 +10,7 @@
  * completed precheck prints FAST_GATE_PLAN and FAST_GATE_COMPLETE; a refused
  * release stops at FAST_GATE_REFUSED. A successful fast precheck still prints
  * full_gate_required=true when the change cannot
- * be promoted safely without the canonical GATE_COMPLETE=801 proof.
+ * be promoted safely without the canonical GATE_COMPLETE=815 proof.
  *
  * Usage:
  *   node scripts/fast-release-gate.js --base=origin/main --mode=precheck
@@ -28,7 +28,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 /* Kept in sync with tests/run-all.js by the deterministic contract test. */
-const FULL_GATE_TESTS = 801;
+const FULL_GATE_TESTS = 815;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

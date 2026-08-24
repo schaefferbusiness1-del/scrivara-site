@@ -73,7 +73,7 @@ ok(plan.focused.some((step) => /profile-coherence/.test(step.label)), 'provenanc
 ok(plan.focused.some((step) => /source-browser/.test(step.label)), 'provenance plan includes the visible SOURCE-row browser proof');
 ok(plan.focused.some((step) => /partial-provenance/.test(step.label)), 'provenance plan includes the new partial receipt test');
 ok(plan.descriptors.every((step) => Array.isArray(step.args) && step.args[0].endsWith('.js')), 'every plan step names an executable JavaScript test/script');
-eq(plan.fullGateTests, 801, 'fast plan distinguishes the canonical 801-suite gate');
+eq(plan.fullGateTests, 815, 'fast plan distinguishes the canonical 815-suite gate');
 
 const e17Like = gate.classifyChangedFiles([
   ...provenance.changed,
