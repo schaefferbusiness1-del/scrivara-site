@@ -203,7 +203,7 @@ assert(/compareVersions\(installed,\s*SERVER_EXT_VERSION\)/.test(checker), 'chec
 assert(!/cannot read the installed extension version/i.test(checker), 'checker must not claim the installed version is inherently unreadable');
 
 const downloadPage = read('get-extension.html');
-const RELEASED_PACKAGE_SHA256 = '10716d17baad8a7b36accc623d04ba021388f61e200b2785a3baeadf83065d75';
+const RELEASED_PACKAGE_SHA256 = '0e70bb27cba9d1b3a613d4c67a14be449c36263adc7618e450fce0ad5d21762f';
 assert(/^[a-f0-9]{64}$/.test(RELEASED_PACKAGE_SHA256),
   '3.0.79 package digest must be stamped after deterministic packaging before release');
 assert(!/\bJSZip\b|cdnjs\.cloudflare\.com\/ajax\/libs\/jszip/i.test(downloadPage),
@@ -288,6 +288,12 @@ try {
   const firstZip = fs.readFileSync(firstPath);
   const secondZip = fs.readFileSync(secondPath);
   assert(firstZip.equals(secondZip), 'building identical sources twice must produce byte-identical ZIPs');
+  const releasedZip = fs.readFileSync(path.join(ROOT, expectedName));
+  const releasedBin = fs.readFileSync(path.join(ROOT, expectedName.replace(/\.zip$/i, '.bin')));
+  assert(releasedZip.equals(firstZip),
+    'tracked released ZIP differs from a deterministic build of the current stamped extension sources');
+  assert(releasedBin.equals(firstZip),
+    'tracked released .bin mirror differs from the deterministic ZIP bytes');
 
   const entries = parseZip(firstZip);
   assertSameList(entries.map(entry => entry.name), EXPECTED_FILES, 'release ZIP');
