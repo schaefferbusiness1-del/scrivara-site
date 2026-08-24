@@ -55,5 +55,18 @@ assert(/#ez3Stop,#captureBtn,\.ez3fl-recbtn/.test(click) &&
   'real Pause/Stop clicks do not clear stale calm-shell state');
 assert(/else wake\(\)/.test(click),
   'ordinary clicks lost the existing calm-shell wake/re-arm behavior');
+const headsDownStart = calm.indexOf('function captureActuallyRecording()');
+const headsDownEnd = calm.indexOf('\n  function ensureStages()', headsDownStart);
+assert(headsDownStart >= 0 && headsDownEnd > headsDownStart,
+  'calm-shell has no active-capture predicate separate from stage progress');
+const activeCapture = calm.slice(headsDownStart, headsDownEnd);
+assert(/Pause|stop/.test(activeCapture) && /captureBtn/.test(activeCapture) &&
+       /classList\.contains\('recording'\)/.test(activeCapture),
+  'active-capture predicate does not use visible Pause/Stop and recorder evidence');
+const headsDown = calm.slice(calm.indexOf('function wake()', headsDownStart),
+  calm.indexOf('/* --------------------------------------------------------------- activity */', headsDownStart));
+assert(/stageNow\(\) !== 1 \|\| !captureActuallyRecording\(\)/.test(headsDown) &&
+       /stageNow\(\) === 1 && captureActuallyRecording\(\)/.test(headsDown),
+  'heads-down timer can still arm from the stopped Resume state');
 
 console.log('PASS stop/wake causal contract: single Pause settles Easy, repeat stop is idempotent, and Stop clears heads-down hint/timer');

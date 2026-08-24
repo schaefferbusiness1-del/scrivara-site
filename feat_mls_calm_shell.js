@@ -2456,6 +2456,23 @@
     return 0;
   }
 
+  /* Heads-down is an active-recording affordance, not a generic Record-stage
+     affordance. A stopped visit intentionally keeps a visible Resume button,
+     so stageNow() remains 1 for progress purposes; that must never re-arm the
+     three-second auto-hide timer. Require visible Pause/Stop or the recorder's
+     own active flag/text instead. */
+  function captureActuallyRecording() {
+    var visit = qs('#visitView');
+    if (visit && visible(visit)) {
+      var stopping = findControl({ label: /\b(?:pause|stop)\b/i, within: '#visitView' });
+      if (stopping) return true;
+    }
+    var capture = qs('#captureBtn');
+    if (!capture || !visible(capture)) return false;
+    return capture.classList.contains('recording') ||
+      /\b(?:recording|stop visit|stop recording)\b/i.test(String(capture.textContent || ''));
+  }
+
   function ensureStages() {
     var visit = qs('#visitView');
     if (!visit) return null;
@@ -2673,10 +2690,10 @@
   function wake() {
     clearHeadsDown();
     if (!headsDownOn()) return;
-    if (stageNow() !== 1) return;
+    if (stageNow() !== 1 || !captureActuallyRecording()) return;
     idleTimer = setTimeout(function () {
       idleTimer = null;
-      if (stageNow() === 1) { ensureHint(); D.body.classList.add('mls-headsdown'); }
+      if (stageNow() === 1 && captureActuallyRecording()) { ensureHint(); D.body.classList.add('mls-headsdown'); }
     }, 3000);
   }
 
@@ -2705,10 +2722,10 @@
     if (idleTimer) return;
     if (D.body.classList.contains('mls-headsdown')) return;
     if (!headsDownOn()) return;
-    if (stageNow() !== 1) return;
+    if (stageNow() !== 1 || !captureActuallyRecording()) return;
     idleTimer = setTimeout(function () {
       idleTimer = null;
-      if (stageNow() === 1) { ensureHint(); D.body.classList.add('mls-headsdown'); }
+      if (stageNow() === 1 && captureActuallyRecording()) { ensureHint(); D.body.classList.add('mls-headsdown'); }
     }, 3000);
   }
 
