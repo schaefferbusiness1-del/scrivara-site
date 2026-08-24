@@ -54,6 +54,53 @@
     sectionMode: ['chronological', 'problem_focused', 'template_fields', 'pertinent_only', 'systems_by_system', 'focused', 'systematic', 'normal_template', 'problem_list', 'ranked_differential', 'narrative', 'problem_based', 'action_list', 'follow_up_first']
   };
   var SECTION_FAMILIES = ['hpi', 'ros', 'exam', 'assessment', 'plan'];
+  /* Every generated artifact gets the same reusable-format contract.  The
+     five structured SOAP sections keep their richer clinical modes below;
+     the remaining families use the bounded generic modes so settings never
+     silently fall back to coarse length/tone/structure-only controls. */
+  var PROFILE_FAMILIES = FAMILY_IDS.slice();
+  var GENERIC_PROFILE_DEFAULTS = {
+    soap: [
+      { id: 'standard', label: 'Standard SOAP', when: 'Most visits', sectionMode: 'default', templateMode: 'adapt', instructions: 'Preserve the SOAP contract and keep each section evidence-grounded.' },
+      { id: 'problem_focused', label: 'Problem-focused SOAP', when: 'Single active complaint', sectionMode: 'problem_grouped', templateMode: 'adapt', instructions: 'Lead with the addressed problem while retaining every required SOAP heading.' }
+    ],
+    opnote: [
+      { id: 'standard', label: 'Standard procedure note', when: 'Routine completed procedure', sectionMode: 'template_fields', templateMode: 'strict', instructions: 'Use the selected procedure template and state only documented procedural facts.' },
+      { id: 'complication', label: 'Complication-focused procedure note', when: 'Complication or unexpected event documented', sectionMode: 'problem_grouped', templateMode: 'guide', instructions: 'Make the documented event, response, and disposition easy to find; do not infer causality.' }
+    ],
+    avs: [
+      { id: 'standard', label: 'Standard after-visit summary', when: 'Most visits', sectionMode: 'action_list', templateMode: 'adapt', instructions: 'Use plain language, clear actions, medications, follow-up, and documented precautions.' },
+      { id: 'education', label: 'Education-first after-visit summary', when: 'Patient education is the main deliverable', sectionMode: 'narrative', templateMode: 'guide', instructions: 'Explain documented instructions in patient-friendly language without adding new medical advice.' }
+    ],
+    referral: [
+      { id: 'standard', label: 'Standard referral letter', when: 'Routine referral', sectionMode: 'template_fields', templateMode: 'adapt', instructions: 'State the referral question and relevant documented findings before background detail.' },
+      { id: 'urgent', label: 'Urgent referral letter', when: 'Urgent or expedited referral documented', sectionMode: 'action_list', templateMode: 'guide', instructions: 'Lead with urgency, reason, and requested action only when supported by the source.' }
+    ],
+    priorauth: [
+      { id: 'standard', label: 'Standard prior authorization', when: 'Routine coverage request', sectionMode: 'problem_grouped', templateMode: 'adapt', instructions: 'Present requested service, diagnosis, prior treatment, and medical necessity from documented evidence.' },
+      { id: 'appeal', label: 'Appeal / denial response', when: 'Coverage denial or appeal documented', sectionMode: 'narrative', templateMode: 'guide', instructions: 'Address the documented denial rationale directly and distinguish facts from requested reconsideration.' }
+    ],
+    legal_ime: [
+      { id: 'standard', label: 'Standard legal / IME report', when: 'Most reports', sectionMode: 'template_fields', templateMode: 'strict', instructions: 'Use neutral, source-linked language; separate history, opinions, limitations, and unanswered questions.' },
+      { id: 'causation', label: 'Causation-focused report', when: 'Causation or apportionment is specifically requested', sectionMode: 'problem_grouped', templateMode: 'guide', instructions: 'Address only the requested causation question and label evidence limits and uncertainty explicitly.' }
+    ],
+    copilot: [
+      { id: 'standard', label: 'Direct Copilot answer', when: 'Most clinician questions', sectionMode: 'default', templateMode: 'adapt', instructions: 'Answer directly from the available snapshot and say exactly what source is missing.' },
+      { id: 'actionable', label: 'Action-oriented Copilot answer', when: 'The clinician asks what to do next', sectionMode: 'action_list', templateMode: 'guide', instructions: 'Separate documented facts, possible next steps, and clinician decisions.' }
+    ],
+    studio_widget: [
+      { id: 'standard', label: 'Standard AI Studio output', when: 'Most studio requests', sectionMode: 'template_fields', templateMode: 'adapt', instructions: 'Return the requested artifact in the caller contract with accessible, maintainable structure.' },
+      { id: 'compact', label: 'Compact studio output', when: 'Small embedded widget or constrained surface', sectionMode: 'default', templateMode: 'guide', instructions: 'Keep the artifact compact without dropping required data or safety text.' }
+    ],
+    coding: [
+      { id: 'standard', label: 'Standard coding review', when: 'Most coding reviews', sectionMode: 'problem_grouped', templateMode: 'adapt', instructions: 'Show supported codes, rationale, and uncertainty; never invent documentation or alter code validity.' },
+      { id: 'payer', label: 'Payer-facing coding review', when: 'Payer or audit response is requested', sectionMode: 'template_fields', templateMode: 'guide', instructions: 'Lead with the documented code and supporting elements in the configured payer presentation.' }
+    ],
+    general_draft: [
+      { id: 'standard', label: 'Standard clinical draft', when: 'Most supporting drafts', sectionMode: 'default', templateMode: 'adapt', instructions: 'Follow the caller output contract and use only source-supported clinical facts.' },
+      { id: 'summary', label: 'Concise clinical summary', when: 'A short handoff or chart summary is requested', sectionMode: 'narrative', templateMode: 'guide', instructions: 'Prioritize the requested clinical question and omit unrelated detail.' }
+    ]
+  };
   var SECTION_MODES = {
     hpi: [['chronological', 'Chronological story'], ['problem_focused', 'Problem-focused'], ['template_fields', 'Saved template fields']],
     ros: [['pertinent_only', 'Pertinent positives / negatives'], ['systems_by_system', 'System-by-system'], ['template_fields', 'Saved template fields']],
@@ -64,6 +111,10 @@
   var SECTION_MODE_LABELS = {
     hpi: 'HPI format', ros: 'ROS format', exam: 'Exam format', assessment: 'Assessment format', plan: 'Plan format'
   };
+  ['soap', 'opnote', 'avs', 'referral', 'priorauth', 'legal_ime', 'copilot', 'studio_widget', 'coding', 'general_draft'].forEach(function (id) {
+    if (!SECTION_MODES[id]) SECTION_MODES[id] = [['default', 'Default format'], ['template_fields', 'Saved template fields'], ['problem_grouped', 'Group by problem'], ['narrative', 'Narrative format'], ['action_list', 'Action list']];
+    if (!SECTION_MODE_LABELS[id]) SECTION_MODE_LABELS[id] = FAMILY_LABELS[id] + ' format';
+  });
   var SECTION_TEMPLATE_DEFAULT = 'adapt';
   var SECTION_PROFILE_DEFAULTS = {
     hpi: [
@@ -142,7 +193,16 @@
     return STORE_KEY;
   }
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
-  function sectionProfiles(id) { return clone(SECTION_PROFILE_DEFAULTS[id] || []); }
+  function sectionProfiles(id) {
+    return clone(SECTION_PROFILE_DEFAULTS[id] || GENERIC_PROFILE_DEFAULTS[id] || []).map(function (row) {
+      row.templateText = row.templateText || '';
+      row.instructions = row.instructions || '';
+      row.when = row.when || '';
+      row.templateMode = row.templateMode || SECTION_TEMPLATE_DEFAULT;
+      return row;
+    });
+  }
+  function isProfileFamily(id) { return PROFILE_FAMILIES.indexOf(familyId(id)) >= 0; }
   function profileId(value, fallback) {
     var clean = cleanText(value, 48).toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^[_-]+|[_-]+$/g, '');
     return clean || fallback;
@@ -291,7 +351,7 @@
     var out = { schemaVersion: 1, families: {} };
     ['length', 'tone', 'structure'].forEach(function (key) { if (options[key] != null) out[key] = cleanText(options[key], 40); });
     if (options.instructions) out.instructions = cleanText(options.instructions, MAX_INSTRUCTIONS);
-    SECTION_FAMILIES.forEach(function (id) {
+    PROFILE_FAMILIES.forEach(function (id) {
       var state = read().families[id] || familyDefaults(id);
       var request = nested[id] && typeof nested[id] === 'object' && !Array.isArray(nested[id]) ? nested[id] : {};
       var profiles = sanitizeSectionProfiles(id, Array.isArray(request.profiles) ? request.profiles : state.profiles);
@@ -317,7 +377,7 @@
       structure: (id === 'opnote' || id === 'legal_ime') ? 'template_faithful' : 'default',
       instructions: ''
     };
-    if (SECTION_FAMILIES.indexOf(id) >= 0) {
+    if (isProfileFamily(id)) {
       out.sectionMode = SECTION_MODES[id][0][0];
       out.templateMode = SECTION_TEMPLATE_DEFAULT;
       out.profiles = sectionProfiles(id);
@@ -371,6 +431,13 @@
       base.activeProfile = selected.id;
       base.sectionMode = selected.sectionMode;
       base.templateMode = selected.templateMode;
+    } else if (isProfileFamily(id)) {
+      var genericProfiles = sanitizeSectionProfiles(id, Array.isArray(input.profiles) ? input.profiles : null);
+      var genericSelected = activeSectionProfile(id, genericProfiles, input.activeProfile || input.profileId);
+      base.profiles = genericProfiles;
+      base.activeProfile = genericSelected.id;
+      base.sectionMode = genericSelected.sectionMode;
+      base.templateMode = genericSelected.templateMode;
     }
     return base;
   }
@@ -452,7 +519,7 @@
   }
   function exampleImporter(id, profile) {
     id = familyId(id);
-    if (SECTION_FAMILIES.indexOf(id) < 0) return null;
+    if (!isProfileFamily(id)) return null;
     var targetId = profileId(profile, ''), previewState = null;
     function sanitizeDerived(value) {
       value = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -498,7 +565,7 @@
   }
   function profileEditor(id) {
     id = familyId(id);
-    if (SECTION_FAMILIES.indexOf(id) < 0) return null;
+    if (!isProfileFamily(id)) return null;
     function current() {
       var state = read(), family = state.families[id] || familyDefaults(id);
       family.profiles = sanitizeSectionProfiles(id, family.profiles);
@@ -511,7 +578,11 @@
       ctx.family.activeProfile = selected.id;
       ctx.family.sectionMode = selected.sectionMode;
       ctx.family.templateMode = selected.templateMode;
-      ctx.family.instructions = '';
+      /* Clinical section comments are profile-owned for the legacy schema.
+         Generic families also have account-wide standing instructions; profile
+         edits must not erase those older settings. */
+      if (SECTION_FAMILIES.indexOf(id) >= 0) ctx.family.instructions = '';
+      else ctx.family.instructions = cleanText(ctx.family.instructions, MAX_INSTRUCTIONS);
       ctx.state.families[id] = ctx.family;
       var saved = write(ctx.state);
       if (!saved) return null;
@@ -605,7 +676,7 @@
         merged[key] = enumValue(key, request[key], merged[key]);
       }
     });
-    if (SECTION_FAMILIES.indexOf(id) >= 0) {
+    if (isProfileFamily(id)) {
       var suppliedProfiles = Array.isArray(request.profiles) ? request.profiles : base.profiles;
       var profiles = sanitizeSectionProfiles(id, suppliedProfiles);
       var selected = activeSectionProfile(id, profiles, request.profileId || request.activeProfile || base.activeProfile);
@@ -625,6 +696,9 @@
       merged.sectionMode = selected.sectionMode;
       merged.templateMode = selected.templateMode;
       merged.templateText = selected.templateText;
+      /* Section instructions were historically profile-owned; generic draft
+         families retain their account-level comment and add the selected
+         format's comments so old settings remain effective. */
       merged.instructions = cleanText([merged.instructions, selected.instructions].filter(Boolean).join(' | '), MAX_INSTRUCTIONS);
     }
     merged.schemaVersion = 1;
@@ -646,6 +720,13 @@
       tone: soap.tone,
       structure: soap.structure,
       instructions: soap.instructions,
+      activeProfile: soap.activeProfile,
+      profileId: soap.profileId,
+      profileName: soap.profileName,
+      profileWhen: soap.profileWhen,
+      sectionMode: soap.sectionMode,
+      templateMode: soap.templateMode,
+      templateText: soap.templateText,
       families: {
         hpi: mergeFamily('hpi', nested && nested.hpi),
         ros: mergeFamily('ros', nested && nested.ros),
@@ -699,7 +780,7 @@
     secondary.forEach(function (field) {
       if (p[field.key]) lines.push('- ' + field.label + ': ' + p[field.key] + '.');
     });
-    if (SECTION_FAMILIES.indexOf(p.family) >= 0) {
+    if (isProfileFamily(p.family)) {
       if (p.profileName) lines.push('- Reusable ' + p.family.toUpperCase() + ' format: ' + p.profileName + ' (profile ' + p.profileId + ').');
       if (p.profileWhen) lines.push('- Use this ' + p.family.toUpperCase() + ' format when: ' + p.profileWhen + '; this selection hint is not patient evidence.');
       if (p.sectionMode) lines.push('- ' + SECTION_MODE_LABELS[p.family] + ': ' + p.sectionMode + '; preserve the exact Athena section heading and use only supported facts.');
@@ -734,7 +815,7 @@
       if (coding.confidenceDisplay) lines.push('- Coding confidence display: ' + coding.confidenceDisplay + '; uncertainty must remain visible.');
       if (coding.payerPresentation) lines.push('- Coding presentation: ' + coding.payerPresentation + '; never alter code validity.');
     }
-    if (p.instructions) lines.push(SECTION_FAMILIES.indexOf(p.family) >= 0
+    if (p.instructions) lines.push(isProfileFamily(p.family)
       ? '- ' + p.family.toUpperCase() + ' AI prompt comments (subordinate formatting/focus guidance only): ' + p.instructions
       : '- Additional provider preference (subordinate, non-patient setting): ' + p.instructions);
     return lines.join('\n');
@@ -848,7 +929,7 @@
     sec.id = 'mlsDraftTuningSection';
     sec.innerHTML =
       '<p class="set-head">🤖 AI draft tuning</p>' +
-      '<p class="set-desc">Set the writing defaults for every kind of AI draft. Save different HPI, ROS, Exam, Assessment, and Plan formats and MLS will choose the matching format from today\'s transcript; you can still override it for one visit. These settings follow your account. Patient facts never belong here, and no setting can relax clinical, coding, legal, identity, or review safeguards.</p>' +
+      '<p class="set-desc">Set the writing defaults for every kind of AI draft. Every draft type supports multiple saved formats, conditional “use when” rules, reusable templates, AI prompt comments, and example import; MLS can choose the matching format from today\'s transcript, and you can still override it for one visit. These settings follow your account. Patient facts never belong here, and no setting can relax clinical, coding, legal, identity, or review safeguards.</p>' +
       '<div class="field"><label for="mlsDtFamily">Draft type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
       '<div class="set-grid2">' +
         '<div class="field"><label for="mlsDtLength">Detail</label><select class="sf-select" id="mlsDtLength">' + optionHtml([['concise','Concise'],['standard','Standard'],['detailed','Detailed']]) + '</select></div>' +
@@ -875,7 +956,8 @@
           '<button type="button" class="btn-green" id="mlsDtSectionImportApply">Apply preview to this saved format</button>' +
         '</div>' +
       '</div></div>' +
-      '<div class="field"><label for="mlsDtInstructions" id="mlsDtInstructionsLabel">Standing instructions for this draft type</label><textarea class="note-box" id="mlsDtInstructions" maxlength="600" placeholder="Non-patient writing preferences only…"></textarea><p class="mini" id="mlsDtCount">0 / 600</p></div>' +
+      '<div class="field"><label for="mlsDtInstructions" id="mlsDtInstructionsLabel">AI prompt comments for this saved format</label><textarea class="note-box" id="mlsDtInstructions" maxlength="600" placeholder="Non-patient writing preferences only…"></textarea><p class="mini" id="mlsDtCount">0 / 600</p></div>' +
+      '<div class="field" id="mlsDtFamilyInstructionsHost"><label for="mlsDtFamilyInstructions">Standing instructions for this draft type</label><textarea class="note-box" id="mlsDtFamilyInstructions" maxlength="600" placeholder="Account-wide non-patient writing preferences only…"></textarea><p class="mini">Applied in addition to the selected saved format for this draft type.</p></div>' +
       '<div class="field" id="mlsDtResetField"><div class="row"><button type="button" class="btn-ghost" id="mlsDtReset" aria-describedby="mlsDtResetStatus">Reset this draft type</button><span class="mini" id="mlsDtResetStatus" role="status"></span></div></div>';
     var family = sec.querySelector('#mlsDtFamily');
     FAMILY_IDS.forEach(function (id) {
@@ -893,7 +975,7 @@
       activeFamily = familyId(family.value);
       loadUi(activeFamily);
     });
-    ['mlsDtLength', 'mlsDtTone', 'mlsDtStructure', 'mlsDtExtra', 'mlsDtSectionName', 'mlsDtSectionMode', 'mlsDtSectionTemplate', 'mlsDtSectionTemplateText', 'mlsDtSectionWhen', 'mlsDtInstructions'].forEach(function (id) {
+    ['mlsDtLength', 'mlsDtTone', 'mlsDtStructure', 'mlsDtExtra', 'mlsDtSectionName', 'mlsDtSectionMode', 'mlsDtSectionTemplate', 'mlsDtSectionTemplateText', 'mlsDtSectionWhen', 'mlsDtInstructions', 'mlsDtFamilyInstructions'].forEach(function (id) {
       var el = q(id); if (el) el.addEventListener('input', function () { captureUi(activeFamily); paintCount(); });
       if (el) el.addEventListener('change', function () { captureUi(activeFamily); paintCount(); });
     });
@@ -910,11 +992,11 @@
         captureUi(activeFamily);
         selector.value = profile;
       } else captureUi(activeFamily);
-      if (SECTION_FAMILIES.indexOf(activeFamily) >= 0 && working.families[activeFamily]) working.families[activeFamily].activeProfile = profile;
+      if (isProfileFamily(activeFamily) && working.families[activeFamily]) working.families[activeFamily].activeProfile = profile;
       loadUi(activeFamily);
     });
     q('mlsDtSectionAdd').addEventListener('click', function () {
-      if (SECTION_FAMILIES.indexOf(activeFamily) < 0) return;
+      if (!isProfileFamily(activeFamily)) return;
       resetSectionImport(true);
       captureUi(activeFamily);
       var p = working.families[activeFamily], profiles = sanitizeSectionProfiles(activeFamily, p.profiles);
@@ -938,7 +1020,7 @@
       try { q('mlsDtSectionName').focus(); q('mlsDtSectionName').select(); } catch (e) {}
     });
     q('mlsDtSectionDelete').addEventListener('click', function () {
-      if (SECTION_FAMILIES.indexOf(activeFamily) < 0) return;
+      if (!isProfileFamily(activeFamily)) return;
       resetSectionImport(true);
       captureUi(activeFamily);
       var p = working.families[activeFamily], profiles = sanitizeSectionProfiles(activeFamily, p.profiles);
@@ -983,7 +1065,8 @@
     var templateHost = q('mlsDtSectionTemplateHost'), template = q('mlsDtSectionTemplate');
     var templateTextHost = q('mlsDtSectionTemplateTextHost'), templateText = q('mlsDtSectionTemplateText');
     var importHost = q('mlsDtSectionImportHost');
-    var isSection = SECTION_FAMILIES.indexOf(id) >= 0;
+    var isSection = isProfileFamily(id), isClinicalSection = SECTION_FAMILIES.indexOf(id) >= 0;
+    var familyInstructionsHost = q('mlsDtFamilyInstructionsHost');
     if (profileHost) profileHost.style.display = isSection ? '' : 'none';
     if (nameHost) nameHost.style.display = isSection ? '' : 'none';
     if (whenHost) whenHost.style.display = isSection ? '' : 'none';
@@ -991,8 +1074,9 @@
     if (templateHost) templateHost.style.display = isSection ? '' : 'none';
     if (templateTextHost) templateTextHost.style.display = isSection ? '' : 'none';
     if (importHost) importHost.style.display = isSection ? '' : 'none';
+    if (familyInstructionsHost) familyInstructionsHost.style.display = isSection && !isClinicalSection ? '' : 'none';
     var instructionLabel = q('mlsDtInstructionsLabel');
-    if (instructionLabel) instructionLabel.textContent = isSection ? 'AI prompt comments for this saved format' : 'Standing instructions for this draft type';
+    if (instructionLabel) instructionLabel.textContent = isSection ? 'AI prompt comments for this saved format' : 'AI prompt comments for this saved format';
     if (!isSection) paintProfileButtons([]);
     if (!isSection || !profile || !mode || !template) return;
     profiles = sanitizeSectionProfiles(id, profiles);
@@ -1012,7 +1096,7 @@
   function paintProfileButtons(profiles) {
     var add = q('mlsDtSectionAdd'), remove = q('mlsDtSectionDelete'), status = q('mlsDtSectionProfileStatus');
     profiles = Array.isArray(profiles) ? profiles : [];
-    var section = SECTION_FAMILIES.indexOf(activeFamily) >= 0;
+    var section = isProfileFamily(activeFamily);
     if (add) { add.disabled = !section || profiles.length >= MAX_SECTION_PROFILES; add.setAttribute('aria-disabled', add.disabled ? 'true' : 'false'); }
     if (remove) { remove.disabled = !section || profiles.length <= 1; remove.setAttribute('aria-disabled', remove.disabled ? 'true' : 'false'); }
     if (status) status.textContent = !section ? '' : (profiles.length + ' of ' + MAX_SECTION_PROFILES + ' saved formats. ' +
@@ -1043,14 +1127,16 @@
     q('mlsDtTone').value = p.tone;
     q('mlsDtStructure').value = p.structure;
     q('mlsDtInstructions').value = p.instructions || '';
+    var familyInstructions = q('mlsDtFamilyInstructions');
+    if (familyInstructions) familyInstructions.value = p.instructions || '';
     var ex = EXTRA[id]; fillExtra(id, ex ? p[ex.key] : '');
     var active = activeSectionProfile(id, p.profiles, p.activeProfile);
-    if (SECTION_FAMILIES.indexOf(id) >= 0 && active) {
+    if (isProfileFamily(id) && active) {
       p.sectionMode = active.sectionMode; p.templateMode = active.templateMode;
       q('mlsDtSectionName').value = active.label || '';
       q('mlsDtSectionWhen').value = active.when || '';
       q('mlsDtSectionTemplateText').value = active.templateText || '';
-      q('mlsDtInstructions').value = active.instructions || p.instructions || '';
+      q('mlsDtInstructions').value = active.instructions || '';
     }
     fillSectionControls(id, p.sectionMode, p.templateMode, p.activeProfile, p.profiles);
     paintCount();
@@ -1063,10 +1149,10 @@
     p.length = enumValue('length', q('mlsDtLength').value, p.length);
     p.tone = enumValue('tone', q('mlsDtTone').value, p.tone);
     p.structure = enumValue('structure', q('mlsDtStructure').value, p.structure);
-    p.instructions = cleanText(q('mlsDtInstructions').value, MAX_INSTRUCTIONS);
+    p.instructions = cleanText((q('mlsDtFamilyInstructions') && q('mlsDtFamilyInstructions').value) || p.instructions, MAX_INSTRUCTIONS);
     var ex = EXTRA[id], extra = q('mlsDtExtra');
     if (ex && extra) p[ex.key] = enumValue(ex.key, extra.value, p[ex.key]);
-    if (SECTION_FAMILIES.indexOf(id) >= 0) {
+    if (isProfileFamily(id)) {
       var profiles = sanitizeSectionProfiles(id, p.profiles), selected = activeSectionProfile(id, profiles, q('mlsDtSectionProfile').value);
       selected.label = cleanReusableText(q('mlsDtSectionName').value, 80) || selected.label || ('Format ' + (profiles.indexOf(selected) + 1));
       selected.sectionMode = enumValue('sectionMode', q('mlsDtSectionMode').value, selected.sectionMode);
@@ -1075,9 +1161,9 @@
       selected.templateText = cleanTemplate(q('mlsDtSectionTemplateText').value, MAX_SECTION_TEMPLATE);
       selected.instructions = cleanReusableText(q('mlsDtInstructions').value, MAX_INSTRUCTIONS);
       p.profiles = profiles.map(function (row) { return row.id === selected.id ? selected : row; });
-      // Section-specific instructions live on the selected saved profile. Keep
-      // the legacy family-level field empty so transport cannot duplicate them.
-      p.instructions = '';
+      // Clinical section instructions are profile-owned. Generic families
+      // retain their separate account-wide comments in the second field.
+      if (SECTION_FAMILIES.indexOf(id) >= 0) p.instructions = '';
       p.activeProfile = selected.id;
       p.sectionMode = selected.sectionMode;
       p.templateMode = selected.templateMode;
@@ -1126,8 +1212,8 @@
     sanitize: sanitize,
     read: read,
     write: write,
-    profiles: function (id) { var family = familyId(id); return SECTION_FAMILIES.indexOf(family) >= 0 ? clone(read().families[family].profiles || sectionProfiles(family)) : []; },
-    profileState: function (id) { var family = familyId(id), state = read().families[family], profiles = SECTION_FAMILIES.indexOf(family) >= 0 ? (state.profiles || sectionProfiles(family)) : []; return { activeProfile: state.activeProfile || '', activeLabel: (profiles.filter(function (row) { return row.id === state.activeProfile; })[0] || profiles[0] || {}).label || '', profiles: clone(profiles) }; },
+    profiles: function (id) { var family = familyId(id); return isProfileFamily(family) ? clone(read().families[family].profiles || sectionProfiles(family)) : []; },
+    profileState: function (id) { var family = familyId(id), state = read().families[family], profiles = isProfileFamily(family) ? (state.profiles || sectionProfiles(family)) : []; return { activeProfile: state.activeProfile || '', activeLabel: (profiles.filter(function (row) { return row.id === state.activeProfile; })[0] || profiles[0] || {}).label || '', profiles: clone(profiles) }; },
     profileEditor: profileEditor,
     exampleImporter: exampleImporter,
     autoRoute: automaticRoutes,
@@ -1135,7 +1221,7 @@
     forStructured: structuredFamily,
     infer: infer,
     promptBlock: promptBlock,
-    selectProfile: function (id, selectionSource) { var family = familyId(id), state = read().families[family], routed = SECTION_FAMILIES.indexOf(family) >= 0 ? routedSectionProfile(family, state.profiles, state.activeProfile, selectionSource) : null; return routed ? { profileId: routed.profile.id, selection: routed.selection } : null; },
+    selectProfile: function (id, selectionSource) { var family = familyId(id), state = read().families[family], routed = isProfileFamily(family) ? routedSectionProfile(family, state.profiles, state.activeProfile, selectionSource) : null; return routed ? { profileId: routed.profile.id, selection: routed.selection } : null; },
     mountSettings: mountSettings,
     beginSettings: beginSettings,
     saveFromUi: saveFromUi,

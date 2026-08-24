@@ -3492,6 +3492,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button id="draftBtn" class="btn-ghost" onclick="saveDraft()">Save draft</button>
         <button id="genBtn" class="btn-green" style="margin-left:auto" onclick="generateNote()">✨ Generate Note</button>
       </div>
+      <div id="genError" role="alert" aria-live="polite" class="mini" style="display:none;color:#b4231e;margin-top:8px"></div>
       <p class="mini">Tip: works best in Chrome or Edge. Your transcript never leaves this page until you press Generate Note.</p>
     </div>
 
@@ -23740,7 +23741,7 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
   const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
   const user='TEMPLATE (match this format exactly):\n"""\n'+_tplTextForDraft(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   try{
-    let out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let out=(await aiCallRaw(sys,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return false;
     if(currentFormat!==templateFormat||_athenaEditorFingerprint()!==templateFingerprint){
       toast('The visit changed while the template was being applied, so MLS discarded that older result. Nothing changed in Athena.','err');
@@ -26983,6 +26984,32 @@ function _mlsStructuredNoteQualityError(reason){
   e.mlsAi={status:502,code:'draft_quality_failed',retryable:true,detail:String(reason||'missing or malformed note').slice(0,120)};
   return e;
 }
+/* The hosted backend returns deterministic, PHI-free issue codes when its
+   output contract rejects a draft. Keep those codes on the Error and turn
+   them into a short clinician-readable explanation; never surface model text
+   or transcript content in the inline failure message. */
+function mlsDraftFailureMessage(err){
+  var ai=err&&err.mlsAi||{};
+  var raw=Array.isArray(ai.issues)?ai.issues:[];
+  var issues=raw.map(function(v){return String(v||'').trim();}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,6);
+  var labels={
+    missing_result:'no structured result', note_not_string:'note was not text', empty_note:'note was blank',
+    note_too_large:'note exceeded the safety size limit', unstructured_clinical_draft:'note was not structured',
+    malformed_soap_heading:'malformed SOAP heading', unsupported_soap_wrapper:'unsupported SOAP wrapper',
+    soap_preamble:'text appeared before the SOAP headings', soap_heading_order:'SOAP headings were out of order',
+    missing_athena_note:'Athena destination note was missing', empty_athena_note:'Athena destination note was blank',
+    athena_note_not_string:'Athena destination note was not text', athena_note_too_large:'Athena destination note was too large'
+  };
+  var readable=issues.map(function(code){
+    if(labels[code]) return labels[code];
+    var m=/^(missing|empty)_(?:soap|athena)_(hpi|ros|exam|assessment|plan)$/.exec(code);
+    if(m) return (m[2].toUpperCase()+' section '+(m[1]==='missing'?'was missing':'was empty'));
+    m=/^(?:malformed|unsupported|duplicate)_(?:soap|athena)_(hpi|ros|exam|assessment|plan)$/.exec(code);
+    if(m) return (m[2].toUpperCase()+' section had an invalid heading');
+    return 'output safety check: '+code.replace(/_/g,' ');
+  });
+  return 'Note was rejected by the safety checks. Nothing changed.'+(readable.length?' Details: '+readable.join('; ')+'.':' Retry Generate after confirming the transcript has enough documented detail.');
+}
 function _mlsValidateStructuredNoteResult(result){
   if(!result || typeof result!=='object' || Array.isArray(result)) throw _mlsStructuredNoteQualityError('response is not an object');
   if(typeof result.note!=='string') throw _mlsStructuredNoteQualityError('note is not a string');
@@ -27242,6 +27269,7 @@ async function generateNote(){
   }
 
   gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
+  try{ var genError=document.getElementById('genError'); if(genError){ genError.textContent=''; genError.style.display='none'; } }catch(eGenClear){}
   try{
     /* A hung generation request used to leave this button disabled forever —
        every later click then failed with no visible outcome. Bound the wait so
@@ -27302,6 +27330,10 @@ async function generateNote(){
     }else{
       toast(friendlyError(err),'err');
     }
+    try{
+      var genError=document.getElementById('genError');
+      if(genError){ genError.textContent=err&&/generation-timeout/.test(String(err.message||'')) ? 'Note generation timed out. Your transcript is safe — click Generate again.' : friendlyError(err); genError.style.display='block'; }
+    }catch(eGenSurface){}
     return false;
   }finally{
     gb.disabled=false; gb.innerHTML='✨ Generate Note';
@@ -27748,6 +27780,7 @@ function mapOpioidName(raw){
 
 function friendlyError(err){
   const m=(err&&err.message)||String(err);
+  if(err&&err.mlsAi&&err.mlsAi.code==='draft_quality_failed') return mlsDraftFailureMessage(err);
   if(err&&err.mlsStructuredNoteQuality) return 'The AI returned an unusable note draft. Nothing was changed. Please retry.';
   if(err&&err.mlsAthenaNoteQuality) return 'The AI returned an unusable Athena note payload. Nothing was changed. Please retry.';
   if(err&&err.noAccess) return 'Your account needs access — enter an access code (Settings) or ask the owner to enable you.';
@@ -27981,7 +28014,7 @@ async function aiCallRaw(sys,user,key,opts){
   var _draftFamily='', _draftTuning=null, _directSys=sys, _noteFormat='soap';
   try{
     _noteFormat=(opts.noteFormat||((typeof getGenStyle==='function')?getGenStyle():'soap')||'soap');
-    var _familyAllow=['avs','referral','priorauth','opnote','legal_ime','general_draft','coding','studio_widget','hpi','ros','exam','assessment','plan','copilot'];
+    var _familyAllow=['soap','avs','referral','priorauth','opnote','legal_ime','general_draft','coding','studio_widget','hpi','ros','exam','assessment','plan','copilot'];
     var _requestedFamily=String(opts.family||'').trim().toLowerCase();
     // Every non-freeform visit request is the same structured clinical-note
     // contract: it always returns the five-field Athena payload even when the
@@ -28070,9 +28103,10 @@ async function aiCallRaw(sys,user,key,opts){
     if(!res.ok){
       /* ===== cap-1.0.0 (same fields on the /api/generate lane) ===== */
       let detail='',gCode='',gRetryable=null;
-      try{const j=await res.json();detail=(j&&(j.error||j.message))||'';gCode=(j&&j.code)||'';if(j&&typeof j.retryable==='boolean')gRetryable=j.retryable;}catch(e){}
+      try{const j=await res.json();detail=(j&&(j.error||j.message))||'';gCode=(j&&j.code)||'';if(j&&typeof j.retryable==='boolean')gRetryable=j.retryable;var issueList=Array.isArray(j&&j.issues)?j.issues:[];}catch(e){var issueList=[];}
       const eGen=new Error(res.status+' '+detail);
       eGen.mlsAi={status:res.status,code:String(gCode||''),retryable:(gRetryable===null?(res.status>=500||res.status===429):gRetryable),detail:String(detail||'').slice(0,120)};
+      if(issueList.length) eGen.mlsAi.issues=issueList.map(function(v){return String(v||'').slice(0,96);}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,12);
       throw eGen;
       /* ===== end cap-1.0.0 ===== */
     }
@@ -54725,12 +54759,12 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      grepped for (tests/1p-histview-contract.test.js).
 
      WHY A FLAGGED BODY IS NOT DUMPED
-     A body that still carries page furniture is not a note a doctor can read,
-     and the junkscrub lane is repairing the STORED record. Until it does:
-       - History: a body with nothing readable left says so in plain words and
-         offers the app's own re-read; a body that still has clinical text
-         after cleaning shows that text, plus the same plain-words notice, and
-         in NEITHER case does a junk literal reach the DOM.
+     Scrubbing is synchronous for this renderer. Removing Athena page furniture
+     is therefore a completed transformation, not a background job. Only a body
+     with no readable clinical text is actionable:
+       - History: a body with no readable text says so in plain words and offers
+         the app's own re-read; a body whose clinical text survived scrubbing is
+         rendered normally and is not mislabeled "being cleaned".
        - Legal: a body with nothing readable left is OMITTED and counted in one
          footnote. A body whose clinical text survived cleaning is NOT omitted —
          dropping documented clinical text out of a records compilation is the
@@ -54879,17 +54913,21 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     if (!text) return { text: raw, removed: 0, chrome: 0, code: 0, raw: raw, shared: usedShared, refused: true, by: VERSION };
     return { text: text, removed: chrome + code, chrome: chrome, code: code, raw: raw, shared: usedShared, refused: false, by: VERSION };
   }
-  /* Two grades, because they need two different answers (see the header). */
+  /* Two grades, because they need two different answers (see the header).
+     `removed` means this synchronous renderer already removed page furniture;
+     it is NOT a pending background-cleanup state.  Only an unreadable/refused
+     body remains actionable. */
   function junkOf(body) {
     var r = scrub(body);
     var readable = r.refused ? '' : trim(r.text);
     var letters = readable.replace(/[^A-Za-z0-9]/g, '').length;
     var illegible = r.refused === true || (r.removed > 0 && letters < 12);
-    return { flagged: r.removed > 0 || r.refused === true, illegible: illegible,
+    var cleaned = !r.refused && r.removed > 0 && !illegible;
+    return { flagged: illegible, cleaned: cleaned, illegible: illegible,
              removed: r.removed, chrome: r.chrome, code: r.code,
              text: illegible ? '' : readable, raw: r.raw };
   }
-  var JUNK_LINE = 'This note came in with Athena page text; MLS is cleaning it — read from Athena again to refresh.';
+  var JUNK_LINE = 'This note had no readable clinical text after Athena page text was removed — read the full note from Athena again to refresh.';
   var INDEX_LINE = 'Index only — full note not read yet.';
 
   /* ======================================================== PROVIDER OF A ROW
@@ -55070,6 +55108,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
   function finish(rec) {
     var j = junkOf(rec.rawBody);
     rec.junk = j.flagged;
+    rec.cleaned = j.cleaned;
     rec.illegible = j.illegible;
     rec.junkRemoved = j.removed;
     rec.readable = rec.indexOnly ? '' : j.text;
@@ -55133,7 +55172,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     var n = view.count;
     var line = n + ' visit' + (n === 1 ? '' : 's');
     if (view.indexOnly) line += ' · ' + view.indexOnly + ' index only';
-    if (view.junk) line += ' · ' + view.junk + ' being cleaned';
+    if (view.junk) line += ' · ' + view.junk + ' need the full note reread';
     return line;
   }
 

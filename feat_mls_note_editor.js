@@ -373,7 +373,23 @@
     var savedLocked = snapshotLockedText();
     toast("Regenerating " + sec.name + "...", "");
     return safe(function () {
-      return window.aiCallRaw(sys, user, (isFn(window.getKey) ? window.getKey() : null), { freeform: true })
+      /* Keep this request on the same independently tunable family as the
+         section being regenerated.  Without an explicit family, the shared
+         transport has to infer from the prose; HPI happened to match, but ROS,
+         EXAM, ASSESSMENT, and PLAN all fell through to general_draft.  That
+         silently discarded the section's saved format/profile, comments, and
+         template while the button appeared to regenerate successfully.  The
+         key is the editor's canonical S/O/A/P key (with lower-case family keys
+         also accepted), so map it through a bounded family selector. Unknown
+         future keys remain fail-closed on the transport's general-draft route. */
+      var familyKey = String(key || "").toLowerCase();
+      /* This editor's visible SOAP keys are S/O/A/P, not the transport's
+         lower-case family ids.  Subjective is deliberately sent through the
+         structured SOAP lane so its nested HPI/ROS profiles remain available;
+         Objective/Assessment/Plan each have a direct family. */
+      var soapKeyFamily = { s: "soap", o: "exam", a: "assessment", p: "plan" };
+      var family = soapKeyFamily[familyKey] || (/^(?:hpi|ros|exam|assessment|plan)$/.test(familyKey) ? familyKey : "general_draft");
+      return window.aiCallRaw(sys, user, (isFn(window.getKey) ? window.getKey() : null), { freeform: true, family: family, draftSubtype: "section_regeneration" })
         .then(function (out) {
           if (!visitTokenStillSafe(visitToken, "section regeneration")) return false;
           var transcriptNow = safe(function () { var t = $("transcript"); return t ? String(t.value || "").trim() : ""; }, "");

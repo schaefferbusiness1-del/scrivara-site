@@ -25,6 +25,9 @@ const sectionSource = between(source, 'function regenerateSection(key)', '/* ===
 assert(sectionSource.includes('captureVisitToken("regenerating this section")'), 'section regeneration must capture the immutable visit before its AI request');
 assert(sectionSource.indexOf('visitTokenStillSafe(visitToken, "section regeneration")') < sectionSource.indexOf('setNote(replaced'), 'a delayed section result can reach the editor before revalidation');
 assert(sectionSource.indexOf('sectionFingerprint = JSON.stringify([cur, transcript])') < sectionSource.indexOf('window.aiCallRaw') && sectionSource.indexOf('JSON.stringify([noteVal(), transcriptNow]) !== sectionFingerprint') < sectionSource.indexOf('setNote(replaced'), 'section regeneration can overwrite newer same-visit edits');
+assert(/soapKeyFamily\s*=\s*\{\s*s:\s*["']soap["']\s*,\s*o:\s*["']exam["']\s*,\s*a:\s*["']assessment["']\s*,\s*p:\s*["']plan["']\s*\}/.test(sectionSource) &&
+  /family:\s*family/.test(sectionSource), 'section regeneration must send the exact SOAP-section tuning family');
+assert(/draftSubtype:\s*["']section_regeneration["']/.test(sectionSource), 'section regeneration must identify its bounded draft subtype');
 
 const dictationSource = between(source, 'function discardDictation()', '/* =====================================================================\n   * ORIGINAL vs EDITED');
 assert(dictationSource.includes('dictVisitToken = visitToken') && dictationSource.includes('session !== dictSession'), 'dictation must be scoped to one recognizer session and visit token');
@@ -118,9 +121,14 @@ async function main() {
   noteBox.value = soapA;
   transcript.value = 'Patient A transcript';
   let resolveSection;
-  context.aiCallRaw = () => new Promise(resolve => { resolveSection = resolve; });
+  let sectionOpts = null;
+  context.aiCallRaw = (_sys, _user, _key, opts) => {
+    sectionOpts = opts || null;
+    return new Promise(resolve => { resolveSection = resolve; });
+  };
   const sectionRun = api.regenerateSection('A');
   assert(sectionRun && typeof sectionRun.then === 'function', 'section regeneration did not return its guarded async operation');
+  assert(sectionOpts && sectionOpts.family === 'assessment' && sectionOpts.draftSubtype === 'section_regeneration', 'assessment regeneration did not reach its exact tuning family');
   activeId = 'b';
   context.currentVisitAthenaBinding = bindingB;
   context.currentVisitAthenaEpoch = 2;

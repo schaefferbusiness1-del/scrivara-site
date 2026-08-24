@@ -551,7 +551,7 @@ async function runtime() {
     eq(res.viewCount, res.count, 'the renderer disagrees with the resolver about the count');
     eq(res.records, 8, `the renderer built ${res.records} cards for ${res.count} encounters`);
     eq(res.indexOnly, 1, `${res.indexOnly} index-only encounters, expected 1`);
-    eq(res.junk, 2, `${res.junk} flagged encounters, expected 2`);
+    eq(res.junk, 1, `${res.junk} encounters still needing a full-note reread, expected 1`);
 
     const view = await page.evaluate(() => window.__hx.read());
     measured.view = { count: view.count, cards: view.cards, shown: view.shown, groups: view.groups.length,
@@ -559,7 +559,7 @@ async function runtime() {
     eq(view.hidden, false, 'the section is hidden on a chart that has encounters');
     eq(view.cards, 8, `${view.cards} cards rendered for 8 encounters`);
     eq(view.count, res.line, `the header says "${view.count}" and the resolver says "${res.line}"`);
-    ok(/^8 visits · 1 index only · 2 being cleaned$/.test(view.count),
+    ok(/^8 visits · 1 index only · 1 need the full note reread$/.test(view.count),
       `the header count is not the honest line: "${view.count}"`);
 
     /* newest first, and grouped by the month it happened in */
@@ -622,13 +622,14 @@ async function runtime() {
       mixed: { junk: mixedJunk.junk, illegible: mixedJunk.illegible } };
     eq(pureJunk.junk, true, 'the pure-junk encounter is not flagged');
     eq(pureJunk.illegible, true, 'the pure-junk encounter is not graded illegible');
-    ok(/MLS is cleaning it/.test(pureJunk.text),
+    ok(/no readable clinical text.*read the full note from Athena again/i.test(pureJunk.text),
       `the flagged card does not say what happened: "${pureJunk.text.slice(0, 120)}"`);
-    eq(mixedJunk.junk, true, 'the mixed encounter is not flagged');
+    eq(mixedJunk.junk, false, 'a readable encounter was incorrectly left flagged as being cleaned');
     eq(mixedJunk.illegible, false, 'an encounter whose assessment survived cleaning was called illegible');
     ok(/lumbar radiculopathy/i.test(mixedJunk.text),
       'the surviving clinical assessment was thrown away with the junk');
-    ok(/MLS is cleaning it/.test(mixedJunk.text), 'the doctor is not told this note is being cleaned');
+    ok(!/MLS is cleaning it|need the full note reread/.test(mixedJunk.text),
+      'a readable encounter still carries a pending-cleaning warning');
 
     /* -- 5. THE FOLDS --------------------------------------------------- */
     eq(view.shown, 5, `${view.shown} cards are on screen before "Show all", expected the newest 5`);
