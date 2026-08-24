@@ -64,11 +64,13 @@ for (const phrase of [
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();
-  await page.setContent(`<!doctype html><html><body>
+  const shell = `<!doctype html><html><body>
     <div id="settingsModal" class="show"><div class="modal">
       <div class="row"><button type="button" onclick="saveSettings()">Save settings</button></div>
     </div></div>
-  </body></html>`);
+  </body></html>`;
+  await page.route('https://mls-import-runtime.test/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: shell }));
+  await page.goto('https://mls-import-runtime.test/settings');
   await page.evaluate(() => {
     window.uns = key => 'example-import-account::' + key;
     window.saveSettings = function () {};
@@ -207,6 +209,12 @@ try {
 
   // Apply/Cancel are user-visible actions, not implicit side effects of file
   // selection or derivation.  The preview pane has to expose both actions.
+  await page.fill('#mlsDtSectionImportExample', 'Example HPI draft with interval history and documented response.');
+  await page.click('#mlsDtSectionImportDerive');
+  await page.waitForFunction(() => {
+    const preview = document.getElementById('mlsDtSectionImportPreview');
+    return preview && getComputedStyle(preview).display !== 'none';
+  });
   assert.strictEqual(await page.locator('#mlsDtSectionImportApply').count(), 1, 'Apply control missing');
   assert.strictEqual(await page.locator('#mlsDtSectionImportCancel').count(), 1, 'Cancel control missing');
   assert.ok(await page.locator('#mlsDtSectionImportApply').isVisible(), 'Apply control is not visible');

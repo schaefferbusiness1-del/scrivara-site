@@ -9,9 +9,12 @@
   'use strict';
   if (window.__mlsDraftTuning && window.__mlsDraftTuning.installed) return;
 
-  var VERSION = '1.2.0';
+  var VERSION = '1.3.0';
   var STORE_KEY = 'draftTuningV1';
   var MAX_INSTRUCTIONS = 600;
+  var MAX_SECTION_TEMPLATE = 2000;
+  var MAX_SECTION_PROFILES = 8;
+  var MAX_SECTION_EXAMPLE = 12000;
   var FAMILY_IDS = ['soap', 'hpi', 'ros', 'exam', 'assessment', 'plan', 'opnote', 'avs', 'referral', 'priorauth', 'legal_ime', 'copilot', 'studio_widget', 'coding', 'general_draft'];
   var FAMILY_LABELS = {
     soap: 'Visit note / SOAP',
@@ -113,6 +116,23 @@
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
       .replace(/\s+/g, ' ').trim().slice(0, max);
   }
+  function scrubReusableText(value) {
+    return String(value == null ? '' : value)
+      .replace(/\bpatient\s+[A-Z][A-Za-z'’-]{1,40}\s+[A-Z][A-Za-z'’-]{1,40}\b/g, '[patient-specific name removed]')
+      .replace(/\b(?:MRN|DOB|SSN)\s*[:#-]?\s*[A-Za-z0-9/.-]{3,32}\b/gi, '[patient-specific identifier removed]')
+      .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email removed]');
+  }
+  function cleanReusableText(value, max) {
+    return cleanText(scrubReusableText(value), max);
+  }
+  function cleanTemplate(value, max) {
+    return scrubReusableText(value)
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+      .replace(/\r\n?/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{4,}/g, '\n\n\n')
+      .trim().slice(0, max).trim();
+  }
   function familyId(value) { return has(FAMILY_IDS, value) ? String(value) : 'soap'; }
   function storageKey() {
     try {
@@ -128,7 +148,7 @@
     return clean || fallback;
   }
   function sanitizeSectionProfiles(id, input) {
-    var defaults = sectionProfiles(id), rows = Array.isArray(input) ? input.slice(0, 8) : [];
+    var defaults = sectionProfiles(id), rows = Array.isArray(input) ? input.slice(0, MAX_SECTION_PROFILES) : [];
     if (!rows.length) return defaults;
     var seen = {}, out = [];
     rows.forEach(function (row, index) {
@@ -141,11 +161,12 @@
       var modeValues = modes.map(function (item) { return item[0]; });
       out.push({
         id: pid,
-        label: cleanText(row.label || row.name || fallback.label || ('Format ' + (index + 1)), 80) || ('Format ' + (index + 1)),
-        when: cleanText(row.when || fallback.when, 180),
+        label: cleanReusableText(row.label || row.name || fallback.label || ('Format ' + (index + 1)), 80) || ('Format ' + (index + 1)),
+        when: cleanReusableText(Object.prototype.hasOwnProperty.call(row, 'when') ? row.when : fallback.when, 180),
         sectionMode: has(modeValues, row.sectionMode) ? String(row.sectionMode) : (fallback.sectionMode || modes[0][0]),
         templateMode: enumValue('templateMode', row.templateMode, fallback.templateMode || SECTION_TEMPLATE_DEFAULT),
-        instructions: cleanText(row.instructions, MAX_INSTRUCTIONS)
+        templateText: cleanTemplate(row.templateText || row.templateBody || row.template, MAX_SECTION_TEMPLATE),
+        instructions: cleanReusableText(row.instructions, MAX_INSTRUCTIONS)
       });
     });
     return out.length ? out : defaults;
@@ -371,6 +392,183 @@
     try { localStorage.setItem(storageKey(), JSON.stringify(clean)); return clean; }
     catch (e) { return null; }
   }
+  function cleanTransientExample(value) {
+    return String(value == null ? '' : value)
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+      .replace(/\r\n?/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{5,}/g, '\n\n\n\n')
+      .trim().slice(0, MAX_SECTION_EXAMPLE).trim();
+  }
+  function ensurePrivateExampleReader() {
+    if (window.__mlsP1LegalPack && typeof window.__mlsP1LegalPack.readLocalFile === 'function') return Promise.resolve(window.__mlsP1LegalPack);
+    var loader = window.__mlsP1LegalLoader;
+    if (!loader || typeof loader.ensure !== 'function') return Promise.resolve(null);
+    try { loader.ensure(); } catch (e) { return Promise.resolve(null); }
+    return new Promise(function (resolve) {
+      var attempts = 0;
+      function check() {
+        var api = window.__mlsP1LegalPack;
+        if (api && typeof api.readLocalFile === 'function') { resolve(api); return; }
+        if (++attempts >= 40) { resolve(null); return; }
+        setTimeout(check, 100);
+      }
+      check();
+    });
+  }
+  function privateExampleExtractor(input) {
+    input = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+    var kind = input.kind === 'image' ? 'image' : (input.kind === 'file' ? 'file' : 'draft');
+    if (kind === 'draft') {
+      var pasted = cleanTransientExample(input.text);
+      return pasted ? Promise.resolve({ kind: kind, text: pasted }) : Promise.reject(new Error('Paste an example draft first.'));
+    }
+    var file = input.file;
+    if (!file) return Promise.reject(new Error('Choose an example file first.'));
+    if (Number(file.size || 0) > 20 * 1024 * 1024) return Promise.reject(new Error('That example is over the 20 MB private preview limit.'));
+    var type = String(file.type || '').toLowerCase(), name = String(file.name || 'example');
+    var isPlain = kind !== 'image' && (/^text\//.test(type) || /\.(txt|text|md|markdown|rtf|csv|tsv|json|html?)$/i.test(name));
+    var work;
+    if (isPlain && typeof file.text === 'function') work = Promise.resolve(file.text());
+    else if (typeof window.__mlsPrivateExampleExtractor === 'function') {
+      work = Promise.resolve(window.__mlsPrivateExampleExtractor({ kind: kind, file: file }));
+    } else {
+      work = ensurePrivateExampleReader().then(function (reader) {
+        if (reader) return Promise.resolve(reader.readLocalFile(file, { timeoutMs: 90000 })).catch(function (readerError) {
+          if (typeof window._tplReadAnyFile === 'function') return window._tplReadAnyFile(file);
+          throw readerError;
+        });
+        if (typeof window._tplReadAnyFile === 'function') return window._tplReadAnyFile(file);
+        if (typeof file.text === 'function') return file.text();
+        throw new Error('The private file reader is not available. Reload MLS and try again.');
+      });
+    }
+    return work.then(function (result) {
+      var raw = result && typeof result === 'object' && !Array.isArray(result) ? result.text : result;
+      var text = cleanTransientExample(raw);
+      if (!text) throw new Error('No readable text was found. Try a sharper image or a searchable PDF.');
+      return { kind: kind, name: name, type: type, text: text };
+    });
+  }
+  function exampleImporter(id, profile) {
+    id = familyId(id);
+    if (SECTION_FAMILIES.indexOf(id) < 0) return null;
+    var targetId = profileId(profile, ''), previewState = null;
+    function sanitizeDerived(value) {
+      value = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+      var templateText = cleanTemplate(value.templateText || value.template || value.templateBody, MAX_SECTION_TEMPLATE);
+      var instructions = cleanReusableText(value.instructions || value.promptComments || value.comments, MAX_INSTRUCTIONS);
+      var name = cleanReusableText(value.name || value.label, 80);
+      if (!templateText) throw new Error('AI did not return a usable template preview.');
+      return { name: name, templateText: templateText, instructions: instructions };
+    }
+    return {
+      extract: privateExampleExtractor,
+      derive: async function (extracted) {
+        var text = cleanTransientExample(extracted && typeof extracted === 'object' ? extracted.text : extracted);
+        if (!text) throw new Error('No readable example text is available to convert.');
+        var base = typeof window.bkBase === 'function' ? String(window.bkBase() || '').replace(/\/$/, '') : '';
+        var token = typeof window.bkToken === 'function' ? String(window.bkToken() || '') : '';
+        var headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = 'Bearer ' + token;
+        var response = await window.fetch(base + '/api/section-templates/derive', {
+          method: 'POST', headers: headers,
+          body: JSON.stringify({ family: id, exampleText: text })
+        });
+        var payload = {}; try { payload = await response.json(); } catch (e) {}
+        if (!response.ok) throw new Error(String(payload.error || payload.message || ('Template preview failed (' + response.status + ').')));
+        return sanitizeDerived(payload.result || payload.template || payload);
+      },
+      preview: function (derived) {
+        if (derived != null) previewState = sanitizeDerived(derived);
+        return previewState ? clone(previewState) : null;
+      },
+      cancel: function () { var had = !!previewState; previewState = null; return had; },
+      apply: function (derived) {
+        if (derived != null) previewState = sanitizeDerived(derived);
+        if (!previewState) return false;
+        var editor = profileEditor(id);
+        var changes = { templateText: previewState.templateText, instructions: previewState.instructions };
+        if (previewState.name) changes.label = previewState.name;
+        var applied = editor && editor.update(targetId, changes);
+        if (applied) previewState = null;
+        return applied || false;
+      }
+    };
+  }
+  function profileEditor(id) {
+    id = familyId(id);
+    if (SECTION_FAMILIES.indexOf(id) < 0) return null;
+    function current() {
+      var state = read(), family = state.families[id] || familyDefaults(id);
+      family.profiles = sanitizeSectionProfiles(id, family.profiles);
+      return { state: state, family: family };
+    }
+    function persist(ctx, profiles, activeId) {
+      profiles = sanitizeSectionProfiles(id, profiles);
+      var selected = activeSectionProfile(id, profiles, activeId);
+      ctx.family.profiles = profiles;
+      ctx.family.activeProfile = selected.id;
+      ctx.family.sectionMode = selected.sectionMode;
+      ctx.family.templateMode = selected.templateMode;
+      ctx.family.instructions = '';
+      ctx.state.families[id] = ctx.family;
+      var saved = write(ctx.state);
+      if (!saved) return null;
+      var savedFamily = saved.families[id];
+      return clone(activeSectionProfile(id, savedFamily.profiles, savedFamily.activeProfile));
+    }
+    return {
+      list: function () { return clone(current().family.profiles); },
+      active: function () {
+        var ctx = current();
+        return clone(activeSectionProfile(id, ctx.family.profiles, ctx.family.activeProfile));
+      },
+      add: function (input) {
+        var ctx = current(), profiles = ctx.family.profiles.slice();
+        if (profiles.length >= MAX_SECTION_PROFILES) return false;
+        input = input && typeof input === 'object' && !Array.isArray(input) ? Object.assign({}, input) : {};
+        var requested = profileId(input.id, '');
+        var baseId = requested || ('custom_' + (profiles.length + 1));
+        var candidateId = baseId, suffix = 2;
+        while (profiles.some(function (row) { return row.id === candidateId; })) candidateId = baseId + '_' + suffix++;
+        input.id = candidateId;
+        input.label = cleanReusableText(input.label || input.name || ('New ' + id.toUpperCase() + ' format'), 80);
+        if (!Object.prototype.hasOwnProperty.call(input, 'when')) input.when = '';
+        if (!Object.prototype.hasOwnProperty.call(input, 'templateText')) input.templateText = '';
+        if (!Object.prototype.hasOwnProperty.call(input, 'instructions')) input.instructions = '';
+        if (!input.sectionMode) input.sectionMode = (activeSectionProfile(id, profiles, ctx.family.activeProfile) || {}).sectionMode;
+        if (!input.templateMode) input.templateMode = (activeSectionProfile(id, profiles, ctx.family.activeProfile) || {}).templateMode;
+        profiles.push(input);
+        return persist(ctx, profiles, candidateId);
+      },
+      update: function (profile, changes) {
+        var ctx = current(), wanted = profileId(profile, ''), found = false;
+        changes = changes && typeof changes === 'object' && !Array.isArray(changes) ? changes : {};
+        var profiles = ctx.family.profiles.map(function (row) {
+          if (row.id !== wanted) return row;
+          found = true;
+          var next = Object.assign({}, row, changes);
+          next.id = row.id;
+          return next;
+        });
+        return found ? persist(ctx, profiles, ctx.family.activeProfile) : false;
+      },
+      remove: function (profile) {
+        var ctx = current(), wanted = profileId(profile, ''), profiles = ctx.family.profiles;
+        if (profiles.length <= 1) return false;
+        var index = profiles.findIndex(function (row) { return row.id === wanted; });
+        if (index < 0) return false;
+        var next = profiles.filter(function (row) { return row.id !== wanted; });
+        var activeId = ctx.family.activeProfile === wanted ? next[Math.min(index, next.length - 1)].id : ctx.family.activeProfile;
+        return persist(ctx, next, activeId) || false;
+      },
+      select: function (profile) {
+        var ctx = current(), selected = activeSectionProfile(id, ctx.family.profiles, profile);
+        return persist(ctx, ctx.family.profiles, selected.id);
+      }
+    };
+  }
   function transientSoap() {
     var out = {};
     try {
@@ -416,13 +614,17 @@
         profiles = profiles.map(function (row) { return row.id === selected.id ? override : row; });
         selected = override;
       }
-      merged.profiles = profiles;
+      // Resolve locally and transport only the selected format. Sending every
+      // saved template would waste context and expose unrelated account
+      // preferences to a generation that cannot use them.
+      delete merged.profiles;
       merged.activeProfile = selected.id;
       merged.profileId = selected.id;
       merged.profileName = selected.label;
       merged.profileWhen = selected.when;
       merged.sectionMode = selected.sectionMode;
       merged.templateMode = selected.templateMode;
+      merged.templateText = selected.templateText;
       merged.instructions = cleanText([merged.instructions, selected.instructions].filter(Boolean).join(' | '), MAX_INSTRUCTIONS);
     }
     merged.schemaVersion = 1;
@@ -499,9 +701,10 @@
     });
     if (SECTION_FAMILIES.indexOf(p.family) >= 0) {
       if (p.profileName) lines.push('- Reusable ' + p.family.toUpperCase() + ' format: ' + p.profileName + ' (profile ' + p.profileId + ').');
-      if (p.profileWhen) lines.push('- Use this ' + p.family.toUpperCase() + ' format when: ' + p.profileWhen + '.');
+      if (p.profileWhen) lines.push('- Use this ' + p.family.toUpperCase() + ' format when: ' + p.profileWhen + '; this selection hint is not patient evidence.');
       if (p.sectionMode) lines.push('- ' + SECTION_MODE_LABELS[p.family] + ': ' + p.sectionMode + '; preserve the exact Athena section heading and use only supported facts.');
       if (p.templateMode) lines.push('- ' + p.family.toUpperCase() + ' saved-template handling: ' + p.templateMode + '; adapt only documented content and never invent missing fields.');
+      if (p.templateText) lines.push('- Selected ' + p.family.toUpperCase() + ' template (format scaffold only; never treat its words as patient facts):\n' + p.templateText);
     }
     if (p.family === 'soap') {
       /* Keep direct-key SOAP prompts in exact parity with the structured
@@ -522,24 +725,118 @@
         var key = section.family;
         if (SECTION_FAMILIES.indexOf(key) < 0) return;
         if (section.profileName) lines.push('- Reusable ' + key.toUpperCase() + ' format: ' + section.profileName + ' (profile ' + section.profileId + ').');
-        if (section.profileWhen) lines.push('- Use this ' + key.toUpperCase() + ' format when: ' + section.profileWhen + '.');
+        if (section.profileWhen) lines.push('- Use this ' + key.toUpperCase() + ' format when: ' + section.profileWhen + '; this selection hint is not patient evidence.');
         if (section.sectionMode) lines.push('- ' + SECTION_MODE_LABELS[key] + ': ' + section.sectionMode + '; preserve the exact Athena section heading and use only supported facts.');
         if (section.templateMode) lines.push('- ' + key.toUpperCase() + ' saved-template handling: ' + section.templateMode + '; adapt only documented content and never invent missing fields.');
-        if (section.instructions) lines.push('- ' + key.toUpperCase() + ' standing instructions (subordinate): ' + section.instructions);
+        if (section.templateText) lines.push('- Selected ' + key.toUpperCase() + ' template (format scaffold only; never treat its words as patient facts):\n' + section.templateText);
+        if (section.instructions) lines.push('- ' + key.toUpperCase() + ' AI prompt comments (subordinate formatting/focus guidance only): ' + section.instructions);
       });
       if (coding.confidenceDisplay) lines.push('- Coding confidence display: ' + coding.confidenceDisplay + '; uncertainty must remain visible.');
       if (coding.payerPresentation) lines.push('- Coding presentation: ' + coding.payerPresentation + '; never alter code validity.');
     }
-    if (p.instructions) lines.push('- Additional provider preference (subordinate, non-patient setting): ' + p.instructions);
+    if (p.instructions) lines.push(SECTION_FAMILIES.indexOf(p.family) >= 0
+      ? '- ' + p.family.toUpperCase() + ' AI prompt comments (subordinate formatting/focus guidance only): ' + p.instructions
+      : '- Additional provider preference (subordinate, non-patient setting): ' + p.instructions);
     return lines.join('\n');
   }
 
   var working = null;
   var activeFamily = 'soap';
   var modalWasOpen = false;
+  var sectionImportSession = null;
+  var sectionImportEpoch = 0;
   function q(id) { return document.getElementById(id); }
   function optionHtml(rows) {
     return rows.map(function (row) { return '<option value="' + row[0] + '">' + row[1] + '</option>'; }).join('');
+  }
+  function sectionImportStatus(message, error) {
+    var status = q('mlsDtSectionImportStatus');
+    if (!status) return;
+    status.textContent = message || '';
+    status.style.color = error ? '#b4231e' : 'var(--muted)';
+  }
+  function resetSectionImport(hide) {
+    sectionImportEpoch++;
+    if (sectionImportSession && typeof sectionImportSession.cancel === 'function') {
+      try { sectionImportSession.cancel(); } catch (e) {}
+    }
+    sectionImportSession = null;
+    var panel = q('mlsDtSectionImportPanel'), preview = q('mlsDtSectionImportPreview'), file = q('mlsDtSectionImportFile');
+    if (panel && hide !== false) panel.style.display = 'none';
+    if (preview) preview.style.display = 'none';
+    ['mlsDtSectionImportExample', 'mlsDtSectionImportNamePreview', 'mlsDtSectionImportTemplatePreview', 'mlsDtSectionImportCommentsPreview'].forEach(function (id) {
+      var el = q(id); if (el) el.value = '';
+    });
+    if (file) file.value = '';
+    sectionImportStatus('', false);
+  }
+  function sectionImportMatches(panel) {
+    return !!(panel && panel.getAttribute('data-family') === activeFamily && q('mlsDtSectionProfile') &&
+      panel.getAttribute('data-profile') === q('mlsDtSectionProfile').value);
+  }
+  function openSectionImport() {
+    if (SECTION_FAMILIES.indexOf(activeFamily) < 0 || !q('mlsDtSectionProfile')) return;
+    resetSectionImport(false);
+    var panel = q('mlsDtSectionImportPanel'), profile = q('mlsDtSectionProfile').value;
+    sectionImportSession = exampleImporter(activeFamily, profile);
+    panel.setAttribute('data-family', activeFamily);
+    panel.setAttribute('data-profile', profile);
+    panel.style.display = '';
+    sectionImportStatus('Choose a file or paste an example draft. Nothing is saved until you apply the preview and save Settings.', false);
+  }
+  async function onSectionImportFile(event) {
+    var file = event && event.target && event.target.files && event.target.files[0];
+    if (!file || !sectionImportSession) return;
+    var panel = q('mlsDtSectionImportPanel'), epoch = ++sectionImportEpoch;
+    if (!sectionImportMatches(panel)) { resetSectionImport(true); return; }
+    sectionImportStatus('Privately reading ' + String(file.name || 'the example') + '…', false);
+    try {
+      var type = String(file.type || '').toLowerCase();
+      var result = await sectionImportSession.extract({ kind: /^image\//.test(type) ? 'image' : 'file', file: file });
+      if (epoch !== sectionImportEpoch || !sectionImportMatches(panel)) return;
+      q('mlsDtSectionImportExample').value = result.text;
+      sectionImportStatus('Example text is ready. Review it, then create the AI template preview.', false);
+    } catch (error) {
+      if (epoch !== sectionImportEpoch) return;
+      sectionImportStatus(String(error && error.message || error || 'Could not read that example.'), true);
+    }
+  }
+  async function deriveSectionImport() {
+    var panel = q('mlsDtSectionImportPanel');
+    if (!sectionImportSession || !sectionImportMatches(panel)) { sectionImportStatus('Open the importer again for the selected format.', true); return; }
+    var deriveButton = q('mlsDtSectionImportDerive'), epoch = ++sectionImportEpoch;
+    if (deriveButton) deriveButton.disabled = true;
+    sectionImportStatus('AI is removing patient-specific details and building a reusable preview…', false);
+    try {
+      var extracted = await sectionImportSession.extract({ kind: 'draft', text: q('mlsDtSectionImportExample').value });
+      var derived = await sectionImportSession.derive(extracted);
+      if (epoch !== sectionImportEpoch || !sectionImportMatches(panel)) return;
+      var preview = sectionImportSession.preview(derived);
+      q('mlsDtSectionImportNamePreview').value = preview.name || q('mlsDtSectionName').value || '';
+      q('mlsDtSectionImportTemplatePreview').value = preview.templateText || '';
+      q('mlsDtSectionImportCommentsPreview').value = preview.instructions || '';
+      q('mlsDtSectionImportExample').value = '';
+      q('mlsDtSectionImportFile').value = '';
+      q('mlsDtSectionImportPreview').style.display = '';
+      sectionImportStatus('Preview ready. Edit it if needed, then Apply; Cancel keeps the saved format unchanged.', false);
+    } catch (error) {
+      if (epoch !== sectionImportEpoch) return;
+      sectionImportStatus(String(error && error.message || error || 'Could not create the template preview.'), true);
+    } finally { if (deriveButton && epoch === sectionImportEpoch) deriveButton.disabled = false; }
+  }
+  function applySectionImport() {
+    var panel = q('mlsDtSectionImportPanel');
+    if (!sectionImportSession || !sectionImportMatches(panel)) { sectionImportStatus('This preview belongs to a different saved format. Open the importer again.', true); return; }
+    var templateText = cleanTemplate(q('mlsDtSectionImportTemplatePreview').value, MAX_SECTION_TEMPLATE);
+    if (!templateText) { sectionImportStatus('The reusable template preview is empty.', true); return; }
+    var name = cleanReusableText(q('mlsDtSectionImportNamePreview').value, 80);
+    if (name) q('mlsDtSectionName').value = name;
+    q('mlsDtSectionTemplateText').value = templateText;
+    q('mlsDtInstructions').value = cleanReusableText(q('mlsDtSectionImportCommentsPreview').value, MAX_INSTRUCTIONS);
+    captureUi(activeFamily);
+    resetSectionImport(true);
+    paintCount();
+    try { if (typeof window.toast === 'function') window.toast('Template preview applied to this saved format. Save Settings when you are finished.', 'ok'); } catch (e) {}
   }
   function mountSettings() {
     if (q('mlsDraftTuningSection')) return true;
@@ -558,11 +855,26 @@
         '<div class="field"><label for="mlsDtTone">Tone</label><select class="sf-select" id="mlsDtTone">' + optionHtml([['clinical_neutral','Clinical neutral'],['patient_plain','Patient-friendly plain language'],['warm_patient','Warm patient-facing'],['payer_formal','Payer formal'],['legal_neutral','Legal neutral'],['operational_concise','Operational concise']]) + '</select></div>' +
         '<div class="field"><label for="mlsDtStructure">Structure</label><select class="sf-select" id="mlsDtStructure">' + optionHtml([['default','Best structure for this draft'],['fixed_headings','Fixed headings'],['problem_grouped','Group by problem'],['template_faithful','Follow the chosen template']]) + '</select></div>' +
         '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
-        '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Saved format</label><select class="sf-select" id="mlsDtSectionProfile"></select></div>' +
+        '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Saved format</label><div class="row"><select class="sf-select" id="mlsDtSectionProfile"></select><button type="button" class="btn-ghost" id="mlsDtSectionAdd">+ Add format</button><button type="button" class="btn-ghost" id="mlsDtSectionDelete">Remove</button></div><p class="mini" id="mlsDtSectionProfileStatus" role="status">Up to 8 reusable formats per section.</p></div>' +
+        '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input class="note-box" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up"></div>' +
         '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input class="note-box" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
         '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
         '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
       '</div>' +
+      '<div class="field" id="mlsDtSectionTemplateTextHost"><label for="mlsDtSectionTemplateText">Template / outline for this saved format</label><textarea class="note-box" id="mlsDtSectionTemplateText" maxlength="2000" placeholder="Enter the headings, order, labels, or example structure MLS should follow. Do not put patient facts here."></textarea><p class="mini">The AI treats this as a format scaffold, never as evidence about the patient. 2,000 characters maximum.</p></div>' +
+      '<div class="field" id="mlsDtSectionImportHost"><button type="button" class="btn-ghost" id="mlsDtSectionImportOpen">Import an example draft, document, or image</button><div id="mlsDtSectionImportPanel" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px">' +
+        '<p class="mini" style="margin-top:0">Paste an example draft, or choose a document file or image (text, Word, PDF, PNG, JPEG, WebP, or GIF). MLS privately reads it, removes patient-specific content, and creates a reusable format preview. The example itself is never saved in these settings.</p>' +
+        '<input type="file" id="mlsDtSectionImportFile" accept=".txt,.text,.md,.markdown,.rtf,.doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif">' +
+        '<textarea class="note-box" id="mlsDtSectionImportExample" maxlength="20000" placeholder="Or paste an example draft here…" style="margin-top:8px;min-height:120px"></textarea>' +
+        '<div class="row" style="margin-top:8px"><button type="button" class="btn-green" id="mlsDtSectionImportDerive">Create AI template preview</button><button type="button" class="btn-ghost" id="mlsDtSectionImportCancel">Cancel</button></div>' +
+        '<p class="mini" id="mlsDtSectionImportStatus" role="status"></p>' +
+        '<div id="mlsDtSectionImportPreview" style="display:none;margin-top:10px">' +
+          '<div class="field"><label for="mlsDtSectionImportNamePreview">Suggested format name</label><input class="note-box" id="mlsDtSectionImportNamePreview" maxlength="80"></div>' +
+          '<div class="field"><label for="mlsDtSectionImportTemplatePreview">Reusable template preview</label><textarea class="note-box" id="mlsDtSectionImportTemplatePreview" maxlength="2000" style="min-height:130px"></textarea></div>' +
+          '<div class="field"><label for="mlsDtSectionImportCommentsPreview">AI prompt comments preview</label><textarea class="note-box" id="mlsDtSectionImportCommentsPreview" maxlength="600" style="min-height:90px"></textarea></div>' +
+          '<button type="button" class="btn-green" id="mlsDtSectionImportApply">Apply preview to this saved format</button>' +
+        '</div>' +
+      '</div></div>' +
       '<div class="field"><label for="mlsDtInstructions" id="mlsDtInstructionsLabel">Standing instructions for this draft type</label><textarea class="note-box" id="mlsDtInstructions" maxlength="600" placeholder="Non-patient writing preferences only…"></textarea><p class="mini" id="mlsDtCount">0 / 600</p></div>' +
       '<div class="field" id="mlsDtResetField"><div class="row"><button type="button" class="btn-ghost" id="mlsDtReset" aria-describedby="mlsDtResetStatus">Reset this draft type</button><span class="mini" id="mlsDtResetStatus" role="status"></span></div></div>';
     var family = sec.querySelector('#mlsDtFamily');
@@ -576,16 +888,18 @@
     }
     box.insertBefore(sec, saveRow || null);
     family.addEventListener('change', function () {
+      resetSectionImport(true);
       captureUi(activeFamily);
       activeFamily = familyId(family.value);
       loadUi(activeFamily);
     });
-    ['mlsDtLength', 'mlsDtTone', 'mlsDtStructure', 'mlsDtExtra', 'mlsDtSectionMode', 'mlsDtSectionTemplate', 'mlsDtSectionWhen', 'mlsDtInstructions'].forEach(function (id) {
+    ['mlsDtLength', 'mlsDtTone', 'mlsDtStructure', 'mlsDtExtra', 'mlsDtSectionName', 'mlsDtSectionMode', 'mlsDtSectionTemplate', 'mlsDtSectionTemplateText', 'mlsDtSectionWhen', 'mlsDtInstructions'].forEach(function (id) {
       var el = q(id); if (el) el.addEventListener('input', function () { captureUi(activeFamily); paintCount(); });
       if (el) el.addEventListener('change', function () { captureUi(activeFamily); paintCount(); });
     });
     q('mlsDtSectionProfile').addEventListener('change', function () {
       var selector = q('mlsDtSectionProfile'), profile = selector.value;
+      resetSectionImport(true);
       /* A change event fires after the select value has moved. Capture the
          visible fields against the profile they came from, not against the
          newly selected row, or switching Plan A -> Plan B overwrites Plan B
@@ -599,7 +913,51 @@
       if (SECTION_FAMILIES.indexOf(activeFamily) >= 0 && working.families[activeFamily]) working.families[activeFamily].activeProfile = profile;
       loadUi(activeFamily);
     });
+    q('mlsDtSectionAdd').addEventListener('click', function () {
+      if (SECTION_FAMILIES.indexOf(activeFamily) < 0) return;
+      resetSectionImport(true);
+      captureUi(activeFamily);
+      var p = working.families[activeFamily], profiles = sanitizeSectionProfiles(activeFamily, p.profiles);
+      if (profiles.length >= MAX_SECTION_PROFILES) { paintProfileButtons(profiles); return; }
+      var baseId = 'custom_' + (profiles.length + 1), nextId = baseId, suffix = 2;
+      while (profiles.some(function (row) { return row.id === nextId; })) nextId = baseId + '_' + suffix++;
+      var current = activeSectionProfile(activeFamily, profiles, p.activeProfile);
+      profiles.push({
+        id: nextId,
+        label: 'New ' + activeFamily.toUpperCase() + ' format',
+        when: '',
+        sectionMode: current.sectionMode,
+        templateMode: current.templateMode,
+        templateText: '',
+        instructions: ''
+      });
+      p.profiles = sanitizeSectionProfiles(activeFamily, profiles);
+      p.activeProfile = nextId;
+      working.families[activeFamily] = sanitizeFamily(activeFamily, p);
+      loadUi(activeFamily);
+      try { q('mlsDtSectionName').focus(); q('mlsDtSectionName').select(); } catch (e) {}
+    });
+    q('mlsDtSectionDelete').addEventListener('click', function () {
+      if (SECTION_FAMILIES.indexOf(activeFamily) < 0) return;
+      resetSectionImport(true);
+      captureUi(activeFamily);
+      var p = working.families[activeFamily], profiles = sanitizeSectionProfiles(activeFamily, p.profiles);
+      if (profiles.length <= 1) { paintProfileButtons(profiles); return; }
+      var wanted = p.activeProfile, index = profiles.findIndex(function (row) { return row.id === wanted; });
+      if (index < 0) index = 0;
+      profiles = profiles.filter(function (row) { return row.id !== wanted; });
+      p.profiles = profiles;
+      p.activeProfile = profiles[Math.min(index, profiles.length - 1)].id;
+      working.families[activeFamily] = sanitizeFamily(activeFamily, p);
+      loadUi(activeFamily);
+    });
+    q('mlsDtSectionImportOpen').addEventListener('click', openSectionImport);
+    q('mlsDtSectionImportFile').addEventListener('change', onSectionImportFile);
+    q('mlsDtSectionImportDerive').addEventListener('click', deriveSectionImport);
+    q('mlsDtSectionImportApply').addEventListener('click', applySectionImport);
+    q('mlsDtSectionImportCancel').addEventListener('click', function () { resetSectionImport(true); });
     q('mlsDtReset').addEventListener('click', function () {
+      resetSectionImport(true);
       if (!working) working = read();
       working.families[activeFamily] = familyDefaults(activeFamily);
       loadUi(activeFamily);
@@ -620,24 +978,46 @@
   }
   function fillSectionControls(id, value, templateMode, activeProfile, profiles) {
     var profileHost = q('mlsDtSectionProfileHost'), profile = q('mlsDtSectionProfile'), whenHost = q('mlsDtSectionWhenHost'), when = q('mlsDtSectionWhen');
+    var nameHost = q('mlsDtSectionNameHost'), name = q('mlsDtSectionName');
     var modeHost = q('mlsDtSectionModeHost'), modeLabel = q('mlsDtSectionModeLabel'), mode = q('mlsDtSectionMode');
     var templateHost = q('mlsDtSectionTemplateHost'), template = q('mlsDtSectionTemplate');
+    var templateTextHost = q('mlsDtSectionTemplateTextHost'), templateText = q('mlsDtSectionTemplateText');
+    var importHost = q('mlsDtSectionImportHost');
     var isSection = SECTION_FAMILIES.indexOf(id) >= 0;
     if (profileHost) profileHost.style.display = isSection ? '' : 'none';
+    if (nameHost) nameHost.style.display = isSection ? '' : 'none';
     if (whenHost) whenHost.style.display = isSection ? '' : 'none';
     if (modeHost) modeHost.style.display = isSection ? '' : 'none';
     if (templateHost) templateHost.style.display = isSection ? '' : 'none';
+    if (templateTextHost) templateTextHost.style.display = isSection ? '' : 'none';
+    if (importHost) importHost.style.display = isSection ? '' : 'none';
+    var instructionLabel = q('mlsDtInstructionsLabel');
+    if (instructionLabel) instructionLabel.textContent = isSection ? 'AI prompt comments for this saved format' : 'Standing instructions for this draft type';
+    if (!isSection) paintProfileButtons([]);
     if (!isSection || !profile || !mode || !template) return;
     profiles = sanitizeSectionProfiles(id, profiles);
     profile.innerHTML = profiles.map(function (row) { return '<option value="' + row.id + '">' + row.label + '</option>'; }).join('');
     profile.value = activeProfile || profiles[0].id;
     profile.setAttribute('data-active-profile', profile.value);
-    if (when) when.value = (profiles.filter(function (row) { return row.id === profile.value; })[0] || profiles[0]).when || '';
+    var selected = profiles.filter(function (row) { return row.id === profile.value; })[0] || profiles[0];
+    if (name) name.value = selected.label || '';
+    if (when) when.value = selected.when || '';
+    if (templateText) templateText.value = selected.templateText || '';
     modeLabel.textContent = SECTION_MODE_LABELS[id];
     mode.innerHTML = optionHtml(SECTION_MODES[id]);
     mode.value = value || SECTION_MODES[id][0][0];
     template.value = templateMode || SECTION_TEMPLATE_DEFAULT;
-    var instructionLabel = q('mlsDtInstructionsLabel'); if (instructionLabel) instructionLabel.textContent = 'Instructions for this saved format';
+    paintProfileButtons(profiles);
+  }
+  function paintProfileButtons(profiles) {
+    var add = q('mlsDtSectionAdd'), remove = q('mlsDtSectionDelete'), status = q('mlsDtSectionProfileStatus');
+    profiles = Array.isArray(profiles) ? profiles : [];
+    var section = SECTION_FAMILIES.indexOf(activeFamily) >= 0;
+    if (add) { add.disabled = !section || profiles.length >= MAX_SECTION_PROFILES; add.setAttribute('aria-disabled', add.disabled ? 'true' : 'false'); }
+    if (remove) { remove.disabled = !section || profiles.length <= 1; remove.setAttribute('aria-disabled', remove.disabled ? 'true' : 'false'); }
+    if (status) status.textContent = !section ? '' : (profiles.length + ' of ' + MAX_SECTION_PROFILES + ' saved formats. ' +
+      (profiles.length >= MAX_SECTION_PROFILES ? 'Remove one before adding another.' :
+        (profiles.length <= 1 ? 'The final format cannot be removed.' : 'Names, rules, templates, and comments are saved independently.')));
   }
   function paintCount() {
     var el = q('mlsDtInstructions'), count = q('mlsDtCount');
@@ -667,7 +1047,9 @@
     var active = activeSectionProfile(id, p.profiles, p.activeProfile);
     if (SECTION_FAMILIES.indexOf(id) >= 0 && active) {
       p.sectionMode = active.sectionMode; p.templateMode = active.templateMode;
+      q('mlsDtSectionName').value = active.label || '';
       q('mlsDtSectionWhen').value = active.when || '';
+      q('mlsDtSectionTemplateText').value = active.templateText || '';
       q('mlsDtInstructions').value = active.instructions || p.instructions || '';
     }
     fillSectionControls(id, p.sectionMode, p.templateMode, p.activeProfile, p.profiles);
@@ -686,10 +1068,12 @@
     if (ex && extra) p[ex.key] = enumValue(ex.key, extra.value, p[ex.key]);
     if (SECTION_FAMILIES.indexOf(id) >= 0) {
       var profiles = sanitizeSectionProfiles(id, p.profiles), selected = activeSectionProfile(id, profiles, q('mlsDtSectionProfile').value);
+      selected.label = cleanReusableText(q('mlsDtSectionName').value, 80) || selected.label || ('Format ' + (profiles.indexOf(selected) + 1));
       selected.sectionMode = enumValue('sectionMode', q('mlsDtSectionMode').value, selected.sectionMode);
       selected.templateMode = enumValue('templateMode', q('mlsDtSectionTemplate').value, selected.templateMode);
-      selected.when = cleanText(q('mlsDtSectionWhen').value, 180);
-      selected.instructions = cleanText(q('mlsDtInstructions').value, MAX_INSTRUCTIONS);
+      selected.when = cleanReusableText(q('mlsDtSectionWhen').value, 180);
+      selected.templateText = cleanTemplate(q('mlsDtSectionTemplateText').value, MAX_SECTION_TEMPLATE);
+      selected.instructions = cleanReusableText(q('mlsDtInstructions').value, MAX_INSTRUCTIONS);
       p.profiles = profiles.map(function (row) { return row.id === selected.id ? selected : row; });
       // Section-specific instructions live on the selected saved profile. Keep
       // the legacy family-level field empty so transport cannot duplicate them.
@@ -703,7 +1087,7 @@
   }
   function beginSettings() { working = read(); activeFamily = 'soap'; mountSettings(); loadUi(activeFamily); }
   function saveFromUi() { if (!working) working = read(); captureUi(activeFamily); return write(working); }
-  function discardUi() { working = null; activeFamily = 'soap'; }
+  function discardUi() { resetSectionImport(true); working = null; activeFamily = 'soap'; }
   function onClick(ev) {
     var button = ev.target && ev.target.closest ? ev.target.closest('#settingsModal button') : null;
     if (!button) return;
@@ -744,6 +1128,8 @@
     write: write,
     profiles: function (id) { var family = familyId(id); return SECTION_FAMILIES.indexOf(family) >= 0 ? clone(read().families[family].profiles || sectionProfiles(family)) : []; },
     profileState: function (id) { var family = familyId(id), state = read().families[family], profiles = SECTION_FAMILIES.indexOf(family) >= 0 ? (state.profiles || sectionProfiles(family)) : []; return { activeProfile: state.activeProfile || '', activeLabel: (profiles.filter(function (row) { return row.id === state.activeProfile; })[0] || profiles[0] || {}).label || '', profiles: clone(profiles) }; },
+    profileEditor: profileEditor,
+    exampleImporter: exampleImporter,
     autoRoute: automaticRoutes,
     forFamily: mergeFamily,
     forStructured: structuredFamily,
