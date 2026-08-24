@@ -14,8 +14,10 @@ assert.match(source, /eGen\.mlsAi\.issues=issueList\.map/,
   'backend quality issues must remain attached to the generation error');
 assert.match(source, /id="genError"[^>]*role="alert"/,
   'generation needs an inline accessible failure surface beside Generate');
-assert.match(source, /genError\.textContent=.*friendlyError\(err\)/,
-  'generation failures must be rendered beside Generate without changing the draft');
+assert.match(source, /id="noteGenError"[^>]*role="alert"/,
+  'the always-visible Clinical note card needs its own accessible failure surface');
+assert.match(source, /\['genError','noteGenError'\]\.forEach/,
+  'generation failures must reach both the Generate controls and the visible Clinical note card');
 
 const start = source.indexOf('function mlsDraftFailureMessage(');
 const end = source.indexOf('function _mlsValidateStructuredNoteResult(', start);

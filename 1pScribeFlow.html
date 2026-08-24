@@ -3504,6 +3504,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="sub">A clean SOAP note, generated from the visit. Edit anything before signing.</p>
 
       <div class="disclaim">ℹ️ AI-generated — review before signing.</div>
+      <div id="noteGenError" role="alert" aria-live="polite" class="mini" style="display:none;color:#b4231e;margin:10px 0"></div>
 
       <div id="noteEmpty" class="empty">
         <span class="big">📄</span>
@@ -27269,7 +27270,7 @@ async function generateNote(){
   }
 
   gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
-  try{ var genError=document.getElementById('genError'); if(genError){ genError.textContent=''; genError.style.display='none'; } }catch(eGenClear){}
+  try{ ['genError','noteGenError'].forEach(function(id){ var genError=document.getElementById(id); if(genError){ genError.textContent=''; genError.style.display='none'; } }); }catch(eGenClear){}
   try{
     /* A hung generation request used to leave this button disabled forever —
        every later click then failed with no visible outcome. Bound the wait so
@@ -27331,8 +27332,8 @@ async function generateNote(){
       toast(friendlyError(err),'err');
     }
     try{
-      var genError=document.getElementById('genError');
-      if(genError){ genError.textContent=err&&/generation-timeout/.test(String(err.message||'')) ? 'Note generation timed out. Your transcript is safe — click Generate again.' : friendlyError(err); genError.style.display='block'; }
+      var genMessage=err&&/generation-timeout/.test(String(err.message||'')) ? 'Note generation timed out. Your transcript is safe — click Generate again.' : friendlyError(err);
+      ['genError','noteGenError'].forEach(function(id){ var genError=document.getElementById(id); if(genError){ genError.textContent=genMessage; genError.style.display='block'; } });
     }catch(eGenSurface){}
     return false;
   }finally{
