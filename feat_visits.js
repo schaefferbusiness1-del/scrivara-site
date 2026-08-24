@@ -1857,6 +1857,7 @@
   var M = function () { return window.__mlsVisitModel; };
   var isFn = function (f) { return typeof f === 'function'; };
   var S = function (x) { return (x == null ? '' : String(x)); };
+  var trim = function (x) { return S(x).trim(); };
 
   function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
@@ -2059,7 +2060,7 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 
-  window.__mlsVisitUI = { render: render, _visitCard: visitCard };
+  window.__mlsVisitUI = { render: render, _visitCard: visitCard, _visitProvenance: visitProvenance };
 })();
 
 /* ----------------------------------------------------------------------------
@@ -2410,11 +2411,135 @@
   }
 
   // ---- button + status injection (shows when a patient is open) --------------
+  function visitNeedsDetailRetry(v) {
+    /* Keep the action label on the same trust rule as the visible provenance
+       chip. Athena/legacy reader rows are incomplete until both completeness
+       flags and a real encounter body are present; a clinician-authored local
+       visit must never manufacture a retry warning. */
+    try {
+      var ui = window.__mlsVisitUI;
+      if (ui && isFn(ui._visitProvenance)) return !!ui._visitProvenance(v);
+    } catch (eUi) {}
+    if (!v || !/athena|legacy|grab|pullrec/i.test(S(v.source))) return false;
+    return v.indexOnly === true || !(v.fullDetail === true && v.bodyComplete === true && S(v.raw).trim());
+  }
+
+  function lastSinglePullNeedsDetailRetry(p) {
+    var receipt = null;
+    try { receipt = window.__mlsSinglePullVisits || null; } catch (e) { receipt = null; }
+    /* Patient id is the only acceptable ownership proof. Do not infer receipt
+       ownership from a name (duplicate names exist) or reuse another chart's
+       partial outcome after a patient switch. */
+    if (!receipt || !p || !S(receipt.patientId) || S(receipt.patientId) !== S(p.id)) return false;
+    return receipt.partial === true || receipt.ok === false || receipt.complete === false;
+  }
+
+  function historyNeedsDetailRetry(p) {
+    if (!p) return false;
+    var visits = [];
+    try { visits = M() && isFn(M().getVisits) ? M().getVisits(p) : (Array.isArray(p.visits) ? p.visits : []); } catch (e) { visits = []; }
+    for (var i = 0; i < visits.length; i++) if (visitNeedsDetailRetry(visits[i])) return true;
+    return lastSinglePullNeedsDetailRetry(p);
+  }
+
+  function historyHeader() {
+    /* The enhanced timeline owns the visible header when it is mounted. The
+       base header remains as the reversible fallback. Reparent the SAME bar;
+       never create a second pull action or a second pull engine. */
+    return document.querySelector('#mlsVisitHistoryExt .mlsxh-head') ||
+      document.querySelector('#mlsVisitHistory .mlsvh-head') || null;
+  }
+
+  var PULL_HIDE_OWNER = 'data-mls-visits-selected-hide';
+  function syncOpenPatientPullVisibility(selected) {
+    var btn = document.getElementById('ptPullAthenaBtn');
+    if (!btn) return;
+    if (selected) {
+      if (btn.getAttribute(PULL_HIDE_OWNER) !== '1') {
+        btn.setAttribute(PULL_HIDE_OWNER, '1');
+        btn.setAttribute('data-mls-visits-prior-hidden', btn.hidden ? '1' : '0');
+        btn.setAttribute('data-mls-visits-prior-display', btn.style.getPropertyValue('display') || '');
+        btn.setAttribute('data-mls-visits-prior-display-priority', btn.style.getPropertyPriority('display') || '');
+      }
+      btn.hidden = true;
+      btn.style.setProperty('display', 'none', 'important');
+      return;
+    }
+    if (btn.getAttribute(PULL_HIDE_OWNER) !== '1') return;
+    var priorHidden = btn.getAttribute('data-mls-visits-prior-hidden') === '1';
+    var priorDisplay = btn.getAttribute('data-mls-visits-prior-display') || '';
+    var priorPriority = btn.getAttribute('data-mls-visits-prior-display-priority') || '';
+    btn.style.removeProperty('display');
+    if (priorDisplay) btn.style.setProperty('display', priorDisplay, priorPriority);
+    btn.hidden = priorHidden;
+    btn.removeAttribute(PULL_HIDE_OWNER);
+    btn.removeAttribute('data-mls-visits-prior-hidden');
+    btn.removeAttribute('data-mls-visits-prior-display');
+    btn.removeAttribute('data-mls-visits-prior-display-priority');
+  }
+
+  function setContextLabel(bar, p) {
+    var btn = bar && bar.querySelector('.mls-cv-btn');
+    if (!btn) return;
+    var label = historyNeedsDetailRetry(p) ? 'Retry missing visit details' : 'Refresh full visit history';
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.setAttribute('aria-label', label + ' from the open, identity-verified Athena chart (read-only)');
+  }
+
+  var FULL_NOTES_OFF_STATUS = 'Full visit notes are OFF. Enable Full visit notes in Settings before refreshing this history.';
+  function fullNotesAdmission(onStatus) {
+    var say = isFn(onStatus) ? onStatus : function () {};
+    var pref = null, current = null;
+    try { pref = window.__mlsVisitNotesPref || null; } catch (ePref) { pref = null; }
+    if (!pref || !isFn(pref.read)) {
+      say('Full visit notes setting is unavailable. Reload MLS, then enable Full visit notes in Settings before trying again.');
+      return Promise.resolve(false);
+    }
+    try { current = pref.read() || null; } catch (eRead) { current = null; }
+    /* OFF is absolute at this human-action boundary. Never call write() here
+       and never let the full-history reader's manual mode bypass the setting. */
+    if (current && (current.state === 'off' || current.on === false)) {
+      say(FULL_NOTES_OFF_STATUS);
+      return Promise.resolve(false);
+    }
+    if (current && current.state === 'on' && current.on === true) return Promise.resolve(true);
+    if (!current || current.state !== 'unset' || !isFn(pref.ensureChosenForBulkPull)) {
+      say('Full visit notes are not enabled. Enable Full visit notes in Settings before refreshing this history.');
+      return Promise.resolve(false);
+    }
+    say('Choose whether to enable Full visit notes. Nothing will be read unless you choose ON.');
+    return Promise.resolve().then(function () {
+      return pref.ensureChosenForBulkPull();
+    }).then(function (answer) {
+      if (!(answer && answer.ok === true && answer.on === true)) {
+        say(answer && answer.on === false ? FULL_NOTES_OFF_STATUS :
+          'Full visit notes were not enabled, so no visit details were read. Enable them in Settings and try again.');
+        return false;
+      }
+      /* The resolver promises read-back confirmation. Re-read anyway so a
+         replaced/stale resolver cannot admit a pull from an unconfirmed reply. */
+      var confirmed = null;
+      try { confirmed = pref.read() || null; } catch (eConfirm) { confirmed = null; }
+      if (!(confirmed && confirmed.state === 'on' && confirmed.on === true)) {
+        say('Full visit notes could not be confirmed ON, so no visit details were read. Check Settings and try again.');
+        return false;
+      }
+      return true;
+    }, function () {
+      say('Full visit notes could not be confirmed ON, so no visit details were read. Check Settings and try again.');
+      return false;
+    });
+  }
+
   function ensureBar() {
+    var p = activeP();
+    syncOpenPatientPullVisibility(!!p);
+    if (!p) { var gone = document.getElementById('mlsCopyVisitsBar'); if (gone) gone.remove(); return; }
     var card = document.getElementById('profileCard');
     if (!card || card.offsetParent === null) return;
-    if (!activeP()) { var ex = document.getElementById('mlsCopyVisitsBar'); if (ex) ex.remove(); return; }
-    if (document.getElementById('mlsCopyVisitsBar')) return;
+    var head = historyHeader();
+    if (!head) return;
+    var bar = document.getElementById('mlsCopyVisitsBar');
     if (!document.getElementById('mlsCvCss')) {
       var s = document.createElement('style'); s.id = 'mlsCvCss';
       s.textContent =
@@ -2422,32 +2547,51 @@
         '#mlsCopyVisitsBar .mls-cv-btn{cursor:pointer;border:0;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2E6A4B,#7A5CC0)}' +
         '#mlsCopyVisitsBar .mls-cv-btn:hover{filter:brightness(1.06)}' +
         '#mlsCopyVisitsBar .mls-cv-btn[disabled]{opacity:.6;cursor:default}' +
+        '#mlsCopyVisitsBar .mls-cv-readonly{font-size:10px;font-weight:800;letter-spacing:.04em;color:#167447;background:#dff8e8;border:1px solid #8bd5a8;border-radius:999px;padding:2px 7px}' +
         '#mlsCopyVisitsBar .mls-cv-status{font-size:12.5px;opacity:.8;flex:1;min-width:160px}';
       (document.head || document.documentElement).appendChild(s);
     }
-    var bar = document.createElement('div'); bar.id = 'mlsCopyVisitsBar';
-    var btn = document.createElement('button'); btn.className = 'mls-cv-btn';
-    btn.textContent = '📋 Copy every visit from athenaOne';
-    var status = document.createElement('span'); status.className = 'mls-cv-status';
-    btn.addEventListener('click', function () {
-      btn.disabled = true;
-      /* px-3.5 (2026-08-07): the bar SURVIVES a patient switch (it is removed
-         only when NO patient is active), so patient A's progress lines - and
-         the terminal "N visits on file" receipt - used to paint inside
-         patient B's open chart. Every status write now proves the run's
-         patient is still the active one. */
-      var runPtId = (activeP() || {}).id || '';
-      run(function (m) {
-        if (S((activeP() || {}).id || '') === S(runPtId)) status.textContent = m;
-      }).then(function () { btn.disabled = false; }, function () { btn.disabled = false; });
-    });
-    bar.appendChild(btn); bar.appendChild(status);
+    if (!bar) {
+      bar = document.createElement('div'); bar.id = 'mlsCopyVisitsBar';
+      var btn = document.createElement('button'); btn.className = 'mls-cv-btn';
+      var readOnly = document.createElement('span'); readOnly.className = 'mls-cv-readonly'; readOnly.textContent = 'READ-ONLY'; readOnly.setAttribute('aria-hidden', 'true');
+      var status = document.createElement('span'); status.className = 'mls-cv-status';
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        /* px-3.5 (2026-08-07): the bar SURVIVES a patient switch (it is removed
+           only when NO patient is active), so patient A's progress lines - and
+           the terminal "N visits on file" receipt - used to paint inside
+           patient B's open chart. Every status write now proves the run's
+           patient is still the active one. */
+        var runPatient = activeP();
+        var runPtId = (runPatient || {}).id || '';
+        var stillMine = function () { return !!runPtId && S((activeP() || {}).id || '') === S(runPtId); };
+        var say = function (m) { if (stillMine()) status.textContent = m; };
+        fullNotesAdmission(say).then(function (admitted) {
+          if (!admitted) return false;
+          /* A choice dialog can outlive a patient switch. Never start the old
+             chart's read behind the new chart, and never silently retarget it. */
+          if (!stillMine()) return false;
+          return run(say, runPatient);
+        }).then(function () { btn.disabled = false; ensureBar(); }, function () { btn.disabled = false; ensureBar(); });
+      });
+      bar.appendChild(btn); bar.appendChild(readOnly); bar.appendChild(status);
+    }
+    if (!bar.querySelector('.mls-cv-readonly')) {
+      var restoredReadOnly = document.createElement('span'); restoredReadOnly.className = 'mls-cv-readonly';
+      restoredReadOnly.textContent = 'READ-ONLY'; restoredReadOnly.setAttribute('aria-hidden', 'true');
+      var restoredStatus = bar.querySelector('.mls-cv-status');
+      if (restoredStatus) bar.insertBefore(restoredReadOnly, restoredStatus); else bar.appendChild(restoredReadOnly);
+    }
+    setContextLabel(bar, p);
     if (!window.__mlsCvBarSwitchWired) {
       window.__mlsCvBarSwitchWired = true;
-      try { window.addEventListener('mls:active-patient-changed', function () { var s = document.querySelector('#mlsCopyVisitsBar .mls-cv-status'); if (s) s.textContent = ''; }); } catch (eSw) {}
+      try { window.addEventListener('mls:active-patient-changed', function () { var s = document.querySelector('#mlsCopyVisitsBar .mls-cv-status'); if (s) s.textContent = ''; try { ensureBar(); } catch (eEnsure) {} }); } catch (eSw) {}
     }
-    var anchor = document.getElementById('profAtGlance') || document.getElementById('profDemo') || document.getElementById('profName');
-    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor.nextSibling); else card.appendChild(bar);
+    if (bar.parentNode !== head) {
+      var title = head.querySelector('.mlsxh-title,.mlsvh-title');
+      if (title && title.nextSibling) head.insertBefore(bar, title.nextSibling); else head.appendChild(bar);
+    }
   }
 
   function start() { setInterval(function () { try { ensureBar(); } catch (e) {} }, 900); try { ensureBar(); } catch (e) {} }
@@ -2460,7 +2604,11 @@
     _visitIdentityAgrees: visitIdentityAgrees,
     _saveVisits: saveVisits,
     _ping: ping,
-    _driveRequest: driveRequest
+    _driveRequest: driveRequest,
+    _ensureBar: ensureBar,
+    _historyNeedsDetailRetry: historyNeedsDetailRetry,
+    _syncOpenPatientPullVisibility: syncOpenPatientPullVisibility,
+    _fullNotesAdmission: fullNotesAdmission
   };
 })();
 

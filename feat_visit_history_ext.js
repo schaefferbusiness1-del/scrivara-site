@@ -621,11 +621,29 @@
     var sig = dataSig(p, visits);
     if (!force && sig === _lastSig && document.getElementById("mlsVisitHistoryExt")) return;
     _lastSig = sig;
+    var patientChanged = !!_lastPid && S(p.id) !== S(_lastPid);
     if (p.id !== _lastPid) { _lastPid = p.id; } // keep filter state per patient (do not reset on data change)
     injectStyle();
 
     var sec = document.getElementById("mlsVisitHistoryExt");
     if (!sec) { sec = document.createElement("div"); sec.id = "mlsVisitHistoryExt"; }
+    /* The full-history pull owner lives inside this header. A background visit
+       filing rebuilds the header about 140 ms later; clearing the section used
+       to destroy its terminal "Done" receipt before the clinician could read
+       it. Detach and reparent the exact node (including its click listener and
+       status) for the same patient. A patient boundary may reuse the control,
+       but never the prior patient's receipt. */
+    var copyVisitsBar = null;
+    try {
+      copyVisitsBar = document.getElementById("mlsCopyVisitsBar");
+      if (copyVisitsBar && patientChanged) {
+        var copyStatus = copyVisitsBar.querySelector(".mls-cv-status");
+        if (copyStatus) copyStatus.textContent = "";
+      }
+      if (copyVisitsBar && sec.contains(copyVisitsBar) && copyVisitsBar.parentNode) {
+        copyVisitsBar.parentNode.removeChild(copyVisitsBar);
+      }
+    } catch (eCopyBar) { copyVisitsBar = null; }
     sec.innerHTML = "";
 
     // header
@@ -676,6 +694,10 @@
     collapseBtn.setAttribute("aria-expanded", f.collapsed ? "false" : "true");
     collapseBtn.textContent = f.collapsed ? "Show history" : "Hide history";
     head.appendChild(collapseBtn);
+    if (copyVisitsBar) {
+      if (title.nextSibling) head.insertBefore(copyVisitsBar, title.nextSibling);
+      else head.appendChild(copyVisitsBar);
+    }
     sec.appendChild(head);
 
     var content = document.createElement("div"); content.className = "mlsxh-content"; content.hidden = !!f.collapsed; sec.appendChild(content);

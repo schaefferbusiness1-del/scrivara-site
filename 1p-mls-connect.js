@@ -22456,6 +22456,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3Gen', function () {
       var t = $('transcript'), text = t ? (t.value || '').trim() : '';
       if (!text) { toast('Type, paste, or record some visit text first.'); var top = $('ez3Transcript'); if (top) top.focus(); return; }
+      /* Keep the Easy Visit wrapper on the same fail-closed evidence gate as
+         generateNote().  Do this before stamping genClickedAt or clicking the
+         hidden engine button: otherwise a sparse transcript is refused by the
+         real generator, then computePhase overwrites that useful refusal with
+         the generic connection warning. */
+      if (typeof _mlsTranscriptHasDraftableTodayEvidence !== 'function' ||
+          !_mlsTranscriptHasDraftableTodayEvidence(text)) {
+        S.phase = 'stopped'; S.genClickedAt = 0;
+        S.lastWarn = 'Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.';
+        render();
+        return;
+      }
       if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
       var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; }
       S.lastWarn = ''; S.genClickedAt = Date.now(); S.signedAt = 0; g.click(); S.phase = 'gen'; render();
@@ -51672,6 +51684,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        Day/bulk pulls still honor the toggle inside runForPatient. */
     return api.runForPatient(p, function (m) { if (m) toast(m, ''); }, { singlePull: true }).then(function (res) {
       var fresh = spvFresh(p.id) || p, after = spvVisitCount(fresh), added = Math.max(0, after - before);
+      /* spv-1.2: Full Notes OFF is an intentional scope choice, not a failed
+         history read. The old branch fell through to the zero-row retry path,
+         painted a red "NO prior visit notes" warning, and started a backfill
+         that the same OFF preference could not complete. Say exactly what was
+         requested, keep the chart-facts pull successful, and never promise a
+         retry that was not admitted. The contextual history action can still
+         start an explicit full-body refresh when the clinician asks for it. */
+      if (res && res.skipped === 'preference-off') {
+        return spvPublish({ at: Date.now(), ok: true, reason: 'visit-notes-off', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: after, added: 0, queued: false,
+          message: 'Saved ' + who + '’s chart facts. Full visit notes are OFF, so prior visit details were not requested. Turn them on in Settings or use “Refresh full visit history” when you need them.' });
+      }
       if (added > 0) {
         return spvPublish({ at: Date.now(), ok: true, reason: 'read', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: after, added: added,
           message: 'Saved ' + who + '’s chart facts and ' + added + ' prior visit note' + (added === 1 ? '' : 's') + ' from Athena.' });
@@ -51683,12 +51706,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var queued = spvEnqueue(p);
       return spvPublish({ at: Date.now(), ok: false, reason: (res && res.reason) || 'no-visits-returned', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: after, added: 0, queued: queued,
         message: 'Saved ' + who + '’s chart facts, but NO prior visit notes came back' +
-          (queued ? ' — their visit history is queued for a retry and will appear when it lands.' : '. Their visit history is still missing; keep athenaOne open on their chart and pull again.') });
+          (queued ? ' — a background retry started. This history is still incomplete until MLS shows a completed receipt; use “Retry missing visit details” if it does not finish.' : '. Their visit history is still missing; keep athenaOne open on their chart and pull again.') });
     }, function (e) {
       var queued = spvEnqueue(p);
       return spvPublish({ at: Date.now(), ok: false, reason: 'reader-failed', patientId: String(p.id || ''), visitsBefore: before, visitsAfter: before, added: 0, queued: queued,
         error: String((e && e.message) || e).slice(0, 120),
-        message: 'Saved ' + who + '’s chart facts, but the visit-history read failed' + (queued ? ' — it is queued for a retry.' : '. Their prior visit notes are still missing.') });
+        message: 'Saved ' + who + '’s chart facts, but the visit-history read failed' + (queued ? ' — a background retry started, but the history remains incomplete until a completed receipt appears.' : '. Their prior visit notes are still missing.') });
     });
   }
   /* ===== end spv-1.0.0 ==================================================== */
@@ -51721,6 +51744,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if(!target)return r;
         var ps=(typeof window.getPatients==='function'?(window.getPatients()||[]):[]),p=ps.filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
         return spvVisitLeg(p, target).then(function (receipt) {
+          if (receipt && receipt.reason === 'visit-notes-off') {
+            return { ok: true, chartSaved: true, visitNotesSkipped: true, reason: 'visit-notes-off', visitReceipt: receipt };
+          }
           if (receipt && receipt.ok === true) return r;
           return { ok: false, partial: true, chartSaved: true, reason: String(receipt && receipt.reason || 'visit-leg-failed'), visitReceipt: receipt || null };
         }, function (e3) {

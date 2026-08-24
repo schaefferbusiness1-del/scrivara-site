@@ -6,8 +6,9 @@
  * full text, not just the summary."
  *
  * WHAT WAS MEASURED AT HEAD, and is pinned here so nobody re-derives it:
- *   - "Copy every visit from athenaOne" (feat_visits.js) is an IMPORTER. It
- *     holds no clipboard code whatsoever. This suite asserts that, so the day
+ *   - The contextual "Refresh full visit history" / "Retry missing visit
+ *     details" action (feat_visits.js) is an IMPORTER. It holds no clipboard
+ *     code whatsoever. This suite asserts that, so the day
  *     someone gives it a clipboard the two controls are reconciled on purpose
  *     rather than by accident.
  *   - Its primary path already refuses anything short of full bodies
@@ -73,9 +74,16 @@ const HX_SRC = blockSource(shell, 'histview-1.0.0');
 
 /* ---- the measured fact about the control the owner named ---- */
 {
-  ok(visitsJs.indexOf('Copy every visit from athenaOne') > 0,
-    'the athenaOne import bar button must still exist under its shipped label');
-  const bar = visitsJs.slice(visitsJs.indexOf('function ensureBar'), visitsJs.indexOf('function start()'));
+  ok(visitsJs.indexOf("'Retry missing visit details'") > 0 &&
+     visitsJs.indexOf("'Refresh full visit history'") > 0,
+    'the one Athena history importer must expose both evidence-driven labels');
+  const barStart = visitsJs.indexOf('function ensureBar');
+  const bar = visitsJs.slice(barStart, visitsJs.indexOf('function start()', barStart));
+  ok(/var bar = document\.getElementById\('mlsCopyVisitsBar'\)/.test(bar) &&
+     /if \(!bar\) \{/.test(bar) && /bar\.id = 'mlsCopyVisitsBar'/.test(bar),
+    'the contextual labels must stay on one existing #mlsCopyVisitsBar owner, not create a second importer');
+  ok(/var head = historyHeader\(\)/.test(bar) && /bar\.parentNode !== head/.test(bar),
+    'the one importer must be owned by the Visit history header');
   ok(!/clipboard|execCommand/.test(bar),
     'MEASURED: the athenaOne bar button is an importer and writes no clipboard — if this fails, ' +
     'the two copy controls must be reconciled deliberately');

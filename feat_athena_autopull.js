@@ -243,16 +243,38 @@
      mlsAppAllVisitsResult. One tap keeps the LAST raw response - safe because
      the extension enforces a single-flight verified read. */
   var lastRawResult = null;
+  var activeVisitsRequestId = '';
+  var awaitingVisitsRequest = false;
+  function eventRequestId(d) {
+    if (!d || typeof d !== 'object') return '';
+    return trim(d.requestId || d.id || (d.resp && (d.resp.requestId || d.resp.id)) || '');
+  }
+  function ownsActiveVisitEvent(d) {
+    var id = eventRequestId(d);
+    return !!(busy && activeVisitsRequestId && id && id === activeVisitsRequestId);
+  }
   try {
     window.addEventListener('message', function (e) {
       try {
-        if (!(e.data && e.data.source === 'mls-ext')) return;
-        if (e.data.type === 'mlsAppAllVisitsResult') {
+        var d = e.data;
+        /* driveRequest creates the correlation id internally. Observe only the
+           outbound request started while THIS auto-pull owns the lane, then
+           accept progress/result events carrying that exact id. The old tap
+           painted every successful day/background/history result into this
+           bar, whose real owner could never deliver a terminal here. */
+        if (d && d.source === 'mls-app' && d.type === 'mlsAppReadAllVisits' &&
+          busy && awaitingVisitsRequest && !activeVisitsRequestId) {
+          activeVisitsRequestId = eventRequestId(d);
+          awaitingVisitsRequest = false;
+          return;
+        }
+        if (!(d && d.source === 'mls-ext') || !ownsActiveVisitEvent(d)) return;
+        if (d.type === 'mlsAppAllVisitsResult') {
           lastRawResult = e.data.resp || e.data;
           var rr = lastRawResult;
-          if (rr && rr.ok === true) setBar(1, 1, 'All encounters read — saving…');
-        } else if (e.data.type === 'mlsAppVisitsProgress') {
-          var pr = e.data.resp || e.data;
+          if (rr && rr.ok === true) setBar(1, 1, 'All encounters read — verifying the local save…');
+        } else if (d.type === 'mlsAppVisitsProgress') {
+          var pr = d.resp || d;
           if (pr && (Number(pr.total) > 0 || pr.message)) setBar(Number(pr.n) || 0, Number(pr.total) || 0, pr.message);
         }
       } catch (e2) {}
@@ -285,7 +307,16 @@
   /* ---------- pullbar-1.0.0: a real progress bar for the single pull ----------
      Mounted INSIDE the pull door (#mlsPullDoor) when present so the door's
      button-adjacency contract stays intact; after the button otherwise. */
-  var barWrap = null, barFill = null, barText = null, barHideT = 0;
+  var barWrap = null, barFill = null, barText = null, barHideT = 0, barLifecycle = 0;
+  function cancelBarRetirement() {
+    /* A terminal from pull A may still have a hide callback queued when pull B
+       starts checking the open chart. Pull B has not emitted visit progress at
+       that point, so setBar() cannot cancel A's callback for it. Invalidate the
+       callback at the pull boundary too; the token also closes the tiny race
+       where clearTimeout runs after the old callback has already been queued. */
+    barLifecycle++;
+    if (barHideT) { try { clearTimeout(barHideT); } catch (eB0) {} barHideT = 0; }
+  }
   function ensureBar() {
     if (barWrap && barWrap.isConnected) return barWrap;
     var door = document.getElementById('mlsPullDoor');
@@ -325,7 +356,7 @@
   }
   function setBar(n, total, msg2) {
     var w = ensureBar(); if (!w) return;
-    if (barHideT) { try { clearTimeout(barHideT); } catch (eB0) {} barHideT = 0; }
+    cancelBarRetirement();
     w.style.display = 'block';
     var pct = total > 0 ? Math.max(2, Math.min(100, Math.round((Number(n) / Number(total)) * 100))) : 2;
     if (barFill) barFill.style.width = pct + '%';
@@ -335,8 +366,13 @@
     var w = barWrap; if (!w || !w.isConnected) return;
     if (barFill && okState) barFill.style.width = '100%';
     if (barText && msg2) barText.textContent = S(msg2);
-    if (barHideT) { try { clearTimeout(barHideT); } catch (eB1) {} }
-    barHideT = setTimeout(function () { try { w.style.display = 'none'; if (barFill) barFill.style.width = '0%'; } catch (eB2) {} }, okState ? 2500 : 16000); /* focus-1.1: a finished bar retires in 2.5s - 8s of full green read as "it never stops" */
+    cancelBarRetirement();
+    var terminalLifecycle = barLifecycle;
+    barHideT = setTimeout(function () {
+      if (terminalLifecycle !== barLifecycle) return;
+      barHideT = 0;
+      try { w.style.display = 'none'; if (barFill) barFill.style.width = '0%'; } catch (eB2) {}
+    }, okState ? 2500 : 16000); /* focus-1.1: a finished bar retires in 2.5s - 8s of full green read as "it never stops" */
   }
   /* doorbar-1.0 (owner, Ed SPEER Jr: "when I search by name and date of birth
      the loading bar doesn't come up"): the typed pull runs the CHART engine,
@@ -347,6 +383,76 @@
   /* ---------- the one-button auto pull ---------- */
   var busy = false;
   var BUSY_EVENT = 'mls:athena-autopull-state';
+  var lastTerminalReceipt = null;
+  function completeVisitReceipt(receipt, expectedRows) {
+    return !!(receipt && receipt.complete === true && receipt.indexComplete === true &&
+      receipt.bodyComplete === true && receipt.fullDetail === true &&
+      Number(receipt.parsed) === Number(receipt.expected) &&
+      Array.isArray(expectedRows) && expectedRows.length === Number(receipt.expected));
+  }
+  function visitAliases(row) {
+    row = row || {};
+    var out = [], encounter = trim(row.encounterId || row.encounterID || '').toLowerCase();
+    var source = trim(row.sourceVisitKey || row.rowKey || '').toLowerCase();
+    if (encounter) out.push('encounter|' + encounter);
+    if (source) out.push('source|' + source);
+    return out;
+  }
+  function aliasesIntersect(a, b) {
+    for (var i = 0; i < a.length; i++) if (b.indexOf(a[i]) >= 0) return true;
+    return false;
+  }
+  function confirmVisitPersistence(patient, saved, model, expectedRows) {
+    var pid = trim(patient && patient.id), current = null, visits = [];
+    var expected = Array.isArray(expectedRows) ? expectedRows : [];
+    if (!pid || Number(saved) !== expected.length) return { ok: false, reason: 'invalid-save-receipt', count: 0 };
+    try {
+      var rows = (typeof window.getPatients === 'function' ? window.getPatients() :
+        (typeof getPatients === 'function' ? getPatients() : [])) || [];
+      current = rows.filter(function (row) { return row && trim(row.id) === pid; })[0] || null;
+    } catch (eRows) { current = null; }
+    if (!current) return { ok: false, reason: 'patient-not-in-current-store', count: 0 };
+    try { visits = model && typeof model.getVisits === 'function' ? (model.getVisits(current) || []) : (Array.isArray(current.visits) ? current.visits : []); }
+    catch (eVisits) { return { ok: false, reason: 'saved-visits-not-readable', count: 0 }; }
+    var normalized = [], used = Object.create(null), allExpectedAliases = [];
+    try {
+      if (!model || typeof model._normVisit !== 'function') throw new Error('normalizer-unavailable');
+      normalized = expected.map(function (row) {
+        return model._normVisit(row, 'athena-copy', {
+          identityVerified: true, identityBinding: pid, bodyComplete: true
+        });
+      });
+    } catch (eNorm) { return { ok: false, reason: 'expected-visits-not-normalizable', count: visits.length }; }
+    for (var ei = 0; ei < normalized.length; ei++) {
+      var wanted = normalized[ei], wantedAliases = visitAliases(wanted);
+      if (!wantedAliases.length || !trim(wanted.raw)) return { ok: false, reason: 'expected-visit-proof-incomplete', count: visits.length };
+      allExpectedAliases = allExpectedAliases.concat(wantedAliases);
+      var matchAt = -1;
+      for (var si = 0; si < visits.length; si++) {
+        if (used[si]) continue;
+        var stored = visits[si], storedAliases = visitAliases(stored);
+        if (!aliasesIntersect(wantedAliases, storedAliases)) continue;
+        if (!(stored && stored.identityVerified === true && trim(stored.identityBinding) === pid &&
+          stored.fullDetail === true && stored.bodyComplete === true && stored.indexOnly !== true &&
+          trim(stored.raw) === trim(wanted.raw))) continue;
+        matchAt = si; break;
+      }
+      if (matchAt < 0) return { ok: false, reason: 'expected-visit-not-confirmed', count: visits.length };
+      used[matchAt] = true;
+    }
+    /* A complete all-visits receipt is authoritative. Its writer reconciles
+       older verified Athena rows, so an extra bound remote row means the exact
+       durable set was not read back (including the expected-empty case). */
+    for (var vi = 0; vi < visits.length; vi++) {
+      var probe = visits[vi];
+      if (!probe || !/athena|legacy|grab|pullrec|cohort/i.test(trim(probe.source)) ||
+        probe.identityVerified !== true || trim(probe.identityBinding) !== pid) continue;
+      if (!aliasesIntersect(visitAliases(probe), allExpectedAliases)) {
+        return { ok: false, reason: 'authoritative-visit-set-not-confirmed', count: visits.length };
+      }
+    }
+    return { ok: true, reason: 'durable-exact-set-confirmed', count: visits.length };
+  }
   function emitBusy(value) {
     /* State only: never put patient identity or chart content on a DOM event. */
     try {
@@ -358,11 +464,33 @@
   }
   async function run(onStatus) {
     if (busy) return;
+    /* Start a fresh progress lifecycle before capture/status work. Without
+       this, the prior pull's terminal timer can hide this pull while it is
+       still waiting for its first correlated visit-progress message. */
+    cancelBarRetirement();
+    var runSettled = false;
+    function settleRun(ok, message, details) {
+      details = details || {};
+      runSettled = true;
+      lastTerminalReceipt = {
+        at: Date.now(), ok: ok === true, status: ok === true ? 'complete' : 'failed',
+        requestId: activeVisitsRequestId || '', persistenceConfirmed: details.persistenceConfirmed === true,
+        saved: Number(details.saved) >= 0 ? Number(details.saved) : 0,
+        stored: Number(details.stored) >= 0 ? Number(details.stored) : 0,
+        reason: trim(details.reason || (ok === true ? 'complete' : 'failed')).slice(0, 100)
+      };
+      var line = S(message || (ok === true ? 'Pull complete.' : 'Pull failed.'));
+      if (!/^[✓⚠]/.test(line)) line = (ok === true ? '✓ ' : '⚠ ') + line;
+      status(onStatus, line, true);
+      return lastTerminalReceipt;
+    }
     var cv = window.__mlsCopyVisits, M = window.__mlsVisitModel;
     if (!cv || !cv._driveRequest || !cv._saveVisits || !M) {
-      status(onStatus, '⚠ Visit modules aren’t loaded yet — reload the page and try again.', true); hideChipLater(); emitBusy(false); return;
+      settleRun(false, 'Visit modules aren’t loaded yet — reload the page and try again.', { reason: 'visit-modules-unavailable' }); hideChipLater(); emitBusy(false); return;
     }
     busy = true;
+    activeVisitsRequestId = '';
+    lastRawResult = null;
     emitBusy(true);
     try {
       hardenModel();
@@ -375,9 +503,9 @@
       if (!preCap || !trim(preCap.name)) {
         var door = document.getElementById('pdName');
         if (door) { try { door.focus(); door.scrollIntoView({ block: 'center' }); } catch (eDoor) {} }
-        status(onStatus, '⚠ No patient chart could be read in your athenaOne tab. Open the patient’s chart there and click again' +
+        settleRun(false, 'No patient chart could be read in your athenaOne tab. Open the patient’s chart there and click again' +
           (door ? ' — or type a name and date of birth in the form under this button and MLS will find them in athena for you.' : '.') +
-          ' Nothing was saved.', true);
+          ' Nothing was saved.', { reason: 'open-chart-not-readable' });
         hideChipLater(15000); return;
       }
       status(onStatus, 'Found ' + trim(preCap.name) + ' open in athenaOne — pulling their full history…', true);
@@ -389,11 +517,14 @@
       var res = null, driveErr = '';
       for (var attempt = 0; attempt < 2; attempt++) {
         res = null; driveErr = '';
+        activeVisitsRequestId = '';
+        awaitingVisitsRequest = true;
         try {
           res = await cv._driveRequest('mlsAppReadAllVisits', {}, 'mlsAppAllVisitsResult',
             ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
             function (msg) { if (msg) status(onStatus, msg); }, null, 240000, 12000);
         } catch (e) { driveErr = S(e && e.message || e); }
+        awaitingVisitsRequest = false;
         if (res && res.ok) break;
         var raw = lastRawResult;
         if (attempt !== 0 || !raw || raw.retryable !== true || !(Number(raw.readTabId) > 0)) break;
@@ -412,7 +543,7 @@
              refusal this button used to die on — and pointed at the retired
              in-athena panel, which pullone-1.0.0 had to strip at display
              time. MLS stopped on purpose so charts can never mix. */
-          status(onStatus, '⚠ The chart in athenaOne changed while it was being read, so MLS stopped — charts can never mix, and nothing was saved. Keep one patient’s chart open in athenaOne and click again.', true);
+          settleRun(false, '⚠ The chart in athenaOne changed while it was being read, so MLS stopped — charts can never mix, and nothing was saved.', { reason: 'chart-changed-during-read' });
           hideChipLater(22000); return;
         }
         /* schedfall-1.0 (measured live 2026-08-20, Cynthia Gutierrez then Mary
@@ -428,27 +559,72 @@
           status(onStatus, 'That athena screen was the schedule, not ' + trim(preCap.name) + '’s chart — opening their exact chart instead…', true);
           var fbOk = false;
           try { fbOk = (await window.pullPatientChartViaAssist(null, { name: trim(preCap.name), dob: trim(preCap.dob) })) === true; } catch (eFb) {}
-          if (fbOk) { status(onStatus, '✓ Pulled ' + trim(preCap.name) + ' through their exact chart — visit notes follow in the bar below.', true); hideChipLater(8000); return; }
-          status(onStatus, '⚠ The exact-chart fallback could not finish either. Open ' + trim(preCap.name) + '’s chart in athenaOne and click again. Nothing was saved.', true);
+          if (fbOk) { settleRun(true, 'Pulled ' + trim(preCap.name) + ' through their exact chart — its own verified receipt controls the visit save.', { reason: 'exact-chart-fallback-complete', persistenceConfirmed: true }); hideChipLater(8000); return; }
+          settleRun(false, 'The exact-chart fallback could not finish either. Open ' + trim(preCap.name) + '’s chart in athenaOne and click again. Nothing was saved.', { reason: 'exact-chart-fallback-failed' });
           hideChipLater(18000); return;
         }
-        status(onStatus, '⚠ Couldn’t read the open athenaOne chart (' + (em || 'no readable result') + '). Open the patient’s chart in your Athena tab, then try again. Nothing was saved.', true);
+        settleRun(false, 'Couldn’t read the open athenaOne chart (' + (em || 'no readable result') + '). Open the patient’s chart in your Athena tab, then try again. Nothing was saved.', { reason: 'visit-read-failed' });
         hideChipLater(15000); return;
       }
       var identity = res.identity || {};
       var visits = Array.isArray(res.visits) ? res.visits : [];
       if (!trim(identity.name) || !normDob(identity.dob)) {
-        status(onStatus, '⚠ Couldn’t read a clear name + DOB from the open chart — nothing was saved. Open the patient’s chart header in athenaOne and retry.', true);
+        settleRun(false, 'Couldn’t read a clear name + DOB from the open chart — nothing was saved. Open the patient’s chart header in athenaOne and retry.', { reason: 'visit-identity-incomplete' });
         hideChipLater(); return;
+      }
+      var visitReceipt = res.receipt || null;
+      if (!completeVisitReceipt(visitReceipt, visits)) {
+        settleRun(false, 'Athena returned an encounter list without verified full detail for every row. Nothing was saved as complete history; retry with the patient chart open.', {
+          reason: 'full-detail-receipt-incomplete'
+        });
+        hideChipLater(16000); return;
       }
       var r = resolvePatient(identity);
       var patient = r.patient;
       try { if (typeof openPatient === 'function') openPatient(patient.id); else if (typeof selectPatient === 'function') selectPatient(patient.id); } catch (e) {}
       status(onStatus, 'Found: ' + identity.name + ', DOB ' + normDob(identity.dob) + ' — pulling ' + visits.length + ' visit' + (visits.length === 1 ? '' : 's') + (r.created ? ' (new patient)' : '') + '…', true);
-      var saved = 0;
-      try { saved = cv._saveVisits(patient, identity, visits, function (msg) { if (msg) status(onStatus, msg); }); }
-      catch (e) { status(onStatus, '⚠ ' + (e && e.message || 'Save failed') + '.', true); hideChipLater(); return; }
-      status(onStatus, 'Saved ' + saved + ' visit' + (saved === 1 ? '' : 's') + '. Generating AI summaries…');
+      var saveBatchApi = window.__mlsPatientStoreBatch, saveBatchToken = null, saved = 0;
+      if (!saveBatchApi || typeof saveBatchApi.begin !== 'function' || typeof saveBatchApi.end !== 'function') {
+        settleRun(false, 'The local patient-save coordinator is not ready. Reload MLS and retry; nothing is being reported as saved.', { reason: 'patient-save-coordinator-unavailable' });
+        hideChipLater(16000); return;
+      }
+      try { saveBatchToken = saveBatchApi.begin({ cooperative: true, maxChanges: 2, maxDelayMs: 15000 }); }
+      catch (eBatchBegin) {
+        settleRun(false, 'MLS could not open a safe local save transaction. Nothing was saved; reload and retry.', { reason: 'patient-save-transaction-unavailable' });
+        hideChipLater(16000); return;
+      }
+      try {
+        /* Argument five is the reader's completeness receipt. Omitting it used
+           to downgrade every successful row to bodyComplete:false and skip
+           authoritative reconciliation — the direct cause of the misleading
+           "visit notes incomplete" result after this button finished. */
+        saved = cv._saveVisits(patient, identity, visits, function (msg) { if (msg) status(onStatus, msg); }, visitReceipt);
+      } catch (e) {
+        try { await Promise.resolve(saveBatchApi.end(saveBatchToken, 'athena-autopull-visit-save-rejected')); } catch (eBatchAbort) {}
+        settleRun(false, (e && e.message || 'Save failed') + '.', { reason: 'visit-save-rejected' }); hideChipLater(); return;
+      }
+      status(onStatus, 'Encounter details verified — finishing the local save…');
+      try { await Promise.resolve(saveBatchApi.end(saveBatchToken, 'athena-autopull-visit-save')); }
+      catch (eBatchEnd) {
+        settleRun(false, 'The encounter read finished, but the local save did not become durable. Nothing is being reported as saved; reload and retry.', {
+          reason: 'patient-save-flush-failed', saved: saved
+        });
+        hideChipLater(16000); return;
+      }
+      var persisted = confirmVisitPersistence(patient, saved, M, visits);
+      if (!persisted.ok) {
+        settleRun(false, 'The encounter read finished, but MLS could not confirm the exact saved visits. Nothing is being reported as saved; reload and retry.', {
+          reason: persisted.reason, saved: saved, stored: persisted.count
+        });
+        hideChipLater(16000); return;
+      }
+      /* This is the first success wording: only after the atomic visit writer
+         accepted the batch AND the current patient store read it back. Settle
+         the full-green reader bar now; summaries/chart-card enrichment may
+         continue, but cannot leave the completed read looking permanently busy. */
+      settleRun(true, 'Saved ' + saved + ' visit' + (saved === 1 ? '' : 's') + ' locally (' + persisted.count + ' now on file). Finishing summaries…', {
+        reason: 'visit-save-confirmed', persistenceConfirmed: true, saved: saved, stored: persisted.count
+      });
       try { await M.ensureSummaries(patient.id, function (msg) { if (msg) status(onStatus, msg); }); } catch (e) {}
       /* ff-1.2 (owner, live Alicia James card 2026-08-19: every prep-summary
          line read "NOT PULLED from Athena yet" after a one-person pull - "it
@@ -506,10 +682,17 @@
       } catch (eFm) {}
       try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
       try { if (typeof renderProfile === 'function') renderProfile(); } catch (e) {}
-      var n = saved; try { n = M.getVisits(patient).length; } catch (e) {}
+      var n = persisted.count;
+      try {
+        var currentRows = (typeof window.getPatients === 'function' ? window.getPatients() : []) || [];
+        var currentPatient = currentRows.filter(function (row) { return row && trim(row.id) === trim(patient.id); })[0] || patient;
+        n = M.getVisits(currentPatient).length;
+      } catch (e) {}
       /* the terminal line reports what THIS pull captured — the total the
          patient already had is context, never the headline (finding #6). */
-      status(onStatus, '✓ Done — ' + saved + ' new visit' + (saved === 1 ? '' : 's') + ' captured for ' + identity.name + ' (' + n + ' now on file).', true);
+      settleRun(true, 'Done — ' + saved + ' new visit' + (saved === 1 ? '' : 's') + ' captured for ' + identity.name + ' (' + n + ' now on file).', {
+        reason: 'complete', persistenceConfirmed: true, saved: saved, stored: n
+      });
       /* focus-1.1 (owner, 2026-08-20: "it should pull up whoever it just saved"
          and "it still doesn't stop when it's done"): the terminal state OWNS
          the screen. The early openPatient() at resolve time selects but does
@@ -522,8 +705,18 @@
       try { if (typeof renderPatients === 'function') renderPatients(); if (typeof renderProfile === 'function') renderProfile(); } catch (eF3) {}
       try { var pcF = document.getElementById('profileCard'); if (pcF && pcF.scrollIntoView) pcF.scrollIntoView({ block: 'nearest' }); } catch (eF4) {}
       hideChipLater(5000);
-      return { ok: true, saved: saved, total: n, created: r.created };
-    } finally { busy = false; emitBusy(false); }
+      return { ok: true, saved: saved, total: n, created: r.created, receipt: lastTerminalReceipt };
+    } catch (unexpected) {
+      if (!runSettled) settleRun(false, 'The pull stopped before MLS could confirm a local save. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'unexpected-pull-exit' });
+      hideChipLater(16000);
+      return { ok: false, reason: 'unexpected-pull-exit', receipt: lastTerminalReceipt };
+    } finally {
+      if (!runSettled) settleRun(false, 'The pull ended without a confirmed local save receipt. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'terminal-receipt-missing' });
+      busy = false;
+      activeVisitsRequestId = '';
+      awaitingVisitsRequest = false;
+      emitBusy(false);
+    }
   }
 
   /* ---------- wire the existing "📥 Pull from Athena" button to the no-typing auto flow ---------- */
@@ -557,6 +750,9 @@
     isBusy: function () { return busy; }, busyEvent: BUSY_EVENT,
     resolvePatient: resolvePatient, namesMatch: namesMatch, normDob: normDob, dobsMatch: dobsMatch,
     exactCaptureProof: exactCaptureProof, partialCoverageReceipt: partialCoverageReceipt,
-    firstLast: firstLast, hardenModel: hardenModel, revert: revert
+    firstLast: firstLast, hardenModel: hardenModel, revert: revert,
+    terminalReceipt: function () { return lastTerminalReceipt; },
+    _confirmVisitPersistence: confirmVisitPersistence,
+    _eventRequestId: eventRequestId
   };
 })();

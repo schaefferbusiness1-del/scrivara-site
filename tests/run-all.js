@@ -112,6 +112,14 @@ const tests = [
      three shells with a fix-removed causal control. */
   '1p-tip-viewport-containment.test.js',
   '1p-histview-contract.test.js',
+  /* A selected patient has one chart-history pull, in the Visit history
+     header. Its label is driven by patient-scoped completeness evidence, while
+     the generic open-Athena toolbar pull returns exactly on deselection. */
+  'selected-patient-history-pull-ui-runtime.test.js',
+  /* A late background visit result must never resurrect the completed
+     one-patient pull bar at "saving"; success and persistence rejection each
+     own a bounded, locally verified terminal receipt. */
+  'athena-autopull-terminal-receipt-runtime.test.js',
   /* Op Notes rebuilt around ONE mental model (owner 2026-08-17: "more simple
      and intuitive... ALWAYS start on all scheduled patients", then "I HATE
      THAT GREEN BAR and I hate how it doesn't come expanded"): the room lands
@@ -371,6 +379,7 @@ const tests = [
      closed, and editor insertion is reported as read back but unsaved. */
   'athena-live-unbound-discovery-runtime.test.js',
   '1p-copy-all-visits-full-text.test.js',
+  'visit-history-pull-receipt-lifecycle-runtime.test.js',
   '1p-cross-patient-door.test.js',
   '1p-day-pull-facts-capture.test.js',
   'athena-autopull-partial-provenance.test.js',
@@ -647,6 +656,8 @@ const tests = [
   /* A generic current encounter such as "patient is fine" may not borrow old
      chart history to manufacture today's note, plan, or billing. */
   'sparse-transcript-grounding-contract.test.js',
+  '1p-easy-generate-sparse-runtime.test.js',
+  'generation-legacy-athena-sidecar-runtime.test.js',
   'athena-dual-note-contract.test.js',
   'athena-dual-note-state-runtime.test.js',
   'structured-note-flat-staging-contract.test.js',

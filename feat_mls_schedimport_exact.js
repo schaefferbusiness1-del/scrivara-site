@@ -4151,6 +4151,26 @@
       return changed ? 'saved' : 'nothing-new';
     }).catch(function () { return 'error'; });
   }
+  /* si-facts-1.1: facts are useful enrichment, but they are not evidence that
+     the visit-body receipt is complete. Queue the bounded capture only after
+     that receipt is finalized. The follow-up may update factsCapture for
+     reporting, but it can never change the already-stamped visit verdict or
+     hold the next patient. The existing two-token chart-name guard remains the
+     write gate for the best-effort result. */
+  function siCaptureFactsFollowup(patientId, one) {
+    try {
+      /* Dispatch while this row's verified chart is still the active surface;
+         only the response is deferred, so the next row is never blocked. */
+      siCaptureFacts(patientId, 8000).then(function (verdict) {
+        if (one && one.visitsComplete === true) one.factsCapture = verdict;
+      }, function () {
+        if (one && one.visitsComplete === true) one.factsCapture = 'error';
+      });
+    } catch (e) {
+      if (one && one.visitsComplete === true) one.factsCapture = 'error';
+    }
+    return 'queued';
+  }
   function saveVerifiedVisits(target, r) {
     var identity = r && r.identity || {};
     var observed = { chartName: identity.name || r.chartName || "", chartDob: identity.dob || r.chartDob || "", chartMrn: identity.mrn || identity.athenaId || r.chartMrn || "" };
@@ -5462,11 +5482,10 @@
               savedVisits.clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(savedVisits.profileCoverage&&savedVisits.profileCoverage.cards&&savedVisits.profileCoverage.cards[k]&&savedVisits.profileCoverage.cards[k].populated?1:0);},0);
             }
             stageMs.visitSave = Date.now() - __visitSaveT0;
-            /* si-facts-1.0: banner facts (medications above all) while THIS
-               patient's chart is still the open one — awaited so the walk can
-               never navigate to the next chart underneath the capture. */
-            try { one.factsCapture = await siCaptureFacts(target.patientId, 8000); } catch (eSiF) { one.factsCapture = 'error'; }
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||""); one.axRrWaitMs=Number(savedVisits.axRrWaitMs||0); one.axRrRecovered=savedVisits.axRrRecovered===true; one.axEntry=String(savedVisits.axEntry||""); one.fatigueRefresh=savedVisits.fatigueRefresh===true; one.hydStreak=Number(savedVisits.hydStreak||0);
+            /* si-facts-1.1: enrichment is best-effort and must not delay the
+               proven visit-body receipt or the next row. */
+            one.factsCapture = siCaptureFactsFollowup(target.patientId, one);
             /* qv-1.0 (2026-08-09): a chart is only COMPLETE when its bytes are
                provably in storage. The quota guard (mls-connect) judges every
                savePatients by its stored echo and stamps a timestamped failure

@@ -27255,7 +27255,11 @@ async function generateNote(){
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
     _mlsValidateStructuredNoteResult(result);
-    const canonicalAthenaNote=_mlsValidateAthenaNote(result.athena_note);
+    /* Older /api/generate deployments may return the already-valid flat SOAP
+       note without the newer athena_note sidecar. Reuse it only when it
+       independently passes the exact five-destination validator; narrative,
+       malformed, and ambiguous responses still fail closed. */
+    const canonicalAthenaNote=_mlsValidateAthenaNote(result.athena_note==null?result.note:result.athena_note);
     if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)) return false;
     if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint||_mlsAthenaGenerationSourceFingerprint(generationBinding)!==generationSourceFingerprint){
       toast('The visit changed while the note was being generated, so MLS discarded that older result. Review the current visit and generate again. Nothing changed in Athena.','err');
@@ -56776,6 +56780,7 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
         var el = byId('pullChartStatus') || statusEl;
         var outcome = el ? S(el.textContent) : '';
         var chartSaved = r === true || !!(r && r.chartSaved === true);
+        var actionOk = r === true || !!(r && r.ok === true);
         if (chartSaved && !off) {
           var id = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '') || before;
           openPulledChart(id);
@@ -56783,7 +56788,7 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
              line is the shell's own; this only re-parks it and repeats the last
              sentence the pull wrote, so nothing is invented. */
           moveStatusTo(byId('ptPullAthenaBtn'));
-          if (outcome) saySomething(outcome, r === true ? 'ok' : 'err');
+          if (outcome) saySomething(outcome, actionOk ? 'ok' : 'err');
         }
         return r;
       });
@@ -56810,6 +56815,10 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
       say('Pulling this chart from athenaOne...');
       return Promise.resolve(safe(function () { return window.pullPatientChartViaAssist(btn || null, {}); }, false))
         .then(function (result) {
+          if (result && result.visitNotesSkipped === true) {
+            say('Chart facts were pulled. Full visit notes are OFF, so prior visit-note bodies were not requested.');
+            return { ok: true, chartSaved: true, visitNotesSkipped: true, reason: 'visit-notes-off' };
+          }
           if (result === true) { say('Chart and prior visit notes pulled from athenaOne.'); return { ok: true, reason: '' }; }
           if (result && result.chartSaved === true) {
             say('Chart facts were pulled, but prior visit notes are incomplete. See the pull status for the retry guidance.');

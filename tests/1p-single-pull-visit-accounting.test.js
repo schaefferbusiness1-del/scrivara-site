@@ -14,9 +14,10 @@
  *
  *   1. The visit leg had silent exits when the patient record did not resolve
  *      or the reader resolved nothing (cv.run resolves undefined when it is
- *      busy or cannot resolve a patient). A later contract also clarified that
- *      the preference governs day/bulk work: an explicit single-patient pull
- *      always requests that chart's visits and accounts for the result.
+ *      busy or cannot resolve a patient). A later contract clarified that the
+ *      Full Notes preference governs every visit-body reader, including a
+ *      single-patient pull. OFF must be reported as an intentional scope, not
+ *      mislabeled as a failed read or enqueued into an impossible retry.
  *   2. The b121 visits-backfill can never rescue a single pull. It is
  *      edge-triggered on __mlsDayHistoryPull.state.running going true->false,
  *      which only the DAY engines set. A single pull produces no edge, so the
@@ -58,8 +59,14 @@ function ok(cond, msg) { assert.ok(cond, msg); checks++; }
 /* ---- the wrapper routes through the accounting leg ---- */
 ok(/return spvVisitLeg\(p, target\)\.then\(/.test(connect),
   'the single-pull wrapper must route its visit leg through spvVisitLeg');
+ok(/visitNotesSkipped: true, reason: 'visit-notes-off'/.test(connect),
+  'the wrapper must preserve the intentional Full Notes OFF result instead of collapsing it to broad success');
 ok(!/if \(!enabled\(\) \|\| !p \|\| !\(typeof window\._hasImportedHistory/.test(connect),
   'the old three-way silent early return must be gone');
+ok(/var actionOk = r === true \|\| !!\(r && r\.ok === true\)/.test(shell),
+  'the visible pull owner must keep an intentional chart-facts success green');
+ok(/result && result\.visitNotesSkipped === true/.test(shell) && /result && result\.visitNotesSkipped === true/.test(twin),
+  'both shipped shells must distinguish Full Notes OFF before the broad chart+prior-notes success claim');
 
 /* ---- EXECUTE the shipped block ---- */
 const start = connect.indexOf('/* ===== spv-1.0.0');
@@ -106,21 +113,20 @@ function neverClaimsHistory(r) {
 
 (async function run() {
 
-  /* ---- 1. the preference is off: an explicit single-patient request still
-     reads this chart's visits, with an explicit non-persistent override ---- */
+  /* ---- 1. Full Notes OFF: chart facts succeed, no history failure/retry is
+     invented, and the receipt tells the clinician how to request details. ---- */
   {
     const landed = patient([]);
-    const h = harness({ enabled: false, patients: [landed], runForPatient: (p, onStatus, runOpts) => {
-      landed.visits = [{ id: 'v-pref-off-single' }];
-      return Promise.resolve({ ok: true, visits: 1, runOpts });
-    } });
+    const h = harness({ enabled: false, patients: [landed], runForPatient: () => Promise.resolve({ ok: true, skipped: 'preference-off' }) });
     const r = await h.fns.spvVisitLeg(landed, TARGET);
-    ok(r.ok === true && r.reason === 'read' && r.added === 1,
-      'an explicit single-patient pull must read and account for visits even when the day/bulk preference is off');
+    ok(r.ok === true && r.reason === 'visit-notes-off' && r.added === 0,
+      'Full Notes OFF must be an intentional successful chart-facts scope');
     ok(h.readerCalls.length === 1 && h.readerCalls[0][2] && h.readerCalls[0][2].singlePull === true,
-      'the single-patient visit leg must pass the explicit, non-persistent singlePull override');
-    ok(/1 prior visit note/.test(r.message), 'the receipt must say exactly what the explicit single pull added');
-    ok(neverClaimsHistory(r), 'the single pull must not use the retired broad "Athena history" claim');
+      'the single-patient visit leg must still ask the shared reader for an explicit scope receipt');
+    ok(/Full visit notes are OFF/.test(r.message), 'the receipt must explain why prior details were not requested');
+    ok(/Settings|Refresh full visit history/.test(r.message), 'the receipt must give a clear way to request full details');
+    ok(r.queued === false && h.enqueued.length === 0, 'OFF must never enqueue a retry that cannot read visit bodies');
+    ok(neverClaimsHistory(r), 'the OFF receipt must not use the retired broad "Athena history" claim');
     ok(h.toasts.length === 1, 'the verdict must be said out loud exactly once');
   }
 
@@ -168,7 +174,8 @@ function neverClaimsHistory(r) {
     ok(h.enqueued[0].o && h.enqueued[0].o.force === true, 'the enqueue must be forced — the edge watcher will never fire for a single pull');
     ok(h.enqueued[0].names[0].athenaId === '7618711', 'the enqueue must carry the patient identity');
     ok(/NO prior visit notes came back/.test(r.message), 'the receipt must say plainly that nothing came back');
-    ok(/queued for a retry/.test(r.message), 'a queued retry must be visible to the doctor');
+    ok(/background retry started/.test(r.message), 'a started background retry must be visible to the doctor');
+    ok(/still incomplete until MLS shows a completed receipt/.test(r.message), 'the retry message must not imply completion before a receipt exists');
     ok(neverClaimsHistory(r), 'a zero-visit pull must never claim saved history');
   }
 
@@ -179,7 +186,7 @@ function neverClaimsHistory(r) {
     const r = await h.fns.spvVisitLeg(empty, TARGET);
     ok(r.queued === false, 'with no backfill loaded nothing may claim to be queued');
     ok(/still missing/.test(r.message), 'it must say the visit history is still missing');
-    ok(!/queued for a retry/.test(r.message), 'it must not promise a retry that cannot happen');
+    ok(!/background retry started/.test(r.message), 'it must not promise a retry that cannot happen');
   }
 
   /* ---- 7. the reader throws ---- */
@@ -202,6 +209,32 @@ function neverClaimsHistory(r) {
     ok(r.added === 0 && r.visitsAfter === 2, 'nothing may be counted as newly added');
     ok(/already here/.test(r.message), 'the receipt must say they were already here');
     ok(h.enqueued.length === 0, 'a patient who already has visits must not be enqueued');
+  }
+
+  /* ---- 9. the field-read adapter must not turn chart-facts success into a
+     false "prior visit notes pulled" claim when Full Notes is OFF. Execute the
+     shipped adapter rather than checking message text alone. ---- */
+  {
+    const a = shell.indexOf('  function unifyFieldRead() {');
+    const b = shell.indexOf('  /* --------------------------------------- PARK THE LINE', a);
+    ok(a > 0 && b > a, 'the shipped field-read adapter must be extractable');
+    const adapter = shell.slice(a, b);
+    const said = [];
+    const win = {
+      __mlsChartField: { read: () => Promise.resolve({ ok: false, reason: 'legacy' }) },
+      pullPatientChartViaAssist: () => Promise.resolve({ ok: true, chartSaved: true, visitNotesSkipped: true, reason: 'visit-notes-off' })
+    };
+    const install = new Function('window', 'isFn', 'safe', adapter + '\nreturn unifyFieldRead;')(
+      win,
+      f => typeof f === 'function',
+      (fn, fallback) => { try { return fn(); } catch (e) { return fallback; } }
+    );
+    ok(install() === true, 'the shipped field-read adapter must install');
+    const adapted = await win.__mlsChartField.read({}, m => said.push(String(m)), null);
+    ok(adapted.ok === true && adapted.visitNotesSkipped === true && adapted.reason === 'visit-notes-off',
+      'Full Notes OFF must remain a successful chart-facts result with explicit visit-note scope');
+    ok(said.some(m => /Full visit notes are OFF/.test(m)), 'the adapter must say why prior note bodies were not read');
+    ok(!said.some(m => /prior visit notes pulled/.test(m)), 'the adapter must never claim prior notes were pulled when they were skipped');
   }
 
   console.log('PASS 1p single-pull visit accounting: ' + checks + ' checks — every branch of the single-pull visit leg now publishes a measured receipt, a zero-visit landing is never called saved history, the patient the b121 falling-edge watcher can never see is enqueued explicitly, and both shells stopped claiming "Athena history" for a chart-facts pull');

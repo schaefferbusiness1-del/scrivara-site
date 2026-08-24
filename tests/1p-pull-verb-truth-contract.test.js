@@ -250,6 +250,10 @@ function harness() {
       try { showView('patients'); renderProfile(); renderPatients(); } catch (e) {}
       return (getPatients() || []).length;
     },
+    active: function (id) {
+      try { setActivePtId(id || ''); showView('patients'); renderProfile(); renderPatients(); } catch (e) {}
+      return String(typeof getActivePtId === 'function' ? (getActivePtId() || '') : '');
+    },
     installed: function () {
       return { pullverb: !!(window.__mlsPullVerb && window.__mlsPullVerb.installed),
                version: window.__mlsPullVerb && window.__mlsPullVerb.version,
@@ -518,6 +522,12 @@ async function runtime() {
     const seeded = await page.evaluate(() => window.__t9.seedMany(28));
     eq(seeded, 28, `the synthetic patients did not land in the store: ${JSON.stringify(seeded)}`);
     await page.waitForTimeout(2200);
+    /* The generic open-Athena pull is intentionally hidden while a selected
+       patient's one full-history action owns the profile. Measure this verb on
+       its real no-selection surface; the selected owner has its own dedicated
+       consolidation runtime contract. */
+    eq(await page.evaluate(() => window.__t9.active('')), '', 'the generic-pull measurement could not clear the selected patient');
+    await page.waitForTimeout(900);
 
     /* -- 1 + 2 + 3. THE NAMES ------------------------------------------- */
     const A = await page.evaluate(() => window.__t9.control('ptPullAthenaBtn'));
@@ -546,6 +556,8 @@ async function runtime() {
     const bIds = ['pullChartBtn', 'profUnpulledPull', 'pvrPullOne'];
     measured.B = {};
     let bSeen = 0, bTapMeasured = 0;
+    eq(await page.evaluate(() => window.__t9.active('syn-0')), 'syn-0', 'the selected-patient controls could not be opened');
+    await page.waitForTimeout(900);
     for (const id of bIds) {
       await page.evaluate((v) => window.__t9.show(v), OWNER_VIEW[id]);
       await page.waitForTimeout(900);
@@ -569,6 +581,7 @@ async function runtime() {
     /* the tap floor must not be silently skipped for every control */
     ok(bTapMeasured >= 1, 'no verb-B control was ever visible, so the 40px tap floor was never actually measured');
     measured.bTapMeasured = bTapMeasured;
+    eq(await page.evaluate(() => window.__t9.active('')), '', 'the generic-pull surface could not be restored after selected-patient checks');
     await page.evaluate(() => window.__t9.show('patients'));
     await page.waitForTimeout(800);
     ok(A.height >= 40, `verb A is ${A.height}px tall - under the 40px tap floor`);

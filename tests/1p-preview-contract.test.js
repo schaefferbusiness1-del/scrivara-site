@@ -539,9 +539,20 @@ const baseConfigText = P1_CONFIG_RELEASE_SUBS.reduce((text, [from, to]) => text.
    serves under that name on the official route ('where did Legal go': the
    retired-era exclusion 404d the revived file). Exactly one reviewed removal;
    the pay-era legal names stay excluded and everything else stays frozen. */
-const baseConfigTextAdjusted = baseConfigText.replace('  - "feat_mls_legalpack.js"' + String.fromCharCode(10), '');
+/* 2026-08-24 publication-boundary hardening: destination maps and live-proof
+   screenshots under docs/ are repository evidence, never application assets.
+   Keep this as one exact insertion so the broad freeze below still rejects
+   every unrelated _config.yml change. */
+const internalDocsExcludeBlock = [
+  '  # Internal destination maps and live-proof screenshots are repository',
+  '  # evidence, not public application assets.',
+  '  - "docs/"'
+].join('\n') + '\n';
+const baseConfigTextAdjusted = baseConfigText
+  .replace('  - "feat_mls_legalpack.js"' + String.fromCharCode(10), '')
+  .replace('  - "scripts/"' + String.fromCharCode(10), '  - "scripts/"' + String.fromCharCode(10) + internalDocsExcludeBlock);
 assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, '').replace(wyzantConfigBlock, ''), baseConfigTextAdjusted,
-  '_config.yml changed beyond the exact reviewed 1p showcase, /cloned and /wyzant traversal blocks and release-truth substitutions');
+  '_config.yml changed beyond the exact reviewed 1p showcase, /cloned and /wyzant traversal blocks, internal docs exclusion and release-truth substitutions');
 
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');

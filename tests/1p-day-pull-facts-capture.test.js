@@ -7,10 +7,10 @@
  * meds card while the capture reply carried the list. si-facts-1.0 runs ONE
  * bounded capture per patient while that chart is still open.
  *
- * Statics: the helper exists once, the call site is AWAITED inside the
- * per-patient loop before visitsComplete is stamped (so the walk can never
- * navigate away underneath it), the name guard and only-if-empty guards are
- * present, and the verdict rides the ledger row. Functional: the merge
+ * Statics: the helper exists once, and the call site queues a best-effort
+ * follow-up only after visitsComplete is stamped. Facts enrichment cannot
+ * delay row completion or alter its verdict; the name guard and only-if-empty
+ * guards are present, and the verdict rides the ledger row. Functional: the merge
  * semantics run for real in a VM — meds append-missing, a mismatched name
  * adds nothing, empty problems/allergies fill, populated ones are never
  * overwritten. Twins note: this block lives in 1p-feat_mls_schedimport_exact
@@ -31,12 +31,15 @@ const CLONED = fs.readFileSync(path.join(root, 'cloned-feat_mls_schedimport_exac
 
 /* ---- statics ---- */
 eq(SRC.split('function siCaptureFacts(').length - 1, 1, 'siCaptureFacts exists exactly once');
-ok(SRC.indexOf("one.factsCapture = await siCaptureFacts(target.patientId, 8000)") > 0,
-  'the call site is AWAITED and records its verdict on the ledger row');
-const callAt = SRC.indexOf('one.factsCapture = await siCaptureFacts');
-const completeAt = SRC.indexOf('one.visitsComplete = true', callAt);
-ok(callAt > 0 && completeAt > callAt && completeAt - callAt < 400,
-  'the capture completes BEFORE visitsComplete is stamped, in the same block');
+ok(SRC.indexOf('function siCaptureFactsFollowup(') > 0, 'the non-blocking follow-up helper exists');
+ok(SRC.indexOf('one.factsCapture = siCaptureFactsFollowup(target.patientId, one)') > 0,
+  'the call site queues facts enrichment without awaiting it');
+const callAt = SRC.indexOf('one.factsCapture = siCaptureFactsFollowup');
+const completeAt = SRC.lastIndexOf('one.visitsComplete = true', callAt);
+ok(callAt > 0 && completeAt < callAt && callAt - completeAt < 1500,
+  'the follow-up is queued AFTER visitsComplete is stamped');
+ok(!/one\.factsCapture\s*=\s*await\s+siCaptureFacts/.test(SRC), 'facts capture is not on the row critical path');
+ok(/one\.visitsComplete === true/.test(SRC), 'follow-up only reports after the row is complete');
 ok(/if \(inter < 2\) return 'name-mismatch';/.test(SRC), 'two-token name guard present');
 ok(/if \(!String\(p\.problems \|\| ''\)\.trim\(\)/.test(SRC), 'problems fill only when empty');
 ok(/if \(!String\(p\.allergies \|\| ''\)\.trim\(\)/.test(SRC), 'allergies fill only when empty');
