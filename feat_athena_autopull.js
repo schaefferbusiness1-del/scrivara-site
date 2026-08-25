@@ -491,6 +491,45 @@
     }
     return { ok: true, reason: 'durable-exact-set-confirmed', count: visits.length };
   }
+  /* `__mlsChartField.read()` returning {ok:true} proves only that its task did
+     not throw. The six-card SOURCE contract is stronger: the CURRENT stored
+     patient must carry a complete, exact-identity coverage receipt minted by
+     this card-read attempt. Read it back twice (after the reader and again at
+     the terminal boundary) so a stale object or a patient/receipt swap between
+     asynchronous enrichments cannot produce a false green terminal. */
+  function currentFullCardReceipt(patientId, notBefore) {
+    var pid = trim(patientId), current = null, coverage = null;
+    if (!pid) return { ok: false, reason: 'card-patient-id-missing', receipt: null };
+    try {
+      var rows = (typeof window.getPatients === 'function' ? window.getPatients() :
+        (typeof getPatients === 'function' ? getPatients() : [])) || [];
+      current = rows.filter(function (row) { return row && trim(row.id) === pid; })[0] || null;
+    } catch (eRows) { current = null; }
+    if (!current) return { ok: false, reason: 'card-patient-not-current', receipt: null };
+    coverage = current.athenaProfileCoverage;
+    if (!coverage || coverage.complete !== true || coverage.exactIdentityVerified !== true) {
+      return { ok: false, reason: 'card-coverage-receipt-missing', receipt: coverage || null };
+    }
+    if (trim(coverage.patientId) !== pid) {
+      return { ok: false, reason: 'card-coverage-patient-mismatch', receipt: coverage };
+    }
+    var capturedAt = Date.parse(trim(coverage.capturedAt));
+    if (!(capturedAt > 0)) return { ok: false, reason: 'card-coverage-time-missing', receipt: coverage };
+    /* Same browser clock and millisecond timestamps: a receipt even one tick
+       before this read belongs to an earlier attempt and cannot authorize it. */
+    if (Number(notBefore) > 0 && capturedAt < Number(notBefore)) {
+      return { ok: false, reason: 'card-coverage-receipt-stale', receipt: coverage };
+    }
+    if (capturedAt > Date.now() + 5 * 60 * 1000) {
+      return { ok: false, reason: 'card-coverage-time-invalid', receipt: coverage };
+    }
+    return { ok: true, reason: 'fresh-exact-card-coverage', receipt: coverage, capturedAt: capturedAt };
+  }
+  function cardReceiptFingerprint(receipt) {
+    if (!receipt || typeof receipt !== 'object') return '';
+    return [trim(receipt.patientId), trim(receipt.capturedAt), trim(receipt.saveRequestId),
+      trim(receipt.requestId), trim(receipt.receiptId)].join('|');
+  }
   function emitBusy(value) {
     /* State only: never put patient identity or chart content on a DOM event. */
     try {
@@ -722,25 +761,50 @@
          feature-detect must never hide a typo); the capture merge below stays
          as the fallback when the rail is absent or refuses. */
       var cardOpen = true;
+      var cardReadStartedAt = 0;
+      var preReadCoverageFingerprint = '';
       var cardTask = (async function () {
         try {
           var cf = window.__mlsChartField;
           if (!(cf && typeof cf.read === 'function')) return false;
           enrichmentStatus('Reading the full chart card — medications, vitals, history…');
+          /* A millisecond clock alone cannot distinguish a receipt written
+             immediately before this attempt from one refreshed in the same
+             tick. Capture the old receipt so a same-timestamp no-op cannot be
+             mistaken for evidence produced by this read. */
+          try {
+            var preReadProof = currentFullCardReceipt(patient.id, 0);
+            preReadCoverageFingerprint = cardReceiptFingerprint(preReadProof.receipt);
+          } catch (ePreRead) { preReadCoverageFingerprint = ''; }
+          cardReadStartedAt = Date.now();
           var cardRes = await awaitBounded(Promise.resolve(cf.read(patient, function (msg) { if (cardOpen) enrichmentStatus(msg); })),
             POST_SAVE_ENRICH_TIMEOUT_MS, 'The full chart card did not respond before the safety timeout');
-          var landed = !!(cardRes && cardRes.ok === true);
-          if (!landed && cardRes && cardRes.reason) {
+          var readOk = !!(cardRes && cardRes.ok === true);
+          var proof = readOk ? currentFullCardReceipt(patient.id, cardReadStartedAt) :
+            { ok: false, reason: trim(cardRes && cardRes.reason || 'card-reader-refused'), receipt: null };
+          if (proof.ok && preReadCoverageFingerprint && cardReceiptFingerprint(proof.receipt) === preReadCoverageFingerprint) {
+            proof = { ok: false, reason: 'card-coverage-receipt-not-refreshed', receipt: proof.receipt };
+          }
+          if (readOk && !proof.ok) {
+            enrichmentStatus('The chart reader finished, but no fresh exact-patient six-card receipt was saved (' + proof.reason + '). Visits are saved; the chart cards remain incomplete.');
+          } else if (!readOk && cardRes && cardRes.reason) {
             enrichmentStatus('The full chart card could not be read (' + S(cardRes.reason) + ') — visits are saved; the card can be pulled from the profile.');
           }
-          return landed;
+          return proof;
         } catch (eFf) {
           enrichmentStatus('Visits are saved. The full chart card did not finish in time; continuing with the verified visit history.');
-          return false;
+          return { ok: false, reason: 'card-reader-timeout-or-error', receipt: null };
         } finally { cardOpen = false; }
       })();
       var enrichmentResults = await Promise.all([summaryTask, cardTask]);
-      var cardLanded = enrichmentResults[1] === true;
+      var initialCardProof = enrichmentResults[1] || { ok: false, reason: 'card-proof-missing', receipt: null };
+      /* Re-read after the concurrent summary task settles. A correct receipt
+         that was replaced with a stale/wrong-patient one during that await is
+         no longer current and therefore cannot authorize complete. */
+      var finalCardProof = initialCardProof.ok === true
+        ? currentFullCardReceipt(patient.id, cardReadStartedAt)
+        : initialCardProof;
+      var cardLanded = finalCardProof.ok === true;
       /* fm-1.2 fallback: a verified capture still lands medications/problems/
          allergies off the open chart banner when the full-card rail is absent
          or refused. A same-name capture is not enough: DOB or MRN must also
@@ -867,7 +931,7 @@
     exactCaptureProof: exactCaptureProof, partialCoverageReceipt: partialCoverageReceipt,
     firstLast: firstLast, hardenModel: hardenModel, revert: revert,
     terminalReceipt: function () { return lastTerminalReceipt; },
-    _confirmVisitPersistence: confirmVisitPersistence,
+    _confirmVisitPersistence: confirmVisitPersistence, _currentFullCardReceipt: currentFullCardReceipt,
     _eventRequestId: eventRequestId
   };
 })();

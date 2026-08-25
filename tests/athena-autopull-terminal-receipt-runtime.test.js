@@ -52,6 +52,19 @@ async function makeHarness(browser, saveMode) {
     }
     window.getPatients = () => window.__store;
     window.upsertPatient = patient => {
+      if (window.__saveMode === 'coverage-no-refresh' && !patient.athenaProfileCoverage) {
+        patient.athenaProfileCoverage = {
+          complete: true, exactIdentityVerified: true, patientId: patient.id,
+          /* Slightly ahead of the next call so timestamp freshness alone would
+             accept it; the unchanged fingerprint must still reject it. */
+          capturedAt: new Date(Date.now() + 1000).toISOString(),
+          saveRequestId: 'pre-existing-same-tick-receipt',
+          cards: {
+            problems: { status: 'found' }, meds: { status: 'found' }, allergies: { status: 'found' },
+            summary: { status: 'found' }, vitals: { status: 'found' }, history: { status: 'found' }
+          }
+        };
+      }
       const index = window.__store.findIndex(row => row && row.id === patient.id);
       if (index >= 0) window.__store[index] = patient;
       else window.__store.push(patient);
@@ -83,6 +96,7 @@ async function makeHarness(browser, saveMode) {
       getVisits(patient) { return Array.isArray(patient && patient.visits) ? patient.visits : []; },
       ensureSummaries() {
         if (window.__saveMode === 'summary-timeout') return new Promise(() => {});
+        if (window.__saveMode === 'coverage-race') return new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), 40));
         return Promise.resolve({ ok: true });
       }
     };
@@ -107,8 +121,32 @@ async function makeHarness(browser, saveMode) {
       }
     };
     window.__mlsChartField = {
-      read() {
+      read(patient) {
         if (window.__saveMode === 'card-timeout') return new Promise(() => {});
+        const current = window.__store.find(row => row && row.id === patient.id);
+        if (current && window.__saveMode !== 'coverage-missing' && window.__saveMode !== 'coverage-no-refresh') {
+          current.athenaProfileCoverage = {
+            complete: true, exactIdentityVerified: true,
+            patientId: window.__saveMode === 'coverage-wrong-patient' ? 'different-patient' : patient.id,
+            capturedAt: window.__saveMode === 'coverage-stale'
+              ? '2025-01-01T00:00:00.000Z'
+              : (window.__saveMode === 'coverage-prior-attempt'
+                ? new Date(Date.now() - 100).toISOString() : new Date().toISOString()),
+            saveRequestId: 'synthetic-card-read-' + Date.now(),
+            cards: {
+              problems: { status: 'found' }, meds: { status: 'found' }, allergies: { status: 'found' },
+              summary: { status: 'found' }, vitals: { status: 'found' }, history: { status: 'found' }
+            }
+          };
+          window.upsertPatient(current);
+          if (window.__saveMode === 'coverage-race') {
+            window.setTimeout(() => {
+              const raced = window.__store.find(row => row && row.id === patient.id);
+              raced.athenaProfileCoverage = Object.assign({}, raced.athenaProfileCoverage, { patientId: 'different-patient' });
+              window.upsertPatient(raced);
+            }, 10);
+          }
+        }
         return Promise.resolve({ ok: true });
       }
     };
@@ -220,7 +258,7 @@ async function startAndPause(page) {
     await successPage.evaluate(() => window.__resolveOwnedResult());
     const success = await successPage.evaluate(() => window.__runPromise);
     assert(success && success.ok === true, 'the confirmed success path did not resolve successfully');
-    assert(success.receipt && success.receipt.ok === true && success.receipt.persistenceConfirmed === true,
+    assert(success.receipt && success.receipt.ok === true && success.receipt.status === 'complete' && success.receipt.persistenceConfirmed === true,
       'success did not return a persistence-confirmed terminal receipt');
     assert.strictEqual(await successPage.evaluate(() => window.__receivedReceipt === window.__ownedResponse.receipt), true,
       'the exact full-detail reader receipt was not forwarded as _saveVisits argument five');
@@ -413,6 +451,27 @@ async function startAndPause(page) {
       'the hung owned completion did not replace the transient state with retry guidance');
     await driverHangPage.close();
 
+    /* cardRes.ok is transport/task status, not six-card provenance. Missing,
+       wrong-patient, stale, and post-read swapped receipts must all retain the
+       durable visit success while refusing a complete/full-card claim. */
+    for (const mode of ['coverage-missing', 'coverage-wrong-patient', 'coverage-stale', 'coverage-prior-attempt', 'coverage-no-refresh', 'coverage-race']) {
+      const receiptPage = await makeHarness(browser, mode);
+      await startAndPause(receiptPage);
+      await receiptPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
+      const observed = await receiptPage.evaluate(() => window.__runPromise.then(result => ({
+        busy: window.__mlsAthenaAutoPull.isBusy(), receipt: result.receipt,
+        text: document.querySelector('#mlsPullBar [data-text]').textContent
+      })));
+      assert.strictEqual(observed.busy, false, `${mode}: receipt refusal left the pull lane busy`);
+      assert(observed.receipt && observed.receipt.ok === true && observed.receipt.status === 'partial' &&
+        observed.receipt.persistenceConfirmed === true,
+        `${mode}: cardRes.ok without a current fresh exact receipt falsely completed the pull`);
+      assert(/Visits saved/i.test(observed.text) && /full chart card is incomplete/i.test(observed.text) &&
+        !/with the full chart card verified/i.test(observed.text),
+        `${mode}: terminal text falsely claimed full-card verification: ${observed.text}`);
+      await receiptPage.close();
+    }
+
     /* Durable visit persistence settles the pull before optional enrichment.
        A never-resolving summary pass must not retain the single-flight lane or
        prevent a later retry, and it must not rewrite the confirmed receipt as
@@ -445,7 +504,7 @@ async function startAndPause(page) {
       'the stalled chart-card read did not leave an actionable partial terminal');
     await cardTimeoutPage.close();
 
-    console.log('PASS Athena auto-pull terminal receipt: owned progress, full-detail receipt forwarding, durable exact-row confirmation, driver/flush watchdogs, partial chart terminals, timer isolation, and no late saving-state resurrection');
+    console.log('PASS Athena auto-pull terminal receipt: owned progress, durable exact-row confirmation, fresh exact-patient card receipt readback/race refusal, driver/flush watchdogs, partial terminals, timer isolation, and no late saving-state resurrection');
   } finally {
     await browser.close();
   }

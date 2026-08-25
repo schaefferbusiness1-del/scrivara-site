@@ -307,4 +307,34 @@ assert.strictEqual(ep.athenaChartProvenance(staleConflict).kind, 'identity-confl
 assert.match(ep.buildPrepSummaryForPatient(staleConflict),
   /SOURCE: ATHENA RECEIPT REJECTED — the stored pull receipt is bound to a different patient/);
 
+/* The authoritative /1p provenance helper and both derived public lanes must
+   make the same decision. This catches a stale derivation that could repaint a
+   receipt differently even though the focused browser test boots only /1p. */
+function easyPrepForLane(file) {
+  const lane = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+  const marker = lane.indexOf('MLS Scribe - EASY PATIENT PREP');
+  const endMarker = lane.indexOf('MLS Scribe - OUTSIDE RECORDS', marker);
+  assert(marker > 0 && endMarker > marker, `${file}: easy-prep markers missing`);
+  const laneStart = lane.lastIndexOf('(function () {', marker) >= 0 ? lane.indexOf('(function () {', marker) : marker;
+  const laneSource = lane.slice(laneStart, lane.lastIndexOf('})();', endMarker) + 5);
+  const laneWindow = {};
+  const laneContext = {
+    window: laneWindow, document: ctx.document, localStorage: ctx.localStorage, navigator: {},
+    setInterval() { return 0; }, clearInterval() {}, setTimeout() { return 0; }, clearTimeout() {},
+    MutationObserver: ctx.MutationObserver, console
+  };
+  laneContext.globalThis = laneContext;
+  vm.createContext(laneContext);
+  vm.runInContext(laneSource, laneContext, { filename: file + '#easy-prep' });
+  return laneWindow.__mlsEasyPrep;
+}
+const productionDecisions = [verifiedReceipt, verifiedHistory, verifiedIndex, legacyReceipt, wrongPatientReceipt]
+  .map(record => JSON.parse(JSON.stringify(ep.athenaChartProvenance(record))));
+for (const lane of ['1p-mls-connect.js', 'cloned-mls-connect.js']) {
+  const laneEp = easyPrepForLane(lane);
+  const laneDecisions = [verifiedReceipt, verifiedHistory, verifiedIndex, legacyReceipt, wrongPatientReceipt]
+    .map(record => JSON.parse(JSON.stringify(laneEp.athenaChartProvenance(record))));
+  assert.deepStrictEqual(laneDecisions, productionDecisions, `${lane}: provenance decisions drifted from production`);
+}
+
 console.log('prep-summary-debris: ok');
