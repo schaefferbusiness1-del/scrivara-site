@@ -10317,6 +10317,17 @@ function renderPullVisitBodiesSetting(){
     cb.checked=pullVisitBodiesPref();
     if(cb.dataset.wired==='1') return;
     cb.dataset.wired='1';
+    /* vnsync-1.0.0: this checkbox is a VIEW of the ONE resolver, but it only
+       repainted when Settings (re)opened. A CONFIRMED write from any other
+       owner — the first-run Full/Faster choice dialog, the day-strip toggle —
+       left an already-open Settings panel showing the stale state (the
+       reported onboarding-vs-Settings desync; same class as the strip's
+       sbp-1.0). Same-tab writes fire no storage event, so listen to the
+       resolver's confirmed-write broadcast; the id re-check drops a replaced
+       node so a stale reference can never be painted. */
+    window.addEventListener('mls:visit-notes-pref-changed',function(){
+      try{ if(document.getElementById('setPullVisitBodies')===cb) cb.checked=pullVisitBodiesPref(); }catch(e){}
+    });
     cb.addEventListener('change',function(){
       /* qol-2.0: the checkbox is a VIEW. The write goes THROUGH the resolver,
          which reads it back; the toast fires only on a CONFIRMED save, and a

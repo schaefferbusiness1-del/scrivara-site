@@ -1677,7 +1677,16 @@ const tests = [
      checkbox is a VIEW of the ONE resolver: it re-paints until the answer is
      definitive, then the watcher stands down. Runs the REAL strip block
      against the REAL resolver with a late-arriving session. */
-  'strip-checkbox-paints-resolver.test.js'
+  'strip-checkbox-paints-resolver.test.js',
+  /* vnsync-1.0.0 (reported 2026-08-25): the SETTINGS "Pull full visit notes"
+     checkbox repainted only when Settings opened, so a confirmed resolver
+     write from the first-run Full/Faster choice dialog (which may appear over
+     an open Settings panel) or the day-strip toggle left it stale - the
+     onboarding-vs-Settings desync the owner reported. The checkbox is a VIEW
+     of the ONE resolver: it now listens to the resolver's confirmed-write
+     broadcast with a stale-node guard. Runs the REAL Settings block against
+     the REAL resolver with a broadcast-capable window. */
+  'settings-checkbox-paints-resolver.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
