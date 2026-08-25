@@ -661,6 +661,7 @@ const tests = [
      reuse private extraction/OCR, derive a bounded preview, and apply it only
      to the chosen section/profile after an explicit confirmation. */
   'section-example-importer-contract.test.js',
+  'template-image-hpi-cross-layer-contract.test.js',
   'section-format-profile-editor-ui-runtime.test.js',
   'legal-longform-family-routing-contract.test.js',
   'legal-report-response-contract.test.js',

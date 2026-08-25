@@ -1,0 +1,22 @@
+SYNTHETIC QA EXAMPLE — NO REAL PATIENT DATA
+
+HISTORY OF PRESENT ILLNESS
+
+Chief concern:
+A fictional adult presents for follow-up of left shoulder discomfort.
+
+Chronology:
+Symptoms began after a fictional weekend of painting two weeks ago and have improved since beginning a home exercise program.
+
+Prior treatment and response:
+Home exercises reduced the fictional pain score from 7/10 to 4/10. Ice was helpful. No medication changes were discussed.
+
+Functional impact:
+The fictional patient can now reach a high shelf but still avoids prolonged overhead work.
+
+Pertinent symptoms and negatives:
+Mild activity-related discomfort remains. No fictional new injury, fever, numbness, or weakness was reported.
+
+QA STRUCTURE SENTINEL: TEAL-COMPASS-861
+
+This file contains only invented quality-assurance content. It is an example of structure and style, not a real patient record.
