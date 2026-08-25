@@ -1754,7 +1754,11 @@ const tests = [
      never wander through history, and terminal cleanup closes the drawer
      before releasing the reader lease. Thin pin suite - Codex's contracts
      are the behavioral acceptance in their lane. */
-  'visits-surface-and-cleanup-pins.test.js'
+  'visits-surface-and-cleanup-pins.test.js',
+  /* pcs-1.0.0 (systemic 0/8 audit item 1): the AllVisits picker publishes a
+     PHI-free pick census, refusals carry closed codes + the census, and the
+     engine classifies retries by machine code - never by English. */
+  'pick-census-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

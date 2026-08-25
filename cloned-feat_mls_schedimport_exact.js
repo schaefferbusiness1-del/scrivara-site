@@ -3735,6 +3735,13 @@
     var fd = one && one.findDiag;
     if (!fd) return "";
     if (String(fd.reason || "") === "open-deadline-exceeded") return "find-open-deadline";
+    /* pcs-1.0.0 (systemic audit item 1): the extension's own CLOSED machine
+       code is the classification - English strings never route retries. Any
+       well-formed kebab code the open/pick verdict carried is promoted so
+       the retry lane and the day line see the CAUSE, not a flattened
+       no-athena-tab. */
+    var fdCode = String(fd.code || fd.reason || "");
+    if (/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(fdCode)) return fdCode.slice(0, 60);
     return "";
   }
   function fdxStampRoute(one) {
@@ -3752,7 +3759,10 @@
      final orange row, and were never given the larger re-check window even
      though both are transient transport deadlines. Identity, permission and
      wrong-patient refusals remain deliberately absent. */
-  var AUTOMATIC_HISTORY_RETRY_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|bridge-deadline-exceeded|content-deadline-exceeded|chart-read-deadline-exceeded|find-open-deadline|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
+  var AUTOMATIC_HISTORY_RETRY_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|bridge-deadline-exceeded|content-deadline-exceeded|chart-read-deadline-exceeded|find-open-deadline|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|no-candidates|lease-tab-gone|identity-not-proven|deferred-after-timeout)/;
+  /* pcs-1.0.0: the three new pick-census subclasses of no-athena-tab retry
+     exactly as their parent did; lease-sleeping stays OUT deliberately - the
+     sleeping tab has its own wake lane and a blind retry only grinds. */
   /* ===== nav-1.0.0 (a landed schedule is a fact the re-pull must respect) =====
      The whole-pull automatic re-pull exists for ONE situation: athena's grid
      was still painting when the schedule was read. Once a day's schedule has

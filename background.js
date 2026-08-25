@@ -11025,6 +11025,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   function pickEmrTab(hint) {
     try { self.__mlsLastVisitPickFailure = null; } catch (ePickState) {}
+    /* pcs-1.0.0: one PHI-free census per pick - counts, codes, and the
+       selection source. Published immediately so even a hard throw leaves
+       the census of what WAS seen. */
+    var pickDiag = { at: Date.now(), candidateCount: 0, leaseHeld: false, leaseTabId: 0, leaseReachable: null, leaseSleeping: false, exactMatches: 0, selectionSource: '', code: '' };
+    try { self.__mlsLastVisitPickDiag = pickDiag; } catch (ePcsPub) {}
     var guard = null;
     try { guard = __visitGuardByHint.get(hint) || null; } catch (eGuard) {}
     var hardDeadline = Number(guard && guard.deadline || 0);
@@ -11034,6 +11039,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (Date.now() >= hardDeadline) { resolve(null); return; }
           var cand = (tabs || []).filter(function (t) { return t.url && EMR_RE.test(t.url); });
           cand.sort(function (a, b) { return (b.active ? 1 : 0) - (a.active ? 1 : 0) || (b.id - a.id); });
+          pickDiag.candidateCount = cand.length;
+          if (!cand.length) pickDiag.code = 'no-candidates';
           /* Keep AllVisits in the exact Athena tab proven by the immediately
              preceding chart receipt. The same-frame gate below still rechecks
              name+DOB/MRN before reading any encounter body. */
@@ -11049,11 +11056,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             var wantName = h.name || h.patient || h.patientName || '', wantDob = h.dob || h.patientDob || '', wantMrn = h.mrn || h.athenaId || '';
             var leaseMatches = lease && (Date.now() - Number(lease.at || 0)) < 180000 && nk(lease.name) === nk(wantName) && (!wantDob || dk(lease.dob) === dk(wantDob)) && (!wantMrn || nk(lease.mrn) === nk(wantMrn));
             if (leaseMatches) {
+              pickDiag.leaseHeld = true; pickDiag.leaseTabId = Number(lease.tabId) || 0;
               var exact = cand.find(function (t) { return Number(t.id) === Number(lease.tabId); });
+              pickDiag.leaseReachable = !!exact;
+              if (!exact) pickDiag.code = 'lease-tab-gone';
               if (exact && typeof mlsAthTabSleeping === 'function' && mlsAthTabSleeping(exact)) {
+                pickDiag.leaseSleeping = true; pickDiag.code = 'lease-sleeping';
                 try { self.__mlsLastVisitPickFailure = { reason: 'athena-tab-sleeping', signedOut: false, tabId: exact.id }; } catch (eSleepLease) {}
                 resolve(null); return;
               }
+              if (exact) { pickDiag.selectionSource = 'lease'; }
               resolve(exact || null); return;
             }
           } catch (eLease) {}
@@ -11082,7 +11094,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     if (idFrameHit) exactMatches.push(cand[ci0]);
                   } catch (ePickIdentity) {}
                 }
-                if (exactMatches.length) { resolve(exactMatches[0]); return; }
+                pickDiag.exactMatches = exactMatches.length;
+                if (exactMatches.length) { pickDiag.selectionSource = 'identity-proven'; resolve(exactMatches[0]); return; }
+                pickDiag.code = 'identity-not-proven';
                 resolve(null);
               })();
               return;
@@ -11093,6 +11107,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (Date.now() >= hardDeadline) { resolve(null); return; }
             if (typeof mlsPickAthenaTab === 'function') { var pickOpts = { athenaOnly: true }; Promise.resolve(mlsPickAthenaTab(tabs, pickOpts)).then(function (t) { try { if (!t && pickOpts.failure) self.__mlsLastVisitPickFailure = pickOpts.failure; } catch (ePickFailure) {} resolve(Date.now() < hardDeadline ? (t || null) : null); }, function () { resolve(null); }); return; }
           } catch (e2) {}
+          if (cand[0]) pickDiag.selectionSource = pickDiag.selectionSource || 'fallback-first';
           resolve(cand[0] || null);
         });
       } catch (e) { resolve(null); }
@@ -11399,7 +11414,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!emr) {
         var pickFailure = self.__mlsLastVisitPickFailure || null;
         if (pickFailure && pickFailure.reason === 'athena-tab-sleeping') return { ok: false, reason: 'athena-tab-sleeping', athenaTabId: Number(pickFailure.tabId || 0) || null, readTabId: Number(pickFailure.tabId || 0) || null, visits: [], receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, reason: 'athena-tab-sleeping', failureReason: 'athena-tab-sleeping', sleepingTabId: Number(pickFailure.tabId || 0) || null }, error: 'The exact Athena tab is asleep. Use “Wake Athena and retry” to restore only that tab, then retry the failed histories.' };
-        return Date.now() >= readDeadline ? deadlineResult('exact-tab selection') : { ok: false, reason: 'no-athena-tab', visits: [], error: 'No exact-patient athenaOne chart or fresh verified chart lease was proved. Open and verify that patient\'s chart, then retry.' };
+        var pcsD = null, pcsCode = '';
+        try { pcsD = self.__mlsLastVisitPickDiag || null; pcsCode = String((pcsD && pcsD.code) || (self.__mlsLastVisitPickFailure && self.__mlsLastVisitPickFailure.reason) || 'no-athena-tab'); } catch (ePcsRead) {}
+        return Date.now() >= readDeadline ? deadlineResult('exact-tab selection') : { ok: false, reason: 'no-athena-tab', code: pcsCode, pickDiag: pcsD, visits: [], error: 'No exact-patient athenaOne chart or fresh verified chart lease was proved. Open and verify that patient\'s chart, then retry.' };
       }
       var emrId = emr.id;
       readTabId = Number(emrId);
