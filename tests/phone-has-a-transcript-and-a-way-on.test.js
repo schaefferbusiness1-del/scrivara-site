@@ -22,7 +22,9 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const vfocus = fs.readFileSync(path.join(root, 'feat_mls_visit_focus.js'), 'utf8');
 
 /* B2 */
-assert(connect.includes("var wantOwns = !staff && laneMounted && !(document.body && document.body.classList.contains('mls-phone'));"),
+assert(connect.includes("var laneVisible = laneMounted && topLaneIsVisible(laneCandidate);"),
+  'top ownership must first distinguish a mounted lane from a visible lane');
+assert(connect.includes("var wantOwns = !staff && laneVisible && !(document.body && document.body.classList.contains('mls-phone'));"),
   'a mounted-but-CSS-hidden lane must never claim the top on phone (mounted is not visible)');
 assert(vfocus.includes(":not(.mls-phone) #visitView #mlsEz3Body:has(.ez3fl-record:not([hidden])"),
   "visit_focus's transcript-card hide must exclude phone - :not([hidden]) cannot see display:none");
