@@ -1739,7 +1739,15 @@ const tests = [
      sameDayStatus, verified absence saves nothing. Distinct fixture from
      Codex's contract so the suites cross-check; includes a mutation control
      forcing the destructive path to prove the pins bite. */
-  'scoped-save-additive.test.js'
+  'scoped-save-additive.test.js',
+  /* scensus-1.0.0 (Codex red contract same-day-reader-census, now green):
+     the scoped AllVisits census counts unknown dates in their own bucket
+     (partial, never absence-by-arithmetic), answers a future day
+     not-yet-available with no substitution, keeps the administrative
+     classifier narrow so novel row kinds stay clinical, and proves absence
+     only from a complete fully-dated census. Thin pin suite - Codex's
+     contract is the behavioral acceptance in their lane. */
+  'same-day-census-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

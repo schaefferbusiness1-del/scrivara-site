@@ -11879,7 +11879,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
 
-      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [], administrativeVisits = [], dateSkippedRows = [];
+      var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [], administrativeVisits = [], dateSkippedRows = [], dateUnknownRows = [];
+      /* scensus-1.0.0: a FUTURE scoped day cannot have an encounter note yet.
+         Answer it as a bounded, complete not-yet-available baseline - zero
+         rows opened, no prior encounter ever substituted. */
+      if (frozenHint.onlyDate) {
+        var scTodayD = new Date();
+        var scTodayKey = scTodayD.getFullYear() + '-' + ('0' + (scTodayD.getMonth() + 1)).slice(-2) + '-' + ('0' + scTodayD.getDate()).slice(-2);
+        if (frozenHint.onlyDate > scTodayKey) {
+          emit(appTabId, frozenRequestId, 'The requested day has not happened yet - no encounter note can exist; nothing was opened.', 0, total);
+          return { ok: true, identity: identity, visits: [], administrativeVisits: [], diag: diag, strategy: 'bound-click', found: total,
+            receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, expected: 0, parsed: 0,
+              administrativeRows: 0, dateSkippedRows: 0, dateUnknownRows: 0, onlyDate: frozenHint.onlyDate, scopeDate: frozenHint.onlyDate,
+              sameDayStatus: 'not-yet-available', notYetAvailable: true, noSubstitution: true, absenceProven: false, indexTotal: total,
+              attempted: 0, failures: 0, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: chartSurface,
+              timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), identityVerified: gate.ok, stableKeysComplete: true,
+              minimalBodies: 0, authoritativeEmpty: false } };
+        }
+      }
       async function sleepWithinReadDeadline(ms) {
         var remaining = Math.max(0, readDeadline - Date.now());
         if (!remaining) return false;
@@ -11915,7 +11932,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           emit(appTabId, frozenRequestId, 'Indexed order group ' + (i + 1) + ' of ' + total + ' (administrative row - no clinical note body).', i + 1, total);
           continue;
         }
-        if (frozenHint.onlyDate && mlsVisitDateKeyForHint(snap.date) !== frozenHint.onlyDate) { dateSkippedRows.push({ index: i, date: String(snap.date || '').slice(0, 20) }); emit(appTabId, frozenRequestId, 'Indexed encounter ' + (i + 1) + ' of ' + total + ' (outside the requested day - body not read).', i + 1, total); continue; } /* v3.0.30 scoped-day read: the fast lane captures the pulled day's own note and nothing else */
+        if (frozenHint.onlyDate) { /* scensus-1.0.0: an UNPARSEABLE date is UNKNOWN - it can neither prove nor disprove the requested day, so it makes the scoped census PARTIAL instead of silently shrinking it into absence-by-arithmetic. A known other-day row is honestly outside the scope. Neither is clicked on a scoped pass. */
+          var scRowKey = mlsVisitDateKeyForHint(snap.date);
+          if (!scRowKey) { dateUnknownRows.push({ index: i, type: String(snap.type || '').slice(0, 60) }); emit(appTabId, frozenRequestId, 'Indexed encounter ' + (i + 1) + ' of ' + total + ' (its date could not be read - counted as unknown, not as absent; body not read on this scoped pass).', i + 1, total); continue; }
+          if (scRowKey !== frozenHint.onlyDate) { dateSkippedRows.push({ index: i, date: String(snap.date || '').slice(0, 20) }); emit(appTabId, frozenRequestId, 'Indexed encounter ' + (i + 1) + ' of ' + total + ' (outside the requested day - body not read).', i + 1, total); continue; }
+        } /* v3.0.30 scoped-day read: the fast lane captures the pulled day's own note and nothing else */
         attemptedCount++;
         emit(appTabId, frozenRequestId, 'Opening encounter ' + (i + 1) + ' of ' + total + '…', i, total);
         var twoStageAthena = enumRes.selector === 'li.encounter-list-item';
@@ -12208,7 +12229,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         failures.push({ index: -1, reason: 'read-deadline-exceeded' });
       }
 
-      var clinicalTotal = Math.max(0, total - administrativeRows.length - dateSkippedRows.length);
+      var clinicalTotal = Math.max(0, total - administrativeRows.length - dateSkippedRows.length - dateUnknownRows.length);
       /* skc-1.0.0 (live 2026-08-23): key integrity and body coverage are two
          independent proofs. The old initializer made every missing clinical
          body also manufacture `stable-source-keys-incomplete`, even when all
@@ -12222,10 +12243,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sourceKeys[sourceKey] = 1;
       }
       if (!stableKeysComplete) failures.push({ index: -1, reason: 'stable-source-keys-incomplete' });
-      var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete;
+      var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete && (!frozenHint.onlyDate || dateUnknownRows.length === 0);
+      /* scensus-1.0.0: the scoped census verdict, from the counted buckets. */
+      var scScoped = !!(frozenHint && frozenHint.onlyDate);
+      var scSameDay = '';
+      if (scScoped) {
+        if (visits.length > 0) scSameDay = 'saved';
+        else if (dateUnknownRows.length > 0) scSameDay = 'partial';
+        else if (failures.length > 0) scSameDay = 'refused';
+        else scSameDay = 'absent';
+      }
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
-        fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, dateSkippedRows: dateSkippedRows.length, onlyDate: (frozenHint && frozenHint.onlyDate) || '', indexTotal: total,
+        fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, dateSkippedRows: dateSkippedRows.length, dateUnknownRows: dateUnknownRows.length, onlyDate: (frozenHint && frozenHint.onlyDate) || '', scopeDate: scScoped ? frozenHint.onlyDate : '', sameDayStatus: scScoped ? scSameDay : undefined, absenceProven: scScoped ? (scSameDay === 'absent' && bodyComplete) : undefined, noSubstitution: scScoped ? true : undefined, indexTotal: total,
         attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount, surfaceResets: surfaceResets, surfaceResetOps: surfaceResetOps.slice(0, 6), chartSurface: chartSurface, failureDetails: failures.slice(0, 12),
         timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,
@@ -12278,7 +12308,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       res.receipt.hydStreak = __mlsHydFatigue.streak;
       if (__mlsHydFatigue.pendingStamp) { if (__mlsHydFatigue.pendingStamp === 'proactive') res.receipt.proactiveRefresh = true; else res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
-      var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true || Number(res.receipt.administrativeRows || 0) > 0);
+      var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true || Number(res.receipt.administrativeRows || 0) > 0 || res.receipt.notYetAvailable === true || res.receipt.absenceProven === true); /* scensus-1.0.0: a future scoped day and a PROVEN scoped absence are legitimate zero-row completions */
       res.receipt.complete = proven;
       res.receipt.fullDetail = proven;
       res.receipt.readerVersion = res.readerVersion;
