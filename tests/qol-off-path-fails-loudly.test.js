@@ -65,6 +65,29 @@
  * a TRUE sentence would be moving the goalposts to force green, so 5c pins its
  * CONTAINMENT instead - one copy, inside the retired guard's else-branch.
  *
+ * ===== dfc-1.1.0 (this revision): THE DAY NOTE RIDES THE BRIDGE ============
+ * The mandatory exact-day encounter read now goes out as ONE SCOPED
+ * mlsAppReadAllVisits bridge post per row (hint.onlyDate = the pulled day,
+ * plus patientId/todayKey/identity) and saves the pulled day's OWN body
+ * through the additive scoped save. So section 2's old "zero all-visits
+ * posts" pin is re-expressed, protection intact: EXACTLY ONE scoped post per
+ * row, ZERO UNSCOPED posts, an unscoped legacy answer is refused
+ * (scoped-read-unsupported-by-reader) and its historical body never lands,
+ * and every failure still falls back to the legacy vp ladder. The envelope
+ * vocabulary sweep gains one shape-verified carve-out: the typed per-row
+ * allHistoryReceipt {kind:'athena-all-history-v1', requested:false,
+ * status:'not-requested'} is the one place 'not-requested' may appear - it
+ * is additional-history-scoped, not the revoked schedule-only mode marker.
+ *
+ * OPEN ENGINE GAP (section 9 holds this file red until it is fixed): on
+ * direct-read SUCCESS the legacy inline vp lane (engine :5929-5930) fires
+ * anyway - its gate never looks at one.todayNote/one.todayNoteDirectBridge,
+ * and dnAlreadyReadToday cannot help because the day ledger is only written
+ * at finalization. Result: a SECOND scoped read per row per batch, and a vp
+ * refusal at :5977 OVERWRITES the direct read's todayNote=true with false -
+ * a note that was read AND persisted is reported as a failure. Section 9's
+ * one-read-per-row pin is the contract and is deliberately NOT loosened.
+ *
  * The adversarial QUESTION this file asks is unchanged - "does the OFF path
  * tell the truth about what it did?" - only the honest answer moved. Each
  * claim is measured against a CAUSAL CONTROL (an ON run for the bodies claim,
@@ -113,7 +136,7 @@ function firstMatch(list, text) {
      1) OFF (settled) IS DAY-FACTS MODE - it opens every exact scheduled
         chart and saves its facts. This inverts the old chartCalls===0 pin.
      ====================================================================== */
-  const off = makeMonthHarness({ today: TODAY });
+  const off = makeMonthHarness({ legacyAllVisits: true, today: TODAY });
   const seeded = off.seedDay(DAY, ROWS);
   const seededIds = seeded.map(r => String(r.patient_external_id));
   const offResult = await off.api.pull({
@@ -147,13 +170,54 @@ function firstMatch(list, text) {
     'day-facts OFF left scheduled patients holding no chart content');
 
   /* ======================================================================
-     2) OFF STILL SKIPS THE HISTORICAL BODIES. This is the old
-        "no all-visits request" pin, kept verbatim in meaning - it is the
-        half of the old contract dayfacts-1.0.0 did NOT revoke.
+     2) OFF STILL NEVER WALKS THE HISTORICAL BODIES - the retired fuse,
+        re-expressed for dfc-1.1.0 (deliberate, Codex-contracted). The
+        mandatory exact-day encounter read now rides the SAME
+        mlsAppReadAllVisits bridge verb the full walk uses, SCOPED by
+        hint.onlyDate = the pulled day. So "zero all-visits posts" is no
+        longer the honest shape of "no historical walk": the honest shape is
+        EXACTLY ONE SCOPED post per row and ZERO UNSCOPED posts. The
+        protection the old pin carried - OFF may never request every body -
+        is kept in full by the unscoped-count zero below.
      ====================================================================== */
-  const offAllVisits = off.posted.filter(m => m && m.type === 'mlsAppReadAllVisits').length;
-  assert.strictEqual(offAllVisits, 0,
-    'day-facts OFF emitted an all-visits body request');
+  const offAllVisitsPosts = off.posted.filter(m => m && m.type === 'mlsAppReadAllVisits');
+  const offUnscoped = offAllVisitsPosts.filter(m =>
+    !(m.hint && /^\d{4}-\d{2}-\d{2}$/.test(String(m.hint.onlyDate || ''))));
+  assert.strictEqual(offUnscoped.length, 0,
+    'day-facts OFF emitted an UNSCOPED all-visits body request - the revoked historical walk is back');
+  assert.strictEqual(offAllVisitsPosts.length, ROWS,
+    'day-facts OFF did not attempt exactly one scoped exact-day bridge read per row (saw ' +
+    offAllVisitsPosts.length + ', wanted ' + ROWS + ')');
+  assert.ok(offAllVisitsPosts.every(m => String(m.hint.onlyDate) === DAY),
+    'a scoped OFF bridge read was not scoped to the PULLED day (saw ' +
+    JSON.stringify(offAllVisitsPosts.map(m => m.hint && m.hint.onlyDate)) + ', wanted ' + DAY + ')');
+  assert.deepStrictEqual(offAllVisitsPosts.map(m => String(m.hint.patientId)).sort(), seededIds.slice().sort(),
+    'the scoped OFF bridge reads did not cover exactly the scheduled rows once each');
+  assert.ok(offAllVisitsPosts.every(m => String((m.hint && m.hint.todayKey) || '') === TODAY),
+    'a scoped OFF bridge read did not carry the account-local todayKey');
+  assert.ok(offAllVisitsPosts.every(m => m.hint && String(m.hint.name || '') && String(m.hint.dob || '')),
+    'a scoped OFF bridge read went out without the row identity in its hint');
+
+  /* THE FAIL-CLOSED HALF OF THE SCOPED READ: this month harness answers the
+     bridge verb as a LEGACY reader - an unscoped receipt (no receipt.onlyDate)
+     carrying a HISTORICAL 2025-12-01 body. The engine must refuse to credit
+     that answer as a day-scoped read (scoped-read-unsupported-by-reader) and
+     must NOT persist the historical body it was handed - in OFF, an unscoped
+     receipt is never day proof, and a historical body never lands. */
+  assert.ok((hr.patients || []).length === ROWS && (hr.patients || []).every(p =>
+    p && p.sameDayDirectReason === 'scoped-read-unsupported-by-reader'),
+    'the engine credited a LEGACY unscoped all-visits answer as a scoped exact-day read: ' +
+    JSON.stringify((hr.patients || []).map(p => p && p.sameDayDirectReason)));
+  assert.ok((hr.patients || []).every(p => p && p.todayNoteDirectBridge !== true),
+    'a row claimed direct-bridge provenance for a note the legacy reader could not scope');
+  off.patients.forEach(p => {
+    const leaked = (p && p.visits || []).filter(v => v && (String(v.date || '') === '2025-12-01' ||
+      String(v.sourceVisitKey || '') === 'row:syn-prior-1'));
+    assert.strictEqual(leaked.length, 0,
+      'day-facts OFF persisted the HISTORICAL body from a rejected unscoped answer onto ' +
+      (p && p.id) + ': ' + JSON.stringify(leaked));
+  });
+
   assert.ok((hr.patients || []).length === ROWS && (hr.patients || []).every(p => p && p.visitsSkipped === true),
     'day-facts OFF did not mark every row visitsSkipped - historical traversal was not skipped');
   assert.strictEqual(hr.allVisitBodiesRequested, false,
@@ -211,14 +275,49 @@ function firstMatch(list, text) {
 
   /* Whole-envelope vocabulary sweep: not one nested receipt may still speak a
      revoked reason. Serialize once and assert the sweep actually had bytes to
-     read, so an unserializable envelope cannot pass as "clean". */
-  let offEnvelopeJson = '';
-  try { offEnvelopeJson = JSON.stringify(offResult) || ''; } catch (e) { offEnvelopeJson = ''; }
-  assert.ok(offEnvelopeJson.length > 500,
+     read, so an unserializable envelope cannot pass as "clean".
+
+     dfc-1.0.0 carve-out, verified BY SHAPE before it is granted: each row now
+     carries a TYPED honest receipt for the additional all-history walk -
+     allHistoryReceipt { kind:'athena-all-history-v1', requested:false,
+     status:'not-requested' } - and that is the ONLY place 'not-requested' may
+     appear. It is an explicitly additional-history-scoped field (the
+     classification's one permitted skip), not the revoked schedule-only mode
+     marker: hr.visitNotesMode/'reason' stay banned from speaking it above.
+     Every allHistoryReceipt is shape-checked, counted, then excised, and the
+     remaining envelope must be clean of ALL revoked vocabulary. */
+  let offEnvelope = null;
+  try { offEnvelope = JSON.parse(JSON.stringify(offResult)); } catch (e) { offEnvelope = null; }
+  assert.ok(offEnvelope && typeof offEnvelope === 'object',
     'the OFF result envelope could not be serialized, so the vocabulary sweep measured nothing');
+  let ahrSeen = 0;
+  (function excise(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(excise); return; }
+    Object.keys(node).forEach(k => {
+      if (k === 'allHistoryReceipt') {
+        const ahr = node[k] || {};
+        ahrSeen++;
+        assert.strictEqual(ahr.kind, 'athena-all-history-v1',
+          'an allHistoryReceipt in the OFF envelope is not the typed athena-all-history-v1 receipt: ' + JSON.stringify(ahr));
+        assert.strictEqual(ahr.requested, false,
+          'an OFF allHistoryReceipt claims the additional history walk was requested: ' + JSON.stringify(ahr));
+        assert.strictEqual(ahr.status, 'not-requested',
+          'an OFF allHistoryReceipt carries a status other than the honest not-requested: ' + JSON.stringify(ahr));
+        delete node[k];
+        return;
+      }
+      excise(node[k]);
+    });
+  })(offEnvelope);
+  assert.strictEqual(ahrSeen, ROWS,
+    'the OFF envelope did not carry exactly one typed all-history receipt per row (saw ' + ahrSeen + ')');
+  const offEnvelopeJson = JSON.stringify(offEnvelope) || '';
+  assert.ok(offEnvelopeJson.length > 500,
+    'the OFF result envelope shrank to nothing after the all-history excision - the sweep measured nothing');
   REVOKED_OFF_VOCAB.forEach(word => {
     assert.ok(offEnvelopeJson.indexOf(word) === -1,
-      'the OFF result envelope still carries the revoked reason "' + word + '" somewhere in its receipts');
+      'the OFF result envelope still carries the revoked reason "' + word + '" outside the typed all-history receipt');
   });
 
   /* ======================================================================
@@ -543,10 +642,12 @@ function firstMatch(list, text) {
       name + ': the unscoped visit-save door stopped requiring an explicit ON');
   });
 
-  console.log('qol-off-path-fails-loudly: OK (dayfacts-1.0.1 - OFF is day-facts: ' + ROWS +
-    ' verified chart opens + facts saved, ' + ROWS + ' pulled-day encounter notes read onlyDate=' + DAY +
-    ' after their own chart open, 0 historical body reads, honest day-facts/insurance receipt with 0 ' +
-    'not-requested rows, 0 invented failures, no revoked vocabulary anywhere in the day envelope, ' +
+  console.log('qol-off-path-fails-loudly: OK (dfc-1.1.0 - OFF is day-facts: ' + ROWS +
+    ' verified chart opens + facts saved, ' + ROWS + ' scoped exact-day bridge posts hint.onlyDate=' + DAY +
+    ' (0 UNSCOPED posts, a legacy unscoped answer refused and its historical body never persisted), ' +
+    ROWS + ' pulled-day encounter notes read after their own chart open - at most one read per row, ' +
+    'honest day-facts/insurance receipt whose only not-requested lives in the typed per-row ' +
+    'athena-all-history-v1 receipt, 0 invented failures, no revoked vocabulary anywhere else in the day envelope, ' +
     'no "no charts opened" claim in the status stream or the importer twins; unchosen is fail-closed at ' +
     '0 chart AND 0 note reads; both controls applied. NO QUARANTINES REMAIN: the round-2 tooltip expiry ' +
     'fired and was promoted - all 3 mls-connect twins now scan WHOLE for the forbidden claim (one ' +

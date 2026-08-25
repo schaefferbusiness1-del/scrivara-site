@@ -2782,6 +2782,18 @@
              with the already-resolved local patient. */
           if (dob && !state.target._mlsTargetDob) { state.target._mlsTargetDob = dob; state.target.dob = dob; }
           if (mrn && !state.target._mlsTargetMrn) { state.target._mlsTargetMrn = mrn; state.target.mrn = mrn; state.target.athenaId = mrn; }
+          /* dfc-1.1.0 (duplicate same-patient/day rows): the second booking's
+             appointment id was DISCARDED here, so the bundle's one shared
+             coverage read could never name both appointments and no receipt
+             could bind the second encounter. The history row stays ONE
+             patient/day bundle, but it now accumulates every distinct
+             appointment id it stands for. */
+          safe(function () {
+            var addId = String(rowAppointmentId(a) || "");
+            if (!addId) return;
+            if (!Array.isArray(state.target.appointmentIds)) state.target.appointmentIds = state.target.appointmentId ? [String(state.target.appointmentId)] : [];
+            if (state.target.appointmentIds.indexOf(addId) < 0) state.target.appointmentIds.push(addId);
+          });
           return;
         }
         supersedeMissingHistory(patientId);
@@ -2795,6 +2807,7 @@
            mrn: mrn,
            athenaId: mrn,
            appointmentId: rowAppointmentId(a),
+           appointmentIds: rowAppointmentId(a) ? [String(rowAppointmentId(a))] : [],
            date: String(date || ""),
            scheduleDate: String(date || ""),
            source: "athena-schedule-history"
@@ -4208,7 +4221,11 @@
        zero CLINICAL bodies to read; the reader reports them honestly as
        administrativeRows. That is verified evidence of emptiness-of-bodies,
        not an unproven zero. */
-    if (expected === 0 && r.receipt.authoritativeEmpty !== true && !(Number(r.receipt.administrativeRows || 0) > 0)) throw new Error("visits-empty-unproven");
+    if (expected === 0 && r.receipt.authoritativeEmpty !== true && !(Number(r.receipt.administrativeRows || 0) > 0)
+      /* dfc-1.1.0: a SCOPED census that proved absence (complete, fully
+         dated, calendar-authority-backed - scensus semantics) is verified
+         emptiness OF THAT DAY, not an unproven zero. */
+      && !(/^\d{4}-\d{2}-\d{2}$/.test(String((r.receipt.onlyDate || "")).slice(0, 10)) && r.receipt.absenceProven === true)) throw new Error("visits-empty-unproven");
     var p = patientById(target.patientId), cv = window.__mlsCopyVisits, vm = window.__mlsVisitModel, visits = Array.isArray(r.visits) ? r.visits : [];
     if (visits.length !== parsed) throw new Error("visits-count-mismatch");
     var sourceKeys = {};
@@ -4253,10 +4270,13 @@
     if (dscope) {
       /* Additive scoped persistence: one bulk call, reconcile OFF, and a
          verified absence saves nothing at all (never a fabricated row).
-         dscope-1.0.2: where the bulk writer is absent, the model's own
-         addVisit is the additive per-row fallback - identical semantics (no
-         reconcile, sourceVisitKey dedupe), never a silent no-op. */
-      if (!isFn(vm.saveVerifiedVisitBatch) && !isFn(vm.addVisit)) throw new Error("visits-bulk-writer-unavailable");
+         dscope-1.0.2: where the bulk writer is absent, the copy-visits
+         writer is the additive fallback - it stamps the same verified-source
+         flags (source/identityVerified/identityBinding/fullDetail/
+         bodyComplete) the persistence proof below demands, dedupes on
+         sourceVisitKey, and never reconciles. A raw addVisit push cannot
+         substitute: unstamped rows fail the persistence census by design. */
+      if (!isFn(vm.saveVerifiedVisitBatch) && !isFn(cv._saveVisits)) throw new Error("visits-bulk-writer-unavailable");
       for (var dsi = 0; dsi < visits.length; dsi++) {
         if (isFn(cv._visitIdentityAgrees) && !cv._visitIdentityAgrees(p, visits[dsi], true)) throw new Error("visit-row-identity-mismatch");
       }
@@ -4265,7 +4285,7 @@
           var dscopeSave = vm.saveVerifiedVisitBatch(p.id, visits, { source: "athena-schedule-history", bodyComplete: true, reconcile: false, scopeDate: dscopeDate });
           savedCount = Number(dscopeSave && dscopeSave.saved || 0);
         } else {
-          for (var dsa = 0; dsa < visits.length; dsa++) { if (vm.addVisit(p.id, visits[dsa])) savedCount++; }
+          savedCount = Number(cv._saveVisits(p, { name: observed.chartName || target.name, dob: observed.chartDob || target.dob }, visits, function () {}, r.receipt)) || 0;
         }
       }
       reconcileReceipt = { complete: true, scoped: true, removed: 0, retained: -1 }; /* reconciliation deliberately NOT run on a slice */
@@ -5220,8 +5240,9 @@
     function dfcRowAppointmentIds(row, target) {
       var ids = [];
       safe(function () {
-        var bundle = target && Array.isArray(target.appointmentIds) ? target.appointmentIds : null;
-        if (bundle) { bundle.forEach(function (id) { if (id && ids.indexOf(String(id)) < 0) ids.push(String(id)); }); }
+        [row && row.appointmentIds, target && target.appointmentIds].forEach(function (bundle) {
+          if (Array.isArray(bundle)) bundle.forEach(function (id) { if (id && ids.indexOf(String(id)) < 0) ids.push(String(id)); });
+        });
       });
       var own = safe(function () { return String(rowAppointmentId(row) || (target && target.appointmentId) || ""); }, "");
       if (own && ids.indexOf(own) < 0) ids.push(own);
@@ -5580,6 +5601,42 @@
           /* dfc-1.0.0: day-facts mode declares the historical walk honestly
              NOT REQUESTED — a typed receipt, never an implied absence. */
           one.allHistoryReceipt = { kind: "athena-all-history-v1", requested: false, status: "not-requested" };
+          /* dfc-1.1.0: the MANDATORY exact-day encounter read now rides the
+             same AllVisits bridge lane as the full walk, scoped by onlyDate
+             and carrying the account-local todayKey. The site vp transport
+             reduced the reader's answer to {ok, visits:n}, which can prove
+             nothing about scope, bindings, or absence - the bridge receipt
+             carries the full scoped census. ONE bounded read per row; every
+             failure falls back to the legacy vp/defer/idle ladder below
+             (todayNote stays unset so those lanes still try), so a reader
+             that cannot answer this verb costs nothing. */
+          var sdDay = String(batchRowDay(row) || "").slice(0, 10);
+          if (rd && /^\d{4}-\d{2}-\d{2}$/.test(sdDay) && !dayNoteFuture(sdDay) && !dnAlreadyReadToday(sdDay, target.patientId)) {
+            var __sdT0 = Date.now();
+            try {
+              var sdDeadlineAt = Math.min(patientDeadlineAt, Date.now() + adaptiveCeilingMs('visits', 60000, 195000, 100000));
+              var sdVr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, {
+                requestId: patientRequestId + "-sdvisits", deadlineAt: sdDeadlineAt, managed: true, background: true, silent: true,
+                initiator: "schedule-batch-same-day",
+                hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "",
+                  mrn: target.mrn || "", patientId: String(target.patientId), onlyDate: sdDay, todayKey: acctTodayKey() }
+              }), sdDeadlineAt, "same-day-read-deadline-exceeded");
+              if (!(sdVr && sdVr.ok)) throw new Error(String((sdVr && (sdVr.reason || sdVr.error)) || "same-day-read-failed"));
+              /* a reader that predates onlyDate scoping answers with EVERY
+                 body and no scoped receipt - never day proof; fail closed to
+                 the legacy ladder instead of mis-crediting an unscoped read */
+              if (String((sdVr.receipt && sdVr.receipt.onlyDate) || "") !== sdDay) throw new Error("scoped-read-unsupported-by-reader");
+              var sdSaved = saveVerifiedVisits(target, sdVr);
+              stageMs.visits += Date.now() - __sdT0;
+              one.visitCount = sdSaved.visitCount; one.persistedVisits = sdSaved.persistedVisits; one.parsedVisits = sdSaved.parsedVisits;
+              if (sdSaved.sameDay) one.sameDayReceipt = Object.assign({ kind: "athena-same-day-note-v1" }, sdSaved.sameDay);
+              one.todayNote = true; one.todayNoteReadAt = Date.now(); one.todayNoteMs = Date.now() - __sdT0;
+              one.todayNoteDirectBridge = true; /* PHI-free provenance: which transport read it */
+            } catch (sdErr) {
+              stageMs.visits += Date.now() - __sdT0;
+              one.sameDayDirectReason = String(sdErr && sdErr.message || sdErr || "same-day-read-failed").slice(0, 120);
+            }
+          }
         } else if (!stopAfterTimeout && (carryProof = visitsProofCarry(target.patientId))) {
           /* si-2.0.0: the fresh chart read just refreshed this patient's index
              and it matches the stamped verified-bodies pass — nothing new to
@@ -5870,7 +5927,11 @@
            The pre-contract fuse ("never enter it from this batch") is revoked
            together with schedule-only OFF. */
         var pulledDayNoteLaneEnabled = true;
-        if (pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {
+        /* dfc-1.1.0: a row whose pulled-day note already landed through the
+           DIRECT scoped bridge read owes nothing here - one scoped read per
+           row per day. The fold-in remains the ladder's next rung for every
+           direct-read failure (todayNote stays unset there). */
+        if (pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse && one.todayNote == null) {
           var dnDay = batchRowDay(row); /* dnd-1.0.0 */
           var dnGate = tnDayApplicable(dnDay); /* dnf-1.0.0 */
           var dnVp = safe(function () { return window.__mlsVisitSavePref; }, null);

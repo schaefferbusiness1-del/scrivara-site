@@ -288,7 +288,7 @@ ok(importer.includes('var pulledDayNoteLaneEnabled = true;'),
   'the inline pulled-day-note lane must be enabled');
 ok(importer.includes('var pulledDayNoteTailEnabled = true;'),
   'the tn/onlyDate tail pass must be enabled');
-ok(importer.includes('if (pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {'),
+ok(importer.includes('if (pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse && one.todayNote == null) {'),
   'the inline fold-in must still be OFF-mode-only, chart-verified (rd) and fuse-aware');
 ok(importer.includes('if (pulledDayNoteTailEnabled && pullVisitBodies !== true && !__stpStopped) {'),
   'the tail pass must run in day-facts mode and must still yield to a user Stop');
@@ -450,8 +450,9 @@ async function dayFactsAttemptsThePulledDayNote() {
   eq(Number(receipt.todayNoteFailures || 0), 0, 'a clean day-facts fixture reported day-note failures');
   eq(Number(receipt.todayNoteNotRequested || 0), 0,
     'day-facts still reports the pulled-day note as "not requested" -- the retired census short-circuit is back');
-  eq(Number(receipt.chartOpensDayNote || 0), 3,
-    'the receipt does not count the chart opens the scoped day-note reads performed');
+  /* dfc-1.1.0: the direct bridge read rides the already-open chart - zero day-note opens. */
+  eq(Number(receipt.chartOpensDayNote || 0), 0,
+    'the direct-bridge day-note leg opened charts it does not need');
 
   /* the receipt vocabulary */
   eq(receipt.visitNotesRequested, false, 'the day-facts receipt lost its frozen OFF choice');
@@ -508,14 +509,27 @@ async function unchosenBlocksEveryRead() {
 /* N2. The inline fuse still exists in day-facts mode: a timing-class refusal
        trips it, and the NEXT row's verified chart read clears it. */
 async function inlineFuseTripsAndClears() {
+  /* dfc-1.1.0: the fuse lives in the legacy FOLD-IN rung, so this fixture
+     runs a legacy reader (direct reads scope-refused) and throws the
+     timing-class error on the first VP call - vp calls are the ones that
+     carry a defined onlyDate under legacyAllVisits (the bridge answers
+     ignore the hint). */
+  let fuseThrown = false;
   const h = dayFactsHarness({
-    noteResult: (pid, d, n) => (n === 1 ? { __throw: 'the athena runner is not responding' } : { ok: true, visits: 1 })
+    legacyAllVisits: true,
+    noteResult: (pid, d, n) => {
+      if (d && !fuseThrown) { fuseThrown = true; return { __throw: 'the athena runner is not responding' }; }
+      return { ok: true, visits: 1 };
+    }
   });
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus, {});
   eq(Number(receipt.todayNoteFuseCleared || 0), 1,
     'the inline day-note fuse never tripped-and-cleared in day-facts mode');
-  eq(h.noteCalls.length, 3,
+  /* 3 scope-refused bridge attempts (recorded) + 3 vp ladder reads */
+  eq(h.noteCalls.filter(c => c && c.transport !== 'bridge').length, 3,
     'a single fused row cost the rest of the day their pulled-day notes');
+  eq(h.noteCalls.filter(c => c && c.transport === 'bridge').length, 3,
+    'the direct bridge attempt stopped being made (or was made twice) per row');
   eq(Number(receipt.todayNoteFailures || 0), 1, 'the fused row was not counted as an unread note');
   eq(Number(receipt.todayNoteRead || 0), 2, 'the rows after the fuse did not recover their notes');
   eq((receipt.patients || [])[0].todayNoteReason, 'the athena runner is not responding',

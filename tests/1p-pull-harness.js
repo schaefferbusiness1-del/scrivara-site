@@ -404,11 +404,20 @@ function makeHarness(options) {
       Array.from(listeners).forEach(fn => fn(ev));
     });
     /* Full Notes ON uses the extension bridge's ordinary unscoped all-visits
-       verb. Keep the day harness honest by answering that verb directly; the
-       old OFF-onlyDate helper is intentionally not involved. */
+       verb; dfc-1.1.0 also routes the OFF exact-day read through this SAME
+       verb with hint.onlyDate. The harness is hint-aware: the call record
+       carries the TRUE scope, options.noteResult drives the answer for both
+       transports (same semantics the vp fake had), and a scoped request is
+       answered with a same-day visit + a scoped census receipt. */
     if (msg && msg.type === 'mlsAppReadAllVisits') queueMicrotask(() => {
-      const patientId = String((chartCalls.length && chartCalls[chartCalls.length - 1].patientId) || '');
-      const call = { patientId, onlyDate: undefined, at: now, seq: ++callSeq };
+      /* options.legacyAllVisits simulates a reader that predates onlyDate
+         scoping: the hint is ignored and the answer is unscoped - the engine
+         must refuse it (scoped-read-unsupported-by-reader) and fall back. */
+      const hintOnlyDate = options.legacyAllVisits === true ? undefined
+        : (String(msg.hint && msg.hint.onlyDate || '') || undefined);
+      const patientId = String((msg.hint && msg.hint.patientId) ||
+        (chartCalls.length && chartCalls[chartCalls.length - 1].patientId) || '');
+      const call = { patientId, onlyDate: hintOnlyDate, at: now, seq: ++callSeq, transport: 'bridge' };
       noteCalls.push(call);
       const delay = typeof options.noteDelayMs === 'function'
         ? Number(options.noteDelayMs(noteCalls.length, patientId) || 0)
@@ -416,7 +425,7 @@ function makeHarness(options) {
       call.costMs = delay;
       if (delay) now += delay;
       const answer = options.noteResult
-        ? options.noteResult(patientId, undefined, noteCalls.length)
+        ? options.noteResult(patientId, hintOnlyDate, noteCalls.length)
         : { ok: true, visits: 1 };
       if (answer && answer.__never) return;
       const requestId = String(msg.requestId || msg.id || '');
@@ -427,20 +436,30 @@ function makeHarness(options) {
         return;
       }
       const count = Array.isArray(answer && answer.visits) ? answer.visits.length : Math.max(0, Number(answer && answer.visits || 0));
-      const visits = Array.isArray(answer && answer.visits) ? answer.visits : Array.from({ length: count }, (_v, index) => ({
-        date: '2026-01-' + String(index + 1).padStart(2, '0'), type: 'Office visit',
-        raw: 'Synthetic prior visit with substantive clinical detail.', fullDetail: true,
-        sourceVisitKey: 'row:syn-prior-' + (index + 1)
-      }));
+      const visits = Array.isArray(answer && answer.visits) ? answer.visits : Array.from({ length: count }, (_v, index) => (
+        hintOnlyDate ? {
+          date: hintOnlyDate, type: 'Office visit',
+          raw: 'Synthetic pulled-day encounter body with substantive clinical detail.', fullDetail: true,
+          sourceVisitKey: 'row:sd-' + patientId + '-' + hintOnlyDate + (index ? '-' + index : '')
+        } : {
+          date: '2026-01-' + String(index + 1).padStart(2, '0'), type: 'Office visit',
+          raw: 'Synthetic prior visit with substantive clinical detail.', fullDetail: true,
+          sourceVisitKey: 'row:syn-prior-' + (index + 1)
+        }));
       const resp = Object.assign({
         source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: requestId, requestId,
         ok: !(answer && answer.ok === false), visits,
         identity: { name: String(msg.hint && (msg.hint.name || msg.hint.patient) || ''),
           dob: String(msg.hint && msg.hint.dob || ''), mrn: String(msg.hint && (msg.hint.athenaId || msg.hint.mrn) || '') },
-        receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true,
+        receipt: Object.assign({ complete: true, indexComplete: true, bodyComplete: true, fullDetail: true,
           stableKeysComplete: true, expected: visits.length, parsed: visits.length, cap: 500,
           authoritativeEmpty: visits.length === 0 && !!(answer && answer.authoritativeEmpty === true),
-          readerVersion: '2.9.22-visits-r4-two-stage' }, readerVersion: '2.9.22-visits-r4-two-stage'
+          readerVersion: '2.9.22-visits-r4-two-stage' },
+        hintOnlyDate ? { onlyDate: hintOnlyDate, scopeDate: hintOnlyDate,
+          sameDayStatus: visits.length ? 'saved' : 'absent',
+          absenceProven: visits.length === 0, noSubstitution: true,
+          administrativeRows: 0, dateSkippedRows: 0, dateUnknownRows: 0 } : {},
+        answer && answer.receipt || {}), readerVersion: '2.9.22-visits-r4-two-stage'
       }, answer && answer.ok === false ? { reason: String(answer.reason || 'visits-read-failed') } : {});
       Array.from(listeners).forEach(fn => fn({ data: resp }));
     });
@@ -885,10 +904,30 @@ function makeMonthHarness(options) {
       emit('mlsAppScheduleResult', override ? Object.assign({ id: msg.id, requestId: msg.id }, clone(override)) : base, msg.id);
     });
     if (msg.type === 'mlsAppReadAllVisits') queueMicrotask(() => {
+      /* dfc-1.1.0: hint-aware like the day harness - a SCOPED request (the
+         OFF exact-day read) is recorded in noteCalls with transport 'bridge'
+         and answered with a same-day visit under a scoped census receipt +
+         the hinted identity; an unscoped request keeps the legacy fixed
+         answer (the ON walk's default). options.legacyAllVisits simulates a
+         READER THAT PREDATES onlyDate SCOPING: it ignores the hint and
+         answers every-body with no scoped receipt - the engine must refuse
+         to credit it (scoped-read-unsupported-by-reader) and fall back. */
+      const hintOnlyDate = options.legacyAllVisits === true ? undefined
+        : (String(msg.hint && msg.hint.onlyDate || '') || undefined);
+      const hintPid = String(msg.hint && msg.hint.patientId || '');
+      const hinted = patients.find(p => String(p.id) === hintPid) || patients.find(p =>
+        String(p.name || '') === String(msg.hint && (msg.hint.name || msg.hint.patient) || '')) || null;
+      if (hintOnlyDate) noteCalls.push({ patientId: hintPid || (hinted && hinted.id) || '', onlyDate: hintOnlyDate, at: nowValue, transport: 'bridge' });
+      const visits = hintOnlyDate
+        ? [{ date: hintOnlyDate, type: 'Office visit', raw: 'Synthetic pulled-day encounter body with substantive clinical detail.', fullDetail: true, sourceVisitKey: 'row:sd-' + (hintPid || 'x') + '-' + hintOnlyDate }]
+        : [{ date: '2025-12-01', type: 'Office visit', raw: 'Synthetic prior visit with substantive clinical detail.', fullDetail: true, sourceVisitKey: 'row:syn-prior-1' }];
       Array.from(listeners.get('message') || []).forEach(fn => fn({ data: {
         source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: msg.id, requestId: msg.requestId, ok: true,
-        visits: [{ date: '2025-12-01', type: 'Office visit', raw: 'Synthetic prior visit with substantive clinical detail.', fullDetail: true, sourceVisitKey: 'row:syn-prior-1' }],
-        receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: 1, parsed: 1, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
+        visits,
+        identity: hinted ? { name: hinted.name, dob: hinted.dob, mrn: hinted.mrn }
+          : { name: String(msg.hint && (msg.hint.name || msg.hint.patient) || ''), dob: String(msg.hint && msg.hint.dob || ''), mrn: String(msg.hint && (msg.hint.athenaId || msg.hint.mrn) || '') },
+        receipt: Object.assign({ complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, stableKeysComplete: true, expected: visits.length, parsed: visits.length, cap: 500, readerVersion: '2.9.22-visits-r4-two-stage' },
+          hintOnlyDate ? { onlyDate: hintOnlyDate, scopeDate: hintOnlyDate, sameDayStatus: 'saved', noSubstitution: true, absenceProven: false, administrativeRows: 0, dateSkippedRows: 0, dateUnknownRows: 0 } : {}),
         readerVersion: '2.9.22-visits-r4-two-stage'
       } }));
     });

@@ -136,8 +136,15 @@ async function testAiOutageDoesNotLoseTheCapture() {
 
 /* ================================================================== (2) ==
    THE SUMMARY LANDS LATER, WITHOUT ATHENA. Same day, same rows: the AI is down
-   for the whole first pull, then recovers. The second pull must fill the
-   summaries from the STORED text and open no chart to do it. */
+   for the whole first pull, then recovers. The recovered summary must be
+   filled from the STORED text with no chart open - immediately via the manual
+   lane, and by the batch's OWN athena-free tail pass when the AI comes back
+   mid-pull. A LATER pull no longer skips these rows: under dfc/cachev the
+   versioned cache proof demands the mandatory floor, this fixture ships no
+   insurance-coverage reader, so the proof is REJECTED
+   (clinical-floor-coverage-unproven) and every row honestly re-reads FRESH -
+   exactly one chart open per row - and the recovered AI fills the summaries
+   through the normal six-card path. */
 async function testTheSummaryIsFilledFromTheStoredCapture() {
   const DAY = '2026-08-17';
   let aiDown = true;
@@ -161,13 +168,49 @@ async function testTheSummaryIsFilledFromTheStoredCapture() {
   eq(h.patients[0].athenaRawCapture.text, '', 'the raw text was not released after the summary landed (quota)');
   eq(h.patients[0].problems, 'Synthetic problem', 'the filled summary did not reach the patient record');
 
-  /* AND ON THE NEXT PULL: the remaining three fill themselves, athena-free. */
+  /* AND ON THE NEXT PULL (dfc/cachev): with the mandatory floor unproven the
+     legacy verified-today skip is refused and each row costs exactly ONE
+     fresh chart open - a skip without a proven floor is the retired defect,
+     and a re-pull that opened MORE than one chart per row would be the old
+     double-read regression. Nothing stays pending afterwards. */
   const chartsBefore2 = h.chartCalls.length;
   const second = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
   eq(h.api._capPendingFor(h.rows).length, 0,
     'the next pull left ' + h.api._capPendingFor(h.rows).length + ' summaries pending');
-  eq(second.summaryFilled, 3, 'the next pull filled ' + second.summaryFilled + ' of the 3 outstanding summaries');
-  eq(h.chartCalls.length, chartsBefore2, 'the next pull re-opened charts to fill summaries that needed no athena');
+  eq(Number(second.summariesPending || 0), 0, 'a fresh re-read with the AI back still left summaries pending');
+  eq(h.chartCalls.length - chartsBefore2, 4,
+    'the floor-unproven re-read must cost exactly one chart open per row, spent ' + (h.chartCalls.length - chartsBefore2) + ' for 4 rows');
+  eq(second.patients.filter(p => p && p.cacheProof && p.cacheProof.accepted === false
+      && p.cacheProof.reason === 'clinical-floor-coverage-unproven' && Number(p.cacheProof.proofVersion) === 2).length, 4,
+    'the re-read was not driven by the REJECTED versioned cache proof - a skip without a proven mandatory floor is the retired defect');
+  eq(second.summaryFilled, undefined,
+    'the athena-free tail pass claimed fills on a batch whose fresh parses already landed every summary');
+  eq(second.patients.filter(p => p && p.complete === true).length, 4, 'a fresh re-read row did not complete');
+
+  /* AND THE BATCH'S OWN TAIL PASS: the AI recovers between the main loop and
+     the end of the same batch (the live incident's shape - "it recovered
+     minutes later"). The pendings fill from the STORED text, athena-free:
+     zero extra chart opens, and every filling parse comes from the
+     cap-resum lane, not a fresh read. */
+  const h2 = makeHarness({
+    day: DAY, today: DAY, rows: 3, visitNotesOn: true,
+    chartCoverage: true, noteResult: EMPTY_VISITS,
+    parseResult: (text, n) => (n <= 3 ? UPSTREAM_502() : GOOD_CHART)
+  });
+  const tail = await h2.api._runHistoryBatch(h2.rows, [], h2.onStatus);
+  eq(tail.summaryFillAttempted, 3, 'the tail pass did not attempt the three pending captures');
+  eq(tail.summaryFilled, 3, 'the tail pass filled ' + tail.summaryFilled + ' of the 3 pending summaries');
+  eq(Number(tail.summariesPending || 0), 0, 'a summary the tail pass filled is still counted pending');
+  eq(h2.chartCalls.length, 3, 'the tail fill opened a chart - the stored text was not used');
+  eq(h2.parseCalls.length, 6, 'expected exactly 3 main-loop parses + 3 tail-fill parses, saw ' + h2.parseCalls.length);
+  ok(h2.parseCalls.slice(3).every(c => /^cap-resum-/.test(String(c.requestId || ''))),
+    'a tail-fill parse did not come from the stored-capture lane');
+  eq(h2.saveCalls.length, 3, 'the tail fill did not persist the six cards');
+  eq(h2.patients.filter(p => p.athenaRawCapture && p.athenaRawCapture.summaryPending === false
+      && p.athenaRawCapture.released === true && p.athenaRawCapture.text === '').length, 3,
+    'a filled capture kept its raw text (quota) or stayed marked pending');
+  eq(tail.patients.filter(p => p && p.complete === true && p.summaryFilled === true && p.summaryPending === false).length, 3,
+    'a tail-filled row does not carry the filled verdict');
 }
 
 /* ================================================================== (3) ==
@@ -255,7 +298,7 @@ async function main() {
   await testTheGatesStillRefuse();
   await testScheduleLandedRecordAndNavVeto();
   await flush(5);
-  console.log('PASS 1p-capture-before-ai: ' + checks + ' checks - a 502 from the backend AI can no longer destroy a completed athena chart read: all 9 captures are persisted first under the same identity + coverage gates and read back, the rows are saved-with-pending-summary rather than failed histories, the store census counts them (withContent 9, captureOnly 9, delta 9) and the pull spends exactly 9 chart opens instead of 18, the summary is later filled from the STORED text with zero athena reads (immediately and again on the next pull) and the text is released afterwards, while an unproven identity echo stores nothing and a refused six-card save is still an honest failure');
+  console.log('PASS 1p-capture-before-ai: ' + checks + ' checks - a 502 from the backend AI can no longer destroy a completed athena chart read: all 9 captures are persisted first under the same identity + coverage gates and read back, the rows are saved-with-pending-summary rather than failed histories, the store census counts them (withContent 9, captureOnly 9, delta 9) and the pull spends exactly 9 chart opens instead of 18, the summary is later filled from the STORED text with zero athena reads (immediately via the manual lane, and by the batch\'s own athena-free tail pass when the AI recovers mid-pull) and the text is released afterwards, a LATER pull under an unproven mandatory floor honestly re-reads fresh instead of skipping (dfc/cachev: the versioned cache proof is rejected clinical-floor-coverage-unproven, exactly one chart open per row, never a proof-free skip), while an unproven identity echo stores nothing and a refused six-card save is still an honest failure');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-capture-before-ai did not finish')); process.exit(1); }, 90000);

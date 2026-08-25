@@ -480,21 +480,30 @@ function dayNoteHarness(options) {
 }
 
 async function dayNoteRun() {
-  /* The old body below measured a dedicated pulled-day-note pass while Full
-     visit notes was OFF. That product shape is retired. Keep this gate's
-     resume/terminal/lease/navigation coverage above, and make its note-mode
-     assertion match the current hard boundary: OFF performs zero body work
-     and creates no deferred body queue. ON is exercised by the dedicated
-     full-notes host/runtime contracts as one unscoped all-visits walk. */
+  /* SUPERSEDED TWICE and now current: the owner DAY contract (2026-08-25)
+     makes the pulled-day encounter note the MANDATORY floor of OFF, and
+     dfc-1.1.0 gives it a transport ladder - one DIRECT scoped bridge read
+     per row first, the legacy vp lane only on direct failure. In this
+     fixture the identity seam holds, so every direct read SUCCEEDS:
+     three scoped bridge reads, ZERO legacy vp reads (the next rung never
+     fires for a served row), every row served with a saved sameDayReceipt,
+     and nothing queues. */
   const off = dayNoteHarness();
   const offReceipt = await off.api._runHistoryBatch(off.rows, [], off.onStatus, {});
   eq(offReceipt.visitNotesRequested, false, 'the OFF batch lost its frozen note choice');
-  eq(off.noteCalls.length, 0, 'Full visit notes OFF opened a pulled-day note body');
-  eq(Number(offReceipt.todayNoteAttempts || 0), 0, 'OFF claims note-body attempts');
-  eq(Number(offReceipt.todayNoteFailures || 0), 0, 'OFF counts intentionally skipped notes as failures');
-  eq(Number(off.api._todayNoteDeferred().queued || 0), 0, 'OFF created a deferred note-body queue');
-  ok(/var pulledDayNoteLaneEnabled = false;/.test(SRC), 'the retired inline day-note lane is enabled');
-  ok(/var pulledDayNoteTailEnabled = false;/.test(SRC), 'the retired tail day-note lane is enabled');
+  const offBridge = off.noteCalls.filter(c => c && c.transport === 'bridge');
+  const offVp = off.noteCalls.filter(c => c && c.transport !== 'bridge');
+  eq(offBridge.length, 3, 'OFF did not attempt exactly one direct scoped bridge read per row');
+  ok(offBridge.every(c => c.onlyDate === DN_DAY), 'a direct OFF read went out unscoped');
+  eq(offVp.length, 0, 'the legacy vp reader fired for rows the direct bridge read already served');
+  eq((offReceipt.patients || []).filter(p => p && p.todayNote === true && p.todayNoteDirectBridge === true &&
+      p.sameDayReceipt && p.sameDayReceipt.status === 'saved').length, 3,
+    'a row finished without its direct-bridge pulled-day note + saved sameDayReceipt');
+  eq(Number(offReceipt.todayNoteRead || 0), 3, 'the receipt under-reports the pulled-day notes read');
+  eq(Number(offReceipt.todayNoteFailures || 0), 0, 'a served note was counted as a failure');
+  eq(Number(off.api._todayNoteDeferred().queued || 0), 0, 'a served row was still queued for deferred work');
+  ok(/var pulledDayNoteLaneEnabled = true;/.test(SRC), 'the mandatory inline day-note lane is disabled');
+  ok(/var pulledDayNoteTailEnabled = true;/.test(SRC), 'the mandatory tail day-note lane is disabled');
   return;
 
   /* ---- the deferred round must actually take these rows -------------------- */

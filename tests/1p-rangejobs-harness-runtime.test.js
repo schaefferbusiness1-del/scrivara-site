@@ -66,6 +66,27 @@
  * old gap whole (0 onlyDate reads, todayNote null on every row,
  * chartOpens.dayNote 0) while the day-facts CHART pass is untouched - which is
  * what proves the day-note pins measure those two lanes and nothing else.
+ *
+ * ===== dfc-1.1.0: THE EXACT-DAY READ CHANGED TRANSPORT =====================
+ * The pulled-day note now rides the SAME AllVisits bridge verb as the full
+ * walk, distinguished ON THE WIRE by hint.onlyDate = the pulled day (plus
+ * patientId, todayKey and identity): one bounded scoped read per row per
+ * account day (dnAlreadyReadToday dedupes re-runs), saving the pulled day's
+ * OWN body through the additive scoped save. So the retired fuse "OFF never
+ * posts mlsAppReadAllVisits" is re-expressed, never weakened: OFF never posts
+ * an UNSCOPED mlsAppReadAllVisits - the unscoped verb is still the only way to
+ * walk history and is still pinned at ZERO everywhere. THIS harness's fake
+ * reader is a LEGACY one (it answers the scoped verb with EVERY body - a
+ * 2025-12-01 historical visit - and no scoped receipt), so this suite
+ * exercises the direct read's FAILURE path: the engine must refuse the
+ * unscoped answer (sameDayDirectReason 'scoped-read-unsupported-by-reader'),
+ * persist NOTHING from it, and fall back to the legacy vp/tn ladder - which is
+ * why every vp noteCalls pin from 1.0.1 still holds whole, now measured as the
+ * fallback lane, with exactly one scoped bridge ATTEMPT per row alongside it.
+ * The one legitimate home of the words `not-requested` is the new typed
+ * per-row allHistoryReceipt {kind:'athena-all-history-v1', requested:false},
+ * which is pinned positively and carved out of the envelope-wide vocabulary
+ * scan.
  * ========================================================================== */
 
 const assert = require('assert');
@@ -116,11 +137,21 @@ function tapMonth(h, sink) {
   };
 }
 /* dayfacts-1.0.0 helpers -------------------------------------------------- */
-/* how many times the engine posted a bridge verb. `mlsAppReadAllVisits` is the
-   UNSCOPED all-visit-bodies read - the one thing day-facts mode must never
-   issue - so counting it is the honest measure of "historical bodies skipped",
-   far stronger than counting a harness-side callback. */
+/* how many times the engine posted a bridge verb. */
 function postedCount(h, type) { return h.posted.filter(m => m && m.type === type).length; }
+/* dfc-1.1.0: `mlsAppReadAllVisits` is no longer one verb with one meaning.
+   The day-facts exact-day read now rides the SAME bridge verb, distinguished
+   on the wire by hint.onlyDate (the pulled day) - so the retired fuse "OFF
+   never posts mlsAppReadAllVisits" is re-expressed, never weakened, as "OFF
+   never posts an UNSCOPED mlsAppReadAllVisits". An unscoped post is the
+   whole-chart historical walk, which is the read the checkbox governs. */
+function allVisitsPosts(h) { return h.posted.filter(m => m && m.type === 'mlsAppReadAllVisits'); }
+function scopedVisitsPosts(h) {
+  return allVisitsPosts(h).filter(m => m.hint && /^\d{4}-\d{2}-\d{2}$/.test(String(m.hint.onlyDate || '')));
+}
+function unscopedVisitsPosts(h) {
+  return allVisitsPosts(h).filter(m => !(m.hint && m.hint.onlyDate));
+}
 /* the real importer's per-day history receipt, pulled off the tapped month
    result rather than reconstructed by the test. */
 function historyReceiptFor(tap, date) {
@@ -153,7 +184,7 @@ function testAssetIsP1Only() {
  * ONE synthetic month, every shape at once.
  * ========================================================================== */
 async function testWholeMonthReplay() {
-  const h = makeMonthHarness({ today: '2026-03-15' });
+  const h = makeMonthHarness({ legacyAllVisits: true, today: '2026-03-15' });
   /* 2 clinic days with rows, one of which loses two charts; 1 day whose grid
      never settles; the other 25 days are verified EMPTY. */
   h.seedDay('2026-02-03', 3);
@@ -260,11 +291,38 @@ async function testWholeMonthReplay() {
     'an Athena chart was opened on a verified-empty day');
   eq(h.chartCalls.filter(c => c.day === '2026-02-10').length, 0,
     'a chart was opened on a day whose schedule never read - there is no verified row to bind it to');
-  /* the other half of the contract: HISTORICAL bodies are skipped. The
-     unscoped all-visits verb is the only way to read them, so its count over
-     the whole month is the measurement - not a harness-side callback. */
-  eq(postedCount(h, 'mlsAppReadAllVisits'), 0, 'day-facts mode read historical visit bodies');
+  /* the other half of the contract: HISTORICAL bodies are skipped. dfc-1.1.0
+     moved the exact-day read onto the SAME bridge verb, scoped by
+     hint.onlyDate, so the retired "zero mlsAppReadAllVisits" fuse is
+     re-expressed as zero UNSCOPED posts - the unscoped verb is still the only
+     way to walk history, and its count over the whole month is still the
+     measurement, not a harness-side callback. */
+  eq(unscopedVisitsPosts(h).length, 0, 'day-facts mode issued the UNSCOPED all-visits walk');
+  /* the new positive half: EXACTLY ONE scoped direct read per scheduled row,
+     on the readable day only, carrying the pulled day, the row identity and
+     the account todayKey on the wire. */
+  eq(scopedVisitsPosts(h).length, 3,
+    'day-facts did not post exactly one scoped AllVisits read per scheduled row (got ' + scopedVisitsPosts(h).length + ')');
+  eq(scopedVisitsPosts(h).filter(m => m.hint.onlyDate === '2026-02-03').length, 3,
+    'a scoped direct read was not scoped to the day being pulled');
+  eq(new Set(scopedVisitsPosts(h).map(m => String(m.hint.patientId))).size, 3,
+    'the scoped direct read hit the same row twice on one day');
+  eq(scopedVisitsPosts(h).filter(m => m.hint.todayKey === '2026-03-15').length, 3,
+    'a scoped direct read did not carry the account todayKey');
+  eq(scopedVisitsPosts(h).filter(m => m.initiator === 'schedule-batch-same-day').length, 3,
+    'a scoped direct read did not declare the same-day initiator');
+  /* THIS fixture's reader is a LEGACY one: it answers the scoped verb with
+     EVERY body (a 2025-12-01 historical visit) and no scoped receipt. The
+     engine must fail the direct read CLOSED - never credit it, never persist
+     the historical body - and fall back to the vp ladder, which is why the
+     vp noteCalls pins below still hold whole. */
+  ok(h.patients.every(p => !(p.visits || []).some(v => v && v.sourceVisitKey === 'row:syn-prior-1')),
+    'the refused unscoped answer\'s HISTORICAL body was persisted - OFF must never store history');
   const dayFacts = historyReceiptFor(tap, '2026-02-03');
+  eq(dayFacts.patients.filter(p => p && p.sameDayDirectReason === 'scoped-read-unsupported-by-reader').length, 3,
+    'the legacy reader\'s unscoped answer was not refused with its own named reason');
+  eq(dayFacts.patients.filter(p => p && p.todayNoteDirectBridge === true).length, 0,
+    'a row claims its note came over the direct bridge - this fixture\'s reader cannot scope');
   ok(dayFacts, 'the readable day carried no history receipt - the day-facts batch never ran');
   eq(dayFacts.visitNotesMode, 'day-facts',
     'the OFF receipt does not declare day-facts mode (got ' + dayFacts.visitNotesMode + ')');
@@ -338,9 +396,23 @@ async function testWholeMonthReplay() {
   eq(monthEnvelope.visitNotesMode, 'day-facts',
     'the month result envelope does not report day-facts mode (got ' + monthEnvelope.visitNotesMode + ')');
   eq(monthEnvelope.visitNotesRequested, false, 'the OFF month envelope claims full visit notes were requested');
-  const envelopeJson = JSON.stringify(monthEnvelope);
+  /* dfc-1.1.0: the ONE legitimate home for the words `not-requested` is the
+     new TYPED per-row allHistoryReceipt - {kind:'athena-all-history-v1',
+     requested:false, status:'not-requested'} - which declares only that the
+     ADDITIONAL all-history walk was not asked for. Pin that receipt
+     positively on every row, then scan the rest of the envelope with exactly
+     those receipts removed, so the revoked day-note / mode vocabulary still
+     cannot creep back anywhere else. */
+  eq(dayFacts.patients.filter(p => p && p.allHistoryReceipt &&
+      p.allHistoryReceipt.kind === 'athena-all-history-v1' &&
+      p.allHistoryReceipt.requested === false &&
+      p.allHistoryReceipt.status === 'not-requested').length, 3,
+    'a day-facts row lost its typed all-history not-requested receipt');
+  const envelopeJson = JSON.stringify(monthEnvelope, function (k, v) {
+    return k === 'allHistoryReceipt' ? undefined : v;
+  });
   ok(envelopeJson.indexOf('not-requested') < 0,
-    'the revoked not-requested mode is still somewhere in the month envelope an OFF pull hands back');
+    'the revoked not-requested mode is somewhere in the month envelope beyond the typed all-history receipt');
   ok(envelopeJson.indexOf('visit-notes-off') < 0, 'the revoked visit-notes-off vocabulary is still in the month envelope');
   ok(envelopeJson.indexOf('full-notes-off') < 0, 'the revoked full-notes-off vocabulary is still in the month envelope');
   ok(elapsed < 45000, 'the 28-day replay took ' + elapsed + ' ms - the empty-day path is no longer free');
@@ -351,6 +423,7 @@ async function testWholeMonthReplay() {
   const navBefore = h.gotoDates.length;
   const chartsBefore = h.chartCalls.length;
   const notesBefore = h.noteCalls.length;
+  const scopedBefore = scopedVisitsPosts(h).length;
   const resumed = await range.resume({ onStatus: () => {} });
   const revisited = h.gotoDates.slice(navBefore);
 
@@ -367,7 +440,19 @@ async function testWholeMonthReplay() {
     'the resume opened a chart on a day other than the one it re-pulled');
   eq(h.chartCalls.filter(c => c.day === '2026-02-03').length, 3,
     'the resume re-opened charts on a day it had already proved complete');
-  eq(postedCount(h, 'mlsAppReadAllVisits'), 0, 'the resumed day-facts pull read historical visit bodies');
+  eq(unscopedVisitsPosts(h).length, 0, 'the resumed day-facts pull issued the UNSCOPED all-visits walk');
+  /* dfc-1.1.0: the scoped direct read follows the RECOVERED day exactly as
+     the charts and vp notes do - one per row of the re-pulled day, none
+     re-issued for the day already proved. */
+  const resumedScoped = scopedVisitsPosts(h).slice(scopedBefore);
+  eq(resumedScoped.length, 4,
+    'the resume did not post one scoped direct read per row of the recovered 4-row day (got ' + resumedScoped.length + ')');
+  eq(resumedScoped.filter(m => m.hint.onlyDate === '2026-02-10').length, 4,
+    'the resume scoped a direct read to a day other than the one it re-pulled');
+  eq(new Set(resumedScoped.map(m => String(m.hint.patientId))).size, 4,
+    'the resume posted the same row\'s scoped direct read twice');
+  eq(scopedVisitsPosts(h).filter(m => m.hint.onlyDate === '2026-02-03').length, 3,
+    'the resume re-posted scoped direct reads for a day it had already proved');
   /* dayfacts-1.0.1: the pulled-day note follows the RECOVERED day, not the
      day the pull was originally started on. A resume that re-read notes for
      an already-proved day would be paying twice for the same chart. */
@@ -410,6 +495,15 @@ async function testWholeMonthReplay() {
   eq(censusAfter.uniqueIds, censusBefore.uniqueIds, 'the repeat month pull duplicated backend ids');
   eq(censusAfter.uniqueAppointments, censusBefore.uniqueAppointments, 'the repeat pull stored the same Athena appointment twice');
   eq(h.patients.length, 24, 'the repeat month pull created duplicate patients');
+  /* dfc-1.1.0: AT MOST ONE scoped direct read per row per account day -
+     dnAlreadyReadToday dedupes the re-run, so the repeat pull (same frozen
+     account day) adds ZERO scoped posts and ZERO vp note reads on top of the
+     3 + 4 already spent, even though it honestly re-reads the schedule. */
+  eq(scopedVisitsPosts(h).length, 7,
+    'the repeat pull re-posted a scoped direct read for a row already read this account day (got ' + scopedVisitsPosts(h).length + ')');
+  eq(h.noteCalls.length, 7,
+    'the repeat pull re-read a pulled-day note already saved this account day (got ' + h.noteCalls.length + ')');
+  eq(unscopedVisitsPosts(h).length, 0, 'the repeat pull issued the UNSCOPED all-visits walk');
 
   /* the lease is not left held by anybody */
   eq(h.locksHeld().length, 0, 'a settled month job still holds a Web Lock');
@@ -481,8 +575,13 @@ async function testUnchosenPreferenceBlocksEveryRead() {
   eq(offReceipt.requested, 1, 'a settled-OFF batch did not request its one row');
   eq(offReceipt.processed, 1, 'a settled-OFF batch did not process its one row');
   eq(settled.chartCalls.length, 1, 'a settled-OFF batch opened no chart - the mandatory floor is gone');
-  eq(settled.posted.filter(m => m && m.type === 'mlsAppReadAllVisits').length, 0,
-    'a settled-OFF batch read historical visit bodies');
+  /* dfc-1.1.0: the settled-OFF batch posts EXACTLY ONE scoped direct read for
+     its one row - and still zero UNSCOPED walks. */
+  eq(unscopedVisitsPosts(settled).length, 0, 'a settled-OFF batch issued the UNSCOPED all-visits walk');
+  eq(scopedVisitsPosts(settled).length, 1,
+    'a settled-OFF batch did not post exactly one scoped direct read for its one row (got ' + scopedVisitsPosts(settled).length + ')');
+  eq(scopedVisitsPosts(settled)[0].hint.onlyDate, '2026-03-09',
+    'the settled-OFF batch scoped its direct read to the wrong day (got ' + scopedVisitsPosts(settled)[0].hint.onlyDate + ')');
   /* dayfacts-1.0.1: a SETTLED-off account gets the pulled-day note too - that
      is the whole point of admitting it to runForPatient({onlyDate}). */
   eq(settled.noteCalls.length, 1, 'a settled-OFF batch did not attempt the pulled-day note for its one row');
@@ -491,8 +590,10 @@ async function testUnchosenPreferenceBlocksEveryRead() {
   eq(Number(offReceipt.todayNoteRead || 0), 1, 'the settled-OFF receipt cannot say it read the pulled-day note');
   eq(Number(offReceipt.todayNoteNotRequested || 0), 0,
     'a settled-OFF batch declared its pulled-day note not-requested - the revoked short-circuit is back');
-  eq(Number(offReceipt.chartOpens && offReceipt.chartOpens.dayNote), 1,
-    'the settled-OFF receipt cannot say it opened the chart for the pulled-day note');
+  /* dfc-1.1.0: the direct bridge read rides the row's already-open chart -
+     the day-note leg costs zero additional opens. */
+  eq(Number((offReceipt.chartOpens && offReceipt.chartOpens.dayNote) || 0), 0,
+    'the direct-bridge day-note leg opened charts it does not need');
 
   /* ---- UNSET: zero reads, at both doors -------------------------------- */
   const h = makeMonthHarness({ today: '2026-03-15' });
@@ -527,6 +628,8 @@ async function testUnchosenPreferenceBlocksEveryRead() {
   eq(Number(blocked.todayNoteRead || 0), 0, 'a blocked batch claims it read a pulled-day note');
   eq(h.chartCalls.length, 0, 'an unchosen account had a patient chart opened');
   eq(h.noteCalls.length, 0, 'an unchosen account had a visit note read');
+  eq(allVisitsPosts(h).length, 0,
+    'an unchosen account had an AllVisits bridge read posted - scoped or not, the choice gate comes first');
   eq(h.gotoDates.length, 0, 'an unchosen account had Athena navigated');
 
   const range = h.installRangeJobs();
@@ -547,8 +650,11 @@ async function testUnchosenPreferenceBlocksEveryRead() {
   const admitted = await range.startMonth('2026-03', { provider: PROVIDER, pullVisitBodies: false, onStatus: () => {} });
   eq(admitted.complete, true, 'an explicit caller choice was refused as unchosen');
   eq(h.chartCalls.length, 3, 'the explicitly-chosen OFF month did not run day-facts (got ' + h.chartCalls.length + ' chart opens)');
-  eq(h.posted.filter(m => m && m.type === 'mlsAppReadAllVisits').length, 0,
-    'the explicitly-chosen OFF month read historical visit bodies');
+  eq(unscopedVisitsPosts(h).length, 0, 'the explicitly-chosen OFF month issued the UNSCOPED all-visits walk');
+  eq(scopedVisitsPosts(h).length, 3,
+    'the explicitly-chosen OFF month did not post one scoped direct read per row (got ' + scopedVisitsPosts(h).length + ')');
+  eq(scopedVisitsPosts(h).filter(m => m.hint.onlyDate === '2026-03-09').length, 3,
+    'the explicitly-chosen OFF month scoped a direct read outside the day it pulled');
   eq(h.noteCalls.length, 3,
     'the explicitly-chosen OFF month did not attempt one pulled-day note per row (got ' + h.noteCalls.length + ')');
   eq(h.noteCalls.filter(c => c.onlyDate === '2026-03-09').length, 3,
@@ -619,16 +725,23 @@ async function testPreDayfactsOffMonthOpenedNoChart() {
  * ========================================================================== */
 const DAYNOTE_INLINE_LANE_ON = 'var pulledDayNoteLaneEnabled = true;';
 const DAYNOTE_TAIL_LANE_ON = 'var pulledDayNoteTailEnabled = true;';
+/* dfc-1.1.0: the day-note stack now has THREE rungs - the direct scoped
+   bridge read plus the two legacy lanes. The control must fuse all three
+   or it no longer models "day-note work fully off" and proves nothing. */
+const DAYNOTE_DIRECT_ON = 'if (rd && /^\\d{4}-\\d{2}-\\d{2}$/.test(sdDay) && !dayNoteFuture(sdDay) && !dnAlreadyReadToday(sdDay, target.patientId)) {';
 function refuseDayNoteLanes(src) {
   return src
     .split(DAYNOTE_INLINE_LANE_ON).join('var pulledDayNoteLaneEnabled = false;')
-    .split(DAYNOTE_TAIL_LANE_ON).join('var pulledDayNoteTailEnabled = false;');
+    .split(DAYNOTE_TAIL_LANE_ON).join('var pulledDayNoteTailEnabled = false;')
+    .split(DAYNOTE_DIRECT_ON).join('if (false) {');
 }
 async function testPreDayfactsDayNoteFusesReadNoNote() {
   eq(IMPORTER.split(DAYNOTE_INLINE_LANE_ON).length - 1, 1,
     'the inline day-note lane switch is not exactly one line of the importer - re-anchor this control before trusting it');
   eq(IMPORTER.split(DAYNOTE_TAIL_LANE_ON).length - 1, 1,
     'the day-note tail switch is not exactly one line of the importer - re-anchor this control before trusting it');
+  eq(IMPORTER.split(DAYNOTE_DIRECT_ON).length - 1, 1,
+    'the direct scoped-read entry is not exactly one line of the importer - re-anchor this control before trusting it');
 
   /* ---- the BATCH door: the receipt fields the replay's day pins read ---- */
   const b = makeMonthHarness({ today: '2026-03-15' });
@@ -856,7 +969,17 @@ async function testNoFutureDayIsTouched() {
   eq(h.chartCalls.filter(c => c.day > '2026-03-15').length, 0, 'a chart was opened on a future day');
   eq(h.chartCalls.filter(c => !['2026-03-09', '2026-03-15'].includes(c.day)).length, 0,
     'a chart was opened on a verified-empty day');
-  eq(postedCount(h, 'mlsAppReadAllVisits'), 0, 'Full Notes OFF opened a visit-note body');
+  eq(unscopedVisitsPosts(h).length, 0, 'Full Notes OFF issued the UNSCOPED all-visits walk');
+  /* dfc-1.1.0: the scoped direct read obeys the same future boundary as the
+     charts - one per ELAPSED scheduled row, never scoped past today. */
+  eq(scopedVisitsPosts(h).length, 4,
+    'day-facts did not post one scoped direct read per elapsed scheduled row (got ' + scopedVisitsPosts(h).length + ')');
+  eq(scopedVisitsPosts(h).filter(m => m.hint.onlyDate === '2026-03-15').length, 2,
+    'today\'s two rows did not both get a scoped direct read');
+  eq(scopedVisitsPosts(h).filter(m => m.hint.onlyDate === '2026-03-09').length, 2,
+    'the past clinic day\'s rows did not both get a scoped direct read');
+  eq(scopedVisitsPosts(h).filter(m => String(m.hint.onlyDate) > '2026-03-15').length, 0,
+    'a scoped direct read was posted for a FUTURE day');
   /* dayfacts-1.0.1 (was a measured gap under 1.0.0, see testWholeMonthReplay):
      one pulled-day onlyDate attempt per ELAPSED scheduled row - including
      today's own rows, which is the edge the future boundary sits against - and
@@ -1059,7 +1182,7 @@ async function main() {
   await testYearIsMonthsChained();
   await testTwoSystemicMonthsStopTheRange();
   await testCancelIsCleanAndReleasesTheLease();
-  console.log('PASS 1p-rangejobs-harness-runtime: ' + checks + ' checks - a whole synthetic month and year replayed through the REAL /1p importer under the REAL range engine. dayfacts-1.0.1 (owner 2026-08-25) is now the pinned contract: Full-visit-notes OFF is an ABBREVIATED CHART PASS, not schedule-only - every exact scheduled row gets one identity-verified chart open and a chart-facts save that the store census proves landed, the day settles on the plain `complete` verdict (the revoked `complete-schedule-only` is pinned dead), the receipt declares visitNotesMode day-facts / chartFactsRequired / allVisitBodiesRequested false / insuranceAttempted 0 reader-not-shipped, every row reports visitsSkipped and ZERO unscoped all-visits reads are issued, and no chart is opened on a verified-empty, unreadable, or future day; a causal control boots the pre-dayfacts month gate over the same fixture and gets the old world back whole (0 charts, 0 stored facts, complete-schedule-only), so those pins measure the engine and not the harness. The clause that stood UNMET under dayfacts-1.0.0 - the pulled-day encounter note - is now SHIPPED and PROVED rather than tolerated: both day-note lanes are un-fused (1p-feat_mls_schedimport_exact.js:5615 inline fold-in, :6172 tn/onlyDate tail catch-up, and the byte pins now fail if either is re-fused), so every scheduled row gets exactly ONE vp.runForPatient read SCOPED to the day being pulled, on exactly the rows whose charts day-facts opened, never twice and never unscoped - 3 on the readable day, 4 more scoped to the RECOVERED day on resume and none re-read on the day already proved, 2+2 across a past clinic day and today with nothing on a future day - and the receipts agree with the wire (todayNoteRead = rows, todayNoteFailures 0, chartOpens.dayNote = rows, todayNote true on every row). The revoked checkbox short-circuit that reported todayNoteNotRequested = rows on an OFF pull is pinned dead everywhere, surviving at exactly ONE door - blocked-unchosen - which is pinned positively so it cannot creep back as a default; the month result envelope reports visitNotesMode day-facts and the WHOLE envelope is scanned for the retired not-requested / visit-notes-off / full-notes-off vocabulary. A second causal control re-fuses those two switch bytes over the same harness and measures the old gap back whole at both the batch and month doors (0 onlyDate reads, todayNote null, chartOpens.dayNote 0) while pinning that the chart pass, the mode, the skip and the verdict are UNCHANGED - so the day-note counts measure those two lanes and not the fixture. An UNCHOSEN preference still fails closed at both doors (blocked-unchosen receipt with zero chart, note and navigation reads at the batch seam, a refused visit-notes-choice gate with no manifest and no navigation at the range door) while a SETTLED-off account runs day-facts and gets its pulled-day note, the revoked visit-notes-off no-op staying dead. The pre-existing range contract is unchanged and still measured: every day checkpoints durably with its OWN verdict (empty-day / history-partial / schedule-incomplete, no longer one generic code); a failing day is retried to a cap of 3 and then settles as needs-attention, listed on the receipt with its reason, so one bad day never blocks a later month and never spins forever; February failing does not stop March and never restarts January; two months dying the same systemic way DO stop the range and name that cause; an athenaOne sign-out is classified by the extension\'s bounded session probe into waiting-login without spending a retry (a probe-less unreadable grid still is not); Pause after day 9, a browser close, and a login recovery all resume without re-pulling one proved day; a repeat month pull adds no duplicate appointment or patient; and the queue is clamped to the day the importer itself will accept');
+  console.log('PASS 1p-rangejobs-harness-runtime: ' + checks + ' checks - a whole synthetic month and year replayed through the REAL /1p importer under the REAL range engine. dayfacts-1.0.1 (owner 2026-08-25) is now the pinned contract: Full-visit-notes OFF is an ABBREVIATED CHART PASS, not schedule-only - every exact scheduled row gets one identity-verified chart open and a chart-facts save that the store census proves landed, the day settles on the plain `complete` verdict (the revoked `complete-schedule-only` is pinned dead), the receipt declares visitNotesMode day-facts / chartFactsRequired / allVisitBodiesRequested false / insuranceAttempted 0 reader-not-shipped, every row reports visitsSkipped, ZERO unscoped all-visits reads are issued (dfc-1.1.0: the exact-day read rides the SAME bridge verb scoped by hint.onlyDate, so the retired zero-mlsAppReadAllVisits fuse is re-expressed as zero UNSCOPED posts, with exactly one scoped direct-read attempt per row per account day - deduped by dnAlreadyReadToday on the repeat pull - carrying the pulled day, the row identity and the account todayKey on the wire, following the recovered day on resume and the future/empty-day boundary everywhere), the typed per-row allHistoryReceipt is the ONE legitimate home of not-requested, and no chart is opened on a verified-empty, unreadable, or future day; a causal control boots the pre-dayfacts month gate over the same fixture and gets the old world back whole (0 charts, 0 stored facts, complete-schedule-only), so those pins measure the engine and not the harness. The clause that stood UNMET under dayfacts-1.0.0 - the pulled-day encounter note - is now SHIPPED and PROVED rather than tolerated: both day-note lanes are un-fused (1p-feat_mls_schedimport_exact.js:5615 inline fold-in, :6172 tn/onlyDate tail catch-up, and the byte pins now fail if either is re-fused), and under dfc-1.1.0 the scoped BRIDGE read goes first: this fixture\'s legacy reader answers it with EVERY body and no scoped receipt, so the engine is measured refusing it closed (sameDayDirectReason scoped-read-unsupported-by-reader, todayNoteDirectBridge never claimed, the 2025-12-01 historical body in that refused answer NEVER persisted) and falling back to exactly ONE vp.runForPatient read SCOPED to the day being pulled, on exactly the rows whose charts day-facts opened, never twice and never unscoped - 3 on the readable day, 4 more scoped to the RECOVERED day on resume and none re-read on the day already proved, 2+2 across a past clinic day and today with nothing on a future day - and the receipts agree with the wire (todayNoteRead = rows, todayNoteFailures 0, chartOpens.dayNote = rows, todayNote true on every row). The revoked checkbox short-circuit that reported todayNoteNotRequested = rows on an OFF pull is pinned dead everywhere, surviving at exactly ONE door - blocked-unchosen - which is pinned positively so it cannot creep back as a default; the month result envelope reports visitNotesMode day-facts and the WHOLE envelope - minus only the typed athena-all-history-v1 receipt, which is pinned positively in its place - is scanned for the retired not-requested / visit-notes-off / full-notes-off vocabulary. A second causal control re-fuses those two switch bytes over the same harness and measures the old gap back whole at both the batch and month doors (0 onlyDate reads, todayNote null, chartOpens.dayNote 0) while pinning that the chart pass, the mode, the skip and the verdict are UNCHANGED - so the day-note counts measure those two lanes and not the fixture. An UNCHOSEN preference still fails closed at both doors (blocked-unchosen receipt with zero chart, note and navigation reads at the batch seam, a refused visit-notes-choice gate with no manifest and no navigation at the range door) while a SETTLED-off account runs day-facts and gets its pulled-day note, the revoked visit-notes-off no-op staying dead. The pre-existing range contract is unchanged and still measured: every day checkpoints durably with its OWN verdict (empty-day / history-partial / schedule-incomplete, no longer one generic code); a failing day is retried to a cap of 3 and then settles as needs-attention, listed on the receipt with its reason, so one bad day never blocks a later month and never spins forever; February failing does not stop March and never restarts January; two months dying the same systemic way DO stop the range and name that cause; an athenaOne sign-out is classified by the extension\'s bounded session probe into waiting-login without spending a retry (a probe-less unreadable grid still is not); Pause after day 9, a browser close, and a login recovery all resume without re-pulling one proved day; a repeat month pull adds no duplicate appointment or patient; and the queue is clamped to the day the importer itself will accept');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-rangejobs-harness-runtime did not finish')); process.exit(1); }, 600000);

@@ -38,11 +38,21 @@
  * FAILURE message before and is now the REQUIREMENT, and the suite's teeth
  * moved onto the three modes plus the honesty of the OFF wording.
  *
- * ONE DOCUMENTED ENGINE GAP is carried below (search TODO dayfacts-daynote):
- * the tn/onlyDate tail pass the contract requires in day-facts mode is still
- * fused off in the engine. It is reported, not papered over, and the
- * assertions around it are narrowed to what is honestly true today plus the
- * invariants that must hold in BOTH worlds.
+ * dfc-1.1.0 UPDATE (Codex-contracted, closes the old TODO dayfacts-daynote):
+ * the day-facts exact-day read now rides the AllVisits BRIDGE, scoped by
+ * hint.onlyDate = the pulled day (plus patientId + todayKey + identity) -
+ * EXACTLY ONE scoped bridge read per row per day (dnAlreadyReadToday dedupes).
+ * On success the row's own encounter body is saved through the additive
+ * scoped save (no reconcile, older visits untouched) and todayNote is true
+ * without the legacy ladder. On ANY failure - including an UNSCOPED receipt
+ * from a legacy reader, which must NEVER be credited as day proof - the row
+ * falls back to the legacy vp/tn ladder (pulledDayNoteLaneEnabled is now
+ * true), so the old "tail pass fused off" engine gap is closed. The OFF fuse
+ * that survives the move: OFF still never makes an UNSCOPED visit-body read
+ * and never persists a HISTORICAL body - the scope of the read moved, the
+ * no-unscoped-work protection did not. This suite's fixture answers the
+ * bridge with a legacy UNSCOPED receipt, so it pins the fail-closed refusal
+ * (scoped-read-unsupported-by-reader) plus the ladder covering every row.
  * ========================================================================== */
 const assert = require('assert');
 const fs = require('fs');
@@ -98,6 +108,19 @@ async function main() {
     'pullMonth still forces includeHistory=false when the checkbox is OFF');
   ok(!/visitNotesRequested === true && opts\.includeHistory !== false && !fullNotesOff/.test(src),
     'the day pull still gates includeHistory on the checkbox');
+
+  /* dfc-1.1.0: the day-facts exact-day read is a SCOPED AllVisits bridge read
+     (initiator schedule-batch-same-day, hint.onlyDate + todayKey), it refuses
+     fail-closed when the reader cannot prove scope, and the legacy inline
+     day-note lane is UN-fused as its fallback. */
+  ok(/initiator: "schedule-batch-same-day"/.test(src),
+    'the day-facts scoped same-day bridge read (schedule-batch-same-day) is missing');
+  ok(/onlyDate: sdDay, todayKey: acctTodayKey\(\)/.test(src),
+    'the scoped bridge read does not carry onlyDate + the account todayKey');
+  ok(/throw new Error\("scoped-read-unsupported-by-reader"\)/.test(src),
+    'an unscoped receipt from a legacy reader is no longer refused as day proof');
+  ok(/var pulledDayNoteLaneEnabled = true;/.test(src),
+    'the legacy inline day-note lane (the direct-read fallback) is fused off again');
 
   /* mls-connect: an onlyDate-scoped read is admitted when the preference is
      SETTLED (on or off); unscoped still needs ON; unset is skipped. */
@@ -166,16 +189,30 @@ async function main() {
   /* ======================================================================
      3. OFF (settled) = DAY-FACTS. Charts DO open. Bodies do NOT.
      ====================================================================== */
-  const off = makeMonthHarness({ today: TODAY });
+  const off = makeMonthHarness({ legacyAllVisits: true, today: TODAY });
   off.seedDay(DAY, ROWS);
   const offResult = await off.api.pull({ date: DAY, provider: off.provider,
     includeHistory: true, pullVisitBodies: false, onStatus: off.onStatus });
   const offReceipt = offResult.historyReceipt || {};
 
-  /* the flip: this exact count used to be pinned at 0 */
+  /* the flip: this exact count used to be pinned at 0 charts, then dayfacts
+     opened the charts, and dfc-1.1.0 moved the exact-day note onto the same
+     AllVisits bridge verb - SCOPED. The fuse that survives every move: OFF
+     never makes an UNSCOPED visit-body read. */
   eq(off.chartCalls.length, ROWS, 'OFF did not open one chart per exact scheduled row');
-  eq(off.posted.filter(m => m.type === 'mlsAppReadAllVisits').length, 0,
-    'OFF traversed historical visit bodies');
+  const offBridgeReads = off.posted.filter(m => m.type === 'mlsAppReadAllVisits');
+  eq(offBridgeReads.length, ROWS,
+    'OFF did not make exactly one scoped same-day bridge read per exact scheduled row');
+  eq(offBridgeReads.filter(m => !(m.hint && m.hint.onlyDate)).length, 0,
+    'OFF made an UNSCOPED all-visits bridge read (the historical walk ran)');
+  ok(offBridgeReads.every(m => m.hint && m.hint.onlyDate === DAY),
+    'an OFF scoped bridge read was not scoped to the pulled day');
+  ok(offBridgeReads.every(m => m.hint && m.hint.todayKey === TODAY),
+    'an OFF scoped bridge read did not carry the account todayKey');
+  ok(offBridgeReads.every(m => m.hint && String(m.hint.patientId || '') && String(m.hint.name || '')),
+    'an OFF scoped bridge read did not carry the row identity (patientId + name)');
+  eq(new Set(offBridgeReads.map(m => String(m.hint.patientId))).size, ROWS,
+    'OFF duplicated or dropped a scoped same-day read for some row (must be one per patient)');
   eq(offReceipt.visitNotesMode, 'day-facts', 'OFF did not run in day-facts mode');
   eq(offReceipt.chartFactsRequired, true, 'OFF did not declare the mandatory chart-facts floor');
   eq(offReceipt.allVisitBodiesRequested, false, 'OFF claimed all visit bodies were requested');
@@ -216,8 +253,21 @@ async function main() {
     'OFF lost the record that this pull opened and verified each chart');
   ok(off.patients.slice(0, ROWS).every(p => p && p.problems && p.athenaChartSnapshot),
     'OFF did not write chart facts into the store');
+  /* This fixture's legacy reader ANSWERS the scoped read ok:true with a
+     HISTORICAL body and an unscoped receipt - the engine must refuse it
+     fail-closed rather than credit or persist it. Zero visits stored is now
+     an ACTIVE rejection proof, not a no-read tautology. */
   ok(off.patients.slice(0, ROWS).every(p => (p.visits || []).length === 0),
-    'OFF wrote historical visit bodies into the store');
+    'OFF persisted a visit body offered by an unscoped (scope-unproven) reader');
+  ok(offPatients.every(p => p && p.sameDayDirectReason === 'scoped-read-unsupported-by-reader'),
+    'the engine credited an unscoped legacy answer as scoped day proof (or lost the refusal receipt)');
+  ok(!offPatients.some(p => p && p.todayNoteDirectBridge === true),
+    'a row claimed direct-bridge day-note provenance from a reader that never proved scope');
+  ok(!offPatients.some(p => p && p.sameDayReceipt),
+    'a same-day receipt was minted from an unscoped legacy answer');
+  ok(offPatients.every(p => p && p.allHistoryReceipt &&
+      p.allHistoryReceipt.requested === false && p.allHistoryReceipt.status === 'not-requested'),
+    'an OFF row did not declare the historical walk not-requested via the typed all-history receipt');
 
   /* the wording the contract forbids must not reach the doctor on a real run */
   const offSaid = off.statusLines.join(' ¶ ');
@@ -226,29 +276,24 @@ async function main() {
     'an OFF pull did not report its day-facts history as verified complete');
 
   /* ---------------------------------------------------------------------
-     TODO dayfacts-daynote - DOCUMENTED ENGINE GAP (reported, not forced).
-     The contract requires the tn/onlyDate tail pass to attempt exactly the
-     pulled-day encounter note for every day-facts row. The engine still
-     fuses that lane off, so the count below is 0 rather than ROWS:
-       1p-feat_mls_schedimport_exact.js:6188  var pulledDayNoteTailEnabled = false;
-       1p-feat_mls_schedimport_exact.js:6189  if (pulledDayNoteTailEnabled && pullVisitBodies !== true && ...)
-       1p-feat_mls_schedimport_exact.js:5614  var pulledDayNoteLaneEnabled = false;   (inline lane)
-       1p-feat_mls_schedimport_exact.js:5790  if (receipt.visitNotesRequested !== true) { ... todayNoteNotRequested = rows; return; }
-       1p-feat_mls_schedimport_exact.js:7126-7131 niGate refuses the deferred
-         backfill whenever the stored choice is "off", so the background lane
-         cannot cover the gap either.
-     When the lane ships, replace the tolerance below with:
-       eq(offOnlyDateReads, ROWS, 'day-facts did not attempt exactly one pulled-day note per row');
-     Everything asserted here is true in BOTH worlds, so nothing freezes the
-     defect in place: the count may be 0 (lane not shipped) or exactly one per
-     row (lane shipped), never a partial or duplicated fan-out, and day-facts
-     mode must never manufacture a day-note FAILURE or a retry either way.
+     The old TODO dayfacts-daynote engine gap is CLOSED by dfc-1.1.0: the
+     pulled-day note lane shipped as the scoped bridge read (asserted above),
+     and the legacy inline vp lane is un-fused as its fallback
+     (1p-feat_mls_schedimport_exact.js: var pulledDayNoteLaneEnabled = true).
+     In this fixture every direct read is refused (unscoped legacy reader),
+     so the ladder must cover EVERY row: exactly one scoped vp read per row,
+     never a partial or duplicated fan-out, every row's todayNote true, and
+     day-facts must never manufacture a day-note FAILURE or a retry.
      --------------------------------------------------------------------- */
   const offOnlyDateReads = off.noteCalls.filter(c => c && /^\d{4}-\d{2}-\d{2}$/.test(String(c.onlyDate || ''))).length;
-  ok(offOnlyDateReads === 0 || offOnlyDateReads === ROWS,
-    'day-facts fanned out a partial/duplicated pulled-day note pass (' + offOnlyDateReads + ' of ' + ROWS + ')');
-  ok(off.noteCalls.every(c => c && /^\d{4}-\d{2}-\d{2}$/.test(String(c.onlyDate || ''))),
-    'day-facts made an UNSCOPED visit-body read through the note reader');
+  eq(offOnlyDateReads, ROWS,
+    'day-facts did not attempt exactly one pulled-day note per row after the direct read was refused');
+  ok(off.noteCalls.every(c => c && c.onlyDate === DAY),
+    'a fallback note read was not scoped to exactly the pulled day');
+  eq(new Set(off.noteCalls.map(c => String(c.patientId))).size, ROWS,
+    'the fallback pulled-day note pass duplicated or dropped a row');
+  ok(offPatients.every(p => p && p.todayNote === true),
+    'a day-facts row did not end with its pulled-day note read (todayNote true)');
   eq(Number(offReceipt.todayNoteFailures || 0), 0, 'OFF invented unread pulled-day notes');
   ok(!offPatients.some(p => p && p.todayNote === false),
     'OFF marked a pulled-day note as failed');
@@ -287,11 +332,12 @@ async function main() {
 
   await flush(3);
   console.log('PASS 1p-daynote-column-and-not-yet: ' + checks +
-    ' checks - dayfacts-1.0.0: unchosen blocks every read (visit-notes-unchosen/blocked-unchosen, 0 charts); ' +
-    'OFF runs day-facts (' + ROWS + ' identity-verified chart opens + facts saves, 0 historical bodies, honest ' +
-    'insurance placeholders, no "no charts were opened" wording); ON adds one unscoped all-visits read per patient. ' +
-    'Pulled-day note attempts measured in day-facts mode: ' + offOnlyDateReads + ' of ' + ROWS +
-    ' (see TODO dayfacts-daynote - tail pass still fused off at 1p-feat_mls_schedimport_exact.js:6188).');
+    ' checks - dfc-1.1.0: unchosen blocks every read (visit-notes-unchosen/blocked-unchosen, 0 charts); ' +
+    'OFF runs day-facts (' + ROWS + ' identity-verified chart opens + facts saves, exactly one SCOPED same-day ' +
+    'bridge read per row, 0 unscoped reads, 0 historical bodies persisted, honest insurance placeholders, ' +
+    'no "no charts were opened" wording); an unscoped legacy answer is refused fail-closed ' +
+    '(scoped-read-unsupported-by-reader) and the un-fused vp ladder covers every row (' + offOnlyDateReads +
+    ' of ' + ROWS + ' pulled-day notes read, todayNote true on all); ON adds one unscoped all-visits read per patient.');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });

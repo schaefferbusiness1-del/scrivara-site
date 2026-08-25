@@ -1,6 +1,6 @@
 'use strict';
 /* =============================================================================
- * dnd-1.0.0  +  fd-1.0.0  +  dayfacts-1.0.0  -  the pulled day's own visit note
+ * dnd-1.0.0 + fd-1.0.0 + dayfacts-1.0.0 + dfc-1.1.0 - the pulled day's own visit note
  *
  * ===== WHY THE OLD PINS MOVED (dayfacts-1.0.0, owner 2026-08-25) =============
  * This suite used to open with testOffSkipsTheNoteBodyLane: it pinned that
@@ -47,22 +47,41 @@
  *     2 of 14" for >75 s inside the day-note leg, 60-80 s PER ROW, for a day on
  *     which no encounter can exist. That is both the slowness and the "0 ok".
  *
+ * ===== dfc-1.1.0 (2026-08-25, Codex-contracted transport change) ============
+ * The contract's third day-facts clause - "attempt exactly the pulled-day
+ * encounter note per row" - is now MET by a DIRECT read. Under settled OFF the
+ * engine posts ONE SCOPED AllVisits bridge read per row (mlsAppReadAllVisits
+ * with hint.onlyDate = the pulled day, plus patientId/todayKey/identity -
+ * 1p-feat_mls_schedimport_exact.js:5604-5639), refuses unscoped receipts from
+ * legacy readers ("scoped-read-unsupported-by-reader"), and SAVES the pulled
+ * day's OWN encounter body through the additive scoped save (reconcile OFF;
+ * older visits untouched - saveVerifiedVisits dscope branch). On success the
+ * row carries todayNote true + todayNoteDirectBridge + a saved sameDayReceipt;
+ * on ANY direct-read failure the legacy vp/tn/defer/idle ladder still runs
+ * exactly as before. The old TODO(dayfacts-daynote) gap (both day-note lanes
+ * hard-disabled, tnAggregate short-circuiting on the checkbox) is CLOSED:
+ * dayfacts-1.0.1 runs the real per-row tally in day-facts mode too.
+ *
  * ===== OPEN ENGINE GAP (reported, NOT forced green) =========================
- * The contract's third day-facts clause - "the tn/onlyDate tail pass attempts
- * exactly the pulled-day encounter note per row" - is NOT met by the engine
- * bytes under test. Both day-note lanes are still hard-disabled and the
- * aggregate still short-circuits on the checkbox:
- *   1p-feat_mls_schedimport_exact.js:5614  var pulledDayNoteLaneEnabled = false;
- *   1p-feat_mls_schedimport_exact.js:6188  var pulledDayNoteTailEnabled = false;
- *   1p-feat_mls_schedimport_exact.js:5790  tnAggregate(): if (receipt.visitNotesRequested !== true) -> todayNoteNotRequested = rows, everything else 0
- * MEASURED here: a settled-OFF day-facts batch over rows whose charts all
- * verify performs rows chart opens and ZERO scoped note reads, and reports
- * todayNoteNotRequested === rows. See the TODO(dayfacts-daynote) block in
- * testDayFactsOpensChartsAndSkipsHistoricalBodies: the day-note assertions
- * there are NARROWED to what is honest today (the receipt may not claim more
- * pulled-day reads than actually happened, and no read may be unscoped or
- * scoped to a day other than the pulled one). They are deliberately NOT
- * pinned at zero - pinning zero would freeze the gap.
+ * The same contract says the legacy ladder NEVER fires for a row whose direct
+ * read SUCCEEDED (at most one scoped read per row per day). The engine bytes
+ * under test still run the inline fold-in lane after a successful direct read:
+ *   1p-feat_mls_schedimport_exact.js:5930  the inline lane's condition has no
+ *     `one.todayNote == null` guard (the tail pass has one at :6479/:6517);
+ *   1p-feat_mls_schedimport_exact.js:5633  the direct-read success stamps only
+ *     the receipt row (todayNote/todayNoteReadAt), never the day ledger;
+ *   1p-feat_mls_schedimport_exact.js:4690  dnAlreadyReadToday reads that
+ *     ledger, which is persisted at finalization - so it cannot dedupe
+ *     INTRA-batch and the "already-read" rung never catches the row.
+ * MEASURED on this suite's fixture: every settled-OFF row gets its one scoped
+ * bridge read AND a second scoped vp read (one.todayNoteAttempts === 1 on
+ * every row) - 2*rows scoped reads where the contract allows one. See the
+ * TODO(dfc-1.1.0-double-read) block in
+ * testDayFactsOpensChartsAndSkipsHistoricalBodies: the direct lane is pinned
+ * EXACTLY (one bridge-transport read per row, todayNote true, the saved
+ * same-day body) and every EXTRA read is pinned to the pulled-day scope, but
+ * total noteCalls is deliberately NOT pinned at 2*rows - that would freeze
+ * the gap.
  *
  * Everything runs the REAL importer against a fake extension. Synthetic
  * names/DOB/MRN only; no network, no PHI.
@@ -139,6 +158,16 @@ function testDayFactsContractIsDeclaredInTheSource() {
     'a user-facing message still claims Full Notes OFF opens no charts');
   ok(/Full visit notes is off - each day saved chart facts and attempted only its own pulled-day note/.test(SRC),
     'the month-complete OFF message does not tell the truth about chart facts + own-day note');
+  /* dfc-1.1.0: the mandatory exact-day read rides the AllVisits bridge, scoped
+     and deduped, and fails CLOSED on a reader that predates onlyDate scoping */
+  ok(/dfc-1\.1\.0: the MANDATORY exact-day encounter read now rides the/.test(SRC),
+    'the dfc-1.1.0 direct scoped-read block is missing from the day-facts leg');
+  ok(/patientId: String\(target\.patientId\), onlyDate: sdDay, todayKey: acctTodayKey\(\)/.test(SRC),
+    'the direct bridge read no longer carries onlyDate + todayKey + patient identity in its hint');
+  ok(/!dnAlreadyReadToday\(sdDay, target\.patientId\)/.test(SRC),
+    'the direct scoped read lost its dnAlreadyReadToday dedupe - a re-run would re-read every row');
+  ok(/scoped-read-unsupported-by-reader/.test(SRC),
+    'the direct read no longer fails closed on an unscoped receipt from a legacy reader');
   /* the reader half of the contract lives in mls-connect */
   ok(/var dayScoped = !!\(runOpts && \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(String\(runOpts\.onlyDate \|\| ''\)\)\);/.test(CONNECT),
     '__mlsVisitSavePref.runForPatient no longer recognises a well-formed onlyDate scope');
@@ -195,34 +224,52 @@ async function testDayFactsOpensChartsAndSkipsHistoricalBodies() {
   /* --- historical traversal is the ONLY thing skipped --------------------- */
   ok(receipt.patients.every(p => p.visitsSkipped === true),
     'day-facts traversed historical visit bodies (one.visitsSkipped must be true on every row)');
+  ok(receipt.patients.every(p => p.allHistoryReceipt && p.allHistoryReceipt.requested === false && p.allHistoryReceipt.status === 'not-requested'),
+    'a day-facts row lost its typed not-requested all-history receipt - an implied absence is not a receipt');
   eq(h.noteCalls.filter(c => !c.onlyDate).length, 0,
     'day-facts performed an UNSCOPED all-visits read - that is the full-history lane, not the mandatory floor');
-  ok(h.patients.every(p => (p.visits || []).length === 0),
-    'day-facts persisted a historical visit body');
-
-  /* ===== TODO(dayfacts-daynote) - OPEN ENGINE GAP ========================= *
-   * Contract: "the tn/onlyDate tail pass attempts exactly the pulled-day
-   * encounter note per row". The engine bytes under test do NOT do this - both
-   * day-note lanes are hard-disabled and tnAggregate short-circuits on the
-   * checkbox:
-   *   1p-feat_mls_schedimport_exact.js:5614 var pulledDayNoteLaneEnabled = false;
-   *   1p-feat_mls_schedimport_exact.js:6188 var pulledDayNoteTailEnabled = false;
-   *   1p-feat_mls_schedimport_exact.js:5790 tnAggregate(): if (receipt.visitNotesRequested !== true) { ... todayNoteNotRequested = rows; return; }
-   * Measured on this exact fixture: 0 scoped note reads, todayNoteNotRequested
-   * === ROWS. The assertions below are therefore NARROWED to what is honest
-   * today: they never pin the attempt count at zero (that would freeze the
-   * gap), and they still fail loudly if the day-note lane comes back WRONG -
-   * unscoped, aimed at another day, or over-reported on the receipt.
-   * When the lane is enabled, tighten to:
-   *   eq(h.noteCalls.filter(c => c.onlyDate === DAY).length, ROWS, ...)
-   *   eq(Number(receipt.todayNoteRead || 0), ROWS, ...)
-   * ======================================================================== */
-  const scopedDayReads = h.noteCalls.filter(c => c.onlyDate === DAY);
-  ok(h.noteCalls.every(c => !c.onlyDate || c.onlyDate === DAY),
+  ok(h.noteCalls.every(c => c.onlyDate === DAY),
     'a day-facts note read was scoped to a day other than the pulled day');
-  ok(Number(receipt.todayNoteRead || 0) <= scopedDayReads.length,
-    'the day-facts receipt claims more pulled-day notes read than scoped reads actually happened');
-  eq(receipt.todayNoteFailures, 0, 'an unattempted/intentionally-skipped pulled-day note was counted as a failure');
+
+  /* --- dfc-1.1.0: the pulled day's own note comes from ONE direct scoped
+     bridge read per row, and its body is SAVED as the row's only visit ------ */
+  const bridgeReads = h.noteCalls.filter(c => c.transport === 'bridge');
+  eq(bridgeReads.length, ROWS, 'day-facts did not make exactly one scoped AllVisits bridge read per row');
+  ok(bridgeReads.every(c => c.onlyDate === DAY), 'a direct bridge read lost its onlyDate scope');
+  eq(new Set(bridgeReads.map(c => String(c.patientId))).size, ROWS,
+    'a row was bridge-read twice while another was never read - one scoped bridge read per row');
+  ok(receipt.patients.every(p => p.todayNote === true && p.todayNoteDirectBridge === true),
+    'a day-facts row did not get its pulled-day note from the direct bridge read (todayNote true + todayNoteDirectBridge)');
+  ok(receipt.patients.every(p => p.sameDayReceipt && p.sameDayReceipt.kind === 'athena-same-day-note-v1'
+    && p.sameDayReceipt.status === 'saved' && p.sameDayReceipt.scopeDate === DAY && p.sameDayReceipt.noSubstitution === true),
+    'a day-facts row is missing the saved, no-substitution same-day receipt for the pulled day');
+  ok(h.patients.every(p => (p.visits || []).length === 1),
+    'day-facts did not save exactly the pulled day\'s own encounter body (one visit per row, no historical bodies)');
+  ok(h.patients.every(p => (p.visits || []).every(v => String(v.date) === DAY && v.bodyComplete === true && v.identityVerified === true)),
+    'day-facts persisted a visit body dated off the pulled day, or an unverified/incomplete one');
+  eq(Number(receipt.todayNoteRead || 0), ROWS,
+    'the day-facts receipt does not count every pulled-day note the direct lane read');
+  eq(receipt.todayNoteFailures, 0, 'a successful direct pulled-day read was counted as a failure');
+  eq(receipt.todayNoteNotRequested, 0,
+    'the day-facts receipt still reports pulled-day notes as not-requested - the retired checkbox short-circuit is back');
+
+  /* ===== TODO(dfc-1.1.0-double-read) - OPEN ENGINE GAP ==================== *
+   * Contract: on direct-read SUCCESS the legacy vp/tn/defer/idle ladder never
+   * fires for that row - at most ONE scoped read per row per day. The engine
+   * bytes under test still run the inline fold-in lane after a successful
+   * direct read: 1p-feat_mls_schedimport_exact.js:5930 has no
+   * `one.todayNote == null` guard (the tail pass has one at :6479/:6517), and
+   * dnAlreadyReadToday (:4690) cannot dedupe intra-batch because the ledger it
+   * reads is only persisted at finalization while the direct read (:5633)
+   * stamps just the receipt row. MEASURED on this fixture: 2 scoped reads per
+   * row (one bridge + one vp), one.todayNoteAttempts === 1 on every row, and
+   * mls-connect's real runForPatient (dayScoped + settled) would drive Athena
+   * again for each. The pins above bound the harm - every extra read is still
+   * scoped to the pulled day, never unscoped, and the receipt never
+   * over-counts - and total noteCalls is deliberately NOT pinned at 2*ROWS
+   * (that would freeze the gap). When the guard lands, tighten to:
+   *   eq(h.noteCalls.length, ROWS, ...)
+   * ======================================================================== */
 }
 
 /* --------------- 2. day-facts is NOT full notes (the differential control) */
@@ -378,7 +425,7 @@ async function main() {
   testFutureDayIsStaticallyRefused();
   testOneRowCannotStallTheBatch();
   await flush(5);
-  console.log('PASS 1p-day-note-day-and-future: ' + checks + ' checks - dayfacts-1.0.0: day-facts opens EVERY scheduled chart and saves its facts while skipping historical bodies, ON adds the full traversal, an unchosen preference blocks every read, ON retry rows retain the frozen pull day, and the future-day + per-row deadline guards still stand. OPEN GAP: the pulled-day note attempt is still disabled in the engine (see TODO(dayfacts-daynote)).');
+  console.log('PASS 1p-day-note-day-and-future: ' + checks + ' checks - dayfacts-1.0.0 + dfc-1.1.0: day-facts opens EVERY scheduled chart, saves its facts, makes exactly one scoped AllVisits bridge read per row and saves the pulled day\'s OWN encounter body (never a historical one), ON adds the full unscoped traversal, an unchosen preference blocks every read, ON retry rows retain the frozen pull day, and the future-day + per-row deadline guards still stand. OPEN GAP: the legacy inline vp lane still re-reads the same scoped day AFTER a successful direct read (see TODO(dfc-1.1.0-double-read)).');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-day-note-day-and-future did not finish')); process.exit(1); }, 60000);

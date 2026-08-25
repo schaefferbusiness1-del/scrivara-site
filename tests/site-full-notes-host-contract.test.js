@@ -230,8 +230,11 @@ function batchDoorContracts() {
   ok(IMPORTER.includes('var pulledDayNoteLaneEnabled = true;') &&
     !IMPORTER.includes('var pulledDayNoteLaneEnabled = false;'),
     'the inline pulled-day-note fold-in has been hard-disabled again');
-  ok(IMPORTER.includes('if (pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {'),
-    'the inline fold-in no longer runs exactly the day-facts visits-skipped rows whose chart just verified');
+  /* dfc-1.1.0: the fold-in additionally yields to a row whose pulled-day
+     note already landed through the direct scoped bridge read (todayNote
+     set) - one scoped read per row per day. */
+  ok(IMPORTER.includes('if (pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse && one.todayNote == null) {'),
+    'the inline fold-in no longer runs exactly the day-facts visits-skipped rows whose chart just verified (minus direct-bridge-served rows)');
   ok(IMPORTER.includes('var pulledDayNoteTailEnabled = true;') &&
     !IMPORTER.includes('var pulledDayNoteTailEnabled = false;'),
     'the tn/onlyDate pulled-day-note tail pass has been hard-disabled again');
@@ -501,9 +504,17 @@ async function dayFactsOffDayPull() {
   eq(hr.insuranceComplete, false, 'day-facts reported insurance as complete with no reader');
   eq(hr.benefitsComplete, false, 'day-facts reported benefits as complete with no reader');
 
-  /* Historical bodies are the ONLY thing OFF drops. */
-  eq(explicitOff.posted.filter(m => m.type === 'mlsAppReadAllVisits').length, 0,
+  /* Historical bodies are the ONLY thing OFF drops. dfc-1.1.0: the pulled
+     day's own note now rides the SAME AllVisits bridge verb, SCOPED by
+     onlyDate + carrying the account-local todayKey - the retired fuse
+     ("no AllVisits post at all") becomes its equivalent under the new lane:
+     no UNSCOPED post, and exactly one scoped post per row. */
+  const offAllVisits = explicitOff.posted.filter(m => m.type === 'mlsAppReadAllVisits');
+  eq(offAllVisits.filter(m => String(m.hint && m.hint.onlyDate || '') !== '2026-08-23').length, 0,
     'day-facts OFF emitted an unscoped historical AllVisits request');
+  eq(offAllVisits.length, 2, 'day-facts OFF owes exactly one scoped AllVisits read per row');
+  ok(offAllVisits.every(m => /^\d{4}-\d{2}-\d{2}$/.test(String(m.hint && m.hint.todayKey || ''))),
+    'a scoped OFF read went out without its account-local calendar authority');
   const rows = hr.patients || [];
   eq(rows.length, 2, 'the day-facts receipt lost a patient row');
   ok(rows.every(p => p && p.visitsSkipped === true),
@@ -524,16 +535,18 @@ async function dayFactsOffDayPull() {
     'the two pulled-day note attempts were not one per distinct patient');
   eq(Number(hr.todayNoteRead || 0), 2,
     'the day-facts receipt did not count the pulled-day notes the scoped reader read');
-  eq(Number(hr.chartOpensDayNote || 0), 2,
-    'the day-facts receipt did not charge one athena chart open per pulled-day note read');
+  /* dfc-1.1.0: the direct bridge read rides the already-open chart - zero day-note opens. */
+  eq(Number(hr.chartOpensDayNote || 0), 0,
+    'the direct-bridge day-note leg opened charts it does not need');
   eq(Number(hr.todayNoteNotRequested || 0), 0,
     'a settled day-facts row was reported as a pulled-day note nobody requested');
   eq(Number(hr.todayNoteFailures || 0), 0,
     'day-facts invented a pulled-day note failure on a clean synthetic day');
   ok(rows.every(p => p && p.todayNote === true),
     'a day-facts row did not record its pulled-day note as read');
-  ok(rows.every(p => p && Number(p.todayNoteAttempts || 0) === 1),
-    'a day-facts row attempted its pulled-day note more or fewer than exactly once');
+  /* dfc-1.1.0: the note lands on the direct bridge transport - zero legacy-ladder attempts. */
+  ok(rows.every(p => p && p.todayNoteDirectBridge === true && Number(p.todayNoteAttempts || 0) === 0),
+    'a day-facts row was attempted through the legacy ladder despite a served direct read');
   /* the honesty invariant that survives the lane landing: every refused note is
      either queued for recovery or finally unread - never both, never neither. */
   eq(Number(hr.todayNoteFailures || 0),
@@ -586,7 +599,9 @@ async function dayFactsOffMonth() {
     'the admitted OFF month lost its frozen Full Notes choice at the top level');
   eq(monthResult.visitNotesMode, 'day-facts',
     'the admitted OFF month does not report day-facts mode at the top level');
-  eq(monthOff.posted.filter(m => m.type === 'mlsAppReadAllVisits').length, 0,
+  /* dfc-1.1.0: scoped per-row day-note reads are the floor; UNSCOPED is the
+     ON walk and stays forbidden here. */
+  eq(monthOff.posted.filter(m => m.type === 'mlsAppReadAllVisits' && !/^\d{4}-\d{2}-\d{2}$/.test(String(m.hint && m.hint.onlyDate || ''))).length, 0,
     'the admitted OFF month switched into an unscoped ON body walk');
   eq(monthOff.chartCalls.length, 2,
     'the admitted OFF month did not open a chart for every scheduled row of every day');
@@ -742,7 +757,7 @@ async function unchosenIsFailClosed() {
     'the settled-off batch seam requested the historical body walk');
   eq(settledOff.chartCalls.length, 2,
     'a SETTLED off preference did not open a chart for every row at the batch seam');
-  eq(settledOff.posted.filter(m => m.type === 'mlsAppReadAllVisits').length, 0,
+  eq(settledOff.posted.filter(m => m.type === 'mlsAppReadAllVisits' && !/^\d{4}-\d{2}-\d{2}$/.test(String(m.hint && m.hint.onlyDate || ''))).length, 0,
     'the settled-off batch seam ran the unscoped historical walk');
   /* the seam runs the SAME mandatory pulled-day note lane the public day pull
      does - a settled-OFF preference is admitted, never treated as unchosen. */
@@ -771,7 +786,7 @@ async function unchosenIsFailClosed() {
  * ======================================================================== */
 async function dayFactsDayNoteRecovery() {
   const day = '2026-08-23';
-  const h = makeMonthHarness({ today: '2026-08-24' });
+  const h = makeMonthHarness({ legacyAllVisits: true, today: '2026-08-24' }) /* dfc-1.1.0: legacy reader so the vp refusal rung is what this case measures */;
   h.seedDay(day, 2);
   h.rt.__mlsVisitNotesPref = {
     read: () => ({ state: 'off', on: false, settled: true }),

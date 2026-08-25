@@ -48,6 +48,33 @@
  *     unscoped historical walk) and reports todayNoteRead 0;
  *   - the per-row cost lands on costBreakdown.todayNoteMs in day-facts and on
  *     costBreakdown.visitsMs in full - measured, from one fixture, both ways.
+ *
+ * dfc-1.1.0 (Codex-contracted transport change, 2026-08-25): the day-facts
+ * exact-day read now rides the SAME AllVisits bridge verb as the full walk,
+ * scoped by hint.onlyDate = the pulled day (plus patientId/todayKey/identity),
+ * and SAVES the pulled day's own encounter body through the additive scoped
+ * save (dscope: reconcile deliberately not run; older visits untouched). The
+ * harness records that bridge call in noteCalls with its true onlyDate and
+ * transport:'bridge'. Two worlds follow for the pins below:
+ *   - direct-read SUCCESS (fixtures with the identityEcho seam): the row's
+ *     todayNote is true off the bridge (todayNoteDirectBridge), it carries a
+ *     sameDayReceipt, and the legacy vp/tn/defer/idle ladder must never fire
+ *     for that row - AT MOST ONE scoped read per row per day;
+ *   - direct-read FAILURE (seam-free fixtures: saveVerifiedVisits has no
+ *     window._athenaHistoryProofMatches, so every attempt refuses at
+ *     visits-identity-proof-failed): the ladder runs exactly as before, so
+ *     noteCalls carries ONE extra recorded entry - the failed bridge attempt -
+ *     ahead of the row's single effective vp read. Its wall time books on
+ *     costBreakdown.visitsMs (the transport lane), so "visitsMs 0 in OFF" is
+ *     retired; the no-historical-walk protection now lives in the UNSCOPED
+ *     call count, which stays 0 in day-facts.
+ * GAP FOUND AND CLOSED DURING THIS MIGRATION (2026-08-25): the first dfc-1.1.0
+ * engine cut let the inline fold-in fire a SECOND scoped vp read for a row
+ * whose direct bridge read had already succeeded. The guard now lives on the
+ * inline lane's entry (`!inlineDayNoteFuse && one.todayNote == null`);
+ * testDayFactsFloorIsRealWork pins the contract count (one scoped read per
+ * row, zero ladder reads on direct success) and the static block pins the
+ * guard's own bytes so a silent revert cannot pass.
  * ========================================================================== */
 
 const assert = require('assert');
@@ -110,6 +137,27 @@ const MODES = [{ on: true, mode: 'full' }, { on: false, mode: 'day-facts' }];
     'the tn/onlyDate TAIL pass is fused off again (pulledDayNoteTailEnabled)');
   ok(!/pulledDayNote(?:Lane|Tail)Enabled\s*=\s*false/.test(SI),
     'a pulled-day note leg carries a hard-disable assignment');
+  /* dfc-1.1.0: the direct scoped bridge read and its fail-closed guards, by
+     their exact bytes. The scoped hint must carry the pulled day AND the
+     account-local todayKey; a reader that predates onlyDate scoping (answers
+     with an unscoped receipt) is refused rather than mis-credited; the
+     transport that read the note is stamped PHI-free on the row; and the
+     scoped saver keeps its two dscope fuses - a body dated off the pulled day
+     refuses before any write, and slice reconciliation never runs. */
+  ok(/onlyDate: sdDay, todayKey: acctTodayKey\(\)/.test(SI),
+    'the direct read\'s bridge hint no longer carries onlyDate + account todayKey');
+  ok(/\+ "-sdvisits"/.test(SI),
+    'the direct read lost its own -sdvisits requestId (it must be tellable from the full walk)');
+  ok(/scoped-read-unsupported-by-reader/.test(SI),
+    'an UNSCOPED receipt from a legacy reader is no longer refused - that answer is every body, not day proof');
+  ok(/todayNoteDirectBridge = true/.test(SI),
+    'the bridge-transport provenance stamp is gone from the direct read');
+  ok(/!inlineDayNoteFuse && one\.todayNote == null/.test(SI),
+    'the inline fold-in lost its direct-read-success guard - a row whose bridge read landed would be read TWICE');
+  ok(/scoped-visit-date-mismatch/.test(SI),
+    'the scoped saver no longer refuses a visit dated off the pulled day');
+  ok(/reconciliation deliberately NOT run on a slice/.test(SI),
+    'the additive scoped save lost its no-reconcile guarantee');
   /* the stop path speaks one vocabulary in BOTH modes */
   ok(/todayNoteReason = "stopped-by-user"/.test(SI),
     'a stopped row is no longer stamped stopped-by-user');
@@ -193,10 +241,35 @@ async function testVerifiedRowsSkip() {
       eq(receipt.todayNoteRead, 0, tag + 'full mode reported separate pulled-day reads it never made');
     } else {
       eq(unscoped.length, 0, tag + 'day-facts mode performed an UNSCOPED visit walk - that is the ON lane');
-      eq(scoped.length, 10, tag + 'day-facts mode attempted ' + scoped.length +
-        ' pulled-day notes; every row owes exactly one, skipped chart or not');
-      eq(new Set(scoped.map(c => String(c.patientId))).size, 10,
+      /* dfc-1.1.0 failure path (this harness world installs no
+         window._athenaHistoryProofMatches, so every direct bridge attempt
+         refuses at visits-identity-proof-failed): each OPENED chart posts
+         exactly ONE recorded scoped bridge attempt, then the row's single
+         effective read comes from the legacy vp ladder. Chart-SKIPPED rows
+         never open a chart, so they post no bridge attempt at all - their one
+         read is the tail pass's. */
+      const bridged = scoped.filter(c => c.transport === 'bridge');
+      const ladder = scoped.filter(c => !c.transport);
+      eq(bridged.length, 4, tag + 'expected one direct bridge attempt per OPENED chart (4), measured ' + bridged.length);
+      eq(new Set(bridged.map(c => String(c.patientId))).size, 4,
+        tag + 'a row posted two direct bridge attempts in one batch - the direct read is bounded to ONE per row');
+      ok(bridged.every(c => Number(String(c.patientId).slice(-2)) > 6),
+        tag + 'a chart-SKIPPED row posted a direct bridge read with no open chart of its own');
+      eq(ladder.length, 10, tag + 'day-facts mode made ' + ladder.length +
+        ' effective pulled-day reads; every row owes exactly one, skipped chart or not');
+      eq(new Set(ladder.map(c => String(c.patientId))).size, 10,
         tag + 'a row never had its pulled-day note attempted');
+      ok(bridged.every(b => {
+        const l = ladder.find(c => String(c.patientId) === String(b.patientId));
+        return !!l && b.seq < l.seq;
+      }), tag + 'a failed bridge attempt did not precede its own row\'s ladder read');
+      /* the direct failure is stamped honestly, and never claims the bridge
+         transport it did not complete */
+      ok(receipt.patients.filter(p => !p.chartSkippedVerifiedToday)
+        .every(p => p.sameDayDirectReason === 'visits-identity-proof-failed' && p.todayNoteDirectBridge !== true),
+        tag + 'an opened row\'s failed direct read lost its honest sameDayDirectReason: ' +
+          JSON.stringify(receipt.patients.filter(p => !p.chartSkippedVerifiedToday)
+            .map(p => [p.patientId, p.sameDayDirectReason, p.todayNoteDirectBridge])));
       eq(receipt.todayNoteRead, 10, tag + 'the receipt under-reports the pulled-day notes it read');
       eq(receipt.todayNoteNotRequested, 0,
         tag + 'a day-facts row was stamped todayNoteNotRequested - the retired checkbox short-circuit is back');
@@ -224,9 +297,19 @@ async function testVerifiedRowsSkip() {
     ok(h.chartCalls.length < h2.chartCalls.length,
       tag + 'the skip saved no Athena reads (' + h.chartCalls.length + ' vs ' + h2.chartCalls.length + ')');
     /* ...and the control proves the saving is CHART-ONLY: with the lever off,
-       day-facts still performs exactly the same ten pulled-day reads. */
-    if (!M.on) eq(h2.noteCalls.filter(c => String(c.onlyDate || '') === DAY).length, 10,
-      tag + 'the A/B control changed the pulled-day lane; the skip must save CHART opens only');
+       day-facts still performs exactly the same ten effective pulled-day
+       reads - plus, with all ten charts now open, ten recorded direct bridge
+       attempts (dfc-1.1.0), one per opened chart, each failing this seam-free
+       world's identity proof before its row's ladder read. */
+    if (!M.on) {
+      const sc2 = h2.noteCalls.filter(c => String(c.onlyDate || '') === DAY);
+      eq(sc2.filter(c => !c.transport).length, 10,
+        tag + 'the A/B control changed the pulled-day ladder; the skip must save CHART opens only');
+      eq(sc2.filter(c => c.transport === 'bridge').length, 10,
+        tag + 'the A/B control did not post one direct bridge attempt per opened chart');
+      eq(new Set(sc2.filter(c => c.transport === 'bridge').map(c => String(c.patientId))).size, 10,
+        tag + 'a control row posted two direct bridge attempts in one batch');
+    }
   }
 }
 
@@ -357,6 +440,13 @@ async function testDayFactsFloorIsRealWork() {
   };
 
   const df = makeHarness(Object.assign({ day: DAY, today: DAY, rows: 4 }, chartFacts));
+  /* dfc-1.1.0: the scoped save is ADDITIVE - an older verified visit already
+     on the record must survive the pulled-day save byte-relevant-identical
+     (no reconcile ever runs on a slice). Seeded on one patient so the pin
+     below can tell "untouched" from "vacuously absent". */
+  const OLD_VISIT = { date: '2026-05-01', type: 'Office visit',
+    raw: 'Synthetic pre-existing older visit body.', fullDetail: true, sourceVisitKey: 'row:preexisting-old-1' };
+  df.patients[0].visits = [Object.assign({}, OLD_VISIT)];
   const r = await df.api._runHistoryBatch(df.rows, [], df.onStatus);
 
   /* the mode words the contract names, on the receipt */
@@ -406,9 +496,45 @@ async function testDayFactsFloorIsRealWork() {
      measured attempt count was 0 and every row read todayNoteNotRequested).
      The lane ships, so these are counted pins now - tolerating whatever the
      mode happens to read would let a re-fusing pass as green.
+
+     dfc-1.1.0: with this fixture's identity seam installed the direct bridge
+     read SUCCEEDS, so the contract count is exactly one scoped read per row -
+     all four on transport 'bridge', ZERO legacy vp ladder reads. The first
+     dfc-1.1.0 cut FAILED this pin (the inline fold-in had no guard on the
+     direct read's own success and re-read every row through vp); the guard
+     (`one.todayNote == null` on the fold-in entry) closed it the same day,
+     and both the counts here and the guard's bytes in the static block keep
+     it closed.
      --------------------------------------------------------------------- */
+  /* the pulled day's own body was SAVED as a visit - additively */
+  ok(df.patients.every(p => (p.visits || []).filter(v => String(v.date || '').slice(0, 10) === DAY).length === 1),
+    'a day-facts row did not persist exactly one pulled-day visit: ' +
+      JSON.stringify(df.patients.map(p => [p.id, (p.visits || []).map(v => v.date)])));
+  ok(df.patients.every(p => (p.visits || []).every(v => String(v.date || '').slice(0, 10) === DAY ||
+      String(v.sourceVisitKey || '') === OLD_VISIT.sourceVisitKey)),
+    'day-facts mode persisted a HISTORICAL body it had no scoped answer for');
+  /* ...and the pre-existing older visit survived the slice save untouched */
+  ok((() => {
+    const kept = (df.patients[0].visits || []).find(v => String(v.sourceVisitKey || '') === OLD_VISIT.sourceVisitKey);
+    return !!kept && kept.date === OLD_VISIT.date && kept.raw === OLD_VISIT.raw && kept.fullDetail === true;
+  })(), 'the additive scoped save disturbed an older verified visit: ' + JSON.stringify(df.patients[0].visits));
+  /* per-row receipts the DAY contract names */
+  ok(r.patients.every(p => p.sameDayReceipt && p.sameDayReceipt.kind === 'athena-same-day-note-v1' &&
+      p.sameDayReceipt.status === 'saved' && p.sameDayReceipt.scopeDate === DAY && p.sameDayReceipt.noSubstitution === true),
+    'a day-facts row is missing its saved sameDayReceipt for the pulled day: ' +
+      JSON.stringify(r.patients.map(p => p.sameDayReceipt)));
+  ok(r.patients.every(p => p.allHistoryReceipt && p.allHistoryReceipt.requested === false &&
+      p.allHistoryReceipt.status === 'not-requested'),
+    'a day-facts row does not declare the historical walk honestly not-requested');
+  ok(r.patients.every(p => p.todayNoteDirectBridge === true),
+    'a day-facts row lost its bridge-transport provenance stamp: ' +
+      JSON.stringify(r.patients.map(p => [p.patientId, p.todayNoteDirectBridge])));
   eq(df.noteCalls.length, 4, 'day-facts mode attempted ' + df.noteCalls.length +
     ' pulled-day notes; the contract requires exactly one per exact scheduled row');
+  eq(df.noteCalls.filter(c => c.transport === 'bridge').length, 4,
+    'a day-facts scoped read used a transport other than the AllVisits bridge');
+  eq(df.noteCalls.filter(c => !c.transport).length, 0,
+    'the legacy vp ladder fired for a row whose direct bridge read succeeded');
   eq(new Set(df.noteCalls.map(c => String(c.patientId))).size, 4,
     'a day-facts row never had its pulled-day note attempted');
   ok(df.noteCalls.every(c => String(c.onlyDate || '') === DAY),
@@ -457,6 +583,35 @@ async function testDayFactsFloorIsRealWork() {
   eq(rf.todayNoteRead, 0, 'the ON control reported separate pulled-day reads it never made');
   eq(rf.todayNoteNotRequested, 0,
     'the ON control stamped rows todayNoteNotRequested - that vocabulary belongs to the blocked door only');
+}
+
+/* ------ 3b. dfc-1.1.0: a scoped answer cannot smuggle a HISTORICAL body -- */
+async function testScopedSmuggledHistoryRefused() {
+  const DAY = '2026-08-17';
+  /* The reader answers the SCOPED request with a body dated off the pulled
+     day. The dscope saver must refuse before any write (OFF never persists
+     historical bodies - the retired-fuse protection, expressed against the
+     new lane), stamp the honest refusal, and never claim the bridge
+     transport; the legacy ladder still owns the rescue attempt. */
+  const adv = makeHarness({
+    day: DAY, today: DAY, rows: 1, chartCoverage: true, identityEcho: true,
+    parseResult: () => ({ problems: 'Synthetic problem', meds: 'Synthetic med',
+      allergies: 'Synthetic allergy', summary: 'Synthetic summary' }),
+    noteResult: (pid, onlyDate) => onlyDate
+      ? { ok: true, visits: [{ date: '2026-01-05', type: 'Office visit',
+          raw: 'Historical body smuggled into a scoped answer.', fullDetail: true, sourceVisitKey: 'row:smuggled-1' }] }
+      : { ok: true, visits: 1 }
+  });
+  const r = await adv.api._runHistoryBatch(adv.rows, [], adv.onStatus);
+  eq(r.visitNotesMode, 'day-facts', '[smuggle] the batch ran in the wrong mode');
+  eq(r.patients[0].sameDayDirectReason, 'scoped-visit-date-mismatch',
+    '[smuggle] the scoped saver accepted a body dated off the pulled day: ' +
+      String(r.patients[0].sameDayDirectReason));
+  eq((adv.patients[0].visits || []).length, 0,
+    '[smuggle] day-facts PERSISTED a historical body from a scoped answer - the additive scoped save must refuse: ' +
+      JSON.stringify(adv.patients[0].visits));
+  ok(r.patients[0].todayNoteDirectBridge !== true,
+    '[smuggle] a refused direct read still claimed the bridge transport');
 }
 
 /* ------------- 4. an UNCHOSEN preference blocks everything, fail-closed -- */
@@ -508,7 +663,13 @@ async function testCostBreakdown() {
   const dfCb = dfReceipt.costBreakdown;
   ok(dfCb, 'the day-facts receipt carries no per-row cost breakdown - the OFF no-op is back');
   eq(dfCb.rows, 5, 'the day-facts cost breakdown counted the wrong number of rows');
-  eq(dfCb.visitsMs, 0, 'day-facts mode spent ' + dfCb.visitsMs + 'ms traversing historical visit bodies');
+  /* dfc-1.1.0: the direct scoped attempt rides the AllVisits transport, so
+     its wall time books on the visits lane - 5 x 11 s here (each attempt
+     fails this seam-free world's identity proof before handing the row to
+     the ladder). "visitsMs 0 in OFF" is retired; the no-HISTORICAL-walk
+     protection lives in the unscoped count below, which stays 0. */
+  eq(dfCb.visitsMs, 55000,
+    'the day-facts visits lane should carry exactly the 5 x 11000ms direct scoped attempts, measured ' + dfCb.visitsMs);
   eq(dfCb.skippedVerifiedToday, 0, 'the day-facts breakdown mis-reports skipped rows on a first run');
   eq(typeof dfCb.chartMs, 'number', 'the day-facts chart-read cost is missing');
   eq(typeof dfCb.parseSaveMs, 'number', 'the day-facts parse/save cost is missing');
@@ -516,9 +677,16 @@ async function testCostBreakdown() {
     'day-facts mode performed a historical visit-body walk; that lane is ON-only');
   /* dayfacts-1.0.1: day-facts DOES spend per-row read time - on the pulled-day
      note - and the receipt must carry that number rather than a zero that
-     looks identical to the retired no-op. 5 rows x 11 s of scoped reads. */
-  eq(df.noteCalls.filter(c => String(c.onlyDate || '') === DAY).length, 5,
-    'day-facts mode attempted ' + df.noteCalls.length + ' pulled-day notes, expected 5');
+     looks identical to the retired no-op. 5 rows x 11 s of effective reads,
+     each preceded (dfc-1.1.0 failure path) by that row's one recorded failed
+     bridge attempt. */
+  const dfScoped = df.noteCalls.filter(c => String(c.onlyDate || '') === DAY);
+  eq(dfScoped.filter(c => c.transport === 'bridge').length, 5,
+    'expected one direct bridge attempt per row (5), measured ' + dfScoped.filter(c => c.transport === 'bridge').length);
+  eq(dfScoped.filter(c => !c.transport).length, 5,
+    'day-facts mode made ' + dfScoped.filter(c => !c.transport).length + ' effective pulled-day reads, expected 5');
+  eq(new Set(dfScoped.map(c => String(c.patientId))).size, 5,
+    'a cost-fixture row never had its pulled-day note attempted');
   eq(dfReceipt.todayNoteRead, 5, 'the day-facts receipt under-reports the pulled-day notes it read');
   eq(dfReceipt.todayNoteNotRequested, 0, 'a day-facts row was stamped todayNoteNotRequested');
   eq(dfCb.todayNoteMs, 55000,
@@ -549,10 +717,16 @@ async function testCostBreakdown() {
   eq(cb.skippedVerifiedToday, 0, 'the breakdown mis-reports skipped rows on a first run');
   ok(cb.chartMs + cb.parseSaveMs >= 0,
     'the non-body cost lanes no longer produce numeric receipt data');
-  /* the MEASURED cost the checkbox buys: 5 x 11 s of body reads that day-facts
-     never spends. A control that measured nothing would prove nothing. */
-  ok(cb.visitsMs - dfCb.visitsMs >= 55000,
-    'the historical walk cost only ' + (cb.visitsMs - dfCb.visitsMs) + 'ms more than day-facts; expected >= 55000');
+  /* dfc-1.1.0: the checkbox no longer buys READ COUNT on this fixture - both
+     modes book exactly one visits-transport read per row (5 x 11 s each side).
+     What it buys is SCOPE, and that is measured twice: the unscoped call
+     counts (5 in full, 0 in day-facts, both pinned above) and the todayNote
+     lane below. A control that measured nothing would prove nothing. */
+  eq(cb.visitsMs, 55000,
+    'the full-mode visits lane should carry exactly the 5 x 11000ms unscoped walks, measured ' + cb.visitsMs);
+  eq(cb.visitsMs, dfCb.visitsMs,
+    'the two modes no longer spend the same per-row visits-transport time on this fixture (' +
+      cb.visitsMs + ' vs ' + dfCb.visitsMs + ') - the scope-not-count contract moved');
   /* ...and the mirror image: the pulled-day lane is day-facts' own cost, and
      full mode spends none of it. Two numbers, opposite signs, one fixture. */
   ok(dfCb.todayNoteMs - cb.todayNoteMs >= 55000,
@@ -565,9 +739,10 @@ async function main() {
   await testCacheProofVersioning();
   await testTheBarIsNotAMarker();
   await testDayFactsFloorIsRealWork();
+  await testScopedSmuggledHistoryRefused();
   await testUnchosenBlocksEverything();
   await testCostBreakdown();
-  console.log('PASS 1p-pull-resume-skip-and-cost: ' + checks + ' checks - under dayfacts-1.0.1 + cachev-1.0.0 a re-run skips only rows this same account day already proved under a VERSIONED per-lane proof (legacy/partial/narrower-scope proofs are rejected with a closed-vocabulary PHI-free receipt and read fresh; a matching-scope v2 proof still skips), stored with content under an unchanged identity (measured against an A/B control in BOTH modes) and that skip saves CHART OPENS ONLY - every day-facts row, skipped or not, still gets exactly one onlyDate read of the pulled day\'s encounter note; day-facts mode opens and saves every exact scheduled row, skips historical bodies, declares honest insurance placeholders and books its time on costBreakdown.todayNoteMs while full mode books the same fixture\'s time on costBreakdown.visitsMs; an unchosen preference blocks every read');
+  console.log('PASS 1p-pull-resume-skip-and-cost: ' + checks + ' checks - under dfc-1.1.0 + cachev-1.0.0 a re-run skips only rows this same account day already proved under a VERSIONED per-lane proof (legacy/partial/narrower-scope proofs are rejected with a closed-vocabulary PHI-free receipt and read fresh; a matching-scope v2 proof still skips), stored with content under an unchanged identity (measured against an A/B control in BOTH modes) and that skip saves CHART OPENS ONLY - every day-facts row, skipped or not, still gets exactly one EFFECTIVE onlyDate read of the pulled day\'s encounter note, delivered by the scoped AllVisits bridge when the identity proof holds (todayNote direct, sameDayReceipt saved, older visits untouched, historical bodies refused at scoped-visit-date-mismatch) and by the legacy vp ladder after ONE recorded failed bridge attempt when it does not; day-facts mode opens and saves every exact scheduled row, skips historical bodies, declares honest insurance placeholders, and books the pulled-day time on costBreakdown.todayNoteMs AND the visits transport lane while full mode books the same fixture\'s unscoped walks on costBreakdown.visitsMs alone; an unchosen preference blocks every read');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-pull-resume-skip-and-cost did not finish')); process.exit(1); }, 60000);
