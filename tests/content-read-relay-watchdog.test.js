@@ -53,15 +53,16 @@ assert.ok(chartBlock.includes('chart-relay-deadline-exceeded'), 'chart relay bac
 assert.ok(visitsBlock.includes('visits-relay-deadline-exceeded'), 'visits relay backstop reason present');
 assert.ok(chartBlock.includes('chartDeadlineAt + 5000'), 'chart backstop yields the race to the worker\'s own at-deadline refusal');
 
-function makeHarness(block) {
+function makeHarness(block, opts) {
+  opts = opts || {};
   const replies = [];
   const timers = { seq: 0, live: new Map() };
   const sent = [];
   const relay = [];
   const fakeSetTimeout = (fn, ms) => { const id = ++timers.seq; timers.live.set(id, { fn, ms }); return id; };
   const fakeClearTimeout = id => { timers.live.delete(id); };
-  const chrome = { runtime: { lastError: undefined, sendMessage: (msg, cb) => { sent.push({ msg, cb }); } } };
-  const mlsRelayRetry = (msg, cb) => { relay.push({ msg, cb }); };
+  const chrome = { runtime: { lastError: undefined, sendMessage: (msg, cb) => { if (opts.sendThrows) throw new Error('synthetic sync send failure'); sent.push({ msg, cb }); } } };
+  const mlsRelayRetry = (msg, cb) => { if (opts.relayThrows) throw new Error('synthetic sync relay failure'); relay.push({ msg, cb }); };
   const mlsStr = (s, n) => String(s == null ? '' : s).slice(0, n);
   const reply = payload => { replies.push(payload); };
   const run = new Function('d', 'reply', 'mlsStr', 'mlsRelayRetry', 'chrome', 'setTimeout', 'clearTimeout', 'Date', 'Object', 'Number', 'Array', 'isFinite', 'Math', block);
@@ -183,4 +184,36 @@ const ok = m => { n++; console.log('ok ' + n + ' - ' + m); };
   ok('visits: a hung recovery chain is covered by the same single-funnel backstop');
 }
 
-console.log('PASS content read-relay watchdog: chart+visits relays force one named terminal refusal on a silent worker, clear on normal terminals, drop late replies, honor caller deadlines, and never manufacture success (' + n + ' cases)');
+/* ---- 9-11. wdr-1.0.1 (review blocker): a SYNCHRONOUS throw after the timer
+ * armed must route through the same funnel - one reply, zero live timers ---- */
+assert.ok(chartBlock.includes("typeof finishChart === 'function'"), 'chart outer catch routes through the funnel');
+assert.ok(visitsBlock.includes("typeof finishVisits === 'function'"), 'visits outer catch routes through the funnel');
+{
+  const h = makeHarness(chartBlock, { relayThrows: true });
+  h.dispatch({ type: 'mlsAppReadChart', requestId: 'r9', patient: 'Synthetic Patient', deadlineAt: Date.now() + 1000 });
+  assert.strictEqual(h.replies.length, 1, 'sync opener throw produced exactly one terminal');
+  assert.strictEqual(h.replies[0].resp.ok, false, 'terminal is a refusal');
+  assert.strictEqual(h.liveTimerCount(), 0, 'the armed backstop was cleared by the funnel - no second reply can fire');
+  h.fireAllTimers();
+  assert.strictEqual(h.replies.length, 1, 'no stale timer double-reply after a sync throw');
+  ok('chart: sync opener throw -> one funneled terminal, backstop cleared');
+}
+{
+  const h = makeHarness(chartBlock, { sendThrows: true });
+  h.dispatch({ type: 'mlsAppReadChart', requestId: 'r10', deadlineAt: Date.now() + 1000 });
+  assert.strictEqual(h.replies.length, 1, 'sync send throw produced exactly one terminal');
+  assert.strictEqual(h.liveTimerCount(), 0, 'backstop cleared');
+  ok('chart: sync send throw -> one funneled terminal');
+}
+{
+  const h = makeHarness(visitsBlock, { sendThrows: true });
+  h.dispatch({ type: 'mlsAppReadVisits', patient: 'Synthetic Patient' });
+  assert.strictEqual(h.replies.length, 1, 'visits sync throw produced exactly one terminal');
+  assert.strictEqual(h.replies[0].resp.reason, 'extension-error', 'named refusal retained');
+  assert.strictEqual(h.liveTimerCount(), 0, 'backstop cleared');
+  h.fireAllTimers();
+  assert.strictEqual(h.replies.length, 1, 'no stale timer double-reply');
+  ok('visits: sync send throw -> one funneled terminal, backstop cleared');
+}
+
+console.log('PASS content read-relay watchdog: chart+visits relays force one named terminal refusal on a silent worker, clear on normal terminals, drop late replies, honor caller deadlines, route sync throws through the same funnel, and never manufacture success (' + n + ' cases)');

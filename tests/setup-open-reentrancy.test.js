@@ -43,7 +43,7 @@ function extractFn(marker) {
 }
 
 const openSrc = extractFn('async function openSetup(autoOpen)');
-const runSrc = extractFn('async function suOpenSetupRun(automatic,m)');
+const runSrc = extractFn('async function suOpenSetupRun(automatic,m,gen)');
 const closeSrc = extractFn('async function closeSetup(reason)');
 assert.ok(openSrc.includes("openSetup._inFlight"), 'openSetup carries the in-flight latch');
 assert.ok(openSrc.includes("openSetup._loaded===true"), 'openSetup carries the healthy-open no-op guard');
@@ -146,5 +146,37 @@ function makeHarness() {
   assert.strictEqual(h.nodes.su_name.value, 'FROM-STORAGE', 'fresh open renders stored values again');
   ok('close resets the latch: a genuine reopen loads and prefills fresh');
 
-  console.log('PASS setup-open re-entrancy: duplicate opens are no-ops that preserve typed work and step, concurrent opens join one run, Retry still re-fetches, close resets the latch (' + n + ' cases)');
+  /* ---- 6. surg-1.0.1 (review blocker): close DURING the pending GET cancels
+   * the run - the settled GET must not prefill or re-show the wizard ---- */
+  const h6 = makeHarness();
+  const p6 = h6.open(false);
+  assert.ok(h6.nodes.setupModal.classList.contains('show'), 'wizard visible while loading');
+  await h6.close();
+  assert.ok(!h6.nodes.setupModal.classList.contains('show'), 'closed while the GET was pending');
+  await h6.settlePending();
+  assert.strictEqual(await p6, false, 'the canceled run reports false');
+  assert.strictEqual(h6.state.prefills, 0, 'the stale GET did not prefill');
+  assert.ok(!h6.nodes.setupModal.classList.contains('show'), 'the stale GET did not re-show the closed wizard');
+  const p6b = h6.open(false);
+  assert.strictEqual(h6.state.getCalls, 2, 'reopen after a canceled run starts a FRESH fetch (does not join the stale run)');
+  await h6.settlePending();
+  assert.strictEqual(await p6b, true, 'fresh reopen succeeds');
+  assert.strictEqual(h6.state.prefills, 1, 'exactly the fresh run prefilled');
+  ok('close-during-load cancels the run; reopen starts fresh');
+
+  /* ---- 7. close then IMMEDIATE reopen while the old GET is still pending:
+   * only the new run acts, even when both GETs settle together ---- */
+  const h7 = makeHarness();
+  const p7old = h7.open(false);
+  await h7.close();
+  const p7new = h7.open(false);
+  assert.strictEqual(h7.state.getCalls, 2, 'reopen issued its own fetch');
+  await h7.settlePending(); /* settles BOTH pending GETs */
+  assert.strictEqual(await p7old, false, 'the stale run aborted');
+  assert.strictEqual(await p7new, true, 'the new run completed');
+  assert.strictEqual(h7.state.prefills, 1, 'exactly one prefill - the new run\'s');
+  assert.ok(h7.nodes.setupModal.classList.contains('show'), 'wizard shown by the new run');
+  ok('stale and fresh runs settle together: only the fresh one acts');
+
+  console.log('PASS setup-open re-entrancy: duplicate opens are no-ops that preserve typed work and step, concurrent opens join one run, Retry still re-fetches, close resets the latch AND cancels an in-flight load (' + n + ' cases)');
 })().catch(err => { console.error(err.stack || err); process.exit(1); });

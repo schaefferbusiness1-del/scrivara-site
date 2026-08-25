@@ -565,7 +565,15 @@
         } else {
           chrome.runtime.sendMessage(chartMessage, finishChart);
         }
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: mlsStr(d.requestId, 100), resp: { error: 'extension error' } }); }
+      } catch (err) {
+        /* wdr-1.0.1 (review): a synchronous throw AFTER the relay timer armed
+           used to emit this reply directly while the live timer later emitted
+           a second - two terminals from one funnel. Route through finishChart
+           when it exists (it clears the timer and drops duplicates); the bare
+           reply remains only for a throw before the funnel was declared. */
+        if (typeof finishChart === 'function') finishChart({ ok: false, reason: 'extension-error', error: 'extension error' });
+        else reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: mlsStr(d.requestId, 100), resp: { error: 'extension error' } });
+      }
     }
     /* v1.89: READ-ONLY, identity-gated read of the OPEN chart's left-rail
        "Visits and Cases" pane - individual visit entries {date,type,provider,
@@ -647,7 +655,11 @@
           });
         }
         readVisitsOnce(true);
-      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: { ok: false, reason: 'extension-error', error: 'Extension error' } }); }
+      } catch (err) {
+        /* wdr-1.0.1: same single-funnel routing as the chart handler above. */
+        if (typeof finishVisits === 'function') finishVisits({ ok: false, reason: 'extension-error', error: 'Extension error' });
+        else reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: { ok: false, reason: 'extension-error', error: 'Extension error' } });
+      }
     }
     // READ-ONLY: read the open Athena REPORT / claims / procedure / patient LIST tab so MLS
     // can enumerate patients by procedure/CPT (Study cohort, Mode B). Unlike mlsAppPullSchedule

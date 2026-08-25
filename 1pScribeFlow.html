@@ -17283,23 +17283,32 @@ async function openSetup(autoOpen){
      reopen prefills fresh. */
   if(m.classList.contains('show') && openSetup._loaded===true) return true;
   if(openSetup._inFlight) return openSetup._inFlight;
-  var suOpenRun=suOpenSetupRun(autoOpen===true,m);
+  /* surg-1.0.1 (review): a close DURING the initial GET must cancel the run —
+     the settled GET used to prefill and re-show the wizard the doctor had
+     just closed, and a genuine reopen joined that stale run. Monotonic
+     generation token: every new run takes the next number, closeSetup bumps
+     it, and the run re-checks it after every await before touching state. */
+  var suOpenGen=(openSetup._gen=(openSetup._gen||0)+1);
+  var suOpenRun=suOpenSetupRun(autoOpen===true,m,suOpenGen);
   openSetup._inFlight=suOpenRun;
   try{ return await suOpenRun; }
   finally{ if(openSetup._inFlight===suOpenRun) openSetup._inFlight=null; }
 }
-async function suOpenSetupRun(automatic,m){
+async function suOpenSetupRun(automatic,m,gen){
+  function live(){ return openSetup._gen===gen; }
   var msg=document.getElementById('setupMsg'), next=document.getElementById('su_nextBtn'), retry=document.getElementById('su_retryBtn');
   if(!automatic){ m.classList.add('show'); if(msg){msg.style.color='var(--muted)';msg.textContent='Loading saved setup progress…';} }
   if(next) next.disabled=true; if(retry) retry.style.display='none';
   try{ await suOnboardingRequest('GET'); }
   catch(e){
+    if(!live()) return false;
     SU_STATE={status:SU_STATUS.NOT_STARTED,currentStep:'profile',completedSteps:[],error:suActionableError(e),capabilities:(bkUser&&bkUser.capabilities)||{},role:String((bkUser&&bkUser.role)||''),tier:String((bkUser&&bkUser.capabilities&&bkUser.capabilities.tier)||'')};
     if(msg){msg.style.color='#c0392b';msg.textContent=SU_STATE.error+' Retry before continuing so another account’s setup is never reused.';}
     if(retry) retry.style.display='';
     openSetup._loaded=false;
     return false;
   }
+  if(!live()) return false;
   if(automatic&&SU_STATE.status===SU_STATUS.COMPLETED) return false;
   suPrefill(); SU_STEP=automatic?suResumeStep():((SU_STATE.status===SU_STATUS.COMPLETED)?0:suResumeStep());
   suApplyCapabilityUI(); suShow(); m.classList.add('show');
@@ -17311,6 +17320,10 @@ async function suOpenSetupRun(automatic,m){
 async function closeSetup(reason){
   var m=document.getElementById('setupModal'); if(m) m.classList.remove('show');
   openSetup._loaded=false;
+  /* surg-1.0.1: invalidate any in-flight open so a pending GET can neither
+     re-show the closed wizard nor be joined by the next genuine reopen. */
+  openSetup._gen=(openSetup._gen||0)+1;
+  openSetup._inFlight=null;
   if(reason==='deferred'&&backendMode()&&bkToken()){
     SU_STATE.status=SU_STATUS.DEFERRED;
     try{ await suSaveOnboarding({completedSteps:SU_STATE.completedSteps||[]}); }catch(e){ try{ toast('Setup was closed, but progress could not be saved.','err'); }catch(_e){} }
