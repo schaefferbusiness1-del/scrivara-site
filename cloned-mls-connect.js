@@ -21379,14 +21379,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
     return '';
   }
-  /* A completion event is the engine's receipt. Wire once because same-tab
-     upgrades can evaluate this bundle again without replacing document. */
-  try {
-    if (!window.__ez3GenEvtWired) {
-      window.__ez3GenEvtWired = true;
-      window.addEventListener('mls:generation-complete', function () { try { computePhase(); render(); } catch (e) {} });
-    }
-  } catch (eGenEvt) {}
   /* b443: the exact-scheduled gate refusal must stay visible for as long as it
      is TRUE. lastWarn is a one-shot string that computePhase wipes the moment a
      note exists, so a doctor on a row that cannot bind (live-caught 2026-07-20:

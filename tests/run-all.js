@@ -690,6 +690,10 @@ const tests = [
      prove one canonical dispatch, lifecycle reasons, bounded no-op failure,
      and the JS duplicate-control fallback. */
   'ez3-generate-top-browser-runtime.test.js',
+  /* Same-document upgrades retire the old Easy owner before the new owner
+     mounts. The lifecycle listeners must follow that cleanup seam, and the
+     legacy completion receipt must not repaint either owner. */
+  'ez3-generation-owner-upgrade-runtime.test.js',
   /* The generation engine alone owns started/refused/settled state, carries
      one abort signal through the hosted transport, and cannot be relabeled by
      a late optional-format callback after the validated draft has settled. */
