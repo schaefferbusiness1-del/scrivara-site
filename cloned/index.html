@@ -22921,7 +22921,11 @@ async function useTemplateNow(id){
   var t=getTemplateById(id); if(!t){ toast('Template not found.','err'); return; }
   if(!currentSoap && !(typeof currentInsurance!=='undefined'&&currentInsurance)){ toast('Generate or open a note first, then apply a template to it.','err'); return; }
   toast('Reformatting the current note to “'+(t.name||'template')+'”…','');
-  try{ await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||'',expectedBinding,expectedEpoch); }catch(e){ toast('Couldn’t apply that template.','err'); }
+  try{
+    var result=await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||'',expectedBinding,expectedEpoch);
+    if(result&&result.applied) toast('Note formatted to template: '+(t.name||'template'),'ok');
+    else toast('Template “'+(t.name||'selected template')+'” was not applied — the original note is unchanged.','err');
+  }catch(e){ toast('Template “'+(t.name||'selected template')+'” was not applied — the original note is unchanged.','err'); }
 }
 function previewTemplate(id){ tplSelect(id); }
 function editTemplate(id){ Promise.resolve(tplSelect(id)).then(function(){ try{ var n=document.getElementById('tplDetName'); if(n) n.focus(); }catch(e){} }); return true; }
@@ -23742,46 +23746,57 @@ function resolveActiveTemplate(visitText){
    per-device-key modes). Only ever called when templates are ON. On any
    failure the original note is kept unchanged. */
 async function applyTemplateToNote(template,visitText,expectedBinding,expectedEpoch){
-  if(!template || !template.text) return;
-  if(!hasAI()) return; // offline example path: leave note as-is
+  if(!template || !template.text) return {applied:false,reason:'missing-template'};
+  if(!hasAI()) return {applied:false,reason:'ai-unavailable'}; // offline example path: leave note as-is
   if(!expectedBinding){
-    toast('Open or generate this note inside the correct patient visit before applying a template. Nothing changed in Athena.','err');
-    return false;
+    return {applied:false,reason:'unbound-visit'};
   }
-  if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return false;
+  if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return {applied:false,reason:'stale-visit'};
   const baseNote=(currentFormat==='soap'?currentSoap:currentInsurance)||currentSoap||'';
-  if(!baseNote.trim()) return;
+  if(!baseNote.trim()) return {applied:false,reason:'empty-note'};
   const templateFingerprint=_athenaEditorFingerprint();
   const templateFormat=currentFormat;
   const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
   const user='TEMPLATE (match this format exactly):\n"""\n'+_tplTextForDraft(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   try{
     let out=(await aiCallRaw(sys,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
-    if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return false;
+    if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return {applied:false,reason:'stale-visit'};
     if(currentFormat!==templateFormat||_athenaEditorFingerprint()!==templateFingerprint){
-      toast('The visit changed while the template was being applied, so MLS discarded that older result. Nothing changed in Athena.','err');
-      return false;
+      return {applied:false,reason:'stale-note'};
     }
+    if(!out) return {applied:false,reason:'empty-output'};
+    if(out===baseNote) return {applied:false,reason:'unchanged-output'};
     if(out){
       if(currentFormat==='soap') currentSoap=out; else currentInsurance=out;
       const nb=document.getElementById('noteBox');
       if(nb && nb.style.display!=='none') nb.value=out;
       if(currentFormat==='soap')try{_mlsSyncAthenaAfterStandardNoteMutation('template changed the standard note');}catch(eCanonicalTemplate){}
       try{_markVisitDirty();}catch(_){}
-      toast('Note formatted to template: '+template.name,'ok');
+      return {applied:true,templateId:template.id};
     }
+    return {applied:false,reason:'empty-output'};
   }catch(e){
-    toast('Template formatting skipped: '+friendlyError(e),'err');
+    return {applied:false,reason:'ai-error'};
   }
 }
 
 /* Entry point called from generateNote AFTER a note is produced.
    No-op (and never touches the prompt) unless the toggle is ON. */
 async function maybeApplyTemplate(visitText,expectedBinding,expectedEpoch){
-  if(!useTemplatesOn()) return;               // OFF path: do nothing
-  const tpl=resolveActiveTemplate(visitText);
-  if(!tpl){ return; }
-  await applyTemplateToNote(tpl,visitText,expectedBinding||currentVisitAthenaBinding,expectedEpoch==null?currentVisitAthenaEpoch:expectedEpoch);
+  if(!useTemplatesOn()) return {applied:false,reason:'templates-off'};               // OFF path: do nothing
+  let tpl;
+  try{ tpl=resolveActiveTemplate(visitText); }catch(e){ return {applied:false,reason:'template-selection-error'}; }
+  if(!tpl){ return {applied:false,reason:'no-template'}; }
+  let result;
+  try{ result=await applyTemplateToNote(tpl,visitText,expectedBinding||currentVisitAthenaBinding,expectedEpoch==null?currentVisitAthenaEpoch:expectedEpoch); }
+  catch(e){ result={applied:false,reason:'template-error'}; }
+  if(result&&result.applied===true) return {applied:true,templateId:result.templateId,templateName:tpl.name||''};
+  return {applied:false,reason:(result&&result.reason)||'template-failed',templateId:tpl.id,templateName:tpl.name||''};
+}
+function reportTemplateApplication(result,templateName){
+  if(result&&result.applied===true){ toast('Note formatted to template: '+(templateName||result.templateId||'selected template'),'ok'); return true; }
+  if(result&&result.reason!=='templates-off'&&result.reason!=='no-template') toast((templateName?'Template “'+templateName+'”':'Selected template')+' was not applied — the original note is unchanged.','err');
+  return false;
 }
 
 function openDoc(id){
@@ -27336,7 +27351,10 @@ async function generateNote(){
     toast(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.','ok');
     // OPTIONAL: if templates are enabled, reformat the note to the chosen
     // template. This is a guarded no-op when the toggle is OFF (default).
-    try{ await maybeApplyTemplate(transcript,generationBinding,currentVisitAthenaEpoch); }catch(e){}
+    try{
+      var templateResult=await maybeApplyTemplate(transcript,generationBinding,currentVisitAthenaEpoch);
+      reportTemplateApplication(templateResult,templateResult&&templateResult.templateName);
+    }catch(e){ reportTemplateApplication({applied:false,reason:'exception'},''); }
     try{ _markVisitDirty(); }catch(e){}
     return true;
   }catch(err){

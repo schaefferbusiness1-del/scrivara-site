@@ -11960,7 +11960,11 @@ async function useTemplateNow(id){
   var t=getTemplateById(id); if(!t){ toast('Template not found.','err'); return; }
   if(!currentSoap && !(typeof currentInsurance!=='undefined'&&currentInsurance)){ toast('Generate or open a note first, then apply a template to it.','err'); return; }
   toast('Reformatting the current note to “'+(t.name||'template')+'”…','');
-  try{ await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||''); }catch(e){ toast('Couldn’t apply that template.','err'); }
+  try{
+    var result=await applyTemplateToNote(t, (document.getElementById('transcript')||{}).value||'');
+    if(result&&result.applied) toast('Note formatted to template: '+(t.name||'template'),'ok');
+    else toast('Template “'+(t.name||'selected template')+'” was not applied — the original note is unchanged.','err');
+  }catch(e){ toast('Template “'+(t.name||'selected template')+'” was not applied — the original note is unchanged.','err'); }
 }
 function previewTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ mlsPrompt('TEMPLATE: '+(t.name||'')+'\n\n'+String(t.text||'').slice(0,4000)+((t.text||'').length>4000?'\n\n…(truncated)':'')); }catch(e){} }
 function editTemplate(id){ var t=getTemplateById(id); if(!t) return; try{ document.getElementById('tplName').value=t.name||''; document.getElementById('tplKeywords').value=(t.keywords||[]).join(', '); document.getElementById('tplText').value=t.text||''; document.getElementById('tplName').scrollIntoView({behavior:'smooth',block:'center'}); toast('Loaded into the form — edit and Save (it adds a copy; delete the old one if replacing).',''); }catch(e){} }
@@ -12285,32 +12289,49 @@ function resolveActiveTemplate(visitText){
    per-device-key modes). Only ever called when templates are ON. On any
    failure the original note is kept unchanged. */
 async function applyTemplateToNote(template,visitText){
-  if(!template || !template.text) return;
-  if(!hasAI()) return; // offline example path: leave note as-is
+  if(!template || !template.text) return {applied:false,reason:'missing-template'};
+  if(!hasAI()) return {applied:false,reason:'ai-unavailable'}; // offline example path: leave note as-is
   const baseNote=(currentFormat==='soap'?currentSoap:currentInsurance)||currentSoap||'';
-  if(!baseNote.trim()) return;
+  if(!baseNote.trim()) return {applied:false,reason:'empty-note'};
+  const templateFingerprint=typeof _athenaEditorFingerprint==='function'?_athenaEditorFingerprint():null;
+  const templateFormat=currentFormat;
   const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. Output ONLY the filled template as plain text, no commentary, no code fences.';
   const user='TEMPLATE (match this format exactly):\n"""\n'+String(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   try{
     let out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    if(typeof _athenaAsyncBindingStillSafe==='function' && typeof currentVisitAthenaBinding!=='undefined' && currentVisitAthenaBinding && !_athenaAsyncBindingStillSafe(currentVisitAthenaBinding,'template formatting',typeof currentVisitAthenaEpoch==='undefined'?undefined:currentVisitAthenaEpoch)) return {applied:false,reason:'stale-visit'};
+    if(templateFingerprint!==null && (currentFormat!==templateFormat||_athenaEditorFingerprint()!==templateFingerprint)) return {applied:false,reason:'stale-note'};
+    if(!out) return {applied:false,reason:'empty-output'};
+    if(out===baseNote) return {applied:false,reason:'unchanged-output'};
     if(out){
       if(currentFormat==='soap') currentSoap=out; else currentInsurance=out;
       const nb=document.getElementById('noteBox');
       if(nb && nb.style.display!=='none') nb.value=out;
-      toast('Note formatted to template: '+template.name,'ok');
+      return {applied:true,templateId:template.id};
     }
+    return {applied:false,reason:'empty-output'};
   }catch(e){
-    toast('Template formatting skipped: '+friendlyError(e),'err');
+    return {applied:false,reason:'ai-error'};
   }
 }
 
 /* Entry point called from generateNote AFTER a note is produced.
    No-op (and never touches the prompt) unless the toggle is ON. */
 async function maybeApplyTemplate(visitText){
-  if(!useTemplatesOn()) return;               // OFF path: do nothing
-  const tpl=resolveActiveTemplate(visitText);
-  if(!tpl){ return; }
-  await applyTemplateToNote(tpl,visitText);
+  if(!useTemplatesOn()) return {applied:false,reason:'templates-off'};               // OFF path: do nothing
+  let tpl;
+  try{ tpl=resolveActiveTemplate(visitText); }catch(e){ return {applied:false,reason:'template-selection-error'}; }
+  if(!tpl){ return {applied:false,reason:'no-template'}; }
+  let result;
+  try{ result=await applyTemplateToNote(tpl,visitText); }
+  catch(e){ result={applied:false,reason:'template-error'}; }
+  if(result&&result.applied===true) return {applied:true,templateId:result.templateId,templateName:tpl.name||''};
+  return {applied:false,reason:(result&&result.reason)||'template-failed',templateId:tpl.id,templateName:tpl.name||''};
+}
+function reportTemplateApplication(result,templateName){
+  if(result&&result.applied===true){ toast('Note formatted to template: '+(templateName||result.templateId||'selected template'),'ok'); return true; }
+  if(result&&result.reason!=='templates-off'&&result.reason!=='no-template') toast((templateName?'Template “'+templateName+'”':'Selected template')+' was not applied — the original note is unchanged.','err');
+  return false;
 }
 
 function openDoc(id){
@@ -14813,7 +14834,10 @@ async function generateNote(){
     toast(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.','ok');
     // OPTIONAL: if templates are enabled, reformat the note to the chosen
     // template. This is a guarded no-op when the toggle is OFF (default).
-    try{ await maybeApplyTemplate(transcript); }catch(e){}
+    try{
+      var templateResult=await maybeApplyTemplate(transcript);
+      reportTemplateApplication(templateResult,templateResult&&templateResult.templateName);
+    }catch(e){ reportTemplateApplication({applied:false,reason:'exception'},''); }
   }catch(err){
     toast(friendlyError(err),'err');
   }finally{

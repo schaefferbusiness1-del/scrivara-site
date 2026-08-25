@@ -1542,6 +1542,7 @@ const tests = [
   'study-natural-request-parser.test.js',
   'study-natural-request-privacy-adversarial.test.js',
   'template-standard-line-runtime.test.js',
+  'template-application-honesty-runtime.test.js',
   'tooltip-single-source-contract.test.js',
   'tooltip-dedupe-concern-perf-runtime.test.js',
   'ui-single-owner-contract.test.js',
