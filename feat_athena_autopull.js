@@ -527,8 +527,21 @@
   }
   function cardReceiptFingerprint(receipt) {
     if (!receipt || typeof receipt !== 'object') return '';
-    return [trim(receipt.patientId), trim(receipt.capturedAt), trim(receipt.saveRequestId),
-      trim(receipt.requestId), trim(receipt.receiptId)].join('|');
+    /* Canonicalize the whole persisted receipt. Binding only request/time
+       fields would still allow a card/status mutation with those identifiers
+       held constant to cross the terminal boundary unnoticed. */
+    function canonical(value) {
+      if (value === null || typeof value !== 'object') return JSON.stringify(value);
+      if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+      return '{' + Object.keys(value).sort().map(function (key) {
+        return JSON.stringify(key) + ':' + canonical(value[key]);
+      }).join(',') + '}';
+    }
+    try { return canonical(receipt); }
+    catch (eFingerprint) {
+      /* A malformed/cyclic receipt is not credible proof. */
+      return '';
+    }
   }
   function emitBusy(value) {
     /* State only: never put patient identity or chart content on a DOM event. */
@@ -782,7 +795,10 @@
           var readOk = !!(cardRes && cardRes.ok === true);
           var proof = readOk ? currentFullCardReceipt(patient.id, cardReadStartedAt) :
             { ok: false, reason: trim(cardRes && cardRes.reason || 'card-reader-refused'), receipt: null };
-          if (proof.ok && preReadCoverageFingerprint && cardReceiptFingerprint(proof.receipt) === preReadCoverageFingerprint) {
+          var postReadCoverageFingerprint = proof.ok ? cardReceiptFingerprint(proof.receipt) : '';
+          if (proof.ok && !postReadCoverageFingerprint) {
+            proof = { ok: false, reason: 'card-coverage-receipt-malformed', receipt: proof.receipt };
+          } else if (proof.ok && preReadCoverageFingerprint && postReadCoverageFingerprint === preReadCoverageFingerprint) {
             proof = { ok: false, reason: 'card-coverage-receipt-not-refreshed', receipt: proof.receipt };
           }
           if (readOk && !proof.ok) {
@@ -804,6 +820,16 @@
       var finalCardProof = initialCardProof.ok === true
         ? currentFullCardReceipt(patient.id, cardReadStartedAt)
         : initialCardProof;
+      if (initialCardProof.ok === true && finalCardProof.ok === true &&
+          cardReceiptFingerprint(finalCardProof.receipt) !== cardReceiptFingerprint(initialCardProof.receipt)) {
+        /* Bind completion to the exact post-read receipt we accepted. Merely
+           re-validating fields/timestamps permits an ABA race where an older,
+           still-plausible R0 is restored after this attempt wrote R1. */
+        finalCardProof = {
+          ok: false, reason: 'card-coverage-receipt-changed-before-terminal',
+          receipt: finalCardProof.receipt
+        };
+      }
       var cardLanded = finalCardProof.ok === true;
       /* fm-1.2 fallback: a verified capture still lands medications/problems/
          allergies off the open chart banner when the full-card rail is absent

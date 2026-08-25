@@ -52,7 +52,8 @@ async function makeHarness(browser, saveMode) {
     }
     window.getPatients = () => window.__store;
     window.upsertPatient = patient => {
-      if (window.__saveMode === 'coverage-no-refresh' && !patient.athenaProfileCoverage) {
+      if (['coverage-no-refresh', 'coverage-aba-future', 'coverage-r1-stable'].includes(window.__saveMode) &&
+          !patient.athenaProfileCoverage) {
         patient.athenaProfileCoverage = {
           complete: true, exactIdentityVerified: true, patientId: patient.id,
           /* Slightly ahead of the next call so timestamp freshness alone would
@@ -64,6 +65,7 @@ async function makeHarness(browser, saveMode) {
             summary: { status: 'found' }, vitals: { status: 'found' }, history: { status: 'found' }
           }
         };
+        window.__coverageR0 = JSON.parse(JSON.stringify(patient.athenaProfileCoverage));
       }
       const index = window.__store.findIndex(row => row && row.id === patient.id);
       if (index >= 0) window.__store[index] = patient;
@@ -96,7 +98,9 @@ async function makeHarness(browser, saveMode) {
       getVisits(patient) { return Array.isArray(patient && patient.visits) ? patient.visits : []; },
       ensureSummaries() {
         if (window.__saveMode === 'summary-timeout') return new Promise(() => {});
-        if (window.__saveMode === 'coverage-race') return new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), 40));
+        if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future', 'coverage-r1-stable'].includes(window.__saveMode)) {
+          return new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), 40));
+        }
         return Promise.resolve({ ok: true });
       }
     };
@@ -125,25 +129,40 @@ async function makeHarness(browser, saveMode) {
         if (window.__saveMode === 'card-timeout') return new Promise(() => {});
         const current = window.__store.find(row => row && row.id === patient.id);
         if (current && window.__saveMode !== 'coverage-missing' && window.__saveMode !== 'coverage-no-refresh') {
+          const sameTickReplacement = ['coverage-aba-future', 'coverage-r1-stable'].includes(window.__saveMode);
           current.athenaProfileCoverage = {
             complete: true, exactIdentityVerified: true,
             patientId: window.__saveMode === 'coverage-wrong-patient' ? 'different-patient' : patient.id,
-            capturedAt: window.__saveMode === 'coverage-stale'
-              ? '2025-01-01T00:00:00.000Z'
-              : (window.__saveMode === 'coverage-prior-attempt'
-                ? new Date(Date.now() - 100).toISOString() : new Date().toISOString()),
-            saveRequestId: 'synthetic-card-read-' + Date.now(),
+            capturedAt: sameTickReplacement
+              ? window.__coverageR0.capturedAt
+              : (window.__saveMode === 'coverage-stale'
+                ? '2025-01-01T00:00:00.000Z'
+                : (window.__saveMode === 'coverage-prior-attempt'
+                  ? new Date(Date.now() - 100).toISOString() : new Date().toISOString())),
+            saveRequestId: sameTickReplacement ? 'synthetic-r1-same-captured-at' : 'synthetic-card-read-' + Date.now(),
             cards: {
               problems: { status: 'found' }, meds: { status: 'found' }, allergies: { status: 'found' },
               summary: { status: 'found' }, vitals: { status: 'found' }, history: { status: 'found' }
             }
           };
+          if (sameTickReplacement) {
+            window.__coverageR1 = JSON.parse(JSON.stringify(current.athenaProfileCoverage));
+          }
           window.upsertPatient(current);
-          if (window.__saveMode === 'coverage-race') {
+          if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future'].includes(window.__saveMode)) {
             window.setTimeout(() => {
               const raced = window.__store.find(row => row && row.id === patient.id);
-              raced.athenaProfileCoverage = Object.assign({}, raced.athenaProfileCoverage, { patientId: 'different-patient' });
+              if (window.__saveMode === 'coverage-aba-future') {
+                raced.athenaProfileCoverage = JSON.parse(JSON.stringify(window.__coverageR0));
+              } else if (window.__saveMode === 'coverage-race-stale') {
+                raced.athenaProfileCoverage = Object.assign({}, raced.athenaProfileCoverage, {
+                  capturedAt: '2025-01-01T00:00:00.000Z', saveRequestId: 'later-stale-swap'
+                });
+              } else {
+                raced.athenaProfileCoverage = Object.assign({}, raced.athenaProfileCoverage, { patientId: 'different-patient' });
+              }
               window.upsertPatient(raced);
+              window.__coverageSwapApplied = window.__saveMode;
             }, 10);
           }
         }
@@ -454,13 +473,19 @@ async function startAndPause(page) {
     /* cardRes.ok is transport/task status, not six-card provenance. Missing,
        wrong-patient, stale, and post-read swapped receipts must all retain the
        durable visit success while refusing a complete/full-card claim. */
-    for (const mode of ['coverage-missing', 'coverage-wrong-patient', 'coverage-stale', 'coverage-prior-attempt', 'coverage-no-refresh', 'coverage-race']) {
+    for (const mode of ['coverage-missing', 'coverage-wrong-patient', 'coverage-stale', 'coverage-prior-attempt',
+      'coverage-no-refresh', 'coverage-race', 'coverage-race-stale', 'coverage-aba-future']) {
       const receiptPage = await makeHarness(browser, mode);
       await startAndPause(receiptPage);
       await receiptPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
       const observed = await receiptPage.evaluate(() => window.__runPromise.then(result => ({
         busy: window.__mlsAthenaAutoPull.isBusy(), receipt: result.receipt,
-        text: document.querySelector('#mlsPullBar [data-text]').textContent
+        text: document.querySelector('#mlsPullBar [data-text]').textContent,
+        coverage: {
+          r0: window.__coverageR0 || null, r1: window.__coverageR1 || null,
+          current: window.__store[0] && window.__store[0].athenaProfileCoverage || null,
+          swap: window.__coverageSwapApplied || '', now: Date.now()
+        }
       })));
       assert.strictEqual(observed.busy, false, `${mode}: receipt refusal left the pull lane busy`);
       assert(observed.receipt && observed.receipt.ok === true && observed.receipt.status === 'partial' &&
@@ -469,8 +494,34 @@ async function startAndPause(page) {
       assert(/Visits saved/i.test(observed.text) && /full chart card is incomplete/i.test(observed.text) &&
         !/with the full chart card verified/i.test(observed.text),
         `${mode}: terminal text falsely claimed full-card verification: ${observed.text}`);
+      if (mode === 'coverage-aba-future') {
+        assert(observed.coverage.r0 && observed.coverage.r1 &&
+          observed.coverage.r0.capturedAt === observed.coverage.r1.capturedAt &&
+          observed.coverage.r0.saveRequestId !== observed.coverage.r1.saveRequestId,
+          'ABA fixture did not create distinct R0/R1 receipts in the same capturedAt millisecond');
+        assert(Date.parse(observed.coverage.r0.capturedAt) > observed.coverage.now &&
+          observed.coverage.current.saveRequestId === observed.coverage.r0.saveRequestId &&
+          observed.coverage.swap === mode,
+          'ABA fixture did not restore the allowed-future R0 before the terminal proof');
+      }
       await receiptPage.close();
     }
+
+    /* R0 and R1 may share the same allowed-future capturedAt. A changed
+       per-attempt fingerprint is valid only while that exact R1 remains the
+       current receipt at the terminal boundary. Keep the non-raced control so
+       the ABA guard cannot accidentally reject an unchanged accepted R1. */
+    const stableReceiptPage = await makeHarness(browser, 'coverage-r1-stable');
+    await startAndPause(stableReceiptPage);
+    await stableReceiptPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
+    const stableReceipt = await stableReceiptPage.evaluate(() => window.__runPromise.then(result => ({
+      receipt: result.receipt, text: document.querySelector('#mlsPullBar [data-text]').textContent
+    })));
+    assert(stableReceipt.receipt && stableReceipt.receipt.ok === true && stableReceipt.receipt.status === 'complete',
+      'an unchanged accepted R1 receipt was rejected at the terminal boundary');
+    assert(/with the full chart card verified/i.test(stableReceipt.text),
+      `the unchanged R1 control did not report full-card verification: ${stableReceipt.text}`);
+    await stableReceiptPage.close();
 
     /* Durable visit persistence settles the pull before optional enrichment.
        A never-resolving summary pass must not retain the single-flight lane or
@@ -504,7 +555,7 @@ async function startAndPause(page) {
       'the stalled chart-card read did not leave an actionable partial terminal');
     await cardTimeoutPage.close();
 
-    console.log('PASS Athena auto-pull terminal receipt: owned progress, durable exact-row confirmation, fresh exact-patient card receipt readback/race refusal, driver/flush watchdogs, partial terminals, timer isolation, and no late saving-state resurrection');
+    console.log('PASS Athena auto-pull terminal receipt: owned progress, durable exact-row confirmation, exact accepted-receipt terminal binding with same-ms/future ABA refusal, later wrong/stale swap refusal, driver/flush watchdogs, partial terminals, timer isolation, and no late saving-state resurrection');
   } finally {
     await browser.close();
   }
