@@ -69,6 +69,23 @@ assert.ok(source.includes('mls-dt-short-field'),
 assert.ok(/id="mlsDtSectionName"[^>]*style="[^"]*min-height:0[^\"]*height:42px/.test(source) &&
   /id="mlsDtSectionWhen"[^>]*style="[^"]*min-height:0[^\"]*height:42px/.test(source),
   'format name and automatic-use controls still inherit the tall note editor height');
+assert.ok(/id="mlsDtSectionTemplateText"[^>]*style="[^"]*min-height:150px[^\"]*height:150px/.test(source),
+  'saved template outline must not inherit the 260px note editor height');
+assert.ok(/id="mlsDtInstructions"[^>]*class="[^"]*mls-dt-comments-field[^\"]*"[^>]*style="[^"]*min-height:96px[^\"]*height:96px/.test(source) &&
+  /id="mlsDtFamilyInstructions"[^>]*class="[^"]*mls-dt-comments-field[^\"]*"[^>]*style="[^"]*min-height:96px[^\"]*height:96px/.test(source),
+  'AI comment fields must not inherit the 260px note editor height');
+assert.ok(source.includes("processed through MLS\\'s authenticated AI services") &&
+  source.includes('For images or scanned PDFs, MLS first performs temporary OCR') &&
+  source.includes('removes common patient identifiers and embedded instructions') &&
+  source.includes('review the preview before saving') &&
+  source.includes('original example is used transiently, then cleared from this importer') &&
+  source.includes('Only the reusable format fields are saved when you choose Apply and Save Settings'),
+  'template importer disclosure does not explain authenticated processing, preview review, and transient raw-example handling truthfully');
+assert.ok(source.includes('AI is building a reusable preview and removing patient-specific details from the result'),
+  'template importer status overstates client-side redaction');
+assert.ok(source.includes("q('mlsDtSectionImportExample').value = '';") &&
+  source.includes("q('mlsDtSectionImportFile').value = '';"),
+  'template importer does not clear the raw example after deriving its preview');
 
 const sections = ['hpi', 'ros', 'exam', 'assessment', 'plan'];
 const marker = section => ({
