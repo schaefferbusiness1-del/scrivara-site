@@ -52,7 +52,7 @@ function harness(options) {
   const context = {
     window: { __mlsCodeTable: null },
     document: { getElementById(id) { return id === 'noteBox' ? noteBox : null; } },
-    Promise, String, Object, Array, RegExp, JSON, Math, Date, console,
+    Promise, String, Object, Array, RegExp, JSON, Math, Date, console, AbortController,
     setTimeout, clearTimeout
   };
   const script = `
@@ -75,6 +75,7 @@ function harness(options) {
     function useTemplatesOn() { return true; }
     function resolveActiveTemplate() { selectionCalls += 1; return { id: 'tpl-1', name: 'Test template', text: 'TEMPLATE' }; }
     async function aiCallRaw() {
+      if (mode === 'pending') return pending;
       if (mode === 'thrown') throw new Error('mock failure');
       if (mode === 'empty') return '   ';
       if (mode === 'stale') { safe = false; return 'Formatted note'; }
@@ -90,6 +91,7 @@ function harness(options) {
   context.fingerprint = 'fp-1';
   context.messages = [];
   context.selectionCalls = 0;
+  context.pending = options.pending || Promise.resolve('Formatted note');
   vm.runInNewContext(script, context);
   return { api: context.api, state, context, noteBox };
 }
@@ -127,5 +129,22 @@ function harness(options) {
   assert.deepStrictEqual({ applied: result.applied, reason: result.reason }, { applied: false, reason: 'stale-visit' });
   assert.strictEqual(h.context.state.soap, 'Original note', 'stale formatter result changed the original note');
 
-  console.log('PASS template application receipts: success mutates, thrown/empty/stale paths preserve the original note');
+  let resolveLate;
+  const late = new Promise((resolve) => { resolveLate = resolve; });
+  h = harness({ mode: 'pending', pending: late });
+  const controller = new AbortController();
+  const lateResult = h.api.applyTemplateToNote(
+    { id: 'tpl-1', text: 'TEMPLATE' },
+    'visit',
+    { id: 'visit-1' },
+    4,
+    { signal: controller.signal }
+  );
+  controller.abort('template-timeout');
+  resolveLate('Formatted note that arrived after the deadline');
+  result = await lateResult;
+  assert.deepStrictEqual({ applied: result.applied, reason: result.reason }, { applied: false, reason: 'aborted' });
+  assert.strictEqual(h.context.state.soap, 'Original note', 'late aborted formatter overwrote the successful original note');
+
+  console.log('PASS template application receipts: success mutates; thrown, empty, stale, and late-aborted paths preserve the original note');
 })();

@@ -23794,8 +23794,11 @@ function resolveActiveTemplate(visitText){
    per-device-key modes). Only ever called when templates are ON. On any
    failure the original note is kept unchanged. */
 async function applyTemplateToNote(template,visitText,expectedBinding,expectedEpoch){
+  const templateOptions=arguments[4]||{};
+  const templateSignal=templateOptions.signal||null;
   if(!template || !template.text) return {applied:false,reason:'missing-template'};
   if(!hasAI()) return {applied:false,reason:'ai-unavailable'}; // offline example path: leave note as-is
+  if(templateSignal&&templateSignal.aborted) return {applied:false,reason:'aborted'};
   if(!expectedBinding){
     return {applied:false,reason:'unbound-visit'};
   }
@@ -23807,7 +23810,12 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
   const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
   const user='TEMPLATE (match this format exactly):\n"""\n'+_tplTextForDraft(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   try{
-    let out=(await aiCallRaw(sys,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let out=(await aiCallRaw(sys,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat',signal:templateSignal})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    /* A deadline may already have released the Generate button while a legacy
+       provider stub is still resolving.  The signal check is the last owner
+       check before mutation, so that late formatter can never overwrite the
+       successful original draft. */
+    if(templateSignal&&templateSignal.aborted) return {applied:false,reason:'aborted'};
     if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return {applied:false,reason:'stale-visit'};
     if(currentFormat!==templateFormat||_athenaEditorFingerprint()!==templateFingerprint){
       return {applied:false,reason:'stale-note'};
@@ -23831,12 +23839,13 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
 /* Entry point called from generateNote AFTER a note is produced.
    No-op (and never touches the prompt) unless the toggle is ON. */
 async function maybeApplyTemplate(visitText,expectedBinding,expectedEpoch){
+  const templateOptions=arguments[3]||{};
   if(!useTemplatesOn()) return {applied:false,reason:'templates-off'};               // OFF path: do nothing
   let tpl;
   try{ tpl=resolveActiveTemplate(visitText); }catch(e){ return {applied:false,reason:'template-selection-error'}; }
   if(!tpl){ return {applied:false,reason:'no-template'}; }
   let result;
-  try{ result=await applyTemplateToNote(tpl,visitText,expectedBinding||currentVisitAthenaBinding,expectedEpoch==null?currentVisitAthenaEpoch:expectedEpoch); }
+  try{ result=await applyTemplateToNote(tpl,visitText,expectedBinding||currentVisitAthenaBinding,expectedEpoch==null?currentVisitAthenaEpoch:expectedEpoch,templateOptions); }
   catch(e){ result={applied:false,reason:'template-error'}; }
   if(result&&result.applied===true) return {applied:true,templateId:result.templateId,templateName:tpl.name||''};
   return {applied:false,reason:(result&&result.reason)||'template-failed',templateId:tpl.id,templateName:tpl.name||''};
@@ -24022,6 +24031,7 @@ let currentNoteId=null; // id of the history record being edited (null = brand n
 
 function newVisit(opts){
   opts=opts||{};
+  try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed');}catch(eGeneration){}
   try{var _vh=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(_vh&&_vh.current&&_vh.current()){_vh.claim('visit-reset');_vh.release('visit-reset');}}catch(eSpeech){}
   /* a NEW encounter always requires fresh recording consent — without this,
      an unbound walk-in's day-keyed consent silently spanned every same-day
@@ -27300,29 +27310,152 @@ function _mlsAthenaCanonicalForWrite(){
 /* =========================================================
    GENERATE NOTE
    ========================================================= */
-async function generateNote(){
-  const transcript=document.getElementById('transcript').value.trim();
-  if(!transcript){ toast('Capture or paste a visit first.','err'); return false; }
-  if(!_mlsTranscriptHasDraftableTodayEvidence(transcript)){
-    toast("Add what was discussed today - symptoms, findings, assessment, or plan - before generating. MLS will not use old chart history to fill a sparse visit.",'err');
-    return false;
+var _mlsGenerationSequence=0;
+var _mlsActiveGeneration=null;
+function _mlsGenerationTimeoutMs(kind,fallback){
+  /* A test/runtime override may only SHORTEN a deadline. Production callers
+     cannot use it to turn a bounded task back into an infinite one. */
+  try{
+    var raw=window.__MLS_GENERATION_TIMEOUTS&&window.__MLS_GENERATION_TIMEOUTS[kind];
+    var n=Number(raw);
+    if(Number.isFinite(n)&&n>=5&&n<=fallback)return n;
+  }catch(e){}
+  return fallback;
+}
+function _mlsEmitGeneration(kind,detail){
+  detail=Object.assign({source:'generation-engine'},detail||{});
+  try{window.dispatchEvent(new CustomEvent('mls:generation-'+kind,{detail:detail}));}catch(e){}
+  /* Existing refresh-burst owners listen to this legacy settlement name.  It
+     is emitted only from a real refusal/settlement, never from a facade. */
+  if(kind==='settled')try{window.dispatchEvent(new CustomEvent('mls:generation-complete',{detail:detail}));}catch(e2){}
+}
+function _mlsGenerationAbortError(reason){
+  var e=new Error(String(reason||'generation-aborted'));
+  e.name='AbortError'; e.code=String(reason||'generation-aborted');
+  return e;
+}
+function _mlsAbortGenerationRun(run,reason){
+  if(!run||run.settled||!run.controller)return false;
+  run.abortReason=String(reason||'generation-aborted');
+  try{run.controller.abort(run.abortReason);}catch(e){try{run.controller.abort();}catch(e2){}}
+  return true;
+}
+function _mlsAbortActiveGeneration(reason){
+  return _mlsAbortGenerationRun(_mlsActiveGeneration,reason);
+}
+function _mlsAwaitGeneration(run,promise,timeoutMs,timeoutReason){
+  return new Promise(function(resolve,reject){
+    var done=false,timer=null,signal=run&&run.controller&&run.controller.signal;
+    function cleanup(){if(timer)clearTimeout(timer);try{if(signal)signal.removeEventListener('abort',onAbort);}catch(e){}}
+    function finish(fn,value){if(done)return;done=true;cleanup();fn(value);}
+    function onAbort(){finish(reject,_mlsGenerationAbortError((run&&run.abortReason)||timeoutReason||'generation-aborted'));}
+    if(signal){
+      if(signal.aborted){onAbort();return;}
+      signal.addEventListener('abort',onAbort,{once:true});
+    }
+    timer=setTimeout(function(){
+      if(run)run.abortReason=String(timeoutReason||'generation-timeout');
+      if(run&&run.controller)try{run.controller.abort(run.abortReason);}catch(e){onAbort();}
+      else onAbort();
+    },timeoutMs);
+    Promise.resolve(promise).then(function(value){finish(resolve,value);},function(error){finish(reject,error);});
+  });
+}
+function _mlsStartGeneration(transcriptEl,evidence){
+  _mlsAbortActiveGeneration('superseded');
+  var run={id:++_mlsGenerationSequence,controller:new AbortController(),settled:false,abortReason:'',evidence:evidence||null,sourceEl:transcriptEl,sourceHandler:null};
+  if(transcriptEl&&typeof transcriptEl.addEventListener==='function'){
+    run.sourceHandler=function(){_mlsAbortGenerationRun(run,'source-changed');};
+    transcriptEl.addEventListener('input',run.sourceHandler);
   }
-  try{ if(typeof window.__mlsEnsureDraftTuning==='function') await window.__mlsEnsureDraftTuning(); refreshGenSectionProfiles(); }catch(eTune){}
-  try{autoFillVisitComment();}catch(eComment){}
-  if(!_mlsExactScheduledClinicalAction('note generation')) return false;
-  if(!_athenaGuardBoundEditor('note generation')) return false;
-  const generationBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('generated');
-  const generationEpoch=currentVisitAthenaEpoch;
-  const generationSourceFingerprint=_mlsAthenaGenerationSourceFingerprint(generationBinding);
-  const generationFingerprint=_athenaEditorFingerprint();
-  const generationFormat=currentFormat;
-  const generationOptFingerprint=JSON.stringify(currentOpt||null);
-  const generationStyle=getGenStyle();
-  const key=getKey();
+  _mlsActiveGeneration=run;
+  _mlsEmitGeneration('started',{runId:run.id,evidence:(evidence&&evidence.basis)||'today'});
+  return run;
+}
+function _mlsSettleGeneration(run,status,code,message){
+  if(!run||run.settled)return;
+  run.settled=true;
+  try{if(run.sourceEl&&run.sourceHandler)run.sourceEl.removeEventListener('input',run.sourceHandler);}catch(e){}
+  if(_mlsActiveGeneration===run)_mlsActiveGeneration=null;
+  _mlsEmitGeneration('settled',{runId:run.id,status:status||'failed',code:String(code||''),message:String(message||'')});
+}
+function _mlsRefuseGeneration(code,message,showToast){
+  var runId=++_mlsGenerationSequence;
+  if(showToast!==false)toast(message,'err');
+  _mlsEmitGeneration('refused',{runId:runId,code:String(code||'generation-refused'),message:String(message||'')});
+  _mlsEmitGeneration('settled',{runId:runId,status:'refused',code:String(code||'generation-refused'),message:String(message||'')});
+  return false;
+}
+function _mlsHasTrustedVerifiedHistory(){
+  try{
+    var p=activePatient(); if(!p)return false;
+    var patientId=String(p.id==null?(p.patientId==null?'':p.patientId):p.id);
+    if(!patientId)return false;
+    var rows=[];
+    var model=window.__mlsVisitModel;
+    if(model&&typeof model.getVisits==='function'){
+      try{rows=model.getVisits(p)||[];}catch(e1){try{rows=model.getVisits(p.id)||[];}catch(e2){rows=[];}}
+    }
+    if(!Array.isArray(rows)||!rows.length)rows=Array.isArray(p.visits)?p.visits:[];
+    return rows.some(function(v){
+      return !!(v&&v.identityVerified===true&&String(v.identityBinding||'')===patientId&&v.fullDetail===true&&v.bodyComplete===true&&v.indexOnly!==true&&String(v.raw||'').trim());
+    });
+  }catch(e){return false;}
+}
+function _mlsGenerationEvidenceDecision(text){
+  var raw=String(text||'').trim();
+  if(_mlsTranscriptHasDraftableTodayEvidence(raw))return {ok:true,basis:'today'};
+  var sparse=raw.toLowerCase().replace(/[^a-z0-9\/-]+/g,' ').trim();
+  var words=sparse.split(/\s+/).filter(Boolean);
+  /* Verified history can support a short CURRENT statement, not arbitrary
+     four-word filler. "the patient is fine" (and the live typo variant) is a
+     real status statement; "make a note please" is not clinical evidence. */
+  var currentStatement=/\b(?:patient|reports?|denies|feels?|feeling|doing|symptom|pain|ache|better|worse|fine|good|okay|well|unchanged|improv\w*)\b/i;
+  if(words.length>=4&&currentStatement.test(sparse)&&_mlsHasTrustedVerifiedHistory())return {ok:true,basis:'trusted-history-sparse'};
+  return {ok:false,basis:'insufficient',code:'sparse-today-evidence',message:'Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.'};
+}
+function _mlsGenerationDraftTuning(evidence){
+  var tuning=getGenSectionProfileOverrides()||{families:{}};
+  if(evidence&&evidence.basis==='trusted-history-sparse'){
+    var sparseRule='CURRENT VISIT EVIDENCE IS SPARSE. Use the verified prior visits only as background. HPI may state only the current words actually supplied. For ROS, EXAM, ASSESSMENT, and PLAN, write "Not documented in today\'s transcript." unless the current words explicitly support that section. Do not infer stability, examination, diagnosis, medication continuation, order, procedure, follow-up, or plan from prior history.';
+    tuning=Object.assign({},tuning,{instructions:[String(tuning.instructions||'').trim(),sparseRule].filter(Boolean).join('\n')});
+  }
+  return tuning;
+}
+async function generateNote(){
+  _mlsAbortActiveGeneration('superseded');
+  const transcriptEl=document.getElementById('transcript');
+  const transcript=transcriptEl?transcriptEl.value.trim():'';
+  if(!transcript)return _mlsRefuseGeneration('empty-transcript','Capture or paste a visit first.');
+  const evidence=_mlsGenerationEvidenceDecision(transcript);
+  if(!evidence.ok)return _mlsRefuseGeneration(evidence.code,evidence.message);
+  if(!_mlsExactScheduledClinicalAction('note generation'))return _mlsRefuseGeneration('visit-action-blocked','MLS could not verify the active visit for note generation. Re-open the intended visit and try again.',false);
+  if(!_athenaGuardBoundEditor('note generation'))return _mlsRefuseGeneration('visit-binding-blocked','MLS could not bind this draft to the active patient. Re-open the intended visit and try again.',false);
+  const hasAiNow=hasAI();
+  if(!hasAiNow&&transcript.trim()!==EXAMPLE.trim()){
+    openSettings();
+    return _mlsRefuseGeneration('ai-unavailable','Add your OpenAI API key in Settings to generate notes.');
+  }
   const gb=document.getElementById('genBtn');
-
-  if(!hasAI()){
-    if(transcript.trim()===EXAMPLE.trim()){
+  const run=_mlsStartGeneration(transcriptEl,evidence);
+  var outcome='failed',outcomeCode='',outcomeMessage='';
+  if(gb){gb.disabled=true;gb.innerHTML='<span class="spin"></span> Generating…';}
+  try{ ['genError','noteGenError'].forEach(function(id){ var genError=document.getElementById(id); if(genError){ genError.textContent=''; genError.style.display='none'; } }); }catch(eGenClear){}
+  try{
+    if(typeof window.__mlsEnsureDraftTuning==='function'){
+      await _mlsAwaitGeneration(run,Promise.resolve().then(function(){return window.__mlsEnsureDraftTuning();}),_mlsGenerationTimeoutMs('setup',10000),'generation-setup-timeout');
+    }
+    refreshGenSectionProfiles();
+    try{autoFillVisitComment();}catch(eComment){}
+    const generationBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('generated');
+    const generationEpoch=currentVisitAthenaEpoch;
+    const generationSourceFingerprint=_mlsAthenaGenerationSourceFingerprint(generationBinding);
+    const generationFingerprint=_athenaEditorFingerprint();
+    const generationFormat=currentFormat;
+    const generationOptFingerprint=JSON.stringify(currentOpt||null);
+    const generationStyle=getGenStyle();
+    const key=getKey();
+    if(!hasAiNow){
       currentSoap=_reorderNoteForStyle(offlineExampleNote(), generationStyle);
       currentNoteProvenance='typed';
       lastAIDraft=currentSoap; // baseline for "Teach MLS"
@@ -27347,27 +27480,15 @@ async function generateNote(){
       try{ initCollapsibleExtras(); }catch(e){}
       try{ _markVisitDirty(); }catch(e){}
       toast('No API key yet — showing an offline example note. Add your key in Settings for AI on any visit.','');
-    } else {
-      toast('Add your OpenAI API key in Settings to generate notes.','err');
-      openSettings();
-      try{ window.dispatchEvent(new CustomEvent('mls:generation-complete')); }catch(eGen1){}
-      return false;
+      outcome='success'; outcomeCode='offline-example';
+      return true;
     }
-    try{ window.dispatchEvent(new CustomEvent('mls:generation-complete')); }catch(eGen2){}
-    return true;
-  }
-
-  gb.disabled=true; gb.innerHTML='<span class="spin"></span> Generating…';
-  try{ ['genError','noteGenError'].forEach(function(id){ var genError=document.getElementById(id); if(genError){ genError.textContent=''; genError.style.display='none'; } }); }catch(eGenClear){}
-  try{
-    /* A hung generation request used to leave this button disabled forever —
-       every later click then failed with no visible outcome. Bound the wait so
-       the clinician always gets an actionable error and a live retry button. */
-    let genTimeoutId=null;
-    const result=await Promise.race([
-      callOpenAI(transcript,key),
-      new Promise((_,reject)=>{ genTimeoutId=setTimeout(()=>reject(new Error('generation-timeout')),90000); })
-    ]).finally(()=>{ if(genTimeoutId)clearTimeout(genTimeoutId); });
+    const result=await _mlsAwaitGeneration(
+      run,
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence}),
+      _mlsGenerationTimeoutMs('main',90000),
+      'generation-timeout'
+    );
     /* Validate before currentSoap/currentInsurance/currentCoding or any editor
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
@@ -27377,10 +27498,9 @@ async function generateNote(){
        independently passes the exact five-destination validator; narrative,
        malformed, and ambiguous responses still fail closed. */
     const canonicalAthenaNote=_mlsValidateAthenaNote(result.athena_note==null?result.note:result.athena_note);
-    if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)) return false;
+    if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch))throw _mlsGenerationAbortError('source-changed');
     if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint||_mlsAthenaGenerationSourceFingerprint(generationBinding)!==generationSourceFingerprint){
-      toast('The visit changed while the note was being generated, so MLS discarded that older result. Review the current visit and generate again. Nothing changed in Athena.','err');
-      return false;
+      throw _mlsGenerationAbortError('source-changed');
     }
     currentSoap=_reorderNoteForStyle(result.note, generationStyle);
     currentNoteProvenance=generationStyle==='soap'?'generated_soap':'generated_nonsoap';
@@ -27411,27 +27531,53 @@ async function generateNote(){
     // OPTIONAL: if templates are enabled, reformat the note to the chosen
     // template. This is a guarded no-op when the toggle is OFF (default).
     try{
-      var templateResult=await maybeApplyTemplate(transcript,generationBinding,currentVisitAthenaEpoch);
+      var templateController=new AbortController();
+      var templateRun={controller:templateController,abortReason:'',settled:false};
+      var abortTemplate=function(){templateRun.abortReason=run.abortReason||'generation-aborted';try{templateController.abort(templateRun.abortReason);}catch(e){templateController.abort();}};
+      if(run.controller.signal.aborted)abortTemplate();else run.controller.signal.addEventListener('abort',abortTemplate,{once:true});
+      var templateResult=await _mlsAwaitGeneration(
+        templateRun,
+        maybeApplyTemplate(transcript,generationBinding,currentVisitAthenaEpoch,{signal:templateController.signal}),
+        _mlsGenerationTimeoutMs('template',12000),
+        'template-timeout'
+      );
+      try{run.controller.signal.removeEventListener('abort',abortTemplate);}catch(eRemoveTemplate){}
       reportTemplateApplication(templateResult,templateResult&&templateResult.templateName);
-    }catch(e){ reportTemplateApplication({applied:false,reason:'exception'},''); }
+    }catch(e){
+      reportTemplateApplication({applied:false,reason:(e&&e.code)||'exception'},'');
+    }
+    if(run.controller.signal.aborted)throw _mlsGenerationAbortError(run.abortReason||'generation-aborted');
     try{ _markVisitDirty(); }catch(e){}
+    outcome='success'; outcomeCode='generated';
     return true;
   }catch(err){
-    if(err&&/generation-timeout/.test(String(err.message||''))){
-      toast('Note generation timed out after 90 seconds. Your transcript is safe — check your connection and click Generate again.','err');
+    var abortCode=String((err&&err.code)||run.abortReason||'');
+    if(abortCode==='superseded'){
+      outcome='aborted'; outcomeCode=abortCode; outcomeMessage='';
+    }else if(abortCode==='source-changed'){
+      outcome='aborted'; outcomeCode=abortCode;
+      outcomeMessage='The patient or visit source changed while MLS was generating. The older result was discarded—review the current visit and generate again.';
+      toast(outcomeMessage,'err');
+    }else if(abortCode==='generation-timeout'){
+      outcomeCode=abortCode;
+      outcomeMessage='Note generation timed out after 90 seconds. Your transcript is safe—click Generate again.';
+      toast(outcomeMessage,'err');
+    }else if(abortCode==='generation-setup-timeout'){
+      outcomeCode=abortCode;
+      outcomeMessage='Note settings did not finish loading. Your transcript is safe—click Generate again.';
+      toast(outcomeMessage,'err');
     }else{
-      toast(friendlyError(err),'err');
+      outcomeCode=(err&&err.mlsAi&&err.mlsAi.code)||'generation-failed';
+      outcomeMessage=friendlyError(err);
+      toast(outcomeMessage,'err');
     }
     try{
-      var genMessage=err&&/generation-timeout/.test(String(err.message||'')) ? 'Note generation timed out. Your transcript is safe — click Generate again.' : friendlyError(err);
-      ['genError','noteGenError'].forEach(function(id){ var genError=document.getElementById(id); if(genError){ genError.textContent=genMessage; genError.style.display='block'; } });
+      if(outcomeMessage)['genError','noteGenError'].forEach(function(id){var genError=document.getElementById(id);if(genError){genError.textContent=outcomeMessage;genError.style.display='block';}});
     }catch(eGenSurface){}
     return false;
   }finally{
-    gb.disabled=false; gb.innerHTML='✨ Generate Note';
-    /* Announce settlement (success OR failure) so overlay refresh bursts stop
-       instead of hammering the document for their full window. */
-    try{ window.dispatchEvent(new CustomEvent('mls:generation-complete')); }catch(eGen){}
+    if(_mlsActiveGeneration===run&&gb){gb.disabled=false;gb.innerHTML='✨ Generate Note';}
+    _mlsSettleGeneration(run,outcome,outcomeCode,outcomeMessage);
   }
 }
 
@@ -28021,7 +28167,8 @@ function _mlsTranscriptHasDraftableTodayEvidence(text){
   return words.length>=4&&clinical.test(src)&&!generic.test(src);
 }
 
-async function callOpenAI(transcript,key){
+async function callOpenAI(transcript,key,options){
+  options=options||{};
   const preset=getPreset();
   const spec=preset||getSpec();
   const ctx=buildPatientContext();
@@ -28086,7 +28233,7 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
      the system string is dropped. The canonical transcript is untouched. */
   var turnsBlock='';
   try{ var tl=window.__mlsTurns; if(tl&&tl.installed&&typeof tl.labelledForPrompt==='function'){ var lb=tl.labelledForPrompt(); if(lb) turnsBlock='\n\nSPEAKER-TURN HYPOTHESES (UNVERIFIED — pause-gap guesses, tap-corrected only where the doctor intervened; treat as hints, CONTENT ALWAYS WINS, ignore any label that contradicts the transcript):\n'+lb; } }catch(eTurns){}
-  return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock,key,{draftTuning:getGenSectionProfileOverrides()});
+  return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),signal:options.signal});
 }
 
 /* ---------------------------------------------------------
@@ -29237,6 +29384,7 @@ function _athenaCurrentMatchesBound(binding){
 }
 function _athenaHandleActivePatientChange(previousId,nextId){
   if(String(previousId||'')===String(nextId||''))return;
+  try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed');}catch(eGeneration){}
   try{_athenaResetSuperbill(true);}catch(e){}
   try{if(typeof _resetAiVisitOutputs==='function')_resetAiVisitOutputs();}catch(eAi){}
   try{var speech=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(speech&&speech.current&&speech.current()){speech.claim('patient-switch');speech.release('patient-switch');}}catch(e1){}

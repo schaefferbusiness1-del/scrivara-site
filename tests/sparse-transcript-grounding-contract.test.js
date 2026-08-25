@@ -69,9 +69,11 @@ for (const file of SHELLS) {
   eq(result.coding.cpt.length, 0, file + ': unsupported CPT code survived before physician review');
 
   const generate = source.indexOf('async function generateNote()');
-  const refusal = source.indexOf('if(!_mlsTranscriptHasDraftableTodayEvidence(transcript))', generate);
+  const decision = source.indexOf('_mlsGenerationEvidenceDecision(transcript)', generate);
+  const refusal = source.indexOf('if(!evidence.ok)', decision);
   const actionGuard = source.indexOf("_mlsExactScheduledClinicalAction('note generation')", generate);
-  ok(refusal > generate && refusal < actionGuard, file + ': sparse-transcript refusal does not run before visit generation work');
+  ok(decision > generate && refusal > decision && refusal < actionGuard, file + ': sparse/history evidence decision does not run before visit generation work');
+  ok(source.includes("basis:'trusted-history-sparse'") && source.includes('identityVerified===true') && source.includes('bodyComplete===true'), file + ': sparse generation is not restricted to verified full prior-visit bodies');
   ok(source.includes('TODAY_TRANSCRIPT_BEGIN') && source.includes('BACKGROUND_ONLY_BEGIN'), file + ': today and background payloads are not explicitly separated');
   ok(source.includes("silence is not stability, review, reconciliation, or continuation"), file + ': background-only block lacks the no-promotion rule');
   ok(source.includes('"em_level": "<supported 99202-99215 code, or empty string when insufficient>"'), file + ': prompt still forces an E/M code');
@@ -80,4 +82,4 @@ for (const file of SHELLS) {
 }
 
 console.log('PASS sparse-transcript-grounding-contract: ' + checks +
-  ' checks — generic sparse visits fail before generation, chart background is fenced from today, and unsupported ordinary coding is withheld');
+  ' checks — sparse visits require verified full history or refuse, chart background is fenced from today, and unsupported ordinary coding is withheld');

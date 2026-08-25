@@ -59,11 +59,14 @@ assert(fixpack.indexOf('function cancelBurst(reason)') >= 0, 'cancelBurst helper
   assert.strictEqual(ctx.__refreshes, 1, 'a fresh burst after cancel must still refresh');
 }
 
-/* generateNote announces settlement on every exit lane (finally + no-AI paths) */
+/* The engine owns truthful refusal/start/settlement; the legacy refresh event
+   is emitted only as a derived settlement compatibility event. */
+const lifecycle = between(app, 'var _mlsGenerationSequence=0;', 'function autoPopulateExtras(result){');
 const gen = between(app, 'async function generateNote(){', 'function autoPopulateExtras(result){');
-const dispatches = gen.match(/mls:generation-complete/g) || [];
-assert(dispatches.length >= 3, 'generateNote does not announce settlement on all exit lanes (found ' + dispatches.length + ')');
-assert(gen.indexOf('finally{') >= 0 && gen.indexOf('mls:generation-complete', gen.indexOf('finally{')) > 0, 'settlement is not announced from the finally block');
+assert(lifecycle.includes("new CustomEvent('mls:generation-'+kind"), 'typed generation lifecycle event dispatcher is missing');
+assert(lifecycle.includes("if(kind==='settled')") && lifecycle.includes("new CustomEvent('mls:generation-complete'"), 'legacy refresh settlement is not derived from the truthful settled event');
+assert(lifecycle.includes("_mlsEmitGeneration('refused'") && lifecycle.includes("_mlsEmitGeneration('settled'"), 'a refusal does not publish a bounded settled lifecycle');
+assert(gen.indexOf('finally{') >= 0 && gen.indexOf('_mlsSettleGeneration(run,', gen.indexOf('finally{')) > 0, 'started generation does not settle from finally');
 
 /* ---- 2. provider-picker observer ignores its own mutations ---- */
 const start = between(picker, 'function start() {', 'function revert() {');

@@ -22696,23 +22696,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3Gen', function () {
       var t = $('transcript'), text = t ? (t.value || '').trim() : '';
       if (!text) { toast('Type, paste, or record some visit text first.'); var top = $('ez3Transcript'); if (top) top.focus(); return; }
-      /* Keep the Easy Visit wrapper on the same fail-closed evidence gate as
-         generateNote().  Do this before stamping genClickedAt or clicking the
-         hidden engine button: otherwise a sparse transcript is refused by the
-         real generator, then computePhase overwrites that useful refusal with
-         the generic connection warning. */
-      if (typeof _mlsTranscriptHasDraftableTodayEvidence !== 'function' ||
-          !_mlsTranscriptHasDraftableTodayEvidence(text)) {
-        S.phase = 'stopped'; S.genClickedAt = 0;
-        S.lastWarn = 'Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.';
-        render();
-        return;
-      }
-      if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
       var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; }
-      S.lastWarn = ''; ez3StampGenClick(); S.signedAt = 0; g.click(); S.phase = 'gen'; render();
+      g.click(); render();
     });
-    on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } ez3StampGenClick(); S.signedAt = 0; g.click(); S.phase = 'gen'; render(); });
+    on('ez3Regen', function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } g.click(); render(); });
     on('ez3Copy', function (btn) {
       var c = $('copyEmrBtn'); if (c) { c.click(); btn.textContent = '✅ Copied'; setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
       else toast('Copy control not found.');
@@ -24414,6 +24401,43 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.addEventListener('mls:menu-staff-prep-request', onMenuStaffPrepRequest);
   cleanup.push(function () { window.removeEventListener('mls:menu-staff-prep-request', onMenuStaffPrepRequest); });
 
+  /* The hidden generation engine is the sole lifecycle owner.  These events
+     drive every Easy/top facade from what actually happened, so a synchronous
+     evidence refusal can never turn into a fake spinner and later into the
+     generic "check connection" warning. */
+  function onGenerationStarted(ev) {
+    var d = ev && ev.detail || {};
+    S.generationRunId = Number(d.runId || 0);
+    S.genClickedAt = Date.now(); S.signedAt = 0; S.phase = 'gen'; S.lastWarn = '';
+    try { render(); } catch (e) {}
+  }
+  function onGenerationRefused(ev) {
+    var d = ev && ev.detail || {};
+    S.generationRunId = Number(d.runId || 0);
+    S.genClickedAt = 0; S.phase = 'stopped';
+    S.lastWarn = String(d.message || 'Note generation was refused. Add current visit details and try again.');
+    try { render(); } catch (e) {}
+  }
+  function onGenerationSettled(ev) {
+    var d = ev && ev.detail || {}, runId = Number(d.runId || 0);
+    if (S.generationRunId && runId && runId !== S.generationRunId) return;
+    S.genClickedAt = 0;
+    if (d.status === 'success') { S.lastWarn = ''; S.phase = noteText().trim().length >= 30 ? 'note' : 'stopped'; }
+    else if (d.status !== 'refused') {
+      S.phase = 'stopped';
+      if (d.message) S.lastWarn = String(d.message);
+    }
+    try { render(); } catch (e) {}
+  }
+  window.addEventListener('mls:generation-started', onGenerationStarted);
+  window.addEventListener('mls:generation-refused', onGenerationRefused);
+  window.addEventListener('mls:generation-settled', onGenerationSettled);
+  cleanup.push(function () {
+    window.removeEventListener('mls:generation-started', onGenerationStarted);
+    window.removeEventListener('mls:generation-refused', onGenerationRefused);
+    window.removeEventListener('mls:generation-settled', onGenerationSettled);
+  });
+
   /* =======================================================================
    *  public canonical API (claims the __mlsEasyV3 name so old copies bail)
    * ===================================================================== */
@@ -24428,23 +24452,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     state: function () { return { mode: S.mode, screen: S.screen, phase: S.phase, locked: S.locked, autoPull: S.autoPull, pull: P ? { running: P.running, label: P.range.label, saved: P.saved, failedDays: P.failedDays.length } : null }; },
     providerTarget: function () { return activeProviderRequest(); },
     providerRosterReceipt: function () { return providerRosterReceipt(); },
-    /* b940 (owner 2026-07-27: "WHY IS THERE 2 GENERATE NOTES HERE"). The top
-       visit lane starts a generation by clicking #genBtn directly, which never
-       stamps this phase machine, so computePhase() stayed on idle/stopped and
-       renderDoctor kept painting its own #ez3Gen hero reading "Generate one
-       note" while the lane above it already read "Generating note...". Two
-       generate affordances on one screen, one of them offering to start work
-       that was already running.
-       This is the seam that lets a non-engine starter hand the phase over. It
-       cannot refuse and it cannot start anything: no gate, no click, state
-       only. That is deliberate - remote.generate() below WOULD refuse a
-       walk-in or unscheduled visit (it requires S.appt), and the lane must
-       keep working for those exactly as it does today. */
-    noteGenerationStarted: function () {
-      ez3StampGenClick(); S.signedAt = 0; S.phase = 'gen';
-      try { render(); } catch (e) {}
-      return true;
-    },
     /* ---- remote API (v3.2, for the phone pair-to-desktop host) ------------
      * A WHITELIST of safe entry points a paired phone may drive THROUGH the
      * desktop (see feat_mls_easy_phone_host.module.js — inert until the
@@ -24519,9 +24526,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return true;
       },
       generate: function () {
-        if (!S.appt || !requireExactScheduledBinding(S.appt, 'note generation')) return false;
         var g = genBtnResolve(); if (!g) return false;
-        S.genClickedAt = Date.now(); S.signedAt = 0; g.click(); S.phase = 'gen'; render();
+        g.click(); render();
         return true;
       },
       requestSendReview: function () {

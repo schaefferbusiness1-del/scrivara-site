@@ -211,6 +211,9 @@ function makeEngineHarness(blocks, gate) {
       }
     },
     toast(message, type) { calls.toasts.push({ message, type }); },
+    _mlsAbortActiveGeneration() { return false; },
+    _mlsGenerationEvidenceDecision() { return { ok: true, basis: 'today' }; },
+    _mlsRefuseGeneration(code, message) { calls.toasts.push({ message, type: code }); return false; },
     fetch() { calls.network += 1; throw new Error('network effect reached'); }
   };
   context.window.window = context.window;
