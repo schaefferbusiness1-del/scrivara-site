@@ -13,7 +13,7 @@ function eq(actual, expected, message) { checks++; assert.deepStrictEqual(actual
 
 eq(gate.normalizePath('1p\\index.html'), '1p/index.html', 'Windows paths normalize to repository paths');
 ok(gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.79.zip'), 'approved stale ZIP is allowed');
-ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.80.zip'), 'new package is never silently allowed as untracked');
+ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.81.zip'), 'new package is never silently allowed as untracked');
 
 const provenance = gate.classifyChangedFiles([
   'feat_athena_autopull.js',

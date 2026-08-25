@@ -114,6 +114,10 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   assert.ok(activeBackground.indexOf("_ceDoc.createElement('br')") !== -1, 'active CE write builds text+<br> nodes');
   assert.ok(activeBackground.indexOf('while (el.firstChild) el.removeChild(el.firstChild);') !== -1, 'active CE write clears prior children');
   assert.ok(activeBackground.indexOf('rolledBack: rolledBack,') !== -1, 'active failed verification reports rolledBack');
+  assert.ok(activeBackground.indexOf('attempted: true, partialMutation: true, written: false') !== -1,
+    'a setter failure after a mutation attempt must report a possible partial mutation');
+  assert.ok(activeBackground.indexOf('partialMutation: noteAttempted && !rolledBack') !== -1,
+    'a failed verification must report a partial mutation exactly when rollback was not proven');
   const rbIdx = activeBackground.indexOf('The empty-editor precheck above means rollback == clearing back to empty');
   assert.ok(rbIdx > 0, 'rollback rationale present');
   /* rollback must be gated on noteAttempted && !alreadyExact so a pre-existing

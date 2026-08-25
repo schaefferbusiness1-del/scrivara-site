@@ -587,7 +587,42 @@ async function mlsAthenaActionV2DriverFn(req) {
       } catch (e) {}
       return norm(out);
     }
+    function clinicalLabelCore(value) {
+      return norm(value).replace(/[^a-z0-9]+/g, ' ').replace(/\b(?:section|panel|workspace|editor|field|region|container|textarea|input|form)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    function directHumanLabels(el) {
+      var out = [];
+      try {
+        [el.getAttribute('aria-label'), el.getAttribute('title')].forEach(function (value) { if (text(value)) out.push(text(value)); });
+        if (el.labels && el.labels.length === 1 && text(el.labels[0].textContent)) out.push(text(el.labels[0].textContent));
+        var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
+        for (var i = 0; i < heads.length && i < 4; i++) if (text(heads[i].textContent)) out.push(text(heads[i].textContent));
+      } catch (e) {}
+      return out;
+    }
+    var GENERIC_NOTE_HUMAN_CORES = {
+      'encounter note': 1, 'encounter documentation': 1, 'clinical note': 1,
+      'clinical documentation': 1, 'visit note': 1, 'visit documentation': 1,
+      'progress note': 1, 'soap note': 1, 'chart note': 1, 'draft note': 1,
+      'note': 1, 'documentation': 1, 'visit narrative': 1, 'encounter narrative': 1
+    };
+    function genericNoteVisibleConflict(el) {
+      var labels = directHumanLabels(el);
+      for (var i = 0; i < labels.length; i++) {
+        var core = clinicalLabelCore(labels[i]);
+        /* This is an allowlist, not a vocabulary blacklist. A future Athena
+           clinical section name must never inherit the encounter-note machine
+           id and become writable merely because MLS has not seen that phrase. */
+        if (core && GENERIC_NOTE_HUMAN_CORES[core] !== 1) return true;
+      }
+      return false;
+    }
     function noteScopeStrength(el) {
+      /* A machine selector is only an anchor. If Athena presents a different
+         human-facing clinical section at that same node, fail closed instead of
+         trusting the stale/misleading id or data-testid. A machine-only anchor
+         remains valid; any supplied human label must match the allowlist. */
+      if (genericNoteVisibleConflict(el)) return 0;
       var h = scopeDescriptor(el);
       if (/\b(clinical|encounter|visit|progress|soap|chart)\s+(note|documentation)\b|\b(note|documentation)\s+(editor|form|workspace|panel)\b|\bdraft\s+note\b/.test(h)) return 3;
       if (/\bencounter\b/.test(h) && /\b(note|documentation|clinical)\b/.test(h)) return 3;
@@ -641,6 +676,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (noteContainers.length !== 1) return null;
       var noteScope = noteContainers[0], noteEditors = editorsIn(noteScope, frame);
       if (noteEditors.length !== 1) return null;
+      if (genericNoteVisibleConflict(noteEditors[0])) return null;
       if (action === 'write_note') return { control: noteEditors[0], editor: noteEditors[0], root: noteScope, strength: noteScopeStrength(noteScope) };
       var all = interactive(noteScope, frame.w), preferred = [], generic = [], sign = [];
       for (var i = 0; i < all.length; i++) {
@@ -659,13 +695,20 @@ async function mlsAthenaActionV2DriverFn(req) {
        semantically exact section root and exactly one editor inside it. Combined
        labels such as "Assessment & Plan" are intentionally ambiguous for the
        two independent destinations and therefore refuse. */
+    /* Match one canonical Athena section label, not merely a word appearing in
+       a broader clinical label. The older regexes accepted realistic decoys
+       such as "Imaging Impression", "Patient Recommendations", and a specialty
+       "Examination" editor as Assessment, Plan, and Physical Exam. That is a
+       wrong-field risk, so uncertain labels now fail closed. Attribute/heading
+       suffixes used by controls (section, panel, editor, field...) are ignored,
+       but the remaining label must equal one of these reviewed destinations. */
     var NAMED_NOTE_DEFS = {
-      hpi: /\b(?:hpi|history of present illness|present illness)\b/,
-      ros: /\b(?:ros|review of systems)\b/,
-      exam: /\b(?:physical exam(?:ination)?|exam(?:ination)?|objective findings)\b/,
-      assessment: /\b(?:assessment(?: narrative)?|clinical impression|impression)\b/,
-      plan: /\b(?:plan|follow up|followup|recommendations?)\b/,
-      procedure: /\b(?:procedure documentation|procedure note|operative note|op note)\b/
+      hpi: { 'hpi': 1, 'history of present illness': 1, 'present illness': 1 },
+      ros: { 'ros': 1, 'review of systems': 1 },
+      exam: { 'physical exam': 1, 'physical examination': 1 },
+      assessment: { 'assessment': 1, 'assessment narrative': 1 },
+      plan: { 'plan': 1, 'follow up': 1, 'followup': 1, 'plan follow up': 1, 'plan and follow up': 1 },
+      procedure: { 'procedure documentation': 1, 'procedure note': 1, 'operative note': 1, 'op note': 1 }
     };
     /* The app's visible destination is part of the reviewed payload, not
        decoration. Keep the driver-side copy so a stale/misbuilt page cannot
@@ -693,9 +736,64 @@ async function mlsAthenaActionV2DriverFn(req) {
       } catch (e) {}
       return norm(out);
     }
-    function namedKeysForDescriptor(desc) {
+    function namedSectionLabels(el) {
+      var out = [];
+      try {
+        [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component')].forEach(function (value) { if (text(value)) out.push(text(value)); });
+        var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
+        for (var i = 0; i < heads.length && i < 4; i++) if (text(heads[i].textContent)) out.push(text(heads[i].textContent));
+      } catch (e) {}
+      return out;
+    }
+    function namedLabelCore(value) {
+      /* Athena's machine-readable attributes commonly separate words with
+         hyphens/underscores (for example `history-of-present-illness-section`).
+         Normalize separators before removing control-role suffixes so an exact
+         machine label remains usable. The resulting phrase still has to equal
+         one reviewed destination; combined or semantic-near-match labels keep
+         failing closed. */
+      return clinicalLabelCore(value);
+    }
+    function namedKeysForLabel(labelValue, editorLike) {
+      var keys = [], labelKey = namedLabelCore(labelValue);
+      Object.keys(NAMED_NOTE_DEFS).forEach(function (key) {
+        if (NAMED_NOTE_DEFS[key][labelKey] === 1 && keys.indexOf(key) < 0) keys.push(key);
+        /* A second editor can be a sibling rather than a descendant of the
+           canonical section and identify itself as "... second editor" or
+           "... editor secondary". Count that as another candidate so the
+           destination refuses as ambiguous. Qualifier stripping applies only
+           to write controls, never to clinical region headings. */
+        if (editorLike) {
+          var duplicateLabelKey = labelKey.replace(/\b(?:primary|secondary|alternate|copy|first|second|third|fourth|\d+(?:st|nd|rd|th)?)\b/g, ' ').replace(/\s+/g, ' ').trim();
+          if (NAMED_NOTE_DEFS[key][duplicateLabelKey] === 1 && keys.indexOf(key) < 0) keys.push(key);
+        }
+      });
+      return keys;
+    }
+    function namedVisibleConflict(el, expectedKey) {
+      var tag = ''; try { tag = String(el.tagName || '').toLowerCase(); } catch (eTag) {}
+      var editorLike = tag === 'textarea' || tag === 'input' || (el && el.isContentEditable === true);
+      var labels = directHumanLabels(el);
+      for (var i = 0; i < labels.length; i++) {
+        var core = namedLabelCore(labels[i]);
+        if (!core) continue;
+        var keys = namedKeysForLabel(labels[i], editorLike);
+        if (keys.length !== 1 || keys[0] !== expectedKey) return true;
+      }
+      return false;
+    }
+    function namedKeysForElement(el) {
       var keys = [];
-      Object.keys(NAMED_NOTE_DEFS).forEach(function (key) { if (NAMED_NOTE_DEFS[key].test(desc)) keys.push(key); });
+      var tag = ''; try { tag = String(el.tagName || '').toLowerCase(); } catch (eTag) {}
+      var editorLike = tag === 'textarea' || tag === 'input' || (el && el.isContentEditable === true);
+      namedSectionLabels(el).forEach(function (labelValue) {
+        namedKeysForLabel(labelValue, editorLike).forEach(function (key) { if (keys.indexOf(key) < 0) keys.push(key); });
+      });
+      /* A canonical machine anchor plus a contradictory human-facing label is
+         not an exact destination. Return an impossible sentinel so the
+         scope and every ancestor walk reject it instead of silently ignoring the
+         human evidence. */
+      if (keys.length === 1 && namedVisibleConflict(el, keys[0])) return ['__clinical_label_conflict__'];
       return keys;
     }
     var NAMED_NOTE_NESTED_EXCLUSIONS = /\b(?:procedure documentation|procedure note|operative note|orders?|billing|charges?|claims?)\b/;
@@ -706,12 +804,20 @@ async function mlsAthenaActionV2DriverFn(req) {
          textarea inside another named section become a false destination. Walk
          through the outer ancestors too and reject any conflicting label. */
       while (cur && guard++ < 24) {
-        var desc = namedSectionDescriptor(cur), keys = namedKeysForDescriptor(desc);
+        var desc = namedSectionDescriptor(cur), keys = namedKeysForElement(cur);
         /* Athena may render Procedure Documentation inside the wider Physical
            Exam panel. A lone nested procedure editor is not an Exam editor,
            even when the outer panel has an exact Physical Exam heading. */
         if (NAMED_NOTE_NESTED_EXCLUSIONS.test(desc) && key !== 'procedure') return false;
-        if (keys.length && (keys.length !== 1 || keys[0] !== key)) {
+        var curTag = ''; try { curTag = String(cur.tagName || '').toLowerCase(); } catch (eCurTag) {}
+        var curEditorLike = curTag === 'textarea' || curTag === 'input' || (cur && cur.isContentEditable === true);
+        /* Only an actual editor or an element that already claims a named
+           destination can contradict that destination. Unrelated outer page
+           shells may contain patient headers or navigation text with clinical
+           words; those are not section labels and must not poison an otherwise
+           exact inner scope. */
+        var visibleConflict = (curEditorLike || keys.length > 0) && namedVisibleConflict(cur, key);
+        if (visibleConflict || (keys.length && (keys.length !== 1 || keys[0] !== key))) {
           /* Procedure Documentation is a distinct editor nested inside
              Physical Exam in Athena. Once the exact Procedure Documentation
              scope has been reached, its one outer Exam ancestor is expected;
@@ -731,7 +837,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       var raw = []; try { raw = deepQueryAll(frame.doc, selector); } catch (e) {}
       raw = raw.filter(function (el, index) {
         if (!visible(el, frame.w) || raw.indexOf(el) !== index) return false;
-        var desc = namedSectionDescriptor(el), keys = namedKeysForDescriptor(desc);
+        var desc = namedSectionDescriptor(el), keys = namedKeysForElement(el);
         if (keys.length !== 1 || keys[0] !== key) return false;
         return namedOwnedEditors(frame, el, key).length === 1;
       });
@@ -1010,20 +1116,40 @@ async function mlsAthenaActionV2DriverFn(req) {
       var beforeNote = editorValue(noteEditor), alreadyExact = beforeNote === reviewedNote;
       if (beforeNote && !alreadyExact) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-not-empty', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-not-empty' }], noAutomaticChaining: 'no-automatic-chaining' };
       var noteAttempted = false;
-      if (!alreadyExact) { noteAttempted = true; mutationAttempted = true; if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' }; await sleep(250); }
-      var noteVerified = editorValue(noteEditor) === reviewedNote;
+      if (!alreadyExact) { noteAttempted = true; mutationAttempted = true; if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, partialMutation: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' }; await sleep(250); }
+      function currentExactNoteEditor() {
+        var currentTarget = requestedNoteSection === 'note' ? findNoteAction(hit.frame, action) : findNamedNoteAction(hit.frame, action, requestedNoteSection);
+        if (!currentTarget || !currentTarget.editor) return null;
+        if (editorFingerprint(currentTarget.editor, hit.frame.url) !== context.editorFingerprint) return null;
+        return currentTarget.editor;
+      }
+      var verifiedEditor = currentExactNoteEditor();
+      var noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
+      /* A controlled React/Angular editor can accept the native setter and
+         input event, then repaint its older model a few hundred milliseconds
+         later. One 250ms read falsely called that a verified Athena insertion.
+         Require the exact re-resolved editor and value to survive a second,
+         later render window before issuing the unsaved readback receipt. */
+      if (noteVerified && noteAttempted && !alreadyExact) {
+        await sleep(750);
+        verifiedEditor = currentExactNoteEditor();
+        noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
+      }
       if (!noteVerified) {
         /* wv-1.3 (3.0.40): never leave a HALF-VERIFIED note on screen - the doctor sees the text, distrusts the failure receipt, and can sign a note athena's model never received. The empty-editor precheck above means rollback == clearing back to empty. */
         var rolledBack = false;
         try {
           if (noteAttempted && !alreadyExact) {
-            if (noteEditor.isContentEditable) { while (noteEditor.firstChild) noteEditor.removeChild(noteEditor.firstChild); }
-            else { var _rbProto = noteEditor.tagName === 'TEXTAREA' ? hit.frame.w.HTMLTextAreaElement.prototype : hit.frame.w.HTMLInputElement.prototype; var _rbDesc = Object.getOwnPropertyDescriptor(_rbProto, 'value'); if (_rbDesc && _rbDesc.set) _rbDesc.set.call(noteEditor, ''); else noteEditor.value = ''; }
-            try { noteEditor.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); } catch (eRb1) {}
-            rolledBack = editorValue(noteEditor) === '';
+            var rollbackEditor = currentExactNoteEditor() || ((noteEditor && noteEditor.isConnected !== false) ? noteEditor : null);
+            if (rollbackEditor) {
+              if (rollbackEditor.isContentEditable) { while (rollbackEditor.firstChild) rollbackEditor.removeChild(rollbackEditor.firstChild); }
+              else { var _rbProto = rollbackEditor.tagName === 'TEXTAREA' ? hit.frame.w.HTMLTextAreaElement.prototype : hit.frame.w.HTMLInputElement.prototype; var _rbDesc = Object.getOwnPropertyDescriptor(_rbProto, 'value'); if (_rbDesc && _rbDesc.set) _rbDesc.set.call(rollbackEditor, ''); else rollbackEditor.value = ''; }
+              try { rollbackEditor.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); } catch (eRb1) {}
+              rolledBack = editorValue(rollbackEditor) === '';
+            }
           }
         } catch (eRb) {}
-        return { ok: false, action: action, attempted: noteAttempted, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, rolledBack: rolledBack, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
+        return { ok: false, action: action, attempted: noteAttempted, partialMutation: noteAttempted && !rolledBack, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, rolledBack: rolledBack, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
       }
       return { ok: true, action: action, attempted: noteAttempted, written: true, verified: true, draftEntered: true, draftVerified: true, saved: false, persisted: false, signed: false, reason: 'exact-note-editor-verified-unsaved', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: true, verified: true, saved: false, persisted: false, alreadyPresent: alreadyExact }], noAutomaticChaining: 'no-automatic-chaining' };
     }
@@ -2386,14 +2512,12 @@ function mlsAthenaTeachWatcherFn(config) {
         return { ok: false, blocked: true, reason: 'write-safety-guard-missing', error: 'The write-safety guard failed to load; this action is blocked. Nothing was changed.' };
       }
       /* MLS_WRITE_SAFETY_GATE_END */
-      /* mdx-2.0.0 (wf3 presence port): the read-only probe drives the briefing
-         SPA, which renders on paused rAF while the athena tab is occluded - the
-         2026-08-05 staging session starved on exactly this. When the sheet asks
-         (doctor-initiated, not mid-recording), reuse the pulls' fg-1.x front
-         lane - every focus guard in it applies (never fronts when Chrome is
-         unfocused, respects the doctor-moved latch); failure is silent and the
-         probe proceeds to its honest bounded timeout. Probe mode only. */
-      if (mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function') { try { var __probeFg = await self.__mlsFrontAthenaForRead(sender && sender.tab && sender.tab.id); if (__probeFg) { if (typeof self.__mlsDeferRestoreAfterRead === 'function') self.__mlsDeferRestoreAfterRead(__probeFg); else if (typeof self.__mlsRestoreFocusAfterRead === 'function') setTimeout(function () { try { self.__mlsRestoreFocusAfterRead(__probeFg); } catch (ePrR) {} }, 8000); } } catch (eFgProbe) {} } /* qol-2.3: the probe used to DISCARD this state - the one-way yank that left the doctor on Athena */
+      /* mdx-2.1.0 (wf3 presence port): presence belongs to the exact read-only
+         candidate being inspected, not to an arbitrary Athena tab selected
+         before candidate discovery. The probe loop below fronts each signed-in
+         candidate immediately before injecting its read. Execute never enters
+         that loop or carries this flag. */
+      var __probePresenceRequested = mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function';
       var actionToken = '', rec = null;
       if (mode === 'execute') {
         actionToken = clean(msg.actionToken); rec = tokens[actionToken];
@@ -2439,10 +2563,30 @@ function mlsAthenaTeachWatcherFn(config) {
            encounters fail closed as ambiguous-athena-tabs. The token minted
            below stays bound to the single verified tab id. */
         var tab = null, probe = null, probeFailure = null, verifiedTabCount = 0;
-        for (var athIdx = 0; athIdx < athCandidates.length; athIdx++) {
-          var athProbe = await injectOnce(athCandidates[athIdx].id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: null, taughtDestination: checkedTaught.value });
-          if (athProbe && athProbe.ok && athProbe.contextVerified && lockedContextShape(athProbe.context)) { verifiedTabCount++; if (!tab) { tab = athCandidates[athIdx]; probe = athProbe; } }
-          else if (!probeFailure) probeFailure = athProbe && athProbe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (athProbe || { ok: false, blocked: true, reason: 'context-unverified' });
+        var __probeFg = null, __probePresenceOwned = __probePresenceRequested;
+        try {
+          for (var athIdx = 0; athIdx < athCandidates.length; athIdx++) {
+            if (__probePresenceOwned) {
+              try {
+                var __probeFgBefore = __probeFg;
+                __probeFg = await self.__mlsFrontAthenaForRead(sender && sender.tab && sender.tab.id, athCandidates[athIdx].id, __probeFg);
+                if (!__probeFg) { __probeFg = __probeFgBefore; __probePresenceOwned = false; }
+              } catch (eFgProbe) { __probePresenceOwned = false; }
+            }
+            var athProbe = await injectOnce(athCandidates[athIdx].id, { mode: 'probe', action: action, expectedPatient: p, expectedContext: c, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: null, taughtDestination: checkedTaught.value });
+            if (athProbe && athProbe.ok && athProbe.contextVerified && lockedContextShape(athProbe.context)) { verifiedTabCount++; if (!tab) { tab = athCandidates[athIdx]; probe = athProbe; } }
+            else if (!probeFailure) probeFailure = athProbe && athProbe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (athProbe || { ok: false, blocked: true, reason: 'context-unverified' });
+          }
+        } finally {
+          /* Restore once from the final candidate, using the original focus
+             state carried across the loop. A newer clinician focus choice still
+             wins inside the shared deferred-restore guard. */
+          if (__probeFg) {
+            try {
+              if (typeof self.__mlsDeferRestoreAfterRead === 'function') self.__mlsDeferRestoreAfterRead(__probeFg);
+              else if (typeof self.__mlsRestoreFocusAfterRead === 'function') setTimeout(function () { try { self.__mlsRestoreFocusAfterRead(__probeFg); } catch (ePrR) {} }, 8000);
+            } catch (eFgRestore) {}
+          }
         }
         if (verifiedTabCount > 1) return { ok: false, blocked: true, reason: 'ambiguous-athena-tabs', error: 'The same verified encounter matched in more than one signed-in Athena tab. Close the duplicate encounter tab, then retry. Nothing was changed.' };
         if (!tab || !probe) return probeFailure = Object.assign({}, probeFailure || { ok: false, blocked: true, reason: 'context-unverified' }, { diag: { athenaTabs: athCandidates.length, verifiedTabs: verifiedTabCount, firstReason: String((probeFailure && probeFailure.reason) || 'context-unverified') } }); /* 3.0.63: the honest probe failure is still what returns (athena-action-contract pins `return probeFailure`); PHI-free tab counts ride on it (read-only probe path; no gate changes) */
@@ -12172,29 +12316,57 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   self.__mlsDeferRestoreAfterRead = __mlsDeferRestoreAfterRead; /* qol-2.3: the probe path restores through the same batch-scoped defer (hoisted) */
   async function __mlsFrontAthenaForRead(appTabId) {
     try {
+      /* mdx-2.1.0: ActionV2 may supply one exact candidate tab plus the focus
+         state returned for the preceding candidate. Keep the public one-arg
+         history-read contract unchanged; optional arguments only prevent a
+         multi-tab write probe from fronting one arbitrary Athena tab while it
+         inspects a different, still-occluded tab. */
+      var __exactAthenaTabRequested = arguments.length > 1;
+      var __wantedAthenaTabId = __exactAthenaTabRequested ? Number(arguments[1]) : 0;
+      var __carryFocusState = arguments.length > 2 ? arguments[2] : null;
       /* fg-1.1: a restore may still be in flight from the previous row -
          let it land first so this front captures the true previous state. */
       try { if (__mlsFgRestorePending) await __mlsFgRestorePending; } catch (eRp) {}
-      try { if (__mlsFgDeferredRestore) { var __dSlot = __mlsFgDeferredRestore; __mlsFgDeferredRestore = null; clearTimeout(__dSlot.timer); var __dSt = __dSlot.state; if (__dSt && __dSt.athTabId != null) { var __wNow = await new Promise(function (rsW) { try { chrome.windows.getLastFocused({ populate: true }, function (w) { void chrome.runtime.lastError; rsW(w || null); }); } catch (eW) { rsW(null); } }); var __stillFront = !!(__wNow && __wNow.focused === true && __wNow.id === __dSt.athWinId && (__wNow.tabs || []).some(function (t) { return t.active && t.id === __dSt.athTabId; })); if (__stillFront) return __dSt; } } } catch (eDI) {}
+      try { if (!__carryFocusState && __mlsFgDeferredRestore) { var __dSlot = __mlsFgDeferredRestore; __mlsFgDeferredRestore = null; clearTimeout(__dSlot.timer); var __dSt = __dSlot.state; if (__dSt && __dSt.athTabId != null) { var __wNow = await new Promise(function (rsW) { try { chrome.windows.getLastFocused({ populate: true }, function (w) { void chrome.runtime.lastError; rsW(w || null); }); } catch (eW) { rsW(null); } }); var __stillFront = !!(__wNow && __wNow.focused === true && __wNow.id === __dSt.athWinId && (__wNow.tabs || []).some(function (t) { return t.active && t.id === __dSt.athTabId; })); if (__stillFront && (!__exactAthenaTabRequested || Number(__dSt.athTabId) === __wantedAthenaTabId)) return __dSt; if (__stillFront && __exactAthenaTabRequested) __carryFocusState = __dSt; } } } catch (eDI) {}
       /* fg-1.1: only steal focus Chrome already owns. If the doctor is
          outside Chrome entirely (focused:false), fronting would raise a
          window under their typing and retry keystrokes could land in the
          signed-in athenaOne - skip, and the row fails honestly occluded. */
       var lastW = null;
-      try { lastW = await chrome.windows.getLastFocused(); } catch (eLw) {}
+      try { lastW = await chrome.windows.getLastFocused({ populate: true }); } catch (eLw) {}
       if (!lastW || lastW.focused !== true) return null;
       if (__mlsFgDoctorMoved) return null; /* fg-1.2: they moved away this batch */
+      if (__carryFocusState) {
+        var __activeNow = (lastW.tabs || []).find(function (t) { return t && t.active; });
+        var __stillOwnCarry = lastW.id === __carryFocusState.athWinId && __activeNow && Number(__activeNow.id) === Number(__carryFocusState.athTabId);
+        var __watchingApp = __activeNow && __carryFocusState.appTabId != null && Number(__activeNow.id) === Number(__carryFocusState.appTabId);
+        if (!__stillOwnCarry && !__watchingApp) { __mlsFgDoctorMoved = true; return null; }
+      }
       var allT = await chrome.tabs.query({});
-      var athT = await mlsPickAthenaTab(allT, { athenaOnly: true });
+      var athT = null;
+      if (__exactAthenaTabRequested) {
+        if (!Number.isFinite(__wantedAthenaTabId) || __wantedAthenaTabId <= 0) return null;
+        athT = allT.find(function (t) {
+          if (!t || Number(t.id) !== __wantedAthenaTabId) return false;
+          try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (eExact) { return false; }
+        }) || null;
+      } else {
+        athT = await mlsPickAthenaTab(allT, { athenaOnly: true });
+      }
       if (!athT || athT.id == null) return null;
       var prevActive = allT.find(function (t) { return t.active && t.windowId === athT.windowId; });
-      var state = {
-        athTabId: athT.id,
-        athWinId: athT.windowId,
-        prevTabId: (prevActive && prevActive.id !== athT.id) ? prevActive.id : null,
-        prevWinId: (lastW.id != null && lastW.id !== athT.windowId) ? lastW.id : null,
-        appTabId: (appTabId != null ? appTabId : null)
-      };
+      var state = __carryFocusState || {
+          athTabId: athT.id,
+          athWinId: athT.windowId,
+          prevTabId: (prevActive && prevActive.id !== athT.id) ? prevActive.id : null,
+          prevWinId: lastW.id != null ? lastW.id : null,
+          appTabId: (appTabId != null ? appTabId : null)
+        };
+      /* Preserve the original return target while ownership moves from one
+         exact Athena candidate to the next. The terminal defer therefore
+         restores once, from the last candidate, to where the clinician began. */
+      state.athTabId = athT.id;
+      state.athWinId = athT.windowId;
       await chrome.tabs.update(athT.id, { active: true });
       try { await chrome.windows.update(athT.windowId, { focused: true }); } catch (eF) {}
       /* let the newly visible panes begin hydrating before the read walks them */

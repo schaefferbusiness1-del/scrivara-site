@@ -161,12 +161,22 @@ function contentBridge(contentSource) {
 }
 
 function sendProbe(bridge, payload, identity, context, manifestHash, rowHash) {
+  const lockedProbeContext = {
+    patientName: identity.name, dob: identity.dob, mrn: identity.mrn,
+    appointmentId: context.appointmentId, encounterId: context.encounterId,
+    encounterUrl: context.encounterUrl, visitDate: context.visitDate, provider: context.provider,
+    framePath: '0', encounterRootFingerprint: 'root-fingerprint', controlLabel: 'HPI editor',
+    controlFingerprint: 'control-fingerprint', noteScopeFingerprint: 'scope-fingerprint',
+    actionContainerFingerprint: 'container-fingerprint', editorFingerprint: 'editor-fingerprint',
+    contextHash: 'context-hash', taughtDestinationFingerprint: '', taughtDestinationLabel: ''
+  };
   bridge.handler({
     origin: 'https://mlsscribe.com',
     data: {
       source: 'mls-app', type: 'mlsAppAthenaActionV2', mode: 'probe', action: 'write_note',
       requestId: `probe-${rowHash}`, previewHash: 'mls-preview-cross-layer', manifestHash, rowHash,
       expectedPatient: identity, expectedContext: context,
+      probeContext: lockedProbeContext,
       payload, noteText: payload.noteText, sections: payload.sections, notePolicy: 'empty_only'
     }
   });
@@ -174,6 +184,10 @@ function sendProbe(bridge, payload, identity, context, manifestHash, rowHash) {
   assert(request, 'site probe did not reach the content -> runtime bridge');
   assert.strictEqual(request.mode, 'probe');
   assert.strictEqual(request.action, 'write_note');
+  assert.strictEqual(request.probeContext.appointmentId, context.appointmentId,
+    'the content relay dropped the exact appointment id that execute must compare to the probe lock');
+  assert.deepStrictEqual(plain(request.probeContext), lockedProbeContext,
+    'the content relay changed the immutable probe context before the background execute gate');
   return request;
 }
 

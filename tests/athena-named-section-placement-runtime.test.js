@@ -41,12 +41,17 @@ const fields = {
 function fixture(options = {}) {
   const omit = new Set(options.omit || []);
   const duplicate = new Set(options.duplicate || []);
+  const machineOnly = new Set(options.machineOnly || []);
   const combinedAssessmentPlan = options.combinedAssessmentPlan === true;
   const nestedProcedureOnly = options.nestedProcedureOnly === true;
   const mislabeledNestedEditor = options.mislabeledNestedEditor === true;
+  const semanticDecoys = options.semanticDecoys === true;
   const section = (key, label, id) => {
     if (omit.has(key)) return '';
-    const one = `<section data-testid="${key}-section" aria-label="${label}"><h2>${label}</h2><textarea id="${id}" data-appointment-id="8812345" aria-label="${label} editor"></textarea></section>`;
+    const machineKey = key === 'exam' ? 'physical-exam' : key;
+    const one = machineOnly.has(key)
+      ? `<section data-testid="${machineKey}-section"><textarea id="${id}" data-testid="${machineKey}-editor" data-appointment-id="8812345"></textarea></section>`
+      : `<section data-testid="${key}-section" aria-label="${label}"><h2>${label}</h2><textarea id="${id}" data-appointment-id="8812345" aria-label="${label} editor"></textarea></section>`;
     const two = duplicate.has(key) ? `<section data-testid="${key}-section-secondary" aria-label="${label}"><h2>${label}</h2><textarea id="${id}-secondary" data-appointment-id="8812345" aria-label="${label} editor secondary"></textarea></section>` : '';
     return one + two;
   };
@@ -64,6 +69,7 @@ function fixture(options = {}) {
         ? '<section data-testid="exam-section" aria-label="Physical Examination"><h2>Physical Examination</h2><section data-testid="procedure-documentation" aria-label="Procedure Documentation"><h3>Procedure Documentation</h3><textarea id="procedure-editor" data-appointment-id="8812345" aria-label="Procedure Documentation editor"></textarea></section></section>'
         : section('exam', 'Physical Examination', 'exam-editor')}
       ${combinedAssessmentPlan ? '<section data-testid="assessment-plan-section" aria-label="Assessment and Plan"><h2>Assessment & Plan</h2><textarea id="assessment-plan-editor" data-appointment-id="8812345"></textarea></section>' : section('assessment', 'Assessment', 'assessment-editor') + section('plan', 'Plan', 'plan-editor')}
+      ${semanticDecoys ? '<section data-testid="specialty-examination" aria-label="Specialty Examination"><h2>Specialty Examination</h2><textarea id="specialty-examination-editor" data-appointment-id="8812345" aria-label="Specialty Examination editor"></textarea></section><section data-testid="imaging-impression" aria-label="Imaging Impression"><h2>Imaging Impression</h2><textarea id="imaging-impression-editor" data-appointment-id="8812345" aria-label="Imaging Impression editor"></textarea></section><section data-testid="patient-recommendations" aria-label="Patient Recommendations"><h2>Patient Recommendations</h2><textarea id="patient-recommendations-editor" data-appointment-id="8812345" aria-label="Patient Recommendations editor"></textarea></section>' : ''}
     </main></body></html>`;
 }
 
@@ -135,6 +141,37 @@ async function values(page) {
       });
     }
 
+    /* Exact machine-readable labels are valid even when Athena omits a visible
+       heading/aria label. Separator normalization must not force the writer to
+       reject a canonical field or fall back to the generic note. */
+    for (const key of ['hpi', 'ros', 'exam', 'assessment', 'plan']) {
+      await withPage(browser, fixture({ machineOnly: [key] }), async page => {
+        const text = `Machine-label ${key} text.`;
+        const result = await drive(page, request(key, text));
+        assert.strictEqual(result.ok, true, `${key} machine-only destination was refused: ${JSON.stringify(result)}`);
+        const got = await values(page);
+        assert.strictEqual(got[key], text, `${key} machine-only destination was missed`);
+        assert.strictEqual(got.note, '', `${key} machine-only destination fell back to the generic note`);
+        checks += 3;
+      });
+    }
+
+    await withPage(browser, fixture(), async page => {
+      await page.evaluate(() => {
+        const editor = document.getElementById('hpi-editor');
+        editor.addEventListener('input', () => {
+          setTimeout(() => { editor.value = ''; }, 450);
+        }, { once: true });
+      });
+      const result = await drive(page, request('hpi', 'A delayed framework reset must not verify.'));
+      assert.strictEqual(result.ok, false, 'a value reset after the first readback was reported as verified');
+      assert.strictEqual(result.reason, 'outcome-uncertain');
+      assert.strictEqual(result.detail, 'note-write-unverified');
+      assert.strictEqual(result.partialMutation, false, 'a proven empty rollback was mislabeled as a remaining partial mutation');
+      assert.strictEqual(await page.locator('#hpi-editor').inputValue(), '', 'the delayed reset fixture did not clear the field');
+      checks += 5;
+    });
+
     await withPage(browser, fixture(), async page => {
       const text = 'Synthetic full encounter note.';
       const result = await drive(page, request('note', text));
@@ -143,6 +180,52 @@ async function values(page) {
       assert.strictEqual(got.note, text, 'generic note missed the encounter-note editor');
       for (const key of ['hpi','ros','exam','assessment','plan']) assert.strictEqual(got[key], '', `generic note leaked into ${key}`);
       checks += 7;
+    });
+
+    /* A canonical machine selector cannot overrule contradictory visible
+       clinical evidence, including a future label that is absent from every
+       built-in vocabulary. These fixtures reproduce the exact wrong-field seam
+       without relying on a blacklist of known section names. */
+    await withPage(browser, fixture(), async page => {
+      await page.evaluate(() => {
+        const scope = document.querySelector('[data-testid="hpi-section"]');
+        scope.setAttribute('aria-label', 'Radiology Findings');
+        scope.querySelector('h2').textContent = 'Radiology Findings';
+        scope.querySelector('textarea').setAttribute('aria-label', 'Radiology Findings editor');
+      });
+      const result = await drive(page, request('hpi', 'Must not enter an unknown visible section.'));
+      assert.strictEqual(result.ok, false, 'a canonical HPI machine id overruled an unknown contradictory visible label');
+      assert.strictEqual(result.reason, 'context-unverified');
+      assert.deepStrictEqual(await values(page), { note: '', hpi: '', ros: '', exam: '', assessment: '', plan: '' });
+      checks += 3;
+    });
+
+    await withPage(browser, fixture(), async page => {
+      await page.evaluate(() => {
+        const scope = document.querySelector('[data-testid="encounter-note-workspace"]');
+        scope.setAttribute('aria-label', 'Radiology Findings');
+        scope.querySelector('h2').textContent = 'Radiology Findings';
+        scope.querySelector('textarea').setAttribute('aria-label', 'Radiology Findings editor');
+      });
+      const result = await drive(page, request('note', 'Must not enter an unknown visible section.'));
+      assert.strictEqual(result.ok, false, 'a canonical encounter-note machine id overruled an unknown contradictory visible label');
+      assert.strictEqual(result.reason, 'context-unverified');
+      assert.deepStrictEqual(await values(page), { note: '', hpi: '', ros: '', exam: '', assessment: '', plan: '' });
+      checks += 3;
+    });
+
+    await withPage(browser, fixture(), async page => {
+      await page.evaluate(() => {
+        const scope = document.querySelector('[data-testid="encounter-note-workspace"]');
+        scope.removeAttribute('aria-label');
+        scope.querySelector('h2').remove();
+        scope.querySelector('textarea').removeAttribute('aria-label');
+      });
+      const text = 'Machine-only encounter note remains supported.';
+      const result = await drive(page, request('note', text));
+      assert.strictEqual(result.ok, true, `machine-only encounter note was refused: ${JSON.stringify(result)}`);
+      assert.strictEqual((await values(page)).note, text);
+      checks += 2;
     });
 
     await withPage(browser, fixture({ omit: ['hpi'] }), async page => {
@@ -209,6 +292,32 @@ async function values(page) {
       checks += 4;
     });
 
+    /* Realistic semantic decoys must never count as the exact Athena field.
+       These phrases were accepted by the prior broad regexes. Prove both sides:
+       a decoy alone refuses, and a canonical section remains usable beside it. */
+    for (const specimen of [
+      { key: 'exam', omit: 'exam', decoy: '#specialty-examination-editor' },
+      { key: 'assessment', omit: 'assessment', decoy: '#imaging-impression-editor' },
+      { key: 'plan', omit: 'plan', decoy: '#patient-recommendations-editor' }
+    ]) {
+      await withPage(browser, fixture({ omit: [specimen.omit], semanticDecoys: true }), async page => {
+        const result = await drive(page, request(specimen.key, `Decoy ${specimen.key} must refuse.`));
+        assert.strictEqual(result.ok, false, `${specimen.key} accepted a semantic decoy destination`);
+        assert.strictEqual(result.reason, 'context-unverified');
+        assert.strictEqual(await page.locator(specimen.decoy).inputValue(), '', `${specimen.key} mutated its semantic decoy`);
+        assert.strictEqual((await values(page)).note, '', `${specimen.key} decoy refusal fell back to the generic note`);
+        checks += 4;
+      });
+      await withPage(browser, fixture({ semanticDecoys: true }), async page => {
+        const text = `Canonical ${specimen.key} beside decoys.`;
+        const result = await drive(page, request(specimen.key, text));
+        assert.strictEqual(result.ok, true, `${specimen.key} canonical destination was lost beside semantic decoys: ${JSON.stringify(result)}`);
+        assert.strictEqual((await values(page))[specimen.key], text, `${specimen.key} missed its canonical field beside decoys`);
+        assert.strictEqual(await page.locator(specimen.decoy).inputValue(), '', `${specimen.key} leaked into its semantic decoy beside the canonical field`);
+        checks += 3;
+      });
+    }
+
     await withPage(browser, fixture(), async page => {
       const unknown = await drive(page, request('mystery', 'Unknown destination.'));
       assert.strictEqual(unknown.ok, false);
@@ -248,5 +357,5 @@ async function values(page) {
   } finally {
     await browser.close();
   }
-  console.log(`PASS Athena named-section placement runtime: ${checks} checks; HPI/ROS/Exam/Assessment/Plan exact-only, generic preserved, missing/duplicate/combined/unknown/multi/payload-mismatch all fail closed`);
+  console.log(`PASS Athena named-section placement runtime: ${checks} checks; HPI/ROS/Exam/Assessment/Plan exact-only, realistic semantic decoys refused, generic preserved, missing/duplicate/combined/unknown/multi/payload-mismatch all fail closed`);
 })().catch(error => { console.error(error); process.exit(1); });

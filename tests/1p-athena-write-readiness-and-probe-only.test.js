@@ -32,6 +32,9 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const FLOW = fs.readFileSync(path.join(ROOT, '1p-feat_mls_writeflow.js'), 'utf8');
 const SHELL = fs.readFileSync(path.join(ROOT, '1pScribeFlow.html'), 'utf8');
+const CONTENT = fs.readFileSync(path.join(ROOT, 'content.js'), 'utf8');
+const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const WRITE_SAFETY = fs.readFileSync(path.join(ROOT, 'write_safety_guard.js'), 'utf8');
 
 const DAY = '2026-08-17';
 const ATHENA_DAY = '8/17/2026';
@@ -45,6 +48,20 @@ const CAL_ROW = { id: 'cal-row-1', patient_external_id: PATIENT.patientId, name:
 const OWNER_OPEN_ERROR = 'The exact Athena appointment row could not be opened. No name fallback was attempted.';
 
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
+function sourceBetween(source, start, end) {
+  const a = source.indexOf(start);
+  assert(a >= 0, `missing source start marker: ${start}`);
+  const b = source.indexOf(end, a + start.length);
+  assert(b > a, `missing source end marker: ${end}`);
+  return source.slice(a, b);
+}
+function fixedReasonCodes(source) {
+  const out = new Set();
+  const re = /reason\s*:\s*['"]([a-z0-9][a-z0-9+_-]*)['"]/g;
+  let match;
+  while ((match = re.exec(source))) out.add(match[1]);
+  return Array.from(out).sort();
+}
 
 /* ------------------------------------------------------------------ DOM shim
  * Just enough to let the real renderer run: element ids resolve to ONE shared
@@ -319,6 +336,71 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
       assert.strictEqual(diagLine.indexOf(secret), -1, 'the on-screen diagnostics line leaked ' + secret);
     });
     probeOnlyGuard(h);
+
+    /* 3.0.80 exposed dozens of newer fixed refusal/result codes while this
+       patient-free report still allowed only the old 3.0.62 vocabulary. That
+       flattened actionable failures (including target-day mismatches) to
+       "unlisted". Derive every fixed code from the current cross-layer write
+       surfaces so a future extension reason cannot drift silently again. */
+    const reasonSources = [
+      sourceBetween(CONTENT, "if (d.type === 'mlsAppAthenaActionV2')", '/* ATHENA_ACTION_V2_BRIDGE_END */'),
+      sourceBetween(BACKGROUND, '/* ATHENA_ACTION_V2_DRIVER_START */', '/* ATHENA_ACTION_V2_DRIVER_END */'),
+      sourceBetween(BACKGROUND, '/* ATHENA_ACTION_V2_HANDLER_START */', '/* ATHENA_ACTION_V2_HANDLER_END */'),
+      WRITE_SAFETY,
+      sourceBetween(FLOW, 'wfdx-1.0.0', 'function receiptStateForRow')
+    ];
+    const currentCodes = Array.from(new Set(reasonSources.flatMap(fixedReasonCodes).concat(['unresolved-after-pull']))).sort();
+    const missingCodes = currentCodes.filter(code => h.wf.diagnostics.reason(code) !== code);
+    assert.deepStrictEqual(missingCodes, [],
+      'the copyable Athena report flattened current fixed reason code(s): ' + missingCodes.join(', '));
+    assert.strictEqual(h.wf.diagnostics.reason('Synthetic Patient A'), 'unlisted',
+      'free text was allowed into the patient-free error report');
+    assert.strictEqual(h.wf.diagnostics.reason('synthetic-patient-a'), 'unlisted',
+      'an unknown identifier-shaped value was allowed into the patient-free error report');
+  }
+
+  /* ----------- 4b. an execute failure remains copyable and PHI-free -------- */
+  {
+    const privateError = `Failed while writing ${PATIENT.name} ${PATIENT.dob} MRN ${PATIENT.mrn}`;
+    const h = makeHarness({
+      onProbe: m => {
+        if (m.mode === 'execute') return {
+          ok: false, attempted: true, partialMutation: true,
+          reason: 'outcome-uncertain', detail: 'note-write-unverified',
+          results: [{ key: 'hpi', reason: 'note-write-unverified' }], error: privateError
+        };
+        return { ok: true, mode: 'probe', readOnly: true, action: m.action,
+          actionToken: 'one-use-token', rowHash: m.rowHash, reason: 'context-verified', context: {
+            patientName: PATIENT.name, dob: PATIENT.dob, mrn: PATIENT.mrn, appointmentId: APPOINTMENT,
+            encounterId: ENCOUNTER, encounterUrl: ENCOUNTER_URL, visitDate: ATHENA_DAY, provider: PROVIDER,
+            control: 'HPI editor', framePath: '0', encounterRootFingerprint: 'er', controlFingerprint: 'c',
+            noteScopeFingerprint: 'n', editorFingerprint: 'e', contextHash: 'h' } };
+      }
+    });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'hpi', text: 'Synthetic HPI.' }], expectedContext: BOUND_CONTEXT });
+    await settle(40);
+    const go = h.el('mlsAthenaUnifiedGo');
+    assert.strictEqual(go.disabled, false, 'the synthetic execute-failure row never reached READY');
+    go.click();
+    await settle(60);
+    const report = h.wf.diagnostics.report();
+    const executeReceipt = report.receipts.filter(r => r.stage === 'execute')[0];
+    assert(executeReceipt, 'the copyable report dropped the execute attempt');
+    assert.strictEqual(executeReceipt.mode, 'execute', 'the copyable report mislabeled an execute attempt as a read-only probe');
+    assert.strictEqual(executeReceipt.reason, 'outcome-uncertain');
+    assert.strictEqual(executeReceipt.detailReason, 'note-write-unverified');
+    assert.strictEqual(executeReceipt.resultReasons['note-write-unverified'], 1);
+    assert.strictEqual(executeReceipt.attempted, true);
+    assert.strictEqual(executeReceipt.partialMutation, true);
+    const serialized = JSON.stringify(report);
+    [PATIENT.name, PATIENT.dob, PATIENT.mrn, privateError].forEach(secret => {
+      assert.strictEqual(serialized.indexOf(secret), -1, 'the execute receipt leaked ' + secret.slice(0, 24));
+    });
+    const fix = h.el('mlsAthenaUnifiedFix');
+    assert(fix.children.some(c => String(c.textContent).indexOf('Copy error report') === 0),
+      'an execute failure did not restore the Copy error report control');
+    assert.strictEqual(h.wf.diagnostics.state().halted, true,
+      'an uncertain execute result did not halt the manifest');
   }
 
   /* ------------------- 5. the read-only fix ladder the doctor can click ----- */

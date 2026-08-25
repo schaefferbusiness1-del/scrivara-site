@@ -22,7 +22,7 @@ function functionSource(source, name) {
 }
 
 const driverSource = functionSource(background, 'mlsAthenaActionV2DriverFn');
-assert(/procedure:\s*\/\\b\(\?:procedure documentation/.test(driverSource), 'Procedure Documentation is not an exact named-section definition');
+assert(/procedure:\s*\{[^}]*['"]procedure documentation['"]\s*:\s*1/.test(driverSource), 'Procedure Documentation is not an exact named-section definition');
 assert(driverSource.includes("procedure: 'Athena encounter > Physical Exam > Procedure Documentation'"), 'driver destination does not exactly match the reviewed site destination');
 assert(driverSource.includes("procedure: 'Procedure Documentation editor'"), 'driver cannot report the exact procedure editor');
 assert(!/mlsAppPrepProcTemplate|Injection Generic Template/.test(driverSource), 'exact procedure placement unexpectedly creates or selects a procedure template');
@@ -82,6 +82,16 @@ async function drive(page, req) {
   return page.evaluate(async ({ source, requestValue }) => (0, eval)(`(${source})`)(requestValue), { source: driverSource, requestValue: req });
 }
 
+async function diagnose(page, req) {
+  const startNeedle = 'if (candidates.length !== 1) return ';
+  const start = driverSource.indexOf(startNeedle);
+  const end = driverSource.indexOf(';\n    var hit = candidates[0]', start);
+  assert(start >= 0 && end > start, 'driver diagnostic anchor moved');
+  const replacement = `if (candidates.length !== 1) return { debug: frames.map(function(fr){ return { namedScopes:namedNoteScopes(fr,requestedNoteSection).map(function(el){return {descriptor:namedSectionDescriptor(el),keys:namedKeysForElement(el),editors:editorsIn(el,fr).map(function(editor){return {id:editor.id,keys:namedKeysForElement(editor),conflict:namedVisibleConflict(editor,requestedNoteSection)};})};}), allSections:deepQueryAll(fr.doc,'section').map(function(el){return {testid:el.getAttribute('data-testid'),descriptor:namedSectionDescriptor(el),keys:namedKeysForElement(el),conflict:namedVisibleConflict(el,requestedNoteSection)};}) }; }) }`;
+  const source = driverSource.slice(0, start) + replacement + driverSource.slice(end);
+  return page.evaluate(async ({ driver, requestValue }) => (0, eval)(`(${driver})`)(requestValue), { driver: source, requestValue: req });
+}
+
 async function state(page) {
   return page.evaluate(() => {
     const ids = ['generic-note', 'hpi-editor', 'ros-editor', 'exam-editor', 'procedure-editor', 'procedure-editor-2', 'assessment-editor', 'plan-editor'];
@@ -99,6 +109,7 @@ async function state(page) {
     await withPage(browser, fixture(), async page => {
       const text = 'PREOPERATIVE DIAGNOSIS:\nDocumented synthetic diagnosis.\n\nPROCEDURE:\nDocumented synthetic procedure completed without an invented finding.';
       const result = await drive(page, request('procedure', text));
+      if (result.ok !== true) result.debug = await diagnose(page, request('procedure', text));
       assert.strictEqual(result.ok, true, `exact Procedure Documentation write was refused: ${JSON.stringify(result)}`);
       assert.strictEqual(result.reason, 'exact-note-editor-verified-unsaved');
       assert.strictEqual(result.results[0].key, 'procedure');

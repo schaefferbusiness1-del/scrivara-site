@@ -701,6 +701,11 @@
       if(!t) t=onTabLabel('#mlsRdNav');
       if(!t) t=onTabLabel('');
       if(!t) t='MLS Scribe';
+      /* Staff Prep is a front-desk workspace hosted inside the Visit shell, so
+         the active nav tab alone still says "Visit". Its room owner publishes
+         this marker before the header settles; honor it here in the ONE title
+         writer so a later redesign repaint cannot overwrite "Staff prep". */
+      try{ if(document.body&&document.body.getAttribute('data-mls-staffprep')==='1') t='Staff prep'; }catch(e1){}
       if(txtEl.textContent!==t) txtEl.textContent=t;
     }catch(e){}
   }

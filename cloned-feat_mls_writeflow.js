@@ -811,30 +811,54 @@
      ======================================================================== */
   var WFDX_MAX_RECEIPTS = 16;
   var wfdx = { receipts: [], env: null, envAt: 0, observedDay: '', observedDayAt: 0, openedAt: 0, reviewId: '' };
-  /* Reason codes MLS Assist 3.0.62 can return on the three verbs this review
-     drives, plus this page's own. Anything else is reported as 'unlisted' so a
-     future (or malformed) string can never carry free text into the report. */
+  /* Reason codes the current MLS Assist write/probe/teach surfaces can return,
+     plus this page's own. Anything else is reported as 'unlisted' so a future
+     (or malformed) string can never carry free text into the report. Keep this
+     allowlist synchronized with the extension sources; the contract suite
+     derives their fixed reason literals and fails when a new code is omitted. */
   var WFDX_KNOWN_REASONS = {};
-  ('unknown-action preview-hash-mismatch taught-destination-expired taught-destination-invalid ' +
-   'taught-destination-binding-mismatch taught-destination-required taught-destination-frame-mismatch ' +
-   'taught-destination-selector-mismatch taught-destination-control-mismatch taught-destination-label-mismatch ' +
-   'taught-destination-fingerprint-mismatch local-patient-id-required patient-mismatch order-row-mismatch ' +
-   'context-mismatch context-unverified context-verified billing-context-verified order-workspace-context-verified ' +
-   'high-risk-order-blocked unsupported-order-type unsupported-order-fields order-field-too-long ' +
-   'order-payload-incomplete catalog-identity-required unsupported-order-source order-client-id-mismatch ' +
-   'note-content-required unsafe-note-policy billing-near-match-rejected billing-duplicate-rejected ' +
-   'token-sender-mismatch no-athena-tab ambiguous-athena-tabs verified-note-write-required note-write-proof-used ' +
-   'note-write-proof-expired sign-prerequisite-mismatch outcome-uncertain write-safety-guard-missing ' +
-   'synthetic-local-only open-deadline-exceeded appointment-id-missing appointment-id-not-found ' +
-   'appointment-id-ambiguous appointment-navigation-unverified appointment-navigation-snapshot-unavailable ' +
-   'schedule-date-missing-after-recovery schedule-date-restore-failed name-not-found ambiguous no-results ' +
-   'no-name-match blank-error rows-not-rendered dob-mismatch numeric-only-field-refused open-timeout ' +
-   'search-deadline-exceeded goto-date-relay-deadline-exceeded goto-date-deadline-exceeded athena-navigation-busy ' +
-   'extension-error worker-unreachable no-response bridge-error loopback-synthetic-only').split(' ').forEach(function (code) { WFDX_KNOWN_REASONS[code] = 1; });
+  ('account-mismatch account-unverifiable ambiguous ambiguous-athena-tabs appointment-id-ambiguous ' +
+   'appointment-id-missing appointment-id-not-found appointment-navigation-snapshot-unavailable ' +
+   'appointment-navigation-unverified athena-navigation-busy athena-page-changed bad-action ' +
+   'billing-context-unverified billing-context-verified billing-duplicate-rejected billing-exact-match ' +
+   'billing-existing-row-ambiguous billing-near-match-rejected billing-payload-mismatch blank-error ' +
+   'bridge-error cancelled catalog-identity-required catalog-query-required context-mismatch ' +
+   'context-unverifiable context-unverified context-verified display-execute-day-mismatch dob-mismatch ' +
+   'duplicate-session exact-note-editor-verified-unsaved extension-error frame-coverage-unverified ' +
+   'frame-generation-changed fresh-trusted-click-required goto-date-deadline-exceeded ' +
+   'goto-date-relay-deadline-exceeded high-risk-order-blocked invalid-binding invalid-target-retry ' +
+   'local-patient-id-required loopback-synthetic-only missing-order-fields missing-session name-not-found ' +
+   'named-section-final-action-unsupported no-athena-tab no-name-match no-response no-results not-watching ' +
+   'note-content-required note-destination-mismatch note-editor-not-empty note-payload-mismatch ' +
+   'note-section-count-mismatch note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
+   'note-write-unverified numeric-only-field-refused one-exact-order-isolated-readback-verified ' +
+   'open-deadline-exceeded open-timeout order-client-id-mismatch order-exact-already-present ' +
+   'order-existing-duplicate-rejected order-field-too-long order-id-required order-not-reviewed ' +
+   'order-payload-incomplete order-payload-mismatch order-row-mismatch order-workspace-context-verified ' +
+   'outcome-uncertain patient-dob-unverifiable patient-mismatch patient-unverifiable practice-mismatch ' +
+   'practice-unverifiable preview-hash-mismatch provider-mismatch provider-unverifiable rows-not-rendered ' +
+   'schedule-date-missing-after-recovery schedule-date-restore-failed search-deadline-exceeded ' +
+   'session-expired sign-prerequisite-mismatch synthetic-local-only taught-destination-binding-mismatch ' +
+   'taught-destination-control-mismatch taught-destination-expired taught-destination-fingerprint-mismatch ' +
+   'taught-destination-frame-mismatch taught-destination-invalid taught-destination-label-mismatch ' +
+   'taught-destination-required taught-destination-selector-mismatch taught-destination-validated ' +
+   'test-content-production-disabled timeout token-action-mismatch token-expired token-sender-mismatch ' +
+   'token-tab-mismatch token-used unknown-action unknown-note-section unresolved-after-pull unsafe-note-policy ' +
+   'unsupported-order-fields unsupported-order-source unsupported-order-type untrusted-sender ' +
+   'verified-note-write-required watcher-error watcher-unavailable worker-unreachable ' +
+   'write-safety-final-action-blocked write-safety-guard-missing wrong-tab').split(' ').forEach(function (code) { WFDX_KNOWN_REASONS[code] = 1; });
   function wfdxReason(value) {
     var raw = S(value).trim();
     if (!raw) return '';
     return WFDX_KNOWN_REASONS[raw] === 1 ? raw : 'unlisted';
+  }
+  function wfdxReasonCounts(values) {
+    var out = {};
+    (Array.isArray(values) ? values : []).slice(0, 32).forEach(function (value) {
+      var code = wfdxReason(value && value.reason);
+      if (code) out[code] = Number(out[code] || 0) + 1;
+    });
+    return out;
   }
   var WFDX_ERROR_CLASSES = [
     [/no name fallback was attempted/i, 'appointment-row-open-refused'],
@@ -879,7 +903,9 @@
       at: new Date().toISOString(), verb: S(entry.verb).slice(0, 28), stage: S(entry.stage).slice(0, 28),
       mode: S(entry.mode).slice(0, 12), action: S(entry.action).slice(0, 24), rowId: S(entry.rowId).slice(0, 24),
       ok: entry.ok === true, timeout: entry.timeout === true,
-      reason: wfdxReason(entry.reason), errorClass: wfdxErrorClass(entry.error),
+      attempted: entry.attempted === true, partialMutation: entry.partialMutation === true,
+      reason: wfdxReason(entry.reason), detailReason: wfdxReason(entry.detail),
+      resultReasons: wfdxReasonCounts(entry.results), errorClass: wfdxErrorClass(entry.error),
       appointmentIdPresent: entry.appointmentIdPresent === true,
       encounterBound: entry.encounterBound === true,
       identityLock: S(entry.identityLock || 'not-attempted').slice(0, 24),
@@ -899,10 +925,12 @@
     else if (reason === 'patient-mismatch') lock = 'mismatch';
     else if (probe && probe.ok === false) lock = 'refused';
     return wfdxNote({
-      verb: 'mlsAppAthenaActionV2', stage: stage || 'probe', mode: 'probe',
+      verb: 'mlsAppAthenaActionV2', stage: stage || 'probe', mode: stage === 'execute' ? 'execute' : 'probe',
       action: S(row && row.action), rowId: S(row && row.id),
       ok: !!(probe && probe.ok === true), timeout: !!(probe && probe.__timeout === true),
       reason: reason, error: probe && (probe.error || probe.message),
+      detail: probe && probe.detail, results: probe && probe.results,
+      attempted: !!(probe && probe.attempted === true), partialMutation: !!(probe && probe.partialMutation === true),
       appointmentIdPresent: !!S(visit.appointmentId).trim(),
       encounterBound: !!(S(visit.encounterId).trim() && S(visit.encounterUrl).trim()),
       identityLock: lock, expectedDay: visit.visitDate
@@ -1680,6 +1708,18 @@
     btn.addEventListener('click', function () { onClick(btn); });
     return btn;
   }
+  function wfdxAppendCopyReport(state, host) {
+    if (!host || !state || state.closed) return;
+    host.appendChild(wfdxButton('Copy error report',
+      'Copies a patient-free technical report of this review: verbs, refusal codes, athenaOne tab count, the day athenaOne is on, and whether an appointment id is bound.',
+      function (btn) { wfdxCopyText(JSON.stringify(wfdxReport(state.manifest), null, 1), btn, 'Copy error report'); }));
+  }
+  function wfdxShowExecuteReport(state) {
+    var host = wfdxFixHost(); if (!host || !state || state.closed) return;
+    host.innerHTML = '';
+    wfdxAppendCopyReport(state, host);
+    wfdxHealth(false).then(function () { wfdxPaintDiag(state); });
+  }
   /* Everything this strip can do is READ-ONLY: navigate athenaOne's own Day
      view to the encounter's date (mlsAppGotoDate), click that exact appointment
      row (mlsAppSearchOpenPatient), and re-run the read-only check. Nothing here
@@ -1697,9 +1737,7 @@
         'Read-only: sends athenaOne’s Day view to ' + day + ', clicks this exact appointment row, then re-runs the read-only check. Nothing is written.',
         function (btn) { wfdxOpenEncounter(state, rowId, btn, false); }));
     }
-    host.appendChild(wfdxButton('Copy error report',
-      'Copies a patient-free technical report of this review: verbs, refusal codes, athenaOne tab count, the day athenaOne is on, and whether an appointment id is bound.',
-      function (btn) { wfdxCopyText(JSON.stringify(wfdxReport(state.manifest), null, 1), btn, 'Copy error report'); }));
+    wfdxAppendCopyReport(state, host);
     wfdxHealth(false).then(function () { wfdxPaintDiag(state); });
   }
   function wfdxOfferNameRoute(state, rowId) {
@@ -2055,6 +2093,7 @@
       if (state.closed || unifiedAthenaState !== state) return;
       var completedProbe = state.probe;
       state.running = false;
+      wfdxProbeReceipt(state, row, resp || {}, 'execute');
       var receipt = resultToUnifiedReceipt(state, row, resp || {}, completedProbe);
       state.probe = null;
       renderUnifiedReceipts(state);
@@ -2062,6 +2101,7 @@
       setUnifiedReadyTick(null);
       if (cancel) cancel.disabled = false; if (close) close.disabled = false;
       unifiedStatus(state, receipt.message + (state.halted ? ' This manifest is halted because the outcome is uncertain.' : ' No other action ran automatically.'), receipt.status === 'verified' ? 'ok' : 'err');
+      if (receipt.status !== 'verified') wfdxShowExecuteReport(state);
       if (state.halted) {
         for (var i = 0; i < radios.length; i++) radios[i].disabled = true;
       } else {

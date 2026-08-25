@@ -393,6 +393,11 @@ const tests = [
      one complete lock; zero/multiple matches and empty execute context fail
      closed, and editor insertion is reported as read back but unsaved. */
   'athena-live-unbound-discovery-runtime.test.js',
+  /* mdx-2.1.0: with multiple signed-in Athena tabs, the read-only write probe
+     must foreground the exact candidate it is about to inspect, restore once,
+     refuse stale ids without arbitrary fallback, and never expose this presence
+     lane to execute. */
+  'athena-probe-exact-candidate-foreground-runtime.test.js',
   '1p-copy-all-visits-full-text.test.js',
   'visit-history-pull-receipt-lifecycle-runtime.test.js',
   '1p-cross-patient-door.test.js',
