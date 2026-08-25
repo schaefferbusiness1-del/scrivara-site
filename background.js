@@ -10177,16 +10177,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          for encounters. */
       var icons = [];
       try { icons = Array.prototype.slice.call(document.querySelectorAll('.nimbus-icon-visits.chart-tab-icon,.nimbus-icon-visits')); } catch (e0) {}
-      var tab = null;
+      /* vst-1.0.0: collect every DISTINCT rendered rail candidate. Two
+         visible Visits rails (dual chart panes, a decoy) are a refusal by
+         name, never a guess - the same uniqueness law wcl-1.0.x enforces on
+         the app-side click paths. */
+      var tab = null, vstRendered = [], vstHiddenOnly = null;
       for (var oi = 0; oi < icons.length; oi++) {
         try {
           var cand = icons[oi].closest && icons[oi].closest('li.chart-tabs__list-item');
           if (!cand) continue;
           var rr = cand.getBoundingClientRect();
-          if (rr.width > 1 && rr.height > 1) { tab = cand; break; }
-          if (!tab) tab = cand;
+          if (rr.width > 1 && rr.height > 1) { if (vstRendered.indexOf(cand) < 0) vstRendered.push(cand); }
+          else if (!vstHiddenOnly) vstHiddenOnly = cand;
         } catch (e1) {}
       }
+      if (vstRendered.length > 1) return { ok: false, reason: 'visits-tab-ambiguous', candidates: vstRendered.length };
+      tab = vstRendered[0] || vstHiddenOnly;
       if (!tab) {
         /* rst-3073 (live 2026-08-19): after a deep walk this frame can be LEFT
            on an /ax/encounter/N/exam page, where the chart rail (and its
@@ -10209,7 +10215,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
           } catch (eRstA) {}
           if (rstHref) { try { location.assign(rstHref); return { ok: true, recovered: 'briefing-link' }; } catch (eRstG) {} }
-          try { history.back(); return { ok: true, recovered: 'history-back' }; } catch (eRstB) {}
+          /* vst-1.0.0: history.back() from a deep encounter frame is
+             UNVALIDATED navigation - where it lands depends on how the walk
+             got here, and a wrong landing reads a wrong surface. Without an
+             exact briefing link this frame refuses by name; the orchestrator's
+             own re-open path (a fresh verified chart open) is the recovery. */
+          return { ok: false, reason: 'visits-rail-unreachable-deep-encounter' };
         }
         return { ok: false, reason: 'visits-tab-not-found' };
       }
@@ -10219,7 +10230,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          encounter rows, so enumeration fell to junk groups. Trust the
          RENDERED panel: only skip the click when encounter rows exist. */
       var visitsSurfaceOpen = false;
-      try { visitsSurfaceOpen = !!document.querySelector('li.encounter-list-item'); } catch (eVsOpen) {}
+      try {
+        /* vst-1.0.0: an encounter-shaped row proves the OPEN VISITS surface
+           only when it sits under a visits-scoped ancestor. A bare
+           li.encounter-list-item anywhere in the chart (orders, documents,
+           a decoy pane) proves nothing - the rail is re-driven instead,
+           which on a truly-open panel is the click the 3.0.2 collapse note
+           already tolerates on an inactive tab. */
+        var vsRow = document.querySelector('li.encounter-list-item');
+        visitsSurfaceOpen = !!(vsRow && vsRow.closest && vsRow.closest('[class*="visits" i],[id*="visits" i],.chart-tabs__tab-content,[class*="encounter-list" i]'));
+      } catch (eVsOpen) {}
       if (/(^|\s)active(\s|$)/.test(String(tab.className || '')) && visitsSurfaceOpen) return { ok: true, active: true };
       if (!visitActionAllowed()) return visitDeadlineFailure();
       try { tab.click(); return { ok: true, clicked: true }; } catch (e2) { return { ok: false, reason: 'visits-tab-click-failed' }; }
@@ -10915,7 +10935,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   var visitCleanupTail = Promise.resolve();
   var visitCleanupPending = 0;
   var VISIT_CLEANUP_BARRIER_MS = 250;
-  function fireVisitCleanup(reason, immediate) {
+  function fireVisitCleanup(reason, immediate, surfaceCloser) {
     /* qpRelease remains fire-and-forget from the caller's perspective: this
        promise is only a coordination barrier for the NEXT read. It is never
        awaited by the response that scheduled it. */
@@ -10924,6 +10944,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     var task = Promise.resolve(prior).catch(function () {}).then(function () {
       return new Promise(function (resolve) {
         function startCleanup() {
+          /* ocl-1.0.0: close whatever encounter surface this read may have
+             left open BEFORE releasing the lease - the barrier then hands
+             the next row a clean chart, never a refused patient's drawer.
+             Best-effort and bounded: a closer failure never blocks release. */
+          var surfDone = Promise.resolve();
+          if (typeof surfaceCloser === 'function') {
+            try { surfDone = Promise.resolve(surfaceCloser()).catch(function () {}); } catch (eSurf) {}
+          }
+          surfDone.then(function () { startRelease(); }, function () { startRelease(); });
+          function startRelease() {
           try {
             if (!self.__mlsQpRelease) { resolve({ ok: true, skipped: true }); return; }
             Promise.resolve(self.__mlsQpRelease(reason)).then(function () {
@@ -10934,6 +10964,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               resolve({ ok: false });
             });
           } catch (e) { resolve({ ok: false }); }
+          }
         }
         /* qpEnsure can move a tab synchronously and then never settle. In that
            failure mode start restoration now; ordinary after-response cleanup
@@ -12332,7 +12363,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } catch (eLeaseClear) {}
       try { __visitGuardByHint.delete(frozenHint); } catch (eGuardHintClear) {}
       try { if (__visitGuardByTab.get(readTabId) === readGuard) __visitGuardByTab.delete(readTabId); } catch (eGuardTabClear) {}
-      if (qpOwnedByThisRead) fireVisitCleanup('all-visits-after-response');
+      if (qpOwnedByThisRead) fireVisitCleanup('all-visits-after-response', false, function () {
+        /* the same all-frames exec shape the pre-gate identity probe uses;
+           closeDetailFrame is a no-op on an already-clean chart */
+        try { return exec(readTabId, null, ['closeDetailFrame', cfg]); } catch (eOclExec) { return Promise.resolve(); }
+      });
     };
     return readPromise;
   }

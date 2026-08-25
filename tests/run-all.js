@@ -1747,7 +1747,14 @@ const tests = [
      classifier narrow so novel row kinds stay clinical, and proves absence
      only from a complete fully-dated census. Thin pin suite - Codex's
      contract is the behavioral acceptance in their lane. */
-  'same-day-census-pins.test.js'
+  'same-day-census-pins.test.js',
+  /* vst-1.0.0 + ocl-1.0.0 (Codex red contracts visits-surface-targeting +
+     same-day-reader-owner-cleanup): ambiguous Visits rails refuse by name,
+     generic encounter DOM never proves the surface, deep encounter frames
+     never wander through history, and terminal cleanup closes the drawer
+     before releasing the reader lease. Thin pin suite - Codex's contracts
+     are the behavioral acceptance in their lane. */
+  'visits-surface-and-cleanup-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
