@@ -19,10 +19,12 @@ assert(/Get MLS working - 0 of 4 done/.test(firstRun) && /done === 4/.test(first
   'the checklist does not count AI configuration honestly');
 assert(/on\(byId\('mlsFrAiBtn'\),\s*'click',\s*onAiClick\)/.test(firstRun),
   'AI formats CTA is not wired into the checklist lifecycle');
-assert(/function onAiClick\(\)[\s\S]{0,700}window\.openSettings/.test(firstRun),
+assert(/async function onAiClick\(\)[\s\S]{0,1200}window\.openSettings/.test(firstRun),
   'AI formats CTA does not reuse canonical Settings');
-const aiHandler = firstRun.slice(firstRun.indexOf('function onAiClick()'), firstRun.indexOf('function onPullClick()'));
+const aiHandler = firstRun.slice(firstRun.indexOf('async function onAiClick()'), firstRun.indexOf('function onPullClick()'));
 assert(!/markDone\s*\(/.test(aiHandler), 'AI formats CTA must not dismiss or complete setup');
+assert(/__mlsEnsureDraftTuning[\s\S]{0,300}await/.test(aiHandler) || /await[\s\S]{0,300}__mlsEnsureDraftTuning/.test(aiHandler),
+  'Configure does not await the canonical draft-tuning loader');
 assert(/function focusAiFormats\([\s\S]{0,1400}mlsDraftTuningSection/.test(firstRun),
   'AI formats CTA does not target the mounted draft-tuning section');
 assert(/data-mls-settings-group=\\?['"]notes/.test(firstRun) && /scrollIntoView/.test(firstRun) && /\.focus/.test(firstRun),
@@ -31,6 +33,10 @@ assert(/AI note formats for HPI, ROS, Exam, Assessment and Plan/.test(firstRun),
   'Settings tour step does not identify all configurable note sections');
 assert(/documented circumstance applies/.test(firstRun),
   'Settings tour step does not explain conditional-format use');
+assert(firstRun.includes("on(window, 'mls:draft-tuning-saved', onSignal)"),
+  'first-run checklist does not repaint from saved draft-tuning truth');
+assert(tuning.includes("new CustomEvent('mls:draft-tuning-saved')"),
+  'draft-tuning save does not signal the first-run truth reader');
 
 /* Existing tuning transport is the natural one-visit hook: section profiles
  * are account-bounded and a request may select a profile explicitly. */

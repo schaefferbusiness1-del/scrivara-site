@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsDraftTuning && window.__mlsDraftTuning.installed) return;
 
-  var VERSION = '1.3.1';
+  var VERSION = '1.3.2';
   var STORE_KEY = 'draftTuningV1';
   var MAX_INSTRUCTIONS = 600;
   var MAX_SECTION_TEMPLATE = 2000;
@@ -456,7 +456,15 @@
   }
   function write(state) {
     var clean = sanitize(state);
-    try { localStorage.setItem(storageKey(), JSON.stringify(clean)); return clean; }
+    try {
+      localStorage.setItem(storageKey(), JSON.stringify(clean));
+      /* First-run owns only checklist presentation.  Tell it that the
+         account-scoped store changed instead of making it poll Settings or
+         infer completion from a click.  The event carries no settings or
+         visit data; listeners re-read their own namespaced truth. */
+      try { window.dispatchEvent(new CustomEvent('mls:draft-tuning-saved')); } catch (notifyError) {}
+      return clean;
+    }
     catch (e) { return null; }
   }
   function cleanTransientExample(value) {
@@ -934,6 +942,12 @@
     var sec = document.createElement('div');
     sec.className = 'set-section';
     sec.id = 'mlsDraftTuningSection';
+    var style = document.createElement('style');
+    style.id = 'mlsDraftTuningCss';
+    style.textContent = '#mlsDraftTuningSection input.mls-dt-short-field{' +
+      'display:block;width:100%;max-width:100%;min-height:0!important;height:42px!important;' +
+      'box-sizing:border-box;white-space:normal;padding:8px 10px;line-height:1.3}';
+    try { (document.head || document.documentElement).appendChild(style); } catch (e) {}
     sec.innerHTML =
       '<p class="set-head">🤖 AI draft tuning</p>' +
       '<p class="set-desc">Set the writing defaults for every kind of AI draft. Every draft type supports multiple saved formats, conditional “use when” rules, reusable templates, AI prompt comments, and example import; MLS can choose the matching format from today\'s transcript, and you can still override it for one visit. These settings follow your account. Patient facts never belong here, and no setting can relax clinical, coding, legal, identity, or review safeguards.</p>' +
@@ -944,8 +958,8 @@
         '<div class="field"><label for="mlsDtStructure">Structure</label><select class="sf-select" id="mlsDtStructure">' + optionHtml([['default','Best structure for this draft'],['fixed_headings','Fixed headings'],['problem_grouped','Group by problem'],['template_faithful','Follow the chosen template']]) + '</select></div>' +
         '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
         '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Saved format</label><div class="row"><select class="sf-select" id="mlsDtSectionProfile"></select><button type="button" class="btn-ghost" id="mlsDtSectionAdd">+ Add format</button><button type="button" class="btn-ghost" id="mlsDtSectionDelete">Remove</button></div><p class="mini" id="mlsDtSectionProfileStatus" role="status">Up to 8 reusable formats per section.</p></div>' +
-        '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input class="note-box mls-dt-short-field" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up" style="min-height:0;height:42px;box-sizing:border-box;white-space:normal"></div>' +
-        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input class="note-box mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up" style="min-height:0;height:42px;box-sizing:border-box;white-space:normal"><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
+        '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up"></div>' +
+        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
         '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
         '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
       '</div>' +
@@ -957,7 +971,7 @@
         '<div class="row" style="margin-top:8px"><button type="button" class="btn-green" id="mlsDtSectionImportDerive">Create AI template preview</button><button type="button" class="btn-ghost" id="mlsDtSectionImportCancel">Cancel</button></div>' +
         '<p class="mini" id="mlsDtSectionImportStatus" role="status"></p>' +
         '<div id="mlsDtSectionImportPreview" style="display:none;margin-top:10px">' +
-          '<div class="field"><label for="mlsDtSectionImportNamePreview">Suggested format name</label><input class="note-box mls-dt-short-field" id="mlsDtSectionImportNamePreview" maxlength="80" style="min-height:0;height:42px;box-sizing:border-box;white-space:normal"></div>' +
+          '<div class="field"><label for="mlsDtSectionImportNamePreview">Suggested format name</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionImportNamePreview" maxlength="80"></div>' +
           '<div class="field"><label for="mlsDtSectionImportTemplatePreview">Reusable template preview</label><textarea class="note-box" id="mlsDtSectionImportTemplatePreview" maxlength="2000" style="min-height:130px"></textarea></div>' +
           '<div class="field"><label for="mlsDtSectionImportCommentsPreview">AI prompt comments preview</label><textarea class="note-box" id="mlsDtSectionImportCommentsPreview" maxlength="600" style="min-height:90px"></textarea></div>' +
           '<button type="button" class="btn-green" id="mlsDtSectionImportApply">Apply preview to this saved format</button>' +

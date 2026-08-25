@@ -24,6 +24,16 @@ const { chromium } = require('playwright');
     await page.addScriptTag({ path: path.resolve(__dirname, '..', 'feat_mls_draft_tuning.js') });
 
     await page.selectOption('#mlsDtFamily', 'hpi');
+    for (const id of ['#mlsDtSectionName', '#mlsDtSectionWhen', '#mlsDtSectionImportNamePreview']) {
+      assert.equal(await page.locator(id).getAttribute('type'), 'text', id + ' is not an explicit text input');
+    }
+    const shortBox = await page.locator('#mlsDtSectionName').evaluate(el => {
+      const style = getComputedStyle(el);
+      return { height: parseFloat(style.height), minHeight: parseFloat(style.minHeight), width: style.width };
+    });
+    assert.ok(shortBox.height <= 42.5 && shortBox.minHeight <= 0.5,
+      'short format field inherited a tall note-box size: ' + JSON.stringify(shortBox));
+    assert.notEqual(shortBox.width, '0px', 'short format field has no usable scoped width');
     assert.equal(await page.locator('#mlsDtSectionNameHost').evaluate(el => el.style.display), '', 'HPI format-name control is hidden');
     assert.equal(await page.locator('#mlsDtSectionTemplateTextHost').evaluate(el => el.style.display), '', 'HPI template editor is hidden');
 

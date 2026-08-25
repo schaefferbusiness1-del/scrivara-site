@@ -66,9 +66,12 @@ for (const control of ['mlsDtSectionName', 'mlsDtSectionAdd', 'mlsDtSectionDelet
 }
 assert.ok(source.includes('mls-dt-short-field'),
   'short saved-format controls do not have a compact-field class');
-assert.ok(/id="mlsDtSectionName"[^>]*style="[^"]*min-height:0[^\"]*height:42px/.test(source) &&
-  /id="mlsDtSectionWhen"[^>]*style="[^"]*min-height:0[^\"]*height:42px/.test(source),
-  'format name and automatic-use controls still inherit the tall note editor height');
+assert.ok(/<input type="text" class="mls-dt-short-field" id="mlsDtSectionName"/.test(source) &&
+  /<input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen"/.test(source),
+  'format name and automatic-use controls are not explicit compact text inputs');
+assert.ok(source.includes('#mlsDraftTuningSection input.mls-dt-short-field') &&
+  source.includes('min-height:0!important;height:42px!important'),
+  'short saved-format controls do not have robust scoped compact sizing');
 assert.ok(/id="mlsDtSectionTemplateText"[^>]*style="[^"]*min-height:150px[^\"]*height:150px/.test(source),
   'saved template outline must not inherit the 260px note editor height');
 assert.ok(/id="mlsDtInstructions"[^>]*class="[^"]*mls-dt-comments-field[^\"]*"[^>]*style="[^"]*min-height:96px[^\"]*height:96px/.test(source) &&

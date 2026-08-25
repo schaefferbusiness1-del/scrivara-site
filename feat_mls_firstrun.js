@@ -543,44 +543,64 @@
   function onTourClick() { openTour(); }
   function focusAiFormats(attempt) {
     attempt = Number(attempt) || 0;
-    var section = byId('mlsDraftTuningSection');
-    var modal = byId('settingsModal');
-    if (!section || !modal || !modal.classList.contains('show')) {
-      /* Draft tuning is a first-use asset and may arrive just after the
-         settings modal opens. Keep this bounded and retry only while the
-         section is genuinely not mounted. */
-      if (attempt < 20) later(function () { focusAiFormats(attempt + 1); }, 100);
-      return;
-    }
-    /* The settings cleanup owner groups AI draft tuning with Notes & AI. Use
-       its real tab when present so the CTA never leaves the section hidden
-       behind whichever tab happened to be active. */
-    var notesTab = qs('#settingsTabBar [data-mls-settings-group="notes"]');
-    if (notesTab && isFn(notesTab.click)) safe(function () { notesTab.click(); });
-    else {
-      section.classList.remove('set-tab-hidden');
-      section.style.display = '';
-    }
-    safe(function () { section.scrollIntoView({ block: 'start', inline: 'nearest' }); });
-    var first = byId('mlsDtFamily') || byId('mlsDtSectionName');
-    safe(function () { if (first && isFn(first.focus)) first.focus({ preventScroll: true }); });
-  }
-  function onAiClick() {
-    /* Reuse the canonical Settings entry. It starts the first-use draft
-       tuning loader and opens the same account-scoped AI section controls;
-       this CTA never marks setup complete and never carries visit data. */
-    safe(function () {
-      if (isFn(window.openSettings)) {
-        window.openSettings();
-        focusAiFormats(0);
-        return;
+    return new Promise(function (resolve) {
+      function seek(n) {
+        var section = byId('mlsDraftTuningSection');
+        var modal = byId('settingsModal');
+        if (section && modal && modal.classList.contains('show')) {
+          /* The settings cleanup owner groups AI draft tuning with Notes & AI.
+             Select its real tab so Configure cannot leave the editor hidden
+             behind whichever Settings group happened to be active. */
+          var notesTab = qs('#settingsTabBar [data-mls-settings-group="notes"]');
+          if (notesTab && isFn(notesTab.click)) safe(function () { notesTab.click(); });
+          else {
+            section.classList.remove('set-tab-hidden');
+            section.style.display = '';
+          }
+          safe(function () { section.scrollIntoView({ block: 'start', inline: 'nearest' }); });
+          var first = byId('mlsDtFamily') || byId('mlsDtSectionName');
+          if (first && isFn(first.focus)) safe(function () { first.focus({ preventScroll: true }); });
+          resolve(true);
+          return;
+        }
+        /* The lazy draft-tuning bundle can arrive after Settings opens.
+           Bound the wait and report a visible failure rather than letting the
+           first-run button look like a no-op. */
+        if (n >= 30) { resolve(false); return; }
+        later(function () { seek(n + 1); }, 100);
       }
-      var fallback = byId('rectab_settings') || qs('#mlsDock button[data-dest="tools"]');
-      if (fallback && isFn(fallback.click)) {
-        fallback.click();
-        focusAiFormats(0);
-      }
+      seek(attempt);
     });
+  }
+  function showAiConfigureFailure(message) {
+    var row = byId('mlsFrRow_tuning');
+    var hint = row && row.querySelector ? row.querySelector('.mlsfr-hint') : null;
+    setClass(row, 'mlsfr-row bad');
+    setText(hint, message || 'AI note formats could not be opened. Reload MLS and try again.');
+    var button = byId('mlsFrAiBtn');
+    if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+  }
+  async function onAiClick() {
+    /* Load the canonical account-scoped editor first, then open Settings and
+       focus that exact section. Opening Configure never marks setup complete;
+       only a valid saved draftTuningV1 state does. */
+    var button = byId('mlsFrAiBtn');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+    try {
+      if (!isFn(window.__mlsEnsureDraftTuning)) throw new Error('draft-tuning-loader-missing');
+      var api = await window.__mlsEnsureDraftTuning();
+      if (!api || api.installed !== true) throw new Error('draft-tuning-loader-failed');
+      if (isFn(window.openSettings)) window.openSettings();
+      else {
+        var fallback = byId('rectab_settings') || qs('#mlsDock button[data-dest="tools"]');
+        if (!fallback || !isFn(fallback.click)) throw new Error('settings-entry-missing');
+        fallback.click();
+      }
+      if (!(await focusAiFormats(0))) throw new Error('draft-tuning-section-missing');
+      if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+    } catch (error) {
+      showAiConfigureFailure();
+    }
   }
   function onPullClick() {
     if (pullBusy() || recording()) return;
@@ -948,6 +968,7 @@
   /* ------------------------------- boot / api ------------------------------ */
   on(window, 'mls:loader-ready', onSignal);
   on(window, 'mls:view-changed', onSignal);
+  on(window, 'mls:draft-tuning-saved', onSignal);
   for (var li = 0; li < LADDER.length; li++) { later(ensure, LADDER[li]); }
 
   var api = {
