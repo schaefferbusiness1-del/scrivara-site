@@ -119,16 +119,32 @@ const MODES = [{ on: true, mode: 'full' }, { on: false, mode: 'day-facts' }];
     'the retired OFF stamp vocabulary is back on the day-note lane');
 }
 
-/* the fixture writes the day ledger the way a completed batch does */
-function seedVerifiedDay(h, day, patientIds) {
+/* the fixture writes the day ledger the way a completed batch does.
+ * cachev-1.0.0: the skip now demands a VERSIONED per-lane proof (proofVersion
+ * 2 + perPatientLanes with coverage/sameDayNote/allHistory receipts); a bare
+ * "ok today" bit is rejected as legacy-proof-schema-unversioned. This suite
+ * tests the skip LEVER, so the seed here is the fully-proven future shape
+ * (scope 'full' satisfies both modes); testCacheProofVersioning below pins
+ * that partial and legacy shapes are refused. laneOverrides lets a case
+ * poison exactly one lane. */
+function seedVerifiedDay(h, day, patientIds, laneOverrides) {
   const key = 'p1-harness::schedImportIndexV1::' + day;
   const raw = h.rt.localStorage.getItem(key);
   const x = raw ? JSON.parse(raw) : { v: 1, rows: {} };
+  const legacy = laneOverrides === 'legacy';
   x.history = Object.assign({}, x.history, {
     at: h.clock.now(),
     contentMeasured: true,
     contentVerified: true,
     perPatient: patientIds.reduce((a, id) => (a[id] = 'ok', a), {})
+  }, legacy ? {} : {
+    proofVersion: 2,
+    perPatientLanes: patientIds.reduce((a, id) => (a[id] = Object.assign({
+      v: 2,
+      coverage: { complete: true },
+      sameDayNote: { status: 'saved' },
+      allHistory: { scope: 'full', complete: true }
+    }, laneOverrides || {}), a), {})
   });
   h.rt.localStorage.setItem(key, JSON.stringify(x));
   /* the stored record must actually hold content */
@@ -212,6 +228,68 @@ async function testVerifiedRowsSkip() {
     if (!M.on) eq(h2.noteCalls.filter(c => String(c.onlyDate || '') === DAY).length, 10,
       tag + 'the A/B control changed the pulled-day lane; the skip must save CHART opens only');
   }
+}
+
+/* ------------- 1b. cachev-1.0.0: the skip demands a VERSIONED lane proof */
+async function testCacheProofVersioning() {
+  const DAY = '2026-08-17';
+  const REASONS = ['legacy-proof-schema-unversioned', 'clinical-floor-coverage-unproven',
+    'same-day-lane-unproven', 'scope-version-insufficient', 'versioned-lanes-proven'];
+  const CASES = [
+    { tag: '[legacy] ', seed: 'legacy', on: true, reason: 'legacy-proof-schema-unversioned', proofVersion: 1 },
+    /* the shipped ledger writer's own honest stamp: coverage reads
+       reader-not-shipped until the insurance/benefits reader lands, so a
+       batch cannot self-certify a skip off its own receipt yet */
+    { tag: '[coverage] ', seed: { coverage: { complete: false, reason: 'reader-not-shipped' } }, on: true,
+      reason: 'clinical-floor-coverage-unproven', proofVersion: 2 },
+    { tag: '[same-day] ', seed: { sameDayNote: { status: 'attempted' } }, on: false,
+      reason: 'same-day-lane-unproven', proofVersion: 2 },
+    /* scope fencing: a day-facts proof can never skip a FULL pull... */
+    { tag: '[scope-up] ', seed: { allHistory: { scope: 'day-facts', complete: true } }, on: true,
+      reason: 'scope-version-insufficient', proofVersion: 2 }
+  ];
+  for (const C of CASES) {
+    const h = makeHarness({ day: DAY, today: DAY, rows: 10, visitNotesOn: C.on });
+    seedVerifiedDay(h, DAY, h.patients.slice(0, 6).map(p => p.id), C.seed);
+    const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
+    eq(Number(receipt.chartsSkippedVerifiedToday || 0), 0,
+      C.tag + 'an insufficient proof still skipped rows');
+    eq(opened(h), 10, C.tag + 'a rejected proof did not fall through to a fresh read');
+    const seeded = receipt.patients.slice(0, 6);
+    ok(seeded.every(p => p.cacheProof && p.cacheProof.accepted === false),
+      C.tag + 'a rejected row is missing its cacheProof rejection receipt');
+    ok(seeded.every(p => p.cacheProof.reason === C.reason),
+      C.tag + 'wrong rejection reason: ' + JSON.stringify(seeded.map(p => p.cacheProof.reason)));
+    ok(seeded.every(p => p.cacheProof.proofVersion === C.proofVersion),
+      C.tag + 'the receipt misreports the stored proof version');
+    /* the rejection receipt is PHI-free: reason code + version, nothing else.
+       (mrn is skipped: the fixture mrn is the empty string, which every
+       string trivially "contains" - the reported contract-test trap.) */
+    for (const p of seeded) {
+      const s = JSON.stringify(p.cacheProof);
+      const fx = h.patients.find(x => String(x.id) === String(p.patientId)) || {};
+      ok(Object.keys(p.cacheProof).sort().join(',') === 'accepted,proofVersion,reason',
+        C.tag + 'the rejection receipt grew a field beyond accepted/reason/proofVersion: ' + s);
+      ok(!(fx.name && s.includes(fx.name)) && !(fx.dob && s.includes(fx.dob)),
+        C.tag + 'the cache rejection receipt leaked patient identity');
+      ok(REASONS.indexOf(p.cacheProof.reason) >= 0,
+        C.tag + 'a reason outside the closed vocabulary: ' + p.cacheProof.reason);
+    }
+    ok(receipt.patients.slice(0, 6).every(p => !p.chartSkippedVerifiedToday),
+      C.tag + 'a rejected row was still stamped chart-skipped');
+  }
+  /* ...but a day-facts proof DOES satisfy a day-facts re-run (same seed, OFF
+     mode): the fence is directional, not a blanket cache kill */
+  const h2 = makeHarness({ day: DAY, today: DAY, rows: 10, visitNotesOn: false });
+  seedVerifiedDay(h2, DAY, h2.patients.slice(0, 6).map(p => p.id),
+    { allHistory: { scope: 'day-facts', complete: true } });
+  const r2 = await h2.api._runHistoryBatch(h2.rows, [], h2.onStatus);
+  eq(Number(r2.chartsSkippedVerifiedToday || 0), 6,
+    '[scope-match] a matching-scope v2 proof no longer skips - the cache is dead, not versioned');
+  eq(opened(h2), 4, '[scope-match] the matching-scope skip stopped saving chart opens');
+  ok(r2.patients.slice(0, 6).every(p => p.cacheProof && p.cacheProof.accepted === true &&
+      p.cacheProof.reason === 'versioned-lanes-proven'),
+    '[scope-match] an accepted skip is missing its versioned-lanes-proven receipt');
 }
 
 /* ------------------------------------- 2. every clause of the bar refuses */
@@ -484,11 +562,12 @@ async function testCostBreakdown() {
 
 async function main() {
   await testVerifiedRowsSkip();
+  await testCacheProofVersioning();
   await testTheBarIsNotAMarker();
   await testDayFactsFloorIsRealWork();
   await testUnchosenBlocksEverything();
   await testCostBreakdown();
-  console.log('PASS 1p-pull-resume-skip-and-cost: ' + checks + ' checks - under dayfacts-1.0.1 a re-run skips only rows this same account day already proved and stored with content under an unchanged identity (measured against an A/B control in BOTH modes) and that skip saves CHART OPENS ONLY - every day-facts row, skipped or not, still gets exactly one onlyDate read of the pulled day\'s encounter note; day-facts mode opens and saves every exact scheduled row, skips historical bodies, declares honest insurance placeholders and books its time on costBreakdown.todayNoteMs while full mode books the same fixture\'s time on costBreakdown.visitsMs; an unchosen preference blocks every read');
+  console.log('PASS 1p-pull-resume-skip-and-cost: ' + checks + ' checks - under dayfacts-1.0.1 + cachev-1.0.0 a re-run skips only rows this same account day already proved under a VERSIONED per-lane proof (legacy/partial/narrower-scope proofs are rejected with a closed-vocabulary PHI-free receipt and read fresh; a matching-scope v2 proof still skips), stored with content under an unchanged identity (measured against an A/B control in BOTH modes) and that skip saves CHART OPENS ONLY - every day-facts row, skipped or not, still gets exactly one onlyDate read of the pulled day\'s encounter note; day-facts mode opens and saves every exact scheduled row, skips historical bodies, declares honest insurance placeholders and books its time on costBreakdown.todayNoteMs while full mode books the same fixture\'s time on costBreakdown.visitsMs; an unchosen preference blocks every read');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-pull-resume-skip-and-cost did not finish')); process.exit(1); }, 60000);

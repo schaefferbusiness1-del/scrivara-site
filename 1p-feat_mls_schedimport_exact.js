@@ -1587,12 +1587,23 @@
       var ledgerCensus = {};
       for (var ck in census) if (Object.prototype.hasOwnProperty.call(census, ck) && ck !== "prints") ledgerCensus[ck] = census[ck];
       var perPatientDiag = {};
+      var perPatientLanes = {}; /* cachev-1.0.0: v2 per-lane proof receipts */
       (receipt.patients || []).forEach(function (p) {
         if (!p) return;
         var pid = String(p.patientId || "");
         if (p.complete === true) {
           storedOk++;
           if (pid) perPatient[pid] = "ok";
+          /* cachev-1.0.0: the lanes this pull actually proved, recorded so a
+             later same-day re-pull can skip HONESTLY. Coverage is declared
+             unproven until the provenance-bound reader ships - which means
+             no skip can bypass the clinical floor before it exists. */
+          if (pid) perPatientLanes[pid] = {
+            v: 2,
+            coverage: { complete: false, reason: "reader-not-shipped" },
+            sameDayNote: { status: p.todayNote === true ? "saved" : (p.todayNoteSkipped === "future-day" ? "not-yet-available" : (p.todayNote == null ? "unknown" : "unread")) },
+            allHistory: { scope: receipt.visitNotesRequested === true ? "full" : "day-facts", complete: p.visitsComplete === true && p.visitsSkipped !== true ? true : (receipt.visitNotesRequested !== true && p.visitsComplete === true) }
+          };
           /* fa-1.0: a row that cleared on re-check or redo keeps its
              first-attempt evidence IN THE LEDGER - first-attempt convergence
              is the bar, and until now the cure overwrote its own evidence
@@ -1621,6 +1632,8 @@
       });
       x.history = {
         at: Date.now(),
+        proofVersion: 2, /* cachev-1.0.0 */
+        perPatientLanes: perPatientLanes,
         requestId: String(receipt.requestId || ""),
         /* dayRows is the DAYS OWN patient count. requested is only what the
            batch was handed, so the two disagreeing is itself the finding: it
@@ -4209,8 +4222,12 @@
     var dscopeDate = String((r.receipt && (r.receipt.scopeDate || r.receipt.onlyDate)) || "").slice(0, 10);
     var dscope = /^\d{4}-\d{2}-\d{2}$/.test(dscopeDate);
     if (dscope) {
+      /* dscope-1.0.1 (Codex blocker 4 on 10f41d2d): an exact-day slice
+         REQUIRES a canonical frozen row day - a missing/invalid target day
+         refuses before any write instead of skipping the comparison. */
       var frozenDay = String(target && (target.scheduleDate || target.day) || "").slice(0, 10);
-      if (frozenDay && frozenDay !== dscopeDate) throw new Error("scoped-date-target-mismatch");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(frozenDay)) throw new Error("scoped-frozen-day-missing");
+      if (frozenDay !== dscopeDate) throw new Error("scoped-date-target-mismatch");
       for (var dv = 0; dv < visits.length; dv++) {
         if (String(visits[dv] && visits[dv].date || "").slice(0, 10) !== dscopeDate) throw new Error("scoped-visit-date-mismatch");
       }
@@ -4231,6 +4248,14 @@
         savedCount = Number(dscopeSave && dscopeSave.saved || 0);
       }
       reconcileReceipt = { complete: true, scoped: true, removed: 0, retained: -1 }; /* reconciliation deliberately NOT run on a slice */
+      /* dscope-1.0.1: the census status the reader hands back is validated
+         against the CLOSED vocabulary before it enters this receipt. An
+         alien string never travels: rows measurably persisted read saved;
+         an unproveable claim with nothing persisted reads refused (absence
+         is a proof, never a default). */
+      var dsStatusRaw = String((r.receipt && r.receipt.sameDayStatus) || "");
+      var dsSameDayStatus = /^(saved|partial|refused|absent|not-yet-available)$/.test(dsStatusRaw)
+        ? dsStatusRaw : (parsed > 0 ? "saved" : "refused");
     } else if (target.dob && observed.chartDob && isFn(cv._saveVisits)) {
       savedCount = Number(cv._saveVisits(p, { name: observed.chartName || target.name, dob: observed.chartDob }, visits, function () {}, r.receipt));
     } else {
@@ -4347,7 +4372,7 @@
     }
     var refreshedCoverage=responsiveOrganization?null:safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
-    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: dscope ? parsed : persisted.length, savedCount: savedCount, scopedAdditive: dscope === true, scopeDate: dscope ? dscopeDate : undefined, sameDayStatus: dscope ? String((r.receipt && r.receipt.sameDayStatus) || (parsed > 0 ? "saved" : "absent")) : undefined, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
+    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: dscope ? parsed : persisted.length, savedCount: savedCount, scopedAdditive: dscope === true, scopeDate: dscope ? dscopeDate : undefined, sameDayStatus: dscope ? dsSameDayStatus : undefined, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
   }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
     /* b744 #36: true only when the per-patient loop ran to completion; the
@@ -4816,7 +4841,7 @@
     function rskEnabled() {
       return safe(function () { return window.__mlsP1SkipVerifiedToday !== false; }, true);
     }
-    function rskAlreadyVerifiedToday(day, target) {
+    function rskAlreadyVerifiedToday(day, target, wantScope) {
       if (!rskEnabled() || !day || !target || !target.patientId) return null;
       return safe(function () {
         var x = readIndex(day), h = x && x.history;
@@ -4833,6 +4858,21 @@
         var c = censusPatientContent(p), any = false;
         for (var ci = 0; ci < CENSUS_CONTENT_FIELDS.length; ci++) if (c[CENSUS_CONTENT_FIELDS[ci]]) { any = true; break; }
         if (!any) return null;
+        /* cachev-1.0.0: a bare "ok today" bit predates the mandatory
+           coverage + exact-day-note floor and cannot prove those independent
+           lanes completed. Only a v2 proof with per-lane receipts may skip
+           the fresh read, and a narrow scope never satisfies a wider request
+           (an OFF/day-facts proof cannot skip an ON/full pull). The
+           validator is a pure closed-shape check: transport truthiness never
+           substitutes for semantic proof. */
+        var proofVersion = Number(h.proofVersion || 1);
+        var lanes = (h.perPatientLanes && h.perPatientLanes[pid]) || null;
+        if (proofVersion !== 2 || !lanes || Number(lanes.v) !== 2) return { rejectedReason: "legacy-proof-schema-unversioned", proofVersion: proofVersion };
+        if (!(lanes.coverage && lanes.coverage.complete === true)) return { rejectedReason: "clinical-floor-coverage-unproven", proofVersion: proofVersion };
+        if (!(lanes.sameDayNote && /^(saved|absent|not-yet-available)$/.test(String(lanes.sameDayNote.status || "")))) return { rejectedReason: "same-day-lane-unproven", proofVersion: proofVersion };
+        var provedScope = String((lanes.allHistory && lanes.allHistory.scope) || "");
+        var scopeOk = lanes.allHistory && lanes.allHistory.complete === true && (provedScope === "full" || provedScope === String(wantScope || ""));
+        if (!scopeOk) return { rejectedReason: "scope-version-insufficient", proofVersion: proofVersion };
         return { at: at, day: String(day) };
       }, null);
     }
@@ -5251,7 +5291,18 @@
         /* rsk-1.0.0: a row this same account day already proved and STORED is
            complete without a second Athena read. Recorded as skipped so no
            surface can mistake it for a fresh read. */
-        var rskProof = rskAlreadyVerifiedToday(batchRowDay(row), target);
+        var rskProof = rskAlreadyVerifiedToday(batchRowDay(row), target, pullVisitBodies === true ? "full" : "day-facts");
+        if (rskProof && rskProof.rejectedReason) {
+          /* cachev-1.0.0 (Codex red contract pull-cache-proof-version): a
+             proof that EXISTS but predates the mandatory coverage/same-day/
+             all-history floor is rejected at the schema boundary and the row
+             reads FRESH. The rejection receipt is closed-vocabulary and
+             PHI-free - a reason code and a version number, nothing else. */
+          one.cacheProof = { accepted: false, reason: String(rskProof.rejectedReason), proofVersion: Number(rskProof.proofVersion || 1) };
+          rskProof = null;
+        } else if (rskProof) {
+          one.cacheProof = { accepted: true, reason: "versioned-lanes-proven" };
+        }
         if (rskProof) {
           one.dobVerified = true; one.organized = true; one.organizationComplete = true;
           one.visitsComplete = true; one.visitsSkipped = pullVisitBodies !== true;

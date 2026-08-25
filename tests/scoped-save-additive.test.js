@@ -128,6 +128,34 @@ let n = 0; const ok = m => { n++; console.log('ok ' + n + ' - ' + m); };
     'mutation control failed to demonstrate the destructive path the pins guard against');
   ok('mutation control: forced reconcile visibly destroys history (the pins are load-bearing)');
 }
+/* 5b. dscope-1.0.1 (Codex blocker 4): a MISSING/invalid frozen target day
+      refuses before any write - an exact-day slice may never proceed on
+      an uncomparable target */
+{
+  const h = makeHarness(false);
+  assert.throws(() => h.fn(Object.assign({}, target, { scheduleDate: '' }), resp([visit('s', DAY)], 'saved')), /scoped-frozen-day-missing/);
+  assert.strictEqual(h.bulkCalls.length, 0, 'an uncomparable target wrote anyway');
+  const h2 = makeHarness(false);
+  assert.throws(() => h2.fn(Object.assign({}, target, { scheduleDate: 'garbage-day' }), resp([visit('s', DAY)], 'saved')), /scoped-frozen-day-missing/);
+  assert.strictEqual(h2.bulkCalls.length, 0, 'an invalid target day wrote anyway');
+  ok('empty/invalid frozen target day refuses before any write');
+}
+/* 5c. dscope-1.0.1: sameDayStatus passes a CLOSED validator - an alien
+      receipt string never travels onto the result */
+{
+  const h = makeHarness(false);
+  const r = h.fn(target, resp([visit('s', DAY)], 'totally-novel-status'));
+  assert.strictEqual(r.sameDayStatus, 'saved', 'alien status with persisted rows must read saved (measured truth)');
+  const h2 = makeHarness(false);
+  const r2 = h2.fn(target, resp([], 'sneaky-absent-claim'));
+  assert.strictEqual(r2.sameDayStatus, 'refused',
+    'alien status with zero rows must read refused - absence is a proof, never a default');
+  const h3 = makeHarness(false);
+  const r3 = h3.fn(target, resp([], 'not-yet-available'));
+  assert.strictEqual(r3.sameDayStatus, 'not-yet-available', 'the typed future classification survives the validator');
+  assert.strictEqual(h3.bulkCalls.length, 0, 'a not-yet-available day wrote rows');
+  ok('closed sameDayStatus vocabulary: alien strings coerce to measured truth, typed statuses survive');
+}
 /* 6. unscoped saves unchanged: full-history mode still reconciles + censuses */
 {
   const h = makeHarness(false);
@@ -140,4 +168,4 @@ let n = 0; const ok = m => { n++; console.log('ok ' + n + ' - ' + m); };
   ok('unscoped full-history save still reconciles (mode not softened)');
 }
 
-console.log('PASS scoped-save additive: slices persist once with reconcile OFF, absence saves nothing, no-substitution and frozen-target refusals hold, the mutation control bites, and full-history mode is unchanged (' + n + ' cases)');
+console.log('PASS scoped-save additive: slices persist once with reconcile OFF, absence saves nothing, no-substitution and frozen-target refusals hold (empty/invalid frozen day refuses too), sameDayStatus is closed-vocabulary, the mutation control bites, and full-history mode is unchanged (' + n + ' cases)');
