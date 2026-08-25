@@ -5384,7 +5384,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
              the DOM node, while the importer reads the stored key. -->
         <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="setPullVisitBodies" style="margin-top:2px">
-          <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, also read and store every dated prior encounter note from each scheduled chart (slower, stores more, most complete). Off: bulk pulls still open each scheduled chart and save its current facts, but skip the prior visit notes (faster, stores less). The single-patient pull button still reads the one patient you explicitly chose.</span>
+          <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save its dated encounters (slower, most complete). Off: bulk pulls save only schedule/booking rows and do not open patient charts. The single-patient pull button still reads the one patient you explicitly chose.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
         <a href="https://mlsscribe.com/MLS_Assist_v3.0.81.zip" download="MLS_Assist_v3.0.81.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.81 ZIP)</a>
@@ -10326,7 +10326,7 @@ function renderPullVisitBodiesSetting(){
         return;
       }
       try{ const inline=document.getElementById('mlsDsVisitBodies'); if(inline) inline.checked=cb.checked; }catch(e){}
-      try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls still open each chart and save its current facts, but skip prior visit notes — faster and lighter on storage.','ok'); }catch(e){}
+      try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls now read schedule rows only — no patient chart or history is opened.','ok'); }catch(e){}
     });
   }catch(e){}
 }
@@ -10690,7 +10690,7 @@ function mlsConfirm(msg,opts){
 }
 /* First bulk Athena pull choice. This is intentionally tri-state:
    true  = always include full visit notes (slower)
-   false = still open each chart for current facts; skip prior visit notes
+   false = save schedule/booking rows only; do not open patient charts
    null  = dismissed/cancelled, so the originating pull must not start.
    A normal confirm cannot represent false separately from Escape/backdrop. */
 function _mlsVisitNotesChoice(){
@@ -10698,11 +10698,11 @@ function _mlsVisitNotesChoice(){
     card.innerHTML=
       '<div id="_mlsAskMsg" style="padding:18px 18px 7px;font-size:15px;line-height:1.45;color:#1a2b3c">'+
         '<div style="font-weight:750;font-size:17px;margin-bottom:7px">Choose how much Athena visit history MLS should pull</div>'+
-        '<div>Choose once for this account. Every pull opens each scheduled chart and saves its current facts. <b>Full visit notes</b> also reads and stores every dated prior encounter note, which takes longer and uses more storage. <b>Faster pulls</b> skip those prior visit notes — they finish sooner and store less. You can change this later in Settings.</div>'+
+        '<div>Choose once for this account. <b>Full visit notes</b> opens each scheduled chart and saves every dated encounter, which takes longer. <b>Faster schedule-only pulls</b> save the selected booking rows without opening patient charts. You can change this later in Settings.</div>'+
       '</div>'+
       '<div style="padding:10px 16px 16px;display:grid;gap:8px">'+
-        '<button type="button" id="_mlsVisitNotesFull" style="font:inherit;text-align:left;padding:11px 13px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;cursor:pointer"><b>Include full visit notes</b><br><span style="font-size:12px;opacity:.9">Most complete · slower, stores every prior note</span></button>'+
-        '<button type="button" id="_mlsVisitNotesFast" style="font:inherit;text-align:left;padding:11px 13px;border-radius:10px;border:1px solid #B9C8C0;background:#fff;color:#1a2b3c;cursor:pointer"><b>Use faster schedule-only pulls</b><br><span style="font-size:12px;color:#52645d">Current chart facts only · skips prior visit notes</span></button>'+
+        '<button type="button" id="_mlsVisitNotesFull" style="font:inherit;text-align:left;padding:11px 13px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;cursor:pointer"><b>Include full visit notes</b><br><span style="font-size:12px;opacity:.9">Most complete · takes longer</span></button>'+
+        '<button type="button" id="_mlsVisitNotesFast" style="font:inherit;text-align:left;padding:11px 13px;border-radius:10px;border:1px solid #B9C8C0;background:#fff;color:#1a2b3c;cursor:pointer"><b>Use faster schedule-only pulls</b><br><span style="font-size:12px;color:#52645d">Schedule/booking rows only · does not open patient charts</span></button>'+
         '<button type="button" id="_mlsVisitNotesCancel" style="font:inherit;padding:8px 12px;border:0;background:transparent;color:#52645d;cursor:pointer">Choose later — Athena pulls stay blocked</button>'+
       '</div>';
     var full=card.querySelector('#_mlsVisitNotesFull');

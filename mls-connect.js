@@ -51347,7 +51347,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
         '<button type="button" id="mlsDsWakeRetryBtn" style="display:none">↻ Wake Athena and retry</button>' +
         '<button type="button" id="mlsDsDiagBtn" title="Copies a patient-free technical report of the last failed pull — paste it in a message to support.">⧉ Copy error report</button>' +
-        '<label id="mlsDsVisitTgl" title="On: save every prior encounter note (slower, stores more). Off: save current chart facts only — prior visit notes are skipped (faster, stores less)." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
+        '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: read schedule rows only — no patient chart or history is opened." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
         '<span id="mlsDsStatus"></span>';
       /* always the FIRST element of the Visit body — above the engine wrap,
          outside its innerHTML re-renders, so it can never sink or flicker */

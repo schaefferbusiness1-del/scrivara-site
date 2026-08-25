@@ -154,8 +154,8 @@ function makeHarness() {
     assert.ok(h.toasts.length === 1 && /every encounter note/.test(h.toasts[0].msg), 'confirmed save toasts the truthful ON copy');
     h.doc.node.checked = false;
     h.doc.node.fire('change');
-    assert.ok(/skip prior visit notes/.test(h.toasts[1].msg),
-      'the OFF toast tells the truth: charts still open for current facts, prior visit notes are skipped');
+    assert.ok(/schedule rows only/.test(h.toasts[1].msg),
+      'the OFF toast states the shipped schedule-only contract: bulk pulls open no patient chart or history');
     ok('re-render is idempotent and the write-through + truthful toasts ride along');
   }
 

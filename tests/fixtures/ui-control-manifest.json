@@ -7224,8 +7224,8 @@
   },
   {
    "id": "_mlsVisitNotesFull",
-   "label": "Include full visit notes Most complete · slower, stores every prior note",
-   "accessibleName": "Include full visit notes Most complete · slower, stores every prior note",
+   "label": "Include full visit notes Most complete · takes longer",
+   "accessibleName": "Include full visit notes Most complete · takes longer",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -7241,8 +7241,8 @@
   },
   {
    "id": "_mlsVisitNotesFast",
-   "label": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
-   "accessibleName": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
+   "label": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
+   "accessibleName": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -18002,8 +18002,8 @@
   },
   {
    "id": "_mlsVisitNotesFull",
-   "label": "Include full visit notes Most complete · slower, stores every prior note",
-   "accessibleName": "Include full visit notes Most complete · slower, stores every prior note",
+   "label": "Include full visit notes Most complete · takes longer",
+   "accessibleName": "Include full visit notes Most complete · takes longer",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -18019,8 +18019,8 @@
   },
   {
    "id": "_mlsVisitNotesFast",
-   "label": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
-   "accessibleName": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
+   "label": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
+   "accessibleName": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -38419,8 +38419,8 @@
   },
   {
    "id": "_mlsVisitNotesFull",
-   "label": "Include full visit notes Most complete · slower, stores every prior note",
-   "accessibleName": "Include full visit notes Most complete · slower, stores every prior note",
+   "label": "Include full visit notes Most complete · takes longer",
+   "accessibleName": "Include full visit notes Most complete · takes longer",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -38436,8 +38436,8 @@
   },
   {
    "id": "_mlsVisitNotesFast",
-   "label": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
-   "accessibleName": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
+   "label": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
+   "accessibleName": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -58819,8 +58819,8 @@
   },
   {
    "id": "_mlsVisitNotesFull",
-   "label": "Include full visit notes Most complete · slower, stores every prior note",
-   "accessibleName": "Include full visit notes Most complete · slower, stores every prior note",
+   "label": "Include full visit notes Most complete · takes longer",
+   "accessibleName": "Include full visit notes Most complete · takes longer",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -58836,8 +58836,8 @@
   },
   {
    "id": "_mlsVisitNotesFast",
-   "label": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
-   "accessibleName": "Use faster schedule-only pulls Current chart facts only · skips prior visit notes",
+   "label": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
+   "accessibleName": "Use faster schedule-only pulls Schedule/booking rows only · does not open patient charts",
    "title": "",
    "kind": "button",
    "tag": "button",
@@ -68967,7 +68967,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1530-cancel-watcher",
+   "id": "feat-mls-writeflow-js-1502-cancel-watcher",
    "label": "Cancel watcher",
    "accessibleName": "Cancel watcher",
    "title": "",
@@ -68979,12 +68979,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 1530,
+   "line": 1502,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1531-clear",
+   "id": "feat-mls-writeflow-js-1503-clear",
    "label": "Clear",
    "accessibleName": "Clear",
    "title": "",
@@ -68996,12 +68996,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 1531,
+   "line": 1503,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-2425-accept-this-proposed-order",
+   "id": "feat-mls-writeflow-js-2385-accept-this-proposed-order",
    "label": "Accept this proposed order",
    "accessibleName": "Accept this proposed order",
    "title": "",
@@ -69013,12 +69013,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 2425,
+   "line": 2385,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-2545-copy-payload",
+   "id": "feat-mls-writeflow-js-2505-copy-payload",
    "label": "Copy payload",
    "accessibleName": "Copy payload",
    "title": "",
@@ -69030,12 +69030,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 2545,
+   "line": 2505,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-2765-copy-note",
+   "id": "feat-mls-writeflow-js-2725-copy-note",
    "label": "Copy note",
    "accessibleName": "Copy note",
    "title": "",
@@ -69047,7 +69047,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 2765,
+   "line": 2725,
    "gated": false,
    "handler": null
   },
@@ -69064,7 +69064,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 2788,
+   "line": 2748,
    "gated": false,
    "handler": null
   },
@@ -69081,7 +69081,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 2880,
+   "line": 2840,
    "gated": false,
    "handler": null
   },
@@ -69098,7 +69098,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 2895,
+   "line": 2855,
    "gated": false,
    "handler": null
   },
@@ -69115,7 +69115,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 2895,
+   "line": 2855,
    "gated": true,
    "handler": null
   },

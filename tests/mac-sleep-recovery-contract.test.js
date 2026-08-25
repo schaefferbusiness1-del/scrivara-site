@@ -71,7 +71,7 @@ function harness({ focused = true, focusedWindowId = 2, leaseTab = 101, signedOu
   { const h = harness({ signedOut: true }); const r = await h.ctx.recover(101, { explicitUserPull: true, foregroundOk: true }); assert.strictEqual(r.reason, 'athena-signed-out'); assert.strictEqual(h.log.releases, 0); }
   assert(app.includes("athena-tab-sleeping"), 'app keeps sleeping as a distinct receipt reason');
   assert(/Wake Athena and retry/.test(app), 'failed-pull UI lacks explicit recovery action');
-  assert(/prior visit notes are skipped \(faster, stores less\)/.test(app), 'Full Visit Notes OFF copy is stale');
+  assert(/schedule rows only — no patient chart or history is opened/.test(app), 'Full Visit Notes OFF copy is stale');
   assert(/state: 'unset', on: false/.test(app), 'first use still defaults Full Visit Notes ON');
   assert(/permission\|stopped-by-user\|athena-tab-sleeping/.test(app), 'automatic convergence does not veto sleeping');
   assert(/isTrusted !== true/.test(fs.readFileSync(path.join(root, 'content.js'), 'utf8')) && /mlsAppWakeAthenaGestureArmRequest/.test(fs.readFileSync(path.join(root, 'content.js'), 'utf8')), 'wake bridge lacks trusted consumed gesture arm');
