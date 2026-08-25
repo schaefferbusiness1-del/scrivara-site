@@ -789,6 +789,22 @@
       setTimeout(function () { fin({ ok: false, reason: 'open-timeout', error: 'Opening the patient in Athena timed out.' }); }, 155000);
     });
   }
+  function navigateAndSearchOpenTarget(patient, expectedContext) {
+    var day = wfDayKey(expectedContext && expectedContext.visitDate);
+    var appointmentId = S(expectedContext && expectedContext.appointmentId).trim();
+    if (!day || !appointmentId) return searchOpenTarget(patient, expectedContext);
+    return bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000).then(function (nav) {
+      nav = nav || {};
+      var observed = wfDayKey(nav.schedDate);
+      wfdxNote({ verb: 'mlsAppGotoDate', stage: 'auto-open', ok: nav.ok === true, timeout: nav.__timeout === true,
+        reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed, appointmentIdPresent: true });
+      if (nav.ok !== true) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'athenaOne could not be sent to the exact encounter day. Nothing was opened.' };
+      if (observed && observed !== day) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'athenaOne reported a different encounter day. Nothing was opened.' };
+      return searchOpenTarget(patient, expectedContext);
+    }, function () {
+      return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact encounter-day navigation could not be started. Nothing was opened.' };
+    });
+  }
   /* ========================================================================
      wfdx-1.0.0 (1p PREVIEW ONLY) -- PHI-free write-readiness diagnostics.
 
@@ -1901,7 +1917,7 @@
         if (AUTO_OPEN_REASONS[probeReason] === 1 && !state.autoOpened) {
           state.autoOpened = true;
           unifiedStatus(state, S(state.manifest.patient.name) + ' is not open in Athena. MLS is finding and opening the exact chart now — identity is verified before it opens, and nothing is written without your Confirm & write click...', '');
-          searchOpenTarget(state.manifest.patient, state.manifest.visit).then(function (openRes) {
+          navigateAndSearchOpenTarget(state.manifest.patient, state.manifest.visit).then(function (openRes) {
             if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
             wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: 'auto-open', ok: !!(openRes && openRes.ok === true),
               reason: openRes && (openRes.reason || openRes.findReason), error: openRes && openRes.error,

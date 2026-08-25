@@ -314,6 +314,11 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert.strictEqual(openReceipt.reason, 'appointment-id-not-found');
     assert.strictEqual(openReceipt.errorClass, 'appointment-row-open-refused',
       'the exact refusal the owner saw was not classified');
+    const autoNavIndex = h.posted.findIndex(m => m.type === 'mlsAppGotoDate');
+    const autoOpenIndex = h.posted.findIndex(m => m.type === 'mlsAppSearchOpenPatient');
+    assert(autoNavIndex >= 0 && autoOpenIndex > autoNavIndex,
+      'the automatic no-chart route scanned for the appointment before navigating to its frozen day');
+    assert.strictEqual(h.posted[autoNavIndex].date, DAY, 'the automatic no-chart route navigated to the wrong day');
     const report = h.wf.diagnostics.report();
     assert.strictEqual(report.kind, 'mls-athena-review-error-report');
     assert.strictEqual(report.review.appointmentIdPresent, true);
@@ -418,13 +423,19 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert(openBtn, 'the review offered no read-only "open this encounter" button after a refused open');
     const reportBtn = fix.children.filter(c => String(c.textContent).indexOf('Copy error report') === 0)[0];
     assert(reportBtn, 'the review offered no copyable error report');
+    const gotosBeforeManual = h.posted.filter(m => m.type === 'mlsAppGotoDate').length;
+    assert.strictEqual(gotosBeforeManual, 1, 'the automatic open did not make exactly one frozen-day navigation attempt');
+    assert.strictEqual(h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
+      'the automatic route scanned the current Day view after its frozen-day navigation failed');
     openBtn.click();
     await settle(60);
     const gotos = h.posted.filter(m => m.type === 'mlsAppGotoDate');
-    assert.strictEqual(gotos.length, 1, 'the helper did not drive athenaOne to the encounter day exactly once');
-    assert.strictEqual(gotos[0].date, DAY, 'the helper asked athenaOne for the wrong day');
-    assert.strictEqual(h.wf.diagnostics.receipts().filter(r => r.verb === 'mlsAppGotoDate' && r.observedDay === wrongDay).length, 1,
-      'the observed athenaOne day was not recorded');
+    assert.strictEqual(gotos.length, gotosBeforeManual + 1, 'the manual helper did not make exactly one fresh day-navigation attempt');
+    assert.strictEqual(gotos[gotos.length - 1].date, DAY, 'the helper asked athenaOne for the wrong day');
+    assert.strictEqual(h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
+      'the manual route scanned the current Day view after its frozen-day navigation failed');
+    assert.strictEqual(h.wf.diagnostics.receipts().filter(r => r.verb === 'mlsAppGotoDate' && r.observedDay === wrongDay).length, gotos.length,
+      'one or more observed athenaOne day attempts were not recorded');
     const status = h.el('mlsAthenaUnifiedProbe');
     assert(String(status.textContent).indexOf('Day view is on ' + wrongDay) >= 0,
       'the status line did not tell the doctor which day athenaOne is on: ' + status.textContent);
@@ -451,9 +462,11 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     const fix = h.el('mlsAthenaUnifiedFix');
     const openBtn = fix.children.filter(c => String(c.textContent).indexOf('Open this patient') === 0)[0];
     assert(openBtn, 'no read-only open button was offered');
+    const gotosBeforeManual = h.posted.filter(m => m.type === 'mlsAppGotoDate').length;
+    assert.strictEqual(gotosBeforeManual, 1, 'the automatic route did not first navigate to the frozen encounter day');
     openBtn.click();
     await settle(80);
-    assert(h.posted.filter(m => m.type === 'mlsAppGotoDate').length === 1, 'the ladder did not navigate the Day view');
+    assert(h.posted.filter(m => m.type === 'mlsAppGotoDate').length === gotosBeforeManual + 1, 'the manual ladder did not make one fresh Day-view navigation');
     assert(h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length >= 2, 'the ladder did not re-open the appointment row');
     probeOnlyGuard(h);
   }
