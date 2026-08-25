@@ -20,7 +20,9 @@ assert(applySource.includes('function reportTemplateApplication'), 'automatic te
 const maybeSource = applySource.slice(applySource.indexOf('async function maybeApplyTemplate'), applySource.indexOf('function reportTemplateApplication'));
 assert.strictEqual((maybeSource.match(/resolveActiveTemplate\(/g) || []).length, 1, 'maybeApplyTemplate resolves the active template more than once');
 const generationSource = production.slice(production.indexOf('async function generateNote'), production.indexOf('/* =========================================================', production.indexOf('async function generateNote')));
-assert(generationSource.includes('reportTemplateApplication(templateResult,templateResult&&templateResult.templateName)'), 'automatic generation does not report the template result');
+const templateLifecycleSource = production.slice(production.indexOf('function _mlsStartOptionalTemplate'), production.indexOf('function _mlsHasTrustedVerifiedHistory'));
+assert(templateLifecycleSource.includes('reportTemplateApplication(receipt,receipt&&receipt.templateName)'), 'optional template owner does not report a completed template result');
+assert(generationSource.includes('_mlsStartOptionalTemplate(transcript,generationBinding,generationEpoch,transcriptEl)'), 'automatic generation does not launch its bounded optional template owner');
 assert(!generationSource.includes('resolveActiveTemplate('), 'automatic generation created a second template-selection point');
 
 for (const file of ['1pScribeFlow.html', '1p/index.html', 'cloned/index.html', 'ScribeFlow-staging.html', 'ScribeFlow_test.html']) {

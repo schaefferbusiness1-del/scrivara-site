@@ -120,17 +120,18 @@ function harness(options) {
     toasts: [],
     templateSignals: [],
     templateReports: [],
+    templateLifecycleSnapshots: [],
     pending: null,
     hiddenClicks: 0
   };
-  const visit = {
+  const visit = Object.assign({
     identityVerified: true,
     identityBinding: 'synthetic-patient',
     fullDetail: true,
     bodyComplete: true,
     indexOnly: false,
     raw: 'Verified prior visit body used as background only.'
-  };
+  }, options.visit || {});
   const patient = { id: 'synthetic-patient', visits: options.history === false ? [] : [visit] };
   const listeners = new Map();
   class CustomEventMock {
@@ -188,6 +189,8 @@ function harness(options) {
     reportTemplateApplication(result) { state.templateReports.push(result); },
     maybeApplyTemplate(visitText, binding, epoch, templateOptions) {
       state.templateSignals.push(templateOptions && templateOptions.signal);
+      state.templateLifecycleSnapshots.push(state.lifecycle.map(event => event.type));
+      if (typeof options.templateImpl === 'function') return options.templateImpl(visitText, binding, epoch, templateOptions);
       return options.templatePromise || Promise.resolve({ applied: false, reason: 'templates-off' });
     },
     callOpenAI(text, key, callOptions) {
@@ -248,6 +251,14 @@ function events(state, suffix) {
   assert(sparseWithHistory.state.tuning[0].instructions.includes('CURRENT VISIT EVIDENCE IS SPARSE'), 'hosted tuning did not receive the sparse/current-visit rule');
   assert(sparseWithHistory.state.tuning[0].instructions.includes('ROS, EXAM, ASSESSMENT, and PLAN'), 'sparse rule does not keep unknown sections explicit');
   assert.strictEqual(sparseWithHistory.state.aiSignals[0].aborted, false, 'successful main signal was aborted');
+  assert(sparseWithHistory.state.templateLifecycleSnapshots[0].includes('mls:generation-settled'), 'optional template started before the main draft settled');
+
+  const sparseLiveTypo = harness({ transcript: 'the patient is idne' });
+  sparseLiveTypo.context.visibleGenerate();
+  assert.strictEqual(await sparseLiveTypo.state.pending, true, 'live four-word status typo with verified history did not generate');
+  assert.strictEqual(sparseLiveTypo.state.aiCalls, 1, 'live four-word status typo did not reach one bounded model request');
+  assert.strictEqual(events(sparseLiveTypo.state, 'started').length, 1, 'live four-word status typo did not own one truthful start');
+  assert.strictEqual(events(sparseLiveTypo.state, 'settled')[0].detail.status, 'success', 'live four-word status typo did not settle successfully');
 
   const noHistory = harness({ transcript: 'the patient is fine', history: false });
   noHistory.context.visibleGenerate();
@@ -260,11 +271,25 @@ function events(state, suffix) {
   assert(!events(noHistory.state, 'refused')[0].detail.message.includes('connection'), 'refusal fell back to a fake connection diagnosis');
   assert.strictEqual(noHistory.genBtn.disabled, false, 'refusal left Generate disabled');
 
-  const fillerWithHistory = harness({ transcript: 'make a note please' });
+  const fillerWithHistory = harness({ transcript: 'please make patient note' });
   fillerWithHistory.context.visibleGenerate();
   assert.strictEqual(await fillerWithHistory.state.pending, false, 'arbitrary four-word filler borrowed prior history');
   assert.strictEqual(fillerWithHistory.state.aiCalls, 0, 'non-clinical filler reached the model');
   assert.strictEqual(events(fillerWithHistory.state, 'started').length, 0, 'non-clinical filler falsely started generation');
+
+  for (const adversarialText of ['please make good note', 'patient note is good']) {
+    const adversarial = harness({ transcript: adversarialText });
+    adversarial.context.visibleGenerate();
+    assert.strictEqual(await adversarial.state.pending, false, `non-status prompt borrowed history: ${adversarialText}`);
+    assert.strictEqual(adversarial.state.aiCalls, 0, `non-status prompt reached the model: ${adversarialText}`);
+    assert.strictEqual(events(adversarial.state, 'started').length, 0, `non-status prompt emitted started: ${adversarialText}`);
+  }
+
+  const contradictedHistory = harness({ transcript: 'the patient is fine', visit: { patientId: 'different-synthetic-patient' } });
+  contradictedHistory.context.visibleGenerate();
+  assert.strictEqual(await contradictedHistory.state.pending, false, 'history owned by a different patient supported generation');
+  assert.strictEqual(contradictedHistory.state.aiCalls, 0, 'contradictory explicit patient owner reached the model');
+  assert.strictEqual(events(contradictedHistory.state, 'started').length, 0, 'contradictory explicit patient owner falsely started generation');
 
   const hung = harness({ aiPromise: new Promise(() => {}), timeouts: { main: 20 } });
   hung.context.visibleGenerate();
@@ -279,9 +304,31 @@ function events(state, suffix) {
   templateHang.context.visibleGenerate();
   assert.strictEqual(await templateHang.state.pending, true, 'template timeout discarded the successful original generation');
   assert.strictEqual(templateHang.noteBox.value, canonical, 'template timeout replaced the original draft');
+  assert.strictEqual(templateHang.genBtn.disabled, false, 'optional template kept Generate disabled after main success');
+  await new Promise((resolve) => setTimeout(resolve, 35));
   assert.strictEqual(templateHang.state.templateSignals[0].aborted, true, 'template deadline did not abort the optional pass');
   assert.strictEqual(events(templateHang.state, 'settled')[0].detail.status, 'success', 'optional template timeout changed generation success');
-  assert.strictEqual(templateHang.genBtn.disabled, false, 'template timeout left Generate disabled');
+  assert.strictEqual(templateHang.context.__mlsLastTemplateGenerationReceipt.reason, 'template-timeout', 'template timeout did not leave an honest optional receipt');
+  assert.strictEqual(templateHang.state.templateReports.length, 0, 'expected optional timeout emitted a contradictory formatting failure');
+
+  const lateTemplate = deferred();
+  const editedDuringTemplate = harness({ templatePromise: lateTemplate.promise, timeouts: { template: 1000 } });
+  editedDuringTemplate.context.visibleGenerate();
+  assert.strictEqual(await editedDuringTemplate.state.pending, true, 'main draft did not settle before optional formatting');
+  assert.strictEqual(editedDuringTemplate.noteBox.value, canonical, 'main canonical draft was not retained');
+  assert.strictEqual(events(editedDuringTemplate.state, 'settled').length, 1, 'main draft did not have one terminal lifecycle');
+  assert.strictEqual(events(editedDuringTemplate.state, 'settled')[0].detail.status, 'success', 'main draft did not own successful settlement');
+  editedDuringTemplate.transcript.value = 'the current visit source changed';
+  editedDuringTemplate.transcript.fire('input');
+  lateTemplate.resolve({ applied: true, templateName: 'Late stale template' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.strictEqual(editedDuringTemplate.state.templateSignals[0].aborted, true, 'source edit did not abort optional formatting');
+  assert.strictEqual(editedDuringTemplate.noteBox.value, canonical, 'source edit erased or replaced the retained main draft');
+  assert.strictEqual(events(editedDuringTemplate.state, 'settled').length, 1, 'optional cancellation emitted a second generation settlement');
+  assert.strictEqual(editedDuringTemplate.context.__mlsLastTemplateGenerationReceipt.reason, 'source-changed', 'source edit did not leave an honest optional cancellation receipt');
+  assert.strictEqual(editedDuringTemplate.state.templateReports.length, 0, 'source cancellation emitted a contradictory template report');
+  assert.strictEqual(editedDuringTemplate.state.toasts.length, 1, 'source cancellation emitted both success and error toasts');
+  assert.strictEqual(editedDuringTemplate.state.toasts[0].type, 'ok', 'retained main draft did not keep its success toast');
 
   const changed = harness({ aiPromise: new Promise(() => {}), timeouts: { main: 1000 } });
   changed.context.visibleGenerate();
@@ -307,7 +354,7 @@ function events(state, suffix) {
   assert.strictEqual(superseded.noteBox.value, canonical, 'late superseded result overwrote the newer draft');
   assert.strictEqual(superseded.genBtn.disabled, false, 'newest overlapping run did not release Generate');
 
-  console.log('PASS generate note lifecycle: visible sparse/history generation, exact sparse refusal, bounded main/template waits, source abort, and superseding ownership');
+  console.log('PASS generate note lifecycle: grounded sparse/history generation, explicit-owner veto, bounded nonblocking templates, source abort, and superseding ownership');
 })().catch((error) => {
   console.error(error && error.stack || error);
   process.exit(1);

@@ -27298,6 +27298,7 @@ function _mlsAthenaCanonicalForWrite(){
    ========================================================= */
 var _mlsGenerationSequence=0;
 var _mlsActiveGeneration=null;
+var _mlsActiveGenerationTemplate=null;
 function _mlsGenerationTimeoutMs(kind,fallback){
   /* A test/runtime override may only SHORTEN a deadline. Production callers
      cannot use it to turn a bounded task back into an infinite one. */
@@ -27327,7 +27328,9 @@ function _mlsAbortGenerationRun(run,reason){
   return true;
 }
 function _mlsAbortActiveGeneration(reason){
-  return _mlsAbortGenerationRun(_mlsActiveGeneration,reason);
+  var main=_mlsAbortGenerationRun(_mlsActiveGeneration,reason);
+  var template=_mlsAbortGenerationRun(_mlsActiveGenerationTemplate,reason);
+  return main||template;
 }
 function _mlsAwaitGeneration(run,promise,timeoutMs,timeoutReason){
   return new Promise(function(resolve,reject){
@@ -27372,6 +27375,52 @@ function _mlsRefuseGeneration(code,message,showToast){
   _mlsEmitGeneration('settled',{runId:runId,status:'refused',code:String(code||'generation-refused'),message:String(message||'')});
   return false;
 }
+function _mlsExpectedTemplateCancellation(reason){
+  return /^(?:source-changed|superseded|generation-aborted|template-timeout|aborted)$/.test(String(reason||''));
+}
+function _mlsStartOptionalTemplate(transcript,expectedBinding,expectedEpoch,sourceEl){
+  _mlsAbortGenerationRun(_mlsActiveGenerationTemplate,'superseded');
+  var controller=new AbortController();
+  var run={controller:controller,abortReason:'',settled:false,sourceEl:sourceEl||null,sourceHandler:null,promise:null};
+  if(sourceEl&&typeof sourceEl.addEventListener==='function'){
+    run.sourceHandler=function(){_mlsAbortGenerationRun(run,'source-changed');};
+    sourceEl.addEventListener('input',run.sourceHandler);
+  }
+  _mlsActiveGenerationTemplate=run;
+  function finish(receipt){
+    run.settled=true;
+    try{if(run.sourceEl&&run.sourceHandler)run.sourceEl.removeEventListener('input',run.sourceHandler);}catch(e){}
+    if(_mlsActiveGenerationTemplate===run)_mlsActiveGenerationTemplate=null;
+    try{window.__mlsLastTemplateGenerationReceipt=Object.assign({},receipt||{});}catch(eReceipt){}
+    return receipt;
+  }
+  var templatePromise;
+  try{templatePromise=maybeApplyTemplate(transcript,expectedBinding,expectedEpoch,{signal:controller.signal});}
+  catch(error){
+    var launchReceipt={applied:false,reason:'template-launch-failed'};
+    reportTemplateApplication(launchReceipt,'');
+    return Promise.resolve(finish(launchReceipt));
+  }
+  run.promise=_mlsAwaitGeneration(
+    run,
+    templatePromise,
+    _mlsGenerationTimeoutMs('template',12000),
+    'template-timeout'
+  ).then(function(result){
+    var receipt=result||{applied:false,reason:'template-failed'};
+    if(!_mlsExpectedTemplateCancellation(receipt.reason))reportTemplateApplication(receipt,receipt&&receipt.templateName);
+    return finish(receipt);
+  },function(error){
+    var reason=String((error&&error.code)||run.abortReason||'template-error');
+    var receipt={applied:false,reason:reason};
+    /* Main-note generation has already settled successfully. Expected
+       cancellation/timeout therefore stays a quiet optional-format receipt:
+       it must not emit a second red toast that contradicts the retained draft. */
+    if(!_mlsExpectedTemplateCancellation(reason))reportTemplateApplication(receipt,'');
+    return finish(receipt);
+  });
+  return run.promise;
+}
 function _mlsHasTrustedVerifiedHistory(){
   try{
     var p=activePatient(); if(!p)return false;
@@ -27384,7 +27433,8 @@ function _mlsHasTrustedVerifiedHistory(){
     }
     if(!Array.isArray(rows)||!rows.length)rows=Array.isArray(p.visits)?p.visits:[];
     return rows.some(function(v){
-      return !!(v&&v.identityVerified===true&&String(v.identityBinding||'')===patientId&&v.fullDetail===true&&v.bodyComplete===true&&v.indexOnly!==true&&String(v.raw||'').trim());
+      var explicitPatientId=String(v&&v.patientId||'').trim();
+      return !!(v&&v.identityVerified===true&&String(v.identityBinding||'')===patientId&&(!explicitPatientId||explicitPatientId===patientId)&&v.fullDetail===true&&v.bodyComplete===true&&v.indexOnly!==true&&String(v.raw||'').trim());
     });
   }catch(e){return false;}
 }
@@ -27396,8 +27446,12 @@ function _mlsGenerationEvidenceDecision(text){
   /* Verified history can support a short CURRENT statement, not arbitrary
      four-word filler. "the patient is fine" (and the live typo variant) is a
      real status statement; "make a note please" is not clinical evidence. */
-  var currentStatement=/\b(?:patient|reports?|denies|feels?|feeling|doing|symptom|pain|ache|better|worse|fine|good|okay|well|unchanged|improv\w*)\b/i;
-  if(words.length>=4&&currentStatement.test(sparse)&&_mlsHasTrustedVerifiedHistory())return {ok:true,basis:'trusted-history-sparse'};
+  var currentStatusPhrase=new RegExp([
+    '\\b(?:the\\s+)?(?:patient|he|she|they|i)\\s+(?:is|are|am|feels?|felt|reports?|denies|has|have|had|doing)\\s+(?:(?:no|not)\\s+)?(?:(?:[a-z][a-z0-9\\/-]*\\s+){0,3})(?:symptoms?|pain|ache|hurts?|better|worse|fine|idne|good|okay|well|stable|unchanged|improv\\w*|resolv\\w*)\\b',
+    '\\b(?:reports?|denies|feels?|feeling|doing|experienc\\w*|has|have)\\s+(?:(?:no|not)\\s+)?(?:(?:[a-z][a-z0-9\\/-]*\\s+){0,3})(?:symptoms?|pain|ache|hurts?|better|worse|fine|idne|good|okay|well|stable|unchanged|improv\\w*|resolv\\w*)\\b',
+    '\\b(?:symptoms?|pain|ache)\\s+(?:(?:is|are|feels?|has|have)\\s+)?(?:better|worse|stable|unchanged|improv\\w*|resolv\\w*)\\b'
+  ].join('|'),'i');
+  if(words.length>=4&&currentStatusPhrase.test(sparse)&&_mlsHasTrustedVerifiedHistory())return {ok:true,basis:'trusted-history-sparse'};
   return {ok:false,basis:'insufficient',code:'sparse-today-evidence',message:'Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.'};
 }
 function _mlsGenerationDraftTuning(evidence){
@@ -27514,27 +27568,19 @@ async function generateNote(){
     // If a patient-friendly summary was requested, drop it into the handout / after-visit summary.
     try{ if(result.patient_summary){ currentHandout=result.patient_summary; var hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; } var hc=document.getElementById('handoutCard'); if(hc){ hc.style.display='block'; } } }catch(e){}
     toast(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.','ok');
-    // OPTIONAL: if templates are enabled, reformat the note to the chosen
-    // template. This is a guarded no-op when the toggle is OFF (default).
-    try{
-      var templateController=new AbortController();
-      var templateRun={controller:templateController,abortReason:'',settled:false};
-      var abortTemplate=function(){templateRun.abortReason=run.abortReason||'generation-aborted';try{templateController.abort(templateRun.abortReason);}catch(e){templateController.abort();}};
-      if(run.controller.signal.aborted)abortTemplate();else run.controller.signal.addEventListener('abort',abortTemplate,{once:true});
-      var templateResult=await _mlsAwaitGeneration(
-        templateRun,
-        maybeApplyTemplate(transcript,generationBinding,currentVisitAthenaEpoch,{signal:templateController.signal}),
-        _mlsGenerationTimeoutMs('template',12000),
-        'template-timeout'
-      );
-      try{run.controller.signal.removeEventListener('abort',abortTemplate);}catch(eRemoveTemplate){}
-      reportTemplateApplication(templateResult,templateResult&&templateResult.templateName);
-    }catch(e){
-      reportTemplateApplication({applied:false,reason:(e&&e.code)||'exception'},'');
-    }
-    if(run.controller.signal.aborted)throw _mlsGenerationAbortError(run.abortReason||'generation-aborted');
+    /* Main draft owns the Generate lifecycle and settles now. Optional
+       template formatting has its own source listener/controller/deadline;
+       it may improve this successful draft later, but it can neither keep the
+       Generate button busy nor relabel the retained main draft as aborted. */
     try{ _markVisitDirty(); }catch(e){}
     outcome='success'; outcomeCode='generated';
+    if(_mlsActiveGeneration===run&&gb){gb.disabled=false;gb.innerHTML='✨ Generate Note';}
+    _mlsSettleGeneration(run,outcome,outcomeCode,outcomeMessage);
+    /* Optional formatting may improve the retained draft, but launch failure
+       cannot unwind the already-validated/rendered main result. */
+    try{_mlsStartOptionalTemplate(transcript,generationBinding,generationEpoch,transcriptEl);}catch(eTemplateLaunch){
+      try{window.__mlsLastTemplateGenerationReceipt={applied:false,reason:'template-launch-failed'};}catch(eTemplateReceipt){}
+    }
     return true;
   }catch(err){
     var abortCode=String((err&&err.code)||run.abortReason||'');

@@ -21617,7 +21617,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (!requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')) { render(); return; }
       }
       if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
-      if (opts.generate) { var g = genBtnResolve(); if (g) { ez3StampGenClick(); g.click(); S.phase = 'gen'; } }
+      if (opts.generate) { var g = genBtnResolve(); if (g) g.click(); }
       render();
     })();
   }
@@ -22445,9 +22445,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
               var g = genBtnResolve();
               if (!g) return;
-              toast('Generating the note from this visit — review it before signing. (Turn off auto-generate in Settings if you prefer the button.)');
-              S.genClickedAt = Date.now(); S.signedAt = 0;
-              g.click(); S.phase = 'gen'; render();
+              g.click(); render();
             } catch (eG) {}
           }, 900);
         }
