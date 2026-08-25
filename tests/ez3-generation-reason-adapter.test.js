@@ -66,8 +66,14 @@ assert.strictEqual((live.match(/ez3StampGenClick\(\);/g) || []).length, 4,
   'all four generate stamp sites (engine open, #ez3Gen, #ez3Regen, noteGenerationStarted) funnel through the snapshot helper');
 assert.ok(live.includes('window.__ez3GenEvtWired'), 'the generation-complete listener is one-shot guarded');
 
-assert.ok(topSrc.includes('_mlsTranscriptHasDraftableTodayEvidence'),
-  'the TOP Generate button runs the engine evidence gate before clicking (parity with #ez3Gen)');
+/* ez3adapt-1.0.2 (Codex reply 9): the engine owns the WHOLE evidence
+ * contract - it can accept a sparse statement when trusted verified history
+ * exists, so the facade must NOT pre-gate on the transcript alone, and must
+ * never manufacture a started state from a .click(). */
+assert.ok(!topSrc.includes('_mlsTranscriptHasDraftableTodayEvidence'),
+  'the TOP Generate button carries NO facade evidence pre-gate (the engine decides)');
+assert.ok(!topSrc.includes('noteGenerationStarted'),
+  'the TOP Generate button never manufactures a started state from a click');
 assert.ok(phaseSrc.includes('ez3EngineReason() ||'),
   'computePhase prefers the engine-written reason over its generic text in BOTH failure branches');
 assert.strictEqual((phaseSrc.match(/ez3EngineReason\(\) \|\|/g) || []).length, 2,
@@ -152,26 +158,25 @@ const ok = m => { n++; console.log('ok ' + n + ' - ' + m); };
   ok('timeout: engine-written reason surfaces');
 }
 
-/* ---- 4. TOP button: sparse transcript refuses BEFORE the click ---- */
+/* ---- 4. TOP button: a sparse transcript still reaches the ENGINE (which may
+ * accept it on trusted verified history) - zero facade-start either way ---- */
 {
   const h = topHarness('the patient is fine', false);
   h.run();
-  assert.strictEqual(h.log.clicks, 0, 'no blind click on a transcript the engine will refuse');
-  assert.strictEqual(h.log.started, 0, 'no manufactured started state');
-  assert.strictEqual(h.log.toasts.length, 1, 'one actionable refusal');
-  assert.ok(/Add one specific detail from today/.test(h.log.toasts[0].m), 'same wording as the #ez3Gen gate');
-  assert.strictEqual(h.nodes.ez3flTranscript.focused, 1, 'focus returns to the transcript');
-  ok('top button: sparse transcript gets an immediate actionable refusal, no click, no started');
+  assert.strictEqual(h.log.clicks, 1, 'the click reaches the engine - the facade does not pre-judge evidence');
+  assert.strictEqual(h.log.started, 0, 'zero facade-start calls on the possibly-refused path');
+  assert.strictEqual(h.log.toasts.length, 0, 'no facade refusal - the engine speaks for itself');
+  ok('top button: sparse transcript delegated to the engine, zero facade-start');
 }
 
-/* ---- 5. TOP button: rich transcript clicks once and reports started ---- */
+/* ---- 5. TOP button: rich transcript clicks once, zero facade-start ---- */
 {
   const h = topHarness('Right knee pain for two weeks, worse on stairs. Exam: medial joint line tenderness. Plan: NSAIDs and PT.', true);
   h.run();
   assert.strictEqual(h.log.clicks, 1, 'one engine click');
-  assert.strictEqual(h.log.started, 1, 'started reported to the engine phase machine');
+  assert.strictEqual(h.log.started, 0, 'zero facade-start calls on the accepted path - the engine lifecycle moves the phase');
   assert.strictEqual(h.log.toasts.length, 0, 'no refusal toast on the healthy path');
-  ok('top button: healthy path unchanged - one click, one started');
+  ok('top button: healthy path - one click, zero facade-start');
 }
 
 /* ---- 6. STALENESS (ez3adapt-1.0.1, review finding): text left over from a

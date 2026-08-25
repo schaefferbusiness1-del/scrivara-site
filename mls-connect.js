@@ -7603,32 +7603,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (recordingNow()) { flowToast('Pause recording first. Your transcript will stay safe.', 'err'); return; }
     var tx = $('transcript'), text = tx ? (tx.value || '').trim() : '';
     if (!text) { flowToast('Type, paste, or record some visit text first.', 'err'); var top = $('ez3flTranscript'); if (top) top.focus(); return; }
-    /* ez3adapt-1.0.0 (owner live repro 2026-08-25): the LOWER #ez3Gen button
-       already runs the engine's fail-closed evidence gate before clicking,
-       but this TOP button clicked blind — the engine refused the sparse
-       transcript synchronously (before disabling #genBtn), the refusal toast
-       was lost, and the doctor saw a dead click and later a generic banner.
-       Same gate, same wording, same fail-closed posture as #ez3Gen; the
-       engine still enforces its own copy of the gate after the click. */
-    if (typeof _mlsTranscriptHasDraftableTodayEvidence !== 'function' ||
-        !_mlsTranscriptHasDraftableTodayEvidence(text)) {
-      flowToast('Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.', 'err');
-      var topEv = $('ez3flTranscript'); if (topEv) topEv.focus();
-      return;
-    }
+    /* ez3adapt-1.0.2 (Codex reply 9): the reviewed generation engine owns the
+       WHOLE evidence contract — it can accept a short current-status
+       statement when trusted, identity-bound full visit history exists, so a
+       facade pre-gate on the transcript alone (ez3adapt-1.0.0) would refuse
+       exactly the case the engine accepts. No pre-gate here: the click goes
+       to the engine, the engine decides, and its refused/settled lifecycle
+       plus the #genError reason reader surface the outcome truthfully. */
     var gen = $('genBtn');
     if (!gen || gen.disabled) { flowToast('Note generation is not ready yet. Try again in a moment.', 'err'); return; }
     try { gen.click(); } catch (e) { flowToast('The note could not start generating. Please try again.', 'err'); return; }
     syncTopLane(document.querySelector('.ez3fl-record'));
-    /* b940: tell the engine phase machine that a generation is now running.
-       Without this the engine keeps offering #ez3Gen, a SECOND Generate button
-       lower down the same screen, while this lane already reads Generating
-       note. Guarded and optional: with no engine present the lane behaves
-       exactly as before. */
-    try {
-      var ez = window.__mlsEasyV32;
-      if (ez && typeof ez.noteGenerationStarted === 'function') ez.noteGenerationStarted();
-    } catch (eNG) {}
+    /* ez3adapt-1.0.2: the b940 started-notification emission is GONE — the
+       engine is the sole owner of started/refused/settled; a .click() proves
+       nothing about whether generation actually started (the engine can
+       refuse synchronously) and the manufactured 'started' state was exactly
+       the owner's dead-click experience. The engine's own lifecycle events
+       (generation-contract lane) move the phase machine; until those bytes
+       land, the lane simply does not claim Generating for an unproven start,
+       and the completion listener + engine reason reader stay truthful. */
   }
   /* Fixed furniture that can come to rest on top of the review control. Named
      rather than "every position:fixed element that overlaps", because a generic
