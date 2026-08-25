@@ -8566,13 +8566,30 @@
             });
           }
           var preScoped = p1CensusPreScope || scopeProviderRows(rows, providerTarget, r);
-          var bootstrapP = includeHistory && preScoped.complete
-            ? hydrateMissingScheduleProof(preScoped.rows, onStatus, date)
+          /* dfb-1.0.0 (measured live 2026-08-25, four consecutive 13/13
+             identity-bootstrap-partial pulls): the chart-banner bootstrap
+             binds a row by its EXACT appointment id + banner identity + the
+             frozen request echo - it never consults provider attribution.
+             Gating it on provider-scope proof turned an unattributed day
+             grid (no provider column rendered) into a total silent failure:
+             hydrate was skipped wholesale, the synthetic receipt carried an
+             EMPTY reasons dict, and every row died downstream as
+             patient-not-resolved. Bootstrap now runs whenever the SCHEDULE
+             read itself proved complete; provider-scope enforcement still
+             happens exactly where it always did - on importAppts' own
+             receipt at the provider gate below. The skip path remains only
+             for an unproven schedule, and it now names its reason per row
+             instead of vanishing. */
+          var dfbScheduleProven = !!(r.receipt && r.receipt.complete === true);
+          var dfbBootstrapRows = preScoped.complete ? preScoped.rows : rows;
+          var bootstrapP = includeHistory && (preScoped.complete || dfbScheduleProven)
+            ? hydrateMissingScheduleProof(dfbBootstrapRows, onStatus, date)
             : Promise.resolve({ rows: preScoped.rows || [], receipt: {
                 complete: includeHistory ? false : true,
                 attempted: Number(preScoped.rows && preScoped.rows.length || 0),
                 alreadyProven: 0, requested: 0, resolved: 0, failed: includeHistory ? Number(preScoped.rows && preScoped.rows.length || 0) : 0,
-                exactNameUnique: 0, skipped: !includeHistory, reason: !includeHistory ? (p1CensusHistoryRequested ? "provider-attribution-unavailable" : "not-requested") : "provider-scope-unverified", reasons: {},
+                exactNameUnique: 0, skipped: !includeHistory, reason: !includeHistory ? (p1CensusHistoryRequested ? "provider-attribution-unavailable" : "not-requested") : "schedule-unproven",
+                reasons: includeHistory ? { "schedule-unproven": Number(preScoped.rows && preScoped.rows.length || 0) } : {},
                 batchToken: "", proofs: []
               } });
           return bootstrapP.then(function (identityBootstrap) {
