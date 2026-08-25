@@ -7,11 +7,21 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8');
+const propagationShells = [
+  '1pScribeFlow.html',
+  '1p/index.html',
+  'ScribeFlow.html',
+  'cloned/index.html',
+  'ScribeFlow-staging.html'
+];
 
-assert.match(source, /Array\.isArray\(j&&j\.issues\)/,
-  'the /api/generate failure path must read backend machine-readable issues');
-assert.match(source, /eGen\.mlsAi\.issues=issueList\.map/,
-  'backend quality issues must remain attached to the generation error');
+for (const shell of propagationShells) {
+  const shellSource = fs.readFileSync(path.join(root, shell), 'utf8');
+  assert.match(shellSource, /Array\.isArray\(j&&j\.issues\)/,
+    shell + ' /api/generate failure path must read backend machine-readable issues');
+  assert.match(shellSource, /eGen\.mlsAi\.issues=issueList\.map/,
+    shell + ' must keep backend quality issues attached to the generation error');
+}
 assert.match(source, /id="genError"[^>]*role="alert"/,
   'generation needs an inline accessible failure surface beside Generate');
 assert.match(source, /id="noteGenError"[^>]*role="alert"/,

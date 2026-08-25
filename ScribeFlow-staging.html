@@ -14680,6 +14680,32 @@ function _mlsStructuredNoteQualityError(reason){
   e.mlsAi={status:502,code:'draft_quality_failed',retryable:true,detail:String(reason||'missing or malformed note').slice(0,120)};
   return e;
 }
+/* The hosted backend returns deterministic, PHI-free issue codes when its
+   output contract rejects a draft. Keep those codes on the Error and turn
+   them into a short clinician-readable explanation; never surface model text
+   or transcript content in the inline failure message. */
+function mlsDraftFailureMessage(err){
+  var ai=err&&err.mlsAi||{};
+  var raw=Array.isArray(ai.issues)?ai.issues:[];
+  var issues=raw.map(function(v){return String(v||'').trim();}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,6);
+  var labels={
+    missing_result:'no structured result', note_not_string:'note was not text', empty_note:'note was blank',
+    note_too_large:'note exceeded the safety size limit', unstructured_clinical_draft:'note was not structured',
+    malformed_soap_heading:'malformed SOAP heading', unsupported_soap_wrapper:'unsupported SOAP wrapper',
+    soap_preamble:'text appeared before the SOAP headings', soap_heading_order:'SOAP headings were out of order',
+    missing_athena_note:'Athena destination note was missing', empty_athena_note:'Athena destination note was blank',
+    athena_note_not_string:'Athena destination note was not text', athena_note_too_large:'Athena destination note was too large'
+  };
+  var readable=issues.map(function(code){
+    if(labels[code]) return labels[code];
+    var m=/^(missing|empty)_(?:soap|athena)_(hpi|ros|exam|assessment|plan)$/.exec(code);
+    if(m) return (m[2].toUpperCase()+' section '+(m[1]==='missing'?'was missing':'was empty'));
+    m=/^(?:malformed|unsupported|duplicate)_(?:soap|athena)_(hpi|ros|exam|assessment|plan)$/.exec(code);
+    if(m) return (m[2].toUpperCase()+' section had an invalid heading');
+    return 'output safety check: '+code.replace(/_/g,' ');
+  });
+  return 'Note was rejected by the safety checks. Nothing changed.'+(readable.length?' Details: '+readable.join('; ')+'.':' Retry Generate after confirming the transcript has enough documented detail.');
+}
 function _mlsValidateStructuredNoteResult(result){
   if(!result || typeof result!=='object' || Array.isArray(result)) throw _mlsStructuredNoteQualityError('response is not an object');
   if(typeof result.note!=='string') throw _mlsStructuredNoteQualityError('note is not a string');
@@ -15233,6 +15259,7 @@ function mapOpioidName(raw){
 
 function friendlyError(err){
   const m=(err&&err.message)||String(err);
+  if(err&&err.mlsAi&&err.mlsAi.code==='draft_quality_failed') return mlsDraftFailureMessage(err);
   if(err&&err.mlsStructuredNoteQuality) return 'The AI returned an unusable note draft. Nothing was changed. Please retry.';
   if(err&&err.noAccess) return 'Your account needs access — enter an access code (Settings) or ask the owner to enable you.';
   if(err&&err.freeform) return 'This AI helper isn\'t available in the hosted server version yet. (Note generation still works.)';
@@ -15458,9 +15485,14 @@ async function aiCallRaw(sys,user,key,opts){
       const e=new Error('no_access '+msg); e.noAccess=true; throw e;
     }
     if(!res.ok){
-      let detail='';
-      try{const j=await res.json();detail=(j&&(j.error||j.message))||'';}catch(e){}
-      throw new Error(res.status+' '+detail);
+      /* ===== cap-1.0.0 (same fields on the /api/generate lane) ===== */
+      let detail='',gCode='',gRetryable=null;
+      try{const j=await res.json();detail=(j&&(j.error||j.message))||'';gCode=(j&&j.code)||'';if(j&&typeof j.retryable==='boolean')gRetryable=j.retryable;var issueList=Array.isArray(j&&j.issues)?j.issues:[];}catch(e){var issueList=[];}
+      const eGen=new Error(res.status+' '+detail);
+      eGen.mlsAi={status:res.status,code:String(gCode||''),retryable:(gRetryable===null?(res.status>=500||res.status===429):gRetryable),detail:String(detail||'').slice(0,120)};
+      if(issueList.length) eGen.mlsAi.issues=issueList.map(function(v){return String(v||'').slice(0,96);}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,12);
+      throw eGen;
+      /* ===== end cap-1.0.0 ===== */
     }
     const data=await res.json();
     // Primary contract: {result:<object>} — re-stringify so downstream JSON.parse works.
@@ -24353,6 +24385,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1061';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1062';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
