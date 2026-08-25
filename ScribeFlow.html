@@ -17269,7 +17269,27 @@ function suApplyCapabilityUI(){
 }
 async function openSetup(autoOpen){
   var m=document.getElementById('setupModal'); if(!m) return false;
-  var automatic=autoOpen===true, msg=document.getElementById('setupMsg'), next=document.getElementById('su_nextBtn'), retry=document.getElementById('su_retryBtn');
+  /* surg-1.0.0: openSetup was fully re-entrant — the persistent header
+     button, the auto-prompt timer and the error-state Retry could each call
+     it while the wizard was already on screen, and every call re-ran
+     suPrefill() (overwriting all eight inputs from storage) and re-derived
+     SU_STEP (rewinding the visible step). Typed-but-unsaved work vanished —
+     the reported "setup retry loses entered information". A call that finds
+     the wizard ALREADY OPEN in a healthy loaded state is now a no-op that
+     keeps the doctor exactly where they are; the load-failure Retry path
+     still re-fetches (the form was never shown in that state), and a second
+     call DURING the initial fetch joins the in-flight open instead of racing
+     a duplicate GET + prefill. closeSetup resets the latch so a genuine
+     reopen prefills fresh. */
+  if(m.classList.contains('show') && openSetup._loaded===true) return true;
+  if(openSetup._inFlight) return openSetup._inFlight;
+  var suOpenRun=suOpenSetupRun(autoOpen===true,m);
+  openSetup._inFlight=suOpenRun;
+  try{ return await suOpenRun; }
+  finally{ if(openSetup._inFlight===suOpenRun) openSetup._inFlight=null; }
+}
+async function suOpenSetupRun(automatic,m){
+  var msg=document.getElementById('setupMsg'), next=document.getElementById('su_nextBtn'), retry=document.getElementById('su_retryBtn');
   if(!automatic){ m.classList.add('show'); if(msg){msg.style.color='var(--muted)';msg.textContent='Loading saved setup progress…';} }
   if(next) next.disabled=true; if(retry) retry.style.display='none';
   try{ await suOnboardingRequest('GET'); }
@@ -17277,6 +17297,7 @@ async function openSetup(autoOpen){
     SU_STATE={status:SU_STATUS.NOT_STARTED,currentStep:'profile',completedSteps:[],error:suActionableError(e),capabilities:(bkUser&&bkUser.capabilities)||{},role:String((bkUser&&bkUser.role)||''),tier:String((bkUser&&bkUser.capabilities&&bkUser.capabilities.tier)||'')};
     if(msg){msg.style.color='#c0392b';msg.textContent=SU_STATE.error+' Retry before continuing so another account’s setup is never reused.';}
     if(retry) retry.style.display='';
+    openSetup._loaded=false;
     return false;
   }
   if(automatic&&SU_STATE.status===SU_STATUS.COMPLETED) return false;
@@ -17284,10 +17305,12 @@ async function openSetup(autoOpen){
   suApplyCapabilityUI(); suShow(); m.classList.add('show');
   if(next) next.disabled=false; if(retry) retry.style.display='none';
   SU_STATE.status=SU_STATUS.IN_PROGRESS;
+  openSetup._loaded=true;
   return true;
 }
 async function closeSetup(reason){
   var m=document.getElementById('setupModal'); if(m) m.classList.remove('show');
+  openSetup._loaded=false;
   if(reason==='deferred'&&backendMode()&&bkToken()){
     SU_STATE.status=SU_STATUS.DEFERRED;
     try{ await suSaveOnboarding({completedSteps:SU_STATE.completedSteps||[]}); }catch(e){ try{ toast('Setup was closed, but progress could not be saved.','err'); }catch(_e){} }
