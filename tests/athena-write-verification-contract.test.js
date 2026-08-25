@@ -120,10 +120,15 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
     'a failed verification must report a partial mutation exactly when rollback was not proven');
   const rbIdx = activeBackground.indexOf('The empty-editor precheck above means rollback == clearing back to empty');
   assert.ok(rbIdx > 0, 'rollback rationale present');
-  /* rollback must be gated on noteAttempted && !alreadyExact so a pre-existing
-     exact note is never cleared */
-  assert.ok(activeBackground.indexOf('if (noteAttempted && !alreadyExact) {') !== -1,
-    'rollback never clears a note that was already present');
+  /* Any pre-existing note, including byte-exact reviewed text, is refused
+     before mutation. Rollback therefore only applies to a real attempted
+     empty-editor insertion; there is no successful alreadyExact shortcut. */
+  assert.ok(activeBackground.indexOf("notePolicy === 'empty_only' && editorValue(noteEditor)") !== -1,
+    'empty_only does not refuse a pre-existing note before mutation');
+  assert.ok(activeBackground.indexOf('if (noteAttempted) {') !== -1,
+    'rollback is not gated on a real mutation attempt');
+  assert.ok(activeBackground.indexOf('alreadyExact') === -1,
+    'a pre-existing exact note can still enter the successful no-op write path');
   const activeDriverStart = activeBackground.indexOf('async function mlsAthenaActionV2DriverFn(');
   const activeDriverEnd = activeBackground.indexOf('/* ATHENA_ACTION_V2_DRIVER_END */', activeDriverStart);
   assert.ok(activeDriverStart >= 0 && activeDriverEnd > activeDriverStart, 'active ActionV2 driver source is available');

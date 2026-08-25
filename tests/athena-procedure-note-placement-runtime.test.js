@@ -151,12 +151,31 @@ async function state(page) {
     await withPage(browser, fixture({ initial: 'Existing different procedure text.' }), async page => {
       const result = await drive(page, request('procedure', 'Replacement text must not overwrite.'));
       assert.strictEqual(result.ok, false);
-      assert.strictEqual(result.reason, 'context-unverified');
+      assert.strictEqual(result.reason, 'note-editor-not-empty');
+      assert.strictEqual(result.attempted, false);
       const got = await state(page);
       assert.strictEqual(got.values['procedure-editor'], 'Existing different procedure text.');
       assert.strictEqual(got.values['generic-note'], '');
       assert.deepStrictEqual(got.clicks, []);
-      checks += 5;
+      checks += 6;
+    });
+
+    await withPage(browser, fixture({ initial: 'Exact prefilled Procedure Documentation.' }), async page => {
+      const text = 'Exact prefilled Procedure Documentation.';
+      const result = await drive(page, request('procedure', text));
+      assert.strictEqual(result.ok, false, 'exact-prefilled Procedure Documentation was treated as a successful no-op write');
+      assert.strictEqual(result.blocked, true);
+      assert.strictEqual(result.reason, 'note-editor-not-empty');
+      assert.strictEqual(result.attempted, false);
+      assert.strictEqual(result.written, false);
+      assert.strictEqual(result.verified, false);
+      assert.strictEqual(result.noteWriteProof, undefined, 'exact-prefilled Procedure Documentation received a proof without mutation');
+      assert.strictEqual(result.results[0].attempted, false);
+      const got = await state(page);
+      assert.strictEqual(got.values['procedure-editor'], text);
+      for (const [id, value] of Object.entries(got.values)) if (id !== 'procedure-editor') assert.strictEqual(value, '', `exact-prefilled Procedure Documentation leaked into ${id}`);
+      assert.deepStrictEqual(got.clicks, []);
+      checks += 17;
     });
 
     await withPage(browser, fixture(), async page => {

@@ -1172,10 +1172,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         hetRec.note = !!noteTarget;
         if (!noteTarget) continue;
         var currentNote = editorValue(noteTarget.editor);
-        if (mode !== 'teach') {
-          if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) continue; }
-          else if (currentNote !== reviewedNote) continue;
-        }
+        if (mode !== 'teach' && action !== 'write_note' && currentNote !== reviewedNote) continue;
       }
       var targetRoot = billTarget ? billTarget.root : (orderTarget ? orderTarget.root : noteTarget.root);
       var eid = hetStage ? hetStage.encounterId : encounterIdFor(fr, targetRoot, observedIdentity.root);
@@ -1227,7 +1224,11 @@ async function mlsAthenaActionV2DriverFn(req) {
     if (locked && (String(locked.contextHash || '') !== context.contextHash || String(locked.encounterRootFingerprint || '') !== context.encounterRootFingerprint || String(locked.controlFingerprint || '') !== context.controlFingerprint || String(locked.noteScopeFingerprint || '') !== context.noteScopeFingerprint || String(locked.editorFingerprint || '') !== context.editorFingerprint || nameKey(locked.patientName) !== nameKey(context.patientName) || dateKey(locked.dob) !== dateKey(context.dob) || digits(locked.mrn) !== digits(context.mrn) || digits(locked.appointmentId) !== digits(context.appointmentId) || String(locked.encounterId || '') !== String(context.encounterId || ''))) {
       return { ok: false, blocked: true, reason: 'context-mismatch', context: context };
     }
+    function noteEditorNotEmptyReceipt() {
+      return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-not-empty', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-not-empty' }], noAutomaticChaining: 'no-automatic-chaining' };
+    }
     if (mode === 'teach') return { ok: true, mode: 'teach', action: action, readOnly: true, reason: 'taught-destination-validated', contextVerified: true, context: context, targetValidated: true, target: taughtValidation.binding, noAutomaticChaining: 'no-automatic-chaining' };
+    if (action === 'write_note' && notePolicy === 'empty_only' && editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
     /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
     if (mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: action === 'stage_billing' ? 'billing-context-verified' : (action === 'place_order' ? 'order-workspace-context-verified' : 'context-verified'), contextVerified: true, context: context, noAutomaticChaining: 'no-automatic-chaining' };
     if (mode !== 'execute') return { ok: false, blocked: true, reason: 'unknown-action' };
@@ -1257,10 +1258,11 @@ async function mlsAthenaActionV2DriverFn(req) {
 
     /* ATHENA_ACTION_V2_WRITE_NOTE_START */
     if (action === 'write_note') {
-      var beforeNote = editorValue(noteEditor), alreadyExact = beforeNote === reviewedNote;
-      if (beforeNote && !alreadyExact) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-not-empty', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-not-empty' }], noAutomaticChaining: 'no-automatic-chaining' };
-      var noteAttempted = false;
-      if (!alreadyExact) { noteAttempted = true; mutationAttempted = true; if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, partialMutation: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' }; await sleep(250); }
+      if (editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
+      var noteAttempted = true;
+      mutationAttempted = true;
+      if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, partialMutation: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
+      await sleep(250);
       function currentExactNoteEditor() {
         var currentTarget = requestedNoteSection === 'note' ? findNoteAction(hit.frame, action) : findNamedNoteAction(hit.frame, action, requestedNoteSection);
         if (!currentTarget || !currentTarget.editor) return null;
@@ -1274,7 +1276,7 @@ async function mlsAthenaActionV2DriverFn(req) {
          later. One 250ms read falsely called that a verified Athena insertion.
          Require the exact re-resolved editor and value to survive a second,
          later render window before issuing the unsaved readback receipt. */
-      if (noteVerified && noteAttempted && !alreadyExact) {
+      if (noteVerified && noteAttempted) {
         await sleep(750);
         verifiedEditor = currentExactNoteEditor();
         noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
@@ -1283,7 +1285,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         /* wv-1.3 (3.0.40): never leave a HALF-VERIFIED note on screen - the doctor sees the text, distrusts the failure receipt, and can sign a note athena's model never received. The empty-editor precheck above means rollback == clearing back to empty. */
         var rolledBack = false;
         try {
-          if (noteAttempted && !alreadyExact) {
+          if (noteAttempted) {
             var rollbackEditor = currentExactNoteEditor() || ((noteEditor && noteEditor.isConnected !== false) ? noteEditor : null);
             if (rollbackEditor) {
               if (rollbackEditor.isContentEditable) { while (rollbackEditor.firstChild) rollbackEditor.removeChild(rollbackEditor.firstChild); }
@@ -1295,7 +1297,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         } catch (eRb) {}
         return { ok: false, action: action, attempted: noteAttempted, partialMutation: noteAttempted && !rolledBack, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, rolledBack: rolledBack, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
       }
-      return { ok: true, action: action, attempted: noteAttempted, written: true, verified: true, draftEntered: true, draftVerified: true, saved: false, persisted: false, signed: false, reason: 'exact-note-editor-verified-unsaved', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: true, verified: true, saved: false, persisted: false, alreadyPresent: alreadyExact }], noAutomaticChaining: 'no-automatic-chaining' };
+      return { ok: true, action: action, attempted: true, written: true, verified: true, draftEntered: true, draftVerified: true, saved: false, persisted: false, signed: false, reason: 'exact-note-editor-verified-unsaved', context: context, results: [{ key: requestedNoteSection, attempted: true, written: true, verified: true, saved: false, persisted: false, alreadyPresent: false }], noAutomaticChaining: 'no-automatic-chaining' };
     }
     /* ATHENA_ACTION_V2_WRITE_NOTE_END */
 
@@ -2828,7 +2830,7 @@ function mlsAthenaTeachWatcherFn(config) {
         executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { appointmentId: rec.locked.appointmentId, encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: rec.locked, taughtDestination: checkedTaught.value });
       } finally { executeBusy = false; }
       if (!executed) return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', noAutomaticChaining: 'no-automatic-chaining' };
-      if (action === 'write_note' && executed.written === true && executed.verified === true && executed.draftVerified === true && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {
+      if (action === 'write_note' && executed.attempted === true && executed.written === true && executed.verified === true && executed.draftVerified === true && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {
         var noteWriteProof = tokenValue(), proofNow = Date.now();
         noteWriteProofs[noteWriteProof] = {
           used: false, issuedAt: proofNow, expiresAt: proofNow + NOTE_PROOF_TTL_MS,

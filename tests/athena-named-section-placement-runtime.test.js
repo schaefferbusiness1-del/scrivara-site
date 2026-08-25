@@ -182,6 +182,31 @@ async function values(page) {
       checks += 7;
     });
 
+    /* empty_only is a mutation policy, not an idempotency shortcut. Even when
+       Athena already contains the byte-exact reviewed text, the driver did not
+       place it and therefore must neither claim a write nor issue write proof. */
+    for (const specimen of [
+      { key: 'note', id: '#generic-note', text: 'Exact prefilled generic note.' },
+      { key: 'hpi', id: '#hpi-editor', text: 'Exact prefilled HPI.' }
+    ]) {
+      await withPage(browser, fixture(), async page => {
+        await page.locator(specimen.id).fill(specimen.text);
+        const result = await drive(page, request(specimen.key, specimen.text));
+        assert.strictEqual(result.ok, false, `${specimen.key} exact-prefill was treated as a successful no-op write`);
+        assert.strictEqual(result.blocked, true);
+        assert.strictEqual(result.reason, 'note-editor-not-empty');
+        assert.strictEqual(result.attempted, false);
+        assert.strictEqual(result.written, false);
+        assert.strictEqual(result.verified, false);
+        assert.strictEqual(result.noteWriteProof, undefined, `${specimen.key} exact-prefill received a write proof without mutation`);
+        assert.strictEqual(result.results[0].attempted, false);
+        assert.strictEqual(await page.locator(specimen.id).inputValue(), specimen.text, `${specimen.key} exact-prefill changed`);
+        const got = await values(page);
+        for (const [other, value] of Object.entries(got)) if (other !== specimen.key) assert.strictEqual(value, '', `${specimen.key} exact-prefill leaked into ${other}`);
+        checks += 14;
+      });
+    }
+
     /* A canonical machine selector cannot overrule contradictory visible
        clinical evidence, including a future label that is absent from every
        built-in vocabulary. These fixtures reproduce the exact wrong-field seam

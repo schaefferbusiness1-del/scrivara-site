@@ -162,6 +162,17 @@ function success(provider, token) {
     noteScopeFingerprint: 'synthetic-note-scope', editorFingerprint: 'synthetic-editor', contextHash: 'synthetic-context'
   } };
 }
+function shippedFunction(name) {
+  const anchor = '\n  function ' + name + '(';
+  const at = SOURCE.indexOf(anchor);
+  assert(at >= 0, 'writeflow helper `' + name + '` is gone');
+  let i = SOURCE.indexOf('{', at + anchor.length), depth = 0;
+  for (; i < SOURCE.length; i += 1) {
+    if (SOURCE[i] === '{') depth += 1;
+    else if (SOURCE[i] === '}') { depth -= 1; if (depth === 0) { i += 1; break; } }
+  }
+  return SOURCE.slice(at + 1, i);
+}
 
 (async function main() {
   /* Happy path: probes are strictly serial, one exact candidate wins, and the
@@ -312,6 +323,38 @@ function success(provider, token) {
     assert(!manifest.rows.some(row => row.action === 'place_order'), 'orders became executable');
   }
 
+  /* A legacy/hostile bridge receipt can describe byte-exact text that was
+   * already in Athena as written+verified while also admitting attempted:false.
+   * Execute the shipped receipt classifier and result renderer directly: that
+   * non-mutation must not mint a site receipt, say Inserted, or unlock Sign. */
+  {
+    const receiptBox = vm.createContext({ Date, Array, Object, String, Number, JSON });
+    vm.runInContext([
+      'var remembered = 0;',
+      'var S = function (x) { return x == null ? "" : String(x); };',
+      'var stableClone = function (x) { return x == null ? null : JSON.parse(JSON.stringify(x)); };',
+      'var deepFreeze = function (x) { return x; };',
+      'var billingResultSummary = function () { return ""; };',
+      'var rememberVerifiedWrite = function () { remembered += 1; return { noteWriteProof: "forged" }; };',
+      shippedFunction('verifiedNoteWrite'),
+      shippedFunction('resultToUnifiedReceipt'),
+      'this.verify = verifiedNoteWrite; this.render = resultToUnifiedReceipt;'
+    ].join('\n'), receiptBox);
+    const forgedNoAttempt = { ok: true, attempted: false, written: true, verified: true, draftVerified: true,
+      noteWriteProof: 'must-not-be-consumed', noteWriteProofExpiresAt: Date.now() + 600000,
+      results: [{ key: 'hpi', attempted: false, written: true, verified: true, alreadyPresent: true }] };
+    assert.strictEqual(receiptBox.verify(forgedNoAttempt), false, 'attempted:false passed the shipped verified-note gate');
+    const state = { manifest: { previewHash: 'preview', receiptSessionId: 'session', patient: PATIENT,
+      manifestHash: 'manifest' }, receipts: {}, halted: false };
+    const row = { id: 'write-hpi', action: 'write_note', rowHash: 'row', payload: { noteText: 'Exact prefilled HPI.' } };
+    const rendered = receiptBox.render(state, row, forgedNoAttempt, { patient: PATIENT, context: { encounterId: '80000017' } });
+    assert.strictEqual(receiptBox.remembered, 0, 'attempted:false reached receipt minting');
+    assert.notStrictEqual(rendered.status, 'verified', 'attempted:false rendered as verified');
+    assert(!/Inserted into the exact Athena field/.test(rendered.message), 'attempted:false falsely said Inserted');
+    assert(/Sign remains locked/.test(rendered.message), 'attempted:false did not keep Sign locked');
+    assert.strictEqual(state.halted, true, 'attempted:false did not halt the manifest');
+  }
+
   /* ======================================================================
    * The two unlocked lanes the gate never executed (readiness verdict 2).
    * Three passing 1p suites already cover the unlocked action set, the
@@ -364,15 +407,7 @@ function success(provider, token) {
   /* The receipt key is derived by running the shipped normalizers, not by
    * re-implementing them, so the derivation cannot drift away from the guard. */
   function sliceFn(name) {
-    const anchor = '\n  function ' + name + '(';
-    const at = SOURCE.indexOf(anchor);
-    assert(at >= 0, 'writeflow helper `' + name + '` is gone; the receipt-key derivation lost its source');
-    let i = SOURCE.indexOf('{', at + anchor.length), depth = 0;
-    for (; i < SOURCE.length; i += 1) {
-      if (SOURCE[i] === '{') depth += 1;
-      else if (SOURCE[i] === '}') { depth -= 1; if (depth === 0) { i += 1; break; } }
-    }
-    return SOURCE.slice(at + 1, i);
+    return shippedFunction(name);
   }
   const keyBox = vm.createContext({ Date, Math, JSON, Number, String, RegExp, Object, Array });
   vm.runInContext([

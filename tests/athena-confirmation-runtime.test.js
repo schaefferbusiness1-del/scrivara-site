@@ -91,7 +91,7 @@ const window = {
             }
           }
         : {
-          ok: true, written: true, noteWritten: true, verified: true,
+          ok: true, attempted: true, written: true, noteWritten: true, verified: true,
           noteWriteProof: 'proof-runtime-note', noteWriteProofExpiresAt: Date.now() + 120000,
           context: {
             patientName: 'Example Patient', dob: '1/2/1980', mrn: '123',

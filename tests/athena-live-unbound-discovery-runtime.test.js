@@ -106,7 +106,7 @@ function request(overrides) {
   }, overrides || {});
 }
 
-function makeHarness(tabProbeResults) {
+function makeHarness(tabProbeResults, executeResult) {
   const listeners = [];
   const injections = [];
   const tabs = tabProbeResults.map((result, index) => ({
@@ -139,7 +139,7 @@ function makeHarness(tabProbeResults) {
           /* Deliberately do not invoke the driver or mutate a DOM. Reaching
              this stub proves only that the full-lock authorization gates
              accepted the synthetic request. */
-          return [{ result: { ok: false, blocked: true, attempted: false, reason: 'synthetic-no-mutation' } }];
+          return [{ result: executeResult || { ok: false, blocked: true, attempted: false, reason: 'synthetic-no-mutation' } }];
         }
         const index = tabs.findIndex(tab => tab.id === spec.target.tabId);
         return [{ result: tabProbeResults[index] }];
@@ -236,6 +236,27 @@ function makeHarness(tabProbeResults) {
     assert.strictEqual(executeCalls.length, 1, 'the full discovered lock did not reach exactly one synthetic execute boundary');
     assert.deepStrictEqual(executeCalls[0].payload.expectedContext, fullLocator, 'the execute driver did not receive the full frozen locator');
     assert.deepStrictEqual(executeCalls[0].payload.locked, firstLock, 'the execute driver did not receive the original discovered lock');
+  }
+
+  /* A compromised/legacy driver response that claims written+verified while
+   * admitting no mutation attempt must never mint the proof that unlocks Sign. */
+  {
+    const forged = { ok: true, action: 'write_note', attempted: false, written: true, verified: true,
+      draftVerified: true, context: Object.assign({}, firstLock), reason: 'synthetic-prefilled-no-op' };
+    const h = makeHarness([probeSuccess(firstLock)], forged);
+    const probe = await h.dispatch(request({ previewHash: 'preview-no-attempt', manifestHash: 'manifest-no-attempt' }));
+    assert.strictEqual(probe.ok, true);
+    const response = await h.dispatch(request({
+      mode: 'execute', previewHash: 'preview-no-attempt', manifestHash: 'manifest-no-attempt',
+      actionToken: probe.actionToken,
+      expectedContext: { appointmentId: firstLock.appointmentId, encounterId: firstLock.encounterId,
+        encounterUrl: firstLock.encounterUrl, visitDate: firstLock.visitDate, provider: firstLock.provider },
+      probeContext: Object.assign({}, firstLock), userGesture: true, gestureProof: 'synthetic-no-attempt-gesture'
+    }));
+    assert.strictEqual(response.ok, true, 'forged response did not reach the outer proof gate');
+    assert.strictEqual(response.attempted, false);
+    assert.strictEqual(response.noteWriteProof, undefined, 'attempted:false minted a noteWriteProof');
+    assert.strictEqual(response.noteWriteProofExpiresAt, undefined, 'attempted:false minted a proof expiry');
   }
 
   /* No verified lock remains a refusal with no token. */

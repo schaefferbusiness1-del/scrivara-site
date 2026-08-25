@@ -539,10 +539,10 @@
     return key && verifiedWriteUsable(STATE.verifiedWrites[key]) ? STATE.verifiedWrites[key] : null;
   }
   function verifiedNoteWrite(resp) {
-    if (!resp || resp.ok !== true || resp.verified !== true) return false;
+    if (!resp || resp.ok !== true || resp.attempted !== true || resp.verified !== true) return false;
     if (resp.written === true || resp.noteWritten === true) return true;
     var rs = Array.isArray(resp.results) ? resp.results.filter(function (r) { return !r || r.execute !== false; }) : [];
-    return !!(rs.length && rs.every(function (r) { return r && r.written === true && r.verified === true; }));
+    return !!(rs.length && rs.every(function (r) { return r && r.attempted === true && r.written === true && r.verified === true; }));
   }
   function rememberVerifiedWrite(patient, previewHash, opts, payload, lockedContext, resp) {
     if (!verifiedNoteWrite(resp) || !S(resp.noteWriteProof).trim() || Number(resp.noteWriteProofExpiresAt || 0) <= Date.now()) return null;
@@ -2007,7 +2007,7 @@
     else if (row.action === 'stage_billing' && (resp.partialMutation === true || ((resp.stagedCodes || []).length && resp.ok !== true))) { status = 'uncertain'; message = billingResultSummary(resp, row.payload) || 'Billing was partially changed or not fully verified. Inspect the billing slate before retrying.'; }
     else if (!resp.ok) { status = attempted ? 'uncertain' : 'blocked'; message = S(resp.error || resp.message || resp.reason) || 'Athena refused the selected action. No other action ran.'; }
     else if (row.action === 'write_note') {
-      verifiedWrite = rememberVerifiedWrite(probe.patient, state.manifest.previewHash, { receiptSessionId: state.manifest.receiptSessionId }, row.payload, probe.context, resp);
+      verifiedWrite = resp.attempted === true ? rememberVerifiedWrite(probe.patient, state.manifest.previewHash, { receiptSessionId: state.manifest.receiptSessionId }, row.payload, probe.context, resp) : null;
       status = verifiedWrite ? 'verified' : 'uncertain';
       message = verifiedWrite ? 'Inserted into the exact Athena field and read back successfully. It has not been saved or signed. Save, Sign, billing, orders, and prescriptions did not run.' : 'Athena did not return a verified exact-field insertion receipt. Inspect the field before retrying; Sign remains locked.';
     } else if (row.action === 'stage_billing') {

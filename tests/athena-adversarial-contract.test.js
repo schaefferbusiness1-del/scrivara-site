@@ -221,7 +221,7 @@ finding('Sign stays proof-gated end-to-end: the site offers it only with capabil
      capability; the extension's policy refusal is lifted, its correctness
      gates are not. */
   assert(/noteWriteProofs\s*=\s*Object\.create\(null\)|new\s+Map\s*\(/.test(handler), 'background must own a note-write proof registry');
-  assert(/action\s*===\s*['"]write_note['"](?=[^]{0,1800}(?:written|writeVerified))(?=[^]{0,1800}verified)(?=[^]{0,1800}noteWriteProof)/.test(handler), 'proof may be minted only after write_note reports written and verified');
+  assert(/action\s*===\s*['"]write_note['"](?=[^]{0,1800}executed\.attempted\s*===\s*true)(?=[^]{0,1800}(?:written|writeVerified))(?=[^]{0,1800}verified)(?=[^]{0,1800}noteWriteProof)/.test(handler), 'proof may be minted only after write_note actually attempted mutation and reports written and verified');
   assert(/probeContextMatches\(\s*(?:executed|result|writeResult)\.context\s*,\s*rec\.locked\s*\)|(?:executed|result|writeResult)\.context\.contextHash\s*===\s*rec\.locked\.contextHash/.test(handler), 'proof minting must re-check the driver result against the token-locked encounter');
   for (const binding of ['senderTabId', 'athenaTabId', 'previewHash', 'patientHash', 'lockedContextHash']) {
     assert(new RegExp(`\\b${binding}\\b`).test(handler), `note-write proof must bind ${binding}`);

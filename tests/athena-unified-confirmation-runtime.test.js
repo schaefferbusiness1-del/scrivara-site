@@ -101,7 +101,7 @@ const window = {
     const response = message.mode === 'probe'
       ? { ok: true, actionToken: 'one-use-token', context: exactContext }
       : {
-          ok: true, written: true, noteWritten: true, verified: true,
+          ok: true, attempted: true, written: true, noteWritten: true, verified: true,
           noteWriteProof: 'proof-exact-note', noteWriteProofExpiresAt: Date.now() + 120000,
           context: exactContext
         };
