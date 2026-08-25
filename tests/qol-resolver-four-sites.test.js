@@ -14,7 +14,12 @@ const root = path.join(__dirname, '..');
 const mc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 
-const stub = on => ({ read: () => ({ state: on ? 'on' : 'off', on: on }), write: () => true, isPrefKey: () => false });
+/* The ONE RESOLVER's read() answers {state,on,settled}: tri-state PLUS the
+   sbp-1.0 `settled` flag (during boot uns() builds a placeholder namespace and
+   the answer is provisional). dayfacts-1.0.1 made __mlsVisitSavePref.enabled()
+   honour that flag, so a stub that omits it no longer speaks the contract —
+   it is a settled answer that is being flipped here, nothing weaker. */
+const stub = on => ({ read: () => ({ state: on ? 'on' : 'off', on: on, settled: true }), write: () => true, isPrefKey: () => false });
 /* poisoned storage: if a site reads raw keys instead of the resolver, it sees
    the OPPOSITE of what the stub says and the flip assertion catches it */
 const poisonedStorage = on => ({ getItem: k => (/pullVisitBodies|visitNotesModeV2/.test(String(k)) ? (on ? '0' : '1') : null), setItem: () => {}, removeItem: () => {} });
@@ -102,6 +107,40 @@ function extractUnique(src, startMarker, endMarker, label) {
   assert.strictEqual(run(false).__e(), false, 'site 4 (vp.enabled): resolver OFF -> false');
   /* setEnabled returns the resolver's read-back confirmation, not undefined */
   assert.strictEqual(run(true).__s(true), true, 'site 4 (vp.setEnabled): confirmed write returns true');
+
+  /* dayfacts-1.0.1 POSITIVE PIN: the unscoped door is no softer than the
+     day-scoped one. enabled() admits ONLY a coherent, SETTLED 'on'. The three
+     refusals below are the real shapes that used to open every visit body:
+       - a provisional 'on' read off the boot placeholder namespace,
+       - a read from an older bundle that carries no `settled` at all,
+       - an incoherent pair (the "checkbox says ON while the pull runs OFF"
+         the owner saw live at b1016/b1022).
+     Storage is poisoned ON throughout, so a site that fell back to the raw
+     keys would answer true and fail here by name. */
+  function runChoice(choice) {
+    const ctx = vm.createContext({
+      window: { __mlsVisitNotesPref: { read: () => choice, write: () => true, isPrefKey: () => false } },
+      localStorage: poisonedStorage(false), /* raw pullVisitBodies/visitNotesModeV2 both say ON */
+      document: { getElementById: () => null },
+      api: {}
+    });
+    vm.runInContext(block + '\nthis.__e = enabled;', ctx);
+    return ctx.__e();
+  }
+  assert.strictEqual(runChoice({ state: 'on', on: true, settled: true }), true,
+    'site 4 (vp.enabled): a coherent SETTLED on is the one shape that admits');
+  assert.strictEqual(runChoice({ state: 'on', on: true, settled: false }), false,
+    'site 4 (vp.enabled): a PROVISIONAL on (settled:false) must NOT open the unscoped every-visit leg');
+  assert.strictEqual(runChoice({ state: 'on', on: true }), false,
+    'site 4 (vp.enabled): a read with no settled flag at all is not an admission');
+  assert.strictEqual(runChoice({ state: 'off', on: true, settled: true }), false,
+    'site 4 (vp.enabled): incoherent pair (state off / on true) must refuse');
+  assert.strictEqual(runChoice({ state: 'on', on: false, settled: true }), false,
+    'site 4 (vp.enabled): incoherent pair (state on / on false) must refuse');
+  assert.strictEqual(runChoice({ state: 'unset', on: false, settled: true }), false,
+    'site 4 (vp.enabled): explicit-first-use unset resolves OFF');
+  assert.strictEqual(runChoice(null), false,
+    'site 4 (vp.enabled): no answer from the resolver is OFF, never a raw-key fallback');
 }
 
 /* ---- sites 5+6 (relay payload + dedupe identity) are executed in
@@ -110,4 +149,4 @@ function extractUnique(src, startMarker, endMarker, label) {
 assert(/_vr = \(window\.__mlsVisitNotesPref/.test(mc), 'site 5 (relay payload) consults the resolver');
 assert(/vr3 = \(window\.__mlsVisitNotesPref/.test(mc), 'site 6 (dedupe identity) consults the resolver');
 
-console.log('qol-resolver-four-sites: OK (4 sites executed and flipped by the resolver against poisoned storage; OFF opens no note body; payload+dedupe consult pinned)');
+console.log('qol-resolver-four-sites: OK (4 sites executed and flipped by the resolver against poisoned storage; OFF opens no note body; enabled() admits only a coherent SETTLED on (dayfacts-1.0.1); payload+dedupe consult pinned)');

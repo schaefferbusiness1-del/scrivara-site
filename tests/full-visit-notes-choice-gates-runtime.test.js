@@ -16,6 +16,18 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const CONNECT = fs.readFileSync(path.join(ROOT, '1p-mls-connect.js'), 'utf8');
 const RANGE = fs.readFileSync(path.join(ROOT, '1p-feat_mls_rangejobs.js'), 'utf8');
+const SCHED = fs.readFileSync(path.join(ROOT, '1p-feat_mls_schedimport_exact.js'), 'utf8');
+
+/* Mirror of the day engine's own `safe(fn, d)` (1p-feat_mls_schedimport_exact.js:214).
+   The default is returned ONLY on a throw - a closure that returns undefined
+   yields undefined, which is exactly how the shipped gates read. */
+function engineSafe(fn, d) { try { return fn(); } catch (e) { return d; } }
+
+/* The one resolver's read() shape, as every choice gate consumes it.
+   state: 'on' | 'off' | 'unset'; settled marks a real account namespace. */
+function choiceStub(state, settled) {
+  return { read: function () { return { state: state, on: state === 'on', settled: settled !== false }; } };
+}
 
 function blockBetween(source, start, end, label) {
   const a = source.indexOf(start);
@@ -277,32 +289,114 @@ function receiptCases() {
   assert.strictEqual(DS.lastAttemptResult.target, '2026-08-22', 'relay receipt was not bound to the requested day');
 }
 
-async function singlePatientCases() {
+/* dayfacts-1.0.1: runForPatient is THE door every pulled-day encounter note
+ * goes through - the inline fold-in and the tail pass both reach it via
+ * tnBoundedRead, and the idle backfill reaches it via niReadOnce.  Under the
+ * superseding DAY contract a SETTLED OFF account is day-facts mode, and its
+ * exact-day scoped read is MANDATORY, not merely tolerated.  This harness
+ * COUNTS the reads and inspects the opts that reach the reader, so a door that
+ * silently stopped opening (or one that swung too wide) both fail here. */
+function runForPatientHarness() {
   const run = balancedFunction(CONNECT, 'api.runForPatient = function (p, onStatus, runOpts)', 'single-patient runner');
-  let readerCalls = 0;
-  let readerOpts = null;
+  const reads = [];
+  const win = {
+    __mlsVisitNotesPref: null,
+    __mlsCopyVisits: {
+      run(onStatus, patient, opts) { reads.push({ patient: patient, opts: opts || null }); return Promise.resolve(0); }
+    }
+  };
   const ctx = vm.createContext({
     api: { running: false, current: null },
-    enabled: () => false,
-    window: { __mlsCopyVisits: { run(onStatus, patient, opts) { readerCalls++; readerOpts = opts; return Promise.resolve(0); } } },
-    Promise, Error, String
+    /* the shipped enabled(): ONLY an explicit stored ON opens unscoped bodies */
+    enabled: function () {
+      try {
+        const vnp = win.__mlsVisitNotesPref;
+        const c = vnp && typeof vnp.read === 'function' ? vnp.read() : null;
+        return !!(c && c.state === 'on' && c.on === true);
+      } catch (e) { return false; }
+    },
+    window: win, Promise, Error, String, RegExp
   });
   vm.runInContext(run + '\nthis.__runForPatient = api.runForPatient;', ctx);
-  const skipped = await ctx.__runForPatient({ id: 'p1', name: 'Synthetic Patient' }, null, {});
-  assert.strictEqual(skipped.ok, true, 'bulk patient read did not return an explicit refusal result');
-  assert.strictEqual(skipped.skipped, 'preference-off', 'bulk patient read did not honor OFF');
-  const singleOff = await ctx.__runForPatient({ id: 'p1', name: 'Synthetic Patient' }, null, { singlePull: true });
-  assert.strictEqual(singleOff.ok, true, 'single-patient OFF result was not explicit');
-  assert.strictEqual(singleOff.skipped, 'preference-off', 'single-patient request bypassed Full Notes OFF');
-  assert.strictEqual(readerCalls, 0, 'single-patient request opened visit notes while Full Notes was OFF');
+  return {
+    reads,
+    setChoice(state, settled) { win.__mlsVisitNotesPref = choiceStub(state, settled); },
+    clearChoice() { win.__mlsVisitNotesPref = null; },
+    run(runOpts) { return ctx.__runForPatient({ id: 'p1', name: 'Synthetic Patient' }, null, runOpts); }
+  };
+}
 
-  ctx.enabled = () => true;
-  const singleOn = await ctx.__runForPatient({ id: 'p1', name: 'Synthetic Patient' }, null, { singlePull: true });
-  assert.strictEqual(singleOn.ok, true, 'single-patient request did not run with Full Notes ON');
-  assert.strictEqual(singleOn.visits, 0, 'single-patient ON request changed the reader result');
-  assert.strictEqual(readerCalls, 1, 'single-patient ON request did not run the visit-note reader exactly once');
-  assert.strictEqual(readerOpts.singlePull, true, 'single-patient option did not reach the visit-note reader');
+async function dayFactsAdmissionCases() {
+  const h = runForPatientHarness();
+  const DAY = '2026-08-22';
 
+  /* --- settled OFF = day-facts mode ------------------------------------- */
+  h.setChoice('off', true);
+  const unscopedOff = await h.run({});
+  assert.strictEqual(unscopedOff.ok, true, 'day-facts unscoped read did not return an explicit result');
+  assert.strictEqual(unscopedOff.skipped, 'preference-off',
+    'day-facts mode must still refuse UNSCOPED historical bodies with preference-off');
+  assert.strictEqual(h.reads.length, 0, 'day-facts mode opened an unscoped historical body read');
+
+  const scopedOff = await h.run({ onlyDate: DAY });
+  assert.strictEqual(scopedOff.ok, true, 'the mandatory pulled-day note read was refused in day-facts mode');
+  assert.strictEqual(scopedOff.skipped, undefined,
+    'the pulled-day (onlyDate) note is MANDATORY under the day contract - day-facts must not skip it');
+  assert.strictEqual(scopedOff.visits, 0, 'pulled-day note read lost the reader result');
+  assert.strictEqual(h.reads.length, 1, 'day-facts mode did not run exactly one pulled-day note read');
+  assert.strictEqual(h.reads[0].opts && h.reads[0].opts.onlyDate, DAY,
+    'the onlyDate scope did not reach the visit-note reader - an unscoped reader returns EVERY body');
+
+  /* The door is a DATE door, not an "any truthy onlyDate" door: a malformed
+     scope must fail closed rather than widen day-facts into a full crawl. */
+  const malformed = ['2026-8-2', 'today', '2026-08-22T09:00', '', '2026-08-2', true];
+  for (const bad of malformed) {
+    const before = h.reads.length;
+    const r = await h.run({ onlyDate: bad });
+    assert.strictEqual(r.skipped, 'preference-off',
+      'a malformed onlyDate (' + JSON.stringify(bad) + ') widened the day-facts door into an unscoped read');
+    assert.strictEqual(h.reads.length, before,
+      'a malformed onlyDate (' + JSON.stringify(bad) + ') reached the visit-note reader');
+  }
+
+  /* --- unchosen / unsettled stays fail-closed --------------------------- */
+  /* NOTE: {state:'on', settled:false} is deliberately absent - see the KNOWN
+     ENGINE GAP block at the foot of this file.  The shipped enabled() ignores
+     `settled`, so that shape opens the UNSCOPED door and is not fail-closed
+     today.  It is reported, not asserted. */
+  const closed = [
+    ['off', false, 'an UNSETTLED account namespace'],
+    ['unset', true, 'an account that never made the choice']
+  ];
+  for (const [state, settled, label] of closed) {
+    h.setChoice(state, settled);
+    const before = h.reads.length;
+    const scoped = await h.run({ onlyDate: DAY });
+    assert.strictEqual(scoped.ok, true, label + ': refusal was not an explicit result');
+    assert.strictEqual(scoped.skipped, 'preference-unchosen',
+      label + ' had a chart opened for the pulled-day note - first-use admission owns asking');
+    assert.strictEqual(h.reads.length, before, label + ': the visit-note reader ran anyway');
+  }
+  h.clearChoice();
+  const noResolver = await h.run({ onlyDate: DAY });
+  assert.strictEqual(noResolver.skipped, 'preference-unchosen',
+    'a missing resolver did not fail closed at the pulled-day door');
+
+  /* --- explicit ON is the only unscoped door ---------------------------- */
+  h.setChoice('on', true);
+  const before = h.reads.length;
+  const onScoped = await h.run({ onlyDate: DAY });
+  assert.strictEqual(onScoped.skipped, undefined, 'ON refused the pulled-day note read');
+  assert.strictEqual(h.reads.length, before + 1, 'ON did not run the pulled-day note read exactly once');
+  const onUnscoped = await h.run({ singlePull: true });
+  assert.strictEqual(onUnscoped.ok, true, 'single-patient request did not run with Full Notes ON');
+  assert.strictEqual(onUnscoped.visits, 0, 'single-patient ON request changed the reader result');
+  assert.strictEqual(h.reads.length, before + 2, 'ON did not run the unscoped read exactly once');
+  assert.strictEqual(h.reads[h.reads.length - 1].opts.singlePull, true,
+    'single-patient option did not reach the visit-note reader');
+}
+
+async function singlePatientCases() {
   const spv = blockBetween(CONNECT, '  function spvVisitCount(p) {', '  /* ===== end spv-1.0.0 ==================================================== */', 'single-patient receipt');
   let queued = 0;
   const patient = { id: 'p1', name: 'Synthetic Patient', visits: [] };
@@ -323,6 +417,223 @@ async function singlePatientCases() {
   assert.strictEqual(receipt.queued, true, 'single-patient no-visit result failed to report its retry queue');
   assert.strictEqual(queued, 1, 'single-patient no-visit result did not enqueue one retry');
   assert(/NO prior visit notes came back/i.test(receipt.message), 'single-patient partial receipt was not honest about missing visits');
+
+  /* spv-1.2: an OFF single pull is an intentional SCOPE choice, not a failed
+     history read.  It must stay green, must NOT paint the red "no visit notes"
+     warning, and must NOT start a backfill the same preference cannot finish. */
+  spvCtx.window.__mlsSinglePullVisits = null;
+  spvCtx.api.runForPatient = () => Promise.resolve({ ok: true, skipped: 'preference-off' });
+  const offReceipt = await spvCtx.__spv(patient, patient);
+  assert.strictEqual(offReceipt.ok, true, 'an intentionally scoped OFF single pull was reported as a failure');
+  assert.strictEqual(offReceipt.added, 0, 'OFF single pull invented an added visit');
+  assert.strictEqual(offReceipt.queued, false, 'OFF single pull queued a retry its own preference cannot complete');
+  assert.strictEqual(queued, 1, 'OFF single pull enqueued a backfill run');
+  assert(!/NO prior visit notes came back/i.test(offReceipt.message),
+    'OFF single pull painted the red missing-history warning over a deliberate scope choice');
+
+  /* An UNCHOSEN account reaches the same leg with a different skip token.  It
+     must not be silently laundered into the OFF scope message - the honest
+     partial receipt is the correct outcome until the choice is made. */
+  spvCtx.window.__mlsSinglePullVisits = null;
+  spvCtx.api.runForPatient = () => Promise.resolve({ ok: true, skipped: 'preference-unchosen', reason: 'preference-unchosen' });
+  const unchosenReceipt = await spvCtx.__spv(patient, patient);
+  assert.strictEqual(unchosenReceipt.ok, false, 'an unchosen single pull claimed a successful visit leg');
+  assert.notStrictEqual(unchosenReceipt.reason, 'visit-notes-off',
+    'an unchosen account was reported as an explicit OFF scope choice');
+}
+
+/* ===== dayfacts-1.0.1 — the pulled-day note is MANDATORY in BOTH modes =====
+ * The superseding DAY contract revoked schedule-only OFF.  A settled-OFF day
+ * pull now opens every exact scheduled row's chart, saves its facts, and
+ * attempts exactly the pulled-day encounter note through the onlyDate lane.
+ * These pins are adversarial in the direction that matters: they fail if a
+ * lane is re-fused OFF, if the onlyDate scope is dropped (an unscoped reader
+ * returns EVERY body), or if the revoked "visit-notes-off" schedule-only
+ * vocabulary comes back. */
+function dayFactsEngineLaneCases() {
+  /* Both lanes must be live, and neither may be re-disabled anywhere. */
+  assert(/var pulledDayNoteLaneEnabled = true;/.test(SCHED),
+    'the inline day-facts fold-in lane is no longer enabled');
+  assert(/var pulledDayNoteTailEnabled = true;/.test(SCHED),
+    'the tn/onlyDate tail pass is no longer enabled');
+  assert(!/pulledDayNoteLaneEnabled\s*=\s*false/.test(SCHED),
+    'the inline day-facts fold-in lane is re-fused OFF somewhere');
+  assert(!/pulledDayNoteTailEnabled\s*=\s*false/.test(SCHED),
+    'the tn/onlyDate tail pass is re-fused OFF somewhere');
+
+  /* Both lanes select precisely the OFF (visitsSkipped) rows - ON rows get
+     their bodies from the full traversal instead. */
+  assert(/if \(pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one\.visitsSkipped === true && rd && !inlineDayNoteFuse\)/.test(SCHED),
+    'the inline fold-in no longer runs for day-facts (pullVisitBodies !== true) rows');
+  assert(/if \(pulledDayNoteTailEnabled && pullVisitBodies !== true && !__stpStopped\)/.test(SCHED),
+    'the tail pass no longer runs for day-facts (pullVisitBodies !== true) rows');
+
+  /* Every pulled-day read is exact-day scoped through runForPatient. */
+  assert(SCHED.includes('vp.runForPatient(p, function () {}, { onlyDate: String(day) })'),
+    'the bounded pulled-day read no longer scopes runForPatient with onlyDate');
+  assert(SCHED.includes('vp.runForPatient(p, function () {}, { onlyDate: String(row.d) })'),
+    'the idle-notes backfill read no longer scopes runForPatient with onlyDate');
+
+  /* The revoked schedule-only vocabulary must not decide anything again. */
+  const batch = blockBetween(SCHED,
+    '    var chartFactsRequired = true;', '      receipt.todayNoteReasonCodes = {};', 'day-facts batch receipt');
+  assert(/visitNotesMode: visitNotesRequested \? "full" : "day-facts"/.test(batch),
+    'the batch receipt no longer reports day-facts as the OFF mode');
+  assert(/chartFactsRequired: chartFactsRequired/.test(batch) && /allVisitBodiesRequested: allVisitBodiesRequested/.test(batch),
+    'the batch receipt lost the mandatory-floor / checkbox split');
+  assert(/insuranceAttempted: 0/.test(batch) && /insuranceReason: "reader-not-shipped"/.test(batch),
+    'the batch receipt no longer declares insurance honestly as not-yet-attempted');
+  assert(/receipt\.reason = "visit-notes-unchosen"/.test(batch) && /receipt\.visitNotesMode = "blocked-unchosen"/.test(batch),
+    'the blocked-unchosen door lost its reason/mode vocabulary');
+  assert(/receipt\.todayNoteNotRequested = receipt\.notRequestedRows/.test(batch),
+    'the blocked-unchosen door is no longer the source of todayNoteNotRequested');
+
+  /* 'full-notes-off' was the retry lane's wholesale OFF refusal reason. */
+  assert(!/["']full-notes-off["']/.test(SCHED),
+    'the retry lane still carries the revoked full-notes-off refusal reason');
+  assert(/retryBodiesRequested/.test(SCHED),
+    'the OFF retry lane lost the frozen per-receipt mode scoping');
+
+  /* The Calendar door must not AND the checkbox back into includeHistory. */
+  assert(/var includeHistory = opts\.includeHistory !== false; \/\* dayfacts-1\.0\.1: the Calendar door/.test(SCHED),
+    'the Calendar door re-coupled the Full-visit-notes checkbox into includeHistory');
+
+  /* One envelope vocabulary at every level: OFF is 'day-facts', never
+     'not-requested'. */
+  const modes = SCHED.match(/visitNotesMode: [^,\n]+/g) || [];
+  assert(modes.length >= 4, 'the visitNotesMode envelope disappeared from the day engine');
+  modes.forEach(function (m) {
+    assert(!/["']not-requested["']/.test(m),
+      'an OFF pull can still report visitNotesMode "not-requested": ' + m.trim());
+  });
+  ['fullNotesOff ? "day-facts"', 'monthFullNotesOff ? "day-facts"'].forEach(function (needle) {
+    assert(SCHED.includes(needle), 'OFF no longer maps to day-facts at every envelope level: ' + needle);
+  });
+}
+
+/* tnAggregate is the day's ONE today-note census.  Its checkbox short-circuit
+ * ("OFF is a deliberate scope choice, not an unread note") is revoked: the real
+ * per-row tally must run identically in both modes, and todayNoteNotRequested
+ * may only be non-zero through the blocked-unchosen door. */
+function todayNoteCensusCases() {
+  const agg = balancedFunction(SCHED, 'function tnAggregate()', 'today-note census');
+  function census(visitNotesRequested) {
+    const receipt = {
+      visitNotesRequested: visitNotesRequested,
+      visitNotesMode: visitNotesRequested ? 'full' : 'day-facts',
+      todayNoteNotRequested: 99, /* a stale value the census must overwrite */
+      patients: [
+        { patientId: 'a', todayNote: true },
+        { patientId: 'b', todayNote: 'already-read' },
+        { patientId: 'c', todayNote: false, todayNoteReason: 'pull-in-flight', todayNoteDeferred: true },
+        { patientId: 'd', todayNote: false, todayNoteReason: 'scoped-read-unverified' },
+        { patientId: 'e', todayNote: 'not-yet' },
+        { patientId: 'f', todayNote: 'future-day' },
+        { patientId: 'g', todayNote: null }
+      ]
+    };
+    const ctx = vm.createContext({
+      receipt: receipt,
+      tnReasonCode: r => 'code:' + String(r || 'unknown'),
+      String, Math, Number, Object
+    });
+    vm.runInContext(agg + '\nthis.__agg = tnAggregate;', ctx, { filename: 'today-note-census' });
+    return { summary: ctx.__agg(), receipt: receipt };
+  }
+
+  const off = census(false), on = census(true);
+  assert.strictEqual(off.receipt.todayNoteNotRequested, 0,
+    'day-facts rows are still reported as "note not requested" - the checkbox short-circuit is back');
+  assert.strictEqual(off.summary.read, 2, 'day-facts census did not count the rows whose pulled-day note WAS read');
+  assert.strictEqual(off.summary.failed, 2, 'day-facts census did not count the unread pulled-day notes');
+  assert.strictEqual(off.summary.queued, 1, 'day-facts census did not separate the deferred row from the failures');
+  assert.strictEqual(off.summary.unreadFinal, 1, 'day-facts census miscounted the finally-unread notes');
+  assert.strictEqual(off.summary.notYet, 1, 'day-facts census turned a not-yet slot into a failure');
+  assert.strictEqual(off.summary.future, 1, 'day-facts census turned a future day into a failure');
+  assert.strictEqual(off.summary.alreadyRead, 1, 'day-facts census lost the already-read row');
+  assert.strictEqual(off.receipt.todayNoteReasons['pull-in-flight'], 1, 'day-facts census dropped a per-row reason');
+  assert.strictEqual(off.receipt.todayNoteReasons['scoped-read-unverified'], 1, 'day-facts census dropped a per-row reason');
+  assert.deepStrictEqual(
+    { r: off.summary.read, f: off.summary.failed, q: off.summary.queued, n: off.summary.notYet, u: off.summary.unreadFinal },
+    { r: on.summary.read, f: on.summary.failed, q: on.summary.queued, n: on.summary.notYet, u: on.summary.unreadFinal },
+    'the today-note census still tallies day-facts rows differently from full-notes rows');
+  assert.strictEqual(on.receipt.todayNoteNotRequested, 0, 'a full-notes census invented not-requested rows');
+}
+
+/* The idle-notes backfill drains PULLED-DAY notes, which are mandatory in both
+ * settled modes.  Only an account that never made the choice may close it. */
+function notesIdleGateCases() {
+  const gate = balancedFunction(SCHED, 'function niGate(force)', 'idle-notes gate');
+  function gateCtx(pref, over) {
+    const base = {
+      niLoad() {}, _ni: { stopped: false, reading: false, rows: [{ s: 'queued' }], lastActivityAt: 0 },
+      safe: engineSafe, isFn: v => typeof v === 'function',
+      window: { __mlsVisitNotesPref: pref },
+      niNextRow: () => ({ s: 'queued' }), niIdleMs: () => 10 * 60 * 1000, NI_IDLE_MS: 20000,
+      pullRunning: false, tnAthenaFree: () => true,
+      document: { getElementById: () => null },
+      _tnDefer: { running: false, queue: [] }, resumeBusyElsewhere: () => false,
+      Date, Number, String
+    };
+    Object.assign(base, over || {});
+    const ctx = vm.createContext(base);
+    vm.runInContext(gate + '\nthis.__gate = niGate;', ctx, { filename: 'idle-notes-gate' });
+    return ctx;
+  }
+
+  const offGate = gateCtx(choiceStub('off', true)).__gate(false);
+  assert.strictEqual(offGate.open, true,
+    'the idle-notes backfill is still closed for a settled-OFF account - day-facts notes would never drain (reason: ' + offGate.reason + ')');
+  assert.strictEqual(gateCtx(choiceStub('on', true)).__gate(false).open, true,
+    'the idle-notes backfill is closed for a settled-ON account');
+
+  [[choiceStub('unset', true), 'an account that never chose'],
+   [choiceStub('off', false), 'an UNSETTLED namespace holding OFF'],
+   [choiceStub('on', false), 'an UNSETTLED namespace holding ON'],
+   [null, 'a missing resolver'],
+   [{ read() { throw new Error('resolver exploded'); } }, 'a throwing resolver']
+  ].forEach(function (pair) {
+    const g = gateCtx(pair[0]).__gate(true);
+    assert.strictEqual(g.open, false, pair[1] + ' opened the idle-notes backfill');
+    assert.strictEqual(g.reason, 'visit-notes-unchosen',
+      pair[1] + ' was refused with the wrong vocabulary: ' + g.reason);
+  });
+
+  /* `force` (the Read now button) waives idleness and backoff, NOTHING else. */
+  assert.strictEqual(gateCtx(choiceStub('unset', true)).__gate(true).reason, 'visit-notes-unchosen',
+    'the Read now button forced past the unchosen-preference refusal');
+  assert.strictEqual(gateCtx(choiceStub('off', true), { _ni: { stopped: true, reading: false, rows: [], lastActivityAt: 0 } }).__gate(true).reason, 'stopped',
+    'a stopped idle lane was re-opened by the day-facts admission');
+  assert.strictEqual(gateCtx(choiceStub('off', true), { pullRunning: true }).__gate(true).reason, 'pull-running',
+    'day-facts admission let the idle lane drive Athena while a pull was running');
+  assert.strictEqual(gateCtx(choiceStub('off', true), { _ni: { stopped: false, reading: true, rows: [], lastActivityAt: 0 } }).__gate(true).reason, 'reading',
+    'day-facts admission let a second idle read start while one was in flight');
+}
+
+/* dayfacts-1.0.1 in 1p-mls-connect.js: OFF is no longer an "intentionally
+ * skipped history", and the legacy full-crawl helper refuses HISTORICAL bodies
+ * only - it may never claim that OFF opens no charts. */
+function connectDayFactsVocabularyCases() {
+  const mapper = blockBetween(CONNECT,
+    '      var historyIntentionallySkipped = hr.skipped === true ||', '      var recon = pullReconLine(r);', 'day completion mapper');
+  assert(!/visitNotesRequested/.test(mapper.split('var histLine')[0]),
+    'the day-completion mapper still treats visitNotesRequested === false as an intentionally-skipped history');
+  /* the shipped string escapes its apostrophe as ’ in source */
+  assert(CONNECT.includes('Historical visit notes were skipped by choice (Full visit notes is off); chart facts and each day\\u2019s own note were read.'),
+    'the OFF day-completion message no longer reports the chart-facts and own-day-note work that did happen');
+  assert(/pulled-day note/.test(CONNECT), 'the day-completion message lost its unread pulled-day note account');
+
+  const legacy = blockBetween(CONNECT,
+    '        /* dayfacts-1.0.1: this legacy helper does exactly one thing - the FULL',
+    '        return (function run(list, isRetry) {', 'legacy full-crawl helper');
+  assert(/reason: 'historical-bodies-not-requested'/.test(legacy),
+    'the legacy full-crawl helper no longer scopes its refusal to HISTORICAL bodies');
+  assert(!/visit-notes-off/.test(legacy),
+    'the legacy full-crawl helper still carries the revoked visit-notes-off vocabulary');
+  assert(!/no patient charts were opened/i.test(legacy),
+    'the legacy full-crawl helper still claims OFF opens no charts - the guarded day-facts pull opens every one');
+  assert(/did not crawl historical encounter bodies/.test(legacy),
+    'the legacy full-crawl refusal no longer states what it actually declined');
 }
 
 /* vnoff-1.0.0: the retired hero body in ScribeFlow's pullScheduleViaAssist is
@@ -343,9 +654,22 @@ function legacyHeroCase() {
   const crawlAt = hero.indexOf('_pullAllHistories(appts)');
   assert(importAt >= 0 && gateAt > importAt && crawlAt > gateAt,
     'legacy hero crawls histories regardless of the admitted OFF choice (the __pullVisitBodies===true gate is missing or does not guard the crawl)');
-  assert(/Full visit notes is off — no patient charts were opened/.test(hero),
-    'legacy hero OFF completion does not state the schedule-only outcome');
+  assert(/through the legacy reader — this fallback cannot read chart facts or day notes/.test(hero),
+    'legacy hero OFF completion states its own limitation honestly (dayfacts-1.0.1: the fallback cannot do the mandatory floor, and must say so instead of describing OFF as chartless)');
 }
+
+/* ===== KNOWN ENGINE GAP (reported, deliberately NOT asserted here) =========
+ * dayfacts-1.0.1 opened niGate for a settled-OFF account, but the two feeds
+ * that fill the retry queues it drains are still hard-gated on the checkbox:
+ *   1p-feat_mls_schedimport_exact.js:5873  tnDeferRow      -> receipt.visitNotesRequested !== true -> return false
+ *   1p-feat_mls_schedimport_exact.js:7064  niSyncFromReceipt -> receipt.visitNotesRequested !== true -> return 0
+ * Those are the ONLY call sites that enqueue into _tnDefer and _ni, so in
+ * day-facts mode (receipt.visitNotesRequested === false) a pulled-day note that
+ * failed with a deferrable reason is stranded outside BOTH queues - the exact
+ * nih-1.0.0 defect class, now reintroduced for the whole OFF mode.  Asserting
+ * the intended behaviour here would be a red suite against unshipped bytes, so
+ * it goes back as a finding instead.  Delete this block and add the pins the
+ * moment those two guards learn about day-facts. */
 
 (async () => {
   await resolverCases();
@@ -353,8 +677,13 @@ function legacyHeroCase() {
   legacyHeroCase();
   slowYearChoiceCase();
   receiptCases();
+  await dayFactsAdmissionCases();
+  dayFactsEngineLaneCases();
+  todayNoteCensusCases();
+  notesIdleGateCases();
+  connectDayFactsVocabularyCases();
   await singlePatientCases();
-  console.log('PASS full-visit-notes-choice-gates-runtime: resolver first-use cases, day/calendar/legacy/year gates, legacy-hero OFF stays schedule-only, local+relay receipts, and single-patient honest partial');
+  console.log('PASS full-visit-notes-choice-gates-runtime: resolver first-use cases, day/calendar/legacy/year gates, legacy-hero OFF stays schedule-only, local+relay receipts, day-facts onlyDate admission (counted), today-note census in both modes, idle-notes gate vocabulary, connect day-facts wording, and single-patient honest partial');
 })().catch(error => {
   console.error('FAIL full-visit-notes-choice-gates-runtime:', error && error.stack || error);
   process.exitCode = 1;

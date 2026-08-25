@@ -20,6 +20,52 @@
  *
  * Fake extension, fake backend, frozen clock, synthetic names/DOB/MRN only.
  * No network, no Athena, no PHI, no login.
+ *
+ * ===== dayfacts-1.0.1 (superseding owner DAY contract, 2026-08-25) ==========
+ * WHY THE OLD PINS MOVED. Until this contract, "Full visit notes OFF" meant
+ * SCHEDULE-ONLY: the month lane forced includeHistory=false, no chart was ever
+ * opened on an OFF month, and every readable day settled with the importer's
+ * `complete-schedule-only` verdict. This suite pinned exactly that - three
+ * assertions demanded ZERO chart opens across a whole OFF month, and one
+ * demanded the `complete-schedule-only` reason on the durable day record.
+ *
+ * The owner's superseding ruling makes the checkbox mean "ALL historical visit
+ * notes", never "whether any chart opens". So on an OFF month the per-patient
+ * batch now RUNS in day-facts mode: every exact scheduled row gets its
+ * identity-verified chart open and chart-facts save, historical visit
+ * traversal is skipped (visitsSkipped), and the durable verdict is plain
+ * `complete`. pullUnlocked/pullMonth no longer force includeHistory=false on
+ * OFF, so the range engine's own `includeHistory: true` now reaches the day.
+ *
+ * Every old pin below was REPLACED, never deleted, by its new-contract
+ * equivalent: "no chart on an OFF month" became "exactly one chart open per
+ * scheduled row and NONE on a verified-empty or future day"; the
+ * `complete-schedule-only` verdict became `complete` plus a positive pin on the
+ * day-facts receipt (visitNotesMode 'day-facts', chartFactsRequired true,
+ * allVisitBodiesRequested false, insuranceAttempted 0 / 'reader-not-shipped');
+ * "OFF opened a visit-note body" became a measured ZERO unscoped all-visits
+ * reads. The unchosen preference is pinned fail-closed at both doors.
+ *
+ * ===== dayfacts-1.0.1: THE LAST CLAUSE CLOSED ==============================
+ * Under 1.0.0 one contract clause was NOT met by the shipped engine and this
+ * suite pinned the measured zero: the pulled-day encounter-note attempt was
+ * fused off at both lanes, and tnAggregate short-circuited the whole day-note
+ * tally to `todayNoteNotRequested = rows` whenever the checkbox was off.
+ *
+ * 1.0.1 ships it. Both lanes are live - the inline fold-in and the tn/onlyDate
+ * tail catch-up - and the short-circuit is gone. So those gap pins INVERT into
+ * the contract: a day-facts row now has to PROVE its pulled-day note attempt,
+ * scoped to the day being pulled, one per scheduled row, on exactly the rows
+ * whose charts were opened, with the receipt saying todayNoteRead = rows and
+ * todayNoteNotRequested = 0. `not-requested` survives at exactly ONE door -
+ * blocked-unchosen - and is pinned there so it cannot creep back as a default.
+ *
+ * Because "3 notes were attempted" is only evidence if this fixture can also
+ * produce zero, testPreDayfactsDayNoteFusesReadNoNote() boots the SAME harness
+ * over the importer with those two switch bytes flipped back and measures the
+ * old gap whole (0 onlyDate reads, todayNote null on every row,
+ * chartOpens.dayNote 0) while the day-facts CHART pass is untouched - which is
+ * what proves the day-note pins measure those two lanes and nothing else.
  * ========================================================================== */
 
 const assert = require('assert');
@@ -29,6 +75,9 @@ const { makeMonthHarness } = require('./1p-pull-harness.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const RANGE = fs.readFileSync(path.join(ROOT, '1p-feat_mls_rangejobs.js'), 'utf8');
+/* the exact importer bytes makeMonthHarness boots, so a claim about the
+   day-facts lane is measured against the source that produced the run. */
+const IMPORTER = fs.readFileSync(path.join(ROOT, '1p-feat_mls_schedimport_exact.js'), 'utf8');
 
 const PROVIDER = { mode: 'selected', id: '7', stableKey: 'backend:7' };
 let checks = 0;
@@ -65,6 +114,21 @@ function tapMonth(h, sink) {
     sink.calls.push(call);
     return real.call(h.rt.__mlsSI, opts).then(result => { sink.results.push(result); return result; });
   };
+}
+/* dayfacts-1.0.0 helpers -------------------------------------------------- */
+/* how many times the engine posted a bridge verb. `mlsAppReadAllVisits` is the
+   UNSCOPED all-visit-bodies read - the one thing day-facts mode must never
+   issue - so counting it is the honest measure of "historical bodies skipped",
+   far stronger than counting a harness-side callback. */
+function postedCount(h, type) { return h.posted.filter(m => m && m.type === type).length; }
+/* the real importer's per-day history receipt, pulled off the tapped month
+   result rather than reconstructed by the test. */
+function historyReceiptFor(tap, date) {
+  for (const result of tap.results) {
+    const day = (result.days || []).find(d => d && d.date === date);
+    if (day && day.receipt && day.receipt.historyReceipt) return day.receipt.historyReceipt;
+  }
+  return null;
 }
 
 /* ======================================================================== 0 ==
@@ -126,7 +190,14 @@ async function testWholeMonthReplay() {
   const byDate = Object.fromEntries(states.map(s => [s.date, s]));
   eq(states.filter(s => s.status === 'complete').length, 26, 'the month did not durably complete 26 days');
   eq(byDate['2026-02-03'].status, 'complete', 'a clean 3-row day did not checkpoint complete');
-  eq(byDate['2026-02-03'].reason, 'complete-schedule-only', 'a schedule-only day with appointments lost its verdict');
+  /* dayfacts-1.0.0: OFF is no longer schedule-only, so the importer's
+     `complete-schedule-only` verdict is gone from this lane. The day is a
+     FULL day-facts day and settles on the plain `complete` verdict; the
+     abbreviation lives on the receipt, not in a second completion code. */
+  eq(byDate['2026-02-03'].reason, 'complete',
+    'a day-facts day with appointments lost its verdict (got ' + byDate['2026-02-03'].reason + ')');
+  ok(byDate['2026-02-03'].reason !== 'complete-schedule-only',
+    'the revoked schedule-only OFF verdict came back - dayfacts-1.0.0 removed it');
   eq(byDate['2026-02-01'].reason, 'provider-empty', 'a verified-empty day is indistinguishable from a day with patients');
   /* three genuine attempts, then the day is SETTLED as needs-attention with
      its own cause - never retried forever, never silently dropped */
@@ -157,32 +228,165 @@ async function testWholeMonthReplay() {
 
   /* --- the store: no duplicate appointment, one row per seeded slot ----- */
   const census = h.census();
-  eq(census.rows, 3, 'the schedule-only month did not import the one readable day');
+  eq(census.rows, 3, 'the day-facts month did not import the one readable day');
   eq(census.uniqueIds, 3, 'the backend holds duplicate appointment ids');
   eq(census.uniqueAppointments, 3, 'the same Athena appointment was stored twice');
+  /* dayfacts-1.0.0: an OFF month is no longer allowed to leave the chart
+     cards empty. The store census is the only honest proof the facts LANDED
+     rather than the chart merely being opened. */
+  eq(census.patientsWithContent, 3, 'day-facts opened charts but stored no chart facts for the day\'s rows');
 
   /* --- empty days are not paid for: ed-1.0.0 over a whole month --------- */
   const emptyDays = h.gotoDates.filter(d => !['2026-02-03', '2026-02-10', '2026-02-17'].includes(d));
   eq(emptyDays.length, 25, 'the month did not visit each verified-empty day exactly once');
   eq(new Set(emptyDays).size, 25, 'a verified-empty day was navigated more than once');
   eq(h.gotoDates.filter(d => d === '2026-02-17').length, 3, 'the failing day was not retried exactly to the cap');
+
+  /* ===== dayfacts-1.0.0: OFF is an ABBREVIATED CHART PASS, not a no-op ===
+     The pin that stood here demanded ZERO chart opens across the whole OFF
+     month. The superseding contract inverts it: every exact scheduled row on
+     a readable day gets its identity-verified chart open and facts save. What
+     must STILL be zero is a chart on a day Athena verified empty (no row
+     exists to open) and on a day whose schedule never read (no verified row
+     to bind an open to) - so the empty-day economy this suite exists to
+     protect is measured, not abandoned. */
+  eq(h.chartCalls.length, 3,
+    'day-facts did not open exactly one chart per scheduled row (got ' + h.chartCalls.length + ')');
+  eq(h.chartCalls.filter(c => c.day === '2026-02-03').length, 3,
+    'the readable 3-row day did not get a chart open for every row');
+  eq(new Set(h.chartCalls.map(c => c.patientId)).size, 3,
+    'day-facts opened the same patient chart more than once on one day');
   eq(h.chartCalls.filter(c => !['2026-02-03', '2026-02-10'].includes(c.day)).length, 0,
     'an Athena chart was opened on a verified-empty day');
-  eq(h.noteCalls.filter(c => !['2026-02-03', '2026-02-10'].includes(c.onlyDate)).length, 0,
-    'a day-note was read on a verified-empty day');
+  eq(h.chartCalls.filter(c => c.day === '2026-02-10').length, 0,
+    'a chart was opened on a day whose schedule never read - there is no verified row to bind it to');
+  /* the other half of the contract: HISTORICAL bodies are skipped. The
+     unscoped all-visits verb is the only way to read them, so its count over
+     the whole month is the measurement - not a harness-side callback. */
+  eq(postedCount(h, 'mlsAppReadAllVisits'), 0, 'day-facts mode read historical visit bodies');
+  const dayFacts = historyReceiptFor(tap, '2026-02-03');
+  ok(dayFacts, 'the readable day carried no history receipt - the day-facts batch never ran');
+  eq(dayFacts.visitNotesMode, 'day-facts',
+    'the OFF receipt does not declare day-facts mode (got ' + dayFacts.visitNotesMode + ')');
+  eq(dayFacts.chartFactsRequired, true, 'the always-true mandatory chart-facts floor is not on the receipt');
+  eq(dayFacts.allVisitBodiesRequested, false, 'the OFF receipt claims all visit bodies were requested');
+  eq(dayFacts.insuranceAttempted, 0, 'the receipt claims an insurance read that has no shipped reader');
+  eq(dayFacts.insuranceReason, 'reader-not-shipped',
+    'the insurance placeholder is not honest (got ' + dayFacts.insuranceReason + ')');
+  eq(dayFacts.patients.length, 3, 'the day-facts batch did not process every scheduled row');
+  eq(dayFacts.patients.filter(p => p.visitsSkipped === true).length, 3,
+    'a day-facts row traversed historical visits instead of skipping them');
+  eq(Number(dayFacts.chartOpens && dayFacts.chartOpens.history), 3,
+    'the receipt cannot say how many charts day-facts opened');
+
+  /* ===== dayfacts-1.0.1: THE PULLED-DAY NOTE IS MANDATORY, AND MEASURED ===
+     This is the clause that stood here under 1.0.0 as a MEASURED ENGINE GAP.
+     The importer fused both day-note lanes off and tnAggregate zeroed the
+     whole tally for an OFF pull, so the suite pinned 0 reads / 0 todayNoteRead
+     / todayNoteNotRequested = rows, together with the exact fuse bytes.
+     1.0.1 ships the attempt: both lanes are live -
+       :5615  var pulledDayNoteLaneEnabled = true;   (inline fold-in)
+       :6172  var pulledDayNoteTailEnabled = true;   (tail catch-up)
+     - and the checkbox short-circuit is gone. So every one of those pins is
+     INVERTED into the contract rather than deleted: exactly one onlyDate read
+     per scheduled row, SCOPED to the day being pulled (an unscoped read is the
+     whole chart, which is the read the checkbox governs), on exactly the rows
+     whose charts day-facts opened, and nothing anywhere else in the month.
+     testPreDayfactsDayNoteFusesReadNoNote() is the causal control that proves
+     this fixture can still produce the old zero. */
+  eq(h.noteCalls.length, 3,
+    'day-facts did not attempt exactly one pulled-day note per scheduled row (got ' + h.noteCalls.length + ')');
+  eq(h.noteCalls.filter(c => c.onlyDate === '2026-02-03').length, 3,
+    'a pulled-day note was not SCOPED to the day being pulled - an unscoped read is the whole chart');
+  eq(new Set(h.noteCalls.map(c => c.patientId)).size, 3,
+    'day-facts read the same row\'s pulled-day note more than once');
+  eq(Array.from(new Set(h.noteCalls.map(c => c.patientId))).sort().join(','),
+     Array.from(new Set(h.chartCalls.map(c => c.patientId))).sort().join(','),
+    'the rows that got a pulled-day note are not the rows whose charts day-facts opened');
+  /* the fuse bytes, pinned from the other side: the moment either lane is
+     re-fused this fails and names which one, instead of the counts above
+     silently going quiet. */
+  ok(IMPORTER.includes('var pulledDayNoteLaneEnabled = true;'),
+    'the inline day-note fold-in was re-fused off - the mandatory pulled-day note is dead again');
+  ok(IMPORTER.includes('var pulledDayNoteTailEnabled = true;'),
+    'the tn/onlyDate tail catch-up was re-fused off - rows the inline lane misses get no note');
+  ok(IMPORTER.indexOf('var pulledDayNoteLaneEnabled = false;') < 0 &&
+     IMPORTER.indexOf('var pulledDayNoteTailEnabled = false;') < 0,
+    'a revoked day-note fuse byte came back into the shipped importer');
+  /* the receipt has to agree with the wire, or a surface can report a note
+     lane that never ran (and did, under 1.0.0). */
+  eq(Number(dayFacts.todayNoteRead || 0), 3,
+    'the receipt cannot say it read the pulled-day note for every scheduled row (got ' + dayFacts.todayNoteRead + ')');
+  eq(Number(dayFacts.todayNoteFailures || 0), 0, 'a day-facts row failed its pulled-day note');
+  eq(Number(dayFacts.todayNoteNotRequested || 0), 0,
+    'the revoked checkbox short-circuit is back - an OFF pull is declaring its pulled-day notes not-requested (got ' + dayFacts.todayNoteNotRequested + ')');
+  eq(dayFacts.patients.filter(p => p && p.todayNote === true).length, 3,
+    'a day-facts row did not stamp todayNote true for the day it pulled');
+  eq(dayFacts.patients.filter(p => p && p.todayNote === false).length, 0,
+    'a day-facts row stamped todayNote false - the pulled-day note is mandatory now');
+  eq(Number(dayFacts.chartOpens && dayFacts.chartOpens.dayNote), 3,
+    'the receipt cannot say how many pulled-day notes day-facts opened');
+  eq(h.noteCalls.filter(c => !['2026-02-03', '2026-02-10'].includes(String(c.onlyDate))).length, 0,
+    'a day-note was read on a verified-empty day, or unscoped');
+
+  /* --- dayfacts-1.0.1 vocabulary at the RANGE seam ---------------------- */
+  /* the month envelope is what the range engine itself consumes, so this is
+     the level a vocabulary regression would actually reach the doctor through.
+     `not-requested` is no longer a mode an OFF pull may report at ANY level,
+     so the WHOLE envelope is scanned rather than the one field. */
+  const monthEnvelope = tap.results[0];
+  eq(monthEnvelope.visitNotesMode, 'day-facts',
+    'the month result envelope does not report day-facts mode (got ' + monthEnvelope.visitNotesMode + ')');
+  eq(monthEnvelope.visitNotesRequested, false, 'the OFF month envelope claims full visit notes were requested');
+  const envelopeJson = JSON.stringify(monthEnvelope);
+  ok(envelopeJson.indexOf('not-requested') < 0,
+    'the revoked not-requested mode is still somewhere in the month envelope an OFF pull hands back');
+  ok(envelopeJson.indexOf('visit-notes-off') < 0, 'the revoked visit-notes-off vocabulary is still in the month envelope');
+  ok(envelopeJson.indexOf('full-notes-off') < 0, 'the revoked full-notes-off vocabulary is still in the month envelope');
   ok(elapsed < 45000, 'the 28-day replay took ' + elapsed + ' ms - the empty-day path is no longer free');
 
   /* ================================ RESUME: only the failures re-run ==== */
   h.scheduleErrorDays.clear();
   h.incompleteDays.clear();
   const navBefore = h.gotoDates.length;
+  const chartsBefore = h.chartCalls.length;
+  const notesBefore = h.noteCalls.length;
   const resumed = await range.resume({ onStatus: () => {} });
   const revisited = h.gotoDates.slice(navBefore);
 
   eq(resumed.complete, true, 'the month did not finish after its two failures recovered');
   eq(revisited.length, 2, 'resume re-visited ' + revisited.length + ' days; only the 2 failed ones were unproved');
   eq(revisited.sort().join(','), '2026-02-10,2026-02-17', 'resume re-pulled a day it had already verified');
-  eq(h.chartCalls.length, 0, 'Full Notes OFF opened a patient chart during the resumed schedule-only pull');
+  /* dayfacts-1.0.0 replaces "the resumed OFF pull opened no chart at all"
+     with the precise claim: the resume opens charts for exactly the rows of
+     the day it re-pulled, and for nothing it had already proved. */
+  const resumedCharts = h.chartCalls.slice(chartsBefore);
+  eq(resumedCharts.length, 4,
+    'the resumed day-facts pull did not open one chart per row of the recovered 4-row day (got ' + resumedCharts.length + ')');
+  eq(resumedCharts.filter(c => c.day === '2026-02-10').length, 4,
+    'the resume opened a chart on a day other than the one it re-pulled');
+  eq(h.chartCalls.filter(c => c.day === '2026-02-03').length, 3,
+    'the resume re-opened charts on a day it had already proved complete');
+  eq(postedCount(h, 'mlsAppReadAllVisits'), 0, 'the resumed day-facts pull read historical visit bodies');
+  /* dayfacts-1.0.1: the pulled-day note follows the RECOVERED day, not the
+     day the pull was originally started on. A resume that re-read notes for
+     an already-proved day would be paying twice for the same chart. */
+  const resumedNotes = h.noteCalls.slice(notesBefore);
+  eq(resumedNotes.length, 4,
+    'the resumed day-facts pull did not attempt one pulled-day note per row of the recovered 4-row day (got ' + resumedNotes.length + ')');
+  eq(resumedNotes.filter(c => c.onlyDate === '2026-02-10').length, 4,
+    'the resume scoped a pulled-day note to a day other than the one it re-pulled');
+  eq(new Set(resumedNotes.map(c => c.patientId)).size, 4,
+    'the resume read one row\'s pulled-day note twice instead of covering all four rows');
+  eq(h.noteCalls.filter(c => c.onlyDate === '2026-02-03').length, 3,
+    'the resume re-read pulled-day notes on a day it had already proved complete');
+  const recoveredReceipt = historyReceiptFor(tap, '2026-02-10');
+  ok(recoveredReceipt, 'the recovered day carried no history receipt - its day-facts batch never ran');
+  eq(recoveredReceipt.visitNotesMode, 'day-facts', 'the recovered day is not in day-facts mode');
+  eq(Number(recoveredReceipt.todayNoteRead || 0), 4,
+    'the recovered day\'s receipt cannot say it read all four pulled-day notes');
+  eq(Number(recoveredReceipt.todayNoteNotRequested || 0), 0,
+    'the recovered day declared its pulled-day notes not-requested');
   const resumedManifest = h.manifest();
   eq(resumedManifest.status, 'complete', 'the recovered month did not reach a terminal complete state');
   eq(resumedManifest.summary.complete, 28, 'the receipt did not account for every day after recovery');
@@ -220,9 +424,9 @@ async function testWholeMonthReplay() {
  * from an unsettled Athena grid.
  * ========================================================================== */
 async function testPreFixFlattensEveryFailureReason() {
-  /* This causal control intentionally opts into Full Notes so the chart-loss
-     fixture remains a real history failure; the main replay above is the OFF
-     schedule-only contract. */
+  /* This causal control intentionally opts into Full Notes (dayfacts-1.0.0
+     visitNotesMode 'full') so the chart-loss fixture remains a real HISTORY
+     failure; the main replay above is the OFF day-facts contract. */
   const h = makeMonthHarness({ today: '2026-03-15', visitNotesOn: true, chartCoverage: true, identityEcho: true });
   h.seedDay('2026-02-10', 4);
   h.chartFail.add('2026-02-10|syn-01');
@@ -237,6 +441,234 @@ async function testPreFixFlattensEveryFailureReason() {
   eq(days['2026-02-10'].reason, days['2026-02-17'].reason,
     'the pre-fix control already distinguished the two causes - the fix proves nothing');
   preFix.revert();
+}
+
+/* ======================================================================== 1c =
+ * dayfacts-1.0.0, the third state: UNCHOSEN.
+ *
+ * The contract has three states, not two, and the third is the one that can
+ * quietly open charts on an account that never made the choice. OFF is now an
+ * abbreviated chart pass, so "we did not read bodies" is no longer a proxy for
+ * "we did not touch the chart" - the fail-closed door has to be measured on
+ * its own. Two doors are reachable from this seam and both are pinned:
+ *   - the RANGE door, where a caller supplies no explicit choice at all;
+ *   - the BATCH door (__mlsSI._runHistoryBatch), the compatibility/test seam
+ *     that can be reached without the public admission gate.
+ * The suite also pins the boundary from the other side: a SETTLED-off
+ * preference must NOT be blocked - it must run day-facts - because the old
+ * `visit-notes-off` schedule-only no-op was revoked with the contract and must
+ * never be reasserted as a "safe" default.
+ * ========================================================================== */
+function syntheticHistoryTargets(h, date) {
+  return h.rowDays.get(date).map(row => ({
+    patientId: row.patient_external_id, name: row.name, dob: row.dob, mrn: row.mrn,
+    athenaId: row.mrn, appointmentId: row.athenaAppointmentId, scheduleDate: row.date,
+    _mlsTargetPatientId: row.patient_external_id, patient_external_id: row.patient_external_id,
+    date: row.date, d: row.date
+  }));
+}
+async function testUnchosenPreferenceBlocksEveryRead() {
+  /* ---- SETTLED OFF is admitted and RUNS (the revoked no-op stays dead) --- */
+  const settled = makeMonthHarness({ today: '2026-03-15' });
+  settled.seedDay('2026-03-09', 1);
+  const offReceipt = await settled.api._runHistoryBatch(
+    syntheticHistoryTargets(settled, '2026-03-09'), [], () => {}, {});
+  ok(offReceipt.reason !== 'visit-notes-off',
+    'the revoked schedule-only visit-notes-off no-op came back at the batch door');
+  ok(offReceipt.skipped !== true, 'a settled-OFF batch skipped itself instead of running day-facts');
+  eq(offReceipt.visitNotesMode, 'day-facts',
+    'a settled-OFF batch is not in day-facts mode (got ' + offReceipt.visitNotesMode + ')');
+  eq(offReceipt.requested, 1, 'a settled-OFF batch did not request its one row');
+  eq(offReceipt.processed, 1, 'a settled-OFF batch did not process its one row');
+  eq(settled.chartCalls.length, 1, 'a settled-OFF batch opened no chart - the mandatory floor is gone');
+  eq(settled.posted.filter(m => m && m.type === 'mlsAppReadAllVisits').length, 0,
+    'a settled-OFF batch read historical visit bodies');
+  /* dayfacts-1.0.1: a SETTLED-off account gets the pulled-day note too - that
+     is the whole point of admitting it to runForPatient({onlyDate}). */
+  eq(settled.noteCalls.length, 1, 'a settled-OFF batch did not attempt the pulled-day note for its one row');
+  eq(settled.noteCalls[0].onlyDate, '2026-03-09',
+    'the settled-OFF batch read an unscoped note instead of the pulled day (got ' + settled.noteCalls[0].onlyDate + ')');
+  eq(Number(offReceipt.todayNoteRead || 0), 1, 'the settled-OFF receipt cannot say it read the pulled-day note');
+  eq(Number(offReceipt.todayNoteNotRequested || 0), 0,
+    'a settled-OFF batch declared its pulled-day note not-requested - the revoked short-circuit is back');
+  eq(Number(offReceipt.chartOpens && offReceipt.chartOpens.dayNote), 1,
+    'the settled-OFF receipt cannot say it opened the chart for the pulled-day note');
+
+  /* ---- UNSET: zero reads, at both doors -------------------------------- */
+  const h = makeMonthHarness({ today: '2026-03-15' });
+  h.seedDay('2026-03-09', 3);
+  /* the harness's own pref always answers settled; an unchosen account is the
+     state the engine must fail closed on, so drive it explicitly. The importer
+     re-reads window.__mlsVisitNotesPref on every call, so this is the real
+     seam and not a frozen boot value. */
+  h.rt.__mlsVisitNotesPref = {
+    read: () => ({ state: 'unset', on: false, settled: false }),
+    ensureChosenForBulkPull: () => Promise.resolve({ ok: false, reason: 'choice-cancelled' }),
+    write: () => true, isPrefKey: () => false
+  };
+
+  const blocked = await h.api._runHistoryBatch(syntheticHistoryTargets(h, '2026-03-09'), [], () => {}, {});
+  eq(blocked.reason, 'visit-notes-unchosen',
+    'an unchosen account did not get the blocked receipt reason (got ' + blocked.reason + ')');
+  eq(blocked.visitNotesMode, 'blocked-unchosen',
+    'the blocked receipt does not name its mode (got ' + blocked.visitNotesMode + ')');
+  eq(blocked.requested, 0, 'a blocked batch still claims it requested rows');
+  eq(blocked.processed, 0, 'a blocked batch still claims it processed rows');
+  eq(blocked.historyRequested, false, 'a blocked batch still claims history was requested');
+  eq(blocked.failures, 0, 'the fail-closed refusal was reported as a failure');
+  eq(blocked.patients.length, 0, 'a blocked batch produced per-patient rows');
+  eq(blocked.retry.length, 0, 'a blocked batch queued a retry for a choice only the user can make');
+  eq(blocked.notRequestedRows, 3, 'the blocked receipt cannot say how many rows it declined to read');
+  /* dayfacts-1.0.1: blocked-unchosen is the ONE surviving not-requested door.
+     Pinned positively here so the vocabulary cannot quietly return as a
+     default on any OTHER path - where the suite pins it dead. */
+  eq(Number(blocked.todayNoteNotRequested || 0), 3,
+    'the blocked-unchosen door is the one place a not-requested day-note count survives, and it lost the count');
+  eq(Number(blocked.todayNoteRead || 0), 0, 'a blocked batch claims it read a pulled-day note');
+  eq(h.chartCalls.length, 0, 'an unchosen account had a patient chart opened');
+  eq(h.noteCalls.length, 0, 'an unchosen account had a visit note read');
+  eq(h.gotoDates.length, 0, 'an unchosen account had Athena navigated');
+
+  const range = h.installRangeJobs();
+  const refused = await range.startMonth('2026-03', { provider: PROVIDER, onStatus: () => {} });
+  eq(refused.ok, false, 'a range pull started without a settled full-visit-notes choice');
+  eq(refused.status, 'refused', 'the unchosen range start did not refuse (got ' + refused.status + ')');
+  eq(refused.gate, 'visit-notes-choice', 'the unchosen refusal does not name the gate that stopped it');
+  eq(refused.reason, 'choice-cancelled', 'the unchosen refusal lost its cause (got ' + refused.reason + ')');
+  eq(h.manifest(), null, 'a refused unchosen range start still wrote a durable job');
+  eq(h.gotoDates.length, 0, 'a refused unchosen range start still navigated Athena');
+  eq(h.chartCalls.length, 0, 'a refused unchosen range start still opened a chart');
+  eq(h.locksHeld().length, 0, 'a refused unchosen range start left a Web Lock held');
+
+  /* the BOUNDARY, stated from the other side: fail-closed is about an
+     UNSTATED choice. A caller that supplies the boolean itself has made the
+     choice, and the same unchosen account then runs a normal day-facts month.
+     Pinned so neither half can drift silently. */
+  const admitted = await range.startMonth('2026-03', { provider: PROVIDER, pullVisitBodies: false, onStatus: () => {} });
+  eq(admitted.complete, true, 'an explicit caller choice was refused as unchosen');
+  eq(h.chartCalls.length, 3, 'the explicitly-chosen OFF month did not run day-facts (got ' + h.chartCalls.length + ' chart opens)');
+  eq(h.posted.filter(m => m && m.type === 'mlsAppReadAllVisits').length, 0,
+    'the explicitly-chosen OFF month read historical visit bodies');
+  eq(h.noteCalls.length, 3,
+    'the explicitly-chosen OFF month did not attempt one pulled-day note per row (got ' + h.noteCalls.length + ')');
+  eq(h.noteCalls.filter(c => c.onlyDate === '2026-03-09').length, 3,
+    'the explicitly-chosen OFF month read a note outside the day it pulled');
+  range.revert();
+}
+
+/* ======================================================================== 1d =
+ * CAUSAL control for dayfacts-1.0.0 itself.
+ *
+ * "The OFF month opened 3 charts" is only evidence if THIS fixture is capable
+ * of producing zero. It is: the whole change at the month door is one clause -
+ *   pre-fix:  var includeHistory = opts.includeHistory !== false && !monthFullNotesOff;
+ *   shipped:  var includeHistory = opts.includeHistory !== false;
+ * Boot the pre-fix bytes over the SAME harness and the SAME seeded day and the
+ * old contract comes back whole: zero chart opens, zero stored chart facts, and
+ * the `complete-schedule-only` verdict this suite used to pin. So the new pins
+ * measure the ENGINE, not the harness, and the revoked behaviour is on record
+ * rather than remembered.
+ * ========================================================================== */
+const DAYFACTS_MONTH_GATE = 'var includeHistory = opts.includeHistory !== false; /* dayfacts-1.0.0: OFF months still run the mandatory day-facts batch per day */';
+const PRE_DAYFACTS_MONTH_GATE = 'var includeHistory = opts.includeHistory !== false && !monthFullNotesOff;';
+async function testPreDayfactsOffMonthOpenedNoChart() {
+  eq(IMPORTER.split(DAYFACTS_MONTH_GATE).length - 1, 1,
+    'the dayfacts month gate is not exactly one line of the importer - re-anchor this control before trusting it');
+  ok(IMPORTER.indexOf(PRE_DAYFACTS_MONTH_GATE) < 0,
+    'the pre-dayfacts month gate is still in the shipped importer - OFF months are being forced schedule-only again');
+
+  const h = makeMonthHarness({ today: '2026-03-15' });
+  h.seedDay('2026-03-09', 3);
+  h.runInContext(IMPORTER.split(DAYFACTS_MONTH_GATE).join(PRE_DAYFACTS_MONTH_GATE),
+    '1p-feat_mls_schedimport_exact.predayfacts.js');
+  ok(h.rt.__mlsSI && h.rt.__mlsSI !== h.api, 'the pre-fix importer did not replace the shipped one - the control proves nothing');
+  const range = h.installRangeJobs();
+  const preFix = await range.startMonth('2026-03', { provider: PROVIDER, pullVisitBodies: false, onStatus: () => {} });
+
+  eq(preFix.complete, true, 'the pre-fix control did not complete - it failed for some other reason');
+  eq(h.gotoDates.length, 15, 'the pre-fix control did not walk the same 15 elapsed days');
+  eq(h.manifest().months['2026-03'].days['2026-03-09'].reason, 'complete-schedule-only',
+    'the pre-fix control did not reproduce the revoked schedule-only verdict');
+  eq(h.chartCalls.length, 0,
+    'the pre-fix control opened a chart - the fixture cannot produce the old behaviour, so the day-facts pins prove nothing');
+  eq(h.census().rows, 3, 'the pre-fix control did not import the day at all - wrong failure');
+  eq(h.census().patientsWithContent, 0,
+    'the pre-fix control stored chart facts - the OFF no-op it reproduces did not exist');
+  range.revert();
+}
+
+/* ======================================================================== 1f =
+ * CAUSAL control for the dayfacts-1.0.1 DAY-NOTE lanes.
+ *
+ * "The OFF month attempted 3 pulled-day notes" is only evidence if THIS fixture
+ * is capable of producing zero - and under dayfacts-1.0.0 it did, which is why
+ * this suite pinned the zero as a measured gap. The whole difference is two
+ * switch bytes:
+ *   pre-1.0.1:  var pulledDayNoteLaneEnabled = false;   (inline fold-in, :5615)
+ *               var pulledDayNoteTailEnabled = false;   (tail catch-up, :6172)
+ *   shipped:    both true
+ * Boot the RE-FUSED bytes over the SAME harness and the SAME seeded day and the
+ * old gap comes back whole at both doors: zero onlyDate reads, todayNote null
+ * on every row, chartOpens.dayNote 0.
+ *
+ * The control is only clean if it changes NOTHING ELSE, so it also pins what
+ * must stay identical: the day-facts CHART pass still opens 3 charts, still
+ * stores 3 patients' facts, still reports mode 'day-facts' and still settles on
+ * the plain `complete` verdict. That is what makes the day-note counts in the
+ * replay a measurement of those two lanes rather than of the harness.
+ * ========================================================================== */
+const DAYNOTE_INLINE_LANE_ON = 'var pulledDayNoteLaneEnabled = true;';
+const DAYNOTE_TAIL_LANE_ON = 'var pulledDayNoteTailEnabled = true;';
+function refuseDayNoteLanes(src) {
+  return src
+    .split(DAYNOTE_INLINE_LANE_ON).join('var pulledDayNoteLaneEnabled = false;')
+    .split(DAYNOTE_TAIL_LANE_ON).join('var pulledDayNoteTailEnabled = false;');
+}
+async function testPreDayfactsDayNoteFusesReadNoNote() {
+  eq(IMPORTER.split(DAYNOTE_INLINE_LANE_ON).length - 1, 1,
+    'the inline day-note lane switch is not exactly one line of the importer - re-anchor this control before trusting it');
+  eq(IMPORTER.split(DAYNOTE_TAIL_LANE_ON).length - 1, 1,
+    'the day-note tail switch is not exactly one line of the importer - re-anchor this control before trusting it');
+
+  /* ---- the BATCH door: the receipt fields the replay's day pins read ---- */
+  const b = makeMonthHarness({ today: '2026-03-15' });
+  b.seedDay('2026-03-09', 3);
+  b.runInContext(refuseDayNoteLanes(IMPORTER), '1p-feat_mls_schedimport_exact.refused.js');
+  ok(b.rt.__mlsSI && b.rt.__mlsSI !== b.api,
+    'the re-fused importer did not replace the shipped one - the control proves nothing');
+  const fused = await b.rt.__mlsSI._runHistoryBatch(syntheticHistoryTargets(b, '2026-03-09'), [], () => {}, {});
+  eq(b.noteCalls.length, 0,
+    'the re-fused control still attempted a pulled-day note - the fixture cannot produce the old gap, so the day-note pins prove nothing');
+  eq(Number(fused.todayNoteRead || 0), 0, 'the re-fused control reported reading a note it never read');
+  eq(Number(fused.chartOpens && fused.chartOpens.dayNote), 0, 'the re-fused control opened a day-note chart');
+  eq(fused.patients.filter(p => p && p.todayNote === true).length, 0,
+    'the re-fused control stamped todayNote true without a read');
+  /* the checkbox short-circuit is gone in BOTH directions: with no lane to run,
+     the tally is simply empty - it does not resurrect not-requested. */
+  eq(Number(fused.todayNoteNotRequested || 0), 0,
+    'the re-fused control resurrected the revoked not-requested short-circuit');
+  /* ...and the chart pass is untouched, which is what makes it a control */
+  eq(fused.visitNotesMode, 'day-facts', 'the re-fused control left day-facts mode - it changed more than the note lanes');
+  eq(fused.processed, 3, 'the re-fused control stopped processing rows - it is not a clean control');
+  eq(fused.patients.filter(p => p && p.visitsSkipped === true).length, 3,
+    'the re-fused control changed the historical-visit skip - it is not a clean control');
+  eq(b.chartCalls.length, 3, 'the re-fused control changed the day-facts chart pass too - it is not a clean control');
+  eq(Number(fused.chartOpens && fused.chartOpens.history), 3, 'the re-fused control changed the chart-facts opens');
+
+  /* ---- the MONTH door: the same zero through the real range engine ------ */
+  const m = makeMonthHarness({ today: '2026-03-15' });
+  m.seedDay('2026-03-09', 3);
+  m.runInContext(refuseDayNoteLanes(IMPORTER), '1p-feat_mls_schedimport_exact.refused.js');
+  const range = m.installRangeJobs();
+  const preFix = await range.startMonth('2026-03', { provider: PROVIDER, pullVisitBodies: false, onStatus: () => {} });
+  eq(preFix.complete, true, 'the re-fused control did not complete - it failed for some other reason');
+  eq(m.noteCalls.length, 0, 'the re-fused month still attempted a pulled-day note');
+  eq(m.gotoDates.length, 15, 'the re-fused control did not walk the same 15 elapsed days');
+  eq(m.chartCalls.length, 3, 'the re-fused month changed the day-facts chart pass');
+  eq(m.census().patientsWithContent, 3, 'the re-fused month stopped storing chart facts - it is not a clean control');
+  eq(m.manifest().months['2026-03'].days['2026-03-09'].reason, 'complete',
+    'the re-fused month changed the day verdict - the note lanes are not verdict-bearing');
+  range.revert();
 }
 
 /* ======================================================================== 2 ==
@@ -394,7 +826,9 @@ async function testLoginExpiryMidRun() {
 
 /* ======================================================================== 5 ==
  * The current month stops at TODAY: no future day is queued, navigated, or
- * given a chart or day-note read (Full Notes OFF is schedule-only).
+ * given a chart or day-note read. dayfacts-1.0.0 changes only WHAT the elapsed
+ * days do (they now open charts); the future boundary is unchanged and is now
+ * measured on the chart lane too, which is where a regression would show.
  * ========================================================================== */
 async function testNoFutureDayIsTouched() {
   const h = makeMonthHarness({ today: '2026-03-15' });
@@ -410,10 +844,33 @@ async function testNoFutureDayIsTouched() {
   eq(states.filter(s => s.date > '2026-03-15').length, 0, 'a future day was queued');
   eq(h.gotoDates.filter(d => d > '2026-03-15').length, 0, 'Athena was navigated to a future day');
   eq(h.noteCalls.filter(c => String(c.onlyDate) > '2026-03-15').length, 0, 'a day-note was read on a future day');
-  /* Full Notes OFF is explicit schedule/booking-only mode: neither today's
-     appointment nor a past appointment may open a chart or note body. */
-  eq(h.chartCalls.length, 0, 'Full Notes OFF opened a patient chart');
-  eq(h.noteCalls.length, 0, 'Full Notes OFF opened a visit-note body');
+  /* dayfacts-1.0.0: the pin here used to be "OFF opened NO patient chart".
+     OFF is now an abbreviated chart pass, so the honest replacement is
+     exactly-one-open-per-elapsed-scheduled-row, still nothing on a future day
+     and still nothing on a verified-empty day, and still zero VISIT BODIES -
+     the unscoped all-visits verb, which is the read the checkbox governs. */
+  eq(h.chartCalls.length, 4,
+    'day-facts did not open one chart per elapsed scheduled row (got ' + h.chartCalls.length + ')');
+  eq(h.chartCalls.filter(c => c.day === '2026-03-15').length, 2, 'today\'s two rows did not both get a chart open');
+  eq(h.chartCalls.filter(c => c.day === '2026-03-09').length, 2, 'the past clinic day\'s rows did not both get a chart open');
+  eq(h.chartCalls.filter(c => c.day > '2026-03-15').length, 0, 'a chart was opened on a future day');
+  eq(h.chartCalls.filter(c => !['2026-03-09', '2026-03-15'].includes(c.day)).length, 0,
+    'a chart was opened on a verified-empty day');
+  eq(postedCount(h, 'mlsAppReadAllVisits'), 0, 'Full Notes OFF opened a visit-note body');
+  /* dayfacts-1.0.1 (was a measured gap under 1.0.0, see testWholeMonthReplay):
+     one pulled-day onlyDate attempt per ELAPSED scheduled row - including
+     today's own rows, which is the edge the future boundary sits against - and
+     never one scoped to a day that has not happened. */
+  eq(h.noteCalls.length, 4,
+    'day-facts did not attempt one pulled-day note per elapsed scheduled row (got ' + h.noteCalls.length + ')');
+  eq(h.noteCalls.filter(c => c.onlyDate === '2026-03-15').length, 2,
+    'today\'s two rows did not both get a pulled-day note attempt');
+  eq(h.noteCalls.filter(c => c.onlyDate === '2026-03-09').length, 2,
+    'the past clinic day\'s rows did not both get a pulled-day note attempt');
+  eq(new Set(h.noteCalls.map(c => c.patientId + '|' + c.onlyDate)).size, 4,
+    'a row\'s pulled-day note was read twice');
+  eq(h.noteCalls.filter(c => !['2026-03-09', '2026-03-15'].includes(String(c.onlyDate))).length, 0,
+    'a pulled-day note was read unscoped, or on a day with no scheduled row');
 
   /* a future month cannot be started at all */
   await range.cancel();
@@ -591,6 +1048,9 @@ async function main() {
   testAssetIsP1Only();
   await testWholeMonthReplay();
   await testPreFixFlattensEveryFailureReason();
+  await testUnchosenPreferenceBlocksEveryRead();
+  await testPreDayfactsOffMonthOpenedNoChart();
+  await testPreDayfactsDayNoteFusesReadNoNote();
   await testStopAfterDayNineAndResume();
   await testBrowserCloseResumesInANewPage();
   await testLoginExpiryMidRun();
@@ -599,7 +1059,7 @@ async function main() {
   await testYearIsMonthsChained();
   await testTwoSystemicMonthsStopTheRange();
   await testCancelIsCleanAndReleasesTheLease();
-  console.log('PASS 1p-rangejobs-harness-runtime: ' + checks + ' checks - a whole synthetic month and year replayed through the REAL /1p importer under the REAL range engine: every day checkpoints durably with its OWN verdict (empty-day / history-partial / schedule-incomplete, no longer one generic code); a failing day is retried to a cap of 3 and then settles as needs-attention, listed on the receipt with its reason, so one bad day never blocks a later month and never spins forever; February failing does not stop March and never restarts January; two months dying the same systemic way DO stop the range and name that cause; an athenaOne sign-out is classified by the extension\'s bounded session probe into waiting-login without spending a retry (a probe-less unreadable grid still is not); Pause after day 9, a browser close, and a login recovery all resume without re-pulling one proved day; a repeat month pull adds no duplicate appointment or patient; no future day is queued/navigated/note-read while today\'s own note still is; and the queue is clamped to the day the importer itself will accept');
+  console.log('PASS 1p-rangejobs-harness-runtime: ' + checks + ' checks - a whole synthetic month and year replayed through the REAL /1p importer under the REAL range engine. dayfacts-1.0.1 (owner 2026-08-25) is now the pinned contract: Full-visit-notes OFF is an ABBREVIATED CHART PASS, not schedule-only - every exact scheduled row gets one identity-verified chart open and a chart-facts save that the store census proves landed, the day settles on the plain `complete` verdict (the revoked `complete-schedule-only` is pinned dead), the receipt declares visitNotesMode day-facts / chartFactsRequired / allVisitBodiesRequested false / insuranceAttempted 0 reader-not-shipped, every row reports visitsSkipped and ZERO unscoped all-visits reads are issued, and no chart is opened on a verified-empty, unreadable, or future day; a causal control boots the pre-dayfacts month gate over the same fixture and gets the old world back whole (0 charts, 0 stored facts, complete-schedule-only), so those pins measure the engine and not the harness. The clause that stood UNMET under dayfacts-1.0.0 - the pulled-day encounter note - is now SHIPPED and PROVED rather than tolerated: both day-note lanes are un-fused (1p-feat_mls_schedimport_exact.js:5615 inline fold-in, :6172 tn/onlyDate tail catch-up, and the byte pins now fail if either is re-fused), so every scheduled row gets exactly ONE vp.runForPatient read SCOPED to the day being pulled, on exactly the rows whose charts day-facts opened, never twice and never unscoped - 3 on the readable day, 4 more scoped to the RECOVERED day on resume and none re-read on the day already proved, 2+2 across a past clinic day and today with nothing on a future day - and the receipts agree with the wire (todayNoteRead = rows, todayNoteFailures 0, chartOpens.dayNote = rows, todayNote true on every row). The revoked checkbox short-circuit that reported todayNoteNotRequested = rows on an OFF pull is pinned dead everywhere, surviving at exactly ONE door - blocked-unchosen - which is pinned positively so it cannot creep back as a default; the month result envelope reports visitNotesMode day-facts and the WHOLE envelope is scanned for the retired not-requested / visit-notes-off / full-notes-off vocabulary. A second causal control re-fuses those two switch bytes over the same harness and measures the old gap back whole at both the batch and month doors (0 onlyDate reads, todayNote null, chartOpens.dayNote 0) while pinning that the chart pass, the mode, the skip and the verdict are UNCHANGED - so the day-note counts measure those two lanes and not the fixture. An UNCHOSEN preference still fails closed at both doors (blocked-unchosen receipt with zero chart, note and navigation reads at the batch seam, a refused visit-notes-choice gate with no manifest and no navigation at the range door) while a SETTLED-off account runs day-facts and gets its pulled-day note, the revoked visit-notes-off no-op staying dead. The pre-existing range contract is unchanged and still measured: every day checkpoints durably with its OWN verdict (empty-day / history-partial / schedule-incomplete, no longer one generic code); a failing day is retried to a cap of 3 and then settles as needs-attention, listed on the receipt with its reason, so one bad day never blocks a later month and never spins forever; February failing does not stop March and never restarts January; two months dying the same systemic way DO stop the range and name that cause; an athenaOne sign-out is classified by the extension\'s bounded session probe into waiting-login without spending a retry (a probe-less unreadable grid still is not); Pause after day 9, a browser close, and a login recovery all resume without re-pulling one proved day; a repeat month pull adds no duplicate appointment or patient; and the queue is clamped to the day the importer itself will accept');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-rangejobs-harness-runtime did not finish')); process.exit(1); }, 600000);
