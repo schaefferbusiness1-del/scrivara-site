@@ -4197,11 +4197,41 @@
       sourceKeys[sourceSlot] = 1;
     }
     if (!p || !vm || !isFn(vm.addVisit) || !cv) throw new Error("visit-model-unavailable");
+    /* ===== dscope-1.0.0 (scoped-visit-save contract, Codex ff0be547) ======
+       A same-day slice is ADDITIVE EVIDENCE, never an authoritative
+       replacement for the patient's complete Athena history. When the
+       receipt declares an exact-day scope, this saver: validates the scope
+       against the FROZEN target day and every row's own service date
+       (no-substitution), persists through ONE bulk call with reconcile:false,
+       never invokes the destructive full-history reconciliation, and proves
+       only THIS slice's rows - older verified encounters are deliberately
+       outside the census and must survive byte-identical. */
+    var dscopeDate = String((r.receipt && (r.receipt.scopeDate || r.receipt.onlyDate)) || "").slice(0, 10);
+    var dscope = /^\d{4}-\d{2}-\d{2}$/.test(dscopeDate);
+    if (dscope) {
+      var frozenDay = String(target && (target.scheduleDate || target.day) || "").slice(0, 10);
+      if (frozenDay && frozenDay !== dscopeDate) throw new Error("scoped-date-target-mismatch");
+      for (var dv = 0; dv < visits.length; dv++) {
+        if (String(visits[dv] && visits[dv].date || "").slice(0, 10) !== dscopeDate) throw new Error("scoped-visit-date-mismatch");
+      }
+    }
     /* Prefer the established strict name+DOB ingest. MRN-verified charts may
        legitimately lack DOB; in that case retain the same per-row veto and
        write through the one visit model with immutable patient binding. */
     var savedCount = 0, reconcileReceipt = null;
-    if (target.dob && observed.chartDob && isFn(cv._saveVisits)) {
+    if (dscope) {
+      /* Additive scoped persistence: one bulk call, reconcile OFF, and a
+         verified absence saves nothing at all (never a fabricated row). */
+      if (!isFn(vm.saveVerifiedVisitBatch)) throw new Error("visits-bulk-writer-unavailable");
+      for (var dsi = 0; dsi < visits.length; dsi++) {
+        if (isFn(cv._visitIdentityAgrees) && !cv._visitIdentityAgrees(p, visits[dsi], true)) throw new Error("visit-row-identity-mismatch");
+      }
+      if (visits.length) {
+        var dscopeSave = vm.saveVerifiedVisitBatch(p.id, visits, { source: "athena-schedule-history", bodyComplete: true, reconcile: false, scopeDate: dscopeDate });
+        savedCount = Number(dscopeSave && dscopeSave.saved || 0);
+      }
+      reconcileReceipt = { complete: true, scoped: true, removed: 0, retained: -1 }; /* reconciliation deliberately NOT run on a slice */
+    } else if (target.dob && observed.chartDob && isFn(cv._saveVisits)) {
       savedCount = Number(cv._saveVisits(p, { name: observed.chartName || target.name, dob: observed.chartDob }, visits, function () {}, r.receipt));
     } else {
       var frozenMrn = normMrn(target.mrn), observedMrn = normMrn(observed.chartMrn), currentMrn = rowMrn(p);
@@ -4253,7 +4283,11 @@
         String(v.identityBinding || "") === String(p.id) && v.indexOnly !== true && v.fullDetail === true &&
         v.bodyComplete === true && String(v.raw || "").trim() && stableAliases(v).length);
     });
-    if (persisted.length !== parsed) throw new Error("visits-persistence-count-unproven");
+    /* dscope-1.0.0: the whole-history census ("this read is the complete
+       universe of verified rows") is exactly what a scoped slice must NOT
+       assert - older encounters legitimately remain. The per-accepted-row
+       proof below still runs in both modes. */
+    if (!dscope && persisted.length !== parsed) throw new Error("visits-persistence-count-unproven");
     for (var pa = 0; pa < acceptedAliases.length; pa++) {
       var matches = 0, matchedIndex = -1;
       for (var ps = 0; ps < persisted.length; ps++) if (sharesAlias(acceptedAliases[pa], stableAliases(persisted[ps]))) { matches++; matchedIndex = ps; }
@@ -4269,7 +4303,9 @@
     for (var pv = 0; pv < persisted.length; pv++) {
       var owners = 0, persistedAliases = stableAliases(persisted[pv]);
       for (var po = 0; po < acceptedAliases.length; po++) if (sharesAlias(persistedAliases, acceptedAliases[po])) owners++;
-      if (owners !== 1) throw new Error("visits-persistence-alias-collision");
+      /* dscope-1.0.0: on a scoped slice, older verified rows have zero owners
+         by design; only a MULTI-owner row (alias collision) is ever a fault. */
+      if (dscope ? owners > 1 : owners !== 1) throw new Error("visits-persistence-alias-collision");
     }
     /* v2.9.32 order-group entries: filed AFTER the strict clinical proof
        chain, as UNVERIFIED index-only rows (source athena-order-group-index)
@@ -4311,7 +4347,7 @@
     }
     var refreshedCoverage=responsiveOrganization?null:safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
-    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
+    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: dscope ? parsed : persisted.length, savedCount: savedCount, scopedAdditive: dscope === true, scopeDate: dscope ? dscopeDate : undefined, sameDayStatus: dscope ? String((r.receipt && r.receipt.sameDayStatus) || (parsed > 0 ? "saved" : "absent")) : undefined, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
   }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
     /* b744 #36: true only when the per-patient loop ran to completion; the

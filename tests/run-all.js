@@ -1731,7 +1731,15 @@ const tests = [
      section ids); one survivor clicks, two refuse 'ambiguous' BEFORE any
      click (reason rail-ambiguous), zero falls back to the guarded label
      scan. Drives the REAL extracted function against synthetic DOMs. */
-  'visits-rail-scoped-click.test.js'
+  'visits-rail-scoped-click.test.js',
+  /* dscope-1.0.0 (Codex red contract scoped-visit-save, now green): a
+     same-day slice is ADDITIVE - one bulk call with reconcile:false, no
+     destructive full-history reconciliation, older verified encounters
+     byte-identical, no-substitution and frozen-target refusals, honest
+     sameDayStatus, verified absence saves nothing. Distinct fixture from
+     Codex's contract so the suites cross-check; includes a mutation control
+     forcing the destructive path to prove the pins bite. */
+  'scoped-save-additive.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
