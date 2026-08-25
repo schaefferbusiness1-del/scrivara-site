@@ -1704,7 +1704,17 @@ const tests = [
      in-flight latch joins concurrent opens into one fetch, the load-failure
      Retry still re-fetches, and closeSetup resets the latch. Runs the REAL
      extracted openSetup/suOpenSetupRun/closeSetup. */
-  'setup-open-reentrancy.test.js'
+  'setup-open-reentrancy.test.js',
+  /* ez3adapt-1.0.0 (authorized Codex reply 4, slice 4; owner live repro
+     2026-08-25): the TOP Generate button clicked the hidden engine blind (the
+     lower #ez3Gen already ran the evidence gate) and computePhase showed only
+     its generic canned text while generateNote() had written the SPECIFIC
+     reason into #genError/#noteGenError. The top button now runs the same
+     fail-closed gate before clicking, both computePhase failure branches
+     prefer the engine-written reason, and the live block snaps its phase on
+     'mls:generation-complete'. Adapter only - the engine lifecycle hunk
+     belongs to the generation-contract lane. */
+  'ez3-generation-reason-adapter.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

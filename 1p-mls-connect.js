@@ -7603,6 +7603,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (recordingNow()) { flowToast('Pause recording first. Your transcript will stay safe.', 'err'); return; }
     var tx = $('transcript'), text = tx ? (tx.value || '').trim() : '';
     if (!text) { flowToast('Type, paste, or record some visit text first.', 'err'); var top = $('ez3flTranscript'); if (top) top.focus(); return; }
+    /* ez3adapt-1.0.0 (owner live repro 2026-08-25): the LOWER #ez3Gen button
+       already runs the engine's fail-closed evidence gate before clicking,
+       but this TOP button clicked blind — the engine refused the sparse
+       transcript synchronously (before disabling #genBtn), the refusal toast
+       was lost, and the doctor saw a dead click and later a generic banner.
+       Same gate, same wording, same fail-closed posture as #ez3Gen; the
+       engine still enforces its own copy of the gate after the click. */
+    if (typeof _mlsTranscriptHasDraftableTodayEvidence !== 'function' ||
+        !_mlsTranscriptHasDraftableTodayEvidence(text)) {
+      flowToast('Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.', 'err');
+      var topEv = $('ez3flTranscript'); if (topEv) topEv.focus();
+      return;
+    }
     var gen = $('genBtn');
     if (!gen || gen.disabled) { flowToast('Note generation is not ready yet. Try again in a moment.', 'err'); return; }
     try { gen.click(); } catch (e) { flowToast('The note could not start generating. Please try again.', 'err'); return; }
@@ -21185,18 +21198,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var waited = Date.now() - S.genClickedAt, gb = $('genBtn');
       if (waited > 1200 && gb && !gb.disabled) {
         S.phase = 'stopped'; S.genClickedAt = 0;
-        S.lastWarn = 'The note was not generated. Your full transcript is still safe below — try Generate again or check the connection message.';
+        S.lastWarn = ez3EngineReason() || 'The note was not generated. Your full transcript is still safe below — try Generate again or check the connection message.';
         return;
       }
       if (waited < 180000) { S.phase = 'gen'; return; }
       S.phase = 'stopped'; S.genClickedAt = 0;
-      S.lastWarn = 'Note generation timed out. Your full transcript is still safe below — try Generate again.';
+      S.lastWarn = ez3EngineReason() || 'Note generation timed out. Your full transcript is still safe below — try Generate again.';
       return;
     }
     if (n.trim().length >= 30) { S.phase = 'note'; S.genClickedAt = 0; S.lastWarn = ''; bindingNotice(); return; }
     if (S.phase !== 'stopped') S.phase = 'idle';
     bindingNotice();
   }
+  /* ez3adapt-1.0.0: generateNote() writes its SPECIFIC failure reason into
+     #genError/#noteGenError and dispatches 'mls:generation-complete', but
+     this wrapper only ever showed its own generic canned text — the doctor
+     was never told WHY (owner live repro 2026-08-25). Prefer the engine's
+     own words; fall back to the generic text only when the engine left
+     none. The completion listener snaps the phase the moment the engine
+     settles instead of waiting for the next poll tick. Adapter only: no
+     engine/lifecycle change rides here (that hunk is the generation lane's). */
+  function ez3EngineReason() {
+    try {
+      var ids = ['genError', 'noteGenError'];
+      for (var i = 0; i < ids.length; i++) {
+        var g = document.getElementById(ids[i]);
+        var t = g ? String(g.textContent || '').trim() : '';
+        if (t) return t + ' Your full transcript is still safe below.';
+      }
+    } catch (e) {}
+    return '';
+  }
+  try { window.addEventListener('mls:generation-complete', function () { try { computePhase(); render(); } catch (e) {} }); } catch (eGenEvt) {}
   /* b443: the exact-scheduled gate refusal must stay visible for as long as it
      is TRUE. lastWarn is a one-shot string that computePhase wipes the moment a
      note exists, so a doctor on a row that cannot bind (live-caught 2026-07-20:
