@@ -21218,18 +21218,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      none. The completion listener snaps the phase the moment the engine
      settles instead of waiting for the next poll tick. Adapter only: no
      engine/lifecycle change rides here (that hunk is the generation lane's). */
+  /* ez3adapt-1.0.1 (review finding): the engine clears #genError only AFTER
+     its pre-gates, so a deep failure's text could survive into a LATER
+     synchronously-refused attempt and be misread as that attempt's reason.
+     Every generate stamp snapshots the error text it started with;
+     ez3EngineReason refuses to echo an unchanged snapshot, and with no
+     snapshot at all it stays conservative and lets the generic text stand. */
+  function ez3RawEngineErr() {
+    try {
+      var g1 = document.getElementById('genError'), g2 = document.getElementById('noteGenError');
+      return String((g1 && g1.textContent) || '') + '' + String((g2 && g2.textContent) || '');
+    } catch (e) { return ''; }
+  }
+  function ez3StampGenClick() {
+    S.genClickedAt = Date.now();
+    S.genErrBefore = ez3RawEngineErr();
+  }
   function ez3EngineReason() {
     try {
-      var ids = ['genError', 'noteGenError'];
-      for (var i = 0; i < ids.length; i++) {
-        var g = document.getElementById(ids[i]);
-        var t = g ? String(g.textContent || '').trim() : '';
+      var now = ez3RawEngineErr();
+      if (typeof S.genErrBefore !== 'string' || now === S.genErrBefore) return '';
+      var parts = now.split('');
+      for (var i = 0; i < parts.length; i++) {
+        var t = String(parts[i] || '').trim();
         if (t) return t + ' Your full transcript is still safe below.';
       }
     } catch (e) {}
     return '';
   }
-  try { window.addEventListener('mls:generation-complete', function () { try { computePhase(); render(); } catch (e) {} }); } catch (eGenEvt) {}
+  try {
+    if (!window.__ez3GenEvtWired) {
+      window.__ez3GenEvtWired = true;
+      window.addEventListener('mls:generation-complete', function () { try { computePhase(); render(); } catch (e) {} });
+    }
+  } catch (eGenEvt) {}
   /* b443: the exact-scheduled gate refusal must stay visible for as long as it
      is TRUE. lastWarn is a one-shot string that computePhase wipes the moment a
      note exists, so a doctor on a row that cannot bind (live-caught 2026-07-20:
@@ -21498,7 +21520,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (!requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')) { render(); return; }
       }
       if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
-      if (opts.generate) { var g = genBtnResolve(); if (g) { S.genClickedAt = Date.now(); g.click(); S.phase = 'gen'; } }
+      if (opts.generate) { var g = genBtnResolve(); if (g) { ez3StampGenClick(); g.click(); S.phase = 'gen'; } }
       render();
     })();
   }
@@ -22591,9 +22613,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
       var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; }
-      S.lastWarn = ''; S.genClickedAt = Date.now(); S.signedAt = 0; g.click(); S.phase = 'gen'; render();
+      S.lastWarn = ''; ez3StampGenClick(); S.signedAt = 0; g.click(); S.phase = 'gen'; render();
     });
-    on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } S.genClickedAt = Date.now(); S.signedAt = 0; g.click(); S.phase = 'gen'; render(); });
+    on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } ez3StampGenClick(); S.signedAt = 0; g.click(); S.phase = 'gen'; render(); });
     on('ez3Copy', function (btn) {
       var c = $('copyEmrBtn'); if (c) { c.click(); btn.textContent = '✅ Copied'; setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
       else toast('Copy control not found.');
@@ -24317,7 +24339,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        walk-in or unscheduled visit (it requires S.appt), and the lane must
        keep working for those exactly as it does today. */
     noteGenerationStarted: function () {
-      S.genClickedAt = Date.now(); S.signedAt = 0; S.phase = 'gen';
+      ez3StampGenClick(); S.signedAt = 0; S.phase = 'gen';
       try { render(); } catch (e) {}
       return true;
     },

@@ -55,6 +55,16 @@ function extractFn(source, marker) {
 const topSrc = extractFn(src, 'function generateTopNote()');
 const phaseSrc = extractFn(live, 'function computePhase()');
 const reasonSrc = extractFn(live, 'function ez3EngineReason()');
+const rawErrSrc = extractFn(live, 'function ez3RawEngineErr()');
+const stampSrc = extractFn(live, 'function ez3StampGenClick()');
+
+/* ez3adapt-1.0.1 pins: every generate stamp funnels through the snapshot
+ * helper so a stale engine reason from a PREVIOUS attempt can never be
+ * echoed as the current one, and the completion listener wires exactly once */
+assert.ok(stampSrc.includes('S.genErrBefore = ez3RawEngineErr()'), 'the stamp helper snapshots the pre-click error text');
+assert.strictEqual((live.match(/ez3StampGenClick\(\);/g) || []).length, 4,
+  'all four generate stamp sites (engine open, #ez3Gen, #ez3Regen, noteGenerationStarted) funnel through the snapshot helper');
+assert.ok(live.includes('window.__ez3GenEvtWired'), 'the generation-complete listener is one-shot guarded');
 
 assert.ok(topSrc.includes('_mlsTranscriptHasDraftableTodayEvidence'),
   'the TOP Generate button runs the engine evidence gate before clicking (parity with #ez3Gen)');
@@ -67,11 +77,12 @@ assert.ok(live.includes("window.addEventListener('mls:generation-complete'"),
 
 function el(id) { return { id, textContent: '', value: '', disabled: false, style: {}, focused: 0, focus() { this.focused++; } }; }
 
-/* ---- computePhase harness ---- */
-function phaseHarness(genErrorText) {
+/* ---- computePhase harness ----
+ * genErrBefore mirrors ez3StampGenClick's snapshot: pass the PRE-CLICK error
+ * text ('' for a clean start); the engine then writes genErrorText. */
+function phaseHarness(genErrorText, preClickErrorText) {
   const nodes = { genError: el('genError'), noteGenError: el('noteGenError'), genBtn: el('genBtn') };
-  nodes.genError.textContent = genErrorText || '';
-  const S = { phase: 'stopped', recStart: 0, genClickedAt: Date.now() - 5000, lastWarn: '' };
+  const S = { phase: 'stopped', recStart: 0, genClickedAt: 0, lastWarn: '' };
   const ctx = vm.createContext({
     S, Date,
     isRecording: () => false,
@@ -81,7 +92,11 @@ function phaseHarness(genErrorText) {
     document: { getElementById: id => nodes[id] || null },
     String, Math
   });
-  vm.runInContext(reasonSrc + '\n' + phaseSrc, ctx, { filename: 'mls-connect:ez3-phase' });
+  vm.runInContext(rawErrSrc + '\n' + stampSrc + '\n' + reasonSrc + '\n' + phaseSrc, ctx, { filename: 'mls-connect:ez3-phase' });
+  nodes.genError.textContent = preClickErrorText || '';
+  vm.runInContext('ez3StampGenClick()', ctx);           /* the real stamp takes the snapshot */
+  S.genClickedAt = Date.now() - 5000;                    /* then age the click for the fast-fail branch */
+  nodes.genError.textContent = genErrorText || '';       /* what the engine wrote (or left) after the click */
   return { S, nodes, run: () => vm.runInContext('computePhase()', ctx) };
 }
 
@@ -159,4 +174,18 @@ const ok = m => { n++; console.log('ok ' + n + ' - ' + m); };
   ok('top button: healthy path unchanged - one click, one started');
 }
 
-console.log('PASS ez3 generation reason adapter: engine-written reasons surface in both failure branches, the top button gates evidence before clicking like #ez3Gen, the healthy path is unchanged, and the live block listens for generation-complete (' + n + ' cases)');
+/* ---- 6. STALENESS (ez3adapt-1.0.1, review finding): text left over from a
+ * PREVIOUS attempt is never echoed as the current attempt's reason ---- */
+{
+  const stale = 'Add your OpenAI API key in Settings to generate notes.';
+  const h = phaseHarness(stale, stale); /* unchanged since the pre-click snapshot */
+  h.run();
+  assert.ok(/The note was not generated/.test(h.S.lastWarn),
+    'an unchanged pre-click error text falls back to the generic message instead of misattributing the old reason');
+  const h2 = phaseHarness('A fresh, current failure reason.', stale); /* engine overwrote it after the click */
+  h2.run();
+  assert.ok(/fresh, current failure reason/.test(h2.S.lastWarn), 'a changed error text still surfaces');
+  ok('staleness guard: unchanged snapshot suppressed, fresh engine text surfaces');
+}
+
+console.log('PASS ez3 generation reason adapter: engine-written reasons surface in both failure branches with a staleness guard, the top button gates evidence before clicking like #ez3Gen, the healthy path is unchanged, and the live block listens once for generation-complete (' + n + ' cases)');
