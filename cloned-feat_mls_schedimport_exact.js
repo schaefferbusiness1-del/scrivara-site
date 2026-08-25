@@ -3655,6 +3655,8 @@
          property of the SCHEDULE ROW, so it is frozen with the identity. */
       scheduleDate: normDate(target.scheduleDate || row.scheduleDate || row.date || row.frozenDay || "") || ""
     };
+    var sleepingTab = Number((diagSource && (diagSource.athenaTabId || diagSource.readTabId)) || row.athenaTabId || 0);
+    if (sleepingTab > 0) entry.athenaTabId = sleepingTab;
     /* mdx-1.1.0: carry the PHI-free refusal evidence with the retry entry so
        the error report can name the sub-cause without the patient record. */
     if (diagSource && (diagSource.visitsFailedHistogram || diagSource.visitsEnumDiag || diagSource.visitsReadReceipt || diagSource.findDiag)) {
@@ -5393,6 +5395,11 @@
                  field ledger. Only non-empty reads teach the pace. */
               if (vr && vr.ok) { if (!(vr.receipt && (vr.receipt.authoritativeEmpty === true || Number(vr.receipt.expected || 0) === 0))) recordReadMs('visits', Date.now() - __vAttemptT0); break; }
               var vErrText = String((vr && (vr.reason || vr.error)) || "visits-read-failed");
+              if (vr && vr.reason === "athena-tab-sleeping") {
+                one.athenaTabId = Number(vr.athenaTabId || vr.readTabId || (vr.receipt && vr.receipt.sleepingTabId) || 0) || null;
+                one.readTabId = one.athenaTabId;
+                one.visitsReason = "athena-tab-sleeping";
+              }
               /* mdx-1.1.0 (field ledger 2026-08-05, second clinician's Mac):
                  the refusal's own evidence crossed the bridge and died on this
                  line for three straight field reports - failedIndexes (the
@@ -5524,7 +5531,7 @@
                 one.visitsReason=one.visitsReason||(currentProfile?"six-card-current-chart-unproven":"six-card-profile-freshness-unproven");
               }
             }
-          } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 200); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } else if (/athena-session-expired/.test(one.visitsReason)) { stopAfterTimeout = true; receipt.sessionExpired = true; } /* sx-1.1 */ }
+          } catch (visitErr) { if (one.visitsReason !== "athena-tab-sleeping") one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 200); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } else if (/athena-session-expired/.test(one.visitsReason)) { stopAfterTimeout = true; receipt.sessionExpired = true; } /* sx-1.1 */ }
           if (overlapParse) { try { await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); } catch (eOverlapLate) {} overlapParse = null; }
           stageMs.visits = Date.now() - __visitsT0;
         }
@@ -5946,6 +5953,14 @@
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
       if (receipt.requested === 0) receipt.exactIdentityVerified = true;
       receipt.failures = receipt.retry.length;
+      var sleepingRows = receipt.retry.filter(function (entry) { return entry && String(entry.reason || "") === "athena-tab-sleeping"; });
+      if (sleepingRows.length) {
+        receipt.reason = "athena-tab-sleeping";
+        receipt.failureReason = "athena-tab-sleeping";
+        receipt.athenaTabSleeping = true;
+        var sleepingIds = sleepingRows.map(function (entry) { return Number(entry.athenaTabId || 0); }).filter(function (x, i, a) { return x > 0 && a.indexOf(x) === i; });
+        receipt.sleepingTabId = sleepingIds.length === 1 ? sleepingIds[0] : null;
+      }
       /* b752: MEASURE THE STORE, then judge. Everything downstream that speaks
          about coverage in words now reads this census rather than the walk
          counters, because requested/processed are arithmetically incapable of
@@ -7758,9 +7773,18 @@
        the history batch can start.  Cached local facts remain untouched. */
     var visitNotesRequested = typeof opts.pullVisitBodies === "boolean"
       ? opts.pullVisitBodies
-      : (typeof _pullBodiesOverride === "boolean" ? _pullBodiesOverride : null);
+      : (typeof opts.visitNotesRequested === "boolean" ? opts.visitNotesRequested
+        : (typeof _pullBodiesOverride === "boolean" ? _pullBodiesOverride : null));
     var fullNotesOff = visitNotesRequested === false;
-    var includeHistory = opts.includeHistory !== false && !fullNotesOff; /* safe default: full verified workflow */
+    /* First use is explicit: an unset visit-notes choice is schedule-only.
+       Only the admission gate may pass includeHistory:true after a confirmed
+       clinician choice; low-level callers cannot silently open charts. */
+    /* The admission gate freezes the explicit choice as pullVisitBodies, but
+       intentionally does not need to add a second includeHistory flag. An
+       explicit ON choice therefore enters the full-history lane even when a
+       normal day caller omitted includeHistory; explicit OFF and unset remain
+       schedule-only/fail-closed. */
+    var includeHistory = visitNotesRequested === true && opts.includeHistory !== false && !fullNotesOff;
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var providerGate = resolveProviderRequest(opts.provider, {
       allowAll: true,
@@ -8452,7 +8476,7 @@
             res.providerAttributionComplete = providerComplete;
             res.reason = complete
               ? (p1AppointmentCensusComplete ? ((res.censusHistoryPhaseTwo && res.historyPhaseTwoComplete === true) ? "complete-appointment-census-with-history" : (res.censusHistoryPhaseTwo ? "complete-appointment-census-history-partial" : "complete-appointment-census-only")) : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only")))) /* bob-1.0.0 */
-              : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : (!__scvStoreOk && historyReceipt.complete === true ? __scvReason : "history-partial")))));
+              : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : (!__scvStoreOk && historyReceipt.complete === true ? __scvReason : (historyReceipt && historyReceipt.reason === "athena-tab-sleeping" ? "athena-tab-sleeping" : "history-partial"))))));
             res.scheduleVerified = r.scheduleVerified === true;
             res.providerRosterReceipt = currentProviderRosterReceipt;
             res.scheduleReceipt = r.receipt; res.providerReceipt = res.providerReceipt || null; res.calendarReceipt = calendarReceipt; res.historyReceipt = historyReceipt;
@@ -9222,7 +9246,7 @@
   /* One exact month route for Staff prep and the chart-history continuation.
      It deliberately reuses pull() for every frozen day: same two-dimensional
      schedule receipt, same exact provider/appointment/patient identity, same
-     idempotent importer, and the same default-on verified history batch. */
+     idempotent importer, and the same explicitly chosen verified history batch. */
   function pullMonth(opts) {
     opts = opts || {};
     var __visitNotesAdmission = admitFrozenVisitNotesChoice(opts, pullMonth);
@@ -9994,7 +10018,7 @@
       runOpts.__p1ResumeScopeSource = explicit ? "day-caller" : "day-account";
       if (p1OriginalCensusAll && provider === "all") runOpts.__p1DayCensusToken = P1_DAY_CENSUS_TOKEN;
       else delete runOpts.__p1DayCensusToken;
-      if (runOpts.includeHistory === undefined) runOpts.includeHistory = true;
+      if (runOpts.includeHistory === undefined) runOpts.includeHistory = false;
       var preflight = {
         ran: !!needWarm,
         warmed: !!(warm && warm.warmed),

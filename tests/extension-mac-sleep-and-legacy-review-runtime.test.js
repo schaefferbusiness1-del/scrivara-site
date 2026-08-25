@@ -81,7 +81,7 @@ function makePickerHarness(mode, lease) {
         }
       },
       windows: {
-        getLastFocused: async () => ({ id: 1, focused: true }),
+        getLastFocused: async () => ({ id: 2, focused: true }),
         update: async (id, patch) => { state.windowUpdates.push({ id, patch }); return { id, focused: true }; }
       }
     },
@@ -147,6 +147,7 @@ function makeLegacyHarness(source, response) {
     const picked = await h.pick(opts);
     assert(picked && picked.id === 101, 'explicit pull did not recover the sleeping exact Athena tab');
     assert.strictEqual(h.state.updates.length, 1, 'sleeping Athena was not activated exactly once');
+    assert.strictEqual(h.state.windowUpdates.length, 0, 'explicit wake focused a Chrome window');
     assert(h.state.pings.length >= 1, 'restored tab was trusted without a session probe');
     assert(opts.frontState && opts.frontState.appTabId === 9, 'focus-restore state was not retained');
     assert.strictEqual(h.state.rejected.length, 0, 'sleeping tab was evicted as signed out');
@@ -186,6 +187,18 @@ function makeLegacyHarness(source, response) {
     assert(h.state.rejected.includes(101), 'real signed-out proof was not quarantined');
   }
 
+  /* Explicit capture also fails closed when the exact sleeping tab lives in a
+     different Chrome window; it must not raise/focus that window. */
+  {
+    const h = makePickerHarness('success', false);
+    h.ctx.chrome.windows.getLastFocused = async () => ({ id: 1, focused: true });
+    const opts = { athenaOnly: true, explicitUserPull: true, foregroundOk: true, appTabId: 9 };
+    assert.strictEqual(await h.pick(opts), null);
+    assert.strictEqual(opts.failure.reason, 'athena-tab-sleeping');
+    assert.strictEqual(h.state.updates.length, 0, 'cross-window explicit wake activated Athena');
+    assert.strictEqual(h.state.windowUpdates.length, 0, 'cross-window explicit wake focused a Chrome window');
+  }
+
   /* An awake but temporarily unreachable tab is also not relabelled signed out. */
   {
     const h = makePickerHarness('unreachable', false);
@@ -221,6 +234,7 @@ function makeLegacyHarness(source, response) {
   const pingSource = functionBlock(background, 'mlsAthPing');
   assert(!/tabs\.reload|reload\s*\(/.test(wakeSource), 'wake helper contains an explicit reload');
   assert(/allFrames:\s*true/.test(pingSource), 'post-wake session proof is not all-frame');
+  assert(!/windows\.update/.test(wakeSource), 'explicit wake can still focus-hop a Chrome window');
   const captureAt = background.indexOf("msg.type === 'mlsAppCaptureRequest'");
   const captureEnd = background.indexOf("msg.type === 'mlsAppPasteRequest'", captureAt);
   const captureHandler = background.slice(captureAt, captureEnd);

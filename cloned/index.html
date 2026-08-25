@@ -10304,12 +10304,12 @@ async function loadPrefsFromServer(opts){
    the ONE resolver (window.__mlsVisitNotesPref, installed by mls-connect.js).
    This page no longer touches the storage keys: it renders the resolved
    tri-state and writes THROUGH the resolver, which confirms every write by
-   reading it back. 2026-07-28 owner bar unchanged: unset resolves ON
-   (first-pull completeness); only an explicit human choice picks the fast
-   lane. The inline strip checkbox is kept in sync as a courtesy view. */
+   reading it back. First use is an explicit choice; unset resolves to the
+   safe OFF view and opens no chart/history. The inline strip checkbox is kept
+   in sync as a courtesy view. */
 function pullVisitBodiesPref(){
   try{ var r=window.__mlsVisitNotesPref; if(r&&typeof r.read==='function') return r.read().on===true; }catch(e){}
-  return true;
+  return false;
 }
 function renderPullVisitBodiesSetting(){
   try{
@@ -10329,7 +10329,7 @@ function renderPullVisitBodiesSetting(){
         return;
       }
       try{ const inline=document.getElementById('mlsDsVisitBodies'); if(inline) inline.checked=cb.checked; }catch(e){}
-      try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls now run the fast lane — schedule and chart history cards only.','ok'); }catch(e){}
+      try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls now read schedule rows only — no patient chart or history is opened.','ok'); }catch(e){}
     });
   }catch(e){}
 }

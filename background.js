@@ -2646,6 +2646,7 @@ function mlsAthenaTeachWatcherFn(config) {
        Athena tab can never hop the batch mid-run (the same-frame-name-mismatch
        / wrong-tab class). The watchdog release clears the lease as before.
        No window is ever created, moved, or resized (v2.9.35 directive). */
+    if (typeof mlsAthTabSleeping === 'function' && mlsAthTabSleeping(tab)) { try { self.__mlsQpLastVerdict = { v: 'sleeping', at: Date.now(), tabId: tab.id }; } catch (eSleepVerdict) {} return 'sleeping'; }
     QP.athenaTabId = tab.id; QP.winId = null; QP.soloWin = false; QP.orig = null; QP.athOrig = null; QP.strip = null;
     QP.hostWinId = null; QP.hostOrig = null;
     QP.active = true; QP.flashed = false;
@@ -4634,6 +4635,11 @@ async function mlsAthWakeExplicitReadTab(t, opts) {
     /* Never raise Chrome under another application. The explicit click must
        still originate while Chrome owns focus. */
     if (!lastW || lastW.focused !== true) return fail('athena-tab-sleeping', false);
+    /* A focused Chrome window is not enough: never activate a sleeping tab in
+       a different Chrome window (that would silently cross the doctor's
+       workspace). The caller must explicitly click while this exact window is
+       already focused. */
+    if (lastW.id == null || Number(t.windowId) !== Number(lastW.id)) return fail('athena-tab-sleeping', false);
     var windowTabs = [];
     try { windowTabs = await chrome.tabs.query({ windowId: t.windowId }); } catch (eQt) { windowTabs = []; }
     var prev = windowTabs.find(function (x) { return x && x.active && x.id !== t.id; }) || null;
@@ -4645,7 +4651,6 @@ async function mlsAthWakeExplicitReadTab(t, opts) {
       appTabId: opts.appTabId != null ? opts.appTabId : null
     };
     await chrome.tabs.update(t.id, { active: true });
-    try { await chrome.windows.update(t.windowId, { focused: true }); } catch (eFw) {}
     opts.frontState = state;
     var budgets = [1500, 3000, 4000];
     for (var i = 0; i < budgets.length; i++) {
@@ -4670,6 +4675,63 @@ async function mlsAthWakeExplicitReadTab(t, opts) {
     return fail('athena-tab-sleeping', false);
   }
 }
+/* macwake-1.1: explicit recovery for the failed-pull action. This is a
+   separate verb from the ordinary explicit picker wake: it may release and
+   rebuild only the stale quiet lease that names this exact discarded tab.
+   Every other tab/window is out of scope. */
+async function mlsAthRecoverExactSleepingTab(tabId, opts) {
+  opts = opts || {};
+  var id = Number(tabId || 0);
+  var fail = function (reason, signedOut) {
+    opts.failure = { reason: reason, signedOut: signedOut === true, tabId: id || null };
+    return { ok: false, reason: reason, signedOut: signedOut === true, tabId: id || null };
+  };
+  if (!Number.isFinite(id) || id <= 0 || opts.explicitUserPull !== true || opts.foregroundOk !== true) return fail('athena-tab-sleeping', false);
+  var lastW = null, tab = null;
+  try { lastW = await chrome.windows.getLastFocused(); } catch (eW) {}
+  if (!lastW || lastW.focused !== true) return fail('athena-tab-sleeping', false);
+  try { tab = await chrome.tabs.get(id); } catch (eT) {}
+  if (!tab || mlsAthTabHost(tab) !== 'athenanet.athenahealth.com' || mlsAthIsLoginish(tab)) return fail('athena-signed-out', true);
+  if (lastW.id == null || Number(tab.windowId) !== Number(lastW.id)) return fail('athena-tab-sleeping', false);
+  if (!mlsAthTabSleeping(tab)) return fail('athena-tab-not-sleeping', false);
+  var lease = self.__mlsQp && self.__mlsQp.active ? self.__mlsQp : null;
+  var hadLease = !!lease;
+  if (lease && Number(lease.athenaTabId) !== id) return fail('athena-lease-mismatch', false);
+  if (lease && typeof self.__mlsQpRelease !== 'function') return fail('athena-lease-unavailable', false);
+  if (!lease && self.__mlsQp && self.__mlsQp.active) return fail('athena-lease-changed', false);
+  var recoveryEpoch = self.__mlsQp ? Number(self.__mlsQp.epoch || 0) : 0;
+  try {
+    if (lease && self.__mlsQpRelease) await self.__mlsQpRelease('explicit-wake-recovery');
+    if (self.__mlsQp && Number(self.__mlsQp.epoch || 0) !== recoveryEpoch + (lease ? 1 : 0)) return fail('athena-lease-changed', false);
+    await chrome.tabs.update(id, { active: true });
+    /* Chrome is already focused (checked above); selecting this exact tab is
+       the explicit recovery action, but raising/focusing its window would
+       steal focus from another application. Chrome restores a discarded tab
+       after activation; no extension reload/navigation is permitted here. */
+    var restored = null;
+    for (var i = 0; i < 12; i++) {
+      await mlsSleepW(i < 2 ? 350 : 500);
+      try { restored = await chrome.tabs.get(id); } catch (eR) { restored = null; }
+      if (!restored) return fail('athena-tab-sleeping', false);
+      if (restored.id !== id || Number(restored.windowId) !== Number(lastW.id)) return fail('athena-tab-sleeping', false);
+      if (mlsAthTabHost(restored) !== 'athenanet.athenahealth.com' || mlsAthIsLoginish(restored)) return fail('athena-signed-out', true);
+      if (!mlsAthTabSleeping(restored)) break;
+    }
+    if (!restored || mlsAthTabSleeping(restored)) return fail('athena-tab-sleeping', false);
+    var proof = await mlsAthPing(id, 3500);
+    if (!proof || proof.signedOut) return fail('athena-signed-out', true);
+    if (!proof.alive || !proof.reachable) return fail('athena-tab-sleeping', false);
+    if (hadLease && self.__mlsQpEnsure) {
+      if (self.__mlsQp && Number(self.__mlsQp.epoch || 0) !== recoveryEpoch + 1) return fail('athena-lease-changed', false);
+      var rebuilt = await self.__mlsQpEnsure(restored, opts.appTabId);
+      if (self.__mlsQp && Number(self.__mlsQp.epoch || 0) !== recoveryEpoch + 1) return fail('athena-lease-changed', false);
+      if (!self.__mlsQp || !self.__mlsQp.active || Number(self.__mlsQp.athenaTabId) !== id) return fail('athena-lease-rebuild-failed', false);
+      return { ok: true, reason: 'athena-tab-recovered', tabId: id, probe: proof, leaseRebuilt: rebuilt };
+    }
+    return { ok: true, reason: 'athena-tab-recovered', tabId: id, probe: proof, leaseRebuilt: false };
+  } catch (eRcv) { return fail('athena-tab-sleeping', false); }
+}
+self.__mlsAthRecoverExactSleepingTab = mlsAthRecoverExactSleepingTab;
 function mlsPickGenericEmrTab(all) { /* non-athena EMR fallback (athena candidates were already considered+rejected) */
   try {
     return all.find(function (t) { return /epic|cerner|ecw|eclinical|nextgen|allscripts|emr|ehr|\bchart\b|report|claim|billing|practice|clinic/i.test(t.url || '') && !/mlsscribe\.com|athena/i.test((t.url || '') + ' ' + (t.title || '')); })
@@ -10786,6 +10848,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   function pickEmrTab(hint) {
+    try { self.__mlsLastVisitPickFailure = null; } catch (ePickState) {}
     var guard = null;
     try { guard = __visitGuardByHint.get(hint) || null; } catch (eGuard) {}
     var hardDeadline = Number(guard && guard.deadline || 0);
@@ -10811,6 +10874,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             var leaseMatches = lease && (Date.now() - Number(lease.at || 0)) < 180000 && nk(lease.name) === nk(wantName) && (!wantDob || dk(lease.dob) === dk(wantDob)) && (!wantMrn || nk(lease.mrn) === nk(wantMrn));
             if (leaseMatches) {
               var exact = cand.find(function (t) { return Number(t.id) === Number(lease.tabId); });
+              if (exact && typeof mlsAthTabSleeping === 'function' && mlsAthTabSleeping(exact)) {
+                try { self.__mlsLastVisitPickFailure = { reason: 'athena-tab-sleeping', signedOut: false, tabId: exact.id }; } catch (eSleepLease) {}
+                resolve(null); return;
+              }
               resolve(exact || null); return;
             }
           } catch (eLease) {}
@@ -10848,7 +10915,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           /* v1.90: unified verified picker; the old active-first order stays the fallback */
           try {
             if (Date.now() >= hardDeadline) { resolve(null); return; }
-            if (typeof mlsPickAthenaTab === 'function') { Promise.resolve(mlsPickAthenaTab(tabs, { athenaOnly: true })).then(function (t) { resolve(Date.now() < hardDeadline ? (t || cand[0] || null) : null); }, function () { resolve(Date.now() < hardDeadline ? (cand[0] || null) : null); }); return; }
+            if (typeof mlsPickAthenaTab === 'function') { var pickOpts = { athenaOnly: true }; Promise.resolve(mlsPickAthenaTab(tabs, pickOpts)).then(function (t) { try { if (!t && pickOpts.failure) self.__mlsLastVisitPickFailure = pickOpts.failure; } catch (ePickFailure) {} resolve(Date.now() < hardDeadline ? (t || null) : null); }, function () { resolve(null); }); return; }
           } catch (e2) {}
           resolve(cand[0] || null);
         });
@@ -11145,13 +11212,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          still runs unchanged before any body is read. */
       var rePicks = 0;
       while (!emr && rePicks < 5 && Date.now() + 2500 < readDeadline) {
+        if (self.__mlsLastVisitPickFailure && self.__mlsLastVisitPickFailure.reason === 'athena-tab-sleeping') break;
         rePicks++;
         await sleep(2000);
         emr = await pickEmrTab(frozenHint);
       }
       return emr;
     })().then(async function (emr) {
-      if (!emr) return Date.now() >= readDeadline ? deadlineResult('exact-tab selection') : { ok: false, reason: 'no-athena-tab', visits: [], error: 'No exact-patient athenaOne chart or fresh verified chart lease was proved. Open and verify that patient\'s chart, then retry.' };
+      if (!emr) {
+        var pickFailure = self.__mlsLastVisitPickFailure || null;
+        if (pickFailure && pickFailure.reason === 'athena-tab-sleeping') return { ok: false, reason: 'athena-tab-sleeping', athenaTabId: Number(pickFailure.tabId || 0) || null, readTabId: Number(pickFailure.tabId || 0) || null, visits: [], receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, reason: 'athena-tab-sleeping', failureReason: 'athena-tab-sleeping', sleepingTabId: Number(pickFailure.tabId || 0) || null }, error: 'The exact Athena tab is asleep. Use “Wake Athena and retry” to restore only that tab, then retry the failed histories.' };
+        return Date.now() >= readDeadline ? deadlineResult('exact-tab selection') : { ok: false, reason: 'no-athena-tab', visits: [], error: 'No exact-patient athenaOne chart or fresh verified chart lease was proved. Open and verify that patient\'s chart, then retry.' };
+      }
       var emrId = emr.id;
       readTabId = Number(emrId);
       try { __visitGuardByTab.set(Number(emrId), readGuard); } catch (eGuardTab) {}
@@ -11214,6 +11286,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             qpEnsurePromise.finally(function () { fireVisitCleanup('all-visits-late-ensure', true); }).catch(function () {});
             return deadlineResult('quiet-work setup');
           }
+          if (self.__mlsQpLastVerdict && self.__mlsQpLastVerdict.v === 'sleeping') return { ok: false, reason: 'athena-tab-sleeping', athenaTabId: Number(emrId), readTabId: Number(emrId), visits: [], receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, reason: 'athena-tab-sleeping', failureReason: 'athena-tab-sleeping', sleepingTabId: Number(emrId) }, error: 'The exact Athena tab is asleep. Use “Wake Athena and retry” to restore only that tab, then retry the failed histories.' };
         }
         qpOwnedByThisRead = !qpWasActive && !!(self.__mlsQp && self.__mlsQp.active && self.__mlsQp.athenaTabId === emrId);
       } catch (e) {}
@@ -12310,6 +12383,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       return { ok: true, refreshed: true, reopened: !!bPath };
     })().then(sendResponse, function (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); });
+    return true;
+  });
+
+  /* macwake-1.2: a page postMessage is not a user gesture. The content script
+     arms this one-use token only from a trusted click on the exact wake button;
+     the worker consumes it before any Athena action. */
+  self.__mlsWakeGestureByTab = self.__mlsWakeGestureByTab || Object.create(null);
+  self.__mlsWakeRecoveryInFlight = self.__mlsWakeRecoveryInFlight || Object.create(null);
+  self.__mlsWakeRecoverySeen = self.__mlsWakeRecoverySeen || Object.create(null);
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== 'mlsAppWakeAthenaGestureArmRequest') return;
+    var targetId = Number(msg.tabId || 0), token = String(msg.gestureToken || '').slice(0, 180), appTabId = sender && sender.tab ? Number(sender.tab.id) : 0;
+    if (!(targetId > 0) || !token || !(Number(msg.expiresAt || 0) > Date.now()) || !(appTabId > 0)) { sendResponse({ ok: false, reason: 'wake-gesture-invalid' }); return; }
+    self.__mlsWakeGestureByTab[targetId] = { token: token, expiresAt: Math.min(Date.now() + 20000, Number(msg.expiresAt)), appTabId: appTabId };
+    sendResponse({ ok: true });
+    return true;
+  });
+
+  /* macwake-1.1: user-invoked recovery relay. The helper owns exact-tab,
+     focused-Chrome, lease, no-reload, and all-frame proof gates. */
+  chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+    if (!msg || msg.type !== 'mlsAppWakeAthenaAndRetryV1Request') return;
+    var targetId = Number(msg.tabId || 0), token = String(msg.gestureToken || '').slice(0, 180), requestId = String(msg.requestId || '').slice(0, 100), appTabId = sender && sender.tab ? Number(sender.tab.id) : 0;
+    var armed = targetId > 0 ? self.__mlsWakeGestureByTab[targetId] : null;
+    if (!requestId || !armed || armed.token !== token || Number(armed.appTabId) !== appTabId || Number(armed.expiresAt) <= Date.now()) { sendResponse({ ok: false, reason: 'wake-gesture-required' }); return true; }
+    delete self.__mlsWakeGestureByTab[targetId];
+    Object.keys(self.__mlsWakeRecoverySeen).forEach(function (key) { if (Date.now() - Number(self.__mlsWakeRecoverySeen[key] || 0) > 60000) delete self.__mlsWakeRecoverySeen[key]; });
+    if (self.__mlsWakeRecoverySeen[requestId] || self.__mlsWakeRecoveryInFlight[targetId]) { sendResponse({ ok: false, reason: 'wake-recovery-in-flight' }); return true; }
+    self.__mlsWakeRecoverySeen[requestId] = Date.now();
+    self.__mlsWakeRecoveryInFlight[targetId] = { requestId: requestId, appTabId: appTabId, startedAt: Date.now() };
+    Promise.resolve(mlsAthRecoverExactSleepingTab(targetId, {
+      explicitUserPull: msg.explicitUserPull === true,
+      foregroundOk: msg.foregroundOk === true,
+      appTabId: appTabId,
+      gestureToken: token,
+      requestId: requestId
+    })).then(sendResponse, function (eWakeRetry) {
+      sendResponse({ ok: false, reason: 'athena-tab-sleeping', error: String((eWakeRetry && eWakeRetry.message) || eWakeRetry) });
+    }).finally(function () { delete self.__mlsWakeRecoveryInFlight[targetId]; });
     return true;
   });
 

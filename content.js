@@ -37,7 +37,7 @@
      row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
   /* wsg-1.0.0: five write-safety verbs added — mlsAppReviewScreen (extension-side review overlay),
      mlsAppTeachRecall/DryRun/Forget/MemoryList (taught-destination memory; all read-only). */
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1, mlsExtHealth: 1, mlsAthenaPresence: 1, mlsAppChartIdentity: 1, mlsAppAthenaRefreshV1: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1, mlsExtHealth: 1, mlsAthenaPresence: 1, mlsAppChartIdentity: 1, mlsAppAthenaRefreshV1: 1, mlsAppWakeAthenaAndRetryV1: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -67,6 +67,28 @@
      short-lived, one-use authorization only from a real click on the clearly
      labelled MLS sign button. Programmatic .click() events are not trusted. */
   var _mlsSignGestureUntil = 0;
+  /* macwake-1.2: only a trusted click on the rendered exact recovery button
+     can arm the one-use worker token. A page script can post the same verb and
+     forge boolean flags, but it cannot manufacture Event.isTrusted. */
+  var _mlsWakeGesture = { tabId: 0, token: '', until: 0 };
+  function _mlsWakeToken() {
+    try { var a = new Uint32Array(4); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (n) { return n.toString(16); }).join(''); }
+    catch (e) { return String(Date.now()) + '-' + String(Math.random()).slice(2); }
+  }
+  try {
+    if (mlsTrustedOrigin(location.origin)) document.addEventListener('click', function (ev) {
+      try {
+        if (!ev || ev.isTrusted !== true) return;
+        var btn = ev.target && ev.target.closest ? ev.target.closest('#mlsDsWakeRetryBtn') : null;
+        if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true') return;
+        var tabId = Number((btn.dataset && btn.dataset.tabId) || btn.getAttribute('data-tab-id') || 0);
+        if (!(tabId > 0)) return;
+        var token = _mlsWakeToken(), until = Date.now() + 15000;
+        _mlsWakeGesture = { tabId: tabId, token: token, until: until };
+        chrome.runtime.sendMessage({ type: 'mlsAppWakeAthenaGestureArmRequest', tabId: tabId, gestureToken: token, expiresAt: until }, function () {});
+      } catch (eWakeArm) {}
+    }, true);
+  } catch (eWakeClick) {}
   /* ATHENA_ACTION_V2_CLICK_GATE_START */
   /* v2 Athena mutations are armed only by a real, freshly trusted click on the
      exact action button. Page scripts cannot manufacture Event.isTrusted. The
@@ -247,6 +269,18 @@
           reply({ source: 'mls-ext', type: 'mlsAppAthenaRefreshV1Result', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppAthenaRefreshV1Result', resp: { error: 'extension error' } }); }
+    }
+    if (d.type === 'mlsAppWakeAthenaAndRetryV1') {
+      try {
+        var wakeTabId = Number(d.tabId || 0), wakeRequestId = mlsStr(d.requestId || d.id, 100), wake = _mlsWakeGesture;
+        if (!wake || wake.tabId !== wakeTabId || !wake.token || wake.until <= Date.now()) { reply({ source: 'mls-ext', type: 'mlsAppWakeAthenaAndRetryV1Result', requestId: wakeRequestId, resp: { ok: false, reason: 'wake-gesture-required' } }); return; }
+        /* Consume in the content script too; the worker independently consumes
+           its arm, so duplicate/late page messages cannot repeat the action. */
+        _mlsWakeGesture = { tabId: 0, token: '', until: 0 };
+        chrome.runtime.sendMessage({ type: 'mlsAppWakeAthenaAndRetryV1Request', requestId: wakeRequestId, tabId: wakeTabId, gestureToken: wake.token, explicitUserPull: d.explicitUserPull === true, foregroundOk: d.foregroundOk === true }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAppWakeAthenaAndRetryV1Result', requestId: mlsStr(d.requestId || d.id, 100), resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppWakeAthenaAndRetryV1Result', requestId: mlsStr(d.requestId || d.id, 100), resp: { error: 'extension error' } }); }
     }
     if (d.type === 'mlsAppPrepProcTemplate') {
       try {

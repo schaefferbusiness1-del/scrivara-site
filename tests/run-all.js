@@ -214,6 +214,7 @@ const tests = [
   '1p-range-year-readiness.test.js',
   'full-visit-notes-choice-gates-runtime.test.js',
   'first-login-full-visit-notes-choice-contract.test.js',
+  'mac-sleep-recovery-contract.test.js',
   /* The four Calendar pull-surface defects the owner reported on 2026-08-18:
      a future day's rows reading like failures, the hero's verdict printing a
      paragraph of reconciliation prose, a violet progress bar with its caption

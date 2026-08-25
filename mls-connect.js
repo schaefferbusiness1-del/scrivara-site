@@ -1100,7 +1100,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'This strip owns the date. ‹ › moves a day at a time, Today snaps back, and the label always names the day you are looking at.'
       ], [
         'Pull status and per-patient progress appear right here while a pull runs.',
-        '“Full visit notes” controls whether MLS also opens and saves every encounter note (on by default; a little slower).',
+        '“Full visit notes” is an explicit choice: ON opens and saves every encounter note; OFF reads schedule rows only and opens no chart/history.',
         'If a pull ever fails, Retry and a copyable error report appear here too.'
       ])
     },
@@ -50113,7 +50113,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return cr;
         })(),
         identityBootstrap: ib ? { complete: ib.complete === true, attempted: ib.attempted, alreadyProven: ib.alreadyProven, requested: ib.requested, resolved: ib.resolved, failed: ib.failed, reasons: ib.reasons || {} } : null,
-        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''),
+        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''), failureReason: String(hr.failureReason || ''), sleepingTabId: Number(hr.sleepingTabId || 0) || null,
           /* stp-2.0.0 */ stoppedByUser: hr.stoppedByUser === true, todayNoteStoppedRows: Number(hr.todayNoteStoppedRows || 0),
           /* fdx-1.0.0: WHY the chart never opened, by the extension's own code. */
           findReasons: dsSafeReasonCounts(hr.findReasons), findVia: dsSafeReasonCounts(hr.findVia),
@@ -50334,6 +50334,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           (items.length ? (': ' + items.slice(0, 6).join('; ') + (items.length > 6 ? '; …' : '')) : '') +
           '. Use “↻ Retry failed histories only” before relying on prep or operative-note context.' + ((hr2.presenceRequested === true && ((hr2.presenceQuietReads | 0) > 0 || hr2.presenceAssisted !== true)) ? ' Athena finishes these reads when its window is visible - retry while you are in this Chrome window.' : '');
       })()
+      , 'athena-tab-sleeping': 'The exact Athena tab was asleep, so MLS stopped without switching tabs. Use “↻ Wake Athena and retry” to restore that tab and retry only the failed histories.'
     };
     var msg = messages[reason] || 'The pull did not return a verified completion receipt (' + reason + '). Nothing is being reported as complete.';
     /* An athenaOne sign-out must NEVER read as "no patients" or a generic
@@ -50414,13 +50415,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        did not finish names itself 'complete-appointment-census-history-partial'
        (the CENSUS is complete; the history is not). Those rows are the
        doctor's to retry too - only 'history-partial' is auto-convergeable. */
-    var RETRYABLE = /^(history-partial|stopped-by-user|complete-appointment-census-history-partial)$/;
+    var RETRYABLE = /^(history-partial|stopped-by-user|complete-appointment-census-history-partial|athena-tab-sleeping)$/;
     var partial = !!(source && RETRYABLE.test(String(source.reason || ''))) ||
       !!(history && RETRYABLE.test(String(history.reason || '')));
     return partial && history && Array.isArray(history.retry) ? history.retry : [];
   }
   function syncRetryControl(source) {
-    var items = retryItems(source), retryBtn = $('mlsDsRetryHistoryBtn');
+    var items = retryItems(source), retryBtn = $('mlsDsRetryHistoryBtn'), wakeBtn = $('mlsDsWakeRetryBtn');
     DS.lastResult = items.length ? source : null;
     if (!retryBtn) return items.length;
     /* live 2026-07-21 (owner: "there is still no retry failed histories
@@ -50430,8 +50431,44 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     retryBtn.style.display = items.length ? 'inline-block' : 'none';
     retryBtn.disabled = !!(DS.pulling || DS.retrying);
     retryBtn.textContent = items.length ? ('\u21bb Retry failed histories only (' + items.length + ')') : '\u21bb Retry failed histories only';
+    if (wakeBtn) {
+      var hr = source && source.historyReceipt ? source.historyReceipt : source;
+      var ids = [];
+      try { if (hr && hr.sleepingTabId != null) ids.push(Number(hr.sleepingTabId)); } catch (eWakeId0) {}
+      items.forEach(function (it) { if (it && it.athenaTabId != null) ids.push(Number(it.athenaTabId)); });
+      ids = ids.filter(function (x, i, a) { return x > 0 && a.indexOf(x) === i; });
+      var sleeping = String((source && source.reason) || (hr && hr.reason) || '') === 'athena-tab-sleeping' || items.some(function (it) { return String(it && it.reason || '') === 'athena-tab-sleeping'; });
+      wakeBtn.style.display = sleeping && ids.length === 1 ? 'inline-block' : 'none';
+      wakeBtn.disabled = !!(DS.pulling || DS.retrying);
+      wakeBtn.textContent = '↻ Wake Athena and retry';
+      try { if (wakeBtn.dataset) wakeBtn.dataset.tabId = ids.length === 1 ? String(ids[0]) : ''; else wakeBtn.setAttribute('data-tab-id', ids.length === 1 ? String(ids[0]) : ''); } catch (eWakeAttr) {}
+    }
     return items.length;
   }
+
+  function wakeAthenaAndRetryFailedHistories() {
+    if (DS.pulling || DS.retrying || !DS.lastResult || wakeRetryInFlight) return;
+    var source = DS.lastResult, hr = source && source.historyReceipt ? source.historyReceipt : source, items = retryItems(source), ids = [];
+    try { if (hr && hr.sleepingTabId != null) ids.push(Number(hr.sleepingTabId)); } catch (eWakeId) {}
+    items.forEach(function (it) { if (it && it.athenaTabId != null) ids.push(Number(it.athenaTabId)); });
+    ids = ids.filter(function (x, i, a) { return x > 0 && a.indexOf(x) === i; });
+    if (ids.length !== 1) { try { $('mlsDsStatus').textContent = 'The sleeping Athena tab could not be identified exactly. Open the failed pull again rather than switching tabs.'; } catch (eNoId) {} return; }
+    var requestId = 'mls-wake-retry-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), done = false, timer = null;
+    wakeRetryInFlight = true;
+    var btn = $('mlsDsWakeRetryBtn'), stat = $('mlsDsStatus');
+    if (btn) btn.disabled = true;
+    if (stat) { stat.style.display = 'block'; stat.textContent = 'Waking the exact Athena tab…'; }
+    function finish(resp) {
+      if (done) return; done = true; wakeRetryInFlight = false; if (timer) clearTimeout(timer); try { window.removeEventListener('message', onMsg); } catch (e0) {}
+      if (resp && resp.ok === true) { retryFailedHistories(); return; }
+      syncRetryControl(source);
+      if (stat) stat.textContent = resp && resp.reason === 'athena-signed-out' ? 'That Athena tab is signed out. Sign in to Athena, then retry the failed histories.' : 'Athena is still asleep. No other tab was used; try Wake Athena and retry again.';
+    }
+    function onMsg(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppWakeAthenaAndRetryV1Result' || String(d.requestId || '') !== requestId) return; finish(d.resp || d); }
+    try { window.addEventListener('message', onMsg, false); window.postMessage({ source: 'mls-app', type: 'mlsAppWakeAthenaAndRetryV1', requestId: requestId, tabId: ids[0], explicitUserPull: true, foregroundOk: document.visibilityState !== 'hidden' }, '*'); } catch (ePost) { finish({ ok: false, reason: 'bridge-error' }); }
+    timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, 30000);
+  }
+  var wakeRetryInFlight = false;
 
   function retryFailedHistories(cvOpts) {
     /* ===== cvc-1.0.0 (ONE continuous pull, never done-then-again) =====
@@ -50509,9 +50546,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return;
       }
       var fallbackCount = retryItems(source).length;
-      var partial = remaining ? { reason: 'history-partial', historyReceipt: receipt } : source;
+      var partialReason = receipt && receipt.reason === 'athena-tab-sleeping' ? 'athena-tab-sleeping' : 'history-partial';
+      var partial = remaining ? { reason: partialReason, historyReceipt: receipt } : source;
       if (!remaining) remaining = fallbackCount;
-      syncRetryControl(partial);
+        syncRetryControl(partial);
       if (stat) { stat.style.display = 'block'; stat.textContent = 'History is still incomplete for ' + remaining + ' patient' + (remaining === 1 ? '' : 's') + '. Only those patients remain queued.'; }
       try { if (typeof window.toast === 'function') window.toast('History is still incomplete for ' + remaining + ' patient' + (remaining === 1 ? '' : 's') + '.', 'err'); } catch (e2) {}
     }
@@ -50562,13 +50600,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { if (window.__mlsPullStopRequested === true) return false; } catch (eS) {}      /* stp-2.0.0: Stop means stop */
     try { if (result && result.historyReceipt && result.historyReceipt.stoppedByUser === true) return false; } catch (eS2) {}
     try { if (String((result && result.reason) || '') === 'stopped-by-user') return false; } catch (eS3) {}
+    try { if (String((result && result.reason) || '') === 'athena-tab-sleeping' || String((result && result.historyReceipt && result.historyReceipt.reason) || '') === 'athena-tab-sleeping') return false; } catch (eSleep) {}
     try { var pres = !!(result && result.historyReceipt && result.historyReceipt.presenceRequested === true);
       if (document.visibilityState === 'hidden' && !pres) return false; } catch (eV0) {}
     var items = retryItems(result);
     if (!items.length) return false;
     for (var i = 0; i < items.length; i++) {
       var why = String((items[i] && items[i].reason) || '');
-      if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user/i.test(why)) return false;
+      if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user|athena-tab-sleeping/i.test(why)) return false;
     }
     return true;
   }
@@ -50585,10 +50624,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          hazard the cross-tab shield exists to stop (live 2026-07-28) */
       try { var __cvPresence = !!(DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.presenceRequested === true); if (document.visibilityState === 'hidden' && !__cvPresence) { settle(); return; } } catch (eV) {} /* cv-1.2: a presence-assisted batch ends with athenaOne front BY DESIGN, so 'hidden' there is the assist's own doing, not a forgotten background tab - the rounds it runs re-post with foregroundOk and the cross-tab shield still forbids second engines (live 2026-08-04: 11 stragglers sat behind this veto) */
       var items = retryItems(DS.lastResult);
+      try { if (String((DS.lastResult && DS.lastResult.reason) || '') === 'athena-tab-sleeping' || String((DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.reason) || '') === 'athena-tab-sleeping') { settle(); return; } } catch (eSleep2) {}
       if (!items.length || rounds >= 2) { settle(); return; }
       for (var i = 0; i < items.length; i++) {
         var why = String((items[i] && items[i].reason) || '');
-        if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user/i.test(why)) { settle(); return; } /* cv-1.1 (live 2026-08-04): only credential/identity/schedule classes are the doctor's to see FIRST - every other history-phase straggler earns the same bounded automatic rounds the retry button runs. A find-patient-open deadline sat waiting for a human click while the proven heal was one retry away. DS_BODIES_REASON above stays as the extraction anchor two suites slice from. */
+        if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user|athena-tab-sleeping/i.test(why)) { settle(); return; } /* cv-1.1: sleeping Athena is an explicit recovery state, never an automatic convergence retry. */
       }
       rounds++;
       /* cvc-1.0.0: ONE sentence that counts the real work left, in the same
@@ -51305,26 +51345,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<button type="button" class="ds-today" id="mlsDsTodayBtn" aria-label="Go to Today">Today</button>' +
         '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull today</button>' +
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
+        '<button type="button" id="mlsDsWakeRetryBtn" style="display:none">↻ Wake Athena and retry</button>' +
         '<button type="button" id="mlsDsDiagBtn" title="Copies a patient-free technical report of the last failed pull — paste it in a message to support.">⧉ Copy error report</button>' +
-        '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: pull the schedule and each patient’s chart history cards only — much faster." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
+        '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: read schedule rows only — no patient chart or history is opened." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
         '<span id="mlsDsStatus"></span>';
       /* always the FIRST element of the Visit body — above the engine wrap,
          outside its innerHTML re-renders, so it can never sink or flicker */
       body.insertBefore(strip, body.firstChild);
-      /* "Full visit notes" preference. 2026-07-28: DEFAULT ON — the 2026-07-21
-         default-OFF call predates the finding that the toggle never rendered
-         (b940) and that 47 of 51 live snapshot patients carried only index-only
-         visit stubs: no human ever chose the fast lane, the code did. A pull
-         without encounter bodies is not complete history (owner bar
-         2026-07-28). An explicit click writes the ...Set marker and is
-         respected forever after; the legacy bare '0' without it is ignored. */
+      /* "Full visit notes" preference: first use is explicit. Until the
+         clinician chooses, the safe OFF view is shown and no chart/history
+         read is admitted. A later explicit click persists the choice. */
       (function () {
         var tgl = $('mlsDsVisitBodies'); if (!tgl) return;
         /* qol-2.0 ONE RESOLVER: the strip checkbox is a VIEW. It paints from
            the resolved tri-state, writes THROUGH the resolver (read-back
            confirmed - a refused write repaints instead of lying), and
            repaints when any other tab changes the preference (qol-1.1d). */
-        var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
+        var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : false; } catch (e) { tgl.checked = false; } };
         paint();
         /* sbp-1.0 boot-paint settle (live b1016/b1022, final-live-proofs
            Proof 3): the ONE paint above can run before the session namespace
@@ -51370,6 +51407,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       $('mlsDsTodayBtn').onclick = function () { setDay(todayKey()); };
       $('mlsDsPullBtn').onclick = startPull;
       $('mlsDsRetryHistoryBtn').onclick = retryFailedHistories;
+      $('mlsDsWakeRetryBtn').onclick = wakeAthenaAndRetryFailedHistories;
       $('mlsDsDiagBtn').onclick = dsCopyDiag;
       syncRetryControl(DS.lastResult);
       syncStrip(); renderList();
@@ -51504,10 +51542,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * pullVisitBodiesSet) and the legacy un-namespaced global
  * mls_save_every_athena_visit are ADOPTED into the canonical key on first
  * read, and the pair is kept coherent on every write because
- * already-served bundles on other machines still read it. 'unset'
- * resolves ON (owner bar 2026-07-28: first-pull completeness, no silent
- * omissions); the default flips OFF only LAST, after a completed OFF run
- * proves the lane (supervising-session order, 2026-08-10). write() is
+ * already-served bundles on other machines still read it. 'unset' is an
+ * explicit-first-use state and resolves OFF for safety; no chart/history read
+ * may begin until ensureChosenForBulkPull records the clinician's choice.
+ * write() is
  * READ-BACK CONFIRMED: it returns true only when a fresh read returns the
  * value just written - callers must treat false as "nothing changed". */
 (function () {
@@ -51524,7 +51562,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          An 'unset' is definitive only when the canonical key was derived
          from a REAL session namespace - during boot uns() builds a
          placeholder ('sf_u::_::' / '::undefined::') and this read consults
-         the wrong slot, so its 'unset' (= default on) is provisional and
+         the wrong slot, so its 'unset' (= safe OFF) is provisional and
          views must re-read after the session settles (live b1016/b1022:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
@@ -51549,8 +51587,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }
         return { state: on2 ? 'on' : 'off', on: on2, settled: settledNs };
       }
-      return { state: 'unset', on: true, settled: settledNs };
-    } catch (e) { return { state: 'unset', on: true, settled: false }; }
+      return { state: 'unset', on: false, settled: settledNs };
+    } catch (e) { return { state: 'unset', on: false, settled: false }; }
   }
   function write(on) {
     var want = on === true ? 'on' : 'off';
@@ -51582,8 +51620,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          preference in this tab went stale the moment anything else wrote it.
          Measured against the real resolver + the real day-strip paint block:
          boot with a real namespace and no stored value answers
-         {state:'unset', on:true, settled:true} -> the strip checkbox paints
-         CHECKED and arms no settle interval (the answer is already
+         {state:'unset', on:false, settled:true} -> the strip checkbox paints
+         OFF and the first-use gate remains explicit (the answer is not
          definitive); a later write of 'off' leaves read() = {state:'off',
          on:false} with checkbox.checked === true, permanently. That is the
          "checkbox says ON while the pull runs OFF" the owner saw.
@@ -51595,9 +51633,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function isPrefKey(k) { try { var s = String(k || ''); if (!s) return false; return s === nk('visitNotesModeV2') || s === nk('pullVisitBodies') || s === nk('pullVisitBodiesSet') || s === 'mls_save_every_athena_visit'; } catch (e) { return false; } }
   /* A bulk pull may be the first time this account has had to make the
-     speed/completeness choice. Keep the legacy default-on READ semantics for
-     background/old callers, but require an explicit choice at each NEW human
-     bulk-pull admission site. One Promise owns the dialog across the tab so
+     speed/completeness choice. Unset is safe OFF; every NEW human bulk-pull
+     admission site still requires an explicit choice. One Promise owns the dialog across the tab so
      two buttons cannot open two asks. Callers still need their own admission
      latch so two .then handlers cannot start two pulls from this one answer. */
   var choiceInFlight = null;

@@ -89,7 +89,7 @@ async function resolverCases() {
   let h = resolverHarness({ choice: () => false });
   const initial = h.api.read();
   assert.strictEqual(initial.state, 'unset', 'unset preference did not retain unset state');
-  assert.strictEqual(initial.on, true, 'unset preference is not default ON');
+  assert.strictEqual(initial.on, false, 'unset preference is not safe OFF');
   assert.strictEqual(initial.settled, true, 'real namespace was not marked settled');
   let r = await h.api.ensureChosenForBulkPull();
   assert.strictEqual(r.ok, true, 'first-use OFF choice did not save');

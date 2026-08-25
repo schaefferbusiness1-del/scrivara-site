@@ -30,8 +30,8 @@ function staticRetirementContract() {
   ok(SRC.includes('var pulledDayNoteTailEnabled = false;'),
     'the retired pulled-day-note tail pass can run again');
   ok(SRC.includes('var fullNotesOff = visitNotesRequested === false;') &&
-    SRC.includes('var includeHistory = opts.includeHistory !== false && !fullNotesOff;'),
-    'Full Notes OFF no longer closes the chart/history phase at admission');
+    SRC.includes('var includeHistory = visitNotesRequested === true && opts.includeHistory !== false && !fullNotesOff;'),
+    'Full Notes OFF/ON choice does not close or open the chart/history phase at admission');
   ok(SRC.includes('var historyReceipt = (!fullNotesOff && includeHistory)') &&
     SRC.includes('reason: historySkipReason'),
     'OFF can still enter the body/history batch or lacks an honest skip receipt');
@@ -70,7 +70,6 @@ async function explicitOnUsesOneUnscopedReader() {
   const result = await h.api.pull({
     date: day,
     provider: h.provider,
-    includeHistory: true,
     pullVisitBodies: true,
     onStatus: h.onStatus
   });
