@@ -56,6 +56,7 @@ const tests = [
      mutate visit data. */
   'first-run-ai-tuning-entry-contract.test.js',
   'first-run-ai-tuning-loader-runtime.test.js',
+  'draft-tuning-account-boundary-runtime.test.js',
   /* Recent production regressions must be part of the full release gate, not
      only ad-hoc focused runs: every draft family keeps its own format, the
      first full Athena pull safely seeds local starter structures, mixed

@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsDraftTuning && window.__mlsDraftTuning.installed) return;
 
-  var VERSION = '1.3.2';
+  var VERSION = '1.3.3';
   var STORE_KEY = 'draftTuningV1';
   var MAX_INSTRUCTIONS = 600;
   var MAX_SECTION_TEMPLATE = 2000;
@@ -191,6 +191,28 @@
       if (typeof uns === 'function') return uns(STORE_KEY);
     } catch (e) {}
     return STORE_KEY;
+  }
+  /* Every editor/import session is owned by both the account namespace and
+     the app's real session epoch.  The local boundary counter also catches a
+     logout/account switch event when a synthetic or older shell does not
+     publish __mlsSessionEpoch. */
+  var storageBoundaryEpoch = 0;
+  function sessionEpochValue() {
+    try { return window.__mlsSessionEpoch == null ? '' : String(window.__mlsSessionEpoch); }
+    catch (e) { return ''; }
+  }
+  function storageScope() {
+    return { key: String(storageKey() || STORE_KEY), sessionEpoch: sessionEpochValue(), boundaryEpoch: storageBoundaryEpoch };
+  }
+  function scopeCurrent(scope) {
+    if (!scope || typeof scope !== 'object') return false;
+    return String(storageKey() || STORE_KEY) === scope.key &&
+      sessionEpochValue() === scope.sessionEpoch && storageBoundaryEpoch === scope.boundaryEpoch;
+  }
+  function scopeError() {
+    var error = new Error('The MLS account changed while this template was open. Nothing was saved. Reopen Settings and try again.');
+    error.code = 'draft-tuning-account-changed';
+    return error;
   }
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
   function sectionProfiles(id) {
@@ -448,16 +470,25 @@
     FAMILY_IDS.forEach(function (id) { out.families[id] = sanitizeFamily(id, families[id]); });
     return out;
   }
-  function read() {
+  function readForScope(scope) {
+    if (scope && !scopeCurrent(scope)) return null;
     try {
-      var raw = localStorage.getItem(storageKey());
+      var key = scope ? scope.key : String(storageKey() || STORE_KEY);
+      var raw = localStorage.getItem(key);
+      if (scope && !scopeCurrent(scope)) return null;
       return raw ? sanitize(JSON.parse(raw)) : defaultState();
-    } catch (e) { return defaultState(); }
+    } catch (e) { return scope ? null : defaultState(); }
   }
-  function write(state) {
+  function read() {
+    return readForScope(null) || defaultState();
+  }
+  function writeForScope(state, scope) {
+    if (scope && !scopeCurrent(scope)) return null;
     var clean = sanitize(state);
     try {
-      localStorage.setItem(storageKey(), JSON.stringify(clean));
+      var key = scope ? scope.key : String(storageKey() || STORE_KEY);
+      if (scope && !scopeCurrent(scope)) return null;
+      localStorage.setItem(key, JSON.stringify(clean));
       /* First-run owns only checklist presentation.  Tell it that the
          account-scoped store changed instead of making it poll Settings or
          infer completion from a click.  The event carries no settings or
@@ -467,6 +498,7 @@
     }
     catch (e) { return null; }
   }
+  function write(state) { return writeForScope(state, null); }
   function cleanTransientExample(value) {
     return String(value == null ? '' : value)
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
@@ -528,7 +560,8 @@
   function exampleImporter(id, profile) {
     id = familyId(id);
     if (!isProfileFamily(id)) return null;
-    var targetId = profileId(profile, ''), previewState = null;
+    var targetId = profileId(profile, ''), previewState = null, originScope = storageScope();
+    function requireOrigin() { if (!scopeCurrent(originScope)) { previewState = null; throw scopeError(); } }
     function sanitizeDerived(value) {
       value = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
       var templateText = cleanTemplate(value.templateText || value.template || value.templateBody, MAX_SECTION_TEMPLATE);
@@ -538,8 +571,16 @@
       return { name: name, templateText: templateText, instructions: instructions };
     }
     return {
-      extract: privateExampleExtractor,
+      scopeCurrent: function () { return scopeCurrent(originScope); },
+      extract: function (input) {
+        try { requireOrigin(); } catch (error) { return Promise.reject(error); }
+        return Promise.resolve(privateExampleExtractor(input)).then(function (result) {
+          requireOrigin();
+          return result;
+        });
+      },
       derive: async function (extracted) {
+        requireOrigin();
         var text = cleanTransientExample(extracted && typeof extracted === 'object' ? extracted.text : extracted);
         if (!text) throw new Error('No readable example text is available to convert.');
         var base = typeof window.bkBase === 'function' ? String(window.bkBase() || '').replace(/\/$/, '') : '';
@@ -550,19 +591,23 @@
           method: 'POST', headers: headers,
           body: JSON.stringify({ family: id, exampleText: text })
         });
+        requireOrigin();
         var payload = {}; try { payload = await response.json(); } catch (e) {}
+        requireOrigin();
         if (!response.ok) throw new Error(String(payload.error || payload.message || ('Template preview failed (' + response.status + ').')));
         return sanitizeDerived(payload.result || payload.template || payload);
       },
       preview: function (derived) {
+        if (!scopeCurrent(originScope)) { previewState = null; return null; }
         if (derived != null) previewState = sanitizeDerived(derived);
         return previewState ? clone(previewState) : null;
       },
       cancel: function () { var had = !!previewState; previewState = null; return had; },
       apply: function (derived) {
+        if (!scopeCurrent(originScope)) { previewState = null; return false; }
         if (derived != null) previewState = sanitizeDerived(derived);
         if (!previewState) return false;
-        var editor = profileEditor(id);
+        var editor = profileEditor(id, originScope);
         var changes = { templateText: previewState.templateText, instructions: previewState.instructions };
         if (previewState.name) changes.label = previewState.name;
         var applied = editor && editor.update(targetId, changes);
@@ -571,15 +616,19 @@
       }
     };
   }
-  function profileEditor(id) {
+  function profileEditor(id, boundScope) {
     id = familyId(id);
     if (!isProfileFamily(id)) return null;
+    boundScope = boundScope || storageScope();
     function current() {
-      var state = read(), family = state.families[id] || familyDefaults(id);
+      var state = boundScope ? readForScope(boundScope) : read();
+      if (!state) return null;
+      var family = state.families[id] || familyDefaults(id);
       family.profiles = sanitizeSectionProfiles(id, family.profiles);
       return { state: state, family: family };
     }
     function persist(ctx, profiles, activeId) {
+      if (!ctx || (boundScope && !scopeCurrent(boundScope))) return null;
       profiles = sanitizeSectionProfiles(id, profiles);
       var selected = activeSectionProfile(id, profiles, activeId);
       ctx.family.profiles = profiles;
@@ -592,19 +641,21 @@
       if (SECTION_FAMILIES.indexOf(id) >= 0) ctx.family.instructions = '';
       else ctx.family.instructions = cleanText(ctx.family.instructions, MAX_INSTRUCTIONS);
       ctx.state.families[id] = ctx.family;
-      var saved = write(ctx.state);
+      var saved = boundScope ? writeForScope(ctx.state, boundScope) : write(ctx.state);
       if (!saved) return null;
       var savedFamily = saved.families[id];
       return clone(activeSectionProfile(id, savedFamily.profiles, savedFamily.activeProfile));
     }
     return {
-      list: function () { return clone(current().family.profiles); },
+      list: function () { var ctx = current(); return ctx ? clone(ctx.family.profiles) : []; },
       active: function () {
         var ctx = current();
+        if (!ctx) return null;
         return clone(activeSectionProfile(id, ctx.family.profiles, ctx.family.activeProfile));
       },
       add: function (input) {
-        var ctx = current(), profiles = ctx.family.profiles.slice();
+        var ctx = current(); if (!ctx) return false;
+        var profiles = ctx.family.profiles.slice();
         if (profiles.length >= MAX_SECTION_PROFILES) return false;
         input = input && typeof input === 'object' && !Array.isArray(input) ? Object.assign({}, input) : {};
         var requested = profileId(input.id, '');
@@ -622,7 +673,8 @@
         return persist(ctx, profiles, candidateId);
       },
       update: function (profile, changes) {
-        var ctx = current(), wanted = profileId(profile, ''), found = false;
+        var ctx = current(); if (!ctx) return false;
+        var wanted = profileId(profile, ''), found = false;
         changes = changes && typeof changes === 'object' && !Array.isArray(changes) ? changes : {};
         var profiles = ctx.family.profiles.map(function (row) {
           if (row.id !== wanted) return row;
@@ -634,7 +686,8 @@
         return found ? persist(ctx, profiles, ctx.family.activeProfile) : false;
       },
       remove: function (profile) {
-        var ctx = current(), wanted = profileId(profile, ''), profiles = ctx.family.profiles;
+        var ctx = current(); if (!ctx) return false;
+        var wanted = profileId(profile, ''), profiles = ctx.family.profiles;
         if (profiles.length <= 1) return false;
         var index = profiles.findIndex(function (row) { return row.id === wanted; });
         if (index < 0) return false;
@@ -643,7 +696,8 @@
         return persist(ctx, next, activeId) || false;
       },
       select: function (profile) {
-        var ctx = current(), selected = activeSectionProfile(id, ctx.family.profiles, profile);
+        var ctx = current(); if (!ctx) return false;
+        var selected = activeSectionProfile(id, ctx.family.profiles, profile);
         return persist(ctx, ctx.family.profiles, selected.id);
       }
     };
@@ -830,6 +884,8 @@
   }
 
   var working = null;
+  var workingScope = null;
+  var workingScopeInvalid = false;
   var activeFamily = 'soap';
   var modalWasOpen = false;
   var sectionImportSession = null;
@@ -866,10 +922,15 @@
   }
   function sectionImportMatches(panel) {
     return !!(panel && panel.getAttribute('data-family') === activeFamily && q('mlsDtSectionProfile') &&
-      panel.getAttribute('data-profile') === q('mlsDtSectionProfile').value);
+      panel.getAttribute('data-profile') === q('mlsDtSectionProfile').value && sectionImportSession &&
+      (typeof sectionImportSession.scopeCurrent !== 'function' || sectionImportSession.scopeCurrent()));
   }
   function openSectionImport() {
     if (!isProfileFamily(activeFamily) || !q('mlsDtSectionProfile')) return;
+    if (workingScopeInvalid || !workingScope || !scopeCurrent(workingScope)) {
+      sectionImportStatus(scopeError().message, true);
+      return;
+    }
     resetSectionImport(false);
     var panel = q('mlsDtSectionImportPanel'), profile = q('mlsDtSectionProfile').value;
     sectionImportSession = exampleImporter(activeFamily, profile);
@@ -922,7 +983,11 @@
   }
   function applySectionImport() {
     var panel = q('mlsDtSectionImportPanel');
-    if (!sectionImportSession || !sectionImportMatches(panel)) { sectionImportStatus('This preview belongs to a different saved format. Open the importer again.', true); return; }
+    if (!sectionImportSession || !sectionImportMatches(panel)) {
+      sectionImportStatus(sectionImportSession && typeof sectionImportSession.scopeCurrent === 'function' && !sectionImportSession.scopeCurrent()
+        ? scopeError().message : 'This preview belongs to a different saved format. Open the importer again.', true);
+      return;
+    }
     var templateText = cleanTemplate(q('mlsDtSectionImportTemplatePreview').value, MAX_SECTION_TEMPLATE);
     if (!templateText) { sectionImportStatus('The reusable template preview is empty.', true); return; }
     var name = cleanReusableText(q('mlsDtSectionImportNamePreview').value, 80);
@@ -1214,9 +1279,52 @@
     working.families[id] = sanitizeFamily(id, p);
     paintResetState();
   }
-  function beginSettings() { working = read(); activeFamily = 'soap'; mountSettings(); loadUi(activeFamily); }
-  function saveFromUi() { if (!working) working = read(); captureUi(activeFamily); return write(working); }
-  function discardUi() { resetSectionImport(true); working = null; activeFamily = 'soap'; }
+  function beginSettings() {
+    workingScope = storageScope();
+    workingScopeInvalid = false;
+    working = readForScope(workingScope);
+    if (!working) { workingScopeInvalid = true; return false; }
+    activeFamily = 'soap';
+    mountSettings();
+    loadUi(activeFamily);
+    return true;
+  }
+  function settingsScopeFailure() {
+    workingScopeInvalid = true;
+    resetSectionImport(true);
+    var message = scopeError().message;
+    var status = q('mlsDtSectionProfileStatus');
+    if (status) { status.textContent = message; status.style.color = '#b4231e'; }
+    try { if (typeof window.toast === 'function') window.toast(message, 'err'); } catch (e) {}
+    return null;
+  }
+  function saveFromUi() {
+    if (workingScopeInvalid) return settingsScopeFailure();
+    if (!working || !workingScope) { if (!beginSettings()) return settingsScopeFailure(); }
+    if (!scopeCurrent(workingScope)) return settingsScopeFailure();
+    captureUi(activeFamily);
+    if (!scopeCurrent(workingScope)) return settingsScopeFailure();
+    var saved = writeForScope(working, workingScope);
+    return saved || settingsScopeFailure();
+  }
+  function discardUi() {
+    resetSectionImport(true);
+    working = null;
+    workingScope = null;
+    workingScopeInvalid = false;
+    activeFamily = 'soap';
+  }
+  function onSessionBoundary() {
+    storageBoundaryEpoch++;
+    resetSectionImport(true);
+    if (working || workingScope || modalWasOpen) {
+      working = null;
+      workingScope = null;
+      workingScopeInvalid = true;
+      var status = q('mlsDtSectionProfileStatus');
+      if (status) { status.textContent = scopeError().message; status.style.color = '#b4231e'; }
+    }
+  }
   function onClick(ev) {
     var button = ev.target && ev.target.closest ? ev.target.closest('#settingsModal button') : null;
     if (!button) return;
@@ -1240,6 +1348,7 @@
     mountSettings();
     watchModal();
     try { document.addEventListener('click', onClick, true); } catch (e) {}
+    try { window.addEventListener('mls:session-boundary', onSessionBoundary, true); } catch (eBoundary) {}
     try {
       if (typeof PREF_SYNC_KEYS !== 'undefined' && PREF_SYNC_KEYS.indexOf(STORE_KEY) < 0) PREF_SYNC_KEYS.push(STORE_KEY);
     } catch (e2) {}
