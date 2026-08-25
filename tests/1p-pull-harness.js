@@ -811,7 +811,12 @@ function makeMonthHarness(options) {
         if (p && !p.visits.some(v => v.sourceVisitKey === raw.sourceVisitKey)) p.visits.push(raw);
         return raw;
       },
-      getVisits: id => (byId(id) || { visits: [] }).visits,
+      /* The LIVE feat_visits model takes the PATIENT OBJECT (it reads p.visits
+         directly); an id-only fixture here pushed the engine to an id-first
+         call that returned [] in production and failed the persistence census
+         for every patient (live 2026-08-25). Model the live contract: accept
+         the object, keep ids working for older callers. */
+      getVisits: ref => (byId(ref && typeof ref === 'object' ? ref.id : ref) || { visits: [] }).visits,
       reconcileVerifiedAthenaVisits: () => ({ complete: true, removed: 0, retained: 0 }),
       organizePatientHistory: () => ({ ok: true, complete: true, verifiedVisits: 1 })
     },
