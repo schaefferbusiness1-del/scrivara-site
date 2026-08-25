@@ -47,10 +47,15 @@ const fnSrc = extractFn('function clickRailByAttr(sectionId)');
 
 /* ladder + recovery shape pins */
 assert.ok(src.includes("if (attrRes === 'ambiguous') { railAmbiguous = true; break; }"),
-  'the click ladder treats ambiguity as terminal');
+  'the click ladder treats attribute ambiguity as terminal');
+assert.ok(src.includes("if (lblRes === 'ambiguous') { railAmbiguous = true; break; }"),
+  'wcl-1.0.2: the click ladder treats LABEL-fallback ambiguity as terminal too');
 assert.ok(src.includes("reason: 'rail-ambiguous'"), 'ambiguity refuses with its own named reason');
 assert.ok(src.includes("if (clickRailByAttr('visits') === false) clickRailLabel('Visits')"),
   "the v2.01 recovery re-click refuses 'ambiguous' too");
+
+const lblSrc = extractFn('function clickRailLabel(label)');
+assert.ok(lblSrc.includes("return 'ambiguous'"), 'the label fallback refuses multiple distinct targets');
 
 /* ---- synthetic DOM ---- */
 function makeNode(opts) {
@@ -179,4 +184,53 @@ const ok = m => { n++; console.log('ok ' + n + ' - ' + m); };
   ok('visibility gate intact');
 }
 
-console.log('PASS visits-rail scoped click: unique verified rail clicked once, out-of-rail decoys never clicked, two rails refuse ambiguous before any click, geometry/sibling/visibility gates hold, ladder and recovery treat ambiguity as terminal (' + n + ' cases)');
+/* ---- 7-8. wcl-1.0.2: the LABEL fallback dedupes nested matches and refuses
+ * genuinely distinct targets ---- */
+function runLabel(doc) {
+  const clicked = [];
+  const ctx = vm.createContext({
+    W: { document: doc },
+    visEl: el => el.visible !== false,
+    BAD: /sign|order|submit|billing|prescri/i,
+    realClick: el => { el.clicks++; clicked.push(el); },
+    allEls: () => walk(doc, []).slice(1),
+    String, RegExp
+  });
+  vm.runInContext(lblSrc, ctx, { filename: 'background:clickRailLabel' });
+  return { result: vm.runInContext("clickRailLabel('Visits')", ctx), clicked };
+}
+function labelNode(target) {
+  const li = makeNode({ className: 'chart-tabs__list-item', left: 20, text: 'Visits' });
+  li.closest = sel => (/a,button|li/.test(sel) ? (target || li) : null);
+  return li;
+}
+{
+  const doc = makeNode({ className: 'doc' });
+  const li = makeNode({ className: 'chart-tabs__list-item', left: 20 });
+  attach(doc, li);
+  const spanA = makeNode({ className: 's', left: 22, text: 'Visits' });
+  const spanB = makeNode({ className: 's', left: 24, text: 'Visits' });
+  spanA.closest = () => li; spanB.closest = () => li;
+  attach(li, spanA); attach(li, spanB);
+  const r = runLabel(doc);
+  assert.strictEqual(r.result, true, 'nested duplicate matches resolve to ONE target and click');
+  assert.strictEqual(r.clicked.length, 1, 'exactly one click');
+  assert.strictEqual(r.clicked[0], li, 'the shared rail item took the click');
+  ok('label fallback: nested duplicates dedupe to one target, one click');
+}
+{
+  const doc = makeNode({ className: 'doc' });
+  const liA = makeNode({ className: 'chart-tabs__list-item', left: 20 });
+  const liB = makeNode({ className: 'chart-tabs__list-item', left: 30 });
+  attach(doc, liA); attach(doc, liB);
+  const sA = makeNode({ className: 's', left: 21, text: 'Visits' });
+  const sB = makeNode({ className: 's', left: 31, text: 'Visits' });
+  sA.closest = () => liA; sB.closest = () => liB;
+  attach(liA, sA); attach(liB, sB);
+  const r = runLabel(doc);
+  assert.strictEqual(r.result, 'ambiguous', 'two distinct rail label targets refuse (old bytes clicked the leftmost - a guess)');
+  assert.strictEqual(r.clicked.length, 0, 'ambiguity refuses BEFORE any click');
+  ok('label fallback: two distinct targets refuse ambiguous, zero clicks');
+}
+
+console.log('PASS visits-rail scoped click: unique verified rail clicked once, out-of-rail decoys never clicked, two rails refuse ambiguous before any click, geometry/sibling/visibility gates hold, the LABEL fallback dedupes and refuses too, ladder and recovery treat ambiguity as terminal (' + n + ' cases)');

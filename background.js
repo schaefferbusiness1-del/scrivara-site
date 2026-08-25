@@ -14903,8 +14903,20 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
         cands.push({ el: tgt, left: r.left, top: r.top });
       }
       if (!cands.length) return false;
-      cands.sort(function (a, b) { return (a.left - b.left) || (a.top - b.top); });
-      realClick(cands[0].el);
+      /* wcl-1.0.2 (Codex review of d780ac27): the label fallback could still
+         GUESS - nested spans inside one rail item produce several candidate
+         entries (same target), and two open chart rails produce genuinely
+         different targets. Dedupe to DISTINCT click targets first; exactly
+         one clicks, more than one refuses 'ambiguous' before any click, the
+         same contract as the attribute path. */
+      var lblTargets = [];
+      for (var ci = 0; ci < cands.length; ci++) {
+        var seenT = false;
+        for (var cj = 0; cj < lblTargets.length; cj++) { if (lblTargets[cj] === cands[ci].el) { seenT = true; break; } }
+        if (!seenT) lblTargets.push(cands[ci].el);
+      }
+      if (lblTargets.length > 1) return 'ambiguous';
+      realClick(lblTargets[0]);
       return true;
     }
     /* v1.89.1 (live find, same day): the rail labels are CSS ::after content
@@ -14969,8 +14981,10 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       var attrRes = clickRailByAttr('visits');
       if (attrRes === true) { clicked = true; break; }
       if (attrRes === 'ambiguous') { railAmbiguous = true; break; } /* wcl-1.0.0: refuse before click */
-      clicked = clickRailLabel('Visits');
-      if (!clicked) await sleep(700);
+      var lblRes = clickRailLabel('Visits');
+      if (lblRes === true) { clicked = true; break; }
+      if (lblRes === 'ambiguous') { railAmbiguous = true; break; } /* wcl-1.0.2: the label fallback refuses ambiguity too */
+      await sleep(700);
     }
     if (railAmbiguous) return { ok: false, reason: 'rail-ambiguous', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'More than one verified-looking left-rail "Visits" target is on screen, so MLS refused to guess which chart it belongs to (wcl-1.0.0) - nothing was clicked or captured. Close extra chart panels or windows in athenaOne, then retry.' };
     if (!clicked) return { ok: false, reason: 'no-rail', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The left-rail "Visits" item was not found on the open chart. Refusing to read any other surface as if it were the verified Visits pane (wf_6) - nothing was captured.' + ((clickRailByAttr._nearMiss > 0) ? (' Note: ' + clickRailByAttr._nearMiss + ' rail-shaped Visits candidate(s) were rejected only by the sibling-signature guard (wcl-1.0.1) - if this chart layout is legitimate, report it.') : '') };
