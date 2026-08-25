@@ -74,7 +74,68 @@ ctx2.globalThis = ctx2;
 vm.createContext(ctx2);
 vm.runInContext(epSrc, ctx2);
 const ep = winStub2.__mlsEasyPrep;
-assert.ok(ep && ep.version === '1.2.0', 'easy-prep v1.2.0 expected, got ' + (ep && ep.version));
+assert.ok(ep && ep.version === '1.2.3', 'easy-prep v1.2.3 expected, got ' + (ep && ep.version));
+
+/* Every patient-history surface must use pvr-1.0.0's canonical resolver.
+   A pulled chart normally has p.visits[] but no locally-authored patientNotes;
+   that exact shape produced the live "9 visits" / "No prior visits" split. */
+const canonicalPatient = {
+  id: 'patient-canonical-visits', name: 'Canonical Visit Patient',
+  visits: [
+    { date: '2026-08-24', raw: 'Assessment: latest resolved encounter.' },
+    { date: '2026-07-01', raw: 'Assessment: older resolved encounter.' }
+  ]
+};
+winStub2.__mlsPtVisits = {
+  resolve(patient) {
+    assert.strictEqual(patient, canonicalPatient, 'Easy Prep did not pass the exact patient object to the resolver');
+    return {
+      count: 9,
+      entries: [
+        { date: '2026-08-24', body: 'Assessment: latest resolved encounter.', row: canonicalPatient.visits[0] },
+        { date: '2026-07-01', body: 'Assessment: older resolved encounter.', row: canonicalPatient.visits[1] },
+        { date: '2026-06-01', body: 'Encounter three.' },
+        { date: '2026-05-01', body: 'Encounter four.' },
+        { date: '2026-04-01', body: 'Encounter five.' },
+        { date: '2026-03-01', body: 'Encounter six.' },
+        { date: '2026-02-01', body: 'Encounter seven.' },
+        { date: '2026-01-01', body: 'Encounter eight.' },
+        { date: '2025-12-01', body: 'Encounter nine.' }
+      ]
+    };
+  }
+};
+const canonicalInfo = ep.lastVisitInfo(canonicalPatient);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(canonicalInfo)), {
+  count: 9, lastDate: '2026-08-24', lastExcerpt: 'Assessment: latest resolved encounter.',
+  unavailable: false, pulled: false
+}, 'Easy Prep diverged from the canonical visit count/latest encounter');
+const canonicalSummary = ep.buildPrepSummaryForPatient(canonicalPatient);
+assert.match(canonicalSummary, /LAST VISIT: 9 visits on file, last seen 2026-08-24/,
+  'Easy Prep still said no prior visits when the canonical resolver had nine');
+assert.match(canonicalSummary, /Assessment: latest resolved encounter\./,
+  'Easy Prep did not use the canonical newest encounter excerpt');
+
+/* A present-but-failed canonical resolver may not silently revive the old
+   patientNotes reader. That would turn a resolver outage into stale certainty. */
+winStub2.patientNotes = function () {
+  return [{ date: '2024-01-01', text: 'STALE LOCAL NOTE MUST NOT RENDER' }];
+};
+winStub2.__mlsPtVisits = { resolve: function () { throw new Error('synthetic resolver failure'); } };
+const unavailableInfo = ep.lastVisitInfo(canonicalPatient);
+assert.strictEqual(unavailableInfo.unavailable, true, 'resolver exception did not produce an explicit unavailable state');
+assert.strictEqual(unavailableInfo.count, 0, 'resolver exception reused a stale local note count');
+const unavailableSummary = ep.buildPrepSummaryForPatient(canonicalPatient);
+assert.match(unavailableSummary, /LAST VISIT: Visit history temporarily unavailable/,
+  'resolver exception was mislabeled as no prior visits');
+assert.doesNotMatch(unavailableSummary, /STALE LOCAL NOTE MUST NOT RENDER/,
+  'resolver exception leaked stale local history into the prep card');
+
+winStub2.__mlsPtVisits = { resolve: function () { return { count: 9, entries: [] }; } };
+assert.strictEqual(ep.lastVisitInfo(canonicalPatient).unavailable, true,
+  'an impossible canonical count/list mismatch was rendered as chart truth');
+winStub2.__mlsPtVisits = null;
+winStub2.patientNotes = function () { return []; };
 
 const cleaned = ep.scrubPageDebris('Pulled from Athena 7/16/2026 —\n' + JUNK + '\nRecent visits:\n• 2026-07-16 — ' + JUNK);
 assert.ok(!/window\.|Jotter|Print Premier Ortho|id #7731709/i.test(cleaned), 'prep display scrub: ' + cleaned);
@@ -109,8 +170,15 @@ const manualOnly = {
 };
 assert.strictEqual(ep.athenaChartProvenance(manualOnly).landed, false,
   'manual clinical fields were mistaken for an Athena pull');
-assert.match(ep.buildPrepSummaryForPatient(manualOnly), /SOURCE: NOT PULLED from Athena yet/,
-  'manual-only record lost its fail-closed source label');
+assert.match(ep.buildPrepSummaryForPatient(manualOnly),
+  /SOURCE: CLINICAL DATA PRESENT — no identity-verified Athena pull receipt is attached/,
+  'data without a receipt was falsely described as having no pull/data at all');
+assert.doesNotMatch(ep.buildPrepSummaryForPatient(manualOnly), /SOURCE: (?:PULLED|NOT PULLED) from Athena/,
+  'unverified data was collapsed into a false binary provenance claim');
+
+const trulyUnread = { id: 'patient-empty', name: 'Empty Record' };
+assert.match(ep.buildPrepSummaryForPatient(trulyUnread), /SOURCE: NOT PULLED from Athena yet/,
+  'a genuinely empty, receipt-free record lost the honest unread state');
 
 const verifiedReceipt = {
   ...manualOnly,
@@ -142,7 +210,8 @@ const wrongPatientReceipt = {
 };
 assert.strictEqual(ep.athenaChartProvenance(wrongPatientReceipt).landed, false,
   'another patient\'s receipt authorized this prep card');
-assert.match(ep.buildPrepSummaryForPatient(wrongPatientReceipt), /SOURCE: NOT PULLED from Athena yet/);
+assert.match(ep.buildPrepSummaryForPatient(wrongPatientReceipt),
+  /SOURCE: ATHENA RECEIPT REJECTED — the stored pull receipt is bound to a different patient/);
 
 const legacyReceipt = { ...manualOnly, athenaChartImportedAt: '2026-08-20T09:00:00.000Z' };
 assert.strictEqual(ep.athenaChartProvenance(legacyReceipt).kind, 'legacy-import-stamp',
@@ -176,7 +245,8 @@ const partialWrongPatient = {
   athenaPartialProfileCoverage: { ...partialReceipt.athenaPartialProfileCoverage, patientId: 'patient-b' }
 };
 assert.strictEqual(ep.athenaChartProvenance(partialWrongPatient).kind, 'identity-conflict');
-assert.match(ep.buildPrepSummaryForPatient(partialWrongPatient), /SOURCE: NOT PULLED from Athena yet/);
+assert.match(ep.buildPrepSummaryForPatient(partialWrongPatient),
+  /SOURCE: ATHENA RECEIPT REJECTED — the stored pull receipt is bound to a different patient/);
 assert.strictEqual(ep.athenaChartProvenance({
   ...partialWrongPatient, athenaChartImportedAt: '2026-08-20T09:00:00.000Z'
 }).kind, 'identity-conflict',
@@ -191,6 +261,7 @@ const staleConflict = {
 };
 assert.strictEqual(ep.athenaChartProvenance(staleConflict).kind, 'identity-conflict',
   'a wrong-patient current receipt fell through to a looser legacy timestamp');
-assert.match(ep.buildPrepSummaryForPatient(staleConflict), /SOURCE: NOT PULLED from Athena yet/);
+assert.match(ep.buildPrepSummaryForPatient(staleConflict),
+  /SOURCE: ATHENA RECEIPT REJECTED — the stored pull receipt is bound to a different patient/);
 
 console.log('prep-summary-debris: ok');

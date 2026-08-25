@@ -1,4 +1,4 @@
-/* feat_mls_uxpack1.js — v ux1-1.0.0 (2026-07-01)
+/* feat_mls_uxpack1.js — v ux1-1.0.1 (2026-08-25)
  *
  * UX PACK 1 (additive, reversible — window.__mlsUxPack1.revert()). Six small fixes:
  *   1. PULL PROGRESS — the "Pull today\u2019s patients" quick-action card shows a live
@@ -10,10 +10,11 @@
        booked patients (and never listed them). The misleading line is hidden whenever
        the day really has appointments, and a compact "Booked" chip strip shows every
        booked patient for the visible day.
- *   5. TEMPLATE TOOLS — a toolbar in the templates area: upload template FILES, upload a
-       whole FOLDER, add a starter pack of properly-structured op-note templates (with
-       fill-in blanks like volumes/concentrations), and Delete ALL templates
-       (double-confirm). Uses the app\u2019s own getTemplates/setTemplates store.
+ *   5. TEMPLATE TOOLS — the old heuristic toolbar is retired. The app now owns two
+       deliberately separate surfaces: the native Op Notes template library and the
+       saved-format importer in Settings for HPI/ROS/Exam/Assessment/Plan and other AI
+       drafts. Programmatic legacy helpers remain, but op-note controls never mount in
+       Settings.
  *   6. AGENDA CHIP — promoted to a primary-styled control and guaranteed to show its label.
  *
  * No athenaOne writes. No PHI leaves the page. Every failure path try/catch no-ops.
@@ -25,8 +26,11 @@ try{
 }catch(e){}
 (function () {
   "use strict";
-  if (window.__mlsUxPack1 && window.__mlsUxPack1.installed) return;
-  var VERSION = "ux1-1.0.0";
+  var VERSION = "ux1-1.0.1";
+  if (window.__mlsUxPack1 && window.__mlsUxPack1.installed) {
+    if (window.__mlsUxPack1.version === VERSION) return;
+    try { if (typeof window.__mlsUxPack1.revert === "function") window.__mlsUxPack1.revert(); } catch (e0) {}
+  }
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === "function"; }
   var NL = String.fromCharCode(10);
@@ -42,9 +46,6 @@ try{
       ".mlsux1-busy{opacity:.85;pointer-events:none;}",
       ".mlsux1-spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(120,150,255,.35);border-top-color:#2E6A4B;border-radius:50%;vertical-align:-2px;margin-right:6px;animation:mlsux1rot .8s linear infinite;}",
       "@keyframes mlsux1rot{to{transform:rotate(360deg)}}",
-      "#mlsUx1TmplBar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px;padding-top:10px;border-top:1px dashed #d5dde6;width:100%;}",
-      "#mlsUx1TmplBar button{cursor:pointer;border:1px solid #d5dde6;background:#f6f9fc;border-radius:8px;padding:6px 10px;font-size:12.5px;}",
-      "#mlsUx1TmplBar button.mlsux1-danger{border-color:#e3b3b3;background:#fdf3f3;color:#8a1f1f;}",
       ".mlsux1-daychips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;}",
       ".mlsux1-daychips span{background:#eef4ff;border:1px solid #EAF1EE;color:#204034;border-radius:8px;padding:3px 8px;font-size:12px;}"
     ].join("");
@@ -262,39 +263,16 @@ try{
     if (!ok2) return;
     if (tSet([])) toast("Deleted all " + n + " templates.", "ok");
   }
-  function mountTmplBar() {
+  function retireMisplacedTemplateBar() {
+    /* ux1-1.0.1: the old generic `[id*=template]` search could select
+       #mlsDtSectionTemplateTextHost while Notes & AI Settings was open. It
+       then inserted op-note upload/delete buttons directly into an Assessment
+       or Plan saved format. #templatesModal already owns the complete op-note
+       importer, while #mlsDraftTuningSection owns its scoped example importer;
+       this obsolete third toolbar must not exist in either surface. */
     safe(function () {
-      if (!isFn(window.getTemplates) || !isFn(window.setTemplates)) return;
       var existing = document.getElementById("mlsUx1TmplBar");
-      if (existing && existing.offsetParent) return;
-      var host = null;
-      var cands = document.querySelectorAll("[id*=template i], [id*=Template]");
-      for (var i = 0; i < cands.length; i++) {
-        var el = cands[i];
-        if (el.tagName === "STYLE" || el.tagName === "SCRIPT") continue;
-        if (el.offsetParent && el.getBoundingClientRect().height > 120) { host = el; break; }
-      }
-      if (!host) {
-        var btns = document.querySelectorAll("button");
-        for (var j = 0; j < btns.length; j++) {
-          if ((btns[j].textContent || "").indexOf("standard line") >= 0 && btns[j].offsetParent) { host = btns[j].parentElement; break; }
-        }
-      }
-      if (!host) return;
       if (existing) existing.remove();
-      var bar = document.createElement("div");
-      bar.id = "mlsUx1TmplBar";
-      function mkBtn(label, cls, fn) {
-        var b = document.createElement("button");
-        b.type = "button"; b.textContent = label; if (cls) b.className = cls;
-        b.addEventListener("click", function (ev) { safe(function () { ev.preventDefault(); ev.stopPropagation(); }); fn(); });
-        bar.appendChild(b);
-      }
-      mkBtn("⬆ Upload templates (.txt/.md)", "", function () { uploadTemplates(false); });
-      mkBtn("📁 Upload a folder", "", function () { uploadTemplates(true); });
-      mkBtn("📦 Add starter op-note templates", "", addStarters);
-      mkBtn("🗑 Delete ALL templates", "mlsux1-danger", deleteAll);
-      host.appendChild(bar);
     });
   }
 
@@ -310,7 +288,7 @@ try{
 
   /* ============ boot / revert ============ */
   var _iv = null;
-  function tick() { injectStyle(); wrapPull(); fixDayView(); mountTmplBar(); fixAgenda(); }
+  function tick() { injectStyle(); wrapPull(); fixDayView(); retireMisplacedTemplateBar(); fixAgenda(); }
   _iv = setInterval(function () { safe(tick); }, 1500);
   safe(tick);
 

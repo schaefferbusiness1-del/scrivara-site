@@ -132,24 +132,48 @@ async function runtime() {
           athenaProfileCoverage: undefined,
           athenaChartImportedAt: undefined,
           athenaChartSnapshot: JSON.stringify({ problems: ['Snapshot-only problem'] })
+        }),
+        resolvedVisits: paint('prep-source-browser-visits', {
+          visits: [
+            { date: '2026-08-24', source: 'athena-visit', raw: 'Assessment: newest Athena encounter.' },
+            { date: '2026-08-20', source: 'athena-visit', raw: 'Assessment: encounter two.' },
+            { date: '2026-08-15', source: 'athena-visit', raw: 'Assessment: encounter three.' },
+            { date: '2026-08-10', source: 'athena-visit', raw: 'Assessment: encounter four.' },
+            { date: '2026-08-05', source: 'athena-visit', raw: 'Assessment: encounter five.' },
+            { date: '2026-07-25', source: 'athena-visit', raw: 'Assessment: encounter six.' },
+            { date: '2026-07-15', source: 'athena-visit', raw: 'Assessment: encounter seven.' },
+            { date: '2026-07-05', source: 'athena-visit', raw: 'Assessment: encounter eight.' },
+            { date: '2026-06-25', source: 'athena-visit', raw: 'Assessment: encounter nine.' }
+          ]
         })
       };
     });
 
-    assert.match(result.manual, /SOURCE: NOT PULLED from Athena yet/,
-      'manual clinical facts must remain visibly NOT PULLED');
+    assert.match(result.manual,
+      /SOURCE: CLINICAL DATA PRESENT — no identity-verified Athena pull receipt is attached/,
+      'clinical facts without a receipt were falsely described as no pull/data at all');
+    assert.doesNotMatch(result.manual, /SOURCE: (?:PULLED|NOT PULLED) from Athena/,
+      'unverified clinical facts were collapsed into a false binary provenance claim');
     assert.match(result.full, /SOURCE: PULLED from Athena — identity-verified chart receipt from 2026-08-24/,
       'a complete exact-patient receipt did not repaint the visible SOURCE row as PULLED');
     assert.doesNotMatch(result.full, /SOURCE: NOT PULLED/);
     assert.match(result.partial, /SOURCE: PARTIALLY PULLED from Athena — identity-verified capture from 2026-08-24/,
       'an exact-patient partial receipt did not repaint the visible SOURCE row as PARTIALLY PULLED');
-    assert.match(result.wrongPatientLegacy, /SOURCE: NOT PULLED from Athena yet/,
-      'wrong-patient proof must fail closed instead of falling through to legacy provenance');
-    assert.match(result.snapshotOnly, /SOURCE: NOT PULLED from Athena yet/,
-      'snapshot contents alone must not authorize positive provenance');
+    assert.match(result.wrongPatientLegacy,
+      /SOURCE: ATHENA RECEIPT REJECTED — the stored pull receipt is bound to a different patient/,
+      'wrong-patient proof must fail closed with the actual identity reason');
+    assert.match(result.snapshotOnly,
+      /SOURCE: CLINICAL DATA PRESENT — no identity-verified Athena pull receipt is attached/,
+      'snapshot contents without a receipt must be shown as unverified data, not a false pulled/not-pulled claim');
+    assert.match(result.resolvedVisits, /LAST VISIT: 9 visits on file, last seen 2026-08-24/,
+      'the visible prep card contradicted the profile resolver with "No prior visits"');
+    assert.match(result.resolvedVisits, /Assessment: newest Athena encounter\./,
+      'the visible prep card did not use the canonical newest encounter body');
+    assert.doesNotMatch(result.resolvedVisits, /LAST VISIT: No prior visits on file/,
+      'the old patientNotes-only empty state is still visible for a pulled chart');
 
     assert.strictEqual(errors.length, 0, `shipped SOURCE-row browser flow raised page errors: ${errors.join(' | ')}`);
-    console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states passed');
+    console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states passed + canonical 9-visit state passed');
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

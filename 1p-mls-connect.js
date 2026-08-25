@@ -2340,9 +2340,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.0') return; } catch (e) { return; }
+  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.3') return; } catch (e) { return; }
 
-  var VERSION = '1.2.0';
+  var VERSION = '1.2.3';
 
   /* ---------- tiny helpers (mirrors the live app's own conventions) ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -2415,10 +2415,57 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return manual || null;
   }
 
-  // Last visit date + count, computed the same way the live at-a-glance chips
-  // and studioDataSnapshot() already do (via patientNotes), so numbers always
-  // agree with what's already on screen.
-  function lastVisitInfo(patientId) {
+  // Last visit date + count come from pvr-1.0.0, the ONE resolver shared by
+  // the profile visit tile, History room and Legal chronology. Athena pulls
+  // store encounters on p.visits[]; patientNotes() contains only notes made in
+  // MLS. Reading patientNotes alone therefore made the same chart say both
+  // "9 visits" and "No prior visits". Keep the id form for older callers, but
+  // prefer the patient object so the resolver reads the exact record on screen.
+  function lastVisitInfo(patientOrId) {
+    var p = (patientOrId && typeof patientOrId === 'object') ? patientOrId : null;
+    var patientId = p ? S(p.id) : S(patientOrId);
+    if (!p && patientId) {
+      try { p = isFn(window.findPatient) ? window.findPatient(patientId) : null; } catch (e) {}
+    }
+    var api = null;
+    try { api = window.__mlsPtVisits; } catch (e) {}
+    if (p && api && isFn(api.resolve)) {
+      try {
+        /* Keep the public owner explicit: profile-coherence pins that the live
+           strip consumes window.__mlsPtVisits.resolve rather than rebuilding
+           a fifth visit reader behind an alias. */
+        var resolved = window.__mlsPtVisits.resolve(p);
+        if (resolved && resolved.entries && resolved.entries.length !== undefined) {
+          var entries = [].slice.call(resolved.entries);
+          var count = Number(resolved.count);
+          /* pvr's public contract is count === entries.length. If that owner
+             throws or returns an internally impossible result, local notes are
+             not an honest substitute: that was the split-brain reader this
+             function was changed to remove. Surface an unavailable state so a
+             clinician never sees stale local data labeled as chart history. */
+          if (!isFinite(count) || count < 0 || Math.floor(count) !== count || count !== entries.length) {
+            return { count: 0, lastDate: '', lastExcerpt: '', unavailable: true, pulled: !!resolved.pulled };
+          }
+          var first = entries[0] || null; // resolver guarantees newest first
+          var row = first && (first.row || first.noteRow);
+          var excerpt = S(first && (first.body || first.summary) ||
+            row && (row.raw || row.detail || row.text || row.note || row.soap || row.findings || row.plan))
+            .replace(/\s+/g, ' ').trim().slice(0, 160);
+          return {
+            count: count,
+            lastDate: S(first && (first.date || first.rawDate)).slice(0, 10),
+            lastExcerpt: excerpt,
+            unavailable: false,
+            pulled: !!resolved.pulled
+          };
+        }
+        return { count: 0, lastDate: '', lastExcerpt: '', unavailable: true, pulled: false };
+      } catch (e) {
+        return { count: 0, lastDate: '', lastExcerpt: '', unavailable: true, pulled: false };
+      }
+    }
+
+    // Compatibility fallback for a shell that has not installed pvr yet.
     var notes = [];
     try { notes = (isFn(window.patientNotes) ? window.patientNotes(patientId) : []) || []; } catch (e) {}
     var dates = notes.map(function (n) { return S(n.date || n.note_date || n.created_at).slice(0, 10); }).filter(Boolean).sort();
@@ -2428,7 +2475,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     })[0];
     var excerpt = '';
     try { excerpt = S(last && (last.text || last.note || last.soap)).replace(/\s+/g, ' ').trim().slice(0, 160); } catch (e) {}
-    return { count: notes.length, lastDate: dates.length ? dates[dates.length - 1] : '', lastExcerpt: excerpt };
+    return { count: notes.length, lastDate: dates.length ? dates[dates.length - 1] : '', lastExcerpt: excerpt, unavailable: false, pulled: false };
   }
 
   // Today's/next appointment time + reason for this patient, computed the same
@@ -2514,7 +2561,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        treated as Athena provenance. Say which state this is once, up front,
        and make the allergy line refuse to imply a documented NKDA. */
     var partial = ctx.chartPartial === true;
-    var unread = !ctx.chartLanded && !partial;
+    var unverifiedData = ctx.chartUnverifiedData === true;
+    var unread = !ctx.chartLanded && !partial && !unverifiedData;
     if (trim(ctx.chartSourceText)) {
       lines.push('SOURCE: ' + trim(ctx.chartSourceText));
     } else if (unread) {
@@ -2527,7 +2575,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ? 'NOT PULLED from Athena yet \u2014 no allergy data has been read for this patient; this is NOT a documented NKDA, confirm with patient'
       : (partial
         ? 'Not captured in this partial Athena pull \u2014 re-pull the full chart and confirm with the patient; this is NOT a documented NKDA'
-        : 'None recorded — confirm with patient (NKDA not yet documented)');
+        : (unverifiedData
+          ? 'Not present in this record \u2014 Athena provenance is not verified; re-pull the chart and confirm with the patient; this is NOT a documented NKDA'
+          : 'None recorded — confirm with patient (NKDA not yet documented)'));
     lines.push('ALLERGIES: ' + (trim(ctx.allergies) || allergyEmpty));
     /* pvr-1.0.0: 'Not recorded' is a placeholder the calm shell flattens to an
        em-dash, and rightly - it is not an answer. ctx.emptyText carries the one
@@ -2569,10 +2619,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
 
     var lastBits = [];
-    if (ctx.visitCount) lastBits.push(ctx.visitCount + ' visit' + (ctx.visitCount === 1 ? '' : 's') + ' on file');
-    if (trim(ctx.lastDate)) lastBits.push('last seen ' + trim(ctx.lastDate));
-    lines.push('LAST VISIT: ' + (lastBits.length ? lastBits.join(', ') : 'No prior visits on file'));
-    if (trim(ctx.lastExcerpt)) lines.push('  → ' + trim(ctx.lastExcerpt) + (ctx.lastExcerpt.length >= 160 ? '…' : ''));
+    if (ctx.visitHistoryUnavailable === true) {
+      lines.push('LAST VISIT: Visit history temporarily unavailable — refresh this page before relying on the visit count.');
+    } else {
+      if (ctx.visitCount) lastBits.push(ctx.visitCount + ' visit' + (ctx.visitCount === 1 ? '' : 's') + ' on file');
+      if (trim(ctx.lastDate)) lastBits.push('last seen ' + trim(ctx.lastDate));
+      lines.push('LAST VISIT: ' + (lastBits.length ? lastBits.join(', ') : 'No prior visits on file'));
+      if (trim(ctx.lastExcerpt)) lines.push('  → ' + trim(ctx.lastExcerpt) + (ctx.lastExcerpt.length >= 160 ? '…' : ''));
+    }
 
     if (trim(ctx.outsideText)) lines.push('OUTSIDE RECORDS: ' + trim(ctx.outsideText));
 
@@ -2709,11 +2763,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     p = p || {};
     var pid = trim(p.id);
     var coverage = p.athenaProfileCoverage;
+    var rejected = function () {
+      return {
+        landed: false,
+        partial: false,
+        ambiguous: true,
+        kind: 'identity-conflict',
+        capturedAt: '',
+        text: 'ATHENA RECEIPT REJECTED \u2014 the stored pull receipt is bound to a different patient. Re-pull this exact chart before relying on its source.'
+      };
+    };
     /* A receipt explicitly bound to another immutable patient id is a conflict,
        not permission to fall back to a looser old timestamp on this record. */
     if (coverage && coverage.exactIdentityVerified === true && trim(coverage.patientId) &&
         (!pid || trim(coverage.patientId) !== pid)) {
-      return { landed: false, partial: false, kind: 'identity-conflict', capturedAt: '', text: '' };
+      return rejected();
     }
     if (coverage && coverage.complete === true && coverage.exactIdentityVerified === true &&
         pid && trim(coverage.patientId) === pid) {
@@ -2732,7 +2796,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var partialReceipt = p.athenaPartialProfileCoverage;
     if (partialReceipt && partialReceipt.exactIdentityVerified === true && trim(partialReceipt.patientId) &&
         (!pid || trim(partialReceipt.patientId) !== pid)) {
-      return { landed: false, partial: false, kind: 'identity-conflict', capturedAt: '', text: '' };
+      return rejected();
     }
     var legacyAt = trim(p.athenaChartImportedAt);
     if (legacyAt) {
@@ -2770,19 +2834,58 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         };
       }
     }
-    return { landed: false, partial: false, kind: 'unverified', capturedAt: '', text: '' };
+    /* Older/import-interrupted records can contain real clinical values while
+       lacking the modern identity-bound receipt. Calling those records "NOT
+       PULLED" is visibly false and was the source of a recurring user report;
+       calling them "PULLED" would be equally unsafe because clinicians can add
+       the same fields manually. State the evidence we actually have: data is
+       present, but its Athena provenance is not verified. A fresh exact-chart
+       pull will attach the authoritative receipt and replace this state. */
+    var hasValue = function (value) {
+      if (Array.isArray(value)) return value.some(hasValue);
+      if (value && typeof value === 'object') {
+        return Object.keys(value).some(function (key) {
+          if (/^(?:capturedAt|updatedAt|createdAt)$/i.test(key)) return false;
+          return hasValue(value[key]);
+        });
+      }
+      var text = trim(value);
+      return !!text && !/^(?:none(?: recorded| on file)?|not recorded|unknown|n\s*\/\s*a|na|not available|not applicable|no data|-|\u2014)$/i.test(text);
+    };
+    var clinicalDataPresent = [
+      p.problems, p.meds, p.allergies, p.vitals, p.history,
+      p.athenaHistorySummary, p.athenaChartSnapshot, p.athenaChartSummaryBlock
+    ].some(hasValue);
+    if (clinicalDataPresent) {
+      return {
+        landed: false,
+        partial: false,
+        ambiguous: true,
+        kind: 'data-without-receipt',
+        capturedAt: '',
+        text: 'CLINICAL DATA PRESENT \u2014 no identity-verified Athena pull receipt is attached. Values may include clinician-entered data or an older import; re-pull this chart to verify the source and refresh missing sections.'
+      };
+    }
+    return { landed: false, partial: false, ambiguous: false, kind: 'unverified', capturedAt: '', text: '' };
   }
 
   function buildPrepSummaryForPatient(p) {
     if (!p) return '';
     var appt = apptContext(p);
-    var lv = lastVisitInfo(p.id);
+    var lv = lastVisitInfo(p);
     var provenance = athenaChartProvenance(p);
     var emptyText = prepEmptyText(p);
     if (provenance.partial === true) {
       ['problems', 'meds', 'vitals', 'history'].forEach(function (key) {
         if (!(provenance.fields && provenance.fields[key] && provenance.fields[key].status === 'found')) {
           emptyText[key] = 'Not captured in this partial Athena pull \u2014 re-pull the full chart.';
+        }
+      });
+    }
+    if (provenance.ambiguous === true) {
+      ['problems', 'meds', 'vitals', 'history'].forEach(function (key) {
+        if (!trim(key === 'problems' ? p.problems : (key === 'meds' ? p.meds : ''))) {
+          emptyText[key] = 'Not present in this record \u2014 Athena pull provenance is not verified; re-pull the chart to refresh this section.';
         }
       });
     }
@@ -2793,11 +2896,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       allergies: cleanListField(p.allergies, { keepNegatives: true }),
       chartLanded: provenance.landed,
       chartPartial: provenance.partial,
+      chartUnverifiedData: provenance.ambiguous,
       chartSourceText: provenance.text,
       vitals: getVitals(p), bmi: resolveBmi(p), history: getHistory(p),
       historySummary: withholdLinesIfOtherPatient(cleanNarrative(scrubPageDebris(p.athenaHistorySummary || '')), p),
       careFlags: cleanListField(p.careFlags),
-      visitCount: lv.count, lastDate: lv.lastDate,
+      visitCount: lv.count, lastDate: lv.lastDate, visitHistoryUnavailable: lv.unavailable === true,
       lastExcerpt: withholdIfOtherPatient(scrubPageDebris(lv.lastExcerpt), p),
       outsideText: outsideRecordsText(p),
       /* pvr-1.0.0: the honest sentence for each EMPTY clinical field, resolved
@@ -52514,22 +52618,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var boxes = [];
     if (p) {
       var lastV = null, appt = null, vit = '';
-      try { lastV = (typeof ep.lastVisitInfo === 'function') ? ep.lastVisitInfo(p.id) : null; } catch (e) {}
+      try { lastV = (typeof ep.lastVisitInfo === 'function') ? ep.lastVisitInfo(p) : null; } catch (e) {}
       try { appt = (typeof ep.apptContext === 'function') ? ep.apptContext(p) : null; } catch (e) {}
       try { var bmi = (typeof ep.resolveBmi === 'function') ? ep.resolveBmi(p) : (p.bmi || ''); var vv = (p.vitals && typeof p.vitals === 'object') ? p.vitals : {}; vit = [vv.bp ? ('BP ' + vv.bp) : '', vv.hr ? ('HR ' + vv.hr) : '', bmi ? ('BMI ' + bmi) : ''].filter(Boolean).join(' \u00b7 '); } catch (e) {}
-      /* pvr-1.0.0: ONE resolver answers "how many visits". lastVisitInfo counts
-         the notes store INCLUDING drafts; _renderProfAtGlance counted the same
-         store EXCLUDING them; the timeline counted p.visits[]; the rail picker
-         counted scheduled appointment rows. Four readers, four rules, and the
-         owner's chart truthfully showed 0, 1 and 3 at the same instant. */
-      var vres = null; try { if (window.__mlsPtVisits && typeof window.__mlsPtVisits.resolve === 'function') vres = window.__mlsPtVisits.resolve(p); } catch (e) {}
-      var vcount = vres ? vres.count : (lastV && lastV.count) || 0;
-      var vlast = '';
-      try { vlast = vres ? ((vres.entries[0] && vres.entries[0].date) || '') : String((lastV && lastV.lastDate) || ''); } catch (e) {}
+      /* pvr-1.0.0: ONE resolver answers "how many visits". Easy Prep now asks
+         the same resolver too; its compatibility fallback is used only before
+         pvr installs. The timeline and the strip therefore cannot disagree
+         merely because Athena encounters live on p.visits[] rather than in the
+         locally-authored note store. */
+      var vcount = (lastV && lastV.count) || 0;
+      var vlast = String((lastV && lastV.lastDate) || '');
       var vtext = vcount ? (vcount + ' visit' + (vcount === 1 ? '' : 's') + (vlast ? ' \u00b7 last ' + vlast : '')) : '';
-      var vfield = vcount
+      var vfield = (lastV && lastV.unavailable === true)
+        ? { text: 'Visit history temporarily unavailable.', detail: 'Refresh this page before relying on the visit count.', quiet: true, read: false, state: 'unavailable' }
+        : vcount
         ? { text: qtxt(vtext, 60), quiet: false, read: false }
-        : { text: (vres && vres.pulled) ? 'No visits on file for this chart.' : 'Not pulled from Athena yet.', quiet: true, read: !!(vres && !vres.pulled), state: (vres && vres.pulled) ? 'none' : 'not_pulled' };
+        : { text: (lastV && lastV.pulled) ? 'No visits on file for this chart.' : 'Not pulled from Athena yet.', quiet: true, read: !!(lastV && !lastV.pulled), state: (lastV && lastV.pulled) ? 'none' : 'not_pulled' };
       boxes = [
         ['Problems', qfield(p, 'problems', String(p.problems || '').split(/\n/).slice(0, 4).join('\n'), 220)],
         ['Medications', qfield(p, 'meds', String(p.meds || '').split(/\n/).slice(0, 4).join('\n'), 220)],
