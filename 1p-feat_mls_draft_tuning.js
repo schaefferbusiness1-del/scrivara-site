@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsDraftTuning && window.__mlsDraftTuning.installed) return;
 
-  var VERSION = '1.3.0';
+  var VERSION = '1.3.1';
   var STORE_KEY = 'draftTuningV1';
   var MAX_INSTRUCTIONS = 600;
   var MAX_SECTION_TEMPLATE = 2000;
@@ -950,7 +950,7 @@
         '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
       '</div>' +
       '<div class="field" id="mlsDtSectionTemplateTextHost"><label for="mlsDtSectionTemplateText">Template / outline for this saved format</label><textarea class="note-box mls-dt-template-field" id="mlsDtSectionTemplateText" maxlength="2000" placeholder="Enter the headings, order, labels, or example structure MLS should follow. Do not put patient facts here." style="min-height:150px;height:150px;box-sizing:border-box"></textarea><p class="mini">The AI treats this as a format scaffold, never as evidence about the patient. 2,000 characters maximum.</p></div>' +
-      '<div class="field" id="mlsDtSectionImportHost"><button type="button" class="btn-ghost" id="mlsDtSectionImportOpen" aria-controls="mlsDtSectionImportPanel" aria-expanded="false">Import an example draft, document, or image</button><div id="mlsDtSectionImportPanel" hidden style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px">' +
+      '<div class="field" id="mlsDtSectionImportHost"><button type="button" class="btn-ghost" id="mlsDtSectionImportOpen" aria-controls="mlsDtSectionImportPanel" aria-describedby="mlsDtSectionImportScope" aria-expanded="false">Upload or paste an example for this saved format</button><p class="mini" id="mlsDtSectionImportScope">Applies only to the selected draft type and saved format. Procedure/op-note templates stay in Op Notes.</p><div id="mlsDtSectionImportPanel" hidden style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px">' +
         '<p class="mini" style="margin-top:0">Paste an example draft, or choose a document file or image (text, Word, PDF, PNG, JPEG, WebP, or GIF). Your example is processed through MLS\'s authenticated AI services. For images or scanned PDFs, MLS first performs temporary OCR. MLS removes common patient identifiers and embedded instructions from the reusable result, but review the preview before saving. The original example is used transiently, then cleared from this importer and is not saved in your draft-tuning settings. Only the reusable format fields are saved when you choose Apply and Save Settings.</p>' +
         '<input type="file" id="mlsDtSectionImportFile" accept=".txt,.text,.md,.markdown,.rtf,.doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif">' +
         '<textarea class="note-box" id="mlsDtSectionImportExample" maxlength="20000" placeholder="Or paste an example draft here…" style="margin-top:8px;min-height:120px"></textarea>' +
@@ -1112,6 +1112,20 @@
       (profiles.length >= MAX_SECTION_PROFILES ? 'Remove one before adding another.' :
         (profiles.length <= 1 ? 'The final format cannot be removed.' : 'Names, rules, templates, and comments are saved independently.')));
   }
+  function paintSectionImportScope(id) {
+    id = familyId(id);
+    var button = q('mlsDtSectionImportOpen'), scope = q('mlsDtSectionImportScope');
+    var label = FAMILY_LABELS[id] || 'selected draft';
+    if (button) button.textContent = 'Upload or paste an example for this ' + label + ' format';
+    if (!scope) return;
+    if (SECTION_FAMILIES.indexOf(id) >= 0) {
+      scope.textContent = 'Applies only to the selected ' + label + ' saved format. It does not use or change procedure/op-note templates.';
+    } else if (id === 'opnote') {
+      scope.textContent = 'Applies only to this AI draft format. The full operative-template library stays in Op Notes.';
+    } else {
+      scope.textContent = 'Applies only to the selected ' + label + ' saved format.';
+    }
+  }
   function paintCount() {
     var el = q('mlsDtInstructions'), count = q('mlsDtCount');
     if (el && count) count.textContent = cleanText(el.value, MAX_INSTRUCTIONS).length + ' / ' + MAX_INSTRUCTIONS;
@@ -1137,6 +1151,7 @@
     id = familyId(id); activeFamily = id;
     var p = working.families[id] || familyDefaults(id);
     q('mlsDtFamily').value = id;
+    paintSectionImportScope(id);
     q('mlsDtLength').value = p.length;
     q('mlsDtTone').value = p.tone;
     q('mlsDtStructure').value = p.structure;

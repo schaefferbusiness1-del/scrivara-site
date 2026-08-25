@@ -31,6 +31,7 @@ assert.ok(p1Source.length > 0, '1p draft-tuning module is missing');
 
 const CONTROL_IDS = [
   'mlsDtSectionImportOpen',
+  'mlsDtSectionImportScope',
   'mlsDtSectionImportPanel',
   'mlsDtSectionImportFile',
   'mlsDtSectionImportExample',
@@ -76,6 +77,7 @@ try {
     window.saveSettings = function () {};
     window.getGenLength = () => 'standard';
     window.getGenInstr = () => '';
+    window.__sectionRouteFamilies = [];
   });
   await page.addScriptTag({ path: path.join(root, 'feat_mls_draft_tuning.js') });
   await page.waitForFunction(() => window.__mlsDraftTuning && document.getElementById('mlsDtFamily'));
@@ -150,13 +152,31 @@ try {
       return { text: 'EXTRACTED PRIVATE EXAMPLE OUTLINE\nHPI:\nInterval history:\nAssessment:' };
     };
     window.fetch = async (url, options) => {
-      routeCalls.push({ url: String(url), body: String(options && options.body || '') });
-      return {
-        ok: true,
-        json: async () => ({
+      const body = String(options && options.body || '');
+      routeCalls.push({ url: String(url), body });
+      let family = 'hpi';
+      try { family = String(JSON.parse(body).family || 'hpi'); } catch (_) {}
+      window.__sectionRouteFamilies.push(family);
+      const fixtures = {
+        hpi: {
           templateText: 'HPI:\nChief concern:\nInterval history:\nRelevant context:',
           instructions: 'AI comments: preserve chronology, laterality and documented response; never add facts.'
-        })
+        },
+        assessment: {
+          templateText: 'ASSESSMENT FORMAT:\n1. [Documented problem]\nEvidence/status:',
+          instructions: 'Rank only supported problems; preserve documented certainty and do not infer diagnoses.'
+        },
+        plan: {
+          templateText: 'PLAN FORMAT:\n- Action:\n- Monitoring:\n- Follow-up:',
+          instructions: 'Tie each action to a supported problem; include only documented timing and precautions.'
+        }
+      };
+      return {
+        ok: true,
+        json: async () => fixtures[family] || {
+          templateText: family.toUpperCase() + ' FORMAT:\n[Supported content only]',
+          instructions: 'Use only documented facts.'
+        }
       };
     };
     const importer = api.exampleImporter('hpi', profileId);
@@ -255,7 +275,97 @@ try {
   assert.ok(await page.locator('#mlsDtSectionImportApply').isVisible(), 'Apply control is not visible');
   assert.ok(await page.locator('#mlsDtSectionImportCancel').isVisible(), 'Cancel control is not visible');
 
-  console.log('PASS section example importer: scoped file/draft/image extraction, bounded private derivation, preview, explicit Apply/Cancel, and no raw example persistence');
+  // Prove the user-facing Settings path, not just the lower-level importer.
+  // Assessment and Plan must each derive, Apply, persist on Settings Save, and
+  // reach the real SOAP prompt as separate format scaffolds. Neither may call
+  // or alter the operative/procedure template library.
+  await page.click('#mlsDtSectionImportCancel');
+  const sectionCases = [
+    {
+      family: 'assessment',
+      label: 'Assessment section',
+      example: 'Synthetic assessment example: numbered supported problems followed by documented status.',
+      template: 'ASSESSMENT FORMAT:',
+      comment: 'Rank only supported problems'
+    },
+    {
+      family: 'plan',
+      label: 'Plan / follow-up section',
+      example: 'Synthetic plan example: action, monitoring, follow-up, and documented precautions.',
+      template: 'PLAN FORMAT:',
+      comment: 'Tie each action to a supported problem'
+    }
+  ];
+  for (const testCase of sectionCases) {
+    await page.selectOption('#mlsDtFamily', testCase.family);
+    assert.match(await page.textContent('#mlsDtSectionImportOpen') || '', new RegExp(testCase.label, 'i'),
+      testCase.family + ' importer button does not name its exact destination');
+    const scope = await page.textContent('#mlsDtSectionImportScope') || '';
+    assert.match(scope, new RegExp('selected ' + testCase.label + ' saved format', 'i'),
+      testCase.family + ' importer does not explain its saved-format scope');
+    assert.match(scope, /does not use or change procedure\/op-note templates/i,
+      testCase.family + ' importer does not distinguish itself from Op Notes templates');
+    await page.click('#mlsDtSectionImportOpen');
+    await page.fill('#mlsDtSectionImportExample', testCase.example);
+    await page.click('#mlsDtSectionImportDerive');
+    await page.waitForFunction(expected => {
+      const preview = document.getElementById('mlsDtSectionImportTemplatePreview');
+      return preview && String(preview.value || '').includes(expected);
+    }, testCase.template);
+    await page.click('#mlsDtSectionImportApply');
+    assert.match(await page.inputValue('#mlsDtSectionTemplateText'), new RegExp(testCase.template),
+      testCase.family + ' Apply did not update its visible saved-format field');
+    assert.match(await page.inputValue('#mlsDtInstructions'), new RegExp(testCase.comment),
+      testCase.family + ' Apply did not update its visible AI comments');
+    await page.click('#settingsModal button[onclick*="saveSettings"]');
+  }
+
+  const scopedUiResult = await page.evaluate(() => {
+    const api = window.__mlsDraftTuning;
+    const state = api.read();
+    const selected = family => {
+      const row = state.families[family];
+      return row.profiles.find(profile => profile.id === row.activeProfile) || row.profiles[0];
+    };
+    return {
+      assessment: selected('assessment'),
+      plan: selected('plan'),
+      hpi: state.families.hpi,
+      ros: state.families.ros,
+      prompt: api.promptBlock('soap'),
+      routeFamilies: window.__sectionRouteFamilies.slice(),
+      opNoteStore: typeof window.getTemplates === 'function' ? window.getTemplates() : []
+    };
+  });
+  assert.match(scopedUiResult.assessment.templateText, /ASSESSMENT FORMAT:/,
+    'Assessment template did not persist after Settings Save');
+  assert.match(scopedUiResult.assessment.instructions, /Rank only supported problems/,
+    'Assessment AI comments did not persist after Settings Save');
+  assert.match(scopedUiResult.plan.templateText, /PLAN FORMAT:/,
+    'Plan template did not persist after Settings Save');
+  assert.match(scopedUiResult.plan.instructions, /Tie each action to a supported problem/,
+    'Plan AI comments did not persist after Settings Save');
+  assert.ok(!JSON.stringify(scopedUiResult.assessment).includes('PLAN FORMAT:'),
+    'Plan import leaked into the Assessment saved format');
+  assert.ok(!JSON.stringify(scopedUiResult.plan).includes('ASSESSMENT FORMAT:'),
+    'Assessment import leaked into the Plan saved format');
+  assert.ok(!JSON.stringify(scopedUiResult.ros).includes('ASSESSMENT FORMAT:') &&
+    !JSON.stringify(scopedUiResult.ros).includes('PLAN FORMAT:'),
+  'Assessment/Plan import leaked into ROS');
+  assert.match(scopedUiResult.prompt, /Selected ASSESSMENT template[\s\S]*ASSESSMENT FORMAT:/,
+    'saved Assessment format is not wired into the SOAP generation prompt');
+  assert.match(scopedUiResult.prompt, /ASSESSMENT AI prompt comments[\s\S]*Rank only supported problems/,
+    'saved Assessment comments are not wired into the SOAP generation prompt');
+  assert.match(scopedUiResult.prompt, /Selected PLAN template[\s\S]*PLAN FORMAT:/,
+    'saved Plan format is not wired into the SOAP generation prompt');
+  assert.match(scopedUiResult.prompt, /PLAN AI prompt comments[\s\S]*Tie each action to a supported problem/,
+    'saved Plan comments are not wired into the SOAP generation prompt');
+  assert.ok(scopedUiResult.routeFamilies.includes('assessment') && scopedUiResult.routeFamilies.includes('plan'),
+    'the Settings UI did not call the AI derivation route with the selected section family');
+  assert.deepStrictEqual(scopedUiResult.opNoteStore, [],
+    'section-format imports changed the separate operative/procedure template store');
+
+  console.log('PASS section example importer: scoped file/draft/image extraction, bounded private derivation, explicit Apply/Cancel, Assessment/Plan persistence, prompt wiring, no cross-section leakage, and no op-note store mutation');
 } finally {
   await browser.close();
 }
