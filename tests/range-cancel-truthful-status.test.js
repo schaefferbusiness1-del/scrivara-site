@@ -84,7 +84,7 @@ assert.strictEqual(texts.ez3cFail, '1',
   'the fail chip counts ONLY the true failure - two cancelled days do not inflate it (old shape showed 3)');
 assert.ok(/2 cancelled/.test(texts.ez3PullBarLbl || ''),
   'the bar label discloses the cancelled count instead of hiding it');
-assert.ok(/3 of 4 days/.test(texts.ez3PullBarLbl || ''),
-  'cancelled days count as SETTLED for this run (same as failed days always did) so the bar never lies about remaining work');
+assert.ok(/4 of 4 days/.test(texts.ez3PullBarLbl || ''),
+  'cancelled days count as SETTLED for this run (same as failed days always did) so the bar never lies about remaining work — all four fixture days are terminal');
 
 console.log('PASS range-cancel truthful status: both live cancel sites write status cancelled, cancelled days stay retryable, the fail chip counts only true failures (1 not 3), and the bar label discloses 2 cancelled');
