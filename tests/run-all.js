@@ -1695,7 +1695,16 @@ const tests = [
      wins the race; visits: caller deadline or a generous 300s chain default),
      clear it on every normal terminal, and drop late replies. Runs the REAL
      extracted handler blocks with fake timers and a silent worker. */
-  'content-read-relay-watchdog.test.js'
+  'content-read-relay-watchdog.test.js',
+  /* surg-1.0.0 (authorized Codex reply 4, slice 3): openSetup was fully
+     re-entrant — header button / auto-prompt / Retry each re-ran suPrefill
+     (wiping all eight typed inputs from storage) and re-derived SU_STEP
+     (rewinding the visible step): the reported "setup retry loses entered
+     information". Duplicate opens of a healthy wizard are now no-ops, an
+     in-flight latch joins concurrent opens into one fetch, the load-failure
+     Retry still re-fetches, and closeSetup resets the latch. Runs the REAL
+     extracted openSetup/suOpenSetupRun/closeSetup. */
+  'setup-open-reentrancy.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

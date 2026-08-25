@@ -349,7 +349,11 @@ ok(fn('suFinish').includes('finished.status!==SU_STATUS.COMPLETED'),
   'the wizard can claim success locally while the server still reports a required step');
 ok(/suIsProvider\(\)\s*&&\s*!pn/.test(fn('suNext')) && /if\s*\(\s*suIsProvider\(\)\s*\)\s*required\.push\(['"]practice['"]\)/.test(fn('suFinish')),
   'staff setup is blocked by the practice-authority step that only a provider is required to complete');
-const openSetupFlow = fn('openSetup');
+/* surg-1.0.0: openSetup gained a re-entrancy guard and its fetch/catch body
+   moved into suOpenSetupRun — the invariant pinned here (a failed GET resets
+   SU_STATE, shows Retry and returns false instead of continuing with stale
+   prior-account state) is unchanged and now lives in the run function. */
+const openSetupFlow = fn('openSetup') + fn('suOpenSetupRun');
 ok(openSetupFlow.includes("document.getElementById('su_retryBtn')") && /catch\s*\([^)]*\)[\s\S]*SU_STATE\s*=\s*\{[\s\S]*return false/.test(openSetupFlow),
   'manual setup continues with stale prior-account state after its GET fails');
 ok(!/catch\s*\([^)]*\)\s*\{\s*\}\s*;?[\s\S]{0,120}(?:_suStep\+\+|suShowStep)/.test(fn('suNext')),
