@@ -7268,6 +7268,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        button is the only one left and must stay. */
     'body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) #ez3flGen:not([hidden])) #ez3Gen,' +
     'body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) #ez3flGen:not([hidden])) #ez3GenBusy{display:none!important}',
+    /* JS-owned fallback for browsers without :has(). The class is derived
+       from the same visible top Generate node, so the fallback cannot hide
+       the engine control when the facade is absent or hidden. */
+    'body:not(.mls-phone).ez3fl-top-gen-owns #ez3Gen,' +
+    'body:not(.mls-phone).ez3fl-top-gen-owns #ez3GenBusy{display:none!important}',
     /* 2026-07-28 owner sweep: the SAME yield for the RECORDING control. The
        lane pill (Start/Pause/Resume) and the engine bar (#ez3Stop/#ez3Rec2)
        both drove one recorder while repainting on different cadences, so the
@@ -7707,16 +7712,45 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (recordingNow()) { flowToast('Pause recording first. Your transcript will stay safe.', 'err'); return; }
     var tx = $('transcript'), text = tx ? (tx.value || '').trim() : '';
     if (!text) { flowToast('Type, paste, or record some visit text first.', 'err'); var top = $('ez3flTranscript'); if (top) top.focus(); return; }
-    /* ez3adapt-1.0.2 (Codex reply 9): the reviewed generation engine owns the
-       WHOLE evidence contract — it can accept a short current-status
-       statement when trusted, identity-bound full visit history exists, so a
-       facade pre-gate on the transcript alone (ez3adapt-1.0.0) would refuse
-       exactly the case the engine accepts. No pre-gate here: the click goes
-       to the engine, the engine decides, and its refused/settled lifecycle
-       plus the #genError reason reader surface the outcome truthfully. */
-    var gen = $('genBtn');
-    if (!gen || gen.disabled) { flowToast('Note generation is not ready yet. Try again in a moment.', 'err'); return; }
-    try { gen.click(); } catch (e) { flowToast('The note could not start generating. Please try again.', 'err'); return; }
+    /* The visible lane is a facade. Route through the canonical Easy action
+       when it is mounted so there is exactly one evidence/binding gate and
+       one click into the real #genBtn owner. Older shells may not render the
+       lower action; in that case the original engine control is the bounded
+       compatibility fallback. A click returning is not proof of dispatch -
+       the engine must publish one lifecycle event in the same turn. */
+    var canonical = $('ez3Gen'), gen = $('genBtn');
+    var target = canonical && !canonical.disabled ? canonical : gen;
+    if (!target || target.disabled) { flowToast('Note generation is not ready yet. Try again in a moment.', 'err'); return; }
+    var sawLifecycle = false, done = false, timer = null;
+    function markLifecycle() { sawLifecycle = true; }
+    try {
+      var canObserve = !!(window && typeof window.addEventListener === 'function');
+      if (canObserve) {
+        window.addEventListener('mls:generation-started', markLifecycle, { once: true });
+        window.addEventListener('mls:generation-refused', markLifecycle, { once: true });
+        window.addEventListener('mls:generation-settled', markLifecycle, { once: true });
+      }
+      /* The canonical #ez3Gen handler snapshots its own attempt. If this is
+         an older shell with no lower action, stamp the direct engine fallback
+         here so stale alert text is still fenced to this attempt. */
+      if (target === gen && typeof ez3StampGenClick === 'function') ez3StampGenClick();
+      if (target === gen) gen.click();
+      else canonical.click();
+    } catch (e) {
+      done = true;
+      try { window.removeEventListener('mls:generation-started', markLifecycle); window.removeEventListener('mls:generation-refused', markLifecycle); window.removeEventListener('mls:generation-settled', markLifecycle); } catch (e1) {}
+      flowToast('The note could not start generating. Please try again.', 'err');
+    }
+    /* The reviewed engine emits started/refused synchronously before any
+       network work. A missing receipt therefore means the hidden delegation
+       did not dispatch, and must be named promptly instead of becoming a
+       silent no-op. Keep this short and bounded; a genuine backend timeout is
+       owned by the engine and its settled event. */
+    if (!done && typeof setTimeout === 'function') timer = setTimeout(function () {
+      if (timer) clearTimeout(timer);
+      if (!sawLifecycle) flowToast('Note generation did not start. The Generate action is unavailable — try again.', 'err');
+      try { window.removeEventListener('mls:generation-started', markLifecycle); window.removeEventListener('mls:generation-refused', markLifecycle); window.removeEventListener('mls:generation-settled', markLifecycle); } catch (e2) {}
+    }, 120);
     syncTopLane(document.querySelector('.ez3fl-record'));
     /* ez3adapt-1.0.2: the b940 started-notification emission is GONE — the
        engine is the sole owner of started/refused/settled; a .click() proves
@@ -7957,6 +7991,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return rr.width > 0 && rr.height > 0 && rr.bottom > 0 && rr.top < vh && rr.right > 0 && rr.left < vw;
     } catch (e) { return false; }
   }
+  function syncTopGenerationOwnership(rec, gb) {
+    var owns = false;
+    try { owns = !!(rec && gb && !gb.hidden && topLaneIsVisible(rec)); } catch (e) { owns = false; }
+    try {
+      var body = document.body;
+      if (body && body.classList.contains('ez3fl-top-gen-owns') !== owns) body.classList.toggle('ez3fl-top-gen-owns', owns);
+    } catch (e2) {}
+    return owns;
+  }
   function setTopVoiceChip(rec, id, on, idleLabel, activeLabel) {
     var chip = rec && rec.querySelector('#' + id); if (!chip) return;
     on = !!on;
@@ -8013,10 +8056,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       var previewHint = rec.querySelector('.ez3fl-rechint');
       setLaneText(previewHint, 'Sample workspace only - recording, cloud sync, Athena, sending, and signing are off.');
+      syncTopGenerationOwnership(rec, null);
       return;
     }
     syncPrimaryVoiceTools(rec);
-    if (!rec || !rec.parentNode) return;
+    if (!rec || !rec.parentNode) { syncTopGenerationOwnership(null, null); return; }
     var live = recordingNow();
     /* 2026-07-28: an active phone session is LIVE - the pill reads Stop and
        the canonical stop reaches it (before, it was stoppable only from the
@@ -8078,6 +8122,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setLaneDisabled(gb, !genReal || !!genReal.disabled);
       setLaneText(gb, genReal && genReal.disabled && !noteText.trim() ? 'Generating note...' : '\u2728 Generate one note');
     }
+    syncTopGenerationOwnership(rec, gb);
     if (hint) {
       setLaneText(hint, live ? 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.' :
         (noteText.trim() ? 'Your note is ready below. Review and edit it here before using any send tools.' :
@@ -21307,24 +21352,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (S.phase !== 'stopped') S.phase = 'idle';
     bindingNotice();
   }
-  /* ez3adapt-1.0.0: generateNote() writes its SPECIFIC failure reason into
-     #genError/#noteGenError and dispatches 'mls:generation-complete', but
-     this wrapper only ever showed its own generic canned text — the doctor
-     was never told WHY (owner live repro 2026-08-25). Prefer the engine's
-     own words; fall back to the generic text only when the engine left
-     none. The completion listener snaps the phase the moment the engine
-     settles instead of waiting for the next poll tick. Adapter only: no
-     engine/lifecycle change rides here (that hunk is the generation lane's). */
-  /* ez3adapt-1.0.1 (review finding): the engine clears #genError only AFTER
-     its pre-gates, so a deep failure's text could survive into a LATER
-     synchronously-refused attempt and be misread as that attempt's reason.
-     Every generate stamp snapshots the error text it started with;
-     ez3EngineReason refuses to echo an unchanged snapshot, and with no
-     snapshot at all it stays conservative and lets the generic text stand. */
+  /* Generation errors belong to the engine, not this facade. The engine
+     clears its two alert nodes only after its pre-gates, so a failed attempt
+     can briefly leave the previous attempt's text in place. Snapshot both
+     nodes before every dispatch and only surface text that changed during
+     this attempt. */
   function ez3RawEngineErr() {
     try {
       var g1 = document.getElementById('genError'), g2 = document.getElementById('noteGenError');
-      return String((g1 && g1.textContent) || '') + '' + String((g2 && g2.textContent) || '');
+      return String((g1 && g1.textContent) || '') + '\u0001' + String((g2 && g2.textContent) || '');
     } catch (e) { return ''; }
   }
   function ez3StampGenClick() {
@@ -21335,7 +21371,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var now = ez3RawEngineErr();
       if (typeof S.genErrBefore !== 'string' || now === S.genErrBefore) return '';
-      var parts = now.split('');
+      var parts = now.split('\u0001');
       for (var i = 0; i < parts.length; i++) {
         var t = String(parts[i] || '').trim();
         if (t) return t + ' Your full transcript is still safe below.';
@@ -21343,6 +21379,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
     return '';
   }
+  /* A completion event is the engine's receipt. Wire once because same-tab
+     upgrades can evaluate this bundle again without replacing document. */
   try {
     if (!window.__ez3GenEvtWired) {
       window.__ez3GenEvtWired = true;
@@ -21617,7 +21655,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (!requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')) { render(); return; }
       }
       if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
-      if (opts.generate) { var g = genBtnResolve(); if (g) g.click(); }
+      if (opts.generate) { var g = genBtnResolve(); if (g) { if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); } }
       render();
     })();
   }
@@ -22445,7 +22483,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
               var g = genBtnResolve();
               if (!g) return;
-              g.click(); render();
+              if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
             } catch (eG) {}
           }, 900);
         }
@@ -22695,9 +22733,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var t = $('transcript'), text = t ? (t.value || '').trim() : '';
       if (!text) { toast('Type, paste, or record some visit text first.'); var top = $('ez3Transcript'); if (top) top.focus(); return; }
       var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; }
-      g.click(); render();
+      if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
     });
-    on('ez3Regen', function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } g.click(); render(); });
+    on('ez3Regen', function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render(); });
     on('ez3Copy', function (btn) {
       var c = $('copyEmrBtn'); if (c) { c.click(); btn.textContent = '✅ Copied'; setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
       else toast('Copy control not found.');
@@ -24406,14 +24444,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function onGenerationStarted(ev) {
     var d = ev && ev.detail || {};
     S.generationRunId = Number(d.runId || 0);
-    S.genClickedAt = Date.now(); S.signedAt = 0; S.phase = 'gen'; S.lastWarn = '';
+    if (typeof ez3StampGenClick === 'function') ez3StampGenClick();
+    else S.genClickedAt = Date.now();
+    S.signedAt = 0; S.phase = 'gen'; S.lastWarn = '';
     try { render(); } catch (e) {}
   }
   function onGenerationRefused(ev) {
     var d = ev && ev.detail || {};
     S.generationRunId = Number(d.runId || 0);
     S.genClickedAt = 0; S.phase = 'stopped';
-    S.lastWarn = String(d.message || 'Note generation was refused. Add current visit details and try again.');
+    S.lastWarn = String(d.message || '') || ez3EngineReason() || 'Note generation was refused. Add current visit details and try again.';
     try { render(); } catch (e) {}
   }
   function onGenerationSettled(ev) {
@@ -24423,7 +24463,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (d.status === 'success') { S.lastWarn = ''; S.phase = noteText().trim().length >= 30 ? 'note' : 'stopped'; }
     else if (d.status !== 'refused') {
       S.phase = 'stopped';
-      if (d.message) S.lastWarn = String(d.message);
+      S.lastWarn = String(d.message || '') || ez3EngineReason() ||
+        (String(d.code || '').indexOf('timeout') >= 0
+          ? 'Note generation timed out. Your full transcript is still safe below — try Generate again.'
+          : 'Note generation failed. Your full transcript is still safe below — try Generate again.');
     }
     try { render(); } catch (e) {}
   }
@@ -24525,7 +24568,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       },
       generate: function () {
         var g = genBtnResolve(); if (!g) return false;
-        g.click(); render();
+        if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
         return true;
       },
       requestSendReview: function () {

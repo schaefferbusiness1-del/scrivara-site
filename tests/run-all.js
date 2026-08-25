@@ -686,6 +686,15 @@ const tests = [
      chart history to manufacture today's note, plan, or billing. */
   'sparse-transcript-grounding-contract.test.js',
   '1p-easy-generate-sparse-runtime.test.js',
+  /* Browser-level Generate-one-note facade: click the real top control and
+     prove one canonical dispatch, lifecycle reasons, bounded no-op failure,
+     and the JS duplicate-control fallback. */
+  'ez3-generate-top-browser-runtime.test.js',
+  /* The generation engine alone owns started/refused/settled state, carries
+     one abort signal through the hosted transport, and cannot be relabeled by
+     a late optional-format callback after the validated draft has settled. */
+  'generate-note-lifecycle-runtime.test.js',
+  'generation-abort-transport-runtime.test.js',
   'generation-legacy-athena-sidecar-runtime.test.js',
   'athena-dual-note-contract.test.js',
   'athena-dual-note-state-runtime.test.js',
