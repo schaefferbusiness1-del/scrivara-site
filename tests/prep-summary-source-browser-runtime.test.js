@@ -136,17 +136,22 @@ async function runtime() {
       };
     });
 
-    assert.match(result.manual, /SOURCE: NOT PULLED from Athena yet/,
-      'manual clinical facts must remain visibly NOT PULLED');
+    assert.match(result.manual,
+      /SOURCE: CLINICAL DATA PRESENT — no identity-verified Athena pull receipt is attached/,
+      'clinical facts without a receipt were falsely described as no pull/data at all');
+    assert.doesNotMatch(result.manual, /SOURCE: (?:PULLED|NOT PULLED) from Athena/,
+      'unverified clinical facts were collapsed into a false binary provenance claim');
     assert.match(result.full, /SOURCE: PULLED from Athena — identity-verified chart receipt from 2026-08-24/,
       'a complete exact-patient receipt did not repaint the visible SOURCE row as PULLED');
     assert.doesNotMatch(result.full, /SOURCE: NOT PULLED/);
     assert.match(result.partial, /SOURCE: PARTIALLY PULLED from Athena — identity-verified capture from 2026-08-24/,
       'an exact-patient partial receipt did not repaint the visible SOURCE row as PARTIALLY PULLED');
-    assert.match(result.wrongPatientLegacy, /SOURCE: NOT PULLED from Athena yet/,
-      'wrong-patient proof must fail closed instead of falling through to legacy provenance');
-    assert.match(result.snapshotOnly, /SOURCE: NOT PULLED from Athena yet/,
-      'snapshot contents alone must not authorize positive provenance');
+    assert.match(result.wrongPatientLegacy,
+      /SOURCE: ATHENA RECEIPT REJECTED — the stored pull receipt is bound to a different patient/,
+      'wrong-patient proof must fail closed with the actual identity reason');
+    assert.match(result.snapshotOnly,
+      /SOURCE: CLINICAL DATA PRESENT — no identity-verified Athena pull receipt is attached/,
+      'snapshot contents without a receipt must be shown as unverified data, not a false pulled/not-pulled claim');
 
     assert.strictEqual(errors.length, 0, `shipped SOURCE-row browser flow raised page errors: ${errors.join(' | ')}`);
     console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states passed');

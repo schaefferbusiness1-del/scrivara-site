@@ -2340,9 +2340,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.0') return; } catch (e) { return; }
+  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.1') return; } catch (e) { return; }
 
-  var VERSION = '1.2.0';
+  var VERSION = '1.2.1';
 
   /* ---------- tiny helpers (mirrors the live app's own conventions) ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -2514,7 +2514,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        treated as Athena provenance. Say which state this is once, up front,
        and make the allergy line refuse to imply a documented NKDA. */
     var partial = ctx.chartPartial === true;
-    var unread = !ctx.chartLanded && !partial;
+    var unverifiedData = ctx.chartUnverifiedData === true;
+    var unread = !ctx.chartLanded && !partial && !unverifiedData;
     if (trim(ctx.chartSourceText)) {
       lines.push('SOURCE: ' + trim(ctx.chartSourceText));
     } else if (unread) {
@@ -2527,7 +2528,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ? 'NOT PULLED from Athena yet \u2014 no allergy data has been read for this patient; this is NOT a documented NKDA, confirm with patient'
       : (partial
         ? 'Not captured in this partial Athena pull \u2014 re-pull the full chart and confirm with the patient; this is NOT a documented NKDA'
-        : 'None recorded — confirm with patient (NKDA not yet documented)');
+        : (unverifiedData
+          ? 'Not present in this record \u2014 Athena provenance is not verified; re-pull the chart and confirm with the patient; this is NOT a documented NKDA'
+          : 'None recorded — confirm with patient (NKDA not yet documented)'));
     lines.push('ALLERGIES: ' + (trim(ctx.allergies) || allergyEmpty));
     /* pvr-1.0.0: 'Not recorded' is a placeholder the calm shell flattens to an
        em-dash, and rightly - it is not an answer. ctx.emptyText carries the one
@@ -2709,11 +2712,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     p = p || {};
     var pid = trim(p.id);
     var coverage = p.athenaProfileCoverage;
+    var rejected = function () {
+      return {
+        landed: false,
+        partial: false,
+        ambiguous: true,
+        kind: 'identity-conflict',
+        capturedAt: '',
+        text: 'ATHENA RECEIPT REJECTED \u2014 the stored pull receipt is bound to a different patient. Re-pull this exact chart before relying on its source.'
+      };
+    };
     /* A receipt explicitly bound to another immutable patient id is a conflict,
        not permission to fall back to a looser old timestamp on this record. */
     if (coverage && coverage.exactIdentityVerified === true && trim(coverage.patientId) &&
         (!pid || trim(coverage.patientId) !== pid)) {
-      return { landed: false, partial: false, kind: 'identity-conflict', capturedAt: '', text: '' };
+      return rejected();
     }
     if (coverage && coverage.complete === true && coverage.exactIdentityVerified === true &&
         pid && trim(coverage.patientId) === pid) {
@@ -2732,7 +2745,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var partialReceipt = p.athenaPartialProfileCoverage;
     if (partialReceipt && partialReceipt.exactIdentityVerified === true && trim(partialReceipt.patientId) &&
         (!pid || trim(partialReceipt.patientId) !== pid)) {
-      return { landed: false, partial: false, kind: 'identity-conflict', capturedAt: '', text: '' };
+      return rejected();
     }
     var legacyAt = trim(p.athenaChartImportedAt);
     if (legacyAt) {
@@ -2770,7 +2783,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         };
       }
     }
-    return { landed: false, partial: false, kind: 'unverified', capturedAt: '', text: '' };
+    /* Older/import-interrupted records can contain real clinical values while
+       lacking the modern identity-bound receipt. Calling those records "NOT
+       PULLED" is visibly false and was the source of a recurring user report;
+       calling them "PULLED" would be equally unsafe because clinicians can add
+       the same fields manually. State the evidence we actually have: data is
+       present, but its Athena provenance is not verified. A fresh exact-chart
+       pull will attach the authoritative receipt and replace this state. */
+    var hasValue = function (value) {
+      if (Array.isArray(value)) return value.some(hasValue);
+      if (value && typeof value === 'object') {
+        return Object.keys(value).some(function (key) {
+          if (/^(?:capturedAt|updatedAt|createdAt)$/i.test(key)) return false;
+          return hasValue(value[key]);
+        });
+      }
+      var text = trim(value);
+      return !!text && !/^(?:none(?: recorded| on file)?|not recorded|unknown|n\s*\/\s*a|na|not available|not applicable|no data|-|\u2014)$/i.test(text);
+    };
+    var clinicalDataPresent = [
+      p.problems, p.meds, p.allergies, p.vitals, p.history,
+      p.athenaHistorySummary, p.athenaChartSnapshot, p.athenaChartSummaryBlock
+    ].some(hasValue);
+    if (clinicalDataPresent) {
+      return {
+        landed: false,
+        partial: false,
+        ambiguous: true,
+        kind: 'data-without-receipt',
+        capturedAt: '',
+        text: 'CLINICAL DATA PRESENT \u2014 no identity-verified Athena pull receipt is attached. Values may include clinician-entered data or an older import; re-pull this chart to verify the source and refresh missing sections.'
+      };
+    }
+    return { landed: false, partial: false, ambiguous: false, kind: 'unverified', capturedAt: '', text: '' };
   }
 
   function buildPrepSummaryForPatient(p) {
@@ -2786,6 +2831,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }
       });
     }
+    if (provenance.ambiguous === true) {
+      ['problems', 'meds', 'vitals', 'history'].forEach(function (key) {
+        if (!trim(key === 'problems' ? p.problems : (key === 'meds' ? p.meds : ''))) {
+          emptyText[key] = 'Not present in this record \u2014 Athena pull provenance is not verified; re-pull the chart to refresh this section.';
+        }
+      });
+    }
     return buildPrepSummary({
       name: p.name, dob: p.dob, age: computeAge(p.dob), sex: p.sex || p.gender, mrn: p.mrn,
       reason: appt.reason, apptTime: appt.time,
@@ -2793,6 +2845,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       allergies: cleanListField(p.allergies, { keepNegatives: true }),
       chartLanded: provenance.landed,
       chartPartial: provenance.partial,
+      chartUnverifiedData: provenance.ambiguous,
       chartSourceText: provenance.text,
       vitals: getVitals(p), bmi: resolveBmi(p), history: getHistory(p),
       historySummary: withholdLinesIfOtherPatient(cleanNarrative(scrubPageDebris(p.athenaHistorySummary || '')), p),
