@@ -801,6 +801,12 @@
           } else if (proof.ok && preReadCoverageFingerprint && postReadCoverageFingerprint === preReadCoverageFingerprint) {
             proof = { ok: false, reason: 'card-coverage-receipt-not-refreshed', receipt: proof.receipt };
           }
+          if (proof.ok) {
+            /* Keep the accepted evidence as an immutable primitive. The
+               receipt object belongs to the live store and may be mutated in
+               place while the concurrent summary task is still settling. */
+            proof.acceptedFingerprint = postReadCoverageFingerprint;
+          }
           if (readOk && !proof.ok) {
             enrichmentStatus('The chart reader finished, but no fresh exact-patient six-card receipt was saved (' + proof.reason + '). Visits are saved; the chart cards remain incomplete.');
           } else if (!readOk && cardRes && cardRes.reason) {
@@ -820,15 +826,21 @@
       var finalCardProof = initialCardProof.ok === true
         ? currentFullCardReceipt(patient.id, cardReadStartedAt)
         : initialCardProof;
-      if (initialCardProof.ok === true && finalCardProof.ok === true &&
-          cardReceiptFingerprint(finalCardProof.receipt) !== cardReceiptFingerprint(initialCardProof.receipt)) {
-        /* Bind completion to the exact post-read receipt we accepted. Merely
-           re-validating fields/timestamps permits an ABA race where an older,
-           still-plausible R0 is restored after this attempt wrote R1. */
-        finalCardProof = {
-          ok: false, reason: 'card-coverage-receipt-changed-before-terminal',
-          receipt: finalCardProof.receipt
-        };
+      if (initialCardProof.ok === true && finalCardProof.ok === true) {
+        var acceptedFingerprint = typeof initialCardProof.acceptedFingerprint === 'string'
+          ? initialCardProof.acceptedFingerprint : '';
+        var finalFingerprint = cardReceiptFingerprint(finalCardProof.receipt);
+        if (!acceptedFingerprint || !finalFingerprint || finalFingerprint !== acceptedFingerprint) {
+          /* Bind completion to the exact immutable fingerprint accepted after
+             the read. Recomputing from initialCardProof.receipt is unsafe: it
+             aliases the mutable store object and can change alongside final. */
+          finalCardProof = {
+            ok: false,
+            reason: !finalFingerprint ? 'card-coverage-receipt-malformed-before-terminal' :
+              'card-coverage-receipt-changed-before-terminal',
+            receipt: finalCardProof.receipt
+          };
+        }
       }
       var cardLanded = finalCardProof.ok === true;
       /* fm-1.2 fallback: a verified capture still lands medications/problems/

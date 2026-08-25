@@ -98,7 +98,8 @@ async function makeHarness(browser, saveMode) {
       getVisits(patient) { return Array.isArray(patient && patient.visits) ? patient.visits : []; },
       ensureSummaries() {
         if (window.__saveMode === 'summary-timeout') return new Promise(() => {});
-        if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future', 'coverage-r1-stable'].includes(window.__saveMode)) {
+        if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future', 'coverage-r1-stable',
+          'coverage-inplace', 'coverage-cyclic', 'coverage-bigint'].includes(window.__saveMode)) {
           return new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), 40));
         }
         return Promise.resolve({ ok: true });
@@ -149,7 +150,8 @@ async function makeHarness(browser, saveMode) {
             window.__coverageR1 = JSON.parse(JSON.stringify(current.athenaProfileCoverage));
           }
           window.upsertPatient(current);
-          if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future'].includes(window.__saveMode)) {
+          if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future',
+            'coverage-inplace', 'coverage-cyclic', 'coverage-bigint'].includes(window.__saveMode)) {
             window.setTimeout(() => {
               const raced = window.__store.find(row => row && row.id === patient.id);
               if (window.__saveMode === 'coverage-aba-future') {
@@ -158,6 +160,12 @@ async function makeHarness(browser, saveMode) {
                 raced.athenaProfileCoverage = Object.assign({}, raced.athenaProfileCoverage, {
                   capturedAt: '2025-01-01T00:00:00.000Z', saveRequestId: 'later-stale-swap'
                 });
+              } else if (window.__saveMode === 'coverage-inplace') {
+                raced.athenaProfileCoverage.cards.history.status = 'changed-in-place-after-acceptance';
+              } else if (window.__saveMode === 'coverage-cyclic') {
+                raced.athenaProfileCoverage.self = raced.athenaProfileCoverage;
+              } else if (window.__saveMode === 'coverage-bigint') {
+                raced.athenaProfileCoverage.nonSerializableMutation = BigInt(1);
               } else {
                 raced.athenaProfileCoverage = Object.assign({}, raced.athenaProfileCoverage, { patientId: 'different-patient' });
               }
@@ -474,18 +482,21 @@ async function startAndPause(page) {
        wrong-patient, stale, and post-read swapped receipts must all retain the
        durable visit success while refusing a complete/full-card claim. */
     for (const mode of ['coverage-missing', 'coverage-wrong-patient', 'coverage-stale', 'coverage-prior-attempt',
-      'coverage-no-refresh', 'coverage-race', 'coverage-race-stale', 'coverage-aba-future']) {
+      'coverage-no-refresh', 'coverage-race', 'coverage-race-stale', 'coverage-aba-future',
+      'coverage-inplace', 'coverage-cyclic', 'coverage-bigint']) {
       const receiptPage = await makeHarness(browser, mode);
       await startAndPause(receiptPage);
       await receiptPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
       const observed = await receiptPage.evaluate(() => window.__runPromise.then(result => ({
         busy: window.__mlsAthenaAutoPull.isBusy(), receipt: result.receipt,
         text: document.querySelector('#mlsPullBar [data-text]').textContent,
-        coverage: {
+        /* Do not serialize the deliberately cyclic/BigInt fixtures back
+           through Playwright. Only the replacement-ABA case needs details. */
+        coverage: window.__saveMode === 'coverage-aba-future' ? {
           r0: window.__coverageR0 || null, r1: window.__coverageR1 || null,
           current: window.__store[0] && window.__store[0].athenaProfileCoverage || null,
           swap: window.__coverageSwapApplied || '', now: Date.now()
-        }
+        } : null
       })));
       assert.strictEqual(observed.busy, false, `${mode}: receipt refusal left the pull lane busy`);
       assert(observed.receipt && observed.receipt.ok === true && observed.receipt.status === 'partial' &&
@@ -555,7 +566,7 @@ async function startAndPause(page) {
       'the stalled chart-card read did not leave an actionable partial terminal');
     await cardTimeoutPage.close();
 
-    console.log('PASS Athena auto-pull terminal receipt: owned progress, durable exact-row confirmation, exact accepted-receipt terminal binding with same-ms/future ABA refusal, later wrong/stale swap refusal, driver/flush watchdogs, partial terminals, timer isolation, and no late saving-state resurrection');
+    console.log('PASS Athena auto-pull terminal receipt: owned progress, durable exact-row confirmation, immutable accepted-fingerprint binding with replacement/in-place/cyclic/BigInt race refusal, unchanged R1 success, driver/flush watchdogs, partial terminals, timer isolation, and no late saving-state resurrection');
   } finally {
     await browser.close();
   }
