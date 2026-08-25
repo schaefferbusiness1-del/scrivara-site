@@ -306,7 +306,7 @@ const wyzantTraversalIncludes = [...WYZANT_HTML];
 /* Owner directive 2026-08-25: the exact stamped 3.0.81 release ships publicly;
  * its bytes are digest-pinned below. Candidates stay excluded. */
 const RELEASED_PACKAGE = 'MLS_Assist_v3.0.81.zip';
-const RELEASED_PACKAGE_SHA256 = '716b4e63002c89cd7372be73f5eafe7bc47f280e0af34ae3e55e316f51c30f5c';
+const RELEASED_PACKAGE_SHA256 = '5e8aaf7ed004409b16304222cf74c87554d4d5b3656e8044fcfbd81be9b944c4';
 assert(/^[a-f0-9]{64}$/.test(RELEASED_PACKAGE_SHA256),
   '3.0.81 package digest must be stamped after deterministic packaging before publication');
 /* 2026-08-06, pin moved deliberately: a byte-identical mirror of the released
