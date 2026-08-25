@@ -5447,7 +5447,7 @@ var mlsProv = (function () {
   }
 
   function mlsExtractScheduleFromText(text) {
-    var out = { appts: [], providers: [], diag: { strategy: 'text', lineCount: 0, headerCount: 0, tabularHeaderCount: 0, tabularRowCount: 0, tabularMalformedRows: 0, tabularAmbiguousHeaders: 0, tabularUnmappedRows: 0, apptCount: 0, providerCount: 0, credsSeen: [], providerNames: [] } };
+    var out = { appts: [], providers: [], diag: { strategy: 'text', lineCount: 0, headerCount: 0, tabularHeaderCount: 0, tabularRowCount: 0, tabularMalformedRows: 0, tabularAmbiguousHeaders: 0, tabularUnmappedRows: 0, timeMidlineRowsSkipped: 0, apptCount: 0, providerCount: 0, credsSeen: [], providerNames: [] } };
     try {
       var raw = S(text);
       if (!raw.trim()) return out;
@@ -5531,8 +5531,19 @@ var mlsProv = (function () {
           continue;
         }
         if (hasTime(ln)) {
-          var nm = patientNameFromRow(ln);
-          if (nm) out.appts.push({ time: firstTime(ln), name: nm, provider: current || '' });
+          /* stx-1.0.0: a real schedule text row LEADS with its time cell on
+             every scraped surface (dashboard day list, weekly grid, sidebar);
+             a time token sitting mid-line is booking-comment prose ("RS'D
+             APPT TO 1:30pm"), and minting a row from it fabricates an
+             appointment no DOM row can verify - the pp-1.1 phantom class,
+             measured live 2026-08-25 as a whole-day refusal. Skips are
+             counted in diag, never silent; the header-mapped tabular lane
+             above is untouched. */
+          if (ln.search(RE_TIME) > 2) { out.diag.timeMidlineRowsSkipped++; }
+          else {
+            var nm = patientNameFromRow(ln);
+            if (nm) out.appts.push({ time: firstTime(ln), name: nm, provider: current || '' });
+          }
         }
       }
       var withAppts = {};

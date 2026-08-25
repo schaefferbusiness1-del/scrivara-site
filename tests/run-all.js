@@ -1762,7 +1762,11 @@ const tests = [
   /* sim-1.0.0: the schedule-incomplete refusal names the condition that
      actually failed the completeness law (text-only/unnamed/count) by closed
      code, instead of printing passing counts as if they were the failure. */
-  'schedule-incomplete-cause-pins.test.js'
+  'schedule-incomplete-cause-pins.test.js',
+  /* stx-1.0.0: the free-line text lane cannot mint an appointment from a
+     mid-line time token (booking-comment prose), so pp-1.1 refusals are
+     reserved for real phantoms; skips are counted, never silent. */
+  'text-lane-mint-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
