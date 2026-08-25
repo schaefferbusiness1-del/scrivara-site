@@ -236,6 +236,14 @@ async function values(page) {
       assert.strictEqual(destinationMismatch.reason, 'note-destination-mismatch');
       assert.deepStrictEqual(await values(page), { note: '', hpi: '', ros: '', exam: '', assessment: '', plan: '' });
       checks += 3;
+
+      const genericDestinationMismatch = await drive(page, request('note', 'Generic destination mismatch must refuse.', { sections: [
+        { key: 'note', text: 'Generic destination mismatch must refuse.', execute: true, destination: 'Athena encounter > Assessment & Plan > Plan / Follow-up' }
+      ] }));
+      assert.strictEqual(genericDestinationMismatch.ok, false, 'a generic note accepted a mismatched reviewed destination label');
+      assert.strictEqual(genericDestinationMismatch.reason, 'note-destination-mismatch');
+      assert.deepStrictEqual(await values(page), { note: '', hpi: '', ros: '', exam: '', assessment: '', plan: '' });
+      checks += 3;
     });
   } finally {
     await browser.close();

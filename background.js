@@ -671,6 +671,7 @@ async function mlsAthenaActionV2DriverFn(req) {
        decoration. Keep the driver-side copy so a stale/misbuilt page cannot
        label an HPI write as Plan (or any other named destination). */
     var NAMED_NOTE_DESTINATIONS = {
+      note: 'Athena encounter > Encounter note',
       hpi: 'Athena encounter > HPI',
       ros: 'Athena encounter > Review of Systems',
       exam: 'Athena encounter > Physical Exam',
@@ -894,7 +895,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (noteSections.length !== 1 || executableSections.length !== 1) return { ok: false, blocked: true, reason: 'note-section-count-mismatch', error: 'One confirmed Athena note destination is required per write.' };
       requestedNoteSection = canonicalNamedNoteKey(executableSections[0].key);
       if (!requestedNoteSection) return { ok: false, blocked: true, reason: 'unknown-note-section', error: 'The requested Athena note destination is not allowlisted.' };
-      if (requestedNoteSection !== 'note' && text(executableSections[0].destination) !== NAMED_NOTE_DESTINATIONS[requestedNoteSection]) {
+      if (text(executableSections[0].destination) !== NAMED_NOTE_DESTINATIONS[requestedNoteSection]) {
         return { ok: false, blocked: true, reason: 'note-destination-mismatch', error: 'The reviewed section key and Athena destination do not match. Nothing was written.' };
       }
       if (noteNorm(executableSections[0].text) !== reviewedNote) return { ok: false, blocked: true, reason: 'note-section-payload-mismatch', error: 'The named section payload does not match the exact reviewed text.' };
