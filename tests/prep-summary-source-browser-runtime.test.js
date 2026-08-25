@@ -173,7 +173,7 @@ async function runtime() {
       'the old patientNotes-only empty state is still visible for a pulled chart');
 
     assert.strictEqual(errors.length, 0, `shipped SOURCE-row browser flow raised page errors: ${errors.join(' | ')}`);
-    console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states + canonical 9-visit state passed');
+    console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states passed + canonical 9-visit state passed');
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));
