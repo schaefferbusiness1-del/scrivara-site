@@ -77,6 +77,7 @@ function harness({ focused = true, focusedWindowId = 2, leaseTab = 101, signedOu
   assert(/isTrusted !== true/.test(fs.readFileSync(path.join(root, 'content.js'), 'utf8')) && /mlsAppWakeAthenaGestureArmRequest/.test(fs.readFileSync(path.join(root, 'content.js'), 'utf8')), 'wake bridge lacks trusted consumed gesture arm');
   assert(/wake-recovery-in-flight/.test(background), 'wake relay lacks one-flight/duplicate guard');
   assert(/requestId/.test(background) && /__mlsWakeRecoverySeen/.test(background), 'wake relay lacks stale request ownership guard');
+  assert(background.includes('Object.keys(self.__mlsWakeGestureByTab)') && background.includes('<= armedNow) delete self.__mlsWakeGestureByTab[key]') && background.includes('delete self.__mlsWakeGestureByTab[targetId]; armed = null'), 'expired one-use gesture arms are not pruned');
   assert(/var proof = await mlsAthPing\(id, 3500\)/.test(background), 'recovery lacks same-tab all-frame reprobe');
   assert(/AUTOMATIC_HISTORY_RETRY_REASON = \/\^\(visit-bodies/.test(feat) && !/AUTOMATIC_HISTORY_RETRY_REASON\s*=\s*\/[^\n]*athena-tab-sleeping/.test(feat), 'history sweep must not auto-retry sleeping');
   console.log('PASS mac-sleep-recovery-contract: exact lease recovery, sleeping/signed-out distinction, no auto-retry, explicit UI, and OFF copy');

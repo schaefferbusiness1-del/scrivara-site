@@ -12395,9 +12395,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   self.__mlsWakeRecoverySeen = self.__mlsWakeRecoverySeen || Object.create(null);
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppWakeAthenaGestureArmRequest') return;
+    var armedNow = Date.now();
+    Object.keys(self.__mlsWakeGestureByTab).forEach(function (key) {
+      if (Number(self.__mlsWakeGestureByTab[key] && self.__mlsWakeGestureByTab[key].expiresAt || 0) <= armedNow) delete self.__mlsWakeGestureByTab[key];
+    });
     var targetId = Number(msg.tabId || 0), token = String(msg.gestureToken || '').slice(0, 180), appTabId = sender && sender.tab ? Number(sender.tab.id) : 0;
-    if (!(targetId > 0) || !token || !(Number(msg.expiresAt || 0) > Date.now()) || !(appTabId > 0)) { sendResponse({ ok: false, reason: 'wake-gesture-invalid' }); return; }
-    self.__mlsWakeGestureByTab[targetId] = { token: token, expiresAt: Math.min(Date.now() + 20000, Number(msg.expiresAt)), appTabId: appTabId };
+    if (!(targetId > 0) || !token || !(Number(msg.expiresAt || 0) > armedNow) || !(appTabId > 0)) { sendResponse({ ok: false, reason: 'wake-gesture-invalid' }); return; }
+    self.__mlsWakeGestureByTab[targetId] = { token: token, expiresAt: Math.min(armedNow + 20000, Number(msg.expiresAt)), appTabId: appTabId };
     sendResponse({ ok: true });
     return true;
   });
@@ -12408,7 +12412,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || msg.type !== 'mlsAppWakeAthenaAndRetryV1Request') return;
     var targetId = Number(msg.tabId || 0), token = String(msg.gestureToken || '').slice(0, 180), requestId = String(msg.requestId || '').slice(0, 100), appTabId = sender && sender.tab ? Number(sender.tab.id) : 0;
     var armed = targetId > 0 ? self.__mlsWakeGestureByTab[targetId] : null;
-    if (!requestId || !armed || armed.token !== token || Number(armed.appTabId) !== appTabId || Number(armed.expiresAt) <= Date.now()) { sendResponse({ ok: false, reason: 'wake-gesture-required' }); return true; }
+    if (armed && Number(armed.expiresAt) <= Date.now()) { delete self.__mlsWakeGestureByTab[targetId]; armed = null; }
+    if (!requestId || !armed || armed.token !== token || Number(armed.appTabId) !== appTabId) { sendResponse({ ok: false, reason: 'wake-gesture-required' }); return true; }
     delete self.__mlsWakeGestureByTab[targetId];
     Object.keys(self.__mlsWakeRecoverySeen).forEach(function (key) { if (Date.now() - Number(self.__mlsWakeRecoverySeen[key] || 0) > 60000) delete self.__mlsWakeRecoverySeen[key]; });
     if (self.__mlsWakeRecoverySeen[requestId] || self.__mlsWakeRecoveryInFlight[targetId]) { sendResponse({ ok: false, reason: 'wake-recovery-in-flight' }); return true; }
