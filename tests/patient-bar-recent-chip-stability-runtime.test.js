@@ -15,7 +15,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_recentpts.js'), 'utf8');
 
-assert(source.includes("var VERSION='rp-2.3.0'"), 'recent-chip exact-event/visible-data version missing');
+assert(source.includes("var VERSION='rp-2.4.0'"), 'recent-chip identity-safe exact-event/visible-data version missing');
 assert(source.includes('min-width:118px'), 'chip wrapper must reserve stable width');
 assert(source.includes('min-width:112px'), 'chip button must reserve stable width');
 assert(source.includes('font-variant-numeric:tabular-nums'), 'count digits must not change button width');
@@ -26,7 +26,7 @@ for (const bundle of ['mls-connect.js', 'mls-connect.staging.js']) {
   const connect = fs.readFileSync(path.join(root, bundle), 'utf8');
   assert(connect.includes('feat_mls_recentpts.js'), `${bundle} must load the recent chip`);
   assert(connect.includes('s.src=A+"?v="+(window.__MLS_AV||Date.now())'),
-    `${bundle} must load rp-2.3.0 through the shared release token`);
+    `${bundle} must load the current Recent Patients module through the shared release token`);
   assert(!connect.includes('20260808rp220perf1') && !connect.includes('20260722rp3'),
     `${bundle} still exposes a retired Recent Patients URL`);
 }
