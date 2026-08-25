@@ -23182,11 +23182,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function pConn(kind, label) { var d2 = $('ez3PullDot'); if (d2) d2.className = 'dot ' + kind; pSet('ez3PullConn', label); }
   function pCounts() {
     if (!P) return;
-    var done = 0; P.range.keys.forEach(function (k) { var st = P.dayStatus[k]; if (st && /^(done|empty|failed)$/.test(st.status)) done++; });
+    var done = 0; P.range.keys.forEach(function (k) { var st = P.dayStatus[k]; if (st && /^(done|empty|failed|cancelled)$/.test(st.status)) done++; /* cxl-1.0.0: a cancelled day is settled for THIS run */ });
     pSet('ez3cFound', String(P.found)); pSet('ez3cSaved', String(P.saved));
-    pSet('ez3cDup', String(P.dups)); pSet('ez3cFail', String(P.failedDays.length));
+    pSet('ez3cDup', String(P.dups));
+    /* cxl-1.0.0: cancelled days ride the retry pool but are NOT failures - the
+       fail chip counts only true failures, and the bar label discloses the
+       cancelled count so nothing is hidden. */
+    var cxlDays = P.failedDays.filter(function (k) { var stf = P.dayStatus[k]; return stf && stf.status === 'cancelled'; }).length;
+    pSet('ez3cFail', String(P.failedDays.length - cxlDays));
     var bar = $('ez3PullBar'); if (bar) bar.style.width = Math.round(done * 100 / Math.max(1, P.range.keys.length)) + '%';
-    pSet('ez3PullBarLbl', done + ' of ' + P.range.keys.length + ' days' + (P.emptyDays.length ? (' · ' + P.emptyDays.length + ' empty') : ''));
+    pSet('ez3PullBarLbl', done + ' of ' + P.range.keys.length + ' days' + (P.emptyDays.length ? (' · ' + P.emptyDays.length + ' empty') : '') + (cxlDays ? (' · ' + cxlDays + ' cancelled') : ''));
     /* ===== p1-durable-month-1.0.0 (controls follow the SAVED job) =====
        With the durable job installed, "running" is a property of the
        manifest, not of this tab: after a reload the panel must offer Resume,
@@ -23323,7 +23328,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       })();
     }
     return navP.then(function (st) {
-      if (P.cancelled) { P.dayStatus[dayKey] = { status: 'failed', error: 'cancelled' }; P.failedDays.push(dayKey); return 'cancelled'; }
+      if (P.cancelled) { /* cxl-1.0.0: a user Cancel is not a failure - the day was never attempted. Status is truthfully 'cancelled'; it stays in the retry pool so Retry re-reads it. */ P.dayStatus[dayKey] = { status: 'cancelled', error: 'cancelled before this day was read' }; P.failedDays.push(dayKey); return 'cancelled'; }
       if (st.navFail) { P.dayStatus[dayKey] = { status: 'failed', error: st.navFail }; P.failedDays.push(dayKey); plog('FAILED ' + pd + ': ' + st.navFail, 'err'); return 'failed'; }
       plog('Reading visits for ' + pd); pSet('ez3PullNow', 'Reading visits for ' + pd);
       var readP = st.preRead ? Promise.resolve(st.preRead) : readSchedule(function (m2) { pSet('ez3PullNow2', m2); });
@@ -23368,7 +23373,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           return next().then(function () {
             if (P.cancelled && processed < rows.length) {
-              P.dayStatus[dayKey] = { status: 'failed', error: 'cancelled after ' + processed + ' of ' + rows.length + ' appointments', found: rows.length, saved: saved, skipped: dup, failed: failed, badnames: bad };
+              P.dayStatus[dayKey] = { status: 'cancelled', error: 'cancelled after ' + processed + ' of ' + rows.length + ' appointments', found: rows.length, saved: saved, skipped: dup, failed: failed, badnames: bad }; /* cxl-1.0.0: truthful mid-day cancel */
               if (P.failedDays.indexOf(dayKey) < 0) P.failedDays.push(dayKey);
               plog(pd + ': cancelled after ' + processed + ' of ' + rows.length + ' appointments; day left retryable.', 'err');
               pCounts(); return 'cancelled';

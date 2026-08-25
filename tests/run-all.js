@@ -1714,7 +1714,15 @@ const tests = [
      prefer the engine-written reason, and the live block snaps its phase on
      'mls:generation-complete'. Adapter only - the engine lifecycle hunk
      belongs to the generation-contract lane. */
-  'ez3-generation-reason-adapter.test.js'
+  'ez3-generation-reason-adapter.test.js',
+  /* cxl-1.0.0 (authorized Codex reply 4, slice 5): the direct range/day loop
+     marked a user Cancel as {status:'failed', error:'cancelled'} at both
+     cancel sites, inflating the fail chip and making an auth drop and a
+     deliberate stop indistinguishable. Both sites now write the truthful
+     'cancelled' status, cancelled days stay in the retry pool, the fail chip
+     counts only true failures, and the bar label discloses the cancelled
+     count. Runs the REAL pCounts against a mixed pool. */
+  'range-cancel-truthful-status.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
