@@ -11168,7 +11168,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     var out = {
       name: String(hint.name || hint.patientName || '').trim(),
       dob: String(hint.dob || hint.patientDob || hint.dateOfBirth || '').trim(),
-      mrn: String(hint.mrn || hint.athenaId || '').trim(), onlyDate: mlsVisitDateKeyForHint(hint.onlyDate)
+      mrn: String(hint.mrn || hint.athenaId || '').trim(), onlyDate: mlsVisitDateKeyForHint(hint.onlyDate),
+      todayKey: /^\d{4}-\d{2}-\d{2}$/.test(String(hint.todayKey || '')) ? String(hint.todayKey) : ''
     };
     try { return Object.freeze(out); } catch (e) { return out; }
   }
@@ -11468,7 +11469,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  want-name (nickname vs legal record name). alias-3071 assigned
                  onto the FROZEN hint - a silent no-op - so it never reached the
                  gate; the hint is REBUILT frozen here instead. */
-              frozenHint = Object.freeze({ name: frozenHint.name, dob: frozenHint.dob, mrn: frozenHint.mrn, onlyDate: frozenHint.onlyDate || '', nameAlias: String(pgIdentity.name) });
+              frozenHint = Object.freeze({ name: frozenHint.name, dob: frozenHint.dob, mrn: frozenHint.mrn, onlyDate: frozenHint.onlyDate || '', todayKey: frozenHint.todayKey || '', nameAlias: String(pgIdentity.name) });
             } else if (!pgGate.ok && pgIdentity && pgIdentity.name && (pgIdentity.dob || pgIdentity.mrn)) {
               /* detect-3072: the whoever-is-open verb sends NO identity hint by
                  design (live 2026-08-19: the empty hint reached the list gate,
@@ -11478,7 +11479,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  anchor: every downstream mix gate now protects the DETECTED
                  patient. A banner with neither DOB nor MRN stays incomplete and
                  fails closed with an honest message at the list gate. */
-              frozenHint = Object.freeze({ name: String(pgIdentity.name || ''), dob: String(pgIdentity.dob || ''), mrn: String(pgIdentity.mrn || ''), onlyDate: frozenHint.onlyDate || '', nameAlias: '' });
+              frozenHint = Object.freeze({ name: String(pgIdentity.name || ''), dob: String(pgIdentity.dob || ''), mrn: String(pgIdentity.mrn || ''), onlyDate: frozenHint.onlyDate || '', todayKey: frozenHint.todayKey || '', nameAlias: '' });
             }
           } catch (eAd72) {}
           preGateOk = true; break;
@@ -11882,11 +11883,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var visits = [], failures = [], retryCount = 0, minimalBodies = 0, attemptedCount = 0, administrativeRows = [], administrativeVisits = [], dateSkippedRows = [], dateUnknownRows = [];
       /* scensus-1.0.0: a FUTURE scoped day cannot have an encounter note yet.
          Answer it as a bounded, complete not-yet-available baseline - zero
-         rows opened, no prior encounter ever substituted. */
+         rows opened, no prior encounter ever substituted.
+         scensus-1.0.1: "today" is the ACCOUNT-LOCAL day carried on the hint,
+         never the machine clock. Without it the future classification does
+         not run and the scoped census fails PARTIAL below. */
+      var scTodayKey = String((frozenHint && frozenHint.todayKey) || '');
+      var scTodayKeyValid = /^\d{4}-\d{2}-\d{2}$/.test(scTodayKey);
       if (frozenHint.onlyDate) {
-        var scTodayD = new Date();
-        var scTodayKey = scTodayD.getFullYear() + '-' + ('0' + (scTodayD.getMonth() + 1)).slice(-2) + '-' + ('0' + scTodayD.getDate()).slice(-2);
-        if (frozenHint.onlyDate > scTodayKey) {
+        if (scTodayKeyValid && frozenHint.onlyDate > scTodayKey) {
           emit(appTabId, frozenRequestId, 'The requested day has not happened yet - no encounter note can exist; nothing was opened.', 0, total);
           return { ok: true, identity: identity, visits: [], administrativeVisits: [], diag: diag, strategy: 'bound-click', found: total,
             receipt: { complete: true, indexComplete: true, bodyComplete: true, fullDetail: true, expected: 0, parsed: 0,
@@ -12243,19 +12247,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sourceKeys[sourceKey] = 1;
       }
       if (!stableKeysComplete) failures.push({ index: -1, reason: 'stable-source-keys-incomplete' });
-      var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete && (!frozenHint.onlyDate || dateUnknownRows.length === 0);
+      var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete && (!frozenHint.onlyDate || (dateUnknownRows.length === 0 && (scTodayKeyValid || visits.length > 0))); /* the calendar authority guards only ABSENCE claims - rows positively read prove themselves */
       /* scensus-1.0.0: the scoped census verdict, from the counted buckets. */
       var scScoped = !!(frozenHint && frozenHint.onlyDate);
       var scSameDay = '';
       if (scScoped) {
         if (visits.length > 0) scSameDay = 'saved';
+        else if (!scTodayKeyValid) scSameDay = 'partial'; /* no calendar authority - absence is unprovable */
         else if (dateUnknownRows.length > 0) scSameDay = 'partial';
         else if (failures.length > 0) scSameDay = 'refused';
         else scSameDay = 'absent';
       }
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
-        fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, dateSkippedRows: dateSkippedRows.length, dateUnknownRows: dateUnknownRows.length, onlyDate: (frozenHint && frozenHint.onlyDate) || '', scopeDate: scScoped ? frozenHint.onlyDate : '', sameDayStatus: scScoped ? scSameDay : undefined, absenceProven: scScoped ? (scSameDay === 'absent' && bodyComplete) : undefined, noSubstitution: scScoped ? true : undefined, indexTotal: total,
+        fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, dateSkippedRows: dateSkippedRows.length, dateUnknownRows: dateUnknownRows.length, onlyDate: (frozenHint && frozenHint.onlyDate) || '', scopeDate: scScoped ? frozenHint.onlyDate : '', temporalAuthority: scScoped ? (scTodayKeyValid ? 'account-local' : 'absent') : undefined, sameDayStatus: scScoped ? scSameDay : undefined, absenceProven: scScoped ? (scSameDay === 'absent' && bodyComplete) : undefined, noSubstitution: scScoped ? true : undefined, indexTotal: total,
         attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount, surfaceResets: surfaceResets, surfaceResetOps: surfaceResetOps.slice(0, 6), chartSurface: chartSurface, failureDetails: failures.slice(0, 12),
         timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,

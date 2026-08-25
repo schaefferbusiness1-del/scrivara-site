@@ -177,8 +177,11 @@ function sourceContracts() {
     'empty/duplicate stable source keys no longer fail closed');
   ok(stableKeys.includes("if (!stableKeysComplete) failures.push({ index: -1, reason: 'stable-source-keys-incomplete' });"),
     'the stable-key refusal disappeared from the receipt');
-  ok(stableKeys.includes('var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete;'),
-    'body completeness no longer independently requires every clinical body');
+  /* scensus-1.0.0/1.0.1 strengthened this clause: a scoped census with an
+     unknown-date row, or without a proven account-local calendar authority,
+     is additionally incomplete (never absence-by-arithmetic) */
+  ok(stableKeys.includes('var bodyComplete = failures.length === 0 && visits.length === clinicalTotal && stableKeysComplete && (!frozenHint.onlyDate || (dateUnknownRows.length === 0 && (scTodayKeyValid || visits.length > 0)));'),
+    'body completeness no longer independently requires every clinical body (plus scensus unknown-date/authority incompleteness)');
 
   /* Freeze only a valid opaque Athena id and rebuild both aliases on retry. */
   const frozenRetry = between(

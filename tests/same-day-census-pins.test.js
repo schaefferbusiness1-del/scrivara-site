@@ -24,10 +24,30 @@ assert.ok(src.includes('counted as unknown, not as absent'),
   'an unparseable date is counted unknown, never absence');
 assert.ok(src.includes('total - administrativeRows.length - dateSkippedRows.length - dateUnknownRows.length'),
   'clinicalTotal excludes the unknown bucket (no absence-by-arithmetic)');
-assert.ok(src.includes("(!frozenHint.onlyDate || dateUnknownRows.length === 0)"),
-  'an unknown date makes a SCOPED census incomplete');
+assert.ok(src.includes("(!frozenHint.onlyDate || (dateUnknownRows.length === 0 && (scTodayKeyValid || visits.length > 0)))"),
+  'an unknown date OR a missing calendar authority makes a SCOPED census incomplete');
 assert.ok(src.includes("else if (dateUnknownRows.length > 0) scSameDay = 'partial';"),
   'the census verdict ladder keeps partial for unknowns');
+/* ---- scensus-1.0.1: the ACCOUNT calendar, never the machine clock ---- */
+assert.ok(src.includes("var scTodayKey = String((frozenHint && frozenHint.todayKey) || '');"),
+  'the future classification must read the account-local todayKey from the hint');
+assert.ok(!src.includes('var scTodayD = new Date()'),
+  'the census future check still infers today from the machine clock');
+assert.ok(src.includes("scTodayKeyValid && frozenHint.onlyDate > scTodayKey"),
+  'the future short-circuit must be gated on a proven calendar authority');
+assert.ok(src.includes("else if (!scTodayKeyValid) scSameDay = 'partial'; /* no calendar authority - absence is unprovable */"),
+  'a scoped census without a calendar authority must degrade to partial, never absent');
+assert.ok(src.includes("temporalAuthority: scScoped ? (scTodayKeyValid ? 'account-local' : 'absent') : undefined"),
+  'the receipt must name its temporal authority');
+assert.ok(src.includes("todayKey: /^\\d{4}-\\d{2}-\\d{2}$/.test(String(hint.todayKey || '')) ? String(hint.todayKey) : ''"),
+  'freezeVisitHint must carry a validated account-local todayKey');
+assert.strictEqual((src.match(/todayKey: frozenHint\.todayKey \|\| ''/g) || []).length, 2,
+  'both mid-walk re-freezes must preserve the todayKey authority');
+/* the app-side sender: the shared visits module hands the reader the
+ * account-local day from the same helper the engine trusts */
+const visitsSrc = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
+assert.ok(visitsSrc.includes('window._acctTodayKey') && /todayKey:/.test(visitsSrc),
+  'the visits hint sender must carry the account-local todayKey');
 assert.ok(src.includes("dateUnknownRows: dateUnknownRows.length"), 'the receipt carries the unknown count');
 assert.ok(src.includes("absenceProven: scScoped ? (scSameDay === 'absent' && bodyComplete) : undefined"),
   'absence is proven only by a complete scoped census');
@@ -55,10 +75,10 @@ assert.strictEqual(verdict(0, 1, 1), 'partial', 'unknown outranks refused (the u
 assert.strictEqual(verdict(0, 0, 1), 'refused', 'failures without unknowns are refused, not absent');
 assert.strictEqual(verdict(0, 0, 0), 'absent', 'only a clean, fully-dated census proves absence');
 const ladder = src.indexOf("if (visits.length > 0) scSameDay = 'saved';");
-const ladderSeg = src.slice(ladder, ladder + 300);
+const ladderSeg = src.slice(ladder, ladder + 500);
 assert.ok(ladder >= 0 &&
   ladderSeg.indexOf("'partial'") < ladderSeg.indexOf("'refused'") &&
   ladderSeg.indexOf("'refused'") < ladderSeg.indexOf("'absent'"),
   'the shipped ladder orders saved > partial > refused > absent exactly as documented');
 
-console.log('PASS same-day census pins: unknown-date bucket, not-yet-available, no absence-by-arithmetic, scoped incompleteness, proven-disjunct admissions, narrow administrative classifier, and the verdict ladder ordering all hold');
+console.log('PASS same-day census pins: unknown-date bucket, not-yet-available, no absence-by-arithmetic, scoped incompleteness, proven-disjunct admissions, narrow administrative classifier, the verdict ladder ordering, and the scensus-1.0.1 account-local calendar authority (host clock banned, partial without authority, hint threaded end to end) all hold');

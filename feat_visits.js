@@ -2331,7 +2331,13 @@
              it). onlyDate scopes the reader to that day; the reader's receipt
              excludes the deliberately skipped rows from its completeness
              arithmetic, so the exact-count gate below still closes. */
-          { hint: { name: targetRef.name, dob: targetRef.dob, mrn: targetRef.mrn || targetRef.athenaId || '', onlyDate: String(runOpts.onlyDate || '') } },
+          /* scensus-1.0.1 (Codex blocker 2 on 10f41d2d): the reader must
+             never infer "today" from the machine clock - around midnight,
+             DST, or a remote clinic timezone the host date is wrong. The
+             hint carries the canonical ACCOUNT-LOCAL day; when it cannot be
+             proven the reader fails PARTIAL (it can still read, it just can
+             never claim absence or not-yet-available without a calendar). */
+          { hint: { name: targetRef.name, dob: targetRef.dob, mrn: targetRef.mrn || targetRef.athenaId || '', onlyDate: String(runOpts.onlyDate || ''), todayKey: (function () { try { var f = window._acctTodayKey; var k = typeof f === 'function' ? String(f() || '') : ''; return /^\d{4}-\d{2}-\d{2}$/.test(k) ? k : ''; } catch (e) { return ''; } })() } },
           'mlsAppAllVisitsResult',
           ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
           function (msg) { if (msg) st(msg); },
