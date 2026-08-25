@@ -954,6 +954,42 @@ async function mlsAthenaActionV2DriverFn(req) {
       }
       return Object.keys(found).map(function (k) { return found[k]; });
     }
+    function hetStageEncounterContext(frame, expectedPatient) {
+      /* het-1.0.0: athena's own machine-typed encounter context, read off an
+         athenaClinicals stage frame. Every field must resolve to EXACTLY ONE
+         distinct value or the frame does not qualify - a serialization
+         naming two patients, encounters, appointments, providers or service
+         dates refuses instead of guessing. Values are compared, never
+         logged. */
+      try {
+        var metas = deepQueryAll(frame.doc, 'meta').filter(function (m) { return /encounter_id/.test(m.getAttribute('content') || ''); });
+        if (metas.length !== 1) return null;
+        var arr = JSON.parse(metas[0].getAttribute('content'));
+        if (!Array.isArray(arr)) return null;
+        var ctx = {};
+        for (var ai = 0; ai < arr.length; ai++) { var it = arr[ai]; if (it && typeof it === 'object') { for (var ck in it) { if (Object.prototype.hasOwnProperty.call(it, ck)) ctx[ck] = String(it[ck]); } } }
+        var encId = digits(ctx.encounter_id || ''), metaPatient = digits(ctx.patient_id || '');
+        var wantMrn = digits(expectedPatient.mrn);
+        if (!encId || encId.length < 3 || !metaPatient || !wantMrn || metaPatient !== wantMrn) return null;
+        var html = '';
+        try { html = String(frame.doc.body ? frame.doc.body.innerHTML : ''); } catch (eHtml) { return null; }
+        if (html.length > 6000000) html = html.slice(0, 6000000);
+        function hetUniq(re, mapFn) {
+          var seen = {}, out = [], m2;
+          while ((m2 = re.exec(html))) { var v = mapFn ? mapFn(m2[1]) : m2[1]; if (v && !seen[v]) { seen[v] = 1; out.push(v); if (out.length > 3) break; } }
+          return out;
+        }
+        var appts = hetUniq(/"AppointmentID\\?"\s*:\s*\\?"(\d{3,})/g);
+        if (appts.length !== 1) return null;
+        var provs = hetUniq(/"DisplayName\\?"\s*:\s*\\?"([^"\\]{4,70})\\?"/g, function (v) { return /,\s*(?:MD|DO|PA-C|CRNP|NP|DPM)\s*$/.test(v) ? v : ''; });
+        if (provs.length !== 1) return null;
+        var dates = hetUniq(/"(?:Scheduled|Appointment|Service|Visit|Appt)[A-Za-z]*Date\\?"[^0-9]{0,80}?(\d{4}-\d{2}-\d{2})/g);
+        if (dates.length !== 1) return null;
+        var visitDate = dateKey(dates[0]);
+        if (!visitDate) return null;
+        return { encounterId: encId, appointmentId: digits(appts[0]), provider: text(provs[0]), visitDate: visitDate };
+      } catch (eHet) { return null; }
+    }
     function encounterMetadataFor(frame, actionRoot, identityRoot) {
       var root = actionRoot, guard = 0;
       while (root && guard++ < 18) {
@@ -1017,6 +1053,28 @@ async function mlsAthenaActionV2DriverFn(req) {
     for (var fi = 0; fi < frames.length; fi++) {
       var fr = frames[fi];
       var chartHeader = anchoredIdentity(fr), observedIdentity = chartHeader.identity;
+      var hetStage = null;
+      if (!observedIdentity && !chartHeader.ambiguous) {
+        /* het-1.0.0: stage surfaces split banner and editor across frames.
+           Qualify ONLY when the frame's own machine-typed context META names
+           the expected patient AND an ANCESTOR frame's banner (never a
+           sibling) passes the exact same identity gates below. */
+        hetStage = hetStageEncounterContext(fr, expectedPatient);
+        if (hetStage) {
+          var hetAncWin = null; try { hetAncWin = fr.w && fr.w.parent && fr.w.parent !== fr.w ? fr.w.parent : null; } catch (eHet0) { hetAncWin = null; }
+          var hetHops = 0;
+          while (hetAncWin && hetHops++ < 6 && !observedIdentity) {
+            var hetFr = null;
+            for (var hfi = 0; hfi < frames.length; hfi++) { if (frames[hfi].w === hetAncWin) { hetFr = frames[hfi]; break; } }
+            if (!hetFr) break;
+            var hetHeader = anchoredIdentity(hetFr);
+            if (hetHeader.ambiguous) { chartHeader = hetHeader; break; }
+            if (hetHeader.identity) { chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
+            try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
+          }
+          if (!observedIdentity) hetStage = null;
+        }
+      }
       if (!observedIdentity || chartHeader.ambiguous) continue;
       if (nameKey(observedIdentity.name) !== nameKey(expectedPatient.name) || dateKey(observedIdentity.dob) !== dateKey(expectedPatient.dob)) { sawOtherPatient = true; continue; }
       var wantMrn = digits(expectedPatient.mrn);
@@ -1034,12 +1092,12 @@ async function mlsAthenaActionV2DriverFn(req) {
         }
       }
       var targetRoot = billTarget ? billTarget.root : (orderTarget ? orderTarget.root : noteTarget.root);
-      var eid = encounterIdFor(fr, targetRoot, observedIdentity.root);
+      var eid = hetStage ? hetStage.encounterId : encounterIdFor(fr, targetRoot, observedIdentity.root);
       if (!eid) continue;
       if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) continue;
-      var observedAppointmentId = appointmentIdFor(fr, targetRoot, observedIdentity.root);
+      var observedAppointmentId = hetStage ? hetStage.appointmentId : appointmentIdFor(fr, targetRoot, observedIdentity.root);
       if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) continue;
-      var encounterMeta = encounterMetadataFor(fr, targetRoot, observedIdentity.root);
+      var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root);
       if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) continue;
       if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) continue;
       if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;

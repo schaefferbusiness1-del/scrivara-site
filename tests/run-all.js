@@ -1766,7 +1766,12 @@ const tests = [
   /* stx-1.0.0: the free-line text lane cannot mint an appointment from a
      mid-line time token (booking-comment prose), so pp-1.1 refusals are
      reserved for real phantoms; skips are counted, never silent. */
-  'text-lane-mint-pins.test.js'
+  'text-lane-mint-pins.test.js',
+  /* het-1.0.0: athenaClinicals stage surfaces qualify for writes only through
+     athena's machine-typed context META (patient_id === expected MRN) plus an
+     ancestor-frame banner judged by the unchanged identity gates; every
+     uniqueness refusal and equality gate is pinned, regexes executed. */
+  'het-stage-context-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
