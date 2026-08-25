@@ -792,14 +792,14 @@
   function navigateAndSearchOpenTarget(patient, expectedContext) {
     var day = wfDayKey(expectedContext && expectedContext.visitDate);
     var appointmentId = S(expectedContext && expectedContext.appointmentId).trim();
-    if (!day || !appointmentId) return searchOpenTarget(patient, expectedContext);
+    if (!day || !appointmentId) return Promise.resolve({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact visit is not bound to a dated Athena appointment, so MLS will not open or guess an encounter.' });
     return bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000).then(function (nav) {
       nav = nav || {};
       var observed = wfDayKey(nav.schedDate);
       wfdxNote({ verb: 'mlsAppGotoDate', stage: 'auto-open', ok: nav.ok === true, timeout: nav.__timeout === true,
         reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed, appointmentIdPresent: true });
       if (nav.ok !== true) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'athenaOne could not be sent to the exact encounter day. Nothing was opened.' };
-      if (observed && observed !== day) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'athenaOne reported a different encounter day. Nothing was opened.' };
+      if (observed !== day) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: observed ? 'athenaOne reported a different encounter day. Nothing was opened.' : 'athenaOne did not prove which encounter day is open. Nothing was opened.' };
       return searchOpenTarget(patient, expectedContext);
     }, function () {
       return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact encounter-day navigation could not be started. Nothing was opened.' };
@@ -1042,9 +1042,11 @@
     }
     var previewHash = S(opts.previewHash || hashPreview({ patient: patient, action: action, payload: payload }));
     var expectedContext = expectedVisitContext(patient, opts);
-    if (opts.requireExpectedVisit && (!expectedContext || !expectedContext.visitDate || !expectedContext.provider)) {
-      actionSay(opts, 'This saved visit does not contain an exact encounter date and provider. Athena actions are disabled for it so the note cannot be placed in a different historical encounter. Nothing was changed.', 'err');
-      return Promise.resolve({ ok: false, error: 'historical-encounter-context-missing' });
+    var expectedVisitReady = !!(expectedContext && wfDayKey(expectedContext.visitDate) && S(expectedContext.provider).trim() &&
+      (S(expectedContext.appointmentId).trim() || (S(expectedContext.encounterId).trim() && S(expectedContext.encounterUrl).trim())));
+    if (!expectedVisitReady) {
+      actionSay(opts, 'This review is not bound to one exact Athena visit (date, provider, and appointment ID or encounter ID/URL). Re-pull or bind the scheduled day, then reopen the review. MLS will not guess an encounter and nothing was changed.', 'err');
+      return Promise.resolve({ ok: false, error: opts.requireExpectedVisit ? 'historical-encounter-context-missing' : 'exact-encounter-context-missing' });
     }
     var priorWriteReceipt = action === 'sign_encounter' ? findAnyVerifiedWrite(patient, previewHash, opts, payload) : null;
     if (action === 'sign_encounter' && (!S(opts.receiptSessionId) || !priorWriteReceipt || !priorWriteReceipt.noteWriteProof)) {
@@ -1070,7 +1072,7 @@
         var canAutoOpen = AUTO_OPEN_REASONS[String(probe.reason || '')] === 1 && opts.autoOpen !== false && opts.__autoOpened !== true;
         if (!canAutoOpen) { athenaActionRunning = false; actionSay(opts, probe.error || probe.message || 'Athena context could not be verified. Nothing was changed.', 'err'); return probe; }
         actionSay(opts, patient.name + ' is not open in Athena. MLS is opening the chart there now — nothing is written without your confirmation.', '');
-        return searchOpenTarget(patient, expectedContext).then(function (openRes) {
+        return navigateAndSearchOpenTarget(patient, expectedContext).then(function (openRes) {
           athenaActionRunning = false;
           if (!openRes || openRes.ok !== true) {
             actionSay(opts, 'MLS could not open ' + patient.name + ' in Athena on its own' + ((openRes && (openRes.error || openRes.reason)) ? (': ' + (openRes.error || openRes.reason)) : '') + '. Open the chart in Athena, then try again. Nothing was changed.', 'err');
@@ -1338,16 +1340,10 @@
     var receiptSessionId = S(opts.receiptSessionId).trim() || ('athena-unified-' + Date.now() + '-' + Math.random().toString(36).slice(2));
     var previewHash = S(opts.previewHash).trim() || hashPreview({ patient: patient, visit: visit, plan: plan, sections: noteSections });
     var identityBlocked = !patient.patientId || !patient.name || !patient.dob || !patient.mrn;
-    /* b745 (write-blocker audit #14): the appointment-id PRE-gate blocked every
-       write before the read-only Athena probe ever ran — including today-writes
-       whose id the ledger could resolve, and every historical record (a gate
-       with no key: no UI could furnish what it demanded). Only a HISTORICAL
-       write (requireExpectedVisit) must pre-name its exact encounter; for a
-       live write the probe itself discovers, verifies, and LOCKS the open
-       encounter (validatedUnifiedProbe still requires the complete matching
-       patient plus one exact encounter id/URL/date/provider/control before
-       anything can execute). The wrong-chart guarantee is unchanged - it was
-       never this pre-gate, it is the probe + the execute-time rebinding. */
+    /* A write review may be current or historical, but both need an exact visit
+       locator before the read-only Athena probe. Patient identity alone cannot
+       distinguish two encounters for the same person; the schedule bind/re-pull
+       supplies the independent date/provider/appointment evidence. */
     /* 2026-07-28: the LIVE lane painted a row READY that the extension's probe
        predicate could never accept. The pre-gate above only bound HISTORICAL
        writes, so a live review with no bound encounter showed a green READY row
@@ -1356,12 +1352,11 @@
        get it, instead of promising a write that cannot happen. */
     var visitReady = !!visit.visitDate && !!visit.provider &&
       (!!visit.appointmentId || (!!visit.encounterId && !!visit.encounterUrl));
-    var visitHasAnyLocator = !!(visit.visitDate || visit.provider || visit.appointmentId || visit.encounterId || visit.encounterUrl);
-    /* Only a wholly unbound CURRENT visit may ask Athena to discover the one
-       open encounter read-only. A partial locator stays blocked so the
-       existing auto-bind path can finish that same locator. */
-    var liveVisitNeedsDiscovery = opts.requireExpectedVisit !== true && !visitHasAnyLocator;
-    var partialLiveVisitBlocked = opts.requireExpectedVisit !== true && visitHasAnyLocator && !visitReady;
+    /* A current review must also name an independent visit locator before its
+       read-only check. Patient identity alone cannot distinguish two encounters
+       for the same patient; the schedule bind/re-pull path supplies the exact
+       date, provider and appointment instead of adopting whatever is open. */
+    var partialLiveVisitBlocked = opts.requireExpectedVisit !== true && !visitReady;
     var exactVisitBlocked = opts.requireExpectedVisit === true &&
       (!visit.visitDate || !visit.provider ||
         (!visit.appointmentId && !(visit.encounterId && visit.encounterUrl)));
@@ -1370,10 +1365,9 @@
     var commonBlock = identityBlocked
       ? 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.'
       : (partialLiveVisitBlocked ? partialLiveVisitReason : (exactVisitBlocked ? exactVisitReason : ''));
-    /* A CURRENT open encounter with complete patient identity may start with a
-       read-only Check Athena probe. The probe must discover exactly one labeled
-       date/provider/encounter, freeze the complete context, and execution must
-       re-bind that same lock. Historical reviews remain pre-bound above. */
+    /* Current and historical reviews both remain blocked until one exact visit
+       is independently bound. Probe- and execute-time rebinding still enforce
+       that frozen locator after the pre-gate. */
     /* Typed place_order rows (MLS Assist 3.0.62+) share the note rows'
        identity/encounter block; without a capable extension the order rows
        fall back to manual and the block is irrelevant to them. */
@@ -1513,7 +1507,7 @@
     var manifest = {
       schema: 'mls-athena-write-manifest-v1', manifestId: 'athena-manifest-' + manifestHash.replace('mls-preview-', ''),
       manifestHash: manifestHash, previewHash: previewHash, receiptSessionId: receiptSessionId,
-      patient: patient, visit: visit, requireExpectedVisit: opts.requireExpectedVisit === true, needsVisitDiscovery: liveVisitNeedsDiscovery, rows: rows
+      patient: patient, visit: visit, requireExpectedVisit: opts.requireExpectedVisit === true, needsVisitDiscovery: false, rows: rows
     };
     return deepFreeze(manifest);
   }

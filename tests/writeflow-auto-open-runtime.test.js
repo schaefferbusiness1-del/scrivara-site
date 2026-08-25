@@ -2,9 +2,10 @@
 
 /* wf2-2.0.0 (owner directive 2026-07-20): when a write probe refuses because
  * the exact patient/encounter is not open in Athena, MLS must reach the
- * destination on its own — drive the extension's proven SearchOpen verb with
- * the frozen identity + appointment id + schedule date, then re-run the SAME
- * action once from the top (fresh probe). Contract pinned here:
+ * destination on its own — first navigate Athena to the frozen appointment's
+ * exact day and require that observed day back, then drive SearchOpen with the
+ * frozen identity + appointment id + schedule date and re-run the SAME action
+ * once from the top (fresh probe). Contract pinned here:
  *   - trigger ONLY on probe reasons context-unverified / context-mismatch;
  *   - exactly ONE auto-open attempt (the retry carries __autoOpened);
  *   - the SearchOpen message carries name, dob, mrn, appointmentId, and the
@@ -88,13 +89,30 @@ async function run(scenario) {
   assert(probe1 && probe1.mode === 'probe', scenario.name + ': first probe missing');
   h.deliver({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: probe1.requestId, resp: scenario.probe1 });
   await h.settle();
-  return { h, probe1, done };
+  const openable = ['context-unverified', 'context-mismatch'].includes(String(scenario.probe1 && scenario.probe1.reason || '')) &&
+    !(scenario.opts && scenario.opts.autoOpen === false);
+  let nav = null;
+  if (openable) {
+    nav = h.posted.find(m => m.type === 'mlsAppGotoDate');
+    assert(nav, scenario.name + ': exact-day navigation message missing');
+    assert.strictEqual(nav.date, OPTS.expectedContext.visitDate, scenario.name + ': navigation lost the frozen visit day');
+    assert.strictEqual(h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
+      scenario.name + ': SearchOpen ran before Athena proved the exact day');
+    if (scenario.leaveNavPending !== true) {
+      const navResult = Object.prototype.hasOwnProperty.call(scenario, 'navResult')
+        ? scenario.navResult
+        : { ok: true, supported: true, schedDate: OPTS.expectedContext.visitDate };
+      h.deliver({ source: 'mls-ext', type: 'mlsAppGotoDateResult', requestId: nav.requestId, resp: navResult });
+      await h.settle();
+    }
+  }
+  return { h, probe1, done, nav };
 }
 
 (async () => {
-// 1. context-unverified → exactly one SearchOpen with the frozen identity,
-//    then a successful open → a SECOND fresh probe; a verified re-probe stops
-//    at the confirm stage (no execute without the human click).
+// 1. context-unverified → exact-day navigation → exactly one SearchOpen with
+//    the frozen identity, then a successful open → a SECOND fresh probe; a
+//    verified re-probe stops at confirmation (no execute without human click).
 {
   const { h, probe1 } = await (async () => {
     const r = await run({ name: 'happy', probe1: { ok: false, blocked: true, reason: 'context-unverified' } });
@@ -156,5 +174,39 @@ for (const reason of ['token-sender-mismatch', 'no-athena-tab', 'patient-mismatc
   assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0, 'opt-out: autoOpen:false must disable the auto-open');
 }
 
-console.log('PASS writeflow auto-open: unopened destinations are reached via one SearchOpen with the frozen identity + schedule date, re-probed exactly once, honest on failure, never on identity/token refusals, and the human confirm click is untouched');
+// 6. A navigation response that does not prove the observed day is a refusal;
+//    it never falls through to SearchOpen or a second probe.
+for (const navResult of [
+  { ok: true, supported: true },
+  { ok: true, supported: true, schedDate: '2026-06-19' },
+  { ok: false, supported: true, reason: 'nav-failed' }
+]) {
+  const r = await run({ name: 'nav-unverified-' + JSON.stringify(navResult), probe1: { ok: false, blocked: true, reason: 'context-unverified' }, navResult });
+  assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
+    'unverified navigation reached SearchOpen: ' + JSON.stringify(navResult));
+  assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppAthenaActionV2').length, 1,
+    'unverified navigation caused a re-probe: ' + JSON.stringify(navResult));
+  assert(r.h.toasts.some(t => /could not open|exact encounter day|did not prove|different encounter day/i.test(t.m)),
+    'unverified navigation did not surface an honest refusal');
+}
+
+// 7. The public direct lane is also fail-closed when no exact visit is bound.
+//    The extension worker may retain a read-only diagnostic capability, but the
+//    product never asks it to adopt whichever same-patient encounter is open.
+{
+  const h = makeHarness();
+  const result = await h.wf.startAthenaAction('write_note', {
+    patient: OPTS.patient, sections: OPTS.sections,
+    expectedContext: { visitDate: '', provider: '', appointmentId: '', encounterId: '', encounterUrl: '' }
+  });
+  await h.settle();
+  assert.strictEqual(result && result.error, 'exact-encounter-context-missing',
+    'the public current lane did not refuse an unbound visit');
+  assert.strictEqual(h.posted.filter(m => /^(?:mlsAppAthenaActionV2|mlsAppGotoDate|mlsAppSearchOpenPatient)$/.test(m.type)).length, 0,
+    'the public current unbound lane contacted Athena');
+  assert(h.toasts.some(t => /re-pull|bind|will not guess/i.test(t.m)),
+    'the public current unbound refusal did not explain the exact bind cure');
+}
+
+console.log('PASS writeflow auto-open: exact-day navigation is proven before SearchOpen, direct unbound reviews stay blocked, one fresh re-probe follows a verified open, failures stay honest, and the human confirm click is untouched');
 })().catch((err) => { console.error(err); process.exit(1); });

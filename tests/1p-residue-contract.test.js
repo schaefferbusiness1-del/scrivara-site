@@ -150,10 +150,8 @@ for (const name of SHELLS) {
   ok(/data-mls-ready-tick="/.test(readyRow), 'the ready tick the lock chip anchors beside is gone');
   ok(/<label /.test(readyRow) && /<b style=/.test(readyRow),
     'the ready row no longer wraps its title in a label/<b> - the lock chip and reason line would land in the wrong place');
-  /* a BLOCKED row must keep having no radio - that is what makes a historical
-     review with no exact visit have zero selectable rows, which PART 2A
-     depends on. A wholly unbound CURRENT review is intentionally different:
-     its ready rows may start the safe read-only encounter-discovery probe. */
+  /* a BLOCKED row must keep having no radio - that is what makes every review
+     with no exact visit have zero selectable rows, which PART 2A depends on. */
   const blockedRow = flow.slice(flow.indexOf('function unifiedBlockedRowHtml('), flow.indexOf('function unifiedBlockedRowHtml(') + 900);
   ok(!/name="mlsAthenaUnifiedAction"/.test(blockedRow),
     'a BLOCKED row now renders a radio - a historical unbound sheet would no longer have zero selectable rows and PART 2A is measuring something else');
@@ -421,9 +419,8 @@ async function runtime() {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const out = {};
       window._calAppts = [];
-      /* Current reviews with a wholly empty locator intentionally expose the
-         read-only discovery lane. Use the still-valid fail-closed case this
-         residue is about: a historical review with no exact visit. */
+      /* A historical review is the stable fail-closed fixture for this residue;
+         current unbound reviews now share the same no-guess pre-gate. */
       const manifest = window.__mlsWriteFlow.openUnifiedConfirmation({
         patient: pt, sections: [{ key: 'note', text: note }], requireExpectedVisit: true
       });

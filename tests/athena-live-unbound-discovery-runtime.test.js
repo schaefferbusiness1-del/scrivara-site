@@ -1,13 +1,14 @@
 'use strict';
 
-/* Safe live-current Athena encounter discovery.
+/* Worker-only empty-context discovery isolation.
  *
  * This is a wholly synthetic worker harness. It never opens Athena, never
  * touches a browser profile, and its execute injection returns a refusal
- * without running the in-page driver. The runtime cases pin the contract that
- * a current reviewed note may begin with complete patient identity and an
- * entirely empty local visit locator, while mutation authority exists only
- * after exactly one complete encounter lock is returned.
+ * without running the in-page driver. The extension worker retains a strict
+ * read-only diagnostic primitive for compatibility, but the shipped product
+ * must pre-block every current or historical review without an independently
+ * bound visit. These cases prove the raw worker still cannot mutate from empty
+ * context while the source gate below proves the product never invokes it.
  */
 
 const assert = require('assert');
@@ -30,6 +31,12 @@ function between(source, begin, end) {
 const HANDLER = between(BACKGROUND, '/* ATHENA_ACTION_V2_HANDLER_START */', '/* ATHENA_ACTION_V2_HANDLER_END */');
 const DRIVER = between(BACKGROUND, '/* ATHENA_ACTION_V2_DRIVER_START */', '/* ATHENA_ACTION_V2_DRIVER_END */');
 const RECEIPT = between(FLOW, 'function resultToUnifiedReceipt(state, row, resp, probe)', 'function executeUnifiedSelection(state)');
+const DIRECT_GATE = between(FLOW, 'var expectedContext = expectedVisitContext(patient, opts);', 'var priorWriteReceipt = action ===');
+
+assert(/if \(!expectedVisitReady\)/.test(DIRECT_GATE) && /exact-encounter-context-missing/.test(DIRECT_GATE),
+  'the public current write lane can still invoke the worker without an exact visit bind');
+assert(/date, provider, and appointment ID or encounter ID\/URL/.test(DIRECT_GATE),
+  'the public unbound refusal no longer tells the user what exact bind is required');
 
 /* The in-page read-only driver is the last arbiter inside one Athena tab: zero
  * and multiple matching encounter frames are equally non-authorizing. */
@@ -176,8 +183,9 @@ function makeHarness(tabProbeResults, executeResult) {
 (async function main() {
   const firstLock = lock('800001', '700001');
 
-  /* A wholly empty visit locator is allowed only for the read-only probe. One
-   * complete verified lock is returned and the token is bound to it. */
+  /* Direct worker invocation with an empty locator is read-only diagnostic
+   * compatibility only; the public site gate above prevents this product path.
+   * Even here, one complete verified lock is required before a token exists. */
   {
     const h = makeHarness([probeSuccess(firstLock)]);
     const response = await h.dispatch(request());
@@ -295,7 +303,7 @@ function makeHarness(tabProbeResults, executeResult) {
     assert(h.injections.every(entry => entry.payload.mode === 'probe'), 'an ambiguous discovery crossed the mutation boundary');
   }
 
-  console.log('PASS Athena live-unbound discovery: current note empty-context probe -> exactly one full lock; zero/multiple fail closed; execute requires the frozen full lock; insertion receipt says read back and unsaved');
+  console.log('PASS Athena worker-only empty-context isolation: public current reviews pre-block before Athena, raw diagnostic probes remain read-only, zero/multiple fail closed, and execute requires a frozen full lock');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

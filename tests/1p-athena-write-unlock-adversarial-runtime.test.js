@@ -374,6 +374,10 @@ function shippedFunction(name) {
     fields: { study: 'MRI knee', region: 'Left knee', indication: 'Synthetic indication' },
     reviewStatus: 'accepted', source: 'provider-entered'
   };
+  const EXACT_ORDER_CONTEXT = {
+    appointmentId: APPOINTMENT, encounterId: '', encounterUrl: '',
+    visitDate: DAY, provider: 'Synthetic Clinician One, MD'
+  };
   {
     const h = makeHarness({ capabilities: CAPABLE });
     const refused = await refusal(h, h.window.__mlsWriteFlow.startAthenaAction('place_order', {
@@ -390,7 +394,8 @@ function shippedFunction(name) {
     /* positive control: the SAME call with a row hash gets past this gate */
     const g = makeHarness({ capabilities: CAPABLE });
     g.window.__mlsWriteFlow.startAthenaAction('place_order', {
-      patient: clone(PATIENT), order: clone(ORDER), rowHash: 'synthetic-row-hash'
+      patient: clone(PATIENT), order: clone(ORDER), rowHash: 'synthetic-row-hash',
+      expectedContext: clone(EXACT_ORDER_CONTEXT)
     });
     await g.settle();
     assert.strictEqual(g.posted.length, 1,
@@ -422,7 +427,7 @@ function shippedFunction(name) {
   const NOTE_TEXT = 'Synthetic reviewed note body.';
   const SIGN_OPTS = () => ({
     patient: clone(PATIENT), receiptSessionId: SESSION, previewHash: PREVIEW,
-    sections: [{ key: 'note', text: NOTE_TEXT }]
+    sections: [{ key: 'note', text: NOTE_TEXT }], expectedContext: clone(BOUND_CONTEXT)
   });
   const BOUND_CONTEXT = {
     encounterId: '80000017', encounterUrl: 'https://athena.synthetic/encounter/80000017',
