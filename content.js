@@ -471,7 +471,7 @@
         var chartScheduleDate = /^\d{4}-\d{2}-\d{2}$/.test(mlsStr(d.scheduleDate, 10)) ? mlsStr(d.scheduleDate, 10) : '';
         var chartDeadlineAt = Number(d.deadlineAt || 0);
         if (!isFinite(chartDeadlineAt) || chartDeadlineAt <= 0) chartDeadlineAt = Date.now() + 100000;
-        var chartFinished = false;
+        var chartFinished = false, chartRelayTimer = null;
         var chartMessage = {
           type: 'mlsAppChartRequest',
           patient: chartPatient,
@@ -487,6 +487,7 @@
         function finishChart(resp) {
           if (chartFinished) return;
           chartFinished = true;
+          if (chartRelayTimer != null) { try { clearTimeout(chartRelayTimer); } catch (eClearChart) {} chartRelayTimer = null; }
           var runtimeErr = chrome.runtime && chrome.runtime.lastError;
           var out = runtimeErr ? { ok: false, reason: 'extension-error', error: runtimeErr.message || 'MLS Assist runtime error.' } : (resp || { ok: false, reason: 'no-response', error: 'No response from MLS Assist' });
           reply({ source: 'mls-ext', type: 'mlsAppChartResult', requestId: chartRequestId, deadlineAt: chartDeadlineAt, resp: out });
@@ -496,6 +497,20 @@
           chartMessage.preopened = true;
           chrome.runtime.sendMessage(chartMessage, finishChart);
         }
+        /* wdr-1.0.0: the schedule and goto-date relays force-finish at their
+           immutable deadline, but this whole read chain (search-open leg
+           included) relied entirely on worker callbacks - a wedged MV3
+           service worker left the app's promise pending forever (the live
+           "endless saving" class). The worker enforces this SAME deadlineAt
+           itself and its refusal names the real stage, so this relay backstop
+           fires 5s AFTER it, purely for a worker that never answers at all.
+           A hidden MLS tab throttles one-shot timers to ~1/min granularity,
+           so the backstop can land up to ~60s late there - still bounded.
+           Late worker replies are dropped by the finished flag; nothing on
+           this path can report success. */
+        chartRelayTimer = setTimeout(function () {
+          finishChart({ ok: false, reason: 'chart-relay-deadline-exceeded', error: 'MLS Assist did not answer this chart read before its deadline. Reload the MLS and Athena tabs, then retry.' });
+        }, Math.max(0, chartDeadlineAt + 5000 - Date.now()));
         /* v2.9.22: named history reads must use the live-certified, DOB-gated
            findpatient Chart opener before the reader settles the exact chart.
            A generic visible-name click lands on Athena's exam-prep surface. */
@@ -578,9 +593,26 @@
         var visitDob = mlsStr(d.dob, 20);
         var visitAthenaId = mlsStr(d.athenaId, 40);
         var visitRequest = { type: 'mlsAppReadVisitsRequest', patient: visitPatient, dob: visitDob, athenaId: visitAthenaId };
+        /* wdr-1.0.0: one chain deadline for the whole read (first read ->
+           bounded one-shot reopen -> chart settle -> re-read). The worker
+           bounds every leg itself (90s exec cap, wdog force-finish), so this
+           relay backstop is deliberately generous - it exists only for a
+           worker that never answers at all and must never undercut a
+           legitimate long recovery chain. Hidden-tab timer throttling can
+           delay it up to ~60s; still bounded. Late replies are dropped by
+           the finished flag; nothing here can report success. */
+        var visitsCallerDeadline = Number(d.deadlineAt || 0);
+        var visitsDeadlineAt = isFinite(visitsCallerDeadline) && visitsCallerDeadline > 0 ? visitsCallerDeadline : Date.now() + 300000;
+        var visitsFinished = false, visitsRelayTimer = null;
         function finishVisits(resp) {
+          if (visitsFinished) return;
+          visitsFinished = true;
+          if (visitsRelayTimer != null) { try { clearTimeout(visitsRelayTimer); } catch (eClearVisits) {} visitsRelayTimer = null; }
           reply({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: resp || { ok: false, reason: 'no-response', error: 'No response from MLS Assist' } });
         }
+        visitsRelayTimer = setTimeout(function () {
+          finishVisits({ ok: false, reason: 'visits-relay-deadline-exceeded', error: 'MLS Assist did not answer this visits read before its deadline. Reload the MLS and Athena tabs, then retry.' });
+        }, Math.max(0, visitsDeadlineAt - Date.now()));
         function readVisitsOnce(canOpen) {
           chrome.runtime.sendMessage(visitRequest, function (resp) {
             var runtimeErr = chrome.runtime.lastError;

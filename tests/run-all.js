@@ -1686,7 +1686,16 @@ const tests = [
      of the ONE resolver: it now listens to the resolver's confirmed-write
      broadcast with a stale-node guard. Runs the REAL Settings block against
      the REAL resolver with a broadcast-capable window. */
-  'settings-checkbox-paints-resolver.test.js'
+  'settings-checkbox-paints-resolver.test.js',
+  /* wdr-1.0.0 (authorized Codex reply 4, slice 1): mlsAppReadChart and
+     mlsAppReadVisits relied entirely on the worker callback - a wedged MV3
+     service worker left the app's promise pending forever (the "endless
+     saving" class). Both relays now force ONE named terminal refusal via a
+     local backstop timer (chart: deadlineAt+5s so the worker's own refusal
+     wins the race; visits: caller deadline or a generous 300s chain default),
+     clear it on every normal terminal, and drop late replies. Runs the REAL
+     extracted handler blocks with fake timers and a silent worker. */
+  'content-read-relay-watchdog.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
