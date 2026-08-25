@@ -70,7 +70,11 @@ assert(!/advOpen|ez3adv|openWorkspace/.test(startPatient), 'starting a recording
 
 // Stop is a pause boundary, not Generate and not Discard. Resume starts from
 // the current transcript, while clearing is isolated behind the discard flow.
-const stopOnly = between(connect, 'function stopRecordingOnly()', '/* ---- send-to-Athena');
+// The canonical stop now receives the lane-origin flag so the top Pause can
+// settle Easy without re-entering the engine confirmation path. Keep the
+// exact signature here; the dedicated stop tests cover the same seam's
+// routing and idempotence in more detail.
+const stopOnly = between(connect, 'function stopRecordingOnly(fromLane)', '/* ---- send-to-Athena');
 assert(!/genBtn|generateNote|\.value\s*=\s*['"]{2}/.test(stopOnly), 'stop must not generate or clear the visit');
 assert(/transcript stays intact|Everything captured is saved/.test(stopOnly), 'stop flow must preserve the transcript');
 const startCapture = between(app, 'function startCapture()', 'function stopCapture()');
