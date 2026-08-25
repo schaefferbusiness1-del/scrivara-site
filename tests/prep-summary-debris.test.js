@@ -74,7 +74,7 @@ ctx2.globalThis = ctx2;
 vm.createContext(ctx2);
 vm.runInContext(epSrc, ctx2);
 const ep = winStub2.__mlsEasyPrep;
-assert.ok(ep && ep.version === '1.2.2', 'easy-prep v1.2.2 expected, got ' + (ep && ep.version));
+assert.ok(ep && ep.version === '1.2.3', 'easy-prep v1.2.3 expected, got ' + (ep && ep.version));
 
 /* Every patient-history surface must use pvr-1.0.0's canonical resolver.
    A pulled chart normally has p.visits[] but no locally-authored patientNotes;
@@ -93,20 +93,49 @@ winStub2.__mlsPtVisits = {
       count: 9,
       entries: [
         { date: '2026-08-24', body: 'Assessment: latest resolved encounter.', row: canonicalPatient.visits[0] },
-        { date: '2026-07-01', body: 'Assessment: older resolved encounter.', row: canonicalPatient.visits[1] }
+        { date: '2026-07-01', body: 'Assessment: older resolved encounter.', row: canonicalPatient.visits[1] },
+        { date: '2026-06-01', body: 'Encounter three.' },
+        { date: '2026-05-01', body: 'Encounter four.' },
+        { date: '2026-04-01', body: 'Encounter five.' },
+        { date: '2026-03-01', body: 'Encounter six.' },
+        { date: '2026-02-01', body: 'Encounter seven.' },
+        { date: '2026-01-01', body: 'Encounter eight.' },
+        { date: '2025-12-01', body: 'Encounter nine.' }
       ]
     };
   }
 };
 const canonicalInfo = ep.lastVisitInfo(canonicalPatient);
 assert.deepStrictEqual(JSON.parse(JSON.stringify(canonicalInfo)), {
-  count: 9, lastDate: '2026-08-24', lastExcerpt: 'Assessment: latest resolved encounter.'
+  count: 9, lastDate: '2026-08-24', lastExcerpt: 'Assessment: latest resolved encounter.',
+  unavailable: false, pulled: false
 }, 'Easy Prep diverged from the canonical visit count/latest encounter');
 const canonicalSummary = ep.buildPrepSummaryForPatient(canonicalPatient);
 assert.match(canonicalSummary, /LAST VISIT: 9 visits on file, last seen 2026-08-24/,
   'Easy Prep still said no prior visits when the canonical resolver had nine');
 assert.match(canonicalSummary, /Assessment: latest resolved encounter\./,
   'Easy Prep did not use the canonical newest encounter excerpt');
+
+/* A present-but-failed canonical resolver may not silently revive the old
+   patientNotes reader. That would turn a resolver outage into stale certainty. */
+winStub2.patientNotes = function () {
+  return [{ date: '2024-01-01', text: 'STALE LOCAL NOTE MUST NOT RENDER' }];
+};
+winStub2.__mlsPtVisits = { resolve: function () { throw new Error('synthetic resolver failure'); } };
+const unavailableInfo = ep.lastVisitInfo(canonicalPatient);
+assert.strictEqual(unavailableInfo.unavailable, true, 'resolver exception did not produce an explicit unavailable state');
+assert.strictEqual(unavailableInfo.count, 0, 'resolver exception reused a stale local note count');
+const unavailableSummary = ep.buildPrepSummaryForPatient(canonicalPatient);
+assert.match(unavailableSummary, /LAST VISIT: Visit history temporarily unavailable/,
+  'resolver exception was mislabeled as no prior visits');
+assert.doesNotMatch(unavailableSummary, /STALE LOCAL NOTE MUST NOT RENDER/,
+  'resolver exception leaked stale local history into the prep card');
+
+winStub2.__mlsPtVisits = { resolve: function () { return { count: 9, entries: [] }; } };
+assert.strictEqual(ep.lastVisitInfo(canonicalPatient).unavailable, true,
+  'an impossible canonical count/list mismatch was rendered as chart truth');
+winStub2.__mlsPtVisits = null;
+winStub2.patientNotes = function () { return []; };
 
 const cleaned = ep.scrubPageDebris('Pulled from Athena 7/16/2026 —\n' + JUNK + '\nRecent visits:\n• 2026-07-16 — ' + JUNK);
 assert.ok(!/window\.|Jotter|Print Premier Ortho|id #7731709/i.test(cleaned), 'prep display scrub: ' + cleaned);

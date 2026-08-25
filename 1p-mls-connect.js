@@ -2340,9 +2340,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.2') return; } catch (e) { return; }
+  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.3') return; } catch (e) { return; }
 
-  var VERSION = '1.2.2';
+  var VERSION = '1.2.3';
 
   /* ---------- tiny helpers (mirrors the live app's own conventions) ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -2427,25 +2427,43 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!p && patientId) {
       try { p = isFn(window.findPatient) ? window.findPatient(patientId) : null; } catch (e) {}
     }
-    try {
-      var api = window.__mlsPtVisits;
-      if (p && api && isFn(api.resolve)) {
-        var resolved = api.resolve(p);
+    var api = null;
+    try { api = window.__mlsPtVisits; } catch (e) {}
+    if (p && api && isFn(api.resolve)) {
+      try {
+        /* Keep the public owner explicit: profile-coherence pins that the live
+           strip consumes window.__mlsPtVisits.resolve rather than rebuilding
+           a fifth visit reader behind an alias. */
+        var resolved = window.__mlsPtVisits.resolve(p);
         if (resolved && resolved.entries && resolved.entries.length !== undefined) {
           var entries = [].slice.call(resolved.entries);
+          var count = Number(resolved.count);
+          /* pvr's public contract is count === entries.length. If that owner
+             throws or returns an internally impossible result, local notes are
+             not an honest substitute: that was the split-brain reader this
+             function was changed to remove. Surface an unavailable state so a
+             clinician never sees stale local data labeled as chart history. */
+          if (!isFinite(count) || count < 0 || Math.floor(count) !== count || count !== entries.length) {
+            return { count: 0, lastDate: '', lastExcerpt: '', unavailable: true, pulled: !!resolved.pulled };
+          }
           var first = entries[0] || null; // resolver guarantees newest first
           var row = first && (first.row || first.noteRow);
           var excerpt = S(first && (first.body || first.summary) ||
             row && (row.raw || row.detail || row.text || row.note || row.soap || row.findings || row.plan))
             .replace(/\s+/g, ' ').trim().slice(0, 160);
           return {
-            count: Math.max(0, Number(resolved.count) || 0),
+            count: count,
             lastDate: S(first && (first.date || first.rawDate)).slice(0, 10),
-            lastExcerpt: excerpt
+            lastExcerpt: excerpt,
+            unavailable: false,
+            pulled: !!resolved.pulled
           };
         }
+        return { count: 0, lastDate: '', lastExcerpt: '', unavailable: true, pulled: false };
+      } catch (e) {
+        return { count: 0, lastDate: '', lastExcerpt: '', unavailable: true, pulled: false };
       }
-    } catch (e) {}
+    }
 
     // Compatibility fallback for a shell that has not installed pvr yet.
     var notes = [];
@@ -2457,7 +2475,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     })[0];
     var excerpt = '';
     try { excerpt = S(last && (last.text || last.note || last.soap)).replace(/\s+/g, ' ').trim().slice(0, 160); } catch (e) {}
-    return { count: notes.length, lastDate: dates.length ? dates[dates.length - 1] : '', lastExcerpt: excerpt };
+    return { count: notes.length, lastDate: dates.length ? dates[dates.length - 1] : '', lastExcerpt: excerpt, unavailable: false, pulled: false };
   }
 
   // Today's/next appointment time + reason for this patient, computed the same
@@ -2601,10 +2619,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
 
     var lastBits = [];
-    if (ctx.visitCount) lastBits.push(ctx.visitCount + ' visit' + (ctx.visitCount === 1 ? '' : 's') + ' on file');
-    if (trim(ctx.lastDate)) lastBits.push('last seen ' + trim(ctx.lastDate));
-    lines.push('LAST VISIT: ' + (lastBits.length ? lastBits.join(', ') : 'No prior visits on file'));
-    if (trim(ctx.lastExcerpt)) lines.push('  → ' + trim(ctx.lastExcerpt) + (ctx.lastExcerpt.length >= 160 ? '…' : ''));
+    if (ctx.visitHistoryUnavailable === true) {
+      lines.push('LAST VISIT: Visit history temporarily unavailable — refresh this page before relying on the visit count.');
+    } else {
+      if (ctx.visitCount) lastBits.push(ctx.visitCount + ' visit' + (ctx.visitCount === 1 ? '' : 's') + ' on file');
+      if (trim(ctx.lastDate)) lastBits.push('last seen ' + trim(ctx.lastDate));
+      lines.push('LAST VISIT: ' + (lastBits.length ? lastBits.join(', ') : 'No prior visits on file'));
+      if (trim(ctx.lastExcerpt)) lines.push('  → ' + trim(ctx.lastExcerpt) + (ctx.lastExcerpt.length >= 160 ? '…' : ''));
+    }
 
     if (trim(ctx.outsideText)) lines.push('OUTSIDE RECORDS: ' + trim(ctx.outsideText));
 
@@ -2879,7 +2901,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       vitals: getVitals(p), bmi: resolveBmi(p), history: getHistory(p),
       historySummary: withholdLinesIfOtherPatient(cleanNarrative(scrubPageDebris(p.athenaHistorySummary || '')), p),
       careFlags: cleanListField(p.careFlags),
-      visitCount: lv.count, lastDate: lv.lastDate,
+      visitCount: lv.count, lastDate: lv.lastDate, visitHistoryUnavailable: lv.unavailable === true,
       lastExcerpt: withholdIfOtherPatient(scrubPageDebris(lv.lastExcerpt), p),
       outsideText: outsideRecordsText(p),
       /* pvr-1.0.0: the honest sentence for each EMPTY clinical field, resolved
@@ -52534,14 +52556,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          pvr installs. The timeline and the strip therefore cannot disagree
          merely because Athena encounters live on p.visits[] rather than in the
          locally-authored note store. */
-      var vres = null; try { if (window.__mlsPtVisits && typeof window.__mlsPtVisits.resolve === 'function') vres = window.__mlsPtVisits.resolve(p); } catch (e) {}
-      var vcount = vres ? vres.count : (lastV && lastV.count) || 0;
-      var vlast = '';
-      try { vlast = vres ? ((vres.entries[0] && vres.entries[0].date) || '') : String((lastV && lastV.lastDate) || ''); } catch (e) {}
+      var vcount = (lastV && lastV.count) || 0;
+      var vlast = String((lastV && lastV.lastDate) || '');
       var vtext = vcount ? (vcount + ' visit' + (vcount === 1 ? '' : 's') + (vlast ? ' \u00b7 last ' + vlast : '')) : '';
-      var vfield = vcount
+      var vfield = (lastV && lastV.unavailable === true)
+        ? { text: 'Visit history temporarily unavailable.', detail: 'Refresh this page before relying on the visit count.', quiet: true, read: false, state: 'unavailable' }
+        : vcount
         ? { text: qtxt(vtext, 60), quiet: false, read: false }
-        : { text: (vres && vres.pulled) ? 'No visits on file for this chart.' : 'Not pulled from Athena yet.', quiet: true, read: !!(vres && !vres.pulled), state: (vres && vres.pulled) ? 'none' : 'not_pulled' };
+        : { text: (lastV && lastV.pulled) ? 'No visits on file for this chart.' : 'Not pulled from Athena yet.', quiet: true, read: !!(lastV && !lastV.pulled), state: (lastV && lastV.pulled) ? 'none' : 'not_pulled' };
       boxes = [
         ['Problems', qfield(p, 'problems', String(p.problems || '').split(/\n/).slice(0, 4).join('\n'), 220)],
         ['Medications', qfield(p, 'meds', String(p.meds || '').split(/\n/).slice(0, 4).join('\n'), 220)],
