@@ -55,11 +55,16 @@ for (const bad of ["(trim(ctx.problems) || 'None recorded')", "(trim(ctx.meds) |
 
 /* ALLERGIES is allowed to be longer, but it must keep naming the uncertainty.
  * Silence here is the highest-severity version of this defect. */
-const allergyLine = /lines\.push\('ALLERGIES: '[^\n]*\)/.exec(connect);
-assert(allergyLine, 'prep summary no longer emits an ALLERGIES line');
-assert(/confirm with patient/i.test(allergyLine[0]),
+const allergyStart = connect.indexOf('var allergyEmpty = unread');
+const allergyEnd = connect.indexOf("/* pvr-1.0.0:", allergyStart);
+assert(allergyStart >= 0 && allergyEnd > allergyStart,
+  'prep summary no longer defines its explicit ALLERGIES fallback');
+const allergyBlock = connect.slice(allergyStart, allergyEnd);
+assert(/confirm with patient/i.test(allergyBlock),
   'ALLERGIES fallback stopped telling the reader to confirm with the patient. ' +
   'An undocumented allergy list is not an absence of allergies.');
+assert(connect.includes("lines.push('ALLERGIES: ' + (trim(ctx.allergies) || allergyEmpty));"),
+  'ALLERGIES fallback is no longer connected to the emitted prep-summary line');
 
 /* VITALS and HISTORY were already correct; keep them that way so the four
  * record-describing fields cannot drift apart again. */
