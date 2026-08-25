@@ -133,6 +133,16 @@ async function runtime() {
           athenaChartImportedAt: undefined,
           athenaChartSnapshot: JSON.stringify({ problems: ['Snapshot-only problem'] })
         }),
+        verifiedHistory: paint('prep-source-browser-history', {
+          visits: [{
+            date: '2026-08-24', source: 'athena-copy', raw: 'Verified encounter body.',
+            identityVerified: true, identityBinding: 'prep-source-browser-history',
+            fullDetail: true, bodyComplete: true, indexOnly: false
+          }]
+        }),
+        legacyStampOnly: paint('prep-source-browser-legacy', {
+          athenaChartImportedAt: '2026-08-20T09:00:00.000Z'
+        }),
         resolvedVisits: paint('prep-source-browser-visits', {
           visits: [
             { date: '2026-08-24', source: 'athena-visit', raw: 'Assessment: newest Athena encounter.' },
@@ -165,6 +175,14 @@ async function runtime() {
     assert.match(result.snapshotOnly,
       /SOURCE: CLINICAL DATA PRESENT — no identity-verified Athena pull receipt is attached/,
       'snapshot contents without a receipt must be shown as unverified data, not a false pulled/not-pulled claim');
+    assert.match(result.verifiedHistory,
+      /SOURCE: VISIT HISTORY PULLED from Athena — exact-patient verified receipt from 2026-08-24 \(1 verified visit\)/,
+      'exact-patient verified visit history still rendered as NOT PULLED');
+    assert.doesNotMatch(result.verifiedHistory, /SOURCE: NOT PULLED/);
+    assert.match(result.legacyStampOnly,
+      /SOURCE: LEGACY ATHENA IMPORT STAMP PRESENT from 2026-08-20 — this older record has no identity-verified pull receipt/,
+      'a legacy timestamp without an identity receipt was presented as verified');
+    assert.doesNotMatch(result.legacyStampOnly, /SOURCE: PULLED from Athena/);
     assert.match(result.resolvedVisits, /LAST VISIT: 9 visits on file, last seen 2026-08-24/,
       'the visible prep card contradicted the profile resolver with "No prior visits"');
     assert.match(result.resolvedVisits, /Assessment: newest Athena encounter\./,
@@ -173,7 +191,7 @@ async function runtime() {
       'the old patientNotes-only empty state is still visible for a pulled chart');
 
     assert.strictEqual(errors.length, 0, `shipped SOURCE-row browser flow raised page errors: ${errors.join(' | ')}`);
-    console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states passed + canonical 9-visit state passed');
+    console.log('prep-summary-source-browser-runtime: 7 visible SOURCE states passed + canonical 9-visit state passed');
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

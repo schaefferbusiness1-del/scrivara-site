@@ -47,6 +47,11 @@
      be used again instead of remaining busy behind a best-effort summary or
      chart-card read. */
   var POST_SAVE_ENRICH_TIMEOUT_MS = 30000;
+  /* driveRequest owns a 240s extension timeout, but this caller still needs its
+     own terminal boundary in case a loader override or event-listener defect
+     returns a promise that never settles after the result event. This bound is
+     intentionally just beyond the driver's normal deadline. */
+  var VISIT_DRIVER_TIMEOUT_MS = 252000;
 
   function S(x) { return x == null ? '' : String(x); }
   function trim(x) { return S(x).trim(); }
@@ -283,7 +288,7 @@
         if (d.type === 'mlsAppAllVisitsResult') {
           lastRawResult = e.data.resp || e.data;
           var rr = lastRawResult;
-          if (rr && rr.ok === true) setBar(1, 1, 'All encounters read — verifying the local save…');
+          if (rr && rr.ok === true) setBar(1, 1, 'All encounters read — validating the owned completion receipt…');
         } else if (d.type === 'mlsAppVisitsProgress') {
           var pr = d.resp || d;
           if (pr && (Number(pr.total) > 0 || pr.message)) setBar(Number(pr.n) || 0, Number(pr.total) || 0, pr.message);
@@ -506,15 +511,16 @@
     function settleRun(ok, message, details) {
       details = details || {};
       runSettled = true;
+      var partial = ok === true && details.partial === true;
       lastTerminalReceipt = {
-        at: Date.now(), ok: ok === true, status: ok === true ? 'complete' : 'failed',
+        at: Date.now(), ok: ok === true, status: partial ? 'partial' : (ok === true ? 'complete' : 'failed'),
         requestId: activeVisitsRequestId || '', persistenceConfirmed: details.persistenceConfirmed === true,
         saved: Number(details.saved) >= 0 ? Number(details.saved) : 0,
         stored: Number(details.stored) >= 0 ? Number(details.stored) : 0,
         reason: trim(details.reason || (ok === true ? 'complete' : 'failed')).slice(0, 100)
       };
       var line = S(message || (ok === true ? 'Pull complete.' : 'Pull failed.'));
-      if (!/^[✓⚠]/.test(line)) line = (ok === true ? '✓ ' : '⚠ ') + line;
+      if (!/^[✓⚠]/.test(line)) line = (partial ? '⚠ ' : (ok === true ? '✓ ' : '⚠ ')) + line;
       status(onStatus, line, true);
       return lastTerminalReceipt;
     }
@@ -555,9 +561,10 @@
         activeVisitsRequestId = '';
         awaitingVisitsRequest = true;
         try {
-          res = await cv._driveRequest('mlsAppReadAllVisits', {}, 'mlsAppAllVisitsResult',
+          res = await awaitBounded(cv._driveRequest('mlsAppReadAllVisits', {}, 'mlsAppAllVisitsResult',
             ['mlsAppVisitsProgress', 'mlsAppSearchProgress'],
-            function (msg) { if (msg) status(onStatus, msg); }, null, 240000, 12000);
+            function (msg) { if (msg) status(onStatus, msg); }, null, 240000, 12000),
+            VISIT_DRIVER_TIMEOUT_MS, 'The owned Athena completion receipt did not settle before the safety timeout');
         } catch (e) { driveErr = S(e && e.message || e); }
         awaitingVisitsRequest = false;
         if (res && res.ok) break;
@@ -570,6 +577,12 @@
       }
       if (!res || !res.ok) {
         var em = driveErr || S(res && (res.error || res.message) || '');
+        if (lastRawResult && lastRawResult.ok === true && /owned Athena completion receipt/i.test(em)) {
+          settleRun(false, 'Athena finished reading the encounters, but MLS did not receive the owned completion receipt in time. Nothing was saved. Reload MLS and MLS Assist, keep the exact chart open, and retry.', {
+            reason: 'visit-driver-result-timeout'
+          });
+          hideChipLater(18000); return;
+        }
         if (/frozen MLS patient|did not match/i.test(em)) {
           /* tm-1.1: this button anchors to whoever was OPEN at the click
              (detect-3072), so a mismatch mid-read means the chart CHANGED
@@ -733,6 +746,7 @@
          or refused. A same-name capture is not enough: DOB or MRN must also
          match, and the partial receipt prevents the profile from claiming
          either "not pulled" or a complete six-card pull. */
+      var partialCardLanded = false;
       if (!cardLanded) try {
         var post = await captureOpen(18000);
         var postCap = (post && post.ok === true && post.captured) ? post.captured : null;
@@ -754,6 +768,7 @@
              provenance changed even if the display characters did not. */
           patient.athenaPartialProfileCoverage = partialReceipt;
           try { upsertPatient(patient); } catch (eFm1) {}
+          partialCardLanded = true;
           status(onStatus, 'Partial chart facts saved with an identity-verified receipt — re-pull the full chart for vitals and history.');
         } else if (postCap && namesMatch(postCap.name, identity.name)) {
           status(onStatus, 'The banner capture did not repeat this patient’s DOB or Athena ID, so MLS saved no chart facts from it.');
@@ -769,9 +784,18 @@
       } catch (e) {}
       /* the terminal line reports what THIS pull captured — the total the
          patient already had is context, never the headline (finding #6). */
-      settleRun(true, 'Done — ' + saved + ' new visit' + (saved === 1 ? '' : 's') + ' captured for ' + identity.name + ' (' + n + ' now on file).', {
-        reason: 'complete', persistenceConfirmed: true, saved: saved, stored: n
-      });
+      if (cardLanded) {
+        settleRun(true, 'Done — ' + saved + ' new visit' + (saved === 1 ? '' : 's') + ' captured for ' + identity.name + ' (' + n + ' now on file), with the full chart card verified.', {
+          reason: 'complete', persistenceConfirmed: true, saved: saved, stored: n
+        });
+      } else {
+        settleRun(true, 'Visits saved — ' + saved + ' new visit' + (saved === 1 ? '' : 's') + ' captured for ' + identity.name + ' (' + n + ' now on file), but the full chart card is incomplete' +
+          (partialCardLanded ? '; medications/problems/allergies were saved from an identity-verified partial capture.' : '.') +
+          ' Use “Pull this patient’s chart” to refresh vitals, history, and every remaining card.', {
+          reason: partialCardLanded ? 'visits-saved-chart-partial' : 'visits-saved-chart-unavailable', partial: true,
+          persistenceConfirmed: true, saved: saved, stored: n
+        });
+      }
       /* focus-1.1 (owner, 2026-08-20: "it should pull up whoever it just saved"
          and "it still doesn't stop when it's done"): the terminal state OWNS
          the screen. The early openPatient() at resolve time selects but does
@@ -787,8 +811,8 @@
       return { ok: true, saved: saved, total: n, created: r.created, receipt: lastTerminalReceipt };
     } catch (unexpected) {
       if (!runSettled && durableSave) {
-        settleRun(true, 'The verified visits are saved. Optional summaries or chart details stopped early and can be refreshed later.', {
-          reason: 'saved-enrichment-ended-early', persistenceConfirmed: true, saved: durableSave.saved, stored: durableSave.stored
+        settleRun(true, 'The verified visits are saved, but optional summaries or chart details stopped early. Use “Pull this patient’s chart” to refresh the missing chart cards.', {
+          reason: 'saved-enrichment-ended-early', partial: true, persistenceConfirmed: true, saved: durableSave.saved, stored: durableSave.stored
         });
       } else if (!runSettled) {
         settleRun(false, 'The pull stopped before MLS could confirm a local save. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'unexpected-pull-exit' });
@@ -797,8 +821,8 @@
       return { ok: !!durableSave, saved: durableSave && durableSave.saved || 0, reason: durableSave ? 'saved-enrichment-ended-early' : 'unexpected-pull-exit', receipt: lastTerminalReceipt };
     } finally {
       if (!runSettled && durableSave) {
-        settleRun(true, 'The verified visits are saved. Optional summaries or chart details ended without a final receipt and can be refreshed later.', {
-          reason: 'saved-enrichment-receipt-missing', persistenceConfirmed: true, saved: durableSave.saved, stored: durableSave.stored
+        settleRun(true, 'The verified visits are saved, but optional summaries or chart details ended without a final receipt. Use “Pull this patient’s chart” to refresh the missing chart cards.', {
+          reason: 'saved-enrichment-receipt-missing', partial: true, persistenceConfirmed: true, saved: durableSave.saved, stored: durableSave.stored
         });
       } else if (!runSettled) {
         settleRun(false, 'The pull ended without a confirmed local save receipt. Nothing is being reported as saved; retry with the patient chart open.', { reason: 'terminal-receipt-missing' });

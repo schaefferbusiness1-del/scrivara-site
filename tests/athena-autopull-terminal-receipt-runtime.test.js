@@ -24,7 +24,7 @@ async function makeHarness(browser, saveMode) {
        cycle B can deliberately pause in capture across cycle A's deadline. */
     const nativeSetTimeout = window.setTimeout.bind(window);
     window.setTimeout = (fn, ms, ...args) => nativeSetTimeout(fn,
-      Number(ms) === 2500 || Number(ms) === 16000 || Number(ms) === 30000 ? 250 : ms, ...args);
+      Number(ms) === 2500 || Number(ms) === 16000 || Number(ms) === 30000 || Number(ms) === 252000 ? 250 : ms, ...args);
 
     window.__saveMode = mode;
     window.__store = [];
@@ -134,7 +134,9 @@ async function makeHarness(browser, saveMode) {
             window.__ownedResponse = response;
             window.postMessage(response, '*');
           };
-          window.__resolveOwnedResult = () => resolve(window.__ownedResponse);
+          window.__resolveOwnedResult = () => {
+            if (window.__saveMode !== 'driver-hang-after-result') resolve(window.__ownedResponse);
+          };
         });
       },
       _saveVisits(patient, identity, visits, onStatus, receipt) {
@@ -207,9 +209,10 @@ async function startAndPause(page) {
     assert.strictEqual(await successPage.locator('#mlsPullBar [data-text]').textContent(), beforeOther,
       'an unrelated successful result repainted the active auto-pull bar');
 
-    /* The owned result may say only that local persistence is being verified. */
+    /* The owned result may say only that its completion receipt is being
+       validated; local persistence has not started yet. */
     await successPage.evaluate(() => window.__emitOwnedResult());
-    await successPage.waitForFunction(() => /verifying the local save/.test(
+    await successPage.waitForFunction(() => /validating the owned completion receipt/.test(
       document.querySelector('#mlsPullBar [data-text]').textContent));
     const preCommitText = await successPage.locator('#mlsPullBar [data-text]').textContent();
     assert(!/\bsaved\b/i.test(preCommitText), 'the bar claimed saved before the local store confirmed it: ' + preCommitText);
@@ -391,6 +394,25 @@ async function startAndPause(page) {
     assert(!/^✓|\bSaved \d|\bDone\b/i.test(flushTimeout.text), 'a stalled durable flush displayed success');
     await flushTimeoutPage.close();
 
+    /* Even a loader/runtime defect that emits the owned successful result but
+       never settles driveRequest must not strand the UI at its pre-save state.
+       No writer runs because the owned completion promise never closed. */
+    const driverHangPage = await makeHarness(browser, 'driver-hang-after-result');
+    await startAndPause(driverHangPage);
+    await driverHangPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
+    const driverHang = await driverHangPage.evaluate(() => window.__runPromise.then(() => ({
+      busy: window.__mlsAthenaAutoPull.isBusy(), calls: window.__saveCalls,
+      receipt: window.__mlsAthenaAutoPull.terminalReceipt(),
+      text: document.querySelector('#mlsPullBar [data-text]').textContent
+    })));
+    assert.strictEqual(driverHang.busy, false, 'an owned result with a hung driver left the pull lane busy');
+    assert.strictEqual(driverHang.calls, 0, 'a completion result without a settled owner reached the writer');
+    assert(driverHang.receipt && driverHang.receipt.status === 'failed' && driverHang.receipt.reason === 'visit-driver-result-timeout',
+      'the hung owned completion did not produce an actionable failed terminal receipt');
+    assert(/^⚠/.test(driverHang.text) && /Reload MLS and MLS Assist/.test(driverHang.text),
+      'the hung owned completion did not replace the transient state with retry guidance');
+    await driverHangPage.close();
+
     /* Durable visit persistence settles the pull before optional enrichment.
        A never-resolving summary pass must not retain the single-flight lane or
        prevent a later retry, and it must not rewrite the confirmed receipt as
@@ -417,12 +439,13 @@ async function startAndPause(page) {
       text: document.querySelector('#mlsPullBar [data-text]').textContent
     })));
     assert.strictEqual(cardTimeout.busy, false, 'a stalled chart-card read left the auto-pull lane busy');
-    assert(cardTimeout.receipt && cardTimeout.receipt.ok === true && cardTimeout.receipt.persistenceConfirmed === true,
+    assert(cardTimeout.receipt && cardTimeout.receipt.ok === true && cardTimeout.receipt.status === 'partial' && cardTimeout.receipt.persistenceConfirmed === true,
       'a stalled chart-card read rewrote the durable visit success as failure');
-    assert(/Done|Saved \d/i.test(cardTimeout.text), 'the stalled chart-card read did not leave a terminal success line');
+    assert(/Visits saved/i.test(cardTimeout.text) && /Pull this patient’s chart/.test(cardTimeout.text),
+      'the stalled chart-card read did not leave an actionable partial terminal');
     await cardTimeoutPage.close();
 
-    console.log('PASS Athena auto-pull terminal receipt: owned progress, full-detail receipt forwarding, durable exact-row confirmation, bounded failures, stalled-flush timeout, timer isolation, and no late saving-state resurrection');
+    console.log('PASS Athena auto-pull terminal receipt: owned progress, full-detail receipt forwarding, durable exact-row confirmation, driver/flush watchdogs, partial chart terminals, timer isolation, and no late saving-state resurrection');
   } finally {
     await browser.close();
   }

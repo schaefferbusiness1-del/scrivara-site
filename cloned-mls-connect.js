@@ -2755,10 +2755,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* Which evidence is allowed to turn the prep card's SOURCE row positive.
      The current pull pipeline's authoritative proof is the same closed receipt
      used by the Athena status chip: complete, exact-identity verified, and
-     bound to this immutable patient id. Older records predate that receipt but
-     carry athenaChartImportedAt, which this card has historically trusted.
-     Snapshot contents and populated fields are intentionally insufficient:
-     either may contain clinician-entered text and cannot prove an Athena read. */
+     bound to this immutable patient id. Exact-patient verified visit rows,
+     optionally corroborated by their identity-fingerprinted organizer receipt,
+     can prove that VISIT HISTORY was pulled, but never that the six chart cards were. A legacy
+     timestamp, snapshot contents, and populated fields are intentionally
+     insufficient: any of them may survive an old interrupted import or contain
+     clinician-entered text. */
   function athenaChartProvenance(p) {
     p = p || {};
     var pid = trim(p.id);
@@ -2798,18 +2800,43 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         (!pid || trim(partialReceipt.patientId) !== pid)) {
       return rejected();
     }
-    var legacyAt = trim(p.athenaChartImportedAt);
-    if (legacyAt) {
-      var legacyDay = (legacyAt.match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || '';
-      return {
-        landed: true,
-        partial: false,
-        kind: 'legacy-import-stamp',
-        capturedAt: legacyAt,
-        text: 'PULLED from Athena \u2014 stored chart import receipt' +
-          (legacyDay ? ' from ' + legacyDay : '') +
-          '; displayed fields may also include clinician-entered additions.'
-      };
+    function identityFingerprint(patient) {
+      var basis = (trim(patient && patient.name) + '|' + trim(patient && patient.dob))
+        .toLowerCase().replace(/[^a-z0-9|]/g, '');
+      if (basis === '|') return '';
+      var h = 0;
+      for (var fi = 0; fi < basis.length; fi++) h = ((h << 5) - h + basis.charCodeAt(fi)) | 0;
+      return 'idfp-' + (h >>> 0).toString(36);
+    }
+    function verifiedVisitHistory() {
+      if (!pid) return null;
+      var rows = Array.isArray(p.visits) ? p.visits : [];
+      var exact = rows.filter(function (row) {
+        return !!(row && row.identityVerified === true && trim(row.identityBinding) === pid &&
+          /athena|legacy|grab|pullrec|cohort/i.test(trim(row.source)));
+      });
+      var full = exact.filter(function (row) {
+        return row.indexOnly !== true && row.fullDetail === true && row.bodyComplete === true && trim(row.raw);
+      });
+      var hr = p.historyImportReceipt;
+      var fp = identityFingerprint(p);
+      var receiptCount = Number(hr && hr.verifiedVisits);
+      var receiptOk = !!(hr && hr.complete === true && trim(hr.patientId) === pid && fp &&
+        trim(hr.identityFingerprint) === fp && /^idfp-[a-z0-9]+$/i.test(fp) &&
+        /^\d{4}-\d{2}-\d{2}T/.test(trim(hr.organizedAt)) && receiptCount > 0 && full.length >= receiptCount);
+      /* A zero-row organizer receipt can be created by a local organize pass
+         without an Athena read. It may never authorize provenance. At least one
+         exact, identity-bound remote row is the irreducible source evidence. */
+      if (!exact.length) return null;
+      var at = receiptOk ? trim(hr.organizedAt) : '';
+      if (!at) {
+        for (var vi = 0; vi < exact.length; vi++) {
+          var candidate = trim(exact[vi].capturedAt || exact[vi].updatedAt || exact[vi].date);
+          if (candidate > at) at = candidate;
+        }
+      }
+      return { count: full.length, indexCount: exact.length - full.length,
+        receiptCount: receiptOk ? receiptCount : full.length, capturedAt: at };
     }
     if (partialReceipt && partialReceipt.kind === 'athena-partial-profile-coverage' &&
         partialReceipt.complete === false && partialReceipt.exactIdentityVerified === true &&
@@ -2833,6 +2860,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             ' only); re-pull the full chart for the remaining cards.'
         };
       }
+    }
+    var visitHistory = verifiedVisitHistory();
+    if (visitHistory) {
+      var visitAt = trim(visitHistory.capturedAt);
+      var visitDay = (visitAt.match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || '';
+      var visitCount = Math.max(Number(visitHistory.count) || 0, Number(visitHistory.receiptCount) || 0);
+      var indexCount = Number(visitHistory.indexCount) || 0;
+      var evidenceLabel = visitCount > 0
+        ? (visitCount + ' verified visit' + (visitCount === 1 ? '' : 's'))
+        : (indexCount + ' identity-verified encounter index row' + (indexCount === 1 ? '' : 's') + '; full note bodies not verified');
+      return {
+        landed: false,
+        partial: true,
+        kind: 'verified-visit-history',
+        capturedAt: visitAt,
+        fields: {},
+        text: 'VISIT HISTORY PULLED from Athena \u2014 exact-patient verified receipt' +
+          (visitDay ? ' from ' + visitDay : '') +
+          ' (' + evidenceLabel +
+          '); the six chart cards are not verified yet, so pull this patient\u2019s chart to refresh them.'
+      };
+    }
+    var legacyAt = trim(p.athenaChartImportedAt);
+    if (legacyAt) {
+      var legacyDay = (legacyAt.match(/^\d{4}-\d{2}-\d{2}/) || [])[0] || '';
+      return {
+        landed: false,
+        partial: false,
+        ambiguous: true,
+        kind: 'legacy-import-stamp-unverified',
+        capturedAt: legacyAt,
+        text: 'LEGACY ATHENA IMPORT STAMP PRESENT' + (legacyDay ? ' from ' + legacyDay : '') +
+          ' \u2014 this older record has no identity-verified pull receipt. Re-pull this exact chart before relying on its source.'
+      };
     }
     /* Older/import-interrupted records can contain real clinical values while
        lacking the modern identity-bound receipt. Calling those records "NOT

@@ -214,10 +214,53 @@ assert.match(ep.buildPrepSummaryForPatient(wrongPatientReceipt),
   /SOURCE: ATHENA RECEIPT REJECTED — the stored pull receipt is bound to a different patient/);
 
 const legacyReceipt = { ...manualOnly, athenaChartImportedAt: '2026-08-20T09:00:00.000Z' };
-assert.strictEqual(ep.athenaChartProvenance(legacyReceipt).kind, 'legacy-import-stamp',
-  'pre-coverage Athena records lost their historical import proof');
+assert.strictEqual(ep.athenaChartProvenance(legacyReceipt).kind, 'legacy-import-stamp-unverified',
+  'a timestamp-only legacy record was falsely upgraded to verified provenance');
 assert.match(ep.buildPrepSummaryForPatient(legacyReceipt),
-  /SOURCE: PULLED from Athena — stored chart import receipt from 2026-08-20/);
+  /SOURCE: LEGACY ATHENA IMPORT STAMP PRESENT from 2026-08-20 — this older record has no identity-verified pull receipt/);
+assert.doesNotMatch(ep.buildPrepSummaryForPatient(legacyReceipt), /SOURCE: PULLED from Athena/);
+
+const verifiedHistory = {
+  ...manualOnly,
+  visits: [{
+    date: '2026-08-24', source: 'athena-copy', raw: 'Verified encounter body.',
+    identityVerified: true, identityBinding: 'patient-a', fullDetail: true,
+    bodyComplete: true, indexOnly: false
+  }]
+};
+assert.strictEqual(ep.athenaChartProvenance(verifiedHistory).kind, 'verified-visit-history',
+  'exact-patient verified Athena visit data did not prevent the false NOT PULLED state');
+assert.match(ep.buildPrepSummaryForPatient(verifiedHistory),
+  /SOURCE: VISIT HISTORY PULLED from Athena — exact-patient verified receipt from 2026-08-24 \(1 verified visit\); the six chart cards are not verified yet/);
+assert.doesNotMatch(ep.buildPrepSummaryForPatient(verifiedHistory), /SOURCE: NOT PULLED/);
+
+const wrongBoundHistory = {
+  ...verifiedHistory,
+  visits: [{ ...verifiedHistory.visits[0], identityBinding: 'patient-b' }]
+};
+assert.strictEqual(ep.athenaChartProvenance(wrongBoundHistory).kind, 'data-without-receipt',
+  'another patient\'s visit row authorized Athena provenance');
+
+const verifiedIndex = {
+  ...manualOnly,
+  visits: [{
+    date: '2026-08-24', source: 'athena-copy', raw: '', identityVerified: true,
+    identityBinding: 'patient-a', fullDetail: false, bodyComplete: false, indexOnly: true
+  }]
+};
+assert.match(ep.buildPrepSummaryForPatient(verifiedIndex),
+  /SOURCE: VISIT HISTORY PULLED from Athena[^\n]+1 identity-verified encounter index row; full note bodies not verified/,
+  'an exact-patient Athena index read fell back to the false NOT PULLED state');
+
+const organizerOnly = {
+  ...manualOnly,
+  historyImportReceipt: {
+    complete: true, verifiedVisits: 0, patientId: 'patient-a',
+    identityFingerprint: 'idfp-forged', organizedAt: '2026-08-24T15:00:00.000Z'
+  }
+};
+assert.strictEqual(ep.athenaChartProvenance(organizerOnly).kind, 'data-without-receipt',
+  'a zero-row local organizer receipt fabricated Athena provenance');
 
 const partialReceipt = {
   ...manualOnly,
