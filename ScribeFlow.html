@@ -10290,9 +10290,10 @@ async function loadPrefsFromServer(opts){
    the ONE resolver (window.__mlsVisitNotesPref, installed by mls-connect.js).
    This page no longer touches the storage keys: it renders the resolved
    tri-state and writes THROUGH the resolver, which confirms every write by
-   reading it back. First use is an explicit choice; unset resolves to the
-   safe OFF view and opens no chart/history. The inline strip checkbox is kept
-   in sync as a courtesy view. */
+   reading it back. First use is an explicit choice; unset renders unchecked
+   and every bulk pull stays blocked until the choice is made (dayfacts: a
+   settled OFF still opens each chart for facts + its own-day note). The
+   inline strip checkbox is kept in sync as a courtesy view. */
 function pullVisitBodiesPref(){
   try{ var r=window.__mlsVisitNotesPref; if(r&&typeof r.read==='function') return r.read().on===true; }catch(e){}
   return false;
@@ -10326,7 +10327,7 @@ function renderPullVisitBodiesSetting(){
         return;
       }
       try{ const inline=document.getElementById('mlsDsVisitBodies'); if(inline) inline.checked=cb.checked; }catch(e){}
-      try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls now read schedule rows only — no patient chart or history is opened.','ok'); }catch(e){}
+      try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls will read each chart’s facts and its own-day note — historical visit notes are skipped.','ok'); }catch(e){}
     });
   }catch(e){}
 }
@@ -25035,7 +25036,7 @@ function pullScheduleViaAssist(btn, opts){
             // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
             try{ await _pullAllHistories(appts); }catch(_h){}
           } else {
-            setS('Imported '+appts.length+' appointment row'+(appts.length===1?'':'s')+'. Full visit notes is off — no patient charts were opened.','ok');
+            setS('Imported '+appts.length+' appointment row'+(appts.length===1?'':'s')+' through the legacy reader — this fallback cannot read chart facts or day notes; reload MLS for the full pull.','ok');
           }
         }catch(err){ setS('Couldn’t parse the schedule. Open Athena’s Day schedule view and try again.','err'); }
         finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } }

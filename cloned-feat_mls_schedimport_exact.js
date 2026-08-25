@@ -4886,6 +4886,18 @@
       var choice = pref && typeof pref.read === "function" ? pref.read() : null;
       return !!(choice && choice.on === true && choice.state !== "unset");
     }, false);
+    /* dayfacts-1.0.0: the tri-state matters again at this door. An explicit
+       operation override is an admitted choice; otherwise only a SETTLED
+       stored on/off is. First-use (unset/unsettled) stays fail-closed right
+       here because _runHistoryBatch is also a compatibility/test seam that
+       can be reached without the public admission gate - an unchosen account
+       must never have charts opened on its behalf. */
+    var batchChoiceAdmitted = safe(function () {
+      if (typeof _pullBodiesOverride === "boolean") return true;
+      var pref = window.__mlsVisitNotesPref;
+      var choice = pref && typeof pref.read === "function" ? pref.read() : null;
+      return !!(choice && choice.settled === true && (choice.state === "on" || choice.state === "off"));
+    }, false);
     var batchStartedAt = Date.now();
     var batchRequestId = "history-batch-" + batchStartedAt.toString(36) + "-" + Math.random().toString(36).slice(2, 9);
     /* A normal 18-patient day has ample time, while no single stuck renderer
@@ -4911,17 +4923,34 @@
     var batchDeadlineAt = batchStartedAt + batchBudgetMs;
     if (sweepDeadlineCapAt > 0) batchDeadlineAt = Math.min(batchDeadlineAt, sweepDeadlineCapAt);
     var visitNotesRequested = pullVisitBodies === true;
-    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, presenceRequested: __historyRetryForeground === true, presenceAssisted: false, presenceFrontedReads: 0, presenceQuietReads: 0, visitNotesRequested: visitNotesRequested, visitNotesMode: visitNotesRequested ? "full" : "not-requested", patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
-    if (!visitNotesRequested) {
-      /* _runHistoryBatch is also exposed as a compatibility/test seam. Keep
-         that seam from bypassing the public admission gate: OFF is a clean,
-         complete no-op for history and performs zero Athena chart/body reads. */
+    /* ===== dayfacts-1.0.0 (superseding owner DAY contract, 2026-08-25) =====
+       The Full-visit-notes boolean now selects HOW MUCH history a bulk pull
+       reads, never WHETHER charts open. Every exact scheduled row gets the
+       mandatory work in BOTH modes: the identity-verified chart open + facts
+       save, and exactly the pulled-day encounter-note attempt (the proven tn
+       onlyDate lane below - its tail pass already selects visitsSkipped rows,
+       which is precisely what OFF rows are). ON additionally traverses every
+       other dated historical body. The old OFF early-return (a schedule-only
+       no-op, "visit-notes-off") is deliberately gone; its schedule-only
+       acceptance was revoked with the contract. chartFactsRequired is the
+       always-true mandatory floor; allVisitBodiesRequested is the checkbox.
+       Insurance/benefits are declared honestly as not-yet-attempted until the
+       provenance-bound coverage adapter ships (separate reviewed commit) -
+       a missing reader is never reported as verified-none. */
+    var chartFactsRequired = true;
+    var allVisitBodiesRequested = visitNotesRequested;
+    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, presenceRequested: __historyRetryForeground === true, presenceAssisted: false, presenceFrontedReads: 0, presenceQuietReads: 0, visitNotesRequested: visitNotesRequested, visitNotesMode: visitNotesRequested ? "full" : "day-facts", chartFactsRequired: chartFactsRequired, allVisitBodiesRequested: allVisitBodiesRequested, insuranceAttempted: 0, insuranceComplete: false, benefitsComplete: false, insuranceReason: "reader-not-shipped", patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
+    if (!batchChoiceAdmitted) {
+      /* First-use fail-closed: no chart, body, or day-note read for an
+         account that has never made the Full-visit-notes choice. The
+         admission gates own asking; this seam refuses honestly. */
       receipt.requested = 0;
       receipt.processed = 0;
       receipt.complete = true;
       receipt.historyRequested = false;
       receipt.failures = 0;
-      receipt.reason = "visit-notes-off";
+      receipt.reason = "visit-notes-unchosen";
+      receipt.visitNotesMode = "blocked-unchosen";
       receipt.notRequestedRows = rows.length + unresolved.length;
       receipt.todayNoteNotRequested = receipt.notRequestedRows;
       receipt.todayNoteRead = 0;
@@ -5576,13 +5605,14 @@
            row the fuse sent to the tail pass had its chart opened just the
            same, and must not be misread as "no evidence". */
         if (rd) one.dayNoteChartOpen = true;
-        /* Full Notes OFF is deliberately schedule + stable chart facts only.
-           The old OFF fast lane reopened each chart with onlyDate to chase the
-           pulled-day encounter note, then queued a second background retry.
-           That is still a visit-body read and made an OFF pull slow and
-           misleading. Keep this code for the ON/full lane's historical
-           compatibility surface, but never enter it from this batch. */
-        var pulledDayNoteLaneEnabled = false;
+        /* dayfacts-1.0.1 (superseding owner DAY contract): the inline fold-in
+           IS the day-facts same-day leg - it reads exactly the pulled-day
+           encounter note while the row's chart is already open and verified.
+           Its own condition (pullVisitBodies !== true && visitsSkipped) keeps
+           it OFF-mode-only; ON rows get their bodies from the full traversal.
+           The pre-contract fuse ("never enter it from this batch") is revoked
+           together with schedule-only OFF. */
+        var pulledDayNoteLaneEnabled = true;
         if (pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {
           var dnDay = batchRowDay(row); /* dnd-1.0.0 */
           var dnGate = tnDayApplicable(dnDay); /* dnf-1.0.0 */
@@ -5758,24 +5788,12 @@
        failures - a failure is a note that should exist and could not be read. */
     function tnAggregate() {
       var tnF = 0, tnR = {}, tnRead = 0, tnNotYet = 0, tnFuture = 0, tnAlready = 0, tnQueuedNow = 0, tnCodes = {};
-      if (receipt.visitNotesRequested !== true) {
-        /* OFF is a deliberate scope choice, not an unread note. The explicit
-           fields make the terminal receipt and UI say "not requested" while
-           keeping all failure counters at zero. */
-        receipt.todayNoteFailures = 0;
-        receipt.todayNoteReasons = {};
-        receipt.todayNoteReasonCodes = {};
-        receipt.todayNoteRead = 0;
-        receipt.todayNoteAlreadyRead = 0;
-        receipt.todayNoteNotYet = 0;
-        receipt.todayNoteFutureDay = 0;
-        receipt.todayNoteQueued = 0;
-        receipt.todayNoteUnreadFinal = 0;
-        receipt.todayNoteNotRequested = Number((receipt.patients || []).length || 0);
-        return { failed: 0, read: 0, notYet: 0, future: 0, alreadyRead: 0,
-          queued: 0, unreadFinal: 0, notRequested: receipt.todayNoteNotRequested,
-          reasons: {}, codes: {} };
-      }
+      /* dayfacts-1.0.1: the pulled-day note is MANDATORY in both modes now,
+         so the old checkbox short-circuit ("OFF is a deliberate scope choice,
+         not an unread note") is gone - the real per-row tally below runs for
+         day-facts rows too. The only true not-requested case is the
+         blocked-unchosen door, which returns before any tally exists. */
+      receipt.todayNoteNotRequested = 0;
       (receipt.patients || []).forEach(function (p) {
         if (!p) return;
         if (p.todayNote === true) { tnRead++; return; }
@@ -5852,7 +5870,7 @@
       safe(function () { niSyncFromReceipt(receipt, tnBatchDay()); });
     }
     function tnDeferRow(entry, day, force) {
-      if (!entry || !day || sweepDepth || receipt.visitNotesRequested !== true) return false;
+      if (!entry || !day || sweepDepth) return false; /* dayfacts-1.0.1: the deferred round serves BOTH modes - a day-facts row's retryable note refusal queues exactly like a full-mode one */
       var pid = String(entry.patientId || "");
       if (!pid) return false;
       var queued = tnQueueDeferred({
@@ -6134,19 +6152,12 @@
         var tnSkipped = 0, tnNotRequested = 0;
         (receipt.patients || []).forEach(function (p) {
           if (!p || p.visitsSkipped !== true || p.todayNote != null) return;
-          /* A stopped Full Notes OFF pull still did not request visit bodies.
-             Do not convert that intentional omission into an orange failure or
-             a background retry merely because the chart loop was stopped. */
-          if (receipt.visitNotesRequested !== true) {
-            p.todayNote = "not-requested";
-            p.todayNoteReason = "visit-notes-off";
-            p.todayNoteSkipped = "visit-notes-off";
-            tnNotRequested++;
-          } else {
-            p.todayNote = false;
-            p.todayNoteReason = "stopped-by-user";
-            tnSkipped++;
-          }
+          /* dayfacts-1.0.1: the pulled-day note is in scope in BOTH modes, so
+             a stopped row's note is honestly "stopped before it was reached" -
+             never the revoked visit-notes-off vocabulary. */
+          p.todayNote = false;
+          p.todayNoteReason = "stopped-by-user";
+          tnSkipped++;
         });
         receipt.todayNoteStoppedRows = tnSkipped;
         receipt.todayNoteNotRequestedRows = tnNotRequested;
@@ -6155,8 +6166,10 @@
          never see freed for this pull's rows. */
       safe(tnDropDeferredQueue);
     }
-    /* Full Notes OFF never starts the legacy date-scoped tail reader. */
-    var pulledDayNoteTailEnabled = false;
+    /* dayfacts-1.0.1: the tail pass is the day-facts catch-up for rows the
+       inline fold-in never reached (chart-read failures healed later, fuse
+       hand-offs, deferred rows). Mandatory under the superseding contract. */
+    var pulledDayNoteTailEnabled = true;
     if (pulledDayNoteTailEnabled && pullVisitBodies !== true && !__stpStopped) {
       /* qol-1.5: this block read the UNDECLARED todayNoteExtOk (and called an
          undefined safeAsync) OUTSIDE any try/catch - the first visits-skipped
@@ -7045,10 +7058,12 @@
      exists to prevent. */
   function niSyncFromReceipt(receipt, day) {
     if (!receipt) return 0;
-    /* A Full Notes OFF receipt intentionally contains no visit-body stage.
-       This guard protects the legacy idle/backfill seam even if a stale row
-       or stop path carries a false todayNote marker. */
-    if (receipt.visitNotesRequested !== true) return 0;
+    /* dayfacts-1.0.1: day-facts receipts DO carry a per-row day-note stage;
+       the old OFF-has-no-stage premise is revoked with its contract. */
+    /* dayfacts-1.0.1: this is THE feed into the idle backfill, and day-facts
+       receipts now carry a real per-row day-note stage - the old refusal
+       ("A Full Notes OFF receipt intentionally contains no visit-body stage")
+       is revoked with the contract that wrote it. */
     if (safe(function () { return window.__mlsPullStopRequested === true; }, false)) return 0;
     var d = normDate(day || receipt.day || "") || "";
     if (!d) return 0;
@@ -7092,14 +7107,14 @@
   function niGate(force) {
     niLoad();
     if (_ni.stopped === true) return { open: false, reason: "stopped" };
-    /* Full Notes OFF is a hard boundary for every bulk/deferred seam.  A
-       queue written by an older build must not silently turn a schedule-only
-       pull into a patient-chart read after reload or a preference change. */
+    /* dayfacts-1.0.1: the idle backfill drains PULLED-DAY (onlyDate-scoped)
+       notes, which are mandatory in both settled modes now. Only an account
+       that has never made the choice stays fail-closed here. */
     if (safe(function () {
       var pref = window.__mlsVisitNotesPref;
       var choice = pref && isFn(pref.read) ? pref.read() : null;
-      return !!(choice && (choice.state === "off" || choice.state === "unset" || choice.on === false));
-    }, false)) return { open: false, reason: "visit-notes-off" };
+      return !(choice && choice.settled === true && (choice.state === "on" || choice.state === "off"));
+    }, true)) return { open: false, reason: "visit-notes-unchosen" };
     if (_ni.reading === true) return { open: false, reason: "reading" };
     if (!niNextRow(force === true)) return { open: false, reason: "nothing-due" };
     if (force !== true && niIdleMs() < NI_IDLE_MS) return { open: false, reason: "user-active" };
@@ -7151,8 +7166,10 @@
       var pref = window.__mlsVisitNotesPref;
       return pref && isFn(pref.read) ? pref.read() : null;
     }, null);
-    if (choice && (choice.state === "off" || choice.state === "unset" || choice.on === false)) {
-      return Promise.resolve({ ok: false, reason: "visit-notes-off" });
+    if (!(choice && choice.settled === true && (choice.state === "on" || choice.state === "off"))) {
+      /* dayfacts-1.0.1: only an unchosen account refuses; settled OFF is
+         day-facts mode and its onlyDate reads are the mandatory floor. */
+      return Promise.resolve({ ok: false, reason: "visit-notes-unchosen" });
     }
     var vp = safe(function () { return window.__mlsVisitSavePref; }, null);
     var p = patientById(row.p);
@@ -7187,8 +7204,8 @@
         : (gate.reason === "user-active") ? "paused"
         : (gate.reason === "nothing-due") ? (niOpenRows() ? "waiting" : (_ni.rows.length ? "done" : "idle"))
         : (gate.reason === "reading") ? "reading"
-        : (gate.reason === "visit-notes-off") ? "paused" : "waiting";
-      if (gate.reason === "visit-notes-off") niStopTimer();
+        : (gate.reason === "visit-notes-unchosen") ? "paused" : "waiting";
+      if (gate.reason === "visit-notes-unchosen") niStopTimer();
       niSurface();
       return Promise.resolve(null);
     }
@@ -7207,8 +7224,8 @@
       var g2 = niGate(force);
       if (!g2.open && g2.reason !== "reading") {
         _ni.reading = false; _ni.gateReason = g2.reason;
-        _ni.state = (g2.reason === "user-active" || g2.reason === "visit-notes-off") ? "paused" : "waiting";
-        if (g2.reason === "visit-notes-off") niStopTimer();
+        _ni.state = (g2.reason === "user-active" || g2.reason === "visit-notes-unchosen") ? "paused" : "waiting";
+        if (g2.reason === "visit-notes-unchosen") niStopTimer();
         niSurface();
         return null;
       }
@@ -7646,24 +7663,19 @@
   function retryFailedHistory(source, onStatus) {
     var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
     var retry = Array.isArray(history.retry) ? history.retry : [];
-    /* A legacy partial receipt may still contain retry rows from the old
-       chart-reading lane.  When the current operation is Full Notes OFF those
-       rows are intentionally not actionable: retrying them would reopen every
-       patient chart and violate schedule-only mode. */
+    /* dayfacts-1.0.1: the old wholesale OFF refusal ("retrying them would
+       reopen every patient chart and violate schedule-only mode") is revoked
+       with schedule-only itself - an OFF row's chart-facts read and pulled-day
+       note are MANDATORY work, so its retry entries are actionable and the
+       batch below re-runs them in day-facts mode via the frozen override.
+       retryBodiesRequested still scopes the retry to the receipt's own mode
+       (an OFF receipt never grows a full-history retry). */
     var retryBodiesRequested = typeof history.visitNotesRequested === "boolean"
       ? history.visitNotesRequested
       : (typeof _pullBodiesOverride === "boolean" ? _pullBodiesOverride : safe(function () {
           var pref = window.__mlsVisitNotesPref, choice = pref && isFn(pref.read) ? pref.read() : null;
           return choice && (choice.state === "off" || choice.state === "unset" || choice.on === false) ? false : true;
         }, true));
-    if (retryBodiesRequested !== true && retry.length) {
-      return Promise.resolve({
-        requestId: "history-retry-skipped-" + Date.now().toString(36),
-        retryOf: String(history.requestId || ""), requested: retry.length, processed: 0,
-        complete: true, exactIdentityVerified: true, skipped: true, reason: "full-notes-off",
-        visitNotesRequested: false, visitNotesMode: "not-requested", patients: [], retry: [], failures: 0
-      });
-    }
     /* dnd-1.0.0: the retry round is scoped to the SAME day the pull read. The
        receipt now states its own day; the pull result's target and schedule
        receipt are the fallbacks for a receipt written before this change. */
@@ -7784,7 +7796,12 @@
        explicit ON choice therefore enters the full-history lane even when a
        normal day caller omitted includeHistory; explicit OFF and unset remain
        schedule-only/fail-closed. */
-    var includeHistory = visitNotesRequested === true && opts.includeHistory !== false && !fullNotesOff;
+    /* dayfacts-1.0.0: the checkbox no longer decides WHETHER the per-patient
+       batch runs - only how much history it traverses. includeHistory keeps
+       its one remaining legitimate opt-out (the census phase-1 caller that
+       explicitly passes false and batches its provable targets in phase 2);
+       an OFF day pull now runs the batch in day-facts mode. */
+    var includeHistory = opts.includeHistory !== false;
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var providerGate = resolveProviderRequest(opts.provider, {
       allowAll: true,
@@ -7806,7 +7823,7 @@
       return "This computer runs MLS Assist v" + cur + " but the current version is v" + pub + " — update MLS Assist on THIS computer (Settings → Get the extension), then retry.";
     }
     function fail(reason, extra) {
-      var out = { ok: false, complete: false, reason: reason || "failed", includeHistory: includeHistory, historyRequested: includeHistory, visitNotesRequested: visitNotesRequested !== null ? visitNotesRequested : undefined, visitNotesMode: fullNotesOff ? "not-requested" : (visitNotesRequested === true ? "full" : "unspecified"), created: 0, repaired: 0, skipped: 0, failed: 0, target: date, providerRosterReceipt: providerGate.receipt || null, scheduleReceipt: null, providerReceipt: null, calendarReceipt: null, historyReceipt: null, retry: {} };
+      var out = { ok: false, complete: false, reason: reason || "failed", includeHistory: includeHistory, historyRequested: includeHistory, visitNotesRequested: visitNotesRequested !== null ? visitNotesRequested : undefined, visitNotesMode: fullNotesOff ? "day-facts" : (visitNotesRequested === true ? "full" : "unspecified"), created: 0, repaired: 0, skipped: 0, failed: 0, target: date, providerRosterReceipt: providerGate.receipt || null, scheduleReceipt: null, providerReceipt: null, calendarReceipt: null, historyReceipt: null, retry: {} };
       extra = extra || {}; for (var k in extra) if (extra.hasOwnProperty(k)) out[k] = extra[k];
       if (RECEIPT_GATE_REASONS[out.reason]) {
         var hint = [duplicateExtHint(), extUpdateHint()].filter(function (h) { return !!h; }).join(" ");
@@ -8393,16 +8410,19 @@
                 ? ("The schedule for " + date + " is saved. Reading chart history for " + p1CensusHistoryTargets.length + " patient" + (p1CensusHistoryTargets.length === 1 ? "" : "s") + " now - provider stays blank, nothing about the census changes.")
                 : ("The schedule for " + date + " is saved. No patient on this day carries the DOB or MRN proof a chart read requires, so no history was attempted."), "");
             }
-            /* Full Notes OFF is not an abbreviated chart pass.  It is an
-               explicit schedule/booking-only mode: no chart target is opened,
-               no stable-fact reader is called, and no deferred/tail lane is
-               allowed to manufacture a later visit-body read. */
-            var historySkipReason = fullNotesOff ? "full-notes-off" : (p1CensusHistoryDeferred ? "provider-attribution-unavailable" : "not-requested");
-            var historyReceipt = (!fullNotesOff && includeHistory)
+            /* dayfacts-1.0.0: Full Notes OFF is an abbreviated chart pass, by
+               owner contract - every scheduled row still gets its verified
+               chart open, its facts save, and exactly the pulled-day
+               encounter-note attempt; only the OTHER dated historical bodies
+               are out of scope. The old schedule-only meaning of OFF is
+               revoked; the only remaining skips are the census phase-1 caller
+               and a day with nothing provable to read. */
+            var historySkipReason = p1CensusHistoryDeferred ? "provider-attribution-unavailable" : "not-requested";
+            var historyReceipt = includeHistory
               ? await runHistoryBatch(res.historyTargets || [], res.historyUnresolved || [], onStatus, { scopeDay: date })
-              : (!fullNotesOff && p1CensusHistoryDeferred && p1CensusHistoryTargets.length
+              : (p1CensusHistoryDeferred && p1CensusHistoryTargets.length
                 ? await runHistoryBatch(p1CensusHistoryTargets, res.historyUnresolved || [], onStatus, { scopeDay: date })
-                : { requested: 0, processed: 0, complete: true, exactIdentityVerified: true, skipped: true, reason: historySkipReason, visitNotesRequested: fullNotesOff ? false : (visitNotesRequested === true ? true : undefined), visitNotesMode: fullNotesOff ? "not-requested" : (visitNotesRequested === true ? "full" : "unspecified"), chartReads: 0, chartOpens: 0, visitBodyReads: 0, onlyDateReads: 0, deferredReads: 0, tailReads: 0, retryReads: 0, censusNoProvableTargets: p1CensusHistoryDeferred === true, patients: [], retry: [], failures: 0 });
+                : { requested: 0, processed: 0, complete: true, exactIdentityVerified: true, skipped: true, reason: historySkipReason, visitNotesRequested: fullNotesOff ? false : (visitNotesRequested === true ? true : undefined), visitNotesMode: fullNotesOff ? "day-facts" : (visitNotesRequested === true ? "full" : "unspecified"), chartReads: 0, chartOpens: 0, visitBodyReads: 0, onlyDateReads: 0, deferredReads: 0, tailReads: 0, retryReads: 0, censusNoProvableTargets: p1CensusHistoryDeferred === true, patients: [], retry: [], failures: 0 });
             /* bob-1.0.0: phase 2 ran, so say so on the receipt. The census's
                OWN completion verdict is deliberately not derived from it. */
             if (p1CensusHistoryDeferred) {
@@ -8458,7 +8478,7 @@
             res.includeHistory = p1CensusHistoryRequested || includeHistory;
             res.historyRequested = p1CensusHistoryRequested || includeHistory;
             res.visitNotesRequested = visitNotesRequested !== null ? visitNotesRequested : (historyReceipt && typeof historyReceipt.visitNotesRequested === "boolean" ? historyReceipt.visitNotesRequested : undefined);
-            res.visitNotesMode = fullNotesOff ? "not-requested" : (res.visitNotesRequested === true ? "full" : (historyReceipt && historyReceipt.visitNotesMode) || "unspecified");
+            res.visitNotesMode = fullNotesOff ? "day-facts" : (res.visitNotesRequested === true ? "full" : (historyReceipt && historyReceipt.visitNotesMode) || "unspecified"); /* dayfacts-1.0.1: one vocabulary at every level */
             /* bob-1.0.0: history is no longer skipped on the census path, so
                the field only fills when phase 2 genuinely had nothing to read. */
             res.historySkippedReason = (p1CensusHistoryDeferred && historyReceipt.skipped === true)
@@ -8617,7 +8637,7 @@
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read (" + __ppWhy("no-chart-frame-candidate") + "), so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") +
               (__noStore ? " " + __noStore + " chart" + (__noStore === 1 ? " was" : "s were") + " read correctly, but MLS could not verify the latest save on this device. Keep this tab open, check available storage, then retry those charts." : "") +
               (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + __ppWhy(String(p.reason || "unread")).slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + (__chartOnly ? " " + __chartOnly + " of the incomplete chart" + (__chartOnly === 1 ? "" : "s") + " DID save the six-card chart summary \u2014 only the visit notes are incomplete; Retry re-reads just those." : "") + contentNotice(historyReceipt) + __redoNote + __tnNote, "err");
-            else if (!includeHistory && !res.censusHistoryPhaseTwo) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; " + (fullNotesOff ? "Full Notes is off, so no patient charts or visit notes were opened." : (p1CensusHistoryDeferred ? "chart history was intentionally skipped because provider attribution is unavailable for this appointment census." : "history was not requested.")) + freshnessNotice(r) + __p1ScopeNotice, "ok"); /* bob-1.0.0: unchanged wording when phase 2 had nothing provable to read */
+            else if (!includeHistory && !res.censusHistoryPhaseTwo) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; " + (p1CensusHistoryDeferred ? "chart history was intentionally skipped because provider attribution is unavailable for this appointment census." : "history was not requested by this caller.") + freshnessNotice(r) + __p1ScopeNotice, "ok"); /* dayfacts-1.0.0: !includeHistory no longer correlates with the checkbox - the OFF wording here would misattribute a census/caller skip */
             else if (!includeHistory) onStatus("Appointment census + history: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + historyFailures + ". Provider stays blank for this census; the chart reads are reported on their own." + freshnessNotice(r) + __p1ScopeNotice + contentNotice(historyReceipt) + __tnNote, historyFailures ? "err" : "ok"); /* bob-1.0.0 */
             else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + __p1ScopeNotice + contentNotice(historyReceipt) + __redoNote + __tnNote, "ok");
             return res;
@@ -9262,14 +9282,14 @@
       dates = dates.filter(function (d) { return onlyDates[d] === 1; });
     }
     var monthFullNotesOff = opts.pullVisitBodies === false;
-    var includeHistory = opts.includeHistory !== false && !monthFullNotesOff;
+    var includeHistory = opts.includeHistory !== false; /* dayfacts-1.0.0: OFF months still run the mandatory day-facts batch per day */
     var monthPullVisitBodies = (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null;
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var onDayCheckpoint = isFn(opts.onDayCheckpoint) ? opts.onDayCheckpoint : null;
     var shouldStop = isFn(opts.shouldStop) ? opts.shouldStop : null;
     var gate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: true, allowDetectedProvider: true });
     function failed(reason, error) {
-      return { ok: false, complete: false, reason: reason, error: error || "", month: month, includeHistory: includeHistory, historyRequested: includeHistory, visitNotesRequested: monthPullVisitBodies !== null ? monthPullVisitBodies : undefined, visitNotesMode: monthFullNotesOff ? "not-requested" : (monthPullVisitBodies === true ? "full" : "unspecified"), provider: gate.provider || null, providerRosterReceipt: gate.receipt || null, days: [], totals: { days: 0, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 }, retry: { dates: [] } };
+      return { ok: false, complete: false, reason: reason, error: error || "", month: month, includeHistory: includeHistory, historyRequested: includeHistory, visitNotesRequested: monthPullVisitBodies !== null ? monthPullVisitBodies : undefined, visitNotesMode: monthFullNotesOff ? "day-facts" : (monthPullVisitBodies === true ? "full" : "unspecified"), provider: gate.provider || null, providerRosterReceipt: gate.receipt || null, days: [], totals: { days: 0, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 }, retry: { dates: [] } };
     }
     if (!dates || !dates.length) return Promise.resolve(failed("invalid-month", "Choose the current or a past month."));
     if (!gate.ok) { onStatus(gate.error || "The provider roster is incomplete.", "err"); return Promise.resolve(failed(gate.reason, gate.error)); }
@@ -9310,7 +9330,7 @@
     var result = {
       ok: false, complete: false, reason: "month-partial", month: month, includeHistory: includeHistory,
       historyRequested: includeHistory, visitNotesRequested: monthPullVisitBodies !== null ? monthPullVisitBodies : undefined,
-      visitNotesMode: monthFullNotesOff ? "not-requested" : (monthPullVisitBodies === true ? "full" : "unspecified"),
+      visitNotesMode: monthFullNotesOff ? "day-facts" : (monthPullVisitBodies === true ? "full" : "unspecified"),
       provider: frozenProvider, providerRosterReceipt: gate.receipt || null,
       /* prs-1.0.0: an ALL-provider MONTH pull inherits exactly the same
          painted-grid coverage limit as the day pull it repeats. */
@@ -9455,7 +9475,7 @@
       result.reason = result.complete ? "complete" : (!ownerProofComplete ? "month-owner-unverified" : (breaker.tripped ? "month-stopped-systemic" : "month-partial"));
       if (breaker.tripped) result.systemicReason = breaker.reason;
       onStatus(result.complete
-        ? ("Verified month complete: " + result.totals.completeDays + "/" + dates.length + " days; schedule " + result.totals.scheduleAccounted + "/" + result.totals.scheduleAttempted + (monthFullNotesOff ? "; Full Notes is off, so no patient charts or visit notes were opened." : "; histories " + result.totals.historiesProcessed + "/" + result.totals.historiesRequested + "; failures 0.") + providerScopeNotice(frozenProvider === "all" ? "all" : "selected"))
+        ? ("Verified month complete: " + result.totals.completeDays + "/" + dates.length + " days; schedule " + result.totals.scheduleAccounted + "/" + result.totals.scheduleAttempted + (monthFullNotesOff ? "; Full visit notes is off - each day saved chart facts and attempted only its own pulled-day note; no other historical bodies were read." : "; histories " + result.totals.historiesProcessed + "/" + result.totals.historiesRequested + "; failures 0.") + providerScopeNotice(frozenProvider === "all" ? "all" : "selected"))
         : (breaker.tripped
           ? ("Month pull STOPPED EARLY — every day was failing the same way: " + (SYSTEMIC_TEXT[breaker.reason] || breaker.reason.replace(/-/g, " ")) + (breaker.hint ? " " + breaker.hint : "") + " Fix that first, then use Retry failed days (" + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + " remain; nothing was skipped silently).")
           : ("Month incomplete: " + result.totals.completeDays + "/" + dates.length + " days verified; retry " + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + ".")), result.complete ? "ok" : "err");
@@ -9491,7 +9511,7 @@
     var frozenDate = sel.date;
     onStatus("Pulling " + frozenProvider.name + " on " + frozenDate + "...", "");
     var calendarPullVisitBodies = (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null;
-    var includeHistory = opts.includeHistory !== false && calendarPullVisitBodies !== false;
+    var includeHistory = opts.includeHistory !== false; /* dayfacts-1.0.1: the Calendar door was the third caller still coupling the checkbox in - an OFF Calendar pull now runs the mandatory day-facts batch like every other entry */
     /* si-1.6.4: every explicit user pull flows through the ONE public entry
        (window.__mlsSI.pull). The calendar route previously invoked the
        module-internal pull, so external observers wrapping the public seam
@@ -10018,7 +10038,7 @@
       runOpts.__p1ResumeScopeSource = explicit ? "day-caller" : "day-account";
       if (p1OriginalCensusAll && provider === "all") runOpts.__p1DayCensusToken = P1_DAY_CENSUS_TOKEN;
       else delete runOpts.__p1DayCensusToken;
-      if (runOpts.includeHistory === undefined) runOpts.includeHistory = false;
+      if (runOpts.includeHistory === undefined) runOpts.includeHistory = true; /* dayfacts-1.0.0: the day pull's mandatory floor (chart facts + pulled-day note) always runs; the checkbox only widens it to full history */
       var preflight = {
         ran: !!needWarm,
         warmed: !!(warm && warm.warmed),

@@ -1100,7 +1100,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'This strip owns the date. ‹ › moves a day at a time, Today snaps back, and the label always names the day you are looking at.'
       ], [
         'Pull status and per-patient progress appear right here while a pull runs.',
-        '“Full visit notes” is an explicit choice: ON opens and saves every encounter note; OFF reads schedule rows only and opens no chart/history.',
+        '“Full visit notes” chooses depth, not whether charts open: OFF still reads each scheduled chart’s facts and its own-day note; ON adds every dated historical encounter note.',
         'If a pull ever fails, Retry and a copyable error report appear here too.'
       ])
     },
@@ -25522,18 +25522,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       orig._pullAllHistories = window._pullAllHistories;
       var pull = function (appts) {
         var ms = mlsStatus();
-        /* This legacy entry used to open the six-card chart before consulting
-           Full Notes. Fail closed at the door: OFF (and an unsettled choice)
-           is schedule/booking-only, so neither chart facts nor encounter
-           bodies may be opened from this helper. */
+        /* dayfacts-1.0.1: this legacy helper does exactly one thing - the FULL
+           historical crawl - which only an explicit ON requests. It cannot run
+           the day-facts floor (the guarded engine owns that), so OFF/unchosen
+           still refuse here, but with the truthful scope: the refusal is about
+           HISTORICAL bodies, never a claim that OFF opens no charts (the
+           guarded engine's day-facts pull does open every chart). */
         var fullNotesOn = safe(function () {
           var pref = window.__mlsVisitNotesPref;
           var choice = pref && typeof pref.read === 'function' ? pref.read() : null;
           return !!(choice && choice.on === true && choice.state !== 'unset');
         }, false);
         if (!fullNotesOn) {
-          progressSay('Full Notes is off — patient charts and visit notes were not opened. Turn it on in Settings before pulling chart histories.');
-          return Promise.resolve({ ok: true, complete: true, reason: 'visit-notes-off', visitNotesRequested: false, historiesRequested: 0 });
+          progressSay('Full visit notes is off, so this legacy history helper did not crawl historical encounter bodies. Day pulls still read each chart’s facts and its own-day note; turn Full visit notes on for complete histories.');
+          return Promise.resolve({ ok: true, complete: true, reason: 'historical-bodies-not-requested', visitNotesRequested: false, historiesRequested: 0 });
         }
         return (function run(list, isRetry) {
           if (!list || !list.length) return Promise.resolve();
@@ -49545,7 +49547,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var sr = r && r.scheduleReceipt && typeof r.scheduleReceipt === 'object' ? r.scheduleReceipt : {};
     var hr = r && r.historyReceipt && typeof r.historyReceipt === 'object' ? r.historyReceipt : {};
     var cr = r && r.calendarReceipt && typeof r.calendarReceipt === 'object' ? r.calendarReceipt : {};
-    var historySkipped = hr.skipped === true || hr.reason === 'full-notes-off' || hr.reason === 'not-requested';
+    var historySkipped = hr.skipped === true || hr.reason === 'visit-notes-unchosen'; /* dayfacts-1.0.1: the two revoked reasons are gone from the engine; a blocked-unchosen refusal is a skip, never partial evidence */
     var evidence = sr.complete === true || cr.complete === true || (!historySkipped && hr.complete === true) ||
       dsReceiptCount(sr.parsedCount || sr.mergedRows) > 0 || dsReceiptCount(hr.processed) > 0 ||
       dsReceiptCount(cr.accounted || cr.mapped || cr.created || cr.repaired) > 0;
@@ -49565,7 +49567,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       reason: dsReceiptCode(r.reason, dsTerminalStatus(r)), durable: false,
       schedule: { complete: sr.complete === true, expected: dsReceiptCount(sr.expectedCount || sr.candidateCount), parsed: dsReceiptCount(sr.parsedCount || sr.mergedRows) },
       history: { requested: dsReceiptCount(hr.requested), processed: dsReceiptCount(hr.processed), complete: hr.complete === true, failures: dsReceiptCount(hr.failures), retry: Array.isArray(hr.retry) ? hr.retry.length : 0 },
-      visitNotes: { requested: requested, mode: requested === true ? 'full' : (requested === false ? 'not-requested' : 'unknown'), read: dsReceiptCount(hr.todayNoteRead), failures: dsReceiptCount(hr.todayNoteFailures), notRequested: dsReceiptCount(hr.todayNoteNotRequested) }
+      visitNotes: { requested: requested, mode: requested === true ? 'full' : (hr.visitNotesMode === 'blocked-unchosen' ? 'blocked-unchosen' : (requested === false ? 'day-facts' : 'unknown')), read: dsReceiptCount(hr.todayNoteRead), failures: dsReceiptCount(hr.todayNoteFailures), notRequested: dsReceiptCount(hr.todayNoteNotRequested) } /* dayfacts-1.0.1: the persisted terminal receipt speaks the same vocabulary as every other level, and a fail-closed unchosen refusal keeps its OWN mode - it must never read as a day-facts pull that did work */
     };
   }
   function dsPersistTerminalReceipt(receipt) {
@@ -49597,7 +49599,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!receipt) return '';
     var status = receipt.status === 'complete' ? 'complete' : (receipt.status === 'partial' ? 'partial' : 'failed');
     var line = 'Pull ' + status + ' for ' + fmtDay(receipt.target || DS.day) + '.';
-    if (receipt.visitNotes && receipt.visitNotes.requested === false) line += ' Full visit notes were intentionally skipped (Full Notes is off).';
+    if (receipt.visitNotes && receipt.visitNotes.mode === 'blocked-unchosen') line += ' The Full-visit-notes choice has not been made for this account yet, so no chart was opened and nothing was read.';
+    else if (receipt.visitNotes && receipt.visitNotes.mode === 'day-facts') line += ' Historical visit notes were skipped by choice (Full visit notes is off); chart facts and each day’s own note were read.'; /* dayfacts-1.0.1: keyed on the MODE so a refusal can never borrow the working sentence */
     if (receipt.durable !== true) line += ' Status could not be saved for reload; it is available in this tab only.';
     return line;
   }
@@ -50311,14 +50314,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          say "history checked for 19 patients" with zero histories stored, which
          is exactly the success the owner was shown while 15 patients had nothing. */
       var hist = ((hr.patients || []).filter(function (p) { return p && p.complete === true; })).length;
-      var historyIntentionallySkipped = hr.visitNotesRequested === false || hr.skipped === true ||
-        hr.reason === 'full-notes-off' || r.historyRequested === false || r.includeHistory === false;
+      /* dayfacts-1.0.1: visitNotesRequested === false is DAY-FACTS mode now -
+         it opened and saved every chart's facts, so it must not suppress the
+         history line. Only a genuinely skipped batch (census phase-1 / caller
+         opt-out) is an intentional skip. */
+      var historyIntentionallySkipped = hr.skipped === true ||
+        r.historyRequested === false || r.includeHistory === false;
       var histGap = (!historyIntentionallySkipped && rows > 0 && hist < rows) ? (rows - hist) : 0;
       var histLine = (!historyIntentionallySkipped && hr.requested != null)
         ? ('history read for ' + hist + ' of ' + rows + ' as the reader counted it') : '';
       var recon = pullReconLine(r);
-      var visitNotesMessage = hr.visitNotesRequested === false
-        ? ' Full visit notes were intentionally skipped (Full Notes is off).'
+      var visitNotesMessage = hr.visitNotesMode === 'day-facts'
+        ? (' Historical visit notes were skipped by choice (Full visit notes is off); chart facts and each day\u2019s own note were read.' + (function () { var tf = Number(hr.todayNoteFailures || 0); return tf ? (' ' + tf + ' pulled-day note' + (tf === 1 ? ' was' : 's were') + ' not read \u2014 see the pull panel rows.') : ''; })())
         : (function () { var tf = Number(hr.todayNoteFailures || 0); return tf ? (' ' + tf + ' pulled-day note' + (tf === 1 ? ' was' : 's were') + ' not read (fast lane); the charts themselves saved \u2014 see the pull panel rows.') : ''; })();
       return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (histLine ? (', ' + histLine) : '') + '.' + (histGap ? (' ' + histGap + ' patient' + (histGap === 1 ? ' has' : 's have') + ' no chart yet - use Retry failed histories to finish them.') : '') + censusLine(hr) + visitNotesMessage + (recon ? ' [' + recon + ']' : '') };
     }
@@ -51400,7 +51407,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
         '<button type="button" id="mlsDsWakeRetryBtn" style="display:none">↻ Wake Athena and retry</button>' +
         '<button type="button" id="mlsDsDiagBtn" title="Copies a patient-free technical report of the last failed pull — paste it in a message to support.">⧉ Copy error report</button>' +
-        '<label id="mlsDsVisitTgl" title="On: open and save every encounter note (slower). Off: read schedule rows only — no patient chart or history is opened." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
+        '<label id="mlsDsVisitTgl" title="On: also save every dated historical encounter note (slower, stores more). Off: each chart’s facts and its own-day note only (faster, stores less)." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
         '<span id="mlsDsStatus"></span>';
       /* always the FIRST element of the Visit body — above the engine wrap,
          outside its innerHTML re-renders, so it can never sink or flicker */
@@ -51747,9 +51754,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var api = { installed: true, version: '1.0.0', running: false, current: null };
   window.__mlsVisitSavePref = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
-  /* Only an explicit ON may open encounter bodies. First-run/public admission
-     owns asking; low-level and legacy callers fail closed while unset. */
-  function enabled() { /* qol-2.0 ONE RESOLVER: delegates. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') { var choice = vnp.read(); return !!(choice && choice.state === 'on' && choice.on === true); } } catch (e) {} return false; }
+  /* Only an explicit SETTLED ON may open unscoped encounter bodies.
+     First-run/public admission owns asking; low-level and legacy callers fail
+     closed while unset. dayfacts-1.0.1: settled is required here too - the
+     unscoped door must never be softer than the day-scoped one (a
+     provisional placeholder-namespace 'on' is not an admitted choice). */
+  function enabled() { /* qol-2.0 ONE RESOLVER: delegates. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') { var choice = vnp.read(); return !!(choice && choice.settled === true && choice.state === 'on' && choice.on === true); } } catch (e) {} return false; }
   function setEnabled(v) { /* qol-2.0: write-through the resolver with read-back; returns confirmed true/false - false means NOTHING CHANGED. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.write === 'function') return vnp.write(v === true) === true; } catch (e) {} return false; }
   function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
   function activeP() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
@@ -51761,10 +51771,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api._spv = { visitLeg: function (p, target) { return spvVisitLeg(p, target); }, count: function (p) { return spvVisitCount(p); } };
   api.runForPatient = function (p, onStatus, runOpts) {
     runOpts = runOpts && typeof runOpts === 'object' ? runOpts : null;
-    /* Full Notes is a hard boundary for every reader option. onlyDate remains
-       useful to an explicitly ON catch-up operation; it is not a permission
-       bypass. singlePull is likewise scoped by the setting. */
-    if (!enabled()) return Promise.resolve({ ok: true, skipped: 'preference-off' });
+    /* dayfacts-1.0.0 (superseding owner DAY contract, 2026-08-25): the
+       preference now scopes HISTORICAL bodies only. An exact-day scoped read
+       (a well-formed runOpts.onlyDate) is the mandatory pulled-day
+       encounter-note attempt and is admitted in BOTH modes - it saves at most
+       the one matching dated body through the same strict identity gate, and
+       the extension-version pong check upstream refuses readers that predate
+       onlyDate scoping (they would return every body). Unscoped reads remain
+       hard-bounded by the preference exactly as before. */
+    var dayScoped = !!(runOpts && /^\d{4}-\d{2}-\d{2}$/.test(String(runOpts.onlyDate || '')));
+    var choiceSettled = (function () { try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') { var c = vnp.read(); return !!(c && c.settled === true && (c.state === 'on' || c.state === 'off')); } } catch (e) {} return false; })();
+    if (!enabled() && !(dayScoped && choiceSettled)) return Promise.resolve({ ok: true, skipped: choiceSettled ? 'preference-off' : 'preference-unchosen' });
     if (!p || !p.id || !p.name) return Promise.reject(new Error('No patient is selected for the full-visit pull.'));
     if (api.running && api.current) return api.current;
     var cv = window.__mlsCopyVisits;
