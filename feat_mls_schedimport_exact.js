@@ -1595,12 +1595,16 @@
           storedOk++;
           if (pid) perPatient[pid] = "ok";
           /* cachev-1.0.0: the lanes this pull actually proved, recorded so a
-             later same-day re-pull can skip HONESTLY. Coverage is declared
-             unproven until the provenance-bound reader ships - which means
-             no skip can bypass the clinical floor before it exists. */
+             later same-day re-pull can skip HONESTLY. dfc-1.0.0: coverage is
+             proven ONLY by this row's own athena-coverage-v1 receipt reading
+             complete+saved; anything else (missing reader, refusal, partial)
+             stays unproven with its own reason - no skip can bypass the
+             clinical floor on an unproven lane. */
           if (pid) perPatientLanes[pid] = {
             v: 2,
-            coverage: { complete: false, reason: "reader-not-shipped" },
+            coverage: (p.coverageReceipt && p.coverageReceipt.kind === "athena-coverage-v1" && p.coverageReceipt.complete === true && p.coverageReceipt.status === "saved")
+              ? { complete: true }
+              : { complete: false, reason: String((p.coverageReceipt && (p.coverageReceipt.reason || p.coverageReceipt.status)) || "reader-not-shipped").slice(0, 60) },
             sameDayNote: { status: p.todayNote === true ? "saved" : (p.todayNoteSkipped === "future-day" ? "not-yet-available" : (p.todayNote == null ? "unknown" : "unread")) },
             allHistory: { scope: receipt.visitNotesRequested === true ? "full" : "day-facts", complete: p.visitsComplete === true && p.visitsSkipped !== true ? true : (receipt.visitNotesRequested !== true && p.visitsComplete === true) }
           };
@@ -4193,7 +4197,12 @@
     if (!proof) throw new Error("visits-identity-proof-failed");
     var expected = Number(r && r.receipt && r.receipt.expected), parsed = Number(r && r.receipt && r.receipt.parsed);
     var readerVersion = String(r && r.readerVersion || ""), receiptReaderVersion = String(r && r.receipt && r.receipt.readerVersion || "");
-    var provenReader = /^2\.9\.22-visits-r4-two-stage$/.test(readerVersion) && receiptReaderVersion === readerVersion;
+    /* dfc-1.0.0: the TOP-LEVEL version proves the READER (transport-stamped,
+       refuses legacy readers that predate onlyDate scoping); the receipt's
+       own readerVersion is that receipt's schema annotation and must merely
+       exist - demanding echo-equality rejected honest receipts that declare
+       their schema independently. Both absent stays fail-closed. */
+    var provenReader = /^2\.9\.22-visits-r4-two-stage$/.test(readerVersion) && receiptReaderVersion.length > 0;
     if (!r.receipt || r.receipt.complete !== true || r.receipt.indexComplete !== true || r.receipt.bodyComplete !== true || r.receipt.fullDetail !== true || r.receipt.stableKeysComplete !== true || !provenReader || expected < 0 || parsed !== expected) throw new Error("visits-full-detail-unproven");
     /* A chart whose only encounter rows are administrative order groups has
        zero CLINICAL bodies to read; the reader reports them honestly as
@@ -4219,7 +4228,12 @@
        never invokes the destructive full-history reconciliation, and proves
        only THIS slice's rows - older verified encounters are deliberately
        outside the census and must survive byte-identical. */
-    var dscopeDate = String((r.receipt && (r.receipt.scopeDate || r.receipt.onlyDate)) || "").slice(0, 10);
+    /* dscope-1.0.2: ONLY the reader's own onlyDate scoping declares a slice.
+       scopeDate is same-day-lane METADATA and legitimately rides on a FULL
+       unscoped receipt (the ON walk derives its same-day proof from the one
+       full read) - keying on it made a full save throw scoped-visit-date-
+       mismatch on every multi-date history. */
+    var dscopeDate = String((r.receipt && r.receipt.onlyDate) || "").slice(0, 10);
     var dscope = /^\d{4}-\d{2}-\d{2}$/.test(dscopeDate);
     if (dscope) {
       /* dscope-1.0.1 (Codex blocker 4 on 10f41d2d): an exact-day slice
@@ -4235,17 +4249,24 @@
     /* Prefer the established strict name+DOB ingest. MRN-verified charts may
        legitimately lack DOB; in that case retain the same per-row veto and
        write through the one visit model with immutable patient binding. */
-    var savedCount = 0, reconcileReceipt = null;
+    var savedCount = 0, reconcileReceipt = null, dsSameDayMeta = null;
     if (dscope) {
       /* Additive scoped persistence: one bulk call, reconcile OFF, and a
-         verified absence saves nothing at all (never a fabricated row). */
-      if (!isFn(vm.saveVerifiedVisitBatch)) throw new Error("visits-bulk-writer-unavailable");
+         verified absence saves nothing at all (never a fabricated row).
+         dscope-1.0.2: where the bulk writer is absent, the model's own
+         addVisit is the additive per-row fallback - identical semantics (no
+         reconcile, sourceVisitKey dedupe), never a silent no-op. */
+      if (!isFn(vm.saveVerifiedVisitBatch) && !isFn(vm.addVisit)) throw new Error("visits-bulk-writer-unavailable");
       for (var dsi = 0; dsi < visits.length; dsi++) {
         if (isFn(cv._visitIdentityAgrees) && !cv._visitIdentityAgrees(p, visits[dsi], true)) throw new Error("visit-row-identity-mismatch");
       }
       if (visits.length) {
-        var dscopeSave = vm.saveVerifiedVisitBatch(p.id, visits, { source: "athena-schedule-history", bodyComplete: true, reconcile: false, scopeDate: dscopeDate });
-        savedCount = Number(dscopeSave && dscopeSave.saved || 0);
+        if (isFn(vm.saveVerifiedVisitBatch)) {
+          var dscopeSave = vm.saveVerifiedVisitBatch(p.id, visits, { source: "athena-schedule-history", bodyComplete: true, reconcile: false, scopeDate: dscopeDate });
+          savedCount = Number(dscopeSave && dscopeSave.saved || 0);
+        } else {
+          for (var dsa = 0; dsa < visits.length; dsa++) { if (vm.addVisit(p.id, visits[dsa])) savedCount++; }
+        }
       }
       reconcileReceipt = { complete: true, scoped: true, removed: 0, retained: -1 }; /* reconciliation deliberately NOT run on a slice */
       /* dscope-1.0.1: the census status the reader hands back is validated
@@ -4256,6 +4277,9 @@
       var dsStatusRaw = String((r.receipt && r.receipt.sameDayStatus) || "");
       var dsSameDayStatus = /^(saved|partial|refused|absent|not-yet-available)$/.test(dsStatusRaw)
         ? dsStatusRaw : (parsed > 0 ? "saved" : "refused");
+      dsSameDayMeta = { status: dsSameDayStatus, scopeDate: dscopeDate,
+        noSubstitution: !r.receipt || r.receipt.noSubstitution !== false,
+        appointmentBindings: (r.receipt && Array.isArray(r.receipt.appointmentBindings)) ? r.receipt.appointmentBindings.slice() : [] };
     } else if (target.dob && observed.chartDob && isFn(cv._saveVisits)) {
       savedCount = Number(cv._saveVisits(p, { name: observed.chartName || target.name, dob: observed.chartDob }, visits, function () {}, r.receipt));
     } else {
@@ -4285,7 +4309,7 @@
     }
     if (!reconcileReceipt || reconcileReceipt.complete !== true) throw new Error("visits-reconcile-unproven");
     var fresh = patientById(target.patientId) || p;
-    var storedVisits = safe(function () { return vm.getVisits(fresh); }, []) || [];
+    var storedVisits = safe(function () { return vm.getVisits(fresh && fresh.id != null ? fresh.id : fresh); }, []) || [];
     function stableAliases(v) {
       var out = [], encounter = String(v && (v.encounterId || v.encounterID) || "").trim().toLowerCase(), source = String(v && (v.sourceVisitKey || v.rowKey) || "").trim().toLowerCase();
       if (encounter) out.push("encounter|" + encounter);
@@ -4372,7 +4396,24 @@
     }
     var refreshedCoverage=responsiveOrganization?null:safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
-    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: dscope ? parsed : persisted.length, savedCount: savedCount, scopedAdditive: dscope === true, scopeDate: dscope ? dscopeDate : undefined, sameDayStatus: dscope ? dsSameDayStatus : undefined, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
+    /* dfc-1.0.0: an UNSCOPED full walk may still carry same-day-lane metadata
+       on its receipt (scopeDate + sameDayStatus + bindings) - ON derives its
+       same-day proof from the one full read instead of a second scoped pass.
+       Status passes the same closed vocabulary; no valid scopeDate = no claim. */
+    if (!dsSameDayMeta) safe(function () {
+      var rrMeta = r.receipt || {};
+      var sdScope = String(rrMeta.scopeDate || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(sdScope)) return;
+      var sdRaw = String(rrMeta.sameDayStatus || "");
+      var sdSaved = visits.some(function (v) { return String(v && v.date || "").slice(0, 10) === sdScope; });
+      dsSameDayMeta = {
+        status: /^(saved|partial|refused|absent|not-yet-available)$/.test(sdRaw) ? sdRaw : (sdSaved ? "saved" : "refused"),
+        scopeDate: sdScope,
+        noSubstitution: rrMeta.noSubstitution !== false,
+        appointmentBindings: Array.isArray(rrMeta.appointmentBindings) ? rrMeta.appointmentBindings.slice() : []
+      };
+    });
+    return { visitCount: safe(function () { return vm.getVisits(fresh && fresh.id != null ? fresh.id : fresh).length; }, visits.length), persistedVisits: dscope ? parsed : persisted.length, savedCount: savedCount, scopedAdditive: dscope === true, scopeDate: dscope ? dscopeDate : undefined, sameDayStatus: dscope ? dsSameDayStatus : undefined, sameDay: dsSameDayMeta || undefined, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
   }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
     /* b744 #36: true only when the per-patient loop ran to completion; the
@@ -5157,6 +5198,102 @@
       });
       return true;
     }
+    /* ===== dfc-1.0.0 (Codex red contract day-pull-clinical-floor): the
+       MANDATORY per-row insurance/benefits lane. Every scheduled row in BOTH
+       modes owes exactly one provenance-bound coverage read through the
+       versioned reader seam `window._assistReadCoverage(target, say, opts)`.
+       Semantics fixed by the owner contract + accepted Qwen invariants:
+       - fill-only merge: a non-empty clinician-manual value is NEVER
+         overwritten; remote fills blanks only; nothing is ever erased.
+       - the raw remote values are stored separately on
+         patient.athenaCoverageSnapshot so the merge never destroys the
+         Athena-observed truth.
+       - patient.athenaCoverageReceipt carries field NAMES and counts only —
+         never a value string (no payer names, no member ids in receipts).
+       - a missing reader is never verified-none: it stamps an incomplete
+         not-attempted receipt (reason reader-not-shipped) and mutates
+         nothing; a failed read stamps refused and mutates nothing. Neither
+         erases valid schedule/same-day data (the lane is non-transactional
+         by design).
+       ===== */
+    var DFC_FIELDS = ["payer", "planName", "memberId", "deductibleRemaining", "coinsurancePct", "copay", "oopRemaining"];
+    function dfcRowAppointmentIds(row, target) {
+      var ids = [];
+      safe(function () {
+        var bundle = target && Array.isArray(target.appointmentIds) ? target.appointmentIds : null;
+        if (bundle) { bundle.forEach(function (id) { if (id && ids.indexOf(String(id)) < 0) ids.push(String(id)); }); }
+      });
+      var own = safe(function () { return String(rowAppointmentId(row) || (target && target.appointmentId) || ""); }, "");
+      if (own && ids.indexOf(own) < 0) ids.push(own);
+      return ids;
+    }
+    function dfcApplyCoverage(target, res, apptIds, requestId) {
+      var p = findStorePatient(target.patientId);
+      if (!p) return { receipt: { kind: "athena-coverage-v1", complete: false, status: "refused", reason: "store-row-missing" } };
+      var values = (res && res.values) || {};
+      var rr = (res && res.receipt) || {};
+      var cur = (p.insurance && typeof p.insurance === "object") ? p.insurance : {};
+      var next = {}, filled = [], preserved = [], present = 0, empty = 0;
+      DFC_FIELDS.forEach(function (k) {
+        var local = String(cur[k] == null ? "" : cur[k]).trim();
+        var remote = String(values[k] == null ? "" : values[k]).trim();
+        if (remote) { present++; } else { empty++; }
+        if (local) { next[k] = local; if (remote && remote !== local) preserved.push(k); }
+        else if (remote) { next[k] = remote; filled.push(k); }
+        else { next[k] = ""; }
+      });
+      /* unknown pre-existing insurance keys survive untouched */
+      safe(function () { for (var k in cur) { if (Object.prototype.hasOwnProperty.call(cur, k) && !(k in next)) next[k] = cur[k]; } });
+      p.insurance = next;
+      var snap = { capturedAt: Date.now() };
+      DFC_FIELDS.forEach(function (k) { snap[k] = String(values[k] == null ? "" : values[k]); });
+      p.athenaCoverageSnapshot = snap;
+      p.athenaCoverageReceipt = {
+        kind: "athena-coverage-v1",
+        complete: rr.complete === true,
+        status: String(rr.status || "saved"),
+        requestId: String(rr.requestId || requestId || ""),
+        sourceSurface: String(rr.sourceSurface || ""),
+        capturedAt: Number(rr.capturedAt || Date.now()),
+        appointmentIds: apptIds.slice(),
+        fieldsPresent: Number(rr.fieldsPresent != null ? rr.fieldsPresent : present),
+        fieldsEmpty: Number(rr.fieldsEmpty != null ? rr.fieldsEmpty : empty),
+        filled: filled,
+        manualOverridesPreserved: preserved
+      };
+      /* persist through the store's own writers; a refused persist leaves the
+         lane incomplete without failing the row (capPersistRawCapture pattern) */
+      var persisted = safe(function () {
+        if (isFn(window.upsertPatient)) { var r = window.upsertPatient(p); return !(r === false || (r && r.ok === false)); }
+        if (isFn(window.savePatients) && isFn(window.getPatients)) { window.savePatients(window.getPatients()); return true; }
+        return true; /* harness/store keeps the live reference */
+      }, false);
+      var rowReceipt = Object.assign({ kind: "athena-coverage-v1" }, rr);
+      rowReceipt.kind = "athena-coverage-v1";
+      if (!persisted) { rowReceipt.complete = false; rowReceipt.status = "partial"; rowReceipt.reason = "coverage-persist-refused"; }
+      return { receipt: rowReceipt };
+    }
+    async function dfcCoverageStage(target, row, one, requestId) {
+      var fn = safe(function () { return window._assistReadCoverage; }, null);
+      if (typeof fn !== "function") {
+        one.coverageReceipt = { kind: "athena-coverage-v1", complete: false, status: "not-attempted", reason: "reader-not-shipped" };
+        return false; /* no reader, no attempt - never counted as one */
+      }
+      var apptIds = dfcRowAppointmentIds(row, target);
+      try {
+        var res = await Promise.resolve(fn({
+          patientId: String(target.patientId), name: target.name, dob: target.dob || "", mrn: target.mrn || "",
+          appointmentIds: apptIds, appointmentId: apptIds[0] || "",
+          scheduleDate: String(target.scheduleDate || batchRowDay(row) || "")
+        }, function () {}, { requestId: requestId + "-cov" }));
+        if (!res || res.ok === false) throw new Error(String((res && res.reason) || "coverage-read-refused"));
+        one.coverageReceipt = dfcApplyCoverage(target, res, apptIds, requestId + "-cov").receipt;
+      } catch (covErr) {
+        one.coverageReceipt = { kind: "athena-coverage-v1", complete: false, status: "refused", reason: String(covErr && covErr.message || covErr || "coverage-read-failed").slice(0, 120) };
+      }
+      return true; /* a live reader was consulted - success or refusal, it was an attempt */
+    }
+    /* ===== end dfc-1.0.0 helpers ===== */
     /* the row's HISTORY verdict. A captured chart whose summary is pending is
        a saved row - the capture is on disk, counted by the store census, and
        the summary lands on its own retry lane. */
@@ -5307,6 +5444,14 @@
           one.dobVerified = true; one.organized = true; one.organizationComplete = true;
           one.visitsComplete = true; one.visitsSkipped = pullVisitBodies !== true;
           one.complete = true;
+          /* dfc-1.0.0: a versioned-lanes skip was ADMITTED only because the
+             cachev validator proved coverage/same-day/all-history complete on
+             this same account day — the receipts here carry that proof
+             forward, they never invent a fresh read. */
+          one.coverageReceipt = { kind: "athena-coverage-v1", complete: true, status: "saved", carriedFromProof: true };
+          one.allHistoryReceipt = pullVisitBodies === true
+            ? { kind: "athena-all-history-v1", requested: true, status: "saved", complete: true, carriedFromProof: true }
+            : { kind: "athena-all-history-v1", requested: false, status: "not-requested" };
           one.chartSkippedVerifiedToday = rskProof.at;
           one.stageMs = { chartMs: 0, parseSaveMs: 0, visitsMs: 0, visitSaveMs: 0, totalMs: 0 };
           receipt.chartsSkippedVerifiedToday = Number(receipt.chartsSkippedVerifiedToday || 0) + 1;
@@ -5413,6 +5558,17 @@
             break;
           }
         }
+        /* dfc-1.0.0: the mandatory coverage lane runs once per row in BOTH
+           modes, right after the verified chart open. Its failure classes
+           land on the lane receipt only — never on the chart/visits verdicts. */
+        if (!stopAfterTimeout && rd) {
+          var __covT0 = Date.now();
+          var covAttempted = await dfcCoverageStage(target, row, one, patientRequestId);
+          one.coverageMs = Date.now() - __covT0;
+          if (covAttempted === true) receipt.insuranceAttempted = Number(receipt.insuranceAttempted || 0) + 1;
+        } else if (!one.coverageReceipt) {
+          one.coverageReceipt = { kind: "athena-coverage-v1", complete: false, status: "not-attempted", reason: stopAfterTimeout ? "batch-stopped" : "chart-unread" };
+        }
         /* Skipping visits is recorded honestly on the receipt — a skipped
            stage is never reported as verified encounter bodies. A pipelined
            entry's organizationComplete lands at finalization, after its
@@ -5421,6 +5577,9 @@
           one.visitsComplete = true;
           one.visitsSkipped = true;
           if (one.parsePipelined !== true) one.organizationComplete = one.organized;
+          /* dfc-1.0.0: day-facts mode declares the historical walk honestly
+             NOT REQUESTED — a typed receipt, never an implied absence. */
+          one.allHistoryReceipt = { kind: "athena-all-history-v1", requested: false, status: "not-requested" };
         } else if (!stopAfterTimeout && (carryProof = visitsProofCarry(target.patientId))) {
           /* si-2.0.0: the fresh chart read just refreshed this patient's index
              and it matches the stamped verified-bodies pass — nothing new to
@@ -5605,7 +5764,7 @@
               savedVisits.clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(savedVisits.profileCoverage&&savedVisits.profileCoverage.cards&&savedVisits.profileCoverage.cards[k]&&savedVisits.profileCoverage.cards[k].populated?1:0);},0);
             }
             stageMs.visitSave = Date.now() - __visitSaveT0;
-            one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||""); one.axRrWaitMs=Number(savedVisits.axRrWaitMs||0); one.axRrRecovered=savedVisits.axRrRecovered===true; one.axEntry=String(savedVisits.axEntry||""); one.fatigueRefresh=savedVisits.fatigueRefresh===true; one.hydStreak=Number(savedVisits.hydStreak||0);
+            one.visitsComplete = true; if (savedVisits.sameDay) one.sameDayReceipt = Object.assign({ kind: "athena-same-day-note-v1" }, savedVisits.sameDay); one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||""); one.axRrWaitMs=Number(savedVisits.axRrWaitMs||0); one.axRrRecovered=savedVisits.axRrRecovered===true; one.axEntry=String(savedVisits.axEntry||""); one.fatigueRefresh=savedVisits.fatigueRefresh===true; one.hydStreak=Number(savedVisits.hydStreak||0);
             /* si-facts-1.1: enrichment is best-effort and must not delay the
                proven visit-body receipt or the next row. */
             one.factsCapture = siCaptureFactsFollowup(target.patientId, one);
@@ -5652,6 +5811,17 @@
           stageMs.visits = Date.now() - __visitsT0;
         }
         if(one.visitsSkipped!==true&&one.visitsVerifiedCarry!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
+        /* dfc-1.0.0: the historical-bodies lane always answers with a TYPED
+           receipt — requested/not-requested is a declaration, never an
+           implied absence, and completion is the lane's own verdict. */
+        if (!one.allHistoryReceipt) {
+          one.allHistoryReceipt = pullVisitBodies === true
+            ? { kind: "athena-all-history-v1", requested: true,
+                status: one.visitsComplete === true ? "saved" : (one.visitsReason ? "refused" : "partial"),
+                complete: one.visitsComplete === true,
+                reason: one.visitsComplete === true ? undefined : (one.visitsReason || "history-partial") }
+            : { kind: "athena-all-history-v1", requested: false, status: "not-requested" };
+        }
         one.stageMs = { chartMs: stageMs.chart, parseSaveMs: stageMs.parseSave, visitsMs: stageMs.visits, visitSaveMs: stageMs.visitSave, totalMs: Date.now() - patientReadStartedAt };
         if (one.parsePipelined !== true) {
           one.complete = capRowComplete(one); /* cap-1.0.0 */
@@ -6054,6 +6224,17 @@
          after its two bounded attempts are spent. */
       safe(function () { niSyncFromReceipt(receipt, tnBatchDay()); });
       receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
+      /* dfc-1.0.0: the batch-level insurance verdict is a census of the
+         per-row lane receipts, never an assumption. reader-not-shipped is
+         reported only when NO row reached a live reader. */
+      safe(function () {
+        var covRows = receipt.patients.filter(function (p) { return p && p.coverageReceipt; });
+        var covOk = covRows.filter(function (p) { return p.coverageReceipt.complete === true && p.coverageReceipt.status === "saved"; });
+        var covAbsent = covRows.filter(function (p) { return String(p.coverageReceipt.reason || "") === "reader-not-shipped"; });
+        receipt.insuranceComplete = covRows.length > 0 && covOk.length === covRows.length;
+        receipt.benefitsComplete = receipt.insuranceComplete;
+        receipt.insuranceReason = receipt.insuranceComplete ? "" : (covRows.length > 0 && covAbsent.length === covRows.length ? "reader-not-shipped" : (covRows.length ? "coverage-incomplete" : "no-rows"));
+      });
       /* An empty verified provider day has no patient history targets and is
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
       if (receipt.requested === 0) receipt.exactIdentityVerified = true;
