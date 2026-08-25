@@ -1667,7 +1667,7 @@ const tests = [
   /* sbp-1.0 (live b1016+b1017, Proof 3): the day-strip "Full visit notes"
      checkbox painted ONCE at strip render - on a cold boot before the session
      namespace exists the resolver reads the placeholder 'sf_u::_::' slot,
-     answers 'unset' (= on), and the box shows CHECKED forever while the
+     answers 'unset' (= safe first-use off), and the box must repaint when the
      settled preference is off (same-tab writes fire no storage event). The
      checkbox is a VIEW of the ONE resolver: it re-paints until the answer is
      definitive, then the watcher stands down. Runs the REAL strip block

@@ -694,8 +694,9 @@ async function main() {
     /provider (?:grouping|identity|attribution).*(?:unverified|unknown|not being reported as complete)|(?:unverified|unknown).*provider (?:grouping|identity|attribution)/i.test(exactStatus),
   'the terminal status did not say appointments imported while provider grouping stayed unverified');
 
-  /* This is the real visible-button shape: includeHistory is omitted, so the
-     guarded day lane defaults it to true.  Provider-unknown census rows may
+  /* This is the real first-use visible-button shape: includeHistory is omitted,
+     so the guarded day lane fails closed to schedule-only until the clinician
+     makes the required Full Visit Notes choice. Provider-unknown census rows may
      lack DOB/MRN/local patient bindings entirely.  That must not turn an
      exact appointment import into 24 chart probes or a false history claim. */
   const button = makeHarness({
@@ -704,8 +705,8 @@ async function main() {
     chartHydrationUnavailable: true
   });
   const buttonResult = await button.api.dayPull({ date: DAY, pullVisitBodies: true, onStatus: button.onStatus });
-  assert.strictEqual(buttonResult.includeHistory, true,
-    'the real day button no longer defaults includeHistory to true');
+  assert.strictEqual(buttonResult.includeHistory, false,
+    'an omitted first-use Full Visit Notes choice did not fail closed to schedule-only');
   assert.strictEqual(buttonResult.ok, true,
     `the real day button failed the exact appointment census: ${JSON.stringify({ reason: buttonResult.reason, error: buttonResult.error })}`);
   assert.strictEqual(buttonResult.complete, true,
@@ -721,13 +722,13 @@ async function main() {
     'the real day button did not return a complete appointment-census receipt');
   assert(buttonResult.identityBootstrapReceipt && buttonResult.identityBootstrapReceipt.skipped === true,
     'provider-unknown census did not explicitly skip demographics/chart hydration');
-  assert.strictEqual(buttonResult.identityBootstrapReceipt.reason, 'provider-attribution-unavailable',
-    'demographics/chart hydration skip did not name unavailable provider attribution');
+  assert.strictEqual(buttonResult.identityBootstrapReceipt.reason, 'not-requested',
+    'schedule-only first use did not name demographics/chart hydration as not requested');
   assert(buttonResult.historyReceipt && buttonResult.historyReceipt.complete === true &&
     buttonResult.historyReceipt.skipped === true,
   'provider-unknown census did not return an explicit completed history-skip receipt');
-  assert.strictEqual(buttonResult.historyReceipt.reason, 'provider-attribution-unavailable',
-    'history skip did not name unavailable provider attribution');
+  assert.strictEqual(buttonResult.historyReceipt.reason, 'not-requested',
+    'schedule-only first use did not name history as not requested');
   assert.strictEqual(Number(buttonResult.historyReceipt.requested || 0), 0,
     'provider-unknown census claimed history rows were requested');
   assert.strictEqual(Number(buttonResult.historyReceipt.processed || 0), 0,

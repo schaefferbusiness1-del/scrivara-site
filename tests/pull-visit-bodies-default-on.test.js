@@ -9,9 +9,9 @@
  * encounter bodies is not "complete available history" (owner bar 2026-07-28:
  * first-pull completeness, no silent omissions).
  *
- * Law now: Settings may paint the completeness-first ON default while the
- * account is unset, but no reader may open encounter bodies until public
- * admission records an explicit human choice. Every low-level reader fails
+ * Law now: Settings paints a safe OFF state while the account is unset, and no
+ * reader may open encounter bodies until public admission records an explicit
+ * human choice. Every low-level reader fails
  * closed while unset; an operation-scoped explicit boolean remains frozen.
  * qol-2.0: every reader now delegates to the ONE resolver
  * (window.__mlsVisitNotesPref, mls-connect.js) — so the law is proven by
@@ -112,8 +112,8 @@ const UNS = k => 'acct::' + k;
     vm.runInContext(fn + '\nthis.__pref = pullVisitBodiesPref;', ctx, { filename: 'ScribeFlow:pullVisitBodiesPref' });
     return ctx.__pref();
   }
-  assert.strictEqual(evalPref({}), true, 'settings: no keys -> checked (ON)');
-  assert.strictEqual(evalPref({ 'acct::pullVisitBodies': '0' }), true, 'settings: legacy 0 ignored -> ON');
+  assert.strictEqual(evalPref({}), false, 'settings: no keys -> unchecked until the required choice');
+  assert.strictEqual(evalPref({ 'acct::pullVisitBodies': '0' }), false, 'settings: legacy 0 ignored -> safe OFF while unset');
   assert.strictEqual(evalPref({ 'acct::pullVisitBodies': '0', 'acct::pullVisitBodiesSet': '1' }), false,
     'settings: explicit human OFF respected');
 

@@ -8,7 +8,7 @@
  * the checkbox painted ONCE at strip render, which on a cold boot happens
  * before the session namespace exists - uns() builds the placeholder
  * 'sf_u::_::' key, the qol-2.0 resolver reads that WRONG slot, answers
- * 'unset' (= default on), and nothing ever repainted (same-tab writes fire no
+ * 'unset' (now a safe first-use OFF), and nothing ever repainted (same-tab writes fire no
  * storage event). The surface lied to the doctor about which mode the next
  * pull would use. ONE-RESOLVER law: the checkbox renders FROM the resolver,
  * never from its own key read, and re-paints on the resolver's settle.
@@ -125,8 +125,8 @@ const REAL_KEY_OFF = 'sf_u::doc@clinic.example::visitNotesModeV2';
     const storage = makeStorage();
     storage.setItem(REAL_KEY_OFF, 'off');
     const h = makeHarness({ sessionEmail: null, storage });
-    assert.strictEqual(h.tgl.checked, true,
-      'pre-settle boot paint is the documented default-ON (the resolver cannot see the real slot yet)');
+    assert.strictEqual(h.tgl.checked, false,
+      'pre-settle boot paint must fail closed OFF while the resolver cannot see the real slot yet');
     /* the session arrives (sign-in completes) */
     h.setSession('doc@clinic.example');
     assert.strictEqual(h.resolver.read().on, false, 'the settled resolver says off (fixture sanity)');
@@ -140,13 +140,13 @@ const REAL_KEY_OFF = 'sf_u::doc@clinic.example::visitNotesModeV2';
     ok('boot race healed: late session, stored OFF -> box repaints OFF from the resolver, watcher stands down');
   }
 
-  /* ---- 2. same boot race, stored ON: the box stays checked THROUGH the
-   * settle (no flicker to a wrong state, and the watcher still clears) ---- */
+  /* ---- 2. same boot race, stored ON: the box stays safely OFF until the
+   * real namespace settles, then paints ON and the watcher clears ---- */
   {
     const storage = makeStorage();
     storage.setItem('sf_u::doc@clinic.example::visitNotesModeV2', 'on');
     const h = makeHarness({ sessionEmail: null, storage });
-    assert.strictEqual(h.tgl.checked, true, 'pre-settle paint ON');
+    assert.strictEqual(h.tgl.checked, false, 'pre-settle paint fails closed OFF');
     h.setSession('doc@clinic.example');
     h.tick(); h.tick();
     assert.strictEqual(h.tgl.checked, true, 'settled ON paints ON');
@@ -169,14 +169,14 @@ const REAL_KEY_OFF = 'sf_u::doc@clinic.example::visitNotesModeV2';
     ok('settled at render: paints from the resolver both states, zero watchers armed');
   }
 
-  /* ---- 4. a REAL-namespace unset is definitive (default ON, 2026-07-28
+  /* ---- 4. a REAL-namespace unset is definitive (safe first-use OFF)
    * owner bar) - the watcher must NOT poll forever on a legitimately unset
    * preference ---- */
   {
     const h = makeHarness({ sessionEmail: 'doc@clinic.example', storage: makeStorage() });
-    assert.strictEqual(h.tgl.checked, true, 'real-namespace unset paints the default-ON law');
+    assert.strictEqual(h.tgl.checked, false, 'real-namespace unset paints safe first-use OFF');
     assert.strictEqual(h.liveTimerCount(), 0, 'real-namespace unset is DEFINITIVE - no watcher armed');
-    ok('unset through a real session namespace is definitive: default ON, no polling');
+    ok('unset through a real session namespace is definitive: safe OFF, no polling');
   }
 
   /* ---- 5. teardown/rebuild: a strip instance replaced in the DOM stops its
@@ -227,10 +227,10 @@ const REAL_KEY_OFF = 'sf_u::doc@clinic.example::visitNotesModeV2';
 
     const realUnset = makeResolver(s => 'sf_u::doc@clinic.example::' + s, makeStorage());
     const ru = realUnset.read();
-    assert.strictEqual(ru.settled, true, 'a real-namespace unset is a DEFINITIVE default-ON answer');
-    assert.strictEqual(ru.on, true, '...and keeps the 2026-07-28 default-ON law');
+    assert.strictEqual(ru.settled, true, 'a real-namespace unset is a DEFINITIVE safe first-use answer');
+    assert.strictEqual(ru.on, false, '...and stays OFF until the clinician makes the required choice');
     ok('resolver settle contract: placeholder/bug-era namespaces provisional, explicit states and real-namespace unset definitive');
   }
 
-  console.log('PASS strip-checkbox paints the resolver: boot-race repaint both states, settle watcher self-clears, definitive unset stays default-ON, teardown safe, write-through intact, resolver settle contract pinned (' + n + ' cases)');
+  console.log('PASS strip-checkbox paints the resolver: boot-race repaint both states, settle watcher self-clears, definitive unset stays safe-OFF, teardown safe, write-through intact, resolver settle contract pinned (' + n + ' cases)');
 })();

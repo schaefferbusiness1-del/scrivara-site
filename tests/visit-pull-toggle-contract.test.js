@@ -31,13 +31,13 @@ assert(/receipt\.reason = "visit-notes-off"/.test(offBlock), 'OFF has no explici
 assert(/receipt\.requested = 0/.test(offBlock) && /receipt\.processed = 0/.test(offBlock),
   'OFF still claims history work was requested or processed');
 assert(/receipt\.todayNoteFailures = 0/.test(offBlock), 'OFF can still fabricate a note failure');
-assert(/var includeHistory = opts\.includeHistory !== false && !fullNotesOff/.test(importer),
-  'the public day pull does not narrow explicit OFF to schedule-only');
+assert(/var includeHistory = visitNotesRequested === true && opts\.includeHistory !== false && !fullNotesOff/.test(importer),
+  'the public day pull does not require an admitted Full Notes choice or narrow explicit OFF to schedule-only');
 
 assert(connect.includes("id=\"mlsDsVisitBodies\""), 'day-pull card must expose the Full visit notes toggle');
 assert(connect.includes('r.write(tgl.checked === true)'), 'toggle must persist through the ONE resolver (which owns the namespaced keys)');
-assert(connect.includes("tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true"),
-  'toggle UI must paint the resolved tri-state, defaulting ON (2026-07-28 supersession)');
+assert(connect.includes("tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : false"),
+  'toggle UI must paint the resolved tri-state and fail closed OFF when the resolver is unavailable');
 
 assert(connect.includes("id = 'mlsDsPullBar'"), 'day pull must render a progress bar');
 assert(connect.includes('(\\d+)\\s+of\\s+(\\d+)') || /\(\\d\+\)\\s\+of\\s\+\(\\d\+\)/.test(connect) || connect.includes('match(/(\\d+)\\s+of\\s+(\\d+)/)'), 'progress bar must parse X of N counts');

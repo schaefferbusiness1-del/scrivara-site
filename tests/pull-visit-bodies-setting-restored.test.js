@@ -28,14 +28,14 @@ assert(!/mlsDsStrip[\s\S]{0,600}setPullVisitBodies/.test(app),
   'the restored control must NOT sit beside the pull button');
 
 /* One stored truth, both consumers served. 2026-07-28: the shared truth is
-   the tri-state pullVisitBodiesPref() — DEFAULT ON, a recorded human choice
+   the tri-state pullVisitBodiesPref() — safe OFF while unset, a recorded human choice
    (the pullVisitBodiesSet marker) respected in both directions, the legacy
    code-authored '0' ignored. Execution-proven in
    tests/pull-visit-bodies-default-on.test.js; source-pinned here. */
 const fn = app.slice(app.indexOf('function pullVisitBodiesPref()'), app.indexOf('TWO-FACTOR AUTH (enrollment'));
 /* qol-2.0: the page no longer touches storage keys — it reads and writes
    THROUGH the ONE resolver, which owns the keys and the human-choice marker.
-   The default-ON law and the marker are execution-proven on the REAL shipped
+   The safe first-use OFF law and the marker are execution-proven on the REAL shipped
    resolver here and in pull-visit-bodies-default-on. */
 assert(fn.includes("r.read().on===true"), 'renders the resolved tri-state (same resolver the importer consults)');
 assert(fn.includes('r.write(cb.checked===true)'), 'writes THROUGH the resolver, never the raw keys');
@@ -46,7 +46,7 @@ assert(fn.includes('cb.checked=pullVisitBodiesPref()'), 'the checkbox renders th
   const { makeResolver } = require('./lib-visit-notes-resolver.js');
   const map = {};
   const res = makeResolver(k => 'acct::' + k, { getItem: k => (k in map ? map[k] : null), setItem: (k, v) => { map[k] = String(v); }, removeItem: k => { delete map[k]; } });
-  assert.strictEqual(res.read().on, true, 'default is ON unless a recorded human choice says otherwise (2026-07-28 supersession, executed on the shipped resolver)');
+  assert.strictEqual(res.read().on, false, 'unset stays OFF until a recorded human choice says otherwise (executed on the shipped resolver)');
   assert.strictEqual(res.read().state, 'unset', 'no stored choice resolves as unset, not as a fake decision');
   assert.strictEqual(res.write(false), true, 'a human change is read-back confirmed');
   assert.strictEqual(map['acct::pullVisitBodiesSet'], '1', 'a human change records the human-choice marker');
@@ -61,4 +61,4 @@ assert(/renderTwofaSettings\(\);\s*\n\s*renderPullVisitBodiesSetting\(\);/.test(
 assert(/mlsDsVisitTgl/.test(calm), 'the calm-shell hide of the inline toggle is the reason this Settings option exists');
 assert(connect.includes('id="mlsDsVisitBodies"'), 'the inline checkbox node must keep existing for the relay lane');
 
-console.log('PASS pull-visits setting restored: separated Settings home, one stored truth, inline node mirrored, bodies-on default with human choice respected');
+console.log('PASS pull-visits setting restored: separated Settings home, one stored truth, inline node mirrored, safe first-use OFF with human choice respected');

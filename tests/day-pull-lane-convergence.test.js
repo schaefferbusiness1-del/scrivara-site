@@ -99,8 +99,8 @@ const dayPullBlock = si.slice(si.indexOf('function dayPull(opts) {'), si.indexOf
 assert(dayPullBlock.length > 400, 'dayPull could not be isolated');
 assert(dayPullBlock.includes('.then(null, function () {'),
   'dayPull must swallow a pre-flight rejection - the pre-flight cannot refuse a pull');
-assert(dayPullBlock.includes('if (runOpts.includeHistory === undefined) runOpts.includeHistory = true;'),
-  'verified history must default ON through the converged entry');
+assert(dayPullBlock.includes('if (runOpts.includeHistory === undefined) runOpts.includeHistory = false;'),
+  'the converged entry must fail closed to schedule-only until Full Notes is explicitly chosen');
 /* pull() is closed over inside the module, so the non-promise engine branch
    cannot be reached from a vm arm without replacing the engine itself. Pin the
    exact refusal the strip used to raise instead of faking a success. */
@@ -115,7 +115,7 @@ function createHarness(opts) {
   opts = opts || {};
   const listeners = new Set();
   const store = new Map();
-  /* 2026-07-28: visit bodies default ON. This suite proves LANE CONVERGENCE
+  /* An explicit choice governs visit-body reads. This suite proves LANE CONVERGENCE
      (the columnless Day grid pulls at all), not the bodies stage — its fake
      bridge serves chart cards only. Record an explicit human fast-lane choice
      so the scenario stays what it always was. */

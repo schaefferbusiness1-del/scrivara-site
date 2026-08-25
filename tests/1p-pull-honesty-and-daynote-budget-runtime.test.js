@@ -456,7 +456,8 @@ function visitPrefCase(connectPath) {
 
 {
   const fixed = visitPrefCase(path.join(ROOT, '1p-mls-connect.js'));
-  eq(fixed.atBuild.checked, true, 'fixture drift: an unset preference must paint the box ON');
+  eq(fixed.atBuild.checked, false,
+    'an unset first-use preference must paint the box OFF until the clinician makes the required choice');
   eq(fixed.atBuild.read.state, 'unset', 'fixture drift: the resolver did not start unset');
   eq(fixed.after.read.on, false, 'the write did not land');
   eq(fixed.after.checked, false,

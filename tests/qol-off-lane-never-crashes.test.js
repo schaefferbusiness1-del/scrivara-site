@@ -9,8 +9,8 @@ const si = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exac
 
 assert.ok(si.includes('var fullNotesOff = visitNotesRequested === false;'),
   'the explicit OFF admission state is missing');
-assert.ok(si.includes('var includeHistory = opts.includeHistory !== false && !fullNotesOff;'),
-  'OFF can still admit the chart/history batch');
+assert.ok(si.includes('var includeHistory = visitNotesRequested === true && opts.includeHistory !== false && !fullNotesOff;'),
+  'anything short of an explicit admitted ON can still enter the chart/history batch');
 assert.ok(si.includes('var pulledDayNoteLaneEnabled = false;'),
   'the retired inline day-note lane is enabled');
 assert.ok(si.includes('var pulledDayNoteTailEnabled = false;'),
