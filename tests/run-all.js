@@ -829,6 +829,7 @@ const tests = [
   'athena-procedure-note-placement-runtime.test.js',
   'athena-generated-soap-staging-runtime.test.js',
   'athena-generated-soap-provenance-runtime.test.js',
+  'athena-crosslayer-bridge-payload-runtime.test.js',
   'athena-inline-canonical-generation-runtime.test.js',
   'athena-opnote-loader-boundary-contract.test.js',
   'destination-teaching-runtime.test.js',
