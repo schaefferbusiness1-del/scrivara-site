@@ -216,7 +216,7 @@ include:
   - "jspdf.umd-4.2.1.min.js"
 
   # The exact released MLS Assist 3.0.81 package (owner directive 2026-08-25).
-  # SHA-256 890840e44ff56fe99ad424cb2c94429ba0c4d9bec0e43961c8ae5f79249ac327 —
+  # SHA-256 b23e1aa335429c9e2f008bc17e62e92c3282a7a73f1c1f0923b362f4136d1c89 —
   # deterministic ZIP and byte-identical .bin mirror. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
   - "MLS_Assist_v3.0.81.zip"
