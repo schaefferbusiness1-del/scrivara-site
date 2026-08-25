@@ -25002,8 +25002,19 @@ function pullScheduleViaAssist(btn, opts){
             return;
           }
           await _importPulledSchedule(appts);
-          // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
-          try{ await _pullAllHistories(appts); }catch(_h){}
+          /* vnoff-1.0.0: this legacy body (live only on a build with no
+             guarded engine) crawled EVERY chart's history regardless of the
+             admitted Full-visit-notes choice — an explicit OFF still opened
+             patient charts on this one path. The choice the admission gate
+             froze into opts.__pullVisitBodies governs here too: OFF (or a
+             missing flag) stays schedule-only, matching the guarded engine's
+             pullUnlocked() boundary. */
+          if(opts.__pullVisitBodies===true){
+            // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
+            try{ await _pullAllHistories(appts); }catch(_h){}
+          } else {
+            setS('Imported '+appts.length+' appointment row'+(appts.length===1?'':'s')+'. Full visit notes is off — no patient charts were opened.','ok');
+          }
         }catch(err){ setS('Couldn’t parse the schedule. Open Athena’s Day schedule view and try again.','err'); }
         finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } }
       })();
