@@ -132,6 +132,19 @@ async function runtime() {
           athenaProfileCoverage: undefined,
           athenaChartImportedAt: undefined,
           athenaChartSnapshot: JSON.stringify({ problems: ['Snapshot-only problem'] })
+        }),
+        resolvedVisits: paint('prep-source-browser-visits', {
+          visits: [
+            { date: '2026-08-24', source: 'athena-visit', raw: 'Assessment: newest Athena encounter.' },
+            { date: '2026-08-20', source: 'athena-visit', raw: 'Assessment: encounter two.' },
+            { date: '2026-08-15', source: 'athena-visit', raw: 'Assessment: encounter three.' },
+            { date: '2026-08-10', source: 'athena-visit', raw: 'Assessment: encounter four.' },
+            { date: '2026-08-05', source: 'athena-visit', raw: 'Assessment: encounter five.' },
+            { date: '2026-07-25', source: 'athena-visit', raw: 'Assessment: encounter six.' },
+            { date: '2026-07-15', source: 'athena-visit', raw: 'Assessment: encounter seven.' },
+            { date: '2026-07-05', source: 'athena-visit', raw: 'Assessment: encounter eight.' },
+            { date: '2026-06-25', source: 'athena-visit', raw: 'Assessment: encounter nine.' }
+          ]
         })
       };
     });
@@ -152,9 +165,15 @@ async function runtime() {
     assert.match(result.snapshotOnly,
       /SOURCE: CLINICAL DATA PRESENT — no identity-verified Athena pull receipt is attached/,
       'snapshot contents without a receipt must be shown as unverified data, not a false pulled/not-pulled claim');
+    assert.match(result.resolvedVisits, /LAST VISIT: 9 visits on file, last seen 2026-08-24/,
+      'the visible prep card contradicted the profile resolver with "No prior visits"');
+    assert.match(result.resolvedVisits, /Assessment: newest Athena encounter\./,
+      'the visible prep card did not use the canonical newest encounter body');
+    assert.doesNotMatch(result.resolvedVisits, /LAST VISIT: No prior visits on file/,
+      'the old patientNotes-only empty state is still visible for a pulled chart');
 
     assert.strictEqual(errors.length, 0, `shipped SOURCE-row browser flow raised page errors: ${errors.join(' | ')}`);
-    console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states passed');
+    console.log('prep-summary-source-browser-runtime: 5 visible SOURCE states + canonical 9-visit state passed');
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

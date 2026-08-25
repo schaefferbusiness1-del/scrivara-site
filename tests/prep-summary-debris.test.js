@@ -74,7 +74,39 @@ ctx2.globalThis = ctx2;
 vm.createContext(ctx2);
 vm.runInContext(epSrc, ctx2);
 const ep = winStub2.__mlsEasyPrep;
-assert.ok(ep && ep.version === '1.2.1', 'easy-prep v1.2.1 expected, got ' + (ep && ep.version));
+assert.ok(ep && ep.version === '1.2.2', 'easy-prep v1.2.2 expected, got ' + (ep && ep.version));
+
+/* Every patient-history surface must use pvr-1.0.0's canonical resolver.
+   A pulled chart normally has p.visits[] but no locally-authored patientNotes;
+   that exact shape produced the live "9 visits" / "No prior visits" split. */
+const canonicalPatient = {
+  id: 'patient-canonical-visits', name: 'Canonical Visit Patient',
+  visits: [
+    { date: '2026-08-24', raw: 'Assessment: latest resolved encounter.' },
+    { date: '2026-07-01', raw: 'Assessment: older resolved encounter.' }
+  ]
+};
+winStub2.__mlsPtVisits = {
+  resolve(patient) {
+    assert.strictEqual(patient, canonicalPatient, 'Easy Prep did not pass the exact patient object to the resolver');
+    return {
+      count: 9,
+      entries: [
+        { date: '2026-08-24', body: 'Assessment: latest resolved encounter.', row: canonicalPatient.visits[0] },
+        { date: '2026-07-01', body: 'Assessment: older resolved encounter.', row: canonicalPatient.visits[1] }
+      ]
+    };
+  }
+};
+const canonicalInfo = ep.lastVisitInfo(canonicalPatient);
+assert.deepStrictEqual(JSON.parse(JSON.stringify(canonicalInfo)), {
+  count: 9, lastDate: '2026-08-24', lastExcerpt: 'Assessment: latest resolved encounter.'
+}, 'Easy Prep diverged from the canonical visit count/latest encounter');
+const canonicalSummary = ep.buildPrepSummaryForPatient(canonicalPatient);
+assert.match(canonicalSummary, /LAST VISIT: 9 visits on file, last seen 2026-08-24/,
+  'Easy Prep still said no prior visits when the canonical resolver had nine');
+assert.match(canonicalSummary, /Assessment: latest resolved encounter\./,
+  'Easy Prep did not use the canonical newest encounter excerpt');
 
 const cleaned = ep.scrubPageDebris('Pulled from Athena 7/16/2026 —\n' + JUNK + '\nRecent visits:\n• 2026-07-16 — ' + JUNK);
 assert.ok(!/window\.|Jotter|Print Premier Ortho|id #7731709/i.test(cleaned), 'prep display scrub: ' + cleaned);

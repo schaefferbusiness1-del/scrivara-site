@@ -2340,9 +2340,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.1') return; } catch (e) { return; }
+  try { if (window.__mlsEasyPrep && window.__mlsEasyPrep.version === '1.2.2') return; } catch (e) { return; }
 
-  var VERSION = '1.2.1';
+  var VERSION = '1.2.2';
 
   /* ---------- tiny helpers (mirrors the live app's own conventions) ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -2415,10 +2415,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return manual || null;
   }
 
-  // Last visit date + count, computed the same way the live at-a-glance chips
-  // and studioDataSnapshot() already do (via patientNotes), so numbers always
-  // agree with what's already on screen.
-  function lastVisitInfo(patientId) {
+  // Last visit date + count come from pvr-1.0.0, the ONE resolver shared by
+  // the profile visit tile, History room and Legal chronology. Athena pulls
+  // store encounters on p.visits[]; patientNotes() contains only notes made in
+  // MLS. Reading patientNotes alone therefore made the same chart say both
+  // "9 visits" and "No prior visits". Keep the id form for older callers, but
+  // prefer the patient object so the resolver reads the exact record on screen.
+  function lastVisitInfo(patientOrId) {
+    var p = (patientOrId && typeof patientOrId === 'object') ? patientOrId : null;
+    var patientId = p ? S(p.id) : S(patientOrId);
+    if (!p && patientId) {
+      try { p = isFn(window.findPatient) ? window.findPatient(patientId) : null; } catch (e) {}
+    }
+    try {
+      var api = window.__mlsPtVisits;
+      if (p && api && isFn(api.resolve)) {
+        var resolved = api.resolve(p);
+        if (resolved && resolved.entries && resolved.entries.length !== undefined) {
+          var entries = [].slice.call(resolved.entries);
+          var first = entries[0] || null; // resolver guarantees newest first
+          var row = first && (first.row || first.noteRow);
+          var excerpt = S(first && (first.body || first.summary) ||
+            row && (row.raw || row.detail || row.text || row.note || row.soap || row.findings || row.plan))
+            .replace(/\s+/g, ' ').trim().slice(0, 160);
+          return {
+            count: Math.max(0, Number(resolved.count) || 0),
+            lastDate: S(first && (first.date || first.rawDate)).slice(0, 10),
+            lastExcerpt: excerpt
+          };
+        }
+      }
+    } catch (e) {}
+
+    // Compatibility fallback for a shell that has not installed pvr yet.
     var notes = [];
     try { notes = (isFn(window.patientNotes) ? window.patientNotes(patientId) : []) || []; } catch (e) {}
     var dates = notes.map(function (n) { return S(n.date || n.note_date || n.created_at).slice(0, 10); }).filter(Boolean).sort();
@@ -2821,7 +2850,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function buildPrepSummaryForPatient(p) {
     if (!p) return '';
     var appt = apptContext(p);
-    var lv = lastVisitInfo(p.id);
+    var lv = lastVisitInfo(p);
     var provenance = athenaChartProvenance(p);
     var emptyText = prepEmptyText(p);
     if (provenance.partial === true) {
@@ -52497,14 +52526,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var boxes = [];
     if (p) {
       var lastV = null, appt = null, vit = '';
-      try { lastV = (typeof ep.lastVisitInfo === 'function') ? ep.lastVisitInfo(p.id) : null; } catch (e) {}
+      try { lastV = (typeof ep.lastVisitInfo === 'function') ? ep.lastVisitInfo(p) : null; } catch (e) {}
       try { appt = (typeof ep.apptContext === 'function') ? ep.apptContext(p) : null; } catch (e) {}
       try { var bmi = (typeof ep.resolveBmi === 'function') ? ep.resolveBmi(p) : (p.bmi || ''); var vv = (p.vitals && typeof p.vitals === 'object') ? p.vitals : {}; vit = [vv.bp ? ('BP ' + vv.bp) : '', vv.hr ? ('HR ' + vv.hr) : '', bmi ? ('BMI ' + bmi) : ''].filter(Boolean).join(' \u00b7 '); } catch (e) {}
-      /* pvr-1.0.0: ONE resolver answers "how many visits". lastVisitInfo counts
-         the notes store INCLUDING drafts; _renderProfAtGlance counted the same
-         store EXCLUDING them; the timeline counted p.visits[]; the rail picker
-         counted scheduled appointment rows. Four readers, four rules, and the
-         owner's chart truthfully showed 0, 1 and 3 at the same instant. */
+      /* pvr-1.0.0: ONE resolver answers "how many visits". Easy Prep now asks
+         the same resolver too; its compatibility fallback is used only before
+         pvr installs. The timeline and the strip therefore cannot disagree
+         merely because Athena encounters live on p.visits[] rather than in the
+         locally-authored note store. */
       var vres = null; try { if (window.__mlsPtVisits && typeof window.__mlsPtVisits.resolve === 'function') vres = window.__mlsPtVisits.resolve(p); } catch (e) {}
       var vcount = vres ? vres.count : (lastV && lastV.count) || 0;
       var vlast = '';
