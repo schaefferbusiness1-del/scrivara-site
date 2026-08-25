@@ -14929,6 +14929,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       try {
         var lis = W.document.querySelectorAll('li.chart-tabs__list-item[data-chart-section-id="' + sectionId + '"],[data-chart-section-id="' + sectionId + '"]');
         var seen = [], survivors = [];
+        clickRailByAttr._nearMiss = 0; /* wcl-1.0.1: rail+geometry candidates rejected ONLY by the sibling signature - surfaced in the no-rail refusal so a rare valid layout is reportable from live QA instead of silently refusing */
         for (var qi = 0; qi < lis.length; qi++) {
           var li = lis[qi];
           var dup = false;
@@ -14954,7 +14955,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
               if (sibScope.querySelector && sibScope.querySelector('[data-chart-section-id="' + sibIds[si] + '"]')) sibs++;
             }
           } catch (eSib) { sibs = 0; }
-          if (sibs < 2) continue;
+          if (sibs < 2) { clickRailByAttr._nearMiss++; continue; }
           survivors.push(li);
         }
         if (survivors.length === 1) { realClick(survivors[0]); return true; }
@@ -14972,7 +14973,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       if (!clicked) await sleep(700);
     }
     if (railAmbiguous) return { ok: false, reason: 'rail-ambiguous', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'More than one verified-looking left-rail "Visits" target is on screen, so MLS refused to guess which chart it belongs to (wcl-1.0.0) - nothing was clicked or captured. Close extra chart panels or windows in athenaOne, then retry.' };
-    if (!clicked) return { ok: false, reason: 'no-rail', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The left-rail "Visits" item was not found on the open chart. Refusing to read any other surface as if it were the verified Visits pane (wf_6) - nothing was captured.' };
+    if (!clicked) return { ok: false, reason: 'no-rail', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The left-rail "Visits" item was not found on the open chart. Refusing to read any other surface as if it were the verified Visits pane (wf_6) - nothing was captured.' + ((clickRailByAttr._nearMiss > 0) ? (' Note: ' + clickRailByAttr._nearMiss + ' rail-shaped Visits candidate(s) were rejected only by the sibling-signature guard (wcl-1.0.1) - if this chart layout is legitimate, report it.') : '') };
     /* ---- 6) wait for the "Visits and Cases" pane (light DOM, live-verified:
        fully readable via innerText). Absolute deadline + short sleeps. */
     var paneDeadline = Date.now() + 16000, paneSeen = false, paneText = '';
