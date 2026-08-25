@@ -2265,6 +2265,14 @@
 
   // ---- main flow -------------------------------------------------------------
   var running = false;
+  function selectedHistoryRunning() { return running === true; }
+  function setSelectedHistoryRunning(next) {
+    running = next === true;
+    /* This transition is also the admission gate for the separate toolbar
+       action.  Do not wait for ensureBar's 900ms maintenance cadence: during
+       that gap a second Athena driver could be started against the same tab. */
+    try { syncOpenPatientPullVisibility(!!activeP()); } catch (eVisibility) {}
+  }
   function run(onStatus, patientOverride, runOpts) {
     if (running) return Promise.resolve();
     runOpts = runOpts && typeof runOpts === 'object' ? runOpts : {};
@@ -2282,7 +2290,7 @@
         }, false);
       }
     } catch (eTarget) { targetRef = null; }
-    running = true;
+    setSelectedHistoryRunning(true);
     var engaged = false;
     var st = function (m) { try { onStatus && onStatus(m); } catch (e) {} };
     st('Connecting to MLS Assist…');
@@ -2392,8 +2400,8 @@
       var saved = saveVisits(p, identity, visits, st, res.receipt || null);
       st('Saved ' + saved + ' visit' + (saved === 1 ? '' : 's') + '. Generating AI summaries…');
       return ensureAndDone(p, st, false);
-    }).then(function (r) { running = false; return r; }, function (err) {
-      running = false; st('⚠ ' + (err && err.message || 'Failed.')); throw err;
+    }).then(function (r) { setSelectedHistoryRunning(false); return r; }, function (err) {
+      setSelectedHistoryRunning(false); st('⚠ ' + (err && err.message || 'Failed.')); throw err;
     });
   }
 
@@ -2456,32 +2464,182 @@
       document.querySelector('#mlsVisitHistory .mlsvh-head') || null;
   }
 
-  var PULL_HIDE_OWNER = 'data-mls-visits-selected-hide';
+  /* The Patients toolbar and the selected-profile history action are different
+     verbs. #ptPullAthenaBtn reads WHOEVER is already open in Athena; the
+     history button reads THIS selected MLS patient. The old selected-patient
+     owner hid the first control with inline display:none, so the only recovery
+     door disappeared precisely when a selected record and the open Athena
+     chart differed. Keep both distinct verbs, but give visibility to one state
+     owner that fails closed while Athena is unavailable, another managed pull
+     is driving the tab, recording is live, or identity is explicitly unsafe. */
+  var OPEN_PULL_STATE = 'data-mls-open-patient-state';
+  var OPEN_PULL_OWNER = 'data-mls-open-patient-owner';
+  var OPEN_PULL_OWNER_VALUE = 'feat-visits-v2';
+  var OPEN_PULL_HIDDEN = 'data-mls-open-patient-hidden';
+  var OPEN_PULL_CSS = 'mlsOpenPatientVisibilityCss';
+  var OPEN_PULL_GUARD = '__mlsOpenPatientGuardFeatVisitsV2';
+
+  function recordingNow() {
+    try { if (document.body && document.body.classList.contains('mls-recording')) return true; } catch (e0) {}
+    try { if (typeof capturing !== 'undefined' && capturing === true) return true; } catch (e1) {}
+    var capture = document.getElementById('captureBtn');
+    if (!capture) return false;
+    try { if (capture.classList.contains('recording')) return true; } catch (e2) {}
+    return /stop visit|stop recording|pause recording|recording now/i.test(S(capture.textContent));
+  }
+
+  function managedPullNow() {
+    /* The selected-patient full-history engine owns `running` in this same
+       closure. Read that authoritative flag directly: publishing a mirrored
+       boolean would create a second truth owner and could leave this patient-
+       switching action visible while the history reader drives Athena. */
+    if (selectedHistoryRunning()) return true;
+    try { var ap = window.__mlsAthenaAutoPull; if (ap && isFn(ap.isBusy) && ap.isBusy()) return true; } catch (e0) {}
+    try { if (typeof window.__mlsPtsPullActive === 'function' && window.__mlsPtsPullActive()) return true; } catch (e1) {}
+    try { var day = window.__mlsDayHistoryPull; if (day && day.state && day.state.running) return true; } catch (e2) {}
+    try { var month = window.__mlsProvMonthPull; if (month && month.running) return true; } catch (e3) {}
+    try {
+      var easy = window.__mlsEasyV32;
+      if (easy && isFn(easy.state)) { var state = easy.state(); if (state && state.pull && state.pull.running) return true; }
+    } catch (e4) {}
+    return false;
+  }
+
+  function identityUnsafeNow() {
+    try { if (window.__mlsAthenaIdentityUnsafe === true) return true; } catch (e0) {}
+    try {
+      var body = document.body;
+      if (body && (body.getAttribute('data-mls-athena-identity-unsafe') === '1' ||
+        body.getAttribute('data-mls-athena-identity-safe') === 'false')) return true;
+    } catch (e1) {}
+    return false;
+  }
+
+  function connectionHiddenReason() {
+    /* __mlsConnTruth is the shipped connection authority. In production the
+       status-dot object is preseeded before it has a state, so consulting the
+       dot first lets a stale __mlsEzConn.ok=true incorrectly override a real
+       no-tab result. When ConnTruth is present, only its explicit `connected`
+       status admits this control; lesser signals are fallbacks only. */
+    var truth = null, described = null, status = '';
+    try { truth = window.__mlsConnTruth || null; } catch (e0) { truth = null; }
+    if (truth && isFn(truth.describe)) {
+      try { described = truth.describe(); } catch (e1) { described = null; }
+      status = S(described && described.status).toLowerCase();
+      if (status === 'connected') return '';
+      if (status === 'no-tab') return 'athena-no-tab';
+      if (status === 'no-extension') return 'athena-no-extension';
+      if (status === 'error') return 'athena-error';
+      return 'athena-checking';
+    }
+    var dot = null;
+    try { dot = window.__mlsAthenaStatusDot || null; } catch (e2) { dot = null; }
+    if (dot && S(dot.state)) return S(dot.state) === 'connected' ? '' : 'athena-unavailable';
+    try {
+      var easy = window.__mlsEzConn;
+      if (easy && typeof easy.ok === 'boolean') return easy.ok === true ? '' : 'athena-unavailable';
+    } catch (e3) {}
+    return ''; /* unknown during boot is not a false "no Athena" claim */
+  }
+
+  function openPatientPullHiddenReason() {
+    if (recordingNow()) return 'recording';
+    if (managedPullNow()) return 'pull-in-flight';
+    if (identityUnsafeNow()) return 'identity-unsafe';
+    var connectionReason = connectionHiddenReason();
+    if (connectionReason) return connectionReason;
+    try {
+      if (typeof window.pullPatientFromAthenaPrompt !== 'function' &&
+        !(window.__mlsAthenaAutoPull && isFn(window.__mlsAthenaAutoPull.run))) return 'handler-unavailable';
+    } catch (e0) { return 'handler-unavailable'; }
+    return '';
+  }
+
+  function ownerEligible(btn) {
+    return !!(btn && btn.getAttribute(OPEN_PULL_OWNER) === OPEN_PULL_OWNER_VALUE);
+  }
+
+  function ensureOpenPullCss() {
+    if (document.getElementById(OPEN_PULL_CSS)) return;
+    var style = document.createElement('style');
+    style.id = OPEN_PULL_CSS;
+    style.textContent = '[' + OPEN_PULL_HIDDEN + '="1"]{display:none!important;}';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function visiblyAvailable(btn) {
+    if (!btn || btn.hidden || btn.getAttribute('aria-hidden') === 'true') return false;
+    if (btn.style.getPropertyValue('display') === 'none') return false;
+    try {
+      var cs = getComputedStyle(btn);
+      return cs.display !== 'none' && cs.visibility !== 'hidden' && btn.getClientRects().length > 0;
+    } catch (e) { return true; }
+  }
+
+  function hideOwnedControl(btn) {
+    if (!ownerEligible(btn)) return false;
+    ensureOpenPullCss();
+    /* Attribute + scoped CSS is this owner's entire visibility effect. It
+       never edits hidden/display/aria-hidden, so a simultaneous preview/auth/
+       role hide remains effective when this attribute is later removed. */
+    btn.setAttribute(OPEN_PULL_HIDDEN, '1');
+    return true;
+  }
+
+  function revealOwnedControl(btn) {
+    if (!ownerEligible(btn) || btn.getAttribute(OPEN_PULL_HIDDEN) !== '1') return false;
+    /* Remove only our own CSS gate. Every pre-existing or later owner remains. */
+    btn.removeAttribute(OPEN_PULL_HIDDEN);
+    return true;
+  }
+
+  function installOpenPullActionGuard() {
+    try {
+      if (window[OPEN_PULL_GUARD]) return;
+      var guard = function (event) {
+        var target = event && event.target;
+        var btn = target && target.closest ? target.closest('#ptPullAthenaBtn') : null;
+        if (!ownerEligible(btn)) return;
+        var reason = openPatientPullHiddenReason();
+        if (!reason) return;
+        /* Visibility is presentation; this capture listener is the matching
+           action-boundary gate. Extension-panel code also calls btn.click(),
+           so it must be refused before the inline pull handler can run. */
+        try { syncOpenPatientPullVisibility(!!activeP()); } catch (eSync) {}
+        /* PullVerb's shipped capture listener can run before this one and queue
+           a zero-delay busy fallback. Settle that exact queued click through
+           its canonical terminal event, but never clear a genuine auto-pull. */
+        var autoBusy = false;
+        try {
+          var autoPull = window.__mlsAthenaAutoPull;
+          autoBusy = !!(autoPull && isFn(autoPull.isBusy) && autoPull.isBusy());
+        } catch (eAutoBusy) { autoBusy = false; }
+        if (!autoBusy) {
+          try { window.dispatchEvent(new CustomEvent('mls:athena-autopull-state', { detail: { busy: false, reason: 'preflight-blocked' } })); } catch (eSettleVisual) {}
+        }
+        try { event.preventDefault(); } catch (ePrevent) {}
+        try { event.stopImmediatePropagation(); } catch (eImmediate) {}
+        try { event.stopPropagation(); } catch (eStop) {}
+      };
+      document.addEventListener('click', guard, true);
+      window[OPEN_PULL_GUARD] = guard;
+    } catch (eGuard) {}
+  }
+
   function syncOpenPatientPullVisibility(selected) {
     var btn = document.getElementById('ptPullAthenaBtn');
-    if (!btn) return;
-    if (selected) {
-      if (btn.getAttribute(PULL_HIDE_OWNER) !== '1') {
-        btn.setAttribute(PULL_HIDE_OWNER, '1');
-        btn.setAttribute('data-mls-visits-prior-hidden', btn.hidden ? '1' : '0');
-        btn.setAttribute('data-mls-visits-prior-display', btn.style.getPropertyValue('display') || '');
-        btn.setAttribute('data-mls-visits-prior-display-priority', btn.style.getPropertyPriority('display') || '');
-      }
-      btn.hidden = true;
-      btn.style.setProperty('display', 'none', 'important');
-      return;
+    if (!btn) return '';
+    if (!ownerEligible(btn)) return 'not-owner-eligible';
+    var reason = openPatientPullHiddenReason();
+    if (reason) {
+      btn.setAttribute(OPEN_PULL_STATE, reason);
+      hideOwnedControl(btn);
+      return reason;
     }
-    if (btn.getAttribute(PULL_HIDE_OWNER) !== '1') return;
-    var priorHidden = btn.getAttribute('data-mls-visits-prior-hidden') === '1';
-    var priorDisplay = btn.getAttribute('data-mls-visits-prior-display') || '';
-    var priorPriority = btn.getAttribute('data-mls-visits-prior-display-priority') || '';
-    btn.style.removeProperty('display');
-    if (priorDisplay) btn.style.setProperty('display', priorDisplay, priorPriority);
-    btn.hidden = priorHidden;
-    btn.removeAttribute(PULL_HIDE_OWNER);
-    btn.removeAttribute('data-mls-visits-prior-hidden');
-    btn.removeAttribute('data-mls-visits-prior-display');
-    btn.removeAttribute('data-mls-visits-prior-display-priority');
+    revealOwnedControl(btn);
+    btn.setAttribute(OPEN_PULL_STATE, visiblyAvailable(btn) ?
+      (selected ? 'visible-with-selected-patient' : 'visible') : 'preserved-hidden');
+    return '';
   }
 
   function setContextLabel(bar, p) {
@@ -2538,6 +2696,7 @@
   }
 
   function ensureBar() {
+    installOpenPullActionGuard();
     var p = activeP();
     syncOpenPatientPullVisibility(!!p);
     if (!p) { var gone = document.getElementById('mlsCopyVisitsBar'); if (gone) gone.remove(); return; }
@@ -2605,6 +2764,7 @@
 
   window.__mlsCopyVisits = {
     run: run,
+    isRunning: selectedHistoryRunning,
     _verifyIdentity: verifyIdentity,
     _explicitVisitIdentity: explicitVisitIdentity,
     _visitIdentityAgrees: visitIdentityAgrees,
@@ -2614,6 +2774,7 @@
     _ensureBar: ensureBar,
     _historyNeedsDetailRetry: historyNeedsDetailRetry,
     _syncOpenPatientPullVisibility: syncOpenPatientPullVisibility,
+    _openPatientPullHiddenReason: openPatientPullHiddenReason,
     _fullNotesAdmission: fullNotesAdmission
   };
 })();

@@ -1,12 +1,11 @@
 'use strict';
 
-/* The open-patient profile used to show two competing Athena pulls: the
- * patient-list toolbar action and a full-history action above the profile.
- * This drives the real feat_visits.js UI owner in Chromium and proves that the
- * existing full-history action has one DOM owner, lives in the visible Visit
- * history header, tells a complete history from a partial one, and returns the
- * toolbar action exactly when the patient selection is cleared. No pull is
- * executed and no patient data leaves this synthetic page. */
+/* The open-patient profile has two deliberately different Athena verbs: the
+ * toolbar reads whoever is open in Athena, while the history action refreshes
+ * the selected MLS patient. This drives the real feat_visits.js UI owner in
+ * Chromium and proves that neither distinct recovery door hides or duplicates
+ * the other. No pull is executed and no patient data leaves this synthetic
+ * page. */
 
 const assert = require('assert');
 const path = require('path');
@@ -19,7 +18,7 @@ const root = path.resolve(__dirname, '..');
   const page = await browser.newPage();
   try {
     await page.setContent(`<!doctype html><html><head></head><body>
-      <button id="ptPullAthenaBtn" style="display:inline-flex">Pull the open patient in Athena</button>
+      <button id="ptPullAthenaBtn" data-mls-open-patient-owner="feat-visits-v2" style="display:inline-flex">Pull the open patient in Athena</button>
       <section id="profileCard">
         <div id="mlsVisitHistoryExt">
           <div class="mlsxh-head"><div class="mlsxh-title">Visit history</div></div>
@@ -41,6 +40,8 @@ const root = path.resolve(__dirname, '..');
         ? window.__activeSyntheticPatient : null;
       window.upsertPatient = () => true;
       window.savePatients = () => true;
+      window.pullPatientFromAthenaPrompt = () => true;
+      window.__mlsAthenaStatusDot = { state: 'connected' };
     });
 
     await page.addScriptTag({ path: path.join(root, 'feat_visits.js') });
@@ -61,8 +62,9 @@ const root = path.resolve(__dirname, '..');
         readOnlyText: document.querySelector('#mlsCopyVisitsBar .mls-cv-readonly') && document.querySelector('#mlsCopyVisitsBar .mls-cv-readonly').textContent,
         readOnlyAriaHidden: document.querySelector('#mlsCopyVisitsBar .mls-cv-readonly') && document.querySelector('#mlsCopyVisitsBar .mls-cv-readonly').getAttribute('aria-hidden'),
         parentClass: second && second.parentElement && second.parentElement.parentElement.className,
-        toolbarHidden: toolbar.hidden && getComputedStyle(toolbar).display === 'none',
-        ownedHide: toolbar.getAttribute('data-mls-visits-selected-hide')
+        toolbarHidden: toolbar.hidden || getComputedStyle(toolbar).display === 'none',
+        ownedHide: toolbar.getAttribute('data-mls-visits-selected-hide'),
+        toolbarState: toolbar.getAttribute('data-mls-open-patient-state')
       };
     });
     assert.deepStrictEqual(complete, {
@@ -73,9 +75,10 @@ const root = path.resolve(__dirname, '..');
       readOnlyText: 'READ-ONLY',
       readOnlyAriaHidden: 'true',
       parentClass: 'mlsxh-head',
-      toolbarHidden: true,
-      ownedHide: '1'
-    }, 'a complete selected chart must have one stable primary history action in the Visit history header');
+      toolbarHidden: false,
+      ownedHide: null,
+      toolbarState: 'visible-with-selected-patient'
+    }, 'a complete selected chart must keep the distinct open-Athena recovery action and one stable history action');
 
     const partialVisit = await page.evaluate(() => {
       window.__mlsSinglePullVisits = null;
@@ -257,10 +260,10 @@ const root = path.resolve(__dirname, '..');
         toolbarHidden: getComputedStyle(document.getElementById('ptPullAthenaBtn')).display === 'none'
       };
     });
-    assert.deepStrictEqual(remounted, { bars: 1, inHeader: true, toolbarHidden: true },
-      'a rebuilt history header must reacquire exactly one existing-engine action');
+    assert.deepStrictEqual(remounted, { bars: 1, inHeader: true, toolbarHidden: false },
+      'a rebuilt history header must reacquire one selected-patient action without hiding the distinct open-Athena action');
 
-    console.log('PASS selected-patient history pull UI: one header owner, honest labels, Full Notes click admission, exact patient scoping, and toolbar reappearance');
+    console.log('PASS selected-patient history pull UI: distinct open-Athena and selected-patient verbs, one history owner, honest labels, Full Notes admission, exact patient scoping');
   } finally {
     await browser.close();
   }

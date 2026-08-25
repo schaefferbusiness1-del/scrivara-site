@@ -128,10 +128,15 @@ const tests = [
      three shells with a fix-removed causal control. */
   '1p-tip-viewport-containment.test.js',
   '1p-histview-contract.test.js',
-  /* A selected patient has one chart-history pull, in the Visit history
-     header. Its label is driven by patient-scoped completeness evidence, while
-     the generic open-Athena toolbar pull returns exactly on deselection. */
+  /* A selected patient has one chart-history pull in the Visit history header.
+     Its label is driven by patient-scoped completeness evidence; the distinct
+     open-Athena toolbar verb remains available when its own safety state does. */
   'selected-patient-history-pull-ui-runtime.test.js',
+  /* The open-Athena Patients action is a different verb from refreshing the
+     selected MLS patient's history. It stays singular and responsive when
+     Athena is connected, but fails closed while unavailable, pulling,
+     recording, or explicitly identity-unsafe. */
+  'open-athena-patient-control-runtime.test.js',
   /* A late background visit result must never resurrect the completed
      one-patient pull bar at "saving"; success and persistence rejection each
      own a bounded, locally verified terminal receipt. */

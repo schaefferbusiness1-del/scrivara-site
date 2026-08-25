@@ -259,6 +259,27 @@ function harness() {
                version: window.__mlsPullVerb && window.__mlsPullVerb.version,
                tipAvoid: typeof window.__mlsTipAvoid };
     },
+    connectedSurface: function () {
+      /* This contract measures the connected control's words and geometry.
+         Disconnected/transition behavior belongs to the focused open-Athena
+         runtime. Pin only ConnTruth.describe(), after the real bundle boots,
+         so a headless page with no extension does not turn this into a hidden-
+         state typography test. */
+      var ct = window.__mlsConnTruth;
+      if (!ct) {
+        ct = window.__mlsConnTruth = {};
+      }
+      if (!ct.__t9Describe) ct.__t9Describe = ct.describe;
+      ct.describe = function () {
+        return { status: 'connected', color: 'green', label: 'MLS Assist ready · Athena tab detected', detail: '' };
+      };
+      try {
+        if (window.__mlsCopyVisits && typeof window.__mlsCopyVisits._syncOpenPatientPullVisibility === 'function') {
+          window.__mlsCopyVisits._syncOpenPatientPullVisibility(!!(typeof getActivePtId === 'function' && getActivePtId()));
+        }
+      } catch (e) {}
+      return ct.describe().status;
+    },
     /* every renamed control, with the pieces that make up its name */
     control: function (id) {
       var b = document.getElementById(id);
@@ -512,6 +533,8 @@ async function runtime() {
 
   try {
     await boot(page, port);
+    eq(await page.evaluate(() => window.__t9.connectedSurface()), 'connected',
+      'the connected-control contract could not pin authoritative connection truth');
 
     const inst = await page.evaluate(() => window.__t9.installed());
     measured.installed = inst;
@@ -522,10 +545,9 @@ async function runtime() {
     const seeded = await page.evaluate(() => window.__t9.seedMany(28));
     eq(seeded, 28, `the synthetic patients did not land in the store: ${JSON.stringify(seeded)}`);
     await page.waitForTimeout(2200);
-    /* The generic open-Athena pull is intentionally hidden while a selected
-       patient's one full-history action owns the profile. Measure this verb on
-       its real no-selection surface; the selected owner has its own dedicated
-       consolidation runtime contract. */
+    /* Measure the generic open-Athena action on its no-selection surface. The
+       selected-patient history action is a different verb and now deliberately
+       coexists on a selected profile; its own runtime proves that distinction. */
     eq(await page.evaluate(() => window.__t9.active('')), '', 'the generic-pull measurement could not clear the selected patient');
     await page.waitForTimeout(900);
 

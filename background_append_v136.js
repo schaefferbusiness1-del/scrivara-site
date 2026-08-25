@@ -140,10 +140,34 @@
           try { await chrome.tabs.update(appTab.id, { active: true }); if (appTab.windowId != null) await chrome.windows.update(appTab.windowId, { focused: true }); } catch (e) {}
           var r = await chrome.scripting.executeScript({
             target: { tabId: appTab.id },
+            world: 'MAIN',
             func: function () {
               try {
                 var btn = document.getElementById('ptPullAthenaBtn');
-                if (btn) { btn.click(); return 'clicked'; }
+                if (btn) {
+                  var state = String(btn.getAttribute('data-mls-open-patient-state') || '');
+                  var owner = String(btn.getAttribute('data-mls-open-patient-owner') || '');
+                  var liveReason = '';
+                  try {
+                    var visitsOwner = window.__mlsCopyVisits;
+                    if (visitsOwner && typeof visitsOwner._openPatientPullHiddenReason === 'function') {
+                      liveReason = String(visitsOwner._openPatientPullHiddenReason() || '');
+                    }
+                  } catch (eLiveGate) { return 'blocked:gate-check-failed'; }
+                  var ownerGate = btn.getAttribute('data-mls-open-patient-hidden') === '1';
+                  var stateGate = owner === 'feat-visits-v2' && state !== 'visible' && state !== 'visible-with-selected-patient';
+                  var displayGate = !!btn.hidden || btn.getAttribute('aria-hidden') === 'true';
+                  try {
+                    var style = getComputedStyle(btn);
+                    displayGate = displayGate || style.display === 'none' || style.visibility === 'hidden' || btn.getClientRects().length < 1;
+                  } catch (eStyle) {}
+                  var blockedReason = liveReason;
+                  if (!blockedReason && (btn.disabled || btn.getAttribute('aria-busy') === 'true')) blockedReason = 'pull-in-flight';
+                  if (!blockedReason && (ownerGate || stateGate)) blockedReason = state || 'unavailable';
+                  if (!blockedReason && displayGate) blockedReason = 'unavailable';
+                  if (blockedReason) return 'blocked:' + blockedReason;
+                  btn.click(); return 'clicked';
+                }
                 if (window.__mlsAthenaActions && window.__mlsAthenaActions.pullOpenChart) { window.__mlsAthenaActions.pullOpenChart({ title: 'Pull from chart', patientName: null, intent: { brings: 'Pull from chart → brings in name, DOB and all visits.', mode: 'read' } }); return 'shared'; }
                 if (window.__mlsAthenaAutoPull && window.__mlsAthenaAutoPull.run) { window.__mlsAthenaAutoPull.run(); return 'autopull'; }
                 return 'no-target';
@@ -152,6 +176,17 @@
           });
           var v = r && r[0] && r[0].result;
           if (v === 'no-target') { sendResponse({ ok: false, error: 'Open the MLS Visit or Patients page first, then try again.' }); return; }
+          if (typeof v === 'string' && v.indexOf('blocked:') === 0) {
+            var blockedReason = v.slice('blocked:'.length) || 'unavailable';
+            var blockedMessage = blockedReason === 'pull-in-flight'
+              ? 'Another Athena pull is already running in MLS. Wait for it to finish, then try again.'
+              : blockedReason === 'recording'
+                ? 'Finish or pause the current recording before switching the open Athena patient.'
+                : blockedReason === 'identity-unsafe'
+                  ? 'MLS cannot safely match the open Athena patient yet. Re-open the intended chart, then try again.'
+                  : 'The MLS open-patient pull is not available right now. Open the Patients page and try again.';
+            sendResponse({ ok: false, reason: blockedReason, error: blockedMessage }); return;
+          }
           if (typeof v === 'string' && v.indexOf('err:') === 0) { sendResponse({ ok: false, error: v.slice(4) }); return; }
           sendResponse({ ok: true, via: v });
         } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }

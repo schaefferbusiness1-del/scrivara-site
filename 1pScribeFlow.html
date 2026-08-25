@@ -3206,7 +3206,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <h2 aria-label="Patients" style="flex-wrap:wrap;row-gap:8px"><span class="ic">👥</span> Patients
         <button class="btn-ghost" id="ptDeselectChip" style="margin-left:auto;font-size:14px;padding:9px 15px;display:none" onclick="deselectPatient()" title="Clear the active patient — visits will be unassigned">✕ Deselect</button>
         <button class="btn-primary" id="ptNewBtn" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="newPatient()">＋ New patient</button>
-        <button class="btn-ghost" id="ptPullAthenaBtn" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" aria-label="Pull the open patient in athena" title="Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena.">📥 Pull the open patient in athena</button>
+        <button class="btn-ghost" id="ptPullAthenaBtn" data-mls-open-patient-owner="feat-visits-v2" style="margin-left:8px;font-size:14px;padding:9px 15px;border-color:#EAF1EE;color:#204034" onclick="pullPatientFromAthenaPrompt(this)" aria-label="Pull the open patient in athena" title="Reads whoever is open in your signed-in athenaOne tab right now and brings that chart into MLS. It can add a patient you do not have yet. Nothing is written to athena.">📥 Pull the open patient in athena</button>
         <button class="btn-ghost" id="ptMoreBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="togglePtMore()" title="Pre-visit links, intakes, booking, scheduling, and import cleanup">⋯ More</button>
         <span id="ptMore" style="display:none;flex-basis:100%;flex-wrap:wrap;gap:8px;margin-top:2px"><button class="btn-ghost" id="ptReceptionBtn" hidden disabled aria-disabled="true" style="display:none;font-size:14px;padding:9px 15px" title="Staff account provisioning is not released">👥 Receptionists unavailable</button>
         <button class="btn-ghost" id="ptLinkBtn" style="margin-left:8px;font-size:14px;padding:9px 15px" onclick="copyPrevisitLink(this)" title="Get a link to send patients so they can fill out their intake before the visit">📤 Pre-visit link</button>
@@ -57119,7 +57119,7 @@ html #profUnpulledPull .mlsac-sub{
 }
 /* 40px tap floor on every pull control, and a calm busy state at the control. */
 html #ptPullAthenaBtn, html #pullChartBtn, html #profUnpulledPull, html #pvrPullOne{
-  min-height:40px;
+  min-height:40px; max-width:100%; box-sizing:border-box;
 }
 html [data-mls-pullverb][aria-busy="true"]{ opacity:.72; cursor:progress; }
 /* pv-tips-1.1 (owner screenshot 2026-08-20: the same sentence painted three
