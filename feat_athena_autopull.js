@@ -529,13 +529,63 @@
     if (!receipt || typeof receipt !== 'object') return '';
     /* Canonicalize the whole persisted receipt. Binding only request/time
        fields would still allow a card/status mutation with those identifiers
-       held constant to cross the terminal boundary unnoticed. */
+       held constant to cross the terminal boundary unnoticed.
+
+       This accepts only the data model the patient store can persist exactly:
+       finite primitives, dense arrays, and ordinary enumerable data objects.
+       JSON.stringify is not a validator: Date values become {}, NaN becomes
+       null, undefined/functions disappear, and holes become null. Any one of
+       those collisions could make a changed live receipt compare equal at the
+       terminal boundary, so non-plain or lossy values fail closed. */
+    var seen = [];
     function canonical(value) {
-      if (value === null || typeof value !== 'object') return JSON.stringify(value);
-      if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
-      return '{' + Object.keys(value).sort().map(function (key) {
-        return JSON.stringify(key) + ':' + canonical(value[key]);
-      }).join(',') + '}';
+      var kind = typeof value;
+      if (value === null) return 'null';
+      if (kind === 'string') return JSON.stringify(value);
+      if (kind === 'boolean') return value ? 'true' : 'false';
+      if (kind === 'number') {
+        if (!Number.isFinite(value)) throw new Error('non-finite receipt number');
+        /* JSON.stringify merges -0 with 0; preserve that finite distinction. */
+        return Object.is(value, -0) ? '-0' : String(value);
+      }
+      if (kind !== 'object') throw new Error('non-data receipt value');
+      /* JSON values are trees, not object graphs. Reject both cycles and
+         repeated object aliases rather than silently erasing that topology. */
+      if (seen.indexOf(value) >= 0) throw new Error('aliased or cyclic receipt value');
+      seen.push(value);
+      var out, i, descriptor;
+      if (Array.isArray(value)) {
+        if (Object.getPrototypeOf(value) !== Array.prototype ||
+            Object.getOwnPropertySymbols(value).length) throw new Error('non-plain receipt array');
+        var arrayNames = Object.getOwnPropertyNames(value);
+        /* A dense array owns exactly length plus indices 0..length-1. This
+           also rejects extra named properties that JSON would silently omit. */
+        if (arrayNames.length !== value.length + 1 || arrayNames.indexOf('length') < 0) {
+          throw new Error('sparse or extended receipt array');
+        }
+        out = [];
+        for (i = 0; i < value.length; i++) {
+          if (!Object.prototype.hasOwnProperty.call(value, i)) throw new Error('sparse receipt array');
+          descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+          if (!descriptor || descriptor.enumerable !== true || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+            throw new Error('non-data receipt array item');
+          }
+          out.push(canonical(descriptor.value));
+        }
+        return '[' + out.join(',') + ']';
+      }
+      if (Object.getPrototypeOf(value) !== Object.prototype ||
+          Object.getOwnPropertySymbols(value).length) throw new Error('non-plain receipt object');
+      var keys = Object.getOwnPropertyNames(value).sort();
+      out = [];
+      for (i = 0; i < keys.length; i++) {
+        descriptor = Object.getOwnPropertyDescriptor(value, keys[i]);
+        if (!descriptor || descriptor.enumerable !== true || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+          throw new Error('non-data receipt property');
+        }
+        out.push(JSON.stringify(keys[i]) + ':' + canonical(descriptor.value));
+      }
+      return '{' + out.join(',') + '}';
     }
     try { return canonical(receipt); }
     catch (eFingerprint) {

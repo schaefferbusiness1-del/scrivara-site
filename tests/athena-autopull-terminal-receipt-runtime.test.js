@@ -8,10 +8,121 @@
  * Chromium and prove request ownership plus both persistence terminals. */
 
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..');
+
+/* Exercise the exact private production helper in a VM before the browser
+ * lifecycle cases. A copied test implementation would let source regressions
+ * pass while proving only the copy. */
+function verifyProductionFingerprintDomain() {
+  const source = fs.readFileSync(path.join(root, 'feat_athena_autopull.js'), 'utf8');
+  const start = source.indexOf('  function cardReceiptFingerprint(receipt) {');
+  const end = source.indexOf('\n  function emitBusy(value)', start);
+  assert(start >= 0 && end > start, 'production cardReceiptFingerprint source was not found');
+  const context = vm.createContext({});
+  vm.runInContext(source.slice(start, end) + '\nthis.__fingerprint = cardReceiptFingerprint;', context,
+    { filename: 'feat_athena_autopull.js#cardReceiptFingerprint' });
+  const evidence = JSON.parse(vm.runInContext(`JSON.stringify((function () {
+    function receipt(requestId) {
+      return {
+        complete: true, exactIdentityVerified: true, patientId: 'vm-patient',
+        capturedAt: '2026-08-25T12:00:00.000Z', saveRequestId: requestId,
+        cards: {
+          problems: { status: 'found' }, meds: { status: 'found' },
+          allergies: { status: 'found' }, summary: { status: 'found' },
+          vitals: { status: 'found' }, history: { status: 'found' }
+        }
+      };
+    }
+    var r0 = receipt('r0'), r1 = receipt('r1');
+    var stable = __fingerprint(r1);
+    var stableClone = __fingerprint(JSON.parse(JSON.stringify(r1)));
+    var abaFinal = __fingerprint(r0);
+
+    var dateReceipt = receipt('date');
+    var liveDate = new Date('2026-08-25T12:00:01.000Z');
+    dateReceipt.adversarial = liveDate;
+    var dateT1 = liveDate.getTime(), dateBefore = __fingerprint(dateReceipt);
+    liveDate.setTime(Date.parse('2026-08-25T12:00:02.000Z'));
+    var dateT2 = liveDate.getTime(), dateAfter = __fingerprint(dateReceipt);
+
+    var nanReceipt = receipt('nan');
+    nanReceipt.adversarial = null;
+    var nullFingerprint = __fingerprint(nanReceipt);
+    nanReceipt.adversarial = NaN;
+    var nanFingerprint = __fingerprint(nanReceipt);
+    nanReceipt.adversarial = Infinity;
+    var infinityFingerprint = __fingerprint(nanReceipt);
+
+    var omittedReceipt = receipt('omitted');
+    omittedReceipt.adversarial = undefined;
+    var undefinedFingerprint = __fingerprint(omittedReceipt);
+    omittedReceipt.adversarial = function () { return null; };
+    var functionFingerprint = __fingerprint(omittedReceipt);
+    omittedReceipt.adversarial = Symbol('receipt');
+    var symbolFingerprint = __fingerprint(omittedReceipt);
+
+    var sparseReceipt = receipt('sparse');
+    sparseReceipt.adversarial = [];
+    var emptyFingerprint = __fingerprint(sparseReceipt);
+    sparseReceipt.adversarial.length = 1;
+    var sparseFingerprint = __fingerprint(sparseReceipt);
+
+    var nonPlainReceipt = receipt('non-plain');
+    nonPlainReceipt.adversarial = new Map([['status', 'found']]);
+    var mapFingerprint = __fingerprint(nonPlainReceipt);
+    nonPlainReceipt.adversarial = Object.create(null);
+    nonPlainReceipt.adversarial.status = 'found';
+    var nullPrototypeFingerprint = __fingerprint(nonPlainReceipt);
+
+    var symbolKeyReceipt = receipt('symbol-key');
+    symbolKeyReceipt[Symbol('hidden')] = 'changed';
+    var symbolKeyFingerprint = __fingerprint(symbolKeyReceipt);
+    var aliasedReceipt = receipt('alias');
+    var sharedCard = { status: 'found' };
+    aliasedReceipt.left = sharedCard;
+    aliasedReceipt.right = sharedCard;
+    var aliasedFingerprint = __fingerprint(aliasedReceipt);
+    var zeroFingerprint = __fingerprint({ value: 0 });
+    var negativeZeroFingerprint = __fingerprint({ value: -0 });
+    return {
+      stable: stable, stableClone: stableClone, abaFinal: abaFinal,
+      dateT1: dateT1, dateT2: dateT2, dateBefore: dateBefore, dateAfter: dateAfter,
+      nullFingerprint: nullFingerprint, nanFingerprint: nanFingerprint,
+      infinityFingerprint: infinityFingerprint, undefinedFingerprint: undefinedFingerprint,
+      functionFingerprint: functionFingerprint, symbolFingerprint: symbolFingerprint,
+      emptyFingerprint: emptyFingerprint, sparseFingerprint: sparseFingerprint,
+      mapFingerprint: mapFingerprint, nullPrototypeFingerprint: nullPrototypeFingerprint,
+      symbolKeyFingerprint: symbolKeyFingerprint, aliasedFingerprint: aliasedFingerprint,
+      zeroFingerprint: zeroFingerprint,
+      negativeZeroFingerprint: negativeZeroFingerprint
+    };
+  })())`, context));
+  assert(evidence.stable && evidence.stable === evidence.stableClone,
+    'stable JSON-plain R1 did not retain one canonical fingerprint');
+  assert(evidence.abaFinal && evidence.abaFinal !== evidence.stable,
+    'ordinary R0/R1 ABA receipts did not have distinct fingerprints');
+  assert(evidence.dateT2 > evidence.dateT1 && evidence.dateBefore === '' && evidence.dateAfter === '',
+    'an in-place Date T+1 to T+2 receipt mutation did not fail closed');
+  assert(evidence.nullFingerprint && evidence.nanFingerprint === '' && evidence.infinityFingerprint === '',
+    'null was not accepted distinctly while non-finite numbers failed closed');
+  assert.strictEqual(evidence.undefinedFingerprint, '', 'undefined receipt data did not fail closed');
+  assert.strictEqual(evidence.functionFingerprint, '', 'function receipt data did not fail closed');
+  assert.strictEqual(evidence.symbolFingerprint, '', 'symbol receipt data did not fail closed');
+  assert(evidence.emptyFingerprint && evidence.sparseFingerprint === '',
+    'a sparse array was not distinguished from an accepted empty array');
+  assert.strictEqual(evidence.mapFingerprint, '', 'a non-plain Map receipt value did not fail closed');
+  assert.strictEqual(evidence.nullPrototypeFingerprint, '', 'a null-prototype receipt value did not fail closed');
+  assert.strictEqual(evidence.symbolKeyFingerprint, '', 'a symbol-keyed receipt mutation did not fail closed');
+  assert.strictEqual(evidence.aliasedFingerprint, '', 'an aliased object graph did not fail closed');
+  assert(evidence.zeroFingerprint && evidence.negativeZeroFingerprint &&
+    evidence.zeroFingerprint !== evidence.negativeZeroFingerprint,
+    'finite primitive fingerprinting merged 0 and -0');
+}
 
 async function makeHarness(browser, saveMode) {
   const page = await browser.newPage();
@@ -99,7 +210,8 @@ async function makeHarness(browser, saveMode) {
       ensureSummaries() {
         if (window.__saveMode === 'summary-timeout') return new Promise(() => {});
         if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future', 'coverage-r1-stable',
-          'coverage-inplace', 'coverage-cyclic', 'coverage-bigint'].includes(window.__saveMode)) {
+          'coverage-inplace', 'coverage-cyclic', 'coverage-bigint', 'coverage-date-inplace',
+          'coverage-null-to-nan', 'coverage-undefined-to-function', 'coverage-empty-to-sparse'].includes(window.__saveMode)) {
           return new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), 40));
         }
         return Promise.resolve({ ok: true });
@@ -146,12 +258,22 @@ async function makeHarness(browser, saveMode) {
               summary: { status: 'found' }, vitals: { status: 'found' }, history: { status: 'found' }
             }
           };
+          if (window.__saveMode === 'coverage-date-inplace') {
+            current.athenaProfileCoverage.adversarial = new Date('2026-08-25T12:00:01.000Z');
+          } else if (window.__saveMode === 'coverage-null-to-nan') {
+            current.athenaProfileCoverage.adversarial = null;
+          } else if (window.__saveMode === 'coverage-undefined-to-function') {
+            current.athenaProfileCoverage.adversarial = undefined;
+          } else if (window.__saveMode === 'coverage-empty-to-sparse') {
+            current.athenaProfileCoverage.adversarial = [];
+          }
           if (sameTickReplacement) {
             window.__coverageR1 = JSON.parse(JSON.stringify(current.athenaProfileCoverage));
           }
           window.upsertPatient(current);
           if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future',
-            'coverage-inplace', 'coverage-cyclic', 'coverage-bigint'].includes(window.__saveMode)) {
+            'coverage-inplace', 'coverage-cyclic', 'coverage-bigint', 'coverage-date-inplace',
+            'coverage-null-to-nan', 'coverage-undefined-to-function', 'coverage-empty-to-sparse'].includes(window.__saveMode)) {
             window.setTimeout(() => {
               const raced = window.__store.find(row => row && row.id === patient.id);
               if (window.__saveMode === 'coverage-aba-future') {
@@ -166,6 +288,14 @@ async function makeHarness(browser, saveMode) {
                 raced.athenaProfileCoverage.self = raced.athenaProfileCoverage;
               } else if (window.__saveMode === 'coverage-bigint') {
                 raced.athenaProfileCoverage.nonSerializableMutation = BigInt(1);
+              } else if (window.__saveMode === 'coverage-date-inplace') {
+                raced.athenaProfileCoverage.adversarial.setTime(Date.parse('2026-08-25T12:00:02.000Z'));
+              } else if (window.__saveMode === 'coverage-null-to-nan') {
+                raced.athenaProfileCoverage.adversarial = NaN;
+              } else if (window.__saveMode === 'coverage-undefined-to-function') {
+                raced.athenaProfileCoverage.adversarial = function () { return null; };
+              } else if (window.__saveMode === 'coverage-empty-to-sparse') {
+                raced.athenaProfileCoverage.adversarial.length = 1;
               } else {
                 raced.athenaProfileCoverage = Object.assign({}, raced.athenaProfileCoverage, { patientId: 'different-patient' });
               }
@@ -254,6 +384,8 @@ async function startAndPause(page) {
   });
 }
 
+verifyProductionFingerprintDomain();
+
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
@@ -289,6 +421,8 @@ async function startAndPause(page) {
       'success did not return a persistence-confirmed terminal receipt');
     assert.strictEqual(await successPage.evaluate(() => window.__receivedReceipt === window.__ownedResponse.receipt), true,
       'the exact full-detail reader receipt was not forwarded as _saveVisits argument five');
+    assert.strictEqual(await successPage.evaluate(() => window.__saveCalls), 1,
+      'one owned pull invoked the visit writer more than once');
     const successTimeline = await successPage.evaluate(() => window.__statusTimeline);
     const firstSaved = successTimeline.find(row => /\bsaved\b/i.test(row.message));
     assert(firstSaved && firstSaved.committed === true,
@@ -330,6 +464,8 @@ async function startAndPause(page) {
     const secondSuccess = await successPage.evaluate(() => window.__runPromise);
     assert(secondSuccess && secondSuccess.ok === true,
       'cycle B did not complete after the stale-timer assertion');
+    assert.strictEqual(await successPage.evaluate(() => window.__saveCalls), 2,
+      'two owned pulls did not invoke exactly one visit writer each');
 
     /* The real cycle-B retirement fires, then a later background success must
        not resurrect the bar — this is the exact screenshot regression. */
@@ -343,6 +479,8 @@ async function startAndPause(page) {
     await successPage.waitForTimeout(30);
     assert.strictEqual(await successPage.locator('#mlsPullBar').evaluate(node => node.style.display), 'none',
       'a late unrelated success resurrected the retired bar at “saving”');
+    assert.strictEqual(await successPage.evaluate(() => window.__saveCalls), 2,
+      'a late unrelated result resurrected the writer after both owned pulls settled');
     await successPage.close();
 
     const failurePage = await makeHarness(browser, 'reject');
@@ -483,12 +621,14 @@ async function startAndPause(page) {
        durable visit success while refusing a complete/full-card claim. */
     for (const mode of ['coverage-missing', 'coverage-wrong-patient', 'coverage-stale', 'coverage-prior-attempt',
       'coverage-no-refresh', 'coverage-race', 'coverage-race-stale', 'coverage-aba-future',
-      'coverage-inplace', 'coverage-cyclic', 'coverage-bigint']) {
+      'coverage-inplace', 'coverage-cyclic', 'coverage-bigint', 'coverage-date-inplace',
+      'coverage-null-to-nan', 'coverage-undefined-to-function', 'coverage-empty-to-sparse']) {
       const receiptPage = await makeHarness(browser, mode);
       await startAndPause(receiptPage);
       await receiptPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
       const observed = await receiptPage.evaluate(() => window.__runPromise.then(result => ({
-        busy: window.__mlsAthenaAutoPull.isBusy(), receipt: result.receipt,
+        busy: window.__mlsAthenaAutoPull.isBusy(), calls: window.__saveCalls, receipt: result.receipt,
+        swap: window.__coverageSwapApplied || '',
         text: document.querySelector('#mlsPullBar [data-text]').textContent,
         /* Do not serialize the deliberately cyclic/BigInt fixtures back
            through Playwright. Only the replacement-ABA case needs details. */
@@ -499,6 +639,12 @@ async function startAndPause(page) {
         } : null
       })));
       assert.strictEqual(observed.busy, false, `${mode}: receipt refusal left the pull lane busy`);
+      assert.strictEqual(observed.calls, 1, `${mode}: one pull did not retain exactly one visit writer`);
+      if (['coverage-race', 'coverage-race-stale', 'coverage-aba-future', 'coverage-inplace',
+        'coverage-cyclic', 'coverage-bigint', 'coverage-date-inplace', 'coverage-null-to-nan',
+        'coverage-undefined-to-function', 'coverage-empty-to-sparse'].includes(mode)) {
+        assert.strictEqual(observed.swap, mode, `${mode}: adversarial receipt mutation did not happen before terminal proof`);
+      }
       assert(observed.receipt && observed.receipt.ok === true && observed.receipt.status === 'partial' &&
         observed.receipt.persistenceConfirmed === true,
         `${mode}: cardRes.ok without a current fresh exact receipt falsely completed the pull`);
@@ -526,8 +672,11 @@ async function startAndPause(page) {
     await startAndPause(stableReceiptPage);
     await stableReceiptPage.evaluate(() => { window.__emitOwnedResult(); window.__resolveOwnedResult(); });
     const stableReceipt = await stableReceiptPage.evaluate(() => window.__runPromise.then(result => ({
+      busy: window.__mlsAthenaAutoPull.isBusy(), calls: window.__saveCalls,
       receipt: result.receipt, text: document.querySelector('#mlsPullBar [data-text]').textContent
     })));
+    assert.strictEqual(stableReceipt.busy, false, 'the stable R1 control left the pull lane busy');
+    assert.strictEqual(stableReceipt.calls, 1, 'the stable R1 control invoked more than one visit writer');
     assert(stableReceipt.receipt && stableReceipt.receipt.ok === true && stableReceipt.receipt.status === 'complete',
       'an unchanged accepted R1 receipt was rejected at the terminal boundary');
     assert(/with the full chart card verified/i.test(stableReceipt.text),
@@ -566,7 +715,7 @@ async function startAndPause(page) {
       'the stalled chart-card read did not leave an actionable partial terminal');
     await cardTimeoutPage.close();
 
-    console.log('PASS Athena auto-pull terminal receipt: owned progress, durable exact-row confirmation, immutable accepted-fingerprint binding with replacement/in-place/cyclic/BigInt race refusal, unchanged R1 success, driver/flush watchdogs, partial terminals, timer isolation, and no late saving-state resurrection');
+    console.log('PASS Athena auto-pull terminal receipt: real-source VM rejects lossy/non-plain receipt values, immutable accepted-fingerprint binding refuses Date/NaN/undefined/function/sparse and ordinary ABA races, unchanged R1 succeeds, each owned pull has one writer, watchdogs settle, and late results cannot resurrect busy/saving state');
   } finally {
     await browser.close();
   }
