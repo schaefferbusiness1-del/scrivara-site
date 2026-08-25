@@ -169,7 +169,10 @@ function runPlan(source, file, setup) {
   for (const [file, source] of sources) {
     eq(canonicalBlock(source, file), firstCanonical, file + ': canonical Athena contract drifted from the canonical 1p lane');
     ok(source.includes('"athena_note": "<the SAME visit as plain text in EXACTLY five flat top-level sections'), file + ': generation prompt does not require athena_note');
-    ok(source.indexOf('const canonicalAthenaNote=_mlsValidateAthenaNote(result.athena_note);') > source.indexOf('_mlsValidateStructuredNoteResult(result);'), file + ': athena_note was not validated after the display note contract');
+    const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result);');
+    const athenaValidation = source.indexOf('_mlsValidateAthenaNote(result.athena_note==null?result.note:result.athena_note);', displayValidation);
+    ok(athenaValidation > displayValidation, file + ': athena_note fallback was not validated after the display note contract');
+    ok(source.includes('result.athena_note==null?result.note:result.athena_note'), file + ': present athena_note was not preferred over the legacy display-note fallback');
     const canonicalCapture = source.indexOf("_mlsSetAthenaNote(canonicalAthenaNote.text,'generated');", source.indexOf('const canonicalAthenaNote='));
     ok(canonicalCapture > source.indexOf('const canonicalAthenaNote='), file + ': canonical sidecar is not captured after validation');
     const settledComment = source.lastIndexOf('applyVisitCommentToNote();', canonicalCapture);
