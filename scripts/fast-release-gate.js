@@ -34,8 +34,8 @@ const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
 
 const ALLOWED_UNTRACKED = Object.freeze(new Set([
-  'MLS_Assist_v3.0.78.bin',
-  'MLS_Assist_v3.0.78.zip',
+  'MLS_Assist_v3.0.79.bin',
+  'MLS_Assist_v3.0.79.zip',
 ]));
 
 const PROVENANCE_FILES = Object.freeze(new Set([
@@ -299,7 +299,7 @@ function usage() {
     `The fast gate is a conservative changed-area precheck, not the ${FULL_GATE_TESTS}-suite replacement.`,
     '--mode=release refuses to call the result releasable when the full gate is required.',
     'FAST_GATE_COMPLETE is distinct from the canonical GATE_COMPLETE emitted by node tests/run-all.js.',
-    'Only untracked MLS_Assist_v3.0.78.zip and MLS_Assist_v3.0.78.bin are permitted.',
+    'Only untracked MLS_Assist_v3.0.79.zip and MLS_Assist_v3.0.79.bin are permitted.',
   ].join('\n');
 }
 

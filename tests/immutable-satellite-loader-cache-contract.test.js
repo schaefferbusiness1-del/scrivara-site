@@ -39,7 +39,7 @@ const assets = [
      that bit copilot_actions, its loader now follows the build number. The
      build-form + dead-literal assertions live below with feat_visits'. */
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
-  ['feat_mls_checker.js', '20260823chk3079', '20260822chk3078'],
+  ['feat_mls_checker.js', '20260825chk3080', '20260823chk3079'],
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
@@ -265,7 +265,7 @@ for (const dead of ['20260807av567', '20260807av566']) {
   assert(!connect.includes(dead), 'retired avatar cache token ' + dead + ' is back in the loader');
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260823chk3079'),
+assert(staging.includes('feat_mls_checker.js?v=20260825chk3080'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');

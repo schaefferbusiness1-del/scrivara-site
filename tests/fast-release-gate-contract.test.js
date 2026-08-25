@@ -12,8 +12,8 @@ function ok(value, message) { checks++; assert.ok(value, message); }
 function eq(actual, expected, message) { checks++; assert.deepStrictEqual(actual, expected, message); }
 
 eq(gate.normalizePath('1p\\index.html'), '1p/index.html', 'Windows paths normalize to repository paths');
-ok(gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.78.zip'), 'approved stale ZIP is allowed');
-ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.79.zip'), 'new package is never silently allowed as untracked');
+ok(gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.79.zip'), 'approved stale ZIP is allowed');
+ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.80.zip'), 'new package is never silently allowed as untracked');
 
 const provenance = gate.classifyChangedFiles([
   'feat_athena_autopull.js',
@@ -56,8 +56,8 @@ const backend = gate.classifyChangedFiles(['backend/src/routes.js']);
 ok(backend.fullRequired && !backend.eligible, 'backend edits require the full gate');
 
 const status = gate.inspectWorktreeStatus([
-  '?? MLS_Assist_v3.0.78.zip',
-  '?? MLS_Assist_v3.0.78.bin',
+  '?? MLS_Assist_v3.0.79.zip',
+  '?? MLS_Assist_v3.0.79.bin',
 ]);
 eq(status.disallowed, [], 'the two approved stale artifacts are the only allowed untracked files');
 eq(status.allowed.length, 2, 'both approved stale artifacts are retained in the status report');
