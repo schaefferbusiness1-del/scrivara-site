@@ -14914,26 +14914,64 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
        (siblings live-enumerated: browse/allergies/problems/medications/
        vaccine/vitals/results/visits/history/p4p/careManagement). Attribute
        selector FIRST; the text scan stays as a fallback for older layouts. */
+    /* wcl-1.0.0 (Codex static map + owner "clicks around" live repro,
+       2026-08-25): clicking the FIRST visible [data-chart-section-id] match
+       let a same-attribute node OUTSIDE the chart rail take the click - the
+       v2.01 recovery below documents it landing on athena's top-nav Calendar
+       menu. A candidate now counts only when it sits in a PROVEN chart rail:
+       a chart-tabs list item (or inside the chart-tabs container), the same
+       left-edge geometry the label scan enforces, and at least two SIBLING
+       section ids in the same container so a lone decoy cannot pass. Exactly
+       one survivor is clicked; more than one returns 'ambiguous' - an honest
+       refusal BEFORE any click; zero survivors falls back to the label scan,
+       which has its own left-rail guard. */
     function clickRailByAttr(sectionId) {
       try {
         var lis = W.document.querySelectorAll('li.chart-tabs__list-item[data-chart-section-id="' + sectionId + '"],[data-chart-section-id="' + sectionId + '"]');
+        var seen = [], survivors = [];
         for (var qi = 0; qi < lis.length; qi++) {
           var li = lis[qi];
+          var dup = false;
+          for (var di = 0; di < seen.length; di++) { if (seen[di] === li) { dup = true; break; } }
+          if (dup) continue;
+          seen.push(li);
           if (!visEl(li)) continue;
           var lbl = String((li.getAttribute && (li.getAttribute('aria-label') || li.getAttribute('data-icon-caption'))) || li.textContent || '').replace(/\s+/g, ' ').trim();
           if (BAD.test(lbl)) continue;
-          realClick(li);
-          return true;
+          var rail = null;
+          try { rail = li.closest ? li.closest('ul.chart-tabs__list,.chart-tabs,[class*="chart-tabs"]') : null; } catch (eRail) { rail = null; }
+          var inRailList = !!rail || /chart-tabs__list-item/.test(String(li.className || ''));
+          if (!inRailList) continue;
+          var rect = null;
+          try { rect = li.getBoundingClientRect(); } catch (eRect) { rect = null; }
+          if (!rect || rect.left > 260) continue;
+          var sibScope = (rail && rail !== li) ? rail : (li.parentElement || li); /* closest() matches the item ITSELF via [class*=] - the siblings live in the container */
+          var sibs = 0;
+          try {
+            var sibIds = ['browse', 'allergies', 'problems', 'medications', 'vitals', 'results', 'history'];
+            for (var si = 0; si < sibIds.length; si++) {
+              if (sibIds[si] === sectionId) continue;
+              if (sibScope.querySelector && sibScope.querySelector('[data-chart-section-id="' + sibIds[si] + '"]')) sibs++;
+            }
+          } catch (eSib) { sibs = 0; }
+          if (sibs < 2) continue;
+          survivors.push(li);
         }
+        if (survivors.length === 1) { realClick(survivors[0]); return true; }
+        if (survivors.length > 1) return 'ambiguous';
       } catch (eA) {}
       return false;
     }
-    var clicked = false;
+    var clicked = false, railAmbiguous = false;
     var railDeadline = Date.now() + 12000; /* absolute deadline, short sleeps */
     while (!clicked && Date.now() < railDeadline) {
-      clicked = clickRailByAttr('visits') || clickRailLabel('Visits');
+      var attrRes = clickRailByAttr('visits');
+      if (attrRes === true) { clicked = true; break; }
+      if (attrRes === 'ambiguous') { railAmbiguous = true; break; } /* wcl-1.0.0: refuse before click */
+      clicked = clickRailLabel('Visits');
       if (!clicked) await sleep(700);
     }
+    if (railAmbiguous) return { ok: false, reason: 'rail-ambiguous', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'More than one verified-looking left-rail "Visits" target is on screen, so MLS refused to guess which chart it belongs to (wcl-1.0.0) - nothing was clicked or captured. Close extra chart panels or windows in athenaOne, then retry.' };
     if (!clicked) return { ok: false, reason: 'no-rail', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The left-rail "Visits" item was not found on the open chart. Refusing to read any other surface as if it were the verified Visits pane (wf_6) - nothing was captured.' };
     /* ---- 6) wait for the "Visits and Cases" pane (light DOM, live-verified:
        fully readable via innerText). Absolute deadline + short sleeps. */
@@ -14950,7 +14988,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
     if (!paneSeen) {
       try { W.document.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); } catch (eEsc) {}
       await sleep(600);
-      try { clickRailByAttr('visits') || clickRailLabel('Visits'); } catch (eRe) {}
+      try { if (clickRailByAttr('visits') === false) clickRailLabel('Visits'); } catch (eRe) {} /* wcl-1.0.0: 'ambiguous' refuses the recovery click too */
       var paneDeadline2 = Date.now() + 10000;
       while (Date.now() < paneDeadline2) {
         await sleep(500);

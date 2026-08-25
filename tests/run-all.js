@@ -1722,7 +1722,16 @@ const tests = [
      'cancelled' status, cancelled days stay in the retry pool, the fail chip
      counts only true failures, and the bar label discloses the cancelled
      count. Runs the REAL pCounts against a mixed pool. */
-  'range-cancel-truthful-status.test.js'
+  'range-cancel-truthful-status.test.js',
+  /* wcl-1.0.0 (Codex static map + owner live "clicks around" repro): the
+     visits-pane driver clicked the FIRST [data-chart-section-id="visits"]
+     match anywhere in the document - the v2.01 comment documents it landing
+     on athena's top-nav Calendar menu. A candidate now needs the full rail
+     signature (chart-tabs container/item + left-edge geometry + 2 sibling
+     section ids); one survivor clicks, two refuse 'ambiguous' BEFORE any
+     click (reason rail-ambiguous), zero falls back to the guarded label
+     scan. Drives the REAL extracted function against synthetic DOMs. */
+  'visits-rail-scoped-click.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
