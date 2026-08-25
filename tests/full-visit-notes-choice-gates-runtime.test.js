@@ -325,13 +325,36 @@ async function singlePatientCases() {
   assert(/NO prior visit notes came back/i.test(receipt.message), 'single-patient partial receipt was not honest about missing visits');
 }
 
+/* vnoff-1.0.0: the retired hero body in ScribeFlow's pullScheduleViaAssist is
+ * the ONLY path on a build with no guarded engine.  It used to crawl every
+ * chart's history unconditionally — an explicitly admitted OFF choice still
+ * opened patient charts on that one path.  The admission gate freezes the
+ * choice into opts.__pullVisitBodies; the legacy body must honor it, and a
+ * missing flag must fail closed to schedule-only. */
+function legacyHeroCase() {
+  const SHELL = fs.readFileSync(path.join(ROOT, '1pScribeFlow.html'), 'utf8');
+  const hero = balancedFunction(SHELL, 'function pullScheduleViaAssist(btn, opts)', 'legacy hero');
+  assert(hero.includes('next.__pullVisitBodies=choice.on===true'),
+    'the admission gate no longer freezes the confirmed choice for the legacy body');
+  const calls = hero.split('_pullAllHistories(appts)').length - 1;
+  assert.strictEqual(calls, 1, 'legacy hero grew a second history-crawl call site');
+  const importAt = hero.indexOf('_importPulledSchedule(appts)');
+  const gateAt = hero.indexOf('if(opts.__pullVisitBodies===true){');
+  const crawlAt = hero.indexOf('_pullAllHistories(appts)');
+  assert(importAt >= 0 && gateAt > importAt && crawlAt > gateAt,
+    'legacy hero crawls histories regardless of the admitted OFF choice (the __pullVisitBodies===true gate is missing or does not guard the crawl)');
+  assert(/Full visit notes is off — no patient charts were opened/.test(hero),
+    'legacy hero OFF completion does not state the schedule-only outcome');
+}
+
 (async () => {
   await resolverCases();
   staticGateCases();
+  legacyHeroCase();
   slowYearChoiceCase();
   receiptCases();
   await singlePatientCases();
-  console.log('PASS full-visit-notes-choice-gates-runtime: resolver first-use cases, day/calendar/legacy/year gates, local+relay receipts, and single-patient honest partial');
+  console.log('PASS full-visit-notes-choice-gates-runtime: resolver first-use cases, day/calendar/legacy/year gates, legacy-hero OFF stays schedule-only, local+relay receipts, and single-patient honest partial');
 })().catch(error => {
   console.error('FAIL full-visit-notes-choice-gates-runtime:', error && error.stack || error);
   process.exitCode = 1;
