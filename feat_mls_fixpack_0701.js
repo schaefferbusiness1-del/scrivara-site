@@ -783,11 +783,24 @@
         });
       } catch (e) {}
       /* patients -> select as the active visit patient */
+      /* qfp-1.0.0 (owner invariant: no silent caps): the 800-row slice
+         silently dropped every patient past index 800 - measured live
+         2026-08-26: the roster held 1758 and the SELECTED patient sat at
+         index 1255, so the box whose placeholder promises "Find a patient"
+         could not find him by name. Index the whole roster; ranking already
+         caps what RENDERS, which is a visible choice, not a dropped one. */
       try {
-        ((typeof getPatients === 'function' ? getPatients() : []) || []).slice(0, 800).forEach(function (p) {
+        ((typeof getPatients === 'function' ? getPatients() : []) || []).forEach(function (p) {
           if (!p || !p.name) return;
+          /* qfp-1.0.1: athenaOne's search convention is "Last,First" and the
+             owner's pull matrix requires it to work from MLS search too. Give
+             every patient row a Last,First alias (with and without the space)
+             so the comma form matches; the visible label stays First Last. */
+          var qfpNm = String(p.name).trim(), qfpParts = qfpNm.split(/\s+/), qfpLF = '';
+          if (qfpParts.length > 1) { var qfpLast = qfpParts[qfpParts.length - 1], qfpFirst = qfpParts[0]; qfpLF = qfpLast + ',' + qfpFirst + ' ' + qfpLast + ', ' + qfpFirst; }
           out.push({
             g: 'Patients', label: '🧑 ' + String(p.name), sub: p.dob ? ('DOB ' + p.dob) : '',
+            search: qfpLF,
             go: function () { return qfPatientRoute(p, patientSession); }
           });
         });
