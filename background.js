@@ -1133,7 +1133,9 @@ async function mlsAthenaActionV2DriverFn(req) {
            the expected patient AND an ANCESTOR frame's banner (never a
            sibling) passes the exact same identity gates below. */
         if (hetStage) {
-          var hetWalkVerdict = 'none-found';
+          var hetSelf = hetAncestorIdentity(fr, expectedPatient);
+          if (hetSelf && hetSelf.identity) { chartHeader = hetSelf; observedIdentity = hetSelf.identity; }
+          var hetWalkVerdict = observedIdentity ? 'self-found' : 'none-found';
           var hetAncWin = null; try { hetAncWin = fr.w && fr.w.parent && fr.w.parent !== fr.w ? fr.w.parent : null; } catch (eHet0) { hetAncWin = null; }
           var hetHops = 0;
           while (hetAncWin && hetHops++ < 6 && !observedIdentity) {
