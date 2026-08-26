@@ -88,3 +88,29 @@ const dates = [...new Set([...fix.matchAll(rex[2])].map(m => m[1]))];
 assert.deepStrictEqual(dates, ['2026-08-25'], 'the labeled-date regex no longer resolves the one service date');
 
 console.log('PASS het stage-context pins: stage frames qualify only through the machine-typed context META + ancestor banner, every uniqueness refusal and identity/equality gate stands, and the shipped regexes resolve live-shaped serializations');
+
+/* het-1.1.4: named-note scopes admit direct-child-heading hosts (the athena
+   stage card shape: div.card host, H3.athena-header label, one slate editor).
+   The block must sit INSIDE namedNoteScopes between the attribute query and
+   the gate filter, and must only ever ADD candidates via parentElement -
+   never touch the gates. */
+const nnsStart = bg.indexOf('function namedNoteScopes');
+const nnsEnd = bg.indexOf('function findNamedNoteAction', nnsStart);
+assert.ok(nnsStart > 0 && nnsEnd > nnsStart, 'namedNoteScopes/findNamedNoteAction moved');
+const nns = bg.slice(nnsStart, nnsEnd);
+assert.ok(nns.includes("deepQueryAll(frame.doc, 'legend,h1,h2,h3,h4,header,[role=\"heading\"]')"),
+  'the heading-parent candidate query is gone from namedNoteScopes');
+assert.ok(nns.includes('if (hetPar && raw.indexOf(hetPar) < 0) raw.push(hetPar);'),
+  'the heading-parent push (dedup guarded) is gone');
+assert.ok(nns.indexOf('raw.push(hetPar)') < nns.indexOf('raw = raw.filter'),
+  'heading parents must join the pool BEFORE the gate filter runs');
+assert.ok(nns.includes('if (keys.length !== 1 || keys[0] !== key) return false;'),
+  'the one-canonical-key gate left namedNoteScopes');
+assert.ok(nns.includes('return namedOwnedEditors(frame, el, key).length === 1;'),
+  'the one-owned-editor gate left namedNoteScopes');
+assert.ok(nns.includes('return collapseContainedMatches(raw);'),
+  'the containment collapse left namedNoteScopes');
+assert.ok(bg.includes('if (scopes.length !== 1) return null;'),
+  'findNamedNoteAction no longer refuses on scope ambiguity');
+
+console.log('PASS het-1.1.4 pins: heading-parent candidates feed the same fail-closed named-scope gates');

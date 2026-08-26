@@ -852,6 +852,20 @@ async function mlsAthenaActionV2DriverFn(req) {
     function namedNoteScopes(frame, key) {
       var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label]';
       var raw = []; try { raw = deepQueryAll(frame.doc, selector); } catch (e) {}
+      /* het-1.1.4: athena stage cards carry their one canonical label as a
+         direct-child heading and no sectioning markup or machine attribute,
+         so the attribute selector cannot see them. A direct-child heading is
+         already this finder's own labeling contract (namedSectionDescriptor
+         reads :scope > h1..h4/header/legend), so the heading's parent joins
+         the candidate pool. Every existing gate below still refuses exactly
+         as before - this adds discoverability, never a bypass. */
+      try {
+        var hetHeads = deepQueryAll(frame.doc, 'legend,h1,h2,h3,h4,header,[role="heading"]');
+        for (var hh = 0; hh < hetHeads.length; hh++) {
+          var hetPar = null; try { hetPar = hetHeads[hh].parentElement || null; } catch (eHetPar) { hetPar = null; }
+          if (hetPar && raw.indexOf(hetPar) < 0) raw.push(hetPar);
+        }
+      } catch (eHet114) {}
       raw = raw.filter(function (el, index) {
         if (!visible(el, frame.w) || raw.indexOf(el) !== index) return false;
         var desc = namedSectionDescriptor(el), keys = namedKeysForElement(el);
