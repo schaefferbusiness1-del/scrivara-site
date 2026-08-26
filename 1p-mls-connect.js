@@ -57375,7 +57375,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       reason: String(r.reason || ''),
       error: String(r.error || '').slice(0, 300),
       scheduleReceipt: pick(r.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason']),
-      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed']),
+      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'attributionCoverage']),
       calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed', 'failureReasons', 'mappingReasons', 'unresolvedMappings']),
       historyReceipt: pick(r.historyReceipt, ['requested', 'processed', 'complete', 'failures'])
     };

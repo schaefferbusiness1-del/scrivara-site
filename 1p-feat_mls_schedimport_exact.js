@@ -6880,6 +6880,13 @@
           };
         } catch (eCr) {}
       }
+      /* nvd-1.0.2: the reader's attribution-coverage census (which rows bound
+         to which provider header, how many stayed unattributed/foreign) is the
+         exact diagnosis for every second-provider calendar failure and for
+         provider-less rows at rest - and it was dropped here too. */
+      if (value.providerRosterReceipt && value.providerRosterReceipt.attributionCoverage) {
+        try { out.attributionCoverage = JSON.parse(JSON.stringify(value.providerRosterReceipt.attributionCoverage)); } catch (eAc) {}
+      }
     }
     /* the matrix must attribute every run to its visit-notes mode; the engine
        already stamps it and this whitelist dropped it. */
