@@ -1094,7 +1094,7 @@ async function mlsAthenaActionV2DriverFn(req) {
          below remains only for frames with no identity of their own. */
       var hetStage = hetStageEncounterContext(fr, expectedPatient);
       hetRec.het = Number(hetDiag.rank || 0);
-      if (!observedIdentity && !chartHeader.ambiguous && hetStage) {
+      if (!observedIdentity && hetStage) { /* het-1.0.5: ambiguity of the frame's own decorative header copies routes to the ancestor banner when the machine context qualified; the final gate below still refuses unless the ancestor banner is single, parseable and passes the identity gates. */
         /* het-1.0.0: stage surfaces split banner and editor across frames.
            Qualify ONLY when the frame's own machine-typed context META names
            the expected patient AND an ANCESTOR frame's banner (never a
