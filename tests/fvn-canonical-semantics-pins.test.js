@@ -66,4 +66,19 @@ assert.ok(si.includes('an OFF row\'s chart-facts read and pulled-day') || si.inc
 assert.ok(si.includes('out.visitNotesMode = String(value.visitNotesMode).slice(0, 24);'),
   'honestPullOutcome no longer carries visitNotesMode');
 
+/* ---- fvn-1.1.0 (Codex reply 38): no entry point may suppress the floor ---- */
+const connect = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
+assert.ok(!connect.includes('if (pl.includeHistory === false) opts.includeHistory = false;'),
+  'the phone relay can pass includeHistory:false into si.pull() again - the floor is suppressible remotely');
+const range = fs.readFileSync(path.join(root, '1p-feat_mls_rangejobs.js'), 'utf8');
+const rangeExec = range.indexOf('var pullOptions = {');
+assert.ok(rangeExec > 0 && /includeHistory: true,\n\s+pullVisitBodies: manifest\.options\.fullNotes === true,/.test(range.slice(rangeExec, rangeExec + 900)),
+  'a resumed range manifest can execute without the canonical floor again');
+/* the legacy hero refuses OFF before importing, in BOTH shells */
+for (const [name, text] of [['1pScribeFlow.html', shell], ['1p/index.html', liveShell]]) {
+  assert.ok(text.includes('if(opts.__pullVisitBodies!==true){'), name + ': the legacy hero OFF-floor refusal is gone');
+  assert.ok(!text.includes('through the legacy reader — this fallback cannot read chart facts or day notes'),
+    name + ': the revoked partial-success OFF status came back');
+}
+
 console.log('PASS FVN canonical semantics (fvn-1.0.0): every human surface now teaches OFF = chart facts + the pulled day\'s own note (older notes skipped) and ON = + all prior notes; the chart-less "schedule-only" claims are gone from the shell; the engine\'s day-facts law, mode stamps, retry-mode freeze, and receipt carry are pinned to the same canon');

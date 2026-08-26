@@ -640,12 +640,13 @@ function connectDayFactsVocabularyCases() {
     'the legacy full-crawl refusal no longer states what it actually declined');
 }
 
-/* vnoff-1.0.0: the retired hero body in ScribeFlow's pullScheduleViaAssist is
- * the ONLY path on a build with no guarded engine.  It used to crawl every
- * chart's history unconditionally — an explicitly admitted OFF choice still
- * opened patient charts on that one path.  The admission gate freezes the
- * choice into opts.__pullVisitBodies; the legacy body must honor it, and a
- * missing flag must fail closed to schedule-only. */
+/* fvn-1.1.0 (Codex reply 38): the retired hero body in ScribeFlow's
+ * pullScheduleViaAssist is the ONLY path on a build with no guarded engine.
+ * The authoritative OFF floor (identity + chart facts + the pulled day's own
+ * note) needs the guarded engine, so the fallback must never import rows and
+ * report ok while omitting it: OFF (or a missing flag) REFUSES BEFORE
+ * IMPORTING with an honest non-success; ON keeps the floor plus historical
+ * notes through the full crawl. The EXECUTED result body proves both. */
 function legacyHeroCase() {
   const SHELL = fs.readFileSync(path.join(ROOT, '1pScribeFlow.html'), 'utf8');
   const hero = balancedFunction(SHELL, 'function pullScheduleViaAssist(btn, opts)', 'legacy hero');
@@ -653,13 +654,71 @@ function legacyHeroCase() {
     'the admission gate no longer freezes the confirmed choice for the legacy body');
   const calls = hero.split('_pullAllHistories(appts)').length - 1;
   assert.strictEqual(calls, 1, 'legacy hero grew a second history-crawl call site');
+  /* order: the OFF refusal gates BEFORE the import, and the crawl follows
+     the import unconditionally on the surviving (ON) path */
+  const refuseAt = hero.indexOf('if(opts.__pullVisitBodies!==true){');
   const importAt = hero.indexOf('_importPulledSchedule(appts)');
-  const gateAt = hero.indexOf('if(opts.__pullVisitBodies===true){');
   const crawlAt = hero.indexOf('_pullAllHistories(appts)');
-  assert(importAt >= 0 && gateAt > importAt && crawlAt > gateAt,
-    'legacy hero crawls histories regardless of the admitted OFF choice (the __pullVisitBodies===true gate is missing or does not guard the crawl)');
-  assert(/through the legacy reader — this fallback cannot read chart facts or day notes/.test(hero),
-    'legacy hero OFF completion states its own limitation honestly (dayfacts-1.0.1: the fallback cannot do the mandatory floor, and must say so instead of describing OFF as chartless)');
+  assert(refuseAt >= 0 && importAt > refuseAt && crawlAt > importAt,
+    'the legacy hero can still import rows before the OFF-floor refusal (or the crawl no longer follows the import)');
+  assert(!/through the legacy reader — this fallback cannot read chart facts or day notes/.test(hero),
+    'the revoked partial-success OFF status (import + ok while omitting the floor) came back');
+
+  /* EXECUTED: drive the result body with a scripted extension reply. */
+  function runHero(pullVisitBodies, reply) {
+    const statuses = [];
+    const calls = { imported: 0, crawled: 0 };
+    const listeners = {};
+    const win = {
+      addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); },
+      removeEventListener: () => {},
+      postMessage: () => {},
+      __mlsDaySwitch: null
+    };
+    const sandbox = {
+      window: win, setTimeout: () => 0, clearInterval: () => {}, setInterval: () => 0,
+      _importPulledSchedule: async () => { calls.imported++; },
+      _pullAllHistories: async () => { calls.crawled++; },
+      _parseScheduleText: async () => [],
+      _normTime: v => String(v || ''),
+      setS: (m, k) => { statuses.push({ m: String(m || ''), k: String(k || '') }); return true; },
+      toast: () => {},
+      btn: null,
+      opts: { __pullVisitBodies: pullVisitBodies },
+      got: false
+    };
+    /* slice the proceed() result body: from onResult through the deadline arm */
+    const s = hero.indexOf('    function onResult(e){');
+    const e = hero.indexOf('    window.addEventListener(\'message\',onResult);', s);
+    assert(s > 0 && e > s, 'the legacy hero result body moved');
+    const make = new Function('window', 'setS', '_importPulledSchedule', '_pullAllHistories', '_parseScheduleText', '_normTime', 'opts', 'btn', 'toast',
+      'var got=false;\n' + hero.slice(s, e) + '\nreturn onResult;');
+    const onResult = make(win, sandbox.setS, sandbox._importPulledSchedule, sandbox._pullAllHistories, sandbox._parseScheduleText, sandbox._normTime, sandbox.opts, null, sandbox.toast);
+    const done = onResult({ data: { source: 'mls-ext', type: 'mlsAppScheduleResult', resp: reply } });
+    /* the handler runs an async IIFE - give it two microtask turns */
+    return Promise.resolve(done).then(() => new Promise(r => setImmediate(r))).then(() => ({ statuses, calls }));
+  }
+  const APPTS = [{ name: 'A B', dob: '01/01/2000', date: '2026-08-26', time: '9:00 AM', reason: '', provider: 'P' }];
+  return (async () => {
+    /* fallback OFF: refuses BEFORE importing - zero imports, zero crawls,
+       an err (never ok) status, and the honest floor sentence */
+    let r = await runHero(false, { ok: true, text: 'x', appts: APPTS, schedDate: '2026-08-26' });
+    assert.deepStrictEqual(r.calls, { imported: 0, crawled: 0 },
+      'the OFF fallback still imported or crawled: ' + JSON.stringify(r.calls));
+    const refusal = r.statuses[r.statuses.length - 1];
+    assert.strictEqual(refusal.k, 'err', 'the OFF fallback refusal was not an honest non-success: ' + JSON.stringify(refusal));
+    assert(/cannot read chart facts|day-only pull here would silently omit/.test(refusal.m), 'the refusal does not name the floor: ' + refusal.m);
+    /* a MISSING flag fails closed identically */
+    r = await runHero(undefined, { ok: true, text: 'x', appts: APPTS, schedDate: '2026-08-26' });
+    assert.deepStrictEqual(r.calls, { imported: 0, crawled: 0 }, 'a missing flag did not fail closed');
+    /* ON: import + full crawl (floor + historical notes) */
+    r = await runHero(true, { ok: true, text: 'x', appts: APPTS, schedDate: '2026-08-26' });
+    assert.deepStrictEqual(r.calls, { imported: 1, crawled: 1 }, 'the ON fallback lost the floor-plus-history crawl');
+    /* unavailable reader: zero partial-success claim, nothing imported */
+    r = await runHero(true, { ok: false, error: 'reader dead' });
+    assert.deepStrictEqual(r.calls, { imported: 0, crawled: 0 }, 'a failed reader still imported');
+    assert(r.statuses.every(st => st.k !== 'ok'), 'a failed reader produced a partial-success claim: ' + JSON.stringify(r.statuses));
+  })();
 }
 
 /* ===== KNOWN ENGINE GAP (reported, deliberately NOT asserted here) =========
@@ -678,7 +737,7 @@ function legacyHeroCase() {
 (async () => {
   await resolverCases();
   staticGateCases();
-  legacyHeroCase();
+  await legacyHeroCase();
   slowYearChoiceCase();
   receiptCases();
   await dayFactsAdmissionCases();
@@ -687,7 +746,7 @@ function legacyHeroCase() {
   notesIdleGateCases();
   connectDayFactsVocabularyCases();
   await singlePatientCases();
-  console.log('PASS full-visit-notes-choice-gates-runtime: resolver first-use cases, day/calendar/legacy/year gates, legacy-hero OFF stays schedule-only, local+relay receipts, day-facts onlyDate admission (counted), today-note census in both modes, idle-notes gate vocabulary, connect day-facts wording, and single-patient honest partial');
+  console.log('PASS full-visit-notes-choice-gates-runtime: resolver first-use cases, day/calendar/legacy/year gates, legacy-hero OFF refuses BEFORE importing (executed: zero imports/crawls, honest err naming the floor; missing flag fails closed; ON imports + full crawl; failed reader claims no partial success), local+relay receipts, day-facts onlyDate admission (counted), today-note census in both modes, idle-notes gate vocabulary, connect day-facts wording, and single-patient honest partial');
 })().catch(error => {
   console.error('FAIL full-visit-notes-choice-gates-runtime:', error && error.stack || error);
   process.exitCode = 1;
