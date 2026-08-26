@@ -1,90 +1,101 @@
 'use strict';
-/* nvl-1.0.0 regression (Codex reply 24 item 4): the day-switch goto gets ONE
- * bounded escape rung - when the settled goto still ends bad (nav refusal or
- * wrong day), the pull runs the batch walker's proven GoHome verb once and
- * re-runs the settled goto; never twice per pull, never on a dead session,
- * and the rung's own result rides navDiag so the receipt proves the ladder
- * ran. The ladder functions are sliced VERBATIM from the shipped 1p bytes
- * and executed with injected dependencies. */
+/* nvl-1.1.0 regression (Codex reply 34): the escape IS the goto handler's own
+ * guarded v1.91 recovery ladder. The app drives NO separate GoHome verb (the
+ * unbounded orphanable action is DELETED, not wrapped); its one retry
+ * re-enters the guarded goto seam, admitted only on closed alive-surface
+ * evidence: the reason-less supported:true failures that carry a located
+ * control (via) or executed-frames diag, plus the wrong-day landing. Every
+ * coded refusal - sleeping, busy, deadline, picker, extension, ALIEN - and
+ * every session-dead/unsupported/malformed reply keeps its first verdict
+ * with zero extra attempts. Ladder functions sliced VERBATIM from shipped
+ * bytes and executed with injected dependencies. */
 
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(path.resolve(__dirname, '..'), '1p-feat_mls_schedimport_exact.js'), 'utf8');
-const start = src.indexOf('/* nvl-1.0.0: the one-rung ladder around the settled goto. */');
+const start = src.indexOf('/* nvl-1.1.0 (Codex reply 34): the escape IS the goto handler');
 const end = src.indexOf('return gotoWithRecovery().then(function (nav) {', start);
-assert.ok(start > 0 && end > start, 'the nvl-1.0.0 ladder left the goto leg');
-const makeLadder = new Function('normDate', 'date', 'navRecovery', 'gotoDateSettled', 'bridge', 'onStatus',
+assert.ok(start > 0 && end > start, 'the nvl-1.1.0 ladder left the goto leg');
+const makeLadder = new Function('normDate', 'date', 'navRecovery', 'gotoDateSettled', 'onStatus',
   src.slice(start, end) + '\nreturn gotoWithRecovery;');
 
-function harness(gotoResults, bridgeImpl) {
-  const calls = { goto: 0, bridge: 0, status: [] };
-  const navRecovery = { ran: false, homeOk: null };
+function harness(gotoResults) {
+  const calls = { goto: 0, status: [] };
+  const navRecovery = { ran: false };
   const ladder = makeLadder(
     v => String(v || ''),
     '2026-08-26',
     navRecovery,
     () => { const r = gotoResults[Math.min(calls.goto, gotoResults.length - 1)]; calls.goto++; return Promise.resolve(r); },
-    (resType, reqType, timeoutMs, payload) => { calls.bridge++; calls.bridgeVerb = reqType; return bridgeImpl(); },
     (m) => calls.status.push(String(m))
   );
   return { ladder, calls, navRecovery };
 }
+const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
 
 (async () => {
-  /* 1: a good first goto never runs the rung */
-  let h = harness([{ ok: true, schedDate: '2026-08-26' }], () => Promise.resolve({ ok: true }));
+  /* healthy goto: one call, no recovery */
+  let h = harness([GOOD]);
   let nav = await h.ladder();
-  assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto, bridge: h.calls.bridge, ran: h.navRecovery.ran }, { ok: true, goto: 1, bridge: 0, ran: false },
-    'a healthy goto triggered the escape rung');
+  assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto, ran: h.navRecovery.ran }, { ok: true, goto: 1, ran: false });
 
-  /* 2: nav refusal -> GoHome once -> second goto succeeds */
-  h = harness([{ ok: false, reason: 'week-strip-empty' }, { ok: true, schedDate: '2026-08-26' }], () => Promise.resolve({ ok: true }));
+  /* THE INTENDED CONTROLS - alive encounter/chart surface (reason-less,
+     supported:true, frames executed) recovers exactly once */
+  h = harness([{ ok: false, supported: true, diag: { initFrames: 3, rounds: [{}, {}] } }, GOOD]);
   nav = await h.ladder();
-  assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto, bridge: h.calls.bridge, verb: h.calls.bridgeVerb, ran: h.navRecovery.ran, homeOk: h.navRecovery.homeOk },
-    { ok: true, goto: 2, bridge: 1, verb: 'mlsAppGoHome', ran: true, homeOk: true },
-    'the encounter-surface refusal did not recover through GoHome');
+  assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto, ran: h.navRecovery.ran }, { ok: true, goto: 2, ran: true },
+    'the alive encounter-surface shape did not recover');
 
-  /* 3: wrong day is ALSO bad - the rung runs for it */
-  h = harness([{ ok: true, schedDate: '2026-08-25' }, { ok: true, schedDate: '2026-08-26' }], () => Promise.resolve({ ok: true }));
+  /* the measured weekstrip verify-miss (via set, empty reason) recovers */
+  h = harness([{ ok: false, supported: true, via: 'weekstrip', schedDate: '2026-08-25', diag: { initFrames: 0, rounds: [] } }, GOOD]);
   nav = await h.ladder();
-  assert.deepStrictEqual({ day: nav.schedDate, goto: h.calls.goto, bridge: h.calls.bridge }, { day: '2026-08-26', goto: 2, bridge: 1 },
-    'a wrong-day landing did not recover');
+  assert.deepStrictEqual({ goto: h.calls.goto, ran: h.navRecovery.ran }, { goto: 2, ran: true }, 'the weekstrip verify flake did not recover');
 
-  /* 4: a dead session never gets a rung */
-  h = harness([{ ok: false, sessionLikelyExpired: true }], () => Promise.resolve({ ok: true }));
+  /* wrong-day landing (ok:true, mismatched day) recovers */
+  h = harness([{ ok: true, supported: true, schedDate: '2026-08-25' }, GOOD]);
   nav = await h.ladder();
-  assert.deepStrictEqual({ goto: h.calls.goto, bridge: h.calls.bridge, ran: h.navRecovery.ran }, { goto: 1, bridge: 0, ran: false },
-    'the ladder drove a dead session');
+  assert.deepStrictEqual({ day: nav.schedDate, goto: h.calls.goto }, { day: '2026-08-26', goto: 2 }, 'a wrong-day landing did not recover');
 
-  /* 4b: an ABSENT (or ambiguous) athena has no surface to escape - no rung,
-     no doubled settle ladder */
-  for (const reason of ['no-athena-tab', 'ambiguous-athena-tabs']) {
-    h = harness([{ ok: false, reason }], () => Promise.resolve({ ok: true }));
+  /* PERMANENT FAIL-CLOSED CONTROLS: every coded/dead/unsupported/malformed
+     reply gets ZERO extra attempts */
+  const NEVER = [
+    ['dead session', { ok: false, supported: true, sessionLikelyExpired: true, diag: { initFrames: 3 } }],
+    ['unsupported reply', { ok: false, supported: false, error: 'No athenaOne tab open.' }],
+    ['sleeping tab', { ok: false, supported: true, reason: 'athena-tab-sleeping', diag: { initFrames: 1 } }],
+    ['navigation busy', { ok: false, supported: true, reason: 'athena-navigation-busy' }],
+    ['immutable deadline', { ok: false, supported: true, reason: 'goto-date-deadline-exceeded', diag: { initFrames: 2 } }],
+    ['extension error', { ok: false, supported: true, reason: 'extension-error' }],
+    ['picker/lease error', { ok: false, supported: true, reason: 'lease-tab-gone' }],
+    ['ALIEN coded reason with alive evidence', { ok: false, supported: true, reason: 'a-reason-invented-later', via: 'weekstrip', diag: { initFrames: 4, rounds: [{}] } }],
+    ['malformed empty reply', {}],
+    ['null reply', null],
+    ['reason-less refusal with NO alive evidence', { ok: false, supported: true, diag: { initFrames: 0, rounds: [] } }]
+  ];
+  for (const [label, reply] of NEVER) {
+    h = harness([reply, GOOD]);
     nav = await h.ladder();
-    assert.deepStrictEqual({ goto: h.calls.goto, bridge: h.calls.bridge, ran: h.navRecovery.ran }, { goto: 1, bridge: 0, ran: false },
-      'the ladder burned attempts against ' + reason);
+    assert.deepStrictEqual({ goto: h.calls.goto, ran: h.navRecovery.ran }, { goto: 1, ran: false },
+      label + ' triggered a recovery attempt - the predicate fails open');
   }
 
-  /* 5: a GoHome rejection still retries the goto once, honestly recorded */
-  h = harness([{ ok: false, reason: 'x' }, { ok: true, schedDate: '2026-08-26' }], () => Promise.reject(new Error('bridge-deadline-exceeded')));
+  /* bounded: the retry itself failing does NOT buy a third attempt */
+  h = harness([{ ok: false, supported: true, via: 'weekstrip', diag: { initFrames: 2 } },
+               { ok: false, supported: true, via: 'weekstrip', diag: { initFrames: 2 } }]);
   nav = await h.ladder();
-  assert.deepStrictEqual({ ok: nav.ok, homeOk: h.navRecovery.homeOk, bridge: h.calls.bridge }, { ok: true, homeOk: false, bridge: 1 },
-    'a failed GoHome killed the retry or lied about itself');
+  assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto }, { ok: false, goto: 2 }, 'the ladder is not bounded to one re-entry');
 
-  /* 6: bounded - a second bad goto returns the bad nav, no second rung */
-  h = harness([{ ok: false, reason: 'x' }, { ok: false, reason: 'x' }], () => Promise.resolve({ ok: true }));
-  nav = await h.ladder();
-  assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto, bridge: h.calls.bridge }, { ok: false, goto: 2, bridge: 1 },
-    'the ladder is not bounded to one rung');
-
-  /* byte pins: the pull enters through the ladder; the diag carries the rung */
+  /* byte pins: the GoHome bridge verb is GONE from this leg (nothing to
+     orphan); the pull enters through the ladder; navDiag proves the run */
+  assert.ok(!src.includes('bridge("mlsAppGoHomeResult", "mlsAppGoHome"'),
+    'the app still drives the separate unbounded GoHome verb from the goto leg');
   assert.ok(src.includes('return gotoWithRecovery().then(function (nav) {'), 'the goto leg no longer enters through the ladder');
-  assert.strictEqual(src.split('bridge("mlsAppGoHomeResult", "mlsAppGoHome", 30000, {})').length - 1, 1,
-    'the escape rung bridge call moved or multiplied');
-  assert.ok(src.includes('recoveryRan: navRecovery.ran === true, /* nvl-1.0.0 */') && src.includes('recoveryHomeOk: navRecovery.homeOk === true'),
-    'navDiag no longer proves whether the ladder ran');
+  assert.ok(src.includes('recoveryRan: navRecovery.ran === true, /* nvl-1.1.0: the guarded seam was re-entered */') &&
+    src.includes('recoveryVia: navRecovery.ran === true ? "second-settled-goto" : ""'),
+    'navDiag no longer proves whether and how the ladder ran');
+  assert.ok(src.includes('if (String(nav.reason || "") !== "") return false;'),
+    'the closed reason-less admission gate is gone (coded refusals could recover again)');
 
-  console.log('PASS nav-ladder recovery (nvl-1.0.0): one bounded GoHome rung recovers encounter-surface and wrong-day landings, dead sessions and healthy gotos never trigger it, a failed rung is recorded honestly, and navDiag carries the proof (ladder executed verbatim from shipped bytes)');
+  console.log('PASS nav-ladder recovery (nvl-1.1.0): the escape is the goto handler\'s own guarded ladder - the orphanable GoHome verb is deleted from the leg; alive encounter-surface, weekstrip verify-miss, and wrong-day landings recover exactly once on positive evidence; dead/unsupported/sleeping/busy/deadline/extension/picker/ALIEN/malformed/evidence-less replies get zero extra attempts (executed verbatim from shipped bytes)');
 })().catch(e => { console.error(e); process.exit(1); });
