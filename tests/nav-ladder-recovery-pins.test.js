@@ -92,24 +92,41 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
   nav = await h.ladder();
   assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto }, { ok: false, goto: 2 }, 'the ladder is not bounded to one re-entry');
 
-  /* nvl-1.2.0: the ATTEMPTS receipt is monotonic across both sequences -
-     the REAL gotoDateSettled + ladder executed with a scripted bridge */
+  /* nvl-1.3.0 (Codex reply 40): the ATTEMPTS receipt counts REAL bridge
+     dispatches - the REAL gotoDateSettled + ladder + the REAL
+     p1AthenaBusyRetry (its presence-admitted internal re-dispatches are
+     attempts too), executed with a scripted bridge */
   {
     const aStart = src.indexOf('      var navAttempts = 0;');
     const aEnd = src.indexOf('      /* ===== p1-onetab-nav-1.0.0', aStart);
     const bStart = src.indexOf('      /* nvl-1.1.0 (Codex reply 34): the escape IS the goto handler', aEnd);
     const bEnd = src.indexOf('      return gotoWithRecovery().then(function (nav) {', bStart);
     assert.ok(aStart > 0 && aEnd > aStart && bStart > aEnd && bEnd > bStart, 'the settled-goto/ladder slices moved');
+    const wStart = src.indexOf('  function p1AthenaBusyRetry(runLeg, onStatus, budget) {');
+    const wEnd = src.indexOf('  /* THE ONE-TAB SENTENCE', wStart);
+    assert.ok(wStart > 0 && wEnd > wStart, 'the real busy-retry helper moved');
+    const makeBusyRetry = new Function('isFn', 'p1IsNoAthenaTabAnswer', 'P1_ATHENA_BUSY_MAX', 'p1PresenceProbe', 'p1PresenceSaysAthenaLives', 'p1BusySleep', 'P1_ATHENA_BUSY_WAITS',
+      src.slice(wStart, wEnd) + '\nreturn p1AthenaBusyRetry;');
     const makeReal = new Function('safe', 'normDate', 'date', 'p1AthenaBusyRetry', 'bridge', 'onStatus', 'window',
       src.slice(aStart, aEnd) + '\n' + src.slice(bStart, bEnd) +
       '\nreturn { run: gotoWithRecovery, attempts: function () { return navAttempts; }, diag: function (nav) { return navDiagOf(nav, navAttempts); }, navRecovery: navRecovery };');
+    const BUSY = { reason: 'stub-athena-busy' }; /* matched by the injected no-tab predicate */
     const drive = async (replies) => {
       let i = 0, bridgeCalls = 0;
+      const realBusyRetry = makeBusyRetry(
+        f => typeof f === 'function',
+        r => !!(r && r.reason === 'stub-athena-busy'),
+        3,
+        () => Promise.resolve({ ok: true, reason: 'presence-verified' }),
+        p => !!(p && p.reason === 'presence-verified'),
+        () => Promise.resolve(),
+        [0, 0, 0]
+      );
       const real = makeReal(
         (fn, d) => { try { return fn(); } catch (e) { return d; } },
         v => String(v || ''),
         '2026-08-26',
-        (fn) => fn(),
+        realBusyRetry,
         () => { bridgeCalls++; const r = replies[Math.min(i, replies.length - 1)]; i++; return Promise.resolve(r); },
         () => {},
         { __mlsBgSleep: () => Promise.resolve() }
@@ -118,9 +135,15 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
       return { nav, total: real.attempts(), bridgeCalls, diag: real.diag(nav), ran: real.navRecovery.ran };
     };
     const BADOK = { ok: false, supported: true, via: 'weekstrip' };
+    /* THE reply-40 case: three presence-admitted busy retries inside ONE
+       wrapper call, then success - FOUR real dispatches, four counted */
+    let r = await drive([BUSY, BUSY, BUSY, GOOD]);
+    assert.deepStrictEqual({ ok: r.nav.ok, total: r.total, calls: r.bridgeCalls, seq: r.diag.sequences, ran: r.ran },
+      { ok: true, total: 4, calls: 4, seq: 1, ran: false },
+      'three busy retries did not count as four real attempts: ' + JSON.stringify(r.diag));
     /* 4 + 1: first sequence exhausts its settle ladder, recovery's first
        attempt lands - the receipt says FIVE, not one */
-    let r = await drive([BADOK, BADOK, BADOK, BADOK, GOOD]);
+    r = await drive([BADOK, BADOK, BADOK, BADOK, GOOD]);
     assert.deepStrictEqual({ ok: r.nav.ok, total: r.total, calls: r.bridgeCalls, seq: r.diag.sequences, ran: r.ran },
       { ok: true, total: 5, calls: 5, seq: 2, ran: true },
       '4+1 did not report the truthful monotonic attempt total: ' + JSON.stringify(r.diag));
@@ -129,9 +152,21 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
     assert.deepStrictEqual({ ok: r.nav.ok, total: r.total, calls: r.bridgeCalls, seq: r.diag.sequences },
       { ok: false, total: 8, calls: 8, seq: 2 },
       '4+4 did not report eight attempts with the one-reentry ceiling: ' + JSON.stringify(r.diag));
+    /* COMBINED: settle-ladder exhaustion (4 dispatches) + recovery whose one
+       wrapper call spends two busy re-dispatches before landing - SEVEN */
+    r = await drive([BADOK, BADOK, BADOK, BADOK, BUSY, BUSY, GOOD]);
+    assert.deepStrictEqual({ ok: r.nav.ok, total: r.total, calls: r.bridgeCalls, seq: r.diag.sequences, ran: r.ran },
+      { ok: true, total: 7, calls: 7, seq: 2, ran: true },
+      'the combined settle+recovery+busy total is untruthful: ' + JSON.stringify(r.diag));
     /* a clean first attempt stays 1/1 */
     r = await drive([GOOD]);
     assert.deepStrictEqual({ total: r.total, seq: r.diag.sequences, ran: r.ran }, { total: 1, seq: 1, ran: false });
+    /* nvl-1.3.0: EXACT receipt booleans - a malformed/ok-less reply can never
+       mint a successful nav receipt */
+    r = await drive([{}]);
+    assert.deepStrictEqual({ ok: r.diag.ok, supported: r.diag.supported }, { ok: false, supported: false },
+      'a malformed {} reply minted a successful receipt: ' + JSON.stringify(r.diag));
+    assert.strictEqual((await drive([GOOD])).diag.ok, true, 'an explicit ok:true no longer reads as success');
   }
 
   /* byte pins: the GoHome bridge verb is GONE from this leg (nothing to
@@ -144,6 +179,16 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
     'navDiag no longer proves whether and how the ladder ran');
   assert.ok(src.includes('if (String(nav.reason || "") !== "") return false;'),
     'the closed reason-less admission gate is gone (coded refusals could recover again)');
+  /* nvl-1.3.0 byte pins: the counter sits at the REAL dispatch inside the
+     wrapper closure; the exact success gate guards the schedule leg */
+  const legIdx = src.indexOf('navAttempts += 1;');
+  assert.ok(legIdx > 0 && src.indexOf('return bridge("mlsAppGotoDateResult", "mlsAppGotoDate"', legIdx) - legIdx < 80,
+    'the attempt counter left the real bridge-dispatch closure');
+  assert.strictEqual(src.split('navAttempts += 1;').length - 1, 1, 'a second attempt-counter site appeared');
+  assert.ok(src.includes('if (!nav || nav.ok !== true) {'),
+    'the exact nav.ok === true success gate is gone - a malformed reply can reach the schedule leg');
+  assert.ok(src.includes('ok: !!(nav && nav.ok === true),') && src.includes('supported: !!(nav && nav.supported === true),'),
+    'navDiagOf lost its exact fail-closed booleans');
 
-  console.log('PASS nav-ladder recovery (nvl-1.2.0): the escape is the goto handler\'s own guarded ladder; admission requires EXPLICIT supported:true and a closed via vocabulary (weekstrip/input/arrows - alien via poisons even positive diag, absent supported fails closed); fourteen fail-closed replies get zero attempts; the attempts receipt is MONOTONIC across sequences (4+1=5, 4+4=8, sequences counted) with the one-reentry ceiling (real gotoDateSettled + ladder executed from shipped bytes)');
+  console.log('PASS nav-ladder recovery (nvl-1.3.0): the escape is the goto handler\'s own guarded ladder; admission requires EXPLICIT supported:true and a closed via vocabulary; fourteen fail-closed replies get zero attempts; the attempts receipt counts REAL bridge dispatches through the REAL p1AthenaBusyRetry (3 busy retries = 4 attempts; settle 4 + recovery busy 2 + landing = 7; 4+1=5; 4+4=8) with the one-reentry ceiling; navDiagOf uses exact fail-closed booleans and only nav.ok === true reaches the schedule leg (executed from shipped bytes)');
 })().catch(e => { console.error(e); process.exit(1); });
