@@ -1799,7 +1799,11 @@ const tests = [
      phase is active - truthful interim stamp, day verdict restored verbatim
      with a convergence appendix once at settle, observer keeps the chip
      alive on a recent interim. */
-  'convergence-interim-outcome-pins.test.js'
+  'convergence-interim-outcome-pins.test.js',
+  /* pts-1.1.0 (Codex reply 30 blocks 1-3): no ownership from absence, the
+     epoch fence is durable with an explicit chart-work refresh scope, and
+     local+relay day-strip attempts share one once-only epoch owner. */
+  'pull-terminal-scope-blocks.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

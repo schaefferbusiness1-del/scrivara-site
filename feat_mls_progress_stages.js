@@ -40,7 +40,7 @@
  * ========================================================================== */
 (function () {
   'use strict';
-  var VERSION = 'ps-1.4.0'; /* pts-1.0.0: scoped pull-terminal seam (Codex reply 29) */
+  var VERSION = 'ps-1.5.0'; /* pts-1.1.0: durable epoch fence + chart-work scope (Codex reply 30) */
   var CHIP_ID = 'mlsPsChip', PANEL_ID = 'mlsPsPanel', CSS_ID = 'mlsPsCss';
   var STALE_AFTER_MS = 15000;
 
@@ -250,7 +250,6 @@
    * never treated as the close authority (other helpers write it).      *
    * ------------------------------------------------------------------ */
   var pts = { terminaled: '', terminalAt: 0 };
-  var PTS_QUARANTINE_MS = 60000;
   function ptsEpoch() {
     return safe(function () {
       var ep = window.__mlsPullEpochV1;
@@ -260,10 +259,24 @@
       return (ss && pid) ? (ss + ':' + pid) : '';
     }, '');
   }
-  function ptsQuarantined() {
-    if (!pts.terminaled) return false;
-    if (ptsEpoch() !== pts.terminaled) return false; /* a new attempt stamps a new epoch */
-    return (now() - pts.terminalAt) < PTS_QUARANTINE_MS;
+  /* pts-1.1.0 (Codex reply 30 BLOCK 2): the fence is DURABLE — a terminaled
+     pull epoch stays terminal until an explicit new attempt replaces the
+     stamp. No time window: sufficiently late MV3 callbacks were exactly the
+     stale-running class this seam exists to end. */
+  function ptsFenced() {
+    return !!(pts.terminaled && ptsEpoch() === pts.terminaled);
+  }
+  /* pts-1.1.0 (BLOCK 2): explicit single-patient chart work carries its own
+     NON-pull scope stamp (__mlsChartWorkScopeV1, stamped by the
+     __mlsChartField.read rail), so it paints immediately without weakening
+     the day-pull fence. The background visit-list top-up deliberately does
+     NOT stamp — its post-pull chatter is the noise the fence exists for. */
+  function ptsChartScope() {
+    return safe(function () {
+      var sc = window.__mlsChartWorkScopeV1;
+      if (!sc || !sc.at || (now() - Number(sc.at)) > 180000) return '';
+      return String(sc.id || 'chart-work');
+    }, '');
   }
   function onPullTerminal(e) {
     var d = (e && e.detail) || {};
@@ -280,9 +293,11 @@
       var cur = activeFlow(flowName);
       if (!cur) return null;
       var je = String(cur.meta.epoch || '');
-      /* '' = the job was created before the engine stamped this attempt
-         (same tab, same arc) — the scoped terminal still owns it. */
-      return (je === ev || je === '') ? cur : null;
+      /* pts-1.1.0 (BLOCK 1): ownership is never inferred from absence — a
+         job with no epoch (started before this attempt stamped, or admitted
+         through the chart-work scope) is NOT owned by this terminal and
+         continues to its own terminal. */
+      return je === ev ? cur : null;
     }
     if (bound('history')) {
       safe(function () { if (hist.quietTimer) { clearTimeout(hist.quietTimer); hist.quietTimer = null; } });
@@ -310,9 +325,17 @@
   function historyTouch(chartDelta, operation, patient) {
     var cur = activeFlow('history');
     if (!cur) {
-      /* pts-1.0.0: same-epoch late traffic cannot reopen the closed job */
-      if (ptsQuarantined()) return;
+      /* pts-1.1.0: under a terminaled (fenced) pull epoch, only work that
+         carries the explicit chart-work scope may open a job — and that job
+         binds to the SCOPE, never to the dead pull epoch, so no pull
+         terminal ever owns it. Unscoped late traffic reopens nothing. */
+      var chartScope = '';
+      if (ptsFenced()) {
+        chartScope = ptsChartScope();
+        if (!chartScope) return;
+      }
       cur = ensure('history', {});
+      if (cur && chartScope) { cur.meta.epoch = ''; cur.meta.chartScope = chartScope; }
     }
     if (!cur) return;
     cur.meta.count += chartDelta;
@@ -731,11 +754,12 @@
       if (fresh || aged) {
         var otherTab = !(localAt && (now() - localAt) < 360000);
         if (!cur) {
-          /* pts-1.0.0: a lingering LOCAL stamp inside the terminal quarantine
-             is late traffic from the closed attempt — never a new job. A
-             foreign-tab xtab stamp still renders (fallback heuristics own
-             those). */
-          var ptsLateLocal = ptsQuarantined() && !otherTab;
+          /* pts-1.1.0: a lingering LOCAL stamp under the terminaled epoch is
+             late traffic from the closed attempt — never a new job, however
+             late it arrives (durable fence; a new attempt stamps a new epoch
+             and lifts it). A foreign-tab xtab stamp still renders (fallback
+             heuristics own those). */
+          var ptsLateLocal = ptsFenced() && !otherTab;
           if (!ptsLateLocal) cur = ensure('pull', {});
         }
         if (cur && fresh && freshest !== pullWatch.lastStamp) {

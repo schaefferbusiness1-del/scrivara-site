@@ -188,7 +188,7 @@ async function runtime() {
 
     eq(await page.evaluate(() => (window.__mlsPsHonest || {}).version), 'pshonest-1.0.0',
       'pshonest-1.0.0 did not install on the running page');
-    eq(await page.evaluate(() => window.__mlsProgressStages.version), 'ps-1.4.0',
+    eq(await page.evaluate(() => window.__mlsProgressStages.version), 'ps-1.5.0',
       'the shared progress module under test is not the version this block was measured against');
 
     /* ---- §1 REPRODUCE the owner's card from the app's own traffic ------ */

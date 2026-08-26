@@ -84,7 +84,7 @@ vm.runInContext(psSource, context, { filename: 'feat_mls_progress_stages.js' });
 const lb = context.__mlsLoadingCalm;
 const ps = context.__mlsProgressStages;
 assert(lb && lb.installed, 'shared lb owner missing');
-assert(ps && ps.installed && ps.version === 'ps-1.4.0', 'ps-1.4.0 (pts-1.0.0) module missing');
+assert(ps && ps.installed && ps.version === 'ps-1.5.0', 'ps-1.5.0 (pts-1.1.0) module missing');
 assert(typeof ps._pullTerminal === 'function', 'the scoped-terminal hook is not exposed');
 assert(listeners['mls:pull-terminal'] && listeners['mls:pull-terminal'].length === 1, 'the mls:pull-terminal listener is not attached');
 
@@ -153,24 +153,34 @@ assert.strictEqual(running(), 0, 'the second epoch terminal did not close its jo
 const failed = lb.snapshot().find(j => j.kind === 'schedule_history_pull' && j.status === 'failed');
 assert(failed, 'an ok:false terminal did not record an honest failed pull job');
 
-/* quarantine expiry: after the window, ordinary (non-pull) history work paints again */
+/* pts-1.1.0 durable fence: however late, unscoped traffic under the
+   terminaled epoch reopens nothing; the explicit chart-work scope paints */
 NOW += 61000;
 bridge('mlsAppReadChart', { patient: { name: 'Refresh C' } });
-assert.strictEqual(running(), 1, 'post-quarantine per-patient refresh traffic no longer paints a chip');
+assert.strictEqual(running(), 0, 'unscoped late traffic reopened a job after the old quarantine window');
+context.__mlsChartWorkScopeV1 = { id: 'cfread-test', at: NOW };
+bridge('mlsAppReadChart', { patient: { name: 'Refresh C' } });
+assert.strictEqual(running(), 1, 'the scoped single-patient refresh no longer paints a chip');
 
-/* ---- emitter byte pins: the 1p day strip stamps the epoch and emits at done() ---- */
+/* ---- emitter byte pins: the shared epoch owner (pts-1.1.0) ---- */
 const connect = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
-assert(connect.includes("window.__mlsPullEpochV1 = { sessionSerial: String(sessionSerial), pullId: String(DS.pullId || ''), startedAt: Date.now() }"),
-  'the pull-start epoch stamp left the day strip');
+const ownerIdx = connect.indexOf('function dsBeginPullEpoch(sessionSerial) {');
+const termIdx = connect.indexOf('function dsTerminalPullEpoch(handle, ok) {');
+assert(ownerIdx > 0 && termIdx > ownerIdx, 'the shared day-strip epoch owner is gone');
+const ownerSlice = connect.slice(ownerIdx, termIdx + 700);
+assert(ownerSlice.includes("window.__mlsPullEpochV1 = { sessionSerial: handle.sessionSerial, pullId: handle.pullId, startedAt: Date.now() }"),
+  'begin no longer stamps the attempt identity');
+assert(ownerSlice.includes('if (!handle || handle.emitted) return false;') && ownerSlice.includes('handle.emitted = true;'),
+  'the once-only emitted latch left the terminal owner');
+assert(ownerSlice.includes("sessionSerial: handle.sessionSerial, pullId: handle.pullId, ok: ok === true, at: Date.now()"),
+  'the terminal detail lost its PHI-free attempt-scoped shape');
+assert(!/detail:\s*\{[^}]*msg/.test(ownerSlice), 'the terminal detail must never carry message text');
 const doneIdx = connect.indexOf('function done(ok, msg, keepStatus, signinRequired) {');
 assert(doneIdx > 0, 'the day-strip done() seam moved');
-const doneSlice = connect.slice(doneIdx, doneIdx + 1600);
+const doneSlice = connect.slice(doneIdx, doneIdx + 900);
 assert(doneSlice.includes("if (closed) return; closed = true;") &&
-  doneSlice.includes("window.dispatchEvent(new CustomEvent('mls:pull-terminal'") &&
-  doneSlice.indexOf('closed = true;') < doneSlice.indexOf("mls:pull-terminal"),
-  'the scoped terminal is not emitted once, inside the closed latch, at done()');
-assert(doneSlice.includes("sessionSerial: String(sessionSerial), pullId: String(DS.pullId || ''), ok: ok === true, at: Date.now()"),
-  'the terminal detail lost its PHI-free attempt-scoped shape');
-assert(!/detail:\s*\{[^}]*msg/.test(doneSlice), 'the terminal detail must never carry message text');
+  doneSlice.includes('dsTerminalPullEpoch(dsLocalEpoch, ok === true);') &&
+  doneSlice.indexOf('closed = true;') < doneSlice.indexOf('dsTerminalPullEpoch'),
+  'done() no longer terminals through the shared owner inside its closed latch');
 
-console.log('PASS pull-terminal seam (pts-1.0.0): scoped attempt terminal closes both observer jobs once, foreign/stale/identity-less terminals are fenced, late old-epoch traffic cannot reopen, foreign-tab stamps still render, a new epoch starts normally, and the 1p day strip emits from its done() seam');
+console.log('PASS pull-terminal seam (pts-1.1.0): scoped attempt terminal closes both observer jobs once, foreign/stale/identity-less terminals are fenced, the epoch fence is durable, the chart-work scope paints, foreign-tab stamps still render, a new epoch starts normally, and the day strip emits through the shared epoch owner');
