@@ -4521,7 +4521,17 @@
      it in its own bucket. Transport/auth/identity/navigation/deadline
      failures stay failures and stay retryable - the sub-cause histogram must
      be pure content evidence or the entry is untouched (fail closed). */
-  var TAX_TRANSPORT_CAUSE = /sleep|no-athena|session|deadline|swap|render|bridge|lease|tab|nav|signin|auth|timeout|unknown/i;
+  /* tax-1.0.1 (Codex reply 33): the classifier FAILS CLOSED. The transport
+     blacklist regex treated every UNRECOGNIZED histogram key as content -
+     background.js's real vocabulary carries safety/navigation/binding causes
+     (identity-changed-before-detail, detail-binding-mismatch,
+     encounter-surface-not-open, slideout-open-failed, click-failed, ...)
+     that a blacklist can never enumerate ahead of time. This closed exact
+     allowlist names the ONLY reviewed content/hydration-only causes that may
+     become named omissions after the capped retry; every unknown, new,
+     identity, binding, key-integrity, surface, frame, click, navigation,
+     transport, auth, deadline, picker, or row-set cause stays retryable. */
+  var TAX_CONTENT_ALLOW = { "accordion-not-open": 1, "no-bound-clinical-detail": 1 };
   function taxReconcileNamedOmissions(receipt) {
     var patients = (receipt && receipt.patients) || [], retry = (receipt && receipt.retry) || [];
     var byPid = {}, i, pid;
@@ -4541,7 +4551,7 @@
         if (hist) {
           var keys = Object.keys(hist);
           contentOnly = keys.length > 0;
-          for (var ki = 0; ki < keys.length; ki++) { if (TAX_TRANSPORT_CAUSE.test(keys[ki])) { contentOnly = false; break; } }
+          for (var ki = 0; ki < keys.length; ki++) { if (TAX_CONTENT_ALLOW[String(keys[ki])] !== 1) { contentOnly = false; break; } }
           if (contentOnly) detail = keys.sort(function (a, b) { return Number(hist[b] || 0) - Number(hist[a] || 0); })[0];
         }
         eligible = censusProven && contentOnly;
