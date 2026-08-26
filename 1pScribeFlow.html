@@ -20842,11 +20842,28 @@ function _athenaProfileProvenance(p,key,hasContent){
     if(!hasContent) return '';                 /* empty cards already speak via _athenaProfileEmptyText */
     var rec=p&&p.athenaProfileCoverage, card=rec&&rec.cards&&rec.cards[key];
     var exact=!!(rec&&rec.complete===true&&rec.exactIdentityVerified===true&&String(rec.patientId||'')===String((p&&p.id)||''));
-    var when=exact?String(rec.capturedAt||'').slice(0,10):'';
-    if(exact&&card&&card.status==='not_documented'){
+    /* prov-1.0.1 (Codex reply 43): capturedAt must SURVIVE validation or be
+       omitted - never sliced into a fake verification date. */
+    var when='';
+    if(exact){
+      var whenRaw=String(rec.capturedAt||'').slice(0,10);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(whenRaw)){
+        var whenD=new Date(whenRaw+'T12:00:00Z');
+        if(isFinite(whenD.getTime())&&whenD.getUTCFullYear()>=2020&&whenD.getUTCFullYear()<=2100&&whenRaw===whenD.toISOString().slice(0,10)) when=whenRaw;
+      }
+    }
+    /* prov-1.0.1: every claim needs its own EXACT section evidence - the
+       overall receipt alone verifies nothing about THIS card. The saved
+       vocabulary is found / not_documented / unverified plus a populated
+       bit; a missing card, an alien status, or a status/populated
+       contradiction gets the cautious line and never a verification claim. */
+    if(exact&&card&&card.status==='not_documented'&&card.populated===false){
       return '⚠ Athena’s chart, verified'+(when?' '+when:'')+', holds NONE of these — the entries here are MLS-local (kept on purpose; review before relying on them).';
     }
-    if(exact) return 'Includes the Athena chart verified'+(when?' '+when:'')+'; MLS-local additions may appear alongside.';
+    if(exact&&card&&card.status==='found'&&card.populated===true){
+      return 'Includes the Athena chart verified'+(when?' '+when:'')+'; MLS-local additions may appear alongside.';
+    }
+    if(exact) return 'The last Athena read receipt does not cover this section individually; entries may carry MLS-local additions.';
     if(_athenaChartLanded(p)){
       var imp=String((p&&p.athenaChartImportedAt)||'').slice(0,10);
       return 'From the Athena pull'+(imp?' of '+imp:'')+'; MLS-local additions may appear alongside.';
