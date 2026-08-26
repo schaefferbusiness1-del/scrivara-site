@@ -8563,7 +8563,13 @@
            classes are exactly the reason-less supported:true failures. */
         if (String(nav.reason || "") !== "") return false;
         var d0 = normDate(nav.schedDate);
-        if (nav.ok !== false) return !!(d0 && d0 !== date); /* wrong-day landing: surface alive by definition */
+        /* nvl-1.4.0 (Codex reply 42): the wrong-day landing is alive by
+           definition ONLY on an exact ok:true. A missing, null, or string ok
+           beside a mismatched parseable date is a malformed reply and buys
+           nothing - the same exact-boolean law as the terminal gate, one
+           branch lower. */
+        if (nav.ok === true) return !!(d0 && d0 !== date);
+        if (nav.ok !== false) return false; /* ok-less/malformed: never admit */
         /* nvl-1.2.0: a failed response recovers only when the handler
            EXPLICITLY says supported:true - absence fails closed - and an
            alien via poisons the reply even beside positive diag evidence. */
