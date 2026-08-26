@@ -954,6 +954,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       }
       return Object.keys(found).map(function (k) { return found[k]; });
     }
+    var hetDiag = { metaCount: -1, metaPatientMatch: null, apptCount: -1, provCount: -1, dateCount: -1, qualified: false, ancestorIdentity: '', noteTargetFound: null };
     function hetStageEncounterContext(frame, expectedPatient) {
       /* het-1.0.0: athena's own machine-typed encounter context, read off an
          athenaClinicals stage frame. Every field must resolve to EXACTLY ONE
@@ -963,6 +964,7 @@ async function mlsAthenaActionV2DriverFn(req) {
          logged. */
       try {
         var metas = deepQueryAll(frame.doc, 'meta').filter(function (m) { return /encounter_id/.test(m.getAttribute('content') || ''); });
+        hetDiag.metaCount = metas.length;
         if (metas.length !== 1) return null;
         var arr = JSON.parse(metas[0].getAttribute('content'));
         if (!Array.isArray(arr)) return null;
@@ -970,6 +972,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         for (var ai = 0; ai < arr.length; ai++) { var it = arr[ai]; if (it && typeof it === 'object') { for (var ck in it) { if (Object.prototype.hasOwnProperty.call(it, ck)) ctx[ck] = String(it[ck]); } } }
         var encId = digits(ctx.encounter_id || ''), metaPatient = digits(ctx.patient_id || '');
         var wantMrn = digits(expectedPatient.mrn);
+        hetDiag.metaPatientMatch = !!(metaPatient && wantMrn && metaPatient === wantMrn);
         if (!encId || encId.length < 3 || !metaPatient || !wantMrn || metaPatient !== wantMrn) return null;
         var html = '';
         try { html = String(frame.doc.body ? frame.doc.body.innerHTML : ''); } catch (eHtml) { return null; }
@@ -980,13 +983,17 @@ async function mlsAthenaActionV2DriverFn(req) {
           return out;
         }
         var appts = hetUniq(/"AppointmentID\\?"\s*:\s*\\?"(\d{3,})/g);
+        hetDiag.apptCount = appts.length;
         if (appts.length !== 1) return null;
         var provs = hetUniq(/"DisplayName\\?"\s*:\s*\\?"([^"\\]{4,70})\\?"/g, function (v) { return /,\s*(?:MD|DO|PA-C|CRNP|NP|DPM)\s*$/.test(v) ? v : ''; });
+        hetDiag.provCount = provs.length;
         if (provs.length !== 1) return null;
         var dates = hetUniq(/"(?:Scheduled|Appointment|Service|Visit|Appt)[A-Za-z]*Date\\?"[^0-9]{0,80}?(\d{4}-\d{2}-\d{2})/g);
+        hetDiag.dateCount = dates.length;
         if (dates.length !== 1) return null;
         var visitDate = dateKey(dates[0]);
         if (!visitDate) return null;
+        hetDiag.qualified = true;
         return { encounterId: encId, appointmentId: digits(appts[0]), provider: text(provs[0]), visitDate: visitDate };
       } catch (eHet) { return null; }
     }
@@ -1072,6 +1079,7 @@ async function mlsAthenaActionV2DriverFn(req) {
             if (hetHeader.identity) { chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
             try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
           }
+          hetDiag.ancestorIdentity = observedIdentity ? 'found' : (chartHeader.ambiguous ? 'ambiguous' : 'none');
           if (!observedIdentity) hetStage = null;
         }
       }
@@ -1084,7 +1092,9 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (action === 'stage_billing') { billTarget = billingField(fr); if (!billTarget.el) continue; }
       else if (action === 'place_order') { orderTarget = orderWorkspace(fr); if (!orderTarget.search) continue; }
       else {
-        noteTarget = (action === 'write_note' && requestedNoteSection !== 'note') ? findNamedNoteAction(fr, action, requestedNoteSection) : findNoteAction(fr, action); if (!noteTarget) continue;
+        noteTarget = (action === 'write_note' && requestedNoteSection !== 'note') ? findNamedNoteAction(fr, action, requestedNoteSection) : findNoteAction(fr, action);
+        if (hetStage) hetDiag.noteTargetFound = !!noteTarget;
+        if (!noteTarget) continue;
         var currentNote = editorValue(noteTarget.editor);
         if (mode !== 'teach') {
           if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) continue; }
@@ -1103,7 +1113,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;
       candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget });
     }
-    if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
+    if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
     var hit = candidates[0], observedPatient = hit.observedIdentity, noteScope = hit.noteTarget && hit.noteTarget.root, noteEditor = hit.noteTarget && hit.noteTarget.editor;
     var bill = hit.bill, orderTarget = hit.orderTarget, actionControl = bill ? bill.el : (orderTarget ? orderTarget.search : hit.noteTarget.control);
     var actionScope = bill ? bill.root : (orderTarget ? orderTarget.root : noteScope);
