@@ -20842,6 +20842,45 @@ function _athenaProfileEmptyText(p,key,fallback){
 function _athenaChartLanded(p){
   try{ return !!String((p&&p.athenaChartImportedAt)||'').trim(); }catch(e){ return false; }
 }
+/* prov-1.0.0 (matrix 2026-08-26, the stale-Ibuprofen case): a POPULATED
+   facts card carried no provenance, so an MLS-local leftover read exactly
+   like a chart fact - athena held Medications: None recorded while the card
+   showed "Ibuprofen 400 mg" with nothing to tell the doctor which world it
+   came from. The merge is append-only BY DESIGN (never auto-delete chart
+   facts), so the cure is LABELING, mirroring the verified-empty pattern:
+   name the strongest applicable evidence, and when a verified chart holds
+   NONE of what the card shows, say that loudly. PHI-free: dates and closed
+   sentences only. */
+function _athenaProfileProvenance(p,key,hasContent){
+  try{
+    if(!hasContent) return '';                 /* empty cards already speak via _athenaProfileEmptyText */
+    var rec=p&&p.athenaProfileCoverage, card=rec&&rec.cards&&rec.cards[key];
+    var exact=!!(rec&&rec.complete===true&&rec.exactIdentityVerified===true&&String(rec.patientId||'')===String((p&&p.id)||''));
+    var when=exact?String(rec.capturedAt||'').slice(0,10):'';
+    if(exact&&card&&card.status==='not_documented'){
+      return '⚠ Athena’s chart, verified'+(when?' '+when:'')+', holds NONE of these — the entries here are MLS-local (kept on purpose; review before relying on them).';
+    }
+    if(exact) return 'Includes the Athena chart verified'+(when?' '+when:'')+'; MLS-local additions may appear alongside.';
+    if(_athenaChartLanded(p)){
+      var imp=String((p&&p.athenaChartImportedAt)||'').slice(0,10);
+      return 'From the Athena pull'+(imp?' of '+imp:'')+'; MLS-local additions may appear alongside.';
+    }
+    return 'Entered in MLS — no Athena chart pulled for this patient yet.';
+  }catch(e){ return ''; }
+}
+function _profProvenanceLine(elId,p,key){
+  try{
+    var el=document.getElementById(elId); if(!el) return;
+    var has=!el.classList.contains('empty-txt');
+    var txt=_athenaProfileProvenance(p,key,has);
+    var line=(el.nextElementSibling&&el.nextElementSibling.className==='prof-prov-line')?el.nextElementSibling:null;
+    if(!txt){ if(line) line.remove(); return; }
+    if(!line){ line=document.createElement('div'); line.className='prof-prov-line'; if(el.parentNode) el.parentNode.insertBefore(line,el.nextSibling); }
+    var warn=txt.charAt(0)==='⚠';
+    line.style.cssText='font-size:11px;line-height:1.35;margin:3px 0 0;'+(warn?'color:#9a6a00;font-weight:600;':'opacity:.72;');
+    if(line.textContent!==txt) line.textContent=txt;
+  }catch(e){}
+}
 function fieldBody(elId,txt,placeholder){
   const el=document.getElementById(elId);
   if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', ');
@@ -20895,6 +20934,8 @@ function renderProfile(){
     }
   }catch(e){}
   fieldBody('profAllergies',_algShown,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
+  /* prov-1.0.0: populated facts cards say where their content came from */
+  try{ _profProvenanceLine('profProblems',p,'problems'); _profProvenanceLine('profMeds',p,'meds'); _profProvenanceLine('profAllergies',p,'allergies'); }catch(_pv){}
   fieldBody('profSummary',p.summary,_athenaProfileEmptyText(p,'summary','No summary yet. The AI updates this from visits & documents; you can also edit it.'));
   _renderProfUnpulledNotice(p);
   try{ if(typeof _renderProfSuspectNotice==='function') _renderProfSuspectNotice(p); }catch(ePxSus){}
