@@ -2241,6 +2241,40 @@ function mlsAthenaTeachWatcherFn(config) {
   var TOKEN_TTL_MS = 90000;
   var NOTE_PROOF_TTL_MS = 180000;
   var executeBusy = false;
+  /* tok-1.0.0 (2026-08-26): the one-use action tokens lived ONLY in this
+     module map, and the MV3 service worker idles out in ~30s - a doctor who
+     confirmed 38s after the probe met token-expired every time (measured on
+     the dummy; the 90s TTL never got a chance to matter). The records now
+     mirror into chrome.storage.session: same TTL, same one-use burn, cleared
+     with the browser session, never written to disk-persistent storage. The
+     in-memory map stays authoritative within one worker life; the mirror is
+     read once per worker, before the first execute token lookup. */
+  var TOKEN_STORE_KEY = 'mlsActionTokensV1';
+  var tokensHydrated = false;
+  function persistTokens() {
+    try {
+      var out = {}, nowP = Date.now();
+      Object.keys(tokens).forEach(function (k) {
+        var r = tokens[k];
+        if (r && !r.used && nowP < Number(r.expiresAt || 0)) out[k] = r;
+      });
+      chrome.storage.session.set({ mlsActionTokensV1: out });
+    } catch (ePersist) {}
+  }
+  function hydrateTokens() {
+    return new Promise(function (res) {
+      if (tokensHydrated) { res(); return; }
+      try {
+        chrome.storage.session.get([TOKEN_STORE_KEY], function (got) {
+          try {
+            var o = got && got[TOKEN_STORE_KEY];
+            if (o && typeof o === 'object') Object.keys(o).forEach(function (k) { if (!tokens[k]) tokens[k] = o[k]; });
+          } catch (eHydrate) {}
+          tokensHydrated = true; res();
+        });
+      } catch (eGet) { tokensHydrated = true; res(); }
+    });
+  }
   function clean(v) { return String(v == null ? '' : v).trim(); }
   function norm(v) { return clean(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function digits(v) { return clean(v).replace(/\D/g, ''); }
@@ -2764,12 +2798,13 @@ function mlsAthenaTeachWatcherFn(config) {
       var __probePresenceRequested = mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function';
       var actionToken = '', rec = null;
       if (mode === 'execute') {
+        await hydrateTokens();
         actionToken = clean(msg.actionToken); rec = tokens[actionToken];
         if (!rec) return { ok: false, blocked: true, reason: 'token-expired' };
         if (rec.used) return { ok: false, blocked: true, reason: 'token-used' };
-        if (Date.now() > rec.expiresAt) { rec.used = true; return { ok: false, blocked: true, reason: 'token-expired' }; }
+        if (Date.now() > rec.expiresAt) { rec.used = true; persistTokens(); return { ok: false, blocked: true, reason: 'token-expired' }; }
         /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
-        rec.used = true; // the first execute attempt consumes the token, even on a later mismatch
+        rec.used = true; persistTokens(); // the first execute attempt consumes the token, even on a later mismatch
       }
       var previewHash = clean(msg.previewHash), manifestHash = clean(msg.manifestHash), p = msg.expectedPatient || {}, c = msg.expectedContext || {}, b = msg.billing || {}, suppliedOrder = msg.order || {};
       var rowHash = clean(msg.rowHash), clientOrderId = clean(msg.clientOrderId);
@@ -2853,6 +2888,7 @@ function mlsAthenaTeachWatcherFn(config) {
             prior.used = true; prior.invalidated = true;
           }
         });
+        persistTokens();
         /* Execute returns the immutable context Athena discovered at probe
            time. Bind the one-use token to that complete destination instead of
            the caller's empty pre-probe locator. */
@@ -2873,6 +2909,7 @@ function mlsAthenaTeachWatcherFn(config) {
           lockedContextHash: simpleHash(expectedContextKey(probe.context)),
           locked: probe.context
         };
+        persistTokens();
         /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
         return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
       }
