@@ -1834,7 +1834,11 @@ const tests = [
   /* prov-1.0.0 (the stale-Ibuprofen case): populated facts cards name their
      strongest evidence; a verified-empty chart beside local content warns
      loudly; unproven receipts never claim verification. */
-  'facts-provenance-pins.test.js'
+  'facts-provenance-pins.test.js',
+  /* vt-1.0.0: every visible visit tally names its scope - the at-glance chip
+     counts MLS notes only and says so; the timeline header counts all
+     sources and says so. */
+  'visit-tally-labels-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
