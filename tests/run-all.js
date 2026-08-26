@@ -1777,7 +1777,11 @@ const tests = [
      halt-on-uncertain, hidden-safe settle-latch waits. */
   '1p-writeflow-batch-send.test.js',
   /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
-  'capture-mrn-normalize-pins.test.js'
+  'capture-mrn-normalize-pins.test.js',
+  /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the
+     two-header flat list never guesses; single-header/two-column attribute;
+     duplicate panes dedupe; supervising text never binds. */
+  'legacy-grid-attribution-fixtures.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
