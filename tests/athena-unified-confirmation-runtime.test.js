@@ -152,15 +152,27 @@ const namedSections = [
 ];
 const namedManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, reviewOpts, { plan: [], sections: namedSections, receiptSessionId: 'runtime-named-sections' }));
 const namedWriteRows = namedManifest.rows.filter(row => row.action === 'write_note');
-assert.deepStrictEqual(Array.from(namedWriteRows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan'], 'named note sections were not split into exact destination rows');
+/* ap-1.0.0 (reconciled 2026-08-26): when exactly one assessment and one plan
+   section exist, a combined "Assessment & Plan" row rides BESIDE the five
+   per-section rows — some athena surfaces expose only the combined field.
+   The pre-ap pin here was stale test debt: the split itself never regressed. */
+assert.deepStrictEqual(Array.from(namedWriteRows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan', 'assessment_and_plan'], 'named note sections were not split into exact destination rows');
 assert.deepStrictEqual(Array.from(namedWriteRows, row => row.destination), [
   'Athena encounter > HPI', 'Athena encounter > Review of Systems', 'Athena encounter > Physical Exam',
-  'Athena encounter > Assessment & Plan > Assessment', 'Athena encounter > Assessment & Plan > Plan / Follow-up'
+  'Athena encounter > Assessment & Plan > Assessment', 'Athena encounter > Assessment & Plan > Plan / Follow-up',
+  'Athena encounter > Assessment & Plan'
 ], 'named note rows advertise the wrong Athena destinations');
 for (const row of namedWriteRows) {
   assert.strictEqual(row.payload.sections.length, 1, `${row.kind} row carried another destination`);
   assert.strictEqual(row.payload.sections[0].key, row.kind, `${row.kind} row lost its canonical section key`);
   assert.strictEqual(row.payload.noteText, row.payload.sections[0].text, `${row.kind} row changed the reviewed bytes`);
+}
+{
+  const apRow = namedWriteRows.find(row => row.kind === 'assessment_and_plan');
+  assert(/^Assessment:\n/.test(apRow.payload.noteText) && /\n\nPlan \/ Follow-up:\n/.test(apRow.payload.noteText),
+    'the combined row must carry BOTH reviewed bodies under labeled headings');
+  assert(apRow.payload.noteText.indexOf('Exact assessment.') > 0 && apRow.payload.noteText.indexOf('Exact plan.') > 0,
+    'the combined row must not change the reviewed bytes');
 }
 assert(!namedManifest.rows.some(row => row.id === 'write-note'), 'named sections still created a generic encounter-note write row');
 for (const id of ['save-named-sections-manual', 'sign-named-sections-manual']) {
