@@ -1,0 +1,30 @@
+{
+  "kind": "athena-legacy-day-grid-structural-capture",
+  "capturedAt": "2026-08-26T01:3x ET (practice 22724, day 2026-08-26, extension idle, manual read-only probe)",
+  "phi": "REDACTED - no patient text captured anywhere; provider header titles and machine attribute NAMES only; appointment ids are athena scheduling ids already present in PHI-free receipts",
+  "frame": "top.1.2.2 (the dashboard schedule frame)",
+  "summary": {
+    "containers": 2,
+    "bothVisible": true,
+    "containerRects": ["1413x1636 (wide main pane)", "453x1418 (narrow side pane)"],
+    "duplication": "both panes render the SAME appointment list (same ids, same sections) - any reader MUST dedupe by data-appointment-id or it double-counts the day",
+    "lazyLoad": "each UL begins with a DIV.data-indicator[data-more-data] - the list virtualizes; rows beyond the loaded window are NOT in the DOM until scrolled (a second mechanism for expected-vs-parsed shortfalls)"
+  },
+  "structure": {
+    "container": "UL.list-borders.appointments-container (class-only; ancestors DIV.appointments > DIV.streamlined-schedule, class-only)",
+    "sectionHeaders": [
+      { "title": "Uyen Phan, PA-C", "element": "DIV.appointment-header2 as a DIRECT CHILD of the UL", "machineAttrs": "NONE (class only)", "ariaLinkage": "none" },
+      { "title": "Matthew Schaeffer, MD", "element": "DIV.appointment-header2 as a DIRECT CHILD of the UL", "machineAttrs": "NONE (class only)", "ariaLinkage": "none" }
+    ],
+    "rows": "LI.filled-appointment-row with data-appointment-id, data-min-rownum, data-max-rownum; NO provider attrs, NO aria-labelledby, ZERO credential-shaped text inside rows on this surface",
+    "sections": [
+      { "order": 1, "header": "Uyen Phan, PA-C", "rows": 10, "rownums": "1-12" },
+      { "order": 2, "header": "Matthew Schaeffer, MD", "rows": 20, "rownums": "13-32" }
+    ]
+  },
+  "attributionFindings": {
+    "whyRowsAreUnattributed": "the flat UL holds BOTH credentialed headers, so the reviewed per-container exactly-one-header rule refuses and every row stays provider-empty - confirmed at rest (0/32 Aug-25 rows, 14/26 Aug-26 rows provider-less)",
+    "noMachineLinkExists": "no data-provider-*, no aria-labelledby, no per-section ancestor boundary - the ONLY structural signals are (a) DOM section boundaries (each direct-child credentialed header labels the rows that FOLLOW it until the next header) and (b) the rownum coordinate ranges, which are contiguous and disjoint per section (1-12 vs 13-32)",
+    "proposedRule": "flat-sectioned attribution, doubly conditioned and fail-closed: a row binds to the nearest PRECEDING direct-child .appointment-header2 sibling IFF that header wrapper holds exactly one credentialed title AND the section rownum ranges are disjoint+ordered AND no row precedes the first header AND row-internal credential text is never consulted; zero or ambiguous conditions keep today's refusal. This is DOM section structure plus a machine coordinate cross-check, not bare ordinal/CSS-order inference - but it needs your sign-off given the 00:2x constraints before any selector changes."
+  }
+}
