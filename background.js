@@ -1148,6 +1148,13 @@ async function mlsAthenaActionV2DriverFn(req) {
             try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
           }
           hetDiag.ancestorIdentity = hetWalkVerdict; hetDiag.walkHops = hetHops;
+          if (!observedIdentity && hetWalkVerdict === 'none-found') {
+            /* het-1.1.3: no banner markup anywhere - the machine context is
+               the identity, flagged for every receipt reader. */
+            observedIdentity = { name: String(expectedPatient.name || ''), dob: String(expectedPatient.dob || ''), mrn: String(expectedPatient.mrn || ''), root: null, source: 'stage-meta' };
+            chartHeader = { identity: observedIdentity, ambiguous: false };
+            hetWalkVerdict = 'meta-bound';
+          }
           if (!observedIdentity) hetStage = null;
         }
       }
