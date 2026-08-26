@@ -5384,7 +5384,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
              the DOM node, while the importer reads the stored key. -->
         <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="setPullVisitBodies" style="margin-top:2px">
-          <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save its dated encounters (slower, most complete). Off: bulk pulls save only schedule/booking rows and do not open patient charts. The single-patient pull button still reads the one patient you explicitly chose.</span>
+          <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save every dated prior visit note as well (slower, most complete). Off: pulls still open each scheduled chart and save its identity, chart facts (problems, medications, allergies) and the pulled day's own visit note — only OLDER visit notes are skipped. The single-patient pull button still reads the one patient you explicitly chose.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
         <a href="https://mlsscribe.com/MLS_Assist_v3.0.81.zip" download="MLS_Assist_v3.0.81.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.81 ZIP)</a>
@@ -10699,11 +10699,11 @@ function _mlsVisitNotesChoice(){
     card.innerHTML=
       '<div id="_mlsAskMsg" style="padding:18px 18px 7px;font-size:15px;line-height:1.45;color:#1a2b3c">'+
         '<div style="font-weight:750;font-size:17px;margin-bottom:7px">Choose how much Athena visit history MLS should pull</div>'+
-        '<div>Choose once for this account. <b>Full visit notes</b> opens each scheduled chart and saves every dated encounter, which takes longer. <b>Faster schedule-only pulls</b> save the selected booking rows without opening patient charts. You can change this later in Settings.</div>'+
+        '<div>Choose once for this account. Every pull opens each scheduled chart and saves its identity, chart facts (problems, medications, allergies) and the pulled day’s own visit note. <b>Full visit notes</b> additionally saves every dated PRIOR visit note, which takes longer. <b>Faster day-only pulls</b> skip only those older notes. You can change this later in Settings.</div>'+
       '</div>'+
       '<div style="padding:10px 16px 16px;display:grid;gap:8px">'+
         '<button type="button" id="_mlsVisitNotesFull" style="font:inherit;text-align:left;padding:11px 13px;border-radius:10px;border:none;background:#2E6A4B;color:#fff;cursor:pointer"><b>Include full visit notes</b><br><span style="font-size:12px;opacity:.9">Most complete · takes longer</span></button>'+
-        '<button type="button" id="_mlsVisitNotesFast" style="font:inherit;text-align:left;padding:11px 13px;border-radius:10px;border:1px solid #B9C8C0;background:#fff;color:#1a2b3c;cursor:pointer"><b>Use faster schedule-only pulls</b><br><span style="font-size:12px;color:#52645d">Schedule/booking rows only · does not open patient charts</span></button>'+
+        '<button type="button" id="_mlsVisitNotesFast" style="font:inherit;text-align:left;padding:11px 13px;border-radius:10px;border:1px solid #B9C8C0;background:#fff;color:#1a2b3c;cursor:pointer"><b>Use faster day-only pulls</b><br><span style="font-size:12px;color:#52645d">Chart facts + the pulled day’s own note · older visit notes skipped</span></button>'+
         '<button type="button" id="_mlsVisitNotesCancel" style="font:inherit;padding:8px 12px;border:0;background:transparent;color:#52645d;cursor:pointer">Choose later — Athena pulls stay blocked</button>'+
       '</div>';
     var full=card.querySelector('#_mlsVisitNotesFull');
@@ -20828,6 +20828,70 @@ function _athenaProfileEmptyText(p,key,fallback){
 function _athenaChartLanded(p){
   try{ return !!String((p&&p.athenaChartImportedAt)||'').trim(); }catch(e){ return false; }
 }
+/* vt-1.1.0 (Codex reply 45): the bulk chart pull files ONE 'Athena chart
+   import' RECEIPT note per patient - a pull receipt, never a visit. This is
+   the ONE predicate every visit counter and the History imports filter
+   share, so the profile chip and the canonical resolver cannot drift. */
+function _mlsIsChartImportNote(n){
+  try{ var c=String((n&&n.cc)||''); return c==='Athena chart import' || /^.+ — Athena chart import$/.test(c); }catch(e){ return false; }
+}
+try{ window._mlsIsChartImportNote=_mlsIsChartImportNote; }catch(e){}
+/* prov-1.0.0 (matrix 2026-08-26, the stale-Ibuprofen case): a POPULATED
+   facts card carried no provenance, so an MLS-local leftover read exactly
+   like a chart fact - athena held Medications: None recorded while the card
+   showed "Ibuprofen 400 mg" with nothing to tell the doctor which world it
+   came from. The merge is append-only BY DESIGN (never auto-delete chart
+   facts), so the cure is LABELING, mirroring the verified-empty pattern:
+   name the strongest applicable evidence, and when a verified chart holds
+   NONE of what the card shows, say that loudly. PHI-free: dates and closed
+   sentences only. */
+function _athenaProfileProvenance(p,key,hasContent){
+  try{
+    if(!hasContent) return '';                 /* empty cards already speak via _athenaProfileEmptyText */
+    var rec=p&&p.athenaProfileCoverage, card=rec&&rec.cards&&rec.cards[key];
+    var exact=!!(rec&&rec.complete===true&&rec.exactIdentityVerified===true&&String(rec.patientId||'')===String((p&&p.id)||''));
+    /* prov-1.0.1 (Codex reply 43): capturedAt must SURVIVE validation or be
+       omitted - never sliced into a fake verification date. */
+    var when='';
+    if(exact){
+      var whenRaw=String(rec.capturedAt||'').slice(0,10);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(whenRaw)){
+        var whenD=new Date(whenRaw+'T12:00:00Z');
+        if(isFinite(whenD.getTime())&&whenD.getUTCFullYear()>=2020&&whenD.getUTCFullYear()<=2100&&whenRaw===whenD.toISOString().slice(0,10)) when=whenRaw;
+      }
+    }
+    /* prov-1.0.1: every claim needs its own EXACT section evidence - the
+       overall receipt alone verifies nothing about THIS card. The saved
+       vocabulary is found / not_documented / unverified plus a populated
+       bit; a missing card, an alien status, or a status/populated
+       contradiction gets the cautious line and never a verification claim. */
+    if(exact&&card&&card.status==='not_documented'&&card.populated===false){
+      return '⚠ Athena’s chart, verified'+(when?' '+when:'')+', holds NONE of these — the entries here are MLS-local (kept on purpose; review before relying on them).';
+    }
+    if(exact&&card&&card.status==='found'&&card.populated===true){
+      return 'Includes the Athena chart verified'+(when?' '+when:'')+'; MLS-local additions may appear alongside.';
+    }
+    if(exact) return 'The last Athena read receipt does not cover this section individually; entries may carry MLS-local additions.';
+    if(_athenaChartLanded(p)){
+      var imp=String((p&&p.athenaChartImportedAt)||'').slice(0,10);
+      return 'From the Athena pull'+(imp?' of '+imp:'')+'; MLS-local additions may appear alongside.';
+    }
+    return 'Entered in MLS — no Athena chart pulled for this patient yet.';
+  }catch(e){ return ''; }
+}
+function _profProvenanceLine(elId,p,key){
+  try{
+    var el=document.getElementById(elId); if(!el) return;
+    var has=!el.classList.contains('empty-txt');
+    var txt=_athenaProfileProvenance(p,key,has);
+    var line=(el.nextElementSibling&&el.nextElementSibling.className==='prof-prov-line')?el.nextElementSibling:null;
+    if(!txt){ if(line) line.remove(); return; }
+    if(!line){ line=document.createElement('div'); line.className='prof-prov-line'; if(el.parentNode) el.parentNode.insertBefore(line,el.nextSibling); }
+    var warn=txt.charAt(0)==='⚠';
+    line.style.cssText='font-size:11px;line-height:1.35;margin:3px 0 0;'+(warn?'color:#9a6a00;font-weight:600;':'opacity:.72;');
+    if(line.textContent!==txt) line.textContent=txt;
+  }catch(e){}
+}
 function fieldBody(elId,txt,placeholder){
   const el=document.getElementById(elId);
   if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', ');
@@ -20881,6 +20945,8 @@ function renderProfile(){
     }
   }catch(e){}
   fieldBody('profAllergies',_algShown,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
+  /* prov-1.0.0: populated facts cards say where their content came from */
+  try{ _profProvenanceLine('profProblems',p,'problems'); _profProvenanceLine('profMeds',p,'meds'); _profProvenanceLine('profAllergies',p,'allergies'); }catch(_pv){}
   fieldBody('profSummary',p.summary,_athenaProfileEmptyText(p,'summary','No summary yet. The AI updates this from visits & documents; you can also edit it.'));
   _renderProfUnpulledNotice(p);
   try{ if(typeof _renderProfSuspectNotice==='function') _renderProfSuspectNotice(p); }catch(ePxSus){}
@@ -20966,13 +21032,13 @@ function _renderProfAtGlance(p){
   var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
   /* count COMPLETED visits only — drafts (e.g. op-note drafts) are not visits
      and must not inflate this chip or disagree with the canonical counters */
-  notes=notes.filter(function(n){ return n&&!n.isDraft; });
+  notes=notes.filter(function(n){ return n&&!n.isDraft&&!(typeof _mlsIsChartImportNote==='function'&&_mlsIsChartImportNote(n)); }); /* vt-1.1.0: a pull receipt is not a visit */
   if(!notes.length){ el.innerHTML='<span style="font-size:12.5px;color:var(--muted)">✨ New patient — start their first visit to begin building their history.</span>'; return; }
   var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
   var last=dates[dates.length-1]||'';
   var pains=notes.map(function(n){ var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return (v==null||v==='')?null:Number(v); }).filter(function(x){return x!=null&&!isNaN(x);});
   function chip(label,val){ return '<span style="background:#eef4fc;border:1px solid #d7e6fb;border-radius:999px;padding:3px 11px;font-size:12px;color:#204034"><b>'+val+'</b> '+label+'</span>'; }
-  var h=chip('visit'+(notes.length===1?'':'s'), notes.length);
+  var h=chip('MLS visit note'+(notes.length===1?'':'s'), notes.length);
   if(last){ var dd=new Date(last+'T12:00'); if(!isNaN(dd.getTime())) h+=chip('last seen', dd.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})); }
   if(pains.length){ h+=chip('last pain', pains[pains.length-1]+'/10'); }
   el.innerHTML=h;
@@ -24441,7 +24507,7 @@ function renderHistory(){
      buried every real visit under a wall of near-identical rows. In the
      default (All) view they now collapse into ONE summary row; the new
      "📥 Chart imports" filter shows them all. Nothing is deleted. */
-  const _isImportNote=(n)=>{ try{ return String(n.cc||'')==='Athena chart import' || /^.+ — Athena chart import$/.test(String(n.cc||'')); }catch(e){ return false; } };
+  const _isImportNote=(n)=>{ try{ return typeof _mlsIsChartImportNote==='function'?_mlsIsChartImportNote(n):(String(n.cc||'')==='Athena chart import'); }catch(e){ return false; } }; /* vt-1.1.0: the ONE shared predicate */
   let _importNotes=[];
   if(fv==='imports'){ ordered=ordered.filter(_isImportNote); }
   else if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
@@ -25034,20 +25100,22 @@ function pullScheduleViaAssist(btn, opts){
             else { setS('Read the page but found no patient appointments. Make sure Athena’s DAY schedule (not the dashboard) is open with patients on it, then pull again.','err'); }
             return;
           }
-          await _importPulledSchedule(appts);
-          /* vnoff-1.0.0: this legacy body (live only on a build with no
-             guarded engine) crawled EVERY chart's history regardless of the
-             admitted Full-visit-notes choice — an explicit OFF still opened
-             patient charts on this one path. The choice the admission gate
-             froze into opts.__pullVisitBodies governs here too: OFF (or a
-             missing flag) stays schedule-only, matching the guarded engine's
-             pullUnlocked() boundary. */
-          if(opts.__pullVisitBodies===true){
-            // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
-            try{ await _pullAllHistories(appts); }catch(_h){}
-          } else {
-            setS('Imported '+appts.length+' appointment row'+(appts.length===1?'':'s')+' through the legacy reader — this fallback cannot read chart facts or day notes; reload MLS for the full pull.','ok');
+          /* fvn-1.1.0 (Codex reply 38): the authoritative OFF floor - identity
+             + chart facts/coverage + exactly the pulled day's own visit note -
+             needs the guarded engine, and this legacy fallback cannot honor
+             it. So OFF (or a missing flag) REFUSES BEFORE IMPORTING with an
+             honest non-success: no successful pull may import rows while
+             omitting the floor, and the old 'ok' status that admitted it
+             "cannot read chart facts or day notes" was exactly the revoked
+             contract. ON keeps the floor plus historical notes through the
+             full crawl below. */
+          if(opts.__pullVisitBodies!==true){
+            setS('This legacy fallback cannot read chart facts or the day’s own visit note, so a day-only pull here would silently omit them. Nothing was imported. Reload MLS to use the full pull engine, or run this pull with Full visit notes ON.','err');
+            return;
           }
+          await _importPulledSchedule(appts);
+          // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
+          try{ await _pullAllHistories(appts); }catch(_h){}
         }catch(err){ setS('Couldn’t parse the schedule. Open Athena’s Day schedule view and try again.','err'); }
         finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } }
       })();
@@ -52112,7 +52180,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
       /* A DRAFT IS NOT A VISIT. This is the rule _renderProfAtGlance already
          applied and lastVisitInfo did not — the exact reason one surface said 1
          and another said 3 about the same chart at the same instant. */
-      if (n && !n.isDraft) out.push(n);
+      if (n && !n.isDraft && !(typeof _mlsIsChartImportNote === 'function' && _mlsIsChartImportNote(n))) out.push(n); /* vt-1.1.0: a pull receipt is not a visit */
     }
     return out;
   }
@@ -52304,12 +52372,33 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
            isFn(window._athenaHistoryVerifiedRef);
   }
   var _reading = '';
+  var _cfScopeSerial = 0; /* scl-1.0.0: opaque per-read serial, never clock-only */
   function readFromAthena(p, onStatus) {
     var say = isFn(onStatus) ? onStatus : function () {};
     if (!p) return Promise.resolve({ ok: false, reason: 'no-patient' });
     if (!canRead()) { say('MLS Assist and a signed-in athenaOne tab are needed for this.'); return Promise.resolve({ ok: false, reason: 'no-bridge' }); }
     if (_reading) return Promise.resolve({ ok: false, reason: 'busy' });
     _reading = str(p.id);
+    /* pts-1.1.0 (Codex reply 30): explicit single-patient chart work carries
+       its own NON-pull scope stamp, so the progress chip paints for it even
+       after a day pull's epoch has been terminaled - without weakening the
+       day-pull fence. PHI-free: an opaque serial and a clock only.
+       scl-1.0.0 (Codex reply 31): the scope is a LEASE, not a latch - the
+       handle is captured locally and compare-and-cleared on EVERY terminal
+       (success, named refusal, thrown/rejected read), so late background
+       chatter inside the 180s admission window cannot mint a new job after
+       this read finished. ABA-safe: only THIS read's id is ever cleared, so
+       an old terminal can never clear a newer read's scope. Clearing gates
+       FUTURE admissions only - the already-open job still finishes through
+       its own quiet timer. */
+    var cfScopeId = 'cfread-' + (++_cfScopeSerial) + '-' + Date.now().toString(36);
+    safe(function () { window.__mlsChartWorkScopeV1 = { id: cfScopeId, at: Date.now() }; });
+    function releaseChartScope() {
+      safe(function () {
+        var sc = window.__mlsChartWorkScopeV1;
+        if (sc && sc.id === cfScopeId) window.__mlsChartWorkScopeV1 = null;
+      });
+    }
     say('Reading this chart from athenaOne...');
     /* THE PATIENT OBJECT, not a hand-built target: _assistReadChart takes its
        own snapshot through _athenaHistoryTargetSnapshot and refuses a name-only
@@ -52338,6 +52427,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
       });
     }).then(function (r) {
       _reading = '';
+      releaseChartScope(); /* scl-1.0.0: success AND every named refusal end the lease */
       safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
       /* Name the refusal. "Could not be re-read" for an identity mismatch would
          invite the doctor to press it again forever; the open Athena chart is a
@@ -52347,7 +52437,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
             ? 'The open athenaOne chart did not prove it is this patient. Nothing was changed.'
             : 'The chart could not be re-read. Nothing was changed.'));
       return r;
-    }, function () { _reading = ''; say('The chart could not be re-read. Nothing was changed.'); return { ok: false, reason: 'error' }; });
+    }, function () { _reading = ''; releaseChartScope(); /* scl-1.0.0: a thrown read ends the lease too */ say('The chart could not be re-read. Nothing was changed.'); return { ok: false, reason: 'error' }; });
   }
 
   /* ======================================================== DOM RECONCILIATION
@@ -52369,7 +52459,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     if (!sec) return;
     var title = sec.querySelector('.mlsxh-title .mlsxh-count');
     if (title) {
-      var want = res.count + ' visit' + (res.count === 1 ? '' : 's');
+      var want = res.count + ' visit' + (res.count === 1 ? '' : 's') + ' — all sources'; /* vt-1.0.0: this tally spans athena + MLS + cohort; the chip above counts MLS notes only */
       if (title.textContent !== want) title.textContent = want;
     }
     var head = sec.querySelector('.mlsxh-content');

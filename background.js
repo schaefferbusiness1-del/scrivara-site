@@ -613,7 +613,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         [el.getAttribute('aria-label'), el.getAttribute('title')].forEach(function (value) { if (text(value)) out.push(text(value)); });
         if (el.labels && el.labels.length === 1 && text(el.labels[0].textContent)) out.push(text(el.labels[0].textContent));
         var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
-        for (var i = 0; i < heads.length && i < 4; i++) if (text(heads[i].textContent)) out.push(text(heads[i].textContent));
+        for (var i = 0; i < heads.length && i < 4; i++) { var hot = namedHeadingOwnText(heads[i]); if (hot) out.push(hot); }
       } catch (e) {}
       return out;
     }
@@ -725,6 +725,10 @@ async function mlsAthenaActionV2DriverFn(req) {
       exam: { 'physical exam': 1, 'physical examination': 1 },
       assessment: { 'assessment': 1, 'assessment narrative': 1 },
       plan: { 'plan': 1, 'follow up': 1, 'followup': 1, 'plan follow up': 1, 'plan and follow up': 1 },
+      /* ap-1.0.0: the practice surface that renders ONE combined A&P note.
+         An explicit combined request is exact; a combined label still never
+         satisfies the separate assessment or plan keys. */
+      ap: { 'assessment and plan': 1 },
       procedure: { 'procedure documentation': 1, 'procedure note': 1, 'operative note': 1, 'op note': 1 }
     };
     /* The app's visible destination is part of the reviewed payload, not
@@ -737,17 +741,33 @@ async function mlsAthenaActionV2DriverFn(req) {
       exam: 'Athena encounter > Physical Exam',
       assessment: 'Athena encounter > Assessment & Plan > Assessment',
       plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up',
+      ap: 'Athena encounter > Assessment & Plan',
       procedure: 'Athena encounter > Physical Exam > Procedure Documentation'
     };
     function canonicalNamedNoteKey(raw) {
       var key = norm(raw).replace(/ /g, '_');
-      var aliases = { note: 'note', encounter_note: 'note', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan', procedure: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', op_note: 'procedure', opnote: 'procedure' };
+      var aliases = { note: 'note', encounter_note: 'note', ap: 'ap', assessment_and_plan: 'ap', assessment_plan: 'ap', a_and_p: 'ap', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan', procedure: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', op_note: 'procedure', opnote: 'procedure' };
       return aliases[key] || '';
+    }
+    function namedHeadingOwnText(head) {
+      /* het-1.1.5: a stage header welds nested furniture into textContent
+         ("History of Present Illness Findings"), hiding the real title
+         from the exact-label equality. A heading with no text of its own
+         that wraps element children is titled by its first text-bearing
+         child; any other heading keeps its whole text. Acceptance is
+         unchanged - the label must still EQUAL a reviewed destination. */
+      try {
+        var kids = head.childNodes || [];
+        for (var i = 0; i < kids.length; i++) { if (kids[i].nodeType === 3 && String(kids[i].nodeValue || '').trim()) return text(head.textContent); }
+        var els = head.children || [];
+        for (var j = 0; j < els.length; j++) { var kt = text(els[j].textContent); if (kt) return kt; }
+      } catch (e) {}
+      return text(head.textContent);
     }
     function namedSectionDescriptor(el) {
       var out = '';
       try {
-        out = [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component')].join(' ');
+        out = [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component'), el.getAttribute('data-subsection-id')].join(' ');
         var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
         for (var i = 0; i < heads.length && i < 4; i++) out += ' ' + text(heads[i].textContent);
       } catch (e) {}
@@ -756,9 +776,9 @@ async function mlsAthenaActionV2DriverFn(req) {
     function namedSectionLabels(el) {
       var out = [];
       try {
-        [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component')].forEach(function (value) { if (text(value)) out.push(text(value)); });
+        [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component'), el.getAttribute('data-subsection-id')].forEach(function (value) { if (text(value)) out.push(text(value)); });
         var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
-        for (var i = 0; i < heads.length && i < 4; i++) if (text(heads[i].textContent)) out.push(text(heads[i].textContent));
+        for (var i = 0; i < heads.length && i < 4; i++) { var hot = namedHeadingOwnText(heads[i]); if (hot) out.push(hot); }
       } catch (e) {}
       return out;
     }
@@ -850,8 +870,22 @@ async function mlsAthenaActionV2DriverFn(req) {
       return editorsIn(scope, frame).filter(function (editor) { return editorOwnedByNamedScope(editor, scope, key); });
     }
     function namedNoteScopes(frame, key) {
-      var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label]';
+      var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label],[data-subsection-id]';
       var raw = []; try { raw = deepQueryAll(frame.doc, selector); } catch (e) {}
+      /* het-1.1.4: athena stage cards carry their one canonical label as a
+         direct-child heading and no sectioning markup or machine attribute,
+         so the attribute selector cannot see them. A direct-child heading is
+         already this finder's own labeling contract (namedSectionDescriptor
+         reads :scope > h1..h4/header/legend), so the heading's parent joins
+         the candidate pool. Every existing gate below still refuses exactly
+         as before - this adds discoverability, never a bypass. */
+      try {
+        var hetHeads = deepQueryAll(frame.doc, 'legend,h1,h2,h3,h4,header,[role="heading"]');
+        for (var hh = 0; hh < hetHeads.length; hh++) {
+          var hetPar = null; try { hetPar = hetHeads[hh].parentElement || null; } catch (eHetPar) { hetPar = null; }
+          if (hetPar && raw.indexOf(hetPar) < 0) raw.push(hetPar);
+        }
+      } catch (eHet114) {}
       raw = raw.filter(function (el, index) {
         if (!visible(el, frame.w) || raw.indexOf(el) !== index) return false;
         var desc = namedSectionDescriptor(el), keys = namedKeysForElement(el);
@@ -982,12 +1016,17 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (!roots.length) return { identity: null, ambiguous: false };
         var wantName = nameKey(expectedPatient.name), wantDob = dateKey(expectedPatient.dob), wantMrn = digits(expectedPatient.mrn || '');
         if (!wantName || !wantDob) return { identity: null, ambiguous: false };
-        var kept = null;
+        var kept = null, sawForeign = false;
         for (var ri = 0; ri < roots.length && ri < 8; ri++) {
           var p1 = parseIdentity(roots[ri]);
           if (!p1) continue;
           var n1 = nameKey(p1.name), d1 = dateKey(p1.dob), m1 = digits(p1.mrn || '');
           var namesMatch = n1 && n1 === wantName;
+          /* het-1.1.8: a COMPLETE parsed identity for a DIFFERENT human is
+             credible foreign evidence - it must block meta-only admission.
+             Same-name roots with a disagreeing date stay decoration (the
+             measured het-1.0.9 appointment-strip noise class). */
+          if (n1 && d1 && n1 !== wantName) sawForeign = true;
           if (namesMatch && d1 && d1 === wantDob) {
             /* the expected person's banner - an MRN conflict on it refuses */
             if (m1 && wantMrn && m1 !== wantMrn) return { identity: null, ambiguous: true };
@@ -1001,9 +1040,9 @@ async function mlsAthenaActionV2DriverFn(req) {
              downstream equality gates, and acceptance still requires the
              expected patient's full banner root above. */
         }
-        if (kept) return { identity: kept, ambiguous: false };
-        return { identity: null, ambiguous: false };
-      } catch (eHa) { return { identity: null, ambiguous: false }; }
+        if (kept) return { identity: kept, ambiguous: false, foreign: sawForeign };
+        return { identity: null, ambiguous: false, foreign: sawForeign };
+      } catch (eHa) { return { identity: null, ambiguous: false, foreign: false }; }
     }
     function hetStageEncounterContext(frame, expectedPatient) {
       /* het-1.0.0/1.0.2: athena's own machine-typed encounter context, read
@@ -1048,7 +1087,11 @@ async function mlsAthenaActionV2DriverFn(req) {
         att.dateCount = dates.length;
         if (dates.length !== 1) { hetCommit(); return null; }
         att.rank = 5;
-        var visitDate = dateKey(dates[0]);
+        /* het-1.1.7: the capture is strict ISO but dateKey is m/d/y-first
+           and mangles it ('2026-08-25' -> '6/8/2025'), refusing every
+           qualified frame at the visit-date equality. Convert directly. */
+        var hetIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dates[0]);
+        var visitDate = hetIso ? (Number(hetIso[2]) + '/' + Number(hetIso[3]) + '/' + hetIso[1]) : dateKey(dates[0]);
         if (!visitDate) { hetCommit(); return null; }
         att.rank = 6; att.qualified = true; hetCommit();
         return { encounterId: encId, appointmentId: digits(appts[0]), provider: text(provs[0]), visitDate: visitDate };
@@ -1113,6 +1156,37 @@ async function mlsAthenaActionV2DriverFn(req) {
     if (mode !== 'teach' && action !== 'stage_billing' && action !== 'place_order' && !reviewedNote) return { ok: false, blocked: true, reason: 'note-content-required', error: 'The exact reviewed note text is required.' };
     if (mode !== 'teach' && action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy', error: 'Only empty_only note placement is allowed.' };
 
+    /* sn-1.0.0: open the requested named section's own stage tab in the
+       machine-bound encounter frame, then let the unchanged loop re-derive
+       everything. Whitelisted tab names only; one click max; fail-open to
+       the normal refusal path on any doubt. */
+    if (action === 'write_note' && requestedNoteSection && requestedNoteSection !== 'note') {
+      try {
+        var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P', ap: 'A/P' };
+        var snWant = snTabs[requestedNoteSection] || '';
+        if (snWant) {
+          var snFrames = sameOriginFrames();
+          for (var sni = 0; sni < snFrames.length; sni++) {
+            var snFr = snFrames[sni];
+            var snStage = hetStageEncounterContext(snFr, expectedPatient);
+            if (!snStage) continue;
+            if (findNamedNoteAction(snFr, action, requestedNoteSection)) { hetDiag.stageNav = 'not-needed'; break; }
+            var snBeads = [];
+            try { snBeads = deepQueryAll(snFr.doc, 'li.nav-bead'); } catch (eSn0) { snBeads = []; }
+            var snBead = null;
+            for (var snj = 0; snj < snBeads.length; snj++) { if (text(snBeads[snj].textContent) === snWant) { snBead = snBead || snBeads[snj]; } }
+            if (!snBead || !visible(snBead, snFr.w)) { hetDiag.stageNav = 'no-bead'; break; }
+            if (/\bopened\b/.test(String(snBead.className || ''))) { hetDiag.stageNav = 'already-open'; break; }
+            var snClick = null; try { snClick = snBead.querySelector('a,button,span') || snBead; } catch (eSn1) { snClick = snBead; }
+            if (wsForbiddenControl(snClick)) { hetDiag.stageNav = 'forbidden-control'; break; }
+            try { snClick.click(); } catch (eSn2) { hetDiag.stageNav = 'click-failed'; break; }
+            hetDiag.stageNav = 'opened-' + snWant;
+            await sleep(1600);
+            break;
+          }
+        }
+      } catch (eSnAll) {}
+    }
     var frames = sameOriginFrames(), candidates = [], sawOtherPatient = false;
     var hetFrames = [];
     for (var fi = 0; fi < frames.length; fi++) {
@@ -1134,6 +1208,7 @@ async function mlsAthenaActionV2DriverFn(req) {
            sibling) passes the exact same identity gates below. */
         if (hetStage) {
           var hetSelf = hetAncestorIdentity(fr, expectedPatient);
+          var hetForeign = !!(hetSelf && hetSelf.foreign);
           if (hetSelf && hetSelf.identity) { chartHeader = hetSelf; observedIdentity = hetSelf.identity; }
           var hetWalkVerdict = observedIdentity ? 'self-found' : 'none-found';
           var hetAncWin = null; try { hetAncWin = fr.w && fr.w.parent && fr.w.parent !== fr.w ? fr.w.parent : null; } catch (eHet0) { hetAncWin = null; }
@@ -1143,11 +1218,17 @@ async function mlsAthenaActionV2DriverFn(req) {
             for (var hfi = 0; hfi < frames.length; hfi++) { if (frames[hfi].w === hetAncWin) { hetFr = frames[hfi]; break; } }
             if (!hetFr) break;
             var hetHeader = hetAncestorIdentity(hetFr, expectedPatient);
+            if (hetHeader.foreign) hetForeign = true;
             if (hetHeader.ambiguous) { hetWalkVerdict = 'ancestor-ambiguous'; chartHeader = hetHeader; break; }
             if (hetHeader.identity) { hetWalkVerdict = 'found'; chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
             try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
           }
           hetDiag.ancestorIdentity = hetWalkVerdict; hetDiag.walkHops = hetHops;
+          if (!observedIdentity && hetWalkVerdict === 'none-found' && hetForeign) {
+            /* het-1.1.8: credible parsed foreign evidence - meta-only
+               admission is forbidden; the frame fails closed. */
+            hetWalkVerdict = 'foreign-identity-present';
+          }
           if (!observedIdentity && hetWalkVerdict === 'none-found') {
             /* het-1.1.3: no banner markup anywhere - the machine context is
                the identity, flagged for every receipt reader. */
@@ -1155,6 +1236,7 @@ async function mlsAthenaActionV2DriverFn(req) {
             chartHeader = { identity: observedIdentity, ambiguous: false };
             hetWalkVerdict = 'meta-bound';
           }
+          hetDiag.ancestorIdentity = hetWalkVerdict;
           if (!observedIdentity) hetStage = null;
         }
       }
@@ -1172,18 +1254,26 @@ async function mlsAthenaActionV2DriverFn(req) {
         hetRec.note = !!noteTarget;
         if (!noteTarget) continue;
         var currentNote = editorValue(noteTarget.editor);
-        if (mode !== 'teach' && action !== 'write_note' && currentNote !== reviewedNote) continue;
+        /* Reconciliation: write_note must reach the mutation boundary even
+           when Athena prefilled the editor so the driver can return the
+           specific, non-mutating note-editor-not-empty receipt. Other action
+           types still require the reviewed value at candidate admission. */
+        if (mode !== 'teach' && action !== 'write_note' && currentNote !== reviewedNote) {
+          if (hetStage) hetDiag.postGate = 'current-note';
+          continue;
+        }
       }
       var targetRoot = billTarget ? billTarget.root : (orderTarget ? orderTarget.root : noteTarget.root);
       var eid = hetStage ? hetStage.encounterId : encounterIdFor(fr, targetRoot, observedIdentity.root);
-      if (!eid) continue;
-      if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) continue;
+      if (!eid) { if (hetStage) hetDiag.postGate = 'eid-missing'; continue; }
+      if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) { if (hetStage) hetDiag.postGate = 'encounter-id'; continue; }
       var observedAppointmentId = hetStage ? hetStage.appointmentId : appointmentIdFor(fr, targetRoot, observedIdentity.root);
-      if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) continue;
+      if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) { if (hetStage) hetDiag.postGate = 'appointment-id'; continue; }
       var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root);
-      if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) continue;
-      if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) continue;
-      if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;
+      if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) { if (hetStage) hetDiag.postGate = 'meta-missing'; continue; }
+      if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) { if (hetStage) hetDiag.postGate = 'visit-date'; continue; }
+      if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) { if (hetStage) hetDiag.postGate = 'provider'; continue; }
+      if (hetStage) hetDiag.postGate = 'pushed';
       candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget });
     }
     if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, hetFrames: hetFrames, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
@@ -5546,7 +5636,27 @@ var mlsProv = (function () {
     t = t.replace(/[\s,;:|–—-]+$/, '');
     t = t.replace(/\s*close\s*$/i, '');
     t = clean(t);
-    return isProviderUiLabel(t) ? '' : t;
+    return (isProviderUiLabel(t) || mlsProviderFurniture(t)) ? '' : t;
+  }
+  /* loc-1.0.0 shared provider-furniture admission predicate (Codex reply
+     26): positive evidence only, so exact credentialed names - including
+     plain "First Last, MD" headers - stay admitted. Duplicated verbatim
+     inside mlsSchedDomInline (injected scope) - edit both together. */
+  function mlsProviderFurniture(s) {
+    var t = String(s || '').trim();
+    if (!t) return false;
+    if (/\d{5}(?:-\d{4})?\s*$/.test(t)) return true;
+    if (/(?:\(\d{3}\)\s*|\b\d{3}[-. ])\d{3}[-. ]\d{4}\b/.test(t)) return true;
+    if (/\b(?:suite|ste|floor|unit|bldg|building|room|rm)\b\.?\s*#?\s*\d/i.test(t)) return true;
+    var locHard = /\b(?:MD|DO|PA-C|CRNP|NP|DPM)\b/;
+    var locStripped = t.replace(/,\s*(?:PA|MD)\.?\s*$/, '');
+    if (/\b(?:clinic|center|centre|dept|department|hospital|imaging|radiology|rehab|rehabilitation|therapy|urgent care|medical group|associates|orthopedics|orthopaedics|health system|laboratory|laboratories|pharmacy)\b/i.test(t) && !locHard.test(locStripped)) return true;
+    var locLm = /^([A-Za-z .'\u2019-]+),\s*(?:PA|MD)\.?\s*$/.exec(t);
+    if (locLm && !locHard.test(locLm[1])) {
+      if (/\d/.test(locLm[1])) return true;
+      if (/\b(?:square|plaza|commons|crossing|junction|station|corners|landing|township)\s*$/i.test(locLm[1].trim())) return true;
+    }
+    return false;
   }
 
   /* A provider candidate can come from either the DOM reader or the plain-text
@@ -7270,6 +7380,9 @@ async function mlsSchedDomInline(doc, CFG){
        so the app's time_display/start_local enrichment knows to take over. */
     function ft(s){var raw=String(s),m=/\b(\d{1,2}):(\d{2})\s*([aApP])\.?\s*[mM]\.?(?=[A-Z])/.exec(raw)||/\b(\d{1,2}):(\d{2})(?:\s*([ap])\.?\s*m\.?)?(?=$|[^A-Za-z])/i.exec(raw);if(!m)return '';var h=+m[1],mn=+m[2];if(mn>59||(m[3]?(h<1||h>12):h>23))return '';if(m[3])return String(h)+':'+m[2]+' '+m[3].toUpperCase()+'M';out.diag.bareTimes=(out.diag.bareTimes||0)+1;return String(h)+':'+m[2];}
     function cp(s){var t=cl(s);t=t.replace(/[•‣▪●>*\-–—]+\s*$/g,'');t=t.replace(/[-–—:|(]*\s*\d+\s*appointments?\b.*$/i,'');t=t.replace(/\b\d+\s*appointments?\b/i,'');t=t.replace(/\(\s*\d+\s*\)\s*$/,'');t=t.replace(/[\s,;:|–—-]+$/,'');t=t.replace(/\s*[Cc]lose\s*$/,'');return cl(t);}
+    /* loc-1.0.0 shared furniture predicate - twin of worker-scope
+       mlsProviderFurniture; edit both together. */
+    function locFurn(s){var t=String(s||'').trim();if(!t)return false;if(/\d{5}(?:-\d{4})?\s*$/.test(t))return true;if(/(?:\(\d{3}\)\s*|\b\d{3}[-. ])\d{3}[-. ]\d{4}\b/.test(t))return true;if(/\b(?:suite|ste|floor|unit|bldg|building|room|rm)\b\.?\s*#?\s*\d/i.test(t))return true;var lh2=/\b(?:MD|DO|PA-C|CRNP|NP|DPM)\b/;var st2=t.replace(/,\s*(?:PA|MD)\.?\s*$/,'');if(/\b(?:clinic|center|centre|dept|department|hospital|imaging|radiology|rehab|rehabilitation|therapy|urgent care|medical group|associates|orthopedics|orthopaedics|health system|laboratory|laboratories|pharmacy)\b/i.test(t)&&!lh2.test(st2))return true;var lm2=/^([A-Za-z .'\u2019-]+),\s*(?:PA|MD)\.?\s*$/.exec(t);if(lm2&&!lh2.test(lm2[1])){if(/\d/.test(lm2[1]))return true;if(/\b(?:square|plaza|commons|crossing|junction|station|corners|landing|township)\s*$/i.test(lm2[1].trim()))return true;}return false;}
     function pui(s){var t=cl(s).toLowerCase().replace(/[\s:|\-–—]+$/g,'').trim();return /^(?:(?:appointment|appt)\s+)?(?:date(?:\s*(?:\/|&|and)\s*time)?|time|type|status|duration|reason|patient(?:\s+(?:name|details?))?|provider(?:\s+name)?|rendering\s+provider|resource(?:\s+name)?|department(?:\s+name)?|schedule|scheduling|location|room)$/i.test(t);}
     function lh(line){var t=cl(line);if(!t||t.length>80)return false;if(ht(t))return false;var hc=RC.test(t),ha=RA.test(t),hn=RN.test(t)||/[A-Z][a-z]+[ _][A-Z][a-z]+/.test(t);if((hc&&hn)||(ha&&hn))return true;if(hc&&RN.test(t)&&t.split(/\s+/).length<=5)return true;return false;}
     /* v2.9.13 shadow (Codex counter fix): checked counts DISTINCT normalized raw
@@ -7334,6 +7447,7 @@ async function mlsSchedDomInline(doc, CFG){
          are column labels, never clinicians.  Keep unattributed rows honest
          instead of poisoning provider filters with UI chrome. */
       if(pui(p))return '';
+      if(locFurn(p))return ''; /* loc-1.0.0 */
       /* v2.9.7 LOCATION GUARD: "PA"/"MD" are US states AND credentials, so a
          location line like "Newtown Square, PA" passed the credential test and
          became a PROVIDER (live capture). If the candidate is exactly
@@ -7384,7 +7498,7 @@ async function mlsSchedDomInline(doc, CFG){
        container owns exactly one provider header and every container agrees. */
     try{
       var _legacyLists=[].slice.call(doc.querySelectorAll('[class~="appointments-container"]')),_legacyNames={},_legacyNameOrder=[],_legacyRows=0,_legacyBoundRows=0,_legacySafe=!!_legacyLists.length;
-      _legacyLists.forEach(function(list){var rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));if(!rows.length)return;_legacyRows+=rows.length;var local={},localOrder=[];_legacyHeaderTextsL(list).forEach(function(raw){var p=lh(raw)?cp(raw):'';if(p&&!local[p.toLowerCase()]){local[p.toLowerCase()]=1;localOrder.push(p);}});if(localOrder.length!==1){_legacySafe=false;return;}var name=localOrder[0],nk=name.toLowerCase();if(!_legacyNames[nk]){_legacyNames[nk]=1;_legacyNameOrder.push(name);}_legacyBoundRows+=rows.length;});
+      _legacyLists.forEach(function(list){var rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));if(!rows.length)return;_legacyRows+=rows.length;var local={},localOrder=[];_legacyHeaderTextsL(list).forEach(function(raw){var p=lh(raw)?cp(raw):'';if(p&&locFurn(p))p='';/* loc-1.0.0 */if(p&&!local[p.toLowerCase()]){local[p.toLowerCase()]=1;localOrder.push(p);}});if(localOrder.length!==1){_legacySafe=false;return;}var name=localOrder[0],nk=name.toLowerCase();if(!_legacyNames[nk]){_legacyNames[nk]=1;_legacyNameOrder.push(name);}_legacyBoundRows+=rows.length;});
       if(_legacySafe&&_legacyRows>0&&_legacyBoundRows===_legacyRows&&_legacyNameOrder.length===1){var _legacyName=_legacyNameOrder[0],_legacyKey=_legacyName.toLowerCase();out.diag.singleProviderScope=true;out.diag.singleProviderName=_legacyName;out.diag.legacyScopeContainers=_legacyLists.length;if(!provSet[_legacyKey]){provSet[_legacyKey]=1;provOrder.push(_legacyName);}var _legacyCred=_legacyName.match(RC);if(_legacyCred&&_legacyCred[1])credSet[_legacyCred[1].toUpperCase()]=1;}
     }catch(_eLegacyScope){}
     /* v2.9.8: NEVER parse schedule data out of the staff-messaging/coordinator/
@@ -7460,7 +7574,7 @@ async function mlsSchedDomInline(doc, CFG){
         var _legacyRawObsL=0,_legacySlotsL=0,_legacyAllBoundL=true,_legacyHeaderProofL=true;
         function _legacyNormL(v){return cl(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
         function _legacyProviderL(raw){
-          var p=lh(raw)?cp(raw):'';if(!p)return '';
+          var p=lh(raw)?cp(raw):'';if(p&&locFurn(p))p='';/* loc-1.0.0 */if(!p)return '';
           var k=_legacyNormL(p);if(k&&!_legacyProvidersL[k]){_legacyProvidersL[k]=p;_legacyProviderOrderL.push(p);}
           if(k&&!provSet[k]){provSet[k]=1;provOrder.push(p);}var cm=p.match(RC);if(cm&&cm[1])credSet[cm[1].toUpperCase()]=1;return p;
         }
@@ -9436,6 +9550,11 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         } catch (e) { return sendResponse({ error: 'Could not read the EMR tab (' + e.message + ').' }); }
         if (!pageText.trim()) return sendResponse({ error: 'The EMR tab had no readable text.' });
         const res = await callBackend('/api/assist/extract', { pageText, url: tab.url });
+        /* cap-mrn-1.0.0: the backend echoes the banner's raw MRN decoration
+           and it VARIES run-to-run ('7833832' vs '#7833832' measured on
+           consecutive captures of one open chart). Every downstream identity
+           comparator keys on digits - normalize at the reply boundary. */
+        try { if (res && res.captured && res.captured.mrn != null) res.captured.mrn = String(res.captured.mrn).replace(/\D+/g, ''); } catch (eCapMrn) {}
         sendResponse(Object.assign({ fromTab: tab.url }, res));
       } catch (e) { sendResponse({ error: 'Capture failed: ' + e.message }); }
       finally {

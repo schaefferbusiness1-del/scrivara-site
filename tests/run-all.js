@@ -1792,7 +1792,78 @@ const tests = [
      athena's machine-typed context META (patient_id === expected MRN) plus an
      ancestor-frame banner judged by the unchanged identity gates; every
      uniqueness refusal and equality gate is pinned, regexes executed. */
-  'het-stage-context-pins.test.js'
+  'het-stage-context-pins.test.js',
+  /* bx-1.0.0: the multi-select batch send is a queue over the existing
+     per-row probe/execute machinery - checkboxes only on ready note-writes,
+     halt-on-uncertain, hidden-safe settle-latch waits. */
+  '1p-writeflow-batch-send.test.js',
+  /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
+  'capture-mrn-normalize-pins.test.js',
+  /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the
+     two-header flat list never guesses; single-header/two-column attribute;
+     duplicate panes dedupe; supervising text never binds. */
+  'legacy-grid-attribution-fixtures.test.js',
+  /* cva-1.0.0 (Codex reply 27): convergence admission is monotonic and
+     fingerprinted - an unchanged omission cohort never buys a second round. */
+  'convergence-admission-pins.test.js',
+  /* ux1-1.0.1 (ancestor acaeec03, registered late): Settings keeps only its
+     scoped section-template importer; the generic [id*=template] op-note
+     toolbar never mounts inside the saved-format editor and retires across
+     same-page upgrades. Playwright runtime proof. */
+  'section-template-toolbar-isolation-runtime.test.js',
+  /* pts-1.0.0 (Codex reply 29): the day-strip done() seam emits one
+     attempt-scoped pull terminal; the progress observers close exactly the
+     bound jobs once, fence foreign/stale terminals, and same-epoch late
+     traffic cannot reopen them. Runs the REAL lb+ps modules. */
+  'pull-terminal-seam-runtime.test.js',
+  /* cvi-1.0.0 (Codex reply 24): no global complete:true while a convergence
+     phase is active - truthful interim stamp, day verdict restored verbatim
+     with a convergence appendix once at settle, observer keeps the chip
+     alive on a recent interim. */
+  'convergence-interim-outcome-pins.test.js',
+  /* pts-1.1.0 (Codex reply 30 blocks 1-3): no ownership from absence, the
+     epoch fence is durable with an explicit chart-work refresh scope, and
+     local+relay day-strip attempts share one once-only epoch owner. */
+  'pull-terminal-scope-blocks.test.js',
+  /* pvd-1.0.0 (Codex replies 24/27): one exclusive verdict per requested
+     patient with closed requested = succeeded+failed+not-attempted+
+     unaccounted arithmetic; the success+retry double-count is a counted
+     conflict, and the machine outcome carries the counts both ways. */
+  'history-verdict-census-pins.test.js',
+  /* tax-1.0.0 (Codex reply 27 p3): after the capped reader, proven content-
+     only omissions terminate as complete-with-named-omissions and leave the
+     retry pool; transport/identity/nav classes stay retryable; a first pass
+     never reconciles. */
+  'named-omission-taxonomy-pins.test.js',
+  /* nvl-1.0.0 (Codex reply 24 item 4): one bounded GoHome rung recovers
+     encounter-surface and wrong-day landings before the nav verdict; dead
+     sessions and healthy gotos never trigger it; navDiag carries the proof. */
+  'nav-ladder-recovery-pins.test.js',
+  /* scl-1.0.0 (Codex reply 31): the chart-work admission scope is a lease -
+     compare-and-cleared on every read terminal with ABA protection, so late
+     background chatter cannot mint a job after the scoped read finished. */
+  'chart-scope-lifecycle-pins.test.js',
+  /* fvn-1.0.0 (Codex reply 24): ONE canonical Full-Visit-Notes semantics -
+     OFF = chart facts + the pulled day's own note (older notes skipped),
+     ON = + all prior notes - pinned across the choice dialog, Settings row,
+     toast, engine day-facts law, retry-mode freeze, and receipts. */
+  'fvn-canonical-semantics-pins.test.js',
+  /* pv7-1.0.0 (owner defect #7): the toolbar open-patient pull verb hides
+     only when the per-patient bar provably mounted in the same context -
+     never a zero-verb render. */
+  'open-patient-verb-visibility-pins.test.js',
+  /* prov-1.0.0 (the stale-Ibuprofen case): populated facts cards name their
+     strongest evidence; a verified-empty chart beside local content warns
+     loudly; unproven receipts never claim verification. */
+  'facts-provenance-pins.test.js',
+  /* vt-1.0.0: every visible visit tally names its scope - the at-glance chip
+     counts MLS notes only and says so; the timeline header counts all
+     sources and says so. */
+  'visit-tally-labels-pins.test.js',
+  /* spd-1.0.0 (reply 24: speed LAST, measurement first): the per-stage cost
+     breakdown rides the stored machine outcome in both verdict directions,
+     numbers only - every matrix run names its slow step at rest. */
+  'speed-cost-receipt-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

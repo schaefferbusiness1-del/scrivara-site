@@ -128,7 +128,11 @@ function startupContract() {
   SHELLS.forEach(({ name, source }) => {
     const dialog = balancedFunction(source, 'function _mlsVisitNotesChoice()', name + ' choice dialog');
     ok(dialog.includes('Include full visit notes'), name + ': choice dialog offers Full visit notes');
-    ok(dialog.includes('Use faster schedule-only pulls'), name + ': choice dialog offers schedule-only Faster pull');
+    /* fvn-1.0.0 (Codex reply 24): OFF is day-facts depth, never chart-less -
+       the dialog now teaches the canonical semantics. */
+    ok(dialog.includes('Use faster day-only pulls'), name + ': choice dialog offers the canonical day-only Faster pull');
+    ok(!dialog.includes('schedule-only') && !dialog.includes('does not open patient charts'),
+      name + ': choice dialog no longer claims OFF skips patient charts');
     ok(dialog.includes('Choose later — Athena pulls stay blocked'), name + ': dialog explains that cancellation keeps pulls blocked');
     ok(dialog.includes('full.onclick=function(){ finish(true); }') &&
        dialog.includes('fast.onclick=function(){ finish(false); }') &&

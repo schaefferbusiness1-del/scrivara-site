@@ -50875,8 +50875,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     return true;
   }
+  /* cva-1.0.0 (Codex reply 27): monotonic fingerprinted convergence
+     admission. Live 2026-08-26: a 5-chart cohort whose capped reads ended in
+     the SAME named omission re-entered a second convergence round and paid
+     the full ceiling again for identical results. Each exact omission
+     (patient + frozen MRN + reason) now gets ONE convergence attempt per
+     pull scope; a later round is admitted only when at least one entry is
+     NEW or its reason CHANGED (progress), so the remaining set can only
+     shrink or reach an explicit terminal. Pure helpers, extracted and
+     executed by tests/convergence-admission-pins. */
+  function cvRetryFingerprint(item) {
+    item = item || {};
+    return [String(item.patientId || ''), String(item.frozenMrn || ''), String(item.reason || '')].join('|');
+  }
+  function cvAdmitRound(items, seenMap, rounds) {
+    if (!Array.isArray(items) || !items.length) return { admit: false, why: 'empty' };
+    if (rounds >= 2) return { admit: false, why: 'round-cap' };
+    var fresh = 0;
+    for (var i = 0; i < items.length; i++) if (!seenMap[cvRetryFingerprint(items[i])]) fresh++;
+    if (!fresh) return { admit: false, why: 'no-fresh-omissions' };
+    return { admit: true, why: 'fresh:' + fresh };
+  }
   function dsAutoConvergeBodies(sessionSerial, onSettled) {
-    var rounds = 0, settledOnce = false, lastReceipt = null;
+    var rounds = 0, settledOnce = false, lastReceipt = null, cvSeenFp = {};
     function settle() { if (settledOnce) return; settledOnce = true; if (typeof onSettled === 'function') { try { onSettled({ rounds: rounds, receipt: lastReceipt }); } catch (eCvS) {} } }
     function sleepW(ms) { return (window.__mlsBgSleep ? window.__mlsBgSleep(ms) : new Promise(function (r) { setTimeout(r, ms); })); }
     function again() {
@@ -50889,12 +50910,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { var __cvPresence = !!(DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.presenceRequested === true); if (document.visibilityState === 'hidden' && !__cvPresence) { settle(); return; } } catch (eV) {} /* cv-1.2: a presence-assisted batch ends with athenaOne front BY DESIGN, so 'hidden' there is the assist's own doing, not a forgotten background tab - the rounds it runs re-post with foregroundOk and the cross-tab shield still forbids second engines (live 2026-08-04: 11 stragglers sat behind this veto) */
       var items = retryItems(DS.lastResult);
       try { if (String((DS.lastResult && DS.lastResult.reason) || '') === 'athena-tab-sleeping' || String((DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.reason) || '') === 'athena-tab-sleeping') { settle(); return; } } catch (eSleep2) {}
-      if (!items.length || rounds >= 2) { settle(); return; }
+      var cvGate = cvAdmitRound(items, cvSeenFp, rounds);
+      if (!cvGate.admit) { settle(); return; } /* cva-1.0.0: unchanged omissions never buy another round */
       for (var i = 0; i < items.length; i++) {
         var why = String((items[i] && items[i].reason) || '');
         if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user|athena-tab-sleeping/i.test(why)) { settle(); return; } /* cv-1.1: sleeping Athena is an explicit recovery state, never an automatic convergence retry. */
       }
       rounds++;
+      items.forEach(function (it) { cvSeenFp[cvRetryFingerprint(it)] = 1; }); /* cva-1.0.0 */
       /* cvc-1.0.0: ONE sentence that counts the real work left, in the same
          place the pull was already speaking. No "done", no restart. */
       var cvTotal = items.length;
@@ -51035,6 +51058,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return 'Pull not started — MLS could not confirm your full-visit-notes choice. Nothing was read from Athena. Try again.';
   }
 
+  /* pts-1.1.0 (Codex reply 30 BLOCK 3): ONE epoch owner for every day-strip
+     attempt — local and office-relay alike — so every attempt has identical
+     terminal semantics. begin stamps the attempt identity the observers bind
+     to; terminal emits the PHI-free scoped event exactly once per handle
+     (duplicate and late callbacks hit the emitted latch; a stale callback
+     after a new attempt emits its OWN old identity, which the observer's
+     current-epoch fence ignores). */
+  function dsBeginPullEpoch(sessionSerial) {
+    var handle = { sessionSerial: String(sessionSerial), pullId: String(DS.pullId || ''), emitted: false };
+    try { window.__mlsPullEpochV1 = { sessionSerial: handle.sessionSerial, pullId: handle.pullId, startedAt: Date.now() }; } catch (ePtsB) {}
+    return handle;
+  }
+  function dsTerminalPullEpoch(handle, ok) {
+    if (!handle || handle.emitted) return false;
+    handle.emitted = true;
+    try {
+      window.dispatchEvent(new CustomEvent('mls:pull-terminal', { detail: {
+        sessionSerial: handle.sessionSerial, pullId: handle.pullId, ok: ok === true, at: Date.now()
+      } }));
+    } catch (ePtsT) {}
+    return true;
+  }
   function startPull(autoRetry) {
     var automaticRetry = autoRetry === DS_AUTO_RETRY;
     var preferenceReady = autoRetry === DS_PREF_READY;
@@ -51120,6 +51165,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        and syncs the result. Same UI, zero extra steps. */
     if (window.__mlsRelayLink && window.__mlsRelayLink.shouldRelay && window.__mlsRelayLink.shouldRelay()) {
       DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
+      var dsRelayEpoch = dsBeginPullEpoch(sessionSerial); /* pts-1.1.0: relay attempts share the one epoch owner */
       var rday = DS.day;
       var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
       if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
@@ -51157,6 +51203,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         onStatus: function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (rstat) rstat.textContent = String(m); } catch (e) {} dsStatusLog(m); try { paintRelayBar(m); } catch (e2) {} },
         onDone: function (ok, msg) {
           if (sessionSerial !== DS.sessionSerial) return;
+          dsTerminalPullEpoch(dsRelayEpoch, ok === true); /* pts-1.1.0: identical terminal semantics; the latch absorbs duplicate callbacks */
           DS.pulling = false;
           ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || ''), visitNotesRequested: DS.pullVisitBodies === true }, rday);
           dsStatusLog(msg);
@@ -51171,6 +51218,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       } catch (relayStartError) {
         /* A synchronous relay bridge throw is still a terminal attempt.  Do
            not leave the strip spinning with no durable answer. */
+        dsTerminalPullEpoch(dsRelayEpoch, false); /* pts-1.1.0 */
         DS.pulling = false;
         var relayStartMsg = 'The office-computer pull could not start. ' + String((relayStartError && relayStartError.message) || relayStartError || 'relay-start-failed');
         ownAttemptResult(null, rday, 'pull-start-failed', relayStartMsg);
@@ -51194,6 +51242,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
+    var dsLocalEpoch = dsBeginPullEpoch(sessionSerial); /* pts-1.1.0: the one epoch owner */
     var day = DS.day;
     var btn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
@@ -51202,6 +51251,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     function done(ok, msg, keepStatus, signinRequired) {
       if (sessionSerial !== DS.sessionSerial) return;
       if (closed) return; closed = true;
+      /* pts-1.1.0: ONE PHI-free attempt-scoped terminal at the ownership
+         seam. Every terminal path of this pull flows through done(), and
+         cvc-1.0.0 already guarantees the converge path reaches it only from
+         its settle continuation - so this fires exactly once, after
+         convergence settles, through the shared epoch owner. */
+      dsTerminalPullEpoch(dsLocalEpoch, ok === true);
       DS.pulling = false;
       DS.pullProviderScope = null;
       syncRetryControl(DS.lastResult);
@@ -51398,10 +51453,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             if ((DS.navFailAfterLanded | 0) < 2 && retryCount > 0 && dsConvergeEligible(result)) {
               DS.pulling = false;
               DS.__autoRetrying = true;
+              /* cvi-1.0.0: interim while converging, day verdict restored at
+                 the true end (same law as the main converge lane). */
+              var cvNavPrior = null;
+              try { cvNavPrior = window.__mlsPullLastOutcome || null; } catch (eCvN0) {}
+              try { window.__mlsPullLastOutcome = { ok: false, interim: true, phase: 'converging', complete: false, remaining: retryCount, at: Date.now() }; } catch (eCvN1) {}
               dsAutoConvergeBodies(sessionSerial, function () {
                 if (sessionSerial !== DS.sessionSerial) return;
                 DS.__autoRetrying = false;
                 var navRemaining = syncRetryControl(DS.lastResult);
+                try {
+                  var cvNavFinal = (cvNavPrior && typeof cvNavPrior === 'object') ? JSON.parse(JSON.stringify(cvNavPrior)) : { ok: false };
+                  cvNavFinal.at = Date.now();
+                  delete cvNavFinal.interim; delete cvNavFinal.phase;
+                  cvNavFinal.convergence = { retried: retryCount, remaining: navRemaining };
+                  window.__mlsPullLastOutcome = cvNavFinal;
+                } catch (eCvN2) {}
                 done(false, __navMsg, navRemaining > 0, false);
               });
               return;
@@ -51516,6 +51583,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              start a second engine and the Pull button stays disabled. */
           DS.pulling = false;
           DS.__autoRetrying = true;
+          /* cvi-1.0.0 (Codex reply 24): while the convergence phase is active
+             the GLOBAL machine outcome may not read complete:true. Stamp a
+             truthful interim now; the day's own verdict comes back - never
+             upgraded (the b752 subset rule) - with a convergence appendix,
+             stamped ONCE when the retry set is empty or explicitly terminal. */
+          var cvPrior = null;
+          try { cvPrior = window.__mlsPullLastOutcome || null; } catch (eCvI0) {}
+          try { window.__mlsPullLastOutcome = { ok: false, interim: true, phase: 'converging', complete: false, remaining: cvItems, at: Date.now() }; } catch (eCvI1) {}
           try {
             var cvStat = $('mlsDsStatus');
             var cvLine = 'Finishing ' + cvItems + ' chart' + (cvItems === 1 ? '' : 's') + ' that need a second read — 0 of ' + cvItems + '…';
@@ -51537,6 +51612,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                 ? (' Every one of the ' + cvItems + ' chart' + (cvItems === 1 ? '' : 's') + ' that needed a second read finished on the automatic pass.')
                 : (' ' + remaining + ' of ' + cvItems + ' still need attention after ' + cvRounds + ' automatic pass' + (cvRounds === 1 ? '' : 'es') + ' — use Retry failed histories.');
             }
+            /* cvi-1.0.0: the FINAL terminal stamp - the day's own verdict
+               restored verbatim plus the convergence appendix. */
+            try {
+              var cvFinal = (cvPrior && typeof cvPrior === 'object') ? JSON.parse(JSON.stringify(cvPrior)) : { ok: outcome.ok === true };
+              cvFinal.at = Date.now();
+              delete cvFinal.interim; delete cvFinal.phase;
+              cvFinal.convergence = { rounds: cvRounds, retried: cvItems, remaining: remaining };
+              window.__mlsPullLastOutcome = cvFinal;
+            } catch (eCvI2) {}
             var finalRetry = syncRetryControl(DS.lastResult);
             done(outcome.ok, outcome.message + cvNote, finalRetry > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
           });
@@ -53083,7 +53167,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         /* frozen provider travels when the phone scoped one; absent = the
            same all-providers day pull the desktop button runs */
         if (pl.provider) opts.provider = pl.provider;
-        if (pl.includeHistory === false) opts.includeHistory = false;
+        /* fvn-1.1.0 (Codex reply 38): a legacy phone payload could pass
+           includeHistory:false straight into si.pull() and suppress the
+           mandatory OFF floor (identity + chart facts + the pulled day's own
+           note). Remote payloads are normalized to the canonical floor -
+           only pullVisitBodies below chooses day-facts versus full. */
         /* rl-2.0.2 N4: carry the REQUESTING device's "Full visit notes" choice.
            Without this the importer read pullVisitBodies from THIS (office)
            machine's localStorage, so the office checkbox silently decided how
@@ -55634,7 +55722,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     api.installed = false; delete window.__mlsExtHealth;
   };
 })();
-;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.3.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260823ps132';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.5.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260826ps150';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{
   var A='feat_mls_cross_day_context.js',V='xdc-2.0.4',old=window.__mlsCrossDayContext||null;
@@ -57475,8 +57563,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       reason: String(r.reason || ''),
       error: String(r.error || '').slice(0, 300),
       scheduleReceipt: pick(r.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason']),
-      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed']),
-      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed']),
+      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'attributionCoverage']),
+      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed', 'failureReasons', 'mappingReasons', 'unresolvedMappings']),
       historyReceipt: pick(r.historyReceipt, ['requested', 'processed', 'complete', 'failures'])
     };
   }

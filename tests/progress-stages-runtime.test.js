@@ -88,7 +88,7 @@ vm.runInContext(psSource, context, { filename: 'feat_mls_progress_stages.js' });
 const lb = context.__mlsLoadingCalm;
 const ps = context.__mlsProgressStages;
 assert(lb && lb.installed && lb.version === 'lb-2.1.0', 'shared lb owner missing');
-assert(ps && ps.installed && ps.version === 'ps-1.3.0', 'progress-stages module missing');
+assert(ps && ps.installed && ps.version === 'ps-1.5.0', 'progress-stages module missing');
 assert.strictEqual(lb.visualOwner, 'mlsProgressStages', 'the headless store does not identify its presentation owner');
 assert.strictEqual(ps.surfaceId, 'mlsPsChip', 'named stages do not identify the single automatic surface');
 assert(messageListeners.length >= 1, 'observer did not attach a message listener');
@@ -287,9 +287,9 @@ assert.strictEqual(j.status, 'timed_out', 'abandoned schedule pull did not time 
 /* ---------------- 8. loader line + registration wiring ------------------- */
 const connect = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8');
 const lbLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_loading_calm.js',V='lb-2.1.0'")) || '';
-const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.3.0'")) || '';
+const psLoader = connect.split(/\r?\n/).find(line => line.includes("var A='feat_mls_progress_stages.js',V='ps-1.5.0'")) || '';
 assert(lbLoader.includes("s.src=A+'?v=20260719lb204'") && lbLoader.includes("s.setAttribute('data-mls-version',V)"), 'lb loader lost its exact version-aware cache token/tag');
-assert(psLoader.includes("s.src=A+'?v=20260823ps132'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
+assert(psLoader.includes("s.src=A+'?v=20260826ps150'") && psLoader.includes("s.setAttribute('data-mls-version',V)"), 'ps loader lost its exact version-aware cache token/tag');
 assert(lbLoader.includes("api.revert") && lbLoader.includes("data-mls-retired-asset"), 'lb loader does not retire the stale owner/tag');
 assert(psLoader.includes("api.revert") && psLoader.includes("data-mls-retired-asset"), 'ps loader does not retire the stale owner/tag');
 const lbAt = connect.indexOf(lbLoader);

@@ -1,0 +1,17 @@
+{
+  "kind": "athena-legacy-day-grid-multiwindow-virtualization-capture",
+  "capturedAt": "2026-08-26T04:0x ET (practice 22724, day 2026-08-26, 30-row day, extension idle 0-running, fresh tab)",
+  "phi": "REDACTED - provider header titles, attribute names, row counts and rownum ranges only",
+  "scroller": "DIV.appointments (scrollHeight 1636, clientHeight 1031)",
+  "windows": [
+    { "tag": "top", "scrollTop": 0, "mountedRows": 30, "mountedHeaders": ["Uyen Phan, PA-C", "Matthew Schaeffer, MD"], "rownums": "1-32", "ulChildren": 35 },
+    { "tag": "middle", "scrollTop": 605, "mountedRows": 30, "mountedHeaders": ["Uyen Phan, PA-C", "Matthew Schaeffer, MD"], "rownums": "1-32", "ulChildren": 35 },
+    { "tag": "bottom (max)", "scrollTop": 605, "mountedRows": 30, "mountedHeaders": ["Uyen Phan, PA-C", "Matthew Schaeffer, MD"], "rownums": "1-32", "ulChildren": 35 },
+    { "tag": "back-to-top", "scrollTop": 0, "mountedRows": 30, "mountedHeaders": ["Uyen Phan, PA-C", "Matthew Schaeffer, MD"], "rownums": "1-32", "ulChildren": 35 }
+  ],
+  "verdict": {
+    "invariantA_headerAlwaysMounted": "PROVEN for this day size - the DOM was byte-identical across every scroll window; scrolling moves only the viewport, nothing mounts or unmounts; both direct-child credentialed headers and all 30 rows (rownums 1-32, contiguous, disjoint per section) stay resident",
+    "caveat": "the data-more-data indicator exists on the UL, so a materially larger day (e.g. 60+ rows across providers) may genuinely virtualize - the invariant is proven at the 30-row scale only; a same-shape capture on the largest available clinic day should ride the reconciled reader change's acceptance",
+    "invariantB_coordinateReconstruction": "also available as the cross-check: data-min/max-rownum ranges were monotonic and disjoint per section in every window"
+  }
+}

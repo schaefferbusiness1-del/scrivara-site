@@ -40,7 +40,7 @@
  * ========================================================================== */
 (function () {
   'use strict';
-  var VERSION = 'ps-1.3.0';
+  var VERSION = 'ps-1.5.0'; /* pts-1.1.0: durable epoch fence + chart-work scope (Codex reply 30) */
   var CHIP_ID = 'mlsPsChip', PANEL_ID = 'mlsPsPanel', CSS_ID = 'mlsPsCss';
   var STALE_AFTER_MS = 15000;
 
@@ -147,7 +147,9 @@
       patient: text(opts.patient, 100), provider: text(opts.provider, 100), selectedDate: text(opts.selectedDate, 40),
       cancelable: false
     });
-    live[flowName] = { handle: handle, meta: { startedAt: now(), requestId: text(opts.requestId, 128), phase: '', count: 0, fail: 0, expectTotal: Math.max(0, Number(opts.total) || 0) } };
+    /* pts-1.0.0: bind the job to the engine attempt running when it was
+       created, so a scoped terminal can close exactly its own jobs. */
+    live[flowName] = { handle: handle, meta: { startedAt: now(), requestId: text(opts.requestId, 128), phase: '', count: 0, fail: 0, expectTotal: Math.max(0, Number(opts.total) || 0), epoch: ptsEpoch() } };
     return live[flowName];
   }
   function activeFlow(flowName) {
@@ -236,6 +238,77 @@
    * History-pull session (chart-read rhythm).                           *
    * ------------------------------------------------------------------ */
   var hist = { quietTimer: null };
+  /* ------------------------------------------------------------------ *
+   * pts-1.0.0 (Codex reply 29): the day-strip owner emits ONE PHI-free  *
+   * attempt-scoped 'mls:pull-terminal' event from its done() seam after *
+   * convergence settles, and stamps __mlsPullEpochV1 at pull start.     *
+   * Jobs bind to the epoch they were created under; the scoped terminal *
+   * closes exactly the bound jobs, once, and same-epoch late traffic    *
+   * cannot recreate them for a bounded quarantine (a NEW attempt lifts  *
+   * it immediately). The quiet/stamp heuristics stay ONLY as fallback   *
+   * for legacy flows and foreign-tab stamps. __mlsPullLastOutcome is    *
+   * never treated as the close authority (other helpers write it).      *
+   * ------------------------------------------------------------------ */
+  var pts = { terminaled: '', terminalAt: 0 };
+  function ptsEpoch() {
+    return safe(function () {
+      var ep = window.__mlsPullEpochV1;
+      if (!ep) return '';
+      var ss = String(ep.sessionSerial == null ? '' : ep.sessionSerial);
+      var pid = String(ep.pullId == null ? '' : ep.pullId);
+      return (ss && pid) ? (ss + ':' + pid) : '';
+    }, '');
+  }
+  /* pts-1.1.0 (Codex reply 30 BLOCK 2): the fence is DURABLE — a terminaled
+     pull epoch stays terminal until an explicit new attempt replaces the
+     stamp. No time window: sufficiently late MV3 callbacks were exactly the
+     stale-running class this seam exists to end. */
+  function ptsFenced() {
+    return !!(pts.terminaled && ptsEpoch() === pts.terminaled);
+  }
+  /* pts-1.1.0 (BLOCK 2): explicit single-patient chart work carries its own
+     NON-pull scope stamp (__mlsChartWorkScopeV1, stamped by the
+     __mlsChartField.read rail), so it paints immediately without weakening
+     the day-pull fence. The background visit-list top-up deliberately does
+     NOT stamp — its post-pull chatter is the noise the fence exists for. */
+  function ptsChartScope() {
+    return safe(function () {
+      var sc = window.__mlsChartWorkScopeV1;
+      if (!sc || !sc.at || (now() - Number(sc.at)) > 180000) return '';
+      return String(sc.id || 'chart-work');
+    }, '');
+  }
+  function onPullTerminal(e) {
+    var d = (e && e.detail) || {};
+    var ss = String(d.sessionSerial == null ? '' : d.sessionSerial);
+    var pid = String(d.pullId == null ? '' : d.pullId);
+    if (!ss || !pid) return;
+    var ev = ss + ':' + pid;
+    /* fence: only the attempt THIS tab's engine stamped may close jobs —
+       a stale, foreign-tab, or older-attempt terminal never matches. */
+    if (ev !== ptsEpoch()) return;
+    if (pts.terminaled === ev) return; /* once only */
+    pts.terminaled = ev; pts.terminalAt = now();
+    function bound(flowName) {
+      var cur = activeFlow(flowName);
+      if (!cur) return null;
+      var je = String(cur.meta.epoch || '');
+      /* pts-1.1.0 (BLOCK 1): ownership is never inferred from absence — a
+         job with no epoch (started before this attempt stamped, or admitted
+         through the chart-work scope) is NOT owned by this terminal and
+         continues to its own terminal. */
+      return je === ev ? cur : null;
+    }
+    if (bound('history')) {
+      safe(function () { if (hist.quietTimer) { clearTimeout(hist.quietTimer); hist.quietTimer = null; } });
+      historyFinish();
+    }
+    if (bound('pull')) {
+      if (d.ok === true) finish('pull', 'complete', 'Pull finished.');
+      else finish('pull', 'fail', 'The pull stopped — see the pull receipt beside the day strip for the reason.');
+      pullWatch.lastStamp = 0; pullWatch.lastNote = '';
+    }
+  }
   function historyFinish() {
     hist.quietTimer = null;
     var cur = activeFlow('history');
@@ -250,7 +323,20 @@
     else finish('history', 'complete', 'Read ' + n + ' chart' + (n === 1 ? '' : 's') + '.');
   }
   function historyTouch(chartDelta, operation, patient) {
-    var cur = activeFlow('history') || ensure('history', {});
+    var cur = activeFlow('history');
+    if (!cur) {
+      /* pts-1.1.0: under a terminaled (fenced) pull epoch, only work that
+         carries the explicit chart-work scope may open a job — and that job
+         binds to the SCOPE, never to the dead pull epoch, so no pull
+         terminal ever owns it. Unscoped late traffic reopens nothing. */
+      var chartScope = '';
+      if (ptsFenced()) {
+        chartScope = ptsChartScope();
+        if (!chartScope) return;
+      }
+      cur = ensure('history', {});
+      if (cur && chartScope) { cur.meta.epoch = ''; cur.meta.chartScope = chartScope; }
+    }
     if (!cur) return;
     cur.meta.count += chartDelta;
     var patch = { operation: text(operation, 160) };
@@ -634,6 +720,7 @@
   window.addEventListener('message', onMessage, false);
   var onJobEvent = function () { safe(render); };
   window.addEventListener('mls:job-progress', onJobEvent, false);
+  window.addEventListener('mls:pull-terminal', onPullTerminal, false); /* pts-1.0.0 */
 
   /* ------------------------------------------------------------------ *
    * ps-1.3.0 pull-stamp watcher. The si engine stamps __mlsPullBusyAt   *
@@ -666,7 +753,15 @@
       var aged = freshest > 0 && !fresh && (now() - freshest) < 360000;
       if (fresh || aged) {
         var otherTab = !(localAt && (now() - localAt) < 360000);
-        if (!cur) cur = ensure('pull', {});
+        if (!cur) {
+          /* pts-1.1.0: a lingering LOCAL stamp under the terminaled epoch is
+             late traffic from the closed attempt — never a new job, however
+             late it arrives (durable fence; a new attempt stamps a new epoch
+             and lifts it). A foreign-tab xtab stamp still renders (fallback
+             heuristics own those). */
+          var ptsLateLocal = ptsFenced() && !otherTab;
+          if (!ptsLateLocal) cur = ensure('pull', {});
+        }
         if (cur && fresh && freshest !== pullWatch.lastStamp) {
           pullWatch.lastStamp = freshest;
           cur.handle.stage('Working through the schedule and charts', {
@@ -686,6 +781,16 @@
            rejection — consult the engine's recorded outcome (finding #5) */
         var outcome = safe(function () { return window.__mlsPullLastOutcome; }, null);
         var recent = outcome && outcome.at && (now() - outcome.at) < 600000;
+        /* cvi-1.0.0 (Codex reply 24): a recent INTERIM stamp means the
+           convergence phase is still working - never a terminal. Keep the
+           job alive and say what the engine is actually doing. */
+        if (recent && outcome.interim === true) {
+          if (pullWatch.lastNote !== 'interim') {
+            pullWatch.lastNote = 'interim';
+            cur.handle.stage('Working through the schedule and charts', { operation: 'Finishing charts that need a second read…' });
+          }
+          return;
+        }
         if (recent && outcome.ok) finish('pull', 'complete', 'Pull finished.');
         else if (recent && !outcome.ok) finish('pull', 'fail', 'The pull stopped: ' + (outcome.error || 'it did not finish') + ' — check the pull receipt before relying on today’s schedule.');
         else finish('pull', 'complete', 'The pull stopped — MLS could not confirm it finished; check the pull receipt before relying on today’s schedule.');
@@ -723,9 +828,11 @@
     panel: { open: function () { setPanel(true); }, close: function () { setPanel(false); }, toggle: function () { setPanel(!panelOpen); } },
     _observe: onMessage, /* exposed for tests: feed synthetic bridge messages */
     _pullTick: pullTick, /* exposed for tests: drive the pull-stamp watcher deterministically */
+    _pullTerminal: onPullTerminal, /* exposed for tests: deliver a scoped terminal (pts-1.0.0) */
     revert: function () {
       safe(function () { window.removeEventListener('message', onMessage, false); });
       safe(function () { window.removeEventListener('mls:job-progress', onJobEvent, false); });
+      safe(function () { window.removeEventListener('mls:pull-terminal', onPullTerminal, false); }); /* pts-1.0.0 */
       safe(function () { if (tickIv) clearInterval(tickIv); tickIv = 0; });
       safe(function () { if (pullWatch.iv) clearInterval(pullWatch.iv); pullWatch.iv = 0; });
       safe(function () { if (hist.quietTimer) clearTimeout(hist.quietTimer); });

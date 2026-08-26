@@ -4445,6 +4445,128 @@
     });
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: dscope ? parsed : persisted.length, savedCount: savedCount, scopedAdditive: dscope === true, scopeDate: dscope ? dscopeDate : undefined, sameDayStatus: dscope ? dsSameDayStatus : undefined, sameDay: dsSameDayMeta || undefined, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
   }
+  /* pvd-1.0.0 (Codex replies 24/27): every requested patient receives exactly
+     ONE mutually exclusive final verdict, and the arithmetic CLOSES:
+     requested === succeeded + failed + notAttempted + unaccounted. The walk
+     counters cannot say this (processed++ fires for failures too, and a
+     patient can sit in patients[] complete:true AND in retry[] at once - the
+     measured double-count). Verdicts, closed vocabulary:
+       succeeded      - walked, complete, and NOT re-queued
+       failed         - walked and incomplete, or complete-but-requeued (the
+                        conflict is COUNTED, never silently absorbed)
+       not-attempted  - never walked (stop/deadline/unresolved-at-entry)
+       unaccounted    - no evidence either way; counted so the sum still
+                        closes and the gap is visible instead of vanishing.
+     PHI-free: patient ids and reason codes only, never names. Pure; exposed
+     as __mlsSI._historyVerdictCensus for extraction-executed tests. */
+  function historyVerdictCensus(rows, unresolved, receipt) {
+    rows = rows || []; unresolved = unresolved || [];
+    var patients = (receipt && receipt.patients) || [], retry = (receipt && receipt.retry) || [];
+    var NOT_ATTEMPTED = { "stopped-by-user": 1, "deferred-after-batch-deadline": 1 };
+    var byPidPatient = {}, byPidRetry = {}, blankPatients = [], blankRetry = [], i, pid;
+    for (i = 0; i < patients.length; i++) {
+      pid = String((patients[i] && patients[i].patientId) || "");
+      if (pid) { if (!byPidPatient[pid]) byPidPatient[pid] = patients[i]; }
+      else blankPatients.push(patients[i]);
+    }
+    for (i = 0; i < retry.length; i++) {
+      pid = String((retry[i] && retry[i].patientId) || "");
+      if (pid) { if (!byPidRetry[pid]) byPidRetry[pid] = retry[i]; }
+      else blankRetry.push(retry[i]);
+    }
+    var out = { requested: 0, succeeded: 0, failed: 0, omitted: 0, notAttempted: 0, unaccounted: 0, conflicts: 0, closed: false, perPatient: [] };
+    var blankPatientAt = 0, blankRetryAt = 0;
+    function judge(sourceRow, ordinal) {
+      var rowPid = String((sourceRow && (sourceRow._mlsTargetPatientId || sourceRow.patient_external_id || sourceRow.patientId)) || "");
+      var pe = null, re = null;
+      if (rowPid) { pe = byPidPatient[rowPid] || null; re = byPidRetry[rowPid] || null; }
+      else {
+        /* pid-less rows consume pid-less entries in walk order - deterministic,
+           and a row can never borrow another patient's identified evidence. */
+        if (blankPatientAt < blankPatients.length) pe = blankPatients[blankPatientAt++];
+        else if (blankRetryAt < blankRetry.length) re = blankRetry[blankRetryAt++];
+      }
+      var verdict, reason = "";
+      if (pe && pe.complete === true && !re) { verdict = "succeeded"; }
+      else if (pe && pe.complete === true && re) { verdict = "failed"; reason = String(re.reason || "requeued-after-success"); out.conflicts++; }
+      /* tax-1.0.0: a reconciled named omission is its OWN terminal - proven
+         chart, named missing detail, out of the retry pool, and NEVER a full
+         visit-body success. Still re-queued means still failed. */
+      else if (pe && pe.namedOmission && !re) { verdict = "complete-with-named-omissions"; reason = String((pe.namedOmission.detail || pe.namedOmission.reason || "")); }
+      else if (pe) { verdict = "failed"; reason = String(pe.reason || (re && re.reason) || "incomplete"); }
+      else if (re && NOT_ATTEMPTED[String(re.reason || "")]) { verdict = "not-attempted"; reason = String(re.reason); }
+      else if (re) { verdict = "not-attempted"; reason = String(re.reason || "never-walked"); }
+      else { verdict = "unaccounted"; reason = "no-entry"; }
+      out.requested++;
+      if (verdict === "succeeded") out.succeeded++;
+      else if (verdict === "failed") out.failed++;
+      else if (verdict === "complete-with-named-omissions") out.omitted++;
+      else if (verdict === "not-attempted") out.notAttempted++;
+      else out.unaccounted++;
+      out.perPatient.push({ patientId: rowPid || ("row#" + ordinal), verdict: verdict, reason: String(reason).slice(0, 60) });
+    }
+    for (i = 0; i < rows.length; i++) judge(rows[i], i);
+    for (i = 0; i < unresolved.length; i++) judge(unresolved[i], rows.length + i);
+    out.closed = out.requested === out.succeeded + out.failed + out.omitted + out.notAttempted + out.unaccounted;
+    return out;
+  }
+  /* tax-1.0.0 (Codex reply 27 p3): reconcile the refresh/day taxonomy ONLY
+     where evidence permits. A chart whose identity, chart facts, and exact-
+     day census were proven in THIS batch, but whose encounter body still
+     binds nothing AFTER the capped reader re-attempted it (a retry pass),
+     terminates as a NAMED OMISSION with the exact missing-detail sub-cause -
+     it leaves the retry pool (the eternal "Retry failed histories (N)" burn)
+     but it NEVER counts as a full visit-body success: one.complete stays
+     false, ON-mode completeness stays partial, and the verdict census counts
+     it in its own bucket. Transport/auth/identity/navigation/deadline
+     failures stay failures and stay retryable - the sub-cause histogram must
+     be pure content evidence or the entry is untouched (fail closed). */
+  /* tax-1.0.1 (Codex reply 33): the classifier FAILS CLOSED. The transport
+     blacklist regex treated every UNRECOGNIZED histogram key as content -
+     background.js's real vocabulary carries safety/navigation/binding causes
+     (identity-changed-before-detail, detail-binding-mismatch,
+     encounter-surface-not-open, slideout-open-failed, click-failed, ...)
+     that a blacklist can never enumerate ahead of time. This closed exact
+     allowlist names the ONLY reviewed content/hydration-only causes that may
+     become named omissions after the capped retry; every unknown, new,
+     identity, binding, key-integrity, surface, frame, click, navigation,
+     transport, auth, deadline, picker, or row-set cause stays retryable. */
+  var TAX_CONTENT_ALLOW = { "accordion-not-open": 1, "no-bound-clinical-detail": 1 };
+  function taxReconcileNamedOmissions(receipt) {
+    var patients = (receipt && receipt.patients) || [], retry = (receipt && receipt.retry) || [];
+    var byPid = {}, i, pid;
+    for (i = 0; i < patients.length; i++) { pid = String((patients[i] && patients[i].patientId) || ""); if (pid && !byPid[pid]) byPid[pid] = patients[i]; }
+    var keep = [], moved = [];
+    for (i = 0; i < retry.length; i++) {
+      var entry = retry[i];
+      pid = String((entry && entry.patientId) || "");
+      var pe = pid ? byPid[pid] : null;
+      var reason = String((entry && entry.reason) || "");
+      var eligible = false, detail = "";
+      if (reason === "visit-bodies-incomplete" && pe && pe.identityVerified === true && pe.organized === true) {
+        var rr = pe.visitsReadReceipt || null;
+        var hist = pe.visitsFailedHistogram || null;
+        var censusProven = !!(rr && Number(rr.expected || 0) > 0);
+        var contentOnly = false;
+        if (hist) {
+          var keys = Object.keys(hist);
+          contentOnly = keys.length > 0;
+          for (var ki = 0; ki < keys.length; ki++) { if (TAX_CONTENT_ALLOW[String(keys[ki])] !== 1) { contentOnly = false; break; } }
+          if (contentOnly) detail = keys.sort(function (a, b) { return Number(hist[b] || 0) - Number(hist[a] || 0); })[0];
+        }
+        eligible = censusProven && contentOnly;
+      }
+      if (eligible) {
+        pe.namedOmission = { reason: reason, detail: String(detail).slice(0, 48), at: Date.now() };
+        moved.push({ patientId: pid, reason: reason, detail: String(detail).slice(0, 48) });
+      } else keep.push(entry);
+    }
+    if (moved.length) {
+      receipt.retry = keep;
+      receipt.namedOmissions = (Array.isArray(receipt.namedOmissions) ? receipt.namedOmissions : []).concat(moved);
+    }
+    return moved.length;
+  }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
     /* b744 #36: true only when the per-patient loop ran to completion; the
        finally uses it to close the progress reporter ONLY on the throw path
@@ -6309,7 +6431,17 @@
       /* An empty verified provider day has no patient history targets and is
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
       if (receipt.requested === 0) receipt.exactIdentityVerified = true;
+      /* tax-1.0.0: ONLY a retry pass (the capped reader re-attempting) may
+         reconcile content-class leftovers into named omissions - a first
+         pass's failure is still just a failure. Runs BEFORE failures and the
+         verdict census so both see the drained pool. */
+      if (sweepOpts && sweepOpts.retryPass === true) taxReconcileNamedOmissions(receipt);
       receipt.failures = receipt.retry.length;
+      /* pvd-1.0.0: the closed per-patient verdict census, stamped at settle.
+         succeeded is now a first-class receipt field - the walk counters
+         (requested/processed) remain, but they no longer stand in for it. */
+      receipt.verdicts = historyVerdictCensus(rows, unresolved, receipt);
+      receipt.succeeded = receipt.verdicts.succeeded;
       var sleepingRows = receipt.retry.filter(function (entry) { return entry && String(entry.reason || "") === "athena-tab-sleeping"; });
       if (sleepingRows.length) {
         receipt.reason = "athena-tab-sleeping";
@@ -6855,6 +6987,83 @@
         if (typeof cv === "number" && isFinite(cv)) { counts[names[ci]] = cv; any = true; }
       }
       if (any) out.counts = counts;
+      /* nvd-1.0.0 (pull matrix 2026-08-26): a nav-failed outcome said only
+         "retry the pull" while the engine's bounded navDiag (home-click
+         result, continue-interstitial, weekstrip attempts, tab counts) was
+         DISCARDED by this whitelist - the first reproduced matrix failure
+         was undiagnosable from its own stored receipt. Carry it through;
+         closed shape, no page text, no PHI. */
+      if (value.navDiag && typeof value.navDiag === "object") {
+        try { out.navDiag = JSON.parse(JSON.stringify(value.navDiag)); } catch (eDg) {}
+      }
+      /* nvd-1.0.1: a calendar-partial outcome said failed:8 and nothing else -
+         the engine's PHI-free reason-code counts (failureReasons, mapping
+         reasons) were built for exactly this and then dropped here. Live run 2
+         of the matrix was undiagnosable from its stored receipt again. */
+      if (value.calendarReceipt && typeof value.calendarReceipt === "object") {
+        try {
+          var cr = value.calendarReceipt;
+          out.calendarDiag = {
+            complete: cr.complete === true,
+            failed: Number(cr.failed || 0),
+            unresolvedMappings: Number(cr.unresolvedMappings || 0),
+            failureReasons: JSON.parse(JSON.stringify(cr.failureReasons || {})),
+            mappingReasons: JSON.parse(JSON.stringify(cr.mappingReasons || {}))
+          };
+        } catch (eCr) {}
+      }
+      /* nvd-1.0.2: the reader's attribution-coverage census (which rows bound
+         to which provider header, how many stayed unattributed/foreign) is the
+         exact diagnosis for every second-provider calendar failure and for
+         provider-less rows at rest - and it was dropped here too. */
+      if (value.providerRosterReceipt && value.providerRosterReceipt.attributionCoverage) {
+        try { out.attributionCoverage = JSON.parse(JSON.stringify(value.providerRosterReceipt.attributionCoverage)); } catch (eAc) {}
+      }
+      /* nvd-1.0.3: a stable 5-chart cohort failed the main walk, the
+         second-read pass, AND both capped retry rounds (2026-08-26) - and
+         the stored outcome said only history-partial because the retry
+         entries' per-chart reason codes were dropped here. Summarize them as
+         bounded reason counts; codes only, never names. */
+      if (value.historyReceipt && Array.isArray(value.historyReceipt.retry) && value.historyReceipt.retry.length) {
+        try {
+          var hdCounts = {};
+          value.historyReceipt.retry.forEach(function (entry) {
+            var hdReason = String(entry && entry.reason || "unspecified").slice(0, 60);
+            hdCounts[hdReason] = Number(hdCounts[hdReason] || 0) + 1;
+          });
+          out.historyRetryReasons = hdCounts;
+        } catch (eHd) {}
+      }
+    }
+    /* the matrix must attribute every run to its visit-notes mode; the engine
+       already stamps it and this whitelist dropped it. */
+    if (value.visitNotesMode !== undefined && value.visitNotesMode !== null && String(value.visitNotesMode) !== "") out.visitNotesMode = String(value.visitNotesMode).slice(0, 24);
+    /* pvd-1.0.0: the closed per-patient verdict counts ride the machine
+       outcome in BOTH verdict directions - succeeded matters on a good day
+       too. Counts only (PHI-free); the per-patient list stays on the full
+       receipt. */
+    if (value.historyReceipt && value.historyReceipt.verdicts) {
+      try {
+        var vd = value.historyReceipt.verdicts;
+        out.historyVerdicts = { requested: Number(vd.requested || 0), succeeded: Number(vd.succeeded || 0), failed: Number(vd.failed || 0), omitted: Number(vd.omitted || 0), notAttempted: Number(vd.notAttempted || 0), unaccounted: Number(vd.unaccounted || 0), conflicts: Number(vd.conflicts || 0), closed: vd.closed === true };
+      } catch (eVd) {}
+    }
+    /* spd-1.0.0 (reply 24: speed LAST, measurement first): the settle's
+       per-stage cost breakdown rides the machine outcome in BOTH verdict
+       directions, so every matrix run names its slow step with numbers at
+       rest instead of needing a live profiler. Milliseconds/counts only. */
+    if (value.historyReceipt && value.historyReceipt.costBreakdown) {
+      try {
+        var cb = value.historyReceipt.costBreakdown;
+        var cbNum = function (v) { v = Number(v); return isFinite(v) ? v : 0; }; /* a non-numeric stage time is 0, never NaN */
+        out.costBreakdown = {
+          chartMs: cbNum(cb.chartMs), parseSaveMs: cbNum(cb.parseSaveMs),
+          visitsMs: cbNum(cb.visitsMs), visitSaveMs: cbNum(cb.visitSaveMs),
+          todayNoteMs: cbNum(cb.todayNoteMs), rows: cbNum(cb.rows),
+          maxChartMs: cbNum(cb.maxChartMs), perRowChartMs: cbNum(cb.perRowChartMs),
+          perRowTodayNoteMs: cbNum(cb.perRowTodayNoteMs), skippedVerifiedToday: cbNum(cb.skippedVerifiedToday)
+        };
+      } catch (eCb) {}
     }
     return out;
   }
@@ -8052,7 +8261,7 @@
         var priorBodiesOverride = _pullBodiesOverride;
         if (typeof history.visitNotesRequested === "boolean") _pullBodiesOverride = history.visitNotesRequested;
         function restoreBodiesOverride() { _pullBodiesOverride = priorBodiesOverride; }
-        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}, { scopeDay: retryScopeDay }).then(
+        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}, { scopeDay: retryScopeDay, retryPass: true }).then(
           function (v) { __historyRetryForeground = false; restoreBodiesOverride(); return v; },
           function (e) { __historyRetryForeground = false; restoreBodiesOverride(); throw e; });
       });
@@ -8118,10 +8327,12 @@
   function pullUnlocked(opts) {
     opts = opts || {};
     var date = opts.date || estTodayKey();
-    /* A bulk pull with Full Notes OFF is deliberately schedule-only.  Do not
-       merely skip encounter bodies: the chart reader itself opens a patient
-       chart, so this boundary must be decided before identity hydration or
-       the history batch can start.  Cached local facts remain untouched. */
+    /* fvn-1.0.0 CANONICAL SEMANTICS (Codex reply 24): OFF is DAY-FACTS mode,
+       not schedule-only - every pull opens each scheduled chart and saves
+       identity + chart facts/coverage + exactly the pulled day's own visit
+       note; ON additionally saves every dated PRIOR visit note. This flag
+       decides HISTORY DEPTH only, and it must be frozen before identity
+       hydration or the history batch can start. */
     var visitNotesRequested = typeof opts.pullVisitBodies === "boolean"
       ? opts.pullVisitBodies
       : (typeof opts.visitNotesRequested === "boolean" ? opts.visitNotesRequested
@@ -8262,13 +8473,19 @@
          receipt. Codes, counts, a truncated URL PATH and a date - never a
          name, DOB, MRN or any chart text. */
       var navAttempts = 0;
+      /* nvl-1.1.0: ONE bounded re-entry of the goto handler's own guarded
+         recovery ladder, admitted only on closed alive-surface evidence;
+         navDiag carries whether it ran so every receipt proves the ladder. */
+      var navRecovery = { ran: false };
       function navDiagOf(nav, attempts) {
         return safe(function () {
           var d = (nav && nav.diag) || null;
           return {
             v: 1,
-            ok: !!(nav && nav.ok !== false),
-            supported: !(nav && nav.supported === false),
+            /* nvl-1.3.0 (Codex reply 40): EXACT booleans - absence is never
+               success. A malformed reply cannot mint a successful receipt. */
+            ok: !!(nav && nav.ok === true),
+            supported: !!(nav && nav.supported === true),
             reason: String((nav && nav.reason) || "").slice(0, 40),
             via: String((nav && nav.via) || "").slice(0, 40),
             observedDay: normDate(nav && nav.schedDate) || "",
@@ -8279,9 +8496,12 @@
             tabPath: String((d && d.tabPath) || "").slice(0, 40),
             initFrames: Number((d && d.initFrames) || 0),
             initFound: !!(d && d.initFound),
-            rounds: Number((d && Array.isArray(d.rounds) && d.rounds.length) || 0)
+            rounds: Number((d && Array.isArray(d.rounds) && d.rounds.length) || 0),
+            recoveryRan: navRecovery.ran === true, /* nvl-1.1.0: the guarded seam was re-entered */
+            recoveryVia: navRecovery.ran === true ? "second-settled-goto" : "",
+            sequences: navRecovery.ran === true ? 2 : 1 /* nvl-1.2.0: attempts above is the monotonic total across these */
           };
-        }, { v: 1, ok: false, reason: "nav-diag-unreadable", attempts: Number(attempts || 0) });
+        }, { v: 1, ok: false, reason: "nav-diag-unreadable", attempts: Number(attempts || 0), recoveryRan: navRecovery.ran === true });
       }
       /* ===== end nav-1.0.0 (diag) ===== */
       /* p1-athena-presence-1.0.0: ONE busy budget for the whole pull. Both the
@@ -8292,12 +8512,24 @@
         var settleWaits = [2500, 5000, 8000];
         function attempt(round) {
           return p1AthenaBusyRetry(function () {
+            /* nvl-1.3.0 (Codex reply 40): counted at the REAL bridge dispatch,
+               INSIDE the busy-retry wrapper - its internal presence-admitted
+               re-dispatches are real attempts too. Monotonic across the
+               settle ladder and the recovery sequence alike. */
+            navAttempts += 1;
             return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false });
           }, onStatus, athenaBusy).then(function (nav) {
-            navAttempts = round + 1; /* nav-1.0.0 */
             var day0 = normDate(nav && nav.schedDate);
             var bad = !nav || nav.ok === false || (day0 && day0 !== date);
-            if (!bad || round >= settleWaits.length) return nav;
+            /* nvl-1.5.0 (Codex reply 44): a settle retry is spent ONLY under
+               the same closed admission law the recovery re-entry uses - an
+               exact ok:true wrong-day landing, or an exact ok:false
+               reason-less supported:true reply with reviewed alive evidence.
+               Every fail-closed shape (coded refusal, dead session,
+               unsupported, null/empty, missing/null/string ok, alien via)
+               returns from its FIRST settled call with one real dispatch and
+               reaches the exact terminal gate. */
+            if (!bad || round >= settleWaits.length || !navRecoveryAdmissible(nav)) return nav;
             onStatus("Athena is still switching days — re-checking in a moment...", "");
             return (window.__mlsBgSleep ? window.__mlsBgSleep(settleWaits[round]) : new Promise(function (resWait) { setTimeout(resWait, settleWaits[round]); })).then(function () {
               return attempt(round + 1);
@@ -8333,9 +8565,62 @@
         });
       }
       /* ===== end p1-onetab-nav-1.0.0 ===== */
-      return gotoDateSettled().then(function (nav) {
+      /* nvl-1.1.0 (Codex reply 34): the escape IS the goto handler's own
+         v1.91 recovery ladder - guard-threaded home-click, Continue-clear,
+         round-1 reload, every action deadline-ceilinged and every late
+         result discarded by its once-only funnel. The app drives NO separate
+         GoHome verb any more, so there is nothing left to orphan; the one
+         app-side retry simply re-enters that guarded seam - and ONLY on
+         closed alive-surface evidence. Everything else keeps its first
+         honest verdict. */
+      function navBad(nav) {
+        var d0 = normDate(nav && nav.schedDate);
+        return !nav || nav.ok === false || (d0 && d0 !== date);
+      }
+      /* nvl-1.2.0 (Codex reply 37): via is a CLOSED exact handler vocabulary -
+         the three reviewed success routes of mlsAthenaGotoDate - never any
+         nonempty alien string. */
+      var NVL_VIA_ALLOW = { weekstrip: 1, input: 1, arrows: 1 };
+      function navRecoveryAdmissible(nav) {
+        if (!nav || nav.sessionLikelyExpired === true) return false;
+        /* every CODED refusal (busy, sleeping, deadline, picker, alien -
+           anything that names itself) keeps its verdict: the alive-surface
+           classes are exactly the reason-less supported:true failures. */
+        if (String(nav.reason || "") !== "") return false;
+        var d0 = normDate(nav.schedDate);
+        /* nvl-1.4.0 (Codex reply 42): the wrong-day landing is alive by
+           definition ONLY on an exact ok:true. A missing, null, or string ok
+           beside a mismatched parseable date is a malformed reply and buys
+           nothing - the same exact-boolean law as the terminal gate, one
+           branch lower. */
+        if (nav.ok === true) return !!(d0 && d0 !== date);
+        if (nav.ok !== false) return false; /* ok-less/malformed: never admit */
+        /* nvl-1.2.0: a failed response recovers only when the handler
+           EXPLICITLY says supported:true - absence fails closed - and an
+           alien via poisons the reply even beside positive diag evidence. */
+        if (nav.supported !== true) return false;
+        var via = String(nav.via || "");
+        if (via !== "" && NVL_VIA_ALLOW[via] !== 1) return false;
+        var dg = nav.diag || null;
+        /* POSITIVE alive evidence only: a reviewed located-control route or
+           frames that executed the injection (the encounter-parked shape). */
+        return NVL_VIA_ALLOW[via] === 1 ||
+          !!(dg && (Number(dg.initFrames || 0) > 0 || (Array.isArray(dg.rounds) && dg.rounds.length > 0)));
+      }
+      function gotoWithRecovery() {
+        return gotoDateSettled().then(function (nav) {
+          if (!navBad(nav) || navRecovery.ran || !navRecoveryAdmissible(nav)) return nav;
+          navRecovery.ran = true;
+          onStatus("athenaOne answered from a non-schedule screen - giving its own guarded recovery one more attempt...", "");
+          return gotoDateSettled();
+        });
+      }
+      return gotoWithRecovery().then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);
-        if (nav && nav.ok === false) {
+        /* nvl-1.3.0 (Codex reply 40): EXACT success gate - a malformed,
+           null, or ok-less reply can no longer fall through to the schedule
+           leg as if navigation succeeded. Only nav.ok === true proceeds. */
+        if (!nav || nav.ok !== true) {
           return p1NavFailure(nav, navDiagOf(nav, navAttempts));
         }
         if (navDay && navDay !== date) {
@@ -10556,6 +10841,8 @@
     _clearLedgerDone: clearDone,
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,
+    _historyVerdictCensus: historyVerdictCensus, /* pvd-1.0.0: pure, extraction-executable */
+    _taxReconcileNamedOmissions: taxReconcileNamedOmissions, /* tax-1.0.0: evidence-gated, extraction-executable */
     _buildRetryRows: buildRetryRows,
     retryFailedHistory: retryFailedHistory,
     _boundedUntil: boundedUntil,

@@ -72,10 +72,18 @@ assert(/dedupeKey:[\s\S]{0,500}jobPayload\.pullVisitBodies === true \? '1' : \(j
   'the dedupe key must include the exact frozen payload choice as ON/OFF/unspecified, or an ON ' +
   'request silently reuses an earlier OFF result and reports success');
 
-/* ---- hop 2: the relay agent forwards it into the pull options ---- */
-const agentIdx = connect.indexOf('if (pl.includeHistory === false)');
+/* ---- hop 2: the relay agent forwards it into the pull options ----
+ * fvn-1.1.0 (Codex reply 38/40): the legacy includeHistory:false passthrough
+ * is DELETED - remote payloads are normalized to the canonical floor and
+ * only pullVisitBodies chooses day-facts versus full. Anchor on the opts
+ * construction itself, and pin the deleted passthrough ABSENT. */
+assert(!connect.includes('if (pl.includeHistory === false) opts.includeHistory = false;'),
+  'the relay agent can pass includeHistory:false into si.pull() again - the mandatory floor is remotely suppressible');
+const agentIdx = connect.indexOf("if (pl.provider) opts.provider = pl.provider;");
 assert(agentIdx > 0, 'the relay agent pull-option mapping could not be located');
-const agentBlock = connect.slice(agentIdx, agentIdx + 900);
+const agentBlock = connect.slice(agentIdx, agentIdx + 1200);
+assert(!/opts\.includeHistory\s*=\s*false/.test(agentBlock),
+  'the relay agent still sets includeHistory:false on the pull options - the floor is suppressible');
 assert(/typeof pl\.pullVisitBodies === 'boolean'/.test(agentBlock),
   'the agent must forward ONLY an explicit boolean — anything else must not override the device');
 assert(/opts\.pullVisitBodies = pl\.pullVisitBodies/.test(agentBlock),
