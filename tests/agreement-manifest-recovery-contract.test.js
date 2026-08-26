@@ -93,6 +93,8 @@ function recoveryHarness(options = {}) {
     _agManifestPromise: null,
     _agSetupPolicyVersion: null,
     _agRecoveredSignerName: '',
+    _agSubmitPromise: null,
+    _agSubmitOwner: null,
     ACTIVE_MLS_AGREEMENTS: [],
     MLS_AGREEMENTS: [],
   };
@@ -265,16 +267,19 @@ function submitHarness(options = {}) {
   const signer = { value: 'Synthetic Signer' };
   const errors = [];
   const requests = [];
-  let manifestResolve;
-  let postResolve;
+  const manifestResolvers = [];
+  const postEntries = [];
   let account = 'first@example.test';
   const context = {
     _agSubmitPromise: null,
+    _agSubmitOwner: null,
     _agManifestEpoch: 0,
     _agSetupPolicyVersion: options.bodyNull ? 0 : 2,
     _agManifest: manifest,
     _agManifestPromise: null,
     _agRecoveredSignerName: '',
+    ACTIVE_MLS_AGREEMENTS: [],
+    MLS_AGREEMENTS: [],
     bkUser: { setupPolicyVersion: options.bodyNull ? 0 : 2, agreements: {} },
     session: { email: account },
     sfGateLoadingStarted: false,
@@ -283,7 +288,8 @@ function submitHarness(options = {}) {
       getElementById(id) { return id === 'agSignName' ? signer : id === 'agSignBtn' ? button : null; },
       querySelectorAll() { return boxes; },
     },
-    agLoadManifest: () => new Promise((resolve) => { manifestResolve = () => resolve(manifest); }),
+    agLoadManifest: () => new Promise((resolve) => { manifestResolvers.push(() => resolve(manifest)); }),
+    agClearManifestRecovery: () => {},
     agGateErr: (message) => errors.push(String(message || '')),
     sigPadIsEmpty: () => false,
     sigPadDataUrl: () => 'data:image/png;base64,AA==',
@@ -299,10 +305,10 @@ function submitHarness(options = {}) {
       if (options.networkError) return Promise.reject(new Error('offline'));
       const response = { ok: options.status === 409 ? false : true, status: options.status || 200,
         json: async () => options.status === 409 ? { error: 'version_mismatch' } : { artifact: { status: 'stored', stored: true }, agreement: { manifestVersion: 'v2' } } };
-      if (options.postPending) return new Promise((resolve) => { postResolve = () => resolve(response); });
+      if (options.postPending || options.queuePosts) return new Promise((resolve, reject) => { postEntries.push({ resolve, reject, response }); });
       return Promise.resolve(response);
     },
-    agIsAgreementVersionMismatch: () => options.status === 409,
+    agIsAgreementVersionMismatch: (status, data) => Number(status) === 409 && ['version_mismatch', 'agreement_version_mismatch', 'manifest_version_mismatch'].includes(String(data && (data.code || data.error) || '').trim().toLowerCase()),
     agRefreshAccountReadiness: async () => false,
     agLegacySigningVerified: () => false,
     showAgreementsPending: () => {},
@@ -321,8 +327,25 @@ function submitHarness(options = {}) {
     unsEmail: () => account,
   };
   vm.createContext(context);
-  vm.runInContext(`${submitSource}\nthis.submitApi={agSubmitSign, setEpoch:(v)=>{_agManifestEpoch=v;}, setAccount:(v)=>{session.email=v;account=v;}};`, context);
-  return { api: context.submitApi, manifestResolve: () => manifestResolve(), postResolve: () => postResolve && postResolve(), requests, errors, button };
+  vm.runInContext(`${submitSource}\n${extractFunction(shell, 'agResetManifestState')}\nthis.submitApi={agSubmitSign, agResetManifestState, setEpoch:(v)=>{_agManifestEpoch=v;}, setAccount:(v)=>{session.email=v;account=v;}, setPolicy:(v)=>{_agSetupPolicyVersion=v;bkUser.setupPolicyVersion=v;}, reset:(previousAccount)=>agResetManifestState(previousAccount)};`, context);
+  return {
+    api: context.submitApi,
+    manifestResolve(index = 0) { const resolve = manifestResolvers.splice(index, 1)[0]; assert(resolve, `manifest resolver ${index} was not pending`); resolve(); },
+    settlePost(index = 0, outcome = 'success') {
+      const entry = postEntries.splice(index, 1)[0];
+      assert(entry, `sign POST ${index} was not pending`);
+      if (outcome === 'network') { entry.reject(new Error('offline')); return; }
+      if (outcome === '409') {
+        entry.resolve({ ok: false, status: 409, json: async () => ({ error: 'version_mismatch' }) });
+        return;
+      }
+      entry.resolve(entry.response);
+    },
+    postResolve() { this.settlePost(0); },
+    requests,
+    errors,
+    button,
+  };
 }
 
 function manifestLoadHarness() {
@@ -391,6 +414,67 @@ function manifestLoadHarness() {
   await Promise.all([beforeSwitch, duringSwitch]);
   assert.strictEqual(switched.requests.length, 1, 'account switch caused a duplicate sign POST');
 
+  async function assertOldSubmitCannotAffectResetAccount(outcome, sameAccount = false) {
+    const crossed = submitHarness({ postPending: true, queuePosts: true });
+    const oldSubmit = crossed.api.agSubmitSign();
+    let oldSettled = false;
+    oldSubmit.then(() => { oldSettled = true; }, () => { oldSettled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    crossed.manifestResolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(crossed.requests.length, 1, `${outcome}: account A did not reach its single pending sign POST`);
+    if (!sameAccount) crossed.api.setAccount('second@example.test');
+    crossed.api.reset('first@example.test');
+
+    const newSubmit = crossed.api.agSubmitSign();
+    const duplicateNewSubmit = crossed.api.agSubmitSign();
+    await new Promise((resolve) => setImmediate(resolve));
+    crossed.manifestResolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(crossed.requests.length, 2, `${outcome}: account B/reset did not start exactly one new sign POST`);
+    crossed.settlePost(1, 'success');
+    await Promise.all([newSubmit, duplicateNewSubmit]);
+    assert.strictEqual(oldSettled, false, `${outcome}: account A settled before account B completed`);
+    const errorsBeforeOldSettles = crossed.errors.slice();
+    const buttonBeforeOldSettles = { disabled: crossed.button.disabled, textContent: crossed.button.textContent };
+
+    crossed.settlePost(0, outcome);
+    await oldSubmit;
+    assert.strictEqual(oldSettled, true, `${outcome}: old account submit never settled`);
+    assert.strictEqual(crossed.requests.length, 2, `${outcome}: old account completion emitted another sign POST`);
+    assert.deepStrictEqual(crossed.errors, errorsBeforeOldSettles, `${outcome}: old account completion changed the current account error UI`);
+    assert.deepStrictEqual({ disabled: crossed.button.disabled, textContent: crossed.button.textContent }, buttonBeforeOldSettles,
+      `${outcome}: old account completion changed the current account button UI`);
+  }
+
+  for (const outcome of ['success', 'network', '409']) await assertOldSubmitCannotAffectResetAccount(outcome);
+  await assertOldSubmitCannotAffectResetAccount('success', true);
+
+  {
+    const crossed = submitHarness({ postPending: true, queuePosts: true });
+    const oldSubmit = crossed.api.agSubmitSign();
+    await new Promise((resolve) => setImmediate(resolve));
+    crossed.api.setAccount('second@example.test');
+    crossed.api.reset('first@example.test');
+    const newSubmit = crossed.api.agSubmitSign();
+    const duplicateNewSubmit = crossed.api.agSubmitSign();
+    await new Promise((resolve) => setImmediate(resolve));
+    crossed.manifestResolve(1);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(crossed.requests.length, 1, 'the reset account did not reach one sign POST while old policy-0 manifest work was pending');
+    crossed.settlePost(0, 'success');
+    await Promise.all([newSubmit, duplicateNewSubmit]);
+    const errorsBeforeOldBody = crossed.errors.slice();
+    const buttonBeforeOldBody = { disabled: crossed.button.disabled, textContent: crossed.button.textContent };
+    crossed.api.setPolicy(0);
+    crossed.manifestResolve(0);
+    await oldSubmit;
+    assert.strictEqual(crossed.requests.length, 1, 'a late stale policy-0 body-null path emitted a sign POST');
+    assert.deepStrictEqual(crossed.errors, errorsBeforeOldBody, 'a late stale policy-0 body-null path changed the current account error UI');
+    assert.deepStrictEqual({ disabled: crossed.button.disabled, textContent: crossed.button.textContent }, buttonBeforeOldBody,
+      'a late stale policy-0 body-null path changed the current account button UI');
+  }
+
   const loads = manifestLoadHarness();
   const accountA = loads.api.agLoadManifest().catch((error) => error);
   loads.api.bump();
@@ -417,13 +501,18 @@ assert(ceremony.includes('if(!agTryManifestRecovery(e)) agGateErr(agManifestLoad
   'initial stale-manifest loading has no bounded recovery path');
 
 const submit = extractFunction(shell, 'agSubmitSign');
+const reset = extractFunction(shell, 'agResetManifestState');
+assert(reset.includes('_agSubmitOwner=null; _agSubmitPromise=null'),
+  'manifest reset does not detach the old submit owner and in-flight latch');
+assert(submit.includes('const submitOwner={epoch:submitEpoch,active:true};') && submit.includes('_agSubmitOwner=submitOwner;'),
+  'submit ownership is not established before manifest work starts');
 assert.strictEqual((submit.match(/\/api\/agreements\/sign/g) || []).length, 1,
   'manifest recovery introduced a second agreement POST path');
 assert(submit.includes('agIsAgreementVersionMismatch(res.status,data)') && submit.includes('agTryManifestRecovery(mismatch)'),
   'server-side version rotation after review does not restart with current text');
 assert(submit.indexOf('agIsAgreementVersionMismatch(res.status,data)') < submit.indexOf('legacyResponseUncertain='),
   'deterministic version mismatch is swallowed by ambiguous-response recovery');
-assert(submit.includes("if(!body){\n      const mismatch=agStaleManifestError"),
+assert(submit.includes('if(!body){') && submit.indexOf('if(!body){') < submit.indexOf('const mismatch=agStaleManifestError'),
   'policy-0 stale browser constant still dead-ends before POST');
 
 console.log('PASS agreement manifest recovery: one cache-busted re-entry, account isolation, assent reset, safe name restore, and no duplicate POST');

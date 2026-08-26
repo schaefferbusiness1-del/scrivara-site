@@ -34271,7 +34271,7 @@ const BROWSER_AGREEMENT_EVIDENCE=Object.freeze([
   ['mls.sanction-policy-ack','58f009aa5dbce2d97efdb77c4b0ca5f817c9f16f832868b9822d094f80b00d7e'],
   ['mls.authorized-representative-esign','1550b572047d666adf1bab6d2c1bef9089105ae6fa52753c01a6250827f2a6b3']
 ]);
-let _agManifest=null, _agManifestPromise=null, _agManifestEpoch=0, _agSetupPolicyVersion=null, _agRecoveredSignerName='', _agSubmitPromise=null;
+let _agManifest=null, _agManifestPromise=null, _agManifestEpoch=0, _agSetupPolicyVersion=null, _agRecoveredSignerName='', _agSubmitPromise=null, _agSubmitOwner=null;
 const AG_MANIFEST_RECOVERY_PARAM='mlsAgreementRefresh';
 const AG_MANIFEST_RECOVERY_TTL_MS=10*60*1000;
 const AG_MANIFEST_MAX_BUILD_LENGTH=160;
@@ -34303,6 +34303,10 @@ function agClearManifestRecovery(account){
   if(key) try{ sessionStorage.removeItem(key); }catch(e){}
 }
 function agResetManifestState(previousAccount){
+  /* A reset creates a new account/manifest epoch. The old submit may still
+     be awaiting fetch, but it no longer owns the UI or the submit latch. */
+  if(_agSubmitOwner) _agSubmitOwner.active=false;
+  _agSubmitOwner=null; _agSubmitPromise=null;
   if(previousAccount) agClearManifestRecovery(previousAccount);
   _agManifestEpoch++; _agManifest=null; _agManifestPromise=null; _agSetupPolicyVersion=null; _agRecoveredSignerName=''; ACTIVE_MLS_AGREEMENTS=MLS_AGREEMENTS;
 }
@@ -35250,16 +35254,17 @@ function agLegacyDeliveryMessage(notification){
    is accepted only after a read-back proves the server recorded this version. */
 async function agSubmitSign(){
   if(_agSubmitPromise) return _agSubmitPromise;
+  const submitEpoch=_agManifestEpoch;
+  const submitOwner={epoch:submitEpoch,active:true};
+  _agSubmitOwner=submitOwner;
   let submitRun;
   submitRun=Promise.resolve().then(async function(){
-  let manifest;
-  try{ manifest=await agLoadManifest(); }catch(e){ if(!agTryManifestRecovery(e)) agGateErr(agManifestLoadErrorText(e)); return; }
-  const submitEpoch=_agManifestEpoch;
   const signingAccountStillCurrent=function(){
-    if(submitEpoch===_agManifestEpoch) return true;
-    agGateErr('The signed-in account changed while the signature was being saved. Nothing else was advanced. Review the forms for the current account.');
-    return false;
+    return submitOwner.active&&_agSubmitOwner===submitOwner&&submitEpoch===_agManifestEpoch;
   };
+  let manifest;
+  try{ manifest=await agLoadManifest(); }catch(e){ if(!signingAccountStillCurrent()) return; if(!agTryManifestRecovery(e)) agGateErr(agManifestLoadErrorText(e)); return; }
+  if(!signingAccountStillCurrent()) return;
   const name=((document.getElementById('agSignName')||{}).value||'').trim();
   if(!name){ agGateErr('Type your full legal name to sign.'); return; }
   const boxes=Array.prototype.slice.call(document.querySelectorAll('.agCheckbox'));
@@ -35286,10 +35291,12 @@ async function agSubmitSign(){
       signatureImg:signatureImg
     };
     if(!body){
+      if(!signingAccountStillCurrent()) return;
       const mismatch=agStaleManifestError(manifest,'The current agreement version is not present in this app release.');
       if(!agTryManifestRecovery(mismatch)) agGateErr(agManifestLoadErrorText(mismatch));
       return;
     }
+    if(!signingAccountStillCurrent()) return;
     let res,data,legacyResponseRecovered=false;
     try{
       res=await fetch(bkBase()+'/api/agreements/sign',{
@@ -35403,12 +35410,15 @@ async function agSubmitSign(){
     toast('Signed receipt stored. '+agDeliveryMessage(delivery),delivery&&delivery.status==='delivered'?'ok':'');
     try{ setTimeout(function(){ maybePromptSetup(); },200); }catch(e){}
   } finally {
-    if(btn){ btn.disabled=false; btn.textContent=orig; }
+    if(submitOwner.active&&_agSubmitOwner===submitOwner&&submitEpoch===_agManifestEpoch&&btn){ btn.disabled=false; btn.textContent=orig; }
   }
   });
   _agSubmitPromise=submitRun;
   try{ return await submitRun; }
-  finally{ if(_agSubmitPromise===submitRun) _agSubmitPromise=null; }
+  finally{
+    if(_agSubmitOwner===submitOwner){ submitOwner.active=false; _agSubmitOwner=null; }
+    if(_agSubmitPromise===submitRun) _agSubmitPromise=null;
+  }
 }
 async function downloadMyAgreementReceipt(btn){
   var old=btn&&btn.textContent; if(btn){btn.disabled=true;btn.textContent='Preparing…';}
