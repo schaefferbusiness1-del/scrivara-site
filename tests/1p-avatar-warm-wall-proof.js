@@ -130,13 +130,17 @@ const FIXTURE = function () {
     const owner = window.__mlsAvatar;
     if (!owner || typeof owner.captureFit !== 'function') return { error: 'NO_CAPTURE_FIT' };
     const WARM = { wallA: '#e8c9a6', wallB: '#d8b48c' };
+    /* These h25 endpoints remain inside the absolute skin window, while the
+       frame mean stays below grey-world retry's 1.08 activation. The causal
+       precondition is therefore the wall/skin merger on every Chrome backend. */
+    const WARM_H25 = { wallA: '#e8d6d2', wallB: '#c8b8b4' };
     const WOOD = { wallA: '#e0bb92', wallB: '#c39a68' };
     const COOL = { wallA: '#c9cdd2', wallB: '#b9bec4' };
     const LAMP = { wallA: '#f2d8b8', wallB: '#e2c49c' };
     const base = { skin: '#f0c8a0', hair: '#3a2a1c', shirt: '#2f5f86', headFrac: 0.25 };
     const cases = [
       ['COOL wall h25', Object.assign({}, base, COOL), 'control'],
-      ['WARM wall h25', Object.assign({}, base, WARM), 'merge'],
+      ['WARM wall h25', Object.assign({}, base, WARM_H25), 'merge'],
       ['WARM wall h30', Object.assign({}, base, WARM, { headFrac: 0.30 }), 'merge'],
       ['WARM+wood h25', Object.assign({}, base, WOOD), 'merge'],
       ['WARM wall h18', Object.assign({}, base, WARM, { headFrac: 0.18 }), 'merge'],
