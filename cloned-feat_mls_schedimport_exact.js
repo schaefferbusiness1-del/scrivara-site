@@ -4474,7 +4474,7 @@
       if (pid) { if (!byPidRetry[pid]) byPidRetry[pid] = retry[i]; }
       else blankRetry.push(retry[i]);
     }
-    var out = { requested: 0, succeeded: 0, failed: 0, notAttempted: 0, unaccounted: 0, conflicts: 0, closed: false, perPatient: [] };
+    var out = { requested: 0, succeeded: 0, failed: 0, omitted: 0, notAttempted: 0, unaccounted: 0, conflicts: 0, closed: false, perPatient: [] };
     var blankPatientAt = 0, blankRetryAt = 0;
     function judge(sourceRow, ordinal) {
       var rowPid = String((sourceRow && (sourceRow._mlsTargetPatientId || sourceRow.patient_external_id || sourceRow.patientId)) || "");
@@ -4489,6 +4489,10 @@
       var verdict, reason = "";
       if (pe && pe.complete === true && !re) { verdict = "succeeded"; }
       else if (pe && pe.complete === true && re) { verdict = "failed"; reason = String(re.reason || "requeued-after-success"); out.conflicts++; }
+      /* tax-1.0.0: a reconciled named omission is its OWN terminal - proven
+         chart, named missing detail, out of the retry pool, and NEVER a full
+         visit-body success. Still re-queued means still failed. */
+      else if (pe && pe.namedOmission && !re) { verdict = "complete-with-named-omissions"; reason = String((pe.namedOmission.detail || pe.namedOmission.reason || "")); }
       else if (pe) { verdict = "failed"; reason = String(pe.reason || (re && re.reason) || "incomplete"); }
       else if (re && NOT_ATTEMPTED[String(re.reason || "")]) { verdict = "not-attempted"; reason = String(re.reason); }
       else if (re) { verdict = "not-attempted"; reason = String(re.reason || "never-walked"); }
@@ -4496,14 +4500,62 @@
       out.requested++;
       if (verdict === "succeeded") out.succeeded++;
       else if (verdict === "failed") out.failed++;
+      else if (verdict === "complete-with-named-omissions") out.omitted++;
       else if (verdict === "not-attempted") out.notAttempted++;
       else out.unaccounted++;
       out.perPatient.push({ patientId: rowPid || ("row#" + ordinal), verdict: verdict, reason: String(reason).slice(0, 60) });
     }
     for (i = 0; i < rows.length; i++) judge(rows[i], i);
     for (i = 0; i < unresolved.length; i++) judge(unresolved[i], rows.length + i);
-    out.closed = out.requested === out.succeeded + out.failed + out.notAttempted + out.unaccounted;
+    out.closed = out.requested === out.succeeded + out.failed + out.omitted + out.notAttempted + out.unaccounted;
     return out;
+  }
+  /* tax-1.0.0 (Codex reply 27 p3): reconcile the refresh/day taxonomy ONLY
+     where evidence permits. A chart whose identity, chart facts, and exact-
+     day census were proven in THIS batch, but whose encounter body still
+     binds nothing AFTER the capped reader re-attempted it (a retry pass),
+     terminates as a NAMED OMISSION with the exact missing-detail sub-cause -
+     it leaves the retry pool (the eternal "Retry failed histories (N)" burn)
+     but it NEVER counts as a full visit-body success: one.complete stays
+     false, ON-mode completeness stays partial, and the verdict census counts
+     it in its own bucket. Transport/auth/identity/navigation/deadline
+     failures stay failures and stay retryable - the sub-cause histogram must
+     be pure content evidence or the entry is untouched (fail closed). */
+  var TAX_TRANSPORT_CAUSE = /sleep|no-athena|session|deadline|swap|render|bridge|lease|tab|nav|signin|auth|timeout|unknown/i;
+  function taxReconcileNamedOmissions(receipt) {
+    var patients = (receipt && receipt.patients) || [], retry = (receipt && receipt.retry) || [];
+    var byPid = {}, i, pid;
+    for (i = 0; i < patients.length; i++) { pid = String((patients[i] && patients[i].patientId) || ""); if (pid && !byPid[pid]) byPid[pid] = patients[i]; }
+    var keep = [], moved = [];
+    for (i = 0; i < retry.length; i++) {
+      var entry = retry[i];
+      pid = String((entry && entry.patientId) || "");
+      var pe = pid ? byPid[pid] : null;
+      var reason = String((entry && entry.reason) || "");
+      var eligible = false, detail = "";
+      if (reason === "visit-bodies-incomplete" && pe && pe.identityVerified === true && pe.organized === true) {
+        var rr = pe.visitsReadReceipt || null;
+        var hist = pe.visitsFailedHistogram || null;
+        var censusProven = !!(rr && Number(rr.expected || 0) > 0);
+        var contentOnly = false;
+        if (hist) {
+          var keys = Object.keys(hist);
+          contentOnly = keys.length > 0;
+          for (var ki = 0; ki < keys.length; ki++) { if (TAX_TRANSPORT_CAUSE.test(keys[ki])) { contentOnly = false; break; } }
+          if (contentOnly) detail = keys.sort(function (a, b) { return Number(hist[b] || 0) - Number(hist[a] || 0); })[0];
+        }
+        eligible = censusProven && contentOnly;
+      }
+      if (eligible) {
+        pe.namedOmission = { reason: reason, detail: String(detail).slice(0, 48), at: Date.now() };
+        moved.push({ patientId: pid, reason: reason, detail: String(detail).slice(0, 48) });
+      } else keep.push(entry);
+    }
+    if (moved.length) {
+      receipt.retry = keep;
+      receipt.namedOmissions = (Array.isArray(receipt.namedOmissions) ? receipt.namedOmissions : []).concat(moved);
+    }
+    return moved.length;
   }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
     /* b744 #36: true only when the per-patient loop ran to completion; the
@@ -6369,6 +6421,11 @@
       /* An empty verified provider day has no patient history targets and is
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
       if (receipt.requested === 0) receipt.exactIdentityVerified = true;
+      /* tax-1.0.0: ONLY a retry pass (the capped reader re-attempting) may
+         reconcile content-class leftovers into named omissions - a first
+         pass's failure is still just a failure. Runs BEFORE failures and the
+         verdict census so both see the drained pool. */
+      if (sweepOpts && sweepOpts.retryPass === true) taxReconcileNamedOmissions(receipt);
       receipt.failures = receipt.retry.length;
       /* pvd-1.0.0: the closed per-patient verdict census, stamped at settle.
          succeeded is now a first-class receipt field - the walk counters
@@ -6978,7 +7035,7 @@
     if (value.historyReceipt && value.historyReceipt.verdicts) {
       try {
         var vd = value.historyReceipt.verdicts;
-        out.historyVerdicts = { requested: Number(vd.requested || 0), succeeded: Number(vd.succeeded || 0), failed: Number(vd.failed || 0), notAttempted: Number(vd.notAttempted || 0), unaccounted: Number(vd.unaccounted || 0), conflicts: Number(vd.conflicts || 0), closed: vd.closed === true };
+        out.historyVerdicts = { requested: Number(vd.requested || 0), succeeded: Number(vd.succeeded || 0), failed: Number(vd.failed || 0), omitted: Number(vd.omitted || 0), notAttempted: Number(vd.notAttempted || 0), unaccounted: Number(vd.unaccounted || 0), conflicts: Number(vd.conflicts || 0), closed: vd.closed === true };
       } catch (eVd) {}
     }
     return out;
@@ -8177,7 +8234,7 @@
         var priorBodiesOverride = _pullBodiesOverride;
         if (typeof history.visitNotesRequested === "boolean") _pullBodiesOverride = history.visitNotesRequested;
         function restoreBodiesOverride() { _pullBodiesOverride = priorBodiesOverride; }
-        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}, { scopeDay: retryScopeDay }).then(
+        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}, { scopeDay: retryScopeDay, retryPass: true }).then(
           function (v) { __historyRetryForeground = false; restoreBodiesOverride(); return v; },
           function (e) { __historyRetryForeground = false; restoreBodiesOverride(); throw e; });
       });
@@ -10682,6 +10739,7 @@
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,
     _historyVerdictCensus: historyVerdictCensus, /* pvd-1.0.0: pure, extraction-executable */
+    _taxReconcileNamedOmissions: taxReconcileNamedOmissions, /* tax-1.0.0: evidence-gated, extraction-executable */
     _buildRetryRows: buildRetryRows,
     retryFailedHistory: retryFailedHistory,
     _boundedUntil: boundedUntil,
