@@ -1403,6 +1403,24 @@
             capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: ATHENA_ACTIONS.write_note.consequence,
             payload: sectionPayload, order: UNIFIED_ORDER.write_note + sectionIndex / 1000 });
         });
+        /* ap-1.0.0 (measured 2026-08-26): some practices render ONE combined
+           "Assessment & Plan" note area and no separate Assessment or Plan
+           fields, so those two rows honestly refuse there. When the review
+           holds exactly one assessment and one plan section, also offer the
+           explicit combined destination - its own row, its own probe, its own
+           confirmation, self-labelled payload. On surfaces WITH separate
+           fields the doctor keeps using the separate rows; the read-only check
+           tells the truth per surface either way. */
+        var apAssessment = noteSectionCounts.assessment === 1 ? noteSections.filter(function (s) { return S(s && s.key).trim() === 'assessment' && S(s && s.text).trim(); })[0] : null;
+        var apPlan = noteSectionCounts.plan === 1 ? noteSections.filter(function (s) { return S(s && s.key).trim() === 'plan' && S(s && s.text).trim(); })[0] : null;
+        if (apAssessment && apPlan) {
+          var apText = 'Assessment:\n' + S(apAssessment.text).trim() + '\n\nPlan / Follow-up:\n' + S(apPlan.text).trim();
+          addRow({ id: 'write-note-assessment_and_plan', action: 'write_note', kind: 'assessment_and_plan',
+            label: 'Write reviewed Assessment & Plan (combined)', destination: DESTINATION.assessment_and_plan,
+            capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: ATHENA_ACTIONS.write_note.consequence,
+            payload: { sections: [{ key: 'assessment_and_plan', text: apText, execute: true, destination: DESTINATION.assessment_and_plan }], noteText: apText, reviewText: apText, sectionKey: 'assessment_and_plan' },
+            order: UNIFIED_ORDER.write_note + 0.9 });
+        }
       } else {
         if (noteSectionCounts.note === 1) {
           addRow({ id: 'write-note', action: 'write_note', kind: 'note', label: ATHENA_ACTIONS.write_note.label, destination: DESTINATION.note,
@@ -3443,6 +3461,7 @@
     exam: 'Athena encounter > Physical Exam',
     assessment: 'Athena encounter > Assessment & Plan > Assessment',
     plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up',
+    assessment_and_plan: 'Athena encounter > Assessment & Plan',
     orders: 'Athena Orders (manual entry)', rx: 'Athena Prescriptions (manual entry)',
     referrals: 'Athena Orders > Referral (manual entry)', pt: 'Athena Orders > PT (manual entry)',
     imaging: 'Athena Orders > Imaging (manual entry)', billing: 'Athena Billing / Charges (manual entry)',
