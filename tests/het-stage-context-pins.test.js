@@ -114,3 +114,28 @@ assert.ok(bg.includes('if (scopes.length !== 1) return null;'),
   'findNamedNoteAction no longer refuses on scope ambiguity');
 
 console.log('PASS het-1.1.4 pins: heading-parent candidates feed the same fail-closed named-scope gates');
+
+/* het-1.1.5: heading labels read the heading's own title. The helper must
+   exist, both heading-label readers must route through it, and the un-welding
+   must be EXECUTED against the live-shaped H3 (leaf title child + nested
+   "Findings" furniture + whitespace-only own text nodes). */
+assert.ok(bg.includes('function namedHeadingOwnText(head)'), 'namedHeadingOwnText helper is gone');
+const hotUses = (bg.match(/var hot = namedHeadingOwnText\(heads\[i\]\); if \(hot\) out\.push\(hot\);/g) || []).length;
+assert.strictEqual(hotUses, 2, 'expected BOTH heading-label readers (section labels + human labels) to use namedHeadingOwnText');
+{
+  const hotStart = bg.indexOf('function namedHeadingOwnText(head)');
+  const hotEnd = bg.indexOf('function namedSectionDescriptor', hotStart);
+  const textFn = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  const hot = new Function('text', 'return ' + bg.slice(hotStart, hotEnd))(textFn);
+  const leaf = t => ({ nodeType: 1, textContent: t, childNodes: [], children: [] });
+  const h3 = { nodeType: 1, textContent: '\n\t\tHistory of Present Illness\n\t\tFindings\n\t',
+    childNodes: [{ nodeType: 3, nodeValue: '\n\t\t' }, leaf('History of Present Illness'), { nodeType: 3, nodeValue: '\n\t' }, leaf('Findings')],
+    children: [leaf('History of Present Illness'), leaf('Findings')] };
+  assert.strictEqual(hot(h3), 'History of Present Illness', 'welded stage H3 must yield its first text-bearing child');
+  const plain = { nodeType: 1, textContent: 'Assessment', childNodes: [{ nodeType: 3, nodeValue: 'Assessment' }], children: [] };
+  assert.strictEqual(hot(plain), 'Assessment', 'a plain-text heading keeps its whole text');
+  const mixed = { nodeType: 1, textContent: 'HPI x', childNodes: [{ nodeType: 3, nodeValue: 'HPI ' }, leaf('x')], children: [leaf('x')] };
+  assert.strictEqual(hot(mixed), 'HPI x', 'a heading with its own text node keeps the whole text (no cherry-picking)');
+}
+
+console.log('PASS het-1.1.5 pins: heading own-title reading is shared by both label readers and un-welds the live stage shape');

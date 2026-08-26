@@ -613,7 +613,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         [el.getAttribute('aria-label'), el.getAttribute('title')].forEach(function (value) { if (text(value)) out.push(text(value)); });
         if (el.labels && el.labels.length === 1 && text(el.labels[0].textContent)) out.push(text(el.labels[0].textContent));
         var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
-        for (var i = 0; i < heads.length && i < 4; i++) if (text(heads[i].textContent)) out.push(text(heads[i].textContent));
+        for (var i = 0; i < heads.length && i < 4; i++) { var hot = namedHeadingOwnText(heads[i]); if (hot) out.push(hot); }
       } catch (e) {}
       return out;
     }
@@ -744,6 +744,21 @@ async function mlsAthenaActionV2DriverFn(req) {
       var aliases = { note: 'note', encounter_note: 'note', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan', procedure: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', op_note: 'procedure', opnote: 'procedure' };
       return aliases[key] || '';
     }
+    function namedHeadingOwnText(head) {
+      /* het-1.1.5: a stage header welds nested furniture into textContent
+         ("History of Present Illness Findings"), hiding the real title
+         from the exact-label equality. A heading with no text of its own
+         that wraps element children is titled by its first text-bearing
+         child; any other heading keeps its whole text. Acceptance is
+         unchanged - the label must still EQUAL a reviewed destination. */
+      try {
+        var kids = head.childNodes || [];
+        for (var i = 0; i < kids.length; i++) { if (kids[i].nodeType === 3 && String(kids[i].nodeValue || '').trim()) return text(head.textContent); }
+        var els = head.children || [];
+        for (var j = 0; j < els.length; j++) { var kt = text(els[j].textContent); if (kt) return kt; }
+      } catch (e) {}
+      return text(head.textContent);
+    }
     function namedSectionDescriptor(el) {
       var out = '';
       try {
@@ -758,7 +773,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       try {
         [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component')].forEach(function (value) { if (text(value)) out.push(text(value)); });
         var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
-        for (var i = 0; i < heads.length && i < 4; i++) if (text(heads[i].textContent)) out.push(text(heads[i].textContent));
+        for (var i = 0; i < heads.length && i < 4; i++) { var hot = namedHeadingOwnText(heads[i]); if (hot) out.push(hot); }
       } catch (e) {}
       return out;
     }
