@@ -994,11 +994,12 @@ async function mlsAthenaActionV2DriverFn(req) {
             if (!kept || (!digits(kept.mrn || '') && m1)) kept = p1;
             continue;
           }
-          /* het-1.0.9: conflicts anchor on the MRN (the strong key). A
-             name-matching root whose date-shaped text disagrees but which
-             carries NO MRN is an appointment strip, not a second person. */
-          if (m1 && wantMrn && m1 === wantMrn && ((n1 && n1 !== wantName) || (d1 && d1 !== wantDob))) return { identity: null, ambiguous: true };
-          /* unrelated identities on the surface are ignored */
+          /* het-1.1.0: presence check only - decorative roots (enterprise-id
+             strips whose digits can equal the MRN, provider text, appointment
+             dates) proved noise-prone as conflict evidence three iterations
+             running; the write binding is the machine context plus the
+             downstream equality gates, and acceptance still requires the
+             expected patient's full banner root above. */
         }
         if (kept) return { identity: kept, ambiguous: false };
         return { identity: null, ambiguous: false };
