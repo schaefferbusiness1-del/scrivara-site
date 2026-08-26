@@ -47,6 +47,7 @@ const tests = [
   /* Server-owned agreement completion, practice-BAA waiting, setup-only 428
      handling, and Enterprise-managed child access must remain fail-closed. */
   'first-login-server-state-contract.test.js',
+  'agreement-manifest-recovery-contract.test.js',
   /* “Pull your first day” is historical setup, not a demand to pull today.
      A sanitized account-owned day already in the durable importer store must
      retire the setup card after refresh; empty/invalid stores stay fail-closed. */

@@ -7463,7 +7463,7 @@ function sfResetSessionBoundary(nextEmail,opts){
   if(previous!==next||!next){
     try{ if(typeof adminClearCreatedInvite==='function') adminClearCreatedInvite(previous); }catch(e){}
     try{ if(typeof setInviteSetupToken==='function') setInviteSetupToken(''); if(typeof clearInvitePasswordDue==='function') clearInvitePasswordDue(); if(typeof clearInvitePasswordFields==='function') clearInvitePasswordFields(); }catch(e){}
-    try{ if(typeof agResetManifestState==='function') agResetManifestState(); }catch(e){}
+    try{ if(typeof agResetManifestState==='function') agResetManifestState(previous); }catch(e){}
   }
   /* A managed pull owns an explicit account key. Its newest in-memory rows
      must reach that key before any logout/account reset can purge or retarget
@@ -34285,8 +34285,88 @@ const BROWSER_AGREEMENT_EVIDENCE=Object.freeze([
   ['mls.sanction-policy-ack','58f009aa5dbce2d97efdb77c4b0ca5f817c9f16f832868b9822d094f80b00d7e'],
   ['mls.authorized-representative-esign','1550b572047d666adf1bab6d2c1bef9089105ae6fa52753c01a6250827f2a6b3']
 ]);
-let _agManifest=null, _agManifestPromise=null, _agManifestEpoch=0, _agSetupPolicyVersion=null;
-function agResetManifestState(){ _agManifestEpoch++; _agManifest=null; _agManifestPromise=null; _agSetupPolicyVersion=null; ACTIVE_MLS_AGREEMENTS=MLS_AGREEMENTS; }
+let _agManifest=null, _agManifestPromise=null, _agManifestEpoch=0, _agSetupPolicyVersion=null, _agRecoveredSignerName='';
+const AG_MANIFEST_RECOVERY_PARAM='mlsAgreementRefresh';
+function agManifestRecoveryKey(account){
+  var owner='';
+  try{ owner=sfNormalizeSessionAccount(account||unsEmail()); }catch(e){ owner=String(account||'').trim().toLowerCase(); }
+  return owner?'sf_u::'+owner+'::agreementManifestRecoveryV1':'';
+}
+function agReadManifestRecovery(key){
+  if(!key) return null;
+  try{
+    var marker=JSON.parse(sessionStorage.getItem(key)||'null');
+    if(!marker||marker.schemaVersion!==1||marker.attempted!==true||marker.account!==String(unsEmail()||'').trim().toLowerCase()) return null;
+    if(typeof marker.signerName!=='string'||marker.signerName.length>160) return null;
+    return marker;
+  }catch(e){ return null; }
+}
+function agClearManifestRecovery(account){
+  var key=agManifestRecoveryKey(account);
+  if(key) try{ sessionStorage.removeItem(key); }catch(e){}
+}
+function agResetManifestState(previousAccount){
+  if(previousAccount) agClearManifestRecovery(previousAccount);
+  _agManifestEpoch++; _agManifest=null; _agManifestPromise=null; _agSetupPolicyVersion=null; _agRecoveredSignerName=''; ACTIVE_MLS_AGREEMENTS=MLS_AGREEMENTS;
+}
+function agStaleManifestError(manifest,message){
+  var error=new Error(message||'The server agreement set is newer than the agreement text in this app release.');
+  error.code='MLS_AGREEMENT_MANIFEST_STALE';
+  error.manifestVersion=String(manifest&&manifest.version||'');
+  return error;
+}
+function agTryManifestRecovery(error){
+  if(!error||error.code!=='MLS_AGREEMENT_MANIFEST_STALE') return false;
+  var account=String(unsEmail()||'').trim().toLowerCase(), key=agManifestRecoveryKey(account);
+  if(!account||!key||agReadManifestRecovery(key)) return false;
+  var name=String((document.getElementById('agSignName')||{}).value||'').trim().slice(0,160);
+  var marker={schemaVersion:1,attempted:true,account:account,signerName:name,startedAt:Date.now(),appBuild:String(window.__MLS_AV||'')};
+  var encoded=JSON.stringify(marker);
+  try{
+    sessionStorage.setItem(key,encoded);
+    if(sessionStorage.getItem(key)!==encoded) throw new Error('recovery marker not durable');
+  }catch(e){ try{ sessionStorage.removeItem(key); }catch(_e){} return false; }
+  /* A changed document set invalidates every assent. The typed name is not an
+     assent and is the only field allowed across this one cache-busted reload. */
+  try{ document.querySelectorAll('.agCheckbox').forEach(function(box){ box.checked=false; }); }catch(e){}
+  try{ sigPadClear('agSigPad'); }catch(e){}
+  try{ agSyncSignState(); }catch(e){}
+  try{
+    var url=new URL(location.href);
+    url.searchParams.set(AG_MANIFEST_RECOVERY_PARAM,Date.now().toString(36));
+    location.replace(url.href);
+    return true;
+  }catch(e){
+    try{ sessionStorage.removeItem(key); }catch(_e){}
+    return false;
+  }
+}
+function agTakeManifestRecoveryDraft(){
+  var key=agManifestRecoveryKey(), marker=agReadManifestRecovery(key), name=marker&&marker.signerName||'';
+  if(key) try{ sessionStorage.removeItem(key); }catch(e){}
+  try{
+    var url=new URL(location.href);
+    if(url.searchParams.has(AG_MANIFEST_RECOVERY_PARAM)){
+      url.searchParams.delete(AG_MANIFEST_RECOVERY_PARAM);
+      history.replaceState(history.state,'',url.pathname+url.search+url.hash);
+    }
+  }catch(e){}
+  return name;
+}
+function agManifestLoadErrorText(error){
+  if(error&&error.code==='MLS_AGREEMENT_MANIFEST_STALE'){
+    var marker=agReadManifestRecovery(agManifestRecoveryKey());
+    return marker
+      ? 'MLS refreshed this app once, but the current agreement text is still updating. Your name is preserved; every agreement check and the signature were cleared. Refresh again in a moment or contact your MLS administrator.'
+      : 'The agreement set changed while this app was open. Refresh this page to load the current forms; every agreement check and signature must be completed again.';
+  }
+  return error&&error.message||'The current agreement set could not be loaded. Retry this page.';
+}
+function agIsAgreementVersionMismatch(status,data){
+  if(Number(status)!==409) return false;
+  var code=String(data&&(data.code||data.error)||'').trim().toLowerCase();
+  return code==='version_mismatch'||code==='agreement_version_mismatch'||code==='manifest_version_mismatch';
+}
 function agValidateServerManifest(m){
   var docs=m&&m.documents;
   if(!m||m.schemaVersion!==1||!m.manifestId||!m.version||!/^[a-f0-9]{64}$/.test(String(m.manifestSha256||''))||!Array.isArray(docs)||!docs.length||docs.length>MLS_AGREEMENTS.length) throw new Error('The server returned an invalid agreement manifest.');
@@ -34294,7 +34374,7 @@ function agValidateServerManifest(m){
   docs.forEach(function(doc){
     var index=BROWSER_AGREEMENT_EVIDENCE.findIndex(function(expected){ return expected[0]===String(doc&&doc.documentId||''); });
     var expected=index>=0?BROWSER_AGREEMENT_EVIDENCE[index]:null, shown=index>=0?MLS_AGREEMENTS[index]:null;
-    if(!doc||!expected||!shown||seen[doc.documentId]||index<=lastIndex||doc.sha256!==expected[1]||doc.title!==shown.title||doc.required!==true||!!doc.requiresCountersignature!==(shown.requiresCountersign===true)) throw new Error('The server agreement manifest does not match the role-appropriate document text in this release. Reload after the application is updated.');
+    if(!doc||!expected||!shown||seen[doc.documentId]||index<=lastIndex||doc.sha256!==expected[1]||doc.title!==shown.title||doc.required!==true||!!doc.requiresCountersignature!==(shown.requiresCountersign===true)) throw agStaleManifestError(m);
     seen[doc.documentId]=true; lastIndex=index; selected.push(shown);
   });
   return {manifest:m,agreements:Object.freeze(selected)};
@@ -34315,12 +34395,13 @@ async function agLoadManifest(){
     var r=await fetch(bkBase()+'/api/agreements/manifest',{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+bkToken()}}), d={};
     try{ d=await r.json(); }catch(e){}
     if(!r.ok) throw new Error((d&&d.error)||'The current agreement set could not be loaded.');
+    if(requestEpoch!==_agManifestEpoch) throw new Error('The signed-in account changed while agreements were loading. Retry.');
     var validated=agValidateServerManifest(d&&d.manifest);
     var setupPolicy=Number(d&&d.setupPolicyVersion);
     if(setupPolicy!==0&&setupPolicy!==2) setupPolicy=Number(bkUser&&bkUser.setupPolicyVersion);
     if(setupPolicy!==0&&setupPolicy!==2) throw new Error('The server did not identify this account’s agreement setup policy. Retry after signing in again.');
     if(requestEpoch!==_agManifestEpoch) throw new Error('The signed-in account changed while agreements were loading. Retry.');
-    ACTIVE_MLS_AGREEMENTS=validated.agreements; _agSetupPolicyVersion=setupPolicy; _agManifest=validated.manifest; return validated.manifest;
+    ACTIVE_MLS_AGREEMENTS=validated.agreements; _agSetupPolicyVersion=setupPolicy; _agManifest=validated.manifest; _agRecoveredSignerName=agTakeManifestRecoveryDraft(); return validated.manifest;
   })().finally(function(){ _agManifestPromise=null; });
   return _agManifestPromise;
 }
@@ -34985,7 +35066,11 @@ function showAgreementsCeremony(fromLoading){
     });
   }
   if(nm) try{ nm.focus(); }catch(e){}
-  agLoadManifest().then(function(){ agGateErr(''); agRenderSections(); agSyncSignState(); }).catch(function(e){ agGateErr(e&&e.message||'The current agreement set could not be loaded. Retry this page.'); });
+  agLoadManifest().then(function(){
+    agGateErr(''); agRenderSections();
+    if(_agRecoveredSignerName&&nm){ nm.value=_agRecoveredSignerName; _agRecoveredSignerName=''; }
+    agSyncSignState();
+  }).catch(function(e){ if(!agTryManifestRecovery(e)) agGateErr(agManifestLoadErrorText(e)); });
 }
 /* Retained only for stale cached markup. A missing ceremony endpoint now fails
    closed; the backend enforces the same requirement on clinical routes. */
@@ -35164,7 +35249,7 @@ function agLegacyDeliveryMessage(notification){
    is accepted only after a read-back proves the server recorded this version. */
 async function agSubmitSign(){
   let manifest;
-  try{ manifest=await agLoadManifest(); }catch(e){ agGateErr(e&&e.message||'The agreement set could not be loaded.'); return; }
+  try{ manifest=await agLoadManifest(); }catch(e){ if(!agTryManifestRecovery(e)) agGateErr(agManifestLoadErrorText(e)); return; }
   const submitEpoch=_agManifestEpoch;
   const signingAccountStillCurrent=function(){
     if(submitEpoch===_agManifestEpoch) return true;
@@ -35196,7 +35281,11 @@ async function agSubmitSign(){
       documents:manifest.documents.map(function(doc){ return {documentId:doc.documentId,sha256:doc.sha256,intent:'accept'}; }),
       signatureImg:signatureImg
     };
-    if(!body){ agGateErr('The current agreement version could not be matched to this account. Reload and review the forms again.'); return; }
+    if(!body){
+      const mismatch=agStaleManifestError(manifest,'The current agreement version is not present in this app release.');
+      if(!agTryManifestRecovery(mismatch)) agGateErr(agManifestLoadErrorText(mismatch));
+      return;
+    }
     let res,data,legacyResponseRecovered=false;
     try{
       res=await fetch(bkBase()+'/api/agreements/sign',{
@@ -35222,6 +35311,11 @@ async function agSubmitSign(){
       if(!signingAccountStillCurrent()) return;
       if(res.status===401){ handle401(); return; }
       if(!res.ok){
+        if(agIsAgreementVersionMismatch(res.status,data)){
+          const mismatch=agStaleManifestError(manifest,'The server agreement version changed before this signature was saved.');
+          if(!agTryManifestRecovery(mismatch)) agGateErr(agManifestLoadErrorText(mismatch));
+          return;
+        }
         const legacyResponseUncertain=_agSetupPolicyVersion===0&&
           (res.status===408||res.status===425||res.status===429||res.status>=500);
         if(legacyResponseUncertain){
