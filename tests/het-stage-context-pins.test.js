@@ -194,3 +194,29 @@ console.log('PASS het-1.1.7 pins: the shipped ISO conversion yields the canonica
 }
 
 console.log('PASS het-1.1.8 pins: complete parsed foreign identities block meta-only admission (executed from shipped bytes)');
+
+/* sn-1.0.0: the stage-nav pre-pass may click ONLY a whitelisted nav bead
+   (HPI/ROS/PE/A/P - never Sign-off, never Review), only in a frame whose
+   machine-typed stage context already binds the expected patient, never a
+   forbidden control, at most one click, BEFORE the unchanged candidate loop. */
+{
+  const snStart = bg.indexOf("var snTabs = ");
+  assert.ok(snStart > 0, 'the stage-nav whitelist is gone');
+  assert.ok(bg.includes("var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P' };"),
+    'the stage-nav tab whitelist changed - Sign-off/Review must never be reachable');
+  assert.ok(!/snTabs = \{[^}]*Sign/i.test(bg), 'Sign-off leaked into the stage-nav whitelist');
+  const snBlock = bg.slice(snStart, bg.indexOf('var frames = sameOriginFrames()', snStart));
+  assert.ok(snBlock.includes('var snStage = hetStageEncounterContext(snFr, expectedPatient);'),
+    'stage-nav no longer requires the machine-bound stage context before any click');
+  assert.ok(snBlock.includes('if (!snStage) continue;'), 'an unbound frame can now be navigated');
+  assert.ok(snBlock.includes('if (wsForbiddenControl(snClick)) {'), 'the forbidden-control refusal left the stage-nav click');
+  assert.ok(snBlock.includes("if (findNamedNoteAction(snFr, action, requestedNoteSection)) { hetDiag.stageNav = 'not-needed'; break; }"),
+    'stage-nav must be skipped when the section already binds');
+  assert.ok((snBlock.match(/snClick\.click\(\)/g) || []).length === 1, 'stage-nav must click at most once');
+  assert.ok(snStart < bg.indexOf('var frames = sameOriginFrames(), candidates = [], sawOtherPatient = false;'),
+    'the pre-pass must run BEFORE the candidate loop');
+  assert.ok(bg.includes("if (action === 'write_note' && requestedNoteSection && requestedNoteSection !== 'note') {"),
+    'stage-nav must be limited to named write_note sections');
+}
+
+console.log('PASS sn-1.0.0 pins: stage-nav pre-pass is whitelisted, machine-bound, single-click, and loop-preserving');

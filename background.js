@@ -1151,6 +1151,37 @@ async function mlsAthenaActionV2DriverFn(req) {
     if (mode !== 'teach' && action !== 'stage_billing' && action !== 'place_order' && !reviewedNote) return { ok: false, blocked: true, reason: 'note-content-required', error: 'The exact reviewed note text is required.' };
     if (mode !== 'teach' && action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy', error: 'Only empty_only note placement is allowed.' };
 
+    /* sn-1.0.0: open the requested named section's own stage tab in the
+       machine-bound encounter frame, then let the unchanged loop re-derive
+       everything. Whitelisted tab names only; one click max; fail-open to
+       the normal refusal path on any doubt. */
+    if (action === 'write_note' && requestedNoteSection && requestedNoteSection !== 'note') {
+      try {
+        var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P' };
+        var snWant = snTabs[requestedNoteSection] || '';
+        if (snWant) {
+          var snFrames = sameOriginFrames();
+          for (var sni = 0; sni < snFrames.length; sni++) {
+            var snFr = snFrames[sni];
+            var snStage = hetStageEncounterContext(snFr, expectedPatient);
+            if (!snStage) continue;
+            if (findNamedNoteAction(snFr, action, requestedNoteSection)) { hetDiag.stageNav = 'not-needed'; break; }
+            var snBeads = [];
+            try { snBeads = deepQueryAll(snFr.doc, 'li.nav-bead'); } catch (eSn0) { snBeads = []; }
+            var snBead = null;
+            for (var snj = 0; snj < snBeads.length; snj++) { if (text(snBeads[snj].textContent) === snWant) { snBead = snBead || snBeads[snj]; } }
+            if (!snBead || !visible(snBead, snFr.w)) { hetDiag.stageNav = 'no-bead'; break; }
+            if (/\bopened\b/.test(String(snBead.className || ''))) { hetDiag.stageNav = 'already-open'; break; }
+            var snClick = null; try { snClick = snBead.querySelector('a,button,span') || snBead; } catch (eSn1) { snClick = snBead; }
+            if (wsForbiddenControl(snClick)) { hetDiag.stageNav = 'forbidden-control'; break; }
+            try { snClick.click(); } catch (eSn2) { hetDiag.stageNav = 'click-failed'; break; }
+            hetDiag.stageNav = 'opened-' + snWant;
+            await sleep(1600);
+            break;
+          }
+        }
+      } catch (eSnAll) {}
+    }
     var frames = sameOriginFrames(), candidates = [], sawOtherPatient = false;
     var hetFrames = [];
     for (var fi = 0; fi < frames.length; fi++) {
