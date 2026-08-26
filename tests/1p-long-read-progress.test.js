@@ -43,11 +43,11 @@ let checks = 0;
 function ok(cond, msg) { assert.ok(cond, msg); checks++; }
 
 /* ---- ships in both twins, and sends nothing ---- */
-const S_AT = shell.indexOf('<!-- ===== pulsee-1.0.0');
-const E_AT = shell.indexOf('<!-- ===== end pulsee-1.0.0');
+const S_AT = shell.indexOf('<!-- ===== pulsee-1.2.0');
+const E_AT = shell.indexOf('<!-- ===== end pulsee-1.2.0');
 {
   ok(S_AT > 0 && E_AT > S_AT, 'pulsee must ship in 1pScribeFlow.html');
-  ok(twin.indexOf('pulsee-1.0.0') > 0, 'pulsee must ship in 1p/index.html');
+  ok(twin.indexOf('pulsee-1.2.0') > 0, 'pulsee must ship in 1p/index.html');
   const block = shell.slice(S_AT, E_AT);
   ok(!/postMessage\s*\(/.test(block), 'the ticker must never post a message');
   ok(!/dispatchEvent\s*\(/.test(block), 'the ticker must never re-dispatch a progress event');
@@ -138,7 +138,7 @@ function harness() {
     console
   };
   const ctx = vm.createContext(sandbox);
-  vm.runInContext(SRC, ctx, { filename: 'pulsee-1.0.0' });
+  vm.runInContext(SRC, ctx, { filename: 'pulsee-1.2.0' });
   return {
     ctx, api: window.__mlsPullSee, posted, timers, status, nodes,
     deliver: d => msgHandlers.slice().forEach(fn => fn({ data: d })),
@@ -243,6 +243,42 @@ const progress = (n, total, message) => ({ type: 'mlsAppVisitsProgress', n, tota
   ok(h.timers.every(t => t.cleared), 'the ticking timer must be released on settle');
 }
 
+/* ---- 8. pulsee-1.2: a result landing while the ticker is DETACHED must still
+   silence it — measured live 2026-08-26 on the dummy's whoever-pull: the left
+   panel re-rendered mid-read, byId missed the detached node at settle time, and
+   the re-attached node came back as a zombie stall line ("athenaOne may be
+   stuck · 2m 16s") whose Stop button did nothing. ---- */
+{
+  const h = harness();
+  h.deliver(progress(1, 9));
+  h.advance(70000);
+  h.api._test.paint();
+  ok(/no new progress/.test(h.ticker().textContent), 'precondition: a stalled line is painted');
+  const zombie = h.ticker();
+  h.nodes.delete('mlsPullTicker');          /* the panel re-render detaches the node: byId now misses it */
+  h.deliver({ type: 'mlsAppAllVisitsResult', ok: false, reason: 'timeout' });
+  ok(h.api.state() === null, 'the result must settle the run even with the node detached');
+  ok(zombie.style.display === 'none',
+    'settle must reach the DETACHED node through the kept handle — display:none survives the re-attach, so no zombie (got display "' + zombie.style.display + '")');
+  h.nodes.set('mlsPullTicker', zombie);     /* the re-render re-attaches the old node */
+  ok(h.ticker().style.display === 'none', 'a re-attached settled ticker must stay hidden');
+  ok(h.timers.every(t => t.cleared), 'the ticking timer must be released even on a detached settle');
+}
+
+/* ---- 9. pulsee-1.2: Stop is never a no-op — a visible line with no run left
+   behind (any zombie path) must still settle honestly on click. ---- */
+{
+  const h = harness();
+  h.deliver(progress(1, 9));
+  const t = h.ticker();
+  h.deliver({ type: 'mlsAppAllVisitsResult', ok: true, visits: [] });
+  ok(h.api.state() === null, 'precondition: run is gone');
+  t.style.display = 'block'; t.textContent = 'stale stall text'; /* force the zombie shape */
+  h.api._test.stopWaiting();
+  ok(/You stopped waiting on this read/.test(t.textContent),
+    'Stop with no run must still settle the line honestly instead of returning silently (got "' + t.textContent + '")');
+}
+
 /* ---- 7. revert ---- */
 {
   const h = harness();
@@ -253,4 +289,4 @@ const progress = (n, total, message) => ({ type: 'mlsAppVisitsProgress', n, tota
   ok(h.api.state() === null, 'a reverted ticker must stop tracking');
 }
 
-console.log('PASS 1p long-read progress: ' + checks + ' checks — the VERB-A read now shows a live encounter count read off the event (not the message the counter guard neutralises), elapsed and idle time computed from the clock rather than tick counts, an honest stall verdict after 60s that fresh progress clears, and a Stop that abandons with a sequence token while admitting it cannot cancel athenaOne’s own read and never touching the day engines\' stop flag');
+console.log('PASS 1p long-read progress: ' + checks + ' checks — the VERB-A read now shows a live encounter count read off the event (not the message the counter guard neutralises), elapsed and idle time computed from the clock rather than tick counts, an honest stall verdict after 60s that fresh progress clears, a Stop that abandons with a sequence token while admitting it cannot cancel athenaOne’s own read and never touching the day engines\' stop flag; and pulsee-1.2 kills the zombie: a settle landing on a DETACHED ticker still silences it through the kept handle, and Stop settles honestly even when the run is already gone');
