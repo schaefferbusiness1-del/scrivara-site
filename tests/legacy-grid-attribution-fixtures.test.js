@@ -211,5 +211,28 @@ const SCHAEFFER = 'Matthew Schaeffer, MD';
       'per-container attribution failed for the two-column case: ' + JSON.stringify(provs));
   }
 
-  console.log('PASS legacy-grid attribution fixtures: capture-shaped two-header flat list never guesses, single-header and two-column attribute, duplicate panes dedupe, supervising text never binds');
+  /* 6) HIDDEN CONTAINER (Codex list: collapsed/hidden column). FINDING, not
+     an endorsement: the legacy lane has NO visibility gate - a zero-width
+     container's rows import exactly like visible ones (probed 2026-08-26).
+     The live dual-pane duplication is saved only by id-dedupe; a hidden
+     stale pane with DIFFERENT ids would inject rows. This case pins the
+     CURRENT behavior so any future visibility gate flips it in review; the
+     defect is logged on the board for the attribution ruling. */
+  {
+    const visible = legacyFlatContainer([
+      legacyHeader(SCHAEFFER),
+      legacyRow(6001, '2:00 PM Lima, Noor (33yo F)')
+    ]);
+    const hiddenChildren = [
+      Object.assign(legacyHeader(SCHAEFFER), { getBoundingClientRect() { return { left: 0, right: 0, top: 0, width: 0 }; } }),
+      Object.assign(legacyRow(6002, '2:30 PM Mike, Onyx (58yo M)'), { getBoundingClientRect() { return { left: 0, right: 0, top: 0, width: 0 }; } })
+    ];
+    const hidden = Object.assign(legacyFlatContainer(hiddenChildren), { getBoundingClientRect() { return { left: 0, right: 0, top: 0, width: 0 }; } });
+    const result = await runtime.mlsSchedDomInline(legacyDoc([visible, hidden]), {});
+    const appts = plain(result.appts || []);
+    assert.strictEqual(appts.length, 2,
+      'CURRENT-BEHAVIOR PIN: the legacy lane imports hidden-container rows (no visibility gate). If this assertion fails at 1, a visibility gate landed - update this case AND the board finding together.');
+  }
+
+  console.log('PASS legacy-grid attribution fixtures: capture-shaped two-header flat list never guesses, single-header and two-column attribute, duplicate panes dedupe, supervising text never binds, hidden-container import pinned as a FLAGGED current behavior');
 })().catch(err => { console.error(err); process.exit(1); });
