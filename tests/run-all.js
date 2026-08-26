@@ -1803,7 +1803,12 @@ const tests = [
   /* pts-1.1.0 (Codex reply 30 blocks 1-3): no ownership from absence, the
      epoch fence is durable with an explicit chart-work refresh scope, and
      local+relay day-strip attempts share one once-only epoch owner. */
-  'pull-terminal-scope-blocks.test.js'
+  'pull-terminal-scope-blocks.test.js',
+  /* pvd-1.0.0 (Codex replies 24/27): one exclusive verdict per requested
+     patient with closed requested = succeeded+failed+not-attempted+
+     unaccounted arithmetic; the success+retry double-count is a counted
+     conflict, and the machine outcome carries the counts both ways. */
+  'history-verdict-census-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
