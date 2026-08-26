@@ -1889,6 +1889,7 @@ if (duplicates.length || missing.length || stale.length) {
    GATE_COMPLETE line only after every registered suite executed — a wrapper
    must require BOTH the exit code and the matching GATE_COMPLETE line. */
 console.log(`GATE_PLAN total=${tests.length}`);
+if (process.argv.includes('--plan')) process.exit(0);
 let executed = 0;
 for (const test of tests) {
   const file = path.join(__dirname, test);

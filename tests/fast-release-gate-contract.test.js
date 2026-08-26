@@ -5,9 +5,8 @@
    deliberately never launch static-site, browser, package, or full-gate tests. */
 
 const assert = require('assert');
-const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
+const { spawnSync } = require('child_process');
 const gate = require('../scripts/fast-release-gate.js');
 
 let checks = 0;
@@ -15,11 +14,14 @@ function ok(value, message) { checks++; assert.ok(value, message); }
 function eq(actual, expected, message) { checks++; assert.deepStrictEqual(actual, expected, message); }
 
 function readCanonicalGateCount() {
-  const source = fs.readFileSync(path.join(__dirname, 'run-all.js'), 'utf8');
-  const start = source.indexOf('const tests = [');
-  const end = source.indexOf('\n];', start);
-  assert(start >= 0 && end > start, 'run-all.js must retain an explicit tests array');
-  return vm.runInNewContext(`${source.slice(start, end + 3)}; tests.length`);
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'run-all.js'), '--plan'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.strictEqual(result.status, 0, String(result.stderr || result.stdout || 'canonical gate plan failed'));
+  const match = String(result.stdout || '').match(/^GATE_PLAN total=(\d+)$/m);
+  assert(match, 'canonical gate plan must print its exact suite count');
+  return Number(match[1]);
 }
 
 eq(gate.normalizePath('1p\\index.html'), '1p/index.html', 'Windows paths normalize to repository paths');
