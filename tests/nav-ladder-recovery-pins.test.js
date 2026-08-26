@@ -71,7 +71,13 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
     ['ALIEN coded reason with alive evidence', { ok: false, supported: true, reason: 'a-reason-invented-later', via: 'weekstrip', diag: { initFrames: 4, rounds: [{}] } }],
     ['malformed empty reply', {}],
     ['null reply', null],
-    ['reason-less refusal with NO alive evidence', { ok: false, supported: true, diag: { initFrames: 0, rounds: [] } }]
+    ['reason-less refusal with NO alive evidence', { ok: false, supported: true, diag: { initFrames: 0, rounds: [] } }],
+    /* nvl-1.2.0 (Codex reply 37): supported ABSENT fails closed even with
+       reviewed via or positive diag; an ALIEN via poisons the reply even
+       beside positive frames evidence. */
+    ['missing supported with reviewed via', { ok: false, via: 'weekstrip' }],
+    ['missing supported with positive diag', { ok: false, diag: { initFrames: 1 } }],
+    ['alien via beside positive diag', { ok: false, supported: true, via: 'jetpack', diag: { initFrames: 5, rounds: [{}] } }]
   ];
   for (const [label, reply] of NEVER) {
     h = harness([reply, GOOD]);
@@ -86,6 +92,48 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
   nav = await h.ladder();
   assert.deepStrictEqual({ ok: nav.ok, goto: h.calls.goto }, { ok: false, goto: 2 }, 'the ladder is not bounded to one re-entry');
 
+  /* nvl-1.2.0: the ATTEMPTS receipt is monotonic across both sequences -
+     the REAL gotoDateSettled + ladder executed with a scripted bridge */
+  {
+    const aStart = src.indexOf('      var navAttempts = 0;');
+    const aEnd = src.indexOf('      /* ===== p1-onetab-nav-1.0.0', aStart);
+    const bStart = src.indexOf('      /* nvl-1.1.0 (Codex reply 34): the escape IS the goto handler', aEnd);
+    const bEnd = src.indexOf('      return gotoWithRecovery().then(function (nav) {', bStart);
+    assert.ok(aStart > 0 && aEnd > aStart && bStart > aEnd && bEnd > bStart, 'the settled-goto/ladder slices moved');
+    const makeReal = new Function('safe', 'normDate', 'date', 'p1AthenaBusyRetry', 'bridge', 'onStatus', 'window',
+      src.slice(aStart, aEnd) + '\n' + src.slice(bStart, bEnd) +
+      '\nreturn { run: gotoWithRecovery, attempts: function () { return navAttempts; }, diag: function (nav) { return navDiagOf(nav, navAttempts); }, navRecovery: navRecovery };');
+    const drive = async (replies) => {
+      let i = 0, bridgeCalls = 0;
+      const real = makeReal(
+        (fn, d) => { try { return fn(); } catch (e) { return d; } },
+        v => String(v || ''),
+        '2026-08-26',
+        (fn) => fn(),
+        () => { bridgeCalls++; const r = replies[Math.min(i, replies.length - 1)]; i++; return Promise.resolve(r); },
+        () => {},
+        { __mlsBgSleep: () => Promise.resolve() }
+      );
+      const nav = await real.run();
+      return { nav, total: real.attempts(), bridgeCalls, diag: real.diag(nav), ran: real.navRecovery.ran };
+    };
+    const BADOK = { ok: false, supported: true, via: 'weekstrip' };
+    /* 4 + 1: first sequence exhausts its settle ladder, recovery's first
+       attempt lands - the receipt says FIVE, not one */
+    let r = await drive([BADOK, BADOK, BADOK, BADOK, GOOD]);
+    assert.deepStrictEqual({ ok: r.nav.ok, total: r.total, calls: r.bridgeCalls, seq: r.diag.sequences, ran: r.ran },
+      { ok: true, total: 5, calls: 5, seq: 2, ran: true },
+      '4+1 did not report the truthful monotonic attempt total: ' + JSON.stringify(r.diag));
+    /* 4 + 4: both sequences exhaust - EIGHT attempts, one re-entry only */
+    r = await drive([BADOK, BADOK, BADOK, BADOK, BADOK, BADOK, BADOK, BADOK, GOOD]);
+    assert.deepStrictEqual({ ok: r.nav.ok, total: r.total, calls: r.bridgeCalls, seq: r.diag.sequences },
+      { ok: false, total: 8, calls: 8, seq: 2 },
+      '4+4 did not report eight attempts with the one-reentry ceiling: ' + JSON.stringify(r.diag));
+    /* a clean first attempt stays 1/1 */
+    r = await drive([GOOD]);
+    assert.deepStrictEqual({ total: r.total, seq: r.diag.sequences, ran: r.ran }, { total: 1, seq: 1, ran: false });
+  }
+
   /* byte pins: the GoHome bridge verb is GONE from this leg (nothing to
      orphan); the pull enters through the ladder; navDiag proves the run */
   assert.ok(!src.includes('bridge("mlsAppGoHomeResult", "mlsAppGoHome"'),
@@ -97,5 +145,5 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
   assert.ok(src.includes('if (String(nav.reason || "") !== "") return false;'),
     'the closed reason-less admission gate is gone (coded refusals could recover again)');
 
-  console.log('PASS nav-ladder recovery (nvl-1.1.0): the escape is the goto handler\'s own guarded ladder - the orphanable GoHome verb is deleted from the leg; alive encounter-surface, weekstrip verify-miss, and wrong-day landings recover exactly once on positive evidence; dead/unsupported/sleeping/busy/deadline/extension/picker/ALIEN/malformed/evidence-less replies get zero extra attempts (executed verbatim from shipped bytes)');
+  console.log('PASS nav-ladder recovery (nvl-1.2.0): the escape is the goto handler\'s own guarded ladder; admission requires EXPLICIT supported:true and a closed via vocabulary (weekstrip/input/arrows - alien via poisons even positive diag, absent supported fails closed); fourteen fail-closed replies get zero attempts; the attempts receipt is MONOTONIC across sequences (4+1=5, 4+4=8, sequences counted) with the one-reentry ceiling (real gotoDateSettled + ladder executed from shipped bytes)');
 })().catch(e => { console.error(e); process.exit(1); });
