@@ -980,13 +980,14 @@ async function mlsAthenaActionV2DriverFn(req) {
       try {
         var roots = identityRoots(frame);
         if (!roots.length) return { identity: null, ambiguous: false };
-        var kept = null, key0 = '';
+        var kept = null;
         for (var ri = 0; ri < roots.length && ri < 8; ri++) {
           var p1 = parseIdentity(roots[ri]);
           if (!p1) continue;
-          var k1 = nameKey(p1.name) + '|' + dateKey(p1.dob) + '|' + digits(p1.mrn || '');
-          if (!kept) { kept = p1; key0 = k1; continue; }
-          if (k1 !== key0) return { identity: null, ambiguous: true };
+          if (!kept) { kept = p1; continue; }
+          var n0 = nameKey(kept.name), n1 = nameKey(p1.name), d0 = dateKey(kept.dob), d1 = dateKey(p1.dob), m0 = digits(kept.mrn || ''), m1 = digits(p1.mrn || '');
+          if ((n0 && n1 && n0 !== n1) || (d0 && d1 && d0 !== d1) || (m0 && m1 && m0 !== m1)) return { identity: null, ambiguous: true };
+          if (!m0 && m1) kept = p1; /* prefer the copy that carries the MRN */
         }
         if (kept && nameKey(kept.name) && dateKey(kept.dob)) return { identity: kept, ambiguous: false };
         return { identity: null, ambiguous: false };
