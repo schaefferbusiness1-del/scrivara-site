@@ -1826,7 +1826,11 @@ const tests = [
      OFF = chart facts + the pulled day's own note (older notes skipped),
      ON = + all prior notes - pinned across the choice dialog, Settings row,
      toast, engine day-facts law, retry-mode freeze, and receipts. */
-  'fvn-canonical-semantics-pins.test.js'
+  'fvn-canonical-semantics-pins.test.js',
+  /* pv7-1.0.0 (owner defect #7): the toolbar open-patient pull verb hides
+     only when the per-patient bar provably mounted in the same context -
+     never a zero-verb render. */
+  'open-patient-verb-visibility-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

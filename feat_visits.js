@@ -2539,12 +2539,18 @@
 
   function ensureBar() {
     var p = activeP();
-    syncOpenPatientPullVisibility(!!p);
-    if (!p) { var gone = document.getElementById('mlsCopyVisitsBar'); if (gone) gone.remove(); return; }
+    /* pv7-1.0.0 (owner defect #7, matrix 2026-08-26): hiding the toolbar's
+       open-patient pull verb the moment a patient was ACTIVE - before this
+       pass proved its replacement bar can mount - left renders whose profile
+       card is absent or hidden (the Patients view with visits selected) with
+       ZERO one-click pull verbs. The verb now hides only at the END of a
+       pass that actually mounted the per-patient bar in a visible context;
+       every early return restores it. */
+    if (!p) { syncOpenPatientPullVisibility(false); var gone = document.getElementById('mlsCopyVisitsBar'); if (gone) gone.remove(); return; }
     var card = document.getElementById('profileCard');
-    if (!card || card.offsetParent === null) return;
+    if (!card || card.offsetParent === null) { syncOpenPatientPullVisibility(false); return; }
     var head = historyHeader();
-    if (!head) return;
+    if (!head) { syncOpenPatientPullVisibility(false); return; }
     var bar = document.getElementById('mlsCopyVisitsBar');
     if (!document.getElementById('mlsCvCss')) {
       var s = document.createElement('style'); s.id = 'mlsCvCss';
@@ -2598,6 +2604,9 @@
       var title = head.querySelector('.mlsxh-title,.mlsvh-title');
       if (title && title.nextSibling) head.insertBefore(bar, title.nextSibling); else head.appendChild(bar);
     }
+    /* pv7-1.0.0: only NOW is the per-patient verb provably in this context -
+       the toolbar verb may stand down. */
+    syncOpenPatientPullVisibility(true);
   }
 
   function start() { setInterval(function () { try { ensureBar(); } catch (e) {} }, 900); try { ensureBar(); } catch (e) {} }
