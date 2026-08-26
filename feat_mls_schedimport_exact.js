@@ -8504,7 +8504,15 @@
           }, onStatus, athenaBusy).then(function (nav) {
             var day0 = normDate(nav && nav.schedDate);
             var bad = !nav || nav.ok === false || (day0 && day0 !== date);
-            if (!bad || round >= settleWaits.length) return nav;
+            /* nvl-1.5.0 (Codex reply 44): a settle retry is spent ONLY under
+               the same closed admission law the recovery re-entry uses - an
+               exact ok:true wrong-day landing, or an exact ok:false
+               reason-less supported:true reply with reviewed alive evidence.
+               Every fail-closed shape (coded refusal, dead session,
+               unsupported, null/empty, missing/null/string ok, alien via)
+               returns from its FIRST settled call with one real dispatch and
+               reaches the exact terminal gate. */
+            if (!bad || round >= settleWaits.length || !navRecoveryAdmissible(nav)) return nav;
             onStatus("Athena is still switching days — re-checking in a moment...", "");
             return (window.__mlsBgSleep ? window.__mlsBgSleep(settleWaits[round]) : new Promise(function (resWait) { setTimeout(resWait, settleWaits[round]); })).then(function () {
               return attempt(round + 1);
