@@ -1821,7 +1821,12 @@ const tests = [
   /* scl-1.0.0 (Codex reply 31): the chart-work admission scope is a lease -
      compare-and-cleared on every read terminal with ABA protection, so late
      background chatter cannot mint a job after the scoped read finished. */
-  'chart-scope-lifecycle-pins.test.js'
+  'chart-scope-lifecycle-pins.test.js',
+  /* fvn-1.0.0 (Codex reply 24): ONE canonical Full-Visit-Notes semantics -
+     OFF = chart facts + the pulled day's own note (older notes skipped),
+     ON = + all prior notes - pinned across the choice dialog, Settings row,
+     toast, engine day-facts law, retry-mode freeze, and receipts. */
+  'fvn-canonical-semantics-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

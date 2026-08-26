@@ -276,6 +276,10 @@ function receiptCases() {
     window: { __mlsRelayLink: { shouldRelay: () => true, pullDay(day, opts) { captured.day = day; captured.opts = opts; } }, toast() {} },
     document: doc, DS, sessionSerial: 0, Date, String, Number, Math, JSON,
     $: id => doc.getElementById(id), dsNewPullId: () => 'pull-1', dsPullVerb: () => 'Pull this day',
+    /* pts-1.1.0: the relay branch begins/terminals through the shared epoch
+       owner - stubbed here; pull-terminal-scope-blocks executes the real one. */
+    dsBeginPullEpoch: () => ({ sessionSerial: '0', pullId: 'pull-1', emitted: false }),
+    dsTerminalPullEpoch: () => true,
     esc: x => String(x), dsStatusLog: m => statusLog.push(String(m || '')), dsSyncDiagBtn() {},
     renderList() {}, ownAttemptResult: (result, day) => { DS.lastAttemptResult = Object.assign({}, result, { target: day }); return DS.lastAttemptResult; },
     documentElement: doc
@@ -463,7 +467,7 @@ function dayFactsEngineLaneCases() {
 
   /* Both lanes select precisely the OFF (visitsSkipped) rows - ON rows get
      their bodies from the full traversal instead. */
-  assert(/if \(pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one\.visitsSkipped === true && rd && !inlineDayNoteFuse\)/.test(SCHED),
+  assert(/if \(pulledDayNoteLaneEnabled && !stopAfterTimeout && pullVisitBodies !== true && one\.visitsSkipped === true && rd && !inlineDayNoteFuse && one\.todayNote == null\)/.test(SCHED),
     'the inline fold-in no longer runs for day-facts (pullVisitBodies !== true) rows');
   assert(/if \(pulledDayNoteTailEnabled && pullVisitBodies !== true && !__stpStopped\)/.test(SCHED),
     'the tail pass no longer runs for day-facts (pullVisitBodies !== true) rows');
