@@ -207,6 +207,37 @@ async function values(page) {
       });
     }
 
+    /* The last safe-to-write check must run after focus. Controlled editors can
+       hydrate a template or clinician draft synchronously from their focus
+       handler; that content is no longer an empty_only destination and must be
+       preserved byte-for-byte without a mutation receipt. */
+    for (const specimen of [
+      { key: 'note', id: '#generic-note', clinicianText: 'Clinician generic note materialized on focus.' },
+      { key: 'hpi', id: '#hpi-editor', clinicianText: 'Clinician HPI materialized on focus.' }
+    ]) {
+      await withPage(browser, fixture(), async page => {
+        await page.evaluate(({ id, clinicianText }) => {
+          const editor = document.querySelector(id);
+          editor.addEventListener('focus', () => { editor.value = clinicianText; }, { once: true });
+        }, specimen);
+        const result = await drive(page, request(specimen.key, `MLS ${specimen.key} text must not overwrite focus-hydrated content.`));
+        assert.strictEqual(result.ok, false, `${specimen.key} focus-prefill was overwritten`);
+        assert.strictEqual(result.blocked, true);
+        assert.strictEqual(result.reason, 'note-editor-not-empty');
+        assert.strictEqual(result.attempted, false);
+        assert.strictEqual(result.written, false);
+        assert.strictEqual(result.verified, false);
+        assert.strictEqual(result.noteWriteProof, undefined, `${specimen.key} focus-prefill received a write proof without mutation`);
+        assert.strictEqual(result.results[0].attempted, false);
+        assert.strictEqual(result.results[0].written, false);
+        assert.strictEqual(result.results[0].verified, false);
+        assert.strictEqual(await page.locator(specimen.id).inputValue(), specimen.clinicianText, `${specimen.key} focus-prefill bytes changed`);
+        const got = await values(page);
+        for (const [other, value] of Object.entries(got)) if (other !== specimen.key) assert.strictEqual(value, '', `${specimen.key} focus-prefill leaked into ${other}`);
+        checks += 16;
+      });
+    }
+
     /* A canonical machine selector cannot overrule contradictory visible
        clinical evidence, including a future label that is absent from every
        built-in vocabulary. These fixtures reproduce the exact wrong-field seam

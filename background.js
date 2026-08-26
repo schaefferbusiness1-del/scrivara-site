@@ -1235,7 +1235,6 @@ async function mlsAthenaActionV2DriverFn(req) {
     /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
 
     function setNoteEditorExact(el, value) {
-      try { el.focus(); } catch (e) {}
       try {
         if (el.isContentEditable) {
           /* wv-1.3 (3.0.40): a literal \n inside one text node renders as a SPACE unless the editor uses pre-wrap, so the innerText readback lost every newline and multi-paragraph notes returned note-write-unverified with the mangled text LEFT in the editor. Text+<br> nodes round-trip through innerText exactly. */
@@ -1258,17 +1257,26 @@ async function mlsAthenaActionV2DriverFn(req) {
 
     /* ATHENA_ACTION_V2_WRITE_NOTE_START */
     if (action === 'write_note') {
-      if (editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
-      var noteAttempted = true;
-      mutationAttempted = true;
-      if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, partialMutation: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
-      await sleep(250);
       function currentExactNoteEditor() {
         var currentTarget = requestedNoteSection === 'note' ? findNoteAction(hit.frame, action) : findNamedNoteAction(hit.frame, action, requestedNoteSection);
         if (!currentTarget || !currentTarget.editor) return null;
         if (editorFingerprint(currentTarget.editor, hit.frame.url) !== context.editorFingerprint) return null;
         return currentTarget.editor;
       }
+      if (editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
+      /* Focusing a controlled Athena editor can synchronously hydrate a saved
+         template or clinician draft. Focus first, re-resolve the exact locked
+         editor, and make the last emptiness check immediately before the native
+         setter/DOM clear. Nothing inside setNoteEditorExact may focus again. */
+      try { noteEditor.focus(); } catch (eFocus) {}
+      var focusedNoteEditor = currentExactNoteEditor();
+      if (!focusedNoteEditor) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'context-mismatch', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'context-mismatch' }], noAutomaticChaining: 'no-automatic-chaining' };
+      noteEditor = focusedNoteEditor;
+      if (editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
+      var noteAttempted = true;
+      mutationAttempted = true;
+      if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, partialMutation: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
+      await sleep(250);
       var verifiedEditor = currentExactNoteEditor();
       var noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
       /* A controlled React/Angular editor can accept the native setter and

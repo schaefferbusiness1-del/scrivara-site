@@ -179,6 +179,30 @@ async function state(page) {
     });
 
     await withPage(browser, fixture(), async page => {
+      const clinicianText = 'Clinician Procedure Documentation materialized on focus.';
+      await page.evaluate(text => {
+        const editor = document.getElementById('procedure-editor');
+        editor.addEventListener('focus', () => { editor.value = text; }, { once: true });
+      }, clinicianText);
+      const result = await drive(page, request('procedure', 'MLS procedure text must not overwrite focus-hydrated content.'));
+      assert.strictEqual(result.ok, false, 'focus-prefilled Procedure Documentation was overwritten');
+      assert.strictEqual(result.blocked, true);
+      assert.strictEqual(result.reason, 'note-editor-not-empty');
+      assert.strictEqual(result.attempted, false);
+      assert.strictEqual(result.written, false);
+      assert.strictEqual(result.verified, false);
+      assert.strictEqual(result.noteWriteProof, undefined, 'focus-prefilled Procedure Documentation received a proof without mutation');
+      assert.strictEqual(result.results[0].attempted, false);
+      assert.strictEqual(result.results[0].written, false);
+      assert.strictEqual(result.results[0].verified, false);
+      const got = await state(page);
+      assert.strictEqual(got.values['procedure-editor'], clinicianText, 'focus-prefilled Procedure Documentation bytes changed');
+      for (const [id, value] of Object.entries(got.values)) if (id !== 'procedure-editor') assert.strictEqual(value, '', `focus-prefilled Procedure Documentation leaked into ${id}`);
+      assert.deepStrictEqual(got.clicks, []);
+      checks += 19;
+    });
+
+    await withPage(browser, fixture(), async page => {
       const mismatch = await drive(page, request('procedure', 'Destination mismatch.', { sections: [
         { key: 'procedure', text: 'Destination mismatch.', execute: true, destination: 'Athena encounter > Physical Exam' }
       ] }));
