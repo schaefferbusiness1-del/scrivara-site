@@ -1775,7 +1775,9 @@ const tests = [
   /* bx-1.0.0: the multi-select batch send is a queue over the existing
      per-row probe/execute machinery - checkboxes only on ready note-writes,
      halt-on-uncertain, hidden-safe settle-latch waits. */
-  '1p-writeflow-batch-send.test.js'
+  '1p-writeflow-batch-send.test.js',
+  /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
+  'capture-mrn-normalize-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

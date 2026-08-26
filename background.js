@@ -9509,6 +9509,11 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         } catch (e) { return sendResponse({ error: 'Could not read the EMR tab (' + e.message + ').' }); }
         if (!pageText.trim()) return sendResponse({ error: 'The EMR tab had no readable text.' });
         const res = await callBackend('/api/assist/extract', { pageText, url: tab.url });
+        /* cap-mrn-1.0.0: the backend echoes the banner's raw MRN decoration
+           and it VARIES run-to-run ('7833832' vs '#7833832' measured on
+           consecutive captures of one open chart). Every downstream identity
+           comparator keys on digits - normalize at the reply boundary. */
+        try { if (res && res.captured && res.captured.mrn != null) res.captured.mrn = String(res.captured.mrn).replace(/\D+/g, ''); } catch (eCapMrn) {}
         sendResponse(Object.assign({ fromTab: tab.url }, res));
       } catch (e) { sendResponse({ error: 'Capture failed: ' + e.message }); }
       finally {
