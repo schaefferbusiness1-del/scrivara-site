@@ -7048,6 +7048,23 @@
         out.historyVerdicts = { requested: Number(vd.requested || 0), succeeded: Number(vd.succeeded || 0), failed: Number(vd.failed || 0), omitted: Number(vd.omitted || 0), notAttempted: Number(vd.notAttempted || 0), unaccounted: Number(vd.unaccounted || 0), conflicts: Number(vd.conflicts || 0), closed: vd.closed === true };
       } catch (eVd) {}
     }
+    /* spd-1.0.0 (reply 24: speed LAST, measurement first): the settle's
+       per-stage cost breakdown rides the machine outcome in BOTH verdict
+       directions, so every matrix run names its slow step with numbers at
+       rest instead of needing a live profiler. Milliseconds/counts only. */
+    if (value.historyReceipt && value.historyReceipt.costBreakdown) {
+      try {
+        var cb = value.historyReceipt.costBreakdown;
+        var cbNum = function (v) { v = Number(v); return isFinite(v) ? v : 0; }; /* a non-numeric stage time is 0, never NaN */
+        out.costBreakdown = {
+          chartMs: cbNum(cb.chartMs), parseSaveMs: cbNum(cb.parseSaveMs),
+          visitsMs: cbNum(cb.visitsMs), visitSaveMs: cbNum(cb.visitSaveMs),
+          todayNoteMs: cbNum(cb.todayNoteMs), rows: cbNum(cb.rows),
+          maxChartMs: cbNum(cb.maxChartMs), perRowChartMs: cbNum(cb.perRowChartMs),
+          perRowTodayNoteMs: cbNum(cb.perRowTodayNoteMs), skippedVerifiedToday: cbNum(cb.skippedVerifiedToday)
+        };
+      } catch (eCb) {}
+    }
     return out;
   }
   /* ===== p1-todaynote-deferred-retry-1.0.0 =====

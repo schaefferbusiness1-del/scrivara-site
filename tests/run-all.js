@@ -1838,7 +1838,11 @@ const tests = [
   /* vt-1.0.0: every visible visit tally names its scope - the at-glance chip
      counts MLS notes only and says so; the timeline header counts all
      sources and says so. */
-  'visit-tally-labels-pins.test.js'
+  'visit-tally-labels-pins.test.js',
+  /* spd-1.0.0 (reply 24: speed LAST, measurement first): the per-stage cost
+     breakdown rides the stored machine outcome in both verdict directions,
+     numbers only - every matrix run names its slow step at rest. */
+  'speed-cost-receipt-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
