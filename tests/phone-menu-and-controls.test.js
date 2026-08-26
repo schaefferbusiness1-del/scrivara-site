@@ -552,7 +552,7 @@ function withNote(h, text) {
   h.tap('fullapp');
   assert.deepStrictEqual(h.calls.layoutPref, [], 'nothing must be stored');
   assert.strictEqual(h.win.sessionStorage.getItem('mls_phone_mode'), null, 'and no second, weaker mechanism may be used behind the doctor\'s back');
-  assert(h.calls.toasts.some(t => t.k === 'err'), 'the refusal must be said as an error');
+  assert(!h.calls.toasts.some(t => t.k === 'err'), 'the refusal must not duplicate the persistent phone banner in a toast');
   assert(h.noteShown() && /layout control/i.test(h.noteText()), 'and stay on the screen');
 }
 {
@@ -585,13 +585,11 @@ function withNote(h, text) {
 }
 
 /* ===========================================================================
- * 4. A REFUSAL IS SAID BOTH WAYS
+ * 4. A REFUSAL HAS ONE PERSISTENT OWNER
  * ---------------------------------------------------------------------------
- * ph2 said every refusal with a toast alone. A toast is four seconds and gone;
- * a doctor who pressed a button and looked down at the patient sees nothing at
- * all, which is "I pressed it and nothing happened" with a message that
- * technically existed. refuse() says it twice: the toast catches the eye now,
- * the sticky line inside the frame is still there when they look back up.
+ * The physical phone rendered one identity failure three times. The closeable
+ * sticky line is the phone owner: it remains visible without covering the
+ * patient card with an additional transient toast and inline duplicate.
  * =========================================================================*/
 {
   const h = makeHarness({ noHost: true });
@@ -599,15 +597,16 @@ function withNote(h, text) {
   h.tap('settings');
 
   const errs = h.calls.toasts.filter(t => t.k === 'err');
-  assert.strictEqual(errs.length, 1, 'a control whose host function is missing must SAY so, as an error');
-  assert(h.noteShown(), 'AND leave it on the screen: #mlsPh3Note must be showing');
+  assert.strictEqual(errs.length, 0, 'a control whose host function is missing must not duplicate the phone banner in a toast');
+  assert(h.noteShown(), 'the refusal must remain on the screen: #mlsPh3Note must be showing');
   assert(h.noteBad(), 'and be styled as the refusal it is');
-  assert.strictEqual(h.noteText(), errs[0].m, 'both surfaces must carry the SAME sentence — two different explanations of one press is worse than one');
+  const held = h.noteText();
+  assert(held.length > 0, 'the persistent owner must carry a concrete sentence');
 
   /* THE POINT OF THE STICKY LINE: it lives in the frame, not the body, so the
      next engine repaint cannot erase the only remaining explanation. */
   h.api().render();
-  assert(h.noteShown() && h.noteText() === errs[0].m, 'a repaint must not erase the refusal — it lives in the frame, not the body that gets rewritten');
+  assert(h.noteShown() && h.noteText() === held, 'a repaint must not erase the refusal — it lives in the frame, not the body that gets rewritten');
 
   /* And it is dismissible, or it becomes furniture. */
   h.tap('note-x');
@@ -620,22 +619,21 @@ function withNote(h, text) {
   const h = makeHarness({ noHost: true });
   h.nav();
   h.tap('signout');
-  assert(h.calls.toasts.some(t => t.k === 'err'), 'sign out must refuse out loud');
+  assert(!h.calls.toasts.some(t => t.k === 'err'), 'sign out must not duplicate its persistent refusal in a toast');
   assert(h.noteShown() && h.noteBad(), 'and stick');
   h.tap('refresh');
   assert(h.noteShown(), 'refresh must refuse the same way');
-  assert(h.calls.toasts.every(t => t.k === 'err'),
-    'and as an ERROR: ph2 answered an unloaded host with a neutral "Checked your office computer" note, which reads as success');
+  assert(h.noteBad(), 'and as an ERROR: an unloaded host must not look like a successful refresh');
 }
 
 /* ===========================================================================
  * 5. THE ENGINE'S BOOLEANS MEAN "DISPATCHED", NOT "DONE"
  * ---------------------------------------------------------------------------
- * record() returns true once it has clicked the host capture button. A phone
- * whose microphone permission was refused sits at phase 'idle' afterwards with
- * the engine still reporting success — press the button, nothing happens,
- * nothing is said. ph2 believed the boolean. ph3 checks the phase actually
- * arrived and says so when it did not.
+ * record() returns true once it has clicked the host capture button. A phone can
+ * still sit at phase 'idle' afterwards, so ph3 checks that the phase actually
+ * arrived. That delayed check must not invent a permission diagnosis: consent
+ * may still be open, or the capture owner may already have shown the exact
+ * unsupported-browser / slow-start explanation.
  * =========================================================================*/
 {
   const h = makeHarness({ snapshot: { today: patients, active: ACTIVE, phase: 'idle' } });
@@ -647,11 +645,50 @@ function withNote(h, text) {
 
   /* ~1500ms later the phase is still 'idle'. */
   h.fireTimers(1500);
-  assert(h.calls.toasts.some(t => t.k === 'err' && /did not start recording/i.test(t.m)),
-    'THE OWNER\'S COMPLAINT, EXACTLY: record() returned true and the phase never became rec, so it must be said');
+  assert(!h.calls.toasts.some(t => t.k === 'err'),
+    'a failed phase check must not duplicate the persistent refusal in a toast');
   assert(h.noteShown() && h.noteBad(), 'and stay on the screen');
   assert(/microphone/i.test(h.noteText()),
-    'and name the most likely cause, because "it did not start" with no next step is a dead end: ' + h.noteText());
+    'and give a concrete type-or-keyboard-microphone fallback: ' + h.noteText());
+  assert(!/permission|site settings/i.test(h.noteText()),
+    'an idle phase alone is not evidence of a microphone permission failure: ' + h.noteText());
+}
+{
+  /* The consent owner can legitimately keep the phase idle for longer than the
+     phone confirmation window while the doctor chooses or the audit write
+     settles. The watchdog must stay silent until that owner resolves. */
+  const h = makeHarness({ snapshot: { today: patients, active: ACTIVE, phase: 'idle' } });
+  h.win._mlsConsentAsk = {};
+  h.api().go('visit');
+  h.tap('record');
+  h.fireTimers(1500);
+  assert(!h.noteShown(),
+    'the delayed record check must not cover an open consent step with a false capture error');
+  assert(!h.calls.toasts.some(t => t.k === 'err'),
+    'an open consent step must not also emit a phone capture failure');
+}
+{
+  /* Both real pre-phase explanations use #micWarn: no SpeechRecognition on
+     iOS, and a recognizer/lease that is still busy. Preserve the exact owner
+     sentence instead of replacing it after 1.5 seconds. */
+  [
+    'Live dictation isn\u2019t available in any iPhone or iPad browser. Tap the keyboard microphone or type.',
+    'The microphone is still busy or could not start. Wait a moment, then press Start recording again. Your transcript is safe.'
+  ].forEach((exact) => {
+    const h = makeHarness({ snapshot: { today: patients, active: ACTIVE, phase: 'idle' } });
+    const warn = h.document.createElement('div');
+    warn.id = 'micWarn';
+    warn.style.display = 'flex';
+    warn.textContent = exact;
+    h.byId.set('micWarn', warn);
+    h.api().go('visit');
+    h.tap('record');
+    h.fireTimers(1500);
+    assert.strictEqual(h.noteText(), exact,
+      'the phone must carry forward the capture owner\'s exact explanation');
+    assert(!/permission|site settings/i.test(h.noteText()),
+      'the exact explanation must not be rewritten as a guessed permission problem');
+  });
 }
 {
   /* And it is NOT a blanket nag: when the phase does arrive, the check is
@@ -683,8 +720,8 @@ function withNote(h, text) {
   h.api().go('visit');
   h.tap('stop');
   assert.strictEqual(h.calls.stopRecording, 1, 'Stop must still reach the engine');
-  assert(h.calls.toasts.some(t => t.k === 'err' && /did not stop/i.test(t.m)),
-    'and a refusal must reach the doctor instead of being swallowed');
+  assert(!h.calls.toasts.some(t => t.k === 'err'),
+    'the stop refusal must not duplicate the persistent phone banner in a toast');
   assert(h.noteShown() && h.noteBad(), 'and survive the repaint that follows it');
 }
 {
@@ -701,7 +738,7 @@ function withNote(h, text) {
   const h = makeHarness({ generateReturns: false, snapshot: { today: patients, active: ACTIVE, phase: 'stopped', warn: 'No patient is locked.' } });
   h.api().go('visit');
   h.tap('generate');
-  assert(h.calls.toasts.some(t => t.k === 'err'), 'a refused generate must be said');
+  assert(!h.calls.toasts.some(t => t.k === 'err'), 'a refused generate must not duplicate the persistent phone banner in a toast');
   assert.strictEqual(h.noteText(), 'No patient is locked.',
     'and the ENGINE\'s own sentence must win over ours whenever it has one — ours would be a second, weaker explanation of the same refusal');
 }
@@ -765,7 +802,7 @@ function withNote(h, text) {
   delete h.win.__mlsDaySwitch;
   const before = h.ui();
   h.tap('day-next');
-  assert(h.calls.toasts.some(t => t.k === 'err'), 'a day arrow that cannot act must say why');
+  assert(!h.calls.toasts.some(t => t.k === 'err'), 'a day-arrow refusal must not duplicate the persistent phone banner in a toast');
   assert(h.noteShown(), 'and the why must stay put');
   assert.notStrictEqual(h.ui(), before, 'a press that reaches nothing must still be distinguishable from a dead control');
 }
@@ -804,7 +841,7 @@ function withNote(h, text) {
   h.byId.set('mlsDsPullBtn', { disabled: true });
   h.tap('pull-stop');
   assert.strictEqual(h.calls.cancelActive, 0, 'a local pull has no relay job to cancel');
-  assert(h.calls.toasts.some(t => t.k === 'err'), 'and the refusal is an error');
+  assert(!h.calls.toasts.some(t => t.k === 'err'), 'and the refusal is owned by the persistent phone banner, not a duplicate toast');
   assert(h.noteShown() && /this iPhone/i.test(h.noteText()), 'named for the device the doctor is holding: ' + h.noteText());
 }
 
@@ -821,8 +858,8 @@ function withNote(h, text) {
      would fail on realm rather than on value. */
   assert.strictEqual(h.calls.startVisitFor[0].opts.record, false,
     'and record:false ALWAYS — opening a patient and starting a microphone are two decisions and the doctor makes the second');
-  assert.deepStrictEqual(Object.keys(h.calls.startVisitFor[0].opts), ['record'],
-    'and nothing else is smuggled in alongside it');
+  assert.deepStrictEqual(Object.keys(h.calls.startVisitFor[0].opts).sort(), ['quiet', 'record'],
+    'and the only companion option is quiet phone-owned warning presentation');
   assert.strictEqual(h.api().state().screen, 'visit', 'and it must push the visit screen');
 }
 {
@@ -831,7 +868,7 @@ function withNote(h, text) {
   const h = makeHarness({ openFails: true, snapshot: { today: patients } });
   h.tap('open', { 'data-id': 'a2' });
   assert.strictEqual(h.api().state().screen, 'day', 'a refused open must not push an empty visit screen');
-  assert(h.calls.toasts.some(t => t.k === 'err'), 'and must be said');
+  assert(!h.calls.toasts.some(t => t.k === 'err'), 'and must not duplicate the persistent phone banner in a toast');
   assert(h.noteShown() && /another day/i.test(h.noteText()),
     'with the most likely reason, since "could not open" alone leaves the doctor pressing it again: ' + h.noteText());
 }
@@ -999,9 +1036,10 @@ async function sendAndCopyChecks() {
     await flush();
     assert(!h.calls.toasts.some((t) => t.k === 'ok'),
       'a clipboard write that was REFUSED reported success — the doctor pastes the previous clipboard into a chart');
-    assert(h.calls.toasts.some((t) => t.k === 'err' && /press and hold/i.test(t.m)),
-      'and the failure must come with the manual way to do it');
-    assert(h.noteShown() && h.noteBad(), 'and it must stick, because the doctor is now looking at the note to select it by hand');
+    assert(!h.calls.toasts.some((t) => t.k === 'err'),
+      'the refusal must not be duplicated in a transient toast');
+    assert(h.noteShown() && h.noteBad() && /press and hold/i.test(h.noteText()),
+      'the one persistent refusal must include the manual way to do it');
   }
   {
     /* An empty note is refused before the clipboard is touched at all. */
@@ -1010,7 +1048,8 @@ async function sendAndCopyChecks() {
     h.tap('copy-note');
     await flush();
     assert.strictEqual(h.calls.clipboard.length, 0, 'there is nothing to copy, so nothing may be written');
-    assert(h.calls.toasts.some((t) => /no note to copy/i.test(t.m)), 'and it must say why');
+    assert(!h.calls.toasts.some((t) => t.k === 'err'), 'the refusal must not be duplicated in a transient toast');
+    assert(h.noteShown() && h.noteBad() && /no note to copy/i.test(h.noteText()), 'and the one persistent refusal must say why');
   }
 }
 

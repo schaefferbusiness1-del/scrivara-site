@@ -808,16 +808,14 @@ assert(!/recSecs/.test(code.slice(code.indexOf('function signature()'), code.ind
     'and it must name the concrete thing to check, not point at a message that is not there');
 }
 {
-  /* A REFUSAL IS SAID BOTH WAYS. A toast is four seconds and gone, which is
-     right for "copied"; a refusal the doctor has to act on has to still be on
-     the screen when they look back up. One without the other is how "nothing
-     happened when I pressed it" happens. */
+  /* ONE PERSISTENT REFUSAL. The physical-phone failure rendered the same
+     patient mismatch as a toast, a sticky banner and an inline card. The phone
+     banner is the sole owner: it survives repaints and remains dismissible. */
   const h = visitAt('idle', {}, { recordFails: true });
   h.tap('record');
-  const last = h.calls.toasts[h.calls.toasts.length - 1];
-  assert(last && last.k === 'err', 'a refusal must raise the app\'s own error toast');
-  assert(h.noteText().length > 0, 'AND it must land on the sticky in-frame line');
-  assert.strictEqual(last.m, h.noteText(), 'with the same sentence in both places, not two stories');
+  const errorToasts = h.calls.toasts.filter(t => t && t.k === 'err');
+  assert.strictEqual(errorToasts.length, 0, 'a phone refusal must not duplicate its persistent banner in a transient toast');
+  assert(h.noteText().length > 0, 'the refusal must land on the sticky in-frame line');
   const noteEl = h.note();
   assert(/ph3-show/.test(noteEl.className), 'the sticky line must actually be shown');
   assert(/ph3-bad/.test(noteEl.className), 'and be styled as a refusal, not as a hint');

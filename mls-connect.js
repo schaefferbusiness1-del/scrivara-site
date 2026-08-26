@@ -20416,6 +20416,48 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
+  /* phone-id-1.0.0: one date key for every identity boundary. Raw digit
+     comparison treats 1947-03-28 and 03/28/1947 as different people. Unknown
+     or partial dates deliberately return '' and therefore never prove a match. */
+  function dobKey(v) {
+    var s = String(v == null ? '' : v).trim(), m;
+    if (!s) return '';
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[1] + m[2] + m[3];
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (m) return m[3] + ('0' + m[1]).slice(-2) + ('0' + m[2]).slice(-2);
+    return '';
+  }
+  function dobConflicts(a, b) { var A = dobKey(a), B = dobKey(b); return !!(A && B && A !== B); }
+  function mrnKey(a) {
+    var v = a && (a.mrn || a.athenaId || a.athenaPatientId || a.patient_mrn) || '';
+    return String(v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+  function mrnConflicts(a, b) { var A = mrnKey(a), B = mrnKey(b); return !!(A && B && A !== B); }
+  /* A matching name plus the ABSENCE of a contradiction is not identity.
+     Demographic fallback is allowed only when DOB or MRN positively agrees;
+     canonical MLS-local ids are handled explicitly at each call site. */
+  function positiveIdentityEvidence(a, p) {
+    if (!a || !p || !a.name || !p.name || !nameMatch(a.name, p.name)) return false;
+    function agrees(candidate) {
+      if (!candidate || !candidate.id || !candidate.name || !nameMatch(a.name, candidate.name)) return false;
+      var ad = dobKey(dobOf(a)), pd = dobKey(dobOf(candidate));
+      var am = mrnKey(a), pm = mrnKey(candidate);
+      if ((ad && pd && ad !== pd) || (am && pm && am !== pm)) return false;
+      return !!((ad && pd && ad === pd) || (am && pm && am === pm));
+    }
+    if (!agrees(p)) return false;
+    /* Demographics can identify a chart only when they identify ONE chart.
+       This mirrors _calResolveLocalPatient; manually selecting either of two
+       same-name+DOB charts must not upgrade an ambiguous schedule row. */
+    var pts = safe(function () {
+      if (isFn(window.getPatients)) return window.getPatients() || [];
+      if (typeof getPatients === 'function') return getPatients() || [];
+      return [];
+    }, []);
+    var hits = pts.filter(agrees);
+    return hits.length === 1 && String(hits[0].id) === String(p.id);
+  }
   function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(d)) : '🎂 DOB —'; }
   function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(d)) : 'DOB —'; }
   function nextPatient() {
@@ -20444,13 +20486,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      ad-hoc lockAndStartPatient path hands the note an appointment id of null,
      which is precisely the "missing appointment ID" report. */
   function dayRowForPatient(rows, p) {
-    if (!p || !p.name || !rows || !rows.length) return null;
-    var pd = String(p.dob || '').replace(/\D/g, '');
+    if (!p || !p.id || !p.name || !rows || !rows.length) return null;
     for (var i = 0; i < rows.length; i++) {
       var a = rows[i];
-      if (!a || !a.name || !nameMatch(a.name, p.name)) continue;
-      var ad = String(a.dob || '').replace(/\D/g, '');
-      if (ad && pd && ad !== pd) continue; /* same name, provably a different person */
+      if (!a || !a.name) continue;
+      var localId = a._pt && a._patientId ? a._patientId : a._mlsTargetPatientId;
+      if (localId && String(localId) !== String(p.id)) continue;
+      if (!localId && !positiveIdentityEvidence(a, p)) continue;
+      if (!nameMatch(a.name, p.name) || dobConflicts(a.dob, p.dob) || mrnConflicts(a, p)) continue;
       return a;
     }
     return null;
@@ -20542,10 +20585,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* ---- live-visit bridges + guards ---------------------------------------- */
+  function canonicalActivePatient() {
+    try { return (window.activePatient && window.activePatient()) || null; } catch (e) { return null; }
+  }
   function activeName() {
-    var l = $('patientLabel');
-    if (l && (l.value || '').trim()) return l.value.trim();
-    try { var p = window.activePatient && window.activePatient(); return (p && p.name) || ''; } catch (e) { return ''; }
+    /* #patientLabel is editable display text, not an identity source. The old
+       order let calStartVisit type the selected name over a stale chart and
+       falsely pass activation. Every clinical check now reads the canonical
+       active-patient object; renderers can still display S.appt separately. */
+    var p = canonicalActivePatient();
+    return (p && p.name) || '';
   }
   function guardInfo() {
     var w = window.__mlsVisitWire || {};
@@ -21129,21 +21178,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!nextId || !S || !S.appt) return false;
     try {
       var a = S.appt, p = patientById(nextId), owns = false;
-      if (a._pt && a._patientId && String(a._patientId) === String(nextId)) owns = true;
-      else if (a.patient_external_id && String(a.patient_external_id) === String(nextId)) owns = true;
-      else if (p && a.name && p.name && nameMatch(a.name, p.name)) {
-        var ad = String(dobOf(a) || '').replace(/\D/g, '');
-        var pd = String(dobOf(p) || '').replace(/\D/g, '');
-        owns = !(ad && pd && ad !== pd);
+      if (a._pt && a._patientId) {
+        if (String(a._patientId) !== String(nextId)) return false;
+        owns = true;
       }
+      else if (a._mlsTargetPatientId) {
+        if (String(a._mlsTargetPatientId) !== String(nextId)) return false;
+        owns = true;
+      }
+      else if (p) owns = positiveIdentityEvidence(a, p);
       if (!owns) return false;
       /* S.appt and S.locked are written together. If they ever disagree,
          prefer releasing the binding over preserving a mixed-patient room. */
       if (p && S.locked && S.locked.name && !nameMatch(S.locked.name, p.name)) return false;
       if (p && S.locked) {
-        var ld = String(S.locked.dob || '').replace(/\D/g, '');
-        var pd2 = String(dobOf(p) || '').replace(/\D/g, '');
-        if (ld && pd2 && ld !== pd2) return false;
+        if (dobConflicts(S.locked.dob, dobOf(p))) return false;
+        if (mrnConflicts(S.locked, p)) return false;
       }
       return true;
     } catch (e) { return false; }
@@ -21156,7 +21206,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (detail && Object.prototype.hasOwnProperty.call(detail, 'patientId')) nextId = String(detail.patientId || '');
           else if (isFn(window.getActivePtId)) nextId = String(window.getActivePtId() || '');
         } catch (eD) {}
-        if (!S || (!S.appt && !S.locked)) return;
+        if (!S) return;
+        /* A failed activation from Home restores the no-visit state but keeps
+           one sticky refusal so the user can see what happened. The next
+           canonical patient transition is the context release for that
+           refusal too; clear it before the ordinary no-binding early return. */
+        if (!S.appt && !S.locked) {
+          if (S.activationRefusalWarn) {
+            S.activationRefusalWarn = ''; S.lastWarn = '';
+            try { render(); } catch (eR0) {}
+          }
+          return;
+        }
         if (nextId && visitBindingOwnsPatient(nextId)) return;
         if (isRecording()) {
           S.lastWarn = 'Recording is still running, so this visit stays open. Stop the recording before switching or clearing the patient.';
@@ -21165,7 +21226,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return;
         }
         S.appt = null; S.locked = null; S.expanded = null; S.query = '';
-        S.lastWarn = ''; S.screen = 'home';
+        S.lastWarn = ''; S.activationRefusalWarn = ''; S.screen = 'home';
         try { render(); } catch (eR2) {}
       } catch (eL) {}
     });
@@ -21394,6 +21455,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    *  phase machine (doctor room) — Record → Generate → Review → Sign → Send
    * ===================================================================== */
   function computePhase() {
+    var activationWarn = String(S.activationRefusalWarn || '');
     if (isRecording()) { if (S.phase !== 'rec') { S.phase = 'rec'; if (!S.recStart) S.recStart = Date.now(); } return; }
     if (S.phase === 'rec') { S.phase = 'stopped'; S.recStart = 0; }
     var n = noteText();
@@ -21409,9 +21471,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       S.lastWarn = ez3EngineReason() || 'Note generation timed out. Your full transcript is still safe below — try Generate again.';
       return;
     }
-    if (n.trim().length >= 30) { S.phase = 'note'; S.genClickedAt = 0; S.lastWarn = ''; bindingNotice(); return; }
+    if (n.trim().length >= 30) {
+      S.phase = 'note'; S.genClickedAt = 0; S.lastWarn = activationWarn;
+      if (!activationWarn) bindingNotice();
+      return;
+    }
     if (S.phase !== 'stopped') S.phase = 'idle';
-    bindingNotice();
+    if (activationWarn) S.lastWarn = activationWarn;
+    else bindingNotice();
   }
   /* Generation errors belong to the engine, not this facade. The engine
      clears its two alert nodes only after its pre-gates, so a failed attempt
@@ -21598,10 +21665,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          and freeze one right here (every input is present on this path). The
          original concern stands: an EXISTING xdc binding is never replaced. */
       if (xctx && String(xctx.sourceId) === String(a.id) && String(xctx.appointmentId) === apptId && String(xctx.date) === day && currentVisitBinding()) return true;
-      var p = typeof window.activePatient === 'function' ? window.activePatient() : null;
+      var p = canonicalActivePatient();
       if (!p || !p.id || !nameMatch(p.name, a.name)) return false;
-      var ad = String(a.dob || '').replace(/\D/g, ''), pd = String(p.dob || '').replace(/\D/g, '');
-      if (ad && pd && ad !== pd) return false;
+      var localTarget = a._pt && a._patientId ? a._patientId : a._mlsTargetPatientId;
+      if (localTarget && String(localTarget) !== String(p.id)) return false;
+      if (!localTarget && !positiveIdentityEvidence(a, p)) return false;
+      if (dobConflicts(a.dob, p.dob) || mrnConflicts(a, p)) return false;
       var noteTime = new Date(day + 'T12:00:00').getTime();
       var binding = window._athenaFreezeVisitBinding(p, {
         source: 'scheduled-appointment', historical: false,
@@ -21623,7 +21692,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function exactScheduledBindingMatches(a) {
     var binding = currentVisitBinding(), ctx = binding && binding.visitContext;
-    var active = safe(function () { return typeof window.activePatient === 'function' ? window.activePatient() : null; }, null);
+    var active = canonicalActivePatient();
     var appointmentId = scheduledAppointmentId(a), day = apptDay(a), provider = String(a && a.provider || '').trim();
     /* b438: presence of an Athena appointment id is not required (see
        installScheduledVisitBinding above); AGREEMENT still is, on the very next
@@ -21631,15 +21700,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        active patient and binding; non-conflicting DOB across all three;
        binding.patient.patientId === active.id; exact date; provider tokens. */
     if (!a || !day || !provider || !binding || !ctx || !binding.patient || !active || !active.id) return false;
+    var localTarget = a._pt && a._patientId ? a._patientId : a._mlsTargetPatientId;
+    if (localTarget && String(localTarget) !== String(active.id)) return false;
+    if (!localTarget && !positiveIdentityEvidence(a, active)) return false;
     if (String(ctx.appointmentId || '').trim() !== appointmentId || String(ctx.visitDate || '').slice(0, 10) !== day) return false;
     if (normTokens(ctx.provider).join('|') !== normTokens(provider).join('|')) return false;
     if (!nameMatch(active.name, a.name) || !nameMatch(binding.patient.name, a.name) || !nameMatch(binding.patient.name, active.name)) return false;
-    var ad = String(a.dob || '').replace(/\D/g, ''), pd = String(active.dob || '').replace(/\D/g, ''), bd = String(binding.patient.dob || '').replace(/\D/g, '');
-    if ((ad && pd && ad !== pd) || (ad && bd && ad !== bd) || (pd && bd && pd !== bd)) return false;
-    if (binding.patient.patientId && String(binding.patient.patientId) !== String(active.id)) return false;
+    if (dobConflicts(a.dob, active.dob) || dobConflicts(a.dob, binding.patient.dob) || dobConflicts(active.dob, binding.patient.dob)) return false;
+    if (mrnConflicts(a, active) || mrnConflicts(a, binding.patient) || mrnConflicts(active, binding.patient)) return false;
+    if (!binding.patient.patientId || String(binding.patient.patientId) !== String(active.id)) return false;
     return true;
   }
-  function requireExactScheduledBinding(a, actionLabel) {
+  function requireExactScheduledBinding(a, actionLabel, opts) {
+    opts = opts || {};
     if (exactScheduledBindingMatches(a)) return true;
     /* Owner 2026-07-24 ("blocking is BS", same ruling as oni-2.14.0): the
        doctor's core action is never refused outright. A failed SCHEDULE proof
@@ -21648,69 +21721,134 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        unproven schedule row. Only a PROVEN cross-patient conflict still
        blocks: the active chart naming a different person than the picked row
        is exactly the wrong-chart save this gate exists to stop. */
-    var active = safe(function () { return typeof window.activePatient === 'function' ? window.activePatient() : null; }, null);
+    var active = canonicalActivePatient();
     var conflict = false;
     try {
       if (active && a) {
+        if (a._mlsTargetPatientId && active.id && String(a._mlsTargetPatientId) !== String(active.id)) conflict = true;
         if (a.name && active.name && !nameMatch(active.name, a.name)) conflict = true;
-        var ad = String(a.dob || '').replace(/\D/g, ''), pd = String(active.dob || '').replace(/\D/g, '');
-        if (ad && pd && ad !== pd) conflict = true;
+        if (dobConflicts(a.dob, active.dob)) conflict = true;
+        if (mrnConflicts(a, active)) conflict = true;
       }
     } catch (e) {}
     if (conflict) {
       S.lastWarn = 'MLS blocked ' + (actionLabel || 'this action') + ' — the selected appointment is for a DIFFERENT patient than the active chart. Switch to the right patient first.';
-      toast(S.lastWarn);
+      if (!opts.quiet) toast(S.lastWarn);
       render();
       return false;
     }
     safe(function () { if (typeof window._athenaSetVisitBinding === 'function') window._athenaSetVisitBinding(null, true); else window.currentVisitAthenaBinding = null; });
     S.lastWarn = 'Athena appointment not linked — recording and note generation still work normally. This note will stay in MLS until you assign it to a schedule row.';
-    toast(S.lastWarn);
+    if (!opts.quiet) toast(S.lastWarn);
     render();
     return true;
   }
   function lockAndStart(a, opts) {
     opts = opts || {};
     /* v3.3: never switch patients mid-recording — stop-first (context lock) */
-    if (isRecording() && S.appt && rowKey(S.appt) !== rowKey(a)) { blockSwitchWhileRecording(); return; }
-    S.appt = a; lockPatient(a); S.editing = false; S.genClickedAt = 0; S.signedAt = 0; S.lastWarn = '';
+    if (isRecording() && S.appt && rowKey(S.appt) !== rowKey(a)) { blockSwitchWhileRecording(); return false; }
+    /* Activation is a transaction. A refused row must not become Easy's
+       selected appointment or erase the prior visit's phase/timestamps while
+       the UI truthfully says that nothing was started. */
+    var beforeActivation = {
+      appt: S.appt, locked: S.locked, editing: S.editing, phase: S.phase,
+      recStart: S.recStart, genClickedAt: S.genClickedAt, signedAt: S.signedAt,
+      lastWarn: S.lastWarn, activationRefusalWarn: S.activationRefusalWarn,
+      mode: S.mode, screen: S.screen
+    };
+    function restoreBeforeActivation() {
+      S.appt = beforeActivation.appt; S.locked = beforeActivation.locked;
+      S.editing = beforeActivation.editing; S.phase = beforeActivation.phase;
+      S.recStart = beforeActivation.recStart; S.genClickedAt = beforeActivation.genClickedAt;
+      S.signedAt = beforeActivation.signedAt; S.lastWarn = beforeActivation.lastWarn;
+      S.activationRefusalWarn = beforeActivation.activationRefusalWarn;
+      S.mode = beforeActivation.mode; S.screen = beforeActivation.screen;
+    }
+    S.appt = a; lockPatient(a); S.editing = false; S.phase = 'idle'; S.recStart = 0; S.genClickedAt = 0; S.signedAt = 0; S.lastWarn = ''; S.activationRefusalWarn = '';
+    var activationReceipt = null;
     try {
       if (a && a._pt) { if (isFn(window.selectPatient)) window.selectPatient(a._patientId); } /* search-picked, no appt id */
-      else if (isFn(window.calStartVisit)) window.calStartVisit(a.id);
+      else if (isFn(window.calStartVisit)) activationReceipt = window.calStartVisit(a.id) || null;
     } catch (e) {}
+    /* Scheduled activation now has a structured synchronous contract. A
+       missing owner, exception, or legacy truthy/undefined return is failure,
+       never permission to reuse a same-demographics prior encounter. */
+    if (!(a && a._pt) && (!activationReceipt || typeof activationReceipt !== 'object' ||
+        (activationReceipt.ok !== true && activationReceipt.ok !== false))) {
+      restoreBeforeActivation();
+      S.lastWarn = 'MLS could not start a fresh visit for this appointment. Nothing was started — return to the day list and try again.';
+      S.activationRefusalWarn = S.lastWarn;
+      render();
+      return false;
+    }
+    /* calStartVisit deliberately clears a stale canonical chart before it
+       opens an unresolved appointment as an unassigned visit. That synchronous
+       active-patient event also releases the old Easy appointment lock. Restore
+       only this explicitly-unbound row after the clear, so Record/Generate stay
+       attached to the appointment card without pretending a chart is linked. */
+    if (activationReceipt && activationReceipt.ok === true && activationReceipt.bound === false) {
+      S.appt = a; lockPatient(a);
+    }
+    if (activationReceipt && activationReceipt.ok === false) {
+      restoreBeforeActivation();
+      S.lastWarn = activationReceipt.reason === 'patient-identity-conflict'
+        ? 'MLS blocked this visit — the selected appointment is for a DIFFERENT patient than the linked chart. Switch to the right patient first.'
+        : 'MLS could not open a fresh visit for this appointment. Nothing was started — return to the day list and try again.';
+      S.activationRefusalWarn = S.lastWarn;
+      render();
+      return false;
+    }
     setEasyMode('doctor', 'doctor', 'appointment-selected', false);
-    var tries = 0;
-    (function check() {
-      tries++;
-      var an = activeName();
-      var ok = !!(an && a.name && nameMatch(an, a.name));
-      if (!ok && tries < 4) { setTimeout(check, 900); return; } /* activation can be async */
-      if (!ok) {
+    /* The phone must not leave Day on a promise that may fail 3.6 seconds
+       later. calStartVisit/selectPatient update canonical identity
+       synchronously; resolve that outcome now and return a truthful boolean. */
+    var active = canonicalActivePatient(), an = (active && active.name) || '';
+    var explicitlyUnbound = !!(activationReceipt && activationReceipt.ok === true && activationReceipt.bound === false);
+    var ok = explicitlyUnbound ? !active : !!(active && an && a.name && nameMatch(an, a.name) && !dobConflicts(active.dob, a.dob));
+    if (ok && activationReceipt && activationReceipt.bound === true && activationReceipt.patientId) {
+      ok = String(active && active.id || '') === String(activationReceipt.patientId);
+    }
+    if (!ok) {
+      restoreBeforeActivation();
+      if (active && a && ((!nameMatch(active.name, a.name)) || dobConflicts(active.dob, a.dob))) {
+        S.lastWarn = 'MLS blocked ' + (opts.record ? 'recording' : (opts.generate ? 'note generation' : 'this visit')) +
+          ' — the selected appointment is for a DIFFERENT patient than the active chart. Switch to the right patient first.';
+      } else {
         S.lastWarn = 'The open visit is labeled “' + an + '”, not “' + (a.name || '') +
                      '”. Nothing was started — pick the patient again.';
-        render(); return;
       }
-      var exactBindingReady = installScheduledVisitBinding(a) && exactScheduledBindingMatches(a);
-      S.lastWarn = exactBindingReady ? '' :
-        (scheduledAppointmentId(a)
-          ? 'The visit opened, but MLS could not prove its exact Athena appointment binding. Re-pull this day before using Athena verification or send.'
-          : 'This row is missing its exact Athena appointment ID. Re-pull this day before using Athena verification or send.');
-      /* Owner 2026-07-26: this return used to run for record/generate too, so
-         clicking Record under the missing-appointment-ID warning did NOTHING —
-         while the warning's own text promises it only gates verification/send.
-         Recording and generation are LOCAL (b438 note in
-         installScheduledVisitBinding); route them through the same demotion
-         gate every other record entry point already uses (ez3Rec2, vo):
-         proceed as an explicitly-UNSCHEDULED visit with a visible warning,
-         block ONLY a proven cross-patient conflict. */
-      if (!exactBindingReady) {
-        if (!opts.record && !opts.generate) { render(); return; }
-        if (!requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')) { render(); return; }
-      }
-      if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
-      if (opts.generate) { var g = genBtnResolve(); if (g) { if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); } }
-      render();
-    })();
+      S.activationRefusalWarn = S.lastWarn;
+      render(); return false;
+    }
+    if (explicitlyUnbound) {
+      S.lastWarn = 'No exact chart is linked to this appointment yet. Recording and note generation still work; the note stays unassigned until you choose the verified chart.';
+      if (opts.record && !requireExactScheduledBinding(a, 'recording', opts)) { render(); return false; }
+      if (opts.generate && !requireExactScheduledBinding(a, 'note generation', opts)) { render(); return false; }
+      if (opts.record && !isRecording()) { var uc = captureBtn(); if (uc) uc.click(); }
+      if (opts.generate) { var ug = genBtnResolve(); if (ug) { if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); ug.click(); } }
+      render(); return true;
+    }
+    var exactBindingReady = installScheduledVisitBinding(a) && exactScheduledBindingMatches(a);
+    S.lastWarn = exactBindingReady ? '' :
+      (scheduledAppointmentId(a)
+        ? 'The visit opened, but MLS could not prove its exact Athena appointment binding. Re-pull this day before using Athena verification or send.'
+        : 'This row is missing its exact Athena appointment ID. Re-pull this day before using Athena verification or send.');
+    /* Owner 2026-07-26: this return used to run for record/generate too, so
+       clicking Record under the missing-appointment-ID warning did NOTHING —
+       while the warning's own text promises it only gates verification/send.
+       Recording and generation are LOCAL (b438 note in
+       installScheduledVisitBinding); route them through the same demotion
+       gate every other record entry point already uses (ez3Rec2, vo):
+       proceed as an explicitly-UNSCHEDULED visit with a visible warning,
+       block ONLY a proven cross-patient conflict. */
+    if (!exactBindingReady) {
+      if (!opts.record && !opts.generate) { render(); return true; }
+      if (!requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation', opts)) { render(); return false; }
+    }
+    if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
+    if (opts.generate) { var g = genBtnResolve(); if (g) { if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); } }
+    render();
+    return true;
   }
 
   /* Type-a-name pick of a patient who is NOT on today's schedule (v3.2):
@@ -22783,12 +22921,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       });
     });
     on('ez3Gen', function () {
+      if (!S.appt || !requireExactScheduledBinding(S.appt, 'note generation')) return;
       var t = $('transcript'), text = t ? (t.value || '').trim() : '';
       if (!text) { toast('Type, paste, or record some visit text first.'); var top = $('ez3Transcript'); if (top) top.focus(); return; }
       var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; }
       if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
     });
-    on('ez3Regen', function () { var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render(); });
+    on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render(); });
     on('ez3Copy', function (btn) {
       var c = $('copyEmrBtn'); if (c) { c.click(); btn.textContent = '✅ Copied'; setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
       else toast('Copy control not found.');
@@ -24407,7 +24546,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     S.mode = 'doctor'; S.screen = 'home'; S.visitDay = todayLocal();
     S.appt = null; S.locked = null; S.phase = 'idle'; S.recStart = 0;
     S.genClickedAt = 0; S.signedAt = 0; S.expanded = null; S.editing = false;
-    S.lastWarn = ''; S.showCount = 5; S.providerFilter = ''; S.providerRef = '';
+    S.lastWarn = ''; S.activationRefusalWarn = ''; S.showCount = 5; S.providerFilter = ''; S.providerRef = '';
     S.staffRange = 'today'; S.customFrom = ''; S.customTo = ''; S.advOpen = false; S.query = '';
     S.autoPull = 'idle'; S.autoPullAt = 0; S.autoPullNote = '';
     safe(function () { if (typeof window._athenaSetVisitBinding === 'function') window._athenaSetVisitBinding(null, true); });
@@ -24448,7 +24587,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     S.visitDay = day;
     S.appt = null; S.locked = null; S.phase = 'idle'; S.recStart = 0;
     S.genClickedAt = 0; S.signedAt = 0; S.expanded = null; S.editing = false;
-    S.lastWarn = ''; S.query = ''; S.showCount = 5;
+    S.lastWarn = ''; S.activationRefusalWarn = ''; S.query = ''; S.showCount = 5;
     safe(function () { if (typeof window._athenaSetVisitBinding === 'function') window._athenaSetVisitBinding(null, true); });
     safe(function () { window.dispatchEvent(new CustomEvent('mls:easy-visit-day-changed', { detail: { day: day, previousDay: previous } })); });
     setEasyMode('doctor', 'home', 'visit-day-change', false);
@@ -24603,23 +24742,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var a = null, list = appts();
         for (var i = 0; i < list.length; i++) { if (list[i] && String(list[i].id) === String(apptId)) { a = list[i]; break; } }
         if (!a || apptDay(a) !== visitDay()) return false;
-        try { if (isFn(window.showView)) window.showView('visit'); } catch (e) {}
-        lockAndStart(a, { record: !!(opts && opts.record) });
-        return true;
+        return lockAndStart(a, { record: !!(opts && opts.record), quiet: !!(opts && opts.quiet) }) !== false;
       },
       record: function () {
         if (!S.appt) return false;
-        if (!requireExactScheduledBinding(S.appt, 'recording')) return false;
+        /* The phone owns its one persistent refusal banner. Quiet suppresses
+           the hidden Easy toast so one mismatch does not render three times. */
+        if (!requireExactScheduledBinding(S.appt, 'recording', { quiet: true })) return false;
         if (isRecording()) return true;
         var c = captureBtn(); if (!c) return false;
         c.click(); return true;
       },
       stopRecording: function () {
-        if (!isRecording()) return false;
-        stopRecordingOnly(); /* transcript stays intact; generation is explicit */
-        return true;
+        /* The visible capture button can settle before a segment, phone mic,
+           or dictation owner releases. Canonical cleanup is intentionally
+           idempotent, so always invoke it even when isRecording() is stale. */
+        return stopRecordingOnly(false); /* transcript stays intact; generation is explicit */
       },
       generate: function () {
+        if (!S.appt || !requireExactScheduledBinding(S.appt, 'note generation', { quiet: true })) return false;
         var g = genBtnResolve(); if (!g) return false;
         if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
         return true;

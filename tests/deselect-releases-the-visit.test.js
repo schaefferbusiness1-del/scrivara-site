@@ -47,12 +47,16 @@ const ownerStart = src.indexOf('function visitBindingOwnsPatient(nextId)');
 assert(ownerStart > 0 && ownerStart < first,
   'the live engine needs an explicit patient-to-visit ownership check before its lifecycle listener');
 const ownerBlock = src.slice(ownerStart, first);
-assert(/a\._pt && a\._patientId/.test(ownerBlock) && /a\.patient_external_id/.test(ownerBlock),
-  'ownership must preserve both a search-picked patient row and an exact linked appointment activation');
-assert(/patientById\(nextId\)/.test(ownerBlock) && /nameMatch\(a\.name, p\.name\)/.test(ownerBlock),
-  'ownership needs the active local patient identity when an appointment has no exact external id');
-assert(/ad && pd && ad !== pd/.test(ownerBlock),
-  'same-name patients must not share a visit when both DOBs disagree');
+assert(/a\._pt && a\._patientId/.test(ownerBlock) && /positiveIdentityEvidence\(a, p\)/.test(ownerBlock),
+  'ownership must preserve an exact local row or require positive demographic identity evidence');
+assert(!/patient_external_id[^\n]*String\(nextId\)/.test(ownerBlock),
+  'an Athena external id must never be compared as though it were an MLS-local patient id');
+assert(/a\._mlsTargetPatientId/.test(ownerBlock) && /String\(a\._mlsTargetPatientId\) !== String\(nextId\)/.test(ownerBlock),
+  'an explicit local chart id contradiction must release the stale visit before demographic fallback');
+assert(/patientById\(nextId\)/.test(ownerBlock),
+  'ownership needs the active local patient identity when an appointment has no canonical local id');
+assert(/positiveIdentityEvidence/.test(ownerBlock),
+  'same-name patients without an agreeing DOB or MRN must not share a visit');
 assert(/S\.locked && S\.locked\.name/.test(ownerBlock) && /S\.locked\.dob/.test(ownerBlock),
   'an inconsistent Easy lock must not preserve an otherwise matching appointment');
 
@@ -72,6 +76,8 @@ assert(/Recording is still running/.test(block),
 /* 3. It releases the engine's binding and returns home. */
 assert(/S\.appt = null; S\.locked = null;/.test(block),
   'the release must drop both the row binding and the lock');
+assert(/S\.activationRefusalWarn = '';/.test(block),
+  'a definitive patient release must clear the sticky activation-refusal warning');
 assert(/S\.screen = 'home'/.test(block),
   'after releasing the patient the engine must land on the home screen');
 

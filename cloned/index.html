@@ -16562,15 +16562,53 @@ function _calNameKeyFL(s){
 function _calResolveLocalPatient(a){
   try{
     if(!a) return null;
-    if(a.patient_external_id && typeof findPatient==='function' && findPatient(a.patient_external_id)) return a.patient_external_id;
+    a._mlsIdentityConflict='';
+    function directLocal(id,requiresSecondFactor){
+      if(!id||typeof findPatient!=='function') return null;
+      var p=findPatient(id); if(!p) return null;
+      var an=_calNameKeyFL(a.name),pn=_calNameKeyFL(p.name);
+      var ad=_calDobKey(a.dob),pd=_calDobKey(p.dob);
+      var am=String(a.mrn||a.athenaId||a.patient_mrn||'').replace(/\D/g,'');
+      var pm=String(p.mrn||p.athenaId||'').replace(/\D/g,'');
+      if((an&&pn&&an!==pn)||(ad&&pd&&ad!==pd)||(am&&pm&&am!==pm)){
+        a._mlsIdentityConflict='local-id-identity-conflict';
+        return null;
+      }
+      /* patient_external_id may be Athena's id, not an MLS-local id. Even if
+         its bytes happen to collide with one local chart, it is compatible
+         only when DOB or MRN independently agrees. _mlsTargetPatientId is the
+         canonical local namespace and does not need that compatibility test. */
+      if(requiresSecondFactor){
+        if(!((ad&&pd&&ad===pd)||(am&&pm&&am===pm))) return null;
+        var compatible=(typeof getPatients==='function'?(getPatients()||[]):[]).filter(function(q){
+          if(!q||q.id==null||_calNameKeyFL(q.name)!==an) return false;
+          var qd=_calDobKey(q.dob),qm=String(q.mrn||q.athenaId||'').replace(/\D/g,'');
+          if((ad&&qd&&ad!==qd)||(am&&qm&&am!==qm)) return false;
+          return !!((ad&&qd&&ad===qd)||(am&&qm&&am===qm));
+        });
+        if(compatible.length!==1||String(compatible[0].id)!==String(p.id)) return null;
+      }
+      a._mlsTargetPatientId=String(p.id!=null?p.id:id);
+      return a._mlsTargetPatientId;
+    }
+    var direct=directLocal(a._mlsTargetPatientId,false); if(direct) return direct;
+    if(a._mlsIdentityConflict) return null;
+    direct=directLocal(a.patient_external_id,true); if(direct) return direct;
+    if(a._mlsIdentityConflict) return null;
     var nm=String(a.name||'').trim().toLowerCase().replace(/\s+/g,' '); if(!nm) return null;
     var db=_calDobKey(a.dob);
+    var mr=String(a.mrn||a.athenaId||a.patient_mrn||'').replace(/\D/g,'');
     var hits=(typeof getPatients==='function'?(getPatients()||[]):[]).filter(function(p){
       if(String((p&&p.name)||'').trim().toLowerCase().replace(/\s+/g,' ')!==nm) return false;
       var pd=_calDobKey(p&&p.dob);
-      return !(db&&pd&&db!==pd);
+      var pm=String((p&&p.mrn)||(p&&p.athenaId)||'').replace(/\D/g,'');
+      if(db&&pd&&db!==pd) return false;
+      if(mr&&pm&&mr!==pm) return false;
+      /* A sole same-name chart is not identity proof. Require an agreeing DOB
+         or MRN before this resolver may promote it to the active chart. */
+      return !!((db&&pd&&db===pd)||(mr&&pm&&mr===pm));
     });
-    if(hits.length===1&&hits[0]&&hits[0].id!=null) return hits[0].id;
+    if(hits.length===1&&hits[0]&&hits[0].id!=null){ a._mlsTargetPatientId=String(hits[0].id); return hits[0].id; }
     /* 2026-07-29: the exact-string compare above cannot reconcile the name
        shapes athenaOne delivers (Last-comma-First, a middle name or initial,
        a Jr/Sr suffix) with a chart stored as First-Last. When it missed,
@@ -16587,28 +16625,82 @@ function _calResolveLocalPatient(a){
         var fb=(typeof getPatients==='function'?(getPatients()||[]):[]).filter(function(p){
           if(!p||p.id==null) return false;
           if(_calDobKey(p.dob)!==db) return false;
+          var pm=String(p.mrn||p.athenaId||'').replace(/\D/g,'');
+          if(mr&&pm&&mr!==pm) return false;
           return _calNameKeyFL(p.name)===want;
         });
-        if(fb.length===1) return fb[0].id;
+        if(fb.length===1){ a._mlsTargetPatientId=String(fb[0].id); return fb[0].id; }
       }
     }
     return null;
   }catch(e){ return null; }
 }
 function calStartVisit(id){
-  var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); }); if(!a) return;
+  var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); });
+  if(!a) return {ok:false,bound:false,patientId:'',reason:'appointment-not-found'};
+  var _localPid=null;
   try{
-    var _localPid=_calResolveLocalPatient(a);
+    _localPid=_calResolveLocalPatient(a);
+    if(a._mlsIdentityConflict){
+      return {ok:false,bound:false,patientId:'',reason:'patient-identity-conflict'};
+    }
+    /* phone-id-1.0.0: a pulled Athena row often carries an external chart id
+       that is not an MLS patient id. When no local row is linked yet, use the
+       same fail-closed name + DOB/MRN matcher as the chart reader. It may make
+       one local placeholder only when a second identity factor is present;
+       duplicate/ambiguous people still return null. Never pass the external id
+       as patientId here because the two id namespaces are not interchangeable. */
+    var _rowDob=String(a.dob||'').trim();
+    var _rowMrn=String(a.mrn||a.athenaId||a.patient_mrn||'').trim();
+    if(!_localPid && (_rowDob||_rowMrn) && typeof _athenaHistoryTargetSnapshot==='function'){
+      var _target=_athenaHistoryTargetSnapshot({
+        name:String((typeof _calLabelOf==='function'?_calLabelOf(a):a.name)||''),
+        dob:_rowDob,
+        mrn:_rowMrn,
+        reason:String(a.reason||''),
+        appointmentId:String(a.athena_appointment_id||a.appointment_id||a.appointmentId||''),
+        scheduleDate:String(a.appt_date||a.day_local||'').slice(0,10)
+      },true);
+      if(_target&&_target.patientId){
+        _localPid=_target.patientId;
+        /* Keep the resolved MLS id beside, never in place of, Athena's id. */
+        a._mlsTargetPatientId=String(_localPid);
+      }
+    }
     if(_localPid && typeof selectPatient==='function'){
       selectPatient(_localPid);
-      if(typeof activePatient==='function' && activePatient() && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); try{ toast('Started a visit for '+_calLabelOf(a)+'.','ok'); }catch(e){} return; }
+      var _active=(typeof activePatient==='function')?activePatient():null;
+      if(_active&&String(_active.id||'')===String(_localPid)&&typeof goNewVisitForPatient==='function'){
+        goNewVisitForPatient();
+        try{ toast('Started a visit for '+_calLabelOf(a)+'.','ok'); }catch(e){}
+        return {ok:true,bound:true,patientId:String(_localPid),reason:'exact-patient'};
+      }
     }
   }catch(e){}
-  // No linked chart yet — start an unassigned visit prefilled with the name + reason.
-  try{ if(typeof showView==='function') showView('visit'); if(typeof newVisit==='function') newVisit(); }catch(e){}
+  /* No exact chart exists (or the match is ambiguous). A prior implementation
+     changed only #patientLabel and left localStorage[activePt] pointing at the
+     previous patient. The visible name looked right while the canonical chart
+     remained wrong, so Start recording correctly raised a false-looking
+     DIFFERENT-patient block. Start a genuinely unassigned encounter instead:
+     clear the old canonical patient before any new visit state is created. */
+  var _started=false;
+  try{
+    if(typeof goNewUnassignedVisit==='function'){ goNewUnassignedVisit(); _started=true; }
+    else{
+      if(typeof newVisit==='function'){
+        if(typeof setActivePtId==='function') setActivePtId('');
+        if(typeof showView==='function') showView('visit');
+        newVisit(); _started=true;
+      }
+    }
+  }catch(e2){}
+  /* A missing/throwing encounter creator is not a visit. Preserve the prior
+     visible fields and let the structured failure receipt own the warning. */
+  if(!_started) return {ok:false,bound:false,patientId:'',reason:'visit-start-failed'};
   try{ var pl=document.getElementById('patientLabel'); if(pl) pl.value=_calLabelOf(a); }catch(e){}
   try{ var cb=document.getElementById('contextBox'); if(cb && a.reason) cb.value=(cb.value?cb.value+'\n':'')+'Reason for visit: '+a.reason; }catch(e){}
   try{ toast('Started a visit for '+_calLabelOf(a)+' — dictate or paste, then Generate.','ok'); }catch(e){}
+  return {ok:true,bound:false,patientId:'',reason:'patient-unresolved'};
 }
 // "Now in your waiting room" — surfaces checked-in/roomed patients on the Visit
 // screen with one-tap Start visit, so the doctor never hunts for who's next.

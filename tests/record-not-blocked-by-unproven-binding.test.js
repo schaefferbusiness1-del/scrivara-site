@@ -28,9 +28,9 @@ const body = connect.slice(start, end);
 
 assert(body.includes('exactBindingReady'),
   'the exact-binding check must still exist - this contract scopes it, never deletes it');
-assert(/if\s*\(!exactBindingReady\)\s*\{\s*\n\s*if\s*\(!opts\.record\s*&&\s*!opts\.generate\)\s*\{\s*render\(\);\s*return;\s*\}/.test(body),
+assert(/if\s*\(!exactBindingReady\)\s*\{\s*\n\s*if\s*\(!opts\.record\s*&&\s*!opts\.generate\)\s*\{\s*render\(\);\s*return true;\s*\}/.test(body),
   'a plain open (no record/generate) keeps the warn-and-stop behavior');
-assert(body.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')"),
+assert(body.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation', opts)"),
   'record/generate under an unproven binding must route through the demotion gate, not return');
 assert(!/if\s*\(!exactBindingReady\)\s*\{\s*render\(\);\s*return;\s*\}/.test(body),
   'the bare blocking return (warn, render, stop - before opts.record) must stay retired');

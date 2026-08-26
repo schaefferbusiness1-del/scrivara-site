@@ -7,6 +7,28 @@ const vm = require('vm');
 
 const connect = fs.readFileSync(path.resolve(__dirname, '..', 'mls-connect.js'), 'utf8');
 
+function identityDobKey(value) {
+  let m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + m[2] + m[3];
+  m = String(value || '').match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  return m ? m[3] + String(m[1]).padStart(2, '0') + String(m[2]).padStart(2, '0') : '';
+}
+function identityMrnKey(value) {
+  const v = value && (value.mrn || value.athenaId || value.athenaPatientId || value.patient_mrn) || '';
+  return String(v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+function positiveEvidence(a, p, patients, nameMatch) {
+  function agrees(candidate) {
+    if (!a || !candidate || !candidate.id || !nameMatch(a.name, candidate.name)) return false;
+    const ad = identityDobKey(a.dob), pd = identityDobKey(candidate.dob);
+    const am = identityMrnKey(a), pm = identityMrnKey(candidate);
+    if ((ad && pd && ad !== pd) || (am && pm && am !== pm)) return false;
+    return !!((ad && pd && ad === pd) || (am && pm && am === pm));
+  }
+  const hits = (patients || []).filter(agrees);
+  return agrees(p) && hits.length === 1 && String(hits[0].id) === String(p.id);
+}
+
 function sliceFunction(name, nextName) {
   const start = connect.indexOf(`function ${name}(`);
   const end = connect.indexOf(`\n  function ${nextName}(`, start);
@@ -19,13 +41,13 @@ const bindSource = sliceFunction('installScheduledVisitBinding', 'lockAndStart')
 const lockSource = sliceFunction('lockAndStart', 'lockAndStartPatient');
 
 assert(lockSource.includes('var exactBindingReady = installScheduledVisitBinding(a) && exactScheduledBindingMatches(a);'), 'scheduled visit activation does not install and read back the exact binding');
-assert(lockSource.indexOf('installScheduledVisitBinding(a)') < lockSource.indexOf('if (opts.record'), 'recording can begin before exact scheduled binding is attempted');
+assert(lockSource.indexOf('installScheduledVisitBinding(a)') < lockSource.lastIndexOf('if (opts.record && !isRecording())'), 'the normally bound recording branch can begin before exact scheduled binding is attempted');
 /* Owner 2026-07-26 ("Record must work regardless of this warning"): an
  * unproven binding DEMOTES record/generate to an explicitly-unscheduled visit
  * through requireExactScheduledBinding instead of silently returning. A plain
  * open (no action requested) still warns and stops. */
-assert(lockSource.includes('if (!opts.record && !opts.generate) { render(); return; }'), 'a plain open must still warn and stop on unproven binding');
-assert(lockSource.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')"), 'record/generate on unproven binding must route through the demotion gate, not silently return');
+assert(lockSource.includes('if (!opts.record && !opts.generate) { render(); return true; }'), 'a plain open must still warn and stop on unproven binding');
+assert(lockSource.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation', opts)"), 'record/generate on unproven binding must route through the demotion gate, not silently return');
 assert(idSource.includes('a.appointmentId || a.appointment_id || a.apptId || a.appt_id || a.athena_appointment_id'), 'binding does not recognize the explicit Athena appointment-id fields');
 assert(!/a\.id\s*\|\|/.test(idSource), 'calendar/source id can still masquerade as Athena appointment id');
 
@@ -43,8 +65,18 @@ function harness(overrides) {
     currentVisitAthenaBinding: overrides.existingBinding,
     apptDay(a) { return String(a.appt_date || a.day_local || '').slice(0, 10); },
     nameMatch(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); },
+    dobConflicts(a, b) {
+      const A = identityDobKey(a), B = identityDobKey(b); return !!(A && B && A !== B);
+    },
+    mrnKey: identityMrnKey,
+    mrnConflicts(a, b) { const A = identityMrnKey(a), B = identityMrnKey(b); return !!(A && B && A !== B); },
+    positiveIdentityEvidence(a, p) {
+      return positiveEvidence(a, p, patient ? [patient] : [], context.nameMatch);
+    },
+    canonicalActivePatient() { return patient; },
     window: {
       activePatient() { return patient; },
+      getPatients() { return patient ? [patient] : []; },
       __mlsCrossDayContext: { current() { return current; } },
       _athenaFreezeVisitBinding(p, meta) {
         calls.freeze.push({ p, meta });
@@ -122,6 +154,13 @@ for (const bad of [
 {
   const h = harness({ patient: { id: 'local-p-2', name: 'Different Patient', dob: '03/04/1980', mrn: '550012' } });
   assert.strictEqual(h.install(row), false, 'wrong active patient was bound to the scheduled appointment');
+  assert.strictEqual(h.calls.set.length, 0);
+}
+
+{
+  const h = harness({ patient: { id: 'local-p-2', name: 'Exact Patient', dob: '03/04/1980', mrn: '550012' } });
+  assert.strictEqual(h.install({ ...row, _mlsTargetPatientId: 'local-p-1' }), false,
+    'explicit local target contradiction was rebound by agreeing demographics');
   assert.strictEqual(h.calls.set.length, 0);
 }
 

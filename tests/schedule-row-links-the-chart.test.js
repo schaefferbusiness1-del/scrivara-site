@@ -31,7 +31,7 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'ScribeFlow.html'), 'utf
 /* ---- 1. the fallback exists and keeps the identity bar high ---- */
 assert(html.includes('function _calNameKeyFL(s){'),
   'the canonical first|last name-shape helper is gone');
-assert(html.includes('if(hits.length===1&&hits[0]&&hits[0].id!=null) return hits[0].id;'),
+assert(html.includes("if(hits.length===1&&hits[0]&&hits[0].id!=null){ a._mlsTargetPatientId=String(hits[0].id); return hits[0].id; }"),
   'the exact-match path must still be tried FIRST');
 const resolver = html.slice(
   html.indexOf('function _calResolveLocalPatient(a){'),
@@ -40,8 +40,10 @@ assert(resolver.indexOf('if(db){') > 0,
   'the canonical fallback must be gated on a known date of birth');
 assert(/_calDobKey\(p\.dob\)!==db/.test(resolver),
   'the fallback must require the date of birth to AGREE');
-assert(/if\(fb\.length===1\) return fb\[0\]\.id;/.test(resolver),
+assert(/if\(fb\.length===1\)\{ a\._mlsTargetPatientId=String\(fb\[0\]\.id\); return fb\[0\]\.id; \}/.test(resolver),
   'the fallback must refuse unless EXACTLY ONE chart matches - never guess between charts');
+assert(resolver.includes('A sole same-name chart is not identity proof'),
+  'the exact-name path can again promote a patient without agreeing DOB/MRN proof');
 
 /* ---- 2. run the real helper ---- */
 const m = html.match(/function _calNameKeyFL\(s\)\{[\s\S]*?\n\}/);

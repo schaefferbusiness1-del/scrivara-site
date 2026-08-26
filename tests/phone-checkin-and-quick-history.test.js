@@ -159,6 +159,7 @@ function makeHarness(opts) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve(opts.presence || null) });
     }
   };
+  if (typeof opts.acctDateKeyOf === 'function') win._acctDateKeyOf = opts.acctDateKeyOf;
   win.window = win; win.document = document;
   win.MutationObserver = function (cb) { this.observe = function () { win._mo = cb; }; this.disconnect = function () {}; };
   win.setTimeout = function (fn, ms) { const id = timers.length; timers.push({ fn, ms, id, live: true, kind: 'timeout' }); return id; };
@@ -236,7 +237,8 @@ function ageOf(dob) {
 
 const READY = {
   id: 77, headline: 'Left knee giving way on stairs for 3 weeks; no red flags.',
-  patient_external_id: 'ext-9', ready_at: new Date(Date.now() - 4 * 60000).toISOString(),
+  patient_external_id: 'ext-9', appointment_id: 'a1', service_day: '2026-08-07',
+  ready_at: new Date(Date.now() - 4 * 60000).toISOString(),
   turns: 11, audited: 'passed', inProgress: false,
   bullets: ['Pain 6/10, worse descending stairs', 'No fever, no night pain'],
   summary: 'Patient reports 3 weeks of left knee instability...',
@@ -244,13 +246,15 @@ const READY = {
 };
 const READY2 = {
   id: 79, headline: 'Right shoulder stiff since a fall in June.',
-  patient_external_id: 'ext-4', ready_at: new Date(Date.now() - 9 * 60000).toISOString(),
+  patient_external_id: 'ext-4', appointment_id: 'a2', service_day: '2026-08-07',
+  ready_at: new Date(Date.now() - 9 * 60000).toISOString(),
   turns: 8, audited: 'passed', inProgress: false,
   bullets: ['Cannot reach overhead'], summary: 'Fell onto an outstretched hand...'
 };
 const FLAGGED_LIVE = {
   id: 78, headline: '⚠ Chest pressure while walking — interview still running.',
-  patient_external_id: 'ext-4', ready_at: new Date(Date.now() - 60000).toISOString(),
+  patient_external_id: 'ext-4', appointment_id: 'a2', service_day: '2026-08-07',
+  ready_at: new Date(Date.now() - 60000).toISOString(),
   turns: 3, audited: null, inProgress: true, flags: ['cardiac'], bullets: ['⚠ Chest pressure on exertion']
 };
 const APPTS = [
@@ -358,9 +362,8 @@ async function main() {
   assert.strictEqual(h.calls.vibrate.length, 1, 'a flag raised mid-interview must reach the doctor early');
   assert(/STILL ANSWERING/.test(h.briefs()),
     'and must NOT be announced as finished — there is no summary to go and read yet');
-  assert.strictEqual(h.pill().hidden, true,
-    'and the unread count must not include it: a badge that sends the doctor to read something that ' +
-    'does not exist yet teaches him to ignore the badge');
+  assert.strictEqual(h.pill().hidden, false,
+    'and a newly flagged live interview must leave a persistent visible route after the one-time vibration');
 
   const done = Object.assign({}, FLAGGED_LIVE, { inProgress: false, summary: 'Cardiac screen...', turns: 9 });
   h.setCheckins([done]);
@@ -372,6 +375,40 @@ async function main() {
     'is the one that never announces.');
   assert.strictEqual(h.pill().hidden, false, 'and the finish is what the badge counts');
   assert(!/STILL ANSWERING/.test(h.briefs()), 'and the finish is rendered as a finish');
+}
+{
+  /* Opening a partial red-flag interview does not mark its future completed
+     summary as read. The same id represents two clinically distinct states. */
+  const h = makeHarness({ checkins: [], appts: APPTS });
+  await h.settle();
+  h.setCheckins([FLAGGED_LIVE]);
+  h.fireWatch();
+  await h.settle();
+  h.tap('ck-open', { 'data-id': '78' });
+  assert.strictEqual(h.pill().hidden, true, 'opening the partial flag did not clear its current unread state');
+  h.api().go('day');
+  h.setCheckins([Object.assign({}, FLAGGED_LIVE, { inProgress: false, summary: 'Completed summary', turns: 9 })]);
+  h.fireWatch();
+  await h.settle();
+  assert.strictEqual(h.pill().hidden, false, 'the completed summary stayed read because its partial flag shared the same id');
+  assert.strictEqual(h.pill().getAttribute('aria-label'), '1 unread patient check-in',
+    'the completed state must become one new readable brief');
+}
+{
+  /* Check-ins are a chronology, not one global unread queue. Missing dates
+     cannot float above today's patients merely because "unknown" sorts after
+     an ISO date lexically. */
+  const today = Object.assign({}, READY, { id: 201, headline: 'Today check-in', service_day: '2026-08-07', ready_at: '' });
+  const older = Object.assign({}, READY2, { id: 202, headline: 'Older check-in', service_day: '2026-08-05', ready_at: '' });
+  const unknown = Object.assign({}, READY2, { id: 203, headline: 'Undated check-in', service_day: '', ready_at: '' });
+  const h = makeHarness({ checkins: [unknown, older, today], appts: APPTS });
+  await h.settle();
+  const s = h.briefs();
+  const iToday = s.indexOf('data-checkin-day="2026-08-07"');
+  const iOlder = s.indexOf('data-checkin-day="2026-08-05"');
+  const iUnknown = s.indexOf('data-checkin-day="unknown"');
+  assert(iToday >= 0 && iOlder > iToday && iUnknown > iOlder,
+    'check-ins must group newest service day first and keep an unavailable date last');
 }
 
 /* ===========================================================================
@@ -390,24 +427,26 @@ async function main() {
     'and state().tab still aliases the screen, because mls-connect.js reads this object');
 
   const p = h.pill();
-  assert.strictEqual(p.hidden, false, 'two ready check-ins must show a count');
-  assert.strictEqual(p.getAttribute('aria-label'), '2 unread patient check-ins',
-    'THE COUNT IS UNREAD, AND IT SAYS SO. Three rows are on screen and one of them is a flagged ' +
-    'interview still running with no summary to read; the number a doctor acts on is 2.');
+  assert.strictEqual(p.hidden, false, 'completed and newly flagged live check-ins must show a persistent count');
+  assert.strictEqual(p.getAttribute('aria-label'), '3 unread patient check-ins',
+    'THE COUNT INCLUDES ACTIONABLE LIVE FLAGS. A vibration can be missed, so the live flagged row must keep a visible route.');
 
   h.tap('ck-open', { 'data-id': '77' });
-  assert.strictEqual(h.pill().getAttribute('aria-label'), '1 unread patient check-in',
+  assert.strictEqual(h.pill().getAttribute('aria-label'), '2 unread patient check-ins',
     'READING ONE DROPS IT. ph2 counted rows, so opening a brief changed nothing and the badge was ' +
     'still 5 at noon.');
-  assert(/1 check-in</.test(h.pill().innerHTML), 'and one is singular');
+  assert(/2 check-ins</.test(h.pill().innerHTML), 'and the visible count matches its label');
 
   /* Closing it again is not un-reading it. */
   h.tap('ck-open', { 'data-id': '77' });
-  assert.strictEqual(h.pill().getAttribute('aria-label'), '1 unread patient check-in',
+  assert.strictEqual(h.pill().getAttribute('aria-label'), '2 unread patient check-ins',
     'collapsing a brief he has already read must not resurrect the badge');
 
   h.tap('ck-open', { 'data-id': '79' });
-  assert.strictEqual(h.pill().hidden, true, 'and reading the last one clears the pill entirely');
+  assert.strictEqual(h.pill().getAttribute('aria-label'), '1 unread patient check-in',
+    'the flagged live interview remains visibly outstanding after completed briefs are read');
+  h.tap('ck-open', { 'data-id': '78' });
+  assert.strictEqual(h.pill().hidden, true, 'and reading the final flagged row clears the pill entirely');
 
   /* Clearing the COUNT must not delete the BRIEFS. */
   const s = h.briefs();
@@ -538,6 +577,94 @@ async function main() {
     'THE ONE THAT MATTERS: the other patient\'s intake must not appear in this room');
 }
 {
+  /* The same patient may have many visits. The active encounter gets its own
+     intake; an older ready row must never be reused merely because the patient
+     id is the same. Exact appointment echo outranks chronology. */
+  const oldSamePatient = Object.assign({}, READY, {
+    id: 177, appointment_id: 'old-a1', service_day: '2026-08-05',
+    ready_at: '2026-08-05T13:00:00Z', headline: 'OLD SAME PATIENT CHECK-IN'
+  });
+  const currentSamePatient = Object.assign({}, READY, {
+    id: 178, appointment_id: 'a1', service_day: '2026-08-07',
+    ready_at: '2026-08-07T13:00:00Z', headline: 'CURRENT SAME PATIENT CHECK-IN'
+  });
+  const h = makeHarness({
+    checkins: [oldSamePatient, currentSamePatient], appts: APPTS,
+    snapshot: { active: MARCUS, phase: 'idle' }
+  });
+  await h.settle();
+  h.api().go('visit');
+  const s = h.screen();
+  assert(/CURRENT SAME PATIENT CHECK-IN/.test(s), 'active visit did not choose its exact echoed check-in');
+  assert(!/OLD SAME PATIENT CHECK-IN/.test(s), 'older same-patient check-in leaked into the new visit');
+}
+{
+  /* Two legacy check-ins for two same-day visits have no exact encounter echo.
+     Newest is not identity; hide both rather than guess. */
+  const legacyOne = Object.assign({}, READY, {
+    id: 181, appointment_id: '', service_day: '2026-08-07',
+    ready_at: '2026-08-07T13:00:00Z', headline: 'AMBIGUOUS SAME-DAY ONE'
+  });
+  const legacyTwo = Object.assign({}, READY, {
+    id: 182, appointment_id: '', service_day: '2026-08-07',
+    ready_at: '2026-08-07T15:00:00Z', headline: 'AMBIGUOUS SAME-DAY TWO'
+  });
+  const h = makeHarness({
+    checkins: [legacyOne, legacyTwo], appts: APPTS,
+    snapshot: { active: MARCUS, phase: 'idle' }
+  });
+  await h.settle();
+  h.api().go('visit');
+  const s = h.screen();
+  assert(!/AMBIGUOUS SAME-DAY/.test(s),
+    'phone guessed between two same-patient same-day check-ins without appointment ids');
+}
+{
+  /* Even one legacy check-in is ambiguous when that patient has two schedule
+     encounters on the same service day. Count encounters, not check-in rows. */
+  const legacy = Object.assign({}, READY, {
+    id: 183, appointment_id: '', service_day: '2026-08-07',
+    ready_at: '2026-08-07T13:00:00Z', headline: 'ONE CHECK-IN TWO VISITS'
+  });
+  const secondMarcusVisit = Object.assign({}, APPTS[0], { id: 'a3', time: '3:00 PM' });
+  const h = makeHarness({
+    checkins: [legacy], appts: [APPTS[0], secondMarcusVisit, APPTS[1]],
+    snapshot: { active: MARCUS, phase: 'idle' }
+  });
+  await h.settle();
+  h.api().go('visit');
+  assert(!/ONE CHECK-IN TWO VISITS/.test(h.screen()),
+    'one no-echo check-in leaked across two same-patient same-day appointments');
+}
+{
+  /* Opening an older grouped brief must not offer a button that opens today's
+     different encounter for the same patient. */
+  const oldSamePatient = Object.assign({}, READY, {
+    id: 179, appointment_id: 'old-a1', service_day: '2026-08-05',
+    ready_at: '2026-08-05T13:00:00Z', headline: 'OLDER GROUPED BRIEF'
+  });
+  const h = makeHarness({ checkins: [oldSamePatient], appts: APPTS });
+  await h.settle();
+  h.api().go('checkins');
+  h.tap('ck-open', { 'data-id': '179' });
+  assert(!/Open Marcus.*visit/.test(h.bar()),
+    'older same-patient brief offered to open today\'s different appointment');
+}
+{
+  /* Timestamps are grouped in the account's timezone, not raw UTC. */
+  const nearMidnightUtc = Object.assign({}, READY, {
+    id: 180, service_day: '', visit_day: '', appt_date: '', day_local: '',
+    ready_at: '2026-08-08T00:30:00Z'
+  });
+  const h = makeHarness({
+    checkins: [nearMidnightUtc], appts: APPTS,
+    acctDateKeyOf() { return '2026-08-07'; }
+  });
+  await h.settle();
+  assert(/data-checkin-day="2026-08-07"/.test(h.briefs()),
+    'near-midnight check-in ignored the account-local day converter');
+}
+{
   /* No portal id on the appointment => no match, and nothing shown. A brief
      attached by guesswork is worse than no brief. */
   const h = makeHarness({
@@ -607,6 +734,46 @@ const MARCUS_CHART = {
   h.api().go('visit');
   assert(/Penicillin, Sulfa/.test(h.screen()),
     'a chart with no portal id may still be released — on name AND date of birth together');
+}
+{
+  /* AN EXPLICIT LOCAL ID IS AUTHORITATIVE. If it contradicts the active chart,
+     identical demographics must not reopen the fallback and expose the stale
+     chart's clinical fields. */
+  const stale = Object.assign({}, MARCUS_CHART, { id: 'local-wrong' });
+  const h = makeHarness({
+    chart: stale, notes: CHART_NOTES,
+    appts: [Object.assign({}, APPTS[0], { _mlsTargetPatientId: 'local-expected' }), APPTS[1]],
+    snapshot: { active: MARCUS, phase: 'idle' }
+  });
+  await h.settle();
+  h.api().go('visit');
+  const s = h.screen();
+  assert(/cannot confirm the chart it has open belongs to Marcus Bell/.test(s),
+    'an explicit local-id contradiction must fail closed even when name and DOB agree');
+  assert(!/Penicillin/.test(s) && !/Meloxicam/.test(s),
+    'a stale chart must not leak clinical fields after an explicit local-id contradiction');
+}
+{
+  /* A raw schedule patientId is an Athena-side identifier, not an MLS local
+     chart id. If its value happens to collide with another local chart's id,
+     that collision must not bypass the demographic identity gate. */
+  const other = {
+    id: 'athena-raw-collision', name: 'Different Patient', dob: '1977-09-12', sex: 'F', mrn: 'OTHER-77',
+    allergies: 'Latex secret', meds: 'Other patient medicine', problems: 'Other patient condition',
+    athenaChartImportedAt: '2026-08-01T10:00:00Z'
+  };
+  const h = makeHarness({
+    chart: other, notes: CHART_NOTES,
+    appts: [Object.assign({}, APPTS[0], { patientId: 'athena-raw-collision' }), APPTS[1]],
+    snapshot: { active: MARCUS, phase: 'idle' }
+  });
+  await h.settle();
+  h.api().go('visit');
+  const s = h.screen();
+  assert(/cannot confirm the chart it has open belongs to Marcus Bell/.test(s),
+    'a raw Athena patientId collision must fail closed instead of being trusted as an MLS local id');
+  assert(!/Latex secret/.test(s) && !/Other patient medicine/.test(s) && !/Other patient condition/.test(s),
+    'a raw schedule-id collision must not expose another patient\'s clinical fields');
 }
 {
   /* THE GATE CLOSES: same name, and NOT ONE DATE OF BIRTH between them. A name

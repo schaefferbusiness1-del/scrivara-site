@@ -58,10 +58,26 @@ async function main() {
       window._calAppts = [{
         id: 'upgrade-appt', name: 'Upgrade Patient', dob: '1980-01-01',
         day_local: day, appt_date: day, start_at: new Date().toISOString(),
-        patient_external_id: 'upgrade-patient'
+        appointment_id: 'athena-upgrade-appt', provider: 'Upgrade Provider, MD',
+        patient_external_id: 'athena-upgrade-patient', _mlsTargetPatientId: 'upgrade-patient'
       }];
       window._acctTodayKey = () => day;
       window.showView = () => {};
+      const exactPatient = { id: 'upgrade-patient', name: 'Upgrade Patient', dob: '1980-01-01' };
+      window.activePatient = () => exactPatient;
+      window.getPatients = () => [exactPatient];
+      window.calStartVisit = id => id === 'upgrade-appt'
+        ? { ok: true, bound: true, patientId: exactPatient.id, reason: 'exact-patient' }
+        : { ok: false, bound: false, patientId: '', reason: 'appointment-not-found' };
+      window.currentVisitAthenaBinding = null;
+      window._athenaFreezeVisitBinding = (patient, meta) => ({
+        patient: { patientId: patient.id, name: patient.name, dob: patient.dob },
+        visitContext: meta.visitContext
+      });
+      window._athenaSetVisitBinding = binding => {
+        window.currentVisitAthenaBinding = binding || null;
+        return true;
+      };
 
       const nativeAdd = window.addEventListener.bind(window);
       const nativeRemove = window.removeEventListener.bind(window);

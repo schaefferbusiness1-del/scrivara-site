@@ -115,10 +115,18 @@ const activationRuntime = between(
   easyOwner,
   'canonical Easy activation'
 );
+const patientLifecycleRuntime = between(
+  connectSource,
+  '  function visitBindingOwnsPatient(nextId) {',
+  "  document.addEventListener('click', ez3Click, true);",
+  easyOwner,
+  'canonical Easy active-patient lifecycle'
+);
 const computePhaseRuntime = declaredFunction(connectSource, 'computePhase', easyOwner);
 const bindingNoticeRuntime = declaredFunction(connectSource, 'bindingNotice', easyOwner);
 const easyIdentityRuntime = [
   'normTokens', 'nameMatch', 'dobOf', 'dobKey', 'dobConflicts',
+  'mrnKey', 'mrnConflicts', 'positiveIdentityEvidence',
   'canonicalActivePatient', 'activeName'
 ].map(name => declaredFunction(connectSource, name, easyOwner)).join('\n');
 const remoteRuntime = between(
@@ -155,6 +163,7 @@ function makeEngine(options) {
   let activeId = String(options.activeId || '');
   let currentBinding = null;
   let capturing = false;
+  const eventHandlers = {};
   const receipts = [];
   const calls = {
     capture: 0, generate: 0, newVisit: 0, select: [], clearActive: 0,
@@ -229,8 +238,13 @@ function makeEngine(options) {
       return patient;
     },
     setActivePtId(id) {
+      const previous = activeId;
       activeId = String(id || '');
       if (!activeId) calls.clearActive++;
+      if (String(previous) !== activeId) context.dispatchEvent({
+        type: 'mls:active-patient-changed',
+        detail: { previousId: String(previous || ''), patientId: activeId }
+      });
     },
     selectPatient(id) { calls.select.push(String(id)); activeId = String(id || ''); },
     activePatient,
@@ -240,6 +254,7 @@ function makeEngine(options) {
       resetBaseEncounter();
     },
     goNewUnassignedVisit() {
+      if (options.failUnassigned) throw new Error('synthetic unassigned-start failure');
       context.setActivePtId('');
       context.showView('visit');
       resetBaseEncounter();
@@ -265,7 +280,10 @@ function makeEngine(options) {
     setTimeout(fn) { fn(); return 1; },
     clearTimeout() {},
     setInterval() { return 1; },
-    clearInterval() {}
+    clearInterval() {},
+    addEventListener(type, fn) { (eventHandlers[type] = eventHandlers[type] || []).push(fn); },
+    removeEventListener(type, fn) { eventHandlers[type] = (eventHandlers[type] || []).filter(item => item !== fn); },
+    dispatchEvent(ev) { (eventHandlers[ev && ev.type] || []).slice().forEach(fn => fn(ev)); return true; }
   };
   context.window = context;
   context.window.window = context;
@@ -291,7 +309,7 @@ function makeEngine(options) {
 
   vm.createContext(context);
   vm.runInContext(
-    `${historyTargetRuntime}\n${calRuntime}\n${easyIdentityRuntime}\n${computePhaseRuntime}\n${bindingNoticeRuntime}\n${activationRuntime}\n` +
+    `${historyTargetRuntime}\n${calRuntime}\n${easyIdentityRuntime}\n${computePhaseRuntime}\n${bindingNoticeRuntime}\n${patientLifecycleRuntime}\n${activationRuntime}\n` +
     `this.__remoteHost = {\n${remoteRuntime}\n};\nthis.__engineState = S;`,
     context,
     { filename: 'phone-day-row-real-engine.js' }
@@ -375,6 +393,46 @@ function patient(id, name, dob) {
   return { id, name, dob, source: 'synthetic-phone-regression' };
 }
 
+/* 0. A stale phone row whose appointment vanished returns a structured
+ * appointment-not-found receipt at the engine and leaves the phone on Day. */
+{
+  const selected = patient('pt-vanished', 'Vanished Row', '1970-01-02');
+  const chain = makeChain({
+    rows: [row('row-vanished', 'appt-vanished', selected.name, selected.dob)],
+    patients: [selected], activeId: selected.id
+  });
+  const receipt = chain.engine.context.calStartVisit('missing-row');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(receipt)), {
+    ok: false, bound: false, patientId: '', reason: 'appointment-not-found'
+  }, 'missing appointment did not return the structured failure receipt');
+  chain.engine.rows.splice(0, chain.engine.rows.length); /* rendered phone row is now stale */
+  chain.phone.tap('open', { 'data-id': 'row-vanished' });
+  assert.strictEqual(chain.phone.api().state().screen, 'day', 'phone left Day for a vanished appointment row');
+  assert.strictEqual(chain.engine.calls.newVisit, 0, 'vanished appointment reset/started an encounter');
+  assert.deepStrictEqual(chain.engine.calls.showView, [], 'vanished appointment moved the desktop to Visit before activation succeeded');
+}
+
+/* 0b. A failed unassigned encounter creator must not repaint prior encounter
+ * fields or emit a success toast, and the phone must remain on Day. */
+{
+  const prior = patient('pt-unassigned-failure-prior', 'Prior Existing', '1970-02-02');
+  const chain = makeChain({
+    rows: [row('row-unassigned-failure', 'appt-unassigned-failure', 'Unresolved Target', '')],
+    patients: [prior], activeId: prior.id, failUnassigned: true
+  });
+  chain.engine.elements.patientLabel.value = 'Existing patient label';
+  chain.engine.elements.contextBox.value = 'Existing encounter context';
+  chain.phone.tap('open', { 'data-id': 'row-unassigned-failure' });
+  const receipt = chain.engine.receipts[chain.engine.receipts.length - 1];
+  assert.strictEqual(receipt && receipt.reason, 'visit-start-failed', 'failed encounter creator returned the wrong structured receipt');
+  assert.strictEqual(chain.phone.api().state().screen, 'day', 'failed encounter creator moved the phone into Visit');
+  assert.strictEqual(chain.engine.elements.patientLabel.value, 'Existing patient label', 'failed encounter creator repainted the prior patient label');
+  assert.strictEqual(chain.engine.elements.contextBox.value, 'Existing encounter context', 'failed encounter creator changed prior context');
+  assert.strictEqual(chain.engine.calls.toasts.some(t => /Started a visit/i.test(t.message)), false,
+    'failed encounter creator emitted a false success toast');
+  assert.deepStrictEqual(chain.engine.calls.showView, [], 'failed encounter creator moved the desktop to Visit');
+}
+
 function tapOpen(chain, id) {
   assert(chain.phone.screen().includes(`data-id="${id}"`), `phone Day did not render row ${id}`);
   chain.phone.tap('open', { 'data-id': id });
@@ -408,6 +466,8 @@ function assertBoundReceipt(receipt, patientId, label) {
   });
   const receipt = tapOpen(chain, 'row-heal');
   assertBoundReceipt(receipt, selected.id, 'stale-chart heal');
+  assert.strictEqual(chain.engine.rows[0]._mlsTargetPatientId, selected.id,
+    'verified compatibility id was not stamped into the canonical MLS-local namespace');
   assert.strictEqual(chain.engine.activePatient().id, selected.id, 'Day row left the prior chart active');
   tapRecord(chain);
   assert.strictEqual(chain.engine.calls.capture, 1, 'healed target did not reach the real capture button');
@@ -442,6 +502,33 @@ function assertBoundReceipt(receipt, patientId, label) {
   assert.strictEqual(chain.engine.calls.capture, 1, 'Last, First / First Last match was blocked before recording');
 }
 
+/* 3b. A sole same-name chart is not patient identity. Without DOB, MRN, or an
+ * exact local id, the row must remain unbound even when only one chart shares
+ * the name. */
+{
+  const sameNameOnly = patient('pt-name-only', 'Alex Example', '1988-08-18');
+  const chain = makeChain({
+    rows: [row('row-name-only', 'appt-name-only', sameNameOnly.name, '')],
+    patients: [sameNameOnly], activeId: sameNameOnly.id
+  });
+  const receipt = tapOpen(chain, 'row-name-only');
+  assert.strictEqual(receipt.bound, false, 'name-only schedule row was promoted to an exact local patient');
+  assert.strictEqual(receipt.patientId, '', 'name-only schedule row leaked the same-name chart id');
+  assert.strictEqual(chain.engine.activePatient(), null, 'name-only resolution left the same-name chart active');
+}
+
+/* 3c. One agreeing second factor cannot override a contradictory one. */
+{
+  const chart = Object.assign(patient('pt-mrn-conflict', 'Taylor Conflict', '1980-02-03'), { mrn: '111111' });
+  const chain = makeChain({
+    rows: [row('row-mrn-conflict', 'appt-mrn-conflict', chart.name, chart.dob, { mrn: '222222' })],
+    patients: [chart], activeId: chart.id
+  });
+  const receipt = tapOpen(chain, 'row-mrn-conflict');
+  assert.strictEqual(receipt.bound, false, 'agreeing name/DOB overrode a contradictory MRN');
+  assert.strictEqual(chain.engine.activePatient(), null, 'MRN-conflicting chart remained active');
+}
+
 /* 4. No exact local chart is an ordinary unbound local encounter. The stale
  * prior chart must be explicitly cleared before the label is prefilled; Easy
  * then demotes only the schedule binding and the phone still records locally. */
@@ -468,6 +555,12 @@ function assertBoundReceipt(receipt, patientId, label) {
   assert.strictEqual(chain.engine.binding(), null, 'unbound recording retained an Athena appointment binding');
   assert.strictEqual(chain.engine.calls.toasts.length, toastsBeforeRecord,
     'quiet phone recording emitted a second engine toast instead of letting the phone own the warning');
+  chain.engine.remote.stopRecording();
+  const toastsBeforeGenerate = chain.engine.calls.toasts.length;
+  assert.strictEqual(chain.engine.remote.generate(), true, 'unbound phone generation was refused');
+  assert.strictEqual(chain.engine.calls.generate, 1, 'unbound phone generation did not reach the real Generate control');
+  assert.strictEqual(chain.engine.calls.toasts.length, toastsBeforeGenerate,
+    'quiet phone generation emitted a second engine toast instead of letting the phone own the warning');
 
   const warning = chain.engine.remote.snapshot().warn;
   assert(warning && /not linked|unscheduled/i.test(warning), 'unbound recording has no visible explanatory warning');
@@ -486,11 +579,61 @@ function assertBoundReceipt(receipt, patientId, label) {
     rows: [row('row-conflict', 'appt-conflict', chart.name, '1981-02-03', { patient_external_id: chart.id })],
     patients: [chart], activeId: chart.id
   });
-  tapOpen(chain, 'row-conflict');
-  tapRecord(chain);
+  chain.phone.tap('open', { 'data-id': 'row-conflict' });
+  assert.strictEqual(chain.phone.api().state().screen, 'day',
+    'phone left Day after the activation identity check had already failed');
+  assert.strictEqual(chain.engine.calls.newVisit, 0,
+    'identity-conflicting Open reset/started an encounter before reporting failure');
   assert.strictEqual(chain.engine.calls.capture, 0, 'same name with a different DOB reached recording');
+  assert.deepStrictEqual(chain.engine.calls.showView, [], 'identity-conflicting Open moved the desktop to Visit before validation');
   assert.strictEqual(chain.engine.capturing(), false, 'contradictory identity entered recording state');
   assert(/different patient/i.test(chain.engine.remote.snapshot().warn), 'contradictory identity block did not name the cause');
+  assert(/could not open|different patient/i.test(chain.phone.noteText()),
+    'phone gave no persistent explanation for the refused open');
+  const warning = chain.engine.remote.snapshot().warn;
+  const visible = chain.phone.screen() + '\n' + chain.phone.action() + '\n' + chain.phone.noteText();
+  assert.strictEqual(visible.split(warning).length - 1, 1,
+    'contradictory identity block rendered more than one visible phone warning');
+  chain.engine.context.setActivePtId('');
+  assert.strictEqual(chain.engine.remote.snapshot().warn, '',
+    'a canonical patient release left the failed-activation warning stuck on Home');
+}
+
+/* 5b. A refused row is not the active Easy visit. Preserve the prior visit's
+ * selection and completed-note state while reporting the new refusal. */
+{
+  const chart = patient('pt-prior-kept', 'Morgan Same', '1980-02-03');
+  const prior = row('row-prior-kept', 'appt-prior-kept', chart.name, chart.dob,
+    { patient_external_id: chart.id, time: '8:00 AM' });
+  const conflict = row('row-conflict-after-note', 'appt-conflict-after-note', chart.name, '1981-02-03',
+    { patient_external_id: chart.id, time: '9:00 AM' });
+  const chain = makeChain({ rows: [prior, conflict], patients: [chart], activeId: chart.id });
+  assertBoundReceipt(tapOpen(chain, prior.id), chart.id, 'prior visit before refused switch');
+  chain.engine.seedEncounter();
+  const before = {
+    activeId: chain.engine.remote.snapshot().active.id,
+    phase: chain.engine.state.phase,
+    recStart: chain.engine.state.recStart,
+    genClickedAt: chain.engine.state.genClickedAt,
+    signedAt: chain.engine.state.signedAt,
+    note: chain.engine.elements.noteBox.value,
+    transcript: chain.engine.elements.transcript.value,
+    resets: chain.engine.calls.newVisit
+  };
+  chain.phone.api().go('day');
+  chain.phone.tap('open', { 'data-id': conflict.id });
+  const after = chain.engine.remote.snapshot();
+  assert.strictEqual(after.active.id, before.activeId,
+    'refused row replaced the prior Easy appointment despite saying nothing was started');
+  assert.strictEqual(chain.engine.state.phase, before.phase, 'refused row erased the prior visit phase');
+  assert.strictEqual(chain.engine.state.recStart, before.recStart, 'refused row erased the prior recording clock');
+  assert.strictEqual(chain.engine.state.genClickedAt, before.genClickedAt, 'refused row erased the prior generation timestamp');
+  assert.strictEqual(chain.engine.state.signedAt, before.signedAt, 'refused row erased the prior sign timestamp');
+  assert.strictEqual(chain.engine.elements.noteBox.value, before.note, 'refused row erased the prior generated note');
+  assert.strictEqual(chain.engine.elements.transcript.value, before.transcript, 'refused row erased the prior transcript');
+  assert.strictEqual(chain.engine.calls.newVisit, before.resets, 'refused row reset the prior encounter');
+  assert(/different patient/i.test(after.warn),
+    `refused switch lost its visible wrong-patient warning (actual: ${JSON.stringify(after.warn)})`);
 }
 
 /* 6. Reusing the same patient for a later appointment is still a new
@@ -520,6 +663,61 @@ function assertBoundReceipt(receipt, patientId, label) {
   assert.strictEqual(chain.engine.state.signedAt, 0, 'same-patient second appointment kept the prior sign state');
   assert.strictEqual(chain.engine.binding().visitContext.appointmentId, 'appt-repeat-2', 'second appointment kept the first encounter binding');
   assert.deepStrictEqual(chain.phone.barActs(), ['record'], 'fresh same-patient appointment did not return the phone to Start recording');
+}
+
+/* 7. After an exact row is stamped to local A, a same-demographics switch to
+ * local B must release the Easy visit instead of preserving it by fallback. */
+{
+  const localA = patient('local-a', 'Jordan Same', '1984-04-14');
+  const localB = patient('local-b', 'Jordan Same', '1984-04-14');
+  const scheduled = row('row-jordan', 'appt-jordan', localA.name, localA.dob,
+    { patient_external_id: 'athena-jordan', _mlsTargetPatientId: localA.id });
+  const chain = makeChain({ rows: [scheduled], patients: [localA, localB], activeId: localA.id });
+  assertBoundReceipt(tapOpen(chain, scheduled.id), localA.id, 'canonical local-A binding');
+  assert.strictEqual(chain.engine.rows[0]._mlsTargetPatientId, localA.id, 'row was not stamped with canonical local target');
+  chain.engine.context.setActivePtId(localB.id);
+  assert.strictEqual(chain.engine.remote.snapshot().active, null,
+    'same-demographics local-B switch preserved local-A appointment binding');
+  assert.strictEqual(chain.engine.state.locked, null, 'stale Easy patient lock survived local-ID contradiction');
+}
+
+/* 8. An Athena external id is not an MLS-local id. Coincidental byte equality
+ * with a same-name local chart cannot become identity without DOB or MRN. */
+{
+  const collision = patient('shared-id', 'Avery Collision', '1989-09-19');
+  const chain = makeChain({
+    rows: [row('row-external-collision', 'appt-external-collision', collision.name, '',
+      { patient_external_id: collision.id })],
+    patients: [collision], activeId: collision.id
+  });
+  const receipt = tapOpen(chain, 'row-external-collision');
+  assert.strictEqual(receipt.bound, false, 'external-id collision was treated as an MLS-local patient id');
+  assert.strictEqual(receipt.patientId, '', 'external-id collision leaked a local patient id');
+  assert.strictEqual(chain.engine.rows[0]._mlsTargetPatientId, undefined,
+    'external-id collision was stamped into the canonical MLS-local namespace');
+  assert.strictEqual(chain.engine.activePatient(), null,
+    'external-id collision preserved the coincidental local chart as active');
+}
+
+/* 9. Name+DOB is evidence only when it identifies one local chart. After an
+ * ambiguous open stays unbound, manually selecting either duplicate must not
+ * retain or exact-bind that schedule row. */
+{
+  const localA = patient('duplicate-a', 'Sam Duplicate', '1986-06-16');
+  const localB = patient('duplicate-b', 'Sam Duplicate', '1986-06-16');
+  const chain = makeChain({
+    rows: [row('row-duplicate', 'appt-duplicate', localA.name, localA.dob)],
+    patients: [localA, localB], activeId: localA.id
+  });
+  const receipt = tapOpen(chain, 'row-duplicate');
+  assert.strictEqual(receipt.bound, false, 'duplicate name+DOB charts produced an exact activation');
+  assert.strictEqual(chain.engine.remote.snapshot().active.id, 'row-duplicate',
+    'ambiguous row did not remain available as an unbound local encounter');
+  chain.engine.context.setActivePtId(localA.id);
+  assert.strictEqual(chain.engine.remote.snapshot().active, null,
+    'manual selection of one duplicate retained the ambiguous schedule row');
+  assert.strictEqual(chain.engine.binding(), null,
+    'manual selection of one duplicate installed an exact Athena binding');
 }
 
 console.log('PASS phone Day-row identity/recording chain: stale charts heal to exact targets; unresolved targets clear to one-warning unbound recording; contradictory DOB stays blocked; ISO/US DOB and Last, First names match safely; and a second appointment for the same patient resets encounter state');

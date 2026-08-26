@@ -673,10 +673,11 @@
     if (t) t.textContent = S.note.text;
     noteEl.className = 'ph3-show' + (S.note.kind === 'bad' ? ' ph3-bad' : '');
   }
-  /* A refusal is said BOTH ways: the toast catches the eye now, the sticky line
-     is still there in ten seconds. One without the other is how "nothing
-     happened when I pressed it" happens. */
-  function refuse(text) { toast(text, 'err'); say(text, 'bad'); }
+  /* phone-id-1.0.0: one refusal, one place. The former toast + sticky banner +
+     inline engine card rendered the same mismatch three times and obscured the
+     patient card and Record control. The persistent, closeable banner is the
+     phone owner; engine calls made through this surface are quiet. */
+  function refuse(text) { say(text, 'bad'); }
 
   /* ---------------------------------------------------------------------------
    * DID IT ACTUALLY HAPPEN?
@@ -703,7 +704,23 @@
     if (/still work|works normally|will stay in MLS/i.test(w)) return '';
     return w;
   }
-  function expectPhase(wanted, ms, message) {
+  /* Recording can legitimately remain idle while the encounter-consent sheet
+     is open. It can also fail before Easy has a phase to report (notably when
+     this browser has no SpeechRecognition); that owner writes the exact reason
+     into #micWarn. The phone must preserve those facts instead of replacing
+     them 1.5 seconds later with a guessed microphone-permission diagnosis. */
+  function captureStartPending() {
+    if (safe(function () { return !!window._mlsConsentAsk; }, false)) return true;
+    var ask = $('_mlsAskMsg');
+    return !!(ask && /patient consent required|saving consent/i.test(String(ask.textContent || '')));
+  }
+  function captureStartExplanation() {
+    var w = $('micWarn');
+    if (!w || (w.style && w.style.display === 'none')) return '';
+    var span = safe(function () { return w.querySelector ? w.querySelector('span') : null; }, null);
+    return String((span && span.textContent) || w.textContent || '').replace(/^\s*[\u26A0\uFE0F]+\s*/, '').trim();
+  }
+  function expectPhase(wanted, ms, message, opts) {
     clearConfirm();
     confirmTimer = setTimeout(function () {
       confirmTimer = null;
@@ -711,8 +728,10 @@
       var sn = snap();
       var p = sn ? String(sn.phase || '') : '';
       for (var i = 0; i < wanted.length; i++) if (p === wanted[i]) return;
+      if (opts && opts.pending && opts.pending()) return;
       /* The engine's own sentence wins when it has one. */
-      refuse(warnAsRefusal(sn) || message);
+      var exact = opts && opts.explain ? opts.explain() : '';
+      refuse(warnAsRefusal(sn) || exact || message);
       S.lastSig = ''; render(true);
     }, ms);
   }
@@ -992,10 +1011,11 @@
     for (var i = 0; i < r.length; i++) if (r[i] && !r[i].inProgress) out.push(r[i]);
     return out;
   }
-  /* UNREAD only. A flagged interview still running has no summary to go and
-     read, so it is not counted -- it is shown, in red, in the list. */
+  /* Include a newly flagged live interview in the persistent header alert.
+     It previously only vibrated and then sorted to the bottom, so a doctor who
+     missed the vibration had no visible route to the urgent partial brief. */
   function ckUnread() {
-    var n = 0, r = ckReady();
+    var n = 0, r = ckRows();
     for (var i = 0; i < r.length; i++) if (!S.ckRead[String(r[i].id)]) n++;
     return n;
   }
@@ -1041,6 +1061,18 @@
           S.ckErr = '';
           var list = (d.checkins || d.items || d.rows || []);
           if (list.length == null) list = [];
+          /* Reading an early red-flag card does not read the later completed
+             summary. When the same intake crosses run -> done, reopen its
+             unread state so the finished clinical brief is visibly new. */
+          var priorById = {};
+          for (var pi = 0; pi < ckRows().length; pi++) {
+            var prior = ckRows()[pi];
+            if (prior && prior.id != null) priorById[String(prior.id)] = prior;
+          }
+          for (var li = 0; li < list.length; li++) {
+            var next = list[li], old = next && priorById[String(next.id)];
+            if (old && old.inProgress && !next.inProgress) delete S.ckRead[String(next.id)];
+          }
           var firstAnswer = !S.ckAt;
           var fresh = [];
           for (var i = 0; i < list.length; i++) {
@@ -1151,11 +1183,61 @@
    * "waiting in MLS on the office computer" -- they were not, they were already
    * downloaded onto the phone he was holding.
    * =========================================================================*/
+  function ckTimeMs(c) {
+    var raw = String((c && (c.ready_at || c.flagged_at || c.updated_at || c.created_at || c.started_at)) || '').trim();
+    if (!raw) return 0;
+    if (!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(raw)) raw = raw.replace(' ', 'T') + 'Z';
+    return safe(function () { var n = Date.parse(raw); return isNaN(n) ? 0 : n; }, 0);
+  }
+  function ckDayKey(c) {
+    var explicit = String((c && (c.service_day || c.visit_day || c.appt_date || c.day_local)) || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(explicit)) return explicit;
+    var ms = ckTimeMs(c);
+    if (!ms) return 'unknown';
+    return safe(function () {
+      if (typeof window._acctDateKeyOf === 'function') return String(window._acctDateKeyOf(new Date(ms)) || 'unknown');
+      var d = new Date(ms);
+      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    }, 'unknown');
+  }
+  function ckDayLabel(key) {
+    if (key === 'unknown') return 'Earlier check-ins';
+    var today = safe(function () { return typeof window._acctTodayKey === 'function' ? String(window._acctTodayKey()) : ''; }, '');
+    var p = key.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0);
+    var label = safe(function () { return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }); }, key);
+    if (key === today) return 'Today · ' + label;
+    return label;
+  }
+  function ckAppointmentId(c) {
+    return String((c && (c.appointmentId || c.appointment_id || c.apptId || c.appt_id || c.athena_appointment_id)) || '').trim();
+  }
+  function rowAppointmentId(a) {
+    return String((a && (a.appointmentId || a.appointment_id || a.apptId || a.appt_id || a.athena_appointment_id || rowId(a))) || '').trim();
+  }
+  function rowDayKey(a, fallback) {
+    var explicit = String((a && (a.service_day || a.visit_day || a.appt_date || a.day_local || a.date)) || '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(explicit) ? explicit : String(fallback || '').slice(0, 10);
+  }
+  /* Exact appointment echo wins. Older same-patient check-ins must never be
+     reused for a new encounter; when the endpoint has not echoed an
+     appointment id yet, service day is the minimum acceptable boundary. */
+  function ckAppointmentRank(c, a, fallbackDay) {
+    var checkinAppointment = ckAppointmentId(c);
+    if (checkinAppointment) return checkinAppointment === rowAppointmentId(a) ? 2 : 0;
+    var checkinDay = ckDayKey(c), appointmentDay = rowDayKey(a, fallbackDay);
+    return checkinDay !== 'unknown' && appointmentDay && checkinDay === appointmentDay ? 1 : 0;
+  }
   function ckSorted() {
     return ckRows().slice().sort(function (a, b) {
+      var da = ckDayKey(a), db = ckDayKey(b);
+      if (da !== db) {
+        if (da === 'unknown') return 1;
+        if (db === 'unknown') return -1;
+        return da < db ? 1 : -1; /* newest service day first; unknown last */
+      }
       var ua = S.ckRead[String(a.id)] ? 1 : 0, ub = S.ckRead[String(b.id)] ? 1 : 0;
-      if (ua !== ub) return ua - ub;
-      return (Date.parse(b && b.ready_at) || 0) - (Date.parse(a && a.ready_at) || 0);
+      if (ua !== ub) return ua - ub;          /* unread first within its day */
+      return ckTimeMs(b) - ckTimeMs(a);
     });
   }
   function checkinsScreen() {
@@ -1179,7 +1261,15 @@
     var unread = ckUnread();
     h += '<p class="ph3-sect">' + r.length + ' check-in' + (r.length === 1 ? '' : 's') +
       (unread ? ' &middot; ' + unread + ' unread' : '') + '</p>';
-    for (var i = 0; i < r.length; i++) h += ckCard(r[i]);
+    var lastDay = '';
+    for (var i = 0; i < r.length; i++) {
+      var day = ckDayKey(r[i]);
+      if (day !== lastDay) {
+        lastDay = day;
+        h += '<p class="ph3-sect" data-checkin-day="' + esc(day) + '">' + esc(ckDayLabel(day)) + '</p>';
+      }
+      h += ckCard(r[i]);
+    }
     return h;
   }
   /* The schedule row a brief belongs to, matched on the PORTAL ID through the
@@ -1188,16 +1278,23 @@
   function ckRowFor(c) {
     var ext = String((c && c.patient_external_id) || '').trim();
     if (!ext) return null;
-    var list = rows();
+    var list = rows(), ranked = [];
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
-      if (a && String(a.patient_external_id || '') === ext) return a;
       /* snapshot.today rows carry only id/name/dob/time, so fall back to the
          raw appointment that shares the id. */
       var raw = rawApptById(rowId(a));
-      if (raw && String(raw.patient_external_id || '') === ext) return a;
+      var owner = raw || a;
+      if (!owner || String(owner.patient_external_id || '') !== ext) continue;
+      var rank = ckAppointmentRank(c, owner, today());
+      if (rank) ranked.push({ row: a, rank: rank });
     }
-    return null;
+    ranked.sort(function (a, b) { return b.rank - a.rank; });
+    if (!ranked.length) return null;
+    if (ranked[0].rank === 2) return ranked[0].row;
+    /* A patient can have two visits on one day. Without an appointment echo,
+       more than one candidate is ambiguous and must not produce an Open button. */
+    return ranked.length === 1 ? ranked[0].row : null;
   }
   function rawApptById(id) {
     if (!id) return null;
@@ -1205,17 +1302,35 @@
     for (var i = 0; i < ap.length; i++) if (ap[i] && String(rowId(ap[i])) === String(id)) return ap[i];
     return null;
   }
-  /* On a visit: only THIS patient's check-in, above their history. */
-  function ckForPatient(ext) {
-    var key = String(ext || '').trim();
-    if (!key) return '';
-    var r = ckRows();
-    for (var i = 0; i < r.length; i++) {
-      if (r[i] && String(r[i].patient_external_id || '') === key) {
-        return '<p class="ph3-sect">Their check-in</p>' + ckCard(r[i]);
-      }
+  function samePatientAppointmentCount(ext, day) {
+    var list = safe(function () { return window._calAppts || []; }, []) || [];
+    if (!list.length) list = rows();
+    var seen = {}, count = 0;
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (!a || String(a.patient_external_id || '') !== String(ext || '')) continue;
+      if (rowDayKey(a, today()) !== day) continue;
+      var identity = rowAppointmentId(a) || rowId(a);
+      if (!identity || seen[identity]) continue;
+      seen[identity] = 1; count++;
     }
-    return '';
+    return count;
+  }
+  /* On a visit: only THIS patient's check-in, above their history. */
+  function ckForPatient(appt) {
+    var key = String((appt && appt.patient_external_id) || '').trim();
+    if (!key) return '';
+    var r = ckRows(), matches = [];
+    for (var i = 0; i < r.length; i++) {
+      if (!r[i] || String(r[i].patient_external_id || '') !== key) continue;
+      var rank = ckAppointmentRank(r[i], appt, today());
+      if (rank) matches.push({ checkin: r[i], rank: rank });
+    }
+    matches.sort(function (a, b) { return b.rank - a.rank || ckTimeMs(b.checkin) - ckTimeMs(a.checkin); });
+    if (!matches.length) return '';
+    var top = matches[0];
+    if (top.rank !== 2 && (matches.length !== 1 || samePatientAppointmentCount(key, ckDayKey(top.checkin)) !== 1)) return '';
+    return '<p class="ph3-sect">Their check-in</p>' + ckCard(top.checkin);
   }
 
   /* ===========================================================================
@@ -1437,6 +1552,26 @@
     return null;
   }
   function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function nameKeyFL(s) {
+    var raw = String(s || '').toLowerCase().replace(/[.]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!raw) return '';
+    raw = raw.replace(/\b(jr|sr|ii|iii|iv|md|do|np|pa)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    var first = '', last = '';
+    if (raw.indexOf(',') >= 0) {
+      var parts = raw.split(','); last = String(parts[0] || '').trim().split(' ')[0] || '';
+      first = String(parts[1] || '').trim().split(' ')[0] || '';
+    } else {
+      var words = raw.split(' ').filter(Boolean); if (words.length < 2) return '';
+      first = words[0]; last = words[words.length - 1];
+    }
+    return first && last ? first + '|' + last : '';
+  }
+  function dobKey(v) {
+    var s = String(v == null ? '' : v).trim(), m;
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + m[2] + m[3];
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    return m ? m[3] + ('0' + m[1]).slice(-2) + ('0' + m[2]).slice(-2) : '';
+  }
 
   /* THE IDENTITY GATE. ph2 printed the patient's name from snapshot.active and
      then printed allergies, medications and problems from window.activePatient()
@@ -1450,11 +1585,17 @@
     var p = activeChart();
     if (!p) return { chart: null, why: 'no-chart' };
     var appt = activeAppt();
-    var ext = String((appt && appt.patient_external_id) || '').trim();
-    if (ext && String(p.id || '') === ext) return { chart: p, why: '' };
-    var an = norm(sn && sn.active && sn.active.name), pn = norm(p.name);
-    var ad = String((sn && sn.active && sn.active.dob) || '').slice(0, 10);
-    var pd = String(p.dob || '').slice(0, 10);
+    /* Athena's patient_external_id and MLS's local patient id are different
+       namespaces. Only the explicit MLS resolution may be compared to p.id. */
+    var localId = String((appt && (appt._mlsTargetPatientId || appt._patientId)) || '').trim();
+    if (localId && String(p.id || '') === localId) return { chart: p, why: '' };
+    /* Once the schedule row carries an explicit MLS-local chart id, that id is
+       authoritative. Falling through to demographic matching after an id
+       contradiction can expose a stale chart belonging to a different local
+       record that happens to share the same name and DOB. */
+    if (localId) return { chart: null, why: 'mismatch' };
+    var an = nameKeyFL(sn && sn.active && sn.active.name), pn = nameKeyFL(p.name);
+    var ad = dobKey(sn && sn.active && sn.active.dob), pd = dobKey(p.dob);
     /* NAME AND DATE OF BIRTH, both, or nothing. A name on its own is not an
        identity in this product -- the repo has a standing rule against matching
        an EMR record by name equality, and a clinic with two Maria Garcias is
@@ -1553,12 +1694,12 @@
     var h = '<div class="ph3-card"><p class="ph3-h" style="font-size:19px">' + esc(String(a.name || 'Patient')) + '</p>' +
       '<p class="ph3-p">' + esc(bits.join(' · ')) + '</p></div>';
 
-    /* The engine's own refusal sentence, whenever it has one. This is the only
-       explanation a control that just refused ever gives. */
-    if (sn.warn) h += '<div class="ph3-card" style="border-color:#E9CFCF;background:#FDF1F1"><p class="ph3-p" style="color:#5B1A18">' + esc(String(sn.warn)) + '</p></div>';
+    /* Do not repeat the same engine refusal below the patient card when the
+       phone's persistent banner already owns it. */
+    if (sn.warn && !(S.note && String(S.note.text) === String(sn.warn))) h += '<div class="ph3-card" style="border-color:#E9CFCF;background:#FDF1F1"><p class="ph3-p" style="color:#5B1A18">' + esc(String(sn.warn)) + '</p></div>';
 
     var appt = activeAppt();
-    h += ckForPatient(appt && appt.patient_external_id);
+    h += ckForPatient(appt);
     h += quickHistory(sn);
 
     h += '<p class="ph3-sect">What was said</p>';
@@ -1912,8 +2053,8 @@
       if (!r || typeof r.startVisitFor !== 'function') { refuse('The visit engine has not finished loading yet.'); return; }
       /* record:false ALWAYS. Opening a patient and starting a microphone are
          two different decisions and the doctor makes the second one. */
-      var ok = safe(function () { return r.startVisitFor(id, { record: false }); }, false);
-      if (!ok) { refuse('MLS could not open that patient. Their appointment may be on another day — check the date above the list.'); return; }
+      var ok = safe(function () { return r.startVisitFor(id, { record: false, quiet: true }); }, false);
+      if (!ok) { refuse(warnAsRefusal(snap()) || 'MLS could not open that patient. Their appointment may be on another day — check the date above the list.'); return; }
       goVisit();
       return;
     }
@@ -1935,18 +2076,15 @@
       var started = safe(function () { return r2.record(); }, false);
       if (started) {
         expectPhase(['rec'], 1500,
-          'MLS did not start recording. The most common reason is that this ' + deviceNoun() +
-          ' has not given the browser permission to use the microphone — check the site settings and try again.');
+          'MLS did not start recording. Check the recording message on this screen. You can keep working by typing or using the keyboard microphone in the transcript, then try Start recording again.',
+          { pending: captureStartPending, explain: captureStartExplanation });
       }
       if (!started) {
-        /* The engine's own sentence lands in snapshot.warn when it has one --
-           but a denied microphone is refused WITHOUT setting warn, and pointing
-           at "the message on this screen" when there is no message is the
-           instruction-points-nowhere defect. Say the concrete thing instead. */
+        /* A capture-layer explanation (unsupported live dictation, blocked mic,
+           and similar) is more specific than the remote dispatch boolean. */
         var sn0 = snap();
-        refuse(warnAsRefusal(sn0) ||
-          ('Recording did not start. The most common reason is that this ' + deviceNoun() +
-            ' has not been given permission to use the microphone — check the browser’s site settings.'));
+        refuse(warnAsRefusal(sn0) || captureStartExplanation() ||
+          'Recording did not start. Check the recording message on this screen, or type/use the keyboard microphone in the transcript and try again.');
       }
       S.lastSig = ''; render(true);
       return;

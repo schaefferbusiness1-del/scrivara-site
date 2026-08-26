@@ -11,16 +11,38 @@ const end = source.indexOf('\n  function lockAndStartPatient(', start);
 assert(start >= 0 && end > start, 'could not bound canonical scheduled-action gate');
 const runtime = source.slice(start, end);
 
+function identityDobKey(value) {
+  let m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + m[2] + m[3];
+  m = String(value || '').match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  return m ? m[3] + String(m[1]).padStart(2, '0') + String(m[2]).padStart(2, '0') : '';
+}
+function identityMrnKey(value) {
+  const v = value && (value.mrn || value.athenaId || value.athenaPatientId || value.patient_mrn) || '';
+  return String(v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+function positiveEvidence(a, p, patients, nameMatch) {
+  function agrees(candidate) {
+    if (!a || !candidate || !candidate.id || !nameMatch(a.name, candidate.name)) return false;
+    const ad = identityDobKey(a.dob), pd = identityDobKey(candidate.dob);
+    const am = identityMrnKey(a), pm = identityMrnKey(candidate);
+    if ((ad && pd && ad !== pd) || (am && pm && am !== pm)) return false;
+    return !!((ad && pd && ad === pd) || (am && pm && am === pm));
+  }
+  const hits = (patients || []).filter(agrees);
+  return agrees(p) && hits.length === 1 && String(hits[0].id) === String(p.id);
+}
+
 assert(runtime.includes('installScheduledVisitBinding(a) && exactScheduledBindingMatches(a)'), 'activation does not require a read-back match after installing the exact binding');
 /* Owner 2026-07-26: record/generate under an unproven binding demote through
  * requireExactScheduledBinding (unscheduled + visible warning; only a proven
  * cross-patient conflict blocks). A plain open still warns and stops. */
-assert(runtime.includes('if (!opts.record && !opts.generate) { render(); return; }'), 'a plain open must still warn and stop on unproven binding');
-assert(runtime.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation')"), 'record/generate on unproven binding must route through the demotion gate');
+assert(runtime.includes('if (!opts.record && !opts.generate) { render(); return true; }'), 'a plain open must still warn and stop on unproven binding');
+assert(runtime.includes("requireExactScheduledBinding(a, opts.record ? 'recording' : 'note generation', opts)"), 'record/generate on unproven binding must route through the demotion gate');
 assert(source.includes("on('ez3Rec2', function () { if (!requireExactScheduledBinding(S.appt, 'recording')) return;"), 'resume recording bypasses exact scheduled binding');
 assert(source.includes("if (!requireExactScheduledBinding(S.appt, 'note generation')) return;"), 'visible note generation bypasses exact scheduled binding');
 assert(source.includes("on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return;"), 'regeneration bypasses exact scheduled binding');
-assert(source.includes("if (!S.appt || !requireExactScheduledBinding(S.appt, 'note generation')) return false;"), 'remote generation bypasses exact scheduled binding');
+assert(source.includes("if (!S.appt || !requireExactScheduledBinding(S.appt, 'note generation', { quiet: true })) return false;"), 'remote generation bypasses exact scheduled binding or duplicates the phone warning');
 
 function makeHarness(options) {
   options = options || {};
@@ -38,6 +60,15 @@ function makeHarness(options) {
       const B = String(b || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       return !!A && A === B;
     },
+    dobConflicts(a, b) {
+      const A = identityDobKey(a), B = identityDobKey(b); return !!(A && B && A !== B);
+    },
+    mrnKey: identityMrnKey,
+    mrnConflicts(a, b) { const A = identityMrnKey(a), B = identityMrnKey(b); return !!(A && B && A !== B); },
+    positiveIdentityEvidence(a, p) {
+      return positiveEvidence(a, p, active ? [active] : [], context.nameMatch);
+    },
+    canonicalActivePatient() { return active; },
     rowKey(a) { return String(a && a.id || ''); },
     lockPatient: null,
     isRecording() { return false; }, blockSwitchWhileRecording() {},
@@ -50,7 +81,12 @@ function makeHarness(options) {
     genBtnResolve() { return { click() { calls.generate += 1; } }; },
     window: {
       activePatient() { return active; },
-      calStartVisit() { calls.select += 1; },
+      getPatients() { return active ? [active] : []; },
+      calStartVisit() {
+        calls.select += 1;
+        if (Object.prototype.hasOwnProperty.call(options, 'calReceipt')) return options.calReceipt;
+        return { ok: true, bound: true, patientId: String(active && active.id || ''), reason: 'exact-patient' };
+      },
       __mlsCrossDayContext: { current() { return options.xdcContext || null; } },
       _athenaFreezeVisitBinding(patient, meta) {
         calls.freeze += 1;
@@ -86,6 +122,13 @@ function row(day) {
 
 for (const day of ['2026-07-19', '2026-07-22']) {
   {
+    const h = makeHarness({ calReceipt: null });
+    h.run(row(day), { record: true, generate: true });
+    assert.strictEqual(h.calls.record, 0, `${day}: missing structured start receipt reused the prior encounter for recording`);
+    assert.strictEqual(h.calls.generate, 0, `${day}: missing structured start receipt reused the prior encounter for generation`);
+    assert(/could not start a fresh visit/i.test(h.context.S.lastWarn), `${day}: missing structured start receipt gave no truthful warning`);
+  }
+  {
     const h = makeHarness({ active: null });
     h.run(row(day), { record: true, generate: true });
     assert.strictEqual(h.calls.record, 0, `${day}: missing active patient started recording`);
@@ -113,6 +156,14 @@ for (const day of ['2026-07-19', '2026-07-22']) {
     assert.strictEqual(h.calls.record, 0, `${day}: DOB-conflicting active chart must never record`);
     assert.strictEqual(h.calls.generate, 0, `${day}: DOB-conflicting active chart must never generate`);
     assert(/DIFFERENT patient/.test(h.context.S.lastWarn), `${day}: the conflict block must name the cause`);
+  }
+  {
+    /* Canonical local IDs outrank agreeing demographics. */
+    const h = makeHarness({ active: { id: 'PT-2', name: 'Exact Patient', dob: '03/04/1980' } });
+    h.run({ ...row(day), _mlsTargetPatientId: 'PT-1' }, { record: true, generate: true });
+    assert.strictEqual(h.calls.record, 0, `${day}: explicit local-id contradiction reached recording`);
+    assert.strictEqual(h.calls.generate, 0, `${day}: explicit local-id contradiction reached generation`);
+    assert(/DIFFERENT patient/.test(h.context.S.lastWarn), `${day}: local-id contradiction did not stay a hard conflict`);
   }
   {
     const h = makeHarness();
