@@ -255,7 +255,12 @@ function testConvergenceIsOneContinuousPull() {
   /* the verdict must be painted after the prediction, not before it */
   const willIdx = MC.indexOf('var willConverge = retryCount > 0 && dsConvergeEligible(result);');
   ok(willIdx >= 0, 'the pull does not decide before painting (cvc-1.0.0)');
-  const tail = MC.slice(willIdx, willIdx + 2600);
+  /* cvi-1.0.0 widened this block (interim outcome stamp + verbatim verdict
+     restore before done()), so the window is bounded by the block's own
+     error-continuation anchor instead of a fixed byte count. */
+  const tailEnd = MC.indexOf('function (err) {', willIdx);
+  ok(tailEnd > willIdx, 'the converge block lost its error-continuation boundary');
+  const tail = MC.slice(willIdx, tailEnd);
   ok(/if \(!willConverge\) \{\s*\n\s*done\(/.test(tail),
     'the terminal verdict is not gated on the convergence prediction');
   ok(/dsAutoConvergeBodies\(sessionSerial, function \(cv\) \{/.test(tail),
