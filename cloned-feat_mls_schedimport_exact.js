@@ -8310,10 +8310,12 @@
   function pullUnlocked(opts) {
     opts = opts || {};
     var date = opts.date || estTodayKey();
-    /* A bulk pull with Full Notes OFF is deliberately schedule-only.  Do not
-       merely skip encounter bodies: the chart reader itself opens a patient
-       chart, so this boundary must be decided before identity hydration or
-       the history batch can start.  Cached local facts remain untouched. */
+    /* fvn-1.0.0 CANONICAL SEMANTICS (Codex reply 24): OFF is DAY-FACTS mode,
+       not schedule-only - every pull opens each scheduled chart and saves
+       identity + chart facts/coverage + exactly the pulled day's own visit
+       note; ON additionally saves every dated PRIOR visit note. This flag
+       decides HISTORY DEPTH only, and it must be frozen before identity
+       hydration or the history batch can start. */
     var visitNotesRequested = typeof opts.pullVisitBodies === "boolean"
       ? opts.pullVisitBodies
       : (typeof opts.visitNotesRequested === "boolean" ? opts.visitNotesRequested
