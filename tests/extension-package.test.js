@@ -203,7 +203,7 @@ assert(/compareVersions\(installed,\s*SERVER_EXT_VERSION\)/.test(checker), 'chec
 assert(!/cannot read the installed extension version/i.test(checker), 'checker must not claim the installed version is inherently unreadable');
 
 const downloadPage = read('get-extension.html');
-const RELEASED_PACKAGE_SHA256 = 'c8a3524cfe60fa5be1256c960dcde4b7101e85fe0d4083323547788bd4de4b12';
+const RELEASED_PACKAGE_SHA256 = '9a01f81e3bca0ec05ef8e0eb0294869196348b87d44dfc95400cb2f9d113e215';
 assert(/^[a-f0-9]{64}$/.test(RELEASED_PACKAGE_SHA256),
   '3.0.81 package digest must be stamped after deterministic packaging before release');
 assert(!/\bJSZip\b|cdnjs\.cloudflare\.com\/ajax\/libs\/jszip/i.test(downloadPage),
