@@ -83,7 +83,7 @@ function recoveryHarness(options = {}) {
       getElementById(id) { return id === 'agSignName' ? { value: '  Synthetic Signer  ' } : null; },
       querySelectorAll(selector) { return selector === '.agCheckbox' ? boxes : []; },
     },
-    window: { __MLS_AV: 'qa-build' },
+    window: { __MLS_AV: options.build || 'qa-build' },
     unsEmail: () => account,
     sfNormalizeSessionAccount: (value) => String(value || '').trim().toLowerCase(),
     sigPadClear: () => { signatureClears += 1; },
@@ -135,6 +135,40 @@ function recoveryHarness(options = {}) {
   assert.strictEqual(h.store.has(key), false, 'successful re-entry left a stale reload latch');
   assert.strictEqual(h.historyUrls.length, 1, 'successful re-entry did not remove the cache-busting query');
   assert(!h.historyUrls[0].includes('mlsAgreementRefresh'), 'cache-busting query remained in the canonical URL');
+}
+
+{
+  const h = recoveryHarness({ build: 'new-build' });
+  const key = h.api.agManifestRecoveryKey();
+  const oldMarker = {
+    schemaVersion: 1, attempted: true, account: 'first@example.test', signerName: 'Old-build draft',
+    startedAt: Date.now(), appBuild: 'old-build',
+  };
+  h.store.set(key, JSON.stringify(oldMarker));
+  assert.deepStrictEqual(h.api.agReadManifestRecovery(key), oldMarker,
+    'an unexpired marker from the prior cached build was rejected instead of safely carried across reload');
+  assert.strictEqual(h.api.agTakeManifestRecoveryDraft(), 'Old-build draft',
+    'the safe draft was not consumed from an unexpired prior-build marker');
+  assert.strictEqual(h.api.agTakeManifestRecoveryDraft(), '', 'a consumed prior-build marker was replayed');
+
+  const expired = { ...oldMarker, startedAt: Date.now() - (10 * 60 * 1000) - 1 };
+  h.store.set(key, JSON.stringify(expired));
+  assert.strictEqual(h.api.agReadManifestRecovery(key), null, 'an expired marker was accepted');
+  assert.strictEqual(h.store.has(key), false, 'an expired marker was not purged');
+  h.store.set(key, '{not-json');
+  assert.strictEqual(h.api.agReadManifestRecovery(key), null, 'a corrupt marker was accepted');
+  assert.strictEqual(h.store.has(key), false, 'a corrupt marker was not purged');
+  h.store.set(key, JSON.stringify({ ...oldMarker, appBuild: 'x'.repeat(161) }));
+  assert.strictEqual(h.api.agReadManifestRecovery(key), null, 'an oversized build marker was accepted');
+  assert.strictEqual(h.store.has(key), false, 'an oversized build marker was not purged');
+  const missingBuild = { ...oldMarker };
+  delete missingBuild.appBuild;
+  h.store.set(key, JSON.stringify(missingBuild));
+  assert.strictEqual(h.api.agReadManifestRecovery(key), null, 'a missing-field marker was accepted');
+  assert.strictEqual(h.store.has(key), false, 'a missing-field marker was not purged');
+  h.store.set(key, JSON.stringify({ ...oldMarker, startedAt: 'not-a-number' }));
+  assert.strictEqual(h.api.agReadManifestRecovery(key), null, 'a nonnumeric marker timestamp was accepted');
+  assert.strictEqual(h.store.has(key), false, 'a nonnumeric marker timestamp was not purged');
 }
 
 {
@@ -192,6 +226,183 @@ function recoveryHarness(options = {}) {
   assert.strictEqual(h.api.agIsAgreementVersionMismatch(409, { error: 'identity_mismatch' }), false,
     'an identity conflict can be mislabeled as an app-version problem');
 }
+
+{
+  const validateSource = extractFunction(shell, 'agValidateServerManifest');
+  const staleSource = extractFunction(shell, 'agStaleManifestError');
+  const validate = Function('BROWSER_AGREEMENT_EVIDENCE', 'MLS_AGREEMENTS',
+    `${staleSource}\n${validateSource}\nreturn agValidateServerManifest;`)(
+      [['doc.one', 'a'.repeat(64)]], [{ title: 'Document One', requiresCountersign: false }]
+    );
+  const manifest = {
+    schemaVersion: 1,
+    manifestId: 'manifest-current',
+    version: 'v2',
+    manifestSha256: 'b'.repeat(64),
+    documents: [{ documentId: 'doc.one', sha256: 'a'.repeat(64), title: 'Document One', required: true, requiresCountersignature: false }],
+  };
+  for (const [field, value] of [['manifestId', {}], ['version', []]]) {
+    assert.throws(() => validate({ ...manifest, [field]: value }),
+      (error) => error && !error.code, `malformed ${field} was misclassified as stale evidence`);
+  }
+  for (const [field, value] of [['documentId', {}], ['title', []], ['sha256', {}], ['required', 'true'], ['requiresCountersignature', 0]]) {
+    assert.throws(() => validate({ ...manifest, documents: [{ ...manifest.documents[0], [field]: value }] }),
+      (error) => error && !error.code, `malformed document ${field} was misclassified as stale evidence`);
+  }
+}
+
+function submitHarness(options = {}) {
+  const submitSource = `async ${extractFunction(shell, 'agSubmitSign')}`;
+  const manifest = {
+    schemaVersion: 1,
+    manifestId: 'manifest-current',
+    version: 'v2',
+    manifestSha256: 'b'.repeat(64),
+    documents: [{ documentId: 'doc.one', sha256: 'a'.repeat(64), title: 'Document One', required: true, requiresCountersignature: false }],
+  };
+  const boxes = [{ checked: true }];
+  const button = { disabled: false, textContent: 'Sign & continue' };
+  const signer = { value: 'Synthetic Signer' };
+  const errors = [];
+  const requests = [];
+  let manifestResolve;
+  let postResolve;
+  let account = 'first@example.test';
+  const context = {
+    _agSubmitPromise: null,
+    _agManifestEpoch: 0,
+    _agSetupPolicyVersion: options.bodyNull ? 0 : 2,
+    _agManifest: manifest,
+    _agManifestPromise: null,
+    _agRecoveredSignerName: '',
+    bkUser: { setupPolicyVersion: options.bodyNull ? 0 : 2, agreements: {} },
+    session: { email: account },
+    sfGateLoadingStarted: false,
+    sfGateLoadingVisible: false,
+    document: {
+      getElementById(id) { return id === 'agSignName' ? signer : id === 'agSignBtn' ? button : null; },
+      querySelectorAll() { return boxes; },
+    },
+    agLoadManifest: () => new Promise((resolve) => { manifestResolve = () => resolve(manifest); }),
+    agGateErr: (message) => errors.push(String(message || '')),
+    sigPadIsEmpty: () => false,
+    sigPadDataUrl: () => 'data:image/png;base64,AA==',
+    agTryManifestRecovery: () => false,
+    agManifestLoadErrorText: (error) => String(error && error.message || 'error'),
+    agStaleManifestError: () => new Error('stale'),
+    agLegacySignRequest: options.bodyNull ? () => null : () => ({ version: 'v2' }),
+    agCeremonyKey: () => 'ceremony-key',
+    bkBase: () => '',
+    bkToken: () => 'token',
+    fetch: (...args) => {
+      requests.push(args);
+      if (options.networkError) return Promise.reject(new Error('offline'));
+      const response = { ok: options.status === 409 ? false : true, status: options.status || 200,
+        json: async () => options.status === 409 ? { error: 'version_mismatch' } : { artifact: { status: 'stored', stored: true }, agreement: { manifestVersion: 'v2' } } };
+      if (options.postPending) return new Promise((resolve) => { postResolve = () => resolve(response); });
+      return Promise.resolve(response);
+    },
+    agIsAgreementVersionMismatch: () => options.status === 409,
+    agRefreshAccountReadiness: async () => false,
+    agLegacySigningVerified: () => false,
+    showAgreementsPending: () => {},
+    showAgreementsGate: () => {},
+    hideAgreementsGate: () => {},
+    handle401: () => {},
+    agAccountSetupSurface: () => 'ceremony',
+    agDeliveryMessage: () => '',
+    agLegacyDeliveryMessage: () => '',
+    toast: () => {},
+    startSession: () => {},
+    maybePromptSetup: () => {},
+    setTimeout: () => {},
+    sessionStorage: { setItem: () => {} },
+    uns: (key) => key,
+    unsEmail: () => account,
+  };
+  vm.createContext(context);
+  vm.runInContext(`${submitSource}\nthis.submitApi={agSubmitSign, setEpoch:(v)=>{_agManifestEpoch=v;}, setAccount:(v)=>{session.email=v;account=v;}};`, context);
+  return { api: context.submitApi, manifestResolve: () => manifestResolve(), postResolve: () => postResolve && postResolve(), requests, errors, button };
+}
+
+function manifestLoadHarness() {
+  const loadSource = `async ${extractFunction(shell, 'agLoadManifest')}`;
+  const responses = [];
+  let calls = 0;
+  const context = {
+    _agManifest: null,
+    _agManifestPromise: null,
+    _agManifestEpoch: 0,
+    _agSetupPolicyVersion: null,
+    _agRecoveredSignerName: '',
+    ACTIVE_MLS_AGREEMENTS: [],
+    MLS_AGREEMENTS: [],
+    bkUser: { setupPolicyVersion: 2 },
+    bkBase: () => '',
+    bkToken: () => 'token',
+    fetch: () => { calls += 1; return new Promise((resolve) => responses.push(resolve)); },
+    agValidateServerManifest: (manifest) => ({ manifest, agreements: [] }),
+    agTakeManifestRecoveryDraft: () => '',
+    sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    unsEmail: () => 'first@example.test',
+    sfNormalizeSessionAccount: (value) => String(value || '').trim().toLowerCase(),
+    URL,
+    Date,
+  };
+  vm.createContext(context);
+  vm.runInContext(`let _agManifest=null,_agManifestPromise=null,_agManifestEpoch=0,_agSetupPolicyVersion=null,_agRecoveredSignerName='';\n${loadSource}\nthis.loadApi={agLoadManifest,bump:()=>{_agManifestEpoch++;_agManifest=null;_agManifestPromise=null;},state:()=>({_agManifestPromise,_agManifestEpoch})};`, context);
+  return {
+    api: context.loadApi,
+    get calls() { return calls; },
+    resolve(version) { responses.shift()({ ok: true, json: async () => ({ manifest: { version }, setupPolicyVersion: 2 }) }); },
+  };
+}
+
+(async function runSubmitRuntimeTests(){
+  const h = submitHarness();
+  const first = h.api.agSubmitSign();
+  const second = h.api.agSubmitSign();
+  await new Promise((resolve) => setImmediate(resolve));
+  h.manifestResolve();
+  await Promise.all([first, second]);
+  assert.strictEqual(h.requests.length, 1, 'concurrent submitters emitted more than one sign POST');
+  assert.strictEqual(h.requests[0][1].method, 'POST', 'the shared submit path did not issue a POST');
+
+  for (const options of [{ networkError: true }, { status: 409 }, { bodyNull: true }]) {
+    const one = submitHarness(options);
+    const first = one.api.agSubmitSign();
+    const second = one.api.agSubmitSign();
+    await new Promise((resolve) => setImmediate(resolve));
+    one.manifestResolve();
+    await Promise.all([first, second]);
+    assert.strictEqual(one.requests.length, options.bodyNull ? 0 : 1,
+      `concurrent ${options.bodyNull ? 'body-null' : options.networkError ? 'network' : '409'} submits were not single-flight`);
+  }
+
+  const switched = submitHarness({ postPending: true });
+  const beforeSwitch = switched.api.agSubmitSign();
+  const duringSwitch = switched.api.agSubmitSign();
+  await new Promise((resolve) => setImmediate(resolve));
+  switched.manifestResolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  switched.api.setEpoch(1);
+  assert.strictEqual(switched.requests.length, 1, 'account switch did not leave one in-flight sign POST');
+  switched.postResolve();
+  await Promise.all([beforeSwitch, duringSwitch]);
+  assert.strictEqual(switched.requests.length, 1, 'account switch caused a duplicate sign POST');
+
+  const loads = manifestLoadHarness();
+  const accountA = loads.api.agLoadManifest().catch((error) => error);
+  loads.api.bump();
+  const accountB = loads.api.agLoadManifest().catch((error) => error);
+  loads.resolve('account-a');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(loads.calls, 2, 'old account completion cleared the newer manifest promise');
+  const third = loads.api.agLoadManifest().catch((error) => error);
+  assert.strictEqual(loads.calls, 2, 'third caller started a duplicate B manifest GET');
+  loads.resolve('account-b');
+  await Promise.all([accountA, accountB, third]);
+})().catch((error) => { console.error(error); process.exitCode = 1; });
 
 const loadManifest = extractFunction(shell, 'agLoadManifest');
 assert(loadManifest.indexOf("requestEpoch!==_agManifestEpoch") < loadManifest.indexOf('agValidateServerManifest'),
