@@ -972,7 +972,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       return Object.keys(found).map(function (k) { return found[k]; });
     }
     var hetDiag = { rank: -1, metaCount: -1, metaPatientMatch: null, apptCount: -1, provCount: -1, dateCount: -1, qualified: false, ancestorIdentity: '', noteTargetFound: null };
-    function hetAncestorIdentity(frame) {
+    function hetAncestorIdentity(frame, expectedPatient) {
       /* het-1.0.6: tolerant banner read for the ANCESTOR WALK ONLY - the
          stage frame is already machine-bound to the expected patient, so
          unparseable decorative regions must not poison the confirmation
@@ -980,16 +980,27 @@ async function mlsAthenaActionV2DriverFn(req) {
       try {
         var roots = identityRoots(frame);
         if (!roots.length) return { identity: null, ambiguous: false };
+        var wantName = nameKey(expectedPatient.name), wantDob = dateKey(expectedPatient.dob), wantMrn = digits(expectedPatient.mrn || '');
+        if (!wantName || !wantDob) return { identity: null, ambiguous: false };
         var kept = null;
         for (var ri = 0; ri < roots.length && ri < 8; ri++) {
           var p1 = parseIdentity(roots[ri]);
           if (!p1) continue;
-          if (!kept) { kept = p1; continue; }
-          var n0 = nameKey(kept.name), n1 = nameKey(p1.name), d0 = dateKey(kept.dob), d1 = dateKey(p1.dob), m0 = digits(kept.mrn || ''), m1 = digits(p1.mrn || '');
-          if ((n0 && n1 && n0 !== n1) || (d0 && d1 && d0 !== d1) || (m0 && m1 && m0 !== m1)) return { identity: null, ambiguous: true };
-          if (!m0 && m1) kept = p1; /* prefer the copy that carries the MRN */
+          var n1 = nameKey(p1.name), d1 = dateKey(p1.dob), m1 = digits(p1.mrn || '');
+          var namesMatch = n1 && n1 === wantName;
+          if (namesMatch && d1 && d1 === wantDob) {
+            /* the expected person's banner - an MRN conflict on it refuses */
+            if (m1 && wantMrn && m1 !== wantMrn) return { identity: null, ambiguous: true };
+            if (!kept || (!digits(kept.mrn || '') && m1)) kept = p1;
+            continue;
+          }
+          /* a copy that matches the expected person on ONE axis but conflicts
+             on the other is a red flag, not decoration - refuse */
+          if (namesMatch && d1 && d1 !== wantDob) return { identity: null, ambiguous: true };
+          if (m1 && wantMrn && m1 === wantMrn && n1 && n1 !== wantName) return { identity: null, ambiguous: true };
+          /* unrelated identities on the surface are ignored */
         }
-        if (kept && nameKey(kept.name) && dateKey(kept.dob)) return { identity: kept, ambiguous: false };
+        if (kept) return { identity: kept, ambiguous: false };
         return { identity: null, ambiguous: false };
       } catch (eHa) { return { identity: null, ambiguous: false }; }
     }
@@ -1127,7 +1138,7 @@ async function mlsAthenaActionV2DriverFn(req) {
             var hetFr = null;
             for (var hfi = 0; hfi < frames.length; hfi++) { if (frames[hfi].w === hetAncWin) { hetFr = frames[hfi]; break; } }
             if (!hetFr) break;
-            var hetHeader = hetAncestorIdentity(hetFr);
+            var hetHeader = hetAncestorIdentity(hetFr, expectedPatient);
             if (hetHeader.ambiguous) { chartHeader = hetHeader; break; }
             if (hetHeader.identity) { chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
             try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
