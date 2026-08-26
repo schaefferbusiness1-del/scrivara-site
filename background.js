@@ -1133,6 +1133,7 @@ async function mlsAthenaActionV2DriverFn(req) {
            the expected patient AND an ANCESTOR frame's banner (never a
            sibling) passes the exact same identity gates below. */
         if (hetStage) {
+          var hetWalkVerdict = 'none-found';
           var hetAncWin = null; try { hetAncWin = fr.w && fr.w.parent && fr.w.parent !== fr.w ? fr.w.parent : null; } catch (eHet0) { hetAncWin = null; }
           var hetHops = 0;
           while (hetAncWin && hetHops++ < 6 && !observedIdentity) {
@@ -1140,11 +1141,11 @@ async function mlsAthenaActionV2DriverFn(req) {
             for (var hfi = 0; hfi < frames.length; hfi++) { if (frames[hfi].w === hetAncWin) { hetFr = frames[hfi]; break; } }
             if (!hetFr) break;
             var hetHeader = hetAncestorIdentity(hetFr, expectedPatient);
-            if (hetHeader.ambiguous) { chartHeader = hetHeader; break; }
-            if (hetHeader.identity) { chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
+            if (hetHeader.ambiguous) { hetWalkVerdict = 'ancestor-ambiguous'; chartHeader = hetHeader; break; }
+            if (hetHeader.identity) { hetWalkVerdict = 'found'; chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
             try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
           }
-          hetDiag.ancestorIdentity = observedIdentity ? 'found' : (chartHeader.ambiguous ? 'ambiguous' : 'none');
+          hetDiag.ancestorIdentity = hetWalkVerdict; hetDiag.walkHops = hetHops;
           if (!observedIdentity) hetStage = null;
         }
       }
