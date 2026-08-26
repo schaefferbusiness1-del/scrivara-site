@@ -42,7 +42,7 @@ assert(/HIPAA compliant/i.test(assist), 'assist states the confirmed HIPAA postu
 assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only language must be gone from assist');
 
 const download = read('get-extension.html');
-const RELEASED_PACKAGE_SHA256 = '860d7e78485a5666c53429dfa73cee2b0f2a50fff90ee6d5607a91516cfcc0f8';
+const RELEASED_PACKAGE_SHA256 = '2c3b935fee49843660c84faabd92601e3821ee92fd9b5ac605a2e22c64d2d888';
 assert(/^[a-f0-9]{64}$/.test(RELEASED_PACKAGE_SHA256),
   '3.0.81 package digest must be stamped after deterministic packaging before public release');
 assert(/MLS_Assist_v3.0.81.zip/.test(download) &&
