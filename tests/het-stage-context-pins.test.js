@@ -157,3 +157,40 @@ console.log('PASS het-1.1.5 pins: heading own-title reading is shared by both la
 }
 
 console.log('PASS het-1.1.7 pins: the shipped ISO conversion yields the canonical visit-date key');
+
+/* het-1.1.8 (Codex release-review invariant): meta-only admission is allowed
+   only when genuinely no credible parsed identity exists. The presence reader
+   is extracted from the SHIPPED bytes and executed against the four cases:
+   foreign, decorative-noise, expected-present, no-banner. */
+{
+  const haStart = bg.indexOf('function hetAncestorIdentity');
+  const haEnd = bg.indexOf('function hetStageEncounterContext', haStart);
+  assert.ok(haStart > 0 && haEnd > haStart, 'hetAncestorIdentity moved');
+  const haSrc = bg.slice(haStart, haEnd);
+  const nameKeyStub = n => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
+  const mk = roots => new Function('identityRoots', 'parseIdentity', 'nameKey', 'dateKey', 'digits', 'return ' + haSrc)(
+    () => roots.map((r, i) => i), i => roots[i], nameKeyStub, d => String(d || ''), v => String(v || '').replace(/\D/g, ''));
+  const expected = { name: 'Adam J Schaeffer', dob: '03/24/2006', mrn: '7833832' };
+  const foreign2 = mk([{ name: 'Pat Q Other', dob: '01/01/1990', mrn: '111' }, { name: 'Sam R Else', dob: '02/02/1985', mrn: '222' }])(null, expected);
+  assert.strictEqual(foreign2.identity, null, 'two foreign roots must not yield an identity');
+  assert.strictEqual(foreign2.foreign, true, 'two complete parsed foreign roots MUST flag foreign (the Codex VM repro)');
+  const decorative = mk([{ name: 'Adam J Schaeffer', dob: '08/25/2026', mrn: '' }])(null, expected);
+  assert.strictEqual(decorative.foreign, false, 'a same-name appointment strip stays decoration (het-1.0.9 noise class)');
+  const present = mk([{ name: 'Adam J Schaeffer', dob: '03/24/2006', mrn: '7833832' }, { name: 'Pat Q Other', dob: '01/01/1990', mrn: '111' }])(null, expected);
+  assert.ok(present.identity, 'the expected banner must still be accepted');
+  assert.strictEqual(present.foreign, true, 'the foreign flag must survive alongside acceptance');
+  const empty = mk([])(null, expected);
+  assert.ok(!empty.foreign, 'no roots means no foreign evidence - meta-bound may proceed');
+  /* the loop wiring: foreign accumulates from self + every walked ancestor and
+     blocks the meta-bound branch BEFORE it fires, with a truthful census stamp */
+  assert.ok(bg.includes("var hetForeign = !!(hetSelf && hetSelf.foreign);"), 'the self foreign accumulator is gone');
+  assert.ok(bg.includes("if (hetHeader.foreign) hetForeign = true;"), 'the walk foreign accumulator is gone');
+  assert.ok(bg.includes("if (!observedIdentity && hetWalkVerdict === 'none-found' && hetForeign) {"), 'the foreign refusal gate is gone');
+  assert.ok(bg.includes("hetWalkVerdict = 'foreign-identity-present';"), 'the foreign refusal verdict is gone');
+  assert.ok(bg.indexOf("hetWalkVerdict = 'foreign-identity-present'") < bg.indexOf("hetWalkVerdict = 'meta-bound'"), 'the foreign gate must run BEFORE meta-bound');
+  const stampLF = bg.includes("hetDiag.ancestorIdentity = hetWalkVerdict;\n          if (!observedIdentity) hetStage = null;");
+  const stampCRLF = bg.includes("hetDiag.ancestorIdentity = hetWalkVerdict;\r\n          if (!observedIdentity) hetStage = null;");
+  assert.ok(stampLF || stampCRLF, 'the truthful post-branch census re-stamp is gone');
+}
+
+console.log('PASS het-1.1.8 pins: complete parsed foreign identities block meta-only admission (executed from shipped bytes)');

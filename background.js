@@ -1011,12 +1011,17 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (!roots.length) return { identity: null, ambiguous: false };
         var wantName = nameKey(expectedPatient.name), wantDob = dateKey(expectedPatient.dob), wantMrn = digits(expectedPatient.mrn || '');
         if (!wantName || !wantDob) return { identity: null, ambiguous: false };
-        var kept = null;
+        var kept = null, sawForeign = false;
         for (var ri = 0; ri < roots.length && ri < 8; ri++) {
           var p1 = parseIdentity(roots[ri]);
           if (!p1) continue;
           var n1 = nameKey(p1.name), d1 = dateKey(p1.dob), m1 = digits(p1.mrn || '');
           var namesMatch = n1 && n1 === wantName;
+          /* het-1.1.8: a COMPLETE parsed identity for a DIFFERENT human is
+             credible foreign evidence - it must block meta-only admission.
+             Same-name roots with a disagreeing date stay decoration (the
+             measured het-1.0.9 appointment-strip noise class). */
+          if (n1 && d1 && n1 !== wantName) sawForeign = true;
           if (namesMatch && d1 && d1 === wantDob) {
             /* the expected person's banner - an MRN conflict on it refuses */
             if (m1 && wantMrn && m1 !== wantMrn) return { identity: null, ambiguous: true };
@@ -1030,9 +1035,9 @@ async function mlsAthenaActionV2DriverFn(req) {
              downstream equality gates, and acceptance still requires the
              expected patient's full banner root above. */
         }
-        if (kept) return { identity: kept, ambiguous: false };
-        return { identity: null, ambiguous: false };
-      } catch (eHa) { return { identity: null, ambiguous: false }; }
+        if (kept) return { identity: kept, ambiguous: false, foreign: sawForeign };
+        return { identity: null, ambiguous: false, foreign: sawForeign };
+      } catch (eHa) { return { identity: null, ambiguous: false, foreign: false }; }
     }
     function hetStageEncounterContext(frame, expectedPatient) {
       /* het-1.0.0/1.0.2: athena's own machine-typed encounter context, read
@@ -1167,6 +1172,7 @@ async function mlsAthenaActionV2DriverFn(req) {
            sibling) passes the exact same identity gates below. */
         if (hetStage) {
           var hetSelf = hetAncestorIdentity(fr, expectedPatient);
+          var hetForeign = !!(hetSelf && hetSelf.foreign);
           if (hetSelf && hetSelf.identity) { chartHeader = hetSelf; observedIdentity = hetSelf.identity; }
           var hetWalkVerdict = observedIdentity ? 'self-found' : 'none-found';
           var hetAncWin = null; try { hetAncWin = fr.w && fr.w.parent && fr.w.parent !== fr.w ? fr.w.parent : null; } catch (eHet0) { hetAncWin = null; }
@@ -1176,11 +1182,17 @@ async function mlsAthenaActionV2DriverFn(req) {
             for (var hfi = 0; hfi < frames.length; hfi++) { if (frames[hfi].w === hetAncWin) { hetFr = frames[hfi]; break; } }
             if (!hetFr) break;
             var hetHeader = hetAncestorIdentity(hetFr, expectedPatient);
+            if (hetHeader.foreign) hetForeign = true;
             if (hetHeader.ambiguous) { hetWalkVerdict = 'ancestor-ambiguous'; chartHeader = hetHeader; break; }
             if (hetHeader.identity) { hetWalkVerdict = 'found'; chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
             try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
           }
           hetDiag.ancestorIdentity = hetWalkVerdict; hetDiag.walkHops = hetHops;
+          if (!observedIdentity && hetWalkVerdict === 'none-found' && hetForeign) {
+            /* het-1.1.8: credible parsed foreign evidence - meta-only
+               admission is forbidden; the frame fails closed. */
+            hetWalkVerdict = 'foreign-identity-present';
+          }
           if (!observedIdentity && hetWalkVerdict === 'none-found') {
             /* het-1.1.3: no banner markup anywhere - the machine context is
                the identity, flagged for every receipt reader. */
@@ -1188,6 +1200,7 @@ async function mlsAthenaActionV2DriverFn(req) {
             chartHeader = { identity: observedIdentity, ambiguous: false };
             hetWalkVerdict = 'meta-bound';
           }
+          hetDiag.ancestorIdentity = hetWalkVerdict;
           if (!observedIdentity) hetStage = null;
         }
       }
