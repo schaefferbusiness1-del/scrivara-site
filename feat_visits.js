@@ -2593,6 +2593,55 @@
     return true;
   }
 
+  function openPatientPullRefusalMessage(reason) {
+    var suffix = ' Nothing was read or saved.';
+    if (reason === 'recording') {
+      return '⚠ Pull not started — finish or pause the current recording before switching the open Athena patient.' + suffix;
+    }
+    if (reason === 'pull-in-flight') {
+      return '⚠ Pull not started — another Athena pull is already running. Wait for it to finish, then try again.' + suffix;
+    }
+    if (reason === 'identity-unsafe') {
+      return '⚠ Pull not started — MLS cannot safely match the open Athena patient yet. Re-open the intended chart, then try again.' + suffix;
+    }
+    if (reason === 'athena-no-tab') {
+      return '⚠ Pull not started — no signed-in athenaOne tab is answering. Open the patient chart in athenaOne, then try again.' + suffix;
+    }
+    if (reason === 'athena-no-extension') {
+      return '⚠ Pull not started — MLS Assist is not connected. Reload the extension and this MLS page, then try again.' + suffix;
+    }
+    if (reason === 'athena-checking') {
+      return '⚠ Pull not started — MLS is still checking the athenaOne connection. Keep the patient chart open and try again in a moment.' + suffix;
+    }
+    if (reason === 'handler-unavailable') {
+      return '⚠ Pull not started — the patient-pull module is not ready. Reload MLS, keep the intended Athena chart open, and try again.' + suffix;
+    }
+    return '⚠ Pull not started — the open-patient Athena reader is unavailable right now. Open the Patients page with athenaOne signed in, then try again.' + suffix;
+  }
+
+  function reportOpenPatientPullTerminal(reason, btn) {
+    var message = openPatientPullRefusalMessage(S(reason) || 'unavailable');
+    var host = btn || document.getElementById('ptPullAthenaBtn');
+    var owner = null;
+    try { owner = window.__mlsPullOne || null; } catch (eOwner) { owner = null; }
+    if (owner && isFn(owner.reportOpenPatientStatus)) {
+      try { owner.reportOpenPatientStatus(message, 'err', host); return message; } catch (eReport) {}
+    }
+    /* Cold-module fallback: reuse the shell's one status line. Do not create a
+       second notice just because pullone has not armed yet. */
+    try {
+      var line = document.getElementById('pullChartStatus');
+      if (!line) return message;
+      if (host && host.parentNode && line.previousElementSibling !== host) {
+        host.parentNode.insertBefore(line, host.nextSibling);
+      }
+      line.style.display = 'block';
+      line.style.color = '#9f2d2d';
+      line.textContent = message;
+    } catch (eFallback) {}
+    return message;
+  }
+
   function installOpenPullActionGuard() {
     try {
       if (window[OPEN_PULL_GUARD]) return;
@@ -2617,6 +2666,7 @@
         if (!autoBusy) {
           try { window.dispatchEvent(new CustomEvent('mls:athena-autopull-state', { detail: { busy: false, reason: 'preflight-blocked' } })); } catch (eSettleVisual) {}
         }
+        reportOpenPatientPullTerminal(reason, btn);
         try { event.preventDefault(); } catch (ePrevent) {}
         try { event.stopImmediatePropagation(); } catch (eImmediate) {}
         try { event.stopPropagation(); } catch (eStop) {}
@@ -2775,6 +2825,8 @@
     _historyNeedsDetailRetry: historyNeedsDetailRetry,
     _syncOpenPatientPullVisibility: syncOpenPatientPullVisibility,
     _openPatientPullHiddenReason: openPatientPullHiddenReason,
+    _reportOpenPatientPullTerminal: reportOpenPatientPullTerminal,
+    _openPatientPullRefusalMessage: openPatientPullRefusalMessage,
     _fullNotesAdmission: fullNotesAdmission
   };
 })();

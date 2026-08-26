@@ -56806,6 +56806,15 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
     el.textContent = S(text);
     return true;
   }
+  /* The open-patient toolbar action can be refused by a later feature-module
+     gate before its inline async handler runs. Keep that refusal on this ONE
+     existing status line: never manufacture a toast/status twin, and always
+     park the line beside the control whose click was admitted or refused. */
+  function reportOpenPatientStatus(text, kind, btn) {
+    var host = btn || byId('ptPullAthenaBtn');
+    if (host) moveStatusTo(host);
+    return saySomething(text, kind);
+  }
 
   /* -------------------------------------------------------- c. THE DEAD POINTER
      Keyed on the distinctive phrase rather than the whole sentence, because a
@@ -56981,6 +56990,13 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
       if (!hit) continue;
       moveStatusTo(t);
       watchChip();
+      /* Paint synchronously, before the inline handler or any lazy module can
+         refuse. A preflight gate replaces this with its truthful terminal in
+         the same click dispatch; an admitted pull replaces it with the real
+         engine narration and terminal receipt. */
+      if (t.id === 'ptPullAthenaBtn') {
+        reportOpenPatientStatus('Starting the read-only Athena pull — checking the patient open in athenaOne…', '', t);
+      }
       return;
     }
   }
@@ -57009,7 +57025,8 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
   window.__mlsPullOne = {
     installed: true, version: VERSION,
     calmMismatch: calmMismatch, deadPointer: DEAD_POINTER, workingAdvice: WORKING_ADVICE,
-    moveStatusTo: moveStatusTo, openPulledChart: openPulledChart, mirrorFrom: mirrorFrom, watchChip: watchChip, arm: arm,
+    moveStatusTo: moveStatusTo, reportOpenPatientStatus: reportOpenPatientStatus,
+    openPulledChart: openPulledChart, mirrorFrom: mirrorFrom, watchChip: watchChip, arm: arm,
     isOff: function () { return off; },
     revert: function () {
       off = true;

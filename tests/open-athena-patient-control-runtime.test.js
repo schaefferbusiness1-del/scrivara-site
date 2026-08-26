@@ -14,6 +14,12 @@ const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..');
 const shell = fs.readFileSync(path.join(root, '1p', 'index.html'), 'utf8');
+const pullOneMarker = shell.indexOf('<!-- ===== pullone-1.0.0');
+const pullOneScriptStart = shell.indexOf('<script>', pullOneMarker);
+const pullOneScriptEnd = shell.indexOf('</script>', pullOneScriptStart);
+assert(pullOneMarker >= 0 && pullOneScriptStart > pullOneMarker && pullOneScriptEnd > pullOneScriptStart,
+  'could not extract the shipped PullOne status owner');
+const pullOneSource = shell.slice(pullOneScriptStart + '<script>'.length, pullOneScriptEnd);
 const pullVerbMarker = shell.indexOf('<!-- ===== pullverb-1.0.0');
 const pullVerbScriptStart = shell.indexOf('<script>', pullVerbMarker);
 const pullVerbScriptEnd = shell.indexOf('</script>', pullVerbScriptStart);
@@ -46,7 +52,9 @@ const panelDriverSource = backgroundSource.slice(panelDriverStart, panelDriverEn
         onclick="pullPatientFromAthenaPrompt(this)">Pull the open patient in athena</button>
       <button id="ptMoreBtn">More</button>
     </div><section id="profileCard"><div id="mlsVisitHistoryExt"><div class="mlsxh-head"><div class="mlsxh-title">Visit history</div></div></div></section>
-    <button id="captureBtn">Start recording</button></main></body></html>`);
+    <button id="captureBtn">Start recording</button></main>
+    <div id="mlsAutoPullChip" style="display:none"></div>
+    <section id="historyView" style="display:none"><div id="pullChartStatus" style="display:none"></div></section></body></html>`);
 
     await page.evaluate(() => {
       window.__activeSyntheticPatient = null;
@@ -56,15 +64,28 @@ const panelDriverSource = backgroundSource.slice(panelDriverStart, panelDriverEn
       window.upsertPatient = () => true;
       window.savePatients = () => true;
       window.__openPatientPullActivations = 0;
-      window.pullPatientFromAthenaPrompt = () => { window.__openPatientPullActivations += 1; return true; };
+      window.__syntheticTerminalOk = true;
+      window.pullPatientFromAthenaPrompt = () => {
+        window.__openPatientPullActivations += 1;
+        window.dispatchEvent(new CustomEvent('mls:athena-autopull-state', { detail: { busy: true } }));
+        setTimeout(() => {
+          document.getElementById('mlsAutoPullChip').textContent = window.__syntheticTerminalOk
+            ? '✓ Done — the synthetic open chart was read and saved.'
+            : '⚠ The synthetic read failed. Nothing was read or saved.';
+          window.dispatchEvent(new CustomEvent('mls:athena-autopull-state', { detail: { busy: false } }));
+        }, 500);
+        return true;
+      };
       window.__truthStatus = 'connected';
       window.__mlsConnTruth = { describe: () => ({ status: window.__truthStatus }) };
       window.__mlsAthenaStatusDot = {}; /* production preseed: object, no state */
       window.__mlsEzConn = { ok: true };
       window.__mlsAthenaAutoPull = { isBusy: () => false, run: () => true };
     });
-    /* Preserve production listener order: PullVerb owns the earlier capture
-       listener; feat_visits must cancel its queued false busy fallback. */
+    /* Preserve production listener order: PullOne parks and speaks through the
+       one status line, PullVerb owns busy at the control, and feat_visits owns
+       the later action-boundary refusal. */
+    await page.addScriptTag({ content: pullOneSource });
     await page.addScriptTag({ content: pullVerbSource });
     await page.addScriptTag({ path: path.join(root, 'feat_visits.js') });
     await page.waitForFunction(() => window.__mlsCopyVisits && window.__mlsCopyVisits._openPatientPullHiddenReason);
@@ -158,6 +179,17 @@ const panelDriverSource = backgroundSource.slice(panelDriverStart, panelDriverEn
       'the extension panel lost the live recording gate');
     assert.strictEqual(await page.evaluate(() => window.__openPatientPullActivations), 0,
       'the extension panel activated the open-patient pull during recording');
+    assert.deepStrictEqual(await page.evaluate(() => {
+      const line = document.getElementById('pullChartStatus');
+      return {
+        visible: getComputedStyle(line).display !== 'none',
+        afterButton: line.previousElementSibling && line.previousElementSibling.id === 'ptPullAthenaBtn',
+        text: String(line.textContent || '')
+      };
+    }), {
+      visible: true, afterButton: true,
+      text: '⚠ Pull not started — finish or pause the current recording before switching the open Athena patient. Nothing was read or saved.'
+    }, 'the exact extension-panel recording refusal did not paint the one visible doctor-facing terminal');
     await page.evaluate(() => { document.body.classList.remove('mls-recording'); });
 
     /* Exact panel race #2: a later preview/auth/role owner hides the same
@@ -251,8 +283,12 @@ const panelDriverSource = backgroundSource.slice(panelDriverStart, panelDriverEn
     await page.waitForTimeout(20);
     assert.deepStrictEqual(await page.evaluate(() => ({
       activations: window.__openPatientPullActivations,
-      busy: document.getElementById('ptPullAthenaBtn').getAttribute('aria-busy')
-    })), { activations: 0, busy: 'true' },
+      busy: document.getElementById('ptPullAthenaBtn').getAttribute('aria-busy'),
+      status: String(document.getElementById('pullChartStatus').textContent || '')
+    })), {
+      activations: 0, busy: 'true',
+      status: '⚠ Pull not started — another Athena pull is already running. Wait for it to finish, then try again. Nothing was read or saved.'
+    },
     'the concurrent-click guard either launched a second pull or cleared a genuine auto-pull busy state');
     await page.evaluate(() => {
       window.__mlsAthenaAutoPull.isBusy = () => false;
@@ -388,6 +424,44 @@ const panelDriverSource = backgroundSource.slice(panelDriverStart, panelDriverEn
       'the shipped extension-panel route did not report its one exact activation');
     assert.strictEqual(await page.evaluate(() => window.__openPatientPullActivations), 1,
       'the successful shipped extension-panel route did not activate the restored control exactly once');
+    const admittedStart = await page.evaluate(() => String(document.getElementById('pullChartStatus').textContent || ''));
+    assert.match(admittedStart, /^Starting the read-only Athena pull/,
+      'an admitted restored-control click did not paint an immediate visible started state');
+    await page.waitForFunction(() => /^✓ Done/.test(String(document.getElementById('pullChartStatus').textContent || '')));
+    assert.deepStrictEqual(await page.evaluate(() => {
+      const b = document.getElementById('ptPullAthenaBtn');
+      const line = document.getElementById('pullChartStatus');
+      return {
+        busy: b.getAttribute('aria-busy'),
+        label: String(b.textContent).replace(/\s+/g, ' ').trim(),
+        visible: getComputedStyle(line).display !== 'none',
+        afterButton: line.previousElementSibling === b,
+        text: String(line.textContent || '')
+      };
+    }), {
+      busy: null, label: '📥 Pull the open patient in athena', visible: true, afterButton: true,
+      text: '✓ Done — the synthetic open chart was read and saved.'
+    }, 'the admitted success did not finish visibly or left the restored control busy');
+
+    const admittedFailureStart = await page.evaluate(() => {
+      window.__syntheticTerminalOk = false;
+      document.getElementById('ptPullAthenaBtn').click();
+      return String(document.getElementById('pullChartStatus').textContent || '');
+    });
+    assert.match(admittedFailureStart, /^Starting the read-only Athena pull/,
+      'the admitted failure path did not first paint its visible started state');
+    await page.waitForFunction(() => /^⚠ The synthetic read failed/.test(String(document.getElementById('pullChartStatus').textContent || '')));
+    assert.deepStrictEqual(await page.evaluate(() => {
+      const b = document.getElementById('ptPullAthenaBtn');
+      return {
+        activations: window.__openPatientPullActivations,
+        busy: b.getAttribute('aria-busy'),
+        text: String(document.getElementById('pullChartStatus').textContent || '')
+      };
+    }), {
+      activations: 2, busy: null,
+      text: '⚠ The synthetic read failed. Nothing was read or saved.'
+    }, 'the admitted failure did not finish truthfully or left the restored control busy');
 
     const distinct = await page.evaluate(() => {
       window.__mlsCopyVisits._syncOpenPatientPullVisibility(true);

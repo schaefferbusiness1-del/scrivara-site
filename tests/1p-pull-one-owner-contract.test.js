@@ -443,7 +443,20 @@ async function runtime() {
     ok(strip.oneText.indexOf("Pull this patient's chart") >= 0, `the one control says ${JSON.stringify(strip.oneText)}`);
 
     /* -- 5. THE BUTTON SPEAKS, WITH ITS CONTROL --------------------------- */
-    await page.evaluate(() => window.__t1.pressPtPull());
+    /* RED before open-patient feedback ownership: the restored control's
+       cold connection gate swallowed the click before the async pull module
+       could paint anything. The refusal must be synchronous, visible, and on
+       the one line beside the Patients-screen control. */
+    const immediateSaid = await page.evaluate(() => {
+      window.__t1.pressPtPull();
+      return window.__t1.statusWhere();
+    });
+    measured.immediateSaid = immediateSaid;
+    eq(immediateSaid.visible, true, 'the cold-module refusal is silent in the click dispatch that refused it');
+    eq(immediateSaid.view, 'patientsView', `the cold-module refusal answered into ${immediateSaid.view}`);
+    eq(immediateSaid.afterButton, true, 'the cold-module refusal is not beside the button that was pressed');
+    ok(/^⚠ Pull not started/.test(immediateSaid.text), `the cold-module refusal is not a truthful terminal: ${JSON.stringify(immediateSaid.text)}`);
+    ok(/Nothing was read or saved\./.test(immediateSaid.text), `the cold-module refusal omits the no-save result: ${JSON.stringify(immediateSaid.text)}`);
     await page.waitForTimeout(2600);
     const said = await page.evaluate(() => window.__t1.statusWhere());
     measured.said = said;

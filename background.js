@@ -13614,7 +13614,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     if (!blockedReason && (btn.disabled || btn.getAttribute('aria-busy') === 'true')) blockedReason = 'pull-in-flight';
                     if (!blockedReason && (ownerGate || stateGate)) blockedReason = state || 'unavailable';
                     if (!blockedReason && displayGate) blockedReason = 'unavailable';
-                    if (blockedReason) return 'blocked:' + blockedReason;
+                    if (blockedReason) {
+                      try {
+                        if (visitsOwner && typeof visitsOwner._reportOpenPatientPullTerminal === 'function') {
+                          visitsOwner._reportOpenPatientPullTerminal(blockedReason, btn);
+                        }
+                      } catch (eReportBlocked) {}
+                      return 'blocked:' + blockedReason;
+                    }
                     btn.click(); return 'clicked';
                   }
                   if (window.__mlsAthenaActions && window.__mlsAthenaActions.pullOpenChart) { window.__mlsAthenaActions.pullOpenChart({ title: 'Pull from chart', patientName: null, intent: { brings: 'Pull from chart → brings in name, DOB and all visits.', mode: 'read' } }); return 'shared'; }
