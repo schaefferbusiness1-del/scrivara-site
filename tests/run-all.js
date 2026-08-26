@@ -1781,7 +1781,15 @@ const tests = [
   /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the
      two-header flat list never guesses; single-header/two-column attribute;
      duplicate panes dedupe; supervising text never binds. */
-  'legacy-grid-attribution-fixtures.test.js'
+  'legacy-grid-attribution-fixtures.test.js',
+  /* cva-1.0.0 (Codex reply 27): convergence admission is monotonic and
+     fingerprinted - an unchanged omission cohort never buys a second round. */
+  'convergence-admission-pins.test.js',
+  /* ux1-1.0.1 (ancestor acaeec03, registered late): Settings keeps only its
+     scoped section-template importer; the generic [id*=template] op-note
+     toolbar never mounts inside the saved-format editor and retires across
+     same-page upgrades. Playwright runtime proof. */
+  'section-template-toolbar-isolation-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
