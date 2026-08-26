@@ -10,7 +10,7 @@
  * completed precheck prints FAST_GATE_PLAN and FAST_GATE_COMPLETE; a refused
  * release stops at FAST_GATE_REFUSED. A successful fast precheck still prints
  * full_gate_required=true when the change cannot
- * be promoted safely without the canonical GATE_COMPLETE=815 proof.
+ * be promoted safely without the canonical GATE_COMPLETE=858 proof.
  *
  * Usage:
  *   node scripts/fast-release-gate.js --base=origin/main --mode=precheck
@@ -28,15 +28,15 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 /* Kept in sync with tests/run-all.js by the deterministic contract test. */
-const FULL_GATE_TESTS = 815;
+const FULL_GATE_TESTS = 858;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
 
-const ALLOWED_UNTRACKED = Object.freeze(new Set([
-  'MLS_Assist_v3.0.79.bin',
-  'MLS_Assist_v3.0.79.zip',
-]));
+/* A release package is an executable publication artifact.  No untracked
+   package is silently clean: every candidate must be the exact tracked build
+   reviewed by the publication and digest contracts. */
+const ALLOWED_UNTRACKED = Object.freeze(new Set());
 
 const PROVENANCE_FILES = Object.freeze(new Set([
   '1p-mls-connect.js',
@@ -246,7 +246,7 @@ function readWorktreeStatus() {
 function assertGitClean(status) {
   if (status.disallowed.length) {
     const detail = status.disallowed.map((row) => `${row.status} ${row.file}`).join(', ');
-    throw new Error(`worktree is not clean; only approved stale .78 artifacts may be untracked: ${detail}`);
+    throw new Error(`worktree is not clean; untracked release artifacts are not allowed: ${detail}`);
   }
 }
 
@@ -299,7 +299,7 @@ function usage() {
     `The fast gate is a conservative changed-area precheck, not the ${FULL_GATE_TESTS}-suite replacement.`,
     '--mode=release refuses to call the result releasable when the full gate is required.',
     'FAST_GATE_COMPLETE is distinct from the canonical GATE_COMPLETE emitted by node tests/run-all.js.',
-    'Only untracked MLS_Assist_v3.0.79.zip and MLS_Assist_v3.0.79.bin are permitted.',
+    'Untracked release packages are never permitted.',
   ].join('\n');
 }
 

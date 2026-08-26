@@ -5,15 +5,26 @@
    deliberately never launch static-site, browser, package, or full-gate tests. */
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
 const gate = require('../scripts/fast-release-gate.js');
 
 let checks = 0;
 function ok(value, message) { checks++; assert.ok(value, message); }
 function eq(actual, expected, message) { checks++; assert.deepStrictEqual(actual, expected, message); }
 
+function readCanonicalGateCount() {
+  const source = fs.readFileSync(path.join(__dirname, 'run-all.js'), 'utf8');
+  const start = source.indexOf('const tests = [');
+  const end = source.indexOf('\n];', start);
+  assert(start >= 0 && end > start, 'run-all.js must retain an explicit tests array');
+  return vm.runInNewContext(`${source.slice(start, end + 3)}; tests.length`);
+}
+
 eq(gate.normalizePath('1p\\index.html'), '1p/index.html', 'Windows paths normalize to repository paths');
-ok(gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.79.zip'), 'approved stale ZIP is allowed');
-ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.81.zip'), 'new package is never silently allowed as untracked');
+ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.79.zip'), 'stale packages are never silently allowed as untracked');
+ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.81.zip'), 'current packages are never silently allowed as untracked');
 
 const provenance = gate.classifyChangedFiles([
   'feat_athena_autopull.js',
@@ -59,8 +70,8 @@ const status = gate.inspectWorktreeStatus([
   '?? MLS_Assist_v3.0.79.zip',
   '?? MLS_Assist_v3.0.79.bin',
 ]);
-eq(status.disallowed, [], 'the two approved stale artifacts are the only allowed untracked files');
-eq(status.allowed.length, 2, 'both approved stale artifacts are retained in the status report');
+eq(status.disallowed.length, 2, 'both stale artifacts keep the worktree dirty');
+eq(status.allowed.length, 0, 'no untracked release artifact is silently allowed');
 
 const dirty = gate.inspectWorktreeStatus([' M ScribeFlow.html']);
 ok(dirty.disallowed.length === 1, 'tracked modifications are never treated as clean');
@@ -73,7 +84,7 @@ ok(plan.focused.some((step) => /profile-coherence/.test(step.label)), 'provenanc
 ok(plan.focused.some((step) => /source-browser/.test(step.label)), 'provenance plan includes the visible SOURCE-row browser proof');
 ok(plan.focused.some((step) => /partial-provenance/.test(step.label)), 'provenance plan includes the new partial receipt test');
 ok(plan.descriptors.every((step) => Array.isArray(step.args) && step.args[0].endsWith('.js')), 'every plan step names an executable JavaScript test/script');
-eq(plan.fullGateTests, 815, 'fast plan distinguishes the canonical 815-suite gate');
+eq(plan.fullGateTests, readCanonicalGateCount(), 'fast plan stays synchronized with the canonical suite count');
 
 const e17Like = gate.classifyChangedFiles([
   ...provenance.changed,
