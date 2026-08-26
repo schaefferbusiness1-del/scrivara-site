@@ -6864,6 +6864,22 @@
       if (value.navDiag && typeof value.navDiag === "object") {
         try { out.navDiag = JSON.parse(JSON.stringify(value.navDiag)); } catch (eDg) {}
       }
+      /* nvd-1.0.1: a calendar-partial outcome said failed:8 and nothing else -
+         the engine's PHI-free reason-code counts (failureReasons, mapping
+         reasons) were built for exactly this and then dropped here. Live run 2
+         of the matrix was undiagnosable from its stored receipt again. */
+      if (value.calendarReceipt && typeof value.calendarReceipt === "object") {
+        try {
+          var cr = value.calendarReceipt;
+          out.calendarDiag = {
+            complete: cr.complete === true,
+            failed: Number(cr.failed || 0),
+            unresolvedMappings: Number(cr.unresolvedMappings || 0),
+            failureReasons: JSON.parse(JSON.stringify(cr.failureReasons || {})),
+            mappingReasons: JSON.parse(JSON.stringify(cr.mappingReasons || {}))
+          };
+        } catch (eCr) {}
+      }
     }
     /* the matrix must attribute every run to its visit-notes mode; the engine
        already stamps it and this whitelist dropped it. */
