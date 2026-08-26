@@ -53067,7 +53067,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         /* frozen provider travels when the phone scoped one; absent = the
            same all-providers day pull the desktop button runs */
         if (pl.provider) opts.provider = pl.provider;
-        if (pl.includeHistory === false) opts.includeHistory = false;
+        /* fvn-1.1.0 (Codex reply 38): a legacy phone payload could pass
+           includeHistory:false straight into si.pull() and suppress the
+           mandatory OFF floor (identity + chart facts + the pulled day's own
+           note). Remote payloads are normalized to the canonical floor -
+           only pullVisitBodies below chooses day-facts versus full. */
         /* rl-2.0.2 N4: carry the REQUESTING device's "Full visit notes" choice.
            Without this the importer read pullVisitBodies from THIS (office)
            machine's localStorage, so the office checkbox silently decided how

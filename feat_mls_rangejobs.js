@@ -829,7 +829,12 @@
         month: monthKey,
         dates: dates.slice(),
         provider: liveProvider.provider,
-        includeHistory: manifest.options.includeHistory !== false,
+        /* fvn-1.1.0 (Codex reply 38): a persisted legacy manifest could carry
+           includeHistory:false from a pre-dayfacts build and resume a range
+           pull without the mandatory floor. Execution is normalized to the
+           canonical floor - only fullNotes chooses day-facts versus full.
+           The manifest keeps recording what was originally requested. */
+        includeHistory: true,
         pullVisitBodies: manifest.options.fullNotes === true,
         onStatus: function (message, kind) { safe(function () { ctx.onStatus(String(message || ''), kind); }); },
         shouldStop: function () { return !!ctx.control || currentManifestKey() !== ctx.key; },

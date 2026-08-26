@@ -25038,20 +25038,22 @@ function pullScheduleViaAssist(btn, opts){
             else { setS('Read the page but found no patient appointments. Make sure Athena’s DAY schedule (not the dashboard) is open with patients on it, then pull again.','err'); }
             return;
           }
-          await _importPulledSchedule(appts);
-          /* vnoff-1.0.0: this legacy body (live only on a build with no
-             guarded engine) crawled EVERY chart's history regardless of the
-             admitted Full-visit-notes choice — an explicit OFF still opened
-             patient charts on this one path. The choice the admission gate
-             froze into opts.__pullVisitBodies governs here too: OFF (or a
-             missing flag) stays schedule-only, matching the guarded engine's
-             pullUnlocked() boundary. */
-          if(opts.__pullVisitBodies===true){
-            // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
-            try{ await _pullAllHistories(appts); }catch(_h){}
-          } else {
-            setS('Imported '+appts.length+' appointment row'+(appts.length===1?'':'s')+' through the legacy reader — this fallback cannot read chart facts or day notes; reload MLS for the full pull.','ok');
+          /* fvn-1.1.0 (Codex reply 38): the authoritative OFF floor - identity
+             + chart facts/coverage + exactly the pulled day's own visit note -
+             needs the guarded engine, and this legacy fallback cannot honor
+             it. So OFF (or a missing flag) REFUSES BEFORE IMPORTING with an
+             honest non-success: no successful pull may import rows while
+             omitting the floor, and the old 'ok' status that admitted it
+             "cannot read chart facts or day notes" was exactly the revoked
+             contract. ON keeps the floor plus historical notes through the
+             full crawl below. */
+          if(opts.__pullVisitBodies!==true){
+            setS('This legacy fallback cannot read chart facts or the day’s own visit note, so a day-only pull here would silently omit them. Nothing was imported. Reload MLS to use the full pull engine, or run this pull with Full visit notes ON.','err');
+            return;
           }
+          await _importPulledSchedule(appts);
+          // Then auto-pull EACH patient's chart/history (extension finds + opens each chart).
+          try{ await _pullAllHistories(appts); }catch(_h){}
         }catch(err){ setS('Couldn’t parse the schedule. Open Athena’s Day schedule view and try again.','err'); }
         finally{ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||'📥 Pull today’s patients &amp; their history'; } }
       })();
