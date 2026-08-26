@@ -51998,6 +51998,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
            isFn(window._athenaHistoryVerifiedRef);
   }
   var _reading = '';
+  var _cfScopeSerial = 0; /* scl-1.0.0: opaque per-read serial, never clock-only */
   function readFromAthena(p, onStatus) {
     var say = isFn(onStatus) ? onStatus : function () {};
     if (!p) return Promise.resolve({ ok: false, reason: 'no-patient' });
@@ -52007,8 +52008,23 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     /* pts-1.1.0 (Codex reply 30): explicit single-patient chart work carries
        its own NON-pull scope stamp, so the progress chip paints for it even
        after a day pull's epoch has been terminaled - without weakening the
-       day-pull fence. PHI-free: an opaque serial and a clock only. */
-    safe(function () { window.__mlsChartWorkScopeV1 = { id: 'cfread-' + Date.now().toString(36), at: Date.now() }; });
+       day-pull fence. PHI-free: an opaque serial and a clock only.
+       scl-1.0.0 (Codex reply 31): the scope is a LEASE, not a latch - the
+       handle is captured locally and compare-and-cleared on EVERY terminal
+       (success, named refusal, thrown/rejected read), so late background
+       chatter inside the 180s admission window cannot mint a new job after
+       this read finished. ABA-safe: only THIS read's id is ever cleared, so
+       an old terminal can never clear a newer read's scope. Clearing gates
+       FUTURE admissions only - the already-open job still finishes through
+       its own quiet timer. */
+    var cfScopeId = 'cfread-' + (++_cfScopeSerial) + '-' + Date.now().toString(36);
+    safe(function () { window.__mlsChartWorkScopeV1 = { id: cfScopeId, at: Date.now() }; });
+    function releaseChartScope() {
+      safe(function () {
+        var sc = window.__mlsChartWorkScopeV1;
+        if (sc && sc.id === cfScopeId) window.__mlsChartWorkScopeV1 = null;
+      });
+    }
     say('Reading this chart from athenaOne...');
     /* THE PATIENT OBJECT, not a hand-built target: _assistReadChart takes its
        own snapshot through _athenaHistoryTargetSnapshot and refuses a name-only
@@ -52037,6 +52053,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
       });
     }).then(function (r) {
       _reading = '';
+      releaseChartScope(); /* scl-1.0.0: success AND every named refusal end the lease */
       safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
       /* Name the refusal. "Could not be re-read" for an identity mismatch would
          invite the doctor to press it again forever; the open Athena chart is a
@@ -52046,7 +52063,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
             ? 'The open athenaOne chart did not prove it is this patient. Nothing was changed.'
             : 'The chart could not be re-read. Nothing was changed.'));
       return r;
-    }, function () { _reading = ''; say('The chart could not be re-read. Nothing was changed.'); return { ok: false, reason: 'error' }; });
+    }, function () { _reading = ''; releaseChartScope(); /* scl-1.0.0: a thrown read ends the lease too */ say('The chart could not be re-read. Nothing was changed.'); return { ok: false, reason: 'error' }; });
   }
 
   /* ======================================================== DOM RECONCILIATION
