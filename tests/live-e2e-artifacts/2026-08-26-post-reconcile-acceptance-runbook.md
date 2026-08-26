@@ -1,10 +1,22 @@
-# Post-reconciliation acceptance runbook — 2026-08-26
+# Post-reconciliation acceptance runbook — 2026-08-26 (updated for `00c49503`)
 
-Written at branch tip `46a566ee` (all thirteen reliability slices Codex-accepted: cva, cvi,
-pts-1.1, pvd, tax-1.0.1, nvl-1.5, fvn-1.1, scl, pv7-1.1, prov-1.0.1, vt-1.1, spd — replies
-35/36/41/42/46/47). Run this AFTER Codex reconciles the branch into main and the enabled
-extension is restamped/reloaded through the normal protocol. Every step names the exact
-receipt that proves it; a green click path proves nothing by itself.
+Targets Codex's reconciliation merge `00c49503` (reply 49: site tip `aa00f509` × accepted
+Claude tip `46a566ee`, lane `codex/reconcile-site-claude-20260826` /
+`wt-reconcile-site-claude-20260826`). Candidate extension identity to verify at load
+time: core digest `b8d185d7e15d6667a6c67b6e6bb71667c6b59cf8d844c410da071bf7d2b26a45`,
+package digest `f38834f7e28f50bd86b506bdfe2f5aa3a0730f4bade75e7f9dbd8c3b02454442`
+(3.0.81 deterministic ZIP/BIN — LOCAL CANDIDATE until the load/deploy boundary opens).
+Run this AFTER the candidate ships through the normal protocol. Every step names the
+exact receipt that proves it; a green click path proves nothing by itself.
+
+**Reconciliation semantic note (reply 49):** the accepted site keeps the toolbar
+"whoever is open in Athena" verb VISIBLE beside the selected patient's "Refresh full
+visit history" bar — they are distinct verbs. The acceptance check is therefore: BOTH
+controls present in their contexts, the scoped safety hide owner intact, and NO
+zero-verb state anywhere (the revised `open-athena-patient-control-runtime` + pin suite
+are the executable contract). The background.js conflict resolution preserves the
+site's `note-editor-not-empty` receipt for prefilled exact destinations alongside the
+HET diagnostic stamp for non-write mismatches — the write matrix below exercises both.
 
 **Boundaries (unchanged, absolute):** live writes only on dummy Adam J Schaeffer
 (#7833832, appt 55816420, encounter 15991289); only write_note/save_draft ever execute;
@@ -23,9 +35,10 @@ every mutation needs action-time confirmation (Codex reply 48 standing rule).
 ## 1. Owner-validated whoever-pull re-test (SACRED — first, per standing law)
 - Real click on the open-patient toolbar verb with the dummy open in athena.
 - PROVE: right patient (digits-only MRN in the capture receipt — cap-mrn law), no
-  false "different patient" warning, `#ptPullAthenaBtn` visible in every render
-  (pv7: select a patient on the Patients view and confirm the verb never vanishes;
-  hidden-header render too).
+  false "different patient" warning, and the reconciled two-verb contract: the toolbar
+  whoever-verb stays visible in EVERY render (Patients view with visits selected,
+  hidden-header render) AND the per-patient bar mounts beside it when its context is
+  visible — both distinct verbs present, zero-verb state impossible.
 
 ## 2. Five-path pull matrix (each path ×2 minimum; verify DATA, not clicks)
 Read after every pull: `window.__mlsPullLastOutcome` — it now carries `historyVerdicts`
