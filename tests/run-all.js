@@ -1771,7 +1771,11 @@ const tests = [
      athena's machine-typed context META (patient_id === expected MRN) plus an
      ancestor-frame banner judged by the unchanged identity gates; every
      uniqueness refusal and equality gate is pinned, regexes executed. */
-  'het-stage-context-pins.test.js'
+  'het-stage-context-pins.test.js',
+  /* bx-1.0.0: the multi-select batch send is a queue over the existing
+     per-row probe/execute machinery - checkboxes only on ready note-writes,
+     halt-on-uncertain, hidden-safe settle-latch waits. */
+  '1p-writeflow-batch-send.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
