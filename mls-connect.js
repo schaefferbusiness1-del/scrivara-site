@@ -48877,23 +48877,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* event-driven widget deck on Visit (window.__mlsWidgetDeck wd-1.2.0; revert()); shared build token prevents stale polling code */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
 ;(function(){try{var want=false;var lay='';try{lay=localStorage.getItem('mls_layout_pref')||'';}catch(e){}if(lay==='full')return;if(lay==='simple')want=true;try{if(!want)want=(sessionStorage.getItem('mls_phone_mode')==='1');}catch(e){}try{if(!want&&localStorage.getItem('mls_device_role')==='phone')want=true;}catch(e){}try{if(!want&&/[?&]phone=1/.test(location.search))want=true;}catch(e){}try{if(!want)want=/iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent||'')&&((navigator.maxTouchPoints||0)>0||'ontouchstart' in window);}catch(e){}if(!want)return;if(document.querySelector('script[data-mls-asset="feat_mls_phone_ui.js"]'))return;var s=document.createElement('script');s.src='feat_mls_phone_ui.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_phone_ui.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS on a phone (ph3-1.0.0): a phone app written for the phone, replacing the 28-rule body.mls-phone hide layer that produced every defect in PHONE_AUDIT_2026-07-27.md. Requested ONLY on a handheld / explicit phone role / ?phone=1 / the Settings layout preference, so a desktop pays nothing. THE LAYOUT PREFERENCE IS READ FIRST AND IT IS READ HERE: wantPhone() has consulted mls_layout_pref since dr-1.5.0, but this loader did not, so Settings -> Integrations -> This device -> "Simple phone app" answered yes in one place and never fetched the file in the other -- a setting that saved and did nothing. 'full' returns immediately for the same reason in reverse. Deliberately NOT routed through __mlsDeferAsset: this module hides the desktop chrome, and deferring it past first paint shows the doctor the 8-item dock and the crowded workspace for a second before replacing them (window.__mlsPhoneUI ph3-1.0.0; revert()) */
-/* p1-calm-dock-2.0.0: normal preview owns one liquid-glass dock while the
+/* p1-calm-dock-2.0.1: normal preview owns one liquid-glass dock while the
    established Calm owner keeps the account's chosen side. Narrow screens use
    the proven bottom geometry without rewriting that desktop preference. The
    old rail is hidden only after the rendered dock (or its 44px reveal handle)
    and the matching content clearance prove ready. */
 ;(function(){try{
   if(!(window.__MLS_MAIN&&window.__MLS_MAIN.enabled===true))return;
-  var A='feat_mls_calm_shell.js',V='p1-calm-dock-2.0.0',CALM_V='calm-1.0.0';
+  var A='feat_mls_calm_shell.js',V='p1-calm-dock-2.0.1',CALM_V='calm-1.0.0';
   var KEY='__mlsP1CalmDock',SEQ='__mlsP1CalmDockSequence',prior=window[KEY];
   function controllerShape(value){return !!(value&&value.installed===true&&value.version===V&&
     typeof value.installToken==='string'&&value.installToken&&typeof value.ensure==='function'&&
     typeof value.reconcile==='function'&&typeof value.revert==='function');}
-  if(prior){if(controllerShape(prior)){prior.ensure();return;}return;}
+  function previousControllerShape(value){return !!(value&&value.installed===true&&value.version==='p1-calm-dock-2.0.0'&&
+    typeof value.installToken==='string'&&value.installToken&&typeof value.ensure==='function'&&
+    typeof value.reconcile==='function'&&typeof value.revert==='function');}
+  if(prior){
+    if(controllerShape(prior)){prior.ensure();return;}
+    if(!previousControllerShape(prior))return;
+    var priorRetired=false;try{priorRetired=prior.revert()===true;}catch(_priorRevertError){priorRetired=false;}
+    if(!priorRetired||window[KEY]===prior||window[KEY])return;
+  }
   var sequence=Math.max(0,Number(window[SEQ])||0)+1;window[SEQ]=sequence;
   var ctl={installed:true,version:V,state:'idle',installToken:'p1-calm-'+Date.now().toString(36)+'-'+
     sequence.toString(36)+'-'+Math.random().toString(36).slice(2),node:null,owner:null,
     settleTimer:null,settleAttempt:0,maxSettleAttempts:80,style:null,status:null,listeners:[],loadAttempt:0,
+    selfHealTimer:null,selfHealRetries:0,maxSelfHealRetries:2,lastFailure:null,
     handle:null,compactTimer:null,revealTimer:null,overlayTimer:null,compactPinned:true,compactExpanded:true,pinKey:'',pinRow:null,compactObserver:null,
     clearanceReleased:false,clearanceTimer:null};
   var DOCK_SIDES={bottom:1,top:1,left:1,right:1};
@@ -48934,6 +48943,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      band. 760 makes both beliefs agree: the shell has exactly one phone
      threshold, so the guard uses that same one. */
   function narrowDock(){try{return Number(window.innerWidth)<=760||!!(window.matchMedia&&window.matchMedia('(max-width:760px)').matches);}catch(_mediaError){return Number(window.innerWidth)<=760;}}
+  function phoneSurface(){try{return narrowDock()||!!(document.body&&document.body.classList.contains('mls-phone'));}catch(_phoneError){return narrowDock();}}
   function actualDockSide(){
     if(narrowDock())return 'bottom';
     var attr='';try{attr=String(document.body&&document.body.getAttribute('data-mls-dock')||'');}catch(_attrError){}
@@ -48971,7 +48981,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'html body[data-mls-dock="top"] #mlsAskResults{top:46px;bottom:auto}'+
         'html body[data-mls-dock="left"] #mlsAskResults{left:calc(100% + 8px);right:auto;top:0;bottom:auto}'+
         'html body[data-mls-dock="right"] #mlsAskResults{right:calc(100% + 8px);left:auto;top:0;bottom:auto}'+
-        '@media(max-width:760px){html body #mlsDock{top:auto!important}html body #mlsP1DockHandle{display:none!important}html body.mls-p1-dock-collapsed #mlsDock{opacity:1!important;visibility:visible!important;pointer-events:auto!important}}'+
+        'html body.mls-phone #mlsP1CalmDockStatus{display:none!important;pointer-events:none!important}'+
+        '@media(max-width:760px){html body #mlsDock{top:auto!important}html body #mlsP1DockHandle{display:none!important}html body.mls-p1-dock-collapsed #mlsDock{opacity:1!important;visibility:visible!important;pointer-events:auto!important}html body #mlsP1CalmDockStatus{display:none!important;pointer-events:none!important}}'+
         /* defect-2: the frozen shell reserves #appWrap side/top padding and a
            body bottom padding for wherever the dock lives, and never gives it
            back while the dock is only hidden (auto-hide/collapsed). This class
@@ -49015,17 +49026,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function clearReady(){try{if(document.body&&document.body.classList.contains('mls-p1-dock-ready'))document.body.classList.remove('mls-p1-dock-ready');}catch(_classError){};}
   function removeStatus(){var node=ctl.status||document.getElementById('mlsP1CalmDockStatus');if(node&&node.parentNode)try{node.parentNode.removeChild(node);}catch(_removeError){}ctl.status=null;}
+  function statusVisible(){var node=ctl.status||document.getElementById('mlsP1CalmDockStatus');if(!node)return false;try{var css=getComputedStyle(node),r=node.getBoundingClientRect();return css.display!=='none'&&css.visibility!=='hidden'&&css.pointerEvents!=='none'&&Number(r.width)>0&&Number(r.height)>0;}catch(_statusError){return false;}}
+  function legacyNavigationVisible(){var rail=document.getElementById('mlsRdNav');if(!rail)return false;try{var css=getComputedStyle(rail),r=rail.getBoundingClientRect();return css.display!=='none'&&css.visibility!=='hidden'&&Number(r.width)>0&&Number(r.height)>0;}catch(_railError){return false;}}
+  function discardFailedLoad(){var node=ctl.node;if(!node)return;ctl.node=null;try{node.onload=null;node.onerror=null;node.setAttribute('data-mls-retired-asset',A);node.removeAttribute('data-mls-asset');if(node.parentNode)node.parentNode.removeChild(node);}catch(_removeError){}}
+  function scheduleSelfHeal(reason){
+    if(!current()||!phoneSurface()||reason!=='failed-network'||ctl.selfHealTimer||ctl.selfHealRetries>=ctl.maxSelfHealRetries)return false;
+    ctl.selfHealTimer=setTimeout(function(){ctl.selfHealTimer=null;if(!current()||!preview()||!phoneSurface())return;ctl.selfHealRetries++;ctl.state='retrying';load();},300);
+    return true;
+  }
   function fail(reason,message){
     if(!current())return false;ctl.state=reason;clearReady();
     var api=ownerShape(window.__mlsCalmShell)?window.__mlsCalmShell:null;
     if(api&&api.active===true)try{api.revert();}catch(_ownerRevertError){}
     try{if(document.body)document.body.removeAttribute('data-mls-dock');}catch(_bodyError){}
-    var node=document.getElementById('mlsP1CalmDockStatus');
-    if(!node){node=document.createElement('div');node.id='mlsP1CalmDockStatus';node.setAttribute('role','alert');node.setAttribute('aria-live','assertive');
-      node.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483200;max-width:420px;padding:11px 14px;border:1px solid #b85b53;border-radius:12px;background:#fff4f2;color:#6f2722;box-shadow:0 8px 24px rgba(55,31,27,.18);font:600 13px/1.4 system-ui,sans-serif';
-      (document.body||document.documentElement).appendChild(node);}
-    node.textContent=message||'The navigation bar could not load. The existing navigation is still available; reload this preview to try again.';ctl.status=node;
-    try{window.__mlsP1CalmDockFailure={reason:reason,at:Date.now()};}catch(_failureError){}
+    var phone=phoneSurface(),retryPlanned=false;
+    if(reason==='failed-network')discardFailedLoad();
+    if(phone){removeStatus();retryPlanned=scheduleSelfHeal(reason);}
+    else{
+      var node=document.getElementById('mlsP1CalmDockStatus');
+      if(!node){node=document.createElement('div');node.id='mlsP1CalmDockStatus';node.setAttribute('role','alert');node.setAttribute('aria-live','assertive');
+        node.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483200;max-width:420px;padding:11px 14px;border:1px solid #b85b53;border-radius:12px;background:#fff4f2;color:#6f2722;box-shadow:0 8px 24px rgba(55,31,27,.18);font:600 13px/1.4 system-ui,sans-serif';
+        (document.body||document.documentElement).appendChild(node);}
+      node.textContent=message||'The navigation bar could not load. The existing navigation is still available; reload this preview to try again.';ctl.status=node;
+    }
+    ctl.lastFailure={reason:reason,at:Date.now(),phoneSurface:phone,narrow:narrowDock(),alertVisible:statusVisible(),legacyNavigationVisible:legacyNavigationVisible(),retriesUsed:ctl.selfHealRetries,retryPlanned:retryPlanned,maxSelfHealRetries:ctl.maxSelfHealRetries};
+    try{window.__mlsP1CalmDockFailure=ctl.lastFailure;}catch(_failureError){}
     return false;
   }
   function pinPreferenceKey(){return accountPreferenceKey('p1DockPinnedV1')||'mls::p1DockPinnedV1';}
@@ -49255,7 +49280,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     try{if(rail&&getComputedStyle(rail).display!=='none'){clearReady();return false;}}catch(_railError){clearReady();return false;}
     ctl.owner=window.__mlsCalmShell;ctl.state='ready';ctl.settleAttempt=0;removeStatus();
-    try{delete window.__mlsP1CalmDockFailure;delete window.__mlsPresentationFallback;
+    try{if(ctl.lastFailure)window.__mlsP1CalmDockRecovery={recoveredAt:Date.now(),retriesUsed:ctl.selfHealRetries,lastFailure:ctl.lastFailure};ctl.lastFailure=null;ctl.selfHealRetries=0;delete window.__mlsP1CalmDockFailure;delete window.__mlsPresentationFallback;
       if(document.documentElement)document.documentElement.removeAttribute('data-mls-presentation-fallback');}catch(_clearError){}
     return true;
   }
@@ -49266,6 +49291,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   ctl.reconcile=function(){
     if(!current())return false;if(!preview())return fail('blocked-preview','The navigation bar is disabled outside this lane.');
+    if(/^failed-|^blocked-/.test(ctl.state))return false;
     ensureStyle();normalizePreference();
     var api=window.__mlsCalmShell;
     if(!ownerShape(api)){if(api)return fail('failed-owner-shape');ctl.state='waiting-owner';armSettle();return false;}
@@ -49308,6 +49334,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
   ctl.revert=function(){
     if(!current())return false;if(ctl.settleTimer){clearTimeout(ctl.settleTimer);ctl.settleTimer=null;}
+    if(ctl.selfHealTimer){clearTimeout(ctl.selfHealTimer);ctl.selfHealTimer=null;}
     removeCompact();
     ctl.listeners.splice(0).forEach(function(row){try{row[0].removeEventListener(row[1],row[2],row[3]);}catch(_listenerError){}});
     clearReady();removeStatus();if(ctl.style&&ctl.style.parentNode)try{ctl.style.parentNode.removeChild(ctl.style);}catch(_styleError){}ctl.style=null;

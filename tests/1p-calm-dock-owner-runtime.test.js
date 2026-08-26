@@ -58,6 +58,7 @@ ok(/mls-p1-dock-ready/.test(guard) && /failed-render-timeout/.test(guard),
   'dock owner lost its ready-only geometry gate or honest render timeout');
 ok(/mlsP1DockHandle/.test(guard) && /p1DockPinnedV1/.test(guard),
   'P1 compact handle or persisted pin contract is absent');
+ok(/p1-calm-dock-2\.0\.1/.test(guard), 'phone-safe Calm-dock behavior did not bump the warm-tab controller version');
 
 const calmAsset = String.raw`(function(){
   if(window.__mlsCalmShell)return;
@@ -124,6 +125,8 @@ function html(params) {
   const device = params.get('device') || (side === 'left' ? 'top' : 'left');
   const pin = params.get('pin') == null ? '1' : params.get('pin');
   const mode = params.get('mode') || 'ready';
+  const phone = params.get('phone') === '1';
+  const prior = params.get('prior') === '1';
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     *{box-sizing:border-box}html,body{width:100%;min-height:100%;margin:0}body{padding-left:236px;font-family:system-ui,sans-serif}
     #mlsRdNav{display:block;position:fixed;left:0;top:0;width:236px;height:100vh;background:#eee;z-index:50}
@@ -145,16 +148,18 @@ function html(params) {
     #_backupBadge{position:fixed;left:16px;bottom:84px;z-index:9000;width:140px;height:34px;background:#fff7e6}
     #mlsGetPhoneCard{position:fixed;right:16px;bottom:16px;z-index:99996;width:200px;height:80px;background:#F6FBF8}
     #mlsFab{position:fixed;right:24px;bottom:96px;z-index:99980;width:54px;height:54px;background:#1F63C9}
+    @media(max-width:760px){body{padding-left:0}#mlsRdNav{left:0;top:auto;bottom:0;width:100%;height:48px}#appWrap{padding:16px}body:not(.mls-calm) #primaryAction{position:fixed;left:16px;bottom:48px;z-index:100;height:44px}#_patientFace,#_backupBadge,#mlsGetPhoneCard,#mlsFab{display:none}}
   </style><script>
     ${p1 ? "window.__MLS_P1_PREVIEW={enabled:true,route:'/1p/'};" : ''}
     window.__MLS_AV='${mode}';window.__calmMode='${mode}';window.__acct='a';
     window.__jobs=[];window.__mlsDeferAsset=function(fn){window.__jobs.push(fn);setTimeout(fn,0);return window.__jobs.length;};
     window.uns=function(k){return 'account-'+window.__acct+':'+k;};
+    ${prior ? "window.__warmPriorReverts=0;(function(){var old={installed:true,version:'p1-calm-dock-2.0.0',installToken:'old-controller',ensure:function(){},reconcile:function(){},revert:function(){window.__warmPriorReverts++;old.installed=false;if(window.__mlsP1CalmDock===old)delete window.__mlsP1CalmDock;return true;}};window.__mlsP1CalmDock=old;})();" : ''}
     try{localStorage.setItem('mlsCalmShell','0');localStorage.setItem('mls::qolDockSide','${device}');localStorage.setItem('account-a:qolDockSide','${side}');localStorage.setItem('account-a:p1DockPinnedV1','${pin}');}catch(e){}
-  </script></head><body><header id="appHeader">Header</header><div id="mlsCtxBar">Patient context</div>
+  </script></head><body${phone ? ' class="mls-phone"' : ''}><header id="appHeader">Header</header><div id="mlsCtxBar">Patient context</div>
   <nav id="mlsRdNav">Old left rail</nav>
   <div id="_patientFace"></div><div id="_backupBadge"></div><div id="mlsGetPhoneCard"></div><button id="mlsFab" type="button"></button>
-  <main id="appWrap"><section id="appScreen"><button id="primaryAction">Primary action</button>
+  <main id="appWrap"><section id="appScreen"><button id="primaryAction" onclick="window.__recordingStarts=(window.__recordingStarts||0)+1">Start recording</button>
   <label for="qolDockSide">Navigation bar</label><select id="qolDockSide" onchange="applyDockSidePreview(this.value)">
   <option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select>
   <label for="qolDockAutoHide">Auto-hide</label><input type="checkbox" id="qolDockAutoHide" onchange="if(typeof applyDockAutoHidePreview==='function')applyDockAutoHidePreview(this.checked)">
@@ -163,12 +168,18 @@ function html(params) {
 
 function serve() {
   return new Promise(resolve => {
+    const assetRequests = new Map();
     const server = http.createServer((req, res) => {
       const url = new URL(req.url, 'http://127.0.0.1');
       res.setHeader('Cache-Control', 'no-store');
       if (url.pathname === '/guard.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(guard); }
       if (url.pathname === '/feat_mls_calm_shell.js') {
         if (url.searchParams.get('v') === 'network-error') { res.statusCode = 404; return res.end('not found'); }
+        if (url.searchParams.get('v') === 'transient-network') {
+          const count = assetRequests.get('transient-network') || 0;
+          assetRequests.set('transient-network', count + 1);
+          if (!count) { res.statusCode = 503; return res.end('try again'); }
+        }
         res.setHeader('Content-Type', 'text/javascript'); return res.end(calmAsset);
       }
       res.setHeader('Content-Type', 'text/html'); res.end(html(url.searchParams));
@@ -186,7 +197,8 @@ async function open(browser, base, options = {}) {
   const query = new URLSearchParams({
     mode: options.mode || 'ready', side: options.side || 'bottom',
     device: options.device || (options.side === 'left' ? 'top' : 'left'),
-    pin: options.pin == null ? '1' : String(options.pin), p1: options.p1 === false ? '0' : '1'
+    pin: options.pin == null ? '1' : String(options.pin), p1: options.p1 === false ? '0' : '1',
+    phone: options.phone ? '1' : '0', prior: options.prior ? '1' : '0'
   });
   if (options.classic) query.set('ui', 'classic');
   await page.goto(`${base}/?${query}`, { waitUntil: 'load' });
@@ -262,6 +274,20 @@ function assertGeometry(result, side, viewport, label) {
       eq(result.pin, '0', 'non-P1 page changed its pin preference');
       eq(errors.length, 0, 'non-P1 early exit raised page errors: ' + errors.join(' | '));
       await context.close();
+    }
+
+    /* A recognized 2.0.0 warm-tab controller is retired exactly once before
+       2.0.1 installs. Unknown prior owners remain fail-closed by the guard. */
+    {
+      const opened = await open(browser, base, { prior: true });
+      await ready(opened.page);
+      const result = await opened.page.evaluate(() => ({ version:window.__mlsP1CalmDock&&window.__mlsP1CalmDock.version,
+        reverts:window.__warmPriorReverts,state:window.__mlsP1CalmDock&&window.__mlsP1CalmDock.state }));
+      eq(result.reverts, 1, 'warm-tab 2.0.0 controller was not retired exactly once');
+      eq(result.version, 'p1-calm-dock-2.0.1', 'warm tab did not install the 2.0.1 controller');
+      eq(result.state, 'ready', 'warm-tab replacement controller did not reach ready');
+      eq(opened.errors.length, 0, 'warm-tab upgrade raised page errors: ' + opened.errors.join(' | '));
+      await opened.context.close();
     }
 
     /* Every supported desktop side survives boot and proves non-obstructing geometry. */
@@ -543,16 +569,117 @@ function assertGeometry(result, side, viewport, label) {
       assertGeometry(result, 'top', opened.viewport, 'delayed top');
       await opened.context.close();
     }
+    /* A permanent phone network failure stays out of the recorder's way. The
+       legacy navigation remains available, diagnostics tell the truth, and the
+       loader stops after exactly its bounded self-heal budget. */
+    {
+      const viewport = { width: 390, height: 844 };
+      const opened = await open(browser, base, { mode: 'network-error', viewport });
+      await opened.page.waitForFunction(() => {
+        const c=window.__mlsP1CalmDock,f=window.__mlsP1CalmDockFailure;
+        return c&&f&&c.state==='failed-network'&&c.selfHealRetries===c.maxSelfHealRetries&&f.retryPlanned===false;
+      }, null, { timeout: 5000 });
+      let result = await opened.page.evaluate(() => {
+        const button=document.getElementById('primaryAction'),r=button.getBoundingClientRect();
+        const target=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+        return { alert:document.getElementById('mlsP1CalmDockStatus'),alerts:document.querySelectorAll('[role="alert"]').length,
+          rail:getComputedStyle(document.getElementById('mlsRdNav')).display,ready:document.body.classList.contains('mls-p1-dock-ready'),
+          visible:!!(r.width&&r.height&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight),hit:target===button||button.contains(target),
+          diagnostics:window.__mlsP1CalmDockFailure,retries:window.__mlsP1CalmDock.selfHealRetries };
+      });
+      eq(result.alert, null, 'phone failure rendered a Calm-dock alert overlay');
+      eq(result.alerts, 0, 'phone failure left an alert overlay in the document');
+      eq(result.rail, 'block', 'phone failure hid the working legacy navigation');
+      eq(result.ready, false, 'phone failure retained the ready marker');
+      eq(result.visible, true, 'Start recording escaped the phone viewport');
+      eq(result.hit, true, 'Start recording was not the hit-test target at its centre');
+      eq(result.retries, 2, 'phone failure did not stop at the bounded retry budget');
+      eq(result.diagnostics.reason, 'failed-network', 'phone diagnostics lost the terminal failure reason');
+      eq(result.diagnostics.phoneSurface, true, 'phone diagnostics did not identify the phone surface');
+      eq(result.diagnostics.narrow, true, 'phone diagnostics did not identify the narrow surface');
+      eq(result.diagnostics.alertVisible, false, 'phone diagnostics claimed a suppressed alert was visible');
+      eq(result.diagnostics.legacyNavigationVisible, true, 'phone diagnostics claimed the visible legacy navigation was unavailable');
+      eq(result.diagnostics.retryPlanned, false, 'terminal phone diagnostics claimed another retry was pending');
+      const oldOverlayWouldBlock = await opened.page.evaluate(() => {
+        const probe=document.createElement('div');
+        probe.textContent='The navigation bar could not load. The existing navigation is still available; reload this preview to try again.';
+        probe.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483200;max-width:420px;padding:11px 14px;border:1px solid #b85b53;border-radius:12px;background:#fff4f2;color:#6f2722;box-shadow:0 8px 24px rgba(55,31,27,.18);font:600 13px/1.4 system-ui,sans-serif';
+        document.body.appendChild(probe);
+        const button=document.getElementById('primaryAction'),r=button.getBoundingClientRect(),target=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+        const blocked=target===probe||probe.contains(target);probe.remove();return blocked;
+      });
+      eq(oldOverlayWouldBlock, true, 'phone fixture no longer places Start recording where the retired warning would block it');
+      await opened.page.click('#primaryAction');
+      eq(await opened.page.evaluate(() => window.__recordingStarts), 1, 'Start recording was not clickable after the terminal phone failure');
+      eq(opened.errors.length, 0, 'phone network failure raised page errors: ' + opened.errors.join(' | '));
+      await opened.context.close();
+    }
+    /* Explicit simple-phone mode gets the same non-obstructing failure policy
+       even on a viewport wider than the responsive breakpoint. */
+    {
+      const viewport = { width: 900, height: 800 };
+      const opened = await open(browser, base, { mode: 'network-error', phone: true, viewport });
+      await opened.page.waitForFunction(() => {
+        const c=window.__mlsP1CalmDock,f=window.__mlsP1CalmDockFailure;
+        return c&&f&&c.state==='failed-network'&&c.selfHealRetries===c.maxSelfHealRetries&&!f.retryPlanned;
+      }, null, { timeout: 5000 });
+      const result = await opened.page.evaluate(() => ({ alert:!!document.getElementById('mlsP1CalmDockStatus'),diagnostics:window.__mlsP1CalmDockFailure,
+        rail:getComputedStyle(document.getElementById('mlsRdNav')).display }));
+      eq(result.alert, false, 'wide simple-phone mode rendered a Calm-dock alert overlay');
+      eq(result.diagnostics.phoneSurface, true, 'wide simple-phone diagnostics missed the explicit phone layout');
+      eq(result.diagnostics.narrow, false, 'wide simple-phone diagnostics incorrectly called the viewport narrow');
+      eq(result.rail, 'block', 'wide simple-phone failure hid the legacy navigation');
+      await opened.context.close();
+    }
+    /* Phone suppression is failure-class agnostic: a rendered owner that never
+       produces valid dock geometry also fails back without an alert overlay. */
+    {
+      const viewport = { width: 390, height: 844 };
+      const opened = await open(browser, base, { mode: 'blank', viewport });
+      await opened.page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'waiting-render');
+      await opened.page.evaluate(() => { window.__mlsP1CalmDock.maxSettleAttempts=1;window.__mlsP1CalmDock.reconcile(); });
+      await opened.page.waitForFunction(() => window.__mlsP1CalmDock.state === 'failed-render-timeout');
+      const result = await opened.page.evaluate(() => ({ alert:!!document.getElementById('mlsP1CalmDockStatus'),diagnostics:window.__mlsP1CalmDockFailure,
+        rail:getComputedStyle(document.getElementById('mlsRdNav')).display,retries:window.__mlsP1CalmDock.selfHealRetries }));
+      eq(result.alert, false, 'phone render timeout rendered a Calm-dock alert overlay');
+      eq(result.diagnostics.reason, 'failed-render-timeout', 'phone render-timeout diagnostics lost the failure class');
+      eq(result.diagnostics.phoneSurface, true, 'phone render-timeout diagnostics missed the phone surface');
+      eq(result.rail, 'block', 'phone render timeout hid the legacy navigation');
+      eq(result.retries, 0, 'non-network phone failure entered the network self-heal loop');
+      await opened.context.close();
+    }
     {
       const opened = await open(browser, base, { mode: 'network-error' });
       await opened.page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'failed-network');
       const result = await opened.page.evaluate(() => ({ alert: document.getElementById('mlsP1CalmDockStatus') && document.getElementById('mlsP1CalmDockStatus').textContent,
         rail: getComputedStyle(document.getElementById('mlsRdNav')).display, padding: getComputedStyle(document.body).paddingLeft,
-        ready: document.body.classList.contains('mls-p1-dock-ready') }));
+        ready: document.body.classList.contains('mls-p1-dock-ready'), diagnostics:window.__mlsP1CalmDockFailure,
+        retries:window.__mlsP1CalmDock.selfHealRetries }));
       ok(/navigation bar could not load/i.test(result.alert), 'failed dock load was not surfaced honestly');
       eq(result.rail, 'block', 'failed dock load hid the only working navigation');
       eq(result.padding, '236px', 'failed dock load cleared the old navigation gutter');
       eq(result.ready, false, 'failed dock load retained the ready marker');
+      eq(result.diagnostics.alertVisible, true, 'desktop diagnostics did not report the visible warning');
+      eq(result.retries, 0, 'desktop failure unexpectedly entered the phone self-heal loop');
+      await opened.context.close();
+    }
+    /* One transient phone failure recovers on the first bounded retry, clears
+       failure presentation, and promotes the proven dock over the old rail. */
+    {
+      const viewport = { width: 390, height: 844 };
+      const opened = await open(browser, base, { mode: 'transient-network', viewport });
+      await ready(opened.page);
+      const result = await opened.page.evaluate(() => ({ alert:!!document.getElementById('mlsP1CalmDockStatus'),failure:window.__mlsP1CalmDockFailure||null,
+        recovery:window.__mlsP1CalmDockRecovery||null,rail:getComputedStyle(document.getElementById('mlsRdNav')).display,
+        dock:getComputedStyle(document.getElementById('mlsDock')).visibility,retries:window.__mlsP1CalmDock.selfHealRetries }));
+      eq(result.alert, false, 'recovered phone retained a failure alert');
+      eq(result.failure, null, 'recovered phone retained the active failure diagnostic');
+      ok(result.recovery && result.recovery.lastFailure.reason === 'failed-network', 'recovered phone did not retain truthful recovery diagnostics');
+      eq(result.recovery.retriesUsed, 1, 'transient phone recovery used an unexpected retry count');
+      eq(result.retries, 0, 'transient phone recovery did not reset its budget after proof');
+      eq(result.rail, 'none', 'recovered phone did not retire the legacy rail after dock proof');
+      eq(result.dock, 'visible', 'recovered phone dock is not visible');
+      eq(opened.errors.length, 0, 'transient phone recovery raised page errors: ' + opened.errors.join(' | '));
       await opened.context.close();
     }
 
