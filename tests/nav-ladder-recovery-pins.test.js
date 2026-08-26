@@ -168,6 +168,36 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
     /* a clean first attempt stays 1/1 */
     r = await drive([GOOD]);
     assert.deepStrictEqual({ total: r.total, seq: r.diag.sequences, ran: r.ran }, { total: 1, seq: 1, ran: false });
+
+    /* nvl-1.5.0 (Codex reply 44): the REAL settle layer spends retries only
+       under the same closed law - every fail-closed shape gets EXACTLY ONE
+       real bridge dispatch, zero recovery, and the trailing GOOD reply is
+       never consumed (production can never proceed past a fail-closed first
+       reply on a later settle call). */
+    const SETTLE_NEVER = [
+      ['coded refusal', { ok: false, supported: true, reason: 'athena-tab-sleeping', diag: { initFrames: 1 } }],
+      ['dead session', { ok: false, supported: true, sessionLikelyExpired: true, diag: { initFrames: 3 } }],
+      ['unsupported', { ok: false, supported: false, error: 'No athenaOne tab open.' }],
+      ['null reply', null],
+      ['empty reply', {}],
+      ['missing-ok wrong day (the decisive control)', { schedDate: '2026-08-25' }],
+      ['null-ok wrong day', { ok: null, schedDate: '2026-08-25' }],
+      ['string-ok wrong day', { ok: 'true', schedDate: '2026-08-25' }],
+      ['alien via beside positive diag', { ok: false, supported: true, via: 'jetpack', diag: { initFrames: 5 } }],
+      ['missing supported with reviewed via', { ok: false, via: 'weekstrip' }],
+      ['reason-less with no alive evidence', { ok: false, supported: true, diag: { initFrames: 0, rounds: [] } }]
+    ];
+    for (const [label, reply] of SETTLE_NEVER) {
+      r = await drive([reply, GOOD]);
+      assert.deepStrictEqual({ calls: r.bridgeCalls, total: r.total, ran: r.ran }, { calls: 1, total: 1, ran: false },
+        label + ' spent settle retries in the REAL layer: ' + JSON.stringify({ calls: r.bridgeCalls, total: r.total, ran: r.ran }));
+      assert.notStrictEqual(r.nav && r.nav.ok, true,
+        label + ' consumed the trailing GOOD reply and proceeded as success');
+    }
+    /* the reviewed alive shapes RETAIN their bounded settle behavior */
+    r = await drive([{ ok: true, supported: true, schedDate: '2026-08-25' }, GOOD]);
+    assert.deepStrictEqual({ ok: r.nav.ok, calls: r.bridgeCalls }, { ok: true, calls: 2 },
+      'the exact ok:true wrong-day landing lost its settle retry');
     /* nvl-1.3.0: EXACT receipt booleans - a malformed/ok-less reply can never
        mint a successful nav receipt */
     r = await drive([{}]);
@@ -199,6 +229,8 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
   assert.ok(src.includes('if (nav.ok === true) return !!(d0 && d0 !== date);') &&
     src.includes('if (nav.ok !== false) return false; /* ok-less/malformed: never admit */'),
     'the nvl-1.4.0 exact wrong-day admission is gone (an ok-less mismatched-day reply could buy recovery again)');
+  assert.ok(src.includes('if (!bad || round >= settleWaits.length || !navRecoveryAdmissible(nav)) return nav;'),
+    'the nvl-1.5.0 settle-boundary admission is gone (fail-closed replies would buy settle retries again)');
 
-  console.log('PASS nav-ladder recovery (nvl-1.3.0): the escape is the goto handler\'s own guarded ladder; admission requires EXPLICIT supported:true and a closed via vocabulary; fourteen fail-closed replies get zero attempts; the attempts receipt counts REAL bridge dispatches through the REAL p1AthenaBusyRetry (3 busy retries = 4 attempts; settle 4 + recovery busy 2 + landing = 7; 4+1=5; 4+4=8) with the one-reentry ceiling; navDiagOf uses exact fail-closed booleans and only nav.ok === true reaches the schedule leg (executed from shipped bytes)');
+  console.log('PASS nav-ladder recovery (nvl-1.5.0): the closed admission law governs BOTH the recovery re-entry AND the real settle ladder - eighteen outer fail-closed replies get zero recovery, eleven fail-closed shapes get exactly ONE real bridge dispatch in the executed settle layer with the trailing GOOD never consumed (incl. the decisive missing-ok wrong-day control), reviewed alive shapes keep their bounded settle/re-entry; real busy-dispatch totals (3 busy = 4; combined = 7; 4+1=5; 4+4=8), exact fail-closed navDiag booleans, and the exact ok:true schedule-leg gate all executed from shipped bytes');
 })().catch(e => { console.error(e); process.exit(1); });
