@@ -77,7 +77,14 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
        beside positive frames evidence. */
     ['missing supported with reviewed via', { ok: false, via: 'weekstrip' }],
     ['missing supported with positive diag', { ok: false, diag: { initFrames: 1 } }],
-    ['alien via beside positive diag', { ok: false, supported: true, via: 'jetpack', diag: { initFrames: 5, rounds: [{}] } }]
+    ['alien via beside positive diag', { ok: false, supported: true, via: 'jetpack', diag: { initFrames: 5, rounds: [{}] } }],
+    /* nvl-1.4.0 (Codex reply 42): a wrong-day-shaped reply without an EXACT
+       ok:true is malformed - missing/null/string ok admits nothing, even
+       beside positive diag or a reviewed via. */
+    ['ok-less reply with mismatched day', { schedDate: '2026-08-25' }],
+    ['null ok with mismatched day', { ok: null, schedDate: '2026-08-25' }],
+    ['string ok with mismatched day', { ok: 'true', schedDate: '2026-08-25' }],
+    ['ok-less mismatched day beside reviewed via and diag', { schedDate: '2026-08-25', supported: true, via: 'weekstrip', diag: { initFrames: 3 } }]
   ];
   for (const [label, reply] of NEVER) {
     h = harness([reply, GOOD]);
@@ -189,6 +196,9 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
     'the exact nav.ok === true success gate is gone - a malformed reply can reach the schedule leg');
   assert.ok(src.includes('ok: !!(nav && nav.ok === true),') && src.includes('supported: !!(nav && nav.supported === true),'),
     'navDiagOf lost its exact fail-closed booleans');
+  assert.ok(src.includes('if (nav.ok === true) return !!(d0 && d0 !== date);') &&
+    src.includes('if (nav.ok !== false) return false; /* ok-less/malformed: never admit */'),
+    'the nvl-1.4.0 exact wrong-day admission is gone (an ok-less mismatched-day reply could buy recovery again)');
 
   console.log('PASS nav-ladder recovery (nvl-1.3.0): the escape is the goto handler\'s own guarded ladder; admission requires EXPLICIT supported:true and a closed via vocabulary; fourteen fail-closed replies get zero attempts; the attempts receipt counts REAL bridge dispatches through the REAL p1AthenaBusyRetry (3 busy retries = 4 attempts; settle 4 + recovery busy 2 + landing = 7; 4+1=5; 4+4=8) with the one-reentry ceiling; navDiagOf uses exact fail-closed booleans and only nav.ok === true reaches the schedule leg (executed from shipped bytes)');
 })().catch(e => { console.error(e); process.exit(1); });
