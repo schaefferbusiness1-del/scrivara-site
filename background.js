@@ -1064,9 +1064,13 @@ async function mlsAthenaActionV2DriverFn(req) {
     if (mode !== 'teach' && action === 'write_note' && notePolicy !== 'empty_only') return { ok: false, blocked: true, reason: 'unsafe-note-policy', error: 'Only empty_only note placement is allowed.' };
 
     var frames = sameOriginFrames(), candidates = [], sawOtherPatient = false;
+    var hetFrames = [];
     for (var fi = 0; fi < frames.length; fi++) {
       var fr = frames[fi];
+      var hetRec = { i: fi, id: '', het: -1, note: null };
+      if (hetFrames.length < 12) hetFrames.push(hetRec);
       var chartHeader = anchoredIdentity(fr), observedIdentity = chartHeader.identity;
+      hetRec.id = observedIdentity ? 'own' : (chartHeader.ambiguous ? 'ambig' : 'none');
       var hetStage = null;
       if (!observedIdentity && !chartHeader.ambiguous) {
         /* het-1.0.0: stage surfaces split banner and editor across frames.
@@ -1088,6 +1092,7 @@ async function mlsAthenaActionV2DriverFn(req) {
           }
           hetDiag.ancestorIdentity = observedIdentity ? 'found' : (chartHeader.ambiguous ? 'ambiguous' : 'none');
           if (!observedIdentity) hetStage = null;
+          hetRec.het = Number(hetDiag.rank || 0);
         }
       }
       if (!observedIdentity || chartHeader.ambiguous) continue;
@@ -1101,6 +1106,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       else {
         noteTarget = (action === 'write_note' && requestedNoteSection !== 'note') ? findNamedNoteAction(fr, action, requestedNoteSection) : findNoteAction(fr, action);
         if (hetStage) hetDiag.noteTargetFound = !!noteTarget;
+        hetRec.note = !!noteTarget;
         if (!noteTarget) continue;
         var currentNote = editorValue(noteTarget.editor);
         if (mode !== 'teach') {
@@ -1120,7 +1126,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;
       candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget });
     }
-    if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
+    if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, hetFrames: hetFrames, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
     var hit = candidates[0], observedPatient = hit.observedIdentity, noteScope = hit.noteTarget && hit.noteTarget.root, noteEditor = hit.noteTarget && hit.noteTarget.editor;
     var bill = hit.bill, orderTarget = hit.orderTarget, actionControl = bill ? bill.el : (orderTarget ? orderTarget.search : hit.noteTarget.control);
     var actionScope = bill ? bill.root : (orderTarget ? orderTarget.root : noteScope);
