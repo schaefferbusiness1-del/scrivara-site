@@ -954,28 +954,32 @@ async function mlsAthenaActionV2DriverFn(req) {
       }
       return Object.keys(found).map(function (k) { return found[k]; });
     }
-    var hetDiag = { metaCount: -1, metaPatientMatch: null, apptCount: -1, provCount: -1, dateCount: -1, qualified: false, ancestorIdentity: '', noteTargetFound: null };
+    var hetDiag = { rank: -1, metaCount: -1, metaPatientMatch: null, apptCount: -1, provCount: -1, dateCount: -1, qualified: false, ancestorIdentity: '', noteTargetFound: null };
     function hetStageEncounterContext(frame, expectedPatient) {
-      /* het-1.0.0: athena's own machine-typed encounter context, read off an
-         athenaClinicals stage frame. Every field must resolve to EXACTLY ONE
-         distinct value or the frame does not qualify - a serialization
-         naming two patients, encounters, appointments, providers or service
-         dates refuses instead of guessing. Values are compared, never
-         logged. */
+      /* het-1.0.0/1.0.2: athena's own machine-typed encounter context, read
+         off an athenaClinicals stage frame. Every field must resolve to
+         EXACTLY ONE distinct value or the frame does not qualify. The
+         attempt census keeps the FURTHEST-progressing frame (rank), so an
+         empty side panel cannot overwrite the encounter frame's counts.
+         Values are compared, never logged. */
+      var att = { rank: 0, metaCount: -1, metaPatientMatch: null, apptCount: -1, provCount: -1, dateCount: -1, qualified: false };
+      function hetCommit() { if (att.rank >= Number(hetDiag.rank || 0)) { hetDiag.rank = att.rank; hetDiag.metaCount = att.metaCount; hetDiag.metaPatientMatch = att.metaPatientMatch; hetDiag.apptCount = att.apptCount; hetDiag.provCount = att.provCount; hetDiag.dateCount = att.dateCount; hetDiag.qualified = att.qualified; } }
       try {
         var metas = deepQueryAll(frame.doc, 'meta').filter(function (m) { return /encounter_id/.test(m.getAttribute('content') || ''); });
-        hetDiag.metaCount = metas.length;
-        if (metas.length !== 1) return null;
+        att.metaCount = metas.length;
+        if (metas.length !== 1) { hetCommit(); return null; }
+        att.rank = 1;
         var arr = JSON.parse(metas[0].getAttribute('content'));
-        if (!Array.isArray(arr)) return null;
+        if (!Array.isArray(arr)) { hetCommit(); return null; }
         var ctx = {};
         for (var ai = 0; ai < arr.length; ai++) { var it = arr[ai]; if (it && typeof it === 'object') { for (var ck in it) { if (Object.prototype.hasOwnProperty.call(it, ck)) ctx[ck] = String(it[ck]); } } }
         var encId = digits(ctx.encounter_id || ''), metaPatient = digits(ctx.patient_id || '');
         var wantMrn = digits(expectedPatient.mrn);
-        hetDiag.metaPatientMatch = !!(metaPatient && wantMrn && metaPatient === wantMrn);
-        if (!encId || encId.length < 3 || !metaPatient || !wantMrn || metaPatient !== wantMrn) return null;
+        att.metaPatientMatch = !!(metaPatient && wantMrn && metaPatient === wantMrn);
+        if (!encId || encId.length < 3 || !metaPatient || !wantMrn || metaPatient !== wantMrn) { hetCommit(); return null; }
+        att.rank = 2;
         var html = '';
-        try { html = String(frame.doc.body ? frame.doc.body.innerHTML : ''); } catch (eHtml) { return null; }
+        try { html = String(frame.doc.body ? frame.doc.body.innerHTML : ''); } catch (eHtml) { hetCommit(); return null; }
         if (html.length > 6000000) html = html.slice(0, 6000000);
         function hetUniq(re, mapFn) {
           var seen = {}, out = [], m2;
@@ -983,19 +987,22 @@ async function mlsAthenaActionV2DriverFn(req) {
           return out;
         }
         var appts = hetUniq(/"AppointmentID\\?"\s*:\s*\\?"(\d{3,})/g);
-        hetDiag.apptCount = appts.length;
-        if (appts.length !== 1) return null;
+        att.apptCount = appts.length;
+        if (appts.length !== 1) { hetCommit(); return null; }
+        att.rank = 3;
         var provs = hetUniq(/"DisplayName\\?"\s*:\s*\\?"([^"\\]{4,70})\\?"/g, function (v) { return /,\s*(?:MD|DO|PA-C|CRNP|NP|DPM)\s*$/.test(v) ? v : ''; });
-        hetDiag.provCount = provs.length;
-        if (provs.length !== 1) return null;
+        att.provCount = provs.length;
+        if (provs.length !== 1) { hetCommit(); return null; }
+        att.rank = 4;
         var dates = hetUniq(/"(?:Scheduled|Appointment|Service|Visit|Appt)[A-Za-z]*Date\\?"[^0-9]{0,80}?(\d{4}-\d{2}-\d{2})/g);
-        hetDiag.dateCount = dates.length;
-        if (dates.length !== 1) return null;
+        att.dateCount = dates.length;
+        if (dates.length !== 1) { hetCommit(); return null; }
+        att.rank = 5;
         var visitDate = dateKey(dates[0]);
-        if (!visitDate) return null;
-        hetDiag.qualified = true;
+        if (!visitDate) { hetCommit(); return null; }
+        att.rank = 6; att.qualified = true; hetCommit();
         return { encounterId: encId, appointmentId: digits(appts[0]), provider: text(provs[0]), visitDate: visitDate };
-      } catch (eHet) { return null; }
+      } catch (eHet) { hetCommit(); return null; }
     }
     function encounterMetadataFor(frame, actionRoot, identityRoot) {
       var root = actionRoot, guard = 0;

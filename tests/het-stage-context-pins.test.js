@@ -16,15 +16,15 @@ const bg = fs.readFileSync(path.join(path.resolve(__dirname, '..'), 'background.
 /* the stage-context reader exists with its uniqueness refusals */
 assert.ok(bg.includes('function hetStageEncounterContext(frame, expectedPatient) {'),
   'the stage-context reader is gone - stage surfaces cannot qualify again');
-assert.ok(bg.includes('if (metas.length !== 1) return null;'),
+assert.ok(bg.includes('if (metas.length !== 1) { hetCommit(); return null; }'),
   'the one-context-META uniqueness refusal is gone');
-assert.ok(bg.includes('if (!encId || encId.length < 3 || !metaPatient || !wantMrn || metaPatient !== wantMrn) return null;'),
+assert.ok(bg.includes('if (!encId || encId.length < 3 || !metaPatient || !wantMrn || metaPatient !== wantMrn) { hetCommit(); return null; }'),
   'the meta patient_id === expected MRN gate is gone - a foreign chart could qualify');
-assert.ok(bg.includes('if (appts.length !== 1) return null;'),
+assert.ok(bg.includes('if (appts.length !== 1) { hetCommit(); return null; }'),
   'the unique-appointment refusal is gone');
-assert.ok(bg.includes('if (provs.length !== 1) return null;'),
+assert.ok(bg.includes('if (provs.length !== 1) { hetCommit(); return null; }'),
   'the unique-credentialed-provider refusal is gone');
-assert.ok(bg.includes('if (dates.length !== 1) return null;'),
+assert.ok(bg.includes('if (dates.length !== 1) { hetCommit(); return null; }'),
   'the unique-service-date refusal is gone');
 
 /* ancestor-only banner inheritance, judged by the SAME gates */
