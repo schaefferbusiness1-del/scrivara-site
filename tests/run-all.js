@@ -809,6 +809,8 @@ const tests = [
      assertion, and no source read can stand in for it. It says so in its final
      line if no Chrome binary is present. */
   'opnote-room-does-not-trap.test.js',
+  /* opnote-declunk-1.0.0 (owner 2026-08-26): the room never drafts by itself */
+  'opnote-room-never-drafts-by-itself.test.js',
   'opnote-follow-modes-differ.test.js',
   'ui-clinical-pass.test.js',
   'ui-shell-pass.test.js',

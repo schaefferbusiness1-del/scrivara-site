@@ -178,9 +178,11 @@ for (const name of SHELLS) {
      /no\.addEventListener\('click', function \(\) \{ answer\('kept'\); \}/.test(src),
     `${name}: the nudge no longer remembers a "keep it where it is" answer, so it will ask again`);
 
-  /* -- opnote-day: one primary action, and the button autodraft needs ---
-     msl-autodraft refuses when #opPrepGenAllBtn's offsetParent is null, so a
-     registry that folds it turns automatic drafting off silently. */
+  /* -- opnote-day: one primary action, and the button the day depends on ---
+     REASON RESTATED 2026-08-26 (owner: "make it not auto draft and have to
+     click draft op note"). It used to be that folding #opPrepGenAllBtn turned
+     msl-autodraft off silently; now nothing drafts a day but a press on this
+     button, so a registry that folds it takes drafting off the screen. */
   const day = src.slice(src.indexOf('<!-- ===== opnote-day-4.0.0'), src.indexOf('<!-- ===== end opnote-day-4.0.0'));
   ok(day.includes("VERSION = 'opnote-day-4.0.1'"), `${name}: the op-note room block lost its version`);
   /* PIN INVERTED 2026-08-18 (op-notes lane). 1.0.0 and 2.0.0 FOLDED
@@ -989,11 +991,18 @@ async function runtime() {
     }
 
     /* ================================================================
-     * 11. "PREP OP NOTES SHOULD AUTO START ON FOR ALL PATIENTS"
-     * msl-autodraft must actually press Draft-all when the room opens, and
-     * the run must reach EVERY row of the triaged set - not the first, and
-     * not a sample. opPrepGenerateOne is stubbed so the real runner can
-     * complete offline; everything else is the app's own path.
+     * 11. "MAKE IT NOT AUTO DRAFT AND HAVE TO CLICK DRAFT OP NOTE"
+     * PIN INVERTED 2026-08-26 (owner, verbatim above). Until then this
+     * section asserted the OPPOSITE - that msl-autodraft pressed Draft-all
+     * when the room opened - and its clicks/covered/status assertions are
+     * kept here rather than deleted, because the second half of the ask is
+     * that the explicit press must still draft the WHOLE triaged day.
+     *
+     * So the section now runs in two halves against the same instrument:
+     * opening the room reaches nobody, and one press of the room's own
+     * #opPrepGenAllBtn reaches every one of the 28. opPrepGenerateOne is
+     * stubbed so the real runner can complete offline; everything else is
+     * the app's own path.
      * ============================================================== */
     {
       const fired = await page.evaluate(async () => {
@@ -1032,7 +1041,33 @@ async function runtime() {
         rows.forEach((r) => { r.gen = false; r.note = ''; delete r._genErr; delete r._genSeq; });
       });
       await page.evaluate(() => window.__uiContract.openRoom());
-      /* the automatic run is scheduled, not synchronous */
+      /* An automatic run would have been SCHEDULED, not synchronous, so the
+         quiet half has to be waited out rather than sampled once: this is the
+         same 6s the old assertion's 60s waitForFunction would have settled
+         inside. */
+      await page.waitForTimeout(6000);
+      const quiet = await page.evaluate(() => ({
+        clicks: window.__spy.clicks,
+        covered: Object.keys(window.__spy.gen).length,
+        status: window.__mlsAutoDraft.status()
+      }));
+      eq(quiet.clicks, 0,
+        `opening the room pressed Draft all by itself: ${JSON.stringify(quiet)}`);
+      eq(quiet.covered, 0,
+        `opening the room drafted ${quiet.covered} patients without a click: ${JSON.stringify(quiet)}`);
+      ok(quiet.status.on === false,
+        `automatic drafting reports itself ON: ${JSON.stringify(quiet.status)}`);
+      /* NON-VACUITY: the day must actually have been draftable. A room that
+         reached nobody because there was nothing to reach would report the
+         same zeroes. */
+      ok(quiet.status.reason === 'ready',
+        `the room was not ready to draft ("${quiet.status.reason}"), so the quiet half proved nothing`);
+
+      /* the explicit press - the one the owner asked for - still does the day */
+      await page.evaluate(() => {
+        const b = document.getElementById('opPrepGenAllBtn');
+        if (b) b.click();
+      });
       await page.waitForFunction(() => Object.keys(window.__spy.gen).length >= 28, null, { timeout: 60000 })
         .catch(() => {});
       const spy = await page.evaluate(() => ({
@@ -1041,10 +1076,9 @@ async function runtime() {
         status: window.__mlsAutoDraft.status()
       }));
       ok(spy.clicks >= 1,
-        `msl-autodraft never pressed Draft all when the room opened: ${JSON.stringify(spy)}`);
+        `the explicit Draft-all press never reached the runner: ${JSON.stringify(spy)}`);
       eq(spy.covered, 28,
-        `the automatic run reached ${spy.covered} of 28 patients: ${JSON.stringify(spy)}`);
-      ok(spy.status.on === true, `automatic drafting reports itself off: ${JSON.stringify(spy.status)}`);
+        `the clicked run reached ${spy.covered} of 28 patients: ${JSON.stringify(spy)}`);
       await page.evaluate(() => { if (window.__spyBase) window.opPrepGenerateOne = window.__spyBase; });
     }
 

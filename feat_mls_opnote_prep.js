@@ -374,6 +374,11 @@
      vanish silently. Non-blocking two-step confirm (no native dialogs): the
      first switch warns and arms an 8s window; repeating the SAME switch inside
      it proceeds. A fresh open (modal closed) never warns. */
+  /* ONE arming window for every "are you sure" this room raises. Three
+     different guards used 8s and 10s for what is, to the doctor, one idea, and
+     both disarmed while he was still reading the button. The shell's re-draft
+     confirm (1pScribeFlow.html opPrepGenerateOne) uses the same number. */
+  var CONFIRM_MS = 15000; /* refuter 2026-08-26: 45s let a stray second press destroy edits silently; 15s keeps the single-confirm UX without a long silent live window */
   var switchArm = null;
   function blockUnsavedSwitch(fnName, args) {
     try {
@@ -387,7 +392,7 @@
       }
       if (!loseable.length) return false;
       var sig = fnName + '::' + Array.prototype.join.call(args || [], ',');
-      if (switchArm && switchArm.sig === sig && (Date.now() - switchArm.at) < 8000) { switchArm = null; return false; }
+      if (switchArm && switchArm.sig === sig && (Date.now() - switchArm.at) < CONFIRM_MS) { switchArm = null; return false; }
       switchArm = { sig: sig, at: Date.now() };
       STATE.blockedSwitches++;
       try { if (isFn(window.toast)) window.toast('Typed procedure text for ' + loseable.slice(0, 2).join(', ') + (loseable.length > 2 ? ' +' + (loseable.length - 2) + ' more' : '') + ' hasn’t been drafted and will be cleared — click the same switch again to continue.', 'err'); } catch (e0) {}
@@ -598,7 +603,17 @@
       return function (dayKey) {
         if (blockUnsavedSwitch('openOpPrep', arguments)) return;
         if (!dayKey) {
-          try { dayKey = nextProcedureDay(dayKeyOf(new Date())); } catch (e) {}
+          /* OWNER 2026-08-16: "when u click draft op notes on a day it should
+             draft the op notes for the day the visit screen is on or the
+             calendar is on, not just any day to start." The shell's
+             _opContextDay IS that answer; filling the argument in here is what
+             made it unreachable, because openOpPrep only consults it when no
+             day was passed. The next procedure day stays the fallback for when
+             no day surface is on screen. */
+          try { dayKey = isFn(window._opContextDay) ? trim(window._opContextDay()) : ''; } catch (e0) { dayKey = ''; }
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
+            try { dayKey = nextProcedureDay(dayKeyOf(new Date())); } catch (e) {}
+          }
         }
         var r = orig.call(this, dayKey);
         try { adoptAllExistingDrafts(); } catch (eA) {}
@@ -654,7 +669,7 @@
               reasons.push(pendLabels.length + ' auto-suggested standard value' + (pendLabels.length === 1 ? '' : 's') + ' (' + pendLabels.slice(0, 4).join(', ') + (pendLabels.length > 4 ? ', …' : '') + ') will be saved as final — review the amber fields above');
             }
             if (reasons.length) {
-              if (!row._opnpSaveArm || (Date.now() - row._opnpSaveArm) > 10000) {
+              if (!row._opnpSaveArm || (Date.now() - row._opnpSaveArm) > CONFIRM_MS) {
                 row._opnpSaveArm = Date.now();
                 var warn = '⚠ Check before saving: ' + reasons.join('; ') + '. Click Save again to confirm.';
                 var msg2 = document.getElementById('opPrepMsg_' + i);

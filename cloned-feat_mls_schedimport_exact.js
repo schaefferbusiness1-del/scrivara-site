@@ -10209,7 +10209,6 @@
     if (clearIntent) resumeClear();
   }
   function resumeStart(rec) {
-    resumeDismiss(false);
     var prev = resumeGet();
     /* p1-resume-honesty-1.0.0 (a): a resume may only ever run the day the
        doctor is looking at. This is the exact hijack that shipped: a record
@@ -10218,13 +10217,23 @@
     var __selectedDay = p1SelectedDayKey();
     var __recDay = normDate(rec && rec.date || "");
     if (__selectedDay && __recDay && __recDay !== __selectedDay) {
+      /* rsk-1.0.0 (owner 2026-08-26, "make sure this resume pull button
+         works", measured live): the old order dismissed the chip BEFORE this
+         gate, so a wrong-day click ATE the resume offer - the error flashed,
+         the chip vanished, nothing resumed, and no outcome instrument was
+         written. The chip must survive a refusal (the record is untouched and
+         still resumable on the right day), and the refusal must reach the
+         same instruments every other pull outcome reaches. */
       var __wrongDayRefusal = { ok: false, complete: false, reason: "resume-day-not-selected",
         gate: "resume-selected-day", target: __recDay, selectedDay: __selectedDay,
-        error: "The unfinished pull was for " + __recDay + ", but " + __selectedDay + " is selected. Nothing was read; press Pull to pull " + __selectedDay + ".",
+        error: "The unfinished pull was for " + __recDay + ", but " + __selectedDay + " is selected. Nothing was read; go to " + __recDay + " (the Today button, then the day arrows) and press Resume again - the offer stays.",
         created: 0, repaired: 0, skipped: 0, failed: 0, retry: {} };
+      lastPullResult = __wrongDayRefusal;
+      safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(__wrongDayRefusal); });
       safe(function () { if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(__wrongDayRefusal.error, "err"); });
       return __wrongDayRefusal;
     }
+    resumeDismiss(false);
     var capturedScope = p1SanitizeResumeScope(rec && rec.providerScope);
     var durableScope = p1SanitizeResumeScope(prev && prev.providerScope);
     var capturedDate = normDate(rec && rec.date || ""), durableDate = normDate(prev && prev.date || "");

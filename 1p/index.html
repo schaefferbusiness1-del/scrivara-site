@@ -3369,7 +3369,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="pullScheduleViaAssist(this)" title="Pulls the day's patients from Athena AND auto-pulls each patient's chart history, saving everything to your account" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">📥 Pull today’s patients &amp; their history</button>
         <button onclick="emrConnectFromHero()" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">🔗 Connect to EMR</button>
-        <button id="opPrepSmartBtn" onclick="openOpPrepSmart()" title="Draft an operative note from your uploaded op-note templates. If a patient is selected, it preps that patient; otherwise you can prep all scheduled procedures." style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">💉 Prep op note</button>
+        <button id="opPrepSmartBtn" onclick="openOpPrepSmart()" title="Open the op-note room for the day you are looking at - every scheduled procedure, with a Draft-all button. Nothing drafts until you press it." style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">💉 Prep op note</button>
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
@@ -5766,7 +5766,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   </div>
 </div>
 
-<!-- PROCEDURE-DAY OP NOTES — auto-draft tomorrow's operative reports from the doctor's uploaded op-note templates. -->
+<!-- PROCEDURE-DAY OP NOTES — draft a day's operative reports from the doctor's uploaded op-note templates, on his press and never before it. -->
 <div class="modal-bg opr-room" id="opPrepModal" role="dialog" aria-modal="true" aria-labelledby="opPrepHdr">
   <div class="modal">
     <button class="modal-x" onclick="closeOpPrep()" aria-label="Close op-note prep">×</button>
@@ -21782,6 +21782,9 @@ function opPrepSetDayTomorrow(){ var d=new Date(); d.setDate(d.getDate()+1); ope
 function openOpPrepForPatient(pid){
   _opEnsureDayBrain();
   var p=null; try{ var pts=(typeof getPatients==='function'?getPatients():[])||[]; p=pid?pts.find(function(x){return x.id===pid;}):(typeof activePatient==='function'?activePatient():null); }catch(e){}
+  /* A supplied id that matches no chart is an appointment the app could not
+     resolve to one patient - never a reason to open somebody else's note. */
+  if(!p&&pid){ try{ toast('Could not match that appointment to one chart. Open the correct patient first, then draft their op note.','err'); }catch(e){} return; }
   if(!p){ try{ toast('Open a patient first, then draft their op note.','err'); }catch(e){} return; }
   var reason=''; try{
     var cal=((window._calAppts||[])||[]), exactId=cal.filter(function(a){ return String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||'')===String(p.id||''); });
@@ -22130,6 +22133,16 @@ function _opRowVerdict(row,pass,why,code){
     row._genPass=!!pass;
     row._genErr=pass?'':String(why||'').replace(/^Error:\s*/,'').trim();
     row._genErrCode=pass?'':String(code||'');
+    /* THE BLAME DIES WITH THE ATTEMPT IT BELONGS TO. _lastDraftErr is written
+       by the Draft-all runner (retry notice, transport failure, thrown error)
+       and cleared by nobody, and statusCompute reads it as an error of the
+       ROW - so a patient who failed once and drafted on the retry kept the
+       "Draft failed" chip while holding a finished note, and held the whole
+       day in its failed state. Every runner reaches a patient through the
+       opPrepGenerateOne that calls this, so this is the one place a success
+       can drop it. The runner reads _lastDraftErr only in its failure branch,
+       which a passing row never enters. */
+    if(pass) row._lastDraftErr='';
   }catch(e){}
 }
 async function opPrepGenerateOne(i){
@@ -22143,7 +22156,10 @@ async function opPrepGenerateOne(i){
     try{ var stg=document.getElementById('opPrepStatus'); if(stg) stg.textContent=row.appt.name+'’s draft has your manual edits — click "↻ Discard my edits & re-draft?" again to replace them.'; }catch(e){}
     try{ toast('This draft has your manual edits. Click "↻ Discard my edits & re-draft?" again to replace them with a fresh draft.','err'); }catch(e){}
     try{ opPrepRender(); }catch(e){}
-    setTimeout(function(){ try{ if(row._confirmRedraft){ row._confirmRedraft=false; opPrepRender(); } }catch(e){} },10000);
+    /* One arming window for every "are you sure" in this room; 10s disarmed
+       itself while the doctor was still reading the button. Matches
+       feat_mls_opnote_prep.js's CONFIRM_MS. */
+    setTimeout(function(){ try{ if(row._confirmRedraft){ row._confirmRedraft=false; opPrepRender(); } }catch(e){} },15000);
     _opRowVerdict(row,false,'this draft has your manual edits — confirm the discard to replace it','MLS_OPNOTE_EDITED');
     return;
   }
@@ -42128,28 +42144,23 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 <!-- ===== end msl-today-1.0.0 ========================================== -->
 <!-- ===== end msl-1.0.0 ================================================= -->
 <!-- ===== msl-autodraft-1.0.0 ==========================================
-     "Prep op notes should auto start on for all patients."
+     OWNER 2026-08-26: "make it not auto draft and have to click draft op
+     note". Opening the op-note room MUST NOT start a run. Generation begins
+     only when a human presses a draft control - the rail's Draft-all button
+     or a card's own Draft op note.
 
-     Opening the room now starts drafting by itself, so the doctor arrives at
-     finished drafts instead of a screen with 24 empty cards and a button.
-
-     WHAT IT DELIBERATELY DOES NOT DO. It does not draft every scheduled
-     patient. feat_mls_opnote_daybrain.js triages the day into needs / done /
-     held, and "held" exists because unfiltered drafting once wrote operative
-     notes for follow-ups and cancelled slots. This reuses the SAME triaged
-     set that the Draft-all button already uses - for a 27-patient day that is
-     the 24 who need a note, and the other 3 stay one click away.
-
-     It drives the existing #opPrepGenAllBtn rather than reimplementing
-     drafting, so it inherits the 1p runner's per-patient retry, live progress
-     bar, per-patient ledger, honest summary, and - the part that matters for
-     an automatic action - its Stop button.
+     THE MODULE IS KEPT, OFF, RATHER THAN DELETED. notReadyReason() is the
+     only place in the app that knows what "this day is ready to draft" means,
+     and it is the causal control a test drives to prove that an automatic run
+     would still be caught. It is inert unless the pref is explicitly '1',
+     which nothing in the shipped UI ever writes: there is no toggle, and the
+     only setter is a console/test handle.
 
      Drafts save to each patient's History only. Nothing here can reach
      Athena; that path is a separate, human-confirmed click. -->
 <script>
 (function () {
-  var KEY = 'mslAutoDraft';          /* '0' = off. Absent = ON. */
+  var KEY = 'mslAutoDraft';          /* '1' = on. Absent = OFF. */
   var MAX_WAIT_MS = 15000;           /* stop waiting for the safety module */
   var started = Object.create(null); /* one automatic run per day+mode */
 
@@ -42157,9 +42168,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var v = null;
     try { if (typeof window.uns === 'function') v = localStorage.getItem(window.uns(KEY)); } catch (e) {}
     if (v == null) { try { v = localStorage.getItem(KEY); } catch (e) {} }
-    /* An absent key means ON. Only an explicit '0', which only a human
-       clicking the toggle ever writes, means off. */
-    return String(v) !== '0';
+    /* OWNER 2026-08-26. An absent key means OFF, and only an explicit '1'
+       turns it on. No shipped control writes that value, so on this app the
+       room never drafts by itself. */
+    return String(v) === '1';
   }
   function setPref(on) {
     var v = on ? '1' : '0';
@@ -42241,7 +42253,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     try { if (window.__mlsOpDay && typeof window.__mlsOpDay.runNotice === 'function') said = window.__mlsOpDay.runNotice('Drafting the op notes that need one. Stop any time.'); } catch (e) {}
     if (!said) { try { if (typeof window.toast === 'function') window.toast('Drafting the op notes that need one. Stop any time.', ''); } catch (e) {} }
   }
-  function schedule() { if (!timer) timer = setTimeout(tick, 250); }
+  /* Off means costing nothing: with the pref off this must not arm a timer
+     for every mutation the open room makes. */
+  function schedule() { if (!timer && prefOn()) timer = setTimeout(tick, 250); }
 
   /* The room is opened by several callers and re-rendered constantly, so
      watch for it becoming visible rather than hooking one entry point. */
@@ -42265,7 +42279,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   function boot() { watch(); schedule(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
-  document.addEventListener('click', function () { setTimeout(boot, 0); }, true);
+  /* The observers are installed at boot on the shell's own static #opPrepModal,
+     so this re-boot exists only for the enabled case and must not do work on
+     every click in the app while the feature is off. */
+  document.addEventListener('click', function () { if (prefOn()) setTimeout(boot, 0); }, true);
 })();
 </script>
 <!-- ===== end msl-autodraft-1.0.0 ====================================== -->
@@ -43706,12 +43723,32 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 /* The Draft-all row in the editor is EMPTY once its button has moved to the
    rail, and it is only folded once that move is verified — an unconditional
    rule here would hide the button on a page where the move never happened,
-   and msl-autodraft would silently stop starting. */
-#opPrepModal[data-mlsopn-gen="railed"] #oprEditor > .row{ display:none !important; }
+   and the press is now the ONLY way a note is ever drafted.
 
-/* The Draft-all progress panel carries the Stop button, so it is a RUN
-   surface: on while a run is on, gone otherwise. */
-#opPrepModal[data-mls-opnotes-state]:not([data-mlsopn-run="on"]) #tpfLedger{ display:none !important; }
+   EMPTY, not silent. #opPrepStatus stays in that row, and it is where nine
+   writers put the drafting line, the per-patient failure reason, the
+   un-drafted-text warning and the runner's closing summary plus its "Retry
+   failed (N)" button — all of it written to a folded node. The row therefore
+   unfolds for exactly as long as that node has something to say, which
+   paintInner stamps as data-mlsopn-say.
+
+   It stays in the PANE rather than moving to the rail: under 900px the rail
+   is a fixed-height top strip laid out as a grid, and MEASURED at 768x1024,
+   moving this node into it pushed a whole grid row of patient cards onto the
+   strip's bottom edge — visible and not pressable. */
+#opPrepModal[data-mlsopn-gen="railed"]:not([data-mlsopn-say]) #oprEditor > .row{ display:none !important; }
+#opPrepModal[data-mlsopn-say] #oprEditor > .row{ align-items:flex-start; }
+#opPrepModal[data-mlsopn-say] #opPrepStatus{
+  font:600 12.5px/1.5 var(--sans); color:var(--ink,#1A211C);
+  overflow-wrap:anywhere; word-break:break-word;
+}
+#opPrepModal[data-mlsopn-say] #opPrepStatus button{ margin-left:10px; min-height:40px; }
+
+/* The Draft-all progress panel carries the Stop button while a run is on, and
+   the closing summary plus the runner's own "Retry failed (N)" button after it
+   ends - so it stays up for as long as the run left something to retry, and
+   goes when there is nothing left to say. */
+#opPrepModal[data-mls-opnotes-state]:not([data-mlsopn-run]) #tpfLedger{ display:none !important; }
 
 /* ---- the RIGHT PANE, one surface at a time ---- */
 /* LIST / EMPTY: no editor on screen at all, and the pane says what to do. */
@@ -43866,7 +43903,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpnRailAct #mlsOpnRailTpl:hover{ border-color:var(--brand,#2E6A4B); }
 /* THE ONE PRIMARY IS THE BIGGEST THING IN THE RAIL. It is the shell's own
    #opPrepGenAllBtn, moved — not a copy — so it keeps its id, its onclick and
-   the offsetParent msl-autodraft refuses to start without. */
+   every listener the runner and the satellites put on it. */
 #mlsOpnRailAct #opPrepGenAllBtn{
   width:100%; box-sizing:border-box; min-height:48px; text-align:center;
   font:800 14px/1.25 var(--sans) !important; padding:13px 14px !important;
@@ -43976,6 +44013,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   font:600 12.5px/1.55 var(--sans); color:var(--muted); text-align:center;
 }
 #mlsOpnEmpty[hidden]{ display:none; }
+#mlsOpnClearQ,
 #mlsOpnPull{
   display:inline-block; margin-top:12px; min-height:40px; padding:10px 16px; cursor:pointer;
   font:700 12.5px/1.2 var(--sans); color:#fff;
@@ -44327,8 +44365,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     { sel: '#tpfLedgerList',      levels: ['simple'] }
   ];
   /* NEVER folded, at any level, and the reason is load-bearing:
-       #opPrepGenAllBtn - msl-autodraft refuses when its offsetParent is null,
-                          so folding it turns automatic drafting off silently.
+       #opPrepGenAllBtn - since 2026-08-26 nothing drafts a day but a human
+                          press on this button, so folding it takes drafting
+                          off the screen entirely.
        #tpfStop         - the Stop button of an automatic run.
        .modal-x         - the way out of a full-screen room.
        #oprDayRail      - the left-side selector the owner asked for back. */
@@ -44750,7 +44789,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         ' because you changed day. Go back to that day and press Draft all to finish them.';
       lastSig = '';
     }
-    clearSelection(); query = ''; detOpen = false; tplOpen = false;
+    /* The search is a filter over names and procedures, not day state, and it
+       is the doctor's own typing - the second writer of it, paintInner, keeps
+       it across a day change too. A query that now matches nobody says so on
+       the empty surface and offers one press to clear it. */
+    clearSelection(); detOpen = false; tplOpen = false;
     fmtReset();
     try {
       if (typeof window.opPrepSetDay === 'function') { window.opPrepSetDay(k); return true; }
@@ -44949,11 +44992,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 
   /* ---- 7. THE SURFACES ----------------------------------------------- */
   /* THE ONE NODE THAT MOVES. #opPrepGenAllBtn is the shell's own Draft-all
-     button and msl-autodraft-1.0.0 refuses to start when its offsetParent is
-     null. A copy in the rail would be a second Draft-all; folding the original
-     would turn automatic drafting off silently. So the original is re-parented
-     - id, onclick, listeners and offsetParent all intact - and the now-empty
-     editor row is folded ONLY once the move is verified. */
+     button and, since 2026-08-26, the only thing that starts a whole-day run.
+     A copy in the rail would be a second Draft-all; folding the original would
+     take drafting off the screen. So the original is re-parented - id, onclick,
+     listeners and offsetParent all intact - and the now-empty editor row is
+     folded ONLY once the move is verified. */
   function railGen(host) {
     var gen = el('opPrepGenAllBtn'), modal = el('opPrepModal');
     if (!gen || !host) return false;
@@ -45541,7 +45584,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       topOfRoom();
     }
     var day = currentDay();
-    if (day !== lastDay) { lastDay = day; if (!patientMode()) { clearSelection(); } query = ''; topOfRoom(); }
+    /* The search filters names and procedures, not days. Clearing the
+       variable while the input kept its text also left the two disagreeing:
+       the box read "smi" and every row was shown. */
+    if (day !== lastDay) { lastDay = day; if (!patientMode()) { clearSelection(); } topOfRoom(); }
     if (patientMode()) { sel = 0; selKey = rowsRef.length ? rowKey(rowsRef[0], 0) : ''; }
     else alignSelection(rowsRef);
 
@@ -45560,7 +45606,21 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       if (S(modal.getAttribute('data-mls-opnotes-state')) !== st) modal.setAttribute('data-mls-opnotes-state', st);
       /* ONE scroll reset per state TRANSITION, never per paint. */
       if (st !== lastState) { lastState = st; topOfRoom(); }
-      if (runOn) modal.setAttribute('data-mlsopn-run', 'on'); else modal.removeAttribute('data-mlsopn-run');
+      /* "done" keeps the ledger - and only the ledger - on screen while rows
+         are still failed, so the Retry button the runner appends is reachable.
+         t.failed is computed from the CURRENT rows, so a new day or a
+         successful retry clears it. */
+      if (runOn) modal.setAttribute('data-mlsopn-run', 'on');
+      else if (t.failed) modal.setAttribute('data-mlsopn-run', 'done');
+      else modal.removeAttribute('data-mlsopn-run');
+      /* THE ROOM'S OWN STATUS LINE, unfolded only while it is saying
+         something. Written before the signature short-circuit on purpose: the
+         text arrives from nine other writers, and a repaint that decides
+         nothing else changed must still let the sentence through. */
+      var sayNow = '';
+      try { var stn = el('opPrepStatus'); sayNow = stn ? S(stn.textContent).replace(/^\s+|\s+$/g, '') : ''; } catch (eS) { sayNow = ''; }
+      if (sayNow) { if (modal.getAttribute('data-mlsopn-say') !== '1') modal.setAttribute('data-mlsopn-say', '1'); }
+      else if (modal.getAttribute('data-mlsopn-say')) modal.removeAttribute('data-mlsopn-say');
       if (st === 'note' && detOpen) modal.setAttribute('data-mlsopn-det', 'open'); else modal.removeAttribute('data-mlsopn-det');
       if (st === 'note' && tplOpen) modal.setAttribute('data-mlsopn-tpl', 'open'); else modal.removeAttribute('data-mlsopn-tpl');
     }
@@ -45740,21 +45800,39 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       }
     }
 
-    /* ---- the empty day: never a blank room ---- */
+    /* ---- the empty day: never a blank room ----
+       Two different empty rooms, and they must never be confused: a day with
+       nobody on it, and a day whose search matches nobody. The second one
+       painted a blank list with no explanation. __day carries the whole
+       reason, so a changed query repaints and a repeat pass costs nothing. */
     var empty = el('mlsOpnEmpty');
     if (empty) {
-      if (r.length) { empty.hidden = true; empty.innerHTML = ''; empty.__day = ''; }
-      else if (empty.__day !== day) {
-        empty.__day = day;
+      var emptyWhy = r.length ? (shownIdx.length ? '' : 'q|' + day + '|' + query) : 'd|' + day;
+      if (!emptyWhy) { empty.hidden = true; empty.innerHTML = ''; empty.__day = ''; }
+      else if (empty.__day !== emptyWhy) {
+        empty.__day = emptyWhy;
         empty.hidden = false;
         empty.innerHTML = '';
         var line = document.createElement('div');
-        line.textContent = 'No scheduled patients on ' + dayLong(day) + '.';
-        empty.appendChild(line);
         var b = document.createElement('button');
-        b.type = 'button'; b.id = 'mlsOpnPull';
-        b.textContent = '📥 Pull this day from Athena';
-        b.addEventListener('click', pullThisDay, false);
+        b.type = 'button';
+        if (r.length) {
+          line.textContent = 'No patient on ' + dayLong(day) + ' matches that search.';
+          empty.appendChild(line);
+          b.id = 'mlsOpnClearQ';
+          b.textContent = 'Clear the search';
+          b.addEventListener('click', function () {
+            query = '';
+            var sq = el('mlsOpnSearch'); if (sq) sq.value = '';
+            paint();
+          }, false);
+        } else {
+          line.textContent = 'No scheduled patients on ' + dayLong(day) + '.';
+          empty.appendChild(line);
+          b.id = 'mlsOpnPull';
+          b.textContent = '📥 Pull this day from Athena';
+          b.addEventListener('click', pullThisDay, false);
+        }
         empty.appendChild(b);
       } else {
         empty.hidden = false;
@@ -46094,7 +46172,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       }
       var m = el('opPrepModal');
       if (m) {
-        ['data-mlsopn', 'data-mlsopn-more', 'data-mlsopn-run', 'data-mlsopn-det', 'data-mlsopn-tpl',
+        ['data-mlsopn', 'data-mlsopn-more', 'data-mlsopn-run', 'data-mlsopn-say', 'data-mlsopn-det', 'data-mlsopn-tpl',
           'data-mlsopn-gen', 'data-mls-opnotes-state', 'data-mls-opnotes-next'].forEach(function (a) { m.removeAttribute(a); });
       }
       var fmt = document.querySelectorAll('.mls-fp-fmt[data-mls-fmt]');

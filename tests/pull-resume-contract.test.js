@@ -162,7 +162,10 @@ let resumeRuntimePromise = Promise.resolve();
     toast() {},
     clearInterval() {},
     document: { getElementById() { return null; } },
-    P1_DAY_CENSUS_TOKEN: { privateLane: true }
+    P1_DAY_CENSUS_TOKEN: { privateLane: true },
+    /* rsk-1.0.0: pass-through stub so the refusal's real instrument call site
+       executes in this harness; the assertion below reads what flowed through. */
+    honestPullOutcome(r) { return r; }
   });
   ctx.window.__mlsDsStatus = function () {};
   ctx.window.__mlsDaySwitch = { currentDay() { return selectedDay; } };
@@ -193,6 +196,23 @@ let resumeRuntimePromise = Promise.resolve();
   assert.strictEqual(pullCalls.length, 0, 'a different-day resume started Athena navigation');
   assert(Object.prototype.hasOwnProperty.call(mem, 'acct::pullResumeV1'),
     'the day-selection refusal silently destroyed the unfinished day record');
+  /* rsk-1.0.0 (owner 2026-08-26, "make sure this resume pull button works",
+     measured live): a wrong-day click used to dismiss the chip BEFORE the
+     gate and write no outcome - the click looked eaten. The refusal must now
+     reach the pull outcome instrument, tell the doctor the offer survives,
+     and the dismiss must sit AFTER the day gate in resumeStart. */
+  assert(ctx.window.__mlsPullLastOutcome && ctx.window.__mlsPullLastOutcome.reason === 'resume-day-not-selected',
+    'rsk-1.0.0: the wrong-day refusal must reach window.__mlsPullLastOutcome');
+  assert(/the offer stays/.test(wrongDay.error),
+    'rsk-1.0.0: the refusal copy must say the Resume offer survives');
+  {
+    const driverSrc = src.slice(driverStart, driverEnd);
+    const startBody = driverSrc.slice(driverSrc.indexOf('function resumeStart'));
+    const gateAt = startBody.indexOf('resume-day-not-selected');
+    const dismissAt = startBody.indexOf('resumeDismiss(false);');
+    assert(gateAt >= 0 && dismissAt > gateAt,
+      'rsk-1.0.0: resumeStart must gate the day BEFORE dismissing the chip - a wrong-day click must not eat the Resume offer');
+  }
 
   api.resumeClear();
   selectedDay = '2026-07-30';

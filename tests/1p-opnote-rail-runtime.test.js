@@ -1602,6 +1602,221 @@ async function runtime() {
     }
 
     /* ================================================================
+     * 15b. THE ROOM SAYS WHAT HAPPENED (owner, 2026-08-26: "there are other
+     * things that are so clunky").
+     *
+     * Four surfaces that were written to and never read, measured through the
+     * app's own path rather than pinned in source:
+     *
+     *   A  #opPrepStatus. Nine writers put the drafting line, the per-patient
+     *      failure reason, the un-drafted-text warning and the runner's
+     *      closing summary into it — and it sits inside the editor row that is
+     *      folded once #opPrepGenAllBtn moves to the rail. The row now unfolds
+     *      for exactly as long as that node has something to say.
+     *   B  #tpfLedger. It carries the closing summary and the runner's own
+     *      "Retry failed (N)" button, and it was CSS-gated on a run being LIVE
+     *      — so the resumable-run feature had no reachable control. It now
+     *      stays up while rows are still failed, and stands down when they
+     *      are not. That second half is only true because _opRowVerdict now
+     *      clears _lastDraftErr on a pass: the runner writes that field and
+     *      clears it nowhere, so a row that failed and then drafted kept the
+     *      "Draft failed" chip while holding a finished note.
+     *   C  the day search. It survived neither writer of `query` — paintInner
+     *      cleared it on a day change and setDay cleared it again — while the
+     *      input kept the doctor's text, so the box and the filter disagreed.
+     *   D  a day filtered to nothing is not an empty day, and now says so with
+     *      one press to clear it.
+     * ============================================================== */
+    {
+      await page.evaluate(() => window.__mlsSimpleLayer.set('calm'));
+      await page.evaluate((d) => window.__opn.open(d), DAY);
+      await page.waitForTimeout(1800);
+
+      /* ---- A ----
+         Earlier sections drafted, so the status is carrying their sentences.
+         The folded state is the one this half is about, so it is established
+         rather than assumed. */
+      await page.evaluate(() => { document.getElementById('opPrepStatus').textContent = ''; });
+      await page.waitForTimeout(800);
+      const quiet = await page.evaluate(() => {
+        const st = document.getElementById('opPrepStatus');
+        return { say: document.getElementById('opPrepModal').getAttribute('data-mlsopn-say'),
+          rowShown: !!(st && st.parentNode && st.parentNode.offsetParent !== null) };
+      });
+      eq(quiet.rowShown, false,
+        `with nothing to say the leftover Draft-all row is on screen: ${JSON.stringify(quiet)}`);
+      await page.evaluate(() => {
+        document.getElementById('opPrepStatus').textContent =
+          "Couldn't draft Ada Sample's op note - the note service is rate-limiting this account.";
+      });
+      await page.waitForTimeout(700);
+      const said = await page.evaluate(() => {
+        const st = document.getElementById('opPrepStatus');
+        const r = st.getBoundingClientRect();
+        return { say: document.getElementById('opPrepModal').getAttribute('data-mlsopn-say'),
+          shown: st.offsetParent !== null, w: Math.round(r.width), h: Math.round(r.height) };
+      });
+      eq(said.say, '1', `the room did not stamp data-mlsopn-say: ${JSON.stringify(said)}`);
+      eq(said.shown, true,
+        `the status line the drafters write their reasons into is still off screen: ${JSON.stringify(said)}`);
+      ok(said.w > 100 && said.h > 8, `the status line has no readable box: ${JSON.stringify(said)}`);
+      measured.status = said;
+      await page.evaluate(() => { document.getElementById('opPrepStatus').textContent = ''; });
+      await page.waitForTimeout(700);
+      eq(await page.evaluate(() => document.getElementById('opPrepModal').getAttribute('data-mlsopn-say')), null,
+        'the row stays unfolded after the status is cleared');
+
+      /* ---- B: a real run, one transport failure, through the app's path ----
+         Earlier sections drafted and saved on this day, so the rows are put
+         back to "no note yet" first: a row the day-brain already scores as
+         done or held would never reach the failed state this half is about. */
+      await page.evaluate(() => {
+        (window._opPrep || []).forEach((r) => {
+          r.gen = false; r.note = ''; r.edited = false;
+          delete r._genErr; delete r._genErrCode; delete r._lastDraftErr;
+          delete r._noteId; delete r._genSeq; delete r._genPass;
+          r._opdbTriage = null; r._opdbBypass = true;
+        });
+        try { window.opPrepRender(); } catch (e) {}
+      });
+      await page.waitForTimeout(1200);
+      await page.evaluate(() => {
+        window.__railGenBase = window.opPrepGenerateOne;
+        window.opPrepGenerateOne = function (i) {
+          const r = (window._opPrep || [])[i];
+          if (!r) return Promise.resolve(false);
+          r._genSeq = (r._genSeq || 0) + 1;
+          if (i === 0) {
+            r.gen = false;
+            /* the shell's own verdict stamp, plus the field the runner leaves */
+            window._opRowVerdict(r, false, 'the note service is rate-limiting this account', 'MLS_OPNOTE_TRANSPORT');
+            r._lastDraftErr = '429';
+            return Promise.resolve(false);
+          }
+          r.gen = true;
+          r.note = 'PROCEDURE: synthetic\nFINDINGS: documented';
+          window._opRowVerdict(r, true, '', '');
+          return Promise.resolve(true);
+        };
+        document.getElementById('opPrepGenAllBtn').click();
+      });
+      await page.waitForFunction(
+        () => document.getElementById('opPrepModal').getAttribute('data-mlsopn-run') !== 'on',
+        null, { timeout: 90000 }).catch(() => {});
+      await page.waitForTimeout(2500);
+      const after = await page.evaluate(() => {
+        const m = document.getElementById('opPrepModal');
+        const led = document.getElementById('tpfLedger');
+        const st = document.getElementById('opPrepStatus');
+        const btns = st ? st.querySelectorAll('button') : [];
+        return { run: m.getAttribute('data-mlsopn-run'),
+          ledgerShown: !!(led && led.offsetParent !== null),
+          statusShown: !!(st && st.offsetParent !== null),
+          summary: st ? st.textContent.slice(0, 90) : '',
+          failedChips: Array.from(document.querySelectorAll('#mlsOpDayGrid .mlsOpDayCard'))
+            .map((c) => c.getAttribute('data-mls-cardstate')).filter((s) => s === 'failed').length,
+          retry: btns.length ? btns[0].textContent.trim() : '' };
+      });
+      measured.runEnd = after;
+      /* NON-VACUITY: if the run left nothing failed, everything below is a
+         measurement of the fixture rather than of the room. */
+      eq(after.failedChips, 1,
+        `the run left ${after.failedChips} failed rows rather than the one it was told to fail: ${JSON.stringify(after)}`);
+      eq(after.run, 'done',
+        `a run that left a failure did not hold the room in the "done" state: ${JSON.stringify(after)}`);
+      eq(after.ledgerShown, true,
+        `the ledger vanished at the moment it became useful: ${JSON.stringify(after)}`);
+      ok(after.statusShown && after.summary.length > 0,
+        `the run's closing summary is not readable: ${JSON.stringify(after)}`);
+      ok(/Retry failed/.test(after.retry),
+        `the runner's own Retry-failed button is unreachable: ${JSON.stringify(after)}`);
+
+      /* the retry succeeds, and the failed state has to go with it */
+      await page.evaluate(() => {
+        window.opPrepGenerateOne = function (i) {
+          const r = (window._opPrep || [])[i];
+          if (!r) return Promise.resolve(false);
+          r.gen = true; r._genSeq = (r._genSeq || 0) + 1;
+          r.note = 'PROCEDURE: synthetic\nFINDINGS: documented';
+          window._opRowVerdict(r, true, '', '');
+          return Promise.resolve(true);
+        };
+        const st = document.getElementById('opPrepStatus');
+        const btn = st ? st.querySelector('button') : null;
+        if (btn) btn.click();
+      });
+      await page.waitForTimeout(6000);
+      await page.evaluate(() => {
+        const st = document.getElementById('opPrepStatus'); if (st) st.textContent = '';
+        window.__mlsOpDay.refresh();
+      });
+      await page.waitForTimeout(1500);
+      const healed = await page.evaluate(() => ({
+        run: document.getElementById('opPrepModal').getAttribute('data-mlsopn-run'),
+        ledgerShown: (() => { const l = document.getElementById('tpfLedger'); return !!(l && l.offsetParent !== null); })(),
+        chips: Array.from(document.querySelectorAll('#mlsOpDayGrid .mlsOpDayCard'))
+          .map((c) => c.getAttribute('data-mls-cardstate')).filter((s) => s === 'failed').length
+      }));
+      measured.runHealed = healed;
+      eq(healed.chips, 0,
+        `a retried, drafted patient still reads "Draft failed": ${JSON.stringify(healed)} — _lastDraftErr outlived its attempt`);
+      eq(healed.run, null, `the ledger state never stands down: ${JSON.stringify(healed)}`);
+      eq(healed.ledgerShown, false, `a stale ledger is still on screen: ${JSON.stringify(healed)}`);
+      await page.evaluate(() => { if (window.__railGenBase) window.opPrepGenerateOne = window.__railGenBase; });
+
+      /* ---- C: the search survives a day change ---- */
+      await page.evaluate((d) => window.__opn.open(d), DAY);
+      await page.waitForTimeout(1400);
+      await page.evaluate(() => {
+        const s = document.getElementById('mlsOpnSearch');
+        s.value = 'Bo';
+        s.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await page.waitForTimeout(800);
+      await page.evaluate(() => document.getElementById('mlsOpnNextDay').click());
+      await page.waitForTimeout(1600);
+      const kept = await page.evaluate(() => ({
+        box: (document.getElementById('mlsOpnSearch') || {}).value || '',
+        count: (document.getElementById('mlsOpDayCount') || {}).textContent || ''
+      }));
+      measured.searchKept = kept;
+      eq(kept.box, 'Bo', `the search box lost what he typed on a day change: ${JSON.stringify(kept)}`);
+      ok(/shown/.test(kept.count),
+        `the box says "${kept.box}" and the day count says "${kept.count}" — the filter and its input disagree`);
+
+      /* ---- D: filtered to nothing is not an empty day ---- */
+      await page.evaluate(() => {
+        const s = document.getElementById('mlsOpnSearch');
+        s.value = 'zzzznobody';
+        s.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await page.waitForTimeout(1000);
+      const none = await page.evaluate(() => {
+        const e = document.getElementById('mlsOpnEmpty');
+        const c = document.getElementById('mlsOpnClearQ');
+        return { cards: document.querySelectorAll('#mlsOpDayGrid .mlsOpDayCard').length,
+          shown: !!(e && e.offsetParent !== null), text: e ? e.textContent.slice(0, 90) : '',
+          clear: !!(c && c.offsetParent !== null) };
+      });
+      measured.filteredEmpty = none;
+      eq(none.cards, 0, `the filter matched ${none.cards} rows, so this proves nothing`);
+      ok(none.shown && /matches that search/.test(none.text),
+        `a day filtered to nothing reads as an empty day: ${JSON.stringify(none)}`);
+      ok(none.clear, `there is no way back from a filter that matches nobody: ${JSON.stringify(none)}`);
+      await page.evaluate(() => document.getElementById('mlsOpnClearQ').click());
+      await page.waitForTimeout(1000);
+      const backAgain = await page.evaluate(() => ({
+        box: (document.getElementById('mlsOpnSearch') || {}).value || '',
+        cards: document.querySelectorAll('#mlsOpDayGrid .mlsOpDayCard').length
+      }));
+      eq(backAgain.box, '', `"Clear the search" left text in the box: ${JSON.stringify(backAgain)}`);
+      ok(backAgain.cards > 0, `"Clear the search" did not bring the day back: ${JSON.stringify(backAgain)}`);
+
+      await page.evaluate((d) => window.__opn.open(d), DAY);
+      await page.waitForTimeout(1200);
+    }
+
+    /* ================================================================
      * 16. THE ROOM IS CALM
      *
      * Owner, 2026-08-18: "matter of fact the whole op notes thing is bugging
