@@ -6887,6 +6887,21 @@
       if (value.providerRosterReceipt && value.providerRosterReceipt.attributionCoverage) {
         try { out.attributionCoverage = JSON.parse(JSON.stringify(value.providerRosterReceipt.attributionCoverage)); } catch (eAc) {}
       }
+      /* nvd-1.0.3: a stable 5-chart cohort failed the main walk, the
+         second-read pass, AND both capped retry rounds (2026-08-26) - and
+         the stored outcome said only history-partial because the retry
+         entries' per-chart reason codes were dropped here. Summarize them as
+         bounded reason counts; codes only, never names. */
+      if (value.historyReceipt && Array.isArray(value.historyReceipt.retry) && value.historyReceipt.retry.length) {
+        try {
+          var hdCounts = {};
+          value.historyReceipt.retry.forEach(function (entry) {
+            var hdReason = String(entry && entry.reason || "unspecified").slice(0, 60);
+            hdCounts[hdReason] = Number(hdCounts[hdReason] || 0) + 1;
+          });
+          out.historyRetryReasons = hdCounts;
+        } catch (eHd) {}
+      }
     }
     /* the matrix must attribute every run to its visit-notes mode; the engine
        already stamps it and this whitelist dropped it. */
