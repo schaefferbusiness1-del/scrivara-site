@@ -1573,6 +1573,10 @@
      validated, and is cleared by anything that invalidates that probe. It never
      enables the button - the single enable path stays the probe-ok branch. */
   function setUnifiedReadyTick(rowId) {
+    /* bx-1.0.0: a truthy tick means a probe reached its success terminal -
+       the batch driver waits on this settle latch (and on the recheck-button
+       latch for refusals) instead of any timer heuristics. */
+    try { if (rowId && unifiedAthenaState) unifiedAthenaState.probeSettled = unifiedAthenaState.probeGeneration; } catch (eBx) {}
     try {
       var ticks = document.querySelectorAll('[data-mls-ready-tick]');
       for (var i = 0; i < ticks.length; i++) {
@@ -1677,6 +1681,9 @@
     /* wf2-1.9.0: read-only re-probe on demand; the button lives inside the
        status line and is wiped by the next unifiedStatus repaint. */
     if (!state || state.closed) return;
+    /* bx-1.0.0: every settled probe refusal offers this button, so it doubles
+       as the refusal settle latch the batch driver waits on. */
+    try { state.probeSettled = state.probeGeneration; } catch (eBx) {}
     var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) { return; }
     if (!el) return;
     try {
@@ -2108,6 +2115,97 @@
         for (var rj = 0; rj < radios.length; rj++) radios[rj].disabled = false;
       }
     });
+  }
+  /* ------------------------------------------------------------------ */
+  /* bx-1.0.0 - batch send (owner 2026-08-26: "you should be able to send
+     each section all at the same time and check each one off then it all
+     off to Athena not just one at a time").
+     The batch driver is a QUEUE over the existing per-row machinery: for
+     each checked READY note-write row, in manifest order, it runs the SAME
+     probeUnifiedRow (own read-only check, own action token) and the SAME
+     executeUnifiedSelection (own execute, own receipt). No gate, token,
+     payload, or receipt path changes; the only new thing is sequencing.
+     Save, Sign, billing and orders never have checkboxes and never join.
+     An uncertain outcome halts the manifest exactly as a manual run would.
+     Waits are settle-latch driven (probeSettled) plus a hidden-safe sleep -
+     never bare timers, because a backgrounded tab freezes those. */
+  function bxSleep(ms) {
+    return new Promise(function (resolve) {
+      var at = Date.now() + Math.max(0, Number(ms || 0));
+      if (typeof document === 'undefined' || !document.hidden) { setTimeout(resolve, Math.max(0, at - Date.now())); return; }
+      var ch = null; try { ch = new MessageChannel(); } catch (e) { ch = null; }
+      if (!ch) { setTimeout(resolve, Math.max(0, at - Date.now())); return; }
+      ch.port1.onmessage = function () {
+        if (Date.now() >= at || !document.hidden) { try { ch.port1.onmessage = null; ch.port1.close(); ch.port2.close(); } catch (e2) {} if (Date.now() >= at) { resolve(); } else { setTimeout(resolve, Math.max(0, at - Date.now())); } return; }
+        try { ch.port2.postMessage(0); } catch (e3) { setTimeout(resolve, Math.max(0, at - Date.now())); }
+      };
+      ch.port2.postMessage(0);
+    });
+  }
+  function bxWait(pred, timeoutMs) {
+    var until = Date.now() + timeoutMs;
+    function step() {
+      if (pred()) return Promise.resolve(true);
+      if (Date.now() >= until) return Promise.resolve(false);
+      return bxSleep(500).then(step);
+    }
+    return step();
+  }
+  function bxCheckedRows(state) {
+    var out = [], boxes = [];
+    try { boxes = document.querySelectorAll('#mlsAthenaUnifiedConfirm input.mls-bx-check'); } catch (e) { boxes = []; }
+    for (var i = 0; i < boxes.length; i++) {
+      if (!boxes[i].checked) continue;
+      var row = unifiedRow(state.manifest, boxes[i].getAttribute('data-mls-bx-row'));
+      if (row && row.capability === 'ready' && row.action === 'write_note') out.push(row);
+    }
+    return out;
+  }
+  function runUnifiedBatchSend(state, btn) {
+    if (!state || state.closed || state.running || state.generating || state.batchRunning) return;
+    if (state.halted) { unifiedStatus(state, 'This review is halted on an uncertain outcome. Inspect Athena before anything else runs.', 'err'); return; }
+    var rows = bxCheckedRows(state);
+    if (!rows.length) { unifiedStatus(state, 'Check at least one READY note section to include in the batch.', 'err'); return; }
+    state.batchRunning = true;
+    var restLabel = btn ? btn.textContent : '';
+    if (btn) btn.disabled = true;
+    var okCount = 0, skipped = [], stopMsg = '';
+    function finish() {
+      state.batchRunning = false;
+      if (btn) { btn.disabled = false; btn.textContent = restLabel; }
+      var summary = 'Batch finished: ' + okCount + ' of ' + rows.length + ' checked sections verified in Athena.' +
+        (skipped.length ? ' Not sent: ' + skipped.join(', ') + ' (each kept its own honest refusal above).' : '') +
+        (stopMsg ? ' ' + stopMsg : '') + ' Save & Sign stay manual.';
+      unifiedStatus(state, summary, okCount === rows.length && !stopMsg ? 'ok' : 'err');
+    }
+    function step(i) {
+      if (i >= rows.length || state.closed || unifiedAthenaState !== state) { finish(); return; }
+      if (state.halted) { stopMsg = 'Halted on an uncertain outcome - inspect Athena before retrying anything.'; finish(); return; }
+      var row = rows[i];
+      if (state.receipts[row.id] && state.receipts[row.id].status === 'verified') { okCount++; step(i + 1); return; }
+      if (btn) btn.textContent = 'Checking ' + (i + 1) + '/' + rows.length + '...';
+      probeUnifiedRow(state, row.id);
+      bxWait(function () {
+        if (state.closed || unifiedAthenaState !== state) return true;
+        if (state.probe && state.probe.rowId === row.id) return true;
+        return state.probeSettled === state.probeGeneration && !state.probe;
+      }, 150000).then(function () {
+        if (state.closed || unifiedAthenaState !== state) { finish(); return; }
+        if (!(state.probe && state.probe.rowId === row.id)) { skipped.push(row.label); step(i + 1); return; }
+        if (btn) btn.textContent = 'Writing ' + (i + 1) + '/' + rows.length + '...';
+        executeUnifiedSelection(state);
+        bxWait(function () {
+          if (state.closed || unifiedAthenaState !== state) return true;
+          return !state.running && !!state.receipts[row.id];
+        }, 180000).then(function () {
+          var rec = state.receipts[row.id];
+          if (rec && rec.status === 'verified') okCount++;
+          else if (!rec || rec.status !== 'rehearsed') skipped.push(row.label);
+          step(i + 1);
+        });
+      });
+    }
+    step(0);
   }
   function reopenOptions(opts, manifest) {
     return {
@@ -2564,6 +2662,14 @@
       '<span style="display:block;color:#385b49;font-size:12px;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</span>' +
       '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px"><b>How:</b> Select this row, then use its own Confirm &amp; Send. Only &ldquo;' + esc(row.label) + '&rdquo; runs.</span>' +
       '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</span></span></label>' +
+      /* bx-1.0.0 (owner 2026-08-26: "send each section all at the same time
+         and check each one off"): note-write rows carry an include checkbox
+         for the one-confirm batch. It sits OUTSIDE the radio label so the two
+         controls never fight, and only write_note rows ever get one - Save,
+         Sign, billing and orders can never join a batch. */
+      (row.action === 'write_note'
+        ? '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:#204034;cursor:pointer"><input type="checkbox" class="mls-bx-check" data-mls-bx-row="' + esc(row.id) + '" checked> Include in &ldquo;Send checked sections&rdquo;</label>'
+        : '') +
       unifiedPayloadDetails(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
   function unifiedManualRowHtml(manifest, row) {
@@ -2892,12 +2998,14 @@
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
-      '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
+      '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedBatch" style="border:1px solid #205c43;background:#eef7f2;color:#205c43;border-radius:10px;padding:11px 14px;font-weight:850;font-size:13px;cursor:pointer" title="Runs every checked note section through its own read-only check and write, one at a time, in order. Save and Sign stay manual.">Send checked sections</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
     ov.appendChild(card); document.body.appendChild(ov);
     var cancel = card.querySelector('#mlsAthenaUnifiedCancel'), close = card.querySelector('#mlsAthenaUnifiedClose'), go = card.querySelector('#mlsAthenaUnifiedGo');
     cancel.onclick = closeUnifiedConfirmation; close.onclick = closeUnifiedConfirmation;
     ov.addEventListener('click', function (ev) { if (ev.target === ov && !state.running && !state.generating) closeUnifiedConfirmation(); });
     go.addEventListener('click', function () { executeUnifiedSelection(state); });
+    var batchBtn = card.querySelector('#mlsAthenaUnifiedBatch');
+    if (batchBtn) batchBtn.addEventListener('click', function () { runUnifiedBatchSend(state, batchBtn); });
     var generationButton = card.querySelector('#mlsAthenaUnifiedGenerateSections');
     if (generationButton) generationButton.addEventListener('click', function () { runUnifiedCanonicalGeneration(state, generationButton); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
@@ -3269,7 +3377,7 @@
     if (unifiedAthenaState) closeUnifiedConfirmation();
     var manifest = buildUnifiedManifest(opts);
     wfdxReset(manifest);
-    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, receipts: {}, running: false, generating: false, binding: false, halted: false, closed: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
+    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, probeSettled: 0, receipts: {}, running: false, generating: false, binding: false, halted: false, closed: false, batchRunning: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
     srrArmIfUnbound(state); /* srr-1.0.0 */
     unifiedAthenaState = state;
