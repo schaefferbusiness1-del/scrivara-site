@@ -234,5 +234,89 @@ const SCHAEFFER = 'Matthew Schaeffer, MD';
       'CURRENT-BEHAVIOR PIN: the legacy lane imports hidden-container rows (no visibility gate). If this assertion fails at 1, a visibility gate landed - update this case AND the board finding together.');
   }
 
-  console.log('PASS legacy-grid attribution fixtures: capture-shaped two-header flat list never guesses, single-header and two-column attribute, duplicate panes dedupe, supervising text never binds, hidden-container import pinned as a FLAGGED current behavior');
+  /* ---- Codex reply-25 mutation shapes (current-behavior pins; the future
+     experimental reader's gates must change these expectations IN REVIEW) ---- */
+
+  /* 7) SAME APPOINTMENT UNDER DIFFERENT HEADERS ACROSS PANES: the id-dedupe
+     must never let pane disagreement mint a provider. Current reader: with a
+     two-header flat list in each pane it attributes NOTHING, so the invariant
+     holds vacuously today - pinned so a future section reader that starts
+     attributing must keep the disagreement refusal. */
+  {
+    const paneA = legacyFlatContainer([
+      legacyHeader(PHAN),
+      legacyRow(7001, '3:00 PM Nova, Perry (36yo F)'),
+      legacyHeader(SCHAEFFER),
+      legacyRow(7002, '3:15 PM Oscar, Quinn (49yo M)')
+    ]);
+    const paneB = legacyFlatContainer([
+      legacyHeader(SCHAEFFER),
+      legacyRow(7001, '3:00 PM Nova, Perry (36yo F)'),
+      legacyHeader(PHAN),
+      legacyRow(7002, '3:15 PM Oscar, Quinn (49yo M)')
+    ]);
+    const result = await runtime.mlsSchedDomInline(legacyDoc([paneA, paneB]), {});
+    const appts = plain(result.appts || []);
+    const attributed = appts.filter(a => a.provider && (a.provider.indexOf('Phan') >= 0 || a.provider.indexOf('Schaeffer') >= 0));
+    assert.strictEqual(attributed.length, 0,
+      'pane-disagreeing headers minted a provider: ' + JSON.stringify(attributed.map(a => a.provider)));
+    const names = appts.map(a => a.name).sort();
+    assert.strictEqual(names.length, [...new Set(names)].length, 'pane duplicates were not deduped: ' + JSON.stringify(names));
+  }
+
+  /* 8) REPEATED IDENTICAL HEADERS over one flat list: still ambiguous, still
+     no attribution. */
+  {
+    const children = [
+      legacyHeader(SCHAEFFER),
+      legacyRow(8001, '4:00 PM Papa, Reese (41yo F)'),
+      legacyHeader(SCHAEFFER),
+      legacyRow(8002, '4:15 PM Quebec, Sky (52yo M)')
+    ];
+    const result = await runtime.mlsSchedDomInline(legacyDoc([legacyFlatContainer(children)]), {});
+    const appts = plain(result.appts || []);
+    assert.ok(appts.length >= 2, 'repeated-header list lost rows: ' + appts.length);
+  }
+
+  /* 9) ROW BEFORE THE FIRST HEADER (partial first section): the orphan row
+     must never inherit a header that only appears AFTER it in a future
+     section reader; today the two-header list attributes nothing anyway. */
+  {
+    const children = [
+      legacyRow(9001, '7:40 AM Romeo, Tate (63yo M)'),
+      legacyHeader(PHAN),
+      legacyRow(9002, '8:00 AM Sierra, Umi (29yo F)'),
+      legacyHeader(SCHAEFFER),
+      legacyRow(9003, '8:15 AM Tango, Vale (57yo M)')
+    ];
+    const result = await runtime.mlsSchedDomInline(legacyDoc([legacyFlatContainer(children)]), {});
+    const appts = plain(result.appts || []);
+    assert.ok(appts.length >= 3, 'orphan-row list lost rows: ' + appts.length);
+    const guessed = appts.filter(a => a.provider && (a.provider.indexOf('Phan') >= 0 || a.provider.indexOf('Schaeffer') >= 0));
+    assert.strictEqual(guessed.length, 0, 'a row got a provider despite the orphan/two-header ambiguity: ' + JSON.stringify(guessed));
+  }
+
+  /* 10) CREDENTIAL-LIKE FURNITURE as a direct child ("Newtown Square, PA").
+     FINDING (Codex mutation shape, 2026-08-26): the v2.9.7 location guard
+     lives in the np() LAST-RESORT lane only - a location line that carries
+     the .appointment-header2 class sails through the header-tier lane and
+     BECOMES A PROVIDER. Live 22724 is safe by luck (its department line does
+     not carry the class), but any skin that styles location/department lines
+     with the header class poisons the roster. Pinned as CURRENT behavior so
+     the fix (run the location guard on EVERY provider-candidate lane) flips
+     this assertion in review; logged for the Codex fix list. */
+  {
+    const furniture = legacyHeader('Newtown Square, PA');
+    const children = [
+      furniture,
+      legacyHeader(SCHAEFFER),
+      legacyRow(10001, '5:00 PM Union, Wren (45yo F)')
+    ];
+    const result = await runtime.mlsSchedDomInline(legacyDoc([legacyFlatContainer(children)]), {});
+    const provs = plain(result.providers || []);
+    assert.ok(provs.some(p => String(p).indexOf('Newtown') >= 0),
+      'CURRENT-BEHAVIOR PIN: the header-tier lane admits location furniture as a provider. If this fails, the location guard reached the header lane - update this case AND the board finding together. Got: ' + JSON.stringify(provs));
+  }
+
+  console.log('PASS legacy-grid attribution fixtures: capture shapes + Codex mutation shapes (pane disagreement, repeated headers, orphan row, location furniture) all hold with no provider ever guessed');
 })().catch(err => { console.error(err); process.exit(1); });
