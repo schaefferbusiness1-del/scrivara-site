@@ -14,9 +14,10 @@ const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(path.resolve(__dirname, '..'), '1p-feat_mls_schedimport_exact.js'), 'utf8');
-const tStart = src.indexOf('var TAX_TRANSPORT_CAUSE =');
+const tStart = src.indexOf('var TAX_CONTENT_ALLOW =');
 const tEnd = src.indexOf('async function runHistoryBatch', tStart);
-assert.ok(tStart > 0 && tEnd > tStart, 'the tax-1.0.0 reconciler is gone');
+assert.ok(tStart > 0 && tEnd > tStart, 'the tax-1.0.1 reconciler is gone');
+assert.ok(!src.includes('TAX_TRANSPORT_CAUSE'), 'the fail-open transport blacklist came back');
 const reconcile = new Function(src.slice(tStart, tEnd) + '\nreturn taxReconcileNamedOmissions;')();
 const cStart = src.indexOf('function historyVerdictCensus(rows, unresolved, receipt) {');
 const census = new Function(src.slice(cStart, tEnd) + '\nreturn historyVerdictCensus;')();
@@ -46,6 +47,36 @@ assert.deepStrictEqual({ s: v.succeeded, f: v.failed, o: v.omitted, closed: v.cl
 receipt = { patients: [provenPatient('b', { visitsFailedHistogram: { 'accordion-not-open': 2, 'athena-tab-sleeping': 1 } })], retry: [retryEntry('b', 'visit-bodies-incomplete')] };
 assert.strictEqual(reconcile(receipt), 0, 'a mixed content+transport histogram reconciled');
 assert.strictEqual(receipt.retry.length, 1);
+
+/* tax-1.0.1 (Codex reply 33): the classifier FAILS CLOSED - every safety/
+   navigation/binding cause from background.js's real vocabulary, and any
+   alien cause it has never seen, stays retryable even with full proof
+   evidence beside it. PERMANENT executions. */
+const FAIL_CLOSED_CAUSES = [
+  'identity-changed-before-detail', 'identity-changed-after-surface-recycle',
+  'detail-binding-mismatch', 'stable-source-keys-incomplete',
+  'row-set-changed-after-surface-recycle', 'encounter-surface-not-open',
+  'encounter-frame-not-refreshed', 'ambiguous-encounter-frames',
+  'slideout-open-failed', 'click-failed',
+  'a-cause-invented-after-this-test-was-written'
+];
+for (const cause of FAIL_CLOSED_CAUSES) {
+  const solo = {};
+  solo[cause] = 3;
+  receipt = { patients: [provenPatient('fc', { visitsFailedHistogram: solo })], retry: [retryEntry('fc', 'visit-bodies-incomplete')] };
+  assert.strictEqual(reconcile(receipt), 0, cause + ' reconciled as content - the classifier fails open');
+  assert.strictEqual(receipt.retry.length, 1, cause + ' left the retry pool');
+  const mixed = { 'accordion-not-open': 5 };
+  mixed[cause] = 1;
+  receipt = { patients: [provenPatient('fm', { visitsFailedHistogram: mixed })], retry: [retryEntry('fm', 'visit-bodies-incomplete')] };
+  assert.strictEqual(reconcile(receipt), 0, cause + ' beside a reviewed cause reconciled - one bad key must poison the histogram');
+}
+/* the reviewed pair still admits, alone and together */
+receipt = { patients: [provenPatient('ok1', { visitsFailedHistogram: { 'no-bound-clinical-detail': 4 } })], retry: [retryEntry('ok1', 'visit-bodies-incomplete')] };
+assert.strictEqual(reconcile(receipt), 1, 'the reviewed no-bound-clinical-detail class no longer admits');
+receipt = { patients: [provenPatient('ok2', { visitsFailedHistogram: { 'accordion-not-open': 1, 'no-bound-clinical-detail': 6 } })], retry: [retryEntry('ok2', 'visit-bodies-incomplete')] };
+assert.strictEqual(reconcile(receipt), 1, 'the combined reviewed classes no longer admit');
+assert.strictEqual(receipt.namedOmissions[receipt.namedOmissions.length - 1].detail, 'no-bound-clinical-detail', 'the top reviewed cause is not the recorded detail');
 
 /* no histogram = no evidence -> untouched (fail closed) */
 receipt = { patients: [provenPatient('c', { visitsFailedHistogram: null })], retry: [retryEntry('c', 'visit-bodies-incomplete')] };
@@ -81,4 +112,4 @@ assert.ok(src.includes('{ scopeDay: retryScopeDay, retryPass: true }'), 'the ret
 assert.ok(src.includes('_taxReconcileNamedOmissions: taxReconcileNamedOmissions'), 'the reconciler is no longer exposed for execution');
 assert.ok(src.includes("omitted: Number(vd.omitted || 0)"), 'the machine outcome no longer carries the omitted count');
 
-console.log('PASS named-omission taxonomy (tax-1.0.0): a capped-reader retry pass reconciles proven content-only omissions into complete-with-named-omissions (drained from the retry pool, never a full success), transport/identity/nav/deadline classes stay retryable, evidence gates fail closed, and a first pass never reconciles (executed from shipped bytes)');
+console.log('PASS named-omission taxonomy (tax-1.0.1): a capped-reader retry pass reconciles omissions whose sub-causes sit ENTIRELY inside the closed content allowlist; ten real safety/navigation/binding causes plus an alien cause fail closed alone and beside a reviewed cause; transport/identity/nav/deadline reasons stay retryable; a first pass never reconciles (executed from shipped bytes)');
