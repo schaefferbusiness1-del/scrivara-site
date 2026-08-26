@@ -57376,7 +57376,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       error: String(r.error || '').slice(0, 300),
       scheduleReceipt: pick(r.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason']),
       providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed']),
-      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed']),
+      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed', 'failureReasons', 'mappingReasons', 'unresolvedMappings']),
       historyReceipt: pick(r.historyReceipt, ['requested', 'processed', 'complete', 'failures'])
     };
   }
