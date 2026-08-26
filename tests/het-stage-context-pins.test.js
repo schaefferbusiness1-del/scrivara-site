@@ -62,12 +62,14 @@ assert.ok(bg.includes('var observedAppointmentId = hetStage ? hetStage.appointme
 assert.ok(bg.includes('var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root);'),
   'the visit-metadata source seam is gone');
 
-/* the downstream equality gates still stand for both paths */
-assert.ok(bg.includes('if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) continue;'),
+/* the downstream equality gates still stand for both paths (het-1.1.6 added
+   a postGate census stamp inside each continue - the gate itself must keep
+   its exact condition and its continue) */
+assert.ok(bg.includes("if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) { if (hetStage) hetDiag.postGate = 'visit-date'; continue; }"),
   'the expected-visit-date equality gate changed');
-assert.ok(bg.includes('if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;'),
+assert.ok(bg.includes("if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) { if (hetStage) hetDiag.postGate = 'provider'; continue; }"),
   'the expected-provider equality gate changed');
-assert.ok(bg.includes("if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) continue;"),
+assert.ok(bg.includes("if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) { if (hetStage) hetDiag.postGate = 'appointment-id'; continue; }"),
   'the expected-appointment equality gate changed');
 
 /* behavioral: the three uniqueness regexes, extracted from the SHIPPED bytes

@@ -1202,20 +1202,21 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (!noteTarget) continue;
         var currentNote = editorValue(noteTarget.editor);
         if (mode !== 'teach') {
-          if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) continue; }
-          else if (currentNote !== reviewedNote) continue;
+          if (action === 'write_note') { if (currentNote && currentNote !== reviewedNote) { if (hetStage) hetDiag.postGate = 'current-note'; continue; } }
+          else if (currentNote !== reviewedNote) { if (hetStage) hetDiag.postGate = 'current-note'; continue; }
         }
       }
       var targetRoot = billTarget ? billTarget.root : (orderTarget ? orderTarget.root : noteTarget.root);
       var eid = hetStage ? hetStage.encounterId : encounterIdFor(fr, targetRoot, observedIdentity.root);
-      if (!eid) continue;
-      if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) continue;
+      if (!eid) { if (hetStage) hetDiag.postGate = 'eid-missing'; continue; }
+      if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) { if (hetStage) hetDiag.postGate = 'encounter-id'; continue; }
       var observedAppointmentId = hetStage ? hetStage.appointmentId : appointmentIdFor(fr, targetRoot, observedIdentity.root);
-      if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) continue;
+      if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) { if (hetStage) hetDiag.postGate = 'appointment-id'; continue; }
       var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root);
-      if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) continue;
-      if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) continue;
-      if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) continue;
+      if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) { if (hetStage) hetDiag.postGate = 'meta-missing'; continue; }
+      if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) { if (hetStage) hetDiag.postGate = 'visit-date'; continue; }
+      if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) { if (hetStage) hetDiag.postGate = 'provider'; continue; }
+      if (hetStage) hetDiag.postGate = 'pushed';
       candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget });
     }
     if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, hetFrames: hetFrames, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
