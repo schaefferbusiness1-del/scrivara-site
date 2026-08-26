@@ -40220,7 +40220,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1070';
+  window.__MLS_AV='b1071';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -57972,7 +57972,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
 })();
 </script>
 <!-- ===== end xpdoor-1.0.0 ================================================= -->
-<!-- ===== pulsee-1.0.0 — a long read must show it is alive =================
+<!-- ===== pulsee-1.2.0 — a long read must show it is alive =================
      Owner 2026-08-19, watching a live pull: "if Maria's chart is running and
      this is no indicator that is so bad."
 
@@ -58012,8 +58012,8 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
 <script>
 (function () {
   'use strict';
-  var VERSION = 'pulsee-1.0.0';
-  var off = false, seq = 0, run = null, iv = null, TICKER_ID = 'mlsPullTicker', STOP_ID = 'mlsPullStopRead';
+  var VERSION = 'pulsee-1.2.0';
+  var off = false, seq = 0, run = null, iv = null, elRef = null, TICKER_ID = 'mlsPullTicker', STOP_ID = 'mlsPullStopRead';
   var STALL_MS = 60000;
   function S(v) { return v == null ? '' : String(v); }
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -58039,6 +58039,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
     if (el.previousSibling !== status && status.parentNode) {
       safe(function () { status.parentNode.insertBefore(el, status.nextSibling); });
     }
+    elRef = el; /* pulsee-1.2: settle must reach this node even when a panel re-render has it detached */
     return el;
   }
   function paint() {
@@ -58085,13 +58086,18 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
   function settle(msg, color) {
     if (iv) { safe(function () { clearInterval(iv); }); iv = null; }
     run = null;
-    var el = byId(TICKER_ID); if (!el) return;
+    /* pulsee-1.2: a panel re-render can hold the ticker DETACHED exactly when the
+       result lands; byId misses detached nodes, and an untouched detached node
+       re-attaches later as a zombie stall line whose Stop can never fire. The kept
+       handle still reaches it, and display:none survives the re-attach. */
+    var el = byId(TICKER_ID) || elRef; if (!el) return;
     el.__pullseeStop = null; el.__pullseeText = null; el.__pullseeLine = ''; /* pullsee-1.1: settle wipes children; the next run rebuilds */
     if (msg) { el.style.display = 'block'; el.style.color = color || '#52675c'; el.textContent = msg; }
     else el.style.display = 'none';
   }
   function stopWaiting() {
-    if (!run) return;
+    /* pulsee-1.2: never a no-op — a visible zombie line (run already gone) still
+       deserves an honest settled stop instead of a button that does nothing. */
     seq++; /* the abandoned read owns nothing from here on */
     settle('You stopped waiting on this read. MLS has let it go and will ignore its answer. athenaOne’s own read may still finish on its own — nothing was written to Athena, and nothing was saved here.', '#6f5a20');
   }
@@ -58128,7 +58134,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
   };
 })();
 </script>
-<!-- ===== end pulsee-1.0.0 ================================================= -->
+<!-- ===== end pulsee-1.2.0 ================================================= -->
 <!-- ===== pshonest-1.0.0 — a checkmark must mean work that happened ========
      Owner, 2026-08-18, from his own screenshot of the progress widget:
 
