@@ -1817,7 +1817,11 @@ const tests = [
   /* nvl-1.0.0 (Codex reply 24 item 4): one bounded GoHome rung recovers
      encounter-surface and wrong-day landings before the nav verdict; dead
      sessions and healthy gotos never trigger it; navDiag carries the proof. */
-  'nav-ladder-recovery-pins.test.js'
+  'nav-ladder-recovery-pins.test.js',
+  /* scl-1.0.0 (Codex reply 31): the chart-work admission scope is a lease -
+     compare-and-cleared on every read terminal with ABA protection, so late
+     background chatter cannot mint a job after the scoped read finished. */
+  'chart-scope-lifecycle-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
