@@ -8465,8 +8465,10 @@
           var d = (nav && nav.diag) || null;
           return {
             v: 1,
-            ok: !!(nav && nav.ok !== false),
-            supported: !(nav && nav.supported === false),
+            /* nvl-1.3.0 (Codex reply 40): EXACT booleans - absence is never
+               success. A malformed reply cannot mint a successful receipt. */
+            ok: !!(nav && nav.ok === true),
+            supported: !!(nav && nav.supported === true),
             reason: String((nav && nav.reason) || "").slice(0, 40),
             via: String((nav && nav.via) || "").slice(0, 40),
             observedDay: normDate(nav && nav.schedDate) || "",
@@ -8493,9 +8495,13 @@
         var settleWaits = [2500, 5000, 8000];
         function attempt(round) {
           return p1AthenaBusyRetry(function () {
+            /* nvl-1.3.0 (Codex reply 40): counted at the REAL bridge dispatch,
+               INSIDE the busy-retry wrapper - its internal presence-admitted
+               re-dispatches are real attempts too. Monotonic across the
+               settle ladder and the recovery sequence alike. */
+            navAttempts += 1;
             return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false });
           }, onStatus, athenaBusy).then(function (nav) {
-            navAttempts += 1; /* nvl-1.2.0 (Codex reply 37): MONOTONIC across sequences - a recovered pull's receipt counts every bridge attempt it really spent */
             var day0 = normDate(nav && nav.schedDate);
             var bad = !nav || nav.ok === false || (day0 && day0 !== date);
             if (!bad || round >= settleWaits.length) return nav;
@@ -8580,7 +8586,10 @@
       }
       return gotoWithRecovery().then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);
-        if (nav && nav.ok === false) {
+        /* nvl-1.3.0 (Codex reply 40): EXACT success gate - a malformed,
+           null, or ok-less reply can no longer fall through to the schedule
+           leg as if navigation succeeded. Only nav.ok === true proceeds. */
+        if (!nav || nav.ok !== true) {
           return p1NavFailure(nav, navDiagOf(nav, navAttempts));
         }
         if (navDay && navDay !== date) {
