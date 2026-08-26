@@ -694,19 +694,24 @@ async function main() {
     /provider (?:grouping|identity|attribution).*(?:unverified|unknown|not being reported as complete)|(?:unverified|unknown).*provider (?:grouping|identity|attribution)/i.test(exactStatus),
   'the terminal status did not say appointments imported while provider grouping stayed unverified');
 
-  /* This is the real first-use visible-button shape: includeHistory is omitted,
-     so the guarded day lane fails closed to schedule-only until the clinician
-     makes the required Full Visit Notes choice. Provider-unknown census rows may
-     lack DOB/MRN/local patient bindings entirely.  That must not turn an
-     exact appointment import into 24 chart probes or a false history claim. */
+  /* This is the real first-use visible-button shape: includeHistory is
+     omitted. Under dayfacts-1.0.0 (the superseding owner DAY contract,
+     2026-08-25) the day route ALWAYS requests the mandatory floor - the
+     retired schedule-only fail-closed is gone - so the receipt reports
+     includeHistory:true. The protections that matter on a provider-unknown
+     census day with nothing provable are the ones asserted below: the exact
+     appointment census still completes, the history phase honestly has
+     nothing to read, and it never turns into 24 chart probes or a false
+     history claim. (Found by the 850-suite sweep 2026-08-26: this pin still
+     carried the revoked pre-dayfacts semantics.) */
   const button = makeHarness({
     demographicsInsufficient: true,
     noLocalPatients: true,
     chartHydrationUnavailable: true
   });
   const buttonResult = await button.api.dayPull({ date: DAY, pullVisitBodies: true, onStatus: button.onStatus });
-  assert.strictEqual(buttonResult.includeHistory, false,
-    'an omitted first-use Full Visit Notes choice did not fail closed to schedule-only');
+  assert.strictEqual(buttonResult.includeHistory, true,
+    'the day route no longer requests the dayfacts mandatory floor (includeHistory must always be true on the day button)');
   assert.strictEqual(buttonResult.ok, true,
     `the real day button failed the exact appointment census: ${JSON.stringify({ reason: buttonResult.reason, error: buttonResult.error })}`);
   assert.strictEqual(buttonResult.complete, true,
@@ -722,13 +727,16 @@ async function main() {
     'the real day button did not return a complete appointment-census receipt');
   assert(buttonResult.identityBootstrapReceipt && buttonResult.identityBootstrapReceipt.skipped === true,
     'provider-unknown census did not explicitly skip demographics/chart hydration');
-  assert.strictEqual(buttonResult.identityBootstrapReceipt.reason, 'not-requested',
-    'schedule-only first use did not name demographics/chart hydration as not requested');
+  /* dayfacts-1.0.0: hydration/history ARE requested (the mandatory floor);
+     the honest skip names WHY nothing could run - attribution unavailable -
+     never the retired 'not-requested' schedule-only vocabulary. */
+  assert.strictEqual(buttonResult.identityBootstrapReceipt.reason, 'provider-attribution-unavailable',
+    'the census hydration skip does not name provider attribution as the missing evidence');
   assert(buttonResult.historyReceipt && buttonResult.historyReceipt.complete === true &&
     buttonResult.historyReceipt.skipped === true,
   'provider-unknown census did not return an explicit completed history-skip receipt');
-  assert.strictEqual(buttonResult.historyReceipt.reason, 'not-requested',
-    'schedule-only first use did not name history as not requested');
+  assert.strictEqual(buttonResult.historyReceipt.reason, 'provider-attribution-unavailable',
+    'the census history skip does not name provider attribution as the missing evidence');
   assert.strictEqual(Number(buttonResult.historyReceipt.requested || 0), 0,
     'provider-unknown census claimed history rows were requested');
   assert.strictEqual(Number(buttonResult.historyReceipt.processed || 0), 0,
