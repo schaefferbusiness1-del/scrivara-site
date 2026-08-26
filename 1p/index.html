@@ -20842,6 +20842,14 @@ function _athenaProfileEmptyText(p,key,fallback){
 function _athenaChartLanded(p){
   try{ return !!String((p&&p.athenaChartImportedAt)||'').trim(); }catch(e){ return false; }
 }
+/* vt-1.1.0 (Codex reply 45): the bulk chart pull files ONE 'Athena chart
+   import' RECEIPT note per patient - a pull receipt, never a visit. This is
+   the ONE predicate every visit counter and the History imports filter
+   share, so the profile chip and the canonical resolver cannot drift. */
+function _mlsIsChartImportNote(n){
+  try{ var c=String((n&&n.cc)||''); return c==='Athena chart import' || /^.+ — Athena chart import$/.test(c); }catch(e){ return false; }
+}
+try{ window._mlsIsChartImportNote=_mlsIsChartImportNote; }catch(e){}
 /* prov-1.0.0 (matrix 2026-08-26, the stale-Ibuprofen case): a POPULATED
    facts card carried no provenance, so an MLS-local leftover read exactly
    like a chart fact - athena held Medications: None recorded while the card
@@ -21038,7 +21046,7 @@ function _renderProfAtGlance(p){
   var notes=[]; try{ notes=(typeof patientNotes==='function'?patientNotes(p.id):[])||[]; }catch(e){}
   /* count COMPLETED visits only — drafts (e.g. op-note drafts) are not visits
      and must not inflate this chip or disagree with the canonical counters */
-  notes=notes.filter(function(n){ return n&&!n.isDraft; });
+  notes=notes.filter(function(n){ return n&&!n.isDraft&&!(typeof _mlsIsChartImportNote==='function'&&_mlsIsChartImportNote(n)); }); /* vt-1.1.0: a pull receipt is not a visit */
   if(!notes.length){ el.innerHTML='<span style="font-size:12.5px;color:var(--muted)">✨ New patient — start their first visit to begin building their history.</span>'; return; }
   var dates=notes.map(function(n){return String(n.date||n.note_date||n.created_at||'').slice(0,10);}).filter(Boolean).sort();
   var last=dates[dates.length-1]||'';
@@ -24503,7 +24511,7 @@ function renderHistory(){
      buried every real visit under a wall of near-identical rows. In the
      default (All) view they now collapse into ONE summary row; the new
      "📥 Chart imports" filter shows them all. Nothing is deleted. */
-  const _isImportNote=(n)=>{ try{ return String(n.cc||'')==='Athena chart import' || /^.+ — Athena chart import$/.test(String(n.cc||'')); }catch(e){ return false; } };
+  const _isImportNote=(n)=>{ try{ return typeof _mlsIsChartImportNote==='function'?_mlsIsChartImportNote(n):(String(n.cc||'')==='Athena chart import'); }catch(e){ return false; } }; /* vt-1.1.0: the ONE shared predicate */
   let _importNotes=[];
   if(fv==='imports'){ ordered=ordered.filter(_isImportNote); }
   else if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
@@ -51866,7 +51874,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
       /* A DRAFT IS NOT A VISIT. This is the rule _renderProfAtGlance already
          applied and lastVisitInfo did not — the exact reason one surface said 1
          and another said 3 about the same chart at the same instant. */
-      if (n && !n.isDraft) out.push(n);
+      if (n && !n.isDraft && !(typeof _mlsIsChartImportNote === 'function' && _mlsIsChartImportNote(n))) out.push(n); /* vt-1.1.0: a pull receipt is not a visit */
     }
     return out;
   }
