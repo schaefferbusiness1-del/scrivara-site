@@ -52004,6 +52004,11 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     if (!canRead()) { say('MLS Assist and a signed-in athenaOne tab are needed for this.'); return Promise.resolve({ ok: false, reason: 'no-bridge' }); }
     if (_reading) return Promise.resolve({ ok: false, reason: 'busy' });
     _reading = str(p.id);
+    /* pts-1.1.0 (Codex reply 30): explicit single-patient chart work carries
+       its own NON-pull scope stamp, so the progress chip paints for it even
+       after a day pull's epoch has been terminaled - without weakening the
+       day-pull fence. PHI-free: an opaque serial and a clock only. */
+    safe(function () { window.__mlsChartWorkScopeV1 = { id: 'cfread-' + Date.now().toString(36), at: Date.now() }; });
     say('Reading this chart from athenaOne...');
     /* THE PATIENT OBJECT, not a hand-built target: _assistReadChart takes its
        own snapshot through _athenaHistoryTargetSnapshot and refuses a name-only
