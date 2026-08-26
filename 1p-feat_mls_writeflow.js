@@ -852,7 +852,7 @@
    'order-existing-duplicate-rejected order-field-too-long order-id-required order-not-reviewed ' +
    'order-payload-incomplete order-payload-mismatch order-row-mismatch order-workspace-context-verified ' +
    'outcome-uncertain patient-dob-unverifiable patient-mismatch patient-unverifiable practice-mismatch ' +
-   'practice-unverifiable preview-hash-mismatch provider-mismatch provider-unverifiable rows-not-rendered ' +
+   'practice-unverifiable preview-hash-mismatch probe-frame-missing provider-mismatch provider-unverifiable rows-not-rendered ' +
    'schedule-date-missing-after-recovery schedule-date-restore-failed search-deadline-exceeded ' +
    'session-expired sign-prerequisite-mismatch synthetic-local-only taught-destination-binding-mismatch ' +
    'taught-destination-control-mismatch taught-destination-expired taught-destination-fingerprint-mismatch ' +
