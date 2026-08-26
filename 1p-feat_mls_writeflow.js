@@ -2034,8 +2034,25 @@
       unifiedStatus(state, (probeOnlyActive() ? 'PROBE ONLY — ' : '') + 'Ready — the exact chart is verified. One click on Confirm & Send runs only ' + row.label + '.' + (probeOnlyActive() ? ' In PROBE ONLY it is rehearsed read-only and nothing is written.' : ' Nothing else.'), '');
     });
   }
+  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet
+     said NOT ATTEMPTED): every sheet REOPEN (rebind, re-check rebuild) starts a
+     fresh state with empty receipts, wiping the memory of what already landed.
+     The ledger below survives reopens (keyed receiptSessionId+rowId; reopen
+     paths reuse the same session id), so a section stays WRITTEN/VERIFIED for
+     the life of the review. It records outcomes only - it can never make a row
+     sendable. */
+  var sectionLedger = Object.create(null);
+  function ledgerKey(state, rowId) { return S(state.manifest && state.manifest.receiptSessionId) + '||' + S(rowId); }
+  function rememberRowOutcome(state, rowId, receipt) {
+    try { if (receipt && (receipt.status === 'verified' || receipt.status === 'uncertain')) sectionLedger[ledgerKey(state, rowId)] = receipt; } catch (e) {}
+  }
   function receiptStateForRow(state, row) {
     if (state.receipts[row.id]) return state.receipts[row.id];
+    var prior = sectionLedger[ledgerKey(state, row.id)];
+    if (prior) return { status: prior.status, message: prior.message + ' (from earlier in this review)' };
+    if (row.capability === 'blocked' && /note-editor-not-empty|not empty/i.test(S(row.reason))) {
+      return { status: 'already in Athena', message: 'The exact Athena field already holds text (inserted earlier in this review, or by hand). There is nothing to send; review it in Athena.' };
+    }
     if (row.capability === 'manual') return { status: 'manual', message: row.reason };
     if (row.capability === 'blocked') return { status: 'blocked', message: row.reason };
     return { status: 'not attempted', message: 'Ready, but not attempted in this receipt.' };
@@ -2046,12 +2063,41 @@
        / BLOCKED / MANUAL" in a red-and-amber column that read as a wall of
        failure for a review where nothing had happened yet. The receipt is an
        outcome record: it appears only once there IS an outcome. */
-    if (!Object.keys(state.receipts).length) { host.innerHTML = ''; return; }
-    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c' };
-    host.innerHTML = '<div style="border:1px solid #e2e8f2;background:#fff;border-radius:10px;padding:10px 12px"><div style="font-weight:800;color:#204034;margin-bottom:6px">What happened</div>' + state.manifest.rows.map(function (row) {
+    /* wfsum-1.0.0: the ledger keeps earlier outcomes visible after reopens, so
+       the receipt renders whenever ANY outcome exists for this review. */
+    var anyOutcome = Object.keys(state.receipts).length > 0 ||
+      state.manifest.rows.some(function (row) { return !!sectionLedger[ledgerKey(state, row.id)]; });
+    if (!anyOutcome) { host.innerHTML = ''; return; }
+    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c', 'already in Athena': '#205c43' };
+    /* wfsum-1.0.0 completion banner: when every note-write row is in Athena
+       (verified now, verified earlier, or its field already holds text), say so
+       ONCE in green - the owner asked for one glanceable "everything is
+       written" answer instead of reading eight rows. */
+    var noteRows = state.manifest.rows.filter(function (row) { return row.action === 'write_note'; });
+    var inAthena = noteRows.filter(function (row) { var r = receiptStateForRow(state, row); return r.status === 'verified' || r.status === 'already in Athena'; });
+    var banner = (noteRows.length && inAthena.length === noteRows.length)
+      ? '<div style="border:1px solid #bfe0cf;background:#eef7f2;color:#205c43;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-weight:800">&#10003; Everything on this review is in Athena — ' + inAthena.length + ' of ' + noteRows.length + ' note sections verified. Nothing was saved or signed; finish Save / Sign in Athena yourself.</div>'
+      : '';
+    host.innerHTML = banner + '<div style="border:1px solid #e2e8f2;background:#fff;border-radius:10px;padding:10px 12px"><div style="font-weight:800;color:#204034;margin-bottom:6px">What happened</div>' + state.manifest.rows.map(function (row) {
       var r = receiptStateForRow(state, row), label = S(r.status).toUpperCase();
       return '<div style="border-top:1px solid #e2e8f2;padding:7px 0"><b>' + esc(row.label) + '</b><span style="float:right;color:' + (colors[r.status] || '#52675c') + ';font-weight:800">' + esc(label) + '</span><div style="clear:both;color:#52675c;font-size:12px">' + esc(r.message) + '</div></div>';
     }).join('') + '</div>';
+    /* wfsum-1.0.0 footer truth (owner: '"Send checked sections" should be
+       different than "Done" - it's confusing'): once anything landed, the exit
+       button stops reading like it might undo the writes; once EVERYTHING is
+       in Athena, it becomes the one obvious green Done and the batch button
+       says there is nothing left to send. */
+    try {
+      var cancelBtn = document.getElementById('mlsAthenaUnifiedCancel'), batchBtn2 = document.getElementById('mlsAthenaUnifiedBatch');
+      var anyLanded = state.manifest.rows.some(function (row) { var r2 = receiptStateForRow(state, row); return r2.status === 'verified' || r2.status === 'already in Athena'; });
+      if (cancelBtn && banner) {
+        cancelBtn.textContent = 'Done — close review';
+        cancelBtn.style.border = '1px solid #205c43'; cancelBtn.style.background = '#205c43'; cancelBtn.style.color = '#fff';
+      } else if (cancelBtn && anyLanded) {
+        cancelBtn.textContent = 'Close review (writes stay in Athena)';
+      }
+      if (batchBtn2 && banner && !state.batchRunning) { batchBtn2.disabled = true; batchBtn2.textContent = 'Nothing left to send'; }
+    } catch (eFoot) {}
   }
   function resultToUnifiedReceipt(state, row, resp, probe) {
     resp = resp || {}; var status = 'blocked', message = '', verifiedWrite = null;
@@ -2082,6 +2128,7 @@
        being confirmed by the parameters we happened to send. */
     var receipt = deepFreeze({ rowId: row.id, action: row.action, status: status, message: message, patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(), responseIdentity: stableClone((probe && probe.responseIdentity) || null), manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context), completedAt: new Date().toISOString() });
     state.receipts[row.id] = receipt;
+    rememberRowOutcome(state, row.id, receipt); /* wfsum-1.0.0: survives sheet reopens */
     if (status === 'uncertain') state.halted = true;
     return receipt;
   }
@@ -2094,6 +2141,19 @@
     var currentTaughtDestination = taughtDestinationFor(state.manifest, row);
     if (probe.taughtDestinationHash !== hashPreview(currentTaughtDestination || {})) { unifiedStatus(state, 'The taught destination changed after the read-only check. Select the action again before writing.', 'err'); invalidateUnifiedProbeForTeach(state); return; }
     state.running = true; go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.textContent = 'Working…';
+    /* wfsum-1.0.0 loading bar: the owner watched "Working…" for up to 40s with
+       no sign of life. Tick the elapsed seconds on the button itself and fill
+       it left-to-right (capped at 95% - only the receipt claims completion). */
+    var wfsumT0 = Date.now(), wfsumVerb = probeOnlyActive() ? 'Checking (probe only)' : (row.action === 'save_draft' ? 'Saving draft in Athena' : 'Writing to Athena');
+    var wfsumTick = setInterval(function () {
+      try {
+        if (state.closed || unifiedAthenaState !== state || !state.running) { clearInterval(wfsumTick); return; }
+        var secs = Math.floor((Date.now() - wfsumT0) / 1000), pct = Math.min(95, Math.round((secs / 45) * 100));
+        go.textContent = wfsumVerb + '… ' + secs + 's';
+        go.style.background = 'linear-gradient(90deg,#2f7d5a ' + pct + '%,#204034 ' + pct + '%)';
+      } catch (eTick) { try { clearInterval(wfsumTick); } catch (e2) {} }
+    }, 1000);
+    function wfsumStopTick() { try { clearInterval(wfsumTick); } catch (e) {} try { go.style.background = '#204034'; } catch (e3) {} }
     var cancel = document.getElementById('mlsAthenaUnifiedCancel'), close = document.getElementById('mlsAthenaUnifiedClose');
     if (cancel) cancel.disabled = true; if (close) close.disabled = true;
     var radios = document.querySelectorAll('#mlsAthenaUnifiedConfirm input[name="mlsAthenaUnifiedAction"]');
@@ -2114,6 +2174,7 @@
         clientOrderId: row.action === 'place_order' ? S(row.payload.order && row.payload.order.clientOrderId).trim() : '',
         taughtDestination: currentTaughtDestination, expectedContext: probe.context
       }, 'mlsAppAthenaActionV2Result', 150000).then(function (resp) {
+        wfsumStopTick();
         if (state.closed || unifiedAthenaState !== state) return;
         resp = resp || {};
         state.running = false;
@@ -2143,6 +2204,7 @@
       rowHash: row.rowHash, clientOrderId: row.action === 'place_order' ? S(row.payload.order && row.payload.order.clientOrderId).trim() : '', taughtDestination: currentTaughtDestination,
       probeContext: probe.rawContext, expectedContext: probe.context
     }, 'mlsAppAthenaActionV2Result', 150000).then(function (resp) {
+      wfsumStopTick();
       if (state.closed || unifiedAthenaState !== state) return;
       var completedProbe = state.probe;
       state.running = false;
@@ -2223,6 +2285,9 @@
         (skipped.length ? ' Not sent: ' + skipped.join(', ') + ' (each kept its own honest refusal above).' : '') +
         (stopMsg ? ' ' + stopMsg : '') + ' Save & Sign stay manual.';
       unifiedStatus(state, summary, okCount === rows.length && !stopMsg ? 'ok' : 'err');
+      /* wfsum-1.0.0: re-render so the completion banner and footer relabel
+         (Done / Nothing left to send) survive the label restore above. */
+      try { renderUnifiedReceipts(state); } catch (eRR) {}
     }
     function step(i) {
       if (i >= rows.length || state.closed || unifiedAthenaState !== state) { finish(); return; }
@@ -4031,7 +4096,12 @@
       receipts: function () { return wfdx.receipts.slice(); }, envLine: function () { return wfdxEnvLine(unifiedAthenaState && unifiedAthenaState.manifest, wfdx.env); },
       reason: wfdxReason, errorClass: wfdxErrorClass, health: wfdxHealth,
       probeOnly: probeOnlyActive, probeOnlyBanner: PROBE_ONLY_BANNER,
-      state: function () { return unifiedAthenaState; } },
+      state: function () { return unifiedAthenaState; },
+      /* wfsum-1.0.0 test seam: the reopen-surviving receipt truth. remember()
+         is the same call the execute path makes; rowState()/render() are the
+         same functions the sheet paints with. Nothing here can write. */
+      receiptLedger: { v: 'wfsum-1.0.0', key: ledgerKey, remember: rememberRowOutcome,
+        rowState: receiptStateForRow, render: renderUnifiedReceipts } },
     /* wfbind-1.0.0 test + support seam (read-only; run() is the same call the
        sheet's own control makes). */
     bindCure: { v: 'wfbind-1.0.0', label: WFBIND_LABEL,
