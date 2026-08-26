@@ -1794,7 +1794,12 @@ const tests = [
      attempt-scoped pull terminal; the progress observers close exactly the
      bound jobs once, fence foreign/stale terminals, and same-epoch late
      traffic cannot reopen them. Runs the REAL lb+ps modules. */
-  'pull-terminal-seam-runtime.test.js'
+  'pull-terminal-seam-runtime.test.js',
+  /* cvi-1.0.0 (Codex reply 24): no global complete:true while a convergence
+     phase is active - truthful interim stamp, day verdict restored verbatim
+     with a convergence appendix once at settle, observer keeps the chip
+     alive on a recent interim. */
+  'convergence-interim-outcome-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

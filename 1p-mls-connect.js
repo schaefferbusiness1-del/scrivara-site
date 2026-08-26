@@ -51336,10 +51336,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             if ((DS.navFailAfterLanded | 0) < 2 && retryCount > 0 && dsConvergeEligible(result)) {
               DS.pulling = false;
               DS.__autoRetrying = true;
+              /* cvi-1.0.0: interim while converging, day verdict restored at
+                 the true end (same law as the main converge lane). */
+              var cvNavPrior = null;
+              try { cvNavPrior = window.__mlsPullLastOutcome || null; } catch (eCvN0) {}
+              try { window.__mlsPullLastOutcome = { ok: false, interim: true, phase: 'converging', complete: false, remaining: retryCount, at: Date.now() }; } catch (eCvN1) {}
               dsAutoConvergeBodies(sessionSerial, function () {
                 if (sessionSerial !== DS.sessionSerial) return;
                 DS.__autoRetrying = false;
                 var navRemaining = syncRetryControl(DS.lastResult);
+                try {
+                  var cvNavFinal = (cvNavPrior && typeof cvNavPrior === 'object') ? JSON.parse(JSON.stringify(cvNavPrior)) : { ok: false };
+                  cvNavFinal.at = Date.now();
+                  delete cvNavFinal.interim; delete cvNavFinal.phase;
+                  cvNavFinal.convergence = { retried: retryCount, remaining: navRemaining };
+                  window.__mlsPullLastOutcome = cvNavFinal;
+                } catch (eCvN2) {}
                 done(false, __navMsg, navRemaining > 0, false);
               });
               return;
@@ -51454,6 +51466,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              start a second engine and the Pull button stays disabled. */
           DS.pulling = false;
           DS.__autoRetrying = true;
+          /* cvi-1.0.0 (Codex reply 24): while the convergence phase is active
+             the GLOBAL machine outcome may not read complete:true. Stamp a
+             truthful interim now; the day's own verdict comes back - never
+             upgraded (the b752 subset rule) - with a convergence appendix,
+             stamped ONCE when the retry set is empty or explicitly terminal. */
+          var cvPrior = null;
+          try { cvPrior = window.__mlsPullLastOutcome || null; } catch (eCvI0) {}
+          try { window.__mlsPullLastOutcome = { ok: false, interim: true, phase: 'converging', complete: false, remaining: cvItems, at: Date.now() }; } catch (eCvI1) {}
           try {
             var cvStat = $('mlsDsStatus');
             var cvLine = 'Finishing ' + cvItems + ' chart' + (cvItems === 1 ? '' : 's') + ' that need a second read — 0 of ' + cvItems + '…';
@@ -51475,6 +51495,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                 ? (' Every one of the ' + cvItems + ' chart' + (cvItems === 1 ? '' : 's') + ' that needed a second read finished on the automatic pass.')
                 : (' ' + remaining + ' of ' + cvItems + ' still need attention after ' + cvRounds + ' automatic pass' + (cvRounds === 1 ? '' : 'es') + ' — use Retry failed histories.');
             }
+            /* cvi-1.0.0: the FINAL terminal stamp - the day's own verdict
+               restored verbatim plus the convergence appendix. */
+            try {
+              var cvFinal = (cvPrior && typeof cvPrior === 'object') ? JSON.parse(JSON.stringify(cvPrior)) : { ok: outcome.ok === true };
+              cvFinal.at = Date.now();
+              delete cvFinal.interim; delete cvFinal.phase;
+              cvFinal.convergence = { rounds: cvRounds, retried: cvItems, remaining: remaining };
+              window.__mlsPullLastOutcome = cvFinal;
+            } catch (eCvI2) {}
             var finalRetry = syncRetryControl(DS.lastResult);
             done(outcome.ok, outcome.message + cvNote, finalRetry > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
           });

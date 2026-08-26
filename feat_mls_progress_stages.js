@@ -757,6 +757,16 @@
            rejection — consult the engine's recorded outcome (finding #5) */
         var outcome = safe(function () { return window.__mlsPullLastOutcome; }, null);
         var recent = outcome && outcome.at && (now() - outcome.at) < 600000;
+        /* cvi-1.0.0 (Codex reply 24): a recent INTERIM stamp means the
+           convergence phase is still working - never a terminal. Keep the
+           job alive and say what the engine is actually doing. */
+        if (recent && outcome.interim === true) {
+          if (pullWatch.lastNote !== 'interim') {
+            pullWatch.lastNote = 'interim';
+            cur.handle.stage('Working through the schedule and charts', { operation: 'Finishing charts that need a second read…' });
+          }
+          return;
+        }
         if (recent && outcome.ok) finish('pull', 'complete', 'Pull finished.');
         else if (recent && !outcome.ok) finish('pull', 'fail', 'The pull stopped: ' + (outcome.error || 'it did not finish') + ' — check the pull receipt before relying on today’s schedule.');
         else finish('pull', 'complete', 'The pull stopped — MLS could not confirm it finished; check the pull receipt before relying on today’s schedule.');
