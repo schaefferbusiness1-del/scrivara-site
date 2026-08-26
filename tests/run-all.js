@@ -1813,7 +1813,11 @@ const tests = [
      only omissions terminate as complete-with-named-omissions and leave the
      retry pool; transport/identity/nav classes stay retryable; a first pass
      never reconciles. */
-  'named-omission-taxonomy-pins.test.js'
+  'named-omission-taxonomy-pins.test.js',
+  /* nvl-1.0.0 (Codex reply 24 item 4): one bounded GoHome rung recovers
+     encounter-surface and wrong-day landings before the nav verdict; dead
+     sessions and healthy gotos never trigger it; navDiag carries the proof. */
+  'nav-ladder-recovery-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

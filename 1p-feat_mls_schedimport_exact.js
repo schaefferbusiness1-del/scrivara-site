@@ -8444,6 +8444,15 @@
          receipt. Codes, counts, a truncated URL PATH and a date - never a
          name, DOB, MRN or any chart text. */
       var navAttempts = 0;
+      /* nvl-1.0.0 (Codex reply 24 item 4): ONE bounded escape rung before the
+         nav verdict. Measured on the matrix: the goto loses ONLY when the
+         athena tab is parked on an encounter/chart surface (every schedule
+         surface navigates fine), and the batch walker's own GoHome verb is
+         the proven escape from exactly those surfaces. So when the settled
+         goto still ends bad, run GoHome ONCE and re-run the settled goto -
+         never more than once per pull, never on a dead session - and carry
+         the rung's own result in navDiag so a receipt proves the ladder ran. */
+      var navRecovery = { ran: false, homeOk: null };
       function navDiagOf(nav, attempts) {
         return safe(function () {
           var d = (nav && nav.diag) || null;
@@ -8461,9 +8470,11 @@
             tabPath: String((d && d.tabPath) || "").slice(0, 40),
             initFrames: Number((d && d.initFrames) || 0),
             initFound: !!(d && d.initFound),
-            rounds: Number((d && Array.isArray(d.rounds) && d.rounds.length) || 0)
+            rounds: Number((d && Array.isArray(d.rounds) && d.rounds.length) || 0),
+            recoveryRan: navRecovery.ran === true, /* nvl-1.0.0 */
+            recoveryHomeOk: navRecovery.homeOk === true
           };
-        }, { v: 1, ok: false, reason: "nav-diag-unreadable", attempts: Number(attempts || 0) });
+        }, { v: 1, ok: false, reason: "nav-diag-unreadable", attempts: Number(attempts || 0), recoveryRan: navRecovery.ran === true });
       }
       /* ===== end nav-1.0.0 (diag) ===== */
       /* p1-athena-presence-1.0.0: ONE busy budget for the whole pull. Both the
@@ -8515,7 +8526,26 @@
         });
       }
       /* ===== end p1-onetab-nav-1.0.0 ===== */
-      return gotoDateSettled().then(function (nav) {
+      /* nvl-1.0.0: the one-rung ladder around the settled goto. */
+      function navBad(nav) {
+        var d0 = normDate(nav && nav.schedDate);
+        return !nav || nav.ok === false || (d0 && d0 !== date);
+      }
+      function gotoWithRecovery() {
+        return gotoDateSettled().then(function (nav) {
+          /* the rung escapes a SURFACE - with no athena tab at all (or an
+             ambiguous set) there is nothing to escape, and doubling the
+             settled ladder against an absent tab is pure burn. */
+          if (!navBad(nav) || navRecovery.ran || (nav && nav.sessionLikelyExpired) ||
+              /^(no-athena-tab|ambiguous-athena-tabs)$/.test(String((nav && nav.reason) || ""))) return nav;
+          navRecovery.ran = true;
+          onStatus("athenaOne is parked away from the schedule (usually a chart or encounter screen) - returning it to the schedule and retrying the day switch...", "");
+          return bridge("mlsAppGoHomeResult", "mlsAppGoHome", 30000, {}).then(
+            function (home) { navRecovery.homeOk = !!(home && home.ok !== false); return gotoDateSettled(); },
+            function () { navRecovery.homeOk = false; return gotoDateSettled(); });
+        });
+      }
+      return gotoWithRecovery().then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);
         if (nav && nav.ok === false) {
           return p1NavFailure(nav, navDiagOf(nav, navAttempts));
