@@ -6855,7 +6855,19 @@
         if (typeof cv === "number" && isFinite(cv)) { counts[names[ci]] = cv; any = true; }
       }
       if (any) out.counts = counts;
+      /* nvd-1.0.0 (pull matrix 2026-08-26): a nav-failed outcome said only
+         "retry the pull" while the engine's bounded navDiag (home-click
+         result, continue-interstitial, weekstrip attempts, tab counts) was
+         DISCARDED by this whitelist - the first reproduced matrix failure
+         was undiagnosable from its own stored receipt. Carry it through;
+         closed shape, no page text, no PHI. */
+      if (value.navDiag && typeof value.navDiag === "object") {
+        try { out.navDiag = JSON.parse(JSON.stringify(value.navDiag)); } catch (eDg) {}
+      }
     }
+    /* the matrix must attribute every run to its visit-notes mode; the engine
+       already stamps it and this whitelist dropped it. */
+    if (value.visitNotesMode !== undefined && value.visitNotesMode !== null && String(value.visitNotesMode) !== "") out.visitNotesMode = String(value.visitNotesMode).slice(0, 24);
     return out;
   }
   /* ===== p1-todaynote-deferred-retry-1.0.0 =====
