@@ -725,6 +725,10 @@ async function mlsAthenaActionV2DriverFn(req) {
       exam: { 'physical exam': 1, 'physical examination': 1 },
       assessment: { 'assessment': 1, 'assessment narrative': 1 },
       plan: { 'plan': 1, 'follow up': 1, 'followup': 1, 'plan follow up': 1, 'plan and follow up': 1 },
+      /* ap-1.0.0: the practice surface that renders ONE combined A&P note.
+         An explicit combined request is exact; a combined label still never
+         satisfies the separate assessment or plan keys. */
+      ap: { 'assessment and plan': 1 },
       procedure: { 'procedure documentation': 1, 'procedure note': 1, 'operative note': 1, 'op note': 1 }
     };
     /* The app's visible destination is part of the reviewed payload, not
@@ -737,11 +741,12 @@ async function mlsAthenaActionV2DriverFn(req) {
       exam: 'Athena encounter > Physical Exam',
       assessment: 'Athena encounter > Assessment & Plan > Assessment',
       plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up',
+      ap: 'Athena encounter > Assessment & Plan',
       procedure: 'Athena encounter > Physical Exam > Procedure Documentation'
     };
     function canonicalNamedNoteKey(raw) {
       var key = norm(raw).replace(/ /g, '_');
-      var aliases = { note: 'note', encounter_note: 'note', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan', procedure: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', op_note: 'procedure', opnote: 'procedure' };
+      var aliases = { note: 'note', encounter_note: 'note', ap: 'ap', assessment_and_plan: 'ap', assessment_plan: 'ap', a_and_p: 'ap', hpi: 'hpi', history_of_present_illness: 'hpi', ros: 'ros', review_of_systems: 'ros', exam: 'exam', physical_exam: 'exam', physical_examination: 'exam', assessment: 'assessment', assessment_narrative: 'assessment', plan: 'plan', follow_up: 'plan', followup: 'plan', procedure: 'procedure', procedure_note: 'procedure', operative_note: 'procedure', op_note: 'procedure', opnote: 'procedure' };
       return aliases[key] || '';
     }
     function namedHeadingOwnText(head) {
@@ -762,7 +767,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     function namedSectionDescriptor(el) {
       var out = '';
       try {
-        out = [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component')].join(' ');
+        out = [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component'), el.getAttribute('data-subsection-id')].join(' ');
         var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
         for (var i = 0; i < heads.length && i < 4; i++) out += ' ' + text(heads[i].textContent);
       } catch (e) {}
@@ -771,7 +776,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     function namedSectionLabels(el) {
       var out = [];
       try {
-        [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component')].forEach(function (value) { if (text(value)) out.push(text(value)); });
+        [el.id, el.getAttribute('name'), el.getAttribute('aria-label'), el.getAttribute('data-testid'), el.getAttribute('data-component'), el.getAttribute('data-subsection-id')].forEach(function (value) { if (text(value)) out.push(text(value)); });
         var heads = deepQueryAll(el, ':scope > legend,:scope > h1,:scope > h2,:scope > h3,:scope > h4,:scope > header,:scope > [role="heading"]');
         for (var i = 0; i < heads.length && i < 4; i++) { var hot = namedHeadingOwnText(heads[i]); if (hot) out.push(hot); }
       } catch (e) {}
@@ -865,7 +870,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       return editorsIn(scope, frame).filter(function (editor) { return editorOwnedByNamedScope(editor, scope, key); });
     }
     function namedNoteScopes(frame, key) {
-      var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label]';
+      var selector = 'section,fieldset,article,[role="region"],[data-testid],[data-component],[aria-label],[data-subsection-id]';
       var raw = []; try { raw = deepQueryAll(frame.doc, selector); } catch (e) {}
       /* het-1.1.4: athena stage cards carry their one canonical label as a
          direct-child heading and no sectioning markup or machine attribute,
@@ -1157,7 +1162,7 @@ async function mlsAthenaActionV2DriverFn(req) {
        the normal refusal path on any doubt. */
     if (action === 'write_note' && requestedNoteSection && requestedNoteSection !== 'note') {
       try {
-        var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P' };
+        var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P', ap: 'A/P' };
         var snWant = snTabs[requestedNoteSection] || '';
         if (snWant) {
           var snFrames = sameOriginFrames();

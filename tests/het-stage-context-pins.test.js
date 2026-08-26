@@ -202,7 +202,7 @@ console.log('PASS het-1.1.8 pins: complete parsed foreign identities block meta-
 {
   const snStart = bg.indexOf("var snTabs = ");
   assert.ok(snStart > 0, 'the stage-nav whitelist is gone');
-  assert.ok(bg.includes("var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P' };"),
+  assert.ok(bg.includes("var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P', ap: 'A/P' };"),
     'the stage-nav tab whitelist changed - Sign-off/Review must never be reachable');
   assert.ok(!/snTabs = \{[^}]*Sign/i.test(bg), 'Sign-off leaked into the stage-nav whitelist');
   const snBlock = bg.slice(snStart, bg.indexOf('var frames = sameOriginFrames()', snStart));
@@ -220,3 +220,34 @@ console.log('PASS het-1.1.8 pins: complete parsed foreign identities block meta-
 }
 
 console.log('PASS sn-1.0.0 pins: stage-nav pre-pass is whitelisted, machine-bound, single-click, and loop-preserving');
+
+/* ap-1.0.0: the combined Assessment & Plan note is an EXPLICIT distinct
+   destination - one exact label core, its own destination string, discovered
+   through the machine subsection anchor. The separate assessment/plan keys
+   keep refusing combined labels (a combined label maps only to 'ap'). */
+{
+  assert.ok(bg.includes("ap: { 'assessment and plan': 1 },"), 'the ap key lost its one exact label');
+  assert.ok(bg.includes("ap: 'Athena encounter > Assessment & Plan',"), 'the ap destination string changed');
+  assert.ok(bg.includes("ap: 'ap', assessment_and_plan: 'ap', assessment_plan: 'ap', a_and_p: 'ap'"), 'the ap canonical aliases are gone');
+  assert.ok(bg.includes("[aria-label],[data-subsection-id]'"), 'the data-subsection-id scope anchor left the selector');
+  const dsCount = (bg.match(/el\.getAttribute\('data-subsection-id'\)/g) || []).length;
+  assert.strictEqual(dsCount, 2, 'both label readers (section labels + descriptor) must read data-subsection-id');
+  /* EXECUTED: the shipped clinicalLabelCore resolves both live machine anchors
+     and the visible heading title to the ONE ap core - and to NOTHING else */
+  const clcStart = bg.indexOf('function clinicalLabelCore');
+  const clcEnd = bg.indexOf('function directHumanLabels', clcStart);
+  const textFn = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  const normFn = v => textFn(v).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const clc = new Function('norm', 'return ' + bg.slice(clcStart, clcEnd))(normFn);
+  assert.strictEqual(clc('assessment-and-plan'), 'assessment and plan', 'the section id no longer resolves the ap core');
+  assert.strictEqual(clc('assessment_and_plan'), 'assessment and plan', 'the data-subsection-id no longer resolves the ap core');
+  assert.strictEqual(clc('Assessment & Plan'), 'assessment and plan', 'the visible heading title no longer resolves the ap core');
+  /* the separate keys must NOT accept the combined core */
+  const defsStart = bg.indexOf('var NAMED_NOTE_DEFS = {');
+  const defs = new Function('return ' + bg.slice(defsStart + 22, bg.indexOf('};', defsStart) + 1))();
+  assert.ok(!defs.assessment['assessment and plan'] && !defs.plan['assessment and plan'],
+    'the combined core leaked into a separate key - the two independent destinations lost their refusal');
+  assert.strictEqual(defs.ap['assessment and plan'], 1, 'the ap key does not accept its own core');
+}
+
+console.log('PASS ap-1.0.0 pins: the combined A&P destination is exact, machine-anchored, and never satisfies the separate keys');
