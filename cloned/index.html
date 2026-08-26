@@ -21027,7 +21027,7 @@ function _renderProfAtGlance(p){
   var last=dates[dates.length-1]||'';
   var pains=notes.map(function(n){ var v=(n.outcome&&n.outcome.pain!=null)?n.outcome.pain:(n.pain!=null?n.pain:null); return (v==null||v==='')?null:Number(v); }).filter(function(x){return x!=null&&!isNaN(x);});
   function chip(label,val){ return '<span style="background:#eef4fc;border:1px solid #d7e6fb;border-radius:999px;padding:3px 11px;font-size:12px;color:#204034"><b>'+val+'</b> '+label+'</span>'; }
-  var h=chip('visit'+(notes.length===1?'':'s'), notes.length);
+  var h=chip('MLS visit note'+(notes.length===1?'':'s'), notes.length);
   if(last){ var dd=new Date(last+'T12:00'); if(!isNaN(dd.getTime())) h+=chip('last seen', dd.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})); }
   if(pains.length){ h+=chip('last pain', pains[pains.length-1]+'/10'); }
   el.innerHTML=h;
@@ -52128,7 +52128,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     if (!sec) return;
     var title = sec.querySelector('.mlsxh-title .mlsxh-count');
     if (title) {
-      var want = res.count + ' visit' + (res.count === 1 ? '' : 's');
+      var want = res.count + ' visit' + (res.count === 1 ? '' : 's') + ' — all sources'; /* vt-1.0.0: this tally spans athena + MLS + cohort; the chip above counts MLS notes only */
       if (title.textContent !== want) title.textContent = want;
     }
     var head = sec.querySelector('.mlsxh-content');
