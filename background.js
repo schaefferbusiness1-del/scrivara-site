@@ -498,9 +498,26 @@ async function mlsAthenaActionV2DriverFn(req) {
     function anchoredIdentity(frame) {
       var roots = identityRoots(frame);
       /* A repeated copy of the same demographics is still more than one
-         possible chart-header owner. Do not collapse duplicate text across
-         containers: one visible explicit header must own the identity. */
-      if (roots.length !== 1) return { identity: null, ambiguous: roots.length > 1 };
+         possible chart-header owner - UNLESS every copy parses and every copy
+         agrees on name, DOB and MRN (het-1.0.4, live 2026-08-25: the
+         athenaClinicals stage frame legitimately paints the one patient's
+         header in several containers, and the blanket refusal blocked the
+         frame that held the encounter META). Two DIFFERENT identities, or
+         any copy that fails to parse, stay ambiguous exactly as before. */
+      if (roots.length !== 1) {
+        if (roots.length > 1) {
+          var parsedAll = [];
+          for (var pi = 0; pi < roots.length && pi < 6; pi++) { var p1 = parseIdentity(roots[pi]); if (!p1) { parsedAll = null; break; } parsedAll.push(p1); }
+          if (parsedAll && parsedAll.length) {
+            var k0 = nameKey(parsedAll[0].name) + '|' + dateKey(parsedAll[0].dob) + '|' + digits(parsedAll[0].mrn || '');
+            var allSame = nameKey(parsedAll[0].name) && dateKey(parsedAll[0].dob);
+            for (var pj = 1; pj < parsedAll.length && allSame; pj++) { if ((nameKey(parsedAll[pj].name) + '|' + dateKey(parsedAll[pj].dob) + '|' + digits(parsedAll[pj].mrn || '')) !== k0) allSame = false; }
+            if (allSame) return { identity: parsedAll[0], ambiguous: false };
+          }
+          return { identity: null, ambiguous: true };
+        }
+        return { identity: null, ambiguous: false };
+      }
       var parsed = parseIdentity(roots[0]);
       return parsed ? { identity: parsed, ambiguous: false } : { identity: null, ambiguous: false };
     }
@@ -1071,13 +1088,17 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (hetFrames.length < 12) hetFrames.push(hetRec);
       var chartHeader = anchoredIdentity(fr), observedIdentity = chartHeader.identity;
       hetRec.id = observedIdentity ? 'own' : (chartHeader.ambiguous ? 'ambig' : 'none');
-      var hetStage = null;
-      if (!observedIdentity && !chartHeader.ambiguous) {
+      /* het-1.0.4: the machine-typed stage context is consulted for EVERY
+         frame (its own patient_id === expected-MRN gate makes it inert on
+         foreign or context-less frames); the ancestor-banner inheritance
+         below remains only for frames with no identity of their own. */
+      var hetStage = hetStageEncounterContext(fr, expectedPatient);
+      hetRec.het = Number(hetDiag.rank || 0);
+      if (!observedIdentity && !chartHeader.ambiguous && hetStage) {
         /* het-1.0.0: stage surfaces split banner and editor across frames.
            Qualify ONLY when the frame's own machine-typed context META names
            the expected patient AND an ANCESTOR frame's banner (never a
            sibling) passes the exact same identity gates below. */
-        hetStage = hetStageEncounterContext(fr, expectedPatient);
         if (hetStage) {
           var hetAncWin = null; try { hetAncWin = fr.w && fr.w.parent && fr.w.parent !== fr.w ? fr.w.parent : null; } catch (eHet0) { hetAncWin = null; }
           var hetHops = 0;
@@ -1092,7 +1113,6 @@ async function mlsAthenaActionV2DriverFn(req) {
           }
           hetDiag.ancestorIdentity = observedIdentity ? 'found' : (chartHeader.ambiguous ? 'ambiguous' : 'none');
           if (!observedIdentity) hetStage = null;
-          hetRec.het = Number(hetDiag.rank || 0);
         }
       }
       if (!observedIdentity || chartHeader.ambiguous) continue;

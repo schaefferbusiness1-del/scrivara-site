@@ -27,6 +27,19 @@ assert.ok(bg.includes('if (provs.length !== 1) { hetCommit(); return null; }'),
 assert.ok(bg.includes('if (dates.length !== 1) { hetCommit(); return null; }'),
   'the unique-service-date refusal is gone');
 
+/* het-1.0.4: N parseable, AGREEING copies of one patient's header collapse to
+   one identity; any disagreement or parse failure stays ambiguous */
+assert.ok(bg.includes("if (allSame) return { identity: parsedAll[0], ambiguous: false };"),
+  'the agreeing-copies collapse is gone - stage frames with duplicated headers refuse again');
+assert.ok(bg.includes("if (!p1) { parsedAll = null; break; }"),
+  'an unparseable header copy no longer forces ambiguity - the collapse lost its fail-closed edge');
+assert.ok(bg.includes("return { identity: null, ambiguous: true };"),
+  'the disagreement fallback is gone');
+
+/* het-1.0.4: the stage context is consulted for every frame */
+assert.ok(bg.includes('var hetStage = hetStageEncounterContext(fr, expectedPatient);'),
+  'the always-consult seam is gone - own-identity frames lost the machine-typed sources');
+
 /* ancestor-only banner inheritance, judged by the SAME gates */
 assert.ok(bg.includes('hetStage = hetStageEncounterContext(fr, expectedPatient);'),
   'the candidate loop no longer consults the stage context');
