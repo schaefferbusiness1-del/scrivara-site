@@ -141,3 +141,19 @@ assert.strictEqual(hotUses, 2, 'expected BOTH heading-label readers (section lab
 }
 
 console.log('PASS het-1.1.5 pins: heading own-title reading is shared by both label readers and un-welds the live stage shape');
+
+/* het-1.1.7: the stage visit date is stored in canonical m/d/yyyy key form -
+   dateKey mangles ISO ('2026-08-25' -> '6/8/2025'), which the postGate census
+   caught as the visit-date drop. Execute the shipped conversion. */
+{
+  const convStart = bg.indexOf('var hetIso = ');
+  assert.ok(convStart > 0, 'the ISO visit-date conversion is gone');
+  const convEnd = bg.indexOf(';', bg.indexOf('var visitDate', convStart));
+  const conv = bg.slice(convStart, convEnd + 1);
+  const run = new Function('dates', 'dateKey', conv + ' return visitDate;');
+  const dk = () => { throw new Error('dateKey must not run on a strict ISO capture'); };
+  assert.strictEqual(run(['2026-08-25'], dk), '8/25/2026', 'ISO capture must convert to the canonical m/d/yyyy key');
+  assert.strictEqual(run(['2026-01-05'], dk), '1/5/2026', 'leading zeros must drop like dateKey does');
+}
+
+console.log('PASS het-1.1.7 pins: the shipped ISO conversion yields the canonical visit-date key');

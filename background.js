@@ -1077,7 +1077,11 @@ async function mlsAthenaActionV2DriverFn(req) {
         att.dateCount = dates.length;
         if (dates.length !== 1) { hetCommit(); return null; }
         att.rank = 5;
-        var visitDate = dateKey(dates[0]);
+        /* het-1.1.7: the capture is strict ISO but dateKey is m/d/y-first
+           and mangles it ('2026-08-25' -> '6/8/2025'), refusing every
+           qualified frame at the visit-date equality. Convert directly. */
+        var hetIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dates[0]);
+        var visitDate = hetIso ? (Number(hetIso[2]) + '/' + Number(hetIso[3]) + '/' + hetIso[1]) : dateKey(dates[0]);
         if (!visitDate) { hetCommit(); return null; }
         att.rank = 6; att.qualified = true; hetCommit();
         return { encounterId: encId, appointmentId: digits(appts[0]), provider: text(provs[0]), visitDate: visitDate };
