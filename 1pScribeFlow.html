@@ -20561,7 +20561,13 @@ function renderPatients(){
   // instead of lowercasing + sorting the full roster again.
   var roster=__mlsPtRosterData(all);
   var ranked=sortMode==='visits'?__mlsPtVisitRows(roster):roster.nameRows;
-  var matched=ql?ranked.filter(function(row){return row.search.indexOf(ql)>=0;}):ranked;
+  // ptq-1.0.0 (measured live 2026-08-26): "adam schaeffer" must find
+  // "Adam J Schaeffer" - a whole-query substring dies on the middle initial,
+  // and the only visible match was a hollow duplicate row. Every whitespace
+  // token must match somewhere in the search key; single-word queries behave
+  // exactly as before.
+  var qTokens=ql?ql.split(/\s+/).filter(Boolean):[];
+  var matched=qTokens.length?ranked.filter(function(row){for(var qi=0;qi<qTokens.length;qi++){if(row.search.indexOf(qTokens[qi])<0)return false;}return true;}):ranked;
   const PT_CAP=150;                 // cap rendered rows so the DOM stays fast on huge rosters
   const matchCount=matched.length;
   const capped=matchCount>PT_CAP;

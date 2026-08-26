@@ -291,5 +291,98 @@ function historicalOpts() {
       'a foreign ledger row leaves the sheet CANNOT SEND');
   }
 
-  console.log('PASS 1p writeflow bind cure: ' + checks + ' checks — the owner\'s unbound sheet offers one exactly-named press that navigates, confirms the painted day, pulls it, and rebinds every row to READY; an unpaintable day, an unscheduled patient, a foreign ledger row and a missing MRN all stay CANNOT SEND with the reason named');
+  /* ---- 8. bindday-1.0.0: a review PINNED to the wrong day still offers the
+     patient's own scheduled days — measured live 2026-08-26: an ad-hoc note
+     typed today pinned visitDate to the creation day, the single-candidate
+     early return made that wrong pin the only offer, and the cure re-pulled
+     the wrong day and dead-ended ("shouldn't always have to rebind"). ---- */
+  {
+    const WRONG_DAY = '2026-08-20';
+    const h = makeContext();
+    vm.runInContext(src, h.ctx, { filename: '1p-feat_mls_writeflow.js' });
+    const wf = h.window.__mlsWriteFlow;
+    const manifest = wf.openUnifiedConfirmation({
+      patient: PATIENT, sections: [{ key: 'note', text: 'body for the pinned-wrong-day case' }],
+      expectedContext: { visitDate: WRONG_DAY, provider: PROVIDER }
+    });
+    ok(manifest && manifest.rows.filter(r => r.capability === 'ready' && r.action).length === 0,
+      'a wrong-day pin with no matching schedule row stays CANNOT SEND');
+    ok(wf.bindCure.candidateDays(manifest).join(',') === WRONG_DAY + ',' + DAY,
+      'candidates must be the pinned day FIRST plus the patient\'s own other scheduled days (got ' + wf.bindCure.candidateDays(manifest).join(',') + ')');
+    const buttons = h.cureButtons();
+    ok(buttons.length === 2, 'both days must be offered as explicit presses (got ' + buttons.length + ')');
+    ok(buttons[0].getAttribute('data-mls-bind-cure') === WRONG_DAY, 'the pinned day stays the first offer');
+    ok(buttons[1].getAttribute('data-mls-bind-cure') === DAY, 'the patient\'s real scheduled day is the second offer');
+    ok((buttons[1].attrs['data-tip'] || buttons[1].title || '').length >= 0, 'offer rendered');
+    /* the doctor picks the REAL day: the cure navigates THAT day, not the pin */
+    buttons[1].click();
+    const nav = h.posted.filter(m => m.type === 'mlsAppGotoDate').pop();
+    ok(nav && nav.date === DAY, 'pressing the alternate day must navigate athenaOne to THAT day (got ' + (nav && nav.date) + ')');
+    h.reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', requestId: nav.requestId, ok: true, schedDate: DAY });
+    await tick();
+    ok(h.pulls.length === 1, 'the confirmed alternate day must start exactly one pull');
+    h.localStorage.setItem('acct:schedImportIndexV1::' + DAY, LEDGER);
+    const poller = h.intervals.filter(i => i.ms === 5000 && !i.cleared).pop();
+    ok(!!poller, 'the alternate-day cure arms the same bounded poller');
+    poller.fn();
+    ok(poller.cleared === true, 'the poller disarms when the alternate day\'s ledger names the appointment');
+    const bound = wf.diagnostics.state().manifest;
+    ok(bound.visit.appointmentId === '70000777', 'the review rebinds to the REAL appointment on the patient\'s actual day');
+    ok(bound.rows.filter(r => r.capability === 'ready' && r.action).length > 0, 'rows flip to READY after the cross-day cure');
+  }
+
+  /* ---- 9. seam-1.0.0: a probe refused for a MISSING ENCOUNTER FRAME auto-runs
+     the read-only open ladder ONCE (time-bounded), instead of printing the
+     open-it-yourself instruction at the doctor — owner 2026-08-26: "nothing
+     should ever be blocked", "seamless". A repeat failure inside the window
+     falls through to the spoken instruction (no auto-open loop). ---- */
+  {
+    const h = makeContext();
+    h.localStorage.setItem('acct:schedImportIndexV1::' + DAY, LEDGER);
+    vm.runInContext(src, h.ctx, { filename: '1p-feat_mls_writeflow.js' });
+    const wf = h.window.__mlsWriteFlow;
+    const manifest = wf.openUnifiedConfirmation({
+      patient: PATIENT, sections: [{ key: 'hpi', text: 'HPI body for the seam case', execute: true }],
+      expectedContext: { visitDate: DAY, provider: PROVIDER }
+    });
+    ok(manifest.visit.appointmentId === '70000777', 'precondition: the review is BOUND (day+provider+ledger resolve the appointment)');
+    await tick();
+    /* the chart-level heal (wf2-2.2.0) is once per review; the live sequence had
+       already consumed it - the frame-level seam engages after it. */
+    wf.diagnostics.state().autoOpened = true;
+    const probe1 = h.posted.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'probe').pop();
+    ok(!!probe1, 'a bound review auto-probes its selected row read-only');
+    const FRAME_FAIL = { ok: false, reason: 'context-unverified', error: 'Could not identify one exact patient encounter frame.' };
+    h.reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: probe1.requestId, resp: FRAME_FAIL });
+    await tick(); await tick();
+    const nav1 = h.posted.filter(m => m.type === 'mlsAppGotoDate').pop();
+    ok(!!nav1, 'the frame-missing refusal must AUTO-run the read-only open ladder (Day-view nav posted)');
+    ok(/MLS is opening it read-only now/.test(h.resolveId('mlsAthenaUnifiedProbe').textContent) || h.toasts.some(t => /MLS is opening it read-only now/.test(t)) || /Sending athenaOne/.test(h.resolveId('mlsAthenaUnifiedProbe').textContent),
+      'the auto-open must say MLS is doing the opening, not instruct the doctor (probe line: ' + h.resolveId('mlsAthenaUnifiedProbe').textContent.slice(0, 80) + ')');
+    h.reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', requestId: nav1.requestId, ok: true, schedDate: DAY });
+    await tick();
+    const open1 = h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').pop();
+    ok(!!open1, 'the ladder must then click the exact appointment row read-only');
+    h.reply({ source: 'mls-ext', type: 'mlsAppSearchOpenResult', requestId: open1.requestId, resp: { ok: true, via: 'appointment-row' } });
+    await tick();
+    /* the ladder's tail re-probes (via setTimeout stub -> nothing fires here);
+       drive a SECOND frame-missing refusal through the probe path directly */
+    const navCountBefore = h.posted.filter(m => m.type === 'mlsAppGotoDate').length;
+    wf.diagnostics.state().manifest.rows.filter(r => r.id === 'write-hpi' || r.action === 'write_note').length; /* touch */
+    const probe2 = h.posted.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'probe').pop();
+    if (probe2 && probe2.requestId !== probe1.requestId) {
+      h.reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: probe2.requestId, resp: FRAME_FAIL });
+      await tick();
+    } else {
+      /* no second auto-probe in this stub environment: re-refuse via the same path */
+      h.reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: probe1.requestId, resp: FRAME_FAIL });
+      await tick();
+    }
+    ok(h.posted.filter(m => m.type === 'mlsAppGotoDate').length === navCountBefore,
+      'a second frame-missing refusal inside the window must NOT auto-open again (loop-proof)');
+    ok(/To unlock: in athenaOne, open this patient|Sending athenaOne|Re-checking the exact encounter/.test(h.resolveId('mlsAthenaUnifiedProbe').textContent),
+      'the repeat refusal falls through to the spoken instruction (probe line: ' + h.resolveId('mlsAthenaUnifiedProbe').textContent.slice(0, 80) + ')');
+  }
+
+  console.log('PASS 1p writeflow bind cure: ' + checks + ' checks — the owner\'s unbound sheet offers one exactly-named press that navigates, confirms the painted day, pulls it, and rebinds every row to READY; an unpaintable day, an unscheduled patient, a foreign ledger row and a missing MRN all stay CANNOT SEND with the reason named; bindday-1.0.0 offers the patient\'s own scheduled days beside a wrong pinned day so the doctor can cure the binding in one press instead of dead-ending; and seam-1.0.0 auto-runs the read-only encounter open ONCE (time-bounded) when the probe reports the frame missing, so the sheet heals itself instead of instructing the doctor');
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });

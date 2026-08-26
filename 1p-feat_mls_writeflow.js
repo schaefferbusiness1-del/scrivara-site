@@ -1966,7 +1966,25 @@
            the doctor. Say HOW, and offer one explicit re-check instead of
            making them reopen the whole review. */
         var probeErr = S(probe && (probe.error || probe.message || probe.reason)) || 'Athena context could not be verified. Nothing was changed.';
-        if (/encounter frame|context.unverified|context.mismatch/i.test(probeErr + ' ' + probeReason)) probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
+        if (/encounter frame|context.unverified|context.mismatch/i.test(probeErr + ' ' + probeReason)) {
+          /* seam-1.0.0 (owner 2026-08-26: "nothing should ever be blocked",
+             "seamless"): the read-only open ladder below IS the instruction this
+             branch used to print at the doctor. Run it for them, once per
+             minute at most (the ladder's tail re-runs this probe, so an
+             unbounded auto-open here would loop against a surface athenaOne
+             keeps closing; the time bound makes that impossible). A repeat
+             failure inside the window falls through to the spoken instruction. */
+          var autoOpenDue = !(Number(state.autoOpenAt) > Date.now() - 60000);
+          if (autoOpenDue && wfdxDayKey(state.manifest.visit && state.manifest.visit.visitDate) && !state.running) {
+            state.autoOpenAt = Date.now();
+            wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: 'auto-open-encounter', ok: true, reason: 'probe-frame-missing',
+              expectedDay: wfdxDayKey(state.manifest.visit.visitDate), appointmentIdPresent: !!S(state.manifest.visit.appointmentId).trim() });
+            unifiedStatus(state, 'The encounter is not open in athenaOne. MLS is opening it read-only now — nothing is written…', '');
+            wfdxOpenEncounter(state, row.id, null, false);
+            return;
+          }
+          probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
+        }
         /* mdx-2.0.0: a null probe is a timeout, and the most common cause is an
            occluded athenaOne tab that cannot paint its briefing. Name the cure. */
         if (!probe) probeErr += ' If athenaOne is open but behind other windows, click its tab once so it can paint, then press Check Athena again.';
@@ -2332,22 +2350,32 @@
     } catch (e) {}
     return false;
   }
-  /* Days this patient could have been seen on, from the MLS schedule ONLY. */
+  /* Days this patient could have been seen on, from the MLS schedule ONLY.
+     bindday-1.0.0 (measured live 2026-08-26): a note created today for a visit
+     that BELONGS to another day pins visit.visitDate to the creation day, and
+     the early return here made that wrong pin the ONLY candidate - the
+     multi-day offer below was unreachable, so the cure re-pulled the wrong day
+     and dead-ended ("shouldn't always have to rebind... seamless" - owner).
+     The pinned day stays FIRST (the single-day render is unchanged when the
+     patient has no other scheduled days), and the patient's own other
+     scheduled days follow as explicit offers; MLS still never picks a day. */
   function wfbindCandidateDays(manifest) {
     var out = [], seen = {};
     try {
       var visit = (manifest && manifest.visit) || {};
       var pinned = wfdxDayKey(visit.visitDate);
-      if (pinned) return [pinned];
+      if (pinned) { seen[pinned] = 1; out.push(pinned); }
       var pid = S(manifest && manifest.patient && manifest.patient.patientId).trim();
-      if (!pid) return [];
+      if (!pid) return out;
+      var rest = [];
       calendarRows().forEach(function (a) {
         if (!a || S(a.patient_external_id || a.patientId || '').trim() !== pid) return;
         var d = wfdxDayKey(visitDay(a.day_local || a.appt_date || a.start_at));
         if (!d || seen[d]) return;
-        seen[d] = 1; out.push(d);
+        seen[d] = 1; rest.push(d);
       });
-      out.sort();
+      rest.sort();
+      out = out.concat(rest);
     } catch (e) {}
     return out;
   }
@@ -2508,9 +2536,18 @@
       host.appendChild(one);
       return true;
     }
+    /* bindday-1.0.0: the first candidate may be the review's own (possibly
+       wrong) pinned day; the rest are the patient's other scheduled days. Name
+       each honestly - the doctor picks, MLS never chooses a day. */
+    var pinnedDay = wfdxDayKey((visit && visit.visitDate) || '');
     days.slice(0, 8).forEach(function (day) {
+      var isPinned = !!pinnedDay && day === pinnedDay;
       var b = wfbindButton('Bind to ' + day + ' — re-pulls this day',
-        'This review names no day. ' + day + ' is one of this patient’s own scheduled days. MLS re-pulls it read-only and re-checks the exact appointment; it will not choose a day for you.',
+        isPinned
+          ? 'This review expects ' + day + '. MLS re-pulls it read-only and re-checks the exact appointment.'
+          : (pinnedDay
+            ? 'This review expects ' + pinnedDay + ', but this patient is also on the MLS schedule for ' + day + '. MLS re-pulls ' + day + ' read-only and re-checks the exact appointment; it will not choose a day for you.'
+            : 'This review names no day. ' + day + ' is one of this patient’s own scheduled days. MLS re-pulls it read-only and re-checks the exact appointment; it will not choose a day for you.'),
         function (btn) { wfbindRun(state, day, btn); });
       b.setAttribute('data-mls-bind-cure', day);
       host.appendChild(b);
@@ -3026,7 +3063,7 @@
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
-      '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedBatch" style="border:1px solid #205c43;background:#eef7f2;color:#205c43;border-radius:10px;padding:11px 14px;font-weight:850;font-size:13px;cursor:pointer" title="Runs every checked note section through its own read-only check and write, one at a time, in order. Save and Sign stay manual.">Send checked sections</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
+      '<div style="display:flex;gap:9px;position:sticky;bottom:0;z-index:3;background:#fff;border-top:1px solid #e4e9e6;margin-top:10px;padding:12px 0 10px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedBatch" style="border:1px solid #205c43;background:#eef7f2;color:#205c43;border-radius:10px;padding:11px 14px;font-weight:850;font-size:13px;cursor:pointer" title="Runs every checked note section through its own read-only check and write, one at a time, in order. Save and Sign stay manual.">Send checked sections</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
     ov.appendChild(card); document.body.appendChild(ov);
     var cancel = card.querySelector('#mlsAthenaUnifiedCancel'), close = card.querySelector('#mlsAthenaUnifiedClose'), go = card.querySelector('#mlsAthenaUnifiedGo');
     cancel.onclick = closeUnifiedConfirmation; close.onclick = closeUnifiedConfirmation;

@@ -417,6 +417,7 @@ const tests = [
   '1p-visit-banner-bind-cure.test.js',
   '1p-write-fidelity-contract.test.js',
   '1p-writeflow-bind-cure.test.js',
+  '1p-patient-search-tokens.test.js',
   '1p-writeflow-booking-row-fallback.test.js',
   '1p-writeflow-stale-review-rebind.test.js',
   /* MLS Assist 3.0.62 / wsg-2.0.0 (owner directive 2026-08-12): with the
