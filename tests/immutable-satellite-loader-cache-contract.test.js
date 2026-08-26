@@ -63,7 +63,7 @@ const assets = [
   ['feat_mls_copilot_dock_fix.js', '20260726cdf210', '20260716cdf200'],
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
-  ['feat_mls_progress_stages.js', '20260823ps132', '20260722ps131'],
+  ['feat_mls_progress_stages.js', '20260826ps140', '20260823ps132'],
   /* feat_task3_frontsync.js now follows the shared build token. It is derived
      across lanes and changes too often for a second hand-maintained token. */
   ['feat_mls_upnow_activeselect.js', '20260808uas5perf1', '20260804uas4'],

@@ -51117,6 +51117,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
+    /* pts-1.0.0 (Codex reply 29): expose this attempt's identity so the
+       progress observers can bind their presentation jobs to the exact pull
+       epoch instead of guessing from traffic rhythm. */
+    try { window.__mlsPullEpochV1 = { sessionSerial: String(sessionSerial), pullId: String(DS.pullId || ''), startedAt: Date.now() }; } catch (ePtsE) {}
     var day = DS.day;
     var btn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
@@ -51125,6 +51129,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     function done(ok, msg, keepStatus, signinRequired) {
       if (sessionSerial !== DS.sessionSerial) return;
       if (closed) return; closed = true;
+      /* pts-1.0.0 (Codex reply 29): ONE PHI-free attempt-scoped terminal at
+         the ownership seam. Every terminal path of this pull flows through
+         done(), and cvc-1.0.0 already guarantees the converge path reaches it
+         only from its settle continuation - so this fires exactly once, after
+         convergence settles. The progress observers terminal only the jobs
+         bound to this exact epoch; no message text rides along. */
+      try {
+        window.dispatchEvent(new CustomEvent('mls:pull-terminal', { detail: {
+          sessionSerial: String(sessionSerial), pullId: String(DS.pullId || ''), ok: ok === true, at: Date.now()
+        } }));
+      } catch (ePtsT) {}
       DS.pulling = false;
       DS.pullProviderScope = null;
       syncRetryControl(DS.lastResult);
@@ -55557,7 +55572,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     api.installed = false; delete window.__mlsExtHealth;
   };
 })();
-;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.3.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260823ps132';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.4.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260826ps140';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{
   var A='feat_mls_cross_day_context.js',V='xdc-2.0.4',old=window.__mlsCrossDayContext||null;

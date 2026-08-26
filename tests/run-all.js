@@ -1789,7 +1789,12 @@ const tests = [
      scoped section-template importer; the generic [id*=template] op-note
      toolbar never mounts inside the saved-format editor and retires across
      same-page upgrades. Playwright runtime proof. */
-  'section-template-toolbar-isolation-runtime.test.js'
+  'section-template-toolbar-isolation-runtime.test.js',
+  /* pts-1.0.0 (Codex reply 29): the day-strip done() seam emits one
+     attempt-scoped pull terminal; the progress observers close exactly the
+     bound jobs once, fence foreign/stale terminals, and same-epoch late
+     traffic cannot reopen them. Runs the REAL lb+ps modules. */
+  'pull-terminal-seam-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
