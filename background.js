@@ -994,10 +994,10 @@ async function mlsAthenaActionV2DriverFn(req) {
             if (!kept || (!digits(kept.mrn || '') && m1)) kept = p1;
             continue;
           }
-          /* a copy that matches the expected person on ONE axis but conflicts
-             on the other is a red flag, not decoration - refuse */
-          if (namesMatch && d1 && d1 !== wantDob) return { identity: null, ambiguous: true };
-          if (m1 && wantMrn && m1 === wantMrn && n1 && n1 !== wantName) return { identity: null, ambiguous: true };
+          /* het-1.0.9: conflicts anchor on the MRN (the strong key). A
+             name-matching root whose date-shaped text disagrees but which
+             carries NO MRN is an appointment strip, not a second person. */
+          if (m1 && wantMrn && m1 === wantMrn && ((n1 && n1 !== wantName) || (d1 && d1 !== wantDob))) return { identity: null, ambiguous: true };
           /* unrelated identities on the surface are ignored */
         }
         if (kept) return { identity: kept, ambiguous: false };
