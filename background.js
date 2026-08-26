@@ -5619,7 +5619,27 @@ var mlsProv = (function () {
     t = t.replace(/[\s,;:|–—-]+$/, '');
     t = t.replace(/\s*close\s*$/i, '');
     t = clean(t);
-    return isProviderUiLabel(t) ? '' : t;
+    return (isProviderUiLabel(t) || mlsProviderFurniture(t)) ? '' : t;
+  }
+  /* loc-1.0.0 shared provider-furniture admission predicate (Codex reply
+     26): positive evidence only, so exact credentialed names - including
+     plain "First Last, MD" headers - stay admitted. Duplicated verbatim
+     inside mlsSchedDomInline (injected scope) - edit both together. */
+  function mlsProviderFurniture(s) {
+    var t = String(s || '').trim();
+    if (!t) return false;
+    if (/\d{5}(?:-\d{4})?\s*$/.test(t)) return true;
+    if (/(?:\(\d{3}\)\s*|\b\d{3}[-. ])\d{3}[-. ]\d{4}\b/.test(t)) return true;
+    if (/\b(?:suite|ste|floor|unit|bldg|building|room|rm)\b\.?\s*#?\s*\d/i.test(t)) return true;
+    var locHard = /\b(?:MD|DO|PA-C|CRNP|NP|DPM)\b/;
+    var locStripped = t.replace(/,\s*(?:PA|MD)\.?\s*$/, '');
+    if (/\b(?:clinic|center|centre|dept|department|hospital|imaging|radiology|rehab|rehabilitation|therapy|urgent care|medical group|associates|orthopedics|orthopaedics|health system|laboratory|laboratories|pharmacy)\b/i.test(t) && !locHard.test(locStripped)) return true;
+    var locLm = /^([A-Za-z .'\u2019-]+),\s*(?:PA|MD)\.?\s*$/.exec(t);
+    if (locLm && !locHard.test(locLm[1])) {
+      if (/\d/.test(locLm[1])) return true;
+      if (/\b(?:square|plaza|commons|crossing|junction|station|corners|landing|township)\s*$/i.test(locLm[1].trim())) return true;
+    }
+    return false;
   }
 
   /* A provider candidate can come from either the DOM reader or the plain-text
@@ -7343,6 +7363,9 @@ async function mlsSchedDomInline(doc, CFG){
        so the app's time_display/start_local enrichment knows to take over. */
     function ft(s){var raw=String(s),m=/\b(\d{1,2}):(\d{2})\s*([aApP])\.?\s*[mM]\.?(?=[A-Z])/.exec(raw)||/\b(\d{1,2}):(\d{2})(?:\s*([ap])\.?\s*m\.?)?(?=$|[^A-Za-z])/i.exec(raw);if(!m)return '';var h=+m[1],mn=+m[2];if(mn>59||(m[3]?(h<1||h>12):h>23))return '';if(m[3])return String(h)+':'+m[2]+' '+m[3].toUpperCase()+'M';out.diag.bareTimes=(out.diag.bareTimes||0)+1;return String(h)+':'+m[2];}
     function cp(s){var t=cl(s);t=t.replace(/[•‣▪●>*\-–—]+\s*$/g,'');t=t.replace(/[-–—:|(]*\s*\d+\s*appointments?\b.*$/i,'');t=t.replace(/\b\d+\s*appointments?\b/i,'');t=t.replace(/\(\s*\d+\s*\)\s*$/,'');t=t.replace(/[\s,;:|–—-]+$/,'');t=t.replace(/\s*[Cc]lose\s*$/,'');return cl(t);}
+    /* loc-1.0.0 shared furniture predicate - twin of worker-scope
+       mlsProviderFurniture; edit both together. */
+    function locFurn(s){var t=String(s||'').trim();if(!t)return false;if(/\d{5}(?:-\d{4})?\s*$/.test(t))return true;if(/(?:\(\d{3}\)\s*|\b\d{3}[-. ])\d{3}[-. ]\d{4}\b/.test(t))return true;if(/\b(?:suite|ste|floor|unit|bldg|building|room|rm)\b\.?\s*#?\s*\d/i.test(t))return true;var lh2=/\b(?:MD|DO|PA-C|CRNP|NP|DPM)\b/;var st2=t.replace(/,\s*(?:PA|MD)\.?\s*$/,'');if(/\b(?:clinic|center|centre|dept|department|hospital|imaging|radiology|rehab|rehabilitation|therapy|urgent care|medical group|associates|orthopedics|orthopaedics|health system|laboratory|laboratories|pharmacy)\b/i.test(t)&&!lh2.test(st2))return true;var lm2=/^([A-Za-z .'\u2019-]+),\s*(?:PA|MD)\.?\s*$/.exec(t);if(lm2&&!lh2.test(lm2[1])){if(/\d/.test(lm2[1]))return true;if(/\b(?:square|plaza|commons|crossing|junction|station|corners|landing|township)\s*$/i.test(lm2[1].trim()))return true;}return false;}
     function pui(s){var t=cl(s).toLowerCase().replace(/[\s:|\-–—]+$/g,'').trim();return /^(?:(?:appointment|appt)\s+)?(?:date(?:\s*(?:\/|&|and)\s*time)?|time|type|status|duration|reason|patient(?:\s+(?:name|details?))?|provider(?:\s+name)?|rendering\s+provider|resource(?:\s+name)?|department(?:\s+name)?|schedule|scheduling|location|room)$/i.test(t);}
     function lh(line){var t=cl(line);if(!t||t.length>80)return false;if(ht(t))return false;var hc=RC.test(t),ha=RA.test(t),hn=RN.test(t)||/[A-Z][a-z]+[ _][A-Z][a-z]+/.test(t);if((hc&&hn)||(ha&&hn))return true;if(hc&&RN.test(t)&&t.split(/\s+/).length<=5)return true;return false;}
     /* v2.9.13 shadow (Codex counter fix): checked counts DISTINCT normalized raw
@@ -7407,6 +7430,7 @@ async function mlsSchedDomInline(doc, CFG){
          are column labels, never clinicians.  Keep unattributed rows honest
          instead of poisoning provider filters with UI chrome. */
       if(pui(p))return '';
+      if(locFurn(p))return ''; /* loc-1.0.0 */
       /* v2.9.7 LOCATION GUARD: "PA"/"MD" are US states AND credentials, so a
          location line like "Newtown Square, PA" passed the credential test and
          became a PROVIDER (live capture). If the candidate is exactly
@@ -7457,7 +7481,7 @@ async function mlsSchedDomInline(doc, CFG){
        container owns exactly one provider header and every container agrees. */
     try{
       var _legacyLists=[].slice.call(doc.querySelectorAll('[class~="appointments-container"]')),_legacyNames={},_legacyNameOrder=[],_legacyRows=0,_legacyBoundRows=0,_legacySafe=!!_legacyLists.length;
-      _legacyLists.forEach(function(list){var rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));if(!rows.length)return;_legacyRows+=rows.length;var local={},localOrder=[];_legacyHeaderTextsL(list).forEach(function(raw){var p=lh(raw)?cp(raw):'';if(p&&!local[p.toLowerCase()]){local[p.toLowerCase()]=1;localOrder.push(p);}});if(localOrder.length!==1){_legacySafe=false;return;}var name=localOrder[0],nk=name.toLowerCase();if(!_legacyNames[nk]){_legacyNames[nk]=1;_legacyNameOrder.push(name);}_legacyBoundRows+=rows.length;});
+      _legacyLists.forEach(function(list){var rows=[].slice.call(list.querySelectorAll('[class~="filled-appointment-row"]'));if(!rows.length)return;_legacyRows+=rows.length;var local={},localOrder=[];_legacyHeaderTextsL(list).forEach(function(raw){var p=lh(raw)?cp(raw):'';if(p&&locFurn(p))p='';/* loc-1.0.0 */if(p&&!local[p.toLowerCase()]){local[p.toLowerCase()]=1;localOrder.push(p);}});if(localOrder.length!==1){_legacySafe=false;return;}var name=localOrder[0],nk=name.toLowerCase();if(!_legacyNames[nk]){_legacyNames[nk]=1;_legacyNameOrder.push(name);}_legacyBoundRows+=rows.length;});
       if(_legacySafe&&_legacyRows>0&&_legacyBoundRows===_legacyRows&&_legacyNameOrder.length===1){var _legacyName=_legacyNameOrder[0],_legacyKey=_legacyName.toLowerCase();out.diag.singleProviderScope=true;out.diag.singleProviderName=_legacyName;out.diag.legacyScopeContainers=_legacyLists.length;if(!provSet[_legacyKey]){provSet[_legacyKey]=1;provOrder.push(_legacyName);}var _legacyCred=_legacyName.match(RC);if(_legacyCred&&_legacyCred[1])credSet[_legacyCred[1].toUpperCase()]=1;}
     }catch(_eLegacyScope){}
     /* v2.9.8: NEVER parse schedule data out of the staff-messaging/coordinator/
@@ -7533,7 +7557,7 @@ async function mlsSchedDomInline(doc, CFG){
         var _legacyRawObsL=0,_legacySlotsL=0,_legacyAllBoundL=true,_legacyHeaderProofL=true;
         function _legacyNormL(v){return cl(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
         function _legacyProviderL(raw){
-          var p=lh(raw)?cp(raw):'';if(!p)return '';
+          var p=lh(raw)?cp(raw):'';if(p&&locFurn(p))p='';/* loc-1.0.0 */if(!p)return '';
           var k=_legacyNormL(p);if(k&&!_legacyProvidersL[k]){_legacyProvidersL[k]=p;_legacyProviderOrderL.push(p);}
           if(k&&!provSet[k]){provSet[k]=1;provOrder.push(p);}var cm=p.match(RC);if(cm&&cm[1])credSet[cm[1].toUpperCase()]=1;return p;
         }

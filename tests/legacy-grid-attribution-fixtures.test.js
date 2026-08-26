@@ -296,26 +296,38 @@ const SCHAEFFER = 'Matthew Schaeffer, MD';
     assert.strictEqual(guessed.length, 0, 'a row got a provider despite the orphan/two-header ambiguity: ' + JSON.stringify(guessed));
   }
 
-  /* 10) CREDENTIAL-LIKE FURNITURE as a direct child ("Newtown Square, PA").
-     FINDING (Codex mutation shape, 2026-08-26): the v2.9.7 location guard
-     lives in the np() LAST-RESORT lane only - a location line that carries
-     the .appointment-header2 class sails through the header-tier lane and
-     BECOMES A PROVIDER. Live 22724 is safe by luck (its department line does
-     not carry the class), but any skin that styles location/department lines
-     with the header class poisons the roster. Pinned as CURRENT behavior so
-     the fix (run the location guard on EVERY provider-candidate lane) flips
-     this assertion in review; logged for the Codex fix list. */
+  /* 10) CREDENTIAL-LIKE FURNITURE (loc-1.0.0, Codex reply 26): the shared
+     admission predicate now rejects positive furniture evidence on EVERY
+     provider lane. Each furniture line sits beside a REAL credentialed
+     provider that must stay admitted. */
   {
-    const furniture = legacyHeader('Newtown Square, PA');
-    const children = [
-      furniture,
-      legacyHeader(SCHAEFFER),
-      legacyRow(10001, '5:00 PM Union, Wren (45yo F)')
+    const furnitureLines = [
+      'Newtown Square, PA',
+      'West Chester Clinic, PA',
+      'Suite 210, PA',
+      '600 Main Street 19073',
+      '(484) 607-8053',
+      'Radiology Department'
     ];
-    const result = await runtime.mlsSchedDomInline(legacyDoc([legacyFlatContainer(children)]), {});
-    const provs = plain(result.providers || []);
-    assert.ok(provs.some(p => String(p).indexOf('Newtown') >= 0),
-      'CURRENT-BEHAVIOR PIN: the header-tier lane admits location furniture as a provider. If this fails, the location guard reached the header lane - update this case AND the board finding together. Got: ' + JSON.stringify(provs));
+    for (const f of furnitureLines) {
+      const children = [
+        legacyHeader(f),
+        legacyHeader(SCHAEFFER),
+        legacyRow(10001, '5:00 PM Union, Wren (45yo F)')
+      ];
+      const result = await runtime.mlsSchedDomInline(legacyDoc([legacyFlatContainer(children)]), {});
+      const provs = plain(result.providers || []).map(String);
+      const leak = provs.filter(p => p.indexOf('Newtown') >= 0 || p.indexOf('Chester') >= 0 || p.indexOf('Suite') >= 0 || p.indexOf('Main') >= 0 || p.indexOf('607-8053') >= 0 || p.indexOf('Radiology') >= 0);
+      assert.strictEqual(leak.length, 0, 'furniture "' + f + '" became a provider: ' + JSON.stringify(provs));
+    }
+    /* the adjacent real providers must remain admitted (single-header case) */
+    const clean = await runtime.mlsSchedDomInline(legacyDoc([legacyFlatContainer([
+      legacyHeader(SCHAEFFER),
+      legacyRow(10002, '5:15 PM Victor, Zed (61yo M)')
+    ])]), {});
+    const cleanProvs = plain(clean.providers || []).map(String);
+    assert.ok(cleanProvs.some(p => p.indexOf('Schaeffer') >= 0),
+      'the real credentialed provider was weakened by the furniture predicate: ' + JSON.stringify(cleanProvs));
   }
 
   console.log('PASS legacy-grid attribution fixtures: capture shapes + Codex mutation shapes (pane disagreement, repeated headers, orphan row, location furniture) all hold with no provider ever guessed');
