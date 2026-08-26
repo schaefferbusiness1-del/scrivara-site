@@ -8479,7 +8479,8 @@
             initFound: !!(d && d.initFound),
             rounds: Number((d && Array.isArray(d.rounds) && d.rounds.length) || 0),
             recoveryRan: navRecovery.ran === true, /* nvl-1.1.0: the guarded seam was re-entered */
-            recoveryVia: navRecovery.ran === true ? "second-settled-goto" : ""
+            recoveryVia: navRecovery.ran === true ? "second-settled-goto" : "",
+            sequences: navRecovery.ran === true ? 2 : 1 /* nvl-1.2.0: attempts above is the monotonic total across these */
           };
         }, { v: 1, ok: false, reason: "nav-diag-unreadable", attempts: Number(attempts || 0), recoveryRan: navRecovery.ran === true });
       }
@@ -8494,7 +8495,7 @@
           return p1AthenaBusyRetry(function () {
             return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false });
           }, onStatus, athenaBusy).then(function (nav) {
-            navAttempts = round + 1; /* nav-1.0.0 */
+            navAttempts += 1; /* nvl-1.2.0 (Codex reply 37): MONOTONIC across sequences - a recovered pull's receipt counts every bridge attempt it really spent */
             var day0 = normDate(nav && nav.schedDate);
             var bad = !nav || nav.ok === false || (day0 && day0 !== date);
             if (!bad || round >= settleWaits.length) return nav;
@@ -8545,18 +8546,28 @@
         var d0 = normDate(nav && nav.schedDate);
         return !nav || nav.ok === false || (d0 && d0 !== date);
       }
+      /* nvl-1.2.0 (Codex reply 37): via is a CLOSED exact handler vocabulary -
+         the three reviewed success routes of mlsAthenaGotoDate - never any
+         nonempty alien string. */
+      var NVL_VIA_ALLOW = { weekstrip: 1, input: 1, arrows: 1 };
       function navRecoveryAdmissible(nav) {
-        if (!nav || nav.sessionLikelyExpired === true || nav.supported === false) return false;
+        if (!nav || nav.sessionLikelyExpired === true) return false;
         /* every CODED refusal (busy, sleeping, deadline, picker, alien -
            anything that names itself) keeps its verdict: the alive-surface
            classes are exactly the reason-less supported:true failures. */
         if (String(nav.reason || "") !== "") return false;
         var d0 = normDate(nav.schedDate);
         if (nav.ok !== false) return !!(d0 && d0 !== date); /* wrong-day landing: surface alive by definition */
+        /* nvl-1.2.0: a failed response recovers only when the handler
+           EXPLICITLY says supported:true - absence fails closed - and an
+           alien via poisons the reply even beside positive diag evidence. */
+        if (nav.supported !== true) return false;
+        var via = String(nav.via || "");
+        if (via !== "" && NVL_VIA_ALLOW[via] !== 1) return false;
         var dg = nav.diag || null;
-        /* POSITIVE alive evidence only: the date control was located (via) or
-           frames executed the injection (the encounter/chart-parked shape). */
-        return String(nav.via || "") !== "" ||
+        /* POSITIVE alive evidence only: a reviewed located-control route or
+           frames that executed the injection (the encounter-parked shape). */
+        return NVL_VIA_ALLOW[via] === 1 ||
           !!(dg && (Number(dg.initFrames || 0) > 0 || (Array.isArray(dg.rounds) && dg.rounds.length > 0)));
       }
       function gotoWithRecovery() {
