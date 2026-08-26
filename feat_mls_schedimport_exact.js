@@ -4445,6 +4445,66 @@
     });
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: dscope ? parsed : persisted.length, savedCount: savedCount, scopedAdditive: dscope === true, scopeDate: dscope ? dscopeDate : undefined, sameDayStatus: dscope ? dsSameDayStatus : undefined, sameDay: dsSameDayMeta || undefined, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
   }
+  /* pvd-1.0.0 (Codex replies 24/27): every requested patient receives exactly
+     ONE mutually exclusive final verdict, and the arithmetic CLOSES:
+     requested === succeeded + failed + notAttempted + unaccounted. The walk
+     counters cannot say this (processed++ fires for failures too, and a
+     patient can sit in patients[] complete:true AND in retry[] at once - the
+     measured double-count). Verdicts, closed vocabulary:
+       succeeded      - walked, complete, and NOT re-queued
+       failed         - walked and incomplete, or complete-but-requeued (the
+                        conflict is COUNTED, never silently absorbed)
+       not-attempted  - never walked (stop/deadline/unresolved-at-entry)
+       unaccounted    - no evidence either way; counted so the sum still
+                        closes and the gap is visible instead of vanishing.
+     PHI-free: patient ids and reason codes only, never names. Pure; exposed
+     as __mlsSI._historyVerdictCensus for extraction-executed tests. */
+  function historyVerdictCensus(rows, unresolved, receipt) {
+    rows = rows || []; unresolved = unresolved || [];
+    var patients = (receipt && receipt.patients) || [], retry = (receipt && receipt.retry) || [];
+    var NOT_ATTEMPTED = { "stopped-by-user": 1, "deferred-after-batch-deadline": 1 };
+    var byPidPatient = {}, byPidRetry = {}, blankPatients = [], blankRetry = [], i, pid;
+    for (i = 0; i < patients.length; i++) {
+      pid = String((patients[i] && patients[i].patientId) || "");
+      if (pid) { if (!byPidPatient[pid]) byPidPatient[pid] = patients[i]; }
+      else blankPatients.push(patients[i]);
+    }
+    for (i = 0; i < retry.length; i++) {
+      pid = String((retry[i] && retry[i].patientId) || "");
+      if (pid) { if (!byPidRetry[pid]) byPidRetry[pid] = retry[i]; }
+      else blankRetry.push(retry[i]);
+    }
+    var out = { requested: 0, succeeded: 0, failed: 0, notAttempted: 0, unaccounted: 0, conflicts: 0, closed: false, perPatient: [] };
+    var blankPatientAt = 0, blankRetryAt = 0;
+    function judge(sourceRow, ordinal) {
+      var rowPid = String((sourceRow && (sourceRow._mlsTargetPatientId || sourceRow.patient_external_id || sourceRow.patientId)) || "");
+      var pe = null, re = null;
+      if (rowPid) { pe = byPidPatient[rowPid] || null; re = byPidRetry[rowPid] || null; }
+      else {
+        /* pid-less rows consume pid-less entries in walk order - deterministic,
+           and a row can never borrow another patient's identified evidence. */
+        if (blankPatientAt < blankPatients.length) pe = blankPatients[blankPatientAt++];
+        else if (blankRetryAt < blankRetry.length) re = blankRetry[blankRetryAt++];
+      }
+      var verdict, reason = "";
+      if (pe && pe.complete === true && !re) { verdict = "succeeded"; }
+      else if (pe && pe.complete === true && re) { verdict = "failed"; reason = String(re.reason || "requeued-after-success"); out.conflicts++; }
+      else if (pe) { verdict = "failed"; reason = String(pe.reason || (re && re.reason) || "incomplete"); }
+      else if (re && NOT_ATTEMPTED[String(re.reason || "")]) { verdict = "not-attempted"; reason = String(re.reason); }
+      else if (re) { verdict = "not-attempted"; reason = String(re.reason || "never-walked"); }
+      else { verdict = "unaccounted"; reason = "no-entry"; }
+      out.requested++;
+      if (verdict === "succeeded") out.succeeded++;
+      else if (verdict === "failed") out.failed++;
+      else if (verdict === "not-attempted") out.notAttempted++;
+      else out.unaccounted++;
+      out.perPatient.push({ patientId: rowPid || ("row#" + ordinal), verdict: verdict, reason: String(reason).slice(0, 60) });
+    }
+    for (i = 0; i < rows.length; i++) judge(rows[i], i);
+    for (i = 0; i < unresolved.length; i++) judge(unresolved[i], rows.length + i);
+    out.closed = out.requested === out.succeeded + out.failed + out.notAttempted + out.unaccounted;
+    return out;
+  }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
     /* b744 #36: true only when the per-patient loop ran to completion; the
        finally uses it to close the progress reporter ONLY on the throw path
@@ -6310,6 +6370,11 @@
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
       if (receipt.requested === 0) receipt.exactIdentityVerified = true;
       receipt.failures = receipt.retry.length;
+      /* pvd-1.0.0: the closed per-patient verdict census, stamped at settle.
+         succeeded is now a first-class receipt field - the walk counters
+         (requested/processed) remain, but they no longer stand in for it. */
+      receipt.verdicts = historyVerdictCensus(rows, unresolved, receipt);
+      receipt.succeeded = receipt.verdicts.succeeded;
       var sleepingRows = receipt.retry.filter(function (entry) { return entry && String(entry.reason || "") === "athena-tab-sleeping"; });
       if (sleepingRows.length) {
         receipt.reason = "athena-tab-sleeping";
@@ -6906,6 +6971,16 @@
     /* the matrix must attribute every run to its visit-notes mode; the engine
        already stamps it and this whitelist dropped it. */
     if (value.visitNotesMode !== undefined && value.visitNotesMode !== null && String(value.visitNotesMode) !== "") out.visitNotesMode = String(value.visitNotesMode).slice(0, 24);
+    /* pvd-1.0.0: the closed per-patient verdict counts ride the machine
+       outcome in BOTH verdict directions - succeeded matters on a good day
+       too. Counts only (PHI-free); the per-patient list stays on the full
+       receipt. */
+    if (value.historyReceipt && value.historyReceipt.verdicts) {
+      try {
+        var vd = value.historyReceipt.verdicts;
+        out.historyVerdicts = { requested: Number(vd.requested || 0), succeeded: Number(vd.succeeded || 0), failed: Number(vd.failed || 0), notAttempted: Number(vd.notAttempted || 0), unaccounted: Number(vd.unaccounted || 0), conflicts: Number(vd.conflicts || 0), closed: vd.closed === true };
+      } catch (eVd) {}
+    }
     return out;
   }
   /* ===== p1-todaynote-deferred-retry-1.0.0 =====
@@ -10606,6 +10681,7 @@
     _clearLedgerDone: clearDone,
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,
+    _historyVerdictCensus: historyVerdictCensus, /* pvd-1.0.0: pure, extraction-executable */
     _buildRetryRows: buildRetryRows,
     retryFailedHistory: retryFailedHistory,
     _boundedUntil: boundedUntil,
