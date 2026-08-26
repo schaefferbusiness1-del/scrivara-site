@@ -1808,7 +1808,12 @@ const tests = [
      patient with closed requested = succeeded+failed+not-attempted+
      unaccounted arithmetic; the success+retry double-count is a counted
      conflict, and the machine outcome carries the counts both ways. */
-  'history-verdict-census-pins.test.js'
+  'history-verdict-census-pins.test.js',
+  /* tax-1.0.0 (Codex reply 27 p3): after the capped reader, proven content-
+     only omissions terminate as complete-with-named-omissions and leave the
+     retry pool; transport/identity/nav classes stay retryable; a first pass
+     never reconciles. */
+  'named-omission-taxonomy-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

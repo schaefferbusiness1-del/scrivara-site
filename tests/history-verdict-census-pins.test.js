@@ -63,7 +63,26 @@ assert.deepStrictEqual({ s: v.succeeded, ua: v.unaccounted, closed: v.closed }, 
 
 /* exclusivity: exactly one verdict per requested patient, always */
 assert.strictEqual(v.perPatient.length, v.requested, 'perPatient rows do not match the denominator');
-v.perPatient.forEach(p => assert.ok(['succeeded', 'failed', 'not-attempted', 'unaccounted'].includes(p.verdict), 'open verdict vocabulary: ' + p.verdict));
+v.perPatient.forEach(p => assert.ok(['succeeded', 'failed', 'complete-with-named-omissions', 'not-attempted', 'unaccounted'].includes(p.verdict), 'open verdict vocabulary: ' + p.verdict));
+
+/* tax-1.0.0 integration: a reconciled named omission is its own bucket - not
+   a success, not a failure - and the sum still closes */
+v = census([row('a'), row('b')], [], {
+  patients: [pe('a', true), { patientId: 'b', complete: false, namedOmission: { reason: 'visit-bodies-incomplete', detail: 'accordion-not-open' } }],
+  retry: []
+});
+assert.deepStrictEqual(
+  { s: v.succeeded, f: v.failed, o: v.omitted, closed: v.closed },
+  { s: 1, f: 0, o: 1, closed: true },
+  'a named omission did not census into its own bucket');
+const om = v.perPatient.find(p => p.patientId === 'b');
+assert.deepStrictEqual({ verdict: om.verdict, reason: om.reason }, { verdict: 'complete-with-named-omissions', reason: 'accordion-not-open' });
+/* still re-queued means still failed - a named omission cannot coexist with a live retry entry */
+v = census([row('b')], [], {
+  patients: [{ patientId: 'b', complete: false, namedOmission: { reason: 'visit-bodies-incomplete', detail: 'accordion-not-open' } }],
+  retry: [re('b', 'visit-bodies-incomplete')]
+});
+assert.deepStrictEqual({ f: v.failed, o: v.omitted }, { f: 1, o: 0 }, 'a re-queued named omission escaped the failed bucket');
 
 /* wiring pins: settle stamps the census + succeeded; the machine outcome carries counts */
 assert.ok(src.includes('receipt.verdicts = historyVerdictCensus(rows, unresolved, receipt);'), 'the settle no longer stamps the census');
