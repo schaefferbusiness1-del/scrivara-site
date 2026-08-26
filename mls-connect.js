@@ -50775,8 +50775,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     return true;
   }
+  /* cva-1.0.0 (Codex reply 27): monotonic fingerprinted convergence
+     admission. Live 2026-08-26: a 5-chart cohort whose capped reads ended in
+     the SAME named omission re-entered a second convergence round and paid
+     the full ceiling again for identical results. Each exact omission
+     (patient + frozen MRN + reason) now gets ONE convergence attempt per
+     pull scope; a later round is admitted only when at least one entry is
+     NEW or its reason CHANGED (progress), so the remaining set can only
+     shrink or reach an explicit terminal. Pure helpers, extracted and
+     executed by tests/convergence-admission-pins. */
+  function cvRetryFingerprint(item) {
+    item = item || {};
+    return [String(item.patientId || ''), String(item.frozenMrn || ''), String(item.reason || '')].join('|');
+  }
+  function cvAdmitRound(items, seenMap, rounds) {
+    if (!Array.isArray(items) || !items.length) return { admit: false, why: 'empty' };
+    if (rounds >= 2) return { admit: false, why: 'round-cap' };
+    var fresh = 0;
+    for (var i = 0; i < items.length; i++) if (!seenMap[cvRetryFingerprint(items[i])]) fresh++;
+    if (!fresh) return { admit: false, why: 'no-fresh-omissions' };
+    return { admit: true, why: 'fresh:' + fresh };
+  }
   function dsAutoConvergeBodies(sessionSerial, onSettled) {
-    var rounds = 0, settledOnce = false, lastReceipt = null;
+    var rounds = 0, settledOnce = false, lastReceipt = null, cvSeenFp = {};
     function settle() { if (settledOnce) return; settledOnce = true; if (typeof onSettled === 'function') { try { onSettled({ rounds: rounds, receipt: lastReceipt }); } catch (eCvS) {} } }
     function sleepW(ms) { return (window.__mlsBgSleep ? window.__mlsBgSleep(ms) : new Promise(function (r) { setTimeout(r, ms); })); }
     function again() {
@@ -50789,12 +50810,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { var __cvPresence = !!(DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.presenceRequested === true); if (document.visibilityState === 'hidden' && !__cvPresence) { settle(); return; } } catch (eV) {} /* cv-1.2: a presence-assisted batch ends with athenaOne front BY DESIGN, so 'hidden' there is the assist's own doing, not a forgotten background tab - the rounds it runs re-post with foregroundOk and the cross-tab shield still forbids second engines (live 2026-08-04: 11 stragglers sat behind this veto) */
       var items = retryItems(DS.lastResult);
       try { if (String((DS.lastResult && DS.lastResult.reason) || '') === 'athena-tab-sleeping' || String((DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.reason) || '') === 'athena-tab-sleeping') { settle(); return; } } catch (eSleep2) {}
-      if (!items.length || rounds >= 2) { settle(); return; }
+      var cvGate = cvAdmitRound(items, cvSeenFp, rounds);
+      if (!cvGate.admit) { settle(); return; } /* cva-1.0.0: unchanged omissions never buy another round */
       for (var i = 0; i < items.length; i++) {
         var why = String((items[i] && items[i].reason) || '');
         if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user|athena-tab-sleeping/i.test(why)) { settle(); return; } /* cv-1.1: sleeping Athena is an explicit recovery state, never an automatic convergence retry. */
       }
       rounds++;
+      items.forEach(function (it) { cvSeenFp[cvRetryFingerprint(it)] = 1; }); /* cva-1.0.0 */
       /* cvc-1.0.0: ONE sentence that counts the real work left, in the same
          place the pull was already speaking. No "done", no restart. */
       var cvTotal = items.length;
@@ -57375,8 +57398,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       reason: String(r.reason || ''),
       error: String(r.error || '').slice(0, 300),
       scheduleReceipt: pick(r.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason']),
-      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed']),
-      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed']),
+      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'attributionCoverage']),
+      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed', 'failureReasons', 'mappingReasons', 'unresolvedMappings']),
       historyReceipt: pick(r.historyReceipt, ['requested', 'processed', 'complete', 'failures'])
     };
   }

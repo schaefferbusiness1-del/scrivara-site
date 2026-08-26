@@ -6855,7 +6855,57 @@
         if (typeof cv === "number" && isFinite(cv)) { counts[names[ci]] = cv; any = true; }
       }
       if (any) out.counts = counts;
+      /* nvd-1.0.0 (pull matrix 2026-08-26): a nav-failed outcome said only
+         "retry the pull" while the engine's bounded navDiag (home-click
+         result, continue-interstitial, weekstrip attempts, tab counts) was
+         DISCARDED by this whitelist - the first reproduced matrix failure
+         was undiagnosable from its own stored receipt. Carry it through;
+         closed shape, no page text, no PHI. */
+      if (value.navDiag && typeof value.navDiag === "object") {
+        try { out.navDiag = JSON.parse(JSON.stringify(value.navDiag)); } catch (eDg) {}
+      }
+      /* nvd-1.0.1: a calendar-partial outcome said failed:8 and nothing else -
+         the engine's PHI-free reason-code counts (failureReasons, mapping
+         reasons) were built for exactly this and then dropped here. Live run 2
+         of the matrix was undiagnosable from its stored receipt again. */
+      if (value.calendarReceipt && typeof value.calendarReceipt === "object") {
+        try {
+          var cr = value.calendarReceipt;
+          out.calendarDiag = {
+            complete: cr.complete === true,
+            failed: Number(cr.failed || 0),
+            unresolvedMappings: Number(cr.unresolvedMappings || 0),
+            failureReasons: JSON.parse(JSON.stringify(cr.failureReasons || {})),
+            mappingReasons: JSON.parse(JSON.stringify(cr.mappingReasons || {}))
+          };
+        } catch (eCr) {}
+      }
+      /* nvd-1.0.2: the reader's attribution-coverage census (which rows bound
+         to which provider header, how many stayed unattributed/foreign) is the
+         exact diagnosis for every second-provider calendar failure and for
+         provider-less rows at rest - and it was dropped here too. */
+      if (value.providerRosterReceipt && value.providerRosterReceipt.attributionCoverage) {
+        try { out.attributionCoverage = JSON.parse(JSON.stringify(value.providerRosterReceipt.attributionCoverage)); } catch (eAc) {}
+      }
+      /* nvd-1.0.3: a stable 5-chart cohort failed the main walk, the
+         second-read pass, AND both capped retry rounds (2026-08-26) - and
+         the stored outcome said only history-partial because the retry
+         entries' per-chart reason codes were dropped here. Summarize them as
+         bounded reason counts; codes only, never names. */
+      if (value.historyReceipt && Array.isArray(value.historyReceipt.retry) && value.historyReceipt.retry.length) {
+        try {
+          var hdCounts = {};
+          value.historyReceipt.retry.forEach(function (entry) {
+            var hdReason = String(entry && entry.reason || "unspecified").slice(0, 60);
+            hdCounts[hdReason] = Number(hdCounts[hdReason] || 0) + 1;
+          });
+          out.historyRetryReasons = hdCounts;
+        } catch (eHd) {}
+      }
     }
+    /* the matrix must attribute every run to its visit-notes mode; the engine
+       already stamps it and this whitelist dropped it. */
+    if (value.visitNotesMode !== undefined && value.visitNotesMode !== null && String(value.visitNotesMode) !== "") out.visitNotesMode = String(value.visitNotesMode).slice(0, 24);
     return out;
   }
   /* ===== p1-todaynote-deferred-retry-1.0.0 =====
