@@ -972,6 +972,26 @@ async function mlsAthenaActionV2DriverFn(req) {
       return Object.keys(found).map(function (k) { return found[k]; });
     }
     var hetDiag = { rank: -1, metaCount: -1, metaPatientMatch: null, apptCount: -1, provCount: -1, dateCount: -1, qualified: false, ancestorIdentity: '', noteTargetFound: null };
+    function hetAncestorIdentity(frame) {
+      /* het-1.0.6: tolerant banner read for the ANCESTOR WALK ONLY - the
+         stage frame is already machine-bound to the expected patient, so
+         unparseable decorative regions must not poison the confirmation
+         banner. Two PARSED copies that disagree still refuse. */
+      try {
+        var roots = identityRoots(frame);
+        if (!roots.length) return { identity: null, ambiguous: false };
+        var kept = null, key0 = '';
+        for (var ri = 0; ri < roots.length && ri < 8; ri++) {
+          var p1 = parseIdentity(roots[ri]);
+          if (!p1) continue;
+          var k1 = nameKey(p1.name) + '|' + dateKey(p1.dob) + '|' + digits(p1.mrn || '');
+          if (!kept) { kept = p1; key0 = k1; continue; }
+          if (k1 !== key0) return { identity: null, ambiguous: true };
+        }
+        if (kept && nameKey(kept.name) && dateKey(kept.dob)) return { identity: kept, ambiguous: false };
+        return { identity: null, ambiguous: false };
+      } catch (eHa) { return { identity: null, ambiguous: false }; }
+    }
     function hetStageEncounterContext(frame, expectedPatient) {
       /* het-1.0.0/1.0.2: athena's own machine-typed encounter context, read
          off an athenaClinicals stage frame. Every field must resolve to
@@ -1106,7 +1126,7 @@ async function mlsAthenaActionV2DriverFn(req) {
             var hetFr = null;
             for (var hfi = 0; hfi < frames.length; hfi++) { if (frames[hfi].w === hetAncWin) { hetFr = frames[hfi]; break; } }
             if (!hetFr) break;
-            var hetHeader = anchoredIdentity(hetFr);
+            var hetHeader = hetAncestorIdentity(hetFr);
             if (hetHeader.ambiguous) { chartHeader = hetHeader; break; }
             if (hetHeader.identity) { chartHeader = hetHeader; observedIdentity = hetHeader.identity; break; }
             try { hetAncWin = hetAncWin.parent && hetAncWin.parent !== hetAncWin ? hetAncWin.parent : null; } catch (eHet1) { hetAncWin = null; }
