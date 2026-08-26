@@ -55,12 +55,12 @@ function element(tag) {
 }
 
 function world(state) {
-  /* state: { patient, cardVisible (null = no card), headPresent } */
+  /* state: { patient, cardVisible (null = no card), headPresent, headVisible (default true) } */
   const btn = element('button'); btn.id = 'ptPullAthenaBtn';
   const card = state.cardVisible == null ? null : element('div');
   if (card) { card.id = 'profileCard'; card.offsetParent = state.cardVisible ? {} : null; }
   const head = state.headPresent ? element('div') : null;
-  if (head) head.className = 'mlsxh-head';
+  if (head) { head.className = 'mlsxh-head'; head.offsetParent = state.headVisible === false ? null : {}; }
   const byId = { ptPullAthenaBtn: btn };
   if (card) byId.profileCard = card;
   const doc = {
@@ -99,6 +99,20 @@ w = world({ patient: { id: 'p1' }, cardVisible: true, headPresent: false });
 w.api.ensureBar();
 assert.ok(verbVisible(w.btn), 'a missing history header still hid the toolbar verb');
 
+/* pv7-1.1.0 (Codex reply 39): a PRESENT but HIDDEN header is not a mounted
+   replacement - the verb stays visible */
+w = world({ patient: { id: 'p1' }, cardVisible: true, headPresent: true, headVisible: false });
+w.api.ensureBar();
+assert.ok(verbVisible(w.btn), 'reply-39 branch: a hidden enhanced header still hid the toolbar verb (zero-verb state)');
+/* transition: the header becomes visible -> the verb stands down */
+w.doc.querySelector('.mlsxh-head').offsetParent = {};
+w.api.ensureBar();
+assert.ok(!verbVisible(w.btn), 'the verb did not hide once the hidden header became visible');
+/* and back: hidden again -> the verb restores */
+w.doc.querySelector('.mlsxh-head').offsetParent = null;
+w.api.ensureBar();
+assert.ok(verbVisible(w.btn), 'the verb did not restore when the header hid again');
+
 /* the replacement mounts: NOW the verb stands down */
 w = world({ patient: { id: 'p1' }, cardVisible: true, headPresent: true });
 w.api.ensureBar();
@@ -116,9 +130,11 @@ assert.strictEqual(ensureSlice.split('syncOpenPatientPullVisibility(false); retu
   'the two early returns (hidden card / missing header) no longer restore the verb');
 assert.ok(/if \(!p\) \{ syncOpenPatientPullVisibility\(false\);/.test(ensureSlice),
   'the no-patient path no longer restores the verb');
+assert.ok(ensureSlice.includes('if (!head || head.offsetParent === null) { syncOpenPatientPullVisibility(false); return; }'),
+  'the pv7-1.1.0 header-visibility proof is gone (a hidden header would count as a mounted replacement again)');
 const hideIdx = ensureSlice.lastIndexOf('syncOpenPatientPullVisibility(true);');
 const mountIdx = ensureSlice.indexOf('if (bar.parentNode !== head) {');
 assert.ok(hideIdx > mountIdx && mountIdx > 0, 'the hide no longer waits for the bar mount');
 assert.ok(!/^\s*syncOpenPatientPullVisibility\(!!p\);/m.test(ensureSlice), 'the unconditional pre-mount hide came back');
 
-console.log('PASS open-patient verb visibility (pv7-1.0.0): the toolbar pull verb stays visible whenever the per-patient bar cannot mount (no/hidden card, missing header), hides only after the replacement is provably in the same context, and restores on the next pass when the context changes (real functions executed from shipped bytes)');
+console.log('PASS open-patient verb visibility (pv7-1.1.0): the toolbar pull verb stays visible whenever the per-patient bar cannot mount (no/hidden card, missing header, and the reply-39 present-but-HIDDEN header branch with its visible/hidden round-trip), hides only after the replacement is provably visible in the same context, and restores on the next pass (real functions executed from shipped bytes)');

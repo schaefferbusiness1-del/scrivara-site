@@ -2550,7 +2550,12 @@
     var card = document.getElementById('profileCard');
     if (!card || card.offsetParent === null) { syncOpenPatientPullVisibility(false); return; }
     var head = historyHeader();
-    if (!head) { syncOpenPatientPullVisibility(false); return; }
+    /* pv7-1.1.0 (Codex reply 39): historyHeader() prefers the enhanced
+       header even when it is HIDDEN - a present-but-invisible header is not
+       a mounted replacement, so treating it as one re-created the zero-verb
+       state. The chosen header must prove visibility the same way the card
+       does before the toolbar verb may stand down. */
+    if (!head || head.offsetParent === null) { syncOpenPatientPullVisibility(false); return; }
     var bar = document.getElementById('mlsCopyVisitsBar');
     if (!document.getElementById('mlsCvCss')) {
       var s = document.createElement('style'); s.id = 'mlsCvCss';
