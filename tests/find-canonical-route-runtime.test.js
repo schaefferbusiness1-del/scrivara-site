@@ -8,7 +8,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_fixpack_0701.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
-assert(connect.includes('feat_mls_fixpack_0701.js') && connect.includes('?v=20260824fp120'),
+assert(connect.includes('feat_mls_fixpack_0701.js') && connect.includes('?v=20260826fp121'),
   'canonical Find fix is not loaded through a fresh immutable asset URL');
 /* 2026-08-24 (b1049 train): the fixpack token advanced to 20260824fp120 when
    the module changed, so this release pin must advance with the immutable URL.
