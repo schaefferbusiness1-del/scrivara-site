@@ -830,6 +830,7 @@ const tests = [
   'schedule-weektab-provider-header-variant.test.js',
   'opnote-room-remake-contract.test.js',
   'athena-action-contract.test.js',
+  'athena-action-token-session-runtime.test.js',
   'athena-confirmation-runtime.test.js',
   'sign-claim-requires-receipt.test.js',
   'refusal-is-not-a-save.test.js',

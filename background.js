@@ -2238,43 +2238,22 @@ function mlsAthenaTeachWatcherFn(config) {
   self.__mlsAthenaActionV2Wired = true;
   var tokens = Object.create(null);
   var noteWriteProofs = Object.create(null);
-  var TOKEN_TTL_MS = 90000;
+  /* ata-3.0.0: A clinician may reasonably spend several minutes reviewing the
+     exact note shown between the read-only probe and the final click. MV3 may
+     also discard this service worker during that review. Keep the exact,
+     one-use authorization in browser-session memory (never local/sync) and
+     revalidate the live Athena tab, account, patient, encounter, destination,
+     and complete payload immediately before mutation as before. */
+  var TOKEN_TTL_MS = 10 * 60 * 1000;
   var NOTE_PROOF_TTL_MS = 180000;
   var executeBusy = false;
-  /* tok-1.0.0 (2026-08-26): the one-use action tokens lived ONLY in this
-     module map, and the MV3 service worker idles out in ~30s - a doctor who
-     confirmed 38s after the probe met token-expired every time (measured on
-     the dummy; the 90s TTL never got a chance to matter). The records now
-     mirror into chrome.storage.session: same TTL, same one-use burn, cleared
-     with the browser session, never written to disk-persistent storage. The
-     in-memory map stays authoritative within one worker life; the mirror is
-     read once per worker, before the first execute token lookup. */
-  var TOKEN_STORE_KEY = 'mlsActionTokensV1';
-  var tokensHydrated = false;
-  function persistTokens() {
-    try {
-      var out = {}, nowP = Date.now();
-      Object.keys(tokens).forEach(function (k) {
-        var r = tokens[k];
-        if (r && !r.used && nowP < Number(r.expiresAt || 0)) out[k] = r;
-      });
-      chrome.storage.session.set({ mlsActionTokensV1: out });
-    } catch (ePersist) {}
-  }
-  function hydrateTokens() {
-    return new Promise(function (res) {
-      if (tokensHydrated) { res(); return; }
-      try {
-        chrome.storage.session.get([TOKEN_STORE_KEY], function (got) {
-          try {
-            var o = got && got[TOKEN_STORE_KEY];
-            if (o && typeof o === 'object') Object.keys(o).forEach(function (k) { if (!tokens[k]) tokens[k] = o[k]; });
-          } catch (eHydrate) {}
-          tokensHydrated = true; res();
-        });
-      } catch (eGet) { tokensHydrated = true; res(); }
-    });
-  }
+  var TOKEN_SESSION_SCHEMA = 'mls-athena-action-token-v3';
+  var TOKEN_SESSION_PREFIX = 'mlsAthenaActionV3Token.';
+  var NOTE_PROOF_SESSION_SCHEMA = 'mls-athena-note-write-proof-v1';
+  var NOTE_PROOF_SESSION_PREFIX = 'mlsAthenaNoteWriteProofV1.';
+  var AUTH_CLEANUP_ALARM = 'mls-athena-auth-session-cleanup-v1';
+  var AUTH_QUARANTINE_ALARM_PREFIX = 'mls-athena-auth-quarantine-v1.';
+  var tokenStateQueue = Promise.resolve();
   function clean(v) { return String(v == null ? '' : v).trim(); }
   function norm(v) { return clean(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function digits(v) { return clean(v).replace(/\D/g, ''); }
@@ -2291,6 +2270,371 @@ function mlsAthenaTeachWatcherFn(config) {
        Preserve the raw note string here: normalization is useful for editor
        readback, but may never authorize different execute-time whitespace. */
     return JSON.stringify([String(noteText == null ? '' : noteText), clean(policy || 'empty_only'), sectionPayloads]);
+  }
+  function tokenSessionArea() {
+    try {
+      var area = chrome && chrome.storage && chrome.storage.session;
+      return area && typeof area.get === 'function' && typeof area.set === 'function' ? area : null;
+    } catch (e) { return null; }
+  }
+  function tokenStorageKey(id) { return TOKEN_SESSION_PREFIX + clean(id); }
+  function noteProofStorageKey(id) { return NOTE_PROOF_SESSION_PREFIX + clean(id); }
+  function tokenStateClone(value) {
+    try { return JSON.parse(JSON.stringify(value)); } catch (e) { return null; }
+  }
+  function withTokenStateLock(fn) {
+    var run = tokenStateQueue.then(fn, fn);
+    tokenStateQueue = run.then(function () {}, function () {});
+    return run;
+  }
+  async function tokenSessionRead(id) {
+    var area = tokenSessionArea();
+    if (!area) return null;
+    try { var key = tokenStorageKey(id), got = await area.get(key); return got && got[key] ? got[key] : null; }
+    catch (e) { return null; }
+  }
+  async function tokenSessionWrite(id, rec) {
+    var area = tokenSessionArea();
+    if (!area) return true; // deterministic test/legacy fallback; Chrome 116+ always has session storage
+    try {
+      var key = tokenStorageKey(id), expected = tokenStateClone(rec), item = {};
+      item[key] = expected;
+      await area.set(item);
+      /* The authorization is useful only if a future MV3 worker can hydrate
+         the exact state that this worker believes it committed. Read it back
+         before returning a probe token or crossing the mutation boundary;
+         quota/serialization/silent adapter failures therefore fail closed. */
+      var got = await area.get(key), actual = got && got[key];
+      return !!actual && JSON.stringify(actual) === JSON.stringify(expected);
+    }
+    catch (e) { return false; }
+  }
+  async function noteProofSessionRead(id) {
+    var area = tokenSessionArea();
+    if (!area) return null;
+    try { var key = noteProofStorageKey(id), got = await area.get(key); return got && got[key] ? got[key] : null; }
+    catch (e) { return null; }
+  }
+  async function noteProofSessionWrite(id, rec) {
+    var area = tokenSessionArea();
+    if (!area) return true; // deterministic test/legacy fallback; Chrome 116+ always has session storage
+    try {
+      var key = noteProofStorageKey(id), expected = tokenStateClone(rec), item = {};
+      item[key] = expected;
+      await area.set(item);
+      var got = await area.get(key), actual = got && got[key];
+      return !!actual && JSON.stringify(actual) === JSON.stringify(expected);
+    }
+    catch (e) { return false; }
+  }
+  function authQuarantineAlarmName(kind, id) {
+    return AUTH_QUARANTINE_ALARM_PREFIX + (kind === 'proof' ? 'proof.' : 'token.') + clean(id);
+  }
+  async function authQuarantineState(kind, id) {
+    try {
+      if (!chrome.alarms || typeof chrome.alarms.get !== 'function') return { available: false, marked: false };
+      var name = authQuarantineAlarmName(kind, id), alarm = await chrome.alarms.get(name);
+      return { available: true, marked: !!(alarm && alarm.name === name) };
+    } catch (e) { return { available: false, marked: false }; }
+  }
+  async function markAuthQuarantine(kind, id, expiresAt) {
+    try {
+      if (!chrome.alarms || typeof chrome.alarms.create !== 'function' || typeof chrome.alarms.get !== 'function') return false;
+      var name = authQuarantineAlarmName(kind, id);
+      await chrome.alarms.create(name, { when: Math.max(Date.now() + 1000, Number(expiresAt || 0) + 1000) });
+      var alarm = await chrome.alarms.get(name);
+      return !!(alarm && alarm.name === name);
+    } catch (e) { return false; }
+  }
+  async function clearAuthQuarantine(kind, id) {
+    try { if (chrome.alarms && typeof chrome.alarms.clear === 'function') await chrome.alarms.clear(authQuarantineAlarmName(kind, id)); }
+    catch (e) {}
+  }
+  async function consumeSessionRecord(kind, id, key, terminalRecord) {
+    var area = tokenSessionArea();
+    if (!area) return true; // deterministic legacy-test fallback only
+    /* The alarm is a PHI-free, short-lived deny marker owned by Chrome rather
+       than the service worker. Establish and read it back BEFORE asking session
+       storage to invalidate the ready capability. If remove and set both become
+       unavailable or uncertain, a replacement worker still sees this marker
+       and refuses the surviving ready record until its original expiry. */
+    if (!(await markAuthQuarantine(kind, id, terminalRecord && terminalRecord.expiresAt))) return false;
+    try {
+      if (typeof area.remove === 'function') {
+        await area.remove(key);
+        await area.get(key); // force Chrome to settle the removal before replacement
+      }
+    } catch (eRemove) {}
+    try {
+      var expected = tokenStateClone(terminalRecord), item = {};
+      item[key] = expected;
+      await area.set(item);
+      var got = await area.get(key), actual = got && got[key];
+      if (actual && JSON.stringify(actual) === JSON.stringify(expected)) {
+        await clearAuthQuarantine(kind, id);
+        return true;
+      }
+    } catch (eTerminal) {}
+    /* A failed/uncertain terminal write must not expose the old ready record to
+       a replacement worker. The pre-write delete normally already burned it;
+       repeat and verify the scrub because a rejected set has unknown outcome.
+       Returning false prevents this request from reaching Athena either way. */
+    var scrubbed = false;
+    try {
+      if (typeof area.remove === 'function') {
+        await area.remove(key);
+        var afterFailure = await area.get(key);
+        scrubbed = !afterFailure || !Object.prototype.hasOwnProperty.call(afterFailure, key);
+      }
+    } catch (eScrub) {}
+    if (scrubbed) await clearAuthQuarantine(kind, id);
+    return false;
+  }
+  async function pruneExpiredAuthSessionUnlocked(now) {
+    var area = tokenSessionArea();
+    if (!area || typeof area.remove !== 'function') return 0;
+    try {
+      var stored = await area.get(null), removeKeys = [], nextExpiry = 0;
+      Object.keys(stored || {}).forEach(function (key) {
+        var value = stored[key], id = '';
+        if (key.indexOf(TOKEN_SESSION_PREFIX) === 0) {
+          id = key.slice(TOKEN_SESSION_PREFIX.length);
+          if (!validPersistedToken(id, value)) { removeKeys.push(key); delete tokens[id]; return; }
+        } else if (key.indexOf(NOTE_PROOF_SESSION_PREFIX) === 0) {
+          id = key.slice(NOTE_PROOF_SESSION_PREFIX.length);
+          if (!validPersistedNoteWriteProof(id, value)) { removeKeys.push(key); delete noteWriteProofs[id]; return; }
+        } else return;
+        /* Full authorization records and PHI-free terminal tombstones are both
+           bounded by the original expiry. Tombstones preserve truthful replay
+           only during that window; they are not durable history. */
+        var expiresAt = Number(value.expiresAt || 0);
+        if (!expiresAt || expiresAt <= now) { removeKeys.push(key); if (key.indexOf(TOKEN_SESSION_PREFIX) === 0) delete tokens[id]; else delete noteWriteProofs[id]; return; }
+        if (!nextExpiry || expiresAt < nextExpiry) nextExpiry = expiresAt;
+      });
+      if (removeKeys.length) await area.remove(removeKeys);
+      return nextExpiry;
+    } catch (e) { return 0; }
+  }
+  async function scheduleAuthSessionCleanupUnlocked(expiresAt) {
+    try {
+      if (!chrome.alarms || typeof chrome.alarms.get !== 'function' || typeof chrome.alarms.create !== 'function') return;
+      var when = Number(expiresAt || 0); if (!when) return;
+      var prior = await chrome.alarms.get(AUTH_CLEANUP_ALARM);
+      if (!prior || !Number(prior.scheduledTime) || Number(prior.scheduledTime) > when + 1000) await chrome.alarms.create(AUTH_CLEANUP_ALARM, { when: when + 1000 });
+    } catch (e) {}
+  }
+  try {
+    if (chrome.alarms && chrome.alarms.onAlarm && typeof chrome.alarms.onAlarm.addListener === 'function') chrome.alarms.onAlarm.addListener(function (alarm) {
+      if (!alarm || alarm.name !== AUTH_CLEANUP_ALARM) return;
+      return withTokenStateLock(async function () {
+        var nextExpiry = await pruneExpiredAuthSessionUnlocked(Date.now());
+        if (nextExpiry) await scheduleAuthSessionCleanupUnlocked(nextExpiry);
+      });
+    });
+  } catch (eCleanupWire) {}
+  function validPersistedToken(id, rec) {
+    if (!rec || rec.schema !== TOKEN_SESSION_SCHEMA || rec.kind !== 'athena-action-token' || clean(rec.tokenId) !== clean(id)) return false;
+    if (!/^(ready|used|executing|settled|uncertain|invalidated|expired)$/.test(clean(rec.state))) return false;
+    if (!/^(write_note|stage_billing|save_draft|sign_encounter|place_order)$/.test(clean(rec.action))) return false;
+    if (!(Number(rec.senderTabId) > 0) || !(Number(rec.athenaTabId) > 0) || !(Number(rec.issuedAt) > 0) || !(Number(rec.expiresAt) > Number(rec.issuedAt))) return false;
+    if (Number(rec.issuedAt) > Date.now() + 10000 || Number(rec.expiresAt) > Number(rec.issuedAt) + TOKEN_TTL_MS + 1000) return false;
+    /* Once an execute attempt claims a token, no future worker needs its PHI,
+       note, order, billing, account, or encounter payload. Keep only a small
+       replay/uncertainty tombstone for the remainder of the token lifetime. */
+    if (rec.redacted === true) return rec.state !== 'ready' && rec.used === true;
+    if (!clean(rec.previewHash) || !clean(rec.patientId) || !digits(rec.expectedMrn) || !expectedContextShape(rec.expectedContext, true) || !lockedContextShape(rec.locked)) return false;
+    if (clean(rec.lockedContextHash) !== simpleHash(expectedContextKey(rec.locked))) return false;
+    if (typeof rec.billingPayload !== 'string' || typeof rec.orderPayload !== 'string' || typeof rec.notePayload !== 'string' || typeof rec.taughtDestinationPayload !== 'string' || typeof rec.expectedAccount !== 'string' || typeof rec.expectedPracticeId !== 'string') return false;
+    return true;
+  }
+  function actionTokenTombstone(id, rec, state, detail) {
+    return {
+      schema: TOKEN_SESSION_SCHEMA, kind: 'athena-action-token', tokenId: clean(id), redacted: true,
+      state: state, used: true, issuedAt: Number(rec && rec.issuedAt), expiresAt: Number(rec && rec.expiresAt),
+      senderTabId: Number(rec && rec.senderTabId), athenaTabId: Number(rec && rec.athenaTabId), action: clean(rec && rec.action),
+      stateAt: Date.now(), stateDetail: clean(detail).slice(0, 120)
+    };
+  }
+  async function loadActionTokenUnlocked(id) {
+    id = clean(id);
+    var rec = tokens[id];
+    if (validPersistedToken(id, rec)) return rec;
+    rec = await tokenSessionRead(id);
+    if (!validPersistedToken(id, rec)) return null;
+    tokens[id] = rec;
+    return rec;
+  }
+  function prepareActionTokenRecord(id, rec) {
+    id = clean(id);
+    rec.schema = TOKEN_SESSION_SCHEMA;
+    rec.kind = 'athena-action-token';
+    rec.tokenId = id;
+    rec.state = 'ready';
+    rec.used = false;
+    return rec;
+  }
+  async function storeActionTokenUnlocked(id, rec) {
+    id = clean(id);
+    prepareActionTokenRecord(id, rec);
+    tokens[id] = rec;
+    if (await tokenSessionWrite(id, rec)) { await scheduleAuthSessionCleanupUnlocked(rec.expiresAt); return true; }
+    delete tokens[id];
+    return false;
+  }
+  async function claimActionToken(id) {
+    return withTokenStateLock(async function () {
+      id = clean(id);
+      if (tokenSessionArea()) {
+        var quarantine = await authQuarantineState('token', id);
+        if (!quarantine.available || quarantine.marked) return { ok: false, reason: 'token-state-unavailable', detail: quarantine.marked ? 'prior-claim-storage-outcome-unavailable' : 'authorization-quarantine-unavailable' };
+      }
+      var rec = await loadActionTokenUnlocked(id);
+      if (!rec) return { ok: false, reason: 'token-expired' };
+      if (rec.state === 'executing' || rec.state === 'uncertain') return { ok: false, reason: 'outcome-uncertain', detail: 'prior-token-execution-did-not-settle' };
+      if (rec.used || rec.state !== 'ready') return { ok: false, reason: 'token-used' };
+      if (Date.now() > Number(rec.expiresAt)) {
+        var expired = actionTokenTombstone(id, rec, 'expired', 'expired-before-claim');
+        tokens[id] = expired;
+        await tokenSessionWrite(id, expired);
+        return { ok: false, reason: 'token-expired' };
+      }
+      /* ATHENA_ACTION_V2_MUTATION_BOUNDARY: the first execute request consumes
+         the authorization before any caller-controlled mismatch is reported.
+         The serialized session write prevents a double click from claiming it
+         twice, including after a service-worker restart. */
+      rec.used = true;
+      rec.state = 'used';
+      rec.claimedAt = Date.now();
+      var claimed = actionTokenTombstone(id, rec, 'used', 'execute-claimed');
+      tokens[id] = claimed;
+      if (!(await consumeSessionRecord('token', id, tokenStorageKey(id), claimed))) return { ok: false, reason: 'token-state-unavailable' };
+      return { ok: true, rec: rec };
+    });
+  }
+  async function transitionActionToken(id, rec, state, detail) {
+    return withTokenStateLock(async function () {
+      var current = await loadActionTokenUnlocked(id);
+      if (!current || (current !== rec && clean(current.tokenId) !== clean(rec && rec.tokenId))) return false;
+      var next = actionTokenTombstone(id, rec, state, detail);
+      tokens[clean(id)] = next;
+      return tokenSessionWrite(id, next);
+    });
+  }
+  async function invalidatePriorOrderTokensUnlocked(senderTabId, previewHash) {
+    var ids = Object.keys(tokens);
+    var area = tokenSessionArea(), stored = null;
+    if (area) { try { stored = await area.get(null); } catch (e) { return false; } }
+    if (stored) Object.keys(stored).forEach(function (key) {
+      if (key.indexOf(TOKEN_SESSION_PREFIX) !== 0) return;
+      var id = key.slice(TOKEN_SESSION_PREFIX.length);
+      if (ids.indexOf(id) < 0 && validPersistedToken(id, stored[key])) { tokens[id] = stored[key]; ids.push(id); }
+    });
+    var writes = [];
+    ids.forEach(function (id) {
+      var prior = tokens[id];
+      if (prior && !prior.used && prior.state === 'ready' && prior.action === 'place_order' && Number(prior.senderTabId) === Number(senderTabId) && prior.previewHash === previewHash) {
+        var invalidated = actionTokenTombstone(id, prior, 'invalidated', 'newer-order-probe');
+        invalidated.invalidated = true; tokens[id] = invalidated;
+        writes.push(tokenSessionWrite(id, invalidated));
+      }
+    });
+    if (!writes.length) return true;
+    var results = await Promise.all(writes);
+    return results.every(function (ok) { return ok === true; });
+  }
+  async function storeOrderActionTokenAtomicUnlocked(id, rec, invalidateOrder) {
+    var area = tokenSessionArea();
+    if (!area) {
+      if (!(await invalidatePriorOrderTokensUnlocked(invalidateOrder.senderTabId, invalidateOrder.previewHash))) return false;
+      return storeActionTokenUnlocked(id, rec);
+    }
+    id = clean(id); prepareActionTokenRecord(id, rec);
+    var stored;
+    try { stored = await area.get(null); } catch (eRead) { return false; }
+    var items = {}, invalidatedById = {}, priorById = {};
+    Object.keys(stored || {}).forEach(function (key) {
+      if (key.indexOf(TOKEN_SESSION_PREFIX) !== 0) return;
+      var priorId = key.slice(TOKEN_SESSION_PREFIX.length), prior = stored[key];
+      if (!validPersistedToken(priorId, prior) || prior.redacted === true) return;
+      if (!prior.used && prior.state === 'ready' && prior.action === 'place_order' && Number(prior.senderTabId) === Number(invalidateOrder.senderTabId) && prior.previewHash === invalidateOrder.previewHash) {
+        priorById[priorId] = prior;
+        var invalidated = actionTokenTombstone(priorId, prior, 'invalidated', 'newer-order-probe');
+        invalidated.invalidated = true; invalidatedById[priorId] = invalidated; items[tokenStorageKey(priorId)] = invalidated;
+      }
+    });
+    items[tokenStorageKey(id)] = tokenStateClone(rec);
+    var keys = Object.keys(items);
+    try {
+      /* One StorageArea.set commit carries every prior invalidation and the new
+         token. A concurrent/failed order probe therefore cannot persist two
+         ready authorizations for the same sender+manifest. */
+      await area.set(items);
+      var got = await area.get(keys);
+      for (var ki = 0; ki < keys.length; ki++) if (!got || JSON.stringify(got[keys[ki]]) !== JSON.stringify(items[keys[ki]])) throw new Error('order-token-transaction-readback-mismatch');
+    } catch (eWrite) {
+      /* The batch did not verify as committed. Mirror its rollback locally as
+         well: the last successfully returned authorization remains the sole
+         ready token, instead of changing behavior only after worker restart. */
+      Object.keys(priorById).forEach(function (priorId) { tokens[priorId] = priorById[priorId]; });
+      delete tokens[id];
+      return false;
+    }
+    Object.keys(invalidatedById).forEach(function (priorId) { tokens[priorId] = invalidatedById[priorId]; });
+    tokens[id] = rec;
+    await scheduleAuthSessionCleanupUnlocked(rec.expiresAt);
+    return true;
+  }
+  async function storeActionToken(id, rec, invalidateOrder) {
+    /* The lock serializes all token writers. For orders, the helper additionally
+       commits prior invalidation + replacement mint in one storage.set batch,
+       so a worker restart cannot expose two ready rows for one manifest. */
+    return withTokenStateLock(async function () {
+      await pruneExpiredAuthSessionUnlocked(Date.now());
+      if (invalidateOrder) return storeOrderActionTokenAtomicUnlocked(id, rec, invalidateOrder);
+      return storeActionTokenUnlocked(id, rec);
+    });
+  }
+  function validPersistedNoteWriteProof(id, proof) {
+    if (!proof || proof.schema !== NOTE_PROOF_SESSION_SCHEMA || proof.kind !== 'athena-note-write-proof' || clean(proof.proofId) !== clean(id)) return false;
+    if (!/^(ready|used|expired)$/.test(clean(proof.state))) return false;
+    if (!(Number(proof.senderTabId) > 0) || !(Number(proof.athenaTabId) > 0) || !(Number(proof.issuedAt) > 0) || !(Number(proof.expiresAt) > Number(proof.issuedAt))) return false;
+    if (Number(proof.issuedAt) > Date.now() + 10000 || Number(proof.expiresAt) > Number(proof.issuedAt) + NOTE_PROOF_TTL_MS + 1000) return false;
+    if (proof.redacted === true) return proof.state !== 'ready' && proof.used === true;
+    if (!clean(proof.previewHash) || !clean(proof.patientKey) || !clean(proof.notePayload) || !clean(proof.lockedContextKey)) return false;
+    if (clean(proof.patientHash) !== simpleHash(proof.patientKey) || clean(proof.noteHash) !== simpleHash(proof.notePayload) || clean(proof.lockedContextHash) !== simpleHash(proof.lockedContextKey)) return false;
+    return true;
+  }
+  function noteWriteProofTombstone(id, proof, state, detail) {
+    return {
+      schema: NOTE_PROOF_SESSION_SCHEMA, kind: 'athena-note-write-proof', proofId: clean(id), redacted: true,
+      state: state, used: true, issuedAt: Number(proof && proof.issuedAt), expiresAt: Number(proof && proof.expiresAt),
+      senderTabId: Number(proof && proof.senderTabId), athenaTabId: Number(proof && proof.athenaTabId),
+      stateAt: Date.now(), stateDetail: clean(detail).slice(0, 120)
+    };
+  }
+  async function loadNoteWriteProofUnlocked(id) {
+    id = clean(id);
+    var proof = noteWriteProofs[id];
+    if (validPersistedNoteWriteProof(id, proof)) return proof;
+    proof = await noteProofSessionRead(id);
+    if (!validPersistedNoteWriteProof(id, proof)) return null;
+    noteWriteProofs[id] = proof;
+    return proof;
+  }
+  async function storeNoteWriteProof(id, proof) {
+    return withTokenStateLock(async function () {
+      id = clean(id);
+      proof.schema = NOTE_PROOF_SESSION_SCHEMA;
+      proof.kind = 'athena-note-write-proof';
+      proof.proofId = id;
+      proof.state = 'ready';
+      proof.used = false;
+      noteWriteProofs[id] = proof;
+      await pruneExpiredAuthSessionUnlocked(Date.now());
+      if (await noteProofSessionWrite(id, proof)) { await scheduleAuthSessionCleanupUnlocked(proof.expiresAt); return true; }
+      delete noteWriteProofs[id];
+      return false;
+    });
   }
   function urlKey(v) { return clean(v).split('#')[0]; }
   function expectedContextKey(c) { c = c || {}; return [digits(c.appointmentId), digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider)].join('|'); }
@@ -2430,23 +2774,62 @@ function mlsAthenaTeachWatcherFn(config) {
       return r && r[0] && r[0].result ? r[0].result : { ok: false, reason: 'outcome-uncertain', error: 'The Athena action returned no result.' };
     } catch (e) { return { ok: false, reason: 'outcome-uncertain', error: String((e && e.message) || e) }; }
   }
-  function matchingNoteWriteProof(id, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) {
-    var proof = noteWriteProofs[clean(id)];
-    if (!proof || proof.used || Date.now() > proof.expiresAt) return null;
-    if (Number(proof.senderTabId) !== Number(senderTabId) || Number(proof.athenaTabId) !== Number(athenaTabId)) return null;
+  function noteWriteProofMatches(proof, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) {
+    if (!proof || proof.used || proof.state !== 'ready' || Date.now() > proof.expiresAt) return false;
+    if (Number(proof.senderTabId) !== Number(senderTabId) || Number(proof.athenaTabId) !== Number(athenaTabId)) return false;
     /* Hashes remain useful diagnostics, but authorization uses the complete
        canonical values so a 32-bit hash collision cannot swap patient, note,
        or encounter data between probe and execute. */
-    if (proof.previewHash !== previewHash || proof.patientKey !== patientKey(p) || proof.patientHash !== simpleHash(patientKey(p))) return null;
-    if (proof.notePayload !== notePayload || proof.noteHash !== noteHash) return null;
-    if (context && (proof.lockedContextKey !== encounterProofKey(context) || proof.lockedContextHash !== simpleHash(encounterProofKey(context)))) return null;
-    return proof;
+    if (proof.previewHash !== previewHash || proof.patientKey !== patientKey(p) || proof.patientHash !== simpleHash(patientKey(p))) return false;
+    if (proof.notePayload !== notePayload || proof.noteHash !== noteHash) return false;
+    if (context && (proof.lockedContextKey !== encounterProofKey(context) || proof.lockedContextHash !== simpleHash(encounterProofKey(context)))) return false;
+    return true;
   }
-  function noteWriteProofFailure(id) {
-    var proofRecord = noteWriteProofs[clean(id)];
-    if (proofRecord && proofRecord.used) return 'note-write-proof-used';
-    if (proofRecord && Date.now() > proofRecord.expiresAt) return 'note-write-proof-expired';
-    return 'verified-note-write-required';
+  async function matchingNoteWriteProof(id, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) {
+    return withTokenStateLock(async function () {
+      if (tokenSessionArea()) {
+        var quarantine = await authQuarantineState('proof', id);
+        if (!quarantine.available || quarantine.marked) return null;
+      }
+      var proof = await loadNoteWriteProofUnlocked(id);
+      return noteWriteProofMatches(proof, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) ? proof : null;
+    });
+  }
+  async function noteWriteProofFailure(id) {
+    return withTokenStateLock(async function () {
+      if (tokenSessionArea()) {
+        var quarantine = await authQuarantineState('proof', id);
+        if (!quarantine.available || quarantine.marked) return 'token-state-unavailable';
+      }
+      var proofRecord = await loadNoteWriteProofUnlocked(id);
+      if (proofRecord && (proofRecord.state === 'expired' || Date.now() >= proofRecord.expiresAt)) return 'note-write-proof-expired';
+      if (proofRecord && (proofRecord.used || proofRecord.state === 'used')) return 'note-write-proof-used';
+      return 'verified-note-write-required';
+    });
+  }
+  async function claimNoteWriteProof(id, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) {
+    return withTokenStateLock(async function () {
+      id = clean(id);
+      if (tokenSessionArea()) {
+        var quarantine = await authQuarantineState('proof', id);
+        if (!quarantine.available || quarantine.marked) return { ok: false, reason: 'token-state-unavailable' };
+      }
+      var proof = await loadNoteWriteProofUnlocked(id);
+      if (!proof) return { ok: false, reason: 'verified-note-write-required' };
+      if (proof.state === 'expired' || Date.now() >= proof.expiresAt) {
+        var expired = noteWriteProofTombstone(id, proof, 'expired', 'expired-before-sign');
+        noteWriteProofs[id] = expired;
+        await noteProofSessionWrite(id, expired);
+        return { ok: false, reason: 'note-write-proof-expired' };
+      }
+      if (proof.used || proof.state === 'used') return { ok: false, reason: 'note-write-proof-used' };
+      if (!noteWriteProofMatches(proof, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context)) return { ok: false, reason: 'sign-prerequisite-mismatch' };
+      proof.used = true; proof.state = 'used'; proof.usedAt = Date.now();
+      var claimed = noteWriteProofTombstone(id, proof, 'used', 'sign-claimed');
+      noteWriteProofs[id] = claimed;
+      if (!(await consumeSessionRecord('proof', id, noteProofStorageKey(id), claimed))) return { ok: false, reason: 'token-state-unavailable' };
+      return { ok: true, proof: proof };
+    });
   }
 
   /* DESTINATION_TEACH_HANDLER_START */
@@ -2798,13 +3181,10 @@ function mlsAthenaTeachWatcherFn(config) {
       var __probePresenceRequested = mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function';
       var actionToken = '', rec = null;
       if (mode === 'execute') {
-        await hydrateTokens();
-        actionToken = clean(msg.actionToken); rec = tokens[actionToken];
-        if (!rec) return { ok: false, blocked: true, reason: 'token-expired' };
-        if (rec.used) return { ok: false, blocked: true, reason: 'token-used' };
-        if (Date.now() > rec.expiresAt) { rec.used = true; persistTokens(); return { ok: false, blocked: true, reason: 'token-expired' }; }
-        /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
-        rec.used = true; persistTokens(); // the first execute attempt consumes the token, even on a later mismatch
+        actionToken = clean(msg.actionToken);
+        var tokenClaim = await claimActionToken(actionToken);
+        if (!tokenClaim.ok) return { ok: false, blocked: true, reason: tokenClaim.reason, detail: tokenClaim.detail || '' };
+        rec = tokenClaim.rec;
       }
       var previewHash = clean(msg.previewHash), manifestHash = clean(msg.manifestHash), p = msg.expectedPatient || {}, c = msg.expectedContext || {}, b = msg.billing || {}, suppliedOrder = msg.order || {};
       var rowHash = clean(msg.rowHash), clientOrderId = clean(msg.clientOrderId);
@@ -2870,10 +3250,13 @@ function mlsAthenaTeachWatcherFn(config) {
         if (verifiedTabCount > 1) return { ok: false, blocked: true, reason: 'ambiguous-athena-tabs', error: 'The same verified encounter matched in more than one signed-in Athena tab. Close the duplicate encounter tab, then retry. Nothing was changed.' };
         if (!tab || !probe) return probeFailure = Object.assign({}, probeFailure || { ok: false, blocked: true, reason: 'context-unverified' }, { diag: { athenaTabs: athCandidates.length, verifiedTabs: verifiedTabCount, firstReason: String((probeFailure && probeFailure.reason) || 'context-unverified') } }); /* 3.0.63: the honest probe failure is still what returns (athena-action-contract pins `return probeFailure`); PHI-free tab counts ride on it (read-only probe path; no gate changes) */
         if (action === 'sign_encounter') {
-          proofRecord = matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, null);
-          if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId), error: 'Write and verify this exact reviewed note in this encounter before signing.' };
+          proofRecord = await matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, null);
+          if (!proofRecord) return { ok: false, blocked: true, reason: await noteWriteProofFailure(noteWriteProofId), error: 'Write and verify this exact reviewed note in this encounter before signing.' };
         }
-        if (action === 'sign_encounter' && !matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, probe.context)) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch', error: 'The verified note write does not match this encounter.' };
+        if (action === 'sign_encounter') {
+          proofRecord = await matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, probe.context);
+          if (!proofRecord) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch', error: 'The verified note write does not match this encounter.' };
+        }
         if ((dateKey(c.visitDate) && dateKey(c.visitDate) !== dateKey(probe.context.visitDate)) ||
             (norm(c.provider) && norm(c.provider) !== norm(probe.context.provider)) ||
             (digits(c.appointmentId) && digits(c.appointmentId) !== digits(probe.context.appointmentId)) ||
@@ -2882,13 +3265,6 @@ function mlsAthenaTeachWatcherFn(config) {
         /* Only the newest authorization for one manifest may remain live.
            Without this, a click intended for row B could replay an older token
            minted for row A because both rows share the manifest preview hash. */
-        if (action === 'place_order') Object.keys(tokens).forEach(function (id) {
-          var prior = tokens[id];
-          if (prior && !prior.used && prior.action === 'place_order' && Number(prior.senderTabId) === Number(sender.tab.id) && prior.previewHash === previewHash) {
-            prior.used = true; prior.invalidated = true;
-          }
-        });
-        persistTokens();
         /* Execute returns the immutable context Athena discovered at probe
            time. Bind the one-use token to that complete destination instead of
            the caller's empty pre-probe locator. */
@@ -2896,22 +3272,29 @@ function mlsAthenaTeachWatcherFn(config) {
           appointmentId: digits(probe.context.appointmentId), encounterId: digits(probe.context.encounterId),
           encounterUrl: urlKey(probe.context.encounterUrl), visitDate: dateKey(probe.context.visitDate), provider: norm(probe.context.provider)
         };
-        var tok = tokenValue(), now = Date.now();
-        tokens[tok] = {
-          used: false, issuedAt: now, expiresAt: now + TOKEN_TTL_MS,
+        var tok = tokenValue(), now = Date.now(), tokenExpiresAt = now + TOKEN_TTL_MS;
+        /* A Sign token transfers an already-verified write prerequisite; it may
+           survive a worker restart, but it may never outlive that prerequisite. */
+        if (action === 'sign_encounter' && proofRecord) {
+          tokenExpiresAt = Math.min(tokenExpiresAt, Number(proofRecord.expiresAt));
+          if (tokenExpiresAt <= now) return { ok: false, blocked: true, reason: 'note-write-proof-expired', error: 'The verified note-write proof expired before Sign could be authorized. Re-verify the note, then retry.' };
+        }
+        var tokenRecord = {
+          used: false, issuedAt: now, expiresAt: tokenExpiresAt,
           senderTabId: sender.tab.id, athenaTabId: tab.id, action: action,
           previewHash: previewHash, patientHash: simpleHash(patientKey(p)), expectedMrn: digits(p.mrn),
           expectedContextHash: simpleHash(expectedContextKey(expectedAtExecute)), billingHash: simpleHash(canonicalBillingPayload), billingPayload: canonicalBillingPayload, orderHash: simpleHash(canonicalOrderKey), orderPayload: canonicalOrderKey, noteHash: noteHash, notePayload: canonicalNotePayload,
           manifestHash: manifestHash, taughtDestinationHash: simpleHash(canonicalTaughtKey), taughtDestinationPayload: canonicalTaughtKey,
           patientId: clean(p.patientId), clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', rowHash: action === 'place_order' ? rowHash : '',
           noteWriteProof: action === 'sign_encounter' ? noteWriteProofId : '',
+          expectedAccount: clean(msg.expectedAccount), expectedPracticeId: digits(msg.expectedPracticeId),
           expectedContext: expectedAtExecute,
           lockedContextHash: simpleHash(expectedContextKey(probe.context)),
           locked: probe.context
         };
-        persistTokens();
+        if (!(await storeActionToken(tok, tokenRecord, action === 'place_order' ? { senderTabId: sender.tab.id, previewHash: previewHash } : null))) return { ok: false, blocked: true, reason: 'token-state-unavailable', error: 'Chrome could not preserve the exact one-use authorization for review. Re-check Athena before trying again. Nothing was changed.' };
         /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
-        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: now + TOKEN_TTL_MS, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
+        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: tokenExpiresAt, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
       }
 
       if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
@@ -2929,6 +3312,8 @@ function mlsAthenaTeachWatcherFn(config) {
       if (rec.orderPayload !== canonicalOrderKey || rec.orderHash !== simpleHash(canonicalOrderKey)) return { ok: false, blocked: true, reason: 'order-payload-mismatch' };
       if (rec.notePayload !== canonicalNotePayload || rec.noteHash !== noteHash) return { ok: false, blocked: true, reason: 'note-payload-mismatch' };
       if (rec.taughtDestinationPayload !== canonicalTaughtKey || rec.taughtDestinationHash !== simpleHash(canonicalTaughtKey)) return { ok: false, blocked: true, reason: 'taught-destination-binding-mismatch' };
+      if (norm(rec.expectedAccount) !== norm(msg.expectedAccount)) return { ok: false, blocked: true, reason: 'account-mismatch' };
+      if (digits(rec.expectedPracticeId) !== digits(msg.expectedPracticeId)) return { ok: false, blocked: true, reason: 'practice-mismatch' };
       if (!expectedContextMatches(c, rec.expectedContext, rec.locked) || rec.expectedContextHash !== simpleHash(expectedContextKey(c)) || rec.lockedContextHash !== simpleHash(expectedContextKey(rec.locked))) return { ok: false, blocked: true, reason: 'context-mismatch' };
       if (!probeContextMatches(msg.probeContext, rec.locked)) return { ok: false, blocked: true, reason: 'context-mismatch' };
       if (msg.userGesture !== true || !clean(msg.gestureProof)) return { ok: false, blocked: true, reason: 'fresh-trusted-click-required' };
@@ -2945,43 +3330,55 @@ function mlsAthenaTeachWatcherFn(config) {
       if (executeBusy) return { ok: false, blocked: true, reason: 'outcome-uncertain', detail: 'another-athena-action-is-running', noAutomaticChaining: 'no-automatic-chaining' };
       if (action === 'sign_encounter') {
         if (!noteWriteProofId || noteWriteProofId !== rec.noteWriteProof) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch' };
-        proofRecord = matchingNoteWriteProof(noteWriteProofId, sender.tab.id, rec.athenaTabId, p, previewHash, noteHash, canonicalNotePayload, rec.locked);
-        if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId) };
-        proofRecord.used = true; // the immediate pre-injection Sign attempt consumes the proof
+        var proofClaim = await claimNoteWriteProof(noteWriteProofId, sender.tab.id, rec.athenaTabId, p, previewHash, noteHash, canonicalNotePayload, rec.locked);
+        if (!proofClaim.ok) return { ok: false, blocked: true, reason: proofClaim.reason };
+        proofRecord = proofClaim.proof; // the immediate pre-injection Sign attempt consumes the proof durably
       }
       /* MLS_WRITE_SAFETY_CONTEXT_GATE_START (wsg-1.0.0)  verify the signed-in
          account (when the app supplied an expectation) and that the live Athena
          tab's practice id matches the locked encounter's practice id. Supplied
          expectations that cannot be verified BLOCK (fail-closed). */
       if (self.MLSWriteSafety) {
-        var wsCtxGate = await self.MLSWriteSafety.verifyAccountPracticeGate({ tabId: rec.athenaTabId, expectedAccount: clean(msg.expectedAccount), expectedPracticeId: clean(msg.expectedPracticeId), lockedEncounterUrl: rec.locked && rec.locked.encounterUrl });
+        var wsCtxGate = await self.MLSWriteSafety.verifyAccountPracticeGate({ tabId: rec.athenaTabId, expectedAccount: clean(rec.expectedAccount), expectedPracticeId: clean(rec.expectedPracticeId), lockedEncounterUrl: rec.locked && rec.locked.encounterUrl });
         if (wsCtxGate && wsCtxGate.blocked) return wsCtxGate;
       }
       /* MLS_WRITE_SAFETY_CONTEXT_GATE_END */
+      if (!(await transitionActionToken(actionToken, rec, 'executing', action))) return { ok: false, blocked: true, reason: 'token-state-unavailable', error: 'Chrome could not lock this one-use action before the Athena mutation boundary. Nothing was changed.' };
       executeBusy = true;
       var executed;
       try {
         /* ATHENA_ACTION_V2_EXECUTE_INJECTION */
         executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { appointmentId: rec.locked.appointmentId, encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: rec.locked, taughtDestination: checkedTaught.value });
       } finally { executeBusy = false; }
-      if (!executed) return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', noAutomaticChaining: 'no-automatic-chaining' };
+      if (!executed) {
+        await transitionActionToken(actionToken, rec, 'uncertain', 'no-execute-result');
+        return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', noAutomaticChaining: 'no-automatic-chaining' };
+      }
       if (action === 'write_note' && executed.attempted === true && executed.written === true && executed.verified === true && executed.draftVerified === true && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {
         var noteWriteProof = tokenValue(), proofNow = Date.now();
-        noteWriteProofs[noteWriteProof] = {
+        var newNoteWriteProof = {
           used: false, issuedAt: proofNow, expiresAt: proofNow + NOTE_PROOF_TTL_MS,
           senderTabId: sender.tab.id, athenaTabId: rec.athenaTabId,
           previewHash: previewHash, patientKey: patientKey(p), patientHash: simpleHash(patientKey(p)),
           notePayload: canonicalNotePayload, noteHash: noteHash,
           lockedContextKey: encounterProofKey(executed.context), lockedContextHash: simpleHash(encounterProofKey(executed.context))
         };
-        executed.noteWriteProof = noteWriteProof;
-        executed.noteWriteProofExpiresAt = proofNow + NOTE_PROOF_TTL_MS;
+        /* Never expose a Sign capability that the next MV3 worker cannot
+           hydrate. The note result stays truthful if this separate proof write
+           fails; only the follow-on Sign prerequisite is withheld. */
+        if (await storeNoteWriteProof(noteWriteProof, newNoteWriteProof)) {
+          executed.noteWriteProof = noteWriteProof;
+          executed.noteWriteProofExpiresAt = proofNow + NOTE_PROOF_TTL_MS;
+        }
       }
       if (action === 'sign_encounter' && proofRecord && proofRecord.used) executed.noteWriteProofConsumed = true;
       executed.patientId = clean(p.patientId);
       if (action === 'place_order') { executed.clientOrderId = checkedOrder.order.clientOrderId; executed.rowHash = rowHash; }
       executed.actionTokenConsumed = true;
       executed.noAutomaticChaining = 'no-automatic-chaining';
+      await transitionActionToken(actionToken, rec,
+        executed.reason === 'outcome-uncertain' || executed.partialMutation === true ? 'uncertain' : 'settled',
+        clean(executed.reason || (executed.ok === true ? 'verified' : 'refused')));
       return executed;
     })().then(function (r) { sendResponse(r); }).catch(function (e) { sendResponse({ ok: false, reason: 'outcome-uncertain', error: String((e && e.message) || e), noAutomaticChaining: 'no-automatic-chaining' }); });
     return true;

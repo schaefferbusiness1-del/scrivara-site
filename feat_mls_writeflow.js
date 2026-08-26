@@ -852,13 +852,13 @@
    'order-existing-duplicate-rejected order-field-too-long order-id-required order-not-reviewed ' +
    'order-payload-incomplete order-payload-mismatch order-row-mismatch order-workspace-context-verified ' +
    'outcome-uncertain patient-dob-unverifiable patient-mismatch patient-unverifiable practice-mismatch ' +
-   'practice-unverifiable preview-hash-mismatch provider-mismatch provider-unverifiable rows-not-rendered ' +
+    'practice-unverifiable preview-hash-mismatch probe-frame-missing provider-mismatch provider-unverifiable rows-not-rendered ' +
    'schedule-date-missing-after-recovery schedule-date-restore-failed search-deadline-exceeded ' +
    'session-expired sign-prerequisite-mismatch synthetic-local-only taught-destination-binding-mismatch ' +
    'taught-destination-control-mismatch taught-destination-expired taught-destination-fingerprint-mismatch ' +
    'taught-destination-frame-mismatch taught-destination-invalid taught-destination-label-mismatch ' +
    'taught-destination-required taught-destination-selector-mismatch taught-destination-validated ' +
-   'test-content-production-disabled timeout token-action-mismatch token-expired token-sender-mismatch ' +
+    'test-content-production-disabled timeout token-action-mismatch token-expired token-sender-mismatch token-state-unavailable ' +
    'token-tab-mismatch token-used unknown-action unknown-note-section unresolved-after-pull unsafe-note-policy ' +
    'unsupported-order-fields unsupported-order-source unsupported-order-type untrusted-sender ' +
    'verified-note-write-required watcher-error watcher-unavailable worker-unreachable ' +
