@@ -1830,7 +1830,11 @@ const tests = [
   /* pv7-1.0.0 (owner defect #7): the toolbar open-patient pull verb hides
      only when the per-patient bar provably mounted in the same context -
      never a zero-verb render. */
-  'open-patient-verb-visibility-pins.test.js'
+  'open-patient-verb-visibility-pins.test.js',
+  /* prov-1.0.0 (the stale-Ibuprofen case): populated facts cards name their
+     strongest evidence; a verified-empty chart beside local content warns
+     loudly; unproven receipts never claim verification. */
+  'facts-provenance-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
