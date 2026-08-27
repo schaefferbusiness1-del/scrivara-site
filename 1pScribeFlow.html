@@ -1106,9 +1106,15 @@
      announce itself and then get out of the way. The travel was 80px,
      which reads as a thing thrown up from off-screen; 14px reads as a
      thing settling. pointer-events is deliberately untouched. */
+  /* gcx-1.0.0 (2026-08-27): pointer-events:none. This is a transient NOTICE at
+     z-index 99999, fixed near the top of the viewport, and nothing in the app
+     ever listens for a click on it -- but it is wide enough to sit on top of a
+     centred primary control. It was therefore able to swallow the very next
+     click on the button whose refusal it was explaining, which reads exactly
+     like "the button does nothing". A notice must never eat a click. */
   .toast{position:fixed;top:var(--mls-notice-top,96px);bottom:auto;left:var(--mls-notice-left,50%);transform:translateX(-50%) translateY(-14px);
     background:var(--ink);color:#fff;padding:13px 22px;border-radius:10px;font-size:15px;
-    box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;z-index:99999;max-width:90vw;
+    box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;z-index:99999;max-width:90vw;pointer-events:none;
     transition:transform var(--mls-dur-2) var(--mls-ease-inout),opacity var(--mls-dur-1) linear}
   .toast.show{transform:translateX(-50%) translateY(0);opacity:1;
     transition:transform var(--mls-dur-3) var(--mls-ease-spring),opacity var(--mls-dur-2) var(--mls-ease-out)}
@@ -1131,6 +1137,36 @@
   }
   .toast.err{background:var(--red)}
   .toast.ok{background:var(--green-dk)}
+  /* gcx-1.0.0 (2026-08-27) -- owner: "the button just glitches out and does
+     nothing". A REPEATED generation refusal is the same sentence in the same
+     banner, and toast() deliberately no-ops on an identical message that is
+     already showing, so the second click changed nothing on screen at all.
+     This class is the visible re-announcement: the refusal path removes it,
+     forces a reflow and re-adds it, so an identical block still MOVES. Tokens
+     and rgba only, so the hex-colour gate stays quiet. */
+  @keyframes mlsGateShake{
+    0%,100%{transform:translateX(0)}
+    12%{transform:translateX(-7px)}
+    28%{transform:translateX(7px)}
+    44%{transform:translateX(-5px)}
+    60%{transform:translateX(5px)}
+    76%{transform:translateX(-2px)}
+    88%{transform:translateX(2px)}
+  }
+  @keyframes mlsGateGlow{
+    0%{box-shadow:0 0 0 0 rgba(180,35,30,.55)}
+    65%{box-shadow:0 0 0 11px rgba(180,35,30,0)}
+    100%{box-shadow:0 0 0 0 rgba(180,35,30,0)}
+  }
+  .mls-gate-flash{animation:mlsGateShake .5s ease-in-out,mlsGateGlow .9s ease-out;
+    outline:2px solid var(--red);outline-offset:3px;border-radius:8px}
+  .mls-gate-flash:focus{outline:2px solid var(--red);outline-offset:3px}
+  /* The toast already owns translateX(-50%); shaking it would tear it off
+     centre, so it pulses instead. Higher specificity wins the animation. */
+  .toast.mls-gate-flash{animation:mlsGateGlow .9s ease-out;outline-color:rgba(255,255,255,.9)}
+  @media (prefers-reduced-motion: reduce){
+    .mls-gate-flash{animation:none!important}
+  }
   /* 2026-07-30: a third level, because "we used the closest template, check it"
      is neither a success nor an error and toast() was rendering it neutral.
      Tokens only (--gold flips for dark), so the hex-colour gate stays quiet. */
@@ -27612,11 +27648,91 @@ function _mlsSettleGeneration(run,status,code,message){
   if(_mlsActiveGeneration===run)_mlsActiveGeneration=null;
   _mlsEmitGeneration('settled',{runId:run.id,status:status||'failed',code:String(code||''),message:String(message||'')});
 }
+/* gcx-1.0.0 (2026-08-27) -- owner: the big Generate button "just glitches out
+   and does nothing" when the anti-invention evidence gate refuses. The gate
+   itself was correct and stays untouched; what was broken is that the REFUSAL
+   was not observable on a repeat click. toast() returns early when the same
+   message is already showing (a deliberate anti-spam rule), and the Easy
+   facade re-renders the identical warn banner, so the second and third click
+   produced zero pixels of change. These two helpers make a refusal announce
+   itself EVERY time. Both are defensive to the last line: they run inside the
+   shipped generation engine and must never be the reason a refusal throws. */
+function _mlsShoutGeneration(message){
+  var msg=String(message==null?'':message);
+  if(!msg)return false;
+  try{
+    var t=document.getElementById('toast');
+    /* Clear the dedupe key so an identical repeat is re-announced and its
+       lifetime restarts, instead of silently returning the live toast. */
+    if(t&&t.classList&&t.classList.contains('show')){
+      t.classList.remove('show');
+      try{void t.offsetWidth;}catch(eR){}
+    }
+    toastKey='';
+  }catch(e){}
+  try{toast(msg,'err');}catch(e2){return false;}
+  return true;
+}
+function _mlsFlashGenerationBlock(message){
+  var msg=String(message==null?'':message);
+  function pulse(el){
+    if(!el)return;
+    try{
+      if(!el.classList)return;
+      el.classList.remove('mls-gate-flash');
+      try{void el.offsetWidth;}catch(eW){}
+      el.classList.add('mls-gate-flash');
+      setTimeout(function(){try{el.classList.remove('mls-gate-flash');}catch(eC){}},1000);
+    }catch(e){}
+  }
+  function run(){
+    var targets=[];
+    try{
+      ['genError','noteGenError'].forEach(function(id){
+        var el=document.getElementById(id);
+        if(!el)return;
+        /* The inline error line is the one refusal surface that persists after
+           the toast fades, so it carries the same sentence. */
+        try{if(msg){el.textContent=msg;if(el.style)el.style.display='block';}}catch(eS){}
+        try{if(el.offsetParent!==null)targets.push(el);}catch(eO){}
+      });
+    }catch(e1){}
+    try{
+      var bars=document.querySelectorAll('.ez3-warnbar,.ez3-infobar');
+      for(var i=0;i<bars.length;i++)targets.push(bars[i]);
+    }catch(e2){}
+    for(var j=0;j<targets.length;j++)pulse(targets[j]);
+    if(targets.length){
+      /* Take the doctor TO the reason: one scroll, one focus, so a screen
+         reader reads it and the sentence is on screen before anything else. */
+      try{
+        var lead=targets[0];
+        if(!lead.hasAttribute('tabindex'))lead.setAttribute('tabindex','-1');
+        if(typeof lead.scrollIntoView==='function')lead.scrollIntoView({block:'center'});
+        if(typeof lead.focus==='function')lead.focus({preventScroll:true});
+      }catch(e3){}
+    }
+    try{
+      var t=document.getElementById('toast');
+      if(t&&t.classList&&t.classList.contains('show'))pulse(t);
+    }catch(e4){}
+    try{if(typeof window.__mlsSyncGenerationGateUi==='function')window.__mlsSyncGenerationGateUi();}catch(e5){}
+  }
+  /* The Easy facade rebuilds its whole wrapper synchronously on the refusal
+     event, so the banner emphasised here does not exist until that render has
+     run. One macrotask later, never rAF: this tab can be occluded behind
+     athenaOne, where rAF stops and the emphasis would never arrive. */
+  try{setTimeout(run,0);}catch(e){run();}
+  return true;
+}
 function _mlsRefuseGeneration(code,message,showToast){
   var runId=++_mlsGenerationSequence;
-  if(showToast!==false)toast(message,'err');
+  if(showToast!==false)_mlsShoutGeneration(message);
   _mlsEmitGeneration('refused',{runId:runId,code:String(code||'generation-refused'),message:String(message||'')});
   _mlsEmitGeneration('settled',{runId:runId,status:'refused',code:String(code||'generation-refused'),message:String(message||'')});
+  /* Runs for showToast===false too: those two callers own their OWN specific
+     toast, and the banner emphasis is what makes the repeat click visible. */
+  _mlsFlashGenerationBlock(message);
   return false;
 }
 function _mlsExpectedTemplateCancellation(reason){
@@ -27698,6 +27814,29 @@ function _mlsGenerationEvidenceDecision(text){
   if(words.length>=4&&currentStatusPhrase.test(sparse)&&_mlsHasTrustedVerifiedHistory())return {ok:true,basis:'trusted-history-sparse'};
   return {ok:false,basis:'insufficient',code:'sparse-today-evidence',message:'Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.'};
 }
+/* gcx-1.0.0: a READ-ONLY question for the visible controls -- "would a click
+   be refused right now, and what is the sentence". It runs the SAME shipped
+   evidence gate that generateNote() runs, so the button's blocked state can
+   never drift from the real refusal, and it decides nothing itself: the gate
+   below remains the only thing that can stop a generation. */
+function _mlsGenerationBlockReason(text){
+  var raw='';
+  try{
+    if(text==null){var el=document.getElementById('transcript');raw=el?String(el.value||''):'';}
+    else raw=String(text);
+  }catch(e){raw=String(text==null?'':text);}
+  raw=raw.trim();
+  if(!raw)return {code:'empty-transcript',message:'Capture or paste a visit first.'};
+  var evidence;
+  try{evidence=_mlsGenerationEvidenceDecision(raw);}catch(e2){return null;}
+  if(evidence&&evidence.ok)return null;
+  return {code:String((evidence&&evidence.code)||'generation-refused'),message:String((evidence&&evidence.message)||'')};
+}
+try{
+  window.__mlsGenerationBlockReason=_mlsGenerationBlockReason;
+  window.__mlsShoutGeneration=_mlsShoutGeneration;
+  window.__mlsFlashGenerationBlock=_mlsFlashGenerationBlock;
+}catch(eGcx){}
 function _mlsGenerationDraftTuning(evidence){
   var tuning=getGenSectionProfileOverrides()||{families:{}};
   if(evidence&&evidence.basis==='trusted-history-sparse'){
