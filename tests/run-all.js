@@ -1541,6 +1541,8 @@ const tests = [
      binding, re-auth resume, backoff, and a sentence for every failure class. */
   '1p-phone-sync-receive-loop-runtime.test.js',
   '1p-phone-send-to-athena-contract.test.js',
+  '1p-phone-desktop-open-visit-relay.test.js',
+  '1p-phone-direct-mediarecorder-runtime.test.js',
   '1p-phone-press-375.test.js',
   /* The old product name reached seven surfaces across four lanes. This sweeps
      the reviewed publication inventory rather than a hand-list, and asserts the

@@ -322,7 +322,7 @@
     'body.mls-ph3 #mlsFab, body.mls-ph3 #mlsFabMenu, body.mls-ph3 #mlsDaDock,',
     'body.mls-ph3 #mlsAsstFab, body.mls-ph3 #mlsCopVoiceBtn, body.mls-ph3 #mlsTabPickerChip,',
     'body.mls-ph3 #mlsRdRailBtn, body.mls-ph3 #mlsRdNav, body.mls-ph3 #_patientFace,',
-    'body.mls-ph3 #mlsVoiceCluster, body.mls-ph3 #mlsPhExit,',
+    'body.mls-ph3 #mlsVoiceCluster, body.mls-ph3 #mlsPhExit, body.mls-ph3 #mlsTray,',
     'body.mls-ph3 #mlsR46VerBanner, body.mls-ph3 #mlsA2hsCard{display:none!important}',
 
     /* The backup-failure badge is NOT hidden - it reports a real problem with
@@ -562,6 +562,10 @@
   api.state = function () { return { screen: S.screen, tab: S.screen, mounted: S.mounted, menu: S.menu }; };
 
   var frameEl = null, hdrEl = null, bodyEl = null, actEl = null, noteEl = null, sheetEl = null;
+  /* Fences terminal callbacks from an earlier appointment selection.  The
+     relay itself also carries a monotonic revision so a network-delayed older
+     job cannot replace the newer selection on the office computer. */
+  var officeOpenSerial = 0;
 
   /* ===========================================================================
    * MOUNT
@@ -646,6 +650,7 @@
      the office computer. None of it is written to disk, and none of it may
      survive the account boundary in memory either. */
   function forgetSession() {
+    officeOpenSerial++;
     S.ck = null; S.ckErr = ''; S.ckSeen = {}; S.ckRead = {}; S.ckOpen = ''; S.ckPing = 0; S.ckAt = 0;
     S.q = ''; S.note = null; S.txMirror = ''; S.screen = 'day'; S.lastSig = '';
     api._presence = null; api._presenceErr = ''; presenceAt = 0;
@@ -711,6 +716,14 @@
      them 1.5 seconds later with a guessed microphone-permission diagnosis. */
   function captureStartPending() {
     if (safe(function () { return !!window._mlsConsentAsk; }, false)) return true;
+    /* iPhone Safari uses the hosted MediaRecorder/transcription owner instead
+       of Web Speech. Permission + session setup are asynchronous, and an honest
+       Starting state must not be replaced by a guessed "mic blocked" refusal
+       while that real work is still settling. */
+    if (safe(function () {
+      var d = window.__mlsDirectPhoneCapture;
+      return !!(d && typeof d.state === 'function' && /^(starting|stopping)$/.test(String(d.state().status || '')));
+    }, false)) return true;
     var ask = $('_mlsAskMsg');
     return !!(ask && /patient consent required|saving consent/i.test(String(ask.textContent || '')));
   }
@@ -719,6 +732,12 @@
     if (!w || (w.style && w.style.display === 'none')) return '';
     var span = safe(function () { return w.querySelector ? w.querySelector('span') : null; }, null);
     return String((span && span.textContent) || w.textContent || '').replace(/^\s*[\u26A0\uFE0F]+\s*/, '').trim();
+  }
+  function captureStopPending() {
+    return safe(function () {
+      var d = window.__mlsDirectPhoneCapture;
+      return !!(d && typeof d.state === 'function' && String((d.state() || {}).status || '') === 'stopping');
+    }, false);
   }
   function expectPhase(wanted, ms, message, opts) {
     clearConfirm();
@@ -2056,6 +2075,20 @@
       var ok = safe(function () { return r.startVisitFor(id, { record: false, quiet: true }); }, false);
       if (!ok) { refuse(warnAsRefusal(snap()) || 'MLS could not open that patient. Their appointment may be on another day — check the date above the list.'); return; }
       goVisit();
+      /* The phone is useful precisely because the office computer can follow
+         it.  Local activation stays first and never waits on the network.  A
+         relayed office open is navigation-only and its terminal status is
+         shown without blocking recording on this phone. */
+      var rlOpen = relay(), chosenDay = today(), chosenId = id, openSerial = ++officeOpenSerial;
+      if (relaying() && rlOpen && typeof rlOpen.openVisitOnOffice === 'function') {
+        safe(function () {
+          rlOpen.openVisitOnOffice({ appointmentId: chosenId, visitDay: chosenDay, onStatus: function (status, line) {
+            if (openSerial !== officeOpenSerial) return;
+            if (status === 'opened') toast('✓ This appointment is open on the office computer.', 'ok');
+            else if (status === 'failed') say(line || 'This visit is open on the phone, but the office computer did not confirm it.', 'warn');
+          } });
+        });
+      }
       return;
     }
 
@@ -2095,7 +2128,7 @@
       var stopped = safe(function () { return r3.stopRecording(); }, false);
       /* A false here means the engine did not believe it was recording. Saying
          nothing leaves a Stop button over a screen that still says Recording. */
-      if (stopped) expectPhase(['stopped', 'gen', 'note'], 1500, 'MLS is still recording. Try Stop once more.');
+      if (stopped) expectPhase(['stopped', 'gen', 'note'], 1500, 'MLS is still recording or finishing the last recording segment. Keep this screen open.', { pending: captureStopPending });
       else refuse('MLS did not stop the recording. It may already have stopped on its own — check the line above.');
       S.lastSig = ''; render(true);
       return;

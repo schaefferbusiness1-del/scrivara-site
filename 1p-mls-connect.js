@@ -7721,7 +7721,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var seg0 = segmentApi();
       if (seg0 && typeof seg0.isArmed === 'function' && seg0.isArmed() && typeof seg0.stopSegment === 'function') { seg0.stopSegment(); did = true; }
-      else if (recordingNow() && typeof window.stopCapture === 'function') { window.stopCapture(); did = true; }
+      else {
+        var direct = window.__mlsDirectPhoneCapture;
+        var directState = direct && typeof direct.state === 'function' ? String((direct.state() || {}).status || '') : '';
+        /* A direct iPhone session can still be acquiring permission/session
+           while the legacy capture button is not marked recording. It is still
+           a real microphone owner and must be cancellable by every Stop path. */
+        if ((recordingNow() || /^(starting|recording|stopping)$/.test(directState)) && typeof window.stopCapture === 'function') { window.stopCapture(); did = true; }
+      }
     } catch (eSa) {}
     try { if (typeof phoneMicCode !== 'undefined' && phoneMicCode && typeof window.stopPhoneMic === 'function') { window.stopPhoneMic(); did = true; } } catch (eSb) {}
     try { var dct = window.__mlsDictateAnywhere; if (dct && typeof dct.isListening === 'function' && dct.isListening() && typeof dct.stop === 'function') { dct.stop(); did = true; } } catch (eSc) {}
@@ -20609,6 +20616,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function captureBtn() { return $('captureBtn'); }
   function isRecording() { var b = captureBtn(); return !!(b && (b.classList.contains('recording') || /stop/i.test(b.textContent || ''))); /* 2026-07-28: class-first truth, shared with the lane */ }
+  function directCaptureStatus() {
+    return safe(function () {
+      var d = window.__mlsDirectPhoneCapture;
+      return d && typeof d.state === 'function' ? String((d.state() || {}).status || '') : '';
+    }, '');
+  }
+  function captureBusy() { return isRecording() || /^(starting|recording|stopping)$/.test(directCaptureStatus()); }
   function noteText() { var n = $('noteBox'); return n ? (n.value || '') : ''; }
   function signBtn() { return $('signBtn'); }
   function signReady() { var b = signBtn(); return !!(b && !b.disabled); }
@@ -21753,7 +21767,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function lockAndStart(a, opts) {
     opts = opts || {};
     /* v3.3: never switch patients mid-recording — stop-first (context lock) */
-    if (isRecording() && S.appt && rowKey(S.appt) !== rowKey(a)) { blockSwitchWhileRecording(); return false; }
+    if (captureBusy() && S.appt && rowKey(S.appt) !== rowKey(a)) {
+      /* The tap is accepted as a pending switch. The exact target is frozen and
+         re-resolved only after capture has really released, so the doctor does
+         not have to tap the same person twice and a stale row can never open. */
+      blockSwitchWhileRecording(a);
+      return true;
+    }
     /* Activation is a transaction. A refused row must not become Easy's
        selected appointment or erase the prior visit's phase/timestamps while
        the UI truthfully says that nothing was started. */
@@ -22726,15 +22746,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     window.__ez3AutoGenWrap = true;
     window.stopCapture = function () {
       var out = orig.apply(this, arguments);
-      try {
+      var advance = function () { try {
         var enabled = true;
         try { enabled = localStorage.getItem(uns('ez3AutoGenerate')) !== '0'; } catch (eA) {}
         var t = document.getElementById('transcript');
         var words = (t && String(t.value || '').trim().split(/\s+/).filter(Boolean).length) || 0;
-        if (enabled && words >= 12 && S && S.appt && !S.genClickedAt && !S._discarding) {
+        if (enabled && words >= 12 && S && S.appt && !S.genClickedAt && !S._discarding && !S._switchingAfterStop) {
           setTimeout(function () {
             try {
-              if (S._discarding) return; /* discard won the race after the stop */
+              if (S._discarding || S._switchingAfterStop) return; /* discard/switch won the race after the stop */
               if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
               var g = genBtnResolve();
               if (!g) return;
@@ -22742,7 +22762,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             } catch (eG) {}
           }, 900);
         }
-      } catch (eW) {}
+      } catch (eW) {} };
+      /* Direct iPhone recording returns a promise that settles only after its
+         final self-contained audio segment is uploaded and the last transcript
+         tail is applied. Generating before that receipt silently drops the end
+         of the visit, so auto-advance waits for the actual capture owner. */
+      if (out && isFn(out.then)) out.then(advance, function () {});
+      else advance();
       return out;
     };
   })();
@@ -23341,12 +23367,59 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* v3.3: the context lock is ENFORCED while recording — switching patients
      mid-recording would mix visits, so it is blocked behind stop-first. */
-  function blockSwitchWhileRecording() {
+  var pendingCaptureSwitch = 0;
+  function blockSwitchWhileRecording(target) {
+    var targetKey = rowKey(target);
+    var targetDay = apptDay(target);
+    var targetAccount = bkToken();
+    var request = ++pendingCaptureSwitch;
     confirmBox({
       title: 'Still recording ' + ((S.locked && S.locked.name) || 'this patient'),
       body: 'Stop this recording first so nothing gets mixed up. The transcript stays safe and no note is generated until you choose Generate.',
       yesLabel: '⏸ Stop recording', noLabel: 'Keep recording',
-      onYes: function () { setEasyMode('doctor', 'doctor', 'recording-stop-return', false); stopRecordingOnly(); }
+      onNo: function () { if (request === pendingCaptureSwitch) pendingCaptureSwitch++; },
+      onYes: function () {
+        if (request !== pendingCaptureSwitch) return;
+        S._switchingAfterStop = request;
+        setEasyMode('doctor', 'doctor', 'recording-stop-return', false);
+        stopRecordingOnly();
+        var started = Date.now();
+        (function settleAndSwitch() {
+          if (request !== pendingCaptureSwitch) {
+            if (S._switchingAfterStop === request) S._switchingAfterStop = 0;
+            return;
+          }
+          if (captureBusy()) {
+            if (Date.now() - started < 45000) { setTimeout(settleAndSwitch, 180); return; }
+            S._switchingAfterStop = 0;
+            S.lastWarn = 'Recording is still finishing. Nothing was switched — wait for Stopped, then choose the patient again.';
+            S.activationRefusalWarn = S.lastWarn;
+            render();
+            return;
+          }
+          if (bkToken() !== targetAccount || visitDay() !== targetDay) {
+            S._switchingAfterStop = 0;
+            S.lastWarn = 'The account or calendar day changed while recording stopped. Nothing was switched — choose the patient again.';
+            S.activationRefusalWarn = S.lastWarn;
+            render();
+            return;
+          }
+          var fresh = null, list = appts();
+          for (var i = 0; i < list.length; i++) {
+            if (list[i] && rowKey(list[i]) === targetKey && apptDay(list[i]) === targetDay) { fresh = list[i]; break; }
+          }
+          if (!fresh) {
+            S._switchingAfterStop = 0;
+            S.lastWarn = 'That appointment changed while recording stopped. Nothing was switched — refresh the day and choose it again.';
+            S.activationRefusalWarn = S.lastWarn;
+            render();
+            return;
+          }
+          S._switchingAfterStop = 0;
+          pendingCaptureSwitch++;
+          lockAndStart(fresh, { record: false, quiet: true });
+        })();
+      }
     });
   }
 
@@ -24799,6 +24872,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setVisitDay: setVisitDay,
       exactActionReady: function (actionLabel) {
         var label = actionLabel || 'this action';
+        var phoneQuiet = !!safe(function () { return document.body && document.body.classList.contains('mls-ph3'); }, false);
         if (!S.appt) {
           /* b940 (write-blocker audit #36): DEMOTE, never refuse. The owner's
              standing ruling (same file, requireExactScheduledBinding): an
@@ -24807,11 +24881,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              The old hard refusal here blocked generation - and therefore the
              entire write chain - for every walk-in and add-on. */
           S.lastWarn = 'Unscheduled visit — ' + label + ' works normally. This note will stay in MLS until you assign it to a schedule row.';
-          try { toast(S.lastWarn); } catch (eT) {}
+          if (!phoneQuiet) { try { toast(S.lastWarn); } catch (eT) {} }
           try { render(); } catch (eR) {}
           return true;
         }
-        return requireExactScheduledBinding(S.appt, label);
+        return requireExactScheduledBinding(S.appt, label, { quiet: phoneQuiet });
       },
       snapshot: function () {
         computePhase();
@@ -24820,6 +24894,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                    provider: a.provider || '', type: visitType(a), seen: isSeen(a) };
         });
         var note = noteText();
+        var transcriptLen = safe(function () { var tx = $('transcript'); return tx ? String(tx.value || '').trim().length : 0; }, 0);
         return {
           ts: Date.now(), clock: fmtClock(), day: visitDay(), provider: activeProvider() || '',
           autoPull: S.autoPull, guards: guardInfo(),
@@ -24834,6 +24909,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           phase: S.phase, recSecs: S.phase === 'rec' ? Math.floor((Date.now() - S.recStart) / 1000) : 0,
           signed: S.signedAt > 0,
           noteLen: note.trim().length,
+          transcriptLen: transcriptLen,
           notePreview: note.trim().slice(0, 1200),
           today: rows
         };
@@ -25693,6 +25769,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function guardStart() {
     if (RG.on) return;
+    /* Direct iPhone capture already owns one MediaStream and uploads complete
+       transcription segments. Opening the local backup owner here would request
+       the microphone a second time, which Safari can report as a false denial
+       even though the doctor already allowed access. */
+    var direct = safe(function () { return window.__mlsDirectPhoneCapture; }, null);
+    var directStatus = safe(function () { return direct && typeof direct.state === 'function' ? String((direct.state() || {}).status || '') : ''; }, '');
+    if (/^(starting|recording|stopping)$/.test(directStatus)) return;
     RG.purging = false;
     RG.on = true; RG.sess = Date.now(); RG.lastLen = -1; RG.lastGrow = Date.now(); RG.lastVoice = 0; RG.bytes = 0;
     dbPrune();
@@ -53523,7 +53606,110 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       } catch (e3) { fin(false, 'pull could not start (is athenaOne open?)'); }
     });
   }
+  /* phopen-1.0.0: a phone appointment selection is a short-lived, account-
+     scoped NAVIGATION request.  It deliberately rides the already-deployed
+     pullChart relay kind (the server allowlist predates this UI intent); the
+     payload's explicit intent is allowlisted again here before anything runs.
+
+     Success means considerably more than "startVisitFor returned truthy": the
+     exact requested day must own exactly one matching appointment row, the
+     account and targeted office device must stay unchanged, and a fresh
+     snapshot after activation must name that same appointment and day.  A
+     recording or unfinished note for another appointment is never displaced. */
+  var openVisitLastRevisionByOrigin = {};
+  var openVisitRevisionAccount = '';
+  function runOpenVisit(job) {
+    return new Promise(function (res) {
+      var pl = job && job.payload || {};
+      var appointmentId = String(pl.appointmentId || '').trim();
+      var day = String(pl.visitDay || '').slice(0, 10);
+      var requestId = String(pl.requestId || '');
+      var originDeviceId = String(pl.originDeviceId || 'phone-session');
+      var originSessionId = String(pl.originSessionId || '');
+      var selectionRevision = Number(pl.selectionRevision || 0);
+      var token0 = tok();
+      var target0 = String(job && job.targetDeviceId || '');
+      function fail(reason) { res({ ok: false, error: String(reason || 'The office computer did not open the appointment.') }); }
+      function accountStillSame() { return !!token0 && tok() === token0; }
+      if (String(pl.intent || '') !== 'openVisit') { fail('Unsupported chart navigation request. Nothing was opened.'); return; }
+      if (!appointmentId || appointmentId.length > 180 || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        fail('The phone request did not contain one exact appointment and day. Nothing was opened.'); return;
+      }
+      if (!requestId || requestId !== String(job && job.requestId || '')) {
+        fail('The phone request identity could not be verified. Nothing was opened.'); return;
+      }
+      if (!originSessionId || originSessionId.length > 100) {
+        fail('The phone selection session could not be verified. Nothing was opened.'); return;
+      }
+      /* A phone reload starts a new session/revision sequence; an MLS account
+         change clears every prior sequence. Neither may make revision 1 look
+         stale forever or let one account's sequence affect another. */
+      if (openVisitRevisionAccount !== token0) { openVisitRevisionAccount = token0; openVisitLastRevisionByOrigin = {}; }
+      var revisionKey = originDeviceId + '|' + originSessionId;
+      if (!(selectionRevision > 0) || selectionRevision <= Number(openVisitLastRevisionByOrigin[revisionKey] || 0)) {
+        fail('A newer phone selection already replaced this request. Nothing was opened.'); return;
+      }
+      if (!accountStillSame()) { fail('The signed-in MLS account changed. Nothing was opened.'); return; }
+      if (target0 && agentDeviceId() && target0 !== agentDeviceId()) {
+        fail('This request belongs to a different office computer. Nothing was opened.'); return;
+      }
+      /* Claim the revision before inspecting mutable visit state.  From this
+         point an older network-delayed selection can never replace it. */
+      openVisitLastRevisionByOrigin[revisionKey] = selectionRevision;
+      var easy = window.__mlsEasyV32;
+      var remote = easy && easy.remote;
+      if (!remote || typeof remote.snapshot !== 'function' || typeof remote.setVisitDay !== 'function' || typeof remote.startVisitFor !== 'function') {
+        fail('The office visit screen is not ready. Nothing was opened.'); return;
+      }
+      var before = null;
+      try { before = remote.snapshot(); } catch (e0) {}
+      if (!before || !accountStillSame()) { fail('The office visit screen could not verify its current state. Nothing was opened.'); return; }
+      var beforeId = before.active && String(before.active.id || '');
+      var changingPatient = !!beforeId && beforeId !== appointmentId;
+      var directStatus = '';
+      try {
+        var direct = window.__mlsDirectPhoneCapture;
+        directStatus = direct && typeof direct.state === 'function' ? String((direct.state() || {}).status || '') : '';
+      } catch (e1) {}
+      var captureBusyNow = before.phase === 'rec' || directStatus === 'starting' || directStatus === 'recording' || directStatus === 'stopping';
+      if (captureBusyNow && changingPatient) {
+        fail('The office computer is recording a different appointment. Nothing was switched.'); return;
+      }
+      if (changingPatient && before.signed !== true && (before.noteLen > 0 || before.transcriptLen > 0 || before.phase === 'note' || before.phase === 'gen' || before.phase === 'stopped')) {
+        fail('The office computer has an unfinished visit open. Finish or save it before switching.'); return;
+      }
+      /* Already exact is a verified no-op, including the same appointment
+         currently recording.  It is still an honest ACK because the snapshot
+         proves the requested identity on this office computer now. */
+      if (beforeId === appointmentId && String(before.day || '') === day) {
+        res({ ok: true, data: { opened: true, alreadyOpen: true, appointmentId: appointmentId, visitDay: day, requestId: requestId } }); return;
+      }
+      var daySet = false;
+      try { daySet = remote.setVisitDay(day) === true; } catch (e2) {}
+      if (!daySet || !accountStillSame()) { fail('The office computer could not switch to that day safely. Nothing was opened.'); return; }
+      var daySnap = null;
+      try { daySnap = remote.snapshot(); } catch (e3) {}
+      if (!daySnap || String(daySnap.day || '') !== day || !accountStillSame()) {
+        fail('The office calendar did not confirm the requested day. Nothing was opened.'); return;
+      }
+      var matches = (daySnap.today || []).filter(function (row) { return row && String(row.id || '') === appointmentId; });
+      if (matches.length !== 1) {
+        fail(matches.length ? 'The appointment identity is duplicated on the office calendar. Nothing was opened.' : 'That exact appointment is not on the office calendar. Refresh the day there and try again.');
+        return;
+      }
+      var started = false;
+      try { started = remote.startVisitFor(appointmentId, { record: false, quiet: true, source: 'phone-relay' }) === true; } catch (e4) {}
+      if (!started || !accountStillSame()) { fail('The office computer refused to open that appointment. Nothing was changed.'); return; }
+      var after = null;
+      try { after = remote.snapshot(); } catch (e5) {}
+      if (!after || String(after.day || '') !== day || !after.active || String(after.active.id || '') !== appointmentId || !accountStillSame()) {
+        fail('The office computer could not verify the appointment after opening it.'); return;
+      }
+      res({ ok: true, data: { opened: true, alreadyOpen: false, appointmentId: appointmentId, visitDay: day, requestId: requestId } });
+    });
+  }
   function runPullChart(job) {
+    if (job && job.payload && String(job.payload.intent || '') === 'openVisit') return runOpenVisit(job);
     return new Promise(function (res) {
       var pl = job.payload || {};
       if (!pl.name) { res({ ok: false, error: 'no patient named' }); return; }
@@ -53542,6 +53728,136 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setTimeout(function () { if (!done) { done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} res({ ok: false, error: 'chart read timed out' }); } }, 110000);
     });
   }
+  /* PHONE -> OFFICE APPOINTMENT HANDOFF.  This is navigation only: no Athena
+     write, no recording start, and no patient demographics in the relay body.
+     The job is always targeted at the presence registry's exact office device.
+     A same-selection double tap joins the in-memory flight; completed jobs are
+     never reused as future ACKs. */
+  var openVisitFlight = null;
+  var openVisitRevision = 0;
+  var openVisitSessionId = 'phopen-session-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  var openVisitStatus = { status: 'idle', line: '' };
+  function setOpenVisitStatus(status, line, cb) {
+    openVisitStatus = { status: String(status || 'idle'), line: String(line || '') };
+    try { if (typeof cb === 'function') cb(openVisitStatus.status, openVisitStatus.line); } catch (e) {}
+  }
+  api.openVisitState = function () { return { status: openVisitStatus.status, line: openVisitStatus.line }; };
+  function pollOpenVisitJob(id, expected, cb) {
+    return new Promise(function (resolve) {
+      var startedAt = Date.now(), finished = false;
+      function done(ok, line) {
+        if (finished) return;
+        finished = true;
+        setOpenVisitStatus(ok ? 'opened' : 'failed', line, cb);
+        resolve(ok === true);
+      }
+      function poll() {
+        if (finished) return;
+        if (expected.selectionRevision !== openVisitRevision) {
+          /* The doctor selected another appointment while this one was in
+             flight. Cancel the stale queue record when possible and, either
+             way, never let its terminal line or receipt replace the newer
+             selection on the phone. The office runner has the same revision
+             fence for the race where it was already taken. */
+          finished = true;
+          fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id) + '/cancel', { method: 'POST', headers: H() }).catch(function () {});
+          resolve(false);
+          return;
+        }
+        if (Date.now() - startedAt > 75000) { done(false, 'The office computer did not confirm this appointment in time. It is still open on this phone.'); return; }
+        fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
+          .then(function (r) { return r && r.ok ? r.json() : null; })
+          .then(function (j) {
+            var job = j && j.job;
+            if (!job) { done(false, 'The office handoff could not be verified. It is still open on this phone.'); return; }
+            if (job.status === 'lost' || job.status === 'canceled' || job.status === 'expired') {
+              done(false, 'The office computer stopped responding before it confirmed the appointment. It is still open on this phone.'); return;
+            }
+            if (job.status === 'done') {
+              var out = job.result || {}, data = out.data || {};
+              if (out.ok === true && data.opened === true && String(data.appointmentId || '') === expected.appointmentId &&
+                  String(data.visitDay || '') === expected.visitDay && String(data.requestId || '') === expected.requestId) {
+                done(true, 'Opened this exact appointment on the office computer.');
+              } else {
+                done(false, String(out.error || 'The office computer did not verify this exact appointment. It is still open on this phone.'));
+              }
+              return;
+            }
+            setOpenVisitStatus(job.status === 'taken' ? 'working' : 'queued',
+              job.status === 'taken' ? 'Opening this appointment on the office computer…' : 'Waiting for the office computer…', cb);
+            setTimeout(poll, 1800);
+          })
+          .catch(function () { setTimeout(poll, 2400); });
+      }
+      poll();
+    });
+  }
+  api.openVisitOnOffice = function (o) {
+    o = o || {};
+    var appointmentId = String(o.appointmentId || o.apptId || '').trim();
+    var visitDay = String(o.visitDay || '').slice(0, 10);
+    var flightKey = visitDay + '|' + appointmentId;
+    var cb = o.onStatus;
+    if (openVisitFlight && openVisitFlight.key === flightKey) return openVisitFlight.promise;
+    if (!authed() || !appointmentId || appointmentId.length > 180 || !/^\d{4}-\d{2}-\d{2}$/.test(visitDay)) {
+      setOpenVisitStatus('failed', 'The exact appointment could not be identified for the office computer. It is still open on this phone.', cb);
+      return Promise.resolve(false);
+    }
+    var requestId = 'phopen-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    var selectionRevision = ++openVisitRevision;
+    var expected = { appointmentId: appointmentId, visitDay: visitDay, requestId: requestId, selectionRevision: selectionRevision };
+    setOpenVisitStatus('checking', 'Checking the office computer…', cb);
+    var promise = fetch(base() + '/api/relay/presence', { headers: H() })
+      .then(function (r) { return r && r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (p) {
+        if (selectionRevision !== openVisitRevision) return false;
+        if (!p || p.ok !== true || p.online !== true || p.ext !== true || !p.officeId) {
+          setOpenVisitStatus('failed', 'The office computer is not ready. This appointment is still open on this phone.', cb);
+          return false;
+        }
+        var body = {
+          /* Reuse the deployed, server-accepted read/navigation kind.  The
+             desktop runner still requires intent === openVisit explicitly. */
+          kind: 'pullChart',
+          payload: { intent: 'openVisit', appointmentId: appointmentId, visitDay: visitDay, requestId: requestId,
+                     originDeviceId: agentDeviceId() || 'phone-session', originSessionId: openVisitSessionId,
+                     selectionRevision: selectionRevision },
+          requestId: requestId,
+          targetDeviceId: String(p.officeId),
+          dedupeKey: 'pullChart|openVisit|' + requestId
+        };
+        setOpenVisitStatus('queued', 'Asking the office computer to open this appointment…', cb);
+        return fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify(body) })
+          .then(function (r) {
+            if (r && r.status === 400) return r.json().then(function (j) { return { rejected: String(j && j.error || 'refused') }; }, function () { return { rejected: 'refused' }; });
+            return r && r.ok ? r.json() : null;
+          })
+          .then(function (j) {
+            if (selectionRevision !== openVisitRevision) {
+              if (j && j.id) fetch(base() + '/api/relay/jobs/' + encodeURIComponent(j.id) + '/cancel', { method: 'POST', headers: H() }).catch(function () {});
+              return false;
+            }
+            if (j && j.rejected) {
+              setOpenVisitStatus('failed', 'The MLS server refused the office handoff. This appointment is still open on this phone.', cb);
+              return false;
+            }
+            if (!j || j.ok !== true || !j.id) {
+              setOpenVisitStatus('failed', 'The office handoff could not be queued. This appointment is still open on this phone.', cb);
+              return false;
+            }
+            return pollOpenVisitJob(String(j.id), expected, cb);
+          });
+      })
+      .catch(function () {
+        setOpenVisitStatus('failed', 'The office handoff could not be completed. This appointment is still open on this phone.', cb);
+        return false;
+      });
+    openVisitFlight = { key: flightKey, promise: promise };
+    promise.then(function () { if (openVisitFlight && openVisitFlight.promise === promise) openVisitFlight = null; },
+      function () { if (openVisitFlight && openVisitFlight.promise === promise) openVisitFlight = null; });
+    return promise;
+  };
   /* ===== phsend-1.0.0 (2026-08-18, phone lane) =============================
    * "Record the visit on the phone, then send the note to Athena from the
    * phone." The recording and the drafting already work on the phone. This is
@@ -54453,8 +54769,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return;
         }
         api.agentRuns++;
-        lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : job.kind === 'sendNote' ? 'get a note ready to send to Athena…' : 'read a chart…'));
-        toast('📱 Phone request received — running it here (' + job.kind + ').', '');
+        var openingVisit = job.kind === 'pullChart' && job.payload && job.payload.intent === 'openVisit';
+        lb(true, '📱 Your phone asked the office computer to ' + (job.kind === 'pullDay' ? 'pull a day from Athena…' : job.kind === 'sendNote' ? 'get a note ready to send to Athena…' : openingVisit ? 'open the selected appointment…' : 'read a chart…'));
+        toast(openingVisit ? '📱 Opening the appointment selected on your phone.' : ('📱 Phone request received — running it here (' + job.kind + ').'), '');
         var run = relayRunner(job);
         run.then(function (out) {
           lb(false);
@@ -57379,15 +57696,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      of race loadCalendar itself carries a sequence number for. Only the current
      generation may write. */
   var gen = 0;
-  function hydrateCharts(boundId, boundTok) {
+  var chartHydrateGen = 0;
+  function hydrateCharts(boundId, boundTok, syncGen) {
     var f = safe(function () { return typeof window.loadPatientsFromServer === 'function' ? window.loadPatientsFromServer : null; }, null);
-    if (!f) return;
-    safe(function () {
-      Promise.resolve(f({})).then(function () {
-        if (identity() !== boundId || tok() !== boundTok) return;
+    if (!f) return Promise.resolve(false);
+    var myChartGen = ++chartHydrateGen;
+    return safe(function () {
+      return Promise.resolve(f({})).then(function () {
+        if (myChartGen !== chartHydrateGen || syncGen !== gen || identity() !== boundId || tok() !== boundTok) return false;
         repaintPhone();
-      }, function () {});
-    });
+        return true;
+      }, function () { return false; });
+    }, Promise.resolve(false));
   }
 
   function run(reason) {
@@ -57450,8 +57770,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var gained = (before >= 0 && after >= 0 && after > before) ? (after - before) : 0;
       if (gained > 0) {
         S.waiting += gained;
-        hydrateCharts(boundId, boundTok);
       }
+      /* The patient mirror can change while the appointment count stays the
+         same (for example, the office computer just finished reading this
+         chart). Hydrate every successful receipt that actually has visits;
+         count growth was never a valid proxy for new clinical context, while
+         an empty day has no chart context to refresh. */
+      if (after > 0) hydrateCharts(boundId, boundTok, myGen);
       setStatus('ok', '');
       repaintPhone();
       return r;
