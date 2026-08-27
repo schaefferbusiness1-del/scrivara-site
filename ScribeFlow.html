@@ -28364,9 +28364,12 @@ function _mlsUnsupportedClinicalClaimFailure(err){
   var issues=Array.isArray(ai.issues)?ai.issues:[];
   return String(ai.code||'')==='draft_quality_failed'&&issues.some(function(code){return String(code||'').toLowerCase()==='unsupported_clinical_claim';});
 }
-/* A claim-only rejection gets one conservative retry. It never bypasses the
-   validator or accepts a rejected response; other safety failures stay closed. */
-/* REMOVED_UNSAFE_REPAIR_HELPER */
+/* A claim-only rejection must not strand a recorded visit. The hosted repair
+   lane gets one conservative retry with the exact saved section/template
+   tuning still attached. If that transport is unavailable, generateNote()
+   falls back to a five-section draft containing only the clinician's own
+   recorded words plus explicit "not documented" placeholders. */
+async function _mlsRepairUnsupportedClinicalClaim(sys,user,draftTuning,signal){
   var repairRule='\n\nCONSERVATIVE REPAIR REQUIRED: A previous draft was rejected because it stated a clinical claim that was not directly supported by TODAY_TRANSCRIPT. Regenerate the complete requested JSON now. Preserve every selected saved format, per-section template, heading, order, and AI comment, but treat all template wording as format only. Copy no clinical fact from a template or background. For every unsupported ROS, exam, assessment, plan, medication, order, diagnosis, code, or follow-up detail, write "Not documented in today\'s transcript." or leave the optional array/value empty. Do not infer stability, normal findings, continuation, a diagnosis, or a plan.';
   try{
     var response=await fetch(bkBase()+'/api/complete',{
@@ -41605,7 +41608,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1087';
+  window.__MLS_AV='b1088';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
