@@ -1569,6 +1569,30 @@
      why "why did these patients get no history" has never been answerable after
      the fact. Additive: rides the existing ledger object and namespace, touches
      no row state, and readIndex preserves unknown top-level keys. */
+  /* ===== onheal-1.0.0 (the ON lane's same-day proof) ======================
+     The pulled day's own encounter has TWO honest sources. With Full visit
+     notes OFF a separate scoped read stamps p.todayNote, and that derivation
+     below is unchanged and still wins. With it ON there is no separate scoped
+     read at all - both day-note lanes are OFF-only - so todayNote stayed null
+     forever, this lane could only ever say "unknown", and
+     rskAlreadyVerifiedToday rejected EVERY same-day re-pull with
+     "same-day-lane-unproven": every re-pull re-walked every chart.
+     The ON fallbacks below are receipts this pull actually earned - the scoped
+     direct-bridge receipt, then the full walk's own sameDayProof - and both are
+     validated against the SAME closed vocabulary the checker accepts, so an
+     alien string can never travel. "unknown" remains the honest default. */
+  function sameDayLaneStatus(p) {
+    var base = (p && p.todayNote === true) ? "saved"
+      : ((p && p.todayNoteSkipped === "future-day") ? "not-yet-available"
+        : ((p && p.todayNote == null) ? "unknown" : "unread"));
+    if (base !== "unknown") return base;
+    var carried = String((p && p.sameDayReceipt && p.sameDayReceipt.status) || "");
+    if (/^(saved|absent|not-yet-available)$/.test(carried)) return carried;
+    if (/^(partial|refused)$/.test(carried)) return "unread";
+    var proved = String((p && p.sameDayProof && p.sameDayProof.status) || "");
+    if (/^(saved|absent|not-yet-available)$/.test(proved)) return proved;
+    return "unknown";
+  }
   function recordHistoryVerdict(day, receipt, dayRowCount) {
     day = String(day || ""); if (!day || !receipt) return;
     safe(function () {
@@ -1605,7 +1629,7 @@
             coverage: (p.coverageReceipt && p.coverageReceipt.kind === "athena-coverage-v1" && p.coverageReceipt.complete === true && p.coverageReceipt.status === "saved")
               ? { complete: true }
               : { complete: false, reason: String((p.coverageReceipt && (p.coverageReceipt.reason || p.coverageReceipt.status)) || "reader-not-shipped").slice(0, 60) },
-            sameDayNote: { status: p.todayNote === true ? "saved" : (p.todayNoteSkipped === "future-day" ? "not-yet-available" : (p.todayNote == null ? "unknown" : "unread")) },
+            sameDayNote: { status: sameDayLaneStatus(p) }, /* onheal-1.0.0 */
             allHistory: { scope: receipt.visitNotesRequested === true ? "full" : "day-facts", complete: p.visitsComplete === true && p.visitsSkipped !== true ? true : (receipt.visitNotesRequested !== true && p.visitsComplete === true) }
           };
           /* fa-1.0: a row that cleared on re-check or redo keeps its
@@ -2316,15 +2340,179 @@
     var status = authoritativeStatusForDay(day, rawProvider);
     return status.available ? status._rows.slice() : null;
   }
-  function findPatient(pts, a) {
-    var mrn = rowMrn(a), nk = normName(a && a.name), dk = normDob(a && a.dob), i, p;
+  /* ===== padopt-1.0.0 (appointment -> chart adoption) =====================
+     MEASURED on the owner's live account 2026-08-26: 25 of 29 appointment rows
+     on one pulled day carried a freshly MINTED "p_sched_" identity while the
+     same human already had a local chart, so the day's visit, the appointment
+     binding and the profile the doctor opens all landed on different rows.
+     Both zero-match tails of findPatient below were reached for rows that DID
+     carry proof, because the MRN and DOB tiers compare normName(), which is
+     byte-exact: "Brooks, Bernard P", "Bernard P Brooks" and "Bernard Brooks"
+     are three different keys, so a real chart for the same human scored zero.
+
+     This tier normalises the NAME SHAPE only. Identity still rests on a
+     POSITIVELY AGREEING second factor (DOB or MRN), exactly one survivor, and
+     a NATIVE local row preferred over capture debris when several agree. Every
+     existing refusal is untouched and runs first: this tier can only turn a
+     MISS into a match, never a refusal into a match. A merely ABSENT second
+     factor proves nothing and never adopts; any conflicting one refuses. */
+  var PADOPT_NAME_NOISE = /\b(jr|sr|ii|iii|iv|md|do|np|pa|dds|dmd|phd)\b/g;
+  function padoptNameKey(s) {
+    var t = String(s || "").toLowerCase().replace(/[.]/g, " ").replace(/[^a-z0-9,\s]/g, " ").replace(/\s+/g, " ").trim();
+    if (!t) return "";
+    t = t.replace(PADOPT_NAME_NOISE, " ").replace(/\s+/g, " ").trim();
+    var first = "", last = "";
+    if (t.indexOf(",") >= 0) {
+      var parts = t.split(",");
+      last = String(parts[0] || "").trim().split(" ")[0] || "";
+      first = String(parts[1] || "").trim().split(" ")[0] || "";
+    } else {
+      var w = t.split(" ").filter(function (x) { return !!x; });
+      if (w.length < 2) return "";
+      first = w[0]; last = w[w.length - 1];
+    }
+    if (!first || !last) return "";
+    return first + "|" + last;
+  }
+  function padoptTokens(s) {
+    var t = String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!t) return [];
+    t = t.replace(PADOPT_NAME_NOISE, " ").replace(/\s+/g, " ").trim();
+    var out = [], w = t.split(" "), i;
+    for (i = 0; i < w.length; i++) if (w[i] && w[i].length > 1 && out.indexOf(w[i]) < 0) out.push(w[i]);
+    return out;
+  }
+  /* first+last canonical key, or full token containment in EITHER direction
+     with at least two shared tokens - which is what reconciles a stored
+     "Bernard Brooks" with an Athena "Brooks, Bernard P". */
+  function padoptNameMatch(left, right) {
+    var lk = padoptNameKey(left), rk = padoptNameKey(right);
+    if (lk && rk && lk === rk) return true;
+    var lt = padoptTokens(left), rt = padoptTokens(right), shared = 0, i;
+    if (lt.length < 2 || rt.length < 2) return false;
+    /* padopt-1.0.1 (refuter 2026-08-26): containment alone let order-swapped
+       names match - "Robert James" and "James Robert" are two different
+       humans. The LAST token must agree before containment counts. The
+       comma-form "Brooks, Bernard P" still reconciles: padoptNameKey parses
+       the comma order and matches on the first|last key above this gate. */
+    if (lt[lt.length - 1] !== rt[rt.length - 1]) return false;
+    for (i = 0; i < lt.length; i++) if (rt.indexOf(lt[i]) >= 0) shared++;
+    if (shared < 2) return false;
+    return shared === lt.length || shared === rt.length;
+  }
+  /* padopt-1.0.1: a placeholder is not proof. An MRN must carry at least four
+     digits and may not be one digit repeated; a DOB must survive the strict
+     calendar validation. Junk on BOTH sides can otherwise agree with itself
+     and buy an adoption. */
+  function padoptValidMrn(m) {
+    var s = String(m == null ? "" : m).replace(/\D+/g, "");
+    if (s.length < 4) return "";
+    if (/^(\d)\1+$/.test(s)) return "";
+    return s;
+  }
+  /* The live store holds the same human as several rows: a "p_sched_" schedule
+     mint, an all-digits Athena capture, and a "_"+digits capture twin. The
+     NATIVE row is the chart the doctor opens, so it wins - the same partition
+     the backend's own adoption pick applies. */
+  function padoptIsDebrisId(id) {
+    var s = String(id == null ? "" : id).trim();
+    if (!s) return true;
+    return /^p_sched_/.test(s) || /^_?\d+$/.test(s);
+  }
+  /* A row bearing an Athena chart id that matched NOTHING falls through to the
+     stricter MRN/DOB tiers, because a MISS is not a conflict. What it may
+     never do is land on a local row PROVABLY stamped with a DIFFERENT Athena
+     chart id: that is two charts, and it fails closed like every other
+     conflict. Absent on either side proves nothing and refuses nothing. */
+  function padoptSourceConflict(p, sourceId) {
+    if (!sourceId) return false;
+    var own = rowSourcePatientId(p);
+    return !!own && own.toLowerCase() !== String(sourceId).toLowerCase();
+  }
+  /* Returns { id: "<local id>", why: "<code>" }. id is "" on every refusal.
+     why is a closed, PHI-free vocabulary the receipt may carry. */
+  function padoptResolve(pts, a) {
+    pts = Array.isArray(pts) ? pts : [];
+    /* padopt-1.0.1 (refuter): the second factor must be REAL proof. A
+       placeholder DOB ("Unknown", an impossible date) or a placeholder MRN
+       can agree with its own junk twin on the store row and buy a wrong-human
+       adoption; both sides now pass the strict validators before they may
+       count as proof OR as conflict. */
+    var dk = validDobProof(a && a.dob), mk = padoptValidMrn(rowMrn(a)), sk = rowSourcePatientId(a), i, p;
+    if (!dk && !mk) return { id: "", why: "no-dob-and-no-mrn" };
+    if (!padoptTokens(a && a.name).length) return { id: "", why: "no-usable-name" };
+    var nameMatches = [];
+    for (i = 0; i < pts.length; i++) {
+      p = pts[i];
+      if (!p || p.id == null || !String(p.id).trim()) continue;
+      if (padoptNameMatch(p.name, a && a.name)) nameMatches.push(p);
+    }
+    if (!nameMatches.length) return { id: "", why: "tolerant-name-no-match" };
+    var eligible = [], conflicted = 0;
+    for (i = 0; i < nameMatches.length; i++) {
+      p = nameMatches[i];
+      var pd = validDobProof(p.dob), pm = padoptValidMrn(rowMrn(p));
+      if ((dk && pd && pd !== dk) || (mk && pm && pm !== mk) || padoptSourceConflict(p, sk)) { conflicted++; continue; }
+      if ((dk && pd === dk) || (mk && pm === mk)) eligible.push(p);
+    }
+    if (!eligible.length) return { id: "", why: conflicted ? "tolerant-name-conflict" : "tolerant-name-unproven" };
+    if (eligible.length > 1) {
+      var native = eligible.filter(function (one) { return !padoptIsDebrisId(one && one.id); });
+      if (native.length !== 1) return { id: "", why: "tolerant-name-ambiguous" };
+      eligible = native;
+    }
+    /* THE INVARIANT: the adopted value is always the id of a row that is IN the
+       local store. A raw Athena chart id, an MRN or any other source-side
+       identifier can therefore never masquerade as a local id here - the only
+       way one appears is if a real local row already carries it, in which case
+       adopting that row is exactly right. padoptAdopt re-proves the membership
+       before it hands the row back. */
+    return { id: String(eligible[0].id), why: "tolerant-name-adopted" };
+  }
+  /* The exact-name tiers can legitimately land on CAPTURE DEBRIS - a p_sched_
+     mint or an all-digits/underscore-digits capture twin - while the chart the
+     doctor actually opens is a NATIVE row for the same human carrying the same
+     proof. The native row wins, the same partition the backend's own adoption
+     pick applies. Two hard limits: the tolerant tier must prove the native row
+     unambiguously, and a source row that ALREADY carries a local id is never
+     re-pointed (moving an existing binding is a different, riskier act, and
+     the live store's p_sched rows are load-bearing). */
+  function padoptPreferNative(pts, a, exact, notes) {
+    if (!exact || exact.id == null || !padoptIsDebrisId(exact.id)) return exact;
+    if (rowLocalPatientId(a)) return exact;
+    var up = safe(function () { return padoptResolve(pts, a); }, null);
+    if (!up || !up.id || up.id === String(exact.id) || padoptIsDebrisId(up.id)) return exact;
+    for (var i = 0; i < pts.length; i++) {
+      if (String(pts[i] && pts[i].id || "") === up.id) {
+        if (notes) { notes.adopted = true; notes.why = "native-preferred-over-debris"; }
+        return pts[i];
+      }
+    }
+    return exact;
+  }
+  function padoptAdopt(pts, a, notes) {
+    var verdict = safe(function () { return padoptResolve(pts, a); }, null);
+    if (notes && verdict) notes.why = String(verdict.why || "");
+    if (!verdict || !verdict.id) return null;
+    for (var i = 0; i < pts.length; i++) {
+      if (String(pts[i] && pts[i].id || "") === verdict.id) { if (notes) notes.adopted = true; return pts[i]; }
+    }
+    return null;
+  }
+  /* ===== end padopt-1.0.0 ================================================= */
+  function findPatient(pts, a, notes) {
+    /* padopt-1.0.1 (refuter): every tier's second factor passes the strict
+       validators. normDob keeps unparseable text as a lowercased token, so
+       "Unknown" on both sides used to agree with itself and bind a wrong
+       human; validDobProof/padoptValidMrn turn every placeholder into "". */
+    var mrn = padoptValidMrn(rowMrn(a)), nk = normName(a && a.name), dk = validDobProof(a && a.dob), i, p;
     var localId = rowLocalPatientId(a);
     if (localId) {
       for (i = 0; i < pts.length; i++) {
         p = pts[i];
         if (String(p && p.id || "") !== localId) continue;
-        if (mrn && rowMrn(p) && rowMrn(p) !== mrn) return null;
-        if (dk && normDob(p && p.dob) && normDob(p && p.dob) !== dk) return null;
+        if (mrn && padoptValidMrn(rowMrn(p)) && padoptValidMrn(rowMrn(p)) !== mrn) return null;
+        if (dk && validDobProof(p && p.dob) && validDobProof(p && p.dob) !== dk) return null;
         /* An exact local id without source DOB/MRN is still not enough for a
            new frozen Athena row; only an already-bound appointment may supply
            that proof later in queueHistory. */
@@ -2335,27 +2523,42 @@
     var sourceId = rowSourcePatientId(a);
     if (sourceId && (mrn || dk)) {
       var sourceMatches = pts.filter(function (one) { return rowSourcePatientId(one).toLowerCase() === sourceId.toLowerCase(); });
-      if (sourceMatches.length !== 1) return null;
-      p = sourceMatches[0];
-      if (mrn && rowMrn(p) && rowMrn(p) !== mrn) return null;
-      if (dk && normDob(p && p.dob) && normDob(p && p.dob) !== dk) return null;
-      return p;
+      /* padopt-1.0.0: MORE THAN ONE local row stamped with this Athena chart id
+         is real ambiguity and still fails closed. ZERO is a MISS, not a
+         conflict - no locally created chart has ever been stamped with an
+         Athena id, which is the ordinary case on this account - and the MRN and
+         DOB tiers below are STRICTER proof than the id that was absent.
+         Returning null here sent fully proven rows straight to the mint. */
+      if (sourceMatches.length > 1) return null;
+      if (sourceMatches.length === 1) {
+        p = sourceMatches[0];
+        if (mrn && padoptValidMrn(rowMrn(p)) && padoptValidMrn(rowMrn(p)) !== mrn) return null;
+        if (dk && validDobProof(p && p.dob) && validDobProof(p && p.dob) !== dk) return null;
+        return p;
+      }
     }
     if (mrn) {
-      var mrnMatches = pts.filter(function (one) { return rowMrn(one) === mrn; });
+      var mrnMatches = pts.filter(function (one) { return padoptValidMrn(rowMrn(one)) === mrn; });
       if (mrnMatches.length > 1) return null;
-      if (mrnMatches.length === 1) { p = mrnMatches[0]; return (!dk || !normDob(p && p.dob) || normDob(p && p.dob) === dk) ? p : null; }
+      /* padopt-1.0.0: a row whose Athena chart id matched nothing may fall
+         through to this stricter tier, but never onto a local row stamped with
+         a DIFFERENT Athena chart id. */
+      if (mrnMatches.length === 1) { p = mrnMatches[0]; if (padoptSourceConflict(p, sourceId)) return null; return (!dk || !validDobProof(p && p.dob) || validDobProof(p && p.dob) === dk) ? padoptPreferNative(pts, a, p, notes) : null; }
       if (dk) {
-        var fallbackDobMatches = pts.filter(function (one) { return !rowMrn(one) && normName(one && one.name) === nk && normDob(one && one.dob) === dk; });
-        if (fallbackDobMatches.length === 1) return fallbackDobMatches[0];
+        var fallbackDobMatches = pts.filter(function (one) { return !padoptValidMrn(rowMrn(one)) && normName(one && one.name) === nk && validDobProof(one && one.dob) === dk; });
+        if (fallbackDobMatches.length === 1) return padoptSourceConflict(fallbackDobMatches[0], sourceId) ? null : padoptPreferNative(pts, a, fallbackDobMatches[0], notes);
       }
-      return null;
+      /* padopt-1.0.0: the exact-name compare found NOTHING. Try the tolerant
+         name shape with the same second-factor proof; ambiguity still fails. */
+      return padoptAdopt(pts, a, notes);
     }
     if (dk) {
-      var dobMatches = pts.filter(function (one) { return normName(one && one.name) === nk && normDob(one && one.dob) === dk; });
-      if (dobMatches.length === 1) return dobMatches[0];
-      /* A supplied DOB that does not match must never degrade to name-only. */
-      return null;
+      var dobMatches = pts.filter(function (one) { return normName(one && one.name) === nk && validDobProof(one && one.dob) === dk; });
+      if (dobMatches.length === 1) return padoptSourceConflict(dobMatches[0], sourceId) ? null : padoptPreferNative(pts, a, dobMatches[0], notes);
+      /* A supplied DOB that does not match must never degrade to name-only.
+         padopt-1.0.0: a DOB that AGREES on a differently-shaped name is not a
+         degrade - it is the same proof, read through a tolerant name key. */
+      return padoptAdopt(pts, a, notes);
     }
     /* A unique display name is not an identity proof. In particular, never
        upgrade a name-only Athena row with DOB/MRN copied from a local record. */
@@ -2734,6 +2937,15 @@
          before any asynchronous chart work begins. The history pipeline uses
          these IDs (plus DOB/MRN proof), never a later name-only lookup. */
       var historyTargets = [], historyTargetState = {}, historyUnresolved = [];
+      /* padopt-1.0.0: the adoption census. Counts and a closed reason
+         vocabulary only - never a name, DOB or MRN - so a receipt can prove a
+         mint was UNAVOIDABLE instead of a silent miss. */
+      var adoptionReceipt = { kind: "padopt-1.0.0", adopted: 0, boundExact: 0, mintAttempted: 0, reasons: {} };
+      function padoptNoteMint(code) {
+        adoptionReceipt.mintAttempted++;
+        var c = String(code || "unknown").slice(0, 40);
+        adoptionReceipt.reasons[c] = (adoptionReceipt.reasons[c] || 0) + 1;
+      }
       function supersedeMissingHistory(patientId) {
         historyUnresolved.forEach(function (item) {
           if (item && item.patientId === patientId && item.reason === "missing-source-dob-mrn-proof") item._superseded = true;
@@ -2818,6 +3030,10 @@
       function materializePatient(a,name) {
         var found=safe(function(){return findPatient(pts,a);},null);
         if(found&&found.id)return found;
+        /* padopt-1.0.0: the mint is the LAST resort and this is the only gate
+           in front of it. Record - PHI-free - WHY no local chart could be
+           proven, so the receipt can show the mint was unavoidable. */
+        padoptNoteMint(safe(function(){var v=padoptResolve(pts,a);return v&&v.why;},"")||"unknown");
         var key=patientIdentity(a,false);
         if(!key||!isFn(window.upsertPatient))return null;
         var np={id:stableId(key),name:String(name||a&&a.name||"").trim(),dob:String(a&&a.dob||""),reason:String(a&&a.reason||""),source:"athena-schedule",created:Date.now()};
@@ -2857,10 +3073,12 @@
           var ext = "", existing = null;
           /* Resolve the patient from frozen source proof first. A same-name local
              record, even when unique, is never a binding candidate. */
+          var padoptNotes = {};
           safe(function () {
-            existing = findPatient(pts, a);
+            existing = findPatient(pts, a, padoptNotes);
             if (existing) ext = existing.id;
           });
+          if (existing && existing.id) { if (padoptNotes.adopted === true) adoptionReceipt.adopted++; else adoptionReceipt.boundExact++; }
           /* An exact appointment id may locate an already-bound backend row.
              It can reconcile that appointment, but conflicting source proof is
              fatal and its local patient's DOB/MRN is never copied onto the row. */
@@ -2868,7 +3086,15 @@
             var boundPatient = pts.find(function (p0) { return String(p0 && p0.id || "") === String(oldRow.patient_external_id); }) || null;
             var frozenProof = sourceProof(a);
             var proofConflict = !!(boundPatient && ((frozenProof.dob && normDob(boundPatient.dob) && normDob(boundPatient.dob) !== frozenProof.dob) || (frozenProof.mrn && rowMrn(boundPatient) && rowMrn(boundPatient) !== frozenProof.mrn)));
-            if (proofConflict || (existing && String(existing.id || "") !== String(oldRow.patient_external_id || ""))) {
+            var boundDisagrees = !!(existing && String(existing.id || "") !== String(oldRow.patient_external_id || ""));
+            /* padopt-1.0.1 (refuter): a backend row already bound to a
+               p_sched_/digits DEBRIS id while adoption proves the NATIVE chart
+               is the healing case this whole lane exists for - superseding the
+               debris binding is an upgrade, not a patient change. Only a
+               native-vs-native disagreement (or a real proof conflict) stays
+               fatal and blocks both records. */
+            var debrisUpgrade = boundDisagrees && !proofConflict && existing && !padoptIsDebrisId(existing.id) && padoptIsDebrisId(oldRow.patient_external_id);
+            if (proofConflict || (boundDisagrees && !debrisUpgrade)) {
               if (boundPatient && boundPatient.id) blockHistoryPatient(boundPatient.id, "source-proof-conflict");
               if (existing && existing.id && (!boundPatient || String(existing.id) !== String(boundPatient.id))) blockHistoryPatient(existing.id, "source-proof-conflict");
               noteImportFailure("appointment-patient-identity-conflict");
@@ -2926,6 +3152,12 @@
             }
           }
           if (existing && existing.id) { ext = String(existing.id); a.patient_external_id = ext; }
+          /* padopt-1.0.0: stamp the proven LOCAL id on the source row so every
+             reader that ORs the two alias fields agrees by construction. An
+             existing valid id is never overwritten - a row exposing two
+             DIFFERENT local aliases is the ambiguity the pickers refuse, and
+             that refusal must survive. Only a local store id ever lands here. */
+          if (ext && !String(a._mlsTargetPatientId || "").trim() && !!patientById(ext)) a._mlsTargetPatientId = ext;
           var ledgerKey = importKey(a, date, nt);
           if (!ledgerKey) {
             noteImportFailure("appointment-identity-unresolved");
@@ -3232,7 +3464,7 @@
             }, ms);
           });
           historyUnresolved = historyUnresolved.filter(function (item) { return !(item && item._superseded); });
-          return { created: created, repaired: repaired, enrichedFields: enrichedFields, providerBackfilled: providerBackfilled, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt };
+          return { created: created, repaired: repaired, enrichedFields: enrichedFields, providerBackfilled: providerBackfilled, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt, adoptionReceipt: adoptionReceipt };
         });
       });
     });
@@ -4203,11 +4435,21 @@
     try {
       /* Dispatch while this row's verified chart is still the active surface;
          only the response is deferred, so the next row is never blocked. */
-      siCaptureFacts(patientId, 8000).then(function (verdict) {
+      var pending = siCaptureFacts(patientId, 8000).then(function (verdict) {
         if (one && one.visitsComplete === true) one.factsCapture = verdict;
+        return verdict;
       }, function () {
         if (one && one.visitsComplete === true) one.factsCapture = 'error';
+        return 'error';
       });
+      /* sicap-1.0.0: KEEP the handle so the batch can settle it after the last
+         row and replace the non-verdict 'queued' with what really happened.
+         Non-enumerable: a promise must never reach a receipt or the day ledger,
+         and JSON.stringify of a receipt row must not change shape. */
+      if (one) {
+        try { Object.defineProperty(one, '__factsCaptureP', { value: pending, enumerable: false, writable: true, configurable: true }); }
+        catch (eDefine) { one.__factsCaptureP = pending; }
+      }
     } catch (e) {
       if (one && one.visitsComplete === true) one.factsCapture = 'error';
     }
@@ -5066,7 +5308,11 @@
         var provedScope = String((lanes.allHistory && lanes.allHistory.scope) || "");
         var scopeOk = lanes.allHistory && lanes.allHistory.complete === true && (provedScope === "full" || provedScope === String(wantScope || ""));
         if (!scopeOk) return { rejectedReason: "scope-version-insufficient", proofVersion: proofVersion };
-        return { at: at, day: String(day) };
+        /* onheal-1.0.0: the accepted same-day status travels WITH the skip.
+           Without it the skip path wrote a ledger row carrying no same-day lane
+           at all, the next write regressed that row to "unknown", and the THIRD
+           pull re-walked the chart the second one had proven. */
+        return { at: at, day: String(day), sameDayNoteStatus: String(lanes.sameDayNote.status) };
       }, null);
     }
     /* ===== end rsk-1.0.0 ===== */
@@ -5605,6 +5851,11 @@
           one.allHistoryReceipt = pullVisitBodies === true
             ? { kind: "athena-all-history-v1", requested: true, status: "saved", complete: true, carriedFromProof: true }
             : { kind: "athena-all-history-v1", requested: false, status: "not-requested" };
+          /* onheal-1.0.0: carry the same-day lane the validator ACCEPTED, so a
+             skip cannot decay the proof it was granted on. */
+          if (/^(saved|absent|not-yet-available)$/.test(String(rskProof.sameDayNoteStatus || ""))) {
+            one.sameDayProof = { status: String(rskProof.sameDayNoteStatus), day: String(rskProof.day || ""), from: "carried-proof", carriedFromProof: true };
+          }
           one.chartSkippedVerifiedToday = rskProof.at;
           one.stageMs = { chartMs: 0, parseSaveMs: 0, visitsMs: 0, visitSaveMs: 0, totalMs: 0 };
           receipt.chartsSkippedVerifiedToday = Number(receipt.chartsSkippedVerifiedToday || 0) + 1;
@@ -5971,6 +6222,37 @@
               one.visitsComplete = false;
               one.reason = "storage-full-not-saved";
               one.storageFailure = { at: Number(__qvFail.at || 0), kind: String(__qvFail.reason || "").slice(0, 40) };
+            }
+            /* onheal-1.0.0: derive the ON lane's same-day proof from what THIS
+               walk measured, and from nothing else. It is admitted only for an
+               UNSCOPED, coverage-complete traversal - saveVerifiedVisits has
+               already proved parsed === expected, persisted === parsed, one
+               alias per row and body equality, so those rows ARE the complete
+               verified universe for this chart. "absent" is therefore EARNED by
+               that completeness, never defaulted. p.todayNote is deliberately
+               NOT set: full mode makes no separate pulled-day read and must
+               never report one (tests/1p-pull-resume-skip-and-cost-runtime
+               pins todayNoteRead === 0 in full mode, and it is right). */
+            if (pullVisitBodies === true && savedVisits.scopedAdditive !== true &&
+                savedVisits.visitsCoverageComplete === true && one.visitsComplete === true) {
+              var sdpDay = batchRowDay(row);
+              if (/^\d{4}-\d{2}-\d{2}$/.test(String(sdpDay || ""))) {
+                var sdpSeen = safe(function () {
+                  var vrows = (vr && Array.isArray(vr.visits)) ? vr.visits : [];
+                  for (var sdi = 0; sdi < vrows.length; sdi++) {
+                    var vrow = vrows[sdi] || {};
+                    if (normDate(vrow.date || vrow.serviceDate || vrow.dateISO || "") === sdpDay) return true;
+                  }
+                  return false;
+                }, false) === true;
+                /* onheal-1.0.1 (refuter): "absent" is a claim about a FINISHED
+                   day. Today's walk is a point-in-time observation - the note
+                   may simply not be written yet - so today and future days
+                   report not-yet-available and never buy a same-day skip. */
+                var sdpLocalToday = safe(function () { var d = new Date(); var mo = String(d.getMonth() + 1); var da = String(d.getDate()); return d.getFullYear() + "-" + (mo.length < 2 ? "0" + mo : mo) + "-" + (da.length < 2 ? "0" + da : da); }, "");
+                var sdpFinishedDay = !!(sdpLocalToday && sdpDay < sdpLocalToday);
+                one.sameDayProof = { status: (dayNoteFuture(sdpDay) || !sdpFinishedDay) ? (sdpSeen ? "saved" : "not-yet-available") : (sdpSeen ? "saved" : "absent"), day: sdpDay, from: "full-walk" };
+              }
             }
             /* si-2.0.0: a COMPLETED body pass earns the carry stamp. */
             if (savedVisits.visitsCoverageComplete === true) stampVisitsProof(target.patientId, savedVisits);
@@ -6404,7 +6686,17 @@
       try {
         (receipt.patients || []).forEach(function (fp) {
           if (!fp) return;
-          var fpQueuedForSweep = holdAutomaticRows === true && !sweepDepth && fp.complete !== true && AUTOMATIC_HISTORY_RETRY_REASON.test(String(fp.reason || ""));
+          /* onheal-1.0.0 (the sweep label may only claim a re-check that can
+             still happen). Two states made this sentence a lie on the doctor's
+             screen: the automatic pass gave up on time (sweepBudgetExhausted),
+             and the doctor pressed Stop - after which the sweep block is
+             skipped entirely, so NOTHING was ever going to re-check the row.
+             __stpStopped is a var in this same function scope and is assigned
+             before the first finalizeVerdict call, so it reads undefined-safe
+             on every earlier path. */
+          var fpQueuedForSweep = holdAutomaticRows === true && !sweepDepth && fp.complete !== true &&
+            receipt.sweepBudgetExhausted !== true && __stpStopped !== true &&
+            AUTOMATIC_HISTORY_RETRY_REASON.test(String(fp.reason || ""));
           ppSettle(fp.name || "", fp.complete === true, fp.complete === true ? (fp.summaryPending === true ? "saved · summary pending" : "") : (fpQueuedForSweep ? "queued-for-automatic-recheck" : ((fp.reason || "incomplete") + historyDiagSuffix(fp))), fpQueuedForSweep, { surfaceResets: fp.surfaceResets, chartSurface: fp.chartSurface, pid: fp.patientId, axe: fp.axEntry, sp: fp.summaryPending === true /* cap-1.0.0 */, dn: tnColumn(fp) /* tny-1.0.0 */, chartSaved: ((fp.organized === true && fp.dobVerified === true) || fp.captureSaved === true) && !fp.storageFailure && fp.visitsReason !== "clinical-field-coverage-unproven" });
         });
       } catch (eTerm) {}
@@ -6633,6 +6925,17 @@
         receipt.todayNoteStoppedRows = tnSkipped;
         receipt.todayNoteNotRequestedRows = tnNotRequested;
       });
+      /* onheal-1.0.0: after a Stop the automatic sweep block is skipped
+         entirely, so no row is queued for anything. Say so on the row. */
+      safe(function () {
+        var stoppedSkips = 0;
+        (receipt.patients || []).forEach(function (p) {
+          if (!p || p.complete === true) return;
+          if (!AUTOMATIC_HISTORY_RETRY_REASON.test(String(p.reason || ""))) return;
+          p.recheckSkipped = "stopped-by-user"; stoppedSkips++;
+        });
+        if (stoppedSkips) receipt.sweepSkippedByStop = stoppedSkips;
+      });
       /* a stop must not leave a deferred round armed against a lease it will
          never see freed for this pull's rows. */
       safe(tnDropDeferredQueue);
@@ -6820,7 +7123,26 @@
       for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
         var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
         if (!sweepable.length) break;
-        if (Date.now() + 240000 >= batchDeadlineAt) { receipt.sweepBudgetExhausted = true; break; }
+        if (Date.now() + 240000 >= batchDeadlineAt) {
+          /* onheal-1.0.0: name it, count it, and SAY it. The rows below keep
+             their real verdict instead of a promise nothing will keep; their
+             full-history retry stays in Retry, and (in ON mode) the day's own
+             note is handed to the idle catch-up by niSyncFromReceipt. */
+          receipt.sweepBudgetExhausted = true;
+          receipt.sweepSkippedForTime = sweepable.length;
+          safe(function () {
+            var skippedIds = {};
+            sweepable.forEach(function (entry) { skippedIds[String(entry && entry.patientId || "")] = 1; });
+            (receipt.patients || []).forEach(function (fp) {
+              if (fp && fp.complete !== true && skippedIds[String(fp.patientId || "")]) fp.recheckSkipped = "out-of-time";
+            });
+          });
+          if (onStatus) safe(function () {
+            onStatus("Out of time for the automatic re-check - " + sweepable.length + " chart" + (sweepable.length === 1 ? "" : "s") +
+              " stay in Retry, and the idle catch-up will try the day's own note again.", "warn");
+          });
+          break;
+        }
         /* si-1.9.4: lead with the held progress ("14 of 16") so the bar keeps
            its place; with zero finished there is no progress to hold, so the
            count-free wording leaves the bar untouched. */
@@ -6873,6 +7195,48 @@
       finalizeVerdict(false);
       safe(ppEnd);
     }
+    /* onheal-1.0.0: the STOP path never reached that finally - the try/finally
+       above is the BODY of `if (!sweepDepth && !__stpStopped)`, so after a Stop
+       neither the terminal settle nor ppEnd ran: every sweepable row kept the
+       "queued for automatic re-check" label forever and the DONE card never
+       froze its clock (s.running stayed true). Stop now gets its own terminal
+       settle. It deliberately does NOT set receipt.sweepPasses - no sweep ran,
+       and tests/1p-pull-stop-and-find-census-runtime pins that it stays unset. */
+    if (!sweepDepth && __stpStopped) {
+      finalizeVerdict(false);
+      safe(ppEnd);
+    }
+    /* ===== sicap-1.0.0 (settle the facts captures) ===================
+       The capture verb carries NO patient argument anywhere in its chain
+       (siCaptureFacts -> content.js -> background.js): it reads whatever chart
+       the athenaOne tab is showing. Re-DISPATCHING it after the loop would
+       therefore read the LAST row's banner for every queued target and the
+       two-token name guard would refuse all but that one - measured, and a
+       content REGRESSION. So the dispatch stays on the row whose verified chart
+       is still the active surface, and only the SETTLE is deferred to here:
+       the drain waits (bounded) for each capture and the BATCH RECEIPT reports
+       the verdict census; the day ledger's row verdicts were already written
+       by recordHistoryVerdict and carry no capture field. The promise handle
+       is non-enumerable so it can never reach a receipt or the day ledger.
+       A sub-batch never drains; the outer batch owns it (and by then it has
+       already absorbed every swept row's entry). */
+    if (!sweepDepth) {
+      var sicapCounts = {}, sicapRows = receipt.patients || [];
+      for (var sci = 0; sci < sicapRows.length; sci++) {
+        var sicOne = sicapRows[sci] || {}, sicP = sicOne.__factsCaptureP;
+        if (!sicP || !isFn(sicP.then)) continue;
+        /* sicap-1.0.1 (refuter): the settle promise's only internal bound is a
+           bare timer that a hidden tab can stretch - the drain itself now
+           carries a hard 10s ceiling per row so a stuck capture can only ever
+           delay the receipt tail, never wedge it. */
+        try { await Promise.race([sicP, new Promise(function (sicR) { setTimeout(sicR, 10000); })]); } catch (eSicap) {}
+        try { delete sicOne.__factsCaptureP; } catch (eSicapDel) {}
+        var sicV = String(sicOne.factsCapture || "queued").slice(0, 24);
+        sicapCounts[sicV] = (sicapCounts[sicV] || 0) + 1;
+      }
+      if (Object.keys(sicapCounts).length) receipt.factsCaptureVerdicts = sicapCounts;
+    }
+    /* ===== end sicap-1.0.0 ========================================== */
     /* ===== cap-1.0.0 (fill the pending summaries) =====
        Two lanes, both athena-free, so neither can cost a chart open or fight
        the lease:
@@ -7621,6 +7985,26 @@
         if (!p || !p.patientId) return;
         if (p.todayNote === true || p.todayNote === "already-read") { niDrop(p.patientId, d, "read-in-pull"); return; }
         if (p.todayNote === "not-yet" || p.todayNote === "future-day") return;
+        /* onheal-1.0.0 (a row NOTHING read the day's note for). The blanket
+           "!== false" return below dropped every row whose day-note stage never
+           produced a verdict at all - which with Full visit notes ON is EVERY
+           row, because there is no separate day-note leg in that mode and
+           todayNote is null forever. A chart the walk could not finish was
+           therefore never retried by anything. This branch is preference-BLIND
+           by design (dayfacts-1.0.1): the same silence in day-facts mode - a
+           failed chart read, a tripped fuse, a row the tail pass never reached
+           - owes the day the same scoped read. Placed AFTER the three checks
+           above so no existing verdict semantics move, and it queues nothing
+           the walk already proved complete or that has not happened yet.
+           Bounded by the same caps as every other queued row: NI_MAX_ROWS,
+           NI_MAX_ATTEMPTS, the backoff ladder, the already-on-file drop rule
+           and the terminal no-encounter code. */
+        if (p.todayNote == null) {
+          if (p.complete === true) return;
+          if (dayNoteFuture(d)) return;
+          if (niEnqueue(p.patientId, d, tnReasonCode(p.reason))) added++;
+          return;
+        }
         if (p.todayNote !== false) return;
         if (p.todayNoteDeferred === true) return;   /* still _tnDefer's row */
         if (niEnqueue(p.patientId, d, tnReasonCode(p.todayNoteReason))) added++;
@@ -10831,6 +11215,8 @@
     _patientIdentity: patientIdentity,
     _appointmentIdentity: appointmentIdentity,
     _findPatient: findPatient,
+    _padoptResolve: padoptResolve, /* padopt-1.0.0: pure, extraction-executable */
+    _padoptNameMatch: padoptNameMatch,
     authoritativeRowsForDay: authoritativeRowsForDay,
     authoritativeStatusForDay: function (day, provider) {
       var s = authoritativeStatusForDay(day, provider), out = {};
