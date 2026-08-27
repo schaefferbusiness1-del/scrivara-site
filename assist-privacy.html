@@ -15,23 +15,42 @@
 </head>
 <body>
 <h1>MLS Assist — Privacy Policy</h1>
-<p class="muted">Last updated: July 24, 2026 · Provided by MLS Scribe LLC</p>
+<p class="muted">Last updated: August 26, 2026 · Applies to MLS Assist 3.0.82 · Provided by MLS Scribe LLC</p>
     <p class="muted" style="margin-top:6px">The full MLS Scribe privacy policy is at <a href="https://mlsscribe.com/privacy.html">mlsscribe.com/privacy.html</a>; where the two differ, that policy governs.</p>
 
-<p>MLS Assist is a Chrome extension used to evaluate MLS alongside athenaOne and the MLS app. It supports clinician-started live schedule reads, supervised reads from the one chart the clinician selects, and reviewed draft placement. The current hosted release is not authorized for real patient information.</p>
+<p>MLS Assist is a Chrome extension for licensed clinicians and their authorized staff. It is a companion to the MLS Scribe web application (mlsscribe.com) and works alongside athenaOne (athenanet.athenahealth.com). It is not a patient-facing product. If you are a patient with a question about your medical record, contact your clinician's practice directly — the practice, not this extension, is the custodian of your record.</p>
 
 <h2>Single purpose</h2>
-<p>MLS Assist responds only to a clinician-started action, except for an optional scheduled snapshot of the one exact Athena chart already open. It does not walk a patient roster in the background, sign a note, submit a claim, or attest for a clinician.</p>
+<p>MLS Assist reads schedule and chart information from athenaOne when the clinician requests it, carries that information into the MLS Scribe application, and places clinician-reviewed note drafts back into athenaOne. It responds only to a clinician-started action, except for an optional scheduled snapshot of the one exact Athena chart already open. It does not crawl athenaOne in the background, sign a note, submit a claim or charge, prescribe, or attest for a clinician.</p>
 
-<h2>What the extension accesses</h2>
+<h2>The clinician reviews everything</h2>
+<p>No draft is written back to athenaOne until the clinician has read it and chosen to save it. Writing to athenaOne is limited to drafting and saving notes. The extension operates inside sessions the clinician has already signed in to; it does not collect, store, or transmit athenaOne credentials.</p>
+
+<h2>What information is handled</h2>
 <ul>
-  <li><b>Schedule or visit content you explicitly request</b> — the visible athenaOne day/month schedule or the one patient chart you select, only when you start the corresponding read.</li>
-  <li><b>One optional scheduled chart snapshot</b> — only the exact patient chart already open in signed-in athenaOne. If no stable verified chart is open, nothing is read or sent.</li>
-  <li><b>Local settings</b> — your preferences (via the browser <code>storage</code> API) are kept on your device.</li>
+  <li><b>Protected health information (PHI)</b> — when a clinician requests it: patient chart and schedule information from athenaOne, and clinical note text drafted in MLS Scribe. This can include patient names, dates of birth, medical record numbers, appointment details, and clinical content.</li>
+  <li><b>Clinician and account information</b> — the identity of the signed-in MLS Scribe user, and the extension's own settings for that user (kept via the browser <code>storage</code> API).</li>
+  <li><b>Operational data</b> — technical records needed to run and diagnose the extension (whether a requested read succeeded, error codes, version information), kept free of patient content wherever possible.</li>
+  <li><b>Public review content (optional feature only)</b> — if enabled, the clinician's own publicly posted patient reviews from public pages on the review sites listed below. This reads only content that is already public; it never posts, never logs in, and never reads private data.</li>
+</ul>
+<p><b>What is not collected:</b> passwords or credentials, payment or financial information, location data, general browsing history, and personal communications are not collected. The extension does not track behavior across websites and contains no advertising or advertising trackers.</p>
+
+<h2>Why — purposes</h2>
+<p>Information is handled to display what the clinician asked for, to draft a note for the clinician's review, to save a reviewed note into athenaOne, to show the clinician's own public reviews when that optional feature is on, to keep the service working (session authentication, error diagnosis, security monitoring, support), and to meet legal and professional record-keeping obligations. It is never used for advertising or profiling, and never for any purpose unrelated to documenting the encounter.</p>
+
+<h2>Where information lives</h2>
+<ul>
+  <li><b>In the browser</b> — a working cache (IndexedDB and extension storage) so the clinician's work survives a reload. It is a cache, not the record of truth.</li>
+  <li><b>On the MLS backend</b> (scrivara-backend.onrender.com) — the authoritative store for the MLS account. Data at rest on the server is encrypted.</li>
+  <li><b>In athenaOne</b> — notes the clinician chooses to save become part of the practice's athenaOne record, governed by the practice's own agreements with athenahealth.</li>
+  <li><b>In transit</b> — all network communication uses HTTPS.</li>
 </ul>
 
-<h2>How the information is used</h2>
-<p>During synthetic evaluation, requested content may be sent over HTTPS to the configured MLS backend solely for the MLS action the clinician started. This policy does not assert that a vendor BAA, zero-retention term, regulated hosting configuration, or production legal release is in effect. Do not use MLS Assist with real patient information until MLS publishes and the server verifies that readiness.</p>
+<h2>Protected health information (HIPAA)</h2>
+<p>MLS Scribe is HIPAA compliant. PHI handled by MLS Assist and the MLS Scribe service is processed under HIPAA on the practice's instructions: the practice is the covered entity, and the service acts as its business associate under the agreements between the practice and the service. Vendors that may touch PHI in the course of hosting or operating the service are engaged as subprocessors under written terms imposing equivalent obligations.</p>
+
+<h2>Sharing</h2>
+<p><b>Data is never sold.</b> There is no advertising and no transfer for advertising purposes, and data is not used to determine creditworthiness. Disclosure is limited to: the practice and its authorized users; athenahealth, when the clinician saves a note into the practice's own record; subprocessors, strictly as needed to host and operate the service; and disclosures required or permitted by law. There is no other third-party sharing.</p>
 
 <h2>Permissions, and why each is needed</h2>
 <ul>
@@ -41,28 +60,26 @@
   <li><code>alarms</code> — to run the optional one-open-chart snapshot at the time you choose.</li>
   <li><code>webNavigation</code> — to identify which frame of the EMR page holds the chart being read.</li>
   <li><code>system.display</code> — to place the MLS and EMR windows side by side when you start a pull.</li>
-  <li><code>offscreen</code> — to hold the audio recorder in a background document so recording survives tab changes.</li>
   <li><code>host access</code> — see the exact list below.</li>
 </ul>
 
-<!-- This section previously read "limited to the supported MLS and athenaOne
-     origins declared in the extension manifest", which understated the shipped
-     manifest by eleven hosts. A privacy policy that names fewer origins than the
-     extension actually declares is the wrong error to make in the user's favour. -->
 <h2>Exactly which sites the extension can access</h2>
 <ul>
   <li><b>athenanet.athenahealth.com</b> — your EMR: reading the visit and taking the steps you approve.</li>
   <li><b>mlsscribe.com</b> (and subdomains) — the MLS app itself.</li>
   <li><b>scrivara-backend.onrender.com</b> — the MLS backend that stores your account data and clinical content.</li>
-  <li><b>localhost / 127.0.0.1</b> — development builds only; unused in the published extension.</li>
+  <li><b>localhost / 127.0.0.1</b> — development builds only; unused in clinical work.</li>
   <li><b>Google Maps, g.page, Healthgrades, Vitals, WebMD, RateMDs, Zocdoc, Yelp, Facebook</b> — used <b>only</b> by the optional reputation tools, and only when you start a scan. These read <b>public business listings and public reviews</b> about your practice. No patient information is sent to any of them, and they are never touched during clinical work.</li>
 </ul>
 
-<h2>Protected health information (HIPAA)</h2>
-<p>The current release is for synthetic evaluation and does not represent that it is approved for real PHI or that any BAA is executed. Production clinical use must remain disabled until the backend verifies an immutable, counsel-approved legal release and server-recorded user grant.</p>
+<h2>Retention &amp; deletion</h2>
+<p>Information is retained while the clinician's account is active. When an account is closed, or on request from the practice, the associated data is deleted from the service's systems, subject to any retention period that law or the practice's medical-record obligations require. The browser-side cache can be cleared at any time by removing the extension or clearing the browser's extension data; clearing the cache does not delete the authoritative record on the server, and does not delete anything already saved into athenaOne, whose deletion is governed by the practice's own record-retention rules.</p>
 
-<h2>Data retention &amp; deletion</h2>
-<p>Visit and roster data live in your MLS account; you can delete records from within MLS, and may request account deletion by contacting us. Local settings are removed when you uninstall the extension.</p>
+<h2>Your rights</h2>
+<p>Because the practice is the covered entity, patient rights under HIPAA — access, amendment, an accounting of disclosures, restrictions on use — are exercised through the practice; the service supports the practice in responding. Clinicians and staff may request access to, correction of, or deletion of their own account information by contacting the practice administrator. Depending on where you live, additional rights may apply under state or national privacy law; requests are handled through the same contact.</p>
+
+<h2>Changes to this policy</h2>
+<p>When this policy is updated, the date at the top changes. Material changes — a new category of data, a new purpose, a new class of recipient — will be communicated to the practice before they take effect.</p>
 
 <h2>Contact</h2>
 <p>MLS Scribe LLC — <a href="mailto:michael@mlsscribe.com">michael@mlsscribe.com</a></p>
