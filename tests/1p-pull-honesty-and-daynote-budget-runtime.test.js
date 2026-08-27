@@ -671,6 +671,68 @@ async function dayNoteRun() {
   ok(/nothing was lost/.test(MC), 'the final wording does not tell the doctor nothing was lost');
 }
 
+/* ---- nrh-1.0.0: a poisoned search surface halts the batch ---------------
+   MEASURED live 2026-08-26, twice in one night: an athenaOne page that could
+   not service patient search (open dept-filter popup; the modern Calendar
+   SPA; a signed-out session) answered no-results for EVERY row, and the
+   batch walked all 22 rows to failure - twice. Four consecutive no-answer
+   find codes halt the walk; anything else resets the streak. ------------- */
+async function nrhSurfaceHaltRun() {
+  const DAY = '2026-08-17';
+  /* (a) every search answers no-results: the batch must stop driving athena
+     after exactly NRH_HALT_AT rows and queue the rest with a named reason. */
+  {
+    const h = makeHarness({
+      day: DAY, today: DAY, rows: 9, visitNotesOn: false, chartCoverage: true,
+      chartResult: () => ({ __throw: 'no matching patient found', mlsFind: { code: 'no-results' } })
+    });
+    const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus, {});
+    /* a failed row may retry once in-chart (rr-1.1), so pin DISTINCT patients
+       driven, not raw call count */
+    eq(new Set(h.chartCalls.map(c => String(c.patientId))).size, 4,
+      'the batch drove more than 4 distinct charts against a surface that answered no-results 4 times in a row');
+    ok(receipt.searchSurfaceHalt && receipt.searchSurfaceHalt.streak === 4,
+      'the receipt does not carry the searchSurfaceHalt verdict');
+    eq(Number(receipt.searchSurfaceHalt.halted || 0), 5, 'the halt did not count the rows it protected');
+    const queued = (receipt.retry || []).filter(e => String(e && e.reason || '') === 'athena-search-surface-unresponsive');
+    eq(queued.length, 5, 'the remaining rows were not queued under the halt reason');
+    ok(h.statusLines.some(s => /Stopped early/.test(String(s && s.msg || s || ''))),
+      'the doctor is never told the walk stopped early');
+    ok(h.statusLines.some(s => /nothing was misfiled/.test(String(s && s.msg || s || ''))),
+      'the halt message does not say nothing was misfiled');
+  }
+  /* (b) a success between failures resets the streak - a real run with a few
+     genuinely-absent patients must never halt. Keyed by PATIENT, not call
+     index: redos and day-note re-verifies make extra chart calls. */
+  {
+    const okIds = new Set();
+    const h = makeHarness({
+      day: DAY, today: DAY, rows: 9, visitNotesOn: false, chartCoverage: true,
+      chartResult: (t) => (okIds.has(String(t && t.patientId)) ? null : { __throw: 'no matching patient found', mlsFind: { code: 'no-results' } })
+    });
+    h.rows.forEach((r, i) => { if (i % 3 === 2) okIds.add(String(r._mlsTargetPatientId || r.patient_external_id || '')); });
+    const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus, {});
+    eq(new Set(h.chartCalls.map(c => String(c.patientId))).size, 9,
+      'interleaved successes still halted the batch - real absent patients would freeze the day');
+    ok(!receipt.searchSurfaceHalt, 'a healthy-but-lossy run was branded surface-unresponsive');
+  }
+  /* (c) a non-find failure class also resets the streak - it proves the
+     surface answered SOMETHING. (A deadline is not usable here: it already
+     stops the batch through its own pre-existing protection.) */
+  {
+    const otherFailIds = new Set();
+    const h = makeHarness({
+      day: DAY, today: DAY, rows: 7, visitNotesOn: false, chartCoverage: true,
+      chartResult: (t) => (otherFailIds.has(String(t && t.patientId)) ? { __throw: 'synthetic-parse-refusal' } : { __throw: 'no matching patient found', mlsFind: { code: 'no-results' } })
+    });
+    h.rows.forEach((r, i) => { if (i === 2) otherFailIds.add(String(r._mlsTargetPatientId || r.patient_external_id || '')); });
+    const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus, {});
+    eq(new Set(h.chartCalls.map(c => String(c.patientId))).size, 7,
+      'a non-find failure mid-run was counted into the no-answer streak (it proves the surface answered)');
+    ok(!receipt.searchSurfaceHalt, 'a mixed-failure run was branded surface-unresponsive');
+  }
+}
+
 /* ------------------------------------------------------------------ driver */
 const watchdog = setTimeout(() => {
   console.error(new Error('1p-pull-honesty-and-daynote-budget did not finish'));
@@ -684,7 +746,8 @@ const watchdog = setTimeout(() => {
   await navAdviceRun();
   await busyClickRun();
   await dayNoteRun();
+  await nrhSurfaceHaltRun();
   clearTimeout(watchdog);
   try { fs.rmSync(CONTROL_DIR, { recursive: true, force: true }); } catch (eRm) {}
-  console.log('PASS 1p-pull-honesty-and-daynote-budget: ' + checks + ' checks - a resume is offered for the SELECTED day only and never starts itself (causal control: origin/main mounts the foreign-day card and starts that pull), terminal verdicts clear the record while honest partials keep it, a no-athena-tab leg is re-checked against the lease-free presence verb and bounded at 3, the empty-week-strip refusal names the one-tab fix and the measured tab count, a second click can no longer overwrite the running pull\'s receipt, the "Full visit notes" checkbox follows a same-tab write (causal control: origin/main stays checked), and OFF opens no note body or deferred day-note lane');
+  console.log('PASS 1p-pull-honesty-and-daynote-budget: ' + checks + ' checks - a resume is offered for the SELECTED day only and never starts itself (causal control: origin/main mounts the foreign-day card and starts that pull), terminal verdicts clear the record while honest partials keep it, a no-athena-tab leg is re-checked against the lease-free presence verb and bounded at 3, the empty-week-strip refusal names the one-tab fix and the measured tab count, a second click can no longer overwrite the running pull\'s receipt, the "Full visit notes" checkbox follows a same-tab write (causal control: origin/main stays checked), and OFF opens no note body or deferred day-note lane; nrh-1.0.0: four consecutive no-answer find codes halt the walk like Stop (remaining rows queued under athena-search-surface-unresponsive, popup-vs-signout named via the presence verb) while any success, pipelined parse, or other failure class resets the streak');
 })().catch(err => { clearTimeout(watchdog); console.error(err); process.exit(1); });

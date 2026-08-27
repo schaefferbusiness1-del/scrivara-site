@@ -5825,6 +5825,20 @@
     receipt.storeCensusBefore = storedContentCensus(rows, unresolved);
     ppStart((sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length), sweepProgressBase);
     safe(function () { var scopeState = ppState(); if (scopeState) scopeState.visitNotesRequested = pullVisitBodies === true; });
+    /* ===== nrh-1.0.0 (a poisoned search surface must not burn the roster) ====
+       MEASURED live 2026-08-26, twice in one night: an athenaOne tab whose
+       page could not service patient search (a department-filter popup left
+       open; the modern Calendar SPA; a signed-out session) answered
+       "no results" for EVERY chart, and the batch walked all 22 rows to
+       failure - twice - before anyone was told. Four consecutive no-answer
+       find codes with no success in between is a statement about the TAB,
+       not about four patients. Halt like the Stop button does: remaining
+       rows queue for Retry and the idle catch-up, nothing is misfiled, and
+       the message says the one thing that fixes it - differentiated by the
+       lease-free presence verb so a signed-out session is not blamed on a
+       popup. Any other outcome (success, skip, deadline, mismatch) proves
+       the surface answered something and resets the streak. */
+    var nrhStreak = 0, NRH_HALT_AT = 4, NRH_CODE = /^(no-results|no-name-match|blank-error|rows-not-rendered)$/;
     try {
       for (var i = 0; i < rows.length; i++) {
         safe(function () { window.__mlsPullBusyAt = Date.now(); }); /* si-1.7.9: keep the merge deferred for the whole batch */
@@ -5843,6 +5857,20 @@
         if (Date.now() >= batchDeadlineAt) {
           receipt.timedOut = true; stopAfterTimeout = true;
           for (var bi = i; bi < rows.length; bi++) receipt.retry.push(frozenRetryEntry(rows[bi], null, "deferred-after-batch-deadline"));
+          break;
+        }
+        /* nrh-1.0.0: the halt itself. stopAfterTimeout also keeps the
+           end-of-batch automatic sweep from re-walking the same dead surface. */
+        if (nrhStreak >= NRH_HALT_AT) {
+          receipt.searchSurfaceHalt = { streak: nrhStreak, halted: rows.length - i };
+          stopAfterTimeout = true;
+          for (var nhi = i; nhi < rows.length; nhi++) receipt.retry.push(frozenRetryEntry(rows[nhi], null, "athena-search-surface-unresponsive"));
+          (function (haltedCount, haltStreak) { safe(function () {
+            var nrhAlive = !!(p1PresenceLast.at && Date.now() - p1PresenceLast.at < 300000 && p1PresenceSaysAthenaLives(p1PresenceLast.resp));
+            onStatus(nrhAlive
+              ? ("Stopped early: " + haltStreak + " chart searches in a row found nothing - including patients that exist - so the athenaOne page has most likely stopped answering search (an open menu or popup, or a view without patient search). athenaOne itself is open and signed in. Click the athenaOne tab once, close anything covering the page, then Retry - the remaining " + haltedCount + " charts are queued and nothing was misfiled.")
+              : ("Stopped early: " + haltStreak + " chart searches in a row found nothing. This usually means the athenaOne session signed out or the tab is stuck. Sign in to athenaOne (or click its tab once so it paints), then Retry - the remaining " + haltedCount + " charts are queued and nothing was misfiled."), "err");
+          }); })(rows.length - i, nrhStreak);
           break;
         }
         var row = rows[i] || {}, target = exactHistoryTarget(row), carryProof = null, one = { patientId: String(row._mlsTargetPatientId || row.patient_external_id || ""), name: String(row.name || ""), identityVerified: false, organized: false, organizationComplete: false, visitsComplete: false, complete: false };
@@ -6330,6 +6358,12 @@
             receipt.retry.push(frozenRetryEntry(row, target, one.reason, one));
           }
         }
+        /* nrh-1.0.0: only the four no-answer find codes extend the streak. A
+           parse-pipelined row means the chart READ succeeded and only the AI
+           parse is deferred - the surface answered, so it resets too. */
+        if (one.parsePipelined === true) nrhStreak = 0;
+        else if (one.complete !== true && NRH_CODE.test(String(one.reason || ""))) nrhStreak++;
+        else nrhStreak = 0;
         /* lpfr-1.0.0: a transient first-pass miss is not a final failure while
            the outer batch still owns its automatic re-check. Keep it calm and
            pending; the final post-sweep settle below is the only place allowed
