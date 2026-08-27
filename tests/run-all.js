@@ -395,6 +395,17 @@ const tests = [
      report, the read-only goto/open/re-check ladder, PROBE ONLY end to end
      with ONE enforcement point, and the op note -> review hand-off. */
   '1p-athena-write-readiness-and-probe-only.test.js',
+  /* mrnadopt-1.0.0 (owner 2026-08-27: "I hate how much is greyed out ... it
+     should be seamless and always work", under the 2026-08-19 name+DOB
+     ruling). A local row with no MRN blocked every row of the review with
+     nothing on the sheet able to clear it - and softening the gate would only
+     have moved the refusal to check time, because MLS Assist itself demands a
+     supplied MRN. This proves the ADOPTION cure: an open chart whose name AND
+     DOB both match hands over its MRN through the read-only identity verb, the
+     MRN is persisted as a CLONE and read back, the review rebuilds itself to
+     READY and survives a reload - while every mismatch, stored-MRN conflict,
+     uncertain read and store refusal keeps the block and names why. */
+  '1p-athena-mrn-adoption-runtime.test.js',
   /* live-unbound-write-1.0.0: a current note with complete patient identity
      may discover one open encounter read-only even when the local visit
      locator is wholly empty. The extension returns authority only for exactly

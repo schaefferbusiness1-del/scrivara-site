@@ -270,8 +270,18 @@ function historicalOpts() {
     const manifest = wf.openUnifiedConfirmation({ patient: noMrn, sections: [{ key: 'note', text: 'body' }], requireExpectedVisit: true });
     const row = manifest.rows.filter(r => r.id === 'write-note')[0];
     ok(row.capability === 'blocked', 'a patient with no MRN must be blocked (MRN-missing guard)');
-    ok(row.reason.indexOf('An immutable local patient ID') === 0, 'the block must be the identity block');
+    /* mrnadopt-1.0.0: an MRN-ONLY identity gap now names its own cure (read the
+       open chart) instead of the generic three-factor sentence. It is still an
+       identity block, and a day re-pull still cannot supply an MRN. */
+    ok(/Athena MRN yet/.test(row.reason) && !/appointment ID/.test(row.reason),
+      'the MRN-only block must be an identity block, not the visit block: ' + row.reason);
     ok(wf.bindCure.curableRow(manifest, row) === false,
+      'an MRN-blocked row must NEVER advertise a day re-pull as its cure');
+    const noDob = { id: PATIENT.id, patientId: PATIENT.patientId, name: PATIENT.name, dob: '', mrn: '' };
+    const manifest2 = wf.buildUnifiedManifest({ patient: noDob, sections: [{ key: 'note', text: 'body' }], requireExpectedVisit: true });
+    const row2 = manifest2.rows.filter(r => r.id === 'write-note')[0];
+    ok(row2.reason.indexOf('An immutable local patient ID') === 0, 'a multi-field identity gap must keep the generic identity block');
+    ok(wf.bindCure.curableRow(manifest2, row2) === false,
       'an identity-blocked row must NEVER advertise a day re-pull as its cure');
   }
 

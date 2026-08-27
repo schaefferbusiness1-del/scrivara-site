@@ -259,7 +259,16 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     const manifest = h.wf.buildUnifiedManifest({ patient: { id: 'syn-a', name: PATIENT.name, dob: PATIENT.dob }, sections: [{ key: 'note', text: NOTE }], expectedContext: BOUND_CONTEXT });
     const noteRow = manifest.rows.filter(r => r.id === 'write-note')[0];
     assert.strictEqual(noteRow.capability, 'blocked', 'a chart with no MRN produced a sendable row');
-    assert.strictEqual(noteRow.reason, 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.');
+    /* mrnadopt-1.0.0: the MRN is the one identity field the sheet can obtain
+       for itself, so an MRN-ONLY gap names that cure instead of repeating the
+       generic three-factor refusal. The row still blocks - MLS Assist refuses
+       a staged section write without a supplied MRN. */
+    assert(/Athena MRN yet/.test(noteRow.reason) && /Check Athena again/.test(noteRow.reason),
+      'the MRN-only block no longer names the one action that clears it: ' + noteRow.reason);
+    const noDob = h.wf.buildUnifiedManifest({ patient: { id: 'syn-a', name: PATIENT.name }, sections: [{ key: 'note', text: NOTE }], expectedContext: BOUND_CONTEXT });
+    assert.strictEqual(noDob.rows.filter(r => r.id === 'write-note')[0].reason,
+      'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.',
+      'a multi-field identity gap lost the original fail-closed sentence');
     probeOnlyGuard(h);
   }
 
