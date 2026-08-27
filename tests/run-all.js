@@ -1821,6 +1821,11 @@ const tests = [
      per-row probe/execute machinery - checkboxes only on ready note-writes,
      halt-on-uncertain, hidden-safe settle-latch waits. */
   '1p-writeflow-batch-send.test.js',
+  /* sheetux-1.0.0 (owner 2026-08-27): the review sheet has ONE bold primary
+     send button that drives that same batch queue, a recoverable refusal is
+     amber with a working do-it-for-me control while identity conflicts stay
+     red, and identical per-row boilerplate is stated once. */
+  '1p-writeflow-sheet-ux.test.js',
   /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
   'capture-mrn-normalize-pins.test.js',
   /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the

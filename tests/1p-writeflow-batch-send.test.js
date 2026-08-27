@@ -37,8 +37,14 @@ assert.ok(src.slice(rcIdx, rcIdx + 600).includes('state.probeSettled = state.pro
 assert.ok(src.includes('function bxSleep(ms)'), 'the hidden-safe sleep is gone');
 assert.ok(src.slice(src.indexOf('function bxSleep'), src.indexOf('function bxWait')).includes('MessageChannel'), 'bxSleep lost its hidden-tab MessageChannel yield');
 
-/* the batch button sits in the footer and is wired once */
-assert.ok(src.includes('id="mlsAthenaUnifiedBatch"'), 'the batch button is gone from the footer');
-assert.ok(src.includes("batchBtn.addEventListener('click', function () { runUnifiedBatchSend(state, batchBtn); })"), 'the batch button is not wired');
+/* sheetux-1.0.0 (2026-08-27): the second footer button is GONE. The batch
+   driver did not change - it is now reached through the ONE merged primary
+   button, which must still route to this exact driver and to nothing new. */
+assert.ok(!src.includes('id="mlsAthenaUnifiedBatch"'), 'the redundant second send button came back to the footer');
+assert.ok(src.includes("go.addEventListener('click', function () { runUnifiedPrimarySend(state, go); })"), 'the merged primary button is not wired to the primary router');
+const primary = src.slice(src.indexOf('function runUnifiedPrimarySend'), src.indexOf('function runUnifiedBatchSend'));
+assert.ok(primary.includes('runUnifiedBatchSend(state, btn);'), 'the merged button no longer routes checked rows through the batch driver');
+assert.ok(primary.includes('executeUnifiedSelection(state);'), 'the merged button lost the legacy one-row lane for Save / Sign / order rows');
+assert.ok(!/bridge\(/.test(primary), 'the merged button must never talk to the bridge directly - only through the existing drivers');
 
-console.log('PASS 1p writeflow batch-send pins: checkboxes gate on ready note-writes, the queue reuses per-row probe/execute with halt-on-uncertain, and waits are hidden-safe settle latches');
+console.log('PASS 1p writeflow batch-send pins: checkboxes gate on ready note-writes, the queue reuses per-row probe/execute with halt-on-uncertain, waits are hidden-safe settle latches, and the one merged primary button routes into that same queue');
