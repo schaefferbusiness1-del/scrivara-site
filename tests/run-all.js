@@ -692,6 +692,12 @@ const tests = [
      prove one canonical dispatch, lifecycle reasons, bounded no-op failure,
      and the JS duplicate-control fallback. */
   'ez3-generate-top-browser-runtime.test.js',
+  /* gcx-1.0.0: a REFUSED Generate click has to be loud -- toast, banner flash,
+     focus -- on the first click and on every identical repeat, while the
+     anti-invention gate keeps refusing and a qualifying detail re-enables the
+     control live. Owner repro: "the button just glitches out and does
+     nothing". */
+  'generate-block-visible-feedback-runtime.test.js',
   /* Same-document upgrades retire the old Easy owner before the new owner
      mounts. The lifecycle listeners must follow that cleanup seam, and the
      legacy completion receipt must not repaint either owner. */
