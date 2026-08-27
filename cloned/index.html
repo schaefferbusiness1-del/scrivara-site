@@ -24243,6 +24243,21 @@ var MLS_TPL_SUGGEST_STOP=(function(){
 function _mlsTplSuggestNorm(s){
   return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9-]+/g,' ').replace(/\s+/g,' ').trim();
 }
+/* Normalizing the whole library once per suggestion is eight thousand passes
+   over his templates on a ninety-file import. Cache the normalized form
+   against the record object: the cache dies with the objects, and a record
+   whose name or body changed misses it and is normalized again. */
+var _mlsTplSuggestDocCache=(typeof WeakMap==='function')?new WeakMap():null;
+function _mlsTplSuggestDocNorm(o){
+  var name=String((o&&o.name)||''), text=String((o&&o.text)||''), hit=null;
+  if(_mlsTplSuggestDocCache){
+    try{ hit=_mlsTplSuggestDocCache.get(o); }catch(_tplCacheReadError){ hit=null; }
+    if(hit&&hit.name===name&&hit.text===text) return hit.norm;
+  }
+  var norm=_mlsTplSuggestNorm(name+' \n '+text);
+  if(_mlsTplSuggestDocCache){ try{ _mlsTplSuggestDocCache.set(o,{name:name,text:text,norm:norm}); }catch(_tplCacheWriteError){} }
+  return norm;
+}
 function _mlsTplSuggestWordish(ch){ return (ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch==='-'; }
 /* Word-boundary containment over already-normalized text. Same rule as the
    picker's _mlsTplHit, kept local so this block stands alone and can be
@@ -24354,7 +24369,7 @@ function _mlsTplSuggestFor(subject,library,opts){
     var o=lib[i];
     if(!o||typeof o!=='object'||o===subject) continue;
     if(subjectId&&String(o.id||'')===subjectId) continue;
-    var on=_mlsTplSuggestNorm(String(o.name||'')+' \n '+String(o.text||''));
+    var on=_mlsTplSuggestDocNorm(o);
     if(on) others.push(on);
   }
   var libN=others.length;
