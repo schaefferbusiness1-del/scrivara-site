@@ -1887,7 +1887,16 @@ const tests = [
   /* spd-1.0.0 (reply 24: speed LAST, measurement first): the per-stage cost
      breakdown rides the stored machine outcome in both verdict directions,
      numbers only - every matrix run names its slow step at rest. */
-  'speed-cost-receipt-pins.test.js'
+  'speed-cost-receipt-pins.test.js',
+  /* tplpick-1.0.0 (owner 2026-08-27: "upload multiple templates ... for all
+     the different kinds of note generation not just one and also add keyword
+     matching so it picks the correct template"): the REAL picker, executed -
+     a per-template note kind gates every candidate, undeclared legacy
+     templates still compete for all kinds, ties break by a total order that
+     no longer depends on upload order, and no match falls to the doctor's
+     default or to nothing. A template is DATA: never eval'd, never compiled
+     into a RegExp, never rendered as markup. */
+  'template-kind-and-keyword-pick-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
