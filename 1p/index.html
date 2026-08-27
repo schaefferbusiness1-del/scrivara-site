@@ -23007,7 +23007,19 @@ function renderTemplateActiveSelect(){
    confirmed delete with undo. Every underlying behavior (use-now with the
    identity binding guard, default selection, duplicate, dedupe, bulk import,
    cloud library sync) is unchanged — this is a presentation upgrade. */
-var _tplUI={ selectedId:'', query:'', dirty:false, renderedId:'' };
+var _tplUI={ selectedId:'', query:'', dirty:false, renderedId:'', lastSuggest:null, lastKind:null };
+/* tplauto-1.0.0: which templates have already been OFFERED a suggestion in
+   this session. A proposal is made ONCE per template, never on every
+   re-render of the pane - a field that refilled itself every time the list
+   refreshed is a field the doctor cannot clear. */
+var _tplSuggestOnce=Object.create(null);
+/* The documents rarity is measured against: the stored library plus the
+   batch under review, so an import of ninety op notes ranks each one
+   against its eighty-nine siblings and not against an empty shelf. */
+function _tplSuggestLibrary(batch){
+  var lib=[]; try{ lib=_tplStore().slice(); }catch(_tplLibError){ lib=[]; }
+  return (batch&&batch.length)?lib.concat(batch):lib;
+}
 var _tplLastDeleted=null;
 function tplSearchChanged(){ var q=document.getElementById('tplSearch'); _tplUI.query=String(q&&q.value||'').toLowerCase().trim(); renderTemplateList(); }
 function _tplMatches(t){
@@ -23049,16 +23061,42 @@ function renderTplDetail(){
   var t=getTemplateById(_tplUI.selectedId);
   if(!t){ pane.innerHTML='<p style="color:var(--muted);font-size:13px;margin:0">Select a template on the left to preview and edit it here.</p>'; return; }
   var isActive=t.id===getActiveTemplateId();
+  /* tplauto-1.0.0 (owner 2026-08-27: "this should be able to auto generate
+     when it thinks it will be used"). An EMPTY "what should choose this"
+     field is offered candidates read out of the template's OWN words -
+     once, while it is still empty, and only until he saves a decision about
+     it. A field he cleared stays cleared: the save records autoKw, and the
+     session latch stops a re-render from refilling it. Nothing is stored
+     here - a suggestion is a prefilled input he still has to Save. */
+  var kwValue=(t.keywords||[]).join(', '), kwWhy='', kindValue=_mlsTplKindOf(t), kindWhy='';
+  if(!kwValue&&!t.autoKw&&!_tplSuggestOnce[t.id]){
+    _tplSuggestOnce[t.id]=1;
+    var sug=null; try{ sug=_mlsTplSuggestFor(t,_tplStore()); }catch(_tplSuggestError){ sug=null; }
+    if(sug&&sug.terms.length){
+      kwValue=sug.terms.join(', '); kwWhy=sug.why;
+      _tplUI.lastSuggest={id:t.id,terms:sug.terms.slice()};
+    }
+    /* An UNSET kind competes for every kind of note, which is already the
+       safe answer - so it is only ever filled in when the template's own
+       text names one kind and only one. */
+    if(sug&&!kindValue&&sug.kind){
+      kindValue=sug.kind; _tplUI.lastKind={id:t.id,kind:sug.kind};
+      kindWhy='Note kind suggested from this template\'s own text - change it, or set it back to Any note kind.';
+    }
+  }
   var revOpts=(t.revisions||[]).map(function(r,i){ return '<option value="'+i+'">'+new Date(r.ts).toLocaleString()+' — '+esc(String(r.name||'').slice(0,30))+' ('+String(r.text||'').length+' chars)</option>'; }).join('');
   pane.innerHTML=
     '<div class="field" style="margin:0 0 8px"><label for="tplDetName">Name</label><input type="text" id="tplDetName" value="'+esc(t.name||'')+'" oninput="tplDetailDirty()"></div>'+
-    '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords <span style="font-weight:400;color:var(--muted)">(comma-separated - these are what choose this template)</span></label><input type="text" id="tplDetKw" value="'+esc((t.keywords||[]).join(', '))+'" oninput="tplDetailDirty()"></div>'+
+    '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords <span style="font-weight:400;color:var(--muted)">(comma-separated - these are what choose this template)</span></label>'+
+    '<div style="display:flex;gap:6px;align-items:flex-start"><input type="text" id="tplDetKw" style="flex:1;min-width:0" value="'+esc(kwValue)+'" oninput="tplKwTyped()" placeholder="e.g. carpal tunnel, release">'+
+      '<button type="button" class="btn-ghost" style="font-size:12px;padding:7px 10px;white-space:nowrap" onclick="tplSuggestKeywords()" title="Read this template and propose the keywords that should choose it">Suggest from this template</button></div>'+
+    '<div id="tplKwWhy" style="font-size:11.5px;color:#8A5A00;margin-top:4px;display:none"></div></div>'+
     /* tplpick-1.0.0: which kind of note generation this template is for. A
        template left on "Any note kind" competes for every kind, which is what
        every template in an existing library already does. */
     '<div class="field" style="margin:0 0 8px"><label for="tplDetKind">Note kind this template is for</label><select id="tplDetKind" class="sf-select" onchange="tplDetailDirty()">'+
-      ['','soap','insurance','op'].map(function(k){ return '<option value="'+esc(k)+'"'+(_mlsTplKindOf(t)===k?' selected':'')+'>'+esc(_mlsTplKindLabel(k))+'</option>'; }).join('')+
-    '</select><div style="font-size:11.5px;color:var(--muted);margin-top:4px">Pick a kind and this template is only ever offered for that kind of note. Leave it on <b>Any note kind</b> and it stays available to all of them.</div></div>'+
+      ['','soap','insurance','op'].map(function(k){ return '<option value="'+esc(k)+'"'+(kindValue===k?' selected':'')+'>'+esc(_mlsTplKindLabel(k))+'</option>'; }).join('')+
+    '</select><div style="font-size:11.5px;color:var(--muted);margin-top:4px">Pick a kind and this template is only ever offered for that kind of note. Leave it on <b>Any note kind</b> and it stays available to all of them.</div><div id="tplDetKindWhy" style="font-size:11.5px;color:#8A5A00;margin-top:4px;display:none"></div></div>'+
     '<textarea id="tplDetText" aria-label="Template content" style="min-height:220px;width:100%;font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace" oninput="tplDetailDirty()">'+esc(t.text||'')+'</textarea>'+
     '<div id="tplDetStatus" role="status" style="font-size:12px;color:var(--muted);margin:6px 0">No unsaved changes</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
@@ -23069,6 +23107,53 @@ function renderTplDetail(){
       '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px;color:#a12c2c" onclick="deleteTemplate(\''+esc(t.id)+'\')">🗑 Delete…</button>'+
     '</div>'+
     ((t.revisions&&t.revisions.length)?'<div class="field" style="margin:10px 0 0"><label for="tplDetRev">Restore an earlier version (kept automatically on every save)</label><div style="display:flex;gap:6px"><select id="tplDetRev" class="sf-select" style="flex:1">'+revOpts+'</select><button class="btn-ghost" style="font-size:12.5px" onclick="tplRestoreRevision(\''+esc(t.id)+'\')">↺ Restore</button></div></div>':'');
+  _tplRenderSuggestNotes(kwWhy,kindWhy);
+}
+/* tplauto-1.0.0: the WHY line. A suggestion the doctor cannot account for is
+   a suggestion he has to check by hand, so the surface says where the words
+   came from. Written with textContent: the terms come out of a template
+   record, which is untrusted data. */
+function _tplRenderSuggestNotes(kwWhy,kindWhy){
+  var w=document.getElementById('tplKwWhy');
+  if(w){ w.textContent=kwWhy||''; w.style.display=kwWhy?'':'none'; }
+  var k=document.getElementById('tplDetKindWhy');
+  if(k){ k.textContent=kindWhy||''; k.style.display=kindWhy?'':'none'; }
+}
+/* The moment he types into the field it is HIS: the suggestion marker comes
+   off, and the save below will not record it as suggested. */
+function tplKwTyped(){
+  _tplUI.lastSuggest=null;
+  _tplRenderSuggestNotes('',(document.getElementById('tplDetKindWhy')||{}).textContent||'');
+  tplDetailDirty();
+}
+/* THE EXPLICIT CONTROL - "Suggest from this template". It reads the template
+   as it stands in the editor RIGHT NOW, unsaved edits and all, so pasting a
+   new body and pressing this proposes for the new body. Unlike the one-shot
+   prefill it overwrites the field, because he asked for it. */
+function tplSuggestKeywords(){
+  var t=getTemplateById(_tplUI.selectedId);
+  if(!t){ toast('Select a template first.','err'); return; }
+  var subject={ id:t.id,
+    name:String((document.getElementById('tplDetName')||{}).value||t.name||''),
+    text:String((document.getElementById('tplDetText')||{}).value||t.text||'') };
+  var sug=null; try{ sug=_mlsTplSuggestFor(subject,_tplStore()); }catch(_tplSuggestNowError){ sug=null; }
+  if(!sug||!sug.terms.length){
+    _tplRenderSuggestNotes('Nothing stood out in this template - every word it uses is one your other templates use too. Type the words that should choose it.','');
+    return;
+  }
+  var box=document.getElementById('tplDetKw');
+  if(box) box.value=sug.terms.join(', ');
+  _tplUI.lastSuggest={id:t.id,terms:sug.terms.slice()};
+  var kindWhy='';
+  var kindSel=document.getElementById('tplDetKind');
+  if(kindSel&&!kindSel.value&&sug.kind){
+    kindSel.value=sug.kind; _tplUI.lastKind={id:t.id,kind:sug.kind};
+    kindWhy='Note kind suggested from this template\'s own text - change it, or set it back to Any note kind.';
+  }
+  _tplRenderSuggestNotes(sug.why,kindWhy);
+  _tplUI.dirty=true;
+  var s=document.getElementById('tplDetStatus');
+  if(s){ s.textContent='Suggested - not saved yet'; s.style.color='#8A5A00'; }
 }
 function tplDetailDirty(){ _tplUI.dirty=true; var s=document.getElementById('tplDetStatus'); if(s){ s.textContent='Edited — not saved yet'; s.style.color='#8A5A00'; } }
 function tplDetailSave(){
@@ -23086,6 +23171,16 @@ function tplDetailSave(){
      one of the four values the picker knows about. */
   cur.kind=_mlsTplKindOf({kind:String((document.getElementById('tplDetKind')||{}).value||'')});
   cur.text=String((document.getElementById('tplDetText')||{}).value||'');
+  /* tplauto-1.0.0: he has now made a decision about these two fields -
+     INCLUDING a decision to leave them empty. Never propose for them again.
+     kwSuggested/kindSuggested record whether what is stored is still exactly
+     what was proposed, so nothing keeps calling it a suggestion once he has
+     edited it. */
+  cur.autoKw=1; cur.autoKind=1;
+  var _sugKw=(_tplUI.lastSuggest&&_tplUI.lastSuggest.id===cur.id)?_tplUI.lastSuggest.terms.join(', ').toLowerCase():null;
+  cur.kwSuggested=(_sugKw!==null&&cur.keywords.join(', ').toLowerCase()===_sugKw)?1:0;
+  var _sugKind=(_tplUI.lastKind&&_tplUI.lastKind.id===cur.id)?_tplUI.lastKind.kind:'';
+  cur.kindSuggested=(_sugKind&&cur.kind===_sugKind)?1:0;
   try{ setTemplates(list); }catch(e){ if(s){ s.textContent='Failed — could not save ('+String(e&&e.message||e).slice(0,60)+')'; s.style.color='#a12c2c'; } return; }
   _tplUI.dirty=false; _tplUI.renderedId='';
   renderTemplateList(); renderTemplateActiveSelect();
@@ -23687,8 +23782,18 @@ function _tplTypeName(text, fallback){
    the name is already the tidied procedure phrase, so its clinical tokens
    (genicular/nerve/block/knee) are exactly the true-signal keywords the guard
    was designed around. Explicit Keywords: metadata always wins. */
-function _tplSeedKeywords(t){
+function _tplSeedKeywords(t,library){
   if(!t || (t.keywords && t.keywords.length)) return;
+  /* tplauto-1.0.0: the NAME alone was the old seed, which is all a
+     keywordless import ever got. Read the whole template - title, its own
+     headings, and the terms it REPEATS - ranked by rarity across the rest of
+     the library, and carry the note kind its text unambiguously names. The
+     name-only path below stays the fallback for a template that nothing
+     stood out in, so an import can still never land with zero keywords. */
+  var sug=null;
+  try{ sug=_mlsTplSuggestFor(t,library||_tplStore()); }catch(_tplSeedError){ sug=null; }
+  if(sug&&!_mlsTplKindOf(t)&&sug.kind){ t.kind=sug.kind; t.kindSuggested=1; }
+  if(sug&&sug.terms.length){ t.keywords=sug.terms.slice(0,MLS_TPL_SUGGEST_MAX); t.kwSuggested=1; return; }
   var stop={'the':1,'and':1,'with':1,'without':1,'for':1,'into':1,'onto':1,'under':1,'over':1,'from':1,'variant':1,'template':1,'note':1,'notes':1,'report':1,'operative':1,'procedure':1,'guided':1,'guidance':1};
   t.keywords=String(t.name||'').toLowerCase()
     .replace(/\(variant \d+\)/g,' ')
@@ -23824,7 +23929,7 @@ async function tplMultiFile(ev){
       return sink;
     });
     fileSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by type (explicit metadata names win)
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });   // name by type (explicit metadata names win)
     var batchInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=batchInfo.list;
     _tplAppendUnreadableRows();
@@ -23849,7 +23954,7 @@ async function tplMultiFile(ev){
       return sink;
     });
     pairSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });
     var pairInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=pairInfo.list;
     if(!_tplPendingSplit.length){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
@@ -23914,7 +24019,7 @@ function _tplPerFileFallback(text){
     var meta=_tplParseMeta(seg);
     if(meta.name) return { name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true };
     var row={ name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };
-    _tplSeedKeywords(row);
+    _tplSeedKeywords(row,_tplSuggestLibrary(null));
     return row;
   }));
   var fbInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
@@ -23945,7 +24050,7 @@ async function tplAiSplit(text){
     if(!rows) return;   // null = AI unavailable (403) → _tplPerFileFallback below
     rows.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); });
   });
-  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by note TYPE, not patient (explicit metadata names win)
+  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });   // name by note TYPE, not patient (explicit metadata names win)
   var aiInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
   _tplPendingSplit=aiInfo.list;
   if(!_tplPendingSplit.length){ _tplPerFileFallback(text); return; }   // AI found nothing → keep each file as one template
@@ -23988,7 +24093,18 @@ function tplAddSplit(){
     }
     return base;
   };
-  keep.forEach(function(t,ki){ _tplSeedKeywords(t); list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:uniqueName(t.name), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() }); });
+  keep.forEach(function(t,ki){
+    _tplSeedKeywords(t,_tplSuggestLibrary(keep));
+    var row={ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:uniqueName(t.name), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() };
+    /* tplauto-1.0.0: a note kind read out of the template's own text rides
+       along, marked as a suggestion, so the picker's kind gate is not
+       starved on import. Nothing is invented: an ambiguous template stays
+       unset, and unset competes for every kind exactly as it always has. */
+    var _k=_mlsTplKindOf(t);
+    if(_k){ row.kind=_k; if(t.kindSuggested) row.kindSuggested=1; }
+    if(t.kwSuggested) row.kwSuggested=1;
+    list.unshift(row);
+  });
   setTemplates(list);
   if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
   _tplPendingSplit=[]; _tplPendingCarry=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
@@ -24058,6 +24174,288 @@ async function fixTemplateNames(){
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
   try{ toast('Renamed '+renamed+' template'+(renamed===1?'':'s')+' by note type.','ok'); }catch(e){}
 }
+
+/* ===== tplauto-1.0.0 (owner 2026-08-27, looking at the new "Use
+   automatically when" field: "this should be able to auto generate when it
+   thinks it will be used") ===============================================
+   The doctor was being asked to hand-type the keywords that decide when a
+   template is picked. He should not have to: the template already contains
+   the words that name it. This reads the template's OWN text and proposes
+   candidates, marked as suggestions, editable, and never written over
+   anything he typed.
+
+   DETERMINISTIC. No AI, no network, no clock, no randomness. The same
+   template against the same library always yields the same list in the same
+   order - a suggestion that changed under him would be worse than none.
+
+   A SUGGESTION IS A SUBSET OF THE TEMPLATE. Nothing is invented. Every term
+   returned is literally present in this template's own title, headings or
+   body, checked on a word boundary against the normalized text before it is
+   allowed into the list - and pinned by the suite.
+
+   DISTINCTIVENESS, NOT FREQUENCY. A term carried by most of his other
+   templates cannot tell one template from another, so it is worthless as a
+   "use this one when" keyword however often it appears here. Candidates are
+   ranked by WHERE they appear (title > heading > repeated body term), how
+   often they appear HERE, and how RARE they are across the rest of the
+   library; a term present in every other template is dropped outright.
+
+   INERT. A library imported from fifty PDFs is untrusted data. Nothing here
+   is eval'd or compiled into a RegExp, and the callers write the result with
+   textContent or as an input value - never as markup. */
+var MLS_TPL_SUGGEST_VERSION='tplauto-1.0.0';
+var MLS_TPL_SUGGEST_MAX=6;
+var MLS_TPL_SUGGEST_MINLEN=3;
+/* Stopwords and the clinical furniture every note carries. Document
+   frequency demotes most of these on a real library, but a library of one or
+   two templates has no frequency signal to speak of, so the ones that are
+   worthless in every specialty are named outright. */
+var MLS_TPL_SUGGEST_STOP=(function(){
+  var stop=Object.create(null);
+  var list=('the and for with without from into onto under over about after before between during '
+    +'that this these those there their they them then than when where which while will would could should '
+    +'have has had was were are been being does did done not any all both each other same such only own '
+    +'per via due out off top its his her him she who whom whose you your our ours very more most less '
+    +'least also here upon within across around because however therefore thus still yet but nor '
+    +'patient patients history exam examination physical plan plans note notes report reports '
+    +'procedure procedures diagnosis diagnoses assessment findings finding impression impressions '
+    +'template templates document documents record records chart charts visit visits '
+    +'sincerely signature signed date dated time name names dob mrn '
+    +'doctor physician provider clinic office practice medical clinical '
+    +'left right bilateral normal abnormal none negative positive '
+    +'preoperative postoperative preop postop operative performed description '
+    +'estimated blood loss anesthesia anesthetic surgeon assistant specimen specimens '
+    +'indications complications consent informed sterile prepped draped technique '
+    +'disposition condition attending dictated transcribed electronically '
+    +'subjective objective chief complaint vital vitals signs systems review interval '
+    +'allergies medications past family social surgical general '
+    +'discussed reviewed continue continued today tolerated '
+    +'yes male female year years old age '
+    +'section sections heading headings page pages line lines '
+    +'use used using what how why').split(' ');
+  for(var i=0;i<list.length;i++){ if(list[i]) stop[list[i]]=1; }
+  return stop;
+})();
+/* Lowercase, and every character that is not a letter, digit or hyphen
+   becomes a space. Hyphens survive INSIDE a term so "l4-l5", "icd-10" and
+   "follow-up" stay one term - the picker's own matcher already tolerates a
+   keyword that carries its own punctuation. */
+function _mlsTplSuggestNorm(s){
+  return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9-]+/g,' ').replace(/\s+/g,' ').trim();
+}
+/* Normalizing the whole library once per suggestion is eight thousand passes
+   over his templates on a ninety-file import. Cache the normalized form
+   against the record object: the cache dies with the objects, and a record
+   whose name or body changed misses it and is normalized again. */
+var _mlsTplSuggestDocCache=(typeof WeakMap==='function')?new WeakMap():null;
+function _mlsTplSuggestDocNorm(o){
+  var name=String((o&&o.name)||''), text=String((o&&o.text)||''), hit=null;
+  if(_mlsTplSuggestDocCache){
+    try{ hit=_mlsTplSuggestDocCache.get(o); }catch(_tplCacheReadError){ hit=null; }
+    if(hit&&hit.name===name&&hit.text===text) return hit.norm;
+  }
+  var norm=_mlsTplSuggestNorm(name+' \n '+text);
+  if(_mlsTplSuggestDocCache){ try{ _mlsTplSuggestDocCache.set(o,{name:name,text:text,norm:norm}); }catch(_tplCacheWriteError){} }
+  return norm;
+}
+function _mlsTplSuggestWordish(ch){ return (ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch==='-'; }
+/* Word-boundary containment over already-normalized text. Same rule as the
+   picker's _mlsTplHit, kept local so this block stands alone and can be
+   lifted and executed by the suite on its own. */
+function _mlsTplSuggestCount(hay,needle){
+  if(!hay||!needle) return 0;
+  var from=0, at, n=0;
+  while((at=hay.indexOf(needle,from))!==-1){
+    var before=at>0?hay.charAt(at-1):'';
+    var after=(at+needle.length)<hay.length?hay.charAt(at+needle.length):'';
+    if(!_mlsTplSuggestWordish(before)&&!_mlsTplSuggestWordish(after)) n++;
+    from=at+1;
+  }
+  return n;
+}
+function _mlsTplSuggestHit(hay,needle){ return _mlsTplSuggestCount(hay,needle)>0; }
+/* A usable candidate: three characters or more, carries a letter (so pure
+   numbers and dash runs are out), and is not furniture. */
+function _mlsTplSuggestUsable(tok){
+  if(!tok||tok.length<MLS_TPL_SUGGEST_MINLEN||tok.length>32) return false;
+  if(MLS_TPL_SUGGEST_STOP[tok]) return false;
+  var hasLetter=false;
+  for(var i=0;i<tok.length;i++){ var c=tok.charAt(i); if(c>='a'&&c<='z'){ hasLetter=true; break; } }
+  return hasLetter;
+}
+/* Positions are preserved: an unusable slot stays in the array as '' so a
+   two-word phrase can never be built ACROSS a word that was dropped. */
+function _mlsTplSuggestTokens(text){
+  var raw=_mlsTplSuggestNorm(text).split(' '), out=[];
+  for(var i=0;i<raw.length;i++){
+    var t=raw[i].replace(/^-+/,'').replace(/-+$/,'');
+    out.push(_mlsTplSuggestUsable(t)?t:'');
+  }
+  return out;
+}
+/* A heading is what the doctor typed to NAME a part of his own note, so its
+   words are strong signal: a short "LABEL:" prefix, or a short all-caps line.
+   The text AFTER a label stays in the body, where it has to earn its place by
+   repeating. */
+function _mlsTplSuggestHeadings(text){
+  var lines=String(text==null?'':text).replace(/\r\n?/g,'\n').split('\n'), out=[];
+  for(var i=0;i<lines.length&&out.length<80;i++){
+    var l=lines[i].replace(/\s+/g,' ').trim();
+    if(!l) continue;
+    var m=/^([A-Za-z][A-Za-z0-9 \/&'-]{0,48}):/.exec(l);
+    if(m){ out.push(m[1]); continue; }
+    if(l.length<=48&&l===l.toUpperCase()&&/[A-Za-z]/.test(l)) out.push(l);
+  }
+  return out;
+}
+/* Which kind of note a template's own text NAMES, when it names one
+   unambiguously. A kind fires only on at least one STRONG marker plus a
+   second distinct marker; if two kinds fire, the template is ambiguous and
+   the kind is left UNSET - and unset already means "competes for every
+   kind", which is the safe answer. */
+var MLS_TPL_KIND_EVIDENCE=[
+  {kind:'op',
+   strong:['preoperative diagnosis','pre-operative diagnosis','postoperative diagnosis','post-operative diagnosis',
+           'operative report','operative note','procedure performed','description of procedure',
+           'estimated blood loss','operative findings'],
+   support:['anesthesia','surgeon','specimen','specimens','indications for procedure','complications',
+            'informed consent','sterile','fluoroscopy','incision','sutures','fluoroscopic guidance']},
+  {kind:'soap',
+   strong:['subjective'],
+   support:['objective','review of systems','physical examination','assessment and plan','vital signs','chief complaint']},
+  {kind:'insurance',
+   strong:['medical necessity','prior authorization','prior auth','preauthorization',
+           'letter of medical necessity','coverage determination','peer to peer','appeal'],
+   support:['payer','insurance','member id','policy number','authorization number','cpt','icd-10',
+            'claim','deductible','plan benefits','denial']}
+];
+function _mlsTplSuggestKind(text){
+  var hay=_mlsTplSuggestNorm(text);
+  if(!hay) return '';
+  var fired=[], i, j;
+  for(i=0;i<MLS_TPL_KIND_EVIDENCE.length;i++){
+    var e=MLS_TPL_KIND_EVIDENCE[i], strong=0, total=0, seen=Object.create(null);
+    for(j=0;j<e.strong.length;j++){
+      var s=_mlsTplSuggestNorm(e.strong[j]);
+      if(s&&!seen[s]&&_mlsTplSuggestHit(hay,s)){ seen[s]=1; strong++; total++; }
+    }
+    for(j=0;j<e.support.length;j++){
+      var p=_mlsTplSuggestNorm(e.support[j]);
+      if(p&&!seen[p]&&_mlsTplSuggestHit(hay,p)){ seen[p]=1; total++; }
+    }
+    if(strong>=1&&total>=2) fired.push(e.kind);
+  }
+  return fired.length===1?fired[0]:'';
+}
+/* THE ONE ENTRY POINT. subject is {name,text} (a template record, or the
+   name/body pair a settings editor currently holds); library is every OTHER
+   document to measure rarity against - the caller may hand over the whole
+   store, the subject is excluded by identity and by id. Never returns null.
+     terms   the suggestions, best first, capped
+     why     one plain sentence naming the sources that produced them
+     kind    the note kind the text names unambiguously, or '' */
+function _mlsTplSuggestFor(subject,library,opts){
+  var out={terms:[],why:'',sources:[],kind:'',considered:0,version:MLS_TPL_SUGGEST_VERSION};
+  if(!subject||typeof subject!=='object') return out;
+  var max=(opts&&opts.max>0)?(opts.max|0):MLS_TPL_SUGGEST_MAX;
+  var title=String(subject.name||''), body=String(subject.text||'');
+  var selfNorm=_mlsTplSuggestNorm(title+' \n '+body);
+  out.kind=_mlsTplSuggestKind(title+' \n '+body);
+  if(!selfNorm) return out;
+  var i, j, k;
+  /* the rest of the library, normalized once, for document frequency */
+  var others=[], subjectId=String(subject.id||''), lib=(library&&library.length)?library:[];
+  for(i=0;i<lib.length;i++){
+    var o=lib[i];
+    if(!o||typeof o!=='object'||o===subject) continue;
+    if(subjectId&&String(o.id||'')===subjectId) continue;
+    var on=_mlsTplSuggestDocNorm(o);
+    if(on) others.push(on);
+  }
+  var libN=others.length;
+  var cand=Object.create(null), order=[];
+  /* WEIGHT IS WHERE THE TERM LIVES. The title names the template, a heading
+     names a part of it, a repeated body term merely recurs in it. A two-word
+     phrase is more specific than either of its words. */
+  function offer(term,weight,src){
+    if(!term||!_mlsTplSuggestHit(selfNorm,term)) return;   /* never invent a term */
+    var c=cand[term];
+    if(!c){ cand[term]={term:term,weight:weight,src:src,at:selfNorm.indexOf(term)}; order.push(cand[term]); return; }
+    if(weight>c.weight){ c.weight=weight; c.src=src; }
+  }
+  function offerLine(line,wordWeight,phraseWeight,src){
+    var toks=_mlsTplSuggestTokens(line);
+    for(var a=0;a<toks.length;a++){
+      if(!toks[a]) continue;
+      offer(toks[a],wordWeight,src);
+      if(a+1<toks.length&&toks[a+1]) offer(toks[a]+' '+toks[a+1],phraseWeight,src);
+    }
+  }
+  offerLine(title,3,4,'title');
+  var heads=_mlsTplSuggestHeadings(body);
+  for(i=0;i<heads.length;i++) offerLine(heads[i],2,3,'heading');
+  /* Body: only terms the doctor REPEATED. A word that appears once in two
+     thousand characters is not what this template is about. */
+  var bodyToks=_mlsTplSuggestTokens(body), seenBody=Object.create(null);
+  for(i=0;i<bodyToks.length;i++){
+    var bt=bodyToks[i];
+    if(!bt||seenBody[bt]) continue;
+    seenBody[bt]=1;
+    if(_mlsTplSuggestCount(_mlsTplSuggestNorm(body),bt)>=2) offer(bt,1,'body');
+  }
+  out.considered=order.length;
+  var scored=[];
+  for(i=0;i<order.length;i++){
+    var c=order[i];
+    var tf=_mlsTplSuggestCount(selfNorm,c.term);
+    if(tf<1) continue;
+    var df=0;
+    for(j=0;j<libN;j++) if(_mlsTplSuggestHit(others[j],c.term)) df++;
+    /* Present in EVERY other template: it cannot tell them apart. Out. */
+    if(libN>=2&&df>=libN) continue;
+    c.tf=tf; c.df=df;
+    c.score=Math.round(c.weight*(tf>3?3:tf)*1000*(libN+1)/(df+1));
+    scored.push(c);
+  }
+  /* A TOTAL ORDER, so the same template always suggests the same list:
+     score, then source weight, then first appearance, then alphabetical. */
+  scored.sort(function(a,b){
+    if(a.score!==b.score) return b.score-a.score;
+    if(a.weight!==b.weight) return b.weight-a.weight;
+    if(a.at!==b.at) return a.at-b.at;
+    return a.term<b.term?-1:(a.term>b.term?1:0);
+  });
+  var taken=[], consumed=Object.create(null), usedSrc=Object.create(null);
+  for(i=0;i<scored.length&&taken.length<max;i++){
+    var t=scored[i], parts=t.term.split(' '), skip=false;
+    for(k=0;k<parts.length;k++) if(consumed[parts[k]]) skip=true;
+    if(skip) continue;                                     /* no "carpal", "tunnel" beside "carpal tunnel" */
+    taken.push(t.term);
+    for(k=0;k<parts.length;k++) consumed[parts[k]]=1;
+    usedSrc[t.src]=1;
+    out.sources.push(t.src);
+  }
+  out.terms=taken;
+  if(taken.length){
+    var names=[];
+    if(usedSrc.title) names.push('title');
+    if(usedSrc.heading) names.push('headings');
+    if(usedSrc.body) names.push('repeated terms');
+    var joined=names.length<=1?(names[0]||'own text'):(names.slice(0,-1).join(', ')+' and '+names[names.length-1]);
+    out.why="Suggested from this template's "+joined+" - edit or clear them.";
+  }
+  return out;
+}
+/* ONE definition of "what would MLS suggest here", shared by the template
+   library editor and the draft-tuning "Use automatically when" field. A
+   second copy in the feature module would drift the first time either
+   changed. */
+try{
+  window._mlsTplSuggestFor=_mlsTplSuggestFor;
+  window._mlsTplSuggestKind=_mlsTplSuggestKind;
+  window._mlsTplSuggestNorm=_mlsTplSuggestNorm;
+  window.MLS_TPL_SUGGEST_VERSION=MLS_TPL_SUGGEST_VERSION;
+}catch(_tplSuggestExportError){}
 
 /* ===== tplpick-1.0.0 (owner 2026-08-27: "upload multiple templates in
    settings for all the different kinds of note generation not just one and

@@ -220,6 +220,7 @@
       row.templateText = row.templateText || '';
       row.instructions = row.instructions || '';
       row.when = row.when || '';
+      row.whenAuto = row.whenAuto ? 1 : 0;
       row.templateMode = row.templateMode || SECTION_TEMPLATE_DEFAULT;
       return row;
     });
@@ -245,6 +246,10 @@
         id: pid,
         label: cleanReusableText(row.label || row.name || fallback.label || ('Format ' + (index + 1)), 80) || ('Format ' + (index + 1)),
         when: cleanReusableText(Object.prototype.hasOwnProperty.call(row, 'when') ? row.when : fallback.when, 180),
+        /* tplauto-1.0.0: "MLS has already proposed a rule for this format".
+           It rides inside the saved format, so a rule the doctor cleared
+           stays cleared across reloads instead of being proposed again. */
+        whenAuto: (Object.prototype.hasOwnProperty.call(row, 'whenAuto') ? row.whenAuto : fallback.whenAuto) ? 1 : 0,
         sectionMode: has(modeValues, row.sectionMode) ? String(row.sectionMode) : (fallback.sectionMode || modes[0][0]),
         templateMode: enumValue('templateMode', row.templateMode, fallback.templateMode || SECTION_TEMPLATE_DEFAULT),
         templateText: cleanTemplate(row.templateText || row.templateBody || row.template, MAX_SECTION_TEMPLATE),
@@ -994,10 +999,128 @@
     if (name) q('mlsDtSectionName').value = name;
     q('mlsDtSectionTemplateText').value = templateText;
     q('mlsDtInstructions').value = cleanReusableText(q('mlsDtSectionImportCommentsPreview').value, MAX_INSTRUCTIONS);
+    /* tplauto-1.0.0: an uploaded example that produced a template also
+       produces the rule that picks it - but only into an EMPTY field. */
+    var whenBox = q('mlsDtSectionWhen');
+    if (whenBox && !String(whenBox.value || '').trim()) {
+      var whenSug = suggestWhenFromUi();
+      var importKey = activeFamily + '::' + String((q('mlsDtSectionProfile') || {}).value || '');
+      whenOffered[importKey] = { text: '', why: '' };
+      if (whenSug && whenSug.result) {
+        whenBox.value = whenSug.result.terms.join(', ');
+        whenOffered[importKey] = { text: whenBox.value, why: whenSug.result.why };
+        paintWhenWhy(whenSug.result.why);
+      }
+    }
     captureUi(activeFamily);
     resetSectionImport(true);
     paintCount();
     try { if (typeof window.toast === 'function') window.toast('Template preview applied to this saved format. Save Settings when you are finished.', 'ok'); } catch (e) {}
+  }
+  /* ==== tplauto-1.0.0 =====================================================
+     Owner 2026-08-27, looking at this very field: "this should be able to
+     auto generate when it thinks it will be used". A saved format already
+     carries the words that describe it - its name and its own template
+     outline - so the rule that picks it can be READ OUT of them instead of
+     typed.
+     ONE extractor, the shell's (_mlsTplSuggestFor). A second copy here
+     would drift from it the first time either changed, and the doctor would
+     get two different answers out of two settings panes. Deterministic and
+     local: no AI call, no network, nothing that can make Save slow or fail.
+     ==================================================================== */
+  var whenOffered = Object.create(null);
+  function suggestFn() {
+    try { return typeof window._mlsTplSuggestFor === 'function' ? window._mlsTplSuggestFor : null; }
+    catch (e) { return null; }
+  }
+  /* Rarity is measured against every OTHER saved format that has a template:
+     a word all of them use cannot tell MLS which one to pick. */
+  function suggestLibrary(skipFamily, skipId) {
+    var lib = [];
+    if (!working || !working.families) return lib;
+    FAMILY_IDS.forEach(function (fam) {
+      var p = working.families[fam];
+      var rows = (p && Array.isArray(p.profiles)) ? p.profiles : [];
+      rows.forEach(function (row) {
+        if (!row || (fam === skipFamily && row.id === skipId)) return;
+        if (!String(row.templateText || '').trim()) return;
+        lib.push({ id: fam + '::' + row.id, name: String(row.label || ''), text: String(row.templateText || '') });
+      });
+    });
+    return lib;
+  }
+  function suggestWhen(family, profileId, name, body) {
+    var fn = suggestFn();
+    if (!fn) return { error: 'unavailable' };
+    if (!String(body || '').trim()) return { error: 'empty' };
+    try {
+      var out = fn({ id: family + '::' + profileId, name: String(name || ''), text: String(body || '') },
+        suggestLibrary(family, profileId), { max: 6 });
+      return { result: (out && out.terms && out.terms.length) ? out : null };
+    } catch (e) { return { error: 'failed' }; }
+  }
+  function suggestWhenFromUi() {
+    return suggestWhen(activeFamily, String((q('mlsDtSectionProfile') || {}).value || ''),
+      (q('mlsDtSectionName') || {}).value, (q('mlsDtSectionTemplateText') || {}).value);
+  }
+  function paintWhenWhy(text) {
+    var why = q('mlsDtSectionWhenWhy');
+    if (!why) return;
+    why.textContent = text || '';
+    why.style.display = text ? '' : 'none';
+  }
+  /* An EMPTY rule on a format that DOES have a template is offered one -
+     ONCE, and only until Save Settings records that he decided about the
+     field. A rule he cleared stays cleared (whenAuto); the session latch
+     stops a family round-trip from refilling it before he ever saves. */
+  function offerWhenSuggestion(family, profile) {
+    paintWhenWhy('');
+    if (!profile || !isProfileFamily(family)) return;
+    var box = q('mlsDtSectionWhen');
+    if (!box) return;
+    var key = family + '::' + profile.id, prior = whenOffered[key];
+    if (String(box.value || '').trim()) {
+      /* Already filled. If it still holds the proposal this session made,
+         keep saying where the words came from: an explanation that vanishes
+         on the next re-render is an explanation he never gets to read. */
+      if (prior && prior.why && prior.text === String(box.value)) paintWhenWhy(prior.why);
+      return;
+    }
+    if (profile.whenAuto || prior) return;
+    if (!String(profile.templateText || '').trim()) return;
+    var sug = suggestWhen(family, profile.id, profile.label, profile.templateText);
+    whenOffered[key] = { text: '', why: '' };
+    if (!sug || !sug.result) return;
+    box.value = sug.result.terms.join(', ');
+    whenOffered[key] = { text: box.value, why: sug.result.why };
+    paintWhenWhy(sug.result.why);
+  }
+  /* THE EXPLICIT CONTROL. Reads the format as it stands in the editor right
+     now, unsaved template and all, and OVERWRITES the rule - because he
+     asked for it. Every outcome says something; a silent button is a button
+     he cannot tell from a broken one. */
+  function suggestWhenNow() {
+    var box = q('mlsDtSectionWhen');
+    if (!box || !isProfileFamily(activeFamily)) return;
+    var sug = suggestWhenFromUi();
+    if (sug.error === 'unavailable' || sug.error === 'failed') {
+      paintWhenWhy('Suggestions are not available in this window. Reload MLS and try again, or type the rule yourself.');
+      return;
+    }
+    if (sug.error === 'empty') {
+      paintWhenWhy('Add the template or outline for this saved format first - the suggestion is read out of it.');
+      return;
+    }
+    if (!sug.result) {
+      paintWhenWhy('Nothing stood out in this format - every word it uses is one your other saved formats use too. Describe the visit in your own words instead.');
+      return;
+    }
+    box.value = sug.result.terms.join(', ');
+    paintWhenWhy(sug.result.why);
+    whenOffered[activeFamily + '::' + String((q('mlsDtSectionProfile') || {}).value || '')] =
+      { text: box.value, why: sug.result.why };
+    captureUi(activeFamily);
+    paintCount();
   }
   function mountSettings() {
     if (q('mlsDraftTuningSection')) return true;
@@ -1024,7 +1147,7 @@
         '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
         '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Saved format</label><div class="row"><select class="sf-select" id="mlsDtSectionProfile"></select><button type="button" class="btn-ghost" id="mlsDtSectionAdd">+ Add format</button><button type="button" class="btn-ghost" id="mlsDtSectionDelete">Remove</button></div><p class="mini" id="mlsDtSectionProfileStatus" role="status">Up to 8 reusable formats per section.</p></div>' +
         '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up"></div>' +
-        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
+        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><button type="button" class="btn-ghost" id="mlsDtSectionWhenSuggest" style="margin-top:6px" title="Read the template for this saved format and propose the words that should pick it">Suggest from this template</button><p class="mini" id="mlsDtSectionWhenWhy" role="status" style="display:none;color:#8A5A00"></p><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
         '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
         '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
       '</div>' +
@@ -1065,6 +1188,8 @@
       var el = q(id); if (el) el.addEventListener('input', function () { captureUi(activeFamily); paintCount(); });
       if (el) el.addEventListener('change', function () { captureUi(activeFamily); paintCount(); });
     });
+    var whenSuggestButton = q('mlsDtSectionWhenSuggest');
+    if (whenSuggestButton) whenSuggestButton.addEventListener('click', suggestWhenNow);
     q('mlsDtSectionProfile').addEventListener('change', function () {
       var selector = q('mlsDtSectionProfile'), profile = selector.value;
       resetSectionImport(true);
@@ -1247,6 +1372,7 @@
       q('mlsDtInstructions').value = active.instructions || '';
     }
     fillSectionControls(id, p.sectionMode, p.templateMode, p.activeProfile, p.profiles);
+    if (isProfileFamily(id) && active) offerWhenSuggestion(id, active);
     paintCount();
     paintResetState();
   }
@@ -1266,6 +1392,10 @@
       selected.sectionMode = enumValue('sectionMode', q('mlsDtSectionMode').value, selected.sectionMode);
       selected.templateMode = enumValue('templateMode', q('mlsDtSectionTemplate').value, selected.templateMode);
       selected.when = cleanReusableText(q('mlsDtSectionWhen').value, 180);
+      /* tplauto-1.0.0: once a rule has been PROPOSED for this format, his
+         next save is his decision about it - including a decision to leave
+         it empty. Latch it so nothing proposes over that again. */
+      if (whenOffered[id + '::' + selected.id]) selected.whenAuto = 1;
       selected.templateText = cleanTemplate(q('mlsDtSectionTemplateText').value, MAX_SECTION_TEMPLATE);
       selected.instructions = cleanReusableText(q('mlsDtInstructions').value, MAX_INSTRUCTIONS);
       p.profiles = profiles.map(function (row) { return row.id === selected.id ? selected : row; });
