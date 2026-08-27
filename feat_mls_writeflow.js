@@ -1799,6 +1799,142 @@
       wfdxOpenEncounter(state, rowId, btn, false);
     };
   }
+  /* ===== wfclar-1.0.0 (owner 2026-08-27: "not so many things that say
+     blocked", "ALSO THE OP NOTES WRITE SHOULD WORK TOO") ====================
+     MEASURED against MLS Assist 3.0.84: a refused read-only probe is
+     `{ ok:false, blocked:true, reason:<code> }` and a whole family of them
+     carries NO English sentence at all - noteEditorNotEmptyReceipt() in
+     background.js returns reason only. The sheet printed
+     `probe.error || probe.message || probe.reason`, so the doctor read the
+     literal token "note-editor-not-empty" in error red under a Check-Athena-
+     again button that would refuse identically forever.
+
+     That is the OP-NOTE path's guaranteed ending. An op note is routed to
+     "Athena encounter > Physical Exam > Procedure Documentation", and that
+     editor only exists once the procedure template has been added - which
+     fills it with the template's own skeleton. notePolicy stays 'empty_only'
+     (MLS must never type over text a human or a template put there), so the
+     op-note probe refuses with that bare token every single time.
+
+     This table changes WHAT THE DOCTOR READS, and nothing else. It cannot
+     change whether a probe refused, cannot enable a button, and cannot make a
+     row sendable: every branch below returns without a probe lock, exactly as
+     the raw-token branch did. It sorts the refusal into the two severities the
+     sheet already knows:
+       fix:true  - ONE step, named in plain words. Amber, plus the controls
+                   that take or support that step. Still refused, still
+                   "nothing was sent".
+       fix:false - a real conflict (wrong patient, wrong chart, wrong day,
+                   missing write proof, a payload that no longer matches the
+                   reviewed one). Stays error-red and gets NO shortcut.
+     A code that is not in this table keeps the exact behaviour it had. */
+  var WFCLAR_NOTHING = ' Nothing was changed and nothing was sent.';
+  var WFCLAR = {
+    /* ---- one named step (amber) ------------------------------------- */
+    'note-editor-not-empty': { fix: true, copy: true,
+      say: 'One step needed: {where} already has text in it. MLS never types over text a person or an Athena template put there - for an op note that text is usually the procedure template skeleton. Clear that field in athenaOne (or keep what is already documented there), then press Check Athena again. Copy this section below if you would rather paste it yourself.' },
+    'no-athena-tab': { fix: true,
+      say: 'One step needed: no signed-in athenaOne tab is open. Open athenaOne and sign in, then press Check Athena again.' },
+    'no-chart-open': { fix: true, open: true,
+      say: 'One step needed: athenaOne has no chart open. MLS can open this exact encounter read-only, or open it yourself and press Check Athena again.' },
+    'ambiguous-athena-tabs': { fix: true,
+      say: 'One step needed: more than one signed-in athenaOne tab is open and MLS will not guess which one holds this encounter. Close all but the tab with this patient, then press Check Athena again.' },
+    'probe-frame-missing': { fix: true, open: true,
+      say: 'One step needed: athenaOne has no open encounter frame for this visit yet. MLS can open it read-only, or open the visit yourself and press Check Athena again.' },
+    'athena-navigation-busy': { fix: true,
+      say: 'One step needed: athenaOne is still finishing another read-only MLS navigation. Let it settle, then press Check Athena again.' },
+    'rows-not-rendered': { fix: true, open: true,
+      say: 'One step needed: athenaOne has not painted its schedule rows yet. MLS can send its Day view there again read-only, or click the athenaOne tab once so it can paint and press Check Athena again.' },
+    'session-expired': { fix: true,
+      say: 'One step needed: your athenaOne session expired. Sign in again in athenaOne, then press Check Athena again.' },
+    'appointment-id-missing': { fix: true, open: true,
+      say: 'One step needed: this review has no exact Athena appointment bound yet. Use the bind control above to re-pull this day, or open the encounter in athenaOne and press Check Athena again.' },
+    'appointment-id-not-found': { fix: true, open: true,
+      say: 'One step needed: athenaOne has not painted this exact appointment row on the day it is showing. MLS can send the Day view there and open the row read-only, or open the encounter yourself and press Check Athena again.' },
+    'unresolved-after-pull': { fix: true, open: true,
+      say: 'One step needed: the day pull finished without naming this exact appointment. MLS can try the read-only open again, or open the encounter in athenaOne and press Check Athena again.' },
+    'timeout': { fix: true,
+      say: 'One step needed: athenaOne did not answer the read-only check in time. If its tab is behind other windows, click it once so it can paint, then press Check Athena again.' },
+    'open-timeout': { fix: true, open: true,
+      say: 'One step needed: athenaOne did not finish opening the chart in time. MLS can try the read-only open again, or open it yourself and press Check Athena again.' },
+    'no-response': { fix: true,
+      say: 'One step needed: MLS Assist did not answer the read-only check. Reload MLS Assist at chrome://extensions, make sure athenaOne is open and signed in, then press Check Athena again.' },
+    /* ---- a real conflict (red, no shortcut) ------------------------- */
+    'patient-mismatch': { fix: false,
+      say: 'The chart athenaOne has open is not this patient. MLS will not write into it and there is no shortcut past this. Open the correct chart yourself, then press Check Athena again.' },
+    'dob-mismatch': { fix: false,
+      say: 'The date of birth in the open Athena chart does not match this reviewed patient. MLS will not write into a chart whose identity disagrees with the note.' },
+    'mrn-conflict': { fix: false,
+      say: 'The MRN in the open Athena chart conflicts with the one on this reviewed patient. MLS will not resolve an identity conflict for you.' },
+    'chart-identity-mismatch': { fix: false,
+      say: 'The identity Athena reported for the open chart does not match this reviewed patient. MLS will not write into it.' },
+    'provider-mismatch': { fix: false,
+      say: 'The provider on the open Athena encounter is not the provider this review was built for. MLS will not retarget a note to a different clinician.' },
+    'practice-mismatch': { fix: false,
+      say: 'The open athenaOne practice is not the one this review was built for. MLS will not write across practices.' },
+    'account-mismatch': { fix: false,
+      say: 'The signed-in athenaOne account is not the one this review was built for. MLS will not write from a different account.' },
+    'note-destination-mismatch': { fix: false,
+      say: 'Athena resolved a different destination than the one shown on this row. MLS will not write a section into a field it is not showing you.' },
+    'note-payload-mismatch': { fix: false,
+      say: 'The text Athena was asked to place is not the reviewed text of this row. MLS will not send a payload the review did not freeze.' },
+    'note-section-payload-mismatch': { fix: false,
+      say: 'The section payload Athena checked is not the one this row froze at review time. MLS will not send it.' },
+    'note-section-count-mismatch': { fix: false,
+      say: 'Athena checked a different number of sections than this row froze at review time. MLS will not send it.' },
+    'preview-hash-mismatch': { fix: false,
+      say: 'This review changed after its immutable hash was minted. Close it and open Send to Athena again; MLS will not send an altered review.' },
+    'verified-note-write-required': { fix: false,
+      say: 'This action needs a verified note write for this exact encounter first. MLS will not run it out of order.' },
+    'sign-prerequisite-mismatch': { fix: false,
+      say: 'The verified write proof does not belong to this exact encounter, so Sign & Save stays locked. MLS will not sign on an unmatched proof.' },
+    'unsafe-note-policy': { fix: false,
+      say: 'Only empty-field placement is allowed, and this request did not carry it. MLS refused before touching Athena.' },
+    'unknown-note-section': { fix: false,
+      say: 'MLS Assist does not recognise this destination, so it refused before touching Athena. Update MLS Assist from Settings > Get the extension and reload it, then open this review again.' },
+    'write-safety-final-action-blocked': { fix: false,
+      say: 'The write-safety guard in MLS Assist blocked this final action. MLS will not work around its own guard.' },
+    'write-safety-guard-missing': { fix: false,
+      say: 'The write-safety guard is not loaded in MLS Assist, so no write may run. Reload MLS Assist at chrome://extensions, then open this review again.' }
+  };
+  function wfClarify(reason) {
+    var code = wfdxReason(reason);
+    return (code && WFCLAR[code]) ? WFCLAR[code] : null;
+  }
+  function wfClarityText(clar, row) {
+    return S(clar && clar.say).replace('{where}', S(row && row.destination) || 'the exact Athena field') + WFCLAR_NOTHING;
+  }
+  /* The reviewed text of one refused section, so the doctor can finish it by
+     hand in the two cases where MLS may not act: a field that already holds
+     text, and any refusal they choose to complete themselves. Copy only. */
+  function wfClarityCopyButton(state, row) {
+    if (!state || state.closed || !row) return;
+    var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) { return; }
+    if (!el) return;
+    try {
+      if (document.getElementById('mlsAthenaUnifiedCopySection')) return;
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'mlsAthenaUnifiedCopySection';
+      btn.textContent = 'Copy this section';
+      btn.title = 'Copies the exact reviewed text of ' + S(row.label) + ' so you can paste it into athenaOne yourself. Read-only: nothing is written.';
+      btn.setAttribute('data-mls-copy-section', S(row.id));
+      btn.style.cssText = 'display:block;margin-top:7px;border:1px solid #cfe0d7;background:#fff;color:#204034;border-radius:8px;padding:6px 12px;font:700 12px inherit;cursor:pointer';
+      btn.addEventListener('click', function () { unifiedCopyText(S(row.payload && row.payload.noteText), btn, 'Copy this section'); });
+      el.appendChild(btn);
+    } catch (e2) {}
+  }
+  /* One settled refusal, said in plain words at its true severity. It ALWAYS
+     ends in unifiedRecheckButton, which is both the doctor's next control and
+     the batch driver's settle latch - so a clarified refusal can never leave a
+     queued send waiting on a probe that already answered. */
+  function wfClarityRefusal(state, row, clar) {
+    var say = wfClarityText(clar, row);
+    if (clar.fix && clar.open) unifiedRecoverableStatus(state, row.id, say, unifiedOpenDayRecovery(state, row.id));
+    else unifiedStatus(state, say, clar.fix ? 'fix' : 'err');
+    unifiedRecheckButton(state, row.id);
+    if (clar.copy) wfClarityCopyButton(state, row);
+  }
+  /* ===== end wfclar-1.0.0 ================================================= */
   /* ---- wfdx-1.0.0 fix strip: what is wrong, and the one button that fixes it -- */
   function wfdxFixHost() { try { return document.getElementById('mlsAthenaUnifiedFix'); } catch (e) { return null; } }
   function wfdxDiagHost() { try { return document.getElementById('mlsAthenaUnifiedDiag'); } catch (e) { return null; } }
@@ -2069,6 +2205,11 @@
         /* mdx-2.0.0: a null probe is a timeout, and the most common cause is an
            occluded athenaOne tab that cannot paint its briefing. Name the cure. */
         if (!probe) probeErr += ' If athenaOne is open but behind other windows, click its tab once so it can paint, then press Check Athena again.';
+        /* wfclar-1.0.0: a refusal code MLS understands is said in plain words at
+           its true severity, with the controls that fit it. Everything else
+           keeps the extension's own sentence and its red. */
+        var clarified = wfClarify(probeReason);
+        if (clarified) { wfClarityRefusal(state, row, clarified); return; }
         unifiedStatus(state, probeErr, 'err');
         unifiedRecheckButton(state, row.id);
         return;
@@ -2186,7 +2327,15 @@
     var attempted = resp.attempted === true || resp.partialMutation === true || resp.reason === 'outcome-uncertain';
     if (resp.__timeout) { status = 'uncertain'; message = 'No completion response arrived. Athena may already have changed. Inspect the exact destination before any retry; no other action ran.'; }
     else if (row.action === 'stage_billing' && (resp.partialMutation === true || ((resp.stagedCodes || []).length && resp.ok !== true))) { status = 'uncertain'; message = billingResultSummary(resp, row.payload) || 'Billing was partially changed or not fully verified. Inspect the billing slate before retrying.'; }
-    else if (!resp.ok) { status = attempted ? 'uncertain' : 'blocked'; message = S(resp.error || resp.message || resp.reason) || 'Athena refused the selected action. No other action ran.'; }
+    else if (!resp.ok) {
+      status = attempted ? 'uncertain' : 'blocked';
+      /* wfclar-1.0.0: a refusal that never touched Athena is said in plain
+         words. An ATTEMPTED outcome keeps the extension's exact sentence and
+         its uncertain status - nothing about a partial mutation is ever
+         paraphrased. */
+      var execClar = attempted ? null : wfClarify(resp.reason);
+      message = execClar ? wfClarityText(execClar, row) : (S(resp.error || resp.message || resp.reason) || 'Athena refused the selected action. No other action ran.');
+    }
     else if (row.action === 'write_note') {
       verifiedWrite = resp.attempted === true ? rememberVerifiedWrite(probe.patient, state.manifest.previewHash, { receiptSessionId: state.manifest.receiptSessionId }, row.payload, probe.context, resp) : null;
       status = verifiedWrite ? 'verified' : 'uncertain';
@@ -2214,6 +2363,126 @@
     if (status === 'uncertain') state.halted = true;
     return receipt;
   }
+  /* ===== wfprog-1.0.0 (owner 2026-08-27: "make it easy and simple with a good
+     loading bar") ===========================================================
+     wfsum-1.0.0 already ticked the seconds on the primary button and filled it
+     left to right. Two things it could not do, both measured on the shipped
+     code: (1) during a BATCH the button label is written twice - the batch
+     driver writes "Writing 2/3..." and executeUnifiedSelection's own tick
+     immediately overwrites it with "Writing to Athena... 4s", so the N-of-M
+     the owner asked for survives for about one second per section; (2) there
+     is nowhere at all that says WHICH section is being written, or what
+     happened to the ones before it, until every receipt is in.
+
+     This is that surface: one bar, one honest headline (which section, N of M,
+     elapsed), one line per section, and a final summary. It is a RENDERER. It
+     owns no gate, sends nothing, and reads its per-section verdicts from the
+     receipts the execute path already writes - a section only ever reads
+     "written" because state.receipts[row.id].status === 'verified', which is
+     minted from the extension's own durable read-back receipt. */
+  var WFPROG_PHASE = {
+    wait: { label: 'waiting', color: '#52675c' },
+    check: { label: 'checking Athena', color: '#6d5010' },
+    write: { label: 'writing', color: '#6d5010' },
+    done: { label: 'written', color: '#205c43' },
+    already: { label: 'already in Athena', color: '#205c43' },
+    refused: { label: 'not sent', color: '#8b2525' },
+    timeout: { label: 'timed out', color: '#8b2525' },
+    skipped: { label: 'not sent', color: '#8b2525' },
+    rehearsed: { label: 'rehearsed only', color: '#7a5a16' }
+  };
+  function wfprogHost() { try { return document.getElementById('mlsAthenaUnifiedProgress'); } catch (e) { return null; } }
+  function wfprogStart(state, rows, batch) {
+    if (!state || state.closed) return;
+    state.prog = { total: rows.length, batch: batch === true, secs: 0, done: false, summary: '',
+      rows: rows.map(function (r) { return { id: S(r.id), label: S(r.label), phase: 'wait' }; }) };
+    wfprogPaint(state);
+  }
+  function wfprogPhase(state, rowId, phase) {
+    if (!state || state.closed || !state.prog) return;
+    var list = state.prog.rows;
+    for (var i = 0; i < list.length; i++) if (list[i].id === S(rowId)) list[i].phase = S(phase);
+    if (phase === 'check' || phase === 'write') state.prog.secs = 0;
+    wfprogPaint(state);
+  }
+  function wfprogTick(state, secs) {
+    if (!state || state.closed || !state.prog || state.prog.done) return;
+    state.prog.secs = Number(secs || 0);
+    wfprogPaint(state);
+  }
+  function wfprogFinish(state, summary) {
+    if (!state || state.closed || !state.prog) return;
+    state.prog.done = true; state.prog.summary = S(summary); state.prog.secs = 0;
+    wfprogPaint(state);
+  }
+  function wfprogCounts(state) {
+    var out = { written: 0, refused: 0, pending: 0, total: 0 };
+    var p = state && state.prog; if (!p) return out;
+    out.total = p.rows.length;
+    p.rows.forEach(function (r) {
+      if (r.phase === 'done' || r.phase === 'already') out.written++;
+      else if (r.phase === 'refused' || r.phase === 'timeout' || r.phase === 'skipped') out.refused++;
+      else out.pending++;
+    });
+    return out;
+  }
+  function wfprogHeadline(state) {
+    var p = state.prog, n = wfprogCounts(state);
+    if (p.done) return S(p.summary);
+    for (var i = 0; i < p.rows.length; i++) {
+      var r = p.rows[i];
+      if (r.phase !== 'check' && r.phase !== 'write') continue;
+      return (r.phase === 'write' ? 'Writing ' : 'Checking Athena for ') + (i + 1) + ' of ' + p.total +
+        ' - ' + r.label + (p.secs ? ' (' + p.secs + 's)' : '') + (r.phase === 'write' ? '' : ' - nothing sent yet');
+    }
+    return n.written + n.refused
+      ? ('Finished ' + (n.written + n.refused) + ' of ' + p.total + ' - moving to the next section')
+      : ('Starting ' + p.total + ' section' + (p.total === 1 ? '' : 's') + ' - nothing has been sent yet');
+  }
+  function wfprogPaint(state) {
+    var host = wfprogHost(); if (!host || !state || state.closed) return;
+    var p = state.prog;
+    if (!p) { try { host.style.display = 'none'; host.innerHTML = ''; } catch (e0) {} return; }
+    var n = wfprogCounts(state);
+    /* The bar never claims 100% until the run is finished AND every section has
+       a settled verdict, exactly as wfsum-1.0.0's button cap did. */
+    var settled = n.written + n.refused;
+    var pct = (p.done && !n.pending) ? 100 : Math.min(95, Math.round((settled / Math.max(1, p.total)) * 100));
+    var lines = p.rows.map(function (r) {
+      var meta = WFPROG_PHASE[r.phase] || WFPROG_PHASE.wait;
+      return '<div data-mls-prog-row="' + esc(r.id) + '" data-mls-prog-phase="' + esc(r.phase) + '" style="display:flex;gap:8px;border-top:1px solid #e2e8f2;padding:5px 0;font-size:12px">' +
+        '<span style="flex:1;min-width:0;color:#204034">' + esc(r.label) + '</span>' +
+        '<span style="font-weight:800;color:' + meta.color + '">' + esc(meta.label) + '</span></div>';
+    }).join('');
+    try {
+      host.style.display = 'block';
+      host.innerHTML = '<div style="border:1px solid #cfe0d7;background:#f7fbf9;border-radius:11px;padding:11px 12px">' +
+        '<div data-mls-prog-headline="1" style="font-weight:850;color:#204034;font-size:13px">' + esc(wfprogHeadline(state)) + '</div>' +
+        '<div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '" data-mls-prog-pct="' + pct + '" style="margin-top:8px;height:9px;border-radius:999px;background:#dbe7e0;overflow:hidden">' +
+        '<div style="height:100%;width:' + pct + '%;background:#2f7d5a"></div></div>' +
+        '<div style="margin-top:7px">' + lines + '</div>' +
+        '<div style="margin-top:6px;font-size:11.5px;color:#52675c">' +
+        esc(n.written + ' written, ' + n.refused + ' not sent, ' + n.pending + ' still to go. MLS never saves or signs.') +
+        '</div></div>';
+    } catch (e) {}
+  }
+  /* The summary is DERIVED from the receipts, never from the loop's optimism:
+     a section counts as written only where its own receipt says verified. */
+  function wfprogSummaryText(state, rows, stopMsg) {
+    var written = [], refused = [], uncertain = [];
+    (rows || []).forEach(function (row) {
+      var rec = state.receipts[row.id];
+      if (rec && rec.status === 'verified') written.push(row.label);
+      else if (rec && rec.status === 'uncertain') uncertain.push(row.label);
+      else refused.push(row.label);
+    });
+    return 'Done: ' + written.length + ' of ' + (rows || []).length + ' section' + ((rows || []).length === 1 ? '' : 's') +
+      ' written to Athena and read back.' +
+      (uncertain.length ? ' Uncertain: ' + uncertain.join(', ') + ' - inspect Athena before retrying.' : '') +
+      (refused.length ? ' Not sent: ' + refused.join(', ') + ' (each keeps its own reason above).' : '') +
+      (stopMsg ? ' ' + stopMsg : '') + ' Nothing was saved or signed; finish Save / Sign in Athena yourself.';
+  }
+  /* ===== end wfprog-1.0.0 ================================================= */
   function executeUnifiedSelection(state) {
     if (!state || state.closed || state.running || state.halted) return;
     var row = unifiedRow(state.manifest, state.selectedRowId), probe = state.probe, go = document.getElementById('mlsAthenaUnifiedGo');
@@ -2227,12 +2496,18 @@
        no sign of life. Tick the elapsed seconds on the button itself and fill
        it left-to-right (capped at 95% - only the receipt claims completion). */
     var wfsumT0 = Date.now(), wfsumVerb = probeOnlyActive() ? 'Checking (probe only)' : (row.action === 'save_draft' ? 'Saving draft in Athena' : 'Writing to Athena');
+    /* wfprog-1.0.0: inside a batch the driver owns the button's N-of-M label,
+       so the tick must not overwrite it - it decorates that label instead. A
+       lone press starts its own one-section progress surface. */
+    if (!state.batchRunning) wfprogStart(state, [row], false);
+    wfprogPhase(state, row.id, 'write');
     var wfsumTick = setInterval(function () {
       try {
         if (state.closed || unifiedAthenaState !== state || !state.running) { clearInterval(wfsumTick); return; }
         var secs = Math.floor((Date.now() - wfsumT0) / 1000), pct = Math.min(95, Math.round((secs / 45) * 100));
-        go.textContent = wfsumVerb + '… ' + secs + 's';
+        go.textContent = (state.batchRunning ? (S(state.batchLabel) || wfsumVerb) : wfsumVerb) + '... ' + secs + 's';
         go.style.background = 'linear-gradient(90deg,#2f7d5a ' + pct + '%,#204034 ' + pct + '%)';
+        wfprogTick(state, secs);
       } catch (eTick) { try { clearInterval(wfsumTick); } catch (e2) {} }
     }, 1000);
     function wfsumStopTick() { try { clearInterval(wfsumTick); } catch (e) {} try { go.style.background = '#204034'; } catch (e3) {} }
@@ -2269,6 +2544,10 @@
           manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context),
           completedAt: new Date().toISOString() });
         state.probe = null;
+        /* wfprog-1.0.0: a rehearsal is neither written nor refused, and the
+           progress surface must never let it read as either. */
+        wfprogPhase(state, row.id, 'rehearsed');
+        if (!state.batchRunning) wfprogFinish(state, 'PROBE ONLY: the full path was rehearsed read-only for ' + row.label + '. Nothing was written, saved, signed, billed or ordered.');
         renderUnifiedReceipts(state);
         if (cancel) cancel.disabled = false; if (close) close.disabled = false;
         for (var rp = 0; rp < radios.length; rp++) radios[rp].disabled = false;
@@ -2292,6 +2571,10 @@
       state.running = false;
       wfdxProbeReceipt(state, row, resp || {}, 'execute');
       var receipt = resultToUnifiedReceipt(state, row, resp || {}, completedProbe);
+      /* wfprog-1.0.0: the per-section verdict comes from the receipt the line
+         above minted, never from having reached this callback. */
+      wfprogPhase(state, row.id, receipt.status === 'verified' ? 'done' : 'refused');
+      if (!state.batchRunning) wfprogFinish(state, wfprogSummaryText(state, [row], state.halted ? 'This review is halted on an uncertain outcome.' : ''));
       state.probe = null;
       renderUnifiedReceipts(state);
       if (go) { go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.textContent = 'Confirm & write'; go.removeAttribute('data-mls-athena-action'); go.removeAttribute('data-mls-preview-hash'); go.removeAttribute('data-mls-row-hash'); go.removeAttribute('data-mls-client-order-id'); }
@@ -2433,12 +2716,15 @@
     var restLabel = btn ? btn.textContent : '';
     if (btn) btn.disabled = true;
     var okCount = 0, skipped = [], stopMsg = '';
+    /* wfprog-1.0.0: one progress surface for the whole queue. */
+    wfprogStart(state, rows, true);
     function finish() {
-      state.batchRunning = false;
+      state.batchRunning = false; state.batchLabel = '';
       if (btn) { btn.disabled = false; btn.textContent = restLabel; }
-      var summary = 'Batch finished: ' + okCount + ' of ' + rows.length + ' checked sections verified in Athena.' +
-        (skipped.length ? ' Not sent: ' + skipped.join(', ') + ' (each kept its own honest refusal above).' : '') +
-        (stopMsg ? ' ' + stopMsg : '') + ' Save & Sign stay manual.';
+      /* The summary is recomputed from the receipts, so it can never claim a
+         section landed that has no durable read-back receipt of its own. */
+      var summary = wfprogSummaryText(state, rows, stopMsg);
+      wfprogFinish(state, summary);
       unifiedStatus(state, summary, okCount === rows.length && !stopMsg ? 'ok' : 'err');
       /* sheetux-1.0.0: the merged button decides its own next state from what
          is still checked - then the receipt render below gets the last word,
@@ -2452,25 +2738,36 @@
       if (i >= rows.length || state.closed || unifiedAthenaState !== state) { finish(); return; }
       if (state.halted) { stopMsg = 'Halted on an uncertain outcome - inspect Athena before retrying anything.'; finish(); return; }
       var row = rows[i];
-      if (state.receipts[row.id] && state.receipts[row.id].status === 'verified') { okCount++; step(i + 1); return; }
-      if (btn) btn.textContent = 'Checking ' + (i + 1) + '/' + rows.length + '...';
+      if (state.receipts[row.id] && state.receipts[row.id].status === 'verified') { okCount++; wfprogPhase(state, row.id, 'already'); step(i + 1); return; }
+      state.batchLabel = 'Checking ' + (i + 1) + ' of ' + rows.length;
+      if (btn) btn.textContent = state.batchLabel + '...';
+      wfprogPhase(state, row.id, 'check');
       probeUnifiedRow(state, row.id);
       bxWait(function () {
         if (state.closed || unifiedAthenaState !== state) return true;
         if (state.probe && state.probe.rowId === row.id) return true;
         return state.probeSettled === state.probeGeneration && !state.probe;
-      }, 150000).then(function () {
+      }, 150000).then(function (settledInTime) {
         if (state.closed || unifiedAthenaState !== state) { finish(); return; }
-        if (!(state.probe && state.probe.rowId === row.id)) { skipped.push(row.label); step(i + 1); return; }
-        if (btn) btn.textContent = 'Writing ' + (i + 1) + '/' + rows.length + '...';
+        if (!(state.probe && state.probe.rowId === row.id)) {
+          /* wfprog-1.0.0: a queue step is BOUNDED, and a step that ran out its
+             bound says so rather than looking like an ordinary refusal. */
+          if (settledInTime === false) { stopMsg = 'One step ran past its 150-second read-only check bound and was left alone.'; wfprogPhase(state, row.id, 'timeout'); }
+          else wfprogPhase(state, row.id, 'refused');
+          skipped.push(row.label); step(i + 1); return;
+        }
+        state.batchLabel = 'Writing ' + (i + 1) + ' of ' + rows.length;
+        if (btn) btn.textContent = state.batchLabel + '...';
+        wfprogPhase(state, row.id, 'write');
         executeUnifiedSelection(state);
         bxWait(function () {
           if (state.closed || unifiedAthenaState !== state) return true;
           return !state.running && !!state.receipts[row.id];
-        }, 180000).then(function () {
+        }, 180000).then(function (wroteInTime) {
           var rec = state.receipts[row.id];
           if (rec && rec.status === 'verified') okCount++;
           else if (!rec || rec.status !== 'rehearsed') skipped.push(row.label);
+          if (!rec && wroteInTime === false) { stopMsg = 'One write ran past its 180-second bound with no receipt - inspect that exact Athena field before retrying it.'; wfprogPhase(state, row.id, 'timeout'); }
           step(i + 1);
         });
       });
@@ -3149,19 +3446,30 @@
   }
   /* ===== end wfx-1.0.0 ==================================================== */
   function unifiedNoteHeroHtml(manifest) {
-    var noteRow = unifiedRow(manifest, 'write-note');
+    var noteRow = unifiedRow(manifest, 'write-note'), heading = 'Review the generated encounter-note text';
     /* Named HPI/ROS/Exam/Assessment/Plan reviews have several independent
        destinations. A generic Encounter-note hero would be false and would
        visually duplicate those rows, so only the true generic-note lane gets
        the full-text hero. Named sections show their own What/Where/How rows. */
-    if (!noteRow) return '';
+    /* wfclar-1.0.0 (owner 2026-08-27, on the op-note write): a review with
+       EXACTLY ONE note-write row has no wall of destinations to duplicate, and
+       an op note is exactly that shape. Hiding its entire body behind "Review
+       full payload and hashes" made the one thing the doctor is confirming the
+       hardest thing on the sheet to read. One row, one hero, titled by that
+       row's own destination so it can never claim to be the generic note. */
+    if (!noteRow) {
+      var singles = manifest.rows.filter(function (r) { return r.action === 'write_note'; });
+      if (singles.length !== 1) return '';
+      noteRow = singles[0];
+      heading = 'Review the exact text going to ' + S(noteRow.destination);
+    }
     var who = [S(manifest.patient.name).trim() || '(patient name missing)'];
     if (manifest.patient.dob) who.push('DOB ' + S(manifest.patient.dob));
     if (manifest.patient.mrn) who.push('MRN ' + S(manifest.patient.mrn));
     if (manifest.visit.visitDate) who.push(S(manifest.visit.visitDate));
     if (manifest.visit.provider) who.push(S(manifest.visit.provider));
     var open = '<section style="border:1px solid #dce5df;border-radius:12px;padding:14px 15px;background:#fff;min-width:0;margin-top:12px">' +
-      '<div style="font-size:13.5px;font-weight:850;color:#204034">Review the generated encounter-note text</div>' +
+      '<div style="font-size:13.5px;font-weight:850;color:#204034">' + esc(heading) + '</div>' +
       '<div style="color:#52675c;font-size:12px;margin-top:3px">' + esc(who.join(' - ')) + '</div>';
     return open +
       '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;margin:11px 0 0;padding:13px;border:1px solid #dbe7e0;border-radius:10px;background:#f8fbf9;color:#1f3027;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(S(noteRow.payload.noteText)) + '</pre>' +
@@ -3307,6 +3615,9 @@
       '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (generationIssue ? 'Generate / Regenerate updates only the local MLS draft through the normal validation and persistence gate. It never binds an encounter and never writes Athena; the rebuilt review must still pass exact patient, appointment, and destination checks.' : (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.')) + '</div>' +
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       unifiedIdentityHtml(manifest) +
+      /* wfprog-1.0.0: the send's own loading surface - which section, N of M,
+         and a settled verdict per section. Hidden until a send starts. */
+      '<div id="mlsAthenaUnifiedProgress" role="status" aria-live="polite" style="display:none;margin-top:11px"></div>' +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
       /* sheetux-1.0.0: ONE primary send button. "Send checked sections" and
          "Confirm & Send to Athena" were the same act described twice, so the
@@ -4583,7 +4894,16 @@
          call the merged primary button makes). */
       sheetUx: { v: 'sheetux-1.0.0', zeroReason: SHEETUX_ZERO_REASON, doItLabel: SHEETUX_DOIT_LABEL,
         plan: unifiedPrimaryPlan, sync: unifiedSyncPrimaryButton, checkedRows: bxCheckedRows,
-        press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); } } },
+        press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); } },
+      /* wfclar-1.0.0 read-only seam: the refusal table and how one refusal is
+         said. Nothing here can send, enable a control, or change a verdict. */
+      clarity: { v: 'wfclar-1.0.0', table: WFCLAR, classify: wfClarify, say: wfClarityText },
+      /* wfprog-1.0.0 read-only seam: the loading surface's own state and the
+         receipt-derived summary. Nothing here can send. */
+      progress: { v: 'wfprog-1.0.0', phases: WFPROG_PHASE, counts: function () { return wfprogCounts(unifiedAthenaState); },
+        headline: function () { return unifiedAthenaState && unifiedAthenaState.prog ? wfprogHeadline(unifiedAthenaState) : ''; },
+        summary: function (rows) { return unifiedAthenaState ? wfprogSummaryText(unifiedAthenaState, rows || [], '') : ''; },
+        snapshot: function () { return unifiedAthenaState && unifiedAthenaState.prog ? stableClone(unifiedAthenaState.prog) : null; } } },
     /* wfbind-1.0.0 test + support seam (read-only; run() is the same call the
        sheet's own control makes). */
     bindCure: { v: 'wfbind-1.0.0', label: WFBIND_LABEL,

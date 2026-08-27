@@ -1844,6 +1844,16 @@ const tests = [
      amber with a working do-it-for-me control while identity conflicts stay
      red, and identical per-row boilerplate is stated once. */
   '1p-writeflow-sheet-ux.test.js',
+  /* wfclar-1.0.0 + wfprog-1.0.0 + opnsend-2.2.0 (owner 2026-08-27, "make it
+     easy and simple with a good loading bar and not so many things that say
+     blocked" / "ALSO THE OP NOTES WRITE SHOULD WORK TOO"): the op note builds
+     ONE ready Procedure Documentation row and writes through the same reviewed
+     path with its own receipt; a one-step refusal is amber with working
+     controls while a wrong-chart refusal stays red with none; the loading
+     surface reports which section, N of M and a receipt-derived summary that
+     cannot overstate what landed; and neither op-note send path in either 1p
+     shell dead-ends in silence. */
+  '1p-writeflow-opnote-clarity-progress.test.js',
   /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
   'capture-mrn-normalize-pins.test.js',
   /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the
