@@ -23007,7 +23007,19 @@ function renderTemplateActiveSelect(){
    confirmed delete with undo. Every underlying behavior (use-now with the
    identity binding guard, default selection, duplicate, dedupe, bulk import,
    cloud library sync) is unchanged — this is a presentation upgrade. */
-var _tplUI={ selectedId:'', query:'', dirty:false, renderedId:'' };
+var _tplUI={ selectedId:'', query:'', dirty:false, renderedId:'', lastSuggest:null, lastKind:null };
+/* tplauto-1.0.0: which templates have already been OFFERED a suggestion in
+   this session. A proposal is made ONCE per template, never on every
+   re-render of the pane - a field that refilled itself every time the list
+   refreshed is a field the doctor cannot clear. */
+var _tplSuggestOnce=Object.create(null);
+/* The documents rarity is measured against: the stored library plus the
+   batch under review, so an import of ninety op notes ranks each one
+   against its eighty-nine siblings and not against an empty shelf. */
+function _tplSuggestLibrary(batch){
+  var lib=[]; try{ lib=_tplStore().slice(); }catch(_tplLibError){ lib=[]; }
+  return (batch&&batch.length)?lib.concat(batch):lib;
+}
 var _tplLastDeleted=null;
 function tplSearchChanged(){ var q=document.getElementById('tplSearch'); _tplUI.query=String(q&&q.value||'').toLowerCase().trim(); renderTemplateList(); }
 function _tplMatches(t){
@@ -23049,16 +23061,42 @@ function renderTplDetail(){
   var t=getTemplateById(_tplUI.selectedId);
   if(!t){ pane.innerHTML='<p style="color:var(--muted);font-size:13px;margin:0">Select a template on the left to preview and edit it here.</p>'; return; }
   var isActive=t.id===getActiveTemplateId();
+  /* tplauto-1.0.0 (owner 2026-08-27: "this should be able to auto generate
+     when it thinks it will be used"). An EMPTY "what should choose this"
+     field is offered candidates read out of the template's OWN words -
+     once, while it is still empty, and only until he saves a decision about
+     it. A field he cleared stays cleared: the save records autoKw, and the
+     session latch stops a re-render from refilling it. Nothing is stored
+     here - a suggestion is a prefilled input he still has to Save. */
+  var kwValue=(t.keywords||[]).join(', '), kwWhy='', kindValue=_mlsTplKindOf(t), kindWhy='';
+  if(!kwValue&&!t.autoKw&&!_tplSuggestOnce[t.id]){
+    _tplSuggestOnce[t.id]=1;
+    var sug=null; try{ sug=_mlsTplSuggestFor(t,_tplStore()); }catch(_tplSuggestError){ sug=null; }
+    if(sug&&sug.terms.length){
+      kwValue=sug.terms.join(', '); kwWhy=sug.why;
+      _tplUI.lastSuggest={id:t.id,terms:sug.terms.slice()};
+    }
+    /* An UNSET kind competes for every kind of note, which is already the
+       safe answer - so it is only ever filled in when the template's own
+       text names one kind and only one. */
+    if(sug&&!kindValue&&sug.kind){
+      kindValue=sug.kind; _tplUI.lastKind={id:t.id,kind:sug.kind};
+      kindWhy='Note kind suggested from this template\'s own text - change it, or set it back to Any note kind.';
+    }
+  }
   var revOpts=(t.revisions||[]).map(function(r,i){ return '<option value="'+i+'">'+new Date(r.ts).toLocaleString()+' — '+esc(String(r.name||'').slice(0,30))+' ('+String(r.text||'').length+' chars)</option>'; }).join('');
   pane.innerHTML=
     '<div class="field" style="margin:0 0 8px"><label for="tplDetName">Name</label><input type="text" id="tplDetName" value="'+esc(t.name||'')+'" oninput="tplDetailDirty()"></div>'+
-    '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords <span style="font-weight:400;color:var(--muted)">(comma-separated - these are what choose this template)</span></label><input type="text" id="tplDetKw" value="'+esc((t.keywords||[]).join(', '))+'" oninput="tplDetailDirty()"></div>'+
+    '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords <span style="font-weight:400;color:var(--muted)">(comma-separated - these are what choose this template)</span></label>'+
+    '<div style="display:flex;gap:6px;align-items:flex-start"><input type="text" id="tplDetKw" style="flex:1;min-width:0" value="'+esc(kwValue)+'" oninput="tplKwTyped()" placeholder="e.g. carpal tunnel, release">'+
+      '<button type="button" class="btn-ghost" style="font-size:12px;padding:7px 10px;white-space:nowrap" onclick="tplSuggestKeywords()" title="Read this template and propose the keywords that should choose it">Suggest from this template</button></div>'+
+    '<div id="tplKwWhy" style="font-size:11.5px;color:#8A5A00;margin-top:4px;display:none"></div></div>'+
     /* tplpick-1.0.0: which kind of note generation this template is for. A
        template left on "Any note kind" competes for every kind, which is what
        every template in an existing library already does. */
     '<div class="field" style="margin:0 0 8px"><label for="tplDetKind">Note kind this template is for</label><select id="tplDetKind" class="sf-select" onchange="tplDetailDirty()">'+
-      ['','soap','insurance','op'].map(function(k){ return '<option value="'+esc(k)+'"'+(_mlsTplKindOf(t)===k?' selected':'')+'>'+esc(_mlsTplKindLabel(k))+'</option>'; }).join('')+
-    '</select><div style="font-size:11.5px;color:var(--muted);margin-top:4px">Pick a kind and this template is only ever offered for that kind of note. Leave it on <b>Any note kind</b> and it stays available to all of them.</div></div>'+
+      ['','soap','insurance','op'].map(function(k){ return '<option value="'+esc(k)+'"'+(kindValue===k?' selected':'')+'>'+esc(_mlsTplKindLabel(k))+'</option>'; }).join('')+
+    '</select><div style="font-size:11.5px;color:var(--muted);margin-top:4px">Pick a kind and this template is only ever offered for that kind of note. Leave it on <b>Any note kind</b> and it stays available to all of them.</div><div id="tplDetKindWhy" style="font-size:11.5px;color:#8A5A00;margin-top:4px;display:none"></div></div>'+
     '<textarea id="tplDetText" aria-label="Template content" style="min-height:220px;width:100%;font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace" oninput="tplDetailDirty()">'+esc(t.text||'')+'</textarea>'+
     '<div id="tplDetStatus" role="status" style="font-size:12px;color:var(--muted);margin:6px 0">No unsaved changes</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
@@ -23069,6 +23107,53 @@ function renderTplDetail(){
       '<button class="btn-ghost" style="font-size:12.5px;padding:7px 12px;color:#a12c2c" onclick="deleteTemplate(\''+esc(t.id)+'\')">🗑 Delete…</button>'+
     '</div>'+
     ((t.revisions&&t.revisions.length)?'<div class="field" style="margin:10px 0 0"><label for="tplDetRev">Restore an earlier version (kept automatically on every save)</label><div style="display:flex;gap:6px"><select id="tplDetRev" class="sf-select" style="flex:1">'+revOpts+'</select><button class="btn-ghost" style="font-size:12.5px" onclick="tplRestoreRevision(\''+esc(t.id)+'\')">↺ Restore</button></div></div>':'');
+  _tplRenderSuggestNotes(kwWhy,kindWhy);
+}
+/* tplauto-1.0.0: the WHY line. A suggestion the doctor cannot account for is
+   a suggestion he has to check by hand, so the surface says where the words
+   came from. Written with textContent: the terms come out of a template
+   record, which is untrusted data. */
+function _tplRenderSuggestNotes(kwWhy,kindWhy){
+  var w=document.getElementById('tplKwWhy');
+  if(w){ w.textContent=kwWhy||''; w.style.display=kwWhy?'':'none'; }
+  var k=document.getElementById('tplDetKindWhy');
+  if(k){ k.textContent=kindWhy||''; k.style.display=kindWhy?'':'none'; }
+}
+/* The moment he types into the field it is HIS: the suggestion marker comes
+   off, and the save below will not record it as suggested. */
+function tplKwTyped(){
+  _tplUI.lastSuggest=null;
+  _tplRenderSuggestNotes('',(document.getElementById('tplDetKindWhy')||{}).textContent||'');
+  tplDetailDirty();
+}
+/* THE EXPLICIT CONTROL - "Suggest from this template". It reads the template
+   as it stands in the editor RIGHT NOW, unsaved edits and all, so pasting a
+   new body and pressing this proposes for the new body. Unlike the one-shot
+   prefill it overwrites the field, because he asked for it. */
+function tplSuggestKeywords(){
+  var t=getTemplateById(_tplUI.selectedId);
+  if(!t){ toast('Select a template first.','err'); return; }
+  var subject={ id:t.id,
+    name:String((document.getElementById('tplDetName')||{}).value||t.name||''),
+    text:String((document.getElementById('tplDetText')||{}).value||t.text||'') };
+  var sug=null; try{ sug=_mlsTplSuggestFor(subject,_tplStore()); }catch(_tplSuggestNowError){ sug=null; }
+  if(!sug||!sug.terms.length){
+    _tplRenderSuggestNotes('Nothing stood out in this template - every word it uses is one your other templates use too. Type the words that should choose it.','');
+    return;
+  }
+  var box=document.getElementById('tplDetKw');
+  if(box) box.value=sug.terms.join(', ');
+  _tplUI.lastSuggest={id:t.id,terms:sug.terms.slice()};
+  var kindWhy='';
+  var kindSel=document.getElementById('tplDetKind');
+  if(kindSel&&!kindSel.value&&sug.kind){
+    kindSel.value=sug.kind; _tplUI.lastKind={id:t.id,kind:sug.kind};
+    kindWhy='Note kind suggested from this template\'s own text - change it, or set it back to Any note kind.';
+  }
+  _tplRenderSuggestNotes(sug.why,kindWhy);
+  _tplUI.dirty=true;
+  var s=document.getElementById('tplDetStatus');
+  if(s){ s.textContent='Suggested - not saved yet'; s.style.color='#8A5A00'; }
 }
 function tplDetailDirty(){ _tplUI.dirty=true; var s=document.getElementById('tplDetStatus'); if(s){ s.textContent='Edited — not saved yet'; s.style.color='#8A5A00'; } }
 function tplDetailSave(){
@@ -23086,6 +23171,16 @@ function tplDetailSave(){
      one of the four values the picker knows about. */
   cur.kind=_mlsTplKindOf({kind:String((document.getElementById('tplDetKind')||{}).value||'')});
   cur.text=String((document.getElementById('tplDetText')||{}).value||'');
+  /* tplauto-1.0.0: he has now made a decision about these two fields -
+     INCLUDING a decision to leave them empty. Never propose for them again.
+     kwSuggested/kindSuggested record whether what is stored is still exactly
+     what was proposed, so nothing keeps calling it a suggestion once he has
+     edited it. */
+  cur.autoKw=1; cur.autoKind=1;
+  var _sugKw=(_tplUI.lastSuggest&&_tplUI.lastSuggest.id===cur.id)?_tplUI.lastSuggest.terms.join(', ').toLowerCase():null;
+  cur.kwSuggested=(_sugKw!==null&&cur.keywords.join(', ').toLowerCase()===_sugKw)?1:0;
+  var _sugKind=(_tplUI.lastKind&&_tplUI.lastKind.id===cur.id)?_tplUI.lastKind.kind:'';
+  cur.kindSuggested=(_sugKind&&cur.kind===_sugKind)?1:0;
   try{ setTemplates(list); }catch(e){ if(s){ s.textContent='Failed — could not save ('+String(e&&e.message||e).slice(0,60)+')'; s.style.color='#a12c2c'; } return; }
   _tplUI.dirty=false; _tplUI.renderedId='';
   renderTemplateList(); renderTemplateActiveSelect();
@@ -23687,8 +23782,18 @@ function _tplTypeName(text, fallback){
    the name is already the tidied procedure phrase, so its clinical tokens
    (genicular/nerve/block/knee) are exactly the true-signal keywords the guard
    was designed around. Explicit Keywords: metadata always wins. */
-function _tplSeedKeywords(t){
+function _tplSeedKeywords(t,library){
   if(!t || (t.keywords && t.keywords.length)) return;
+  /* tplauto-1.0.0: the NAME alone was the old seed, which is all a
+     keywordless import ever got. Read the whole template - title, its own
+     headings, and the terms it REPEATS - ranked by rarity across the rest of
+     the library, and carry the note kind its text unambiguously names. The
+     name-only path below stays the fallback for a template that nothing
+     stood out in, so an import can still never land with zero keywords. */
+  var sug=null;
+  try{ sug=_mlsTplSuggestFor(t,library||_tplStore()); }catch(_tplSeedError){ sug=null; }
+  if(sug&&!_mlsTplKindOf(t)&&sug.kind){ t.kind=sug.kind; t.kindSuggested=1; }
+  if(sug&&sug.terms.length){ t.keywords=sug.terms.slice(0,MLS_TPL_SUGGEST_MAX); t.kwSuggested=1; return; }
   var stop={'the':1,'and':1,'with':1,'without':1,'for':1,'into':1,'onto':1,'under':1,'over':1,'from':1,'variant':1,'template':1,'note':1,'notes':1,'report':1,'operative':1,'procedure':1,'guided':1,'guidance':1};
   t.keywords=String(t.name||'').toLowerCase()
     .replace(/\(variant \d+\)/g,' ')
@@ -23824,7 +23929,7 @@ async function tplMultiFile(ev){
       return sink;
     });
     fileSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by type (explicit metadata names win)
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });   // name by type (explicit metadata names win)
     var batchInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=batchInfo.list;
     _tplAppendUnreadableRows();
@@ -23849,7 +23954,7 @@ async function tplMultiFile(ev){
       return sink;
     });
     pairSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });
     var pairInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=pairInfo.list;
     if(!_tplPendingSplit.length){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
@@ -23914,7 +24019,7 @@ function _tplPerFileFallback(text){
     var meta=_tplParseMeta(seg);
     if(meta.name) return { name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true };
     var row={ name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };
-    _tplSeedKeywords(row);
+    _tplSeedKeywords(row,_tplSuggestLibrary(null));
     return row;
   }));
   var fbInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
@@ -23945,7 +24050,7 @@ async function tplAiSplit(text){
     if(!rows) return;   // null = AI unavailable (403) → _tplPerFileFallback below
     rows.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); });
   });
-  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by note TYPE, not patient (explicit metadata names win)
+  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });   // name by note TYPE, not patient (explicit metadata names win)
   var aiInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
   _tplPendingSplit=aiInfo.list;
   if(!_tplPendingSplit.length){ _tplPerFileFallback(text); return; }   // AI found nothing → keep each file as one template
@@ -23988,7 +24093,18 @@ function tplAddSplit(){
     }
     return base;
   };
-  keep.forEach(function(t,ki){ _tplSeedKeywords(t); list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:uniqueName(t.name), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() }); });
+  keep.forEach(function(t,ki){
+    _tplSeedKeywords(t,_tplSuggestLibrary(keep));
+    var row={ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:uniqueName(t.name), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() };
+    /* tplauto-1.0.0: a note kind read out of the template's own text rides
+       along, marked as a suggestion, so the picker's kind gate is not
+       starved on import. Nothing is invented: an ambiguous template stays
+       unset, and unset competes for every kind exactly as it always has. */
+    var _k=_mlsTplKindOf(t);
+    if(_k){ row.kind=_k; if(t.kindSuggested) row.kindSuggested=1; }
+    if(t.kwSuggested) row.kwSuggested=1;
+    list.unshift(row);
+  });
   setTemplates(list);
   if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
   _tplPendingSplit=[]; _tplPendingCarry=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
