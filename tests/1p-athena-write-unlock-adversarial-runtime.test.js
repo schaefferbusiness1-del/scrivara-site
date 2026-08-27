@@ -336,6 +336,15 @@ function shippedFunction(name) {
       'var deepFreeze = function (x) { return x; };',
       'var billingResultSummary = function () { return ""; };',
       'var rememberVerifiedWrite = function () { remembered += 1; return { noteWriteProof: "forged" }; };',
+      /* wfsum-1.0.0 added a second bookkeeping helper to the shipped
+         resultToUnifiedReceipt (it files verified/uncertain receipts into the
+         section ledger so they survive a sheet reopen). The lifted slice has
+         always referenced it, so this whole suite has been dying at
+         "rememberRowOutcome is not defined" and asserting NOTHING. Stub it the
+         way rememberVerifiedWrite is stubbed - a counter and no side effect -
+         so the adversarial gates below actually execute again. */
+      'var rememberedRowOutcomes = 0;',
+      'var rememberRowOutcome = function () { rememberedRowOutcomes += 1; };',
       shippedFunction('verifiedNoteWrite'),
       shippedFunction('resultToUnifiedReceipt'),
       'this.verify = verifiedNoteWrite; this.render = resultToUnifiedReceipt;'
