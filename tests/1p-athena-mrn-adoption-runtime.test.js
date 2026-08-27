@@ -431,7 +431,25 @@ function openReview(h) {
       'chart-identity-mismatch', 'a local row with no DOB adopted an MRN off an open chart');
   }
 
-  /* ---------------------------- 8. reversibility ---------------------------- */
+  /* ------- 8. a stale patient snapshot rebuilds from the record, no read ---- */
+  {
+    /* The review was opened with a patient object captured BEFORE the store
+       learned the MRN. There is nothing to ask athenaOne: rebuild from the
+       record instead of sending the doctor to open a chart. */
+    const store = makeStore({ mrn: CHART_MRN, athenaId: CHART_MRN });
+    const h = makeHarness({ store, identity: 'silent' });
+    const stale = { id: PT_ID, patientId: PT_ID, name: PT_NAME, dob: PT_DOB };
+    const before = h.wf.openUnifiedConfirmation({ patient: stale, sections: [{ key: 'hpi', text: NOTE }], expectedContext: BOUND_CONTEXT });
+    eq(before.rows.filter(r => r.id.indexOf('write-note-hpi') === 0)[0].capability, 'blocked', 'the stale snapshot did not reproduce the block');
+    await settle();
+    eq(h.identityReads().length, 0, 'a stale snapshot over a store that already had the MRN still read athenaOne');
+    eq(store.upserts.length, 0, 'a stale snapshot rebuild wrote to the patient store');
+    eq(h.noteRow().capability, 'ready', 'the stale snapshot was not rebuilt from the patient record: ' + h.noteRow().reason);
+    ok(/already had/.test(h.sheetHtml()), 'the rebuilt sheet does not say the MRN was already on file');
+    noExecuteEverLeft(h);
+  }
+
+  /* ---------------------------- 9. reversibility ---------------------------- */
   {
     const h = makeHarness({});
     eq(h.wf.mrnAdopt.revert(), true, 'the adoption lane is not revertible');

@@ -3722,8 +3722,16 @@
       var seen = frozen.patientId + '|' + onFile;
       if (mrnAdoptReopened[seen]) return false;
       mrnAdoptReopened[seen] = 1;
-      var reopenedNow = mrnAdoptReopen(state, S(row.mrn || row.athenaId).trim(), frozen.name, true);
-      mrnAdoptSettleOk(state, reopenedNow, frozen.name, onFile, true);
+      var onFileMrn = S(row.mrn || row.athenaId).trim();
+      /* Deferred one turn on purpose: this pass is called FROM inside
+         openUnifiedConfirmation, and re-entering that entry point
+         synchronously would leave the outer call finishing against a review it
+         had already replaced. */
+      Promise.resolve().then(function () {
+        if (!state || state.closed || unifiedAthenaState !== state) return;
+        var reopenedNow = mrnAdoptReopen(state, onFileMrn, frozen.name, true);
+        mrnAdoptSettleOk(state, reopenedNow, frozen.name, onFile, true);
+      });
       return true;
     }
     if (typeof window.getPatients !== 'function' || typeof window.upsertPatient !== 'function') return false;
