@@ -1699,11 +1699,28 @@
       try { returnFocus.focus({ preventScroll: true }); } catch (e1) { try { returnFocus.focus(); } catch (e2) {} }
     }, 0);
   }
+  /* sheetux-1.0.0 (owner 2026-08-27: "THIS WARNING MAKES IT LOOK LIKE ITS NOT
+     GOING TO WORK THO"). THREE severities, not two. A refusal that names one
+     step MLS can take itself is RECOVERABLE: it paints amber (attention), not
+     error-red, and it brings the button that takes the step. Only a real
+     conflict - identity mismatch, wrong chart, wrong day, missing write proof -
+     stays red. Nothing about the honesty changes: every one of these still says
+     that nothing was changed, because nothing was. */
   function unifiedStatus(state, message, kind, behavior) {
     if (!state || state.closed) return;
     var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) {}
-    if (el) { el.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#205c43' : '#6d5010'); el.textContent = message; }
-    actionSay(state.sourceOpts, message, kind, behavior);
+    if (el) {
+      var isFix = kind === 'fix';
+      el.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#205c43' : (isFix ? '#7a5a16' : '#6d5010'));
+      el.style.border = isFix ? '1px solid #f0d79a' : '';
+      el.style.background = isFix ? '#fff7e6' : '';
+      el.style.borderRadius = isFix ? '9px' : '';
+      el.style.padding = isFix ? '9px 11px' : '';
+      try { el.setAttribute('data-mls-status-kind', isFix ? 'fix' : (S(kind) || 'info')); } catch (eKind) {}
+      el.textContent = message;
+    }
+    /* a recoverable step is neither a success nor a failure toast */
+    actionSay(state.sourceOpts, message, kind === 'fix' ? '' : kind, behavior);
   }
   function unifiedRecheckButton(state, rowId) {
     /* wf2-1.9.0: read-only re-probe on demand; the button lives inside the
@@ -1727,6 +1744,44 @@
        strip below, so a refused check always leaves the doctor something to
        click and something to read. */
     wfdxShowFixStrip(state, rowId);
+    /* sheetux-1.0.0: a settled refusal is also the moment the merged primary
+       button becomes the doctor's next move again. */
+    try { unifiedSyncPrimaryButton(state); } catch (eSync) {}
+  }
+  /* sheetux-1.0.0 RECOVERABLE REFUSALS. The message names one step; this puts
+     that step on a button and takes it for the doctor. Everything the control
+     can do is READ-ONLY - athenaOne's own Day view, its own appointment row,
+     and the existing read-only re-check. It never writes, and it never retries
+     a write: a write outcome is never recoverable by construction. */
+  var SHEETUX_DOIT_LABEL = 'Open it and re-check';
+  var SHEETUX_DOIT_TITLE = 'Do it for me. Read-only: sends athenaOne\'s own Day view to this encounter\'s date, clicks this exact appointment row, then re-runs the read-only check. Nothing is written.';
+  function unifiedRecoveryButton(state, rowId, label, title, run) {
+    if (!state || state.closed || typeof run !== 'function') return;
+    var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) { return; }
+    if (!el) return;
+    try {
+      if (document.getElementById('mlsAthenaUnifiedDoIt')) return;
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'mlsAthenaUnifiedDoIt';
+      btn.textContent = S(label) || SHEETUX_DOIT_LABEL; btn.title = S(title);
+      btn.setAttribute('data-mls-recover-row', S(rowId));
+      btn.style.cssText = 'display:block;margin-top:7px;border:1px solid #d8a93a;background:#fff3d6;color:#6d5010;border-radius:8px;padding:7px 13px;font:800 12px inherit;cursor:pointer';
+      btn.addEventListener('click', function () { run(btn); });
+      el.appendChild(btn);
+    } catch (e2) {}
+  }
+  function unifiedRecoverableStatus(state, rowId, message, run) {
+    unifiedStatus(state, message, 'fix');
+    unifiedRecoveryButton(state, rowId, SHEETUX_DOIT_LABEL, SHEETUX_DOIT_TITLE, run);
+  }
+  function unifiedOpenDayRecovery(state, rowId) {
+    return function (btn) {
+      if (!state || state.closed || unifiedAthenaState !== state || state.running) return;
+      /* the named step, taken by MLS: Day view -> this exact appointment row ->
+         the existing read-only re-check (wfdxOpenEncounter re-runs the probe
+         itself once the chart is open). One press, one attempt. */
+      wfdxOpenEncounter(state, rowId, btn, false);
+    };
   }
   /* ---- wfdx-1.0.0 fix strip: what is wrong, and the one button that fixes it -- */
   function wfdxFixHost() { try { return document.getElementById('mlsAthenaUnifiedFix'); } catch (e) { return null; } }
@@ -1795,10 +1850,16 @@
     var generation = state.probeGeneration, manifest = state.manifest, visit = manifest.visit || {};
     var day = wfdxDayKey(visit.visitDate);
     if (btn) { btn.disabled = true; btn.textContent = byName ? 'Searching athenaOne…' : 'Opening in athenaOne…'; }
-    function done(message, kind) {
+    /* sheetux-1.0.0: `recover` marks the refusals that are ONE READ-ONLY STEP
+       away, not failures. They paint amber and carry the button that takes the
+       step. Everything else on this ladder keeps its red. */
+    function done(message, kind, recover) {
       if (btn) { btn.disabled = false; btn.textContent = byName ? 'Open by name instead' : 'Open this patient’s encounter in athenaOne'; }
       if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
-      if (message) unifiedStatus(state, message, kind || 'err');
+      if (message) {
+        if (recover) unifiedRecoverableStatus(state, rowId, message, unifiedOpenDayRecovery(state, rowId));
+        else unifiedStatus(state, message, kind || 'err');
+      }
       wfdxPaintDiag(state);
     }
     var openContext = byName ? { visitDate: visit.visitDate, provider: visit.provider, appointmentId: '' } : visit;
@@ -1817,9 +1878,9 @@
           reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed,
           appointmentIdPresent: !!S(visit.appointmentId).trim() });
         if (nav.ok !== true) {
-          done('athenaOne could not be sent to ' + day + '.' +
-            (observed && observed !== day ? ' Its Day view is on ' + observed + '.' : '') +
-            ' Open athenaOne’s Day view on ' + day + ' yourself, then press Check Athena again. Nothing was changed.', 'err');
+          done('One step needed: athenaOne’s Day view has to be on ' + day + ' once.' +
+            (observed && observed !== day ? ' Its Day view is on ' + observed + ' right now.' : '') +
+            ' MLS can take that step for you, or open ' + day + ' in athenaOne yourself and press Check Athena again. Nothing was changed and nothing was sent.', 'fix', true);
           wfdxOfferNameRoute(state, rowId);
           return;
         }
@@ -1832,9 +1893,9 @@
           appointmentIdPresent: !!S(openContext.appointmentId).trim() });
         if (openRes.ok !== true) {
           var why = wfdxErrorClass(openRes.error) === 'appointment-row-open-refused'
-            ? 'athenaOne is on ' + day + ' but this exact appointment row was not on the painted grid.'
-            : 'athenaOne refused the open (' + (wfdxReason(openRes.reason || openRes.findReason) || 'no reason given') + ').';
-          done(why + ' Nothing was changed.', 'err');
+            ? 'One step needed: athenaOne is on ' + day + ', but this exact appointment row is not on the grid it has painted yet.'
+            : 'One step needed: athenaOne did not open the chart this time (' + (wfdxReason(openRes.reason || openRes.findReason) || 'no reason given') + ').';
+          done(why + ' MLS can try the read-only open again, or open the encounter in athenaOne yourself and press Check Athena again. Nothing was changed.', 'fix', true);
           if (!byName) wfdxOfferNameRoute(state, rowId);
           return;
         }
@@ -1843,7 +1904,7 @@
         unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Re-checking the exact encounter read-only…', '');
         setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); }, 1500);
       });
-    }, function () { done('The read-only open could not be started. Nothing was changed.', 'err'); });
+    }, function () { done('One step needed: the read-only open did not start. MLS can try it again, or open the encounter in athenaOne yourself and press Check Athena again. Nothing was changed.', 'fix', true); });
   }
   function validatedUnifiedProbe(patient, probe) {
     var ctx = probe && probe.context || {};
@@ -2085,10 +2146,11 @@
     /* wfsum-1.0.0 footer truth (owner: '"Send checked sections" should be
        different than "Done" - it's confusing'): once anything landed, the exit
        button stops reading like it might undo the writes; once EVERYTHING is
-       in Athena, it becomes the one obvious green Done and the batch button
-       says there is nothing left to send. */
+       in Athena, it becomes the one obvious green Done and the send button
+       says there is nothing left to send.
+       sheetux-1.0.0: that send button is now the ONE merged primary. */
     try {
-      var cancelBtn = document.getElementById('mlsAthenaUnifiedCancel'), batchBtn2 = document.getElementById('mlsAthenaUnifiedBatch');
+      var cancelBtn = document.getElementById('mlsAthenaUnifiedCancel'), batchBtn2 = document.getElementById('mlsAthenaUnifiedGo');
       var anyLanded = state.manifest.rows.some(function (row) { var r2 = receiptStateForRow(state, row); return r2.status === 'verified' || r2.status === 'already in Athena'; });
       if (cancelBtn && banner) {
         cancelBtn.textContent = 'Done — close review';
@@ -2096,7 +2158,7 @@
       } else if (cancelBtn && anyLanded) {
         cancelBtn.textContent = 'Close review (writes stay in Athena)';
       }
-      if (batchBtn2 && banner && !state.batchRunning) { batchBtn2.disabled = true; batchBtn2.textContent = 'Nothing left to send'; }
+      if (batchBtn2 && banner && !state.batchRunning && !state.running) { batchBtn2.disabled = true; batchBtn2.setAttribute('aria-disabled', 'true'); batchBtn2.textContent = 'Nothing left to send'; }
     } catch (eFoot) {}
   }
   function resultToUnifiedReceipt(state, row, resp, probe) {
@@ -2269,6 +2331,79 @@
     }
     return out;
   }
+  /* ------------------------------------------------------------------ */
+  /* sheetux-1.0.0 (owner 2026-08-27: "THE CONFIRM AND SEND TO ATHENA WHATS
+     THE DIFFERENCE BETWEEN THOSE TWO BUTTONS THEY SHOULD BE MERGED").
+     ONE primary button. It writes NO send loop of its own:
+
+       - checked note sections  -> the EXISTING bx-1.0.0 batch driver, which
+         runs the same probeUnifiedRow / executeUnifiedSelection pair per row,
+         mints its own action token per row, writes its own receipt per row,
+         and halts the manifest on an uncertain outcome exactly as before;
+       - a selected Save draft / Sign & Save / order row - which by bx-1.0.0
+         law can never carry a checkbox - keeps the EXACT legacy one-row path;
+       - a sheet with no include checkboxes at all also keeps that legacy path,
+         so "send what is checked" only ever governs a surface that has checks.
+
+     With exactly one section checked the batch driver runs that single
+     probe/execute pair once, so the receipt is the same receipt the old
+     single-row press produced. Every refusal path, the never-retry rule, and
+     the Sign-after-verified-write gate are untouched. */
+  var SHEETUX_ZERO_REASON = 'Check at least one READY note section first - this button sends only the sections you have checked. Nothing was changed.';
+  function bxCheckBoxes() {
+    try { return document.querySelectorAll('#mlsAthenaUnifiedConfirm input.mls-bx-check') || []; } catch (e) { return []; }
+  }
+  function unifiedPrimaryPlan(state) {
+    if (!state || state.closed) return { mode: 'none', rows: [], reason: SHEETUX_ZERO_REASON };
+    var sel = unifiedRow(state.manifest, state.selectedRowId);
+    var selectable = !!(sel && sel.capability === 'ready' && sel.action);
+    /* Save / Sign / order rows never join a batch - they keep the legacy path */
+    if (selectable && sel.action !== 'write_note') return { mode: 'single', rows: [sel], reason: '' };
+    if (!bxCheckBoxes().length) {
+      return selectable ? { mode: 'single', rows: [sel], reason: '' } : { mode: 'none', rows: [], reason: SHEETUX_ZERO_REASON };
+    }
+    var rows = bxCheckedRows(state);
+    if (!rows.length) return { mode: 'none', rows: [], reason: SHEETUX_ZERO_REASON };
+    /* EXACTLY ONE checked section that is already the selected row and already
+       bound to this review's fresh validated probe IS the legacy single-row
+       press. Route it there, so its receipt AND its request count are what
+       that button always produced - no extra read-only round trip. */
+    if (rows.length === 1 && selectable && rows[0].id === sel.id && state.probe &&
+      state.probe.rowId === sel.id && state.probe.rowHash === sel.rowHash &&
+      state.probe.manifestHash === state.manifest.manifestHash) {
+      return { mode: 'single', rows: rows, reason: '' };
+    }
+    return { mode: 'batch', rows: rows, reason: '' };
+  }
+  function unifiedSyncPrimaryButton(state) {
+    var go = null; try { go = document.getElementById('mlsAthenaUnifiedGo'); } catch (e) { return; }
+    if (!go || !state || state.closed || state.running || state.batchRunning || state.generating) return;
+    var plan = unifiedPrimaryPlan(state);
+    /* 'single' is the legacy lane: its ONLY enable path stays the validated
+       read-only probe, so this never touches the button in that mode. */
+    if (plan.mode === 'batch') {
+      try {
+        go.disabled = false; go.removeAttribute('aria-disabled'); go.removeAttribute('data-mls-primary-blocked');
+        go.title = 'Sends every checked note section, one at a time, each with its own read-only Athena check and its own receipt. Save and Sign stay manual.';
+      } catch (e2) {}
+    } else if (plan.mode === 'none') {
+      try {
+        go.disabled = true; go.setAttribute('aria-disabled', 'true');
+        go.setAttribute('data-mls-primary-blocked', plan.reason); go.title = plan.reason;
+      } catch (e3) {}
+    }
+  }
+  function runUnifiedPrimarySend(state, btn) {
+    if (!state || state.closed) return;
+    if (state.running || state.batchRunning || state.generating) {
+      unifiedStatus(state, 'MLS is already working on this review. Nothing new was started and nothing was sent.', '');
+      return;
+    }
+    var plan = unifiedPrimaryPlan(state);
+    if (plan.mode === 'none') { unifiedStatus(state, plan.reason, 'err'); return; }
+    if (plan.mode === 'single') { executeUnifiedSelection(state); return; }
+    runUnifiedBatchSend(state, btn);
+  }
   function runUnifiedBatchSend(state, btn) {
     if (!state || state.closed || state.running || state.generating || state.batchRunning) return;
     if (state.halted) { unifiedStatus(state, 'This review is halted on an uncertain outcome. Inspect Athena before anything else runs.', 'err'); return; }
@@ -2285,6 +2420,10 @@
         (skipped.length ? ' Not sent: ' + skipped.join(', ') + ' (each kept its own honest refusal above).' : '') +
         (stopMsg ? ' ' + stopMsg : '') + ' Save & Sign stay manual.';
       unifiedStatus(state, summary, okCount === rows.length && !stopMsg ? 'ok' : 'err');
+      /* sheetux-1.0.0: the merged button decides its own next state from what
+         is still checked - then the receipt render below gets the last word,
+         because "Nothing left to send" outranks "some rows are checked". */
+      try { unifiedSyncPrimaryButton(state); } catch (eSync) {}
       /* wfsum-1.0.0: re-render so the completion banner and footer relabel
          (Done / Nothing left to send) survive the label restore above. */
       try { renderUnifiedReceipts(state); } catch (eRR) {}
@@ -2790,7 +2929,11 @@
       '<span style="font-size:10.5px;font-weight:850;color:#205c43;border:1px solid currentColor;border-radius:999px;padding:1px 7px">READY &middot; SEPARATE CONFIRMATION</span>' +
       '<span data-mls-ready-tick="' + esc(row.id) + '" style="display:none;font-size:10.5px;font-weight:850;color:#205c43;border:1px solid currentColor;border-radius:999px;padding:1px 7px">&#10003; Athena verified</span></span>' +
       '<span style="display:block;color:#385b49;font-size:12px;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</span>' +
-      '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px"><b>How:</b> Select this row, then use its own Confirm &amp; Send. Only &ldquo;' + esc(row.label) + '&rdquo; runs.</span>' +
+      /* sheetux-1.0.0 (owner 2026-08-27: too many warnings in your face): the
+         per-row "How" said the same sentence on every ready row, and with ONE
+         merged send button it also said the wrong thing. It is now stated ONCE
+         above the rows, in the What -> Where -> How guide. Per-row copy that is
+         actually per-row (Where, Result, Why) stays inline. */
       '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</span></span></label>' +
       /* bx-1.0.0 (owner 2026-08-26: "send each section all at the same time
          and check each one off"): note-write rows carry an include checkbox
@@ -2798,7 +2941,7 @@
          controls never fight, and only write_note rows ever get one - Save,
          Sign, billing and orders can never join a batch. */
       (row.action === 'write_note'
-        ? '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:#204034;cursor:pointer"><input type="checkbox" class="mls-bx-check" data-mls-bx-row="' + esc(row.id) + '" checked> Include in &ldquo;Send checked sections&rdquo;</label>'
+        ? '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:#204034;cursor:pointer"><input type="checkbox" class="mls-bx-check" data-mls-bx-row="' + esc(row.id) + '" checked> Send this section</label>'
         : '') +
       unifiedPayloadDetails(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
@@ -2807,7 +2950,8 @@
       '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#6d5010">What: ' + esc(unifiedArtifactName(row)) + '</b>' +
       '<span style="font-size:10.5px;font-weight:850;color:#7a5a16;border:1px solid currentColor;border-radius:999px;padding:1px 7px">MANUAL IN ATHENA</span></div>' +
       '<div style="font-size:12px;color:#6d5010;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</div>' +
-      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>How:</b> Review or copy this payload here, then complete it yourself in Athena. Nothing is sent from this row.</div>' +
+      /* sheetux-1.0.0: the "How" here was one identical sentence on every
+         manual row; it is stated once in this group's own heading note. */
       '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</div>' +
       '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#6d5010;font-size:11.5px">Why?</summary>' +
       (row.reason ? '<div style="font-size:12px;color:#52675c;margin-top:4px">' + esc(row.reason) + '</div>' : '') +
@@ -2819,7 +2963,8 @@
       '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#8b2525">What: ' + esc(unifiedArtifactName(row)) + '</b>' +
       '<span style="font-size:10.5px;font-weight:850;color:#8b2525;border:1px solid currentColor;border-radius:999px;padding:1px 7px">BLOCKED &middot; NOTHING SENT</span></div>' +
       '<div style="font-size:12px;color:#8b2525;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</div>' +
-      '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>How:</b> Nothing is sent from this row. Resolve the reason below, then reopen the Athena review.</div>' +
+      /* sheetux-1.0.0: identical on every blocked row - said once in the group
+         heading note instead. The per-row Why below is the unique part. */
       (row.reason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px"><b>Why:</b> ' + esc(row.reason) + '</div>' : '') +
       /* wfbind-1.0.0: a row blocked ONLY for the missing appointment binding has
          a one-press cure on this same sheet. Say so where the doctor is reading
@@ -3085,7 +3230,12 @@
        must do in Athena personally lives in one collapsed drawer instead of a
        wall of groups. */
     var generationIssue = unifiedCanonicalGenerationIssue(state.sourceOpts);
-    var rowsHtml = generationIssue ? '' : '<div data-mls-destination-guide="1" style="margin-top:12px;padding:8px 10px;border:1px solid #dbe7e0;background:#f7fbf9;border-radius:9px;color:#385b49;font-size:12px"><b>What &rarr; Where &rarr; How.</b> Every READY item needs its own Confirm &amp; Send. MANUAL and BLOCKED items never cross the Athena write bridge.</div>';
+    /* sheetux-1.0.0: the one shared "How" for every READY row, said once here
+       instead of repeated verbatim inside each row. */
+    var sharedHow = readyRows.some(function (row) { return row.action === 'write_note'; })
+      ? ' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; nothing is saved or signed.'
+      : ' Every READY item needs its own Confirm &amp; Send.';
+    var rowsHtml = generationIssue ? '' : '<div data-mls-destination-guide="1" style="margin-top:12px;padding:8px 10px;border:1px solid #dbe7e0;background:#f7fbf9;border-radius:9px;color:#385b49;font-size:12px"><b>What &rarr; Where &rarr; How.</b>' + sharedHow + ' MANUAL and BLOCKED items never cross the Athena write bridge.</div>';
     if (readyRows.length > 1) {
       rowsHtml += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" role="radiogroup" aria-label="What MLS sends">' +
         readyRows.map(function (row) { return unifiedReadyRowHtml(manifest, row, chosen && chosen.id === row.id); }).join('') + '</div>';
@@ -3100,10 +3250,11 @@
       var readyOrderCount = orderRows.filter(function (row) { return row.capability === 'ready' && !!row.action; }).length;
       rowsHtml += '<details open style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#6d5010;font-size:12px">' +
         (readyOrderCount ? ('Orders and other Athena items (' + drawerCount + ') — ' + readyOrderCount + ' order' + (readyOrderCount === 1 ? '' : 's') + ' can be sent with separate confirmation') : ('Complete final actions in Athena yourself (' + drawerCount + ') — nothing here is sent')) + '</summary>' +
-        (manualRows.length ? unifiedGroupHead('You finish this in Athena', '#7a5a16', 'The exact payload stays here for you to copy. It never crosses the write bridge.') +
+        /* sheetux-1.0.0: each group states its shared "How" ONCE, here. */
+        (manualRows.length ? unifiedGroupHead('You finish this in Athena', '#7a5a16', 'Review or copy each payload here, then complete it yourself in Athena. Nothing is sent from these rows; the exact payload stays here for you to copy and never crosses the write bridge.') +
           manualRows.map(function (row) { return unifiedManualRowHtml(manifest, row); }).join('') : '') +
         (orderRows.length ? renderUnifiedOrderSummary(orderRows, manifest, chosen) : '') +
-        (blockedRows.length ? unifiedGroupHead('Can\'t send', '#8b2525', 'MLS fails closed on these. Each one names exactly what is missing.') +
+        (blockedRows.length ? unifiedGroupHead('Can\'t send', '#8b2525', 'MLS fails closed on these: nothing is sent from any of them. Resolve the reason each one names, then reopen the Athena review.') +
           blockedRows.map(function (row) { return unifiedBlockedRowHtml(manifest, row); }).join('') : '') +
         '</details>';
     }
@@ -3128,14 +3279,22 @@
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
-      '<div style="display:flex;gap:9px;position:sticky;bottom:0;z-index:3;background:#fff;border-top:1px solid #e4e9e6;margin-top:10px;padding:12px 0 10px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedBatch" style="border:1px solid #205c43;background:#eef7f2;color:#205c43;border-radius:10px;padding:11px 14px;font-weight:850;font-size:13px;cursor:pointer" title="Runs every checked note section through its own read-only check and write, one at a time, in order. Save and Sign stay manual.">Send checked sections</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
+      /* sheetux-1.0.0: ONE primary send button. "Send checked sections" and
+         "Confirm & Send to Athena" were the same act described twice, so the
+         second one is gone and this one drives both lanes (see
+         runUnifiedPrimarySend). Bolder fill, taller hit area, real shadow -
+         the owner could not tell which button was the send. */
+      '<div style="display:flex;gap:9px;position:sticky;bottom:0;z-index:3;background:#fff;border-top:1px solid #e4e9e6;margin-top:10px;padding:12px 0 10px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:11px;padding:15px 18px;font-size:15.5px;font-weight:900;letter-spacing:.2px;box-shadow:0 2px 0 #14261d,0 7px 18px rgba(32,64,52,.30);cursor:pointer">Confirm &amp; Send to Athena</button></div>';
     ov.appendChild(card); document.body.appendChild(ov);
     var cancel = card.querySelector('#mlsAthenaUnifiedCancel'), close = card.querySelector('#mlsAthenaUnifiedClose'), go = card.querySelector('#mlsAthenaUnifiedGo');
     cancel.onclick = closeUnifiedConfirmation; close.onclick = closeUnifiedConfirmation;
     ov.addEventListener('click', function (ev) { if (ev.target === ov && !state.running && !state.generating) closeUnifiedConfirmation(); });
-    go.addEventListener('click', function () { executeUnifiedSelection(state); });
-    var batchBtn = card.querySelector('#mlsAthenaUnifiedBatch');
-    if (batchBtn) batchBtn.addEventListener('click', function () { runUnifiedBatchSend(state, batchBtn); });
+    /* sheetux-1.0.0: the ONE primary button routes to the existing drivers -
+       the bx-1.0.0 batch queue for checked note sections, the legacy one-row
+       execute for a selected Save / Sign / order row. No new send loop. */
+    go.addEventListener('click', function () { runUnifiedPrimarySend(state, go); });
+    var bxBoxes = card.querySelectorAll('input.mls-bx-check');
+    for (var bxi = 0; bxi < bxBoxes.length; bxi++) bxBoxes[bxi].addEventListener('change', function () { unifiedSyncPrimaryButton(state); });
     var generationButton = card.querySelector('#mlsAthenaUnifiedGenerateSections');
     if (generationButton) generationButton.addEventListener('click', function () { runUnifiedCanonicalGeneration(state, generationButton); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
@@ -3167,6 +3326,11 @@
     };
     document.addEventListener('keydown', state.a11yKeyHandler, true);
     wireUnifiedTeaching(state, card);
+    /* sheetux-1.0.0: paint the merged button's zero-checked refusal (and its
+       reason) BEFORE the receipt render and BEFORE the opening probe, so the
+       probe's own disable and "Nothing left to send" both still get the last
+       word over it. */
+    try { unifiedSyncPrimaryButton(state); } catch (eSync0) {}
     renderUnifiedReceipts(state);
     if (chosen) {
       for (var ri = 0; ri < radios.length; ri++) if (radios[ri].value === chosen.id) radios[ri].checked = true;
@@ -4101,7 +4265,12 @@
          is the same call the execute path makes; rowState()/render() are the
          same functions the sheet paints with. Nothing here can write. */
       receiptLedger: { v: 'wfsum-1.0.0', key: ledgerKey, remember: rememberRowOutcome,
-        rowState: receiptStateForRow, render: renderUnifiedReceipts } },
+        rowState: receiptStateForRow, render: renderUnifiedReceipts },
+      /* sheetux-1.0.0 test seam (read-only except press(), which is the SAME
+         call the merged primary button makes). */
+      sheetUx: { v: 'sheetux-1.0.0', zeroReason: SHEETUX_ZERO_REASON, doItLabel: SHEETUX_DOIT_LABEL,
+        plan: unifiedPrimaryPlan, sync: unifiedSyncPrimaryButton, checkedRows: bxCheckedRows,
+        press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); } } },
     /* wfbind-1.0.0 test + support seam (read-only; run() is the same call the
        sheet's own control makes). */
     bindCure: { v: 'wfbind-1.0.0', label: WFBIND_LABEL,
