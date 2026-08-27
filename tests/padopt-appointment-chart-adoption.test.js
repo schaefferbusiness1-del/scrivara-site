@@ -528,5 +528,48 @@ const UNDER_DEBRIS = '_48211937';         /* the "_"+digits capture twin */
     eq((res.historyTargets || []).length, 0, 'a conflicted appointment still reached the history queue');
   }
 
+  /* ---- (i) mrngrab-1.0.0: every pulled chart auto-grabs the MRN ----------
+     Owner 2026-08-27 (verbatim): "every single pull should auto grab an MRN,
+     even day pulls." The identity proof binds the verified chart to the local
+     row by name+DOB; when the chart shows an MRN the local row lacks, the
+     walk persists it - fill-only, never overwriting an existing value. */
+  {
+    const { makeHarness } = require('./1p-pull-harness.js');
+    const DAY = '2026-08-19';
+    const patients = [
+      { id: 'p-nomrn-1', name: 'Wendel Frostbach', dob: '02/03/1971', mrn: '', visits: [] },
+      { id: 'p-hasmrn-2', name: 'Ilsa Quarrytop', dob: '04/05/1972', mrn: '1112223', visits: [] }
+    ];
+    const h = makeHarness({
+      day: DAY, today: DAY, rows: 2, visitNotesOn: true, chartCoverage: true, patients,
+      parseResult: () => ({ problems: 'Synthetic problem', meds: 'Synthetic med', summary: 'Synthetic summary' }),
+      noteResult: (pid) => ({ ok: true, visits: [{ date: DAY, type: 'Office visit',
+        raw: 'Synthetic pulled-day encounter body with substantive clinical detail.',
+        fullDetail: true, sourceVisitKey: 'row:mg-' + pid }] })
+    });
+    const origRead = h.rt._assistReadChart;
+    h.rt._assistReadChart = function (t, s, o) {
+      return Promise.resolve(origRead.call(h.rt, t, s, o)).then(function (rd) {
+        if (rd && rd.ok) rd.chartMrn = String(t && t.patientId) === 'p-nomrn-1' ? '7654321' : '9998887';
+        return rd;
+      });
+    };
+    h.rt._assistReadCoverage = (_t, _s, o) => Promise.resolve({ ok: true, values: {},
+      receipt: { complete: true, status: 'saved', requestId: String((o && o.requestId) || ''),
+        sourceSurface: 'synthetic-suite', capturedAt: h.clock.now(), fieldsPresent: 0, fieldsEmpty: 0 } });
+    const batch = await h.api._runHistoryBatch(h.rows, [], h.onStatus, { scopeDay: DAY });
+    ok(batch.patients.length >= 2, 'the mrngrab batch did not walk both rows');
+    eq(String(patients[0].mrn || patients[0].athenaId || ''), '7654321',
+      'the pulled chart MRN was not adopted onto the MRN-less local row - the owner\'s auto-grab is not happening');
+    /* a chart proving a DIFFERENT MRN than the stored one is a wrong-chart
+       signal: the identity echo refuses the whole row and the stored MRN
+       survives untouched - stronger than fill-only. */
+    const mgConflicted = batch.patients.filter(p => String(p.patientId) === 'p-hasmrn-2')[0];
+    ok(mgConflicted && mgConflicted.complete !== true && /identity-echo-unproven/.test(String(mgConflicted.reason || '')),
+      'a conflicting chart MRN did not refuse the row: ' + JSON.stringify(mgConflicted && mgConflicted.reason));
+    eq(String(patients[1].mrn), '1112223',
+      'a conflicting chart MRN overwrote the stored one - the refusal must leave the row untouched');
+  }
+
   console.log('padopt-appointment-chart-adoption: ' + checks + ' checks passed');
 })().catch(err => { console.error(err); process.exit(1); });

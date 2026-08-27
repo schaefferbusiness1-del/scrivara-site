@@ -559,7 +559,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   };
   rt.postMessage = msg => {
     posted.push(msg);
-    if (msg.type === 'mlsPing') queueMicrotask(() => emit('mlsPong', { ok: true, version: '3.0.82' }, ''));
+    if (msg.type === 'mlsPing') queueMicrotask(() => emit('mlsPong', { ok: true, version: '3.0.84' }, ''));
     if (msg.type === 'mlsAppGotoDate') queueMicrotask(() => {
       const want = String(msg.date || bridgeDay).slice(0, 10);
       bridgeDay = want;

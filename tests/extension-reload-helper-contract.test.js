@@ -20,8 +20,8 @@ assert(!checker.includes('setInterval(function () { window.postMessage'), 'reloa
    loader URL must change whenever the published version does or a returning
    browser keeps announcing the old one. The reload-control behavior this suite
    pins is unchanged. */
-assert(liveLoader.includes('feat_mls_checker.js?v=20260827chk3082'), 'live checker loader must cache-bust the reload control');
-assert(stagingLoader.includes('feat_mls_checker.js?v=20260827chk3082'), 'staging checker loader must match live');
+assert(liveLoader.includes('feat_mls_checker.js?v=20260827chk3084'), 'live checker loader must cache-bust the reload control');
+assert(stagingLoader.includes('feat_mls_checker.js?v=20260827chk3084'), 'staging checker loader must match live');
 assert(checker.includes("panel.className = 'mls-login-keep'"), 'reload control must remain visible on the MLS login gate');
 
 console.log('PASS extension reload helper: query-gated, one-click, exact acknowledgement, no retry loop');

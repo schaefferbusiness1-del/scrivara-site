@@ -203,14 +203,14 @@ assert(/compareVersions\(installed,\s*SERVER_EXT_VERSION\)/.test(checker), 'chec
 assert(!/cannot read the installed extension version/i.test(checker), 'checker must not claim the installed version is inherently unreadable');
 
 const downloadPage = read('get-extension.html');
-const RELEASED_PACKAGE_SHA256 = '2901c60b6aa172cca4a43e0dfb80c961c7dd1b5f9194604237539d8fbdea4a4c';
+const RELEASED_PACKAGE_SHA256 = 'eba0d5373397e8ad6aa16b1433e55a6f1a7fc0bf70cef5c6e88e96dbf6e74ded';
 assert(/^[a-f0-9]{64}$/.test(RELEASED_PACKAGE_SHA256),
-  '3.0.82 package digest must be stamped after deterministic packaging before release');
+  '3.0.84 package digest must be stamped after deterministic packaging before release');
 assert(!/\bJSZip\b|cdnjs\.cloudflare\.com\/ajax\/libs\/jszip/i.test(downloadPage),
   'get-extension.html must not build a candidate from loose public source or a CDN ZIP library');
 assert(!/var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(downloadPage),
   'get-extension.html must not fetch candidate manifests or expose a loose-source package allowlist');
-assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3.0.82.zip["']/i.test(downloadPage) && !/candidate package withheld/i.test(downloadPage),
+assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3.0.84.zip["']/i.test(downloadPage) && !/candidate package withheld/i.test(downloadPage),
   'manual download must offer exactly the stamped released package (owner directive 2026-07-20)');
 assert(new RegExp(RELEASED_PACKAGE_SHA256, 'i').test(downloadPage),
   'download page must display the released package digest for verification');

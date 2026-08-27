@@ -4209,6 +4209,21 @@
         echoErr.mlsEchoes = { name: !!String(rd && rd.chartName || ""), dob: !!String(rd && rd.chartDob || ""), mrn: !!String(rd && rd.chartMrn || "") };
         throw echoErr;
       }
+      /* mrngrab-1.0.0 (owner 2026-08-27: "every single pull should auto grab
+         an MRN, even day pulls"): saveRef non-null means the read's identity
+         echo PROVED this chart is this local row. When the verified chart
+         shows an MRN the local row lacks, persist it - the same adoption
+         Verify-in-Athena performs, now on every proven chart read. Fill-only:
+         a local row that already carries a DIFFERENT MRN never gets here,
+         because the identity echo itself refuses the mismatch. */
+      try {
+        var mgMrn = String(rd && rd.chartMrn || "").trim();
+        var mgRow = patientById(target.patientId);
+        if (mgMrn && mgRow && !String(rowMrn(mgRow) || "").trim()) {
+          mgRow.athenaId = mgMrn; if (!String(mgRow.mrn || "").trim()) mgRow.mrn = mgMrn;
+          safe(function () { window.upsertPatient(mgRow); });
+        }
+      } catch (eMg) {}
       if (!requestId || !safe(function () { return window._savePatientChart(saveRef, row, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
       function verifyStored(){
         var storedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);

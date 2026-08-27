@@ -1,5 +1,5 @@
 {
-  "version": "3.0.82",
+  "version": "3.0.84",
   "minChrome": 116,
-  "notes": "v3.0.82 - One-use Athena action tokens are session-backed and survive MV3 service-worker restarts: each token binds the exact patient, encounter, and field set it was minted for, is consumed exactly once, and settles to a PHI-free terminal receipt. Everything from v3.0.81 remains. Requires Chrome 116+."
+  "notes": "v3.0.84 - Athena reliability: when a read, search, or day-jump fails because the athenaOne page is stuck, MLS Assist now recovers its own tab to the practice dashboard and retries instead of giving up; a gentle background request keeps the signed-in session fresh (no simulated input, signed-out sessions are never touched); and one-use write authorizations survive browser service-worker restarts with exact patient and encounter binding. Everything from v3.0.82 remains. Requires Chrome 116+."
 }
