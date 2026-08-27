@@ -98,7 +98,22 @@
     ['bursa_injection', /\b(bursa|trochanteric|subacromial)\b[\s\S]{0,40}\b(injection|aspiration)\b/],
     ['joint_injection', /\b(knee|hip|shoulder|glenohumeral|acromioclavicular)\b[\s\S]{0,45}\b(injection|arthrocentesis|2061[0-1])\b/],
     ['peripheral_nerve_block', /\b(occipital|suprascapular|ilioinguinal|intercostal|peripheral nerve)\b[\s\S]{0,45}\b(block|injection)\b/],
-    ['generic_esi', /\besi\b|\bepidural\b[\s\S]{0,35}\b(injection|steroid)\b/]
+    ['generic_esi', /\besi\b|\bepidural\b[\s\S]{0,35}\b(injection|steroid)\b/],
+    /* opnq-1.0.0 (owner 2026-08-26: an RFA-titled case received an injection
+       narrative). MEASURED on the shipped classifier: "B/L L3, L4, L5 RFA",
+       "Bilateral multi-level RFA under MAC" and "L3-L5 radiofrequency ablation"
+       all classified to NOTHING, because facet_rfa needs facet/medial branch/
+       mbb/rhizotomy near the modality word, a literal cervical|thoracic|lumbar
+       word within 30 characters, or a 6463x CPT - and a schedule string that
+       names LEVELS instead of a region word carries none of the three. With no
+       class there is no +120 class match and, decisively, no -120 CROSS-class
+       penalty, so an injection template kept its full token score and
+       templateCompatibility's procedureType check returned before it ran.
+       This parent restores the type signal alone; it names no target, so
+       RFA_FAMILY below must relax parent-vs-child or the doctor's own correct
+       RFA template would be refused. It is LAST so every specific class is
+       tested first, and classesIn() drops it whenever any other class fired. */
+    ['generic_rfa', /\b(rfa|radiofrequenc\w*|ablation|rhizotomy|neurotomy|denervation)\b/]
   ];
 
   /* NEGATION: "no procedure performed", "without injection", "denies epidural"
@@ -123,6 +138,12 @@
       .replace(/\bpost[\s-]?op(?:erative)?\s+(?:check|visit|follow[\s-]?up)\b[^.;\n]*/gi, ' ');
   }
   var ESI_FAMILY = { tfesi: 1, interlaminar_esi: 1, caudal_esi: 1, generic_esi: 1 };
+  /* opnq-1.0.0: the parent/child relaxation ESI_FAMILY already has. generic_rfa
+     carries no target of its own, so scoring it -120 against the practice's
+     real facet/SI/genicular RFA template would refuse the RIGHT template - a
+     worse defect than the one the parent class cures. Sibling-vs-sibling
+     (facet_rfa vs genicular_rfa) is NOT relaxed and still conflicts. */
+  var RFA_FAMILY = { facet_rfa: 1, si_rfa: 1, genicular_rfa: 1, generic_rfa: 1 };
   function stripCodes(n) { return S(n).replace(/\b\d{4,5}\b|\b0275t\b/g, ' '); }
   function classesIn(n) {
     var out = [];
@@ -131,6 +152,13 @@
     if (out.indexOf('generic_esi') >= 0 && out.some(function (k) { return k !== 'generic_esi' && ESI_FAMILY[k]; })) {
       out = out.filter(function (k) { return k !== 'generic_esi'; });
     }
+    /* opnq-1.0.0: generic_rfa is a family PARENT, never a procedure of its
+       own. Any other class that fired is more specific, so the parent is
+       dropped whenever one did - which keeps procClassSet().length at 1 and
+       leaves best()'s "names more than one procedure" refusal untouched.
+       Verified against the 12 cases opnote-template-integrity-runtime.test.js
+       pins, including 'Intracept BVN ablation' -> ["intracept"]. */
+    if (out.length > 1 && out.indexOf('generic_rfa') >= 0) out = out.filter(function (k) { return k !== 'generic_rfa'; });
     /* "RFA of the medial branches / SI / genicular nerves" names ONE
        procedure: the ablation. The block class fires on the shared target
        words, so the RFA class subsumes its same-target block sibling. */
@@ -168,7 +196,14 @@
        Recognize every procedure-DESCRIBING heading (history/indication
        headings stay excluded so prior-surgery levels never leak in). */
     var raw=S(text), lines=raw.split(/\r?\n/), picked=[];
-    var HEAD=/^(?:(?:operative\s+)?procedure(?:s)?(?:\s+performed)?|operation(?:s)?(?:\s+performed)?|(?:name|title)\s+of\s+(?:procedure|operation)|laterality(?:\s+and\s+levels?)?|side|levels?(?:\s+(?:treated|injected|addressed|targeted))?|target(?:\s+levels?)?|sites?(?:\s+and\s+levels?)?|interspaces?|approach)\s*:/i;
+    /* opnq-1.0.0: the literal "(S)" was not in the alternation, so
+       "PROCEDURE(S) PERFORMED:" - the exact heading mls-opnote-pro.js emits and
+       the one the consistency check most needs to read - was a MISS and the
+       evidence collapsed to the title line. Widened to the app's own heading;
+       DESCRIPTION/TECHNIQUE deliberately stay OUT, because feeding a whole
+       narrative into the requested/actual fact contract would newly refuse
+       honest drafts. The narrative is bound separately, below. */
+    var HEAD=/^(?:(?:operative\s+)?procedure(?:s|\(s\))?(?:\s+performed)?|operation(?:s)?(?:\s+performed)?|(?:name|title)\s+of\s+(?:procedure|operation)|laterality(?:\s+and\s+levels?)?|side|levels?(?:\s+(?:treated|injected|addressed|targeted))?|target(?:\s+levels?)?|sites?(?:\s+and\s+levels?)?|interspaces?|approach)\s*:/i;
     for(var i=0;i<lines.length;i++){
       var line=S(lines[i]).trim(); if(!line)continue;
       if(i<2&&/\b(?:operative|procedure|injection|block|ablation|tfesi|esi|rfa|stimulator|intracept)\b/i.test(line))picked.push(line);
@@ -223,6 +258,53 @@
     var evidence=procedureEvidence(text), levels=levelsOf(evidence);
     return {procedureType:procClass(evidence),region:regionOf(evidence,levels),side:sideOf(evidence),levels:levels,levelCount:levels.length,approach:approachOf(evidence),evidence:evidence};
   }
+  /* ===== opnq-1.0.0 JUNK STRIP =============================================
+     Owner 2026-08-26: the scheduling string's case number and "PP" suffixes
+     were pasted verbatim into PROCEDURE(S) PERFORMED on a signed note. The raw
+     reason reaches the note through the PROMPT and through the deterministic
+     fact stamp; both are NOTE doors. Matching, ranking and the requested-fact
+     contract keep the FULL string, because every token in it is evidence there
+     and clinicalConsistency grades the draft against facts derived from that
+     same string - stripping before those would change the contract itself.
+
+     THE SAFETY PROPERTY IS CHECKED, NOT ASSERTED IN A COMMENT: the stripped
+     string is returned only when procedureFacts() reports the identical
+     procedure type, region, side, exact levels, level count and approach.
+     Anything else returns the ORIGINAL untouched, so a regex that turns out to
+     eat a level or a laterality token can only be inert. Anesthesia and
+     modality words (MAC, MBB, RFA, ESI, TFESI, SI, MB, DR B) are not
+     procedureFacts fields, so any removed span containing one is refused
+     outright rather than trusted to the invariance check. */
+  var PROC_TITLE_KEEP=/\b(?:MAC|MBB|RFA|ESI|TFESI|SI|MB|DR\s*B)\b/i;
+  var PROC_TITLE_JUNK=[
+    /* "; CASE# KPNV5463" - the '#' and a digit are both REQUIRED so an ordinary
+       sentence ending in "case ..." can never match. */
+    /\s*[;,]?\s*CASE\s*#\s*(?=[A-Za-z0-9-]*\d)[A-Za-z0-9][A-Za-z0-9-]{3,}\s*$/i,
+    /* the trailing visit ordinal "#2", only where a scheduling suffix or the
+       end of the string follows it */
+    /\s*#\s*\d{1,3}\b(?=\s*(?:PP|P)?\s*(?:[;,]|$))/i,
+    /* the trailing scheduling suffix itself */
+    /\s*\b(?:PP|P)\b\s*(?=[;,]|$)/i,
+    /* whatever punctuation the removals left dangling */
+    /\s*[;,]+\s*$/
+  ];
+  function sameProcedureFacts(a,b){
+    return a.procedureType===b.procedureType&&a.region===b.region&&a.side===b.side&&
+      Number(a.levelCount)===Number(b.levelCount)&&a.approach===b.approach&&sameLevels(a.levels,b.levels);
+  }
+  function procTitleForNote(text){
+    var original=S(text),out=original;
+    for(var i=0;i<PROC_TITLE_JUNK.length;i++){
+      var m=PROC_TITLE_JUNK[i].exec(out);
+      if(!m||!m[0])continue;
+      if(PROC_TITLE_KEEP.test(m[0]))continue;
+      out=out.slice(0,m.index)+out.slice(m.index+m[0].length);
+    }
+    out=out.replace(/\s{2,}/g,' ').replace(/\s*[;,]+\s*$/,'').trim();
+    if(!out||out===original)return original;
+    if(!sameProcedureFacts(procedureFacts(original),procedureFacts(out)))return original;
+    return out;
+  }
   function sameRegion(a,b){
     if(!a||!b)return true;
     if(a===b)return true;
@@ -274,6 +356,14 @@
       relaxed.procedureType=requested.procedureType;
       if(requested.procedureType==='generic_esi'||!requested.approach)relaxed.approach=requested.approach;
       actual=relaxed;
+    }
+    /* opnq-1.0.0 RFA hierarchy, mirroring the ESI block above. Only the TYPE
+       is relaxed: region, side, level and approach checks all still run, so a
+       lumbar RFA request cannot reach a genicular or SI RFA template. */
+    if(requested.procedureType!==actual.procedureType&&RFA_FAMILY[requested.procedureType]&&RFA_FAMILY[actual.procedureType]&&(requested.procedureType==='generic_rfa'||actual.procedureType==='generic_rfa')){
+      var relaxedRfa={};for(var rfk in actual)if(Object.prototype.hasOwnProperty.call(actual,rfk))relaxedRfa[rfk]=actual[rfk];
+      relaxedRfa.procedureType=requested.procedureType;
+      actual=relaxedRfa;
     }
     var fields=['procedureType','region','approach'];
     if(tpl&&tpl.validatedFacts===true)fields=['procedureType','region','side','levels','levelCount','approach'];
@@ -395,6 +485,108 @@
     var kept=((clinical&&clinical.errors)||[]).filter(function(e){return ADAPT_FACT_FIELDS[e.field];});
     return {pass:!kept.length,errors:kept,requested:clinical&&clinical.requested,actual:clinical&&clinical.actual,levelsVia:clinical&&clinical.levelsVia,adapted:true};
   }
+  /* ===== opnq-1.0.0 NARRATIVE BINDING ======================================
+     Owner 2026-08-26: "the procedure title said bilateral multi-level RFA under
+     MAC, but the DESCRIPTION OF PROCEDURE was the generic single-needle
+     injection boilerplate."
+
+     THE TITLE AND THE NARRATIVE ARE GRADED SEPARATELY TODAY, AND THE NARRATIVE
+     IS NOT GRADED AT ALL. procedureEvidence() picks the title line and the
+     procedure-DESCRIBING headings; the DESCRIPTION body is outside every check
+     by construction, so a note whose title says RFA over a body that describes
+     an injection passes clinicalConsistency and ships.
+
+     WHAT THIS DOES, AND THE LINE IT WILL NOT CROSS. It classifies the narrative
+     section ON ITS OWN and compares CLASS - never vocabulary. It fires only
+     when BOTH classes are non-empty and they are neither equal nor family
+     compatible; an unclassifiable narrative is left completely alone, because
+     over-firing here would delete real clinical prose, which is the worst
+     outcome available on this surface. When it does fire it does not rewrite
+     the prose into a different story - it replaces the section with a bracketed
+     skeleton naming the elements the REQUESTED procedure needs, in the app's
+     own [FILL:] vocabulary. opNoteBlankTokens() counts those, so the note
+     cannot be saved complete, cannot be exported as a PDF and cannot be offered
+     to Athena until the doctor fills them. Fabricated prose out, an honest
+     unfinished note in. */
+  var NARRATIVE_LABEL=/^(?:description\s+of\s+(?:the\s+)?(?:procedure|operation)|(?:detailed\s+)?description|procedure\s+in\s+detail|details?\s+of\s+(?:the\s+)?procedure|(?:operative\s+)?technique)$/i;
+  var NARRATIVE_NEXT=/^\s*(?:[A-Z][A-Z0-9 ()\/'&,.\-]{2,60}:|[A-Z][A-Z0-9 ()\/'&,.\-]{2,60})\s*$/;
+  var NARRATIVE_SKELETON={
+    rfa:['position, monitoring and sedation as given','target - the exact nerves and levels treated, each side','cannula type, gauge and active tip length','fluoroscopic views used and final needle position confirmed','sensory stimulation threshold at each level','motor stimulation result at each level','local anesthetic given at each level before lesioning','lesion temperature and time at each level, each side','post-lesion check, needle removal and dressing'],
+    injection:['position, monitoring and sedation as given','target - the exact level, side and approach','needle type and gauge','fluoroscopic views used and final needle position confirmed','contrast used and the flow pattern seen','injectate given at each level','post-injection check, needle removal and dressing'],
+    other:['position, monitoring and sedation as given','target - the exact site, side and level(s)','instruments, needles or devices used and their sizes','imaging used and final position confirmed','each step of the technique as performed','medication or material given, with amount','post-procedure check and dressing']
+  };
+  function skeletonKindFor(cls){
+    if(RFA_FAMILY[cls])return 'rfa';
+    if(ESI_FAMILY[cls]||cls==='facet_mbb'||cls==='si_injection'||cls==='genicular_block'||cls==='trigger_point'||cls==='bursa_injection'||cls==='joint_injection'||cls==='peripheral_nerve_block')return 'injection';
+    return 'other';
+  }
+  function narrativeCompatible(want,got){
+    if(!want||!got||want===got)return true;
+    if(ESI_FAMILY[want]&&ESI_FAMILY[got])return true;
+    if(RFA_FAMILY[want]&&RFA_FAMILY[got])return true;
+    return false;
+  }
+  /* Find the narrative section: its heading line index, and the index one past
+     its last body line. Returns null when the note has no such section. */
+  function narrativeSpan(note){
+    var lines=S(note).split(/\r?\n/),start=-1,label='',head='';
+    for(var i=0;i<lines.length;i++){
+      var t=S(lines[i]).trim();if(!t)continue;
+      var m=/^([A-Za-z][A-Za-z0-9 ()\/'&,.\-]{0,60}?)\s*:(.*)$/.exec(t);
+      var name=m?S(m[1]).trim():t;
+      if(NARRATIVE_LABEL.test(name)){start=i;label=name;head=lines[i];break;}
+    }
+    if(start<0)return null;
+    var end=lines.length;
+    for(var j=start+1;j<lines.length;j++){
+      var t2=S(lines[j]).trim();if(!t2)continue;
+      var m2=/^([A-Za-z][A-Za-z0-9 ()\/'&,.\-]{0,60}?)\s*:\s*(.*)$/.exec(t2);
+      var isHead=(m2&&(!!aliasHeadingName(m2[1])||NARRATIVE_NEXT.test(t2)))||NARRATIVE_NEXT.test(t2);
+      if(isHead){end=j;break;}
+    }
+    return {lines:lines,start:start,end:end,label:label,head:head};
+  }
+  /* A heading NAME this module recognises without owning mls-opnote-pro's map:
+     all-caps-ish and short is the shape every op-note heading in this app has. */
+  function aliasHeadingName(name){
+    var n=S(name).trim();
+    if(!n||n.length>60)return '';
+    return /[a-z]/.test(n)?'':n;
+  }
+  function narrativeBinding(note,procedure){
+    var want=procClass(procedure);
+    if(!want)return {fired:false,reason:'no requested class'};
+    var span=narrativeSpan(note);
+    if(!span)return {fired:false,reason:'no narrative section'};
+    var bodyLines=span.lines.slice(span.start,span.end).slice();
+    bodyLines[0]=S(bodyLines[0]).replace(/^[^:]*:/,'');
+    var body=bodyLines.join('\n').trim();
+    if(!body)return {fired:false,reason:'empty narrative'};
+    var got=procClass(body);
+    if(!got)return {fired:false,reason:'narrative not classifiable',requested:want};
+    if(narrativeCompatible(want,got))return {fired:false,reason:'narrative matches',requested:want,found:got};
+    var kind=skeletonKindFor(want);
+    var out=span.lines.slice(0,span.start);
+    out.push(S(span.head).replace(/:\s*[\s\S]*$/,':'));
+    out.push('(The drafted narrative described a different procedure than the one requested and was not kept. Dictate or fill each element below.)');
+    NARRATIVE_SKELETON[kind].forEach(function(el){out.push('[FILL: '+el+']');});
+    out.push('');
+    out=out.concat(span.lines.slice(span.end));
+    return {fired:true,requested:want,found:got,label:span.label,note:out.join('\n')};
+  }
+  function guardNarrativeBinding(procedure,out){
+    try{
+      if(!out||!S(out.note).trim())return out;
+      var v=narrativeBinding(out.note,procedure);
+      if(!v.fired)return out;
+      try{window.__mlsOpNarrativeGuard={at:Date.now(),requested:v.requested,found:v.found,section:v.label};}catch(e1){}
+      try{console.warn('[mls] op-note narrative guard: the '+v.label+' section described '+v.found+' for a '+v.requested+' case; replaced with a bracketed skeleton.');}catch(e2){}
+      var next={};for(var k in out)if(Object.prototype.hasOwnProperty.call(out,k))next[k]=out[k];
+      next.note=v.note;
+      next.narrativeGuard={requested:v.requested,found:v.found,section:v.label};
+      return next;
+    }catch(e){return out;}
+  }
   function templateClass(t) {
     var trusted = S(t && t.name) + ' ' + ((t && t.keywords) || []).join(' ');
     return procClass(trusted) || procClass(S(t && t.text).slice(0, 2400));
@@ -512,6 +704,9 @@
         /* ESI-family generic<->specific is a REAL but weaker match: it must
            beat unrelated templates yet always lose to an exact class. */
         else if (ESI_FAMILY[pc] && ESI_FAMILY[tc] && (pc === 'generic_esi' || tc === 'generic_esi')) score += 45;
+        /* opnq-1.0.0: same weight, same reason - a real but weaker match that
+           must beat unrelated templates and always lose to an exact class. */
+        else if (RFA_FAMILY[pc] && RFA_FAMILY[tc] && (pc === 'generic_rfa' || tc === 'generic_rfa')) score += 45;
         else score -= 120;
       }
       else if (pc && !tc) score -= 25;
@@ -1501,7 +1696,11 @@
     /* When the verified-history owner is ready it is the sole history source;
        do not also trust or duplicate a caller-supplied ctx.history string. */
     var legacyHistory=historyAtStart?'':S(ctx.history);
-    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+tplForModel;
+    /* opnq-1.0.0: NOTE DOOR 1 - what the model is told to write as the title.
+       'procedure' itself is untouched and still drives matching, compatibility
+       and the requested-fact contract. */
+    var procTitle=procTitleForNote(procedure);
+    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procTitle+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+tplForModel;
     var key=isFn(window.getKey)?window.getKey():'';
     /* maxTokens was never set on the only endpoint op notes use; a long
        template + full JSON-wrapped note rode the server default and could be
@@ -1513,7 +1712,9 @@
        held the whole Draft-all run. 180s matches the 3-minute progress budget. */
     try{var __oniAc=new AbortController();opts.signal=__oniAc.signal;setTimeout(function(){try{__oniAc.abort();}catch(eA){}},180000);}catch(eAC){}
     if(S(selectedTpl&&(selectedTpl.id||selectedTpl.templateId)).trim())opts.mlsOpNoteTemplateId=S(selectedTpl.id||selectedTpl.templateId).trim();
-    var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procedure};
+    /* opnq-1.0.0: NOTE DOOR 2 - forceFacts()/reanchor() stamp this onto the
+       note's own "Procedure:" heading line. */
+    var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procTitle};
     if(ctx.dob){facts['date of birth']=ctx.dob;facts.dob=ctx.dob;facts['patient dob']=ctx.dob;}
     if(ctx.age!=null)facts.age=S(ctx.age);
     if(ctx.sex){facts.sex=ctx.sex;facts.gender=ctx.sex;}
@@ -1669,6 +1870,15 @@
         if(typeof window._opGuardProcedureDate==='function')result=window._opGuardProcedureDate(dateStr,result);
         if(typeof window._opGuardDrugBlanks==='function')result=window._opGuardDrugBlanks(tplText,result);
       }catch(eg){}
+      /* opnq-1.0.0 THIRD GUARD, and it is a THIRD KIND. The date guard REPAIRS
+         (the value was given to us). The drug guard REFUSES (the value never
+         was). This one REPLACES: the prose it removes was a different
+         procedure's story, so keeping it is not an option, and writing the
+         right one would be inventing - so it leaves the elements the requested
+         procedure needs, bracketed, for the doctor. Runs after both, and after
+         every validation, so it can never send a draft back around a repair
+         loop. */
+      try{ result=guardNarrativeBinding(procedure,result); }catch(eNb){}
       generationStage(runCtx,'Note ready','The template and requested clinical facts passed final validation.');
       if(entry.progress)entry.progress.complete('Operative note ready.');
       return result;
@@ -1828,6 +2038,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){try{var _tpf=window.__mlsTplPrepFix;if(_tpf&&typeof _tpf.draftAll==='function')return await _tpf.draftAll();}catch(_eDA){}var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

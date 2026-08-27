@@ -417,6 +417,7 @@ const tests = [
   '1p-visit-banner-bind-cure.test.js',
   '1p-write-fidelity-contract.test.js',
   '1p-writeflow-bind-cure.test.js',
+  '1p-writeflow-receipt-ledger.test.js',
   '1p-patient-search-tokens.test.js',
   '1p-writeflow-booking-row-fallback.test.js',
   '1p-writeflow-stale-review-rebind.test.js',
@@ -811,6 +812,14 @@ const tests = [
   'opnote-room-does-not-trap.test.js',
   /* opnote-declunk-1.0.0 (owner 2026-08-26): the room never drafts by itself */
   'opnote-room-never-drafts-by-itself.test.js',
+  /* opnsend-2.0.0 / opnq-1.0.0 (owner 2026-08-26): op notes reach Athena from
+     the card they are written on, and the note that gets there is bound to the
+     procedure it names. The Send-to-Athena suite also pins the derived pages,
+     so it is expected red between a 1p shell edit and the derive step. */
+  'opnote-send-to-athena-control-runtime.test.js',
+  'opnote-template-binding-gate-runtime.test.js',
+  'opnote-procedure-title-junk-strip.test.js',
+  'opnote-pdf-reconciles-not-concatenates.test.js',
   'opnote-follow-modes-differ.test.js',
   'ui-clinical-pass.test.js',
   'ui-shell-pass.test.js',

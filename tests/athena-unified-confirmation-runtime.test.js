@@ -120,7 +120,12 @@ const longTimerSafe = (fn, ms) => {
 const ctx = {
   window, document, MutationObserver, console, structuredClone,
   setTimeout: longTimerSafe, clearTimeout, Date, Math, Promise, Object, Array,
-  String, Number, RegExp, JSON, Uint32Array
+  String, Number, RegExp, JSON, Uint32Array,
+  /* wfsum-1.0.0: the execute path now runs a 1s elapsed-seconds ticker on the
+     confirm button. A real page always has interval timers; give the VM the
+     same surface (unref'd so a leaked interval can never hang the suite). */
+  setInterval: (fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); return t; },
+  clearInterval
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, 'feat_mls_show_assistant.js'), 'utf8'), ctx);
