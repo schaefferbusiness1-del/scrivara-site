@@ -208,9 +208,10 @@ function openReview(wf, sessionId) {
   ok(/Save \/ Sign in Athena yourself/.test(host.innerHTML), 'the banner still hands Save/Sign to the human');
   const cancelBtn = h.resolveId('mlsAthenaUnifiedCancel');
   ok(cancelBtn.textContent === 'Done — close review', 'the exit button becomes "Done - close review" (got "' + cancelBtn.textContent + '")');
-  const batchBtn = h.resolveId('mlsAthenaUnifiedBatch');
+  /* sheetux-1.0.0: the footer's send button is now the ONE merged primary. */
+  const batchBtn = h.resolveId('mlsAthenaUnifiedGo');
   ok(batchBtn.disabled === true && batchBtn.textContent === 'Nothing left to send',
-    'the batch button says there is nothing left to send');
+    'the merged send button says there is nothing left to send');
 
   /* ---- 7. control: one row still unwritten -> NO banner, batch stays live ---- */
   const mHalf = openReview(wf, 'wfsum-session-delta');
@@ -219,14 +220,14 @@ function openReview(wf, sessionId) {
   seam.remember(stateHalf, half[0].id, { status: 'verified', message: 'Inserted into the exact Athena field and read back successfully.' });
   const cancelBtn2 = h.resolveId('mlsAthenaUnifiedCancel');
   cancelBtn2.textContent = 'Cancel'; cancelBtn2.style = {};
-  const batchBtn2 = h.resolveId('mlsAthenaUnifiedBatch');
-  batchBtn2.disabled = false; batchBtn2.textContent = 'Send checked sections';
+  const batchBtn2 = h.resolveId('mlsAthenaUnifiedGo');
+  batchBtn2.disabled = false; batchBtn2.textContent = 'Confirm & Send to Athena';
   seam.render(stateHalf);
   ok(host.innerHTML.indexOf('Everything on this review is in Athena') < 0,
     'with a row still unwritten there is NO completion banner');
   ok(host.innerHTML.indexOf('What happened') >= 0, 'but the receipt list itself renders (an outcome exists)');
-  ok(batchBtn2.disabled === false && batchBtn2.textContent === 'Send checked sections',
-    'and the batch button stays live');
+  ok(batchBtn2.disabled === false && batchBtn2.textContent === 'Confirm & Send to Athena',
+    'and the merged send button stays live');
   ok(cancelBtn2.textContent === 'Close review (writes stay in Athena)',
     'once anything landed the exit button stops reading like an undo (got "' + cancelBtn2.textContent + '")');
 

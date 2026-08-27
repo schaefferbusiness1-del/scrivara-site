@@ -28,9 +28,9 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 /* Kept in sync with tests/run-all.js by the deterministic contract test. */
-/* b1082 reconciliation: 872 registered at b1081
-   + template-kind-and-keyword-pick-pins (tplpick-1.0.0) = 873. */
-const FULL_GATE_TESTS = 873;
+/* b1083 reconciliation: 873 registered at b1082
+   + 1p-writeflow-sheet-ux (sheetux-1.0.0) = 874. */
+const FULL_GATE_TESTS = 874;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
