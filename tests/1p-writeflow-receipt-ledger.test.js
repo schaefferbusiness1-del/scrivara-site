@@ -47,7 +47,11 @@ function ok(cond, msg) { assert.ok(cond, msg); checks++; }
   ok(/state\.receipts\[row\.id\] = receipt;\s*\n\s*rememberRowOutcome\(state, row\.id, receipt\);/.test(src),
     'resultToUnifiedReceipt banks every stored receipt into the ledger');
   ok(src.indexOf("'already in Athena': '#205c43'") > 0, 'ALREADY IN ATHENA paints green, not gray');
-  ok(src.indexOf('wfsumStopTick') > 0 && src.indexOf("wfsumVerb + '… ' + secs + 's'") > 0,
+  /* wfprog-1.0.0 kept this tick and gave it one more job: inside a batch the
+     driver owns the button's "Writing 2 of 3" label, so the tick decorates
+     that label instead of overwriting it. The elapsed seconds still land on
+     the confirm button either way, which is what this pin is about. */
+  ok(src.indexOf('wfsumStopTick') > 0 && src.indexOf("(state.batchRunning ? (S(state.batchLabel) || wfsumVerb) : wfsumVerb) + '... ' + secs + 's'") > 0,
     'the execute loading bar ticks elapsed seconds on the confirm button');
   ok(/wfsumStopTick\(\);\s*\n\s*if \(state\.closed \|\| unifiedAthenaState !== state\) return;/.test(src),
     'both bridge handlers stop the ticker before anything else');
