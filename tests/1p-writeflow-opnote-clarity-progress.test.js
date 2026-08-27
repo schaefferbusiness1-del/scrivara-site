@@ -86,6 +86,7 @@ const THREE = [
 ];
 
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
+function tally(html, needle) { return String(html).split(needle).length - 1; }
 
 /* ------------------------------------------------------------------ DOM shim
  * The sheet-ux harness shape (1p-writeflow-sheet-ux.test.js) plus the two ids
@@ -538,6 +539,35 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     /* byte-identical block in both shells */
     const lift = (src) => src.slice(src.indexOf('/* ===== opnsend-2.2.0'), src.indexOf('try{ window.opPrepSendToAthena=opPrepSendToAthena; }'));
     eq(lift(bodies[0]), lift(bodies[1]), 'the opnsend-2.2.0 block is not byte-identical across the two 1p shells');
+  }
+
+  /* ===== 6b. THE HEADER SAYS WHO AND WHICH VISIT, NOT THE LAW TWICE ======= */
+  {
+    const h = makeHarness({});
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: OP_SECTION, expectedContext: BOUND, receiptSessionId: 'op-head' });
+    await settle(120);
+    const html = h.cardHtml();
+    /* the confirmation law is stated ONCE, in the block that owns it */
+    eq(tally(html, 'each confirmation runs exactly one selected READY item'), 0,
+      'the header still restates the confirmation law the safety block owns');
+    eq(tally(html, 'never retries or auto-chains'), 1,
+      'the confirmation law is not stated exactly once on the sheet');
+    /* and nothing was lost: the safety block still carries every clause */
+    ok(html.indexOf('<b>Nothing has changed yet.</b>') > 0, 'the sheet lost its nothing-changed-yet block');
+    ok(/stay yours in Athena/.test(html), 'the sheet lost the list of what stays the doctor\'s in Athena');
+    /* what replaced it: who and which visit, up front */
+    ok(html.indexOf(PATIENT.name + ' - DOB ' + PATIENT.dob + ' - ' + ATHENA_DAY + ' - ' + PROVIDER) > 0,
+      'the header does not name who and which visit this sheet is about');
+  }
+  {
+    /* an UNBOUND review says so in the header rather than omitting the field */
+    const h = makeHarness({ unbound: true });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: OP_SECTION,
+      expectedContext: { visitDate: '', provider: '', appointmentId: '' }, requireExpectedVisit: true, receiptSessionId: 'op-head-unbound' });
+    await settle(120);
+    const html = h.cardHtml();
+    ok(html.indexOf('visit date not bound yet') > 0, 'an unbound visit date is silently omitted from the header');
+    ok(html.indexOf('provider not bound yet') > 0, 'an unbound provider is silently omitted from the header');
   }
 
   /* ===== 7. THE THIRD OP-NOTE SURFACE: the writeback chat console ========= */

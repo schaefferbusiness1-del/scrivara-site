@@ -3510,6 +3510,17 @@
       '<span style="font-size:11px;color:#52675c">' + unifiedHashFooter(noteRow) + '</span>' +
       '<button type="button" data-mls-copy-note="' + esc(noteRow.id) + '" style="margin-left:auto;border:1px solid #d8ddd9;background:#fff;color:#3d5147;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer">Copy note</button></div></section>';
   }
+  /* WHO and WHICH VISIT, in one line, from the frozen manifest only. An absent
+     field says so instead of being omitted - a header that silently drops the
+     provider would read as a complete identity. */
+  function unifiedWhoLine(manifest) {
+    var patient = (manifest && manifest.patient) || {}, visit = (manifest && manifest.visit) || {};
+    var bits = [S(patient.name).trim() || '(patient name missing)'];
+    if (S(patient.dob).trim()) bits.push('DOB ' + S(patient.dob).trim());
+    bits.push(S(visit.visitDate).trim() || 'visit date not bound yet');
+    bits.push(S(visit.provider).trim() || 'provider not bound yet');
+    return bits.join(' - ');
+  }
   function unifiedIdentityHtml(manifest) {
     return '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">Patient, visit and manifest identity</summary>' +
       '<div style="display:grid;grid-template-columns:118px 1fr;gap:5px 9px;margin-top:7px;padding:11px 12px;background:#f7f9fb;border:1px solid #e2e8f2;border-radius:10px;overflow-wrap:anywhere"><span>Patient</span><b>' + esc(manifest.patient.name || '(missing)') + '</b><span>DOB</span><b>' + esc(manifest.patient.dob || '(missing)') + '</b><span>MRN</span><b>' + esc(manifest.patient.mrn || 'verified from Athena before writing') + '</b><span>MLS patient ID</span><b>' + esc(manifest.patient.patientId || '(missing)') + '</b><span>Expected visit</span><b>' + esc(manifest.visit.visitDate || 'unique encounter must be discovered') + '</b><span>Expected provider</span><b>' + esc(manifest.visit.provider || 'verified from Athena before writing') + '</b><span>Appointment ID</span><b>' + esc(manifest.visit.appointmentId || 'verified from Athena before writing') + '</b><span>Expected encounter</span><b>' + esc(manifest.visit.encounterId || 'verified from Athena before writing') + '</b><span>Manifest</span><b>' + esc(manifest.manifestHash) + '</b></div></details>';
@@ -3643,7 +3654,17 @@
     var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
     card.innerHTML =
       (probeOnlyActive() ? '<div id="mlsAthenaProbeOnlyBanner" style="margin:0 0 12px;padding:10px 12px;border:2px solid #8b2525;background:#fdf2f2;color:#8b2525;border-radius:10px;font-weight:850">' + esc(PROBE_ONLY_BANNER) + '</div>' : '') +
-      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + esc(S(manifest.patient.name) || 'This note') + ' &middot; ' + (generationIssue ? 'generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.' : ('each confirmation runs exactly one selected READY item below. ' + (athenaFinalActionsReady() ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.' : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.'))) + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
+      /* wfclar-1.0.0 (owner 2026-08-27: "make it easy and simple"): this
+         sub-line used to restate the confirmation law - "each confirmation
+         runs exactly one selected READY item", plus its own list of what
+         stays in Athena - two inches above the Nothing-has-changed-yet block
+         that says both again, at more length and with the extra sequencing
+         the law actually needs. Nothing was lost by deleting it: every clause
+         it carried survives verbatim or better below. What replaces it is the
+         one thing the header did NOT say and the doctor most needs to see at
+         a glance - WHO and WHICH VISIT this sheet is about, which until now
+         was folded away inside the identity drawer. */
+      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + (generationIssue ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.') : esc(unifiedWhoLine(manifest))) + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
       unifiedNoteHeroHtml(manifest) +
       unifiedCanonicalGenerationHtml(state) +
       rowsHtml +
