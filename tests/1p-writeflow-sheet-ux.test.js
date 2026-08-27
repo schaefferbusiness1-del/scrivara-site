@@ -475,7 +475,33 @@ function tally(html, needle) { return html.split(needle).length - 1; }
     eq(tally(html, 'nothing is sent from any of them'), 1, 'the shared blocked How is not stated exactly once');
     eq(tally(html, 'Nothing is sent from this row. Resolve the reason below'), 0,
       'the identical blocked How is still repeated on every row');
-    eq(tally(html, '<b>Why:</b>'), blocked, 'a per-row unique reason was collapsed away with the boilerplate');
+    /* wfclar-1.0.0 (owner 2026-08-27, "not so many things that say blocked"):
+       these rows are blocked for ONE reason - the review has no bound
+       encounter - and that sentence used to print once per row, up to eight
+       red paragraphs saying one thing. An IDENTICAL reason is now part of the
+       same collapse the How went through: stated once in the group heading,
+       led by the single missing fact. Uniqueness is what may never collapse,
+       and the fixture below is the control for that. */
+    eq(tally(html, '<b>Why:</b>'), 0,
+      'one reason shared by every blocked row is still repeated inside each of them');
+    eq(tally(html, 'are blocked for the same reason.') + tally(html, 'need the same one thing:'), 1,
+      'the shared blocked reason is not stated exactly once in the group heading');
+    ok(html.indexOf('The exact visit needs its date, provider, and appointment ID') > 0,
+      'the shared blocked reason lost its exact sentence when it moved to the heading');
+  }
+  {
+    /* CONTROL: blocked rows with GENUINELY DIFFERENT reasons collapse nothing. */
+    const h = makeHarness({ unbound: true });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: [SECTIONS[0]],
+      plan: [{ kind: 'not-a-real-destination', body: 'synthetic unsupported payload' }],
+      expectedContext: { visitDate: '', provider: '', appointmentId: '' }, requireExpectedVisit: true, receiptSessionId: 'ux-blocked-mixed' });
+    await settle(80);
+    const html = h.cardHtml();
+    const blocked = tally(html, 'BLOCKED &middot; NOTHING SENT');
+    eq(blocked, 2, 'the mixed-reason fixture did not produce exactly two blocked rows');
+    eq(tally(html, '<b>Why:</b>'), 2, 'a per-row UNIQUE reason was collapsed away with the boilerplate');
+    eq(tally(html, 'are blocked for the same reason.') + tally(html, 'need the same one thing:'), 0,
+      'rows with different reasons were reported as sharing one');
   }
 
   console.log('PASS 1p-writeflow-sheet-ux: ' + checks + ' checks - ONE bold primary button sends every checked section through the existing per-row probe/execute/receipt queue, one checked section is equivalent to the legacy single-row press, zero checked disables with its reason and still refuses if bypassed, recoverable refusals paint amber with a working do-it-for-me control while identity conflicts stay red, and identical per-row boilerplate is said once while unique reasons stay inline');

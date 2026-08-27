@@ -3279,18 +3279,51 @@
       '</details>' +
       unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
-  function unifiedBlockedRowHtml(manifest, row) {
+  /* wfclar-1.0.0 (owner 2026-08-27: "not so many things that say blocked"):
+     when EVERY blocked row is blocked for the SAME reason - which is the
+     overwhelmingly common case, because identity and encounter binding are
+     per-review facts, not per-section ones - the sheet printed that identical
+     sentence, plus the identical bind hint, once per row. Measured on his own
+     store that is up to eight red paragraphs saying one thing.
+
+     Returns the shared reason when there is exactly one; '' when the rows
+     genuinely differ, in which case nothing is collapsed and every unique Why
+     keeps its inline place. This is the sheetux-1.0.0 rule applied to the last
+     block of boilerplate it did not reach. */
+  function unifiedSharedBlockedReason(rows) {
+    if (!rows || rows.length < 2) return '';
+    var first = S(rows[0] && rows[0].reason).trim();
+    if (!first) return '';
+    for (var i = 1; i < rows.length; i++) if (S(rows[i] && rows[i].reason).trim() !== first) return '';
+    return first;
+  }
+  /* Name the ONE fact that is missing, in plain words, instead of leaving the
+     doctor to diff a three-clause sentence against the identity panel. Only
+     when exactly one is absent; two or more keeps the full sentence. */
+  function unifiedOneMissingFact(manifest) {
+    var visit = (manifest && manifest.visit) || {}, missing = [];
+    if (!S(visit.visitDate).trim()) missing.push('the visit date');
+    if (!S(visit.provider).trim()) missing.push('the provider for this visit');
+    if (!S(visit.appointmentId).trim() && !(S(visit.encounterId).trim() && S(visit.encounterUrl).trim())) missing.push('the Athena appointment ID for this visit');
+    return missing.length === 1 ? missing[0] : '';
+  }
+  function unifiedBlockedRowHtml(manifest, row, sharedReason) {
+    var showReason = !!row.reason && S(row.reason).trim() !== S(sharedReason).trim();
     return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #e7c0c0;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fdf7f7">' +
       '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#8b2525">What: ' + esc(unifiedArtifactName(row)) + '</b>' +
       '<span style="font-size:10.5px;font-weight:850;color:#8b2525;border:1px solid currentColor;border-radius:999px;padding:1px 7px">BLOCKED &middot; NOTHING SENT</span></div>' +
       '<div style="font-size:12px;color:#8b2525;margin-top:3px"><b>Where:</b> ' + esc(row.destination) + '</div>' +
       /* sheetux-1.0.0: identical on every blocked row - said once in the group
-         heading note instead. The per-row Why below is the unique part. */
-      (row.reason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px"><b>Why:</b> ' + esc(row.reason) + '</div>' : '') +
+         heading note instead. The per-row Why below is the unique part.
+         wfclar-1.0.0: a reason that IS the shared one is now part of that same
+         collapse; a row whose reason differs still prints its own here. */
+      (showReason ? '<div style="font-size:12px;color:#8b2525;margin-top:3px"><b>Why:</b> ' + esc(row.reason) + '</div>' : '') +
       /* wfbind-1.0.0: a row blocked ONLY for the missing appointment binding has
          a one-press cure on this same sheet. Say so where the doctor is reading
-         the refusal, instead of leaving the strip to be discovered. */
-      (wfbindCurableRow(manifest, row)
+         the refusal, instead of leaving the strip to be discovered.
+         wfclar-1.0.0: only where the Why is still here - when the whole group
+         shares one reason the hint is said once with it. */
+      (showReason && wfbindCurableRow(manifest, row)
         ? '<div data-mls-bind-hint="' + esc(row.id) + '" style="font-size:12px;color:#204034;margin-top:5px;font-weight:700">Fixable here: press &ldquo;' + esc(WFBIND_LABEL) + '&rdquo; above. MLS re-pulls the day and re-checks this exact appointment; nothing is written.</div>'
         : '') +
       '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</div>' +
@@ -3574,6 +3607,20 @@
     } else if (readyRows.length === 1) {
       rowsHtml += unifiedReadyRowHtml(manifest, readyRows[0], true);
     }
+    /* wfclar-1.0.0: one reason shared by every blocked row is said ONCE, in
+       this group's heading, led by the single fact that is missing where there
+       is exactly one. A row with its own distinct reason is untouched and
+       still prints it inline. */
+    var blockedShared = unifiedSharedBlockedReason(blockedRows);
+    var blockedOneThing = blockedShared ? unifiedOneMissingFact(manifest) : '';
+    var blockedGroupNote = 'MLS fails closed on these: nothing is sent from any of them. Resolve the reason each one names, then reopen the Athena review.';
+    if (blockedShared) {
+      blockedGroupNote = (blockedOneThing ? ('<b>All ' + blockedRows.length + ' need the same one thing: ' + esc(blockedOneThing) + '.</b> ') : ('<b>All ' + blockedRows.length + ' are blocked for the same reason.</b> ')) +
+        esc(blockedShared) + ' MLS fails closed: nothing is sent from any of them.' +
+        (blockedRows.every(function (row) { return wfbindCurableRow(manifest, row); })
+          ? (' Fixable here: press &ldquo;' + esc(WFBIND_LABEL) + '&rdquo; above. MLS re-pulls the day and re-checks this exact appointment; nothing is written.')
+          : '');
+    }
     var drawerCount = manualRows.length + blockedRows.length + orderRows.length;
     if (drawerCount) {
       /* wf3: the drawer ships OPEN — what stays manual must be VISIBLE (the
@@ -3586,8 +3633,8 @@
         (manualRows.length ? unifiedGroupHead('You finish this in Athena', '#7a5a16', 'Review or copy each payload here, then complete it yourself in Athena. Nothing is sent from these rows; the exact payload stays here for you to copy and never crosses the write bridge.') +
           manualRows.map(function (row) { return unifiedManualRowHtml(manifest, row); }).join('') : '') +
         (orderRows.length ? renderUnifiedOrderSummary(orderRows, manifest, chosen) : '') +
-        (blockedRows.length ? unifiedGroupHead('Can\'t send', '#8b2525', 'MLS fails closed on these: nothing is sent from any of them. Resolve the reason each one names, then reopen the Athena review.') +
-          blockedRows.map(function (row) { return unifiedBlockedRowHtml(manifest, row); }).join('') : '') +
+        (blockedRows.length ? unifiedGroupHead('Can\'t send', '#8b2525', blockedGroupNote) +
+          blockedRows.map(function (row) { return unifiedBlockedRowHtml(manifest, row, blockedShared); }).join('') : '') +
         '</details>';
     }
     var ov = document.createElement('div'); ov.id = 'mlsAthenaUnifiedConfirm';
