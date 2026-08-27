@@ -28359,6 +28359,44 @@ function mlsDraftFailureMessage(err){
   });
   return 'Note was rejected by the safety checks. Nothing changed.'+(readable.length?' Details: '+readable.join('; ')+'.':' Retry Generate after confirming the transcript has enough documented detail.');
 }
+function _mlsUnsupportedClinicalClaimFailure(err){
+  var ai=err&&err.mlsAi||{};
+  var issues=Array.isArray(ai.issues)?ai.issues:[];
+  return String(ai.code||'')==='draft_quality_failed'&&issues.some(function(code){return String(code||'').toLowerCase()==='unsupported_clinical_claim';});
+}
+/* A claim-only rejection gets one conservative retry. It never bypasses the
+   validator or accepts a rejected response; other safety failures stay closed. */
+/* REMOVED_UNSAFE_REPAIR_HELPER */
+  var repairRule='\n\nCONSERVATIVE REPAIR REQUIRED: A previous draft was rejected because it stated a clinical claim that was not directly supported by TODAY_TRANSCRIPT. Regenerate the complete requested JSON now. Preserve every selected saved format, per-section template, heading, order, and AI comment, but treat all template wording as format only. Copy no clinical fact from a template or background. For every unsupported ROS, exam, assessment, plan, medication, order, diagnosis, code, or follow-up detail, write "Not documented in today\'s transcript." or leave the optional array/value empty. Do not infer stability, normal findings, continuation, a diagnosis, or a plan.';
+  try{
+    var response=await fetch(bkBase()+'/api/complete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
+      body:JSON.stringify({system:String(sys||'')+repairRule,user:user,family:'soap',draftSubtype:'structured_note_repair',draftTuning:draftTuning||undefined,maxTokens:7000,model:(typeof getNoteModel==='function'?getNoteModel():undefined)}),
+      signal:signal
+    });
+    if(!response.ok)return '';
+    var payload=await response.json();
+    return String((payload&&payload.content)||'').trim();
+  }catch(error){
+    if(signal&&signal.aborted)throw error;
+    return '';
+  }
+}
+function _mlsDocumentedOnlyNoteResult(transcript){
+  var documented=String(transcript||'').replace(/\s+/g,' ').trim().slice(0,12000);
+  if(!documented)documented='No current-visit statement was captured.';
+  var missing="Not documented in today's transcript.";
+  var note='HPI:\nDocumented today: '+documented+'\n\nROS:\n'+missing+'\n\nEXAM:\n'+missing+'\n\nASSESSMENT:\n'+missing+'\n\nPLAN:\n'+missing;
+  return {
+    note:note,athena_note:note,insuranceNote:'',patient_summary:'',
+    coding:{em:'',emJust:'Insufficient documentation in today\'s transcript',icd:[],cpt:[]},
+    emr:{cc:documented,dx:'—',meds:'—',orders:'—',fu:'—'},
+    red_flags:[],suggested_orders:[],differentials:[],opioids:[],recommendations:[],
+    conservative_care:{tried:[],still_needed:[]},imaging_concordance:'',surgical_options:[],preop_workup:[],consent_points:{benefits:[],risks:[],alternatives:[]},
+    mlsDocumentedOnlyFallback:true
+  };
+}
 function _mlsValidateStructuredNoteResult(result){
   if(!result || typeof result!=='object' || Array.isArray(result)) throw _mlsStructuredNoteQualityError('response is not an object');
   if(typeof result.note!=='string') throw _mlsStructuredNoteQualityError('note is not a string');
@@ -28890,12 +28928,18 @@ async function generateNote(){
       outcome='success'; outcomeCode='offline-example';
       return true;
     }
-    const result=await _mlsAwaitGeneration(
-      run,
-      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence}),
-      _mlsGenerationTimeoutMs('main',90000),
-      'generation-timeout'
-    );
+    let result;
+    try{
+      result=await _mlsAwaitGeneration(
+        run,
+        callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence}),
+        _mlsGenerationTimeoutMs('main',90000),
+        'generation-timeout'
+      );
+    }catch(initialGenerationError){
+      if(!_mlsUnsupportedClinicalClaimFailure(initialGenerationError))throw initialGenerationError;
+      result=_mlsDocumentedOnlyNoteResult(transcript);
+    }
     /* Validate before currentSoap/currentInsurance/currentCoding or any editor
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
@@ -28934,7 +28978,7 @@ async function generateNote(){
     autoPopulateExtras(result);
     // If a patient-friendly summary was requested, drop it into the handout / after-visit summary.
     try{ if(result.patient_summary){ currentHandout=result.patient_summary; var hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; } var hc=document.getElementById('handoutCard'); if(hc){ hc.style.display='block'; } } }catch(e){}
-    toast(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.','ok');
+    toast(result.mlsDocumentedOnlyFallback?'Note generated from the documented words only. Review and add anything that was not captured.':(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.'),'ok');
     /* Main draft owns the Generate lifecycle and settles now. Optional
        template formatting has its own source listener/controller/deadline;
        it may improve this successful draft later, but it can neither keep the
@@ -29783,6 +29827,10 @@ async function aiCallRaw(sys,user,key,opts){
       const eGen=new Error(res.status+' '+detail);
       eGen.mlsAi={status:res.status,code:String(gCode||''),retryable:(gRetryable===null?(res.status>=500||res.status===429):gRetryable),detail:String(detail||'').slice(0,120)};
       if(issueList.length) eGen.mlsAi.issues=issueList.map(function(v){return String(v||'').slice(0,96);}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,12);
+      if(_mlsUnsupportedClinicalClaimFailure(eGen)){
+        var repaired=await _mlsRepairUnsupportedClinicalClaim(_directSys,user,_draftTuning,opts.signal);
+        if(repaired)return repaired;
+      }
       throw eGen;
       /* ===== end cap-1.0.0 ===== */
     }
