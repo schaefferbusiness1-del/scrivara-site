@@ -540,5 +540,32 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     eq(lift(bodies[0]), lift(bodies[1]), 'the opnsend-2.2.0 block is not byte-identical across the two 1p shells');
   }
 
+  /* ===== 7. THE THIRD OP-NOTE SURFACE: the writeback chat console ========= */
+  {
+    /* mls-connect.js says in as many words that feat_athena_opnote_writeback.js
+       (window.__mlsOpWb) is INTENTIONALLY not loaded, so the console's op-note
+       branch was reached every single time - and answered with a module fault
+       plus "reload the MLS page", which can never help. */
+    const connect = fs.readFileSync(path.join(ROOT, '1p-mls-connect.js'), 'utf8');
+    ok(/feat_athena_opnote_writeback\.js intentionally not loaded/.test(connect),
+      'the premise changed: the op-note writeback module is loaded again, so this section needs rewriting');
+    const con = fs.readFileSync(path.join(ROOT, 'feat_mls_wb_console.js'), 'utf8');
+    const at = con.indexOf('function proposeWrite(kind) {');
+    ok(at > 0, 'the writeback console lost its write proposal');
+    const body = con.slice(at, con.indexOf('function proposeSign()', at));
+    ok(/!mod && kind === 'opnote'/.test(body), 'the console still treats the deliberately-absent op-note module as a fault');
+    ok(body.indexOf('Send to Athena') > 0, 'the console does not name the control that actually writes an op note');
+    ok(body.indexOf('Athena encounter > Physical Exam > Procedure Documentation') > 0,
+      'the console does not name the op note\'s exact destination');
+    ok(/already has text in it/.test(body), 'the console does not warn about the template skeleton it will refuse to overwrite');
+    /* the op-note branch must not promise a write of its own */
+    const opBranch = body.slice(body.indexOf("!mod && kind === 'opnote'"), body.indexOf("if (!mod) return"));
+    ok(!/writeOpNote|writeNoteToChart|postMessage|pending =/.test(opBranch),
+      'the console\'s op-note answer started a write of its own instead of naming the reviewed route');
+    /* the ORDINARY note branch is untouched */
+    ok(body.indexOf("I can't reach the note writeback module right now") > 0,
+      'the ordinary note branch lost its own honest module-missing refusal');
+  }
+
   console.log('PASS 1p-writeflow-opnote-clarity-progress: ' + checks + ' checks - the op note builds ONE ready Procedure Documentation row and writes through the same reviewed path with its own receipt; its own refusal (the field already holds the template skeleton) is amber, plain and carries re-check + copy while a wrong-chart refusal stays red with none; the loading surface reports which section, N of M and a receipt-derived summary that cannot overstate what landed; zero checked still refuses; and neither op-note send path in either 1p shell dead-ends in silence');
 })().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
