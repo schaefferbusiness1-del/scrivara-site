@@ -22906,13 +22906,47 @@ function opPrepSendToAthena(i){
   if(rec && String(rec.text||rec.soap||'')===String(row.note||'')){ try{ window.pushHistoryNoteToAthena(rec.id); }catch(e){} return; }
   /* Not in the chart yet: the SAME save the card's own green button runs, then
      the same read-back check before anything is offered to Athena. */
-  try{ opPrepSave(i); }catch(e){ return; }
+  try{ opPrepSave(i); }catch(e){ try{ window._opSendRefused(i); }catch(_e1){} return; }
   setTimeout(function(){
     var rec2=_opFiledNoteRecord((window._opPrep||[])[i]);
-    if(!rec2) return;
+    if(!rec2){ try{ window._opSendRefused(i); }catch(_e2){} return; }
     try{ window.pushHistoryNoteToAthena(rec2.id); }catch(e){}
   },350);
 }
+/* ===== opnsend-2.2.0 (owner 2026-08-27: "really make sure the write works
+   well ... and not so many things that say blocked") ======================
+   THE SILENT DEAD END. Both op-note send paths ended in `if(!rec2) return;` —
+   the doctor pressed Send to Athena, the note filed as a DRAFT, and NOTHING
+   was said about Athena at all. It is reachable on an ordinary keystroke: the
+   card's disabled state is computed when the card is PAINTED, and the textarea
+   writes row.note without a repaint, so a placeholder typed after the last
+   paint leaves the control enabled while opPrepSave correctly files a draft.
+   The storage-refusal path had the same silence.
+
+   NOTHING IS WEAKENED. The refusal is unchanged and happens for exactly the
+   same reasons; this only names the one that applies, and leaves opPrepSave's
+   own receipt line standing beside it rather than overwriting it. */
+function _opSendRefused(i){
+  var row=(window._opPrep||[])[i]||{};
+  var blanks=0; try{ if(typeof opNoteBlankTokens==='function') blanks=opNoteBlankTokens(row.note||'').length; }catch(e){}
+  var msg=blanks
+    ? ('Not sent to Athena: this op note still has '+blanks+' unresolved field'+(blanks===1?'':'s')+', so it was filed as a DRAFT. Fill '+(blanks===1?'it':'them')+' in above, then press Send to Athena again. Nothing was sent.')
+    : 'Not sent to Athena: this op note is not in the chart as a completed note yet, so there is nothing for the Athena review to open. Read the save message on this card, fix what it names, then press Send to Athena again. Nothing was sent.';
+  try{ toast(msg,'err'); }catch(e){}
+  try{
+    var host=document.getElementById('opPrepMsg_'+i);
+    if(host){
+      var prev=host.querySelector('[data-mls-opsend-refused]');
+      if(prev&&prev.remove) prev.remove();
+      var line=document.createElement('span');
+      line.setAttribute('data-mls-opsend-refused','1');
+      line.style.cssText='display:block;color:#8b2525;font-weight:700;margin-top:3px';
+      line.textContent=msg;
+      host.appendChild(line);
+    }
+  }catch(e){}
+}
+try{ window._opSendRefused=_opSendRefused; }catch(_eSR){}
 try{ window.opPrepSendToAthena=opPrepSendToAthena; }catch(_eSA){}
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
@@ -46533,12 +46567,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     return { label: canPush ? '💾 Save & review for Athena' : ('💾 Save to ' + (S(row.appt && row.appt.name) || 'the chart') + '’s chart'),
       run: function () {
         save.click();
+        var refusedAt = sel;
         setTimeout(function () {
           refresh();
           if (!canPush) return;
           /* Verify the save landed and is NOT a draft before sending. */
-          var rec2 = filedRecord(rows()[sel]);
-          if (!rec2) return;
+          var rec2 = filedRecord(rows()[refusedAt]);
+          /* opnsend-2.2.0: this used to be a bare `return` — the room's own
+             primary button, pressed, then silence about Athena. Same refusal,
+             now spoken by the app's one refusal voice. */
+          if (!rec2) { try { if (typeof window._opSendRefused === 'function') window._opSendRefused(refusedAt); } catch (e0) {} return; }
           try { window.pushHistoryNoteToAthena(rec2.id); } catch (e) {}
         }, 350);
       }, able: true };
