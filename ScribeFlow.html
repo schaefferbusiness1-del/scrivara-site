@@ -21674,7 +21674,12 @@ function _opRankTemplates(procedure){
     {k:'stim',        re:/stimulator/}
   ];
   var procTypes=TYPES.filter(function(ty){ return ty.re.test(procL); }).map(function(ty){ return ty.k; });
-  var tpls=getTemplates();
+  /* tplpick-1.0.0: this room drafts OPERATIVE notes. A template the doctor
+     declared as a SOAP or insurance note is not one of them and must not be
+     offered here - that mix is exactly the confusion a declared kind exists
+     to end. Declaring nothing keeps a template available, so an existing
+     library (where nothing is declared) is ranked exactly as before. */
+  var tpls=getTemplates().filter(function(t){ var k=_mlsTplKindOf(t); return k===''||k==='op'; });
   return tpls.map(function(t){
     var nameL=String(t.name||'').toLowerCase();
     var hay=(nameL+' '+((t.keywords||[]).join(' '))+' '+String(t.text||'').slice(0,600)).toLowerCase();

@@ -375,7 +375,23 @@ SHELLS.forEach(function (name) {
     name + ': a failed application leaves a receipt that still claims the note');
 });
 
-/* ===== 15. THE OVERLAY THAT ACTUALLY RUNS AT GENERATION TIME ============
+/* ===== 15. THE OP-NOTE ROOM IS ONE OF THE KINDS TOO ======================
+   "Prep op notes" ranks the library against a scheduled procedure. A template
+   the doctor declared a SOAP or insurance note is not an operative note and
+   must not be offered there - that mix is the confusion a declared kind
+   exists to end. The filter is EXECUTED, on the real predicate. */
+const OPRANK_FILTER = "getTemplates().filter(function(t){ var k=_mlsTplKindOf(t); return k===''||k==='op'; });";
+ok(shell.indexOf(OPRANK_FILTER) !== -1, 'the op-note ranker no longer filters by declared kind');
+const opEligible = function (t) { const k = kindOf(t); return k === '' || k === 'op'; };
+eq(opEligible({ kind: 'op' }), true, 'a declared op template was excluded from the op-note room');
+eq(opEligible({}), true, 'an undeclared template was excluded from the op-note room');
+eq(opEligible({ kind: 'soap' }), false, 'a declared SOAP template is still offered as an op note');
+eq(opEligible({ kind: 'insurance' }), false, 'a declared insurance template is still offered as an op note');
+/* an existing library declares nothing, so the room is ranked exactly as before */
+eq([TFESI, GENIC, LEGACY].filter(opEligible).length, 3, 'the op-note room lost templates it used to rank');
+eq(LIB.filter(opEligible).length, 3, 'the SOAP-declared template was not the only one dropped');
+
+/* ===== 16. THE OVERLAY THAT ACTUALLY RUNS AT GENERATION TIME ============
    The note-grounding layer in the connect bundle (ngv1) REPLACES
    resolveActiveTemplate outright - it never calls the shell's version - and it
    is armed unconditionally on load and again every 900ms. A declared note kind
