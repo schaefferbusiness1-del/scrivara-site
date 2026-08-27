@@ -1009,75 +1009,22 @@
     if (exact !== 1) return no;
     return { ok: true, reason: "detected-provider-request-bound", observedCount: Number(receipt.observedCount || 0) };
   }
-  /* pbf-1.0.0 (owner escalation 2026-08-27, measured on his real store: of the
-     438 appointments since 2026-08-01, 438 carry appt_date and 438 carry
-     athena_appointment_id, but only 232 carry a provider - so 206 rows are
-     blocked from the Athena write for that ONE missing field and nothing else.
-     His words: "if so many things say blocked then the day pull needs to be
-     better.")
-
-     WHY they are blank. The appointment-census lane below exists precisely
-     because athena's Day grid painted NO per-row provider column
-     (p1ExactCensusRows demands every row be provider-less), and the census
-     only ever runs in "all" scope - so neither the create body nor the enrich
-     path could fill it: BOTH of those scope-fills are gated on
-     `requestedProvider.mode === "selected"`. The provider was never absent
-     from the READ, only from the ROW: the same response carries the day's
-     painted provider header(s), and the census decision already counted them
-     (providerHeaderCount / rawRoster.observedCount).
-
-     A day whose grid painted EXACTLY ONE provider header, with no second
-     clinician named anywhere in that same read, has exactly one honest
-     attribution for every row on it. That is the same evidence pa-1.0.0
-     already accepts for a columnless SELECTED-scope grid, minus the user's
-     selection - so it is held to the same bar and no lower: one header, one
-     distinct clinician key across every label the read exposed, and a refusal
-     the instant a second appears. A MIXED-header census day stays blank
-     forever, on purpose: a wrong provider on a clinical write is worse than a
-     blocked row. */
-  function p1CensusDayProviderName(providerResp, censusReceipt) {
-    if (!censusReceipt || censusReceipt.kind !== "athena-appointment-census") return "";
-    if (Number(censusReceipt.providerHeaderCount) !== 1) return "";
-    var labels = providerDiagLabels(providerResp, []), key = "", name = "";
-    for (var i = 0; i < labels.length; i++) {
-      var k = providerKey(labels[i]);
-      if (!k) continue;
-      if (!key) { key = k; name = String(labels[i]).trim(); continue; }
-      if (k !== key) return "";
-    }
-    return key ? name : "";
-  }
   function p1AppointmentCensusScope(grant, rows, rawProvider, providerResp, scopeDate) {
     if (!grant || grant.token !== P1_CENSUS_IMPORT_TOKEN || grant.response !== providerResp || !grant.receipt || grant.receipt.complete !== true) return null;
     var req = providerRequest(rawProvider), receipt = grant.receipt;
     if (req.mode !== "all" || normDate(scopeDate || "") !== receipt.targetDate ||
         String(providerResp && providerResp.receipt && providerResp.receipt.requestId || "") !== receipt.requestId ||
         !p1ExactCensusRows(rows, receipt.targetDate, receipt.rowCount)) return null;
-    /* pbf-1.0.0: the fill is a COPY, exactly like pa-1.0.0's columnless scoped
-       fill, so the caller's raw rows never mutate and the filled copy carries
-       into BOTH the create body and the enrich/backfill path downstream. */
-    var dayProvider = p1CensusDayProviderName(providerResp, receipt), filled = 0;
-    var scopedRows = rows.map(function (r) {
-      var copy = {}; for (var fk in r) if (Object.prototype.hasOwnProperty.call(r, fk)) copy[fk] = r[fk];
-      if (dayProvider && !String(copy.provider || "").trim()) { copy.provider = dayProvider; filled++; }
-      return copy;
-    });
     return {
       complete: true,
       reason: "appointment-census-only",
-      rows: scopedRows,
-      dayProviderName: dayProvider,
+      rows: rows.slice(),
       receipt: {
         mode: "all",
         complete: false,
         reason: "provider-attribution-unavailable",
         scheduleComplete: true,
         sourceRows: rows.length,
-        /* These three stay ATHENA-sourced counts on purpose: athena itself
-           tagged zero rows, and a receipt that quietly re-counted MLS's own
-           day-header inference as athena attribution would be the "presence is
-           not provenance" defect again. The pbf fields below are the honest
-           separate disclosure of what MLS attributed and why. */
         providerTaggedRows: 0,
         matchingRows: 0,
         mismatchedRows: 0,
@@ -1085,8 +1032,6 @@
         appointmentCensusComplete: true,
         providerAttributionComplete: false,
         attribution: "provider-blank-exact-appointment-census",
-        censusDayProviderKnown: !!dayProvider,
-        censusDayProviderFilledRows: filled,
         censusKind: receipt.kind,
         targetDate: receipt.targetDate,
         requestId: receipt.requestId,
@@ -2905,21 +2850,9 @@
           providerReceipt: providerScope.receipt };
       }
       var backendAppointments = ed.appointments || [], ledgerByDay = Object.create(null);
-      /* pbf-1.0.0 (third honest source): a provider already stored on ANOTHER
-         backend row bound to the SAME athena appointment id is that
-         appointment's own attribution, not a guess - one appointment has one
-         rendering provider. Two stored rows that disagree on the clinician
-         mark the id ambiguous and it stays unfilled forever. */
-      var pbfProviderByApptId = Object.create(null), pbfProviderAmbiguous = Object.create(null);
       for (var eri = 0; eri < backendAppointments.length; eri++) {
         var x = backendAppointments[eri];
         var rawBackendId = backendRowId(x); if (rawBackendId) backendById[rawBackendId] = x;
-        var pbfApptId = String(rowAppointmentId(x) || "").trim().toLowerCase();
-        var pbfProv = String(p1RowProviderName(x) || "").trim();
-        if (pbfApptId && pbfProv && providerKey(pbfProv)) {
-          if (!pbfProviderByApptId[pbfApptId]) pbfProviderByApptId[pbfApptId] = pbfProv;
-          else if (providerKey(pbfProviderByApptId[pbfApptId]) !== providerKey(pbfProv)) pbfProviderAmbiguous[pbfApptId] = 1;
-        }
         var lt = ""; safe(function () { if (x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); });
         var ld = x.appt_date || ""; if (!ld) safe(function () { if (x.start_at) { var dd = new Date(x.start_at); ld = dd.getFullYear() + "-" + ("0" + (dd.getMonth() + 1)).slice(-2) + "-" + ("0" + dd.getDate()).slice(-2); } });
         var linked = patientByLocalId[String(x && x.patient_external_id || "")] || null;
@@ -2971,29 +2904,6 @@
          attributed by this re-pull. This is the backfill counter - the only
          honest number for how many of the 400 are fixed now. */
       var providerBackfilled = 0;
-      /* pbf-1.0.0: THE one place that answers "is this row's provider honestly
-         knowable?", so the CREATE body and the enrich/backfill path can never
-         drift apart again (they already had, which is how a stored row could
-         be repaired in selected mode but never in census mode).
-
-         Ranked, and every rank is evidence rather than inference:
-           1. the row's OWN provider, whatever painted it - including the
-              census day-header fill that p1AppointmentCensusScope already
-              copied on when the day painted exactly one clinician;
-           2. the selected-provider scope this pull deliberately ran under
-              (pa-1.0.0 / b744);
-           3. the provider already stored against this exact athena appointment
-              id on another backend row.
-         Nothing else. An all-scope pull of a MIXED day returns "" and the row
-         stays honestly unbindable. */
-      function pbfKnownProvider(a) {
-        var own = String(a && a.provider || "").trim();
-        if (own) return own;
-        if (requestedProvider.mode === "selected") return String(requestedProvider.name || "");
-        var apptId = String(rowAppointmentId(a) || "").trim().toLowerCase();
-        if (apptId && !pbfProviderAmbiguous[apptId] && pbfProviderByApptId[apptId]) return String(pbfProviderByApptId[apptId]);
-        return "";
-      }
       /* PHI-free row-failure telemetry. The old receipt exposed only `failed:N`,
          so an unavailable calendar GET, a refused identity merge, a backend
          write error, and a one-to-one mapping refusal all looked identical.
@@ -3298,12 +3208,8 @@
                provider-empty row. b744 only ever stamped the CREATE path, so
                no re-pull could fix a stored row; addMissing skips a non-empty
                stored provider, so this is idempotent and never overwrites. */
-            /* pbf-1.0.0: THIS is the backfill for the 206. It was already the
-               repair line; it just could not see a census day's own provider
-               header, because the fallback only ever asked about selected
-               mode. Same POST, same idempotence (addMissing skips a non-empty
-               stored provider), same providerBackfilled receipt. */
-            var enrichProvider = pbfKnownProvider(a);
+            var enrichProvider = String(a.provider || "");
+            if (!enrichProvider && requestedProvider.mode === "selected") enrichProvider = requestedProvider.name;
             addMissing("provider", enrichProvider);
             if (enrich.provider) providerBackfilled++;
             if (!storedAppointmentId) addMissing("athena_appointment_id", incomingAppointmentId);
@@ -3401,8 +3307,8 @@
              one selected provider, that provider IS the attribution. An
              'all'-scope pull with a columnless grid stays honestly empty -
              never guessed. */
-          /* pbf-1.0.0: one resolver for create and enrich - see pbfKnownProvider. */
-          var rowProvider = pbfKnownProvider(a);
+          var rowProvider = String(a.provider || "");
+          if (!rowProvider && requestedProvider.mode === "selected") rowProvider = requestedProvider.name;
           var body = { name: name, dob: String(a.dob || ""), reason: String(a.reason || ""), provider: rowProvider, patient_external_id: ext || null, appt_date: date, start_at: startIso };
           var sourceAppointmentId = rowAppointmentId(a), sourceProviderId = rowProviderId(a);
           if (sourceAppointmentId) body.athena_appointment_id = sourceAppointmentId;
@@ -9115,22 +9021,7 @@
             navEmptyStrip: emptyStrip
           };
           if (emptyStrip) extra.navAdvice = p1OneTabAdvice(tabs);
-          /* sox-1.0.0 (owner 2026-08-27, live): athenaOne had SIGNED OUT and
-             every pull answered "Pull failed for <day>" with the generic
-             "Couldn't open the requested athenaOne day." The evidence was
-             already in hand - the nav result carries sessionLikelyExpired and
-             the extension refuses a signed-out tab by name - it simply never
-             reached the doctor, who cannot guess that the cure is signing in.
-             Say the one actionable thing. The REASON stays nav-failed so the
-             closed vocabulary and every downstream handler are untouched; only
-             the sentence and a PHI-free flag change. */
-          var soxSignedOut = !!(nav && nav.sessionLikelyExpired) ||
-            /signed[- ]?out|athena-session-expired|manual\s*sign\s*in|re-?login/i.test(String((nav && (nav.error || nav.reason || nav.skipped)) || ""));
-          if (soxSignedOut) extra.athenaSignedOut = true;
-          var soxDay = safe(function () { return String(target || "") || ""; }, "");
-          onStatus(soxSignedOut
-            ? ("athenaOne is signed out, so MLS could not open " + (soxDay || "that day") + ". Sign in to athenaOne in its tab, then press pull again - nothing was read and nothing was changed.")
-            : (extra.navAdvice || (nav && nav.error) || "Couldn't open the requested athenaOne day."), "err");
+          onStatus(extra.navAdvice || (nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
           return fail("nav-failed", extra);
         });
       }
@@ -11394,9 +11285,6 @@
     _resolveProviderRequest: resolveProviderRequest,
     _monthDateKeys: monthDateKeys,
     _scopeProviderRows: scopeProviderRows,
-    /* pbf-1.0.0: pure, extraction-executable. Answers "did this census day
-       paint exactly one clinician?" and nothing else. */
-    _censusDayProviderName: p1CensusDayProviderName,
     _hydrateMissingScheduleProof: hydrateMissingScheduleProof,
     _authoritativeEmptyContract: authoritativeEmptyContract,
     _repairAuthoritativeStore: repairAuthoritativeStore, /* p1-authority-repair-1.0.0 */

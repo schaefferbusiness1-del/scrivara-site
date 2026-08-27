@@ -557,14 +557,6 @@ const tests = [
      causal control against origin/main's shell bytes. */
   '1p-visit-owner-isolation-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
-  /* pbf-1.0.0: measured on the owner's store 2026-08-27 - 438/438 appointments
-     since 2026-08-01 carry appt_date AND athena_appointment_id, but only 232
-     carry a provider, so 206 were blocked from the Athena write for that one
-     field alone. The census lane imports in "all" scope and BOTH provider fills
-     were gated on selected mode, so the day's own painted header was read and
-     thrown away. Pins the one-header attribution, the re-pull backfill through
-     the existing enrichment POST, and the refusal on a mixed-header day. */
-  '1p-census-day-provider-backfill-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   /* b1026's pdr-1.0.0 provider Day render fix was never ported to the fork, so
      /1p hid object-provider, rendering_provider_id and doctor_user_id rows the

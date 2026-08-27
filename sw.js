@@ -6,7 +6,7 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v223';
+const CACHE = 'mls-v224';
 
 const SHELL = [
   '/ScribeFlow.html',

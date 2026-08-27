@@ -30,9 +30,8 @@ const ROOT = path.resolve(__dirname, '..');
 /* Kept in sync with tests/run-all.js by the deterministic contract test. */
 /* b1083 reconciliation: 873 registered at b1082
    + 1p-writeflow-sheet-ux (sheetux-1.0.0) = 874.
-   + template-auto-suggest-pins (tplauto-1.0.0) = 875.
-   + 1p-census-day-provider-backfill-runtime (pbf-1.0.0) = 876. */
-const FULL_GATE_TESTS = 876;
+   + template-auto-suggest-pins (tplauto-1.0.0) = 875. */
+const FULL_GATE_TESTS = 875;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
