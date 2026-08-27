@@ -467,5 +467,66 @@ const UNDER_DEBRIS = '_48211937';         /* the "_"+digits capture twin */
       "the pull cannot prove it saved the day's own visit onto the adopted chart");
   }
 
+  /* ---- (g) padopt-1.0.2: an EXISTING backend row bound to debris is
+     RE-POINTED by the update POST. Measured live 2026-08-26 on the owner's
+     account: a full healthy pull left every debris binding in place, because
+     debrisUpgrade only lifted the fatal refusal while the enrich POST was
+     built from addMissing, which fills EMPTY fields only. The upgrade must
+     persist - and must not repeat once the binding is native. ------------- */
+  {
+    const patients = [
+      { id: SCHED_DEBRIS, name: 'Brooks, Bernard P', dob: '01/02/1970', visits: [] },
+      { id: NATIVE_ID, name: 'Bernard Brooks', dob: '1970-01-02', visits: [] }
+    ];
+    const w = makeWorld(patients);
+    const boundRow = {
+      id: 'backend-existing-77', athena_appointment_id: 'athena-appt-up', athena_provider_id: 'provider-1',
+      patient_external_id: SCHED_DEBRIS, appt_date: '2026-08-26', start_at: '2026-08-26T09:20:00.000Z',
+      provider_name: 'Doctor One', dob: '01/02/1970'
+    };
+    w.setBackendRows([boundRow]);
+    const mkRow = () => ({
+      appointmentId: 'athena-appt-up', name: 'Brooks, Bernard P', dob: '01/02/1970',
+      date: '2026-08-26', time: '09:20', provider: 'Doctor One', providerId: 'provider-1'
+    });
+    const res = await w.api.importAppts([mkRow()], { date: '2026-08-26', scopeDate: '2026-08-26', requirePatientBinding: true });
+    eq(res.created, 0, 'the reconciliation created a duplicate instead of updating the bound row');
+    eq(res.failed, 0, 'the debris-bound row still dies in the import walk (the second flat gate)');
+    const repoints = w.posted.filter(p => /\/api\/appointments\/[^/]+\/update$/.test(p.url) && p.body.patient_external_id !== undefined);
+    eq(repoints.length, 1, 'no update POST carried the re-point - the debris binding survives (the 1.0.1 gap, measured live 2026-08-26)');
+    eq(repoints[0].body.patient_external_id, NATIVE_ID, 'the re-point carried something other than the proven native id');
+    ok(/backend-existing-77\/update$/.test(repoints[0].url), 'the re-point was not addressed to the bound row');
+    eq(String((res.historyTargets[0] || {})._mlsTargetPatientId || ''), NATIVE_ID, 'the history target does not name the native chart');
+    /* idempotency: once the backend row is native, a re-import must not post
+       the binding again (fill-only for non-upgrade rows is preserved). */
+    w.setBackendRows([Object.assign({}, boundRow, { patient_external_id: NATIVE_ID })]);
+    w.resetPosted();
+    await w.api.importAppts([mkRow()], { date: '2026-08-26', scopeDate: '2026-08-26', requirePatientBinding: true });
+    eq(w.posted.filter(p => p.body.patient_external_id !== undefined).length, 0,
+      're-import re-posted the binding - the upgrade writer leaks into the ordinary path');
+  }
+
+  /* ---- (h) native-vs-native disagreement on an EXISTING row stays FATAL:
+     the persistence writer must ride ONLY on the debris verdict. ---------- */
+  {
+    const patients = [{ id: NATIVE_ID, name: 'Bernard Brooks', dob: '1970-01-02', visits: [] }];
+    const w = makeWorld(patients);
+    const foreignBound = {
+      id: 'backend-existing-88', athena_appointment_id: 'athena-appt-vs', athena_provider_id: 'provider-1',
+      patient_external_id: 'p-native-other', appt_date: '2026-08-26', start_at: '2026-08-26T10:40:00.000Z',
+      provider_name: 'Doctor One', dob: '01/02/1970'
+    };
+    w.setBackendRows([foreignBound]);
+    const res = await w.api.importAppts([{
+      appointmentId: 'athena-appt-vs', name: 'Brooks, Bernard P', dob: '01/02/1970',
+      date: '2026-08-26', time: '10:40', provider: 'Doctor One', providerId: 'provider-1'
+    }], { date: '2026-08-26', scopeDate: '2026-08-26', requirePatientBinding: true });
+    ok(JSON.stringify(res.failureReasons || {}).indexOf('appointment-patient-identity-conflict') >= 0,
+      'a native-vs-native disagreement no longer fails as an identity conflict');
+    eq(w.posted.filter(p => p.body.patient_external_id !== undefined).length, 0,
+      'a native-vs-native disagreement posted a re-point - the fatal gate leaks');
+    eq((res.historyTargets || []).length, 0, 'a conflicted appointment still reached the history queue');
+  }
+
   console.log('padopt-appointment-chart-adoption: ' + checks + ' checks passed');
 })().catch(err => { console.error(err); process.exit(1); });

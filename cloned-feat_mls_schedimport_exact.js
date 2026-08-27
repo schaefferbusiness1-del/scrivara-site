@@ -3130,9 +3130,26 @@
               oldRow = coreRow || dayProviderRow || null;
             }
             if (oldRow && oldRow.patient_external_id && String(oldRow.patient_external_id) !== ext) {
-              noteImportFailure("slot-patient-identity-conflict");
-              if (onEach) safe(function () { onEach("error", { name: name, error: "slot-patient-identity-conflict" }); });
-              return;
+              /* padopt-1.0.2: this second consistency gate ran AFTER the
+                 debris-upgrade verdict and re-refused the SAME disagreement
+                 unconditionally, so every debris-bound row died here as
+                 slot-patient-identity-conflict and the adoption never left the
+                 walk (measured live 2026-08-26: a full healthy pull reported
+                 calendar-partial every time and the census never moved). The
+                 verdict is recomputed with the identical guards: frozen source
+                 proof must not conflict with the bound row, the resolved chart
+                 must be native, the stored binding must be provable debris.
+                 Anything else stays exactly as fatal as before. */
+              var lateBound = patientByLocalId[String(oldRow.patient_external_id)] || null;
+              var lateProof = sourceProof(a);
+              var lateConflict = !!(lateBound && ((lateProof.dob && normDob(lateBound.dob) && normDob(lateBound.dob) !== lateProof.dob) || (lateProof.mrn && rowMrn(lateBound) && rowMrn(lateBound) !== lateProof.mrn)));
+              var lateUpgrade = !lateConflict && existing && !padoptIsDebrisId(existing.id) && padoptIsDebrisId(oldRow.patient_external_id);
+              if (!lateUpgrade) {
+                noteImportFailure("slot-patient-identity-conflict");
+                if (onEach) safe(function () { onEach("error", { name: name, error: "slot-patient-identity-conflict" }); });
+                return;
+              }
+              debrisUpgrade = true; /* arm the enrich re-point below */
             }
           }
           if (!existing) existing=materializePatient(a,name);
@@ -3199,6 +3216,17 @@
             if (!storedProviderId2) addMissing("athena_provider_id", incomingProviderId2);
             addMissing("reason", String(a.reason || ""));
             addMissing("patient_external_id", ext || "");
+            /* padopt-1.0.2: the debris->native verdict must actually PERFORM
+               the upgrade. addMissing fills only EMPTY fields, so a backend row
+               bound to p_sched_/digits debris kept that binding forever and the
+               adoption above was invisible outside this walk (measured live
+               2026-08-26: census unchanged after a full healthy pull). The
+               guards are untouched - debrisUpgrade is only ever true when the
+               reconciliation proved the native row against frozen source proof
+               and the stored binding is provable capture debris. */
+            if (debrisUpgrade && ext && String(oldRow.patient_external_id || "") !== ext) {
+              enrich.patient_external_id = ext; enrichKeys.push("patient_external_id");
+            }
             /* 2026-07-15: the verified Athena wall time is the truth for an
                identity-matched imported row. Heal a stored instant that
                disagrees with it (e.g. start_at saved under a wrong practice
