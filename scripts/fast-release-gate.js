@@ -28,10 +28,9 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 /* Kept in sync with tests/run-all.js by the deterministic contract test. */
-/* b1081 reconciliation: 869 registered on origin/main (the pin had drifted
-   two behind) + generate-block-visible-feedback-runtime (gcx-1.0.0)
-   + 1p-athena-mrn-adoption-runtime (mrnadopt-1.0.0) + athena-action-token-session-runtime (tokq) = 872. */
-const FULL_GATE_TESTS = 872;
+/* b1082 reconciliation: 872 registered at b1081
+   + template-kind-and-keyword-pick-pins (tplpick-1.0.0) = 873. */
+const FULL_GATE_TESTS = 873;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

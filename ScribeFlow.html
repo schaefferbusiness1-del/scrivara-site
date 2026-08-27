@@ -3548,6 +3548,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       </div>
       <textarea id="noteBox" aria-label="Generated note" class="note-box" style="display:none" placeholder="Generated note..."></textarea>
 
+      <!-- tplpick-1.0.0: which template shaped this note, and which of the
+           doctor's own keywords chose it. Written with textContent only. -->
+      <div id="tplPickReceipt" class="mini" role="status" aria-live="polite" style="display:none;margin-top:8px;color:var(--muted)"></div>
+
       <!-- Insurance-Ready toggle -->
       <div class="toggle-row" id="formatToggleRow" style="display:none;margin-top:12px">
         <span style="font-size:14px;color:var(--muted);font-weight:600">Format:</span>
@@ -21706,7 +21710,12 @@ function _opRankTemplates(procedure){
     {k:'stim',        re:/stimulator/}
   ];
   var procTypes=TYPES.filter(function(ty){ return ty.re.test(procL); }).map(function(ty){ return ty.k; });
-  var tpls=getTemplates();
+  /* tplpick-1.0.0: this room drafts OPERATIVE notes. A template the doctor
+     declared as a SOAP or insurance note is not one of them and must not be
+     offered here - that mix is exactly the confusion a declared kind exists
+     to end. Declaring nothing keeps a template available, so an existing
+     library (where nothing is declared) is ranked exactly as before. */
+  var tpls=getTemplates().filter(function(t){ var k=_mlsTplKindOf(t); return k===''||k==='op'; });
   return tpls.map(function(t){
     var nameL=String(t.name||'').toLowerCase();
     var hay=(nameL+' '+((t.keywords||[]).join(' '))+' '+String(t.text||'').slice(0,600)).toLowerCase();
@@ -23008,7 +23017,7 @@ function renderTemplateList(){
       ' style="border:1px solid '+(isSel?'#2E6A4B':'var(--line)')+';border-radius:10px;padding:8px 10px;margin-bottom:6px;background:'+(isSel?'#f2f8f4':(isActive?'#f7fbff':'transparent'))+';cursor:pointer">'+
       '<div style="display:flex;align-items:center;gap:6px"><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.name)+'</strong>'+
       (isActive?'<span style="font-size:10px;color:#127a55;font-weight:700;white-space:nowrap">● DEFAULT</span>':'')+'</div>'+
-      kw+'<div style="font-size:11px;color:var(--muted)">'+(t.text||'').length+' chars'+revs+'</div>'+
+      kw+'<div style="font-size:11px;color:var(--muted)">'+_mlsTplKindLabel(_mlsTplKindOf(t))+' - '+(t.text||'').length+' chars'+revs+'</div>'+
       '</div>';
   }).join('');
   try{ renderTplDetail(); }catch(e){}
@@ -23029,7 +23038,13 @@ function renderTplDetail(){
   var revOpts=(t.revisions||[]).map(function(r,i){ return '<option value="'+i+'">'+new Date(r.ts).toLocaleString()+' — '+esc(String(r.name||'').slice(0,30))+' ('+String(r.text||'').length+' chars)</option>'; }).join('');
   pane.innerHTML=
     '<div class="field" style="margin:0 0 8px"><label for="tplDetName">Name</label><input type="text" id="tplDetName" value="'+esc(t.name||'')+'" oninput="tplDetailDirty()"></div>'+
-    '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords</label><input type="text" id="tplDetKw" value="'+esc((t.keywords||[]).join(', '))+'" oninput="tplDetailDirty()"></div>'+
+    '<div class="field" style="margin:0 0 8px"><label for="tplDetKw">Keywords <span style="font-weight:400;color:var(--muted)">(comma-separated - these are what choose this template)</span></label><input type="text" id="tplDetKw" value="'+esc((t.keywords||[]).join(', '))+'" oninput="tplDetailDirty()"></div>'+
+    /* tplpick-1.0.0: which kind of note generation this template is for. A
+       template left on "Any note kind" competes for every kind, which is what
+       every template in an existing library already does. */
+    '<div class="field" style="margin:0 0 8px"><label for="tplDetKind">Note kind this template is for</label><select id="tplDetKind" class="sf-select" onchange="tplDetailDirty()">'+
+      ['','soap','insurance','op'].map(function(k){ return '<option value="'+esc(k)+'"'+(_mlsTplKindOf(t)===k?' selected':'')+'>'+esc(_mlsTplKindLabel(k))+'</option>'; }).join('')+
+    '</select><div style="font-size:11.5px;color:var(--muted);margin-top:4px">Pick a kind and this template is only ever offered for that kind of note. Leave it on <b>Any note kind</b> and it stays available to all of them.</div></div>'+
     '<textarea id="tplDetText" aria-label="Template content" style="min-height:220px;width:100%;font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace" oninput="tplDetailDirty()">'+esc(t.text||'')+'</textarea>'+
     '<div id="tplDetStatus" role="status" style="font-size:12px;color:var(--muted);margin:6px 0">No unsaved changes</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
@@ -23049,10 +23064,13 @@ function tplDetailSave(){
   var cur=list[i];
   /* every save keeps the prior content as a restorable revision (last 5) */
   cur.revisions=(cur.revisions||[]);
-  cur.revisions.unshift({ ts:Date.now(), name:cur.name, keywords:(cur.keywords||[]).slice(), text:cur.text });
+  cur.revisions.unshift({ ts:Date.now(), name:cur.name, keywords:(cur.keywords||[]).slice(), kind:_mlsTplKindOf(cur), text:cur.text });
   cur.revisions=cur.revisions.slice(0,5);
   cur.name=String((document.getElementById('tplDetName')||{}).value||'').trim()||cur.name;
   cur.keywords=String((document.getElementById('tplDetKw')||{}).value||'').split(',').map(function(k){return k.trim();}).filter(Boolean);
+  /* tplpick-1.0.0: normalized on the way in, so the store can only ever hold
+     one of the four values the picker knows about. */
+  cur.kind=_mlsTplKindOf({kind:String((document.getElementById('tplDetKind')||{}).value||'')});
   cur.text=String((document.getElementById('tplDetText')||{}).value||'');
   try{ setTemplates(list); }catch(e){ if(s){ s.textContent='Failed — could not save ('+String(e&&e.message||e).slice(0,60)+')'; s.style.color='#a12c2c'; } return; }
   _tplUI.dirty=false; _tplUI.renderedId='';
@@ -23066,9 +23084,12 @@ async function tplRestoreRevision(id){
   if(!await mlsConfirm('Restore the version from '+new Date(r.ts).toLocaleString()+'? The current content is kept as a revision.')) return;
   var list=getTemplates(); var i=list.findIndex(function(x){return x.id===id;}); if(i<0) return;
   var cur=list[i];
-  cur.revisions.unshift({ ts:Date.now(), name:cur.name, keywords:(cur.keywords||[]).slice(), text:cur.text });
+  cur.revisions.unshift({ ts:Date.now(), name:cur.name, keywords:(cur.keywords||[]).slice(), kind:_mlsTplKindOf(cur), text:cur.text });
   cur.revisions=cur.revisions.filter(function(x){return x!==r;}).slice(0,5);
   cur.name=r.name; cur.keywords=(r.keywords||[]).slice(); cur.text=r.text;
+  /* tplpick-1.0.0: revisions taken before note kinds existed do not record
+     one - restoring such a revision must not silently un-declare the kind. */
+  if(r.kind!==undefined) cur.kind=_mlsTplKindOf(r);
   setTemplates(list); _tplUI.dirty=false; _tplUI.renderedId='';
   renderTemplateList(); toast('Restored the earlier version. The replaced content is still in revisions.','ok');
 }
@@ -24024,33 +24045,265 @@ async function fixTemplateNames(){
   try{ toast('Renamed '+renamed+' template'+(renamed===1?'':'s')+' by note type.','ok'); }catch(e){}
 }
 
-/* Auto-choose: score saved templates against the visit text by simple
-   case-insensitive keyword/name matching. Returns the best template or null. */
-function pickTemplateForVisit(visitText){
-  const list=getTemplates();
-  if(!list.length) return null;
-  const hay=String(visitText||'').toLowerCase();
-  let best=null, bestScore=0;
-  list.forEach(t=>{
-    let score=0;
-    (t.keywords||[]).forEach(k=>{ if(k && hay.indexOf(k)!==-1) score+=2; });
-    // a multi-word name also contributes weak signal
-    String(t.name||'').toLowerCase().split(/\s+/).forEach(w=>{ if(w.length>2 && hay.indexOf(w)!==-1) score+=1; });
-    if(score>bestScore){ bestScore=score; best=t; }
-  });
-  return bestScore>0 ? best : null;
+/* ===== tplpick-1.0.0 (owner 2026-08-27: "upload multiple templates in
+   settings for all the different kinds of note generation not just one and
+   also add keyword matching so it picks the correct template") =============
+   The library was already many templates, but they sat in ONE undifferentiated
+   pool and the old picker scored every one of them against every note kind: a
+   SOAP generation could be handed an op-note template. Two smaller defects
+   rode along - a keyword stored as "TFESI" could NEVER match, because the
+   haystack was lowercased and the keyword was not; and ties fell to library
+   order, so which of two equally-good templates won depended on upload order.
+
+   Each template may now carry a doctor-declared NOTE KIND. A template that
+   declares one only ever competes for that kind. A template that declares
+   nothing - which is every template that exists today - competes for all of
+   them, so no library changes meaning when this ships.
+
+   THE PICKER IS A PURE FUNCTION over (library, context, kind). It returns the
+   winner AND the keywords that won it, so the surface can say WHY. It reads
+   nothing from the DOM and writes nothing to it.
+
+   INERT BY CONSTRUCTION. A library imported from fifty PDFs is untrusted data.
+   Nothing out of a template record is ever eval'd, compiled into a RegExp (a
+   keyword like "c++" or "a(b" would throw), or written as HTML by this code.
+   String compares only, and the receipt is rendered with textContent.
+
+   DETERMINISTIC TOTAL ORDER, so the same library and the same visit always
+   pick the same template:
+     1. weighted keyword score, high first
+     2. a template that DECLARES this note kind, over one that declares none
+     3. most distinct keywords matched ("most specific"), high first
+     4. most distinct name words matched
+     5. name, case-insensitively alphabetical
+     6. id, alphabetical - the final total-order guarantee
+   Score zero is NOT a pick. No match means the caller keeps doing exactly what
+   it did before this existed: the doctor's default template, or nothing. */
+var MLS_TPL_KINDS=['soap','insurance','op'];
+function _mlsTplKindOf(t){
+  var k=String((t&&t.kind)||'').trim().toLowerCase();
+  return (k==='soap'||k==='insurance'||k==='op')?k:'';
+}
+function _mlsTplKindLabel(k){
+  if(k==='soap') return 'SOAP / progress note';
+  if(k==='insurance') return 'Insurance-ready note';
+  if(k==='op') return 'Op / procedure note';
+  return 'Any note kind';
+}
+/* Keywords, normalized: lowercased, trimmed, de-duplicated, order preserved.
+   The store already heals keywords into an array (b940); this tolerates a
+   string anyway, so the picker can never be the thing that throws. The seen
+   map is prototype-less so a keyword literally spelled "__proto__" is an
+   ordinary key and not a prototype write. */
+function _mlsTplKeywords(t){
+  var raw=(t&&t.keywords)||[];
+  if(!Array.isArray(raw)) raw=String(raw).split(',');
+  var out=[], seen=Object.create(null);
+  for(var i=0;i<raw.length;i++){
+    var k=String(raw[i]==null?'':raw[i]).trim().toLowerCase();
+    if(!k||seen[k]) continue;
+    seen[k]=1; out.push(k);
+  }
+  return out;
+}
+/* The template NAME keeps contributing the weak signal it always did, so the
+   keywordless imports that a library is mostly made of still get picked. */
+function _mlsTplNameWords(t){
+  var words=String((t&&t.name)||'').toLowerCase().split(/[^a-z0-9]+/);
+  var kws=_mlsTplKeywords(t), out=[], seen=Object.create(null);
+  for(var i=0;i<kws.length;i++) seen[kws[i]]=1;
+  for(var j=0;j<words.length;j++){
+    var w=words[j];
+    if(w.length<=2||seen[w]) continue;
+    seen[w]=1; out.push(w);
+  }
+  return out;
+}
+function _mlsTplWordish(ch){ return (ch>='a'&&ch<='z')||(ch>='0'&&ch<='9'); }
+/* A hit must sit on a word boundary, or "esi" matches "obesity" and every
+   short keyword becomes noise. Only the characters OUTSIDE the match are
+   tested, so keywords carrying their own punctuation ("l4-l5", "c5-6") still
+   match. hay is already lowercased by the caller. */
+function _mlsTplHit(hay,needle){
+  if(!hay||!needle) return false;
+  var from=0, at;
+  while((at=hay.indexOf(needle,from))!==-1){
+    var before=at>0?hay.charAt(at-1):'';
+    var after=(at+needle.length)<hay.length?hay.charAt(at+needle.length):'';
+    if(!_mlsTplWordish(before)&&!_mlsTplWordish(after)) return true;
+    from=at+1;
+  }
+  return false;
+}
+function _mlsTplBeats(a,b,want){
+  if(a.score!==b.score) return a.score>b.score;
+  var ak=(want&&a.kind===want)?1:0, bk=(want&&b.kind===want)?1:0;
+  if(ak!==bk) return ak>bk;
+  if(a.matched.length!==b.matched.length) return a.matched.length>b.matched.length;
+  if(a.matchedName.length!==b.matchedName.length) return a.matchedName.length>b.matchedName.length;
+  var an=a.name.toLowerCase(), bn=b.name.toLowerCase();
+  if(an!==bn) return an<bn;
+  if(a.name!==b.name) return a.name<b.name;
+  return a.id<b.id;
+}
+/* Where a keyword hits is worth more than that it hit: the scheduled procedure
+   NAMES the note, the booking reason describes it, the transcript merely
+   mentions it. A name word is always the weak signal, wherever it lands. */
+function _mlsTplPick(list,ctx,kind){
+  var want=String(kind||'').trim().toLowerCase();
+  if(want!=='soap'&&want!=='insurance'&&want!=='op') want='';
+  var out={template:null,id:'',name:'',kind:'',score:0,matched:[],matchedName:[],
+           considered:0,noteKind:want,reason:'no-templates'};
+  if(!list||!list.length) return out;
+  var fields=[
+    [String((ctx&&ctx.procedure)||'').toLowerCase(),3],
+    [String((ctx&&ctx.reason)||'').toLowerCase(),2],
+    [String((ctx&&ctx.transcript)||'').toLowerCase(),1]
+  ];
+  var best=null;
+  for(var i=0;i<list.length;i++){
+    var t=list[i]; if(!t||typeof t!=='object') continue;
+    var tk=_mlsTplKindOf(t);
+    if(want&&tk&&tk!==want) continue;
+    out.considered++;
+    var kws=_mlsTplKeywords(t), score=0, matched=[], matchedName=[], j, f, w;
+    for(j=0;j<kws.length;j++){
+      w=0;
+      for(f=0;f<fields.length;f++){ if(fields[f][1]>w&&_mlsTplHit(fields[f][0],kws[j])) w=fields[f][1]; }
+      if(w>0){ score+=w; matched.push(kws[j]); }
+    }
+    var nws=_mlsTplNameWords(t);
+    for(j=0;j<nws.length;j++){
+      for(f=0;f<fields.length;f++){ if(_mlsTplHit(fields[f][0],nws[j])){ score+=1; matchedName.push(nws[j]); break; } }
+    }
+    if(score<=0) continue;
+    var cand={template:t,id:String(t.id||''),name:String(t.name||''),kind:tk,
+              score:score,matched:matched,matchedName:matchedName};
+    if(best===null||_mlsTplBeats(cand,best,want)) best=cand;
+  }
+  if(!best){ out.reason=out.considered?'no-match':'no-candidate-of-this-kind'; return out; }
+  out.template=best.template; out.id=best.id; out.name=best.name; out.kind=best.kind;
+  out.score=best.score; out.matched=best.matched; out.matchedName=best.matchedName;
+  out.reason='matched';
+  return out;
+}
+/* ONE definition of "what kind did the doctor declare" and ONE definition of
+   "does this keyword hit". The note-grounding overlay in the connect bundle
+   replaces resolveActiveTemplate outright, so it must reach THESE - a second
+   copy over there would drift from this one the first time either changed. */
+try{ window._mlsTplKindOf=_mlsTplKindOf; window._mlsTplHit=_mlsTplHit; window._mlsTplKeywords=_mlsTplKeywords; }catch(_tplExportError){}
+/* The one sentence the surface shows: which template, and why it won. */
+function _mlsTplPickSentence(pick){
+  if(!pick||pick.reason!=='matched') return '';
+  var s='Template: '+(pick.name||'(unnamed)');
+  var why=(pick.matched||[]).slice();
+  if(why.length) s+=' - matched your keywords: '+why.join(', ');
+  else if((pick.matchedName||[]).length) s+=' - matched its name: '+pick.matchedName.join(', ');
+  return s+' ('+_mlsTplKindLabel(pick.kind)+')';
+}
+/* Which kind of note the generator is about to produce. The two standard
+   formats are the app's own currentFormat; the op-note lane names itself. */
+function _mlsCurrentNoteKind(){
+  try{ return currentFormat==='insurance'?'insurance':'soap'; }catch(e){ return 'soap'; }
+}
+/* The booking reason for this patient's appointment - the same resolver
+   openOpPrepForPatient already uses - with the chart's own stored reason as
+   the fallback. A patient with no id can never be matched by id, and must not
+   match every id-less appointment row. */
+function _mlsVisitBookingReason(p){
+  if(!p) return '';
+  var pid=String(p.id||'');
+  if(pid){
+    try{
+      var hits=((window._calAppts||[])||[]).filter(function(a){
+        return a&&String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||'')===pid;
+      });
+      hits.sort(function(a,b){ return String(b.start_at||'').localeCompare(String(a.start_at||'')); });
+      if(hits[0]&&hits[0].reason) return String(hits[0].reason);
+    }catch(e){}
+  }
+  return String((p&&p.reason)||'');
+}
+/* The visit context the picker scores against. Every read is defensive: a
+   field this cannot build is an empty string, which scores nothing and leaves
+   the decision exactly where transcript-only matching left it. */
+function _mlsVisitTemplateContext(visitText){
+  var ctx={procedure:'',reason:'',transcript:String(visitText||'')};
+  try{
+    var p=(typeof activePatient==='function')?activePatient():null;
+    if(p) ctx.reason=_mlsVisitBookingReason(p);
+  }catch(e){}
+  return ctx;
+}
+/* Auto-choose: score saved templates against the visit by case-insensitive
+   keyword matching. Returns the best template or null - the same contract the
+   bundle overlays and the op-note lane have always called. The receipt of the
+   decision is left on window.__mlsLastTemplatePick for the surface to show;
+   it is metadata only, never the stored record. */
+function pickTemplateForVisit(visitText,ctx,kind){
+  var context=(ctx&&typeof ctx==='object')?
+    {procedure:String(ctx.procedure||''),reason:String(ctx.reason||''),
+     transcript:String(ctx.transcript!=null?ctx.transcript:(visitText||''))}:
+    {procedure:'',reason:'',transcript:String(visitText||'')};
+  var pick=_mlsTplPick(_tplStore(),context,kind);
+  try{
+    window.__mlsLastTemplatePick={name:pick.name,id:pick.id,kind:pick.kind,score:pick.score,
+      matched:pick.matched.slice(),matchedName:pick.matchedName.slice(),
+      considered:pick.considered,noteKind:pick.noteKind,reason:pick.reason,at:Date.now()};
+  }catch(e){}
+  return pick.template?_tplClone(pick.template):null;
+}
+/* SHOW THE PICK. A silent pick is how the wrong template ships: the doctor
+   must be able to read which template shaped this note and which of his own
+   keywords chose it. Text only - the values come out of the template record,
+   which is untrusted data, so they are written with textContent. */
+function _mlsRenderTplPickReceipt(fallbackTpl){
+  var el=document.getElementById('tplPickReceipt');
+  var pick=null; try{ pick=window.__mlsLastTemplatePick; }catch(e){}
+  var text='';
+  /* THE FALLBACK ARGUMENT WINS. It is only ever passed on the path that
+     actually used the default template, and it must outrank any pick left on
+     window - including a stale one from an earlier generation, which is what
+     auto-choose being OFF leaves behind. */
+  if(!(typeof useTemplatesOn==='function'&&useTemplatesOn())) text='';
+  else if(fallbackTpl&&fallbackTpl.name) text='No template matched this visit - using your default: '+String(fallbackTpl.name);
+  else if(pick&&pick.reason==='matched') text=_mlsTplPickSentence(pick);
+  else if(pick&&pick.reason==='no-candidate-of-this-kind') text='No template is set up for this note kind - the note was left unformatted.';
+  else if(pick&&pick.reason!=='no-templates') text='No template matched this visit - the note was left unformatted.';
+  if(el){
+    el.textContent=text;
+    el.style.display=text?'':'none';
+  }
+  return text;
 }
 
 /* Resolve which template (if any) to apply right now, honoring the toggle.
    When the toggle is OFF this returns null and the caller does nothing. */
 function resolveActiveTemplate(visitText){
   if(!useTemplatesOn()) return null;
+  /* Every resolve is a fresh decision. A receipt left by an EARLIER
+     generation must never be read as this one - with auto-choose off the
+     picker does not run at all, and the stale pick would otherwise name a
+     template this note never saw. */
+  try{ window.__mlsLastTemplatePick=null; }catch(e){}
   if(templateAutoOn()){
-    const picked=pickTemplateForVisit(visitText);
-    if(picked){ toast('Auto-chose template: '+picked.name,''); return picked; }
+    /* tplpick-1.0.0: the pick is now kind-gated and scored against the visit
+       CONTEXT (booking reason as well as the transcript), and it announces
+       the keywords that won - see _mlsTplPick. */
+    const picked=pickTemplateForVisit(visitText,_mlsVisitTemplateContext(visitText),_mlsCurrentNoteKind());
+    if(picked){
+      let why=''; try{ why=_mlsTplPickSentence(window.__mlsLastTemplatePick); }catch(e){}
+      try{ _mlsRenderTplPickReceipt(); }catch(e){}
+      toast('Auto-chose '+(why||('template: '+picked.name)),'');
+      return picked;
+    }
     // fall back to the explicitly active template, if any
   }
-  return getTemplateById(getActiveTemplateId());
+  /* NO MATCH IS NOT A GUESS. Exactly what this did before tplpick-1.0.0: the
+     doctor's own default template, or nothing at all. */
+  const fallback=getTemplateById(getActiveTemplateId());
+  try{ _mlsRenderTplPickReceipt(fallback); }catch(e){}
+  return fallback;
 }
 
 /* Reformat the just-generated note to follow a template. Uses the freeform
@@ -24116,6 +24369,19 @@ async function maybeApplyTemplate(visitText,expectedBinding,expectedEpoch){
 }
 function reportTemplateApplication(result,templateName){
   if(result&&result.applied===true){ toast('Note formatted to template: '+(templateName||result.templateId||'selected template'),'ok'); return true; }
+  /* tplpick-1.0.0: a pick that never reached the note must not keep claiming
+     the note. The receipt named a template at SELECTION time; if the reformat
+     did not land, say so instead of leaving a sentence that is now false. */
+  if(result&&result.applied!==true&&result.reason!=='templates-off'){
+    try{
+      var el=document.getElementById('tplPickReceipt');
+      if(el){
+        var nm=templateName||(result&&result.templateName)||'';
+        el.textContent=nm?('Template "'+nm+'" was not applied - the note is unchanged.'):'';
+        el.style.display=el.textContent?'':'none';
+      }
+    }catch(e){}
+  }
   if(result&&result.reason!=='templates-off'&&result.reason!=='no-template') toast((templateName?'Template “'+templateName+'”':'Selected template')+' was not applied — the original note is unchanged.','err');
   return false;
 }
