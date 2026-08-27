@@ -1090,6 +1090,16 @@ const tests = [
   'schedule-history-pipeline.test.js',
   'chart-open-failure-diagnostics-contract.test.js',
   'schedule-identity-adversarial-runtime.test.js',
+  /* padopt-1.0.0 + onheal-1.0.0 (owner 2026-08-26, the measured day: 25 of 29
+     appointment rows carried a freshly minted p_sched_ identity while the same
+     human already had a local chart, and every same-day re-pull re-walked
+     every chart because the ON lane could never prove the day's own note).
+     The first executes the appointment -> chart adoption law in both
+     directions; the second executes the ON-mode same-day proof, the re-pull
+     skip round trip, the idle self-heal feed, the sweep label and the facts
+     capture settle. */
+  'padopt-appointment-chart-adoption.test.js',
+  'onheal-on-mode-self-heal-runtime.test.js',
   'schedule-row-demographics-adversarial.test.js',
   'schedule-visit-persistence-adversarial.test.js',
   'schedule-authoritative-empty-contract.test.js',
