@@ -4564,7 +4564,40 @@ async function mlsRecoverAthenaTab(tabId) {
   if (sessionHealth && sessionHealth.signedOut) return { ok: false, skipped: 'athena-signed-out', manualSignIn: true, timedOut: !!sessionHealth.timedOut };
   try { await mlsArmKeepAlive(tabId, true, sessionHealth); } catch (eKa) {}
   __mlsReadsSinceReload = 0;
-  return { ok: false, skipped: 'automatic-reload-disabled', manualRefresh: true, tabUntouched: true };
+  /* rec-1.0.0 (3.0.84, owner directive 2026-08-27: fix it with everything):
+     the disabled rail starved every wired self-heal call site (goto retry,
+     stale-read recycle, search-open recovery). Recovery now performs ONE
+     bounded, same-origin navigation of the wedged tab to its own practice
+     dashboard - the exact manual cure proven live three times on 2026-08-26.
+     Never on a signed-out session (guarded above), never a login page, never
+     another EMR, throttled per tab, and never while the quiet-probe holds
+     the tab. */
+  try {
+    var recNow = Date.now();
+    self.__mlsRecoverAt = self.__mlsRecoverAt || {};
+    if (recNow - Number(self.__mlsRecoverAt[tabId] || 0) < 120000) {
+      return { ok: false, skipped: 'recovery-throttled', manualRefresh: true, tabUntouched: true };
+    }
+    if (self.__mlsQp && self.__mlsQp.active) {
+      return { ok: false, skipped: 'quiet-probe-active', tabUntouched: true };
+    }
+    var recSeg = String(recoverTab.url || '').match(/athenahealth\.com\/(\d+)\/(\d+)\//);
+    if (!recSeg) return { ok: false, skipped: 'practice-segment-unknown', manualRefresh: true, tabUntouched: true };
+    var recMain = 'https://athenanet.athenahealth.com/' + recSeg[1] + '/' + recSeg[2] + '/ax/dashboard';
+    var recUrl = 'https://athenanet.athenahealth.com/' + recSeg[1] + '/' + recSeg[2] + '/globalframeset.esp?MAIN=' + encodeURIComponent(recMain);
+    self.__mlsRecoverAt[tabId] = recNow;
+    await chrome.tabs.update(tabId, { url: recUrl });
+    await new Promise(function (recDone) {
+      var recT = setTimeout(finishRec, 15000);
+      function onUpd(id, info) { if (id === tabId && info && info.status === 'complete') finishRec(); }
+      function finishRec() { try { clearTimeout(recT); chrome.tabs.onUpdated.removeListener(onUpd); } catch (eRecL) {} recDone(); }
+      try { chrome.tabs.onUpdated.addListener(onUpd); } catch (eRecA) { finishRec(); }
+    });
+    __mlsReadsSinceReload = 0;
+    return { ok: true, recovered: 'dashboard-navigation' };
+  } catch (eRec) {
+    return { ok: false, skipped: 'recovery-failed', manualRefresh: true, tabUntouched: true };
+  }
 }
 /* Session ownership stays with Athena. MLS Assist never synthesizes user input
  * or scrolling to defeat an inactivity policy; this marker is retained only so
@@ -17321,4 +17354,43 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     chrome.alarms.onAlarm.addListener(function (a) { if (a && a.name === 'mlsAthGuard') guardAthenaTabs(); });
   } catch (e) {}
   try { setTimeout(guardAthenaTabs, 3000); } catch (e) {}
+})();
+
+/* ===== ka84-1.0.0 (3.0.84): fetch-based session keep-alive =================
+   Owner ask (2026-08-26): keep athena alive so phone-started flows work.
+   Session policy previously forbade input synthesis - that stays true: this
+   lane NEVER fakes user input, clicks, or scrolling. Every 10 minutes the
+   worker makes ONE credentialed, no-store GET of each signed-in athena tab's
+   own practice dashboard - the same request the app's health probes already
+   make. A signed-out session is left alone (never auto-signin). A worker
+   fetch never fronts, navigates, or mutates a tab, so pulls and writes are
+   untouched. PHI-free: URLs carry practice/department segments only. */
+(function () {
+  'use strict';
+  try { if (self.__mlsKa84Wired) return; self.__mlsKa84Wired = 1; } catch (eKw) {}
+  var KA84 = 'mls-ka84-v1';
+  try { chrome.alarms.create(KA84, { periodInMinutes: 10 }); } catch (eKc) {}
+  try {
+    chrome.alarms.onAlarm.addListener(function (a) {
+      if (!a || a.name !== KA84) return;
+      (async function () {
+        try {
+          var kaTabs = await chrome.tabs.query({ url: 'https://athenanet.athenahealth.com/*' });
+          var kaSeen = {};
+          for (var ki = 0; ki < kaTabs.length; ki++) {
+            var kaT = kaTabs[ki];
+            try {
+              if (typeof mlsAthIsLoginish === 'function' && mlsAthIsLoginish(kaT)) continue;
+              var kaSeg = String(kaT.url || '').match(/athenahealth\.com\/(\d+)\/(\d+)\//);
+              if (!kaSeg) continue;
+              var kaKey = kaSeg[1] + '/' + kaSeg[2];
+              if (kaSeen[kaKey]) continue;
+              kaSeen[kaKey] = 1;
+              await fetch('https://athenanet.athenahealth.com/' + kaKey + '/ax/dashboard', { credentials: 'include', cache: 'no-store' }).catch(function () {});
+            } catch (eKt) {}
+          }
+        } catch (eKa84) {}
+      })();
+    });
+  } catch (eKl) {}
 })();
