@@ -1004,9 +1004,11 @@
     var whenBox = q('mlsDtSectionWhen');
     if (whenBox && !String(whenBox.value || '').trim()) {
       var whenSug = suggestWhenFromUi();
-      whenOffered[activeFamily + '::' + String((q('mlsDtSectionProfile') || {}).value || '')] = true;
+      var importKey = activeFamily + '::' + String((q('mlsDtSectionProfile') || {}).value || '');
+      whenOffered[importKey] = { text: '', why: '' };
       if (whenSug && whenSug.result) {
         whenBox.value = whenSug.result.terms.join(', ');
+        whenOffered[importKey] = { text: whenBox.value, why: whenSug.result.why };
         paintWhenWhy(whenSug.result.why);
       }
     }
@@ -1075,14 +1077,22 @@
     paintWhenWhy('');
     if (!profile || !isProfileFamily(family)) return;
     var box = q('mlsDtSectionWhen');
-    if (!box || String(box.value || '').trim()) return;
-    var key = family + '::' + profile.id;
-    if (profile.whenAuto || whenOffered[key]) return;
+    if (!box) return;
+    var key = family + '::' + profile.id, prior = whenOffered[key];
+    if (String(box.value || '').trim()) {
+      /* Already filled. If it still holds the proposal this session made,
+         keep saying where the words came from: an explanation that vanishes
+         on the next re-render is an explanation he never gets to read. */
+      if (prior && prior.why && prior.text === String(box.value)) paintWhenWhy(prior.why);
+      return;
+    }
+    if (profile.whenAuto || prior) return;
     if (!String(profile.templateText || '').trim()) return;
-    whenOffered[key] = true;
     var sug = suggestWhen(family, profile.id, profile.label, profile.templateText);
+    whenOffered[key] = { text: '', why: '' };
     if (!sug || !sug.result) return;
     box.value = sug.result.terms.join(', ');
+    whenOffered[key] = { text: box.value, why: sug.result.why };
     paintWhenWhy(sug.result.why);
   }
   /* THE EXPLICIT CONTROL. Reads the format as it stands in the editor right
@@ -1107,7 +1117,8 @@
     }
     box.value = sug.result.terms.join(', ');
     paintWhenWhy(sug.result.why);
-    whenOffered[activeFamily + '::' + String((q('mlsDtSectionProfile') || {}).value || '')] = true;
+    whenOffered[activeFamily + '::' + String((q('mlsDtSectionProfile') || {}).value || '')] =
+      { text: box.value, why: sug.result.why };
     captureUi(activeFamily);
     paintCount();
   }

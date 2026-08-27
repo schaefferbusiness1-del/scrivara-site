@@ -1919,7 +1919,16 @@ const tests = [
      no longer depends on upload order, and no match falls to the doctor's
      default or to nothing. A template is DATA: never eval'd, never compiled
      into a RegExp, never rendered as markup. */
-  'template-kind-and-keyword-pick-pins.test.js'
+  'template-kind-and-keyword-pick-pins.test.js',
+  /* tplauto-1.0.0 (owner 2026-08-27, on the new "Use automatically when"
+     field: "this should be able to auto generate when it thinks it will be
+     used"): the REAL extractor and the REAL settings editor, executed - the
+     words that choose a template are read out of the template's own text,
+     never invented; a term every template carries is dropped as worthless;
+     the prefill only touches an EMPTY field, once, and a field he cleared
+     stays cleared across a save and a reload; an ambiguous note kind stays
+     unset. A hostile template stays inert DATA. */
+  'template-auto-suggest-pins.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
