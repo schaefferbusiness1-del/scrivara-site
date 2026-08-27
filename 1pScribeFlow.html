@@ -29532,6 +29532,33 @@ function _reorderNoteForStyle(note, style){
 }
 function getContext(){ const el=document.getElementById('contextBox'); return el?el.value.trim():''; }
 
+/* Athena imports can legitimately store problems, medications, allergies, or
+   summaries as arrays/objects instead of one newline-delimited string. Note
+   generation must accept every supported chart shape, especially when the
+   visit is intentionally unlinked from an Athena appointment. Flatten only
+   the values already present; never invent a clinical fact or stringify an
+   object as the useless literal "[object Object]". */
+function _mlsGenerationFieldText(value,depth){
+  depth=Number(depth)||0;
+  if(value==null||depth>4)return '';
+  if(typeof value==='string'||typeof value==='number'||typeof value==='boolean'){
+    return String(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,' ').trim();
+  }
+  if(Array.isArray(value)){
+    return value.map(function(item){return _mlsGenerationFieldText(item,depth+1);}).filter(Boolean).join('\n').trim();
+  }
+  if(typeof value==='object'){
+    try{
+      return Object.keys(value).slice(0,40).map(function(key){
+        var text=_mlsGenerationFieldText(value[key],depth+1);
+        if(!text)return '';
+        return depth===0?(String(key).replace(/[_-]+/g,' ')+': '+text):text;
+      }).filter(Boolean).join(depth===0?'; ':' · ').trim();
+    }catch(e){return '';}
+  }
+  return String(value).trim();
+}
+
 /* Build an explicitly BACKGROUND-ONLY block from the active chart.  Nothing in
    this block establishes what happened today; the generation prompt and
    backend keep it separate from TODAY_TRANSCRIPT. */
@@ -29542,10 +29569,14 @@ function buildPatientContext(){
     if(p.name)      parts.push('Patient: '+p.name);
     const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
     if(demo)        parts.push('Demographics: '+demo);
-    if(p.problems && p.problems.trim())   parts.push('Active problem list:\n'+p.problems.trim());
-    if(p.meds && p.meds.trim())           parts.push('Current medications:\n'+p.meds.trim());
-    if(p.allergies && p.allergies.trim()) parts.push('Allergies:\n'+p.allergies.trim());
-    if(p.summary && p.summary.trim())     parts.push('Running history / prior-visit summary:\n'+p.summary.trim());
+    const problems=_mlsGenerationFieldText(p.problems);
+    const meds=_mlsGenerationFieldText(p.meds);
+    const allergies=_mlsGenerationFieldText(p.allergies);
+    const summary=_mlsGenerationFieldText(p.summary);
+    if(problems)   parts.push('Active problem list:\n'+problems);
+    if(meds)       parts.push('Current medications:\n'+meds);
+    if(allergies)  parts.push('Allergies:\n'+allergies);
+    if(summary)    parts.push('Running history / prior-visit summary:\n'+summary);
   }
   const pasted=getContext();
   if(pasted) parts.push('Additional context the clinician pasted for this visit:\n'+pasted);
