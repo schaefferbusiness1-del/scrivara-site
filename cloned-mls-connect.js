@@ -7311,6 +7311,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3fl-gen{display:inline-flex;align-items:center;justify-content:center;background:#2E6A4B;border:1px solid #2E6A4B;border-radius:12px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;padding:12px 18px;}',
     '#mlsEz3 .ez3fl-gen:hover{background:#204034;}',
     '#mlsEz3 .ez3fl-gen:disabled{opacity:.62;cursor:wait;}',
+    /* gcx-1.0.0: blocked is NOT disabled -- the click must still be answerable,
+       so this is the only thing that says "a click will be refused, and why". */
+    '#mlsEz3 .ez3fl-gen[aria-disabled="true"]{background:#55605A;border-color:#55605A;}',
     '#mlsEz3 .ez3fl-gen[hidden]{display:none!important;}',
     '#mlsEz3 .ez3fl-rechint{flex-basis:100%;font-size:12px;color:#79837C;margin-top:-2px;}',
     '#mlsEz3 .ez3fl-transcript{flex-basis:100%;background:#F8FAF7;border:1px solid #DCE4DD;border-radius:14px;padding:13px 14px;margin-top:2px;}',
@@ -8184,6 +8187,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setLaneText(gb, genReal && genReal.disabled && !noteText.trim() ? 'Generating note...' : '\u2728 Generate one note');
     }
     syncTopGenerationOwnership(rec, gb);
+    /* gcx-1.0.0: the top lane's Generate carries the same read-only evidence
+       verdict as the canonical control, so its tooltip explains a refusal
+       before the click and clears itself the moment the transcript qualifies. */
+    try { if (typeof window.__mlsSyncGenerationGateUi === 'function') window.__mlsSyncGenerationGateUi(); } catch (eGate) {}
     if (hint) {
       setLaneText(hint, live ? 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.' :
         (noteText.trim() ? 'Your note is ready below. Review and edit it here before using any send tools.' :
@@ -22596,6 +22603,63 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return h + '</div>';
   }
 
+  /* gcx-1.0.0 (2026-08-27) -- owner: the big Generate button "just glitches out
+     and does nothing" while the anti-invention evidence gate is refusing. The
+     gate is the ENGINE's and stays the engine's; this only ASKS it, read-only,
+     so the visible control can say the reason BEFORE the click instead of
+     after. A blocked control is deliberately never `disabled`: a disabled
+     button swallows the click, and a swallowed click IS the reported defect.
+     aria-disabled + the button's existing dim skin + a title tooltip keeps
+     every click answerable, and because this runs from syncTx() and
+     syncTopLane() it re-evaluates on every transcript keystroke -- the button
+     un-blocks itself the moment a real detail is typed. */
+  var GEN_READY_HINT = 'Uses every recorded and typed segment above';
+  var GEN_NO_TEXT_HINT = 'Add some transcript text first';
+  function genGateReason() {
+    var t = $('transcript'), text = t ? String(t.value || '') : '';
+    if (!text.trim()) return GEN_NO_TEXT_HINT;
+    try {
+      var ask = window.__mlsGenerationBlockReason;
+      if (isFn(ask)) { var r = ask(text); return (r && r.message) ? String(r.message) : ''; }
+    } catch (e) {}
+    return '';
+  }
+  function paintGenGate(btn, reason, readyHint) {
+    if (!btn) return;
+    var blocked = !!reason;
+    try {
+      /* `dim` is the hero button's own shipped blocked skin (both themes carry
+         a rule for it). The top lane is styled off aria-disabled instead. */
+      if (btn.classList && btn.classList.contains('ez3-big') && btn.classList.contains('dim') !== blocked) btn.classList.toggle('dim', blocked);
+      btn.setAttribute('aria-disabled', blocked ? 'true' : 'false');
+      if (blocked) btn.setAttribute('title', reason); else btn.removeAttribute('title');
+      var small = btn.querySelector ? btn.querySelector('small') : null;
+      if (small && readyHint != null) {
+        var next = blocked ? reason : readyHint;
+        if (small.textContent !== next) small.textContent = next;
+      }
+    } catch (e) {}
+  }
+  function syncGenGateUi() {
+    var reason = '';
+    try { reason = genGateReason(); } catch (e) {}
+    paintGenGate($('ez3Gen'), reason, GEN_READY_HINT);
+    paintGenGate($('ez3flGen'), reason, null);
+    return reason;
+  }
+  try { window.__mlsSyncGenerationGateUi = syncGenGateUi; } catch (eGcx) {}
+  /* ONE announcement path for every refused Generate click. The shell owns the
+     re-announcement because the shell owns the toast dedupe that made a REPEAT
+     click silent; this degrades to a plain toast on an older shell. */
+  function shoutGenBlock(message) {
+    var msg = String(message || '');
+    if (!msg) return;
+    var said = false;
+    try { if (isFn(window.__mlsShoutGeneration)) said = !!window.__mlsShoutGeneration(msg); } catch (e) {}
+    if (!said) { try { toast(msg, 'err'); } catch (e1) {} }
+    try { if (isFn(window.__mlsFlashGenerationBlock)) window.__mlsFlashGenerationBlock(msg); } catch (e2) {}
+  }
+
   /* b432: quick tools are part of the canonical doctor renderer. They used to
      arrive from __mlsEz3Flow on a MutationObserver/timer, which created a
      second transcript/recorder lane and shifted the room after first paint. */
@@ -22846,8 +22910,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var stopped = S.phase === 'stopped';
       var tx = ($('transcript') && $('transcript').value) || '';
       if (stopped || tx.trim().length) {
-        h += '<button type="button" class="ez3-big" id="ez3Gen"' + (tx.trim().length ? '' : ' disabled') + '>✨ Generate one note' +
-             '<small>' + (tx.trim().length ? 'Uses every recorded and typed segment above' : 'Add some transcript text first') + '</small></button>' +
+        /* gcx-1.0.0: the `disabled` attribute is GONE on purpose. A disabled
+           button eats the click and explains nothing, which is exactly the
+           dead-click the owner reported. syncGenGateUi() (run by syncTx() at
+           the end of this same render, and again on every keystroke) paints
+           the blocked skin, aria-disabled, the tooltip and this <small>. */
+        h += '<button type="button" class="ez3-big" id="ez3Gen">✨ Generate one note' +
+             '<small>' + (tx.trim().length ? GEN_READY_HINT : GEN_NO_TEXT_HINT) + '</small></button>' +
              '<div class="ez3-row2"><button type="button" class="ez3-sm pri" id="ez3Rec2">🎙 Resume recording</button></div>';
       } else {
         /* b940: the patient name comes OFF this button. The visit workspace
@@ -22921,10 +22990,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       });
     });
     on('ez3Gen', function () {
-      if (!S.appt || !requireExactScheduledBinding(S.appt, 'note generation')) return;
+      /* gcx-1.0.0: EVERY exit from this handler now answers the click. The
+         `!S.appt` arm below used to be a bare `return` -- no toast, no banner,
+         no repaint: the literal silent dead click. The evidence gate itself is
+         untouched and still lives in the engine; this only makes its refusal,
+         and every other refusal here, impossible to miss. */
+      if (!S.appt) {
+        var noVisitMsg = 'No visit is open, so there is nothing to generate. Choose the patient and appointment again.';
+        S.lastWarn = noVisitMsg;
+        try { render(); } catch (eNv) {}
+        try { shoutGenBlock(noVisitMsg); } catch (eNv2) {}
+        return;
+      }
+      /* This one is already loud: it sets S.lastWarn, toasts and repaints. */
+      if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
       var t = $('transcript'), text = t ? (t.value || '').trim() : '';
-      if (!text) { toast('Type, paste, or record some visit text first.'); var top = $('ez3Transcript'); if (top) top.focus(); return; }
-      var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; }
+      if (!text) {
+        var emptyMsg = 'Type, paste, or record some visit text first.';
+        try { shoutGenBlock(emptyMsg); } catch (eEm) { try { toast(emptyMsg); } catch (eEm2) {} }
+        var top = $('ez3Transcript'); if (top) top.focus();
+        return;
+      }
+      var g = genBtnResolve();
+      if (!g) {
+        /* "not found" was a guess. #genBtn is also unresolvable while it is
+           BUSY generating, which is a different sentence and a different cure. */
+        var real = $('genBtn');
+        var busyMsg = (real && real.disabled)
+          ? 'MLS is still generating this note. Wait for it to finish, then try again.'
+          : 'The Generate control is not available on this screen. Reload the visit and try again.';
+        try { shoutGenBlock(busyMsg); } catch (eBs) { try { toast(busyMsg); } catch (eBs2) {} }
+        return;
+      }
       if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
     });
     on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render(); });
@@ -23105,6 +23202,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       else if (editMirror && v.length > edit.value.length && v.slice(0, edit.value.length) === edit.value) editMirror.set(edit, v);
     }
     if (count) { var words = v.trim() ? v.trim().split(/\s+/).length : 0; count.textContent = words + ' word' + (words === 1 ? '' : 's') + ' captured'; }
+    /* gcx-1.0.0: the blocked/ready state of Generate is re-derived here, so it
+       is correct after every render AND live on every keystroke. */
+    try { syncGenGateUi(); } catch (eGate) {}
   }
 
   /* ---- stop recording only; transcript stays intact for resume/generate --- */
