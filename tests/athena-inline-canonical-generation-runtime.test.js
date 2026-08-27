@@ -183,7 +183,11 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   assert.strictEqual(reopened, 1, 'successful generation did not rebuild the normal Athena review exactly once');
   const rebuilt = window.__mlsWriteFlow.diagnostics.state().manifest;
   const writeRows = rebuilt.rows.filter(row => row.action === 'write_note');
-  assert.deepStrictEqual(Array.from(writeRows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan'], 'rebuilt review did not stage all five exact destinations');
+  /* ap-1.0.0 (deliberate pin move, same as athena-what-goes-where-runtime):
+     athenaOne owns ONE combined Assessment & Plan editor, so the rebuilt
+     review stages the five named sections PLUS the combined row that writes
+     assessment and plan together. */
+  assert.deepStrictEqual(Array.from(writeRows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan', 'assessment_and_plan'], 'rebuilt review did not stage all six exact destinations');
   assert.strictEqual(rebuilt.patient.patientId, patient.patientId, 'rebuilt review changed the immutable patient');
   assert.strictEqual(rebuilt.visit.appointmentId, exactVisit.appointmentId, 'rebuilt review changed the exact appointment');
   assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'probe').length, 1, 'rebuilt review did not perform exactly one read-only exact-destination probe');

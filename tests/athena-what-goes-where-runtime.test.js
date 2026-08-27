@@ -215,14 +215,39 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 12));
     ]
   });
   const namedCard = byId.mlsAthenaUnifiedConfirm.children[0];
-  assert.strictEqual(namedManifest.rows.filter(row => row.action === 'write_note').length, 5, 'named fixture lost an exact section action');
+  /* ap-1.0.0 moved this pin, deliberately, and it is stated here rather than
+     left as a bare number: athenaOne owns ONE combined Assessment & Plan
+     editor, so alongside the five named section rows the manifest offers a
+     sixth row that writes the reviewed assessment and plan together. Five
+     sections therefore produce SIX write_note rows - the same
+     sections.length + 1 shape athena-crosslayer-bridge-payload-runtime
+     already pins, and the same six rows the owner sees on the live sheet.
+     The count alone was what drifted, so assert the SHAPE instead. */
+  const namedWriteRows = namedManifest.rows.filter(row => row.action === 'write_note');
+  /* joined, not deepStrictEqual: these rows are built inside the vm realm, so
+     their arrays do not share Array.prototype with this file's and a
+     deep-equal fails on identical contents. */
+  assert.strictEqual(
+    namedWriteRows.map(row => String((row.payload && row.payload.sectionKey) || '')).join(','),
+    'hpi,ros,exam,assessment,plan,assessment_and_plan',
+    'named fixture lost an exact section action, or the combined Assessment & Plan row');
   assert(!/Review the generated encounter-note text/.test(namedCard.innerHTML), 'named-section review still renders a false generic Encounter-note hero');
   assert(/What: Reviewed HPI draft/.test(namedCard.innerHTML) && /Where:<\/b> Athena encounter > HPI/.test(namedCard.innerHTML), 'HPI What/Where metadata is unclear');
   assert(/What: Reviewed Review of Systems draft/.test(namedCard.innerHTML) && /Where:<\/b> Athena encounter > Review of Systems/.test(namedCard.innerHTML), 'ROS What/Where metadata is unclear');
   assert(/What: Reviewed Physical Exam draft/.test(namedCard.innerHTML) && /Where:<\/b> Athena encounter > Physical Exam/.test(namedCard.innerHTML), 'Exam What/Where metadata is unclear');
   assert(/What: Reviewed assessment narrative/.test(namedCard.innerHTML) && /Where:<\/b> Athena encounter > Assessment &amp; Plan > Assessment/.test(namedCard.innerHTML), 'Assessment What/Where metadata is unclear or does not match Athena hierarchy');
   assert(/What: Reviewed Plan \/ Follow-up draft/.test(namedCard.innerHTML) && /Where:<\/b> Athena encounter > Assessment &amp; Plan > Plan \/ Follow-up/.test(namedCard.innerHTML), 'Plan What/Where metadata is unclear or does not match Athena hierarchy');
-  assert.strictEqual(namedCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, 5, 'each named Athena field must remain its own selectable confirmation');
+  assert(/What: Write reviewed Assessment &amp; Plan \(combined\)/.test(namedCard.innerHTML) || /Assessment &amp; Plan \(combined\)/.test(namedCard.innerHTML),
+    'the combined Assessment & Plan row lost its own What metadata');
+  /* ap-1.0.0, same deliberate move as the row-shape pin above: the combined
+     Assessment & Plan row is ALSO its own selectable confirmation, so five
+     named fields offer six radios. The law being pinned is one-radio-per-row
+     (nothing silently batched behind a single confirmation), so tie the count
+     to the row set rather than to a literal that drifts whenever a
+     destination is added. */
+  assert.strictEqual(namedCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, namedWriteRows.length,
+    'each named Athena field must remain its own selectable confirmation');
+  assert.strictEqual(namedWriteRows.length, 6, 'the named fixture no longer offers six exact destinations');
 
   const probesBeforeProcedure = sent.filter(message => message.mode === 'probe').length;
   const procedureManifest = window.__mlsWriteFlow.openUnifiedConfirmation({
