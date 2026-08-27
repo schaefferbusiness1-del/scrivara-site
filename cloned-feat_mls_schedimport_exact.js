@@ -9115,7 +9115,22 @@
             navEmptyStrip: emptyStrip
           };
           if (emptyStrip) extra.navAdvice = p1OneTabAdvice(tabs);
-          onStatus(extra.navAdvice || (nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
+          /* sox-1.0.0 (owner 2026-08-27, live): athenaOne had SIGNED OUT and
+             every pull answered "Pull failed for <day>" with the generic
+             "Couldn't open the requested athenaOne day." The evidence was
+             already in hand - the nav result carries sessionLikelyExpired and
+             the extension refuses a signed-out tab by name - it simply never
+             reached the doctor, who cannot guess that the cure is signing in.
+             Say the one actionable thing. The REASON stays nav-failed so the
+             closed vocabulary and every downstream handler are untouched; only
+             the sentence and a PHI-free flag change. */
+          var soxSignedOut = !!(nav && nav.sessionLikelyExpired) ||
+            /signed[- ]?out|athena-session-expired|manual\s*sign\s*in|re-?login/i.test(String((nav && (nav.error || nav.reason || nav.skipped)) || ""));
+          if (soxSignedOut) extra.athenaSignedOut = true;
+          var soxDay = safe(function () { return String(target || "") || ""; }, "");
+          onStatus(soxSignedOut
+            ? ("athenaOne is signed out, so MLS could not open " + (soxDay || "that day") + ". Sign in to athenaOne in its tab, then press pull again - nothing was read and nothing was changed.")
+            : (extra.navAdvice || (nav && nav.error) || "Couldn't open the requested athenaOne day."), "err");
           return fail("nav-failed", extra);
         });
       }

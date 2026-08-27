@@ -348,6 +348,25 @@ async function navAdviceRun() {
   const other = monthWorld({ gotoResult: () => ({ ok: false, error: 'No athenaOne tab open.', sessionLikelyExpired: true }) });
   const otherRes = await other.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: other.onStatus });
   eq(otherRes.navAdvice, undefined, 'a missing-tab nav failure was given the one-tab strip advice');
+  /* sox-1.0.0 (owner, live 2026-08-27): athenaOne had signed out and every
+     pull said only "Pull failed for <day>" plus the generic "Couldn't open
+     the requested athenaOne day." The evidence was already on the nav result;
+     it just never reached him, and signing in is the one thing that cures it. */
+  eq(otherRes.athenaSignedOut, true, 'a signed-out nav failure is not flagged on the receipt');
+  eq(otherRes.reason, 'nav-failed', 'the signed-out message changed the closed reason vocabulary');
+  ok(other.statusLines.some(l => /athenaOne is signed out/.test(l) && /Sign in to athenaOne/.test(l)),
+    'the doctor was never told athenaOne is signed out: ' + JSON.stringify(other.statusLines.slice(0, 4)));
+  ok(other.statusLines.some(l => /nothing was read and nothing was changed/.test(l)),
+    'the signed-out message dropped the honesty clause');
+  eq(other.statusLines.some(l => /Couldn't open the requested athenaOne day/.test(l)), false,
+    'the generic nav sentence still fires on a signed-out session');
+  /* control: a nav failure that is NOT a signed-out session keeps the old
+     wording and is never mislabelled as signed out. */
+  const notOut = monthWorld({ gotoResult: () => ({ ok: false, error: 'athenaOne did not respond in time.' }) });
+  const notOutRes = await notOut.api.pull({ date: MONTH_DAY, provider: 'all', includeHistory: false, pullVisitBodies: false, onStatus: notOut.onStatus });
+  eq(notOutRes.athenaSignedOut, undefined, 'an ordinary nav failure was mislabelled as signed out');
+  eq(notOut.statusLines.some(l => /athenaOne is signed out/.test(l)), false,
+    'an ordinary nav failure told the doctor to sign in for no reason');
 
   /* PREFLIGHT: the same advice up front, before a 60 s failure */
   const pre = makeMonthHarness({ today: MONTH_DAY, athenaTabs: 4, presenceResult: () => ({ ok: true, athenaOpen: false, certain: false, reason: 'athena-tab-unverified' }) });
