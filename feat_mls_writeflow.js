@@ -833,28 +833,34 @@
      allowlist synchronized with the extension sources; the contract suite
      derives their fixed reason literals and fails when a new code is omitted. */
   var WFDX_KNOWN_REASONS = {};
-  ('account-mismatch account-unverifiable ambiguous ambiguous-athena-tabs appointment-id-ambiguous ' +
+  ('account-mismatch account-unverifiable already-on-file ambiguous ambiguous-athena-tabs appointment-id-ambiguous ' +
    'appointment-id-missing appointment-id-not-found appointment-navigation-snapshot-unavailable ' +
    'appointment-navigation-unverified athena-navigation-busy athena-page-changed bad-action ' +
    'billing-context-unverified billing-context-verified billing-duplicate-rejected billing-exact-match ' +
    'billing-existing-row-ambiguous billing-near-match-rejected billing-payload-mismatch blank-error ' +
-   'bridge-error cancelled catalog-identity-required catalog-query-required context-mismatch ' +
+   'bridge-error cancelled catalog-identity-required catalog-query-required ' +
+   /* mrnadopt-1.0.0: the read-only chart-identity read has its own fixed
+      outcomes; without them every adoption refusal printed as "unlisted". */
+   'chart-dob-unreadable chart-identity-mismatch chart-mrn-absent chart-read-uncertain context-mismatch ' +
    'context-unverifiable context-unverified context-verified display-execute-day-mismatch dob-mismatch ' +
-   'duplicate-session exact-note-editor-verified-unsaved extension-error frame-coverage-unverified ' +
+   'duplicate-session exact-chart-match exact-note-editor-verified-unsaved extension-error frame-coverage-unverified ' +
    'frame-generation-changed fresh-trusted-click-required goto-date-deadline-exceeded ' +
    'goto-date-relay-deadline-exceeded high-risk-order-blocked invalid-binding invalid-target-retry ' +
-   'local-patient-id-required loopback-synthetic-only missing-order-fields missing-session name-not-found ' +
-   'named-section-final-action-unsupported no-athena-tab no-name-match no-response no-results not-watching ' +
+   'local-patient-id-required local-row-missing loopback-synthetic-only missing-order-fields missing-session ' +
+   'mrn-adopted mrn-conflict name-not-found ' +
+   'named-section-final-action-unsupported no-athena-tab no-chart-open no-name-match no-response no-results ' +
+   'not-persisted not-watching ' +
    'note-content-required note-destination-mismatch note-editor-not-empty note-payload-mismatch ' +
    'note-section-count-mismatch note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
    'note-write-unverified numeric-only-field-refused one-exact-order-isolated-readback-verified ' +
    'open-deadline-exceeded open-timeout order-client-id-mismatch order-exact-already-present ' +
    'order-existing-duplicate-rejected order-field-too-long order-id-required order-not-reviewed ' +
    'order-payload-incomplete order-payload-mismatch order-row-mismatch order-workspace-context-verified ' +
-   'outcome-uncertain patient-dob-unverifiable patient-mismatch patient-unverifiable practice-mismatch ' +
+   'outcome-uncertain patient-changed patient-dob-unverifiable patient-mismatch patient-unverifiable practice-mismatch ' +
    'practice-unverifiable preview-hash-mismatch probe-frame-missing provider-mismatch provider-unverifiable rows-not-rendered ' +
    'schedule-date-missing-after-recovery schedule-date-restore-failed search-deadline-exceeded ' +
-   'session-expired sign-prerequisite-mismatch synthetic-local-only taught-destination-binding-mismatch ' +
+   'session-expired sign-prerequisite-mismatch store-refused store-unavailable synthetic-local-only ' +
+   'taught-destination-binding-mismatch ' +
    'taught-destination-control-mismatch taught-destination-expired taught-destination-fingerprint-mismatch ' +
    'taught-destination-frame-mismatch taught-destination-invalid taught-destination-label-mismatch ' +
    'taught-destination-required taught-destination-selector-mismatch taught-destination-validated ' +
@@ -1340,6 +1346,15 @@
     var receiptSessionId = S(opts.receiptSessionId).trim() || ('athena-unified-' + Date.now() + '-' + Math.random().toString(36).slice(2));
     var previewHash = S(opts.previewHash).trim() || hashPreview({ patient: patient, visit: visit, plan: plan, sections: noteSections });
     var identityBlocked = !patient.patientId || !patient.name || !patient.dob || !patient.mrn;
+    /* mrnadopt-1.0.0 (owner 2026-08-27, "I hate how much is greyed out... it
+       should be seamless and always work"): an identity block whose ONLY gap is
+       the MRN is curable ON THIS SHEET, so it must not read like the generic
+       three-factor refusal. The row still blocks - MLS Assist itself refuses a
+       staged section write unless the app SUPPLIES name + DOB + MRN, so a READY
+       row without a real MRN would only be refused at check time - but the Why
+       sentence now names the one action that fixes it, and the adoption pass
+       below performs that fix without the doctor typing anything. */
+    var mrnOnlyIdentityBlock = identityBlocked && !!patient.patientId && !!patient.name && !!patient.dob;
     /* A write review may be current or historical, but both need an exact visit
        locator before the read-only Athena probe. Patient identity alone cannot
        distinguish two encounters for the same person; the schedule bind/re-pull
@@ -1363,7 +1378,8 @@
     var partialLiveVisitReason = 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter. Use “Bind this visit to its Athena appointment — re-pulls this day” to run the Athena schedule day pull; MLS then rebuilds this review from the exact appointment. Nothing is sent.';
     var exactVisitReason = 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.';
     var commonBlock = identityBlocked
-      ? 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.'
+      ? (mrnOnlyIdentityBlock ? mrnAdoptBlockReason(patient)
+        : 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.')
       : (partialLiveVisitBlocked ? partialLiveVisitReason : (exactVisitBlocked ? exactVisitReason : ''));
     /* Current and historical reviews both remain blocked until one exact visit
        is independently bound. Probe- and execute-time rebinding still enforce
@@ -1767,6 +1783,10 @@
        leads. This strip renders even with zero ready rows (renderUnifiedConfirmation
        calls it with an empty rowId), which is exactly the owner's screenshot. */
     try { wfbindOfferCure(state, host); } catch (eCure) {}
+    /* mrnadopt-1.0.0: a review blocked ONLY for a missing MRN paints no READY
+       row, so the probe path's own recheck control never appears. Offer the
+       same words the blocked row's Why sentence names. */
+    try { mrnAdoptOfferCure(state, host); } catch (eMrnCure) {}
     if (day && S(rowId).trim()) {
       host.appendChild(wfdxButton('Open this patient’s encounter in athenaOne',
         'Read-only: sends athenaOne’s Day view to ' + day + ', clicks this exact appointment row, then re-runs the read-only check. Nothing is written.',
@@ -2452,6 +2472,10 @@
     try {
       if (!row || row.capability !== 'blocked') return false;
       if (S(row.reason).indexOf(WFBIND_IDENTITY_BLOCK) === 0) return false;
+      /* mrnadopt-1.0.0: an MRN-only identity block reads differently now, and
+         it is still an IDENTITY block - a day re-pull can never supply an MRN.
+         Recognize it by the manifest's own predicate rather than by wording. */
+      if (mrnAdoptCurable(manifest && manifest.patient)) return false;
       if (!/appointment id|not bound|exact visit/i.test(S(row.reason))) return false;
       if (p1VisitBound(manifest && manifest.visit)) return false;
       return wfbindCandidateDays(manifest).length > 0;
@@ -3119,6 +3143,11 @@
       rowsHtml +
       '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> ' + (generationIssue ? 'kept fail-closed while the five local draft fields are generated.' : 'being verified read-only now.') + '</div>' +
       '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">' + (generationIssue ? 'No Athena check or write has started. Generate the local fields first.' : 'Checking the exact chart read-only &mdash; nothing is sent yet.') + '</div>' +
+      /* mrnadopt-1.0.0: what MLS changed in the patient record to unblock this
+         review, stated durably. The status line above is repainted by the very
+         next read-only check, so a transient sentence would vanish before the
+         doctor read it. Rendered only when an adoption actually happened. */
+      mrnAdoptNoteHtml(state) +
       /* wfdx-1.0.0: a PHI-free one-liner (extension version, athenaOne tab
          count, expected day, whether an appointment id is bound, and the day
          athenaOne is really on) plus the read-only buttons that fix it. */
@@ -3496,6 +3525,274 @@
         currentState: function () { return unifiedAthenaState; } },
       revert: function () { p1AutoBindOff = true; return true; } };
   } catch (eAB) {}
+
+  /* ========================================================================
+     mrnadopt-1.0.0 (2026-08-27) -- THE MRN IS ADOPTED, NEVER ASSUMED.
+
+     Owner 2026-08-19: "name+DOB is enough to write - warn + confirm when no
+     MRN". Owner 2026-08-27, looking at a review sheet where every row read
+     BLOCKED - NOTHING SENT: "I hate how much is greyed out... it should be
+     seamless and always work".
+
+     The obvious edit - drop `!patient.mrn` from the identity predicate - is
+     the WRONG one, and would be worse than the gray. The installed MLS Assist
+     refuses a staged section write unless the APP supplies the exact name, a
+     parseable DOB and a digit MRN; a row painted READY on a row with no MRN
+     could therefore only ever end in a refusal at check time. The honest cure
+     is to GET the MRN: athenaOne's own chart banner has it, the extension
+     already exposes a read-only identity verb for it (mlsAppChartIdentity ->
+     { ok, identity:{ name, dob, mrn } }), and the local patient row is simply
+     missing a field the chart can prove.
+
+     So: when the sheet opens blocked and the MRN is the ONE missing identity
+     field, read the OPEN chart's identity read-only, and adopt its MRN only
+     when that chart is provably this patient - the file's own name matcher
+     AND exact DOB equality, the same pair the driver's own gate uses. Then
+     persist it onto the local row through window.upsertPatient (a CLONE, never
+     an in-place mutation), read the store back to prove it landed, and rebuild
+     the review through the SAME entry point every other cure uses. The rows go
+     ready HONESTLY, because the identity the extension demands now exists.
+
+     It refuses, loudly and without changing anything, on: no chart open, an
+     unreadable chart DOB, a name or DOB that does not match, a chart with no
+     MRN, a timed-out or malformed read, a patient switch mid-read, a local row
+     that already carries a DIFFERENT MRN (that is a conflict, not an
+     enrichment), and a write the store does not read back. Nothing here can
+     write to Athena: the only verb it sends is the read-only identity verb.
+
+     Reversible: window.__mlsWriteFlow.mrnAdopt.revert().
+     ======================================================================== */
+  var mrnAdoptOff = false, mrnAdoptLast = null, mrnAdoptRunning = false, mrnAdoptReopened = {};
+  var MRNADOPT_PROBE_MS = 12000;
+  function mrnAdoptBlockReason(patient) {
+    var who = S(patient && patient.name).trim();
+    var whose = who ? (who + '\'s') : 'this patient\'s';
+    return 'MLS does not have ' + whose + ' Athena MRN yet, and MLS Assist refuses a section write without it. Open ' +
+      (who || 'this patient') + '\'s chart in athenaOne, then press Check Athena again - MLS reads the MRN off the verified chart and unblocks these rows automatically. Nothing is sent.';
+  }
+  /* The one predicate: every identity field except the MRN is present. */
+  function mrnAdoptCurable(patient) {
+    patient = patient || {};
+    return !!S(patient.patientId).trim() && !!S(patient.name).trim() && !!S(patient.dob).trim() && !S(patient.mrn).trim();
+  }
+  function mrnAdoptRowMrn(row) { return nrmId(S(row && (row.mrn || row.athenaId || row.athena_id)).trim()); }
+  /* A store row is replaced WHOLE by upsertPatient, so the clone must carry
+     every own field forward; only the two MRN fields and their PHI-free
+     provenance stamp are added. Never mutate the stored object in place. */
+  function mrnAdoptShallowClone(row) {
+    var out = {};
+    try { Object.keys(row || {}).forEach(function (k) { out[k] = row[k]; }); } catch (e) {}
+    return out;
+  }
+  function mrnAdoptLocalRow(patientId) {
+    var want = S(patientId).trim();
+    if (!want) return null;
+    var rows = [];
+    try { if (typeof window.getPatients === 'function') rows = window.getPatients() || []; } catch (e) { return null; }
+    if (!Array.isArray(rows)) return null;
+    for (var i = 0; i < rows.length; i++) if (rows[i] && S(rows[i].id).trim() === want) return rows[i];
+    for (var j = 0; j < rows.length; j++) if (rows[j] && S(rows[j].patientId).trim() === want) return rows[j];
+    return null;
+  }
+  /* The read-only identity verb, uncorrelated on purpose: MLS Assist 3.0.8x
+     replies to mlsAppChartIdentity WITHOUT echoing a request id, so demanding
+     one would drop every real answer. The identity gate below - not the
+     transport - is what makes a stolen or stale answer harmless. */
+  function mrnAdoptProbe() {
+    var requestId = 'wfmrn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    var call;
+    try { call = bridge('mlsAppChartIdentity', { requestId: requestId }, 'mlsAppChartIdentityResult', MRNADOPT_PROBE_MS); }
+    catch (e) { return Promise.resolve({ __failed: true }); }
+    return Promise.resolve(call).then(function (resp) { return resp && typeof resp === 'object' ? resp : { __failed: true }; },
+      function () { return { __failed: true }; });
+  }
+  /* Adoption is a POSITIVE proof, never the absence of a contradiction: the
+     chart must name a matching person AND carry a usable MRN. Anything else
+     is a named refusal. */
+  function mrnAdoptClassify(resp, frozen) {
+    resp = resp || {}; frozen = frozen || {};
+    if (resp.__failed === true || resp.__timeout === true) return { ok: false, code: 'chart-read-uncertain' };
+    if (resp.ok !== true) return { ok: false, code: resp.timedOut === true ? 'chart-read-uncertain' : 'no-chart-open' };
+    var ident = resp.identity;
+    if (!ident || typeof ident !== 'object' || Array.isArray(ident)) return { ok: false, code: 'no-chart-open' };
+    var chartName = S(ident.name).trim(), chartDob = S(ident.dob).trim(), chartMrn = S(ident.mrn || ident.athenaId).trim();
+    if (!chartName) return { ok: false, code: 'no-chart-open' };
+    var wantDob = nrmDob(frozen.dob), gotDob = nrmDob(chartDob);
+    if (!gotDob) return { ok: false, code: 'chart-dob-unreadable' };
+    if (!wantDob || !nameMatch(chartName, frozen.name) || wantDob !== gotDob) return { ok: false, code: 'chart-identity-mismatch' };
+    if (!nrmId(chartMrn)) return { ok: false, code: 'chart-mrn-absent' };
+    return { ok: true, code: 'exact-chart-match', mrn: chartMrn };
+  }
+  /* PRESENCE IS NOT PROVENANCE: the store is read back and must itself name
+     this exact MRN before the review is allowed to rebuild. */
+  function mrnAdoptPersist(patientId, mrn) {
+    var digits = nrmId(mrn);
+    if (!digits) return { ok: false, code: 'chart-mrn-absent' };
+    var row = mrnAdoptLocalRow(patientId);
+    if (!row) return { ok: false, code: 'local-row-missing' };
+    var existing = mrnAdoptRowMrn(row);
+    if (existing && existing !== digits) return { ok: false, code: 'mrn-conflict' };
+    if (!existing) {
+      if (typeof window.upsertPatient !== 'function') return { ok: false, code: 'store-unavailable' };
+      var next = mrnAdoptShallowClone(row);
+      next.mrn = S(mrn).trim();
+      next.athenaId = S(mrn).trim();
+      next.mrnSource = 'athena-chart-identity';
+      next.mrnVerifiedAt = Date.now();
+      try { window.upsertPatient(next); } catch (eUpsert) { return { ok: false, code: 'store-refused' }; }
+    }
+    var back = mrnAdoptLocalRow(patientId);
+    if (!back || mrnAdoptRowMrn(back) !== digits) return { ok: false, code: 'not-persisted' };
+    return { ok: true, code: existing ? 'already-on-file' : 'adopted', patient: back, mrn: S(back.mrn || back.athenaId).trim() };
+  }
+  var MRNADOPT_REFUSALS = {
+    'no-chart-open': 'No athenaOne chart is open for MLS to read, so the MRN could not be picked up. Open the chart in athenaOne, then press Check Athena again. Nothing was changed.',
+    'chart-read-uncertain': 'athenaOne did not settle enough for MLS to read the open chart, so nothing was adopted. Let the chart finish loading, then press Check Athena again. Nothing was changed.',
+    'chart-dob-unreadable': 'MLS could not read a date of birth off the open athenaOne chart, so it will not assume this is the right patient. Nothing was changed.',
+    'chart-identity-mismatch': 'The chart open in athenaOne is not this patient - its name and date of birth do not both match. MLS adopts an MRN only from a chart it can prove. Nothing was changed.',
+    'chart-mrn-absent': 'The open athenaOne chart shows no patient ID for MLS to adopt. Nothing was changed.',
+    'mrn-conflict': 'This patient already has a DIFFERENT MRN on file in MLS, and the open athenaOne chart shows another one. MLS will not overwrite a stored MRN - resolve the conflict in the patient record first. Nothing was changed.',
+    'local-row-missing': 'MLS could not find this patient in the local record, so nothing was adopted or changed.',
+    'store-unavailable': 'This page cannot save to the local patient record, so the MRN was not adopted. Nothing was changed.',
+    'store-refused': 'The local patient record refused the MRN save, so nothing was adopted or changed.',
+    'not-persisted': 'The MRN did not persist to the local patient record, so MLS is not treating it as adopted. Nothing was changed.',
+    'patient-changed': 'The active patient changed while MLS was reading the chart, so nothing was adopted or changed.'
+  };
+  function mrnAdoptRefusal(code) {
+    return MRNADOPT_REFUSALS[S(code)] || 'The MRN could not be picked up from athenaOne. Nothing was changed.';
+  }
+  function mrnAdoptNoteHtml(state) {
+    var note = S(state && state.sourceOpts && state.sourceOpts.mrnAdoptedNote).trim();
+    if (!note) return '';
+    return '<div id="mlsAthenaUnifiedMrnNote" data-mls-mrn-adopted="1" style="margin-top:8px;padding:9px 11px;border:1px solid #cfe0d7;background:#f2f9f5;border-radius:9px;color:#205c43;font-size:12px"><b>MRN picked up from athenaOne.</b> ' + esc(note) + '</div>';
+  }
+  function mrnAdoptNoteFor(patientName, alreadyOnFile) {
+    var who = S(patientName).trim() || 'this patient';
+    return alreadyOnFile
+      ? ('MLS already had ' + who + '\'s Athena MRN on file, so this review was rebuilt from the current patient record. Nothing was sent.')
+      : ('MLS read ' + who + '\'s MRN off the verified athenaOne chart - the chart\'s name and date of birth both matched this patient - and saved it to the MLS patient record, so these rows can now be checked and sent. Nothing was sent.');
+  }
+  /* Rebuild, never mutate: the adopted identity is overlaid on THIS review's
+     own options and the whole review is re-opened through the same entry point
+     the bind cure and the order-accept path use, so every hash recomputes. The
+     adoption sentence rides along so the rebuilt sheet can state, durably, what
+     just changed in the patient record - the transient status line is repainted
+     by the very next read-only check. */
+  function mrnAdoptReopen(state, adoptedMrn, patientName, alreadyOnFile) {
+    var o0 = state.sourceOpts || {}, next = {}, k;
+    for (k in o0) if (Object.prototype.hasOwnProperty.call(o0, k)) next[k] = o0[k];
+    var basePt = (o0 && o0.patient) ? o0.patient : (state.manifest && state.manifest.patient) || {};
+    var nextPt = mrnAdoptShallowClone(basePt);
+    nextPt.mrn = S(adoptedMrn).trim();
+    nextPt.athenaId = S(adoptedMrn).trim();
+    next.patient = nextPt;
+    next.previewHash = '';                                   /* identity changed - recompute honestly */
+    next.receiptSessionId = S(state.manifest && state.manifest.receiptSessionId);
+    next.mrnAdoptedNote = mrnAdoptNoteFor(patientName, alreadyOnFile);
+    openUnifiedConfirmation(next);                           /* closes this review itself */
+    return unifiedAthenaState && unifiedAthenaState !== state ? unifiedAthenaState : null;
+  }
+  function mrnAdoptSettleOk(state, next, patientName, adoptedMrn, alreadyOnFile) {
+    var target = next || state;
+    if (!target || target.closed) return;
+    var rows = (target.manifest && target.manifest.rows) || [];
+    var ready = rows.filter(function (row) { return row && row.capability === 'ready' && row.action; }).length;
+    unifiedStatus(target, mrnAdoptNoteFor(patientName, alreadyOnFile) + ' ' + (ready
+      ? 'The Athena rows are being checked read-only now.'
+      : 'Any rows still blocked now name a different reason.'), 'ok');
+    mrnAdoptLast = { at: Date.now(), adopted: !alreadyOnFile, mrnPresent: !!nrmId(adoptedMrn), readyRows: ready };
+  }
+  /* Returns TRUE when this pass has taken ownership of the sheet's next step
+     (a read is in flight, or the review was rebuilt); FALSE means "not my
+     case" and the caller proceeds exactly as before. */
+  function mrnAdoptPass(state) {
+    if (mrnAdoptOff || mrnAdoptRunning || athenaActionRunning) return false;
+    if (!state || state.closed || state.running || state.halted || unifiedAthenaState !== state) return false;
+    var manifest = state.manifest;
+    if (!manifest || !manifest.patient || !mrnAdoptCurable(manifest.patient)) return false;
+    if (syntheticLocalRuntime()) return false;               /* the demo never reads live Athena */
+    var frozen = { patientId: S(manifest.patient.patientId).trim(), name: S(manifest.patient.name).trim(), dob: S(manifest.patient.dob).trim() };
+    var row = mrnAdoptLocalRow(frozen.patientId);
+    if (!row) return false;                                  /* nothing to enrich - keep the honest block */
+    /* The stored row may already hold the MRN this review was built without
+       (a stale patient snapshot). That needs no Athena read at all - rebuild
+       from the record. Guarded so one identity can rebuild only once. */
+    var onFile = mrnAdoptRowMrn(row);
+    if (onFile) {
+      var seen = frozen.patientId + '|' + onFile;
+      if (mrnAdoptReopened[seen]) return false;
+      mrnAdoptReopened[seen] = 1;
+      var reopenedNow = mrnAdoptReopen(state, S(row.mrn || row.athenaId).trim(), frozen.name, true);
+      mrnAdoptSettleOk(state, reopenedNow, frozen.name, onFile, true);
+      return true;
+    }
+    if (typeof window.getPatients !== 'function' || typeof window.upsertPatient !== 'function') return false;
+    var generation = state.probeGeneration;
+    mrnAdoptRunning = true;
+    /* Any throw between here and the settle would strand the lane's own busy
+       flag and wedge every later retry, so nothing between them is unguarded. */
+    try {
+      unifiedStatus(state, 'Reading the open athenaOne chart read-only to pick up ' + (frozen.name || 'this patient') + '\'s MRN. Nothing is sent...', '');
+    } catch (eSay) {}
+    function mrnAdoptRefuse(code) {
+      mrnAdoptRunning = false;
+      mrnAdoptLast = { at: Date.now(), adopted: false, code: code };
+      try { wfdxNote({ verb: 'mlsAppChartIdentity', stage: 'mrn-adopt', ok: false, reason: code }); } catch (eNote) {}
+      if (!state || state.closed || unifiedAthenaState !== state) return;
+      unifiedStatus(state, mrnAdoptRefusal(code), 'err');
+      /* Repaint the strip so the disabled retry button is replaced by a live
+         one - a refusal must always leave the doctor something to press. */
+      try { wfdxShowFixStrip(state, ''); } catch (eStrip) {}
+    }
+    mrnAdoptProbe().then(function (resp) {
+      mrnAdoptRunning = false;
+      if (!state || state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
+      var verdict = mrnAdoptClassify(resp, frozen);
+      if (!verdict.ok) { mrnAdoptRefuse(verdict.code); return; }
+      /* The patient must still be the one this read was started for. */
+      if (!mrnAdoptCurable(state.manifest && state.manifest.patient) ||
+          S(state.manifest.patient.patientId).trim() !== frozen.patientId ||
+          nrmName(state.manifest.patient.name) !== nrmName(frozen.name) ||
+          nrmDob(state.manifest.patient.dob) !== nrmDob(frozen.dob)) { mrnAdoptRefuse('patient-changed'); return; }
+      var saved = mrnAdoptPersist(frozen.patientId, verdict.mrn);
+      if (!saved.ok) { mrnAdoptRefuse(saved.code); return; }
+      var key = frozen.patientId + '|' + nrmId(saved.mrn);
+      mrnAdoptReopened[key] = 1;
+      var reopened = mrnAdoptReopen(state, saved.mrn, frozen.name, saved.code === 'already-on-file');
+      /* AFTER the reopen: opening a review resets the PHI-free receipt strip,
+         so a note written before it would be wiped out of the very report the
+         doctor copies from the rebuilt sheet. */
+      try { wfdxNote({ verb: 'mlsAppChartIdentity', stage: 'mrn-adopt', ok: true, reason: 'mrn-adopted' }); } catch (eNote2) {}
+      mrnAdoptSettleOk(state, reopened, frozen.name, saved.mrn, saved.code === 'already-on-file');
+    }, function () { mrnAdoptRefuse('chart-read-uncertain'); });
+    return true;
+  }
+  /* The sheet's own retry. A review blocked only for the MRN paints no READY
+     row, so the probe path's own "Check Athena again" never appears - without
+     this control the Why sentence would name a button that is not there. */
+  function mrnAdoptOfferCure(state, host) {
+    if (!state || state.closed || !host || mrnAdoptOff) return false;
+    if (!mrnAdoptCurable(state.manifest && state.manifest.patient)) return false;
+    try { if (host.querySelector('[data-mls-mrn-adopt]')) return false; } catch (eQ) {}
+    var btn = wfdxButton('Check Athena again',
+      'Read-only: reads the chart open in athenaOne and, when its name and date of birth both match this patient, saves that chart\'s MRN to the MLS patient record so these rows can be sent. Nothing is written to Athena.',
+      function (b) {
+        if (b) { b.disabled = true; b.textContent = 'Reading athenaOne...'; }
+        var started = false;
+        try { started = mrnAdoptPass(state) === true; } catch (eRun) { started = false; }
+        if (!started && b) { b.disabled = false; b.textContent = 'Check Athena again'; }
+      });
+    btn.setAttribute('data-mls-mrn-adopt', '1');
+    host.appendChild(btn);
+    return true;
+  }
+  try {
+    window.__mlsMrnAdopt = { v: 'mrnadopt-1.0.0',
+      state: function () { return { off: mrnAdoptOff, running: mrnAdoptRunning, last: mrnAdoptLast }; },
+      revert: function () { mrnAdoptOff = true; return true; } };
+  } catch (eMA0) {}
+  /* ===== end mrnadopt-1.0.0 =============================================== */
+
   function openUnifiedConfirmation(opts) {
     opts = opts || {};
     if (athenaActionRunning) { actionSay(opts, 'Another Athena action is already awaiting confirmation. Finish or cancel it before opening the unified review.', ''); return null; }
@@ -3512,10 +3809,18 @@
     srrArmIfUnbound(state); /* srr-1.0.0 */
     unifiedAthenaState = state;
     if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
+    /* mrnadopt-1.0.0: the auto-bind below refuses outright without an MRN
+       (it will not bind against a chart it cannot positively identify), so the
+       adoption pass runs FIRST and only when the MRN is the single missing
+       identity field. When it adopts it re-enters this same entry point, which
+       runs the auto-bind on the rebuilt review; when it does not apply the
+       original ordering is untouched. */
+    var mrnAdopting = false;
+    try { mrnAdopting = mrnAdoptPass(state) === true; } catch (eMA) { mrnAdopting = false; }
     /* p1-autobind-2.0.0: if the visit is unbound, use its exact imported appointment
        and request-bound provider headers to read the matching encounter instead of
        telling him to go run a day pull. Fails closed; see the block above. */
-    try { p1AutoBindEncounter(state); } catch (eP1AB) {}
+    if (!mrnAdopting) { try { p1AutoBindEncounter(state); } catch (eP1AB) {} }
     actionSay(opts, manifest.rows.some(function (row) { return row.capability === 'ready' && row.action; })
       ? (athenaFinalActionsReady()
         ? 'Athena review ready. Select one ready action — note write, Save Draft, billing staging, Sign & Save, or one supported order — and confirm it; MLS runs exactly that one action.'
@@ -4117,6 +4422,14 @@
          pull; it owns its own definition of "bound" and its own wait. */
       pullDay: function (day, say) { return wfbindNavigateAndPull(day, say); },
       last: function () { return wfbindLast; } },
+    /* mrnadopt-1.0.0 test + support seam. run() is the same call the sheet's
+       own control makes; classify()/persist() are the exact functions the pass
+       uses, so a suite cannot agree with a reimplementation of them. */
+    mrnAdopt: { v: 'mrnadopt-1.0.0', curable: mrnAdoptCurable, classify: mrnAdoptClassify,
+      persist: mrnAdoptPersist, blockReason: mrnAdoptBlockReason, refusal: mrnAdoptRefusal,
+      run: function () { return mrnAdoptPass(unifiedAthenaState); },
+      last: function () { return mrnAdoptLast; },
+      revert: function () { mrnAdoptOff = true; return true; } },
     revert: revert
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
