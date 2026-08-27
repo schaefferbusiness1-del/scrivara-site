@@ -10,7 +10,7 @@
  * completed precheck prints FAST_GATE_PLAN and FAST_GATE_COMPLETE; a refused
  * release stops at FAST_GATE_REFUSED. A successful fast precheck still prints
  * full_gate_required=true when the change cannot
- * be promoted safely without the canonical GATE_COMPLETE=858 proof.
+ * be promoted safely without the canonical GATE_COMPLETE=860 proof.
  *
  * Usage:
  *   node scripts/fast-release-gate.js --base=origin/main --mode=precheck
@@ -30,8 +30,8 @@ const ROOT = path.resolve(__dirname, '..');
 /* Kept in sync with tests/run-all.js by the deterministic contract test. */
 /* b1081 reconciliation: 869 registered on origin/main (the pin had drifted
    two behind) + generate-block-visible-feedback-runtime (gcx-1.0.0)
-   + 1p-athena-mrn-adoption-runtime (mrnadopt-1.0.0) = 871. */
-const FULL_GATE_TESTS = 871;
+   + 1p-athena-mrn-adoption-runtime (mrnadopt-1.0.0) + athena-action-token-session-runtime (tokq) = 872. */
+const FULL_GATE_TESTS = 872;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

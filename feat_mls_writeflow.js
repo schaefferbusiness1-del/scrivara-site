@@ -864,7 +864,7 @@
    'taught-destination-control-mismatch taught-destination-expired taught-destination-fingerprint-mismatch ' +
    'taught-destination-frame-mismatch taught-destination-invalid taught-destination-label-mismatch ' +
    'taught-destination-required taught-destination-selector-mismatch taught-destination-validated ' +
-   'test-content-production-disabled timeout token-action-mismatch token-expired token-sender-mismatch ' +
+    'test-content-production-disabled timeout token-action-mismatch token-expired token-sender-mismatch token-state-unavailable ' +
    'token-tab-mismatch token-used unknown-action unknown-note-section unresolved-after-pull unsafe-note-policy ' +
    'unsupported-order-fields unsupported-order-source unsupported-order-type untrusted-sender ' +
    'verified-note-write-required watcher-error watcher-unavailable worker-unreachable ' +

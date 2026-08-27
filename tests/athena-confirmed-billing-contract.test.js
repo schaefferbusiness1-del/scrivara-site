@@ -157,7 +157,10 @@ assert(directConfirm.indexOf('!lockedContext.encounterId') >= 0 && directConfirm
 assert(directConfirm.indexOf("go.addEventListener('click'") >= 0 && directConfirm.indexOf("go.addEventListener('click'") < directExecuteAt, 'billing execute escaped the explicit confirmation click');
 assert(/mode:\s*'execute', action:\s*action, actionToken:\s*actionToken/.test(directConfirm), 'billing execute lost its one-use action token binding');
 
-const unifiedExecute = between(writeflow, 'function executeUnifiedSelection(state)', 'function reopenOptions(opts, manifest)');
+/* Stop at the batch-driver boundary. `reopenOptions` now appears after the
+ * separate checked-section queue, whose legitimate call into the same
+ * per-row executor is not recursion inside executeUnifiedSelection. */
+const unifiedExecute = between(writeflow, 'function executeUnifiedSelection(state)', '/* bx-1.0.0 - batch send');
 const unifiedExecuteAt = unifiedExecute.indexOf("mode: 'execute'");
 assert(unifiedExecute.indexOf("row.capability !== 'ready'") >= 0 && unifiedExecute.indexOf("row.capability !== 'ready'") < unifiedExecuteAt, 'unified billing can execute a manual or blocked row');
 assert(unifiedExecute.indexOf('probe.rowHash !== row.rowHash') >= 0 && unifiedExecute.indexOf('probe.rowHash !== row.rowHash') < unifiedExecuteAt, 'unified billing can execute without fresh row proof');

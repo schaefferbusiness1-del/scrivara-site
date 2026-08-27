@@ -255,6 +255,32 @@ function send(message) {
   });
   assert.strictEqual(staleA.reason, 'token-used', 'a newer row probe did not invalidate the older same-manifest order token');
 
+  const concurrentRowA = { ...exactOrder, clientOrderId: 'local-order-concurrent-a' };
+  const concurrentRowB = { ...exactOrder, clientOrderId: 'local-order-concurrent-b' };
+  const [concurrentProbeA, concurrentProbeB] = await Promise.all([
+    send({ ...probeMessage, order: concurrentRowA, rowHash: 'row-hash-concurrent-a', clientOrderId: concurrentRowA.clientOrderId }),
+    send({ ...probeMessage, order: concurrentRowB, rowHash: 'row-hash-concurrent-b', clientOrderId: concurrentRowB.clientOrderId })
+  ]);
+  assert(concurrentProbeA.ok && concurrentProbeB.ok, 'overlapping order probes were not both answered');
+  const concurrentExecA = await send({
+    ...probeMessage, mode: 'execute', actionToken: concurrentProbeA.actionToken,
+    order: concurrentRowA, rowHash: 'row-hash-concurrent-a', clientOrderId: concurrentRowA.clientOrderId,
+    expectedContext: { ...concurrentProbeA.context }, probeContext: { ...lockedContext },
+    userGesture: true, gestureProof: 'trusted-concurrent-a',
+    gestureRowHash: 'row-hash-concurrent-a', gestureClientOrderId: concurrentRowA.clientOrderId
+  });
+  const concurrentExecB = await send({
+    ...probeMessage, mode: 'execute', actionToken: concurrentProbeB.actionToken,
+    order: concurrentRowB, rowHash: 'row-hash-concurrent-b', clientOrderId: concurrentRowB.clientOrderId,
+    expectedContext: { ...concurrentProbeB.context }, probeContext: { ...lockedContext },
+    userGesture: true, gestureProof: 'trusted-concurrent-b',
+    gestureRowHash: 'row-hash-concurrent-b', gestureClientOrderId: concurrentRowB.clientOrderId
+  });
+  assert.strictEqual([concurrentExecA, concurrentExecB].filter(result => result.ok === true).length, 1,
+    'overlapping same-manifest probes left zero or two executable order tokens');
+  assert.strictEqual([concurrentExecA, concurrentExecB].filter(result => result.reason === 'token-used').length, 1,
+    'overlapping same-manifest probes did not invalidate exactly one older token');
+
   const p1 = await send(probeMessage);
   assert(p1.ok && p1.actionToken && p1.readOnly, 'order probe did not return a read-only one-use token');
   assert.strictEqual(p1.rowHash, probeMessage.rowHash, 'probe did not echo its exact immutable row binding');
