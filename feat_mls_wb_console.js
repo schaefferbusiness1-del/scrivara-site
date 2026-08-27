@@ -341,7 +341,25 @@
   function proposeWrite(kind) {
     var modName = kind === 'opnote' ? '__mlsOpWb' : '__mlsAthenaWriteback';
     var mod = win(modName);
-    if (!mod) return { matched: true, reply: "I can't reach the " + (kind === 'opnote' ? 'op-note' : 'note') + " writeback module right now, so I will NOT pretend to write. Reload the MLS page and try again." };
+    /* wfclar-1.0.0 (owner 2026-08-27, "ALSO THE OP NOTES WRITE SHOULD WORK
+       TOO"): __mlsOpWb is INTENTIONALLY not loaded - mls-connect.js says so in
+       as many words, because template creation must stay preview-only until
+       identity is verified before any UI mutation. So this branch was reached
+       every single time an op-note write was asked for here, and it answered
+       with a module problem and told the doctor to reload the page, which can
+       never help. The op-note write does exist; it lives on the reviewed
+       sheet. Name that route instead of inventing a fault. */
+    if (!mod && kind === 'opnote') {
+      return { matched: true, reply: [
+        'The op-note write does work - it just does not run from this chat, because MLS never creates or clears an Athena procedure template on its own.',
+        'Here is the route that does write it:',
+        '1) Open the op note in Op notes and press "Send to Athena" on its card (or "Save & review for Athena").',
+        '2) That opens the ordinary Athena review, with the op note addressed to Athena encounter > Physical Exam > Procedure Documentation.',
+        '3) Press Confirm & Send to Athena once. MLS checks the exact patient and encounter read-only first, writes an UNSIGNED insertion, and reads it back before claiming anything.',
+        'If that review says the Procedure Documentation field already has text in it, that is the template skeleton: clear that field in athenaOne yourself and press Check Athena again. MLS will not type over text you or a template put there.'
+      ].join('\n') };
+    }
+    if (!mod) return { matched: true, reply: "I can't reach the note writeback module right now, so I will NOT pretend to write. Reload the MLS page and try again." };
     var where = wbLabel(kind);
     var noteText = currentNoteText();
     pending = { kind: kind, where: where };

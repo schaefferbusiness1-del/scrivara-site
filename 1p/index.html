@@ -22915,7 +22915,7 @@ function opPrepSendToAthena(i){
 }
 /* ===== opnsend-2.2.0 (owner 2026-08-27: "really make sure the write works
    well ... and not so many things that say blocked") ======================
-   THE SILENT DEAD END. Both op-note send paths ended in `if(!rec2) return;` —
+   THE SILENT DEAD END. Both op-note send paths ended in `if(!rec2) return;` -
    the doctor pressed Send to Athena, the note filed as a DRAFT, and NOTHING
    was said about Athena at all. It is reachable on an ordinary keystroke: the
    card's disabled state is computed when the card is PAINTED, and the textarea
@@ -46573,7 +46573,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
           if (!canPush) return;
           /* Verify the save landed and is NOT a draft before sending. */
           var rec2 = filedRecord(rows()[refusedAt]);
-          /* opnsend-2.2.0: this used to be a bare `return` — the room's own
+          /* opnsend-2.2.0: this used to be a bare `return` - the room's own
              primary button, pressed, then silence about Athena. Same refusal,
              now spoken by the app's one refusal voice. */
           if (!rec2) { try { if (typeof window._opSendRefused === 'function') window._opSendRefused(refusedAt); } catch (e0) {} return; }
