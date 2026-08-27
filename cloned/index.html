@@ -25810,8 +25810,285 @@ function showMicWarn(msg){
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
      the doctor actually is. */
-  try{ if(!w.offsetParent){ toast(msg,'err'); } }catch(e){}
+  try{
+    /* The phone shell owns one persistent explanation. A host toast here would
+       stack a second copy over the same Record control. Desktop keeps its toast
+       because #micWarn can be hidden there without another owner. */
+    var phoneOwns=!!(document.body&&document.body.classList.contains('mls-ph3'));
+    if(!w.offsetParent&&!phoneOwns){ toast(msg,'err'); }
+  }catch(e){}
 }
+
+/* =========================================================
+   DIRECT PHONE CAPTURE (authenticated phone app)
+   iPhone Safari does not expose Web Speech. The phone app therefore records
+   complete MediaRecorder segments, sends them to the existing hosted mic
+   transcription session, and appends only the verified transcript tail to the
+   exact bound visit. Audio is kept in memory only and never survives a reload.
+   ========================================================= */
+const _mlsDirectPhone={
+  status:'idle',serial:0,stream:null,recorder:null,segTimer:null,pollTimer:null,
+  code:'',seen:0,uploadTail:Promise.resolve(),pendingUploads:0,uploadFailures:0,
+  bindingId:'',bindingEpoch:null,stopPromise:null,segmentStopResolve:null
+};
+window.__mlsDirectPhoneCapture={
+  version:'1.0.0',
+  state:function(){return {status:_mlsDirectPhone.status,pendingUploads:_mlsDirectPhone.pendingUploads,uploadFailures:_mlsDirectPhone.uploadFailures};},
+  stop:function(reason){return _mlsStopDirectPhoneCapture(reason||'external-stop');}
+};
+function _mlsDirectPhoneSupported(){
+  return !!(document.body&&document.body.classList.contains('mls-ph3')&&
+    typeof MediaRecorder!=='undefined'&&navigator.mediaDevices&&typeof navigator.mediaDevices.getUserMedia==='function');
+}
+function _mlsDirectPhoneMime(){
+  const c=['audio/webm;codecs=opus','audio/webm','audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/aac','audio/ogg;codecs=opus'];
+  try{if(MediaRecorder.isTypeSupported){for(let i=0;i<c.length;i++)if(MediaRecorder.isTypeSupported(c[i]))return c[i];}}catch(e){}
+  return '';
+}
+function _mlsDirectPhoneSleep(ms){return new Promise(function(resolve){setTimeout(resolve,ms);});}
+function _mlsDirectPhoneRead(blob){
+  return new Promise(function(resolve,reject){
+    try{const r=new FileReader();r.onerror=function(){reject(new Error('audio-read-failed'));};r.onloadend=function(){resolve(r.result);};r.readAsDataURL(blob);}catch(e){reject(e);}
+  });
+}
+function _mlsDirectPhoneBindingSafe(serial){
+  if(serial!==_mlsDirectPhone.serial||!_mlsDirectPhone.bindingId||_mlsDirectPhone.bindingEpoch==null)return false;
+  if(Number(currentVisitAthenaEpoch)!==Number(_mlsDirectPhone.bindingEpoch))return false;
+  if(!currentVisitAthenaBinding||currentVisitAthenaBinding.id!==_mlsDirectPhone.bindingId)return false;
+  try{return _athenaCurrentMatchesBound(currentVisitAthenaBinding)===true;}catch(e){return false;}
+}
+function _mlsDirectPhoneAppend(full,serial){
+  full=String(full||'');
+  if(!_mlsDirectPhoneBindingSafe(serial)||full.length<=_mlsDirectPhone.seen)return false;
+  const tail=full.slice(_mlsDirectPhone.seen),ta=document.getElementById('transcript');
+  if(!ta)return false;
+  const sep=ta.value&&!/\s$/.test(ta.value)?' ':'';
+  ta.value=ta.value+sep+tail;
+  finalText=ta.value+' ';
+  _mlsDirectPhone.seen=full.length;
+  try{_markVisitDirty();}catch(e){}
+  try{const words=ta.value.trim().split(/\s+/).filter(Boolean).length;_updateLiveCapture(words);}catch(e){}
+  return true;
+}
+async function _mlsDirectPhonePoll(serial){
+  const code=_mlsDirectPhone.code;
+  if(!code||!_mlsDirectPhoneBindingSafe(serial))return false;
+  try{
+    const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code),{headers:{'Authorization':'Bearer '+bkToken()},cache:'no-store'});
+    if(r.status===401){handle401();return false;}
+    if(!r.ok)return false;
+    const d=await r.json();
+    if(serial!==_mlsDirectPhone.serial||code!==_mlsDirectPhone.code)return false;
+    return _mlsDirectPhoneAppend(d&&d.transcript,serial);
+  }catch(e){return false;}
+}
+async function _mlsDirectPhoneUpload(blob,mimetype,serial){
+  const code=_mlsDirectPhone.code;
+  if(!blob||!blob.size||!code||serial!==_mlsDirectPhone.serial)return false;
+  const audio=await _mlsDirectPhoneRead(blob);
+  let delay=500,last='';
+  for(let attempt=0;attempt<4;attempt++){
+    if(serial!==_mlsDirectPhone.serial||code!==_mlsDirectPhone.code)return false;
+    try{
+      const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/audio',{
+        method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',
+        body:JSON.stringify({audio:audio,mimetype:mimetype||blob.type||'audio/webm'})
+      });
+      if(r.ok){
+        try{const d=await r.clone().json();if(d&&d.transcript)_mlsDirectPhoneAppend(d.transcript,serial);}catch(e){}
+        await _mlsDirectPhonePoll(serial);
+        return true;
+      }
+      last='server '+r.status;
+      if(r.status===404)break;
+    }catch(e){last=String(e&&e.message||e||'network error');}
+    if(attempt<3){await _mlsDirectPhoneSleep(delay);delay*=2;}
+  }
+  _mlsDirectPhone.uploadFailures++;
+  showMicWarn('A recording segment could not reach MLS ('+last+'). Keep this page open and check the connection before stopping; everything already transcribed is safe.');
+  return false;
+}
+function _mlsDirectPhoneQueue(blob,mimetype,serial){
+  _mlsDirectPhone.pendingUploads++;
+  const run=function(){return _mlsDirectPhoneUpload(blob,mimetype,serial);};
+  _mlsDirectPhone.uploadTail=Promise.resolve(_mlsDirectPhone.uploadTail).then(run,run).then(function(ok){
+    _mlsDirectPhone.pendingUploads=Math.max(0,_mlsDirectPhone.pendingUploads-1);return ok;
+  },function(){_mlsDirectPhone.pendingUploads=Math.max(0,_mlsDirectPhone.pendingUploads-1);_mlsDirectPhone.uploadFailures++;return false;});
+  return _mlsDirectPhone.uploadTail;
+}
+function _mlsDirectPhoneStartSegment(serial){
+  if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='recording'||!_mlsDirectPhone.stream)return false;
+  const mime=_mlsDirectPhoneMime();let r;
+  try{r=mime?new MediaRecorder(_mlsDirectPhone.stream,{mimeType:mime}):new MediaRecorder(_mlsDirectPhone.stream);}catch(e){try{r=new MediaRecorder(_mlsDirectPhone.stream);}catch(e2){showMicWarn('MLS could not start the iPhone recorder. Reload this page and try once more.');return false;}}
+  _mlsDirectPhone.recorder=r;
+  const parts=[];
+  r.ondataavailable=function(ev){if(ev.data&&ev.data.size>0)parts.push(ev.data);};
+  r.onstop=function(){
+    if(_mlsDirectPhone.segTimer){clearTimeout(_mlsDirectPhone.segTimer);_mlsDirectPhone.segTimer=null;}
+    if(serial===_mlsDirectPhone.serial&&parts.length){
+      try{const blob=new Blob(parts,{type:r.mimeType||mime||'audio/webm'});if(blob.size)_mlsDirectPhoneQueue(blob,blob.type,serial);}catch(e){}
+    }
+    if(_mlsDirectPhone.segmentStopResolve){const done=_mlsDirectPhone.segmentStopResolve;_mlsDirectPhone.segmentStopResolve=null;done(true);}
+    if(serial===_mlsDirectPhone.serial&&_mlsDirectPhone.status==='recording')setTimeout(function(){
+      if(!_mlsDirectPhoneStartSegment(serial)&&serial===_mlsDirectPhone.serial&&_mlsDirectPhone.status==='recording'){
+        _mlsAbortDirectPhoneCapture('segment-restart-failed');
+      }
+    },0);
+  };
+  try{r.start();}catch(e){showMicWarn('MLS could not start the iPhone recorder. Reload this page and try once more.');return false;}
+  _mlsDirectPhone.segTimer=setTimeout(function(){try{if(r.state!=='inactive')r.stop();}catch(e){}},8000);
+  return true;
+}
+function _mlsDirectPhoneResetUi(){
+  const b=document.getElementById('captureBtn');
+  if(b){b.classList.remove('recording');b.classList.add('btn-primary');b.innerHTML='▶ Start Visit';}
+  try{_hideLiveCapture();}catch(e){}
+  try{mlsSpeechHub().release('visit');}catch(e){}
+}
+async function _mlsDirectPhoneCloseSession(code){
+  if(!code)return;
+  try{await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/stop',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()},keepalive:true});}catch(e){}
+}
+function _mlsAbortDirectPhoneCapture(reason){
+  if(_mlsDirectPhone.status==='idle')return false;
+  const code=_mlsDirectPhone.code,rec=_mlsDirectPhone.recorder,stream=_mlsDirectPhone.stream;
+  _mlsDirectPhone.serial++;
+  _mlsDirectPhone.status='idle';_mlsDirectPhone.code='';_mlsDirectPhone.bindingId='';_mlsDirectPhone.bindingEpoch=null;
+  if(_mlsDirectPhone.segTimer){clearTimeout(_mlsDirectPhone.segTimer);_mlsDirectPhone.segTimer=null;}
+  if(_mlsDirectPhone.pollTimer){clearInterval(_mlsDirectPhone.pollTimer);_mlsDirectPhone.pollTimer=null;}
+  try{if(rec){rec.ondataavailable=null;rec.onstop=null;if(rec.state!=='inactive')rec.stop();}}catch(e){}
+  try{if(stream)stream.getTracks().forEach(function(t){t.onended=null;t.stop();});}catch(e){}
+  _mlsDirectPhone.recorder=null;_mlsDirectPhone.stream=null;_mlsDirectPhone.pendingUploads=0;_mlsDirectPhone.uploadTail=Promise.resolve();
+  capturing=false;captureSessionEpoch++;_mlsDirectPhoneResetUi();
+  _mlsDirectPhoneCloseSession(code);
+  return true;
+}
+function _mlsStartDirectPhoneCapture(captureBindingCandidate){
+  if(/^(starting|recording|stopping)$/.test(_mlsDirectPhone.status))return true;
+  if(!backendMode()||!bkToken()){showMicWarn('Phone recording needs an active MLS sign-in. Sign in again, then tap Start recording.');return false;}
+  const serial=++_mlsDirectPhone.serial,requestEpoch=currentVisitAthenaEpoch;
+  _mlsDirectPhone.status='starting';_mlsDirectPhone.seen=0;_mlsDirectPhone.uploadFailures=0;_mlsDirectPhone.pendingUploads=0;_mlsDirectPhone.uploadTail=Promise.resolve();
+  const b=document.getElementById('captureBtn');if(b){b.classList.remove('btn-primary');b.innerHTML='Starting recording…';}
+  const hub=mlsSpeechHub();
+  hub.register('visit','Visit recording',function(){return _mlsStopDirectPhoneCapture('microphone-handoff');});
+  const lease=hub.claim('visit');
+  /* Ask for the microphone in the original tap task. Speech-hub handoff can
+     wait asynchronously for another recognizer to end; calling getUserMedia
+     from that later callback loses Safari's user activation even when the
+     doctor already granted this site microphone permission. */
+  let micRequest;
+  try{micRequest=navigator.mediaDevices.getUserMedia({audio:true});}catch(e){micRequest=Promise.reject(e);}
+  micRequest=Promise.resolve(micRequest).then(function(stream){
+    if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='starting'){
+      try{stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
+      throw new Error('capture-canceled');
+    }
+    _mlsDirectPhone.stream=stream;
+    return stream;
+  });
+  const begin=function(){
+    if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='starting')return;
+    const sessionRequest=fetch(bkBase()+'/api/mic/start',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()},cache:'no-store'}).then(async function(r){
+      let d={};try{d=await r.json();}catch(e){}
+      if(r.status===401)handle401();
+      if(!r.ok||!d.code)throw new Error((d&&(d.error||d.message))||('server '+r.status));
+      return d.code;
+    });
+    Promise.all([
+      Promise.resolve(micRequest).then(function(stream){return {ok:true,value:stream};},function(error){return {ok:false,error:error};}),
+      Promise.resolve(sessionRequest).then(function(code){return {ok:true,value:code};},function(error){return {ok:false,error:error};})
+    ]).then(async function(result){
+      const mic=result[0],session=result[1],stream=mic.ok?mic.value:null,code=session.ok?session.value:'';
+      if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='starting'){
+        try{if(stream)stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
+        await _mlsDirectPhoneCloseSession(code);return;
+      }
+      if(!mic.ok||!session.ok){
+        try{if(stream)stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
+        _mlsDirectPhone.stream=null;
+        await _mlsDirectPhoneCloseSession(code);
+        _mlsDirectPhone.status='idle';_mlsDirectPhoneResetUi();
+        const n=String(mic.error&&mic.error.name||'');
+        showMicWarn(!mic.ok
+          ? (/NotAllowed|PermissionDenied|Security/i.test(n)
+              ? 'Safari did not grant this page microphone access. In Safari, open Page Settings → Microphone → Allow, reload MLS, then tap Start recording again.'
+              : 'The iPhone microphone could not start. Close any other app using it, reload MLS, and try again.')
+          : 'MLS could not open a secure transcription session. Check the connection and try Start recording again.');
+        return;
+      }
+      if(!_athenaAsyncBindingStillSafe(captureBindingCandidate,'recording',requestEpoch)||
+         (!currentVisitAthenaBinding&&!_athenaSetVisitBinding(captureBindingCandidate))){
+        try{stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
+        _mlsDirectPhone.stream=null;
+        await _mlsDirectPhoneCloseSession(code);
+        _mlsDirectPhone.status='idle';_mlsDirectPhoneResetUi();
+        showMicWarn('The visit changed before recording started. Open the intended appointment and tap Start recording again.');
+        return;
+      }
+      _mlsDirectPhone.stream=stream;_mlsDirectPhone.code=code;
+      try{stream.getTracks().forEach(function(track){track.onended=function(){
+        if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='recording')return;
+        showMicWarn('The iPhone microphone stopped unexpectedly. The transcript already visible is safe. Tap Start recording to continue.');
+        _mlsAbortDirectPhoneCapture('microphone-ended');
+      };});}catch(e){}
+      _mlsDirectPhone.bindingId=currentVisitAthenaBinding&&currentVisitAthenaBinding.id||'';
+      _mlsDirectPhone.bindingEpoch=currentVisitAthenaEpoch;
+      if(!_mlsDirectPhoneBindingSafe(serial)){
+        _mlsAbortDirectPhoneCapture('binding-refused');
+        showMicWarn('MLS could not lock this recording to the selected patient. Choose the appointment again and retry.');
+        return;
+      }
+      finalText=document.getElementById('transcript').value?document.getElementById('transcript').value+' ':'';
+      capturing=true;captureSessionEpoch++;_mlsDirectPhone.status='recording';
+      const btn=document.getElementById('captureBtn');if(btn){btn.classList.add('recording');btn.innerHTML='<span class="live-dot"></span> Recording… Stop Visit';}
+      const warn=document.getElementById('micWarn');if(warn)warn.style.display='none';
+      try{const words=(document.getElementById('transcript').value||'').trim().split(/\s+/).filter(Boolean).length;_updateLiveCapture(words);}catch(e){}
+      if(!_mlsDirectPhoneStartSegment(serial)){_mlsAbortDirectPhoneCapture('recorder-start-failed');return;}
+      _mlsDirectPhone.pollTimer=setInterval(function(){_mlsDirectPhonePoll(serial);},1500);
+      _mlsDirectPhonePoll(serial);
+    });
+  };
+  if(lease&&typeof lease.whenReady==='function')lease.whenReady(begin);else begin();
+  return true;
+}
+function _mlsStopDirectPhoneCapture(reason){
+  if(_mlsDirectPhone.status==='idle')return Promise.resolve(false);
+  if(_mlsDirectPhone.status==='stopping'&&_mlsDirectPhone.stopPromise)return _mlsDirectPhone.stopPromise;
+  if(_mlsDirectPhone.status==='starting'){
+    _mlsAbortDirectPhoneCapture(reason||'cancel-start');
+    return Promise.resolve(true);
+  }
+  const serial=_mlsDirectPhone.serial,code=_mlsDirectPhone.code,stream=_mlsDirectPhone.stream,rec=_mlsDirectPhone.recorder;
+  _mlsDirectPhone.status='stopping';capturing=false;captureSessionEpoch++;
+  const b=document.getElementById('captureBtn');if(b)b.innerHTML='Finishing recording…';
+  if(_mlsDirectPhone.segTimer){clearTimeout(_mlsDirectPhone.segTimer);_mlsDirectPhone.segTimer=null;}
+  let segmentDone=Promise.resolve(true);
+  if(rec&&rec.state!=='inactive'){
+    segmentDone=new Promise(function(resolve){_mlsDirectPhone.segmentStopResolve=resolve;try{rec.stop();}catch(e){_mlsDirectPhone.segmentStopResolve=null;resolve(false);}});
+  }
+  _mlsDirectPhone.stopPromise=segmentDone.then(function(){return _mlsDirectPhone.uploadTail;}).then(async function(){
+    await _mlsDirectPhonePoll(serial);
+    await _mlsDirectPhoneCloseSession(code);
+    if(serial!==_mlsDirectPhone.serial)return false;
+    if(_mlsDirectPhone.pollTimer){clearInterval(_mlsDirectPhone.pollTimer);_mlsDirectPhone.pollTimer=null;}
+    try{if(stream)stream.getTracks().forEach(function(t){t.onended=null;t.stop();});}catch(e){}
+    _mlsDirectPhone.stream=null;_mlsDirectPhone.recorder=null;_mlsDirectPhone.code='';
+    _mlsDirectPhone.bindingId='';_mlsDirectPhone.bindingEpoch=null;_mlsDirectPhone.status='idle';_mlsDirectPhone.stopPromise=null;
+    _mlsDirectPhoneResetUi();
+    if(_mlsDirectPhone.uploadFailures)showMicWarn('Recording stopped, but one or more audio segments could not upload. Review the transcript before writing the note; everything visible there is safe.');
+    return _mlsDirectPhone.uploadFailures===0;
+  },function(){
+    if(serial===_mlsDirectPhone.serial)_mlsAbortDirectPhoneCapture('stop-failed');
+    return false;
+  });
+  return _mlsDirectPhone.stopPromise;
+}
+window.addEventListener('pagehide',function(){_mlsAbortDirectPhoneCapture('pagehide');});
+window.addEventListener('mls:session-boundary',function(){_mlsAbortDirectPhoneCapture('session-boundary');});
+window.addEventListener('mls:active-patient-changed',function(){
+  if(_mlsDirectPhone.status==='idle')return;
+  setTimeout(function(){if(_mlsDirectPhone.status!=='idle'&&!_mlsDirectPhoneBindingSafe(_mlsDirectPhone.serial))_mlsAbortDirectPhoneCapture('patient-changed');},0);
+});
 /* ===== RECORD-FIRST HERO — say the patient + hit record, the vision's front door. ===== */
 function _heroPopulateList(){
   try{
@@ -27415,7 +27692,16 @@ function startCapture(){
     _mlsRequestEncounterConsent('recording').then(function(ok){ if(ok&&!capturing) startCapture(); });
     return false;
   }
+  const captureBindingCandidate=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('recording');
+  /* The authenticated MediaRecorder lane is the phone owner even when an iOS
+     build happens to expose webkitSpeechRecognition: that recognizer is not a
+     reliable permission/capture signal on iPhone and produced the false
+     "microphone blocked" loop reported from the live phone. */
+  if(_mlsDirectPhoneSupported()) return _mlsStartDirectPhoneCapture(captureBindingCandidate);
   if(!recog && !initRecog()){
+    /* iPhone Safari has no Web Speech API. Use the authenticated hosted
+       MediaRecorder/transcription owner instead of misreporting that a granted
+       microphone permission was blocked. */
     /* ph-mic-1.0.0 (2026-07-25, phone lane): "Try Chrome or Edge" is IMPOSSIBLE
        advice on an iPhone. Every iOS browser is required to use WebKit, none of
        them exposes SpeechRecognition, so the single instruction this gave named
@@ -27430,7 +27716,6 @@ function startCapture(){
       : 'Live voice transcription isn’t supported in this browser. Try Chrome or Edge — or just type/paste the visit conversation below. Everything else works the same.');
     return false;
   }
-  const captureBindingCandidate=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('recording');
   const hub=mlsSpeechHub();
   hub.register('visit','Visit recording',function(handoff){
     const previous=recog;
@@ -27509,6 +27794,7 @@ function startCapture(){
   return !beginFailed;
 }
 function stopCapture(){
+  if(/^(starting|recording|stopping)$/.test(_mlsDirectPhone.status)) return _mlsStopDirectPhoneCapture('visit-stop');
   capturing=false;
   captureSessionEpoch++;
   const oldRecog=recog; recog=null;

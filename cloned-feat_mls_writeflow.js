@@ -3654,17 +3654,19 @@
     var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
     card.innerHTML =
       (probeOnlyActive() ? '<div id="mlsAthenaProbeOnlyBanner" style="margin:0 0 12px;padding:10px 12px;border:2px solid #8b2525;background:#fdf2f2;color:#8b2525;border-radius:10px;font-weight:850">' + esc(PROBE_ONLY_BANNER) + '</div>' : '') +
-      /* wfclar-1.0.0 (owner 2026-08-27: "make it easy and simple"): this
-         sub-line used to restate the confirmation law - "each confirmation
-         runs exactly one selected READY item", plus its own list of what
-         stays in Athena - two inches above the Nothing-has-changed-yet block
-         that says both again, at more length and with the extra sequencing
-         the law actually needs. Nothing was lost by deleting it: every clause
-         it carried survives verbatim or better below. What replaces it is the
-         one thing the header did NOT say and the doctor most needs to see at
-         a glance - WHO and WHICH VISIT this sheet is about, which until now
-         was folded away inside the identity drawer. */
-      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + (generationIssue ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.') : esc(unifiedWhoLine(manifest))) + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
+      /* wfclar-1.0.0 (owner 2026-08-27: "make it easy and simple"): the header
+         now leads with WHO and WHICH VISIT - the one thing it did NOT say, and
+         the thing the doctor most needs at a glance; until now it was folded
+         away inside the identity drawer.
+         MEASURED, AND THE REASON THE SENTENCE BELOW IT STAYED: that sub-line
+         reads like a duplicate of the Nothing-has-changed-yet block, and it is
+         not. athena-unified-confirmation-contract pins BOTH of its capability
+         branches by exact wording - the capability-off "Only reviewed note
+         write and Save Draft can be confirmed here" and the capability-on
+         "...run only after their own explicit confirmation" - and neither
+         sentence exists anywhere else on the sheet. Deleting it silently drops
+         a disclosure of what MLS is allowed to do at all. It stays. */
+      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div>' + (generationIssue ? '' : '<div style="color:#204034;font-weight:700;margin-top:3px">' + esc(unifiedWhoLine(manifest)) + '</div>') + '<div style="color:#52675c;margin-top:3px">' + (generationIssue ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.') : (athenaFinalActionsReady() ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.' : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.')) + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
       unifiedNoteHeroHtml(manifest) +
       unifiedCanonicalGenerationHtml(state) +
       rowsHtml +
