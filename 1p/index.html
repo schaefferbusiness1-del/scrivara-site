@@ -22990,7 +22990,7 @@ function renderTemplateList(){
       ' style="border:1px solid '+(isSel?'#2E6A4B':'var(--line)')+';border-radius:10px;padding:8px 10px;margin-bottom:6px;background:'+(isSel?'#f2f8f4':(isActive?'#f7fbff':'transparent'))+';cursor:pointer">'+
       '<div style="display:flex;align-items:center;gap:6px"><strong style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.name)+'</strong>'+
       (isActive?'<span style="font-size:10px;color:#127a55;font-weight:700;white-space:nowrap">● DEFAULT</span>':'')+'</div>'+
-      kw+'<div style="font-size:11px;color:var(--muted)">'+_mlsTplKindLabel(_mlsTplKindOf(t))+' · '+(t.text||'').length+' chars'+revs+'</div>'+
+      kw+'<div style="font-size:11px;color:var(--muted)">'+_mlsTplKindLabel(_mlsTplKindOf(t))+' - '+(t.text||'').length+' chars'+revs+'</div>'+
       '</div>';
   }).join('');
   try{ renderTplDetail(); }catch(e){}
