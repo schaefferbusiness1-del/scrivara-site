@@ -123,7 +123,8 @@ function loadJunkScrub(shell) {
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(js, ctx, { filename: shell + ':junkscrub-1.0.0' });
-  ok(win.__mlsJunkScrub && win.__mlsJunkScrub.version === 'junkscrub-1.0.0', shell + ': the block did not install');
+  ok(win.__mlsJunkScrub && win.__mlsJunkScrub.version === 'junkscrub-1.1.0', shell + ': the block did not install');
+  win.__mlsJunkScrub.__testWin = win;   /* junkscrub-1.1.0: the latch tests set getPatients on the vm window */
   return win.__mlsJunkScrub;
 }
 
@@ -148,7 +149,17 @@ const FIXTURES = {
   'id-dob-tail': 'SAMPLE, Ada (id #7731709, dob: 06/01/1967)' + NOTE,
   'skip-link': 'Skip to main content' + NOTE,
   'athenanet-host': 'https://athenanet.athenahealth.com/1/25/nav.esp' + NOTE,
-  'athena-footer': 'Powered by athenahealth' + NOTE
+  'athena-footer': 'Powered by athenahealth' + NOTE,
+  /* junkscrub-1.1.0: the encounter sign-off validation script, measured on
+     ~1,900 stored bodies 2026-08-26. Invented values, real athenaOne shapes. */
+  'signoff-ident': 'reviewusername.focus(); selectobject FirstMatch PROCEDUREOUTCOMEDATAENTRY' + NOTE,
+  'jquery-call': "jQuery('#PROCEDUREOUTCOMEDATAENTRY').find('select').toArray();" + NOTE,
+  'dom-call': "document.getElementsByName('ASSIGNEDTOUSERNAME')[0];" + NOTE,
+  'alert-call': "alert('Procedure Outcome Result is required.');" + NOTE,
+  'try-catch': 'try { emptyoutcome.focus(); } catch(err) {}' + NOTE,
+  'brace-run': 'return false; } } } return true };' + NOTE,
+  'flowsheet-empty': 'Click encounter events, vitals, or medications here to add content to this flowsheet.' + NOTE,
+  'signoff-line': 'Encounter Sign-Off Encounter not closed.' + NOTE
 };
 
 /* the whole captured shape, junk BEFORE the note — the class that a
@@ -197,6 +208,13 @@ const NEAR_MISS = [
   ['an id number', 'Implant id #4471 placed; patient dob confirmed at the bedside.'],
   ['athenaOne named', 'Documented in athenaOne under the encounter note, per the doctor.'],
   ['a semicolon list', 'Allergies: penicillin; sulfa; latex. NKDA otherwise documented.'],
+  /* junkscrub-1.1.0 near-misses: the words the sign-off rules must not eat */
+  ['the word alert', 'Patient alert and oriented x3; no acute distress. Alert (AAOx3) throughout.'],
+  ['the word return', 'Return to clinic in 6 weeks; return precautions were given and understood.'],
+  ['the word document', 'Will document the discussion; documents reviewed with the patient today.'],
+  ['sign-off English', 'Encounter reviewed and signed off by the attending after the procedure.'],
+  ['medications sentence', 'Discussed her medications here today and added an exercise plan to the visit.'],
+  ['try in prose', 'Will try physical therapy first; if no relief, we will catch it at the next visit.'],
   ['procedure note', 'Lumbar ESI performed at L4-L5 under fluoroscopy; pain 8/10 -> 3/10 at 20 minutes.']
 ];
 for (const [name, text] of NEAR_MISS) {
@@ -403,6 +421,44 @@ for (const shell of SHELLS) {
   ok(receipt.bytesRemoved > 100, 'the receipt reported ' + receipt.bytesRemoved + ' bytes removed from a 300+ byte junk capture');
 }
 
-console.log('junk-scrub-detector: OK — ' + RULE_IDS.length + ' rules, each with a firing fixture; '
+/* ================== PART 7  the live 2026-08-26 shape, end to end (1.1.0) = */
+{
+  const SIGNOFF_TAIL =
+    " var outcomes = jQuery('#PROCEDUREOUTCOMEDATAENTRY').find('select').toArray(); var filter = function (item) { return (item.value == ''); }; var emptyoutcome = FirstMatch(outcomes, filter); if (emptyoutcome) { alert('Procedure Outcome Result is required.'); try { emptyoutcome.focus(); } catch(err) {} return false; } } var reviewcheckbox = document.getElementById('REVIEWENCOUNTER'); if ( reviewcheckbox && reviewcheckbox.checked) { var reviewusername = document.getElementsByName('ASSIGNEDTOUSERNAME')[0]; if (reviewusername) { alert( 'Please select to whom the encounter should be assigned.' ); reviewusername.focus(); return false; } var selectobject = reviewusername; selectobject.value = TrimWhitespace(selectobject.value); selectobject.focus(); return false; } } } return true };";
+  const LIVE_SHAPE = KEEP + ' Encounter Sign-Off Encounter not closed.' + SIGNOFF_TAIL;
+  const res = J.scrub(LIVE_SHAPE);
+  ok(res.hit, 'the measured live sign-off tail was not flagged at all');
+  eq(res.text.indexOf(KEEP), 0, 'the clinical note ahead of the sign-off tail was damaged: ' + JSON.stringify(res.text.slice(0, 120)));
+  ok(res.removed > SIGNOFF_TAIL.length * 0.7,
+    'the sign-off tail mostly survived the scrub (' + res.removed + ' of ' + SIGNOFF_TAIL.length + ' bytes removed): ' + JSON.stringify(res.text.slice(-160)));
+}
+
+/* ==================== PART 8  the latch is a measurement, not a one-shot == */
+{
+  const T = J._t;
+  const win = J.__testWin;
+  ok(typeof T.shouldSkipRun === 'function' && typeof T.countScopeBodies === 'function',
+    'the latch predicate is not exported for test');
+  eq(T.shouldSkipRun(null), false, 'no receipt must run');
+  eq(T.shouldSkipRun({ complete: true, version: 'junkscrub-1.0.0', scopeBodiesAfter: 0 }), false,
+    'an old-version receipt must re-run - new rules exist');
+  eq(T.shouldSkipRun({ complete: true, version: 'junkscrub-1.1.0' }), false,
+    'a receipt without the body-count measurement must re-run once and earn one');
+  eq(T.shouldSkipRun({ complete: false, version: 'junkscrub-1.1.0', scopeBodiesAfter: 0 }), false,
+    'an incomplete (capped) run must resume');
+  win.getPatients = () => [];
+  eq(T.countScopeBodies(), 0, 'an empty roster counts zero in-scope bodies');
+  eq(T.shouldSkipRun({ complete: true, version: 'junkscrub-1.1.0', scopeBodiesAfter: 0 }), true,
+    'an unchanged store re-scans instead of skipping - the cheap-count path is broken');
+  win.getPatients = () => [{ id: 'x', visits: [{ source: 'athena-visits', raw: 'Freshly pulled body.' }] }];
+  eq(T.countScopeBodies(), 1, 'a fresh remote body was not counted');
+  eq(T.shouldSkipRun({ complete: true, version: 'junkscrub-1.1.0', scopeBodiesAfter: 0 }), false,
+    'the janitor stays asleep while new bodies arrive - the exact 2026-08-26 defect (1,900 tails behind a done-flag)');
+  win.getPatients = () => [{ id: 'x', visits: [{ source: 'athena-visits', raw: 'Cleaned.', _rawBeforeScrub: { raw: 'Cleaned. var x = 1;' } }] }];
+  eq(T.countScopeBodies(), 0, 'a scrubbed body still counts into the latch measurement - the latch would flap forever');
+  delete win.getPatients;
+}
+
+console.log('junk-scrub-detector: OK— ' + RULE_IDS.length + ' rules, each with a firing fixture; '
   + NEAR_MISS.length + ' clinical near-misses unflagged; the removal-only, never-empty, no-signature-no-write, '
   + 'idempotence and scope promises executed; _stripPageDebris control confirms the near-miss set is not vacuous.');

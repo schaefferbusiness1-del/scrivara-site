@@ -51700,7 +51700,7 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 /* ===== junkscrub-1.0.0 */
 (function () {
   'use strict';
-  var VERSION = 'junkscrub-1.0.0';
+  var VERSION = 'junkscrub-1.1.0';
   var FLAG_SUFFIX = 'junkScrubV1';
   var FIELDS = ['raw', 'findings', 'plan'];      /* the three _visitBodyText joins */
   var MAX_APPLY_PER_RUN = 400;                   /* bounded work per session; resumes next boot */
@@ -51735,6 +51735,22 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
     { id: 'sketchpad-ident', why: 'page script', re: /\b(?:svgjottercontainerid|SVGJotter|VMLJSONToRaphaelJSON|GetStrokesDimensions|PutSketchpad|SketchpadData|IsSafari)\b/g },
     { id: 'params-div', why: 'page script', re: /\bparams\s*\.\s*div(?:\s*\.\s*[A-Za-z_$][\w$]*)?/g },
 
+    /* --- the encounter sign-off validation script (junkscrub-1.1.0) ------
+       MEASURED live 2026-08-26: ~1,900 stored bodies ended with this shape -
+       jQuery form walking, alert() prompts, DOM lookups, and a brace/return
+       tail ("return false; } } } return true };"). Every anchor below is
+       syntax or an identifier a clinical sentence cannot contain: alert-call
+       requires a QUOTE right after the paren so "alert (AAOx3)" and "patient
+       alert and oriented" never match; brace-run needs three consecutive
+       brace/return-boolean statements; the identifiers exist only in
+       athenaOne's own form script. */
+    { id: 'signoff-ident', why: 'page script', re: /\b(?:PROCEDUREOUTCOMEDATAENTRY|REVIEWENCOUNTER|ASSIGNEDTOUSERNAME|selectobject|reviewcheckbox|reviewusername|emptyoutcome|EscapeRegExp|TrimWhitespace|FirstMatch)\b/g },
+    { id: 'jquery-call', why: 'page script', re: /\bjQuery\s*\(\s*['"][^'"\n]{0,160}['"]\s*\)(?:\s*\.\s*[A-Za-z_$][\w$]*\s*\([^()\n]{0,160}\))*\s*;?/g },
+    { id: 'dom-call', why: 'page script', re: /\bdocument\s*\.\s*(?:getElementById|getElementsByName|querySelector|querySelectorAll)\s*\(\s*['"][^'"\n]{0,120}['"]\s*\)(?:\[\d+\])?\s*;?/g },
+    { id: 'alert-call', why: 'page script', re: /\balert\s*\(\s*['"][^'"\n]{0,200}['"]\s*\)\s*;?/g },
+    { id: 'try-catch', why: 'page script', re: /\btry\s*\{[^{}]{0,200}\}\s*catch\s*\(\s*[A-Za-z_$][\w$]*\s*\)\s*\{[^{}]{0,200}\}/g },
+    { id: 'brace-run', why: 'page script', re: /(?:\breturn\s+(?:true|false)\b\s*;?\s*|\}\s*){3,};?/g },
+
     /* --- the chart-refresh prompt ---------------------------------------- */
     { id: 'refresh-prompt', why: 'EMR page text', re: /\brecently edited this chart(?:\s+at\s*\.?)?/gi },
     { id: 'refresh-line', why: 'EMR page text', re: /\bRefresh to view the most current information\.?/gi },
@@ -51752,7 +51768,11 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
        clinical sentence "skip to main content" is NOT matched. */
     { id: 'skip-link', why: 'page navigation', re: /\bSkip to main content\b/g },
     { id: 'athenanet-host', why: 'page navigation', re: /(?:https?:\/\/)?athenanet\.athenahealth\.com\S*/g },
-    { id: 'athena-footer', why: 'page navigation', re: /\bPowered by athenahealth\b/gi }
+    { id: 'athena-footer', why: 'page navigation', re: /\bPowered by athenahealth\b/gi },
+
+    /* --- more page furniture (junkscrub-1.1.0, both measured live) -------- */
+    { id: 'flowsheet-empty', why: 'EMR page text', re: /[^.\n]{0,80}\bor medications here to add content to this flowsheet\.?/gi },
+    { id: 'signoff-line', why: 'EMR page text', re: /\bEncounter Sign-Off\s+Encounter not closed\.?/g }
   ];
 
   /* ---------------------------------------------------------------- helpers */
@@ -51803,6 +51823,33 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
     if (!REMOTE_RE.test(S(v.source))) return false;          /* doctor/app-authored: never touched */
     for (var i = 0; i < FIELDS.length; i += 1) if (S(v[FIELDS[i]]).length) return true;
     return false;
+  }
+
+  /* junkscrub-1.1.0: the once-per-account latch measured the WRONG thing.
+     The first run scanned 1,220 bodies, cleaned 121, stamped complete - and
+     the reader kept minting new debris, so by 2026-08-26 the store held
+     ~2,400 in-scope bodies with ~1,900 script tails behind a janitor that
+     would never run again. The latch is now a MEASUREMENT: the receipt
+     records the in-scope body count as of the end of its run, and boot
+     re-runs whenever the current count differs (new pulls arrived) or the
+     rules version changed. A clean, unchanged store re-verifies with one
+     cheap count, never a rescan; an old receipt without the count re-runs
+     once and earns one. */
+  function countScopeBodies() {
+    var rows = safe(function () { return window.getPatients() || []; }, []);
+    var n = 0;
+    (rows || []).forEach(function (p) {
+      var vs = (p && Array.isArray(p.visits)) ? p.visits : [];
+      vs.forEach(function (v) {
+        if (!inScope(v)) return;
+        for (var i = 0; i < FIELDS.length; i += 1) if (S(v[FIELDS[i]]).length) n += 1;
+      });
+    });
+    return n;
+  }
+  function shouldSkipRun(prior) {
+    return !!(prior && prior.complete === true && prior.version === VERSION &&
+      typeof prior.scopeBodiesAfter === 'number' && countScopeBodies() === prior.scopeBodiesAfter);
   }
 
   /* ---------------------------------------------------------------- the scan
@@ -51985,12 +52032,13 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
   function attempt(why) {
     if (nsUsable()) {
       var prior = readReceipt();
-      if (prior && prior.complete === true) {                /* once per account */
+      if (shouldSkipRun(prior)) {                            /* store unchanged since the last complete run */
         window.__mlsJunkScrubReceipt = prior;
         return Promise.resolve(prior);
       }
       return run({ apply: true }).then(function (rec) {
         if (!rec) return again(why);                         /* roster not hydrated yet */
+        rec.scopeBodiesAfter = countScopeBodies();           /* the measurement the next boot compares */
         rec.why = S(why || 'boot');
         writeReceipt(rec);
         window.__mlsJunkScrubReceipt = rec;
@@ -52044,7 +52092,7 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
     run: run,
     boot: boot,
     receipt: function () { return window.__mlsJunkScrubReceipt || readReceipt(); },
-    _t: { isSubsequence: isSubsequence, tidy: tidy, publicReceipt: publicReceipt, flagKey: flagKey }
+    _t: { isSubsequence: isSubsequence, tidy: tidy, publicReceipt: publicReceipt, flagKey: flagKey, countScopeBodies: countScopeBodies, shouldSkipRun: shouldSkipRun }
   };
 })();
 
