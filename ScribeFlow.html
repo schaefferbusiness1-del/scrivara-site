@@ -22048,7 +22048,17 @@ function opPrepRender(){
            as [FILL:] tokens — all visible at once, directly above the note text. */
       }
       h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value;window._opPrep['+i+'].edited=(this.value!==window._opPrep['+i+']._genNote)">'+esc(row.note||'')+'</textarea>';
-      h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
+      /* opnsend-2.0.0: the Athena control is DISABLED while the canonical
+         parser still counts an unresolved field - the same parser opPrepSave
+         and pushHistoryNoteToAthena both gate on - so the card can never offer
+         a send the write leg is about to refuse. It is NOT disabled for a
+         missing visit binding: that refusal, and its one-press bind cure, live
+         inside the review sheet and are only reachable by opening it. */
+      var _opAthBlanks=0; try{ if(typeof opNoteBlankTokens==='function') _opAthBlanks=opNoteBlankTokens(row.note||'').length; }catch(_eAB){}
+      var _opAthTitle=_opAthBlanks
+        ? ('Fill the '+_opAthBlanks+' unresolved field'+(_opAthBlanks===1?'':'s')+' above first. An op note with a blank in it is never offered to Athena.')
+        : ('Opens the Athena review - nothing is sent until you confirm it there. If this note is not in '+a.name+'’s chart yet, it is saved there first.');
+      h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><button class="btn-ghost" style="font-size:12.5px;padding:7px 13px"'+(_opAthBlanks?' disabled':'')+' title="'+esc(_opAthTitle)+'" onclick="opPrepSendToAthena('+i+')">🚀 Send to Athena</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
     }
     h+='</div>';
     return h;
@@ -22701,6 +22711,58 @@ function _opVisitStamp(row,patient){
   }catch(e){}
   return out;
 }
+/* ===== opnsend-2.0.0 (owner 2026-08-26: "make it possible to write op notes
+   to athena too and make a UI for that in the op notes suite") =============
+   The room's classic per-patient card carried exactly ONE chart control - Save
+   - and no way to reach Athena at all; the only one-press path lived on the
+   note pane's primary button, where a doctor working the card list never sees
+   it. This adds that same path as a first-class per-draft control on the card,
+   and it adds NOTHING else: it calls opPrepSave() and then
+   window.pushHistoryNoteToAthena(), the two functions that already own the
+   save and the unified write sheet, in that order.
+
+   NOTHING IS WEAKENED, and nothing here decides anything the write leg decides:
+     - the button is disabled while opNoteBlankTokens() counts a blank, which is
+       the same canonical parser opPrepSave and the push both gate on;
+     - the push runs only when a saved, NON-DRAFT record reads back after the
+       save, so a refused or quota-failed save simply does not send;
+     - pushHistoryNoteToAthena re-checks isDraft, blank tokens, route quarantine
+       and exact patient identity itself, and every refusal is surfaced by the
+       sheet or its own toast - this function invents no wording of its own;
+     - a missing or blocked visit binding is NOT hidden here. The sheet opens
+       with a BLOCKED row that carries its own bind cure, which is the only
+       in-app way to fix it; graying this control would put that cure out of
+       reach and leave the doctor with nothing to press. */
+function _opFiledNoteRecord(row){
+  try{
+    var id=String((row&&row._noteId)||'').trim(); if(!id) return null;
+    var ns=(typeof getNotes==='function')?(getNotes()||[]):[];
+    for(var i=0;i<ns.length;i++) if(ns[i]&&ns[i].id===id) return ns[i].isDraft?null:ns[i];
+  }catch(e){}
+  return null;
+}
+function opPrepSendToAthena(i){
+  var row=(window._opPrep||[])[i]; if(!row) return;
+  if(typeof window.pushHistoryNoteToAthena!=='function'){
+    try{ toast('The Athena review is not available on this page. This card still saves the note to the chart.','warn'); }catch(e){}
+    return;
+  }
+  var rec=_opFiledNoteRecord(row);
+  /* opnsend-2.0.1 (refuter 2026-08-26): a filed record with LOCAL edits on the
+     card must not be pushed stale - the textarea writes row.note only. When
+     the card's text differs from the filed bytes, fall through to the
+     save-then-push branch so Athena reviews what the doctor is looking at. */
+  if(rec && String(rec.text||rec.soap||'')===String(row.note||'')){ try{ window.pushHistoryNoteToAthena(rec.id); }catch(e){} return; }
+  /* Not in the chart yet: the SAME save the card's own green button runs, then
+     the same read-back check before anything is offered to Athena. */
+  try{ opPrepSave(i); }catch(e){ return; }
+  setTimeout(function(){
+    var rec2=_opFiledNoteRecord((window._opPrep||[])[i]);
+    if(!rec2) return;
+    try{ window.pushHistoryNoteToAthena(rec2.id); }catch(e){}
+  },350);
+}
+try{ window.opPrepSendToAthena=opPrepSendToAthena; }catch(_eSA){}
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
@@ -29952,7 +30014,14 @@ function _athenaShowReceipt(who, results, partial, immutablePatient, sections, v
     if(unifiedWf&&typeof unifiedWf.openUnifiedConfirmation==='function'){
       var unifiedPatient={name:String((immutablePatient&&immutablePatient.name)||who||''),dob:String((immutablePatient&&immutablePatient.dob)||''),mrn:String((immutablePatient&&immutablePatient.mrn)||''),patientId:String((immutablePatient&&immutablePatient.patientId)||'')};
       var namedKeys={hpi:1,ros:1,exam:1,assessment:1,plan:1,procedure:1}, unifiedSections=[], unifiedPlan=[];
-      (sections||[]).forEach(function(s){ var key=String(s&&s.kind||'').trim().toLowerCase(); if(namedKeys[key]) unifiedSections.push(Object.freeze({key:key,text:String(s.body||'').trim(),execute:true,destination:(unifiedWf.destinations||{})[key]||''})); else unifiedPlan.push(s); });
+      /* opnsend-2.0.0 TRANSPORT LABEL. pushHistoryNoteToAthena prefixes the
+         bundle with 'PROCEDURE / OPERATIVE NOTE:' (or 'NOTE TEXT:') so the plan
+         row can name its route. The writeflow module strips that prefix in its
+         PLAN branch only; a NAMED section - which is exactly what an op note
+         becomes here - kept it, so the literal routing line was staged as the
+         first line of what gets typed into Athena's editor. Stripped on the
+         copy, so the caller's own section object is untouched. */
+      (sections||[]).forEach(function(s){ var key=String(s&&s.kind||'').trim().toLowerCase(); if(namedKeys[key]){ s={kind:String((s&&s.kind)||''),body:String((s&&s.body)||'').replace(/^\s*(?:PROCEDURE\s*\/\s*OPERATIVE NOTE|PROCEDURE NOTE|OPERATIVE NOTE|OP NOTE|NOTE TEXT)\s*:\s*\r?\n?/i,'')}; unifiedSections.push(Object.freeze({key:key,text:String(s.body||'').trim(),execute:true,destination:(unifiedWf.destinations||{})[key]||''})); } else unifiedPlan.push(s); });
       var unifiedExpected=visitContext?{visitDate:String(visitContext.visitDate||visitContext.encounterDate||''),provider:String(visitContext.provider||visitContext.providerName||''),appointmentId:String(visitContext.appointmentId||visitContext.id||''),encounterId:String(visitContext.encounterId||visitContext.visitId||''),encounterUrl:String(visitContext.encounterUrl||visitContext.visitUrl||'')}:null;
       try{Object.freeze(unifiedPatient);Object.freeze(unifiedSections);Object.freeze(unifiedPlan);if(unifiedExpected)Object.freeze(unifiedExpected);}catch(eUnifiedFreeze){}
       return unifiedWf.openUnifiedConfirmation({patient:unifiedPatient,plan:unifiedPlan,sections:unifiedSections,expectedContext:unifiedExpected,noteTimestamp:(visitContext&&visitContext.noteTimestamp)||null,requireExpectedVisit:!!(visitContext&&visitContext.historical),preferredAction:'write_note'});
@@ -40242,7 +40311,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1074';
+  window.__MLS_AV='b1075';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

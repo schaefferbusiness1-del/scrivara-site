@@ -167,6 +167,18 @@
   }
 
   var NOT_DICTATED = '[not dictated]';
+  /* opnq-1.0.1: A PLACEHOLDER IN A HEADER SLOT IS NOT A VALUE. The vocabulary
+     is the app's own, copied field for field from opNoteBlankTokens() in the
+     shell - [[key]], [FILL: label], [not dictated] and a run of underscores -
+     so the composer and the canonical parser can never disagree about what
+     counts as unfilled. Used only to decide whether a slot is still EMPTY;
+     nothing is invented from it and no placeholder is ever removed from body
+     prose by this test. */
+  function isPlaceholderValue(v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s) return true;
+    return /^(?:\[\[\s*[a-z0-9_]+\s*\]\]|\[FILL:\s*[^\]]*\]|\[not dictated\]|_{3,})$/i.test(s);
+  }
 
   /* =============================================================
      SECTION MODEL — canonical operative-note headings, in order.
@@ -224,6 +236,11 @@
     'complications': 'COMPLICATIONS',
     'specimens': 'SPECIMENS',
     'specimen': 'SPECIMENS',
+    /* opnq-1.0.0: this file's OWN emitted heading was the one CANON key with no
+       alias, so a normalized note re-read by normalize() lost its disposition
+       into ADDITIONAL DOCUMENTATION while the canonical section printed
+       [not dictated]. Measured across all 14 CANON keys; this was the only one. */
+    'disposition / post-procedure plan': 'DISPOSITION / POST-PROCEDURE PLAN',
     'disposition': 'DISPOSITION / POST-PROCEDURE PLAN',
     'condition': 'DISPOSITION / POST-PROCEDURE PLAN',
     'post-procedure plan': 'DISPOSITION / POST-PROCEDURE PLAN',
@@ -290,16 +307,38 @@
     var order = [];          // canonical keys in first-seen order
     var unmatched = [];      // [{h, body:[lines]}]
     var i = 0, inHeaderZone = true, cur = null, curUn = null;
+    /* opnq-1.0.0 (owner 2026-08-26: one document carried three different
+       anesthesia statements). A SECOND occurrence of a canonical heading is a
+       REPEAT, not a continuation - pushCanon used to append into the same
+       array, welding two contradicting statements into one section with no
+       separator and no sign that they disagreed. Repeats are collected on
+       their own so normalize() can DROP a true duplicate and LABEL a divergent
+       one. __repeats is a non-index property on the existing array, so every
+       reader of {header, order, sec, unmatched} - feat_opnote_onscreen.js
+       included - sees exactly the shape it saw before. */
+    var curRepeat = null;
+    /* Which header zone we are in. Zone 0 keeps the original overwrite
+       semantics byte-for-byte; a zone opened by a SECOND document title fills
+       only empty slots, so a divergent second copy can never overwrite the
+       primary document's demographics. */
+    var headerZoneN = 0;
 
     function pushCanon(key, firstLine) {
-      if (!sec[key]) { sec[key] = []; order.push(key); }
-      if (firstLine != null && firstLine !== '') sec[key].push(firstLine);
-      cur = key; curUn = null;
+      if (!sec[key]) {
+        sec[key] = []; order.push(key);
+        if (firstLine != null && firstLine !== '') sec[key].push(firstLine);
+        cur = key; curUn = null; curRepeat = null; return;
+      }
+      var rep = [];
+      if (firstLine != null && firstLine !== '') rep.push(firstLine);
+      if (!sec[key].__repeats) sec[key].__repeats = [];
+      sec[key].__repeats.push(rep);
+      cur = key; curUn = null; curRepeat = rep;
     }
     function pushUnmatched(h, firstLine) {
       curUn = { h: h, body: [] };
       if (firstLine != null && firstLine !== '') curUn.body.push(firstLine);
-      unmatched.push(curUn); cur = null;
+      unmatched.push(curUn); cur = null; curRepeat = null;
     }
 
     for (i = 0; i < lines.length; i++) {
@@ -313,19 +352,62 @@
       var value = m ? m[2].trim() : '';
       var lkey = label.toLowerCase();
 
+      /* The document's own title, in every spelling this app has emitted. */
+      var isDocTitle = !m && /^(?:operative\s*\/\s*procedure note|procedure note|operative note|op note)$/i.test(trimmed);
+
       // --- Header zone: consume leading demographic "Key: value" lines ---
       if (inHeaderZone) {
         if (!trimmed) { continue; }                       // skip blank lines at the very top
-        if (/^procedure note$/i.test(trimmed) || /^operative note$/i.test(trimmed)) { continue; } // title line
-        if (m && HEADER_KEYS[lkey]) { header[HEADER_KEYS[lkey]] = value; continue; }
+        if (isDocTitle) { continue; }                     // title line
+        if (m && HEADER_KEYS[lkey]) {
+          var hkey = HEADER_KEYS[lkey];
+          /* opnq-1.0.1: a slot holding a PLACEHOLDER is still empty, so a later
+             copy that states a real value FILLS it rather than being filed as a
+             disagreement with "[not dictated]". Measured: a doubled document
+             whose first copy carried the placeholder and whose second copy
+             carried the date printed the placeholder in the header and the date
+             as a conflict - the header defect this lane exists to fix, one
+             shape further along. */
+          if (headerZoneN === 0 || !header[hkey] || isPlaceholderValue(header[hkey])) header[hkey] = value;
+          /* opnq-1.0.0: a later copy stating a DIFFERENT value is the exact
+             thing the owner saw (two MRNs, two dates, two providers in one
+             document). The primary document still wins the printed slot, but
+             the divergent value is recorded so normalize() can LABEL it.
+             Dropping it silently would trade one dishonest document for
+             another. A PLACEHOLDER is not a divergent claim - it claims
+             nothing - so it is not labelled as one. */
+          else if (String(value).replace(/\s+/g, ' ').trim() && !isPlaceholderValue(value) &&
+                   String(header[hkey]).replace(/\s+/g, ' ').trim().toLowerCase() !== String(value).replace(/\s+/g, ' ').trim().toLowerCase()) {
+            if (!header.__conflicts) header.__conflicts = [];
+            header.__conflicts.push({ key: hkey, label: label.trim(), value: value.trim() });
+          }
+          continue;
+        }
         inHeaderZone = false;                              // first non-header line ends the zone
       }
+
+      /* opnq-1.0.0: a SECOND document title is a DOCUMENT BOUNDARY, not a
+         heading. As a heading it opened one unmatched block that then swallowed
+         every following line - an entire earlier draft - and normalize() dumped
+         the lot verbatim under ADDITIONAL DOCUMENTATION, demographics and all.
+         Re-opening the header zone parses that copy as a document, so its
+         sections reconcile through __repeats and its demographics are compared
+         against the ones already printed instead of contradicting them. */
+      if (isDocTitle) { inHeaderZone = true; headerZoneN++; cur = null; curUn = null; curRepeat = null; continue; }
 
       // --- Section heading detection ---
       if (m && (aliasFor(lkey) || looksLikeHeading(label))) {
         var canon = aliasFor(lkey);
         if (canon) { pushCanon(canon, value); continue; }
-        pushUnmatched(label.toUpperCase(), value); continue;
+        /* opnq-1.0.0: a DEMOGRAPHIC label is a demographic line wherever it
+           appears, never a section heading. Written in caps ("DATE OF
+           PROCEDURE: 08/25/2026") it passed looksLikeHeading, opened an
+           unmatched block and then SWALLOWED every following line into it - so
+           a date the document plainly stated was unreachable to the header lift
+           and the rest of that section was dumped into the tail with it.
+           Falling through leaves it a body line, where the lift below reads it
+           and the tail reconciler compares it against what was printed. */
+        if (!HEADER_KEYS[lkey]) { pushUnmatched(label.toUpperCase(), value); continue; }
       }
       // A standalone ALL-CAPS line with no colon is also a heading.
       if (!m && trimmed && looksLikeHeading(trimmed)) {
@@ -335,7 +417,8 @@
       }
 
       // --- Body line: attach to current section / unmatched / preamble ---
-      if (cur) { sec[cur].push(line); }
+      if (curRepeat) { curRepeat.push(line); }
+      else if (cur) { sec[cur].push(line); }
       else if (curUn) { curUn.body.push(line); }
       else { (sec.__pre = sec.__pre || []).push(line); }   // text before any heading
     }
@@ -402,10 +485,25 @@
   function looksLikeProcedureTitle(s) {
     return /injection|block|ablation|epidural|facet|rhizotomy|stimulator|kyphoplasty|vertebroplasty|discography|denervation|procedure note|op note|template/i.test(String(s || ''));
   }
+  /* One wording for every place a divergent restatement is surfaced, so the
+     PDF and the on-screen view can never describe the same fact differently. */
+  var CONFLICT_LABEL = 'CONFLICTING ENTRY (not reconciled): ';
   function normalize(text, meta) {
     meta = meta || {};
     var p = parseNote(text);
     var H = p.header;
+
+    /* opnq-1.0.1 (measured on the shipped composer): a header slot that already
+       holds a PLACEHOLDER blocked every lift below, because both of them test
+       the slot for truthiness and "[not dictated]" is a non-empty string. A
+       note whose own header line reads "Date of Procedure: [not dictated]"
+       while the document states the date under a later heading therefore still
+       printed the placeholder - the exact defect the late lift was added to
+       cure, one shape further along. Clearing it here restores the empty state
+       the rest of this function is written against; a slot that was already
+       unfilled simply prints NOT_DICTATED again, so the truly-unknown case is
+       byte-unchanged. */
+    Object.keys(H).forEach(function (k) { if (H[k] && isPlaceholderValue(H[k])) H[k] = ''; });
 
     // Late demographic lines: the header zone ends at the first non-header
     // line (e.g. a leaked template metadata line), which used to leave
@@ -418,10 +516,60 @@
         if (!mm) return true;
         var hk = HEADER_KEYS[mm[1].trim().toLowerCase()];
         if (!hk) return true;
-        if (!H[hk]) H[hk] = mm[2].trim();
+        /* opnq-1.0.1: a preamble line carrying a placeholder must not re-fill a
+           slot the clear above just emptied, or the late lift is blocked again
+           by a value that says nothing. */
+        if (!H[hk] && !isPlaceholderValue(mm[2])) H[hk] = mm[2].trim();
         return false;
       });
     }
+
+    /* opnq-1.0.0 (owner 2026-08-26: the header read "Date of Procedure:
+       [not dictated]" while the SAME document stated the exact date further
+       down). The lift above only ever walked __pre - the text BEFORE the first
+       recognised heading - so a date line written UNDER a heading was invisible
+       to it: looksLikeHeading() rejects "Date of Procedure: 08/25/2026" for its
+       lowercase, ALIAS has no entry for it, so it fell through to the body-line
+       branch and stayed buried in whatever section was current.
+
+       DELIBERATELY NARROW, and each limit closes a specific hazard:
+         - only the PROCEDURE DATE slot moves. Widening this to every header key
+           would let a narrative line like "Patient: prone" become the patient's
+           name;
+         - only into an EMPTY slot, so a value already stated at the top always
+           wins over one found later;
+         - the bare 'date' key is EXCLUDED, because a clinical sentence opening
+           "Date:" is the one realistic false positive HEADER_KEYS carries;
+         - the value must PARSE AS A DATE, so a label with prose after it is
+           left where it is.
+       Nothing is invented here: the value printed is one the document itself
+       already states, in the document's own words. */
+    var LOOKS_LIKE_DATE = /^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+\d{4})\b/i;
+    function liftLateDop(arr) {
+      if (!arr || !arr.length) return arr;
+      var kept = arr.filter(function (line) {
+        if (H.dop && !isPlaceholderValue(H.dop)) return true;
+        var mm = String(line).trim().match(/^([A-Za-z][A-Za-z0-9 /&()'.\-]{0,48}?)\s*:\s*(.+)$/);
+        if (!mm) return true;
+        var lk = mm[1].trim().toLowerCase();
+        if (lk === 'date') return true;
+        if (HEADER_KEYS[lk] !== 'dop') return true;
+        var val = mm[2].trim();
+        if (!LOOKS_LIKE_DATE.test(val)) return true;
+        H.dop = val;
+        return false;
+      });
+      /* filter() returns a NEW array; the repeat ledger is a property ON the
+         array and would be dropped with it. */
+      if (arr.__repeats) kept.__repeats = arr.__repeats;
+      return kept;
+    }
+    Object.keys(p.sec).forEach(function (k) { if (k !== '__pre') p.sec[k] = liftLateDop(p.sec[k]); });
+    Object.keys(p.sec).forEach(function (k) {
+      var reps = p.sec[k] && p.sec[k].__repeats;
+      if (reps) for (var ri = 0; ri < reps.length; ri++) reps[ri] = liftLateDop(reps[ri]);
+    });
+    p.unmatched.forEach(function (u) { u.body = liftLateDop(u.body); });
     if (H.patient && looksLikeProcedureTitle(H.patient)) H.patient = '';
 
     // Resolve demographics. PATIENT IDENTITY comes from the app's verified
@@ -445,6 +593,16 @@
     out.push('Date of Procedure: ' + (dop || NOT_DICTATED));
     out.push('Provider: ' + (provider || NOT_DICTATED) + (meta.spec && (provider.indexOf(meta.spec) < 0) ? (' (' + meta.spec + ')') : ''));
     if (assistant) out.push('Assistant: ' + assistant);
+    /* opnq-1.0.0: a second copy of the document that states a DIFFERENT
+       identity, date or provider is surfaced here, immediately under the
+       demographics it contradicts, rather than being dropped or printed later
+       as if it were an equal claim. The printed slot above is still the primary
+       document's. */
+    (H.__conflicts || []).forEach(function (c) {
+      var printed = { patient: patient, dob: dob, mrn: mrn, dop: dop, provider: provider, assistant: assistant }[c.key];
+      if (printed && String(printed).replace(/\s+/g, ' ').trim().toLowerCase() === String(c.value).replace(/\s+/g, ' ').trim().toLowerCase()) return;
+      out.push(CONFLICT_LABEL + c.label + ': ' + c.value);
+    });
     out.push('');
 
     var sec = p.sec;
@@ -542,19 +700,56 @@
       'PROCEDURE CODES (CPT)': cptCodes
     };
 
+    /* opnq-1.0.0 RECONCILE, DO NOT CONCATENATE. A repeated canonical heading
+       used to append silently into the same section: two different Anesthesia
+       statements became one run-on paragraph and nothing said they disagreed.
+       A repeat that is byte-equal to what was printed (after whitespace
+       normalisation) is a true duplicate and is dropped; a repeat that says
+       something DIFFERENT is kept and LABELLED. Nothing divergent is ever
+       silently discarded - that is the lossless promise this file is built on. */
+    function flat(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().toLowerCase(); }
     CANON.forEach(function (key) {
       var v = (resolved[key] == null ? '' : String(resolved[key])).trim();
       out.push(key + ':');
       out.push(v ? v : NOT_DICTATED);
+      var reps = (sec[key] && sec[key].__repeats) || [];
+      var primary = flat(get(key));
+      var seenRep = {};
+      reps.forEach(function (r) {
+        var t = bodyText(r).trim();
+        if (!t) return;
+        var f = flat(t);
+        if (f === primary || seenRep[f]) return;
+        seenRep[f] = 1;
+        out.push(CONFLICT_LABEL + t);
+      });
       out.push('');
     });
 
     // ---- Anything we could not place goes here verbatim (lossless safety net) ----
+    /* opnq-1.0.0: the tail used to restate Patient/DOB/Date/Anesthesia with
+       values that CONTRADICTED the demographics block printed at the top of the
+       same page. A restatement that agrees with what was printed is a proven
+       duplicate and is dropped; one that disagrees is kept and LABELLED, never
+       dropped - the ADDITIONAL DOCUMENTATION block is this file's lossless
+       safety net and a divergent value is exactly what it exists to preserve. */
+    var PRINTED_HEADER = { patient: patient, dob: dob, mrn: mrn, dop: dop, provider: provider, assistant: assistant };
+    function reconcileTail(txt) {
+      return String(txt).split('\n').map(function (line) {
+        var mm = line.trim().match(/^([A-Za-z][A-Za-z0-9 /&()'.\-]{0,48}?)\s*:\s*(.+)$/);
+        if (!mm) return line;
+        var hk = HEADER_KEYS[mm[1].trim().toLowerCase()];
+        if (!hk || !PRINTED_HEADER[hk]) return line;
+        if (flat(PRINTED_HEADER[hk]) === flat(mm[2])) return null;
+        return CONFLICT_LABEL + line.trim();
+      }).filter(function (x) { return x !== null; }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
     var leftovers = [];
-    if (sec.__pre && bodyText(sec.__pre).trim()) leftovers.push(bodyText(sec.__pre));
+    if (sec.__pre && bodyText(sec.__pre).trim()) { var pre0 = reconcileTail(bodyText(sec.__pre)); if (pre0) leftovers.push(pre0); }
     p.unmatched.forEach(function (u) {
       if (u.__consumed) return;
-      var b = bodyText(u.body);
+      var b = reconcileTail(bodyText(u.body));
+      if (!b && HEADER_KEYS[String(u.h || '').toLowerCase()]) return;   /* heading + a duplicate value */
       leftovers.push(u.h + ':' + (b ? ('\n' + b) : ''));
     });
     if (leftovers.length) {
@@ -571,7 +766,13 @@
   function isNormalized(text) {
     var t = String(text || '');
     var n = 0; CANON.forEach(function (k) { if (t.indexOf(k + ':') >= 0 || t.indexOf(k) >= 0) n++; });
-    return n >= 7 && /OPERATIVE \/ PROCEDURE NOTE/.test(t);
+    /* opnq-1.0.0: seven canonical headings plus a title was also satisfied by a
+       document holding one full note PLUS a second copy of it - so exportPdf
+       skipped normalize() entirely and printed both copies untouched, with no
+       reconciliation of any kind. That is precisely the input normalize() now
+       exists to reconcile, so it may not bypass. */
+    var titles = t.match(/OPERATIVE \/ PROCEDURE NOTE/g);
+    return n >= 7 && !!titles && titles.length === 1;
   }
 
   /* =============================================================

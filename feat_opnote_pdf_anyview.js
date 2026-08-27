@@ -89,6 +89,26 @@
       safe(function () {
         var acts = clone.querySelector('.mlsvd-acts'); if (acts && acts.parentNode) acts.parentNode.removeChild(acts);
       });
+      /* opnq-1.0.0: textContent of the nested DIVs feat_opnote_onscreen.js
+         builds carries NO newlines, so this fallback handed normalize() ONE
+         run-on line - every heading lost, the whole note printed under
+         ADDITIONAL DOCUMENTATION. Join the block-level children instead, so a
+         read body without a raw <pre> parses like the note it is. */
+      var blocks = safe(function () { return clone.querySelectorAll('div,p,h1,h2,h3,h4,h5,h6,li,tr'); }, null);
+      if (blocks && blocks.length) {
+        var parts = [];
+        for (var bi = 0; bi < blocks.length; bi++) {
+          /* opnq-1.0.2 (refuter 2026-08-26): an ancestor block's textContent is
+             its descendants re-joined, so joining EVERY match duplicated the
+             whole note once per nesting level. Only leaf blocks contribute. */
+          var hasChildBlock = false;
+          try { hasChildBlock = !!blocks[bi].querySelector('div,p,h1,h2,h3,h4,h5,h6,li,tr'); } catch (eLeaf) {}
+          if (hasChildBlock) continue;
+          var bt = S(blocks[bi].textContent).trim();
+          if (bt && parts.indexOf(bt) < 0) parts.push(bt);
+        }
+        if (parts.length) return parts.join('\n');
+      }
       return S(clone.textContent);
     }
     return S(body.textContent);

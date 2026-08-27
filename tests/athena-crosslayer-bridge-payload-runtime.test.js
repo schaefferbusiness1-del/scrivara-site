@@ -219,9 +219,16 @@ for (const lane of laneFiles) {
   const sections = built.plan.map(row => ({ key: row.kind, text: row.body, execute: true, destination: loaded.flow.destinations[row.kind] }));
   const manifest = loaded.flow.buildUnifiedManifest({ patient: identity, expectedContext: visit, requireExpectedVisit: true, receiptSessionId: `soap-${lane}`, previewHash: `preview-${lane}`, plan: [], sections });
   const rows = manifest.rows.filter(row => row.action === 'write_note');
-  assert.deepStrictEqual(Array.from(rows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan'], `${lane}: unified manifest lost a named row`);
-  assert.strictEqual(rows.length, sections.length, `${lane}: unified manifest did not preserve five independent rows`);
+  /* ap-1.0.0 (owner 2026-08-26): the combined Assessment & Plan row rides
+     BESIDE the five named sections in the unified manifest - same pin update
+     as athena-unified-confirmation-runtime (3d94eb04). */
+  assert.deepStrictEqual(Array.from(rows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan', 'assessment_and_plan'], `${lane}: unified manifest lost a named row`);
+  assert.strictEqual(rows.length, sections.length + 1, `${lane}: unified manifest must carry the five named rows plus the ap-1.0.0 combined row`);
   rows.forEach((row, index) => {
+    /* The ap-1.0.0 combined row is DERIVED (assessment + plan joined) - the
+       byte-fidelity law applies to the five named rows; the combined row's own
+       composition is pinned by athena-unified-confirmation-runtime. */
+    if (row.kind === 'assessment_and_plan') return;
     const expected = sections[index];
     assert.deepStrictEqual(row.payload.sections, [expected], `${lane}/${row.kind}: manifest changed key/text/execute/destination bytes`);
     const request = sendProbe(bridge, row.payload, identity, visit, manifest.manifestHash, row.rowHash);
