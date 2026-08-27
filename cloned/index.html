@@ -24229,9 +24229,13 @@ function _mlsRenderTplPickReceipt(fallbackTpl){
   var el=document.getElementById('tplPickReceipt');
   var pick=null; try{ pick=window.__mlsLastTemplatePick; }catch(e){}
   var text='';
+  /* THE FALLBACK ARGUMENT WINS. It is only ever passed on the path that
+     actually used the default template, and it must outrank any pick left on
+     window - including a stale one from an earlier generation, which is what
+     auto-choose being OFF leaves behind. */
   if(!(typeof useTemplatesOn==='function'&&useTemplatesOn())) text='';
-  else if(pick&&pick.reason==='matched') text=_mlsTplPickSentence(pick);
   else if(fallbackTpl&&fallbackTpl.name) text='No template matched this visit - using your default: '+String(fallbackTpl.name);
+  else if(pick&&pick.reason==='matched') text=_mlsTplPickSentence(pick);
   else if(pick&&pick.reason==='no-candidate-of-this-kind') text='No template is set up for this note kind - the note was left unformatted.';
   else if(pick&&pick.reason!=='no-templates') text='No template matched this visit - the note was left unformatted.';
   if(el){
@@ -24245,6 +24249,11 @@ function _mlsRenderTplPickReceipt(fallbackTpl){
    When the toggle is OFF this returns null and the caller does nothing. */
 function resolveActiveTemplate(visitText){
   if(!useTemplatesOn()) return null;
+  /* Every resolve is a fresh decision. A receipt left by an EARLIER
+     generation must never be read as this one - with auto-choose off the
+     picker does not run at all, and the stale pick would otherwise name a
+     template this note never saw. */
+  try{ window.__mlsLastTemplatePick=null; }catch(e){}
   if(templateAutoOn()){
     /* tplpick-1.0.0: the pick is now kind-gated and scored against the visit
        CONTEXT (booking reason as well as the transcript), and it announces

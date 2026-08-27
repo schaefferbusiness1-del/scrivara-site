@@ -280,6 +280,17 @@ eq(c.result.id, 't4', 'auto-choose OFF stopped honoring the default template');
 eq(c.pickArgs, null, 'auto-choose OFF still ran the keyword picker');
 eq(c.toasts.length, 0, 'auto-choose OFF announced a pick');
 
+/* A STALE RECEIPT MUST NOT SURVIVE INTO THE NEXT GENERATION. With auto-choose
+   OFF the picker never runs, so whatever an earlier generation left on the
+   window would otherwise name a template THIS note never saw. */
+const STALE = { reason: 'matched', name: 'From a previous visit', kind: 'op', matched: ['tfesi'], matchedName: [] };
+c = runResolve({ auto: false, receipt: STALE, picked: null, activeId: 't4', byId: { t4: LEGACY } });
+eq(c.result.id, 't4', 'auto-choose OFF stopped honoring the default template');
+eq(c.receiptFallback.id, 't4', 'the receipt was not told which default was used');
+/* the resolver clears the previous decision before making a new one */
+ok(RESOLVE_SRC.indexOf('window.__mlsLastTemplatePick=null') !== -1,
+  'the resolver no longer clears a previous generation\'s pick receipt');
+
 /* ===== 13. THE RECEIPT RENDERER IS A TEXT SINK, EXECUTED ================= */
 const RENDER_SRC = sliceBetween(shell,
   'function _mlsRenderTplPickReceipt(fallbackTpl){',
@@ -313,6 +324,12 @@ ok(v.el.textContent.indexOf('<img src=x onerror=alert(1)>') !== -1, 'a hostile n
 v = runRender({ receipt: { reason: 'no-match', name: '', matched: [], matchedName: [] }, fallback: { name: 'My default' } });
 ok(v.el.textContent.indexOf('My default') !== -1, 'the receipt does not name the default that was used');
 ok(v.el.textContent.indexOf('No template matched') !== -1, 'the receipt does not admit that nothing matched');
+/* THE FALLBACK ARGUMENT OUTRANKS ANY PICK ON THE WINDOW. It is only passed on
+   the path that really used the default, so a stale receipt from an earlier
+   generation must never name a template THIS note never saw. */
+v = runRender({ receipt: STALE, fallback: { name: 'My default' } });
+ok(v.el.textContent.indexOf('My default') !== -1, 'a stale pick outranked the default that was really used');
+ok(v.el.textContent.indexOf('From a previous visit') === -1, 'a previous visit\'s template is still named on this note');
 /* no match, no default: says the note was left alone - never silent */
 v = runRender({ receipt: { reason: 'no-match', name: '', matched: [], matchedName: [] } });
 ok(v.el.textContent.indexOf('left unformatted') !== -1, 'the receipt does not say the note was left unformatted');
