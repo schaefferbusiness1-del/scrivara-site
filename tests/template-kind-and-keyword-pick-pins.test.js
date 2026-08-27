@@ -375,6 +375,108 @@ SHELLS.forEach(function (name) {
     name + ': a failed application leaves a receipt that still claims the note');
 });
 
+/* ===== 15. THE OVERLAY THAT ACTUALLY RUNS AT GENERATION TIME ============
+   The note-grounding layer in the connect bundle (ngv1) REPLACES
+   resolveActiveTemplate outright - it never calls the shell's version - and it
+   is armed unconditionally on load and again every 900ms. A declared note kind
+   that only the shell honored would therefore never fire on the live SOAP
+   lane. These pins execute the overlay's own classifier and scorer. */
+const CONNECTS = ['1p-mls-connect.js', 'mls-connect.js', 'cloned-mls-connect.js'];
+const connect = fs.readFileSync(path.join(root, CONNECTS[0]), 'utf8');
+
+/* the overlay still shadows the shell - if that ever stops being true, the
+   pins below are measuring a path that no longer runs */
+ok(connect.indexOf('window.resolveActiveTemplate = w;') !== -1,
+  'the overlay no longer replaces resolveActiveTemplate - re-check which path ships');
+
+/* The bundle carries a SECOND, degraded classifyTemplate earlier on (the one
+   the maybeApplyTemplate wrapper uses). Anchor inside the ngv1 block or the
+   slice runs from that one and lifts ten thousand unrelated lines. */
+const NGV1_AT = connect.indexOf('var API = { v: "ngv1-1.1.0" };');
+assert.ok(NGV1_AT > 0, 'the ngv1 block moved or was renamed');
+const NGV1 = connect.slice(NGV1_AT);
+const DECL_SRC = sliceBetween(NGV1, '  function declaredClass(t) {', '  /* template -> class', 'declaredClass');
+const CLASSIFY_SRC = sliceBetween(NGV1, '  function classifyTemplate(t) {', '  function kwHit(', 'classifyTemplate');
+const KWSCORE_SRC = sliceBetween(NGV1, '  function kwHit(hay, needle) {', '  /* ======', 'kwScore');
+/* the lifted classifier must be the ngv1 one, not the degraded twin */
+ok(CLASSIFY_SRC.indexOf('declaredClass(t)') !== -1, 'the lifted classifier is not the ngv1 one');
+ok(CLASSIFY_SRC.length < 2000, 'the classifier slice ran past its block (' + CLASSIFY_SRC.length + ' chars)');
+
+/* THE DOCTOR'S DECLARATION OUTRANKS THE HEURISTIC, executed through the real
+   classifier - with the shell's real _mlsTplKindOf wired in, not a stub. */
+function buildClassify(exportKindOf) {
+  return new Function('window', 'isFn', 'S', 'PROC_NAME_RE', 'PREOP_RE', 'CONSULT_RE', 'FOLLOWUP_RE', 'SOAP_TPL_RE', 'markerHits',
+    DECL_SRC + '\n' + CLASSIFY_SRC + '\nreturn classifyTemplate;')(
+    exportKindOf ? { _mlsTplKindOf: kindOf } : {},
+    function (f) { return typeof f === 'function'; },
+    function (x) { return x == null ? '' : String(x); },
+    /injection|block|epidural/i, /pre-?op/i, /consult/i, /follow-?up/i, /\bSOAP\b/i,
+    function () { return []; });
+}
+const classify = buildClassify(true);
+/* a body and name with NO procedure signal at all - the heuristic would call
+   it unknown, which is exactly what "never auto-picks" means today */
+const PLAIN = { id: 'x', name: 'My form', keywords: ['widget'], text: 'nothing clinical here' };
+eq(classify(PLAIN), 'unknown', 'the heuristic baseline changed - this pin is measuring the wrong thing');
+eq(classify(Object.assign({}, PLAIN, { kind: 'op' })), 'procedure', 'a declared op template is not classed as a procedure');
+eq(classify(Object.assign({}, PLAIN, { kind: 'soap' })), 'office', 'a declared SOAP template is not classed as office');
+eq(classify(Object.assign({}, PLAIN, { kind: 'insurance' })), 'office', 'a declared insurance template is not classed as office');
+/* the declaration BEATS a contradicting heuristic: a template whose name reads
+   as a procedure, declared SOAP, must not be treated as a procedure note */
+eq(classify({ id: 'y', name: 'Epidural injection', keywords: [], text: '', kind: 'soap' }), 'office',
+  'the name heuristic overrode the doctor\'s own declaration');
+eq(classify({ id: 'y', name: 'Epidural injection', keywords: [], text: '' }), 'procedure',
+  'an undeclared template stopped falling through to the heuristic');
+/* declaring nothing changes nothing - every existing library */
+eq(classify(PLAIN), 'unknown', 'an undeclared template stopped falling through to the heuristic');
+/* and if the shell export is missing, the overlay degrades to the heuristic
+   rather than throwing */
+eq(buildClassify(false)(Object.assign({}, PLAIN, { kind: 'op' })), 'unknown',
+  'a missing shell export made the overlay throw instead of degrading');
+
+/* ONE definition of "does this keyword hit" - the overlay must use the
+   SHELL's, or the two paths disagree about what matched. */
+const kwScore = new Function('window', 'isFn', 'S',
+  KWSCORE_SRC + '\nreturn kwScore;')(
+  { _mlsTplHit: picker._mlsTplHit },
+  function (f) { return typeof f === 'function'; },
+  function (x) { return x == null ? '' : String(x); });
+let k = kwScore('history of obesity', { name: 'zz', keywords: ['esi'] });
+eq(k.kwHits, 0, 'the overlay still matches "esi" inside "obesity"');
+k = kwScore('lumbar esi performed today', { name: 'zz', keywords: ['esi', 'lumbar'] });
+eq(k.kwHits, 2, 'the overlay stopped counting real word-boundary hits');
+eq(k.matched, ['esi', 'lumbar'], 'the overlay does not carry out WHICH keywords matched');
+/* an uppercase keyword matches here too */
+eq(kwScore('had a tfesi', { name: 'zz', keywords: ['TFESI'] }).matched, ['tfesi'],
+  'the overlay still cannot match a keyword stored in capitals');
+/* without the shell export it degrades to the shipped indexOf, never throws */
+const kwScoreBare = new Function('window', 'isFn', 'S',
+  KWSCORE_SRC + '\nreturn kwScore;')({}, function (f) { return typeof f === 'function'; },
+  function (x) { return x == null ? '' : String(x); });
+eq(kwScoreBare('lumbar esi', { name: 'zz', keywords: ['esi'] }).kwHits, 1,
+  'the overlay throws when the shell export is absent');
+
+/* the overlay publishes the SAME receipt the shell's picker does, and clears
+   a previous generation's decision before making a new one */
+ok(connect.indexOf('window.__mlsLastTemplatePick = null;') !== -1,
+  'the overlay does not clear a previous generation\'s pick receipt');
+ok(connect.indexOf('window._mlsRenderTplPickReceipt(act)') !== -1,
+  'the overlay does not name the default template it fell back to');
+ok(connect.indexOf('matched your keywords: ') !== -1,
+  'the overlay does not tell the doctor which keywords chose the template');
+/* all three connect lanes carry it - the two derived ones are generated */
+CONNECTS.forEach(function (name) {
+  const text = fs.readFileSync(path.join(root, name), 'utf8');
+  ok(text.indexOf(DECL_SRC) !== -1, name + ': the declared-kind classifier differs between the lanes');
+  ok(text.indexOf(KWSCORE_SRC) !== -1, name + ': the keyword scorer differs between the lanes');
+});
+/* the shell exports the shared predicates the overlay reaches for */
+SHELLS.forEach(function (name) {
+  const text = fs.readFileSync(path.join(root, name), 'utf8');
+  ok(text.indexOf('window._mlsTplKindOf=_mlsTplKindOf; window._mlsTplHit=_mlsTplHit;') !== -1,
+    name + ': the shared kind/hit predicates are no longer exported for the overlay');
+});
+
 /* the kind rides inside the templates JSON that already syncs - no new key */
 ok(shell.indexOf("'useTemplates','templateActive','templateAuto','intakeQuestions','templates',") !== -1,
   'the templates prefs-sync allowlist moved; a per-template kind must ride inside it');
@@ -388,4 +490,8 @@ console.log('PASS template kind + keyword pick (tplpick-1.0.0): ' + checks + ' c
   + 'all six upload permutations. No match is not a guess: the executed resolver falls to the doctor\'s default '
   + 'or to nothing, never consults the picker when auto-choose is off, and the executed receipt says which '
   + 'template won and which keywords won it - as text, never markup. Hostile template records (invalid-RegExp, '
-  + 'unbalanced-paren and "__proto__" keywords, script tags in names, eval() in bodies) stay inert DATA.');
+  + 'unbalanced-paren and "__proto__" keywords, script tags in names, eval() in bodies) stay inert DATA. '
+  + 'The note-grounding overlay that REPLACES the resolver at generation time is executed too: its classifier '
+  + 'now takes the doctor\'s declared kind over its own name/body guess (and degrades to that guess, never '
+  + 'throwing, if the shell export is absent), it scores hits through the SHELL\'s one hit predicate so the two '
+  + 'paths cannot disagree about what "matched" means, and it publishes the same receipt.');

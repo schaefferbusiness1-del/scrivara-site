@@ -24146,6 +24146,11 @@ function _mlsTplPick(list,ctx,kind){
   out.reason='matched';
   return out;
 }
+/* ONE definition of "what kind did the doctor declare" and ONE definition of
+   "does this keyword hit". The note-grounding overlay in the connect bundle
+   replaces resolveActiveTemplate outright, so it must reach THESE - a second
+   copy over there would drift from this one the first time either changed. */
+try{ window._mlsTplKindOf=_mlsTplKindOf; window._mlsTplHit=_mlsTplHit; window._mlsTplKeywords=_mlsTplKeywords; }catch(_tplExportError){}
 /* The one sentence the surface shows: which template, and why it won. */
 function _mlsTplPickSentence(pick){
   if(!pick||pick.reason!=='matched') return '';

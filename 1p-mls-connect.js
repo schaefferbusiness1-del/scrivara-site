@@ -26608,9 +26608,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (FOLLOWUP_RE.test(t)) return { cls: "follow-up", evidence: ev };
     return { cls: "office", evidence: ev };
   }
+  /* tplpick-1.0.0: THE DOCTOR'S DECLARATION OUTRANKS THIS GUESS. Everything
+     below infers a class from a template's name, keywords and body, which is
+     why the header calls unclassifiable keywordless imports out as never
+     auto-picking. Settings now lets him say what a template is FOR, and a
+     stated kind is not something to re-derive from prose:
+       op         -> procedure   (and therefore NEVER applied to an office
+                                  transcript - classAwarePick requires the
+                                  same class and gateActive refuses it)
+       soap/ins.  -> office      (the generic non-procedure class, which is
+                                  also the fallback tier for consult,
+                                  pre-op and follow-up transcripts)
+     Declaring nothing - every template in an existing library - falls
+     through to exactly the heuristic that shipped before. */
+  function declaredClass(t) {
+    var k = "";
+    try { k = isFn(window._mlsTplKindOf) ? window._mlsTplKindOf(t) : ""; } catch (e) { k = ""; }
+    if (k === "op") return "procedure";
+    if (k === "soap" || k === "insurance") return "office";
+    return "";
+  }
   /* template -> class (name + keywords + body) */
   function classifyTemplate(t) {
     if (!t) return "unknown";
+    var declared = declaredClass(t);
+    if (declared) return declared;
     var name = S(t.name), kws = (t.keywords || []).join(" ");
     var head = name + " " + kws;
     if (PROC_NAME_RE.test(name) || markerHits(S(t.text).slice(0, 2500)).length >= 3) return "procedure";
@@ -26623,14 +26645,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (/\bSUBJECTIVE\b[\s\S]*\bOBJECTIVE\b[\s\S]*\bASSESSMENT\b/i.test(body)) return "office";
     return "unknown";
   }
+  /* tplpick-1.0.0: hits are tested on a word boundary through the SHELL's own
+     _mlsTplHit, so this overlay and the shell's picker cannot disagree about
+     what "matched" means - a bare indexOf let "esi" match "obesity" and made
+     that the difference between the right template and the wrong one. The
+     shipped indexOf remains the fallback for a shell that predates the
+     export. matched[] is carried out so the doctor can be TOLD which of his
+     own keywords chose the template. */
+  function kwHit(hay, needle) {
+    try { if (isFn(window._mlsTplHit)) return window._mlsTplHit(hay, needle) === true; } catch (e) {}
+    return hay.indexOf(needle) !== -1;
+  }
   function kwScore(visitText, t) {
     var hay = S(visitText).toLowerCase();
-    var score = 0, kwHits = 0;
+    var score = 0, kwHits = 0, matched = [];
     var kws = (t && t.keywords) || [];
-    for (var i = 0; i < kws.length; i++) { var k = S(kws[i]).toLowerCase(); if (k && hay.indexOf(k) !== -1) { score += 2; kwHits++; } }
+    for (var i = 0; i < kws.length; i++) { var k = S(kws[i]).toLowerCase().trim(); if (k && kwHit(hay, k)) { score += 2; kwHits++; matched.push(k); } }
     var words = S(t && t.name).toLowerCase().split(/\s+/);
-    for (var j = 0; j < words.length; j++) { if (words[j].length > 2 && hay.indexOf(words[j]) !== -1) score += 1; }
-    return { score: score, kwHits: kwHits };
+    for (var j = 0; j < words.length; j++) { if (words[j].length > 2 && kwHit(hay, words[j])) score += 1; }
+    return { score: score, kwHits: kwHits, matched: matched };
   }
 
   /* =====================================================================
@@ -26670,10 +26703,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     if (bestSame) {
       return { tpl: bestSame, cls: tc, score: bestSameScore, kwHits: bestSameSc.kwHits,
+        matched: (bestSameSc.matched || []).slice(),
         reason: "class \u201C" + tc.cls + "\u201D match, score " + bestSameScore + (tc.cls === "procedure" ? " (procedure evidence: " + tc.evidence.join(", ") + ")" : "") };
     }
     if (tc.cls !== "procedure" && bestFb) {
-      return { tpl: bestFb, cls: tc, score: bestFbScore, kwHits: 0,
+      return { tpl: bestFb, cls: tc, score: bestFbScore, kwHits: 0, matched: [],
         reason: "no dedicated \u201C" + tc.cls + "\u201D template matched \u2014 using the generic office format \u201C" + S(bestFb.name) + "\u201D" };
     }
     return { tpl: null, cls: tc,
@@ -26702,10 +26736,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var useOn = isFn(window.useTemplatesOn) ? window.useTemplatesOn() : false;
           if (!useOn) return null;                            /* mirror original OFF path */
           var autoOn = isFn(window.templateAutoOn) ? window.templateAutoOn() : false;
+          /* tplpick-1.0.0: every resolve is a fresh decision - an earlier
+             generation's receipt must never be read as this one's. */
+          try { window.__mlsLastTemplatePick = null; } catch (eClear) {}
           if (autoOn) {
             var pick = classAwarePick(S(visitText));
             if (pick.tpl) {
-              toast("Matched " + pick.cls.cls + " template: " + S(pick.tpl.name), "");
+              /* SAY WHICH TEMPLATE AND WHY. A silent pick is how the wrong
+                 template ships; the doctor's own keywords are the reason he
+                 can check. Same receipt shape the shell's picker publishes,
+                 so #tplPickReceipt renders identically on both paths. */
+              var why = (pick.matched || []).length ? (" - matched your keywords: " + pick.matched.join(", ")) : "";
+              try {
+                window.__mlsLastTemplatePick = { name: S(pick.tpl.name), id: S(pick.tpl.id),
+                  kind: (isFn(window._mlsTplKindOf) ? window._mlsTplKindOf(pick.tpl) : ""),
+                  score: pick.score || 0, matched: (pick.matched || []).slice(), matchedName: [],
+                  considered: 0, noteKind: S(pick.cls && pick.cls.cls), reason: "matched", at: Date.now() };
+              } catch (eReceipt) {}
+              try { if (isFn(window._mlsRenderTplPickReceipt)) window._mlsRenderTplPickReceipt(); } catch (eRender) {}
+              toast("Matched " + pick.cls.cls + " template: " + S(pick.tpl.name) + why, "");
               logEvent("class-pick", pick.tpl.name, true, pick.reason);
               return pick.tpl;
             }
@@ -26714,9 +26763,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           var act = null;
           try { act = isFn(window.getTemplateById) && isFn(window.getActiveTemplateId) ? window.getTemplateById(window.getActiveTemplateId()) : null; } catch (e2) {}
-          if (!act) return null;
+          if (!act) { try { if (isFn(window._mlsRenderTplPickReceipt)) window._mlsRenderTplPickReceipt(); } catch (eR0) {} return null; }
           var d = gateActive(S(visitText), act);
-          if (d.allow) return act;
+          if (d.allow) {
+            /* no keyword match: the doctor's own default, named as such */
+            try { if (isFn(window._mlsRenderTplPickReceipt)) window._mlsRenderTplPickReceipt(act); } catch (eR1) {}
+            return act;
+          }
+          /* the class gate refused the default: nothing shaped this note, so
+             the receipt must not keep naming a template. */
+          try { if (isFn(window._mlsRenderTplPickReceipt)) window._mlsRenderTplPickReceipt(); } catch (eR2) {}
           warnOnce("Template \u201C" + S(act.name) + "\u201D NOT applied \u2014 " + d.reason + ". Note kept exactly as generated.");
           logEvent("gate-block", act.name, true, d.reason);
           return null;
