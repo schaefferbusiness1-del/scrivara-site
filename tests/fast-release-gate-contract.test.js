@@ -26,7 +26,7 @@ function readCanonicalGateCount() {
 
 eq(gate.normalizePath('1p\\index.html'), '1p/index.html', 'Windows paths normalize to repository paths');
 ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.79.zip'), 'stale packages are never silently allowed as untracked');
-ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.81.zip'), 'current packages are never silently allowed as untracked');
+ok(!gate.ALLOWED_UNTRACKED.has('MLS_Assist_v3.0.82.zip'), 'current packages are never silently allowed as untracked');
 
 const provenance = gate.classifyChangedFiles([
   'feat_athena_autopull.js',

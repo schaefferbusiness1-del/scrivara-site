@@ -1,5 +1,5 @@
 {
-  "version": "3.0.81",
+  "version": "3.0.82",
   "minChrome": 116,
-  "notes": "v3.0.81 - Supervised Athena draft placement is hardened: HPI, ROS, Physical Exam, Assessment, Plan, full encounter notes, and Procedure Documentation match only reviewed exact destinations; look-alike labels and duplicate or nonempty targets fail closed. Read-only probes inspect the exact signed-in Athena tab even when multiple Athena tabs are open, then restore focus once. Editor writes are re-resolved and read twice to catch delayed Athena resets, and failed or uncertain writes return a copyable patient-free diagnostic receipt. Nothing is saved or signed automatically. Everything from v3.0.80 remains. Requires Chrome 116+."
+  "notes": "v3.0.82 - One-use Athena action tokens are session-backed and survive MV3 service-worker restarts: each token binds the exact patient, encounter, and field set it was minted for, is consumed exactly once, and settles to a PHI-free terminal receipt. Everything from v3.0.81 remains. Requires Chrome 116+."
 }
