@@ -21172,6 +21172,28 @@ function _profUnpulledEsc(s){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
 }
+function _mlsAnchorProfNotice(card,el){
+  /* suspectvis-1.0.0: BOTH profile notices used to anchor themselves with
+     card.querySelector(".prof-grid") and insert before it. That is correct only
+     until pf2 adopts .prof-grid into #pf2RecordsBody - after that the grid's
+     PARENT is a collapsible fold body, so the notice was created INSIDE a fold
+     that ships closed. Combined with the card shipping collapsed, the
+     cross-patient-contamination alert was display:none in the state the doctor
+     normally sees. Reproducible by ordinary navigation: open a warm chart, then
+     a suspect one.
+     A notice must be a DIRECT CHILD of #profileCard (that is what the collapse
+     allowlist can exempt) and must sit at the TOP. Idempotent, and it re-homes an
+     element that was created in the old position. */
+  try{
+    if(!card||!el) return;
+    if(el.parentNode===card&&el.previousSibling===null) return;
+    var before=null;
+    try{ before=card.querySelector?card.querySelector("#pf2Quick"):null; }catch(e1){ before=null; }
+    if(!before){ try{ var g=card.querySelector(".prof-grid"); if(g&&g.parentNode===card) before=g; }catch(e2){} }
+    if(!before){ try{ var h=card.querySelector("h2"); if(h&&h.parentNode===card) before=h.nextSibling; }catch(e3){} }
+    if(before&&before.parentNode===card) card.insertBefore(el,before); else card.appendChild(el);
+  }catch(e){}
+}
 function _renderProfUnpulledNotice(p){
   try{
     var card=document.getElementById('profileCard'); if(!card) return;
@@ -21189,9 +21211,9 @@ function _renderProfUnpulledNotice(p){
       el=document.createElement('div'); el.id='profUnpulled';
       el.setAttribute('role','status');
       el.style.cssText='background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:10px 13px;margin:10px 0 2px;font-size:13px;line-height:1.5;color:#7a5a16';
-      var grid=null; try{ grid=card.querySelector?card.querySelector('.prof-grid'):null; }catch(eq){ grid=null; }
-      if(grid&&grid.parentNode) grid.parentNode.insertBefore(el,grid); else card.appendChild(el);
+      _mlsAnchorProfNotice(card,el);
     }
+    _mlsAnchorProfNotice(card,el);
     if(el.innerHTML!==html) el.innerHTML=html;
     var btn=document.getElementById('profUnpulledPull');
     if(btn&&!btn.__mlsUnpulledWired){
@@ -21221,9 +21243,9 @@ function _renderProfSuspectNotice(p){
       el=document.createElement('div'); el.id='profImportSuspect';
       el.setAttribute('role','alert');
       el.style.cssText='background:#fdecec;border:1px solid #efb9b9;border-radius:10px;padding:10px 13px;margin:10px 0 2px;font-size:13px;line-height:1.5;color:#7a1d1d';
-      var grid=null; try{ grid=card.querySelector?card.querySelector('.prof-grid'):null; }catch(eq){ grid=null; }
-      if(grid&&grid.parentNode) grid.parentNode.insertBefore(el,grid); else card.appendChild(el);
+      _mlsAnchorProfNotice(card,el);
     }
+    _mlsAnchorProfNotice(card,el);
     el.textContent='⚠ Verify against athenaOne before relying on this chart: the problems, medications, allergies and DOB below were imported during the 2026-06-24 to 06-29 pull window, which mixed data between patients. Re-pull this chart from Athena to replace them with verified data.';
   }catch(e){}
 }
@@ -41823,7 +41845,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1105';
+  window.__MLS_AV='b1106';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

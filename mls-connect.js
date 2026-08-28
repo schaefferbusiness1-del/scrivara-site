@@ -53091,7 +53091,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* pullone-1.0.0: the strip's ONE pull control must survive the collapse -
        the strip is the surface the doctor reads (the card ships COLLAPSED), so
        hiding the control that fills it would put the only pull behind Expand. */
-    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled):not(#pvrPullOne){display:none!important;}',
+    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled):not(#pvrPullOne):not(#profImportSuspect){display:none!important;}',
     '#profileCard.pf2-collapsed #pf2SumExtra > *{display:none!important;}',
     '.pf2-sec.open .pf2-b{display:block;}',
     '.pf2-b > *{margin-top:8px !important;}',

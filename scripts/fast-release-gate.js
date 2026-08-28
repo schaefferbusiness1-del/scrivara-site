@@ -154,6 +154,15 @@ const INVARIANTS = Object.freeze([
      read is assembled in the shell, mls-connect AND the feat_ copilot files,
      so no single changed-area net covers them. Measured 85-106ms each, 0.5s
      for all five. */
+  /* suspectvis-1.0.0 (2026-08-28): a PATIENT-SAFETY contract. The cross-patient
+     contamination alert - the only surface warning that a chart's DOB, allergies,
+     meds and problems may belong to someone else - was display:none in the card's
+     DEFAULT state, from two independent causes at once (it anchored itself inside
+     a fold that ships closed, and it was missing from the collapse allowlist).
+     ~260 records carry that flag. An invariant, not a focused check, because the
+     two halves live in different files and in different lanes: break either one
+     and the alert silently disappears again. 343ms. */
+  { label: 'suspect-notice-visible', args: ['tests/suspect-notice-cannot-be-hidden.test.js'], require: /PASS suspect-notice-cannot-be-hidden:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },
