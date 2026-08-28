@@ -32,11 +32,26 @@ const source = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js
    closing brace, so inserting anything after it is harmless. */
 const start = source.indexOf('  function saveVerifiedVisits(target, r) {');
 assert.ok(start >= 0, 'saveVerifiedVisits present');
+/* slicefn-1.0.1 (2026-08-28): QUOTE-AWARE. A counter that treats every brace
+   character as structure miscounts one inside a string or template literal -
+   an unbalanced `{` in a message, a `${...}` in a template - and cuts in the
+   wrong place. It fails loudly (the slice will not parse) rather than silently,
+   but loudly-wrong is still wrong, and tests/1p-easy-generate-sparse-runtime
+   already solves this the right way. Same approach here: skip anything inside
+   a quote, honouring escapes. */
 const end = (() => {
-  let i = source.indexOf('{', start), depth = 0;
+  let i = source.indexOf('{', start), depth = 0, quote = '', escaped = false;
   for (; i < source.length; i++) {
-    if (source[i] === '{') depth++;
-    else if (source[i] === '}') { depth--; if (depth === 0) return i + 1; }
+    const ch = source[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return i + 1; }
   }
   return -1;
 })();

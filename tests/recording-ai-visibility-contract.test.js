@@ -123,8 +123,12 @@ async function __checkBoundedGeneration() {
     assert(r.error, 'a generation that never settled hung forever - nothing ended it');
     assert.strictEqual(r.run.abortReason, 'generation-timeout',
       'the timeout did not stamp a reason, so the surface cannot tell the doctor WHY it stopped');
+    /* This proves the helper CALLS abort with the reason. Whether the browser
+       then tears down the in-flight fetch is the platform's job and cannot be
+       observed from here - the point is that the old race never even asked. */
     assert.strictEqual(r.aborted, 'generation-timeout',
-      'the timeout rejected without ABORTING the request - the old race did exactly this, leaving the call running after the doctor was told it had stopped');
+      'the timeout rejected without calling abort() on the run controller - the old race did exactly this, ' +
+      'leaving the request with nothing to cancel it after the doctor was told it had stopped');
     assert.strictEqual(r.timers.cleared, 1, 'the timeout path did not clear its own timer');
   }
 
@@ -166,5 +170,5 @@ assert(app.includes('Note generation timed out after 90 seconds'), 'timeout erro
 }
 
 __checkBoundedGeneration().then(() => {
-  console.log('PASS recording/AI visibility: honest resume state, stateful assistant mic on the real panel, and bounded generation proven by EXECUTING the shipped waiter - a hung generation ends, stamps generation-timeout, ABORTS the request rather than merely giving up on it, clears its timer on every path, and tells the doctor the transcript is safe');
+  console.log('PASS recording/AI visibility: honest resume state, stateful assistant mic on the real panel, and bounded generation proven by EXECUTING the shipped waiter - a hung generation ends, stamps generation-timeout, CALLS controller.abort() rather than merely giving up on it (whether the browser then cancels the in-flight fetch is an integration concern this unit cannot see), clears its timer on every path, and tells the doctor the transcript is safe');
 }, (error) => { console.error(error); process.exit(1); });

@@ -14,11 +14,22 @@ const source = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'),
    own closing brace, so a future neighbour cannot break it again. */
 const start = source.indexOf('  function saveVerifiedVisits(target, r) {');
 assert(start >= 0, 'saveVerifiedVisits source was not found');
+/* slicefn-1.0.1 (2026-08-28): QUOTE-AWARE, for the same reason as its twin in
+   tests/scoped-save-additive - a brace inside a string or template literal is
+   not structure, and counting it cuts in the wrong place. */
 const end = (() => {
-  let i = source.indexOf('{', start), depth = 0;
+  let i = source.indexOf('{', start), depth = 0, quote = '', escaped = false;
   for (; i < source.length; i++) {
-    if (source[i] === '{') depth++;
-    else if (source[i] === '}') { depth--; if (depth === 0) return i + 1; }
+    const ch = source[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return i + 1; }
   }
   return -1;
 })();

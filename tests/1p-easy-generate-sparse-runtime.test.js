@@ -125,9 +125,11 @@ const captureBusySource = between(source, '  function directCaptureStatus()', '\
 assert(/function captureBusy\(\)/.test(captureBusySource),
   'captureBusy is no longer adjacent to directCaptureStatus - re-derive this lift rather than stubbing the recording guard away');
 let lockDirectStatus = '';
+let lockRecording = false;
+let lockCalReceipt = { ok: true, bound: true, patientId: 'pt-synthetic' };
 const lockSandbox = {
   S: { appt: null, locked: null, editing: false, genClickedAt: 0, signedAt: 0, lastWarn: '', phase: 'idle' },
-  isRecording: () => false,
+  isRecording: () => lockRecording,
   window: {
     get __mlsDirectPhoneCapture() { return { state: () => ({ status: lockDirectStatus }) }; },
     /* The engine gained a STRUCTURED activation contract after this suite was
@@ -139,7 +141,7 @@ const lockSandbox = {
        subject once that guard landed. Model a clean bound activation, which is
        the state this test's question ("does a throwing engine click leave
        fabricated generation state behind?") presupposes. */
-    calStartVisit: () => ({ ok: true, bound: true, patientId: 'pt-synthetic' })
+    calStartVisit: () => lockCalReceipt
   },
   isFn: (f) => typeof f === 'function',
   safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } },
@@ -171,10 +173,64 @@ for (const status of ['starting', 'recording', 'stopping']) {
     'the lifted recording guard does not treat a direct-phone capture in "' + status + '" as busy - that is the branch this lift exists to cover');
 }
 lockDirectStatus = '';
+/* liftbusy-1.0.1 (2026-08-28): the local reviewer pointed out that pinning
+   isRecording to false left the OTHER disjunct unexercised - captureBusy could
+   have been refactored to `return directPhoneBusy()`, dropping isRecording
+   entirely, and every assertion above would still have passed. Cover it. */
+lockRecording = true;
+assert.strictEqual(lockSandbox.captureBusy(), true,
+  'the lifted recording guard ignores isRecording() - desktop recording would no longer count as busy, ' +
+  'and the mid-recording patient-switch block would open');
+lockDirectStatus = 'recording';
+assert.strictEqual(lockSandbox.captureBusy(), true,
+  'the lifted recording guard fails with BOTH a desktop recording and a direct-phone capture in flight');
+lockRecording = false;
+lockDirectStatus = '';
 
 assert.throws(() => lockSandbox.runLockAndStart({ id: 'synthetic-appointment', name: 'Synthetic Person' }, { generate: true }), /synthetic engine throw/);
 assert.strictEqual(lockSandbox.S.genClickedAt, 0, 'lockAndStart fabricated an in-flight generation without an engine event');
 assert.strictEqual(lockSandbox.S.phase, 'idle', 'lockAndStart fabricated a generation phase without an engine event');
+
+/* liftbusy-1.0.1 (2026-08-28): the REFUSAL branch of the same activation
+   contract, which the local reviewer noted had no coverage anywhere - the
+   stub above always answers {ok:true}, so nothing exercised what happens when
+   activation says no. That branch is the duplicate-patient guard: a legacy
+   truthy/undefined return, or an explicit {ok:false}, must NOT let a
+   same-demographics prior encounter be reused. Cheap to cover, and this is the
+   defect class that has bitten this project before. */
+const lockRendersBeforeRefusals = lockRenders;
+for (const [label, receipt] of [
+  ['an explicit refusal', { ok: false, bound: false, reason: 'patient-identity-conflict' }],
+  ['a legacy truthy return', true],
+  ['a legacy undefined return', undefined],
+  ['an object with no ok at all', { bound: true, patientId: 'pt-synthetic' }]
+]) {
+  lockSandbox.S.appt = null; lockSandbox.S.locked = null;
+  lockSandbox.S.genClickedAt = 0; lockSandbox.S.phase = 'idle'; lockSandbox.S.lastWarn = '';
+  lockCalReceipt = receipt;
+  let threw = null, result;
+  try { result = lockSandbox.runLockAndStart({ id: 'synthetic-appointment', name: 'Synthetic Person' }, { generate: true }); }
+  catch (e) { threw = e; }
+  assert.strictEqual(threw, null,
+    'with ' + label + ' from activation, lockAndStart reached the generate click and threw - the row was opened anyway');
+  assert.strictEqual(result, false,
+    'with ' + label + ' from activation, lockAndStart reported success');
+  assert.strictEqual(lockSandbox.S.appt, null,
+    'with ' + label + ' from activation, the refused row still became the selected appointment');
+  assert.strictEqual(lockSandbox.S.genClickedAt, 0,
+    'with ' + label + ' from activation, a generation was stamped for a visit that never opened');
+  assert.ok(lockSandbox.S.lastWarn,
+    'with ' + label + ' from activation, the refusal was SILENT - the doctor is told nothing and sees nothing start');
+}
+/* Restore BOTH the receipt and the engine state this block borrowed. A later
+   assertion in this file reads S.lastWarn and would otherwise see the refusal
+   text left behind by the loop above and report it as a fabricated diagnosis. */
+lockCalReceipt = { ok: true, bound: true, patientId: 'pt-synthetic' };
+lockSandbox.S.appt = null; lockSandbox.S.locked = null; lockSandbox.S.editing = false;
+lockSandbox.S.genClickedAt = 0; lockSandbox.S.signedAt = 0;
+lockSandbox.S.phase = 'idle'; lockSandbox.S.lastWarn = '';
+lockSandbox.S.activationRefusalWarn = '';
+lockRenders = lockRendersBeforeRefusals;
 assert.strictEqual(lockSandbox.S.lastWarn, '', 'lockAndStart fabricated a connection/refusal diagnosis');
 assert.strictEqual(lockRenders, 0, 'throwing engine path rendered fabricated lifecycle state');
 

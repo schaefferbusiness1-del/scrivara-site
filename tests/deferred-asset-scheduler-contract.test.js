@@ -44,7 +44,15 @@ assert(source.includes('if(priorityInFlight) return -1;') &&
   source.includes("scheduling.isInputPending({includeContinuous:true})") &&
   source.includes('INITIAL_QUIET_MS=2500, FIRST_USE_MS=30000, FIRST_USE_GAP=250, STEADY_GAP=80'),
   'a deadline or forced gate release can bypass fresh interaction/in-flight priority ownership');
-assert(source.includes("var A='feat_mls_calm_shell.js',V='p1-calm-dock-2.0.0',CALM_V='calm-1.0.0'") &&
+/* dockver-1.0.0 (2026-08-28): advanced p1-calm-dock-2.0.0 -> 2.0.1 to follow
+   the source. The warm-tab controller was bumped in e84a6e65 (2026-08-26,
+   "Keep phone recording clear on dock failure"), and its OWN suite,
+   tests/1p-calm-dock-owner-runtime, was updated with it and pins 2.0.1 in two
+   places. Only this file was left behind, so it has been red on main for a
+   version bump that was correctly propagated everywhere it mattered. The two
+   suites now agree, which is the point of pinning it in both: a bump has to be
+   deliberate in both places or one of them fails. */
+assert(source.includes("var A='feat_mls_calm_shell.js',V='p1-calm-dock-2.0.1',CALM_V='calm-1.0.0'") &&
   source.includes("node.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now())") &&
   source.includes("priority:0,owner:'__mlsCalmShell'") &&
   source.includes("barrier:true,fallback:'classic',asset:'feat_mls_calm_shell.js'") &&
