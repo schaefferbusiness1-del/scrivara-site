@@ -743,6 +743,11 @@ const tests = [
   /* The chart rendered the same visits twice. Folded, not deleted - the sync
      module appends visits that exist only as text inside p.summary. */
   'visit-timeline-not-shown-twice.test.js',
+  /* A built widget died live with "MLS.openChart is not a function" - the model
+     is never handed an API list and openChart is the obvious name for an Open
+     Chart button. Also pins that the AI Studio upgrade loads immediately when
+     Studio is on screen instead of waiting up to 4s for browser idle. */
+  'studio-widget-bridge-contract.test.js',
   '1p-easy-generate-sparse-runtime.test.js',
   /* Browser-level Generate-one-note facade: click the real top control and
      prove one canonical dispatch, lifecycle reasons, bounded no-op failure,

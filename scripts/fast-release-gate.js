@@ -68,7 +68,8 @@ const ROOT = path.resolve(__dirname, '..');
    + patient-demographics-are-editable = 892
    + prep-summary-is-folded-not-lost = 893
    + visit-timeline-not-shown-twice = 894 */
-const FULL_GATE_TESTS = 894;
+/*   + studio-widget-bridge-contract = 895 */
+const FULL_GATE_TESTS = 895;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
@@ -224,6 +225,12 @@ const INVARIANTS = Object.freeze([
      Pinned in both directions: the fold must stay closed, and BOTH container ids
      must survive or the renderer and the shared sync module break. 112ms. */
   { label: 'visit-timeline-once', args: ['tests/visit-timeline-not-shown-twice.test.js'], require: /PASS visit-timeline-not-shown-twice:/ },
+  /* wopen-1.0.0 / studiofast-1.0.0 (2026-08-28): two AI Studio defects the owner
+     hit live - a built widget dying on MLS.openChart, and the Studio showing its
+     lesser form for seconds before the upgrade arrived. The bridge is built as a
+     STRING and injected into a sandboxed iframe, so the suite EXECUTES it: a
+     method spelled right in source but throwing at runtime is the exact failure. */
+  { label: 'studio-widget-bridge', args: ['tests/studio-widget-bridge-contract.test.js'], require: /PASS studio-widget-bridge-contract:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },

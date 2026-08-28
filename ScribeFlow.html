@@ -18679,7 +18679,15 @@ function _mlsWidgetBridgeJS(nonce){
     +'function rpc(m,a){return new Promise(function(res,rej){var id=(++_s)+"_"+Date.now();_w[id]={res:res,rej:rej};parent.postMessage({__mlsNonce:_n,__mlsReq:{id:id,method:m,args:a}},"*");setTimeout(function(){if(_w[id]){delete _w[id];rej(new Error("timed out"));}},60000);});}'
     +'function act(t,o){try{parent.postMessage({__mlsNonce:_n,__mlsWidgetAction:Object.assign({type:t},o||{})},"*");}catch(_){}}'
     +'return {data:window.MLS_DATA,'
+    /* wopen-1.0.0 (2026-08-28): a built widget failed live with "MLS.openChart is
+       not a function". The model is never handed an API list - it infers method
+       names from the request - and openChart is the obvious name for "open the
+       chart", which is exactly the button a patient-grid widget wants. Aliased
+       rather than renamed: openPatient is already used by shipped starter
+       widgets and by saved creations in My creations, so it must keep working.
+       Both names route to the SAME app-side action, so there is one behaviour. */
     +'openPatient:function(q){act("openPatient",{query:String(q||"")});},'
+    +'openChart:function(q){act("openPatient",{query:String(q||"")});},'
     +'startVisit:function(q){act("startVisit",{query:String(q||"")});},'
     +'navigate:function(v){act("navigate",{view:String(v||"")});},'
     +'toast:function(m){act("toast",{msg:String(m||"")});},'
@@ -42094,7 +42102,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1119';
+  window.__MLS_AV='b1120';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
