@@ -183,30 +183,75 @@ const unifiedRender = between(writeflow, 'function renderUnifiedConfirmation(sta
    the executor. */
 assert(/go\.addEventListener\('click', function \(\) \{ runUnifiedPrimarySend\(state, go\); \}\)/.test(writeflow),
   'unified billing execution is not exclusively wired to the explicit confirm click');
+/* billingwire-1.0.1 (2026-08-28): my first replacement was WEAKER than the
+   literal it replaced, and the local adversarial review said so with a working
+   bypass. Recording the critique because it was right on every count:
+     - I enumerated callers of runUnifiedPrimarySend but NOT of
+       runUnifiedBatchSend, which also reaches the executor. A plain
+       `document.addEventListener('keydown', ... runUnifiedBatchSend(...))`
+       passed all four of my checks: not a timer, no forbidden token on the
+       line, and the executor's own call-site count is unchanged because that
+       call lives INSIDE runUnifiedBatchSend.
+     - my timer regex required the `function` keyword, so
+       `setTimeout(() => runUnifiedPrimarySend(...), 0)` did not match; nor did
+       `var cb = function(){...}; setTimeout(cb, 0)`, which splits the timer and
+       the target across two lines.
+     - line-based token matching is defeatable by string concatenation or a
+       computed key.
+   The old literal was a CLOSED guarantee - one regex, one scope, one exact
+   call. An open ban-list can never be that. So this is closed too, and over
+   three functions instead of one: every call site of the send entry, the batch
+   driver and the executor is enumerated, and the exact set must match. A new
+   caller anywhere - listener, promise chain, microtask, timer, arrow or not -
+   changes the set and fails, without needing to anticipate its shape. */
 {
-  const refs = [...writeflow.matchAll(/^.*runUnifiedPrimarySend.*$/gm)].map((m) => m[0]);
-  for (const line of refs) {
-    const isDefinition = /function runUnifiedPrimarySend\(state, btn\) \{/.test(line);
-    const isComment = /^\s*(?:\/\*|\*|\/\/)/.test(line) || /runUnifiedPrimarySend\)\./.test(line) || /runUnifiedPrimarySend\)\s*$/.test(line);
-    const isClickWiring = /go\.addEventListener\('click'/.test(line);
-    const isTestSeam = /press: function \(btn\) \{ return runUnifiedPrimarySend\(unifiedAthenaState, btn \|\| null\); \}/.test(line);
-    assert(isDefinition || isComment || isClickWiring || isTestSeam,
-      'a NEW caller of the billing send entry appeared that is not the confirm click or the read-only ' +
-      'test seam - billing could execute without an explicit press: ' + line.trim().slice(0, 140));
+  /* Comments are stripped first, so prose naming a function is not read as a
+     call. If stripping ever goes wrong the counts move and this fails loudly,
+     which is the safe direction. */
+  const code = writeflow
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+
+  /* A module with no dynamic invocation cannot be reached by a computed key or
+     a concatenated name, which is what closes the string-trick bypasses. */
+  for (const [label, re] of [
+    ['eval(', /\beval\s*\(/],
+    ['new Function(', /new Function\s*\(/],
+    ['window[...]', /window\s*\[/],
+    ['a computed call obj[k](', /\w\s*\[\s*[A-Za-z_$][\w$]*\s*\]\s*\(/]
+  ]) {
+    assert(!re.test(code),
+      'feat_mls_writeflow.js gained a DYNAMIC invocation surface (' + label + '). The billing ' +
+      'call-site enumeration below is only closed while every call is written literally - a ' +
+      'computed or concatenated name would reach the executor invisibly.');
   }
-  /* Neither the entry nor the executor may be reached from a timer. */
-  for (const name of ['runUnifiedPrimarySend', 'executeUnifiedSelection', 'runUnifiedBatchSend']) {
-    const timed = new RegExp('(?:setTimeout|setInterval|requestIdleCallback|requestAnimationFrame)\\s*\\(\\s*(?:function[^)]*\\)\\s*\\{[^}]*)?' + name + '\\s*\\(');
-    assert(!timed.test(writeflow),
-      name + ' is reachable from a timer - billing must never execute on a schedule, only on a press');
+
+  const EXPECTED = {
+    runUnifiedPrimarySend: [
+      "go.addEventListener('click', function () { runUnifiedPrimarySend(state, go); });",
+      'press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); }'
+    ],
+    runUnifiedBatchSend: ['runUnifiedBatchSend(state, btn);'],
+    executeUnifiedSelection: ['executeUnifiedSelection(state); return;', 'executeUnifiedSelection(state);']
+  };
+  for (const name of Object.keys(EXPECTED)) {
+    const re = new RegExp('(?<!function )\\b' + name + '\\s*\\(', 'g');
+    const sites = [...code.matchAll(re)].map((m) => {
+      const tail = code.slice(m.index, m.index + 90);
+      const head = code.slice(Math.max(0, m.index - 90), m.index);
+      return { head: head.replace(/\s+/g, ' '), tail: tail.replace(/\s+/g, ' ') };
+    });
+    assert.strictEqual(sites.length, EXPECTED[name].length,
+      name + ' has ' + sites.length + ' call sites, expected ' + EXPECTED[name].length +
+      '. A NEW caller can execute billing without an explicit press. Audit it, then move this pin ' +
+      'deliberately:\n  ' + sites.map((s) => (s.head + '»' + s.tail).slice(-150)).join('\n  '));
+    for (const s of sites) {
+      const whole = (s.head + s.tail);
+      assert(EXPECTED[name].some((allowed) => whole.indexOf(allowed) >= 0),
+        'a ' + name + ' call site is not one of the sanctioned forms - billing may be reachable from ' +
+        'a path that is not the confirm press: ' + whole.slice(-150));
+    }
   }
-  /* And the executor itself is still only entered from those two. */
-  const execRefs = [...writeflow.matchAll(/^.*executeUnifiedSelection\(.*$/gm)]
-    .map((m) => m[0])
-    .filter((l) => !/function executeUnifiedSelection\(state\) \{/.test(l) && !/^\s*(?:\/\*|\*|\/\/)/.test(l));
-  assert(execRefs.length === 2,
-    'the billing executor has ' + execRefs.length + ' live call sites, expected 2 (single-row press, batch step) - ' +
-    'audit the new one before moving this pin:\n  ' + execRefs.map((l) => l.trim().slice(0, 110)).join('\n  '));
 }
 
 const identitySource = between(app, 'function _athenaNormIdentity(v)', 'function _athenaResetSuperbill(hide)');
