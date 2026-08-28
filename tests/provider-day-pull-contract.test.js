@@ -589,7 +589,24 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
 
   vm.runInNewContext(siSource, rt, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 
-  const countVisitReads = () => posted.filter(m => m.type === 'mlsAppReadAllVisits').length;
+  /* dfcount-1.0.0 (2026-08-28): count the HISTORICAL walk only.
+     This counted the bare verb, and every assertion below reads "must not read
+     Athena HISTORICAL visit bodies" - but dfc-1.1.0 made the MANDATORY same-day
+     encounter read ride the very same bridge lane:
+       historical walk : initiator 'schedule-batch',           no onlyDate
+       same-day read   : initiator 'schedule-batch-same-day',  onlyDate: <day>
+     Once the two share a verb, counting the verb can no longer say what these
+     messages claim - a Full Notes OFF pull legitimately performs exactly one
+     scoped same-day read per row and the count went 1 -> 2, so this suite has
+     been RED on main reporting a historical read that never happened.
+     I nearly reported that as a live defect. The engine is correct: it scopes
+     the read by onlyDate and refuses a reader that answers unscoped
+     ("scoped-read-unsupported-by-reader"). The COUNTER was wrong.
+     Excluding on BOTH markers, so a future same-day call that forgets its scope
+     still counts as historical and still trips these assertions. */
+  const countVisitReads = () => posted.filter(m => m.type === 'mlsAppReadAllVisits'
+    && String(m.initiator || '') !== 'schedule-batch-same-day'
+    && !m.onlyDate).length;
 
   /* ============ 1. Full visit notes ON = the mandatory floor + every
      historical body. Unchanged by dayfacts-1.0.0 except that the receipt now

@@ -211,7 +211,18 @@ context.postMessage = msg => {
     return;
   }
   if (!msg || msg.type !== 'mlsAppReadAllVisits') return;
-  allVisitsRequests++;
+  /* dfcount-1.0.0 (2026-08-28): count the HISTORICAL walk only. dfc-1.1.0 made
+     the MANDATORY same-day encounter read ride this same bridge verb -
+       historical : initiator 'schedule-batch',          no onlyDate
+       same-day   : initiator 'schedule-batch-same-day', onlyDate: <day>
+     so a bare verb count can no longer say what the assertion below claims
+     ("day-facts asked the extension for HISTORICAL visit bodies"). A Full Notes
+     OFF pull legitimately performs one scoped same-day read per row, which is
+     why this has been red on main. Both markers are checked, so a same-day call
+     that ever forgets its scope is still counted as historical and still trips
+     the assertion. The request is still SERVED below either way - only the
+     historical tally is guarded. */
+  if (!(String(msg.initiator || '') === 'schedule-batch-same-day' || msg.onlyDate)) allVisitsRequests++;
   queueMicrotask(() => {
     const target = patients.find(p => (msg.hint.athenaId && p.mrn === msg.hint.athenaId) || (p.name === msg.hint.name && p.dob === msg.hint.dob));
     assert(target, 'history request must carry Athena MRN or name+DOB, never rely on a local patient ID');
