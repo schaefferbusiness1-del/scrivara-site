@@ -14535,7 +14535,16 @@ async function loadTeamPatients(){
     if(!pageResult.ok){ throw new Error('Request failed ('+pageResult.status+').'); }
     const rows=pageResult.rows;
     // keep ALL rows (own + team) and tag each with a stable _idx
-    _teamRows=rows.map((row,i)=>Object.assign({_idx:i},row));
+    /* ptshape-1.0.1: this is the SECOND door for server patient rows, and it
+       was the one without a lock. The loader above normalises chart fields
+       before adopting a row; this one kept row.data verbatim, so the array
+       shape that POST /api/assist/extract stores (problems/meds/allergies as
+       arrays) reached teamRoField and rendered as "a,b,c" on one line instead
+       of one item per line. It never THREW here only because teamRoField
+       wraps in String(), which is why it outlived the crash fix. Normalising
+       at both doors also means no future reader of _teamRows can meet an
+       array. The door is a no-op on records that are already strings. */
+    _teamRows=rows.map((row,i)=>{ if(row&&row.data) _mlsNormalizePatientChartFields(row.data); return Object.assign({_idx:i},row); });
     // optional: a roster endpoint so doctors with no patients still show up.
     // Degrades silently if the backend doesn't expose it (404 / error).
     let extraDoctors=[];

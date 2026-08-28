@@ -60,6 +60,18 @@ for (const shell of SHELLS) {
   ok(/if\(!row\.data \|\| !row\.external_id\) continue;\s*\n\s*_mlsNormalizePatientChartFields\(row\.data\);/.test(src),
     shell + ': server rows are adopted WITHOUT passing through the chart-field door');
 
+  /* ptshape-1.0.1: there are TWO doors, and only one was locked. The team list
+     loader takes the SAME /api/patients rows - "keep ALL rows (own + team)" -
+     and kept row.data verbatim, so an array-shaped chart field reached
+     teamRoField and rendered as "a,b,c" on one line. It never threw, because
+     that reader wraps in String(); a silent wrong-shape render is exactly the
+     kind of thing that outlives the crash it shares a cause with.
+     Pinned as WIRING, not as a call count, so moving the loop is fine and
+     dropping the door is not. */
+  ok(/_teamRows=rows\.map\(\(row,i\)=>\{ if\(row&&row\.data\) _mlsNormalizePatientChartFields\(row\.data\); return Object\.assign\(\{_idx:i\},row\); \}\);/.test(src),
+    shell + ': the team list adopts server rows WITHOUT the chart-field door - an array-shaped ' +
+    'problems/meds/allergies would render as "a,b,c" instead of one per line');
+
   const api = new Function(
     lift(src, '_mlsGenerationFieldText') + '\n' + lift(src, '_mlsNormalizePatientChartFields') +
     '\nreturn { text: _mlsGenerationFieldText, norm: _mlsNormalizePatientChartFields };')();
