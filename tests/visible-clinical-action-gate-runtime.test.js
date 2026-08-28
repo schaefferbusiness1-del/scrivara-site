@@ -196,7 +196,22 @@ assert(owner.includes("if (!S.appt) {"), 'engine decision lost its explicit no-l
 assert(owner.includes("Unscheduled visit — ' + label + ' works normally"), 'the unscheduled demotion lost its calm visible notice');
 assert(/if \(!S\.appt\) \{[\s\S]{0,900}?S\.lastWarn[\s\S]{0,300}?toast\(S\.lastWarn\)[\s\S]{0,200}?return true;/.test(owner), 'the no-locked-visit branch must WARN visibly and demote, never refuse silently');
 assert(!owner.includes("S.lastWarn = 'MLS blocked ' + label + ' because no scheduled visit is locked"), 'the old hard generation refusal must stay gone');
-assert(owner.includes('return requireExactScheduledBinding(S.appt, label);'), 'engine decision can pass without the selected scheduled appointment gate');
+/* gatearg-1.0.0 (2026-08-28): pinned as a two-argument call and broken when the
+   gate gained a third:
+     was  return requireExactScheduledBinding(S.appt, label);
+     now  return requireExactScheduledBinding(S.appt, label, { quiet: phoneQuiet });
+   That third argument is not decoration - it is the fix for stacked duplicate
+   warnings on the phone, where the surface already renders S.lastWarn inline
+   and a toast on top of it is the SECOND copy. The gate itself is unchanged, so
+   the guarantee this assertion names never lapsed. Pinned as the property, plus
+   the quiet plumbing on its own so a refactor cannot bring the double warning
+   back silently. */
+assert(/return requireExactScheduledBinding\(S\.appt, label(?:, *\{ *quiet: *phoneQuiet *\})?\);/.test(owner),
+  'engine decision can pass without the selected scheduled appointment gate');
+assert(/var phoneQuiet = !!safe\(function \(\) \{ return document\.body && document\.body\.classList\.contains\('mls-ph3'\); \}, false\);/.test(owner),
+  'the phone-quiet determination is gone, so the phone would show a toast on top of the warning it already renders');
+assert(/if \(!phoneQuiet\) \{ try \{ toast\(S\.lastWarn\); \} catch \(eT\) \{\} \}/.test(owner),
+  'the unscheduled demotion toasts unconditionally again - on the phone that is the second copy of a warning already on screen');
 
 function makeEngineHarness(blocks, gate) {
   const calls = { labels: [], toasts: [], dom: [], network: 0 };

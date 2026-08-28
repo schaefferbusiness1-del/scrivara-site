@@ -99,8 +99,35 @@ const dayPullBlock = si.slice(si.indexOf('function dayPull(opts) {'), si.indexOf
 assert(dayPullBlock.length > 400, 'dayPull could not be isolated');
 assert(dayPullBlock.includes('.then(null, function () {'),
   'dayPull must swallow a pre-flight rejection - the pre-flight cannot refuse a pull');
-assert(dayPullBlock.includes('if (runOpts.includeHistory === undefined) runOpts.includeHistory = false;'),
-  'the converged entry must fail closed to schedule-only until Full Notes is explicitly chosen');
+/* fnclane-1.0.0 (2026-08-28): this demanded the literal
+     if (runOpts.includeHistory === undefined) runOpts.includeHistory = false;
+   inside dayPull, on the premise that the converged entry "must fail closed to
+   schedule-only until Full Notes is explicitly chosen". The PROPERTY still
+   holds and is now enforced harder; the MECHANISM moved, and this suite pinned
+   the mechanism, so it has been red on main while the lane fails closed
+   correctly.
+   includeHistory is no longer the Full Notes flag - dayfacts-1.0.0 reduced it
+   to the census phase-1 opt-out, and fvn-1.0.0 made OFF mean day-facts rather
+   than schedule-only. The choice is now admitted by admitFrozenVisitNotesChoice
+   as the FIRST act of both converged entries, and that gate is strictly
+   stronger than the old default: rather than silently picking a mode when the
+   caller omits one, it REFUSES unless an explicit clinician choice can be
+   obtained, and refuses again if the chooser is missing, throws, or answers
+   anything but {ok:true, on:boolean}.
+   Pinned as the dispatch, then PROVEN behaviourally in ARM 7 below - a default
+   that is only grepped for is not a default that runs. */
+assert(/function dayPull\(opts\) \{\s*\n\s*opts = opts \|\| \{\};\s*\n\s*var __visitNotesAdmission = admitFrozenVisitNotesChoice\(opts, dayPull\);\s*\n\s*if \(__visitNotesAdmission\) return __visitNotesAdmission;/.test(si),
+  'the converged day entry no longer admits through the frozen visit-notes choice as its FIRST act - a pull could start before the clinician has chosen');
+assert(/function pull\(opts\) \{\s*\n\s*opts = opts \|\| \{\};\s*\n\s*var __visitNotesAdmission = admitFrozenVisitNotesChoice\(opts, pull\);\s*\n\s*if \(__visitNotesAdmission\) return __visitNotesAdmission;/.test(si),
+  'the other converged entry (pull) skips the frozen visit-notes choice, so the guarantee holds on only one of the two lanes');
+const admitBlock = si.slice(si.indexOf('function admitFrozenVisitNotesChoice(opts, owner) {'),
+  si.indexOf('function visitNotesChoiceRefusal(opts, reason)') > si.indexOf('function admitFrozenVisitNotesChoice(opts, owner) {')
+    ? si.indexOf('function visitNotesChoiceRefusal(opts, reason)')
+    : si.indexOf('function pull(opts) {'));
+assert(admitBlock.includes('if (typeof opts.pullVisitBodies === "boolean") return null;'),
+  'the admission gate no longer treats an explicit boolean as the only way past it');
+assert(!/frozen\.pullVisitBodies = (?:true|false);/.test(admitBlock),
+  'the admission gate hard-codes a visit-notes choice instead of carrying the clinician own');
 /* pull() is closed over inside the module, so the non-promise engine branch
    cannot be reached from a vm arm without replacing the engine itself. Pin the
    exact refusal the strip used to raise instead of faking a success. */
@@ -416,7 +443,18 @@ async function main() {
   assert.strictEqual(pre.providerMode, 'selected', 'a resolvable account must pull SCOPED, not all-providers');
   assert.strictEqual(pre.providerResolved, true, 'the resolved scope must be disclosed');
   assert.strictEqual(pre.scopeSource, 'account', 'a Visit pull with no picker scopes from the ACCOUNT');
-  assert.strictEqual(res.includeHistory, false, 'Full Notes OFF did not narrow the converged entry to schedule-only');
+  /* fnclane-1.0.0: was `res.includeHistory === false`. Same stale premise as
+     the source assertion near the top of this file - includeHistory stopped
+     being the Full Notes flag (dayfacts-1.0.0), and OFF stopped meaning
+     schedule-only (fvn-1.0.0, it means day-facts). Measured here: the harness
+     stores {state:"off"}, and the converged entry reports includeHistory true
+     while correctly reporting visitNotesRequested false and visitNotesMode
+     "day-facts". So the CHOICE does survive the converged entry - it is
+     carried by the field that still means it. */
+  assert.strictEqual(res.visitNotesRequested, false,
+    'the stored Full Notes OFF choice did not survive the converged entry onto the receipt');
+  assert.strictEqual(res.visitNotesMode, 'day-facts',
+    'Full Notes OFF did not resolve to day-facts mode, which is what saves the required same-day visit context');
   assert.strictEqual(h.posted.filter(message => message.type === 'mlsAppReadAllVisits').length, 0,
     'Full Notes OFF opened a visit-body reader through the converged entry');
 
@@ -525,7 +563,44 @@ async function main() {
     'a dateless call must be handed straight to the engine - no warm-up, no decoration');
   assert.strictEqual(undated.warmReadAt(), -1, 'a dateless call must never run the pre-flight read');
 
-  console.log('PASS day-pull lane convergence: the Visit strip routes through guarded dayPull, proves Athena presence before exact navigation, warms before enumeration, preserves selected-provider attribution, and limits provider-blank success to the explicit appointment-census capability');
+  /* ---- ARM 7: the lane FAILS CLOSED when the visit-notes choice cannot be
+     obtained. fnclane-1.0.0 - the source assertions above pin that both
+     converged entries admit through the gate; this proves what the gate DOES,
+     because a default that is only grepped for is not a default that runs.
+     Nothing may be read from Athena before the clinician has chosen. ---- */
+  for (const [label, breakChooser] of [
+    ['no chooser on this build', (rt) => { delete rt.__mlsVisitNotesPref; }],
+    ['the chooser throws', (rt) => { rt.__mlsVisitNotesPref = { ensureChosenForBulkPull() { throw new Error('boom'); } }; }],
+    ['the chooser declines', (rt) => { rt.__mlsVisitNotesPref = { ensureChosenForBulkPull() { return Promise.resolve({ ok: false, reason: 'choice-cancelled' }); } }; }],
+    ['the chooser answers a non-boolean', (rt) => { rt.__mlsVisitNotesPref = { ensureChosenForBulkPull() { return Promise.resolve({ ok: true, on: 'yes' }); } }; }]
+  ]) {
+    const g = createHarness();
+    g.rowDays.set(DAY, columnlessRows(DAY));
+    breakChooser(g.rt);
+    const postedBefore = g.posted.length;
+    /* No pullVisitBodies - exactly the caller shape the old literal defaulted. */
+    const res = await g.api.dayPull({ date: DAY, provider: g.providerAlpha, onStatus: g.onStatus });
+    assert.strictEqual(res.ok, false, 'with ' + label + ', the day pull started anyway instead of failing closed');
+    assert.strictEqual(res.gate, 'visit-notes-choice',
+      'with ' + label + ', the refusal did not name the visit-notes gate, so a surface cannot tell the clinician what to do (reason: ' + res.reason + ')');
+    assert.strictEqual(g.posted.length, postedBefore,
+      'with ' + label + ', ' + (g.posted.length - postedBefore) + ' message(s) were sent to the extension before the choice existed - the refusal promises "Nothing was read from Athena"');
+  }
+
+  /* ...and an EXPLICIT choice still gets through, or the gate would just be a
+     wall. Both modes, so neither is accidentally the only one that works. */
+  for (const on of [true, false]) {
+    const g = createHarness();
+    g.rowDays.set(DAY, columnlessRows(DAY));
+    g.rt.__mlsVisitNotesPref = { ensureChosenForBulkPull() { return Promise.resolve({ ok: true, on }); } };
+    const res = await g.api.dayPull({ date: DAY, provider: g.providerAlpha, onStatus: g.onStatus });
+    assert.notStrictEqual(res.gate, 'visit-notes-choice',
+      'an EXPLICIT Full Notes ' + (on ? 'ON' : 'OFF') + ' choice was still refused by the visit-notes gate');
+    assert.strictEqual(res.visitNotesRequested, on,
+      'the clinician explicit Full Notes ' + (on ? 'ON' : 'OFF') + ' choice did not survive onto the receipt');
+  }
+
+  console.log('PASS day-pull lane convergence: the Visit strip routes through guarded dayPull, proves Athena presence before exact navigation, warms before enumeration, preserves selected-provider attribution, limits provider-blank success to the explicit appointment-census capability, and fails closed to the frozen visit-notes choice - refusing without touching Athena when that choice cannot be obtained, while an explicit ON or OFF passes through and reaches the receipt');
 }
 
 const watchdog = setTimeout(() => {

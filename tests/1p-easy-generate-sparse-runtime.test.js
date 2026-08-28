@@ -111,9 +111,42 @@ assert(!lifecycleSandbox.S.lastWarn.includes('connection'), 'phase fallback inve
  * no generation state at all. */
 const lockAndStartSource = between(source, 'function lockAndStart(a, opts)', '\n  function lockAndStartPatient(');
 let lockRenders = 0;
+/* liftbusy-1.0.0 (2026-08-28): this sandbox stubbed isRecording and nothing
+   else, but lockAndStart now asks captureBusy(), which is isRecording() OR a
+   direct-phone capture in starting/recording/stopping. The lift was never
+   updated, so every run died on "ReferenceError: captureBusy is not defined"
+   BEFORE reaching the assertion below - the suite has been red on main and, far
+   worse, its real check has not executed since the engine gained that call.
+   captureBusy is lifted REAL, not stubbed: the thing under test is whether
+   lockAndStart refuses to fabricate generation state, and the recording guard
+   is part of how it decides. Only its leaf dependency, the direct-phone bridge,
+   is faked - and it is faked as a value, so both branches stay reachable. */
+const captureBusySource = between(source, '  function directCaptureStatus()', '\n  function noteText()');
+assert(/function captureBusy\(\)/.test(captureBusySource),
+  'captureBusy is no longer adjacent to directCaptureStatus - re-derive this lift rather than stubbing the recording guard away');
+let lockDirectStatus = '';
 const lockSandbox = {
   S: { appt: null, locked: null, editing: false, genClickedAt: 0, signedAt: 0, lastWarn: '', phase: 'idle' },
   isRecording: () => false,
+  window: {
+    get __mlsDirectPhoneCapture() { return { state: () => ({ status: lockDirectStatus }) }; },
+    /* The engine gained a STRUCTURED activation contract after this suite was
+       written: a scheduled row is only opened when calStartVisit returns an
+       object saying ok, and a legacy truthy/undefined return is treated as
+       failure so a same-demographics prior encounter can never be reused. With
+       no calStartVisit at all, lockAndStart correctly refuses and never reaches
+       the generate click - which is why this harness could not exercise its own
+       subject once that guard landed. Model a clean bound activation, which is
+       the state this test's question ("does a throwing engine click leave
+       fabricated generation state behind?") presupposes. */
+    calStartVisit: () => ({ ok: true, bound: true, patientId: 'pt-synthetic' })
+  },
+  isFn: (f) => typeof f === 'function',
+  safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } },
+  canonicalActivePatient: () => ({ id: 'pt-synthetic', name: 'Synthetic Person', dob: '01/01/1980' }),
+  dobConflicts: () => false,
+  captureBtn: () => null,
+  requireExactScheduledBinding: () => true,
   lockPatient() {},
   setEasyMode() {},
   activeName: () => 'Synthetic Person',
@@ -126,7 +159,19 @@ const lockSandbox = {
   setTimeout,
   Date
 };
-vm.runInNewContext(lockAndStartSource + '\nthis.runLockAndStart=lockAndStart;', lockSandbox, { filename: '1p-lock-and-start-generate.js' });
+vm.runInNewContext(captureBusySource + '\n' + lockAndStartSource + '\nthis.runLockAndStart=lockAndStart;this.captureBusy=captureBusy;',
+  lockSandbox, { filename: '1p-lock-and-start-generate.js' });
+
+/* The lifted guard must really be the guard, or the assertions below pass
+   against a stub that always says "not recording". */
+assert.strictEqual(lockSandbox.captureBusy(), false, 'the lifted recording guard reports busy with nothing recording');
+for (const status of ['starting', 'recording', 'stopping']) {
+  lockDirectStatus = status;
+  assert.strictEqual(lockSandbox.captureBusy(), true,
+    'the lifted recording guard does not treat a direct-phone capture in "' + status + '" as busy - that is the branch this lift exists to cover');
+}
+lockDirectStatus = '';
+
 assert.throws(() => lockSandbox.runLockAndStart({ id: 'synthetic-appointment', name: 'Synthetic Person' }, { generate: true }), /synthetic engine throw/);
 assert.strictEqual(lockSandbox.S.genClickedAt, 0, 'lockAndStart fabricated an in-flight generation without an engine event');
 assert.strictEqual(lockSandbox.S.phase, 'idle', 'lockAndStart fabricated a generation phase without an engine event');

@@ -340,8 +340,26 @@ ok(retryHead.includes('var retryBodiesRequested = typeof history.visitNotesReque
   'the retry must still scope itself to the RECEIPT\'s own mode rather than the live checkbox');
 ok(importer.includes('if (typeof history.visitNotesRequested === "boolean") _pullBodiesOverride = history.visitNotesRequested;'),
   'the retry must freeze the original pull\'s mode through the per-pull override');
-ok(importer.includes('return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}, { scopeDay: retryScopeDay }).then('),
-  'the retry must re-enter the real batch, in both modes');
+/* retryspell-1.0.0 (2026-08-28): this pinned the call SITE character for
+   character, so it broke the moment the engine ADDED an option:
+     was  { scopeDay: retryScopeDay }
+     now  { scopeDay: retryScopeDay, retryPass: true }
+   The property it names - "the retry must re-enter the real batch, in both
+   modes" - never stopped holding; the retry got strictly more capable, and this
+   suite went red for it. That is a test pinning a spelling rather than a
+   property, and it costs a real red on main.
+   Pinned as the property now, with the options read as a SET so a future
+   addition strengthens the engine instead of breaking this file - while the
+   two options that carry meaning are each asserted on their own. */
+const retryCall = /return runHistoryBatch\(rows, unresolved, isFn\(onStatus\) \? onStatus : function \(\) \{\}, \{([^}]*)\}\)\.then\(/.exec(importer);
+ok(retryCall, 'the retry must re-enter the real batch, in both modes - runHistoryBatch(rows, unresolved, ...) is no longer called from retryFailedHistory');
+const retryOpts = String(retryCall && retryCall[1] || '');
+ok(/\bscopeDay:\s*retryScopeDay\b/.test(retryOpts),
+  'the retry no longer scopes the re-entered batch to the receipt own day, so it could reach a different day than the one that failed');
+ok(/\bretryPass:\s*true\b/.test(retryOpts),
+  'the re-entered batch is no longer marked as a retry pass, so the named-omission reconciliation below never runs on it');
+ok(/if \(sweepOpts && sweepOpts\.retryPass === true\) taxReconcileNamedOmissions\(receipt\);/.test(importer),
+  'retryPass no longer drives the named-omission reconciliation - the flag would then be decoration');
 
 /* the idle catch-up gate refuses only an UNCHOSEN account now */
 ok(importer.includes('return !(choice && choice.settled === true && (choice.state === "on" || choice.state === "off"));\n    }, true)) return { open: false, reason: "visit-notes-unchosen" };'),
@@ -383,8 +401,34 @@ while ((vnmAt = importer.indexOf('visitNotesMode', vnmAt + 1)) >= 0) {
 }
 eq(vnmBad.length, 0,
   'a visitNotesMode site still speaks the revoked vocabulary at line(s) ' + vnmBad.join(', '));
-eq(vnmCount, 8,
-  'the number of visitNotesMode sites changed (' + vnmCount + ', expected 8) -- audit the new one against the day-facts vocabulary and move this pin');
+/* vnmcount-1.0.0 (2026-08-28): this counted every MENTION of the identifier and
+   pinned it at 8. pvd-1.0.0 then added ONE read-only pass-through that names it
+   five times on a single line -
+     if (value.visitNotesMode !== undefined && value.visitNotesMode !== null &&
+         String(value.visitNotesMode) !== "") out.visitNotesMode = String(value.visitNotesMode).slice(0, 24);
+   - so the count read 13, the suite went red on main, and the thing it exists to
+   catch (a NEW site speaking a retired vocabulary) had not happened at all.
+   Audited all 13 on 2026-08-28: eight writer sites, every one emitting only
+   "day-facts" / "full" / "unspecified" / "blocked-unchosen", plus that single
+   read-only pass-through. Nothing revoked.
+   A census that counts mentions cannot tell a new site from a wordier line, so
+   it now counts SITES - distinct lines that assign the field. The vocabulary
+   check above still sweeps every mention, which is the assertion that actually
+   protects the contract; this one is the tripwire that says "a new site
+   appeared, go read it". */
+const vnmAssignLines = new Set();
+{
+  let a = -1;
+  while ((a = importer.indexOf('visitNotesMode', a + 1)) >= 0) {
+    if (!/^\s*[:=](?!=)/.test(importer.slice(a + 'visitNotesMode'.length, a + 'visitNotesMode'.length + 4))) continue;
+    vnmAssignLines.add(importer.slice(0, a).split('\n').length);
+  }
+}
+eq(vnmAssignLines.size, 8,
+  'the number of visitNotesMode ASSIGNMENT sites changed (' + vnmAssignLines.size + ', expected 8; lines ' +
+  [...vnmAssignLines].join(', ') + ') -- audit the new one against the day-facts vocabulary and move this pin');
+eq(vnmCount >= vnmAssignLines.size, true,
+  'the mention sweep stopped covering the assignment sites, so the vocabulary check above no longer sees every writer');
 
 /* ===========================================================================
    L-N. RUNTIME PROOF. The bytes above say the lane is enabled; these run the

@@ -659,9 +659,38 @@ async function main() {
       'the breaker exit must emit its day-end line');
   }
 
-  // Full Notes OFF is schedule/booking-only. Even if an old caller supplies
-  // includeHistory:true, the explicit frozen false narrows the operation before
-  // any chart or visit-body reader can open.
+  /* fvnstale-1.0.0 (2026-08-28): this block asserted "Full Notes OFF is
+     schedule/booking-only" - that OFF narrows includeHistory to false, opens NO
+     patient chart, and runs NO visit-body reader. That contract was revoked in
+     the engine, in writing, and this suite was never re-derived, so it has been
+     RED on main while the pull it describes works correctly.
+
+       feat_mls_schedimport_exact.js:8791  fvn-1.0.0 CANONICAL SEMANTICS
+         "OFF is DAY-FACTS mode, not schedule-only - every pull opens each
+          scheduled chart and saves identity + chart facts/coverage + exactly
+          the pulled day's own visit note; ON additionally saves every dated
+          PRIOR visit note."
+       :8810  dayfacts-1.0.0
+         "the checkbox no longer decides WHETHER the per-patient batch runs -
+          only how much history it traverses. includeHistory keeps its one
+          remaining legitimate opt-out (the census phase-1 caller)."
+
+     So includeHistory is no longer the Full Notes flag at all; pullVisitBodies
+     is, surfaced on the receipt as visitNotesRequested/visitNotesMode. Making
+     the engine satisfy the old literal would DISABLE the mandatory same-day
+     read - it would degrade the pull to make a test green, and it would break
+     the owner's actual requirement, which day-facts mode is what implements:
+     OFF saves schedule/booking plus the required same-day visit context only.
+
+     Measured here on 2026-08-28 with includeHistory:true, pullVisitBodies:false
+     - includeHistory true, historyRequested true, visitNotesRequested FALSE,
+     visitNotesMode "day-facts", one chart opened, and exactly one visit read
+     which was initiator "schedule-batch-same-day" scoped onlyDate "2026-02-03".
+     Zero historical reads.
+
+     What is pinned now is the thing the old assertions were really protecting,
+     and pinned harder: under OFF not one HISTORICAL body may be read, judged on
+     BOTH markers together rather than on a flag that no longer means this. */
   {
     const realRead = h.rt._assistReadChart;
     let bodiesOffReads = 0;
@@ -669,11 +698,32 @@ async function main() {
     const allVisitsBefore = h.posted.filter(message => message.type === 'mlsAppReadAllVisits').length;
     const bodiesOff = await api.pull({ date: '2026-02-03', provider: h.providerAlpha, includeHistory: true, pullVisitBodies: false });
     h.rt._assistReadChart = realRead;
-    assert.strictEqual(bodiesOff.includeHistory, false, 'explicit Full Notes OFF did not narrow includeHistory');
-    assert.strictEqual(bodiesOff.historyRequested, false, 'explicit Full Notes OFF still claims history requested');
-    assert.strictEqual(bodiesOffReads, 0, 'Full Notes OFF opened a patient chart');
-    assert.strictEqual(h.posted.filter(message => message.type === 'mlsAppReadAllVisits').length, allVisitsBefore,
-      'Full Notes OFF opened a visit-body reader');
+
+    /* The OFF choice must survive onto the receipt under the name that still
+       carries it, or a surface cannot tell the two modes apart. */
+    assert.strictEqual(bodiesOff.visitNotesRequested, false,
+      'explicit Full Notes OFF was not recorded on the receipt - pullVisitBodies is the flag that carries this choice now');
+    assert.strictEqual(bodiesOff.visitNotesMode, 'day-facts',
+      'Full Notes OFF did not run in day-facts mode, which is what saves the required same-day visit context');
+
+    /* THE INVARIANT. A read is forgiven only if it is the mandatory same-day
+       read AND it is scoped to the day being pulled. A same-day read that has
+       forgotten its scope, or a historical read wearing the same-day label,
+       both count as historical and both fail here. */
+    const opened = h.posted.filter(message => message.type === 'mlsAppReadAllVisits').slice(allVisitsBefore);
+    const historical = opened.filter(m => !(String(m.initiator || '') === 'schedule-batch-same-day'
+      && !!(m.hint && m.hint.onlyDate)));
+    assert.deepStrictEqual(historical.map(m => String(m.initiator || '(none)')), [],
+      'Full Notes OFF read a HISTORICAL visit body - OFF may read the pulled day own note and nothing older');
+    for (const m of opened) {
+      assert.strictEqual(m.hint.onlyDate, '2026-02-03',
+        'a same-day read under Full Notes OFF was scoped to ' + JSON.stringify(m.hint.onlyDate) +
+        ' rather than the day being pulled - that reaches another day than the one requested');
+    }
+    /* Day-facts opens each scheduled chart on purpose; what must not happen is
+       opening MORE charts than the day has rows. */
+    assert.ok(bodiesOffReads <= opened.length + 1,
+      'Full Notes OFF opened more patient charts (' + bodiesOffReads + ') than the day has scheduled rows');
   }
 
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');

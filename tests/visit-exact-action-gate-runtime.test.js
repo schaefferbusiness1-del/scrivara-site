@@ -9,7 +9,22 @@ const source = fs.readFileSync(path.resolve(__dirname, '..', 'mls-connect.js'), 
 const start = source.indexOf('  function scheduledAppointmentId(');
 const end = source.indexOf('\n  function lockAndStartPatient(', start);
 assert(start >= 0 && end > start, 'could not bound canonical scheduled-action gate');
-const runtime = source.slice(start, end);
+/* liftbusy-1.0.0 (2026-08-28): lockAndStart's mid-recording switch block asks
+   captureBusy(), which lives ABOVE this slice, so every run of this suite died
+   on "ReferenceError: captureBusy is not defined" at the very first line of the
+   function under test. It has been red on main and, worse, none of its
+   assertions have executed since the engine started asking that question.
+   Lifted REAL rather than stubbed: captureBusy is isRecording() OR a direct
+   phone capture in starting/recording/stopping, and "do not switch patients
+   mid-recording" is precisely the kind of guard this gate suite exists to
+   protect. Only the leaf bridge (window.__mlsDirectPhoneCapture) is faked. */
+const busyStart = source.indexOf('  function directCaptureStatus()');
+const busyEnd = source.indexOf('\n  function noteText()', busyStart);
+assert(busyStart >= 0 && busyEnd > busyStart, 'could not bound the capture-busy guard');
+const busySource = source.slice(busyStart, busyEnd);
+assert(/function captureBusy\(\)/.test(busySource),
+  'captureBusy is no longer adjacent to directCaptureStatus - re-derive this lift rather than stubbing the recording guard away');
+const runtime = busySource + '\n' + source.slice(start, end);
 
 function identityDobKey(value) {
   let m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
