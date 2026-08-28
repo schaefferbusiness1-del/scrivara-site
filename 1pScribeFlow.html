@@ -20970,6 +20970,79 @@ function goNewUnassignedVisit(){
   showView('visit');
   newVisit();
 }
+/* ptundo-1.0.0: toast() writes textContent only and is shared by every message
+   in the app, so it cannot carry an action without changing a surface everything
+   else depends on. A dedicated, self-removing bar above the patient list keeps
+   the undo reachable without touching that. */
+var _mlsLastPtDelete=null, _mlsPtUndoTimer=0;
+function _offerPatientUndo(snap){
+  if(!snap || !snap.patient || !snap.patient.id) return;
+  _mlsLastPtDelete=snap;
+  var host=document.getElementById('ptList');
+  if(!host || !host.parentNode) return;
+  var bar=document.getElementById('ptUndoDeleteBar');
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='ptUndoDeleteBar';
+    bar.setAttribute('role','status');
+    bar.style.cssText='display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 13px;border:1px solid #f0d79a;background:#fff7e6;border-radius:10px;font-size:13px;color:#7a5a16';
+    host.parentNode.insertBefore(bar,host);
+  }
+  bar.textContent='';
+  var msg=document.createElement('span');
+  msg.textContent='Deleted '+String(snap.patient.name||'this patient')+'. Their documents were deleted too.';
+  var btn=document.createElement('button');
+  btn.type='button'; btn.className='btn-ghost'; btn.id='ptUndoDeleteBtn';
+  btn.style.cssText='margin-left:auto;font-size:13px;padding:6px 12px';
+  btn.textContent='Undo';
+  btn.addEventListener('click',function(){ undoLastPatientDelete(); });
+  bar.appendChild(msg); bar.appendChild(btn);
+  bar.style.display='flex';
+  try{ clearTimeout(_mlsPtUndoTimer); }catch(e){}
+  /* the snapshot is dropped with the bar - a stale undo must never resurrect a
+     patient the doctor deleted minutes ago and has moved on from */
+  _mlsPtUndoTimer=setTimeout(function(){ _hidePatientUndo(); },30000);
+}
+function _hidePatientUndo(){
+  _mlsLastPtDelete=null;
+  try{ clearTimeout(_mlsPtUndoTimer); }catch(e){}
+  var bar=document.getElementById('ptUndoDeleteBar');
+  if(bar&&bar.parentNode) bar.parentNode.removeChild(bar);
+}
+function undoLastPatientDelete(){
+  var snap=_mlsLastPtDelete;
+  if(!snap||!snap.patient||!snap.patient.id){ try{ toast('There is nothing to undo.','err'); }catch(e){} return false; }
+  var pid=String(snap.patient.id);
+  /* restore through savePatients, NOT upsertPatient: upsertPatient is wrapped by
+     the F5 dedup gate, whose CREATE path could fold this record into a same-name
+     chart and hand it a different id. An undo must put back exactly what was
+     removed. */
+  try{
+    var arr=getPatients().filter(function(x){ return x && String(x.id)!==pid; });
+    arr.unshift(snap.patient);
+    savePatients(arr);
+  }catch(eR){ try{ toast('Could not restore that patient.','err'); }catch(e){} return false; }
+  try{
+    if(backendMode() && bkToken() && typeof _pendingSyncAdd==='function') _pendingSyncAdd(pid);
+  }catch(eS){}
+  try{
+    if(snap.noteIds && snap.noteIds.length){
+      var ns=getNotes(), touched=[];
+      ns.forEach(function(n){ if(n && snap.noteIds.indexOf(n.id)>=0){ n.patientId=pid; n.updated=Date.now(); touched.push(n.id); } });
+      if(touched.length){
+        saveNotes(ns);
+        if(backendMode() && bkToken() && typeof _pendingBackupAdd==='function'){
+          touched.forEach(function(nid){ try{ _pendingBackupAdd(nid); }catch(e){} });
+          if(typeof _retryPendingBackups==='function'){ try{ _retryPendingBackups(); }catch(e){} }
+        }
+      }
+    }
+  }catch(eN){}
+  _hidePatientUndo();
+  try{ renderPatients(); renderProfile(); renderPatientBar(); }catch(e){}
+  try{ toast('Patient restored.','ok'); }catch(e){}
+  return true;
+}
 async function deletePatient(id){
   /* ptdel-1.1.0 (2026-08-28): the dialog said "This cannot be undone" and stopped
      there, which reads as "this patient is gone for good". For a chart that came
@@ -20995,6 +21068,15 @@ async function deletePatient(id){
     ? ' Their appointment stays on the schedule, so pulling that day from Athena again will re-create this chart.'
     : ' This cannot be undone.';
   if(!await mlsConfirm(_delMsg)) return;
+  /* ptundo-1.0.0 (2026-08-28): the delete control is a hover-revealed trash on a
+     list row, one confirm away, and the patient's uploaded DOCUMENTS - labs,
+     scans, prior records - live on the patient object, so they go with it. That
+     is a hard, irreversible destruction from a mis-click. Snapshot first. */
+  var _undoSnap=null;
+  try{
+    var _up=getPatients().filter(function(x){ return x && x.id===id; })[0];
+    if(_up) _undoSnap={ patient: JSON.parse(JSON.stringify(_up)), noteIds: [], at: Date.now() };
+  }catch(eSnap){ _undoSnap=null; }
   savePatients(getPatients().filter(p=>p.id!==id),undefined,{allowRemovals:true});
   // hosted mode: server delete (owner-only). ptdel-1.0.0: this NO LONGER skips
   // silently on an unknown server id - it resolves the id from the server list and
@@ -21020,6 +21102,7 @@ async function deletePatient(id){
      already survives being offline. */
   const notes=getNotes(); let changed=false; const _reassigned=[];
   notes.forEach(n=>{ if(n.patientId===id){ n.patientId=''; n.updated=Date.now(); changed=true; _reassigned.push(n.id); } });
+  try{ if(_undoSnap) _undoSnap.noteIds=_reassigned.slice(); }catch(eSn){}
   if(changed){
     saveNotes(notes);
     try{
@@ -21031,7 +21114,7 @@ async function deletePatient(id){
   }
   if(getActivePtId()===id) setActivePtId('');
   renderPatients(); renderProfile(); renderPatientBar();
-  if(_delVerdict&&_delVerdict.ok){ toast('Patient deleted.',''); }
+  if(_delVerdict&&_delVerdict.ok){ toast('Patient deleted.',''); try{ _offerPatientUndo(_undoSnap); }catch(eU){} }
   else{
     /* Honest and actionable: the row is gone HERE but the account copy is not,
        so the next sync or sign-in brings it back. Silence would be a false success. */
