@@ -48,8 +48,35 @@ const outerCloseComment = outerSweepBlock.indexOf('the OUTER batch closes the pr
 const outerClose = outerSweepBlock.indexOf('safe(ppEnd);', outerCloseComment);
 assert(outerSweepBlock.includes('await runHistoryBatch(swept.rows') && outerCloseComment > 0 && outerClose > outerCloseComment,
   'the OUTER batch must end the progress state only after its sweeps');
-assert.strictEqual(outerSweepBlock.split('safe(ppEnd);').length - 1, 1,
-  'the OUTER sweep lifecycle must end the progress state exactly once');
+/* ppend-1.0.0 (2026-08-28): this counted safe(ppEnd) inside the sliced region
+   and demanded exactly one. There are two now, and the second is a FIX for the
+   very failure this file is about: a stopped pull used to leave s.running true,
+   so the STOP card never froze its clock - an "endless saving" state, which is
+   an owner-reported defect. Stop was given its own terminal settle.
+   The two are MUTUALLY EXCLUSIVE - `!sweepDepth && !__stpStopped` versus
+   `!sweepDepth && __stpStopped` - so no run can reach both, and a naive count
+   cannot see that. Requiring one would have meant deleting the stop settle and
+   restoring the frozen clock.
+   Pinned as the property instead: every terminal branch closes the reporter
+   exactly once, and the branches cannot overlap. */
+{
+  const closes = [...outerSweepBlock.matchAll(/if \(!sweepDepth && (!?)__stpStopped\) (?:try )?\{/g)]
+    .map((m) => m[1] === '!');
+  assert.strictEqual(closes.length, 2,
+    'the outer sweep no longer has exactly two terminal branches (found ' + closes.length +
+    ') - re-derive this pin against whatever lifecycle replaced them rather than adjusting the count');
+  assert.deepStrictEqual([...closes].sort(), [false, true],
+    'the two terminal branches are no longer mutually exclusive on __stpStopped - a single run could close the progress reporter twice, or leave it open');
+  assert.strictEqual(outerSweepBlock.split('safe(ppEnd);').length - 1, 2,
+    'the OUTER sweep lifecycle must end the progress state exactly once PER terminal branch - a missing one leaves the card running forever, which is the endless-saving report');
+  /* The stop branch specifically: it is the one that was missing, so pin that
+     it still settles rather than merely existing. */
+  const stopAt = outerSweepBlock.search(/if \(!sweepDepth && __stpStopped\) \{/);
+  assert(stopAt >= 0, 'the stop-path terminal settle is gone - a stopped pull would leave its card running');
+  const stopBlock = outerSweepBlock.slice(stopAt, stopAt + 260);
+  assert(stopBlock.includes('finalizeVerdict(false);') && stopBlock.includes('safe(ppEnd);'),
+    'the stop path no longer finalizes AND ends - a stopped pull would show a clock that never freezes');
+}
 assert(!si.includes('} finally { historyBatchRunning = false; ppEnd(); }'),
   'the old pre-sweep close must stay gone - it was the panel-teardown bug');
 assert(si.includes('if(g.state&&g.state.running===true) return null;'),

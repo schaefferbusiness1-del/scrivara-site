@@ -721,9 +721,18 @@ async function main() {
         ' rather than the day being pulled - that reaches another day than the one requested');
     }
     /* Day-facts opens each scheduled chart on purpose; what must not happen is
-       opening MORE charts than the day has rows. */
-    assert.ok(bodiesOffReads <= opened.length + 1,
-      'Full Notes OFF opened more patient charts (' + bodiesOffReads + ') than the day has scheduled rows');
+       opening MORE charts than the day has rows.
+       fvnstale-1.0.1 (2026-08-28): my first version bounded charts by
+       `opened.length + 1` - the number of VISIT READS - which is not what that
+       sentence says and would have allowed 3 charts on a 2-row day. The local
+       reviewer caught it. Bounded by the harness's own row count for the day,
+       read from the fixture so it stays true if the fixture changes. */
+    const scheduledRows = (h.rowDays.get('2026-02-03') || []).length;
+    assert.ok(scheduledRows > 0,
+      'the day under test has no scheduled rows, so the chart bound below would be vacuous');
+    assert.ok(bodiesOffReads <= scheduledRows,
+      'Full Notes OFF opened ' + bodiesOffReads + ' patient charts for a day with ' + scheduledRows +
+      ' scheduled row(s) - day-facts opens each scheduled chart once, never more');
   }
 
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');

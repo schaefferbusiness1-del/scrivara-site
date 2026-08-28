@@ -455,8 +455,24 @@ async function main() {
     'the stored Full Notes OFF choice did not survive the converged entry onto the receipt');
   assert.strictEqual(res.visitNotesMode, 'day-facts',
     'Full Notes OFF did not resolve to day-facts mode, which is what saves the required same-day visit context');
+  /* fnclane-1.0.1 (2026-08-28): this said "Full Notes OFF opened a visit-body
+     reader through the converged entry", and it was VACUOUS as a statement
+     about Full Notes. The count is zero because this pull REFUSES - the very
+     next assertion pins res.ok false, a provider-blank row that must not have
+     the account provider guessed onto it - so nothing reached the per-patient
+     batch in either mode. Reading it as proof about OFF would credit the
+     Full Notes path with a guarantee that the provider gate produced.
+     The local reviewer flagged exactly this and was right.
+     What it genuinely proves is worth keeping, so it is relabelled rather than
+     deleted: a refused pull reads NOTHING from Athena. That is the fail-closed
+     ordering - refuse first, read never.
+     The Full-Notes-OFF-reads-no-history guarantee is asserted where it can
+     actually be exercised, on a pull that SUCCEEDS: provider-month-exact-routing
+     (initiator + onlyDate filter) and visit-pull-toggle-contract (which counts
+     3 charts, 3 saves, 3 onlyDate reads, 0 unscoped walks). Two suites, not
+     one. */
   assert.strictEqual(h.posted.filter(message => message.type === 'mlsAppReadAllVisits').length, 0,
-    'Full Notes OFF opened a visit-body reader through the converged entry');
+    'a REFUSED day pull still opened a visit-body reader - the refusal must come before any Athena read, not after');
 
   assert.strictEqual(res.ok, false,
     'a selected account provider must not be guessed onto a provider-blank appointment row');

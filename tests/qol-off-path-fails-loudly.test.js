@@ -464,11 +464,33 @@ function firstMatch(list, text) {
     assert.strictEqual(spots.length, 0,
       name + ' carries ' + spots.length + ' copies of the schedule-only claim; zero are allowed since ' +
       'dayfacts-1.0.2 reworded even the retired legacy body to state its own limitation instead');
-    const legacyHonest = src.indexOf('this fallback cannot read chart facts or day notes');
+    /* legacyprose-1.0.0 (2026-08-28): this pinned the sentence verbatim as
+       "this fallback cannot read chart facts or day notes". The shipped
+       wording was made MORE precise - "chart facts or the day's own visit
+       note" - and this pin was not moved, so the suite has been red on main
+       for a copy improvement. What matters is that the retired body still
+       names both limitations inside the retired region; the exact phrasing is
+       the copywriter's, not this file's. Matched on substance, with the
+       apostrophe left out of the pattern entirely so a straight/curly swap
+       cannot red it either. */
+    const legacyHonest = src.search(/fallback cannot read chart facts or [^.<]*\b(?:day notes|visit note)\b/);
     assert.ok(legacyHonest > retireAt,
-      name + ': the retired legacy body no longer states its own limitation honestly inside the retired region');
-    assert.ok(/opts\.__pullVisitBodies===true/.test(src.slice(Math.max(0, legacyHonest - 800), legacyHonest)),
+      name + ': the retired legacy body no longer states its own limitation honestly inside the retired region - ' +
+      'it must still say it can read neither chart facts nor the pulled day own note');
+    /* legacyprose-1.0.0: the guard is FAIL-CLOSED now. This looked for
+       `opts.__pullVisitBodies===true`; the shell refuses on
+       `opts.__pullVisitBodies!==true`, so anything that is not an explicit
+       true - unset, null, a string, a stale caller - takes the refusal path
+       rather than falling through into a legacy pull that cannot read the
+       floor. That is strictly safer than the form this pinned, and it is what
+       "fails loudly" means in this file's own title. Accept either, and
+       require that whichever is used, the refusal is what the message serves. */
+    const guardWindow = src.slice(Math.max(0, legacyHonest - 800), legacyHonest);
+    assert.ok(/opts\.__pullVisitBodies\s*(?:===|!==)\s*true/.test(guardWindow),
       name + ': the legacy limitation message is no longer guarded by the legacy opts.__pullVisitBodies branch');
+    assert.ok(/if\(opts\.__pullVisitBodies!==true\)\{/.test(guardWindow),
+      name + ': the legacy fallback no longer FAILS CLOSED - only an explicit true may skip the refusal, ' +
+      'or an unset/stale caller would run a legacy pull that silently omits chart facts and the day note');
   });
 
   /* ======================================================================
