@@ -131,11 +131,42 @@ function firstMatch(list, text) {
   return '';
 }
 
+/* silentpass-1.0.0 (2026-08-28): THIS FILE COULD EXIT 0 WITHOUT FINISHING.
+ *
+ * Everything below runs inside one async IIFE whose only success output is the
+ * console.log on its last line. If any await inside never settles, the promise
+ * never resolves, node drains the event loop, and the process exits 0 with ZERO
+ * stdout - and tests/run-all.js judges a suite purely on `r.status !== 0`, so a
+ * run that executed half the file counts as a PASS.
+ *
+ * That is exactly what happened. On 8e81c003 this file failed at the legacy
+ * prose assertion in section 6 and exited 1. legacyprose-1.0.0 corrected that
+ * assertion, execution ran on to section 7's Full-Notes-ON control pull, and
+ * that await does not settle in this fixture - so sections 7, 8 and 9 (the ON
+ * causal control, the unchosen fail-closed door, the settled-OFF control) never
+ * execute and nothing says so. A loud red became a silent partial green, which
+ * is strictly worse: red gets looked at.
+ *
+ * The watchdog below cannot be optimised away and is deliberately NOT unref'd -
+ * a live timer keeps the event loop alive, so a stalled run can no longer exit
+ * quietly. It reports the last section reached, so the stall names itself.
+ *
+ * The stall in section 7 is a separate, still-open question - see the note
+ * there. This guard exists so that question can never again be invisible. */
+let __sectionReached = 'start (before section 1)';
+const __watchdog = setTimeout(() => {
+  console.error('qol-off-path-fails-loudly DID NOT COMPLETE. Last section reached: ' + __sectionReached +
+    '\nAn await inside this file never settled. Node would otherwise exit 0 with no output and the ' +
+    'gate would count this as a PASS while whole sections never ran.');
+  process.exit(1);
+}, 150000);
+
 (async () => {
   /* ======================================================================
      1) OFF (settled) IS DAY-FACTS MODE - it opens every exact scheduled
         chart and saves its facts. This inverts the old chartCalls===0 pin.
      ====================================================================== */
+  __sectionReached = '1) OFF is day-facts mode';
   const off = makeMonthHarness({ legacyAllVisits: true, today: TODAY });
   const seeded = off.seedDay(DAY, ROWS);
   const seededIds = seeded.map(r => String(r.patient_external_id));
@@ -534,6 +565,7 @@ function firstMatch(list, text) {
         emit the all-visits reads. Without this, "0 body requests" could be a
         harness that cannot emit them at all.
      ====================================================================== */
+  __sectionReached = '7) Full Notes ON causal control';
   const on = makeMonthHarness({ today: TODAY, visitNotesOn: true });
   on.seedDay(DAY, ROWS);
   const onResult = await on.api.pull({
@@ -600,6 +632,7 @@ function firstMatch(list, text) {
         an inert harness - and it is the second, independent measurement
         (day harness, batch seam) that the day-note lane really runs.
      ====================================================================== */
+  __sectionReached = '9) settled-OFF causal control';
   const settledOff = makeHarness({ day: DAY, today: TODAY, rows: ROWS, scheduleBorn: false, chartCoverage: true });
   const settledReceipt = await settledOff.api._runHistoryBatch(settledOff.rows, [], settledOff.onStatus, { scopeDay: DAY });
   await flush(5);
@@ -676,4 +709,5 @@ function firstMatch(list, text) {
     'carve-out, the true live-chart gate, itself expiry-guarded) and ship the corrected tooltip + tour ' +
     'line; ScribeFlow toasts the day-facts truth and its one legacy schedule-only sentence is contained ' +
     'to the retired no-guarded-engine body; the unscoped save door requires a settled choice.)');
-})().catch(error => { console.error(error); process.exit(1); });
+  clearTimeout(__watchdog);
+})().catch(error => { clearTimeout(__watchdog); console.error(error); process.exit(1); });
