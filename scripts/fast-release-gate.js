@@ -197,6 +197,12 @@ const INVARIANTS = Object.freeze([
      problem, so it is pinned as an invariant rather than left to a changed-area
      net. 106ms. */
   { label: 'patient-demographics-editable', args: ['tests/patient-demographics-are-editable.test.js'], require: /PASS patient-demographics-are-editable:/ },
+  /* prepfold-1.0.0 (2026-08-28): the Doctor prep summary re-prints nine facts
+     that each already have a card AND a tile on the same screen. It is FOLDED,
+     not deleted, and this guards BOTH directions - a future 'cleanup' must not
+     delete the clinical text, and a future change must not silently re-open the
+     fold and put the wall of duplication back. 279ms. */
+  { label: 'prep-summary-folded', args: ['tests/prep-summary-is-folded-not-lost.test.js'], require: /PASS prep-summary-is-folded-not-lost:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },

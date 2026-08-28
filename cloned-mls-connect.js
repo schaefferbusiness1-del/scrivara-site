@@ -3074,7 +3074,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     host.innerHTML =
       '<h3>🧾 Doctor prep summary' +
       '<button class="edit" onclick="window.__mlsEpCopySummary()">📋 Copy</button></h3>' +
-      '<div class="body" style="font-family:inherit">' + esc(text).replace(/\n/g, '<br>') + '</div>';
+      /* prepfold-1.0.0 (2026-08-28): buildPrepSummary re-prints SOURCE, ALLERGIES,
+         PROBLEMS, MEDICATIONS, VITALS, HISTORY, LONGITUDINAL SUMMARY and LAST VISIT
+         as flat text - and every one of those already has its own card, and its own
+         quick-strip tile, on the SAME screen directly above this box. That is the
+         single largest block of duplicated text on the chart and it is what the
+         owner meant by "all the other summarys are over kill".
+         FOLDED, not deleted. The text is one click away, Copy still works (it
+         re-derives from buildPrepSummaryForPatient and never reads this DOM), and
+         nothing a doctor might rely on is removed - which matters because other
+         apparently-redundant lines on this card turned out to be load-bearing.
+         <details> is native: no JS, no listener to leak, no state to desync. */
+      '<details class="mls-ep-prep">' +
+      '<summary style="cursor:pointer;color:var(--muted);font-size:12.5px;padding:2px 0">Show the full prep summary text</summary>' +
+      '<div class="body" style="font-family:inherit">' + esc(text).replace(/\n/g, '<br>') + '</div>' +
+      '</details>';
   }
 
   function renderTopBox(p) {
