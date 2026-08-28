@@ -230,6 +230,23 @@ lockSandbox.S.appt = null; lockSandbox.S.locked = null; lockSandbox.S.editing = 
 lockSandbox.S.genClickedAt = 0; lockSandbox.S.signedAt = 0;
 lockSandbox.S.phase = 'idle'; lockSandbox.S.lastWarn = '';
 lockSandbox.S.activationRefusalWarn = '';
+/* liftbusy-1.0.2 (2026-08-28): DO NOT DISCARD THE MEASUREMENT THIS LOOP MADE.
+   The restore below existed only so the throw-path assertion further down still
+   measures the throw path - but assigning the counter back threw away what the
+   four refusals had just told us: whether a refused activation repaints at all.
+   A completeness review flagged the discard and proposed asserting the counter
+   was UNCHANGED. That would be wrong, and the engine says so: every refusal
+   path in lockAndStart ends `render(); return false;` - it MUST repaint, or the
+   warning it just wrote to S.lastWarn is never shown. Demanding no repaint
+   would pin the refusal as silent.
+   What is worth measuring is that each refusal repaints EXACTLY ONCE: zero
+   means an invisible refusal, more than one means a refused row is repainting
+   the screen repeatedly. Asserted first, then the counter is restored so the
+   throw-path assertion below keeps measuring only the throw. */
+assert.strictEqual(lockRenders - lockRendersBeforeRefusals, 4,
+  'the four refused activations repainted ' + (lockRenders - lockRendersBeforeRefusals) + ' times, expected 4 ' +
+  '(one each). Zero would mean a refusal writes S.lastWarn and never shows it; more than one means a ' +
+  'refused row repaints the screen more than it needs to.');
 lockRenders = lockRendersBeforeRefusals;
 assert.strictEqual(lockSandbox.S.lastWarn, '', 'lockAndStart fabricated a connection/refusal diagnosis');
 assert.strictEqual(lockRenders, 0, 'throwing engine path rendered fabricated lifecycle state');

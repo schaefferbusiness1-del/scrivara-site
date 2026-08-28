@@ -47,8 +47,33 @@ assert(!/mlsAthenaContinueFn\s*\(/.test(recovery), 'read recovery must not click
   }
   assert(declines.some((r) => /skipped:\s*'athena-signed-out'/.test(r) && /manualSignIn:\s*true/.test(r)),
     'a signed-out Athena session is no longer handed to the owner as a MANUAL sign-in - signing in is his click, never ours');
-  assert(declines.some((r) => /tabUntouched:\s*true/.test(r)),
-    'no refusal declares the tab untouched any more, so nothing records that a declined recovery left the session alone');
+  /* recovervocab-1.0.1 (2026-08-28): `some` where the comment promised EVERY.
+     A completeness review measured it: 8 declining returns, 4 carrying
+     tabUntouched - so three of those four could lose it and this stayed green.
+     But "every refusal declares tabUntouched" is not the honest rule either,
+     because two of the eight have no tab to touch at all and two hand the
+     session to the owner. The real rule is a PARTITION: every refusal either
+     declares the tab untouched, or says why it could not have touched one.
+     Pinned closed, with the counts, so a refusal cannot quietly drift out of
+     its category. */
+  const NO_TAB_TO_TOUCH = /skipped:\s*'(?:tab-missing|non-athena-tab)'/;
+  const HANDED_TO_OWNER = /manualSignIn:\s*true/;
+  const uncategorised = declines.filter((r) =>
+    !/tabUntouched:\s*true/.test(r) && !NO_TAB_TO_TOUCH.test(r) && !HANDED_TO_OWNER.test(r));
+  assert.deepStrictEqual(uncategorised.map((r) => r.replace(/\s+/g, ' ')), [],
+    'a recovery refusal neither declares the tab untouched, nor says there was no tab to touch, nor hands ' +
+    'the session to the owner. It is a refusal that MIGHT have touched a live Athena session and does not say.');
+  assert.strictEqual(declines.filter((r) => /tabUntouched:\s*true/.test(r)).length, 4,
+    'the number of refusals declaring the tab untouched changed. Audit the new one and move this pin ' +
+    'deliberately - the whole point is that a refusal cannot slip out of the untouched set unnoticed.');
+  assert.strictEqual(declines.filter((r) => HANDED_TO_OWNER.test(r)).length, 2,
+    'the signed-out refusals that hand the session to the owner changed in number - signing in is his click, never ours');
+  /* The shallow `return {...}` scan cannot see a NESTED object literal, so a
+     refusal that grew one would silently drop out of every check above. Compare
+     against a raw count of return-object openings. */
+  assert.strictEqual((recovery.match(/return \{/g) || []).length, returns.length,
+    'a recovery return carries a NESTED object, so the shallow scan above no longer sees every exit - ' +
+    'the categorisation is incomplete and would pass by omission');
   assert(!/chrome\.tabs\.update\([^)]*url:\s*[^)]*login/i.test(recovery),
     'the recovery navigates the Athena tab toward a login URL - that is how a live session gets thrown away');
 }

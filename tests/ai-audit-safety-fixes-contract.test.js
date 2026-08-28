@@ -87,8 +87,10 @@ assert(app.includes('SPEAKER-TURN HYPOTHESES (UNVERIFIED'),
     'the hosted transport keeps only that field, so a sidecar sent anywhere else is silently dropped');
   assert(/draftTuning:/.test(call[2]),
     'the generation call lost its draft-tuning options, so Settings would stop reaching the request');
-  assert(app.includes('SPEAKER-TURN HYPOTHESES (UNVERIFIED'),
-    'the sidecar lost its caveat - unverified speaker attribution would read as fact');
+  /* The sidecar's UNVERIFIED caveat is already pinned above (the assertion just
+     before this block). sidecar-1.0.0 repeated it here; a duplicate predicate
+     22 lines from its twin is noise that makes a real gap harder to see, so it
+     is removed rather than kept "for locality". */
 }
 assert(app.includes("noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',"),
   'Copilot must receive the NOTE, not a word count');

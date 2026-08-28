@@ -160,10 +160,33 @@ function html(params) {
   <nav id="mlsRdNav">Old left rail</nav>
   <div id="_patientFace"></div><div id="_backupBadge"></div><div id="mlsGetPhoneCard"></div><button id="mlsFab" type="button"></button>
   <main id="appWrap"><section id="appScreen"><button id="primaryAction" onclick="window.__recordingStarts=(window.__recordingStarts||0)+1">Start recording</button>
-  <label for="qolDockSide">Navigation bar</label><select id="qolDockSide" onchange="applyDockSidePreview(this.value)">
+  <!-- dockfn-1.0.0 (b1099): these two handlers MIRROR the shipped markup. The
+       real controls call qolDockSideChanged / qolDockAutoHideChanged, which
+       guard the dynamically loaded applyDock* functions; this fixture kept
+       the old direct calls and so no longer resembled the product. -->
+  <label for="qolDockSide">Navigation bar</label><select id="qolDockSide" onchange="qolDockSideChanged(this.value)">
   <option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select>
-  <label for="qolDockAutoHide">Auto-hide</label><input type="checkbox" id="qolDockAutoHide" onchange="if(typeof applyDockAutoHidePreview==='function')applyDockAutoHidePreview(this.checked)">
-  </section></main><script src="/guard.js"></script></body></html>`;
+  <label for="qolDockAutoHide">Auto-hide</label><input type="checkbox" id="qolDockAutoHide" onchange="qolDockAutoHideChanged(this.checked)">
+  </section></main>
+  <script>
+  /* dockfn-1.0.0 mirror: the shipped shell does not call applyDock* from the
+     inline handler - it calls these two named guards, which tolerate the
+     dynamically loaded owner being absent. Reproduced here so this fixture
+     exercises the SAME path the product does, rather than a shortcut the
+     product no longer takes. */
+  function qolDockSideChanged(side){
+    if(typeof window.applyDockSidePreview==='function'){ window.applyDockSidePreview(side); return; }
+    try{
+      var sel=document.getElementById('qolDockSide');
+      var allowed=sel?Array.prototype.map.call(sel.options,function(o){return o.value;}):[];
+      if(allowed.indexOf(side)>=0) localStorage.setItem(uns('qolDockSide'),side);
+    }catch(e){}
+  }
+  function qolDockAutoHideChanged(on){
+    if(typeof window.applyDockAutoHidePreview==='function') window.applyDockAutoHidePreview(on);
+  }
+  </script>
+  <script src="/guard.js"></script></body></html>`;
 }
 
 function serve() {

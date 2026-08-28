@@ -660,6 +660,48 @@ async function main() {
   ok(/office computer/i.test(st.line), 'the line must point the doctor at where the note actually is');
 }
 
+/* ---- B7c: verifiedWrite MISSING, and verifiedWrite TRUTHY-BUT-NOT-TRUE.
+   phverif-1.0.1 (2026-08-28): B7 covers true and B7b covers false, so the two
+   shapes that actually break a `=== true` check were tested nowhere. A
+   completeness review pointed out that loosening the phone's gate from
+   `r0.data.verifiedWrite === true` to a truthy test would pass BOTH existing
+   legs unchanged.
+   Absent is the older office build, which emitted no such field at all; a
+   truthy non-true value ('yes', 1) is what a future payload change could send.
+   Neither is a verified chart write, and neither may read as SENT. ------- */
+{
+  for (const [label, dataExtra] of [
+    ['the field is ABSENT (an older office build)', {}],
+    ['the field is the STRING "true"', { verifiedWrite: 'true' }],
+    ['the field is 1', { verifiedWrite: 1 }],
+    ['the field is the string "yes"', { verifiedWrite: 'yes' }]
+  ]) {
+    let jobState = 'queued';
+    const h = harness({
+      fetch: (url, init) => {
+        if (/presence/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, online: true, ext: true, officeName: 'Front desk', officeId: 'dev_office' }) };
+        if (/\/api\/relay\/jobs$/.test(url) && init.method === 'POST') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, id: 'rj_test' }) };
+        if (/\/api\/relay\/jobs\/rj_test$/.test(url)) {
+          if (jobState === 'done') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'done', result: { ok: true, data: Object.assign({ confirmed: true, encounterId: 'enc-7', visitDate: '2026-08-18', provider: 'Dr Synthetic' }, dataExtra) } } }) };
+          return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'queued' } }) };
+        }
+        return { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) };
+      }
+    });
+    await h.api.sendNoteToAthena({ action: 'write_note', noteText: 'Reviewed note body.', patient: { name: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' }, apptId: 'appt-2', visitDay: '2026-08-18' });
+    await flush(); await flush();
+    jobState = 'done';
+    h.advance(3000); await flush(); await flush();
+
+    const st = h.api.sendState();
+    eq(st.status, 'staged',
+      'with ' + label + ', the phone reported ' + st.status + ' rather than staged. Only a STRICT ' +
+      'verifiedWrite === true is a verified chart write; anything else is the phone claiming a write ' +
+      'Athena never confirmed.');
+    ok(!/^SENT/.test(st.line), 'with ' + label + ', the line led with SENT');
+  }
+}
+
 /* ---- B8: the phone reports a lost / expired / unclaimed job honestly --- */
 {
   for (const [status, extra, expectRe] of [
