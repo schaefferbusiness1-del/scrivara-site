@@ -310,10 +310,26 @@ function buttonIds(html) {
   assert(offers.includes('Adam'),
     'refusing the ambiguous row also removed the banner patient\'s own offer - the doctor ' +
     'is left with no way to record the person on screen. Offers: ' + JSON.stringify(offers));
-  assert.deepStrictEqual(offers, ['Adam', 'Adam'],
-    'MEASURED 2026-08-28: an ambiguous roster yields TWO offers for the same person. If this ' +
-    'now reads ["Adam"], the duplicate has been fixed - update this expectation on purpose. ' +
-    'Offers: ' + JSON.stringify(offers));
+  /* bpwhy-1.0.0 (2026-08-28): THE FROZEN EXPECTATION IS GONE, AND SO IS THE
+     DEFECT IT FROZE. This used to pin offers === ['Adam','Adam'] as "measured
+     today", which is the shape that makes a fix cost a test edit - a test
+     restoring a literal freezes the default. Measuring the two buttons showed
+     the real problem was not the duplication at all: they are distinguishable,
+     and the SECOND one said "not on today's schedule" about a patient who is on
+     today's schedule at 8:00. The identity guard refused to bind the row, and
+     the screen reported that refusal as an ABSENCE.
+     What is pinned now is the honesty, in both directions: an unbindable but
+     PRESENT appointment must not be described as absence, and a genuinely
+     absent one must still say so plainly. */
+  const bannerBtn = (html.match(/<button[^>]*id="ez3ActiveGo"[\s\S]*?<\/button>/) || [])[0] || '';
+  assert(bannerBtn, 'the banner patient lost their own explicit offer entirely');
+  assert(!/not on [^<]*schedule/.test(bannerBtn),
+    'the banner offer claims the patient is NOT on the schedule while a name+DOB-matching appointment ' +
+    'sits on it. MLS cannot PROVE which chart the row belongs to - that is ambiguity, not absence, and ' +
+    'reporting it as absence hides the thing the doctor has to act on. Button: ' + JSON.stringify(bannerBtn.slice(0, 220)));
+  assert(/more than one chart shares this name and date of birth/.test(bannerBtn),
+    'the banner offer no longer explains WHY it cannot lead - the doctor sees a second Start Recording ' +
+    'control with no reason for it. Button: ' + JSON.stringify(bannerBtn.slice(0, 220)));
 }
 
 /* ---- 3. NO BANNER PATIENT: THE DOCUMENTED DAY FLOW IS UNCHANGED -------- */

@@ -22239,8 +22239,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          banner, so a selection restored from a previous day still gets an
          explicit offer — below the day, and labelled with why it is below. */
       if (bp && !bpLeads) {
+        /* bpwhy-1.0.0 (2026-08-28): SAY WHICH KIND OF "not leading" THIS IS.
+           This always claimed the banner patient is "not on <day>'s schedule".
+           That is true when no row matches - a walk-in, or a selection carried
+           over from another day. It is FALSE when a row DOES match by name and
+           date of birth and MLS simply cannot prove it is this chart, which is
+           exactly what happens when two charts share a name and DOB: the
+           identity guard correctly refuses to bind the row, and the screen then
+           reported the refusal as an absence. Telling the doctor a patient is
+           not on the schedule when they are sitting on it at 8:00 is the
+           misleading-state class, and it hides the thing he needs to act on -
+           that there are two charts and he has to pick one.
+           The refusal is unchanged; only the sentence explaining it is. */
+        var bpAmbiguous = false;
+        try {
+          bpAmbiguous = !bpRow && rows.some(function (a) {
+            return a && a.name && nameMatch(a.name, bp.name) && !dobConflicts(a.dob, bp.dob);
+          });
+        } catch (eAmb) { bpAmbiguous = false; }
         h += '<button type="button" class="ez3-big ok" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
-             '<small>the patient on your banner · ' + dobLabelPlain(bp) + ' · not on ' + esc(visitDayShort()) + '’s schedule — records as an ad-hoc visit</small></button>';
+             '<small>the patient on your banner · ' + dobLabelPlain(bp) + ' · ' +
+             (bpAmbiguous
+               ? 'a matching appointment is on ' + esc(visitDayShort()) + '’s schedule, but more than one chart shares this name and date of birth — records as an ad-hoc visit until you pick the right chart'
+               : 'not on ' + esc(visitDayShort()) + '’s schedule — records as an ad-hoc visit') +
+             '</small></button>';
       }
     }
     /* one obvious action at a time: Choose only makes sense once rows exist */
