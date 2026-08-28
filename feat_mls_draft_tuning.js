@@ -12,6 +12,49 @@
   var VERSION = '1.3.3';
   var STORE_KEY = 'draftTuningV1';
   var MAX_INSTRUCTIONS = 600;
+
+  /* opnk-1.0.0 (2026-08-28): the ONE key the op-note generator reads. Written by
+     the Op Note Room rail (feat_mls_opnote_room.js) and, since this change, by
+     the Settings select as well - two surfaces, one stored value, so they can no
+     longer disagree. Deliberately NOT a second source of truth: this module only
+     mirrors what the generator already consults, and the generator's own reader
+     is left untouched because tests/opnote-follow-modes-differ pins its exact
+     shape (one uns() call, one getItem, five tplMode sites). Same three-value
+     vocabulary the rail enforces; anything else reads as the generator's own
+     default, 'adapt'. */
+  var OPNOTE_ROOM_TPL_KEY = 'opNoteTemplateMode';
+  var OPNOTE_GENERATOR_DEFAULT = 'adapt';
+  /* Returns what the GENERATOR WILL ACTUALLY USE, including its default - not
+     merely what is stored. Returning '' for "unset" and letting the caller fall
+     back to the saved profile's own default was my first attempt and it left
+     the exact case that matters broken: on a fresh account the key is unset, the
+     generator uses 'adapt', and the shipped op-note profile says 'strict', so
+     Settings would still have displayed a mode no draft was using. Mirroring the
+     generator's default here makes the two agree by construction. */
+  function opnoteRoomTemplateMode() {
+    try {
+      if (typeof window.uns !== 'function') return OPNOTE_GENERATOR_DEFAULT;
+      var raw = String(localStorage.getItem(window.uns(OPNOTE_ROOM_TPL_KEY)) || '').trim();
+      return (raw === 'strict' || raw === 'guide' || raw === 'adapt') ? raw : OPNOTE_GENERATOR_DEFAULT;
+    } catch (e) { return OPNOTE_GENERATOR_DEFAULT; }
+  }
+  function opnoteRoomTemplateModeSet(mode) {
+    var m = String(mode || '').trim();
+    if (m !== 'strict' && m !== 'guide' && m !== 'adapt') return false;
+    /* Write, then READ BACK before believing it: a restricted or full profile
+       can refuse the write, and "saved" is a claim this app has been caught
+       making without proof before. */
+    var landed = false;
+    try {
+      if (typeof window.uns !== 'function') return false;
+      localStorage.setItem(window.uns(OPNOTE_ROOM_TPL_KEY), m);
+      landed = String(localStorage.getItem(window.uns(OPNOTE_ROOM_TPL_KEY)) || '') === m;
+    } catch (e) { landed = false; }
+    if (!landed) {
+      try { if (typeof window.toast === 'function') window.toast('Op note template handling could not be saved on this device.', 'err'); } catch (e2) {}
+    }
+    return landed;
+  }
   var MAX_SECTION_TEMPLATE = 2000;
   var MAX_SECTION_PROFILES = 8;
   var MAX_SECTION_EXAMPLE = 12000;
@@ -1377,6 +1420,23 @@
     mode.innerHTML = optionHtml(SECTION_MODES[id]);
     mode.value = value || SECTION_MODES[id][0][0];
     template.value = templateMode || SECTION_TEMPLATE_DEFAULT;
+    /* opnk-1.0.0 (2026-08-28): OP NOTE TEMPLATE HANDLING LIVED IN TWO STORES.
+       The op-note generator reads exactly one value - localStorage[uns(
+       'opNoteTemplateMode')], written by the Op Note Room rail - and it is that
+       value alone that produces the system clause, relaxes the fidelity gate
+       and prints the "Style used" receipt. This Settings select wrote somewhere
+       else entirely (draftTuningV1 -> families.opnote.profiles[n].templateMode)
+       and reached no draft.
+       They disagreed OUT OF THE BOX: the generator defaults to 'adapt' while
+       the shipped op-note profile carries 'strict'. So a fresh account showed
+       "Follow saved template strictly" in Settings, drafted in adapt, and the
+       Room's own receipt said "Adapt to the case" - three surfaces, two
+       answers, and the one the doctor could see was the wrong one.
+       The generator's key stays the single authority (its reader is pinned by
+       tests/opnote-follow-modes-differ and must not gain a second read). This
+       control now DISPLAYS that authority, so Settings can no longer show a
+       mode the drafts are not using. */
+    if (id === 'opnote') template.value = opnoteRoomTemplateMode();
     paintProfileButtons(profiles);
   }
   function paintProfileButtons(profiles) {
@@ -1471,6 +1531,13 @@
       selected.label = cleanReusableText(q('mlsDtSectionName').value, 80) || selected.label || ('Format ' + (profiles.indexOf(selected) + 1));
       selected.sectionMode = enumValue('sectionMode', q('mlsDtSectionMode').value, selected.sectionMode);
       selected.templateMode = enumValue('templateMode', q('mlsDtSectionTemplate').value, selected.templateMode);
+      /* opnk-1.0.0: and for op notes, write THROUGH to the key the generator
+         actually reads, so choosing a mode here changes the next draft instead
+         of only changing a stored value nothing consults. Same three-value
+         vocabulary, same read-back-before-believing discipline the Op Note Room
+         rail uses; a storage write that does not land is reported, never
+         assumed. */
+      if (id === 'opnote') opnoteRoomTemplateModeSet(selected.templateMode);
       selected.when = cleanReusableText(q('mlsDtSectionWhen').value, 180);
       /* tplauto-1.0.0: once a rule has been PROPOSED for this format, his
          next save is his decision about it - including a decision to leave
