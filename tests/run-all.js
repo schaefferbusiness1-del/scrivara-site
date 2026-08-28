@@ -698,6 +698,14 @@ const tests = [
   /* A generic current encounter such as "patient is fine" may not borrow old
      chart history to manufacture today's note, plan, or billing. */
   'sparse-transcript-grounding-contract.test.js',
+  /* ...and the rule that enforces it may not be deleted by a clinician typing
+     into "Focus this note". The focus box used to REPLACE it outright. */
+  'sparse-safety-instruction-survives-focus.test.js',
+  /* Both of these arrived with ac8ffc49 / bfd2ad76 on 2026-08-27 and were never
+     registered, so the gate had never once executed them. Both pass. Found by
+     run-all's own registry check while adding the suite above. */
+  'generation-claim-repair-template-runtime.test.js',
+  'generation-structured-profile-unlinked-runtime.test.js',
   '1p-easy-generate-sparse-runtime.test.js',
   /* Browser-level Generate-one-note facade: click the real top control and
      prove one canonical dispatch, lifecycle reasons, bounded no-op failure,

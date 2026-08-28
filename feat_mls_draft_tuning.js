@@ -738,14 +738,45 @@
     }
     if (id === 'soap') {
       var soap = transientSoap();
+      /* sfi-1.0.0 (2026-08-27). THIS COPY USED TO DELETE A SAFETY INSTRUCTION.
+         request.instructions arrives carrying whatever the shell injected -
+         and on a sparse visit that is the sparse-evidence rule from
+         _mlsGenerationDraftTuning: the one that forbids inferring exam
+         findings, a diagnosis, medication continuation, an order, a procedure
+         or a follow-up from PRIOR CHART HISTORY when today's transcript is
+         thin. transientSoap().instructions is the clinician's "Focus this
+         note" box. Copying every key blindly meant the focus text REPLACED the
+         safety rule outright.
+         Measured by executing this module: with no focus text the payload
+         carried the rule (480 chars); with the three words "emphasize the
+         injection" it carried "emphasize the injection | Preserve the SOAP
+         contract..." and the rule was gone. Three words in a text box removed
+         a patient-safety guard.
+         Both now survive, carried text FIRST so that if the pair exceeds
+         MAX_INSTRUCTIONS it is the clinician's preference that is trimmed and
+         never the safety rule. */
+      var carriedInstructions = String(request.instructions || '').trim();
       Object.keys(soap).forEach(function (key) { request[key] = soap[key]; });
+      if (carriedInstructions) {
+        request.instructions = cleanText(
+          [carriedInstructions, String(request.instructions || '').trim()].filter(Boolean).join('\n'),
+          MAX_INSTRUCTIONS);
+      }
     }
     Object.keys(base).forEach(function (key) {
       if (key === 'profiles' || key === 'activeProfile' || key === 'sectionMode' || key === 'templateMode') {
         /* section profile selection is resolved below */
       } else if (key === 'instructions') {
-        var account = cleanText(base.instructions, MAX_INSTRUCTIONS);
         var one = cleanText(request.instructions, MAX_INSTRUCTIONS);
+        /* sfi-1.0.0: the ORDER is unchanged - account first, exactly as before -
+           but the account instruction now yields the space instead of taking
+           it. `one` is the per-visit instruction and may carry the
+           sparse-evidence safety rule (see the soap block above); joining and
+           then truncating from the tail could cut that rule off when a long
+           standing instruction was set. Budgeting the account to what is left
+           makes the per-visit instruction untruncatable by a preference. */
+        var room = Math.max(0, MAX_INSTRUCTIONS - (one ? one.length + 3 : 0));
+        var account = cleanText(base.instructions, room);
         merged.instructions = cleanText([account, one].filter(Boolean).join(' | '), MAX_INSTRUCTIONS);
       } else if (request[key] != null) {
         merged[key] = enumValue(key, request[key], merged[key]);

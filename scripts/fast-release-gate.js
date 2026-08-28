@@ -31,8 +31,14 @@ const ROOT = path.resolve(__dirname, '..');
 /* b1088 reconciliation: 875 registered at b1087
    + 1p-writeflow-opnote-clarity-progress = 876
    + 1p-phone-desktop-open-visit-relay = 877
-   + 1p-phone-direct-mediarecorder-runtime = 878. */
-const FULL_GATE_TESTS = 878;
+   + 1p-phone-direct-mediarecorder-runtime = 878
+   + sparse-safety-instruction-survives-focus = 879
+   + generation-claim-repair-template-runtime = 880
+   + generation-structured-profile-unlinked-runtime = 881.
+   The last two were NOT new: they landed with ac8ffc49 / bfd2ad76 on
+   2026-08-27 and were never registered, so the gate had never executed either
+   of them. run-all's own registry check caught it. */
+const FULL_GATE_TESTS = 881;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
