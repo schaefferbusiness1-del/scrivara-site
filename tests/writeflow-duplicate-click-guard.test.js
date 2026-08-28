@@ -33,8 +33,27 @@ assert(wf.includes("Another Athena action is already awaiting confirmation. Fini
 
 // 2. flag arms at start and clears on fail-closed exits + cancel
 assert(wf.includes('athenaActionRunning = true;'), 'the in-flight flag never arms');
-const failClears = (wf.match(/athenaActionRunning = false; return;/g) || []).length;
-assert(failClears >= 5, 'fail-closed exits must clear the in-flight flag (found ' + failClears + ', expected >= 5)');
+/* wfrep-1.0.0 (2026-08-28): the PROPERTY is unchanged - no fail-closed exit may
+   leave the in-flight flag armed, or the control stays stuck forever. What
+   changed is that the terminal refusals in showActionConfirm now route through
+   refuseAction(), which says it, clears the flag AND reports the refusal to a
+   waiting phone (before, the phone heard nothing and blamed a timeout ~9
+   minutes later). Counting one spelling would have called that refactor a
+   regression, so this counts fail-closed exits BOTH ways and separately proves
+   the helper really does clear the flag - which the old literal count could
+   only ever assume. */
+assert(/function refuseAction\(action, opts, message\) \{[\s\S]{0,400}?athenaActionRunning = false;/.test(wf),
+  'refuseAction must clear the in-flight flag itself');
+/* This must match the CALL, not the typeof guard beside it. Written the loose
+   way first, and a canary that deleted the invocation still passed - the regex
+   was matching `typeof opts.onResult === 'function'` and calling that proof. */
+assert(/function refuseAction\(action, opts, message\) \{[\s\S]{0,400}?opts\.onResult\(\{ ok: false, error: message \}/.test(wf),
+  'refuseAction must REPORT the refusal, not merely display it - a phone waiting on this job hears nothing otherwise');
+const inlineClears = (wf.match(/athenaActionRunning = false; return;/g) || []).length;
+const routedClears = (wf.match(/refuseAction\(action, opts,/g) || []).length - 1; // minus the declaration
+const failClears = inlineClears + routedClears;
+assert(failClears >= 5, 'fail-closed exits must clear the in-flight flag (found ' + failClears +
+  ' = ' + inlineClears + ' inline + ' + routedClears + ' via refuseAction, expected >= 5)');
 assert(/cancel\.onclick = function \(\) \{ closeActionConfirm\(\); athenaActionRunning = false;/.test(wf),
   'Cancel no longer clears the in-flight flag');
 
@@ -48,7 +67,11 @@ assert(disableAt >= 0, 'confirm click no longer disables both buttons');
 assert(bridgeAt > disableAt, 'the buttons must be disabled BEFORE the execute crosses the bridge');
 
 // 4. one-use token fail-closed
-assert(wf.includes("if (!actionToken) { actionSay(opts, 'Athena did not return a one-use confirmation token. Nothing was changed.', 'err'); athenaActionRunning = false; return; }"),
+/* wfrep-1.0.0: same refusal, now routed through refuseAction() so a waiting
+   phone is told WHY instead of timing out nine minutes later. The property
+   pinned here is unchanged and still exact: no actionToken means stop, before
+   anything is confirmed or written. */
+assert(wf.includes("if (!actionToken) { refuseAction(action, opts, 'Athena did not return a one-use confirmation token. Nothing was changed.'); return; }"),
   'missing one-use token no longer fails closed');
 
 // 5. execute carries mode:'execute' + the same token + locked identity on both fields

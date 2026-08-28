@@ -390,6 +390,31 @@
     } catch (e) {}
     return null;
   }
+  /* wfrep-1.0.0 (2026-08-28). A REFUSAL THE OFFICE COMPUTER SAYS BUT NEVER REPORTS.
+   *
+   * showActionConfirm's terminal refusals all did
+   *     actionSay(opts, '<why>', 'err'); athenaActionRunning = false; return;
+   * and no more. That is complete for a doctor standing at the desk - the
+   * sentence is on his screen. It is silence for a doctor holding the phone:
+   * the relay job is only ever finished from opts.onResult, so nothing came
+   * back, and the phone sat there until its own watchdog gave up and blamed a
+   * TIMEOUT. The five that matter most are the identity ones - "the Athena
+   * chart does not match the saved patient identity" became "timed out", which
+   * is not merely unhelpful, it points at the wrong problem entirely.
+   *
+   * refuseAction() says it, stands the action down, AND reports it. Reporting
+   * is additive: only the phone relay path sets opts.onResult (runSendNote),
+   * so a desk press behaves exactly as before, and no gate, guard or refusal
+   * condition is changed by this - the refusal still refuses, it just arrives. */
+  function refuseAction(action, opts, message) {
+    actionSay(opts, message, 'err');
+    athenaActionRunning = false;
+    try {
+      if (opts && typeof opts.onResult === 'function') {
+        opts.onResult({ ok: false, error: message }, { action: action, context: null, verifiedWrite: null });
+      }
+    } catch (e) {}
+  }
   function actionSay(opts, msg, kind, behavior) {
     var el = statusEl(opts);
     if (el) {
@@ -624,11 +649,11 @@
     closeActionConfirm();
     var meta = ATHENA_ACTIONS[action], ctx = (probe && probe.context) || {};
     var actionToken = S((probe && (probe.actionToken || probe.token)) || '');
-    if (!actionToken) { actionSay(opts, 'Athena did not return a one-use confirmation token. Nothing was changed.', 'err'); athenaActionRunning = false; return; }
+    if (!actionToken) { refuseAction(action, opts, 'Athena did not return a one-use confirmation token. Nothing was changed.'); return; }
     var orderRowHash = action === 'place_order' ? S((probe && probe.rowHash) || opts.rowHash || '').trim() : '';
     var orderClientId = action === 'place_order' ? S(payload && payload.order && payload.order.clientOrderId).trim() : '';
     if (action === 'place_order' && (!orderRowHash || !orderClientId || S(probe && probe.clientOrderId).trim() !== orderClientId)) {
-      actionSay(opts, 'Athena did not return an exact order-row authorization binding. Nothing was changed.', 'err'); athenaActionRunning = false; return;
+      refuseAction(action, opts, 'Athena did not return an exact order-row authorization binding. Nothing was changed.'); return;
     }
     /* Imported patients do not always have an Athena MRN stored locally. The
        read-only probe must therefore report the chart MRN, which becomes the
@@ -638,12 +663,10 @@
     var athDob = contextValue(ctx, ['dob', 'patientDob'], '');
     var athMrn = contextValue(ctx, ['mrn', 'patientMrn', 'chartMrn'], '');
     if (!athName || !athDob || !athMrn || athName === '(not reported)' || athDob === '(not reported)' || athMrn === '(not reported)') {
-      actionSay(opts, 'Athena did not report a complete chart identity (name, DOB, and MRN). Nothing was changed.', 'err');
-      athenaActionRunning = false; return;
+      refuseAction(action, opts, 'Athena did not report a complete chart identity (name, DOB, and MRN). Nothing was changed.'); return;
     }
     if (!nameMatch(athName, patient.name) || nrmDob(athDob) !== nrmDob(patient.dob) || (patient.mrn && nrmId(athMrn) !== nrmId(patient.mrn))) {
-      actionSay(opts, 'The Athena chart returned by the read-only check does not match the saved patient identity. Nothing was changed.', 'err');
-      athenaActionRunning = false; return;
+      refuseAction(action, opts, 'The Athena chart returned by the read-only check does not match the saved patient identity. Nothing was changed.'); return;
     }
     var lockedPatient = { name: patient.name, dob: patient.dob, mrn: athMrn, patientId: S(patient.patientId).trim() };
     var lockedContext = {
@@ -655,13 +678,11 @@
     };
     var lockedControl = contextValue(ctx, ['control', 'controlLabel', 'actionControl'], '');
     if (!lockedContext.encounterId || !lockedContext.encounterUrl || !lockedContext.visitDate || !lockedContext.provider || !lockedControl) {
-      actionSay(opts, 'Athena did not report the exact encounter date, provider, ID, URL, and action control. Nothing was changed.', 'err');
-      athenaActionRunning = false; return;
+      refuseAction(action, opts, 'Athena did not report the exact encounter date, provider, ID, URL, and action control. Nothing was changed.'); return;
     }
     var matchedWriteReceipt = action === 'sign_encounter' ? findVerifiedWrite(lockedPatient, previewHash, opts, payload, lockedContext) : null;
     if (action === 'sign_encounter' && (!matchedWriteReceipt || !matchedWriteReceipt.noteWriteProof)) {
-      actionSay(opts, 'Sign & Save is still locked. This receipt does not have a verified write of this exact note to this exact Athena encounter. Write and verify the note first; no action was run.', 'err');
-      athenaActionRunning = false; return;
+      refuseAction(action, opts, 'Sign & Save is still locked. This receipt does not have a verified write of this exact note to this exact Athena encounter. Write and verify the note first; no action was run.'); return;
     }
     var ov = document.createElement('div'); ov.id = 'mlsAthenaActionConfirm';
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(10,25,50,.52);display:flex;align-items:center;justify-content:center;padding:18px';
