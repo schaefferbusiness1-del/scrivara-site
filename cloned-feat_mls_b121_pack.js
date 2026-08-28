@@ -2190,8 +2190,46 @@
       survivors.push(keep);
     });
     var out = arr.filter(function (p) { return !(p && dropIds[p.id]); });
-    try { window.savePatients(out); }
+    /* dedupsrv-1.0.0 (2026-08-28): {allowRemovals:true} is REQUIRED for a save
+       that drops rows. Without it the patient row-guard treats the absent
+       duplicates as an accidental truncation and carries every one of them
+       straight back - so the merge reported success and then undid itself. */
+    try { window.savePatients(out, undefined, { allowRemovals: true }); }
     catch (e) { log('merge save FAILED: ' + ((e && e.message) || e) + ' - store untouched.'); return { aborted: 'save-failed', dupGroups: sc.groups.length, merged: 0 }; }
+    /* dedupsrv-1.0.0: the absorbed rows must also die on the SERVER. Deleting
+       them only locally leaves the duplicate in /api/patients, and the next
+       hydration re-creates every row this merge just collapsed - the same
+       resurrection defect fixed for single deletes in b1107. Reuses
+       deletePatientOnServer, which resolves an unknown server id from the
+       server list and returns a verdict.
+       runOnce is synchronous and console-invoked, so its contract is unchanged:
+       verdicts land in the JOURNAL and failures are logged rather than
+       swallowed - a silent half-merge is what makes duplicates come back with
+       no explanation. */
+    entry.serverDeletes = [];
+    try {
+      var __ddIds = Object.keys(dropIds);
+      if (__ddIds.length) {
+        if (typeof window.deletePatientOnServer !== 'function') {
+          log('merge: deletePatientOnServer is UNAVAILABLE - ' + __ddIds.length + ' absorbed row(s) remain on the server and will rehydrate.');
+          entry.serverDeletes.push({ id: '*', ok: false, reason: 'helper-missing' });
+        } else {
+          window.__mlsDedupLastServerDeletes = Promise.all(__ddIds.map(function (did) {
+            return Promise.resolve(window.deletePatientOnServer(did)).then(function (v) {
+              var rec = { id: String(did), ok: !!(v && v.ok), reason: (v && v.reason) || 'unknown' };
+              entry.serverDeletes.push(rec);
+              if (!rec.ok) log('merge: SERVER delete failed for ' + did + ' (' + rec.reason + ') - that duplicate will return on the next hydration.');
+              return rec;
+            }, function () {
+              var rec = { id: String(did), ok: false, reason: 'threw' };
+              entry.serverDeletes.push(rec);
+              log('merge: SERVER delete threw for ' + did + ' - that duplicate will return on the next hydration.');
+              return rec;
+            });
+          }));
+        }
+      }
+    } catch (eSrvDel) { log('merge: server-delete stage failed: ' + ((eSrvDel && eSrvDel.message) || eSrvDel)); }
     /* STORE-INTERNAL reference remaps ONLY (journaled). _calAppts /
        patient_external_id is deliberately NOT rewritten - see header (d). */
     try {

@@ -178,6 +178,13 @@ const INVARIANTS = Object.freeze([
      because it guards WHO a record is, and because the gate sits in the shared
      engine where no changed-area net reliably reaches it. 118ms. */
   { label: 'f5-automerge-identity', args: ['tests/f5-automerge-needs-positive-identity.test.js'], require: /PASS f5-automerge-needs-positive-identity:/ },
+  /* dedupsrv-1.0.0 (2026-08-28): the only real patient merge in the app undid
+     itself - it saved the survivor list without {allowRemovals:true} so the
+     row-guard carried the duplicates back, and it never deleted the absorbed row
+     on the SERVER so hydration re-created them. Both halves must hold or the
+     merge is theatre; an invariant because the local save and the server delete
+     live in different files. 87ms. */
+  { label: 'patient-merge-durable', args: ['tests/patient-merge-is-durable.test.js'], require: /PASS patient-merge-is-durable:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },
