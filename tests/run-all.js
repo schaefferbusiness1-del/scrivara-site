@@ -706,6 +706,11 @@ const tests = [
      run-all's own registry check while adding the suite above. */
   'generation-claim-repair-template-runtime.test.js',
   'generation-structured-profile-unlinked-runtime.test.js',
+  /* The same class from the OTHER side: the server stores array-shaped chart
+     fields (POST /api/assist/extract) and GET /api/patients returns them
+     verbatim, so they must be flattened at the door before any reader sees
+     them - "p.problems.trim is not a function". */
+  'patient-chart-fields-normalize-at-the-door.test.js',
   '1p-easy-generate-sparse-runtime.test.js',
   /* Browser-level Generate-one-note facade: click the real top control and
      prove one canonical dispatch, lifecycle reasons, bounded no-op failure,

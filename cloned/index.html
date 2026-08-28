@@ -14372,6 +14372,7 @@ async function loadPatientsFromServer(opts){
       const isMine = !row.owner_email || (myEmail && String(row.owner_email).toLowerCase()===myEmail);
       if(!isMine) continue;
       if(!row.data || !row.external_id) continue;
+      _mlsNormalizePatientChartFields(row.data);
       const i=localIndex.has(row.external_id)?localIndex.get(row.external_id):-1;
       if(i===-2) continue;
       if(i<0){
@@ -29687,6 +29688,33 @@ function getContext(){ const el=document.getElementById('contextBox'); return el
    visit is intentionally unlinked from an Athena appointment. Flatten only
    the values already present; never invent a clinical fact or stringify an
    object as the useless literal "[object Object]". */
+/* ptshape-1.0.0 (2026-08-28). THE "p.problems.trim is not a function" CRASH,
+   with its provenance finally established.
+   A browser-only search for the writer finds nothing, which is why this was
+   filed as unproven: NOTHING IN THIS APP creates an array-shaped chart field.
+   The writer is on the SERVER. POST /api/assist/extract asks the model for
+   `{"allergies":[],"medications":[],"problems":[]}` and stores
+   `problems: (pt.problems || []).slice(0, 60)` - an ARRAY - into the encrypted
+   patients row; GET /api/patients then returns `JSON.parse(decrypt(...))`
+   verbatim, with no shape normalisation anywhere on the way out. So any patient
+   captured that way arrives here with problems/meds/allergies as arrays, and
+   the fourteen `(p.problems||'').trim()` style readers in this shell throw -
+   including the note-SAVE path, where the crash costs the doctor a finished
+   note.
+   Normalising the FOURTEEN readers would be fourteen chances to miss one. This
+   normalises at the DOOR instead, where server rows enter the local store, so
+   every present and future reader sees the string shape this app has always
+   assumed. Strings pass through completely untouched - not re-trimmed, not
+   re-encoded - so a record that was already fine is byte-identical. */
+function _mlsNormalizePatientChartFields(rec){
+  if(!rec||typeof rec!=='object')return rec;
+  ['problems','meds','allergies','summary'].forEach(function(key){
+    var value=rec[key];
+    if(value==null||typeof value==='string')return;
+    try{ rec[key]=_mlsGenerationFieldText(value); }catch(e){ rec[key]=''; }
+  });
+  return rec;
+}
 function _mlsGenerationFieldText(value,depth){
   depth=Number(depth)||0;
   if(value==null||depth>4)return '';

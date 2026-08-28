@@ -34,11 +34,14 @@ const ROOT = path.resolve(__dirname, '..');
    + 1p-phone-direct-mediarecorder-runtime = 878
    + sparse-safety-instruction-survives-focus = 879
    + generation-claim-repair-template-runtime = 880
-   + generation-structured-profile-unlinked-runtime = 881.
-   The last two were NOT new: they landed with ac8ffc49 / bfd2ad76 on
-   2026-08-27 and were never registered, so the gate had never executed either
-   of them. run-all's own registry check caught it. */
-const FULL_GATE_TESTS = 881;
+   + generation-structured-profile-unlinked-runtime = 881
+   + patient-chart-fields-normalize-at-the-door = 882.
+   880 and 881 were NOT new suites: generation-claim-repair-template-runtime and
+   generation-structured-profile-unlinked-runtime landed with ac8ffc49 /
+   bfd2ad76 on 2026-08-27 and were never registered, so the gate had never once
+   executed either of them. run-all's own registry check caught it while 879 was
+   being added. */
+const FULL_GATE_TESTS = 882;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
