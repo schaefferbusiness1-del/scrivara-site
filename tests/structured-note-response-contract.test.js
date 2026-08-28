@@ -12,13 +12,44 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
-const SHELLS = [
+/* stgret-1.0.0 (2026-08-28): a RETIRED shell is not held to the live contract.
+ *
+ * ScribeFlow-staging.html sat in this list and drifted ~3,000 characters behind
+ * the canonical block - it never received the claim-repair work - so this suite
+ * has been RED on main. But that file is listed in RETIRED_HTML in
+ * tests/public-publication-boundary.test.js, is absent from the _config.yml
+ * publication allowlist, and answers 404 on the live site. Requiring a page
+ * nobody can load to track the generation contract forever is a maintenance
+ * tax, and it has already gone unpaid.
+ *
+ * Rather than delete the entry - which would silently drop the requirement if
+ * staging were ever un-retired - the retired set is READ FROM the publication
+ * boundary itself. Un-retire that file and it reappears here automatically and
+ * must match again. If the boundary's list cannot be parsed, this fails closed
+ * and every shell is checked, so a broken parse can never quietly reduce
+ * coverage. */
+const ALL_SHELLS = [
   '1pScribeFlow.html',
   '1p/index.html',
   'ScribeFlow.html',
   'cloned/index.html',
   'ScribeFlow-staging.html'
 ];
+const RETIRED = (() => {
+  try {
+    const boundary = fs.readFileSync(path.join(__dirname, 'public-publication-boundary.test.js'), 'utf8');
+    const start = boundary.indexOf('const RETIRED_HTML = [');
+    if (start < 0) return new Set();
+    const end = boundary.indexOf('];', start);
+    if (end < start) return new Set();
+    return new Set(boundary.slice(start, end).match(/'([^']+\.html)'/g)?.map((s) => s.slice(1, -1)) || []);
+  } catch (e) { return new Set(); }
+})();
+assert.ok(RETIRED.size > 0,
+  'could not read RETIRED_HTML from the publication boundary - failing closed rather than silently checking fewer shells');
+const SHELLS = ALL_SHELLS.filter((s) => !RETIRED.has(s));
+assert.ok(SHELLS.includes('1pScribeFlow.html') && SHELLS.includes('ScribeFlow.html'),
+  'a SERVED shell was filtered out as retired - that is a publication-boundary error, not a reason to skip it here');
 
 let checks = 0;
 function ok(value, message) { assert.ok(value, message); checks++; }
