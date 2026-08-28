@@ -310,6 +310,17 @@ button.row:active{background:var(--surface-2)}
 
     <!-- TODAY -->
     <section id="today" class="hide"><div class="wrap">
+      <!-- phday-1.0.0 (2026-08-27): the day strip. S.date was initialised to
+           todayISO() and then READ in five places and WRITTEN in none, so this
+           app could only ever show today - there was no previous day, no next
+           day, and no way back to a missed morning. refreshToday() has always
+           carried a staleness guard for a day that "moved under us", so the
+           day was designed to move and the control was simply never built. -->
+      <div id="todayDayNav" style="display:flex;align-items:center;gap:8px;margin:0 0 10px">
+        <label for="dayInput" style="flex:0 0 auto;font-weight:600;opacity:.75">Day</label>
+        <input id="dayInput" type="date" aria-label="Which day's schedule to show"
+               style="flex:1 1 auto;min-height:44px;padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,.14);background:#fff;color:inherit;font:inherit">
+      </div>
       <div id="todayStatus"></div>
       <div class="find">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
@@ -454,6 +465,18 @@ function chev(){
 function todayISO(){
   var d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+/* phday-1.0.0: the ONLY writer of S.date. Clears the rows first so a slow day
+   can never show yesterday's appointments under today's heading - the loader's
+   own staleness guard drops the late answer, and this makes the wait honest. */
+function goToDay(iso){
+  var next = String(iso||'').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(next) || next === S.date) return;
+  S.date = next;
+  S.appts = null;
+  S.msg = null;
+  render();
+  refreshToday();
 }
 var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function longDate(iso){
@@ -1071,10 +1094,22 @@ function renderSignin(){
 }
 
 function renderToday(){
-  $('hTitle').textContent = 'Today';
+  /* phday-1.0.0: the heading must not say "Today" while showing another day. */
+  var isToday = S.date === todayISO();
+  $('hTitle').textContent = isToday ? 'Today' : 'Schedule';
   var sub = $('hSub');
   sub.textContent = longDate(S.date);
   sub.classList.remove('hide');
+
+  /* phday-1.0.0: ONE control, not three. The budget in
+     tests/phone-app-control-budget.test.js is the owner's "very little buttons"
+     made enforceable, and prev/next/back-to-today would have been a 43% rise
+     in the whole app's control count to do a job a native date field does in
+     one field - with the iOS date wheel for free, and no need for a separate
+     way back to today. Nothing is created at runtime, so listCard() remains the
+     only dynamic control factory. */
+  var dayIn = $('dayInput');
+  if (dayIn && dayIn.value !== S.date) dayIn.value = S.date;
 
   /* office status — a fact, not a control */
   var st = $('todayStatus'); clear(st);
@@ -1354,6 +1389,8 @@ $('backBtn').addEventListener('click', function(){
   render();
 });
 $('outBtn').addEventListener('click', function(){ signOut(''); });
+/* phday-1.0.0: the day picker, bound once beside the other static controls. */
+$('dayInput').addEventListener('change', function(){ goToDay(this.value); });
 
 ['emailInput','pwInput','totpInput'].forEach(function(id){
   $(id).addEventListener('keydown', function(e){

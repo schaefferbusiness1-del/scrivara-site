@@ -25813,8 +25813,18 @@ function initRecog(){
   };
   instance.onerror=e=>{
     if(instance!==recog)return;
-    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+    if(e.error==='not-allowed'){
       showMicWarn('Microphone access was blocked. Allow mic access in your browser, or just type/paste the visit below.');
+      stopCapture();
+    } else if(e.error==='service-not-allowed'){
+      /* phcap-1.0.0 (2026-08-27): this used to share the sentence above, which
+         sent the doctor to fix a permission that was never the problem.
+         'service-not-allowed' is the SPEECH SERVICE refusing - the recognizer
+         backend is unavailable or disallowed by policy - not the microphone.
+         The mic can be fully granted and this still fires, and no amount of
+         changing browser permissions will clear it. Name the real situation and
+         a route that actually exists. */
+      showMicWarn('The speech-recognition service is unavailable in this browser (this is not a microphone permission problem — your mic access is unchanged). Dictate with your keyboard’s 🎤 key, or type/paste the visit below.');
       stopCapture();
     } else if(e.error==='no-speech'){ /* keep going */ }
   };
@@ -25859,9 +25869,32 @@ window.__mlsDirectPhoneCapture={
   state:function(){return {status:_mlsDirectPhone.status,pendingUploads:_mlsDirectPhone.pendingUploads,uploadFailures:_mlsDirectPhone.uploadFailures};},
   stop:function(reason){return _mlsStopDirectPhoneCapture(reason||'external-stop');}
 };
+/* phcap-1.0.0 (2026-08-27): this used to require body.mls-ph3 - a CSS class -
+   before the authenticated MediaRecorder lane could even be considered. That
+   class is set by feat_mls_phone_ui.js, which is requested only when the phone
+   layout is wanted, so a doctor on an iPhone who has chosen the FULL layout
+   (mls_layout_pref==='full' returns the loader early) never gets the class, and
+   therefore never gets live dictation - on a phone whose microphone works and
+   whose permission is Allow. iOS has no Web Speech in ANY browser, so there is
+   no other lane for that user to fall back to.
+   Measured on an emulated iPhone 13 (iOS UA, touch, mic permission granted,
+   MediaRecorder + getUserMedia present, Web Speech absent): without the class
+   this returned FALSE, with the class TRUE - the class was the sole gate.
+   Now the capability is the gate and the class is one accepted signal. The
+   widened arm is deliberately narrow: it requires BOTH no-Web-Speech AND a
+   handheld, so a desktop (which has Web Speech) keeps its existing recognizer
+   path untouched, including any desktop running MLS Assist. */
 function _mlsDirectPhoneSupported(){
-  return !!(document.body&&document.body.classList.contains('mls-ph3')&&
-    typeof MediaRecorder!=='undefined'&&navigator.mediaDevices&&typeof navigator.mediaDevices.getUserMedia==='function');
+  var canRecord=!!(typeof MediaRecorder!=='undefined'&&navigator.mediaDevices&&typeof navigator.mediaDevices.getUserMedia==='function');
+  if(!canRecord)return false;
+  if(document.body&&document.body.classList.contains('mls-ph3'))return true;
+  var noWebSpeech=!(window.SpeechRecognition||window.webkitSpeechRecognition);
+  var handheld=false;
+  try{
+    handheld=/iPhone|iPod|iPad|Android/i.test(navigator.userAgent||'')||
+      (navigator.platform==='MacIntel'&&(navigator.maxTouchPoints||0)>1);
+  }catch(e){handheld=false;}
+  return !!(noWebSpeech&&handheld);
 }
 function _mlsDirectPhoneMime(){
   const c=['audio/webm;codecs=opus','audio/webm','audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/aac','audio/ogg;codecs=opus'];
@@ -29797,7 +29830,12 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
      the system string is dropped. The canonical transcript is untouched. */
   var turnsBlock='';
   try{ var tl=window.__mlsTurns; if(tl&&tl.installed&&typeof tl.labelledForPrompt==='function'){ var lb=tl.labelledForPrompt(); if(lb) turnsBlock='\n\nSPEAKER-TURN HYPOTHESES (UNVERIFIED — pause-gap guesses, tap-corrected only where the doctor intervened; treat as hints, CONTENT ALWAYS WINS, ignore any label that contradicts the transcript):\n'+lb; } }catch(eTurns){}
-  return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),signal:options.signal});
+  /* spec-1.0.0 (2026-08-27): carry the resolved specialty out of callOpenAI.
+     `spec` is already computed above as `preset||getSpec()` - the per-visit
+     "Specialty template" picker, else the saved Settings specialty. It was
+     being folded into `specLine` inside `sys` and nowhere else, and the hosted
+     structured-note lane does not transport `sys` at all (see aiCallRaw). */
+  return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
 }
 
 /* ---------------------------------------------------------
@@ -29857,6 +29895,24 @@ async function aiCallRaw(sys,user,key,opts){
       }
     }
   }catch(eDt){}
+  /* spec-1.0.0 (2026-08-27). THE SPECIALTY REACHED NOTHING IN HOSTED MODE.
+     specLine is built into `sys`, and the branch immediately below routes
+     structured note generation to /api/generate, whose body is
+     {transcript, model, notePreferences, draftFamily, draftTuning} - `sys` is
+     not transported at all. hostedNotePreferences() carries no specialty
+     either, so BOTH the per-visit "Specialty template" picker and the saved
+     Settings specialty were discarded on every hosted note; only the free-form
+     helpers (referral / AVS / document analysis), which do send {system,user},
+     ever saw it. The backend already reads exactly one field for this:
+     sanitizeDraftTuningOverride lifts a top-level `specialty` off draftTuning
+     and mergeDraftTuning gives the request precedence over the account value,
+     capped at 80 characters - so this is the supported channel, not a new
+     wire field. A no-op when no specialty is set: draftTuning is left exactly
+     as it was, undefined included. */
+  try{
+    var _mlsSpecialty=String(opts.specialty==null?'':opts.specialty).trim().slice(0,80);
+    if(_mlsSpecialty) _draftTuning=Object.assign({},_draftTuning||{},{specialty:_mlsSpecialty});
+  }catch(eSpec){}
   if(backendMode()){
     // Structured note generation -> /api/generate ({transcript}->{result}).
     // Free-form helpers (referral, AVS, document analysis) -> /api/complete

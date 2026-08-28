@@ -36,6 +36,20 @@ const BODY = APP.slice(APP.indexOf('<body>'), APP.indexOf('<script>', APP.indexO
 const BUDGET = [
   'emailInput', 'pwInput', 'totpInput',
   'goBtn', 'backBtn', 'outBtn', 'findInput',
+  /* 9  dayInput  phday-1.0.0 (2026-08-27). Serves the FIRST verb - "pull today"
+   *              - by letting it mean a day other than today. S.date was
+   *              initialised to todayISO() and then read in five places and
+   *              written in none, so this app could only ever show the current
+   *              day: a doctor who opened it on Wednesday could not reach
+   *              Monday's visit at all. refreshToday() has always carried a
+   *              staleness guard for a day that "moved under us", so the day
+   *              was designed to move and the control was simply never built.
+   *              Deliberately ONE control, not three: prev / next /
+   *              back-to-today would have raised this app's whole control count
+   *              by 43% to do what one native date field does in one field -
+   *              and it brings the iOS date wheel with it, so there is nothing
+   *              to learn and no way back to today needed. */
+  'dayInput',
 ];
 
 const declared = [...BODY.matchAll(/<(button|input|select|textarea|a)\b[^>]*>/gi)].map((m) => {

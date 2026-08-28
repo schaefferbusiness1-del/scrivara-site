@@ -54305,7 +54305,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               var whenWhere = [];
               if (r0.data.visitDate) whenWhere.push(String(r0.data.visitDate));
               if (r0.data.provider) whenWhere.push(String(r0.data.provider));
-              phsendSet('sent', 'SENT - confirmed on ' + who + (whenWhere.length ? ' (' + whenWhere.join(', ') + ')' : '') + '.');
+              var whereTail = whenWhere.length ? ' (' + whenWhere.join(', ') + ')' : '';
+              /* phverif-1.0.0 (2026-08-27): `confirmed` records only that the relay
+                 round-tripped and a human pressed the sheet on the office computer.
+                 It is NOT evidence Athena took the text. The office computer knows
+                 the difference and already says so: when Athena returns no verified
+                 receipt, the write-flow module calls onResult with verifiedWrite
+                 null (write_note and save_draft branches) while the desktop
+                 banner reads "Athena did not return a verified note write ... MLS is
+                 not marking the write complete." runSendNote forwards that truth as
+                 data.verifiedWrite - and the phone, two rooms away, printed
+                 "SENT - confirmed" over the top of it.
+                 The phone may only claim a chart write when the desktop verified one.
+                 Otherwise it says what actually happened: the note is staged on the
+                 office computer for review. This direction is UNDER-claiming, and it
+                 changes no gate - the write path's own fail-closed refusals are
+                 untouched. */
+              if (r0.data.verifiedWrite === true) {
+                phsendSet('sent', 'SENT - confirmed on ' + who + whereTail + '.');
+              } else {
+                phsendSet('staged', 'Staged on ' + who + whereTail + ' for review - Athena has NOT confirmed a note write. Finish it on the office computer.');
+              }
             } else {
               phsendSet('failed', String(r0.error || 'Nothing was sent to Athena.'));
             }
@@ -54614,8 +54634,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var btnEl = bar.querySelector('.phsend-go');
     if (lineEl) {
       lineEl.textContent = line;
+      /* phverif-1.0.0: 'staged' is named explicitly rather than left to fall
+         through to the neutral grey. Falling through happened to look right,
+         but an unnamed state is one tidy-up away from being painted green with
+         the 'sent' family - and this is the one state that must never read as a
+         completed chart write. Amber is the same attention colour this file
+         already uses for "true, but you still have something to do". */
       lineEl.style.color = phsendState.status === 'sent' ? '#205c43'
-        : (phsendState.status === 'failed' || phsendState.status === 'unavailable') ? '#9f2d2d' : '#55605A';
+        : (phsendState.status === 'failed' || phsendState.status === 'unavailable') ? '#9f2d2d'
+        : phsendState.status === 'staged' ? '#8A5A00' : '#55605A';
     }
     if (btnEl) {
       btnEl.textContent = busy ? 'Stop waiting' : (phsendState.status === 'sent' ? 'Send again' : 'Send to Athena');

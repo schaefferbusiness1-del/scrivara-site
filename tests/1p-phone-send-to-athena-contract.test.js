@@ -580,7 +580,13 @@ async function main() {
       if (/presence/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, online: true, ext: true, officeName: 'Front desk', officeId: 'dev_office' }) };
       if (/\/api\/relay\/jobs$/.test(url) && init.method === 'POST') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, id: 'rj_test' }) };
       if (/\/api\/relay\/jobs\/rj_test$/.test(url)) {
-        if (jobState === 'done') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'done', result: { ok: true, data: { confirmed: true, encounterId: 'enc-7', visitDate: '2026-08-18', provider: 'Dr Synthetic' } } } }) };
+        /* phverif-1.0.0: verifiedWrite:true added. The office computer ALWAYS
+           emits this field (runSendNote sets verifiedWrite:!!meta.verifiedWrite),
+           so a done-job without it modelled a message the desktop never sends -
+           and the SENT assertions below therefore encoded the overclaim this
+           suite exists to prevent. This leg is now a genuinely verified Athena
+           write; B7b below covers the pressed-but-unverified case. */
+        if (jobState === 'done') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'done', result: { ok: true, data: { confirmed: true, verifiedWrite: true, encounterId: 'enc-7', visitDate: '2026-08-18', provider: 'Dr Synthetic' } } } }) };
         if (jobState === 'taken') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'taken', progress: { note: 'Waiting for your confirmation on this computer.' } } }) };
         return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'queued' } }) };
       }
@@ -619,6 +625,39 @@ async function main() {
   eq(after.length, before + 1, 'a resend posts once');
   eq(JSON.parse(after[after.length - 1].init.body).dedupeKey, sent.dedupeKey,
     'the same note for the same visit must carry the same dedupeKey so the server coalesces it');
+}
+
+/* ---- B7b: a PRESSED confirm with NO verified-write receipt must never read as
+   SENT. `confirmed` records only that the relay round-tripped and a human
+   pressed the sheet on the office computer. When Athena returns no verified
+   receipt the write flow calls onResult with verifiedWrite null and the DESKTOP
+   says "Athena did not return a verified note write ... MLS is not marking the
+   write complete." Before phverif-1.0.0 the phone printed "SENT - confirmed"
+   over the top of that. The phone may only claim a chart write when the desktop
+   verified one. ------------------------------------------------------------ */
+{
+  let jobState = 'queued';
+  const h = harness({
+    fetch: (url, init) => {
+      if (/presence/.test(url)) return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, online: true, ext: true, officeName: 'Front desk', officeId: 'dev_office' }) };
+      if (/\/api\/relay\/jobs$/.test(url) && init.method === 'POST') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, id: 'rj_test' }) };
+      if (/\/api\/relay\/jobs\/rj_test$/.test(url)) {
+        if (jobState === 'done') return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'done', result: { ok: true, data: { confirmed: true, verifiedWrite: false, encounterId: 'enc-7', visitDate: '2026-08-18', provider: 'Dr Synthetic' } } } }) };
+        return { ok: true, status: 200, json: () => Promise.resolve({ ok: true, job: { id: 'rj_test', status: 'queued' } }) };
+      }
+      return { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) };
+    }
+  });
+  await h.api.sendNoteToAthena({ action: 'write_note', noteText: 'Reviewed note body.', patient: { name: 'Synthetic Test', dob: '1980-01-01', mrn: '55501' }, apptId: 'appt-2', visitDay: '2026-08-18' });
+  await flush(); await flush();
+  jobState = 'done';
+  h.advance(3000); await flush(); await flush();
+
+  const st = h.api.sendState();
+  eq(st.status, 'staged', 'a pressed confirm with no verified write must report staged, not sent');
+  ok(!/^SENT/.test(st.line), 'the line must not lead with SENT when Athena confirmed nothing');
+  ok(/NOT confirmed|not confirmed/.test(st.line), 'the line must say plainly that Athena has not confirmed a write');
+  ok(/office computer/i.test(st.line), 'the line must point the doctor at where the note actually is');
 }
 
 /* ---- B8: the phone reports a lost / expired / unclaimed job honestly --- */
