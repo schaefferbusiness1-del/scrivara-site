@@ -1633,6 +1633,7 @@ const tests = [
   'tooltip-dedupe-concern-perf-runtime.test.js',
   'ui-single-owner-contract.test.js',
   'ui-control-coverage.test.js',
+  'upload-templates-button-cannot-vanish.test.js',
   'visit-control-continuity.test.js',
   'visit-day-ownership-contract.test.js',
   'visit-exact-appointment-binding-runtime.test.js',

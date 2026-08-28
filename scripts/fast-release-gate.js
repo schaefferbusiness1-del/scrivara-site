@@ -41,7 +41,7 @@ const ROOT = path.resolve(__dirname, '..');
    bfd2ad76 on 2026-08-27 and were never registered, so the gate had never once
    executed either of them. run-all's own registry check caught it while 879 was
    being added. */
-const FULL_GATE_TESTS = 883;
+const FULL_GATE_TESTS = 884;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
