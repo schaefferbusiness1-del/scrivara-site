@@ -3316,6 +3316,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="downloadFullEMR()" title="One-click download of the whole chart — demographics, problems, meds, allergies, every note + coding — for your EMR">⬇ Export everything for EMR</button>
+        <button class="btn-ghost" id="profDeletePt" style="font-size:14px;padding:9px 15px;margin-left:14px;border-color:#efb9b9;color:#7a1d1d" onclick="deleteActivePatient()" title="Delete this patient from this device and your account. Their uploaded documents go too. You can undo this straight afterwards.">&#128465; Delete patient</button>
       </h2>
       <p class="sub" id="profDemo">—</p>
 
@@ -21158,6 +21159,19 @@ function editPatient(id){
     document.getElementById('ptSex').value=String(p.sex||'');
     document.getElementById('ptDob').value=String(p.dob||'');
   }catch(e){}
+}
+/* ptdelui-1.0.0 (2026-08-28, owner asked "where is the UI for deleting a
+   patient"): it was a hover-revealed trash on a patient-LIST row and nothing on
+   the chart at all - `.pt-item .del{visibility:hidden}` with a :hover /
+   :focus-within / .active rule, so on a touch device it is invisible unless the
+   row is already selected. Most people never found it.
+   The chart now carries one too. It is placed LAST and separated, keeps the
+   existing confirm, and inherits b1117's undo - it does not become a second,
+   softer delete path. */
+function deleteActivePatient(){
+  var id=(typeof getActivePtId==='function')?getActivePtId():'';
+  if(!id){ try{ toast('Open a patient first.','err'); }catch(e){} return; }
+  return deletePatient(id);
 }
 function editActivePatient(){
   var id=(typeof getActivePtId==='function')?getActivePtId():'';
@@ -42080,7 +42094,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1118';
+  window.__MLS_AV='b1119';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
