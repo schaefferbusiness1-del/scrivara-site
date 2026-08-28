@@ -105,8 +105,22 @@ function callBlock(input, at) {
 }
 
 /* The REAL functions under test. Everything else is stubbed, so a pass here is
-   a statement about these six and nothing else. */
+   a statement about THESE functions and nothing else. (It said "these six"
+   while the list has grown past that - the count is not the point, the
+   stubbed/real boundary is.) */
+/* tplharness-1.0.0 (2026-08-28): dayRowForPatient grew an identity guard -
+   `if (!localId && !positiveIdentityEvidence(a, p)) continue;` - and this lift
+   list never followed it, so every run died with "ReferenceError:
+   positiveIdentityEvidence is not defined" inside the FIRST render. This suite
+   has therefore not been checking anything since that guard landed.
+   The guard and its helpers are lifted REAL, not stubbed: this file is about
+   which patient the home view offers, and the whole point of that guard is that
+   the match is made by the app's own name+DOB/MRN rule rather than by object
+   identity. Stubbing it would have made the suite agree with itself instead of
+   with the app. All four helpers live inside the same canonical Easy owner
+   region this harness already bounds. */
 const REAL = ['normTokens', 'nameMatch', 'rowKey', 'apptDay', 'bannerPatient',
+  'safe', 'dobOf', 'dobKey', 'mrnKey', 'dobConflicts', 'mrnConflicts', 'positiveIdentityEvidence',
   'dayRowForPatient', 'bannerLeads', 'renderHome'];
 
 const DULIN = { id: 'appt-dulin', name: 'John F Dulin', dob: '05/06/1945', provider: 'Dr Example', appt_date: '2026-07-30', start_local: '7:30 AM', reason: 'Follow-up' };
@@ -124,7 +138,15 @@ function render(opts) {
     S: { autoPull: 'done', screen: 'home' },
     window: {
       activePatient() { return opts.banner || null; },
-      activePtChosenThisSession() { return opts.chosenThisSession === true; }
+      activePtChosenThisSession() { return opts.chosenThisSession === true; },
+      /* tplharness-1.0.0: positiveIdentityEvidence - now lifted REAL - asks the
+         local roster whether these demographics identify exactly ONE chart,
+         because manually selecting either of two same-name+DOB charts must not
+         upgrade an ambiguous schedule row. That roster is scenario DATA, not
+         the behaviour under test, so it is supplied here: by default the single
+         banner patient, and opts.patients lets a case hand over two colliding
+         charts to exercise the ambiguous branch. */
+      getPatients() { return opts.patients || (opts.banner ? [opts.banner] : []); }
     },
     console,
     /* --- stubs: everything renderHome leans on that is not under test --- */

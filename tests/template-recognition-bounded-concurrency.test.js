@@ -61,6 +61,14 @@ const SOURCE = [
   fn('_looksMultiForm'),
   fn('_tplParseMeta'),
   fn('_tplTypeName'),
+  /* tplharness-1.0.0 (2026-08-28): tplMultiFile grew a call to
+     _tplSuggestLibrary() and this lift list never followed it, so every run
+     died with "ReferenceError: _tplSuggestLibrary is not defined" INSIDE the
+     first case - which means this suite has not actually checked bounded
+     concurrency, slot leaks or the wait queue since that call landed. The
+     function is self-contained: its only dependency, _tplStore(), is already
+     inside its own try/catch and degrades to an empty library here. */
+  fn('_tplSuggestLibrary'),
   fn('_tplSeedKeywords'),
   fn('_tplChunk'),
   fn('_tplDedupeTemplatesInfo'),
