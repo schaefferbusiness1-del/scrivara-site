@@ -410,8 +410,40 @@ function probeReply(requestId, over) {
     /* and the room's one-press send runs save THEN push, and only pushes a
        record it can actually see filed */
     ok(/💾 Save & review for Athena/.test(shell), 'the op-note room must offer a one-press save-and-open-review action without claiming it already sent');
-    ok(/var rec2 = filedRecord\(rows\(\)\[sel\]\);\s*\n\s*if \(!rec2\) return;/.test(shell),
-      'the op-note send must verify the save landed as a NON-DRAFT record before pushing');
+    /* opnsend-2.2.0 pin, re-derived 2026-08-28 (sendrefuse-1.0.0). This
+       required the SILENT form:
+         var rec2 = filedRecord(rows()[sel]);
+         if (!rec2) return;
+       which the shell replaced on the owner's own 2026-08-27 instruction
+       ("really make sure the write works well ... and not so many things that
+       say blocked"). The bare return was a dead end: the doctor pressed Send to
+       Athena, the note filed as a DRAFT, and nothing was said about Athena at
+       all - reachable on an ordinary keystroke, because the card's disabled
+       state is computed at PAINT time while the textarea writes row.note
+       without repainting. The shell's own note is explicit that "NOTHING IS
+       WEAKENED. The refusal is unchanged and happens for exactly the same
+       reasons; this only names the one that applies."
+       So the guarantee this assertion protects is intact and the literal was
+       demanding the silence back. Pinned as the guarantee, on BOTH send paths,
+       plus the visible refusal that replaced the dead end. */
+    const sendPaths = [...shell.matchAll(/var rec2\s*=\s*(?:filedRecord|_opFiledNoteRecord)\([^;]*\);/g)];
+    ok(sendPaths.length >= 2,
+      'an op-note send path no longer resolves a FILED record before pushing (' + sendPaths.length +
+      ' found) - a draft could reach Athena');
+    for (const p of sendPaths) {
+      const after = shell.slice(p.index, p.index + 420);
+      ok(/if\s*\(!rec2\)/.test(after),
+        'an op-note send path stopped checking whether the save actually landed before pushing');
+      const refuseAt = after.search(/if\s*\(!rec2\)/);
+      const pushAt = after.search(/pushHistoryNoteToAthena|window\.pushHistoryNote/);
+      ok(pushAt < 0 || refuseAt < pushAt,
+        'an op-note send pushes to Athena BEFORE checking the record filed - a draft would reach the chart');
+      ok(/_opSendRefused/.test(after),
+        'an op-note send path refuses SILENTLY again - the doctor presses Send, the note files as a draft, ' +
+        'and nothing is said about Athena at all. That is the dead end opnsend-2.2.0 removed on owner instruction');
+    }
+    ok(/function filedRecord\(row\) \{\s*\n\s*var rec = savedRecord\(row\);\s*\n\s*return \(rec && !rec\.isDraft\) \? rec : null;/.test(shell),
+      'filedRecord no longer excludes drafts, so "the save landed" would be true for a draft and the send gate would open on one');
     /* execute the fork's real stripper, never a re-typed copy of it */
     const stripper = /^\s*NOTE TEXT\s*:\s*/i;
     ok(src.indexOf(String(stripper).slice(1, -2)) > 0, 'the stripper regex in the fork must be the one this suite executes');
