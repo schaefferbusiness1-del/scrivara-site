@@ -21008,9 +21008,27 @@ async function deletePatient(id){
     try{ _delVerdict=await deletePatientOnServer(id); }catch(e){ _delVerdict={ok:false,reason:'threw'}; }
   }
   // unassign their notes
-  const notes=getNotes(); let changed=false;
-  notes.forEach(n=>{ if(n.patientId===id){ n.patientId=''; changed=true; } });
-  if(changed) saveNotes(notes);
+  /* ptdel-1.2.0 (2026-08-28): the dialog promises the notes "stay in History but
+     become unassigned". On THIS device that was true; on any other it was not.
+     saveNotes() writes localStorage ONLY, while notes themselves sync to the
+     server through /api/records - so the unassignment never left the device and
+     the note came back on another device (or after the sign-out purge) still
+     bound to a patient id that no longer exists.
+     Queue each touched note through the EXISTING pending-backup queue rather
+     than inventing a second sync path: _retryPendingBackups already re-POSTs
+     queued notes to /api/records, already handles 401/402/403 honestly, and
+     already survives being offline. */
+  const notes=getNotes(); let changed=false; const _reassigned=[];
+  notes.forEach(n=>{ if(n.patientId===id){ n.patientId=''; n.updated=Date.now(); changed=true; _reassigned.push(n.id); } });
+  if(changed){
+    saveNotes(notes);
+    try{
+      if(backendMode() && bkToken() && typeof _pendingBackupAdd==='function'){
+        _reassigned.forEach(function(nid){ try{ _pendingBackupAdd(nid); }catch(e){} });
+        if(typeof _retryPendingBackups==='function'){ try{ _retryPendingBackups(); }catch(e){} }
+      }
+    }catch(eSync){}
+  }
   if(getActivePtId()===id) setActivePtId('');
   renderPatients(); renderProfile(); renderPatientBar();
   if(_delVerdict&&_delVerdict.ok){ toast('Patient deleted.',''); }

@@ -183,6 +183,60 @@ const okList = { ok: true, status: 200, json: async () => ([{ external_id: 'ext-
     /* declining must change nothing at all */
     ok(/^\s*if\(!await mlsConfirm\(_delMsg\)\) return;/m.test(delFn) || /mlsConfirm\(_delMsg\)\) return;/.test(delFn),
       shell + ': declining the delete dialog does not abort before any mutation');
+
+    /* ptdel-1.2.0: the dialog promises the notes "stay in History but become
+       unassigned". saveNotes() writes localStorage ONLY while notes themselves
+       sync through /api/records, so on any OTHER device the note came back still
+       bound to the deleted patient. EXECUTED with a CONFIRMING stub so the
+       mutation really runs. */
+    async function deleteAndWatch(notes) {
+      const queued = [];
+      let retried = 0, saved = null;
+      const fn = new Function(
+        'mlsConfirm', 'findPatient', 'savePatients', 'getPatients', 'backendMode', 'bkToken',
+        'deletePatientOnServer', 'getNotes', 'saveNotes', 'getActivePtId', 'setActivePtId',
+        'renderPatients', 'renderProfile', 'renderPatientBar', 'toast', 'window',
+        '_pendingBackupAdd', '_retryPendingBackups',
+        delFn + '\nreturn deletePatient;'
+      )(
+        () => Promise.resolve(true),               /* CONFIRM - let it mutate */
+        () => ({ id: 'pt-1' }),
+        () => {}, () => [], () => true, () => 'tok',
+        async () => ({ ok: true, reason: 'deleted' }),
+        () => notes, a => { saved = a; }, () => '', () => {},
+        () => {}, () => {}, () => {}, () => {},
+        { _calAppts: [] },
+        id => queued.push(id), () => { retried++; }
+      );
+      await fn('pt-1');
+      return { queued, retried, saved };
+    }
+
+    {
+      const notes = [
+        { id: 'n1', patientId: 'pt-1' },
+        { id: 'n2', patientId: 'pt-1' },
+        { id: 'n3', patientId: 'other' }
+      ];
+      const r = await deleteAndWatch(notes);
+      eq(notes[0].patientId, '', shell + ': the deleted patient\'s note was not unassigned');
+      eq(notes[2].patientId, 'other', shell + ': ANOTHER patient\'s note was unassigned by this delete');
+      ok(notes[0].updated > 0,
+        shell + ': the unassigned note\'s updated stamp was not bumped, so a stale server copy can ' +
+        'win and re-bind it to the deleted patient');
+      assert.deepStrictEqual(r.queued.slice().sort(), ['n1', 'n2'],
+        shell + ': the unassigned notes were NOT queued for server sync - saveNotes writes ' +
+        'localStorage only, so on another device they come back bound to the deleted patient');
+      ok(r.retried > 0, shell + ': the pending-backup flush was never kicked, so the fix waits for a ' +
+        'later unrelated event');
+      ok(r.saved && r.saved.length === 3, shell + ': saveNotes was not called with the full note list');
+    }
+
+    /* nothing to unassign must not queue or flush anything */
+    {
+      const r = await deleteAndWatch([{ id: 'n9', patientId: 'someone-else' }]);
+      eq(r.queued.length, 0, shell + ': a delete with no matching notes still queued a sync');
+    }
   }
 
   console.log('PASS patient-delete-reaches-the-server: ' + checks + ' checks - an unknown server id ' +
