@@ -170,7 +170,44 @@ assert(/mode:\s*'execute', action:\s*row\.action, actionToken:\s*probe\.token/.t
 assert(/expectedPatient:\s*bridgeExecutePatient/.test(unifiedExecute) && /expectedContext:\s*probe\.context/.test(unifiedExecute), 'unified billing execute lost its probed patient or encounter binding');
 assert.strictEqual((unifiedExecute.match(/executeUnifiedSelection\(/g) || []).length, 1, 'one confirmed billing action can recursively auto-chain another action');
 const unifiedRender = between(writeflow, 'function renderUnifiedConfirmation(state)', 'function openUnifiedConfirmation(opts)');
-assert(/go\.addEventListener\('click', function \(\) \{ executeUnifiedSelection\(state\); \}\)/.test(unifiedRender), 'unified billing execution is not exclusively wired to the explicit confirm click');
+/* billingwire-1.0.0 (2026-08-28): this pinned the confirm control as calling
+   executeUnifiedSelection DIRECTLY. It no longer does - the button now calls
+   runUnifiedPrimarySend, which either executes one row (mode 'single') or hands
+   a multi-row selection to runUnifiedBatchSend, which executes them one at a
+   time. The indirection is the batch send; the guarantee this assertion exists
+   for - nothing executes without an explicit press - is unchanged.
+   This is a BILLING gate, so it is re-derived to be at least as strict, not
+   merely to pass: the click wiring is pinned, every other reference to the send
+   entry is enumerated and must be a definition, a comment, or the documented
+   read-only test seam, and no timer or auto path may reach either the entry or
+   the executor. */
+assert(/go\.addEventListener\('click', function \(\) \{ runUnifiedPrimarySend\(state, go\); \}\)/.test(writeflow),
+  'unified billing execution is not exclusively wired to the explicit confirm click');
+{
+  const refs = [...writeflow.matchAll(/^.*runUnifiedPrimarySend.*$/gm)].map((m) => m[0]);
+  for (const line of refs) {
+    const isDefinition = /function runUnifiedPrimarySend\(state, btn\) \{/.test(line);
+    const isComment = /^\s*(?:\/\*|\*|\/\/)/.test(line) || /runUnifiedPrimarySend\)\./.test(line) || /runUnifiedPrimarySend\)\s*$/.test(line);
+    const isClickWiring = /go\.addEventListener\('click'/.test(line);
+    const isTestSeam = /press: function \(btn\) \{ return runUnifiedPrimarySend\(unifiedAthenaState, btn \|\| null\); \}/.test(line);
+    assert(isDefinition || isComment || isClickWiring || isTestSeam,
+      'a NEW caller of the billing send entry appeared that is not the confirm click or the read-only ' +
+      'test seam - billing could execute without an explicit press: ' + line.trim().slice(0, 140));
+  }
+  /* Neither the entry nor the executor may be reached from a timer. */
+  for (const name of ['runUnifiedPrimarySend', 'executeUnifiedSelection', 'runUnifiedBatchSend']) {
+    const timed = new RegExp('(?:setTimeout|setInterval|requestIdleCallback|requestAnimationFrame)\\s*\\(\\s*(?:function[^)]*\\)\\s*\\{[^}]*)?' + name + '\\s*\\(');
+    assert(!timed.test(writeflow),
+      name + ' is reachable from a timer - billing must never execute on a schedule, only on a press');
+  }
+  /* And the executor itself is still only entered from those two. */
+  const execRefs = [...writeflow.matchAll(/^.*executeUnifiedSelection\(.*$/gm)]
+    .map((m) => m[0])
+    .filter((l) => !/function executeUnifiedSelection\(state\) \{/.test(l) && !/^\s*(?:\/\*|\*|\/\/)/.test(l));
+  assert(execRefs.length === 2,
+    'the billing executor has ' + execRefs.length + ' live call sites, expected 2 (single-row press, batch step) - ' +
+    'audit the new one before moving this pin:\n  ' + execRefs.map((l) => l.trim().slice(0, 110)).join('\n  '));
+}
 
 const identitySource = between(app, 'function _athenaNormIdentity(v)', 'function _athenaResetSuperbill(hide)');
 const sameBoundPatient = Function(identitySource + '\nreturn _athenaSameBoundPatient;')();
@@ -277,7 +314,29 @@ function desktopCaptureHarness(options = {}) {
     _athenaCurrentMatchesBound() { return true; },
     _markVisitDirty() {}, _updateLiveCapture() {}, _hideLiveCapture() {},
     toast() {},
-    showMicWarn(message) { warnings.push(message); }
+    showMicWarn(message) { warnings.push(message); },
+    /* billingwire-1.0.0 (2026-08-28): startCapture now forks to the direct
+       phone recorder before the desktop path, and this sandbox did not model
+       that fork - so every case here died on "ReferenceError:
+       _mlsDirectPhoneSupported is not defined" and none of the desktop capture
+       transaction assertions below have executed since. It surfaced only after
+       the confirm-wiring assertion above stopped failing first.
+       This block is the DESKTOP transaction, so the fork answers false. The
+       phone branch has its own suite (1p-phone-direct-mediarecorder-runtime);
+       here it is a tripwire, so if the desktop path ever routes into it the
+       failure names itself rather than looking like a capture bug. */
+    _mlsDirectPhoneSupported() { return false; },
+    /* Idle, so stopCapture's direct-phone check falls through to the desktop
+       recogniser. Its status vocabulary is the shipped one - starting /
+       recording / stopping mean busy - so 'idle' is the only value that means
+       "this transaction is not the phone's". */
+    _mlsDirectPhone: { status: 'idle', pendingUploads: 0, uploadFailures: 0 },
+    _mlsStartDirectPhoneCapture() {
+      throw new Error('the DESKTOP capture transaction routed into the direct phone recorder');
+    },
+    _mlsStopDirectPhoneCapture() {
+      throw new Error('the DESKTOP capture transaction stopped the direct phone recorder');
+    }
   };
   context.window = context;
   context._athenaSetVisitBinding = function (binding) {
