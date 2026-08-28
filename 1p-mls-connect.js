@@ -22257,12 +22257,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             return a && a.name && nameMatch(a.name, bp.name) && !dobConflicts(a.dob, bp.dob);
           });
         } catch (eAmb) { bpAmbiguous = false; }
+        /* The reason is built into a variable FIRST, not inlined as a ternary
+           inside the markup. tools/ui-control-inventory.js reads control labels
+           out of the source text: a ternary in the middle of the string breaks
+           its extraction and the control silently drops out of the inventory -
+           measured, it took the active clinician count from 2969 to 2968. A
+           control that leaves the inventory stops being reach-checked, which is
+           the opposite of what this file is for. */
+        var bpWhy = bpAmbiguous
+          ? 'a matching appointment is on ' + esc(visitDayShort()) + '’s schedule, but more than one chart shares this name and date of birth — records as an ad-hoc visit until you pick the right chart'
+          : 'not on ' + esc(visitDayShort()) + '’s schedule — records as an ad-hoc visit';
         h += '<button type="button" class="ez3-big ok" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
-             '<small>the patient on your banner · ' + dobLabelPlain(bp) + ' · ' +
-             (bpAmbiguous
-               ? 'a matching appointment is on ' + esc(visitDayShort()) + '’s schedule, but more than one chart shares this name and date of birth — records as an ad-hoc visit until you pick the right chart'
-               : 'not on ' + esc(visitDayShort()) + '’s schedule — records as an ad-hoc visit') +
-             '</small></button>';
+             '<small>the patient on your banner · ' + dobLabelPlain(bp) + ' · ' + bpWhy + '</small></button>';
       }
     }
     /* one obvious action at a time: Choose only makes sense once rows exist */

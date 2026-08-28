@@ -4,17 +4,47 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const extensionPages = new Set(['offscreen.html', 'popup.html']);
-const pages = fs.readdirSync(root).filter(name => name.endsWith('.html') && !extensionPages.has(name));
+/* inlinescope-1.0.0 (2026-08-28): SCAN THE SUBDIRECTORY SHELLS TOO.
+   This listed only root-level HTML, so /1p/index.html and /cloned/index.html -
+   both SERVED, and both carrying the same thousands of inline handlers as the
+   production shell - were never checked. A dead control introduced there was
+   invisible to the one contract whose job is to find dead controls.
+   Measured when this was widened: 58 pages, 3,662 inline handlers, ZERO
+   unresolved - so nothing was hiding there today. The point is that a future
+   one cannot hide either. */
+const pages = (function collect(dir, depth) {
+  const out = [];
+  for (const name of fs.readdirSync(dir)) {
+    if (name === 'node_modules' || name === '.git' || name === 'tests' || name.startsWith('.')) continue;
+    const full = path.join(dir, name);
+    let st;
+    try { st = fs.statSync(full); } catch (e) { continue; }
+    if (st.isDirectory()) { if (depth < 2) out.push(...collect(full, depth + 1)); continue; }
+    if (name.endsWith('.html') && !extensionPages.has(name)) out.push(path.relative(root, full).replace(/\\/g, '/'));
+  }
+  return out;
+})(root, 0);
+assert.ok(pages.includes('1p/index.html') && pages.includes('cloned/index.html'),
+  'the served subdirectory shells are not being scanned - a dead control in /1p or /cloned would be ' +
+  'invisible to the contract whose entire job is to find dead controls');
 const browserBuiltins = new Set(['alert', 'confirm', 'prompt', 'open', 'print', 'scrollTo', 'setTimeout', 'setInterval']);
 const failures = [];
 let handlerCount = 0;
 
 function pageCode(name, html) {
   let code = html;
+  /* inlinescope-1.0.0: a page in a subdirectory resolves a RELATIVE src against
+     its own directory and an ABSOLUTE one against the site root. Resolving
+     everything against the root - as this did - silently fails to find the
+     scripts of any page that is not at the root, which would make every one of
+     its handlers look unresolved. */
+  const pageDir = path.dirname(path.resolve(root, name));
   for (const match of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*(["'])([^"']+)\1[^>]*>/gi)) {
     const raw = match[2].split(/[?#]/)[0];
     if (!raw || /^(?:https?:|\/\/)/i.test(raw)) continue;
-    const file = path.resolve(root, raw.replace(/^\.\//, ''));
+    const file = raw.startsWith('/')
+      ? path.resolve(root, raw.slice(1))
+      : path.resolve(pageDir, raw.replace(/^\.\//, ''));
     if (file.startsWith(root + path.sep) && fs.existsSync(file)) code += '\n' + fs.readFileSync(file, 'utf8');
   }
   return code;
