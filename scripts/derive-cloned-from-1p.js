@@ -153,6 +153,52 @@
  */
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
+
+/* gsyn-1.0.0 (2026-08-27). A DERIVATION MAY NOT PRODUCE AN ARTIFACT THAT
+ * CANNOT PARSE. See scripts/derive-production-from-1p.js for the full account:
+ * production shipped an unparseable ScribeFlow.html on 2026-08-27 and the whole
+ * application died - every global undefined, every control a silent no-op, the
+ * owner locked out of his own site - even though
+ * tests/scribeflow-inline-syntax.test.js already existed, was registered in
+ * run-all.js, and flags that exact file. It was simply never run against the
+ * DERIVED artifact before the deploy. A gate a ship path can skip is not a
+ * gate, so the check lives at the writer. Same rule for /cloned. */
+function parseProblems(name, text) {
+  const problems = [];
+  if (/\.html?$/i.test(name)) {
+    const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+    let m, n = 0;
+    while ((m = re.exec(text))) {
+      const attrs = m[1] || '';
+      if (/\bsrc\s*=/.test(attrs)) continue;
+      const type = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i);
+      if (type && !/^(?:text|application)\/(?:java|ecma)script$|^module$/i.test(type[1].trim())) continue;
+      const code = m[2].replace(/^\s*<!--/, '').replace(/-->\s*$/, '');
+      if (!code.trim()) continue;
+      n++;
+      const line = text.slice(0, m.index).split('\n').length;
+      /* the same wrapper the shipped suite uses, so the two cannot disagree */
+      try { new vm.Script('(function(){\n' + code + '\n})', { filename: name + ':' + line }); }
+      catch (e) { problems.push(`${name}: inline <script> at line ${line} does not parse - ${String(e.message).split('\n')[0]}`); }
+    }
+    /* fail closed: a scanner that matched nothing is broken, not vindicated */
+    if (!n) problems.push(`${name}: no inline <script> block was checked - the scanner is broken, not the file`);
+  } else if (/\.m?js$/i.test(name)) {
+    try { new vm.Script(text, { filename: name }); }
+    catch (e) { problems.push(`${name}: does not parse - ${String(e.message).split('\n')[0]}`); }
+  }
+  return problems;
+}
+function assertParses(files) {
+  const problems = [];
+  for (const f of files) problems.push(...parseProblems(f.name, f.text));
+  if (problems.length) {
+    console.error('REFUSING TO DERIVE - the derivation does not parse:');
+    for (const p of problems) console.error('  ' + p);
+    process.exit(1);
+  }
+}
 
 const root = path.resolve(__dirname, '..');
 const read = (n) => fs.readFileSync(path.join(root, n), 'utf8');
@@ -385,6 +431,8 @@ if (require.main === module) {
       (bad.length > 40 ? `\n  ...and ${bad.length - 40} more` : ''));
     process.exit(2);
   }
+
+  assertParses(built.files);
 
   if (check) {
     const drift = [];

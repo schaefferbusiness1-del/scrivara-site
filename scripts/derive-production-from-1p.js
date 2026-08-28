@@ -40,6 +40,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const read = (n) => fs.readFileSync(path.join(root, n), 'utf8');
@@ -151,6 +152,60 @@ function forbid(name, text) {
   }
 }
 
+/* gsyn-1.0.0 (2026-08-27). A DERIVATION MAY NOT PRODUCE AN ARTIFACT THAT
+ * CANNOT PARSE.
+ *
+ * On 2026-08-27 production shipped a ScribeFlow.html whose single ~35,000-line
+ * inline block carried an orphaned function body - a bare `await` at top level
+ * where a signature had been replaced by a comment. The block never parsed, so
+ * every global in the application was undefined and every control on the
+ * sign-in screen became a silent no-op. The owner could not log in.
+ *
+ * The infuriating part: the check already existed. tests/scribeflow-inline-
+ * syntax.test.js has been in the tree since b295, is registered in
+ * run-all.js, and flags that exact file - verified against the broken blob.
+ * It simply was never run against the DERIVED artifact before the deploy.
+ *
+ * A gate a ship path can skip is not a gate. So the check now lives at the
+ * WRITER, where it cannot be skipped: --check and a real derivation both run
+ * it, and an unparseable artifact can never reach the disk. Measured on the
+ * b1088 tree: 309 artifacts, zero false positives. */
+function parseProblems(name, text) {
+  const problems = [];
+  if (/\.html?$/i.test(name)) {
+    const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+    let m, n = 0;
+    while ((m = re.exec(text))) {
+      const attrs = m[1] || '';
+      if (/\bsrc\s*=/.test(attrs)) continue;
+      const type = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i);
+      if (type && !/^(?:text|application)\/(?:java|ecma)script$|^module$/i.test(type[1].trim())) continue;
+      const code = m[2].replace(/^\s*<!--/, '').replace(/-->\s*$/, '');
+      if (!code.trim()) continue;
+      n++;
+      const line = text.slice(0, m.index).split('\n').length;
+      /* Same wrapper the shipped suite uses, so the two can never disagree. */
+      try { new vm.Script('(function(){\n' + code + '\n})', { filename: name + ':' + line }); }
+      catch (e) { problems.push(`${name}: inline <script> at line ${line} does not parse - ${String(e.message).split('\n')[0]}`); }
+    }
+    /* Fail closed: a scanner that matched nothing is broken, not vindicated. */
+    if (!n) problems.push(`${name}: no inline <script> block was checked - the scanner is broken, not the file`);
+  } else if (/\.m?js$/i.test(name)) {
+    try { new vm.Script(text, { filename: name }); }
+    catch (e) { problems.push(`${name}: does not parse - ${String(e.message).split('\n')[0]}`); }
+  }
+  return problems;
+}
+function assertParses(outputs) {
+  const problems = [];
+  for (const o of outputs) problems.push(...parseProblems(o.name, o.text));
+  if (problems.length) {
+    console.error('REFUSING TO DERIVE - the derivation does not parse:');
+    for (const p of problems) console.error('  ' + p);
+    process.exit(1);
+  }
+}
+
 function main() {
   const args = process.argv.slice(2);
   const check = args.includes('--check');
@@ -218,6 +273,8 @@ function main() {
     outputs.push({ name: outName, text: t,
       note: `marker x${ident.counts.marker} asset x${ident.counts.asset} build x${ident.counts.build} wording x${w.hits}` });
   }
+
+  assertParses(outputs);
 
   if (check) {
     let bad = 0;
