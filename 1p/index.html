@@ -29653,7 +29653,25 @@ function _mlsTranscriptHasDraftableTodayEvidence(text){
   if(!src)return false;
   var words=src.split(/\s+/).filter(Boolean);
   if(words.length>=8)return true;
-  var clinical=/\b(?:pain|ache|numb|tingl|weak|fever|cough|injur|symptom|denies|reports?|complains?|exam|tender|swelling|range|strength|reflex|gait|diagnos|assess|impression|medication|dose|refill|injection|procedure|imaging|mri|x-ray|lab|order|start|stop|continue|follow[- ]?up|return|worse|better|improv|unchanged)\w*\b/i;
+  /* gcv-1.0.0 (2026-08-27). This list is the ONLY thing deciding whether a
+     short typed or dictated line counts as today's evidence, and it was
+     missing the words patients actually use. Measured by executing the
+     shipped predicate: "my back hurts", "patient has a headache today",
+     "left shoulder is sore since yesterday", "his ankle is swollen and
+     bruised", "the knee keeps locking and giving way" and "she has been dizzy
+     for three days" were ALL refused with "Add one specific detail from
+     today" - nine of ten realistic short complaints, in an ORTHO practice.
+     `hurt` was doubly wrong: the sparse-path phrase matcher in
+     _mlsGenerationEvidenceDecision has always accepted `hurts?`, so one gate
+     called that word evidence while this one called it filler. And `ache`
+     could never match inside "headache"/"backache" at all, because \b fails
+     mid-word - hence the explicit compound alternative below.
+     Every term added names something reported or observed TODAY, so none can
+     be satisfied by chart history: the borrow-prevention this gate exists for
+     is untouched, and the generic-filler refusal on the next line still stops
+     "patient is fine" / "doing well" / "no changes". Existing terms are kept
+     verbatim and in order; new ones are appended. */
+  var clinical=/\b(?:pain|ache|numb|tingl|weak|fever|cough|injur|symptom|denies|reports?|complains?|exam|tender|swelling|range|strength|reflex|gait|diagnos|assess|impression|medication|dose|refill|injection|procedure|imaging|mri|x-ray|lab|order|start|stop|continue|follow[- ]?up|return|worse|better|improv|unchanged|hurt|sore|stiff|swell|swollen|bruis|sprain|strain|spasm|cramp|burn|sharp|dull|throb|radiat|shoot|lock|buckl|fatigue|chill|congest|nausea|vomit|dizz|vertigo|itch|rash|bleed|fell|fall|stumbl|twist)\w*\b|\b(?:head|back|stomach|belly|tooth|ear|neck|body|muscle|joint)aches?\b|\bgiv\w*\s+way\b/i;
   var generic=/^(?:the\s+)?patient\s+(?:is\s+)?(?:fine|good|okay|ok|well)|^(?:doing|feeling)\s+(?:fine|good|okay|ok|well)|^(?:no\s+changes?|all\s+good|same\s+as\s+before)$/i;
   return words.length>=4&&clinical.test(src)&&!generic.test(src);
 }
