@@ -67,8 +67,29 @@ const vf = fs.readFileSync(path.join(root, 'feat_mls_visit_focus.js'), 'utf8');
 assert(tn.includes('labelledForPrompt: function () {'), 'the turn engine must offer the sidecar block');
 assert(app.includes('SPEAKER-TURN HYPOTHESES (UNVERIFIED'),
   'the sidecar must carry its caveat INSIDE the user block - the one field the hosted transport keeps');
-assert(app.includes("return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\\n'+transcript+'\\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock,key,{draftTuning:getGenSectionProfileOverrides()});"),
-  'the sidecar must ride the wrapped user payload after the unchanged transcript and before draft-tuning options');
+/* sidecar-1.0.0 (2026-08-28): this pinned the generation call character for
+   character, including the NAME of the draft-tuning source. It was ALREADY
+   stale on 8e81c003 - the call there passes
+   _mlsGenerationDraftTuning(options.evidence), not getGenSectionProfileOverrides()
+   - and it has since gained a specialty option as well. Two renames and an
+   addition against one literal; the ORDER it exists to protect never moved.
+   Pinned as the order directly: the transcript is wrapped UNCHANGED between its
+   two markers, the speaker-turn sidecar rides AFTER it inside the same user
+   block (the one field the hosted transport keeps), and the options object
+   comes last and still carries draft tuning. Extra options are allowed - that
+   is how specialty reached the request. */
+{
+  const call = /return await postChat\(sys,'TODAY_TRANSCRIPT_BEGIN\\n'\+transcript\+'\\nTODAY_TRANSCRIPT_END'\+([A-Za-z0-9_+]*),key,\{(.*?)\}\);/.exec(app);
+  assert(call, 'the generation call no longer wraps the UNCHANGED transcript between its two markers - anything ' +
+    'that edits the transcript on the way out is a clinical-content change the doctor never made');
+  assert(/ctxLine\+turnsBlock/.test(call[1]),
+    'the speaker-turn sidecar no longer rides AFTER the transcript inside the same user block (' + call[1] + ') - ' +
+    'the hosted transport keeps only that field, so a sidecar sent anywhere else is silently dropped');
+  assert(/draftTuning:/.test(call[2]),
+    'the generation call lost its draft-tuning options, so Settings would stop reaching the request');
+  assert(app.includes('SPEAKER-TURN HYPOTHESES (UNVERIFIED'),
+    'the sidecar lost its caveat - unverified speaker attribution would read as fact');
+}
 assert(app.includes("noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',"),
   'Copilot must receive the NOTE, not a word count');
 assert(app.includes('codes: coding?{ icd10:(coding.icd10||[]).slice(0,20)'),

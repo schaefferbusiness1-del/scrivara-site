@@ -82,7 +82,18 @@ assert(signSrc.indexOf('opNoteBlankTokens') >= 0 && signSrc.indexOf('opNoteBlank
 
 /* ---- 4. draft-free counts: at-a-glance chip + _seenToday ---- */
 const glance = between(app, 'function _renderProfAtGlance(p){', 'const PROF_FIELD_BODY');
-assert(/filter\(function\(n\)\{ return n&&!n\.isDraft; \}\)/.test(glance), 'at-a-glance visit chip still counts drafts');
+/* glancefilter-1.0.0 (2026-08-28): this pinned the filter body character for
+   character and broke when vt-1.1.0 added a SECOND exclusion beside the draft
+   one - a pull receipt is not a visit either, and was inflating the chip the
+   same way a draft did. The guarantee this assertion names never lapsed; the
+   filter got stricter and the literal punished it.
+   Pinned as the two exclusions, each on its own, so dropping either fails with
+   a message that says which. */
+assert(/filter\(function\(n\)\{ return n&&!n\.isDraft/.test(glance),
+  'at-a-glance visit chip still counts drafts');
+assert(/_mlsIsChartImportNote\(n\)/.test(glance),
+  'the at-a-glance visit chip counts pull receipts as visits again - an import would inflate the count ' +
+  'and disagree with the canonical counters');
 
 const seenSrc = between(app, 'function _seenToday(name){', 'function _tomorrowAppts(){');
 assert(seenSrc.indexOf('getPatients') >= 0 && seenSrc.indexOf('n.patientId') >= 0, '_seenToday is not id-reconciled');
