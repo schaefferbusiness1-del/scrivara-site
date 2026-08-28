@@ -46,3 +46,11 @@ assert(connect.includes("calmNotice ? 'ez3-infobar' : 'ez3-warnbar'") && connect
   'the calm schedule notice must use neutral information presentation without a warning icon');
 assert(!connect.includes('⚠️ Proceeding as an UNSCHEDULED visit'),
   'the retired double-warning Athena copy returned');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS record not blocked by an unproven binding: recording and generation stay available on an unproven schedule binding - only a PROVEN cross-patient conflict blocks');

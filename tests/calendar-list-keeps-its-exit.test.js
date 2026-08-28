@@ -48,3 +48,11 @@ assert(connect.includes('feat_mls_calpro.js?v=20260728cal16'),
   'calpro loader token must be the bumped 20260728cal16');
 assert(!connect.includes('feat_mls_calpro.js?v=20260722cal14b'),
   'the retired calpro cache token must be unreachable');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS calendar list keeps its exit: the list panel owns a reachable way back out, so entering it is never a one-way door');

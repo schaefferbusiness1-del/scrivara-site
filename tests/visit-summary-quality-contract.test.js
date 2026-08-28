@@ -31,7 +31,19 @@ async function main() {
   const context = {
     console, Promise, Date, Math, JSON, Object, String, Number, Array, RegExp,
     document: { readyState: 'complete', addEventListener() {}, getElementById() { return null; }, querySelector() { return null; }, createElement() { return {}; }, head: { appendChild() {} }, body: { appendChild() {} }, documentElement: { appendChild() {} } },
-    setTimeout(fn) { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
+    /* inerttimer-1.0.1 (2026-08-28): setTimeout was `(fn) => 1` - a stub that
+       returns a handle and NEVER invokes its callback. ensureSummaries() waits
+       on a timer, so `await M.ensureSummaries('pt-1')` never settled: main()
+       stopped at line ~103, the PASS line never printed, and the process exited
+       0 with ZERO stdout. run-all.js judges on exit code alone, so this counted
+       green while everything after that await - the force-resummarise, and all
+       five summarizeAll batches (pt-c, pt-d, pt-e, pt-f, pt-e6) - never ran.
+       Same defect as tests/schedule-calendar-partial-diagnostics-runtime.
+       Real timers, clamped so a long engine delay cannot make the suite slow. */
+    setTimeout(fn, ms) { return setTimeout(fn, Math.min(Number(ms) || 0, 25)); },
+    clearTimeout(h) { return clearTimeout(h); },
+    setInterval(fn, ms) { return setInterval(fn, Math.max(Math.min(Number(ms) || 0, 25), 5)); },
+    clearInterval(h) { return clearInterval(h); },
     localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
     getPatients() { return patients; },
     findPatient(id) { return patients.find(p => p.id === id) || null; },
@@ -210,7 +222,24 @@ async function main() {
     assert(/if \(!touched\) \{\s*\n?\s*try \{ localStorage\.setItem\(flagKey, '1'\)/.test(src), 'the cleaned-nothing branch no longer flags immediately');
     assert(/_storeHygieneOnce\._verifyRounds/.test(src) && /stillDirty/.test(src), 'the post-write verify pass is gone - the flag can be consumed while the server mirror restores dirty rows');
     assert(/_verifyRounds > 3/.test(src), 'the verify re-clean loop lost its bound');
-    assert(/p\.updated = Date\.now\(\)/.test(src.slice(src.indexOf('function _storeHygieneOnce'))), 'cleaned records no longer bump `updated` - a timestamp merge will prefer the dirty server copy');
+    /* hygienestamp-1.0.0 (2026-08-28): this pinned `p.updated = Date.now()` -
+       a receiver named `p`, with spaces. The engine writes
+       `writable().updated=Date.now()`, where writable() returns the
+       copy-on-write record. The PROPERTY never lapsed; only the spelling moved.
+       Worth saying how this surfaced: the suite could not reach this line at
+       all. Its setTimeout stub never invoked callbacks, so ensureSummaries()
+       never settled and the file exited 0 with no output. Fixing the timer made
+       the assertion reachable for the first time, and it failed on the
+       spelling - not on the contract.
+       Re-pinned as the property AND its condition, which is the part that
+       matters: the stamp must sit on the DIRTY path, so an untouched record is
+       not given a fresh timestamp it did not earn. */
+    const hygiene = src.slice(src.indexOf('function _storeHygieneOnce'));
+    assert(/\.updated\s*=\s*Date\.now\(\)/.test(hygiene),
+      'cleaned records no longer bump `updated` - a timestamp merge will prefer the dirty server copy');
+    assert(/if\(!dirty\)return null;\s*\n?\s*writable\(\)\.updated\s*=\s*Date\.now\(\);/.test(hygiene),
+      'the cleaned-record timestamp is no longer gated on `dirty` - either an untouched record gets a ' +
+      'fresh timestamp it did not earn, or a cleaned one stops getting the bump that makes it win the merge');
   }
 
   /* ---- 13. px-5.0: the athena PRINT-VIEW section shape (no colon; doubled

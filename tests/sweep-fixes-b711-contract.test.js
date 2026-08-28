@@ -45,3 +45,11 @@ assert(app.includes("if(_pnDedup && _ccRaw.lastIndexOf(_pnDedup+' — ', 0)===0)
 const storeAt = app.indexOf("(op-note draft)'");
 assert(storeAt !== -1 && app.slice(storeAt - 120, storeAt).includes("p.name+' — '"),
   'the STORED cc format stays name-prefixed - draft-resume and fixtures match on it');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS sweep fixes b711: each fix in the b711 sweep is present and still guarded at its own site');

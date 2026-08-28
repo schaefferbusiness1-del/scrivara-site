@@ -82,3 +82,11 @@ assert(onf.includes('lastFillError'),
   'the export must carry the last failure for live diagnosis');
 assert(!/safe\(function \(\) \{ buildFillBox/.test(onf),
   'no buildFillBox call may hide inside a bare safe() again');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS op-note fill box sees every shape: every placeholder form is recognised and an unrecognised one fails loudly rather than silently leaving a blank in the note');

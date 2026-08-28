@@ -39,3 +39,11 @@ assert(sig.includes("+ '|' + apk"),
 /* the hero itself still reads the live active patient at render */
 assert(canonical.includes("id=\"ez3ActiveGo\""),
   'the empty-day banner-patient hero must exist');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS home hero follows the banner patient: the visit home tracks the banner in BOTH directions, so the hero never names someone other than the open patient');

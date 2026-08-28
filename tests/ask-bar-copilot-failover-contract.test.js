@@ -59,3 +59,11 @@ assert(b18.includes("closest('#mlsDock')"),
  * mid-word on the owner's screen. */
 assert(shell.includes('#mlsDockAsk{width:172px'),
   'ask input width must fit its own placeholder');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS ask-bar copilot failover: the ask bar never swallows a question - every send path has a visible outcome and the bar cannot overlap its own answer');

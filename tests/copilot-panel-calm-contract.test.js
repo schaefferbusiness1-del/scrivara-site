@@ -61,3 +61,11 @@ assert(/id="copilotInput"[^>]*data-mls-no-dictate|data-mls-no-dictate[^>]*id="co
   'the copilot input must opt out of the floating dictate chip - the panel owns #copilotMicBtn');
 assert(da.includes('data-mls-no-dictate'),
   'dictate-anywhere must still honor its opt-out attribute');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS copilot panel calm: the opened panel keeps its calm proportions - no reflowing hero, no control that grows past its row');

@@ -57,3 +57,11 @@ assert(app.includes(".tplId=this.value;window._opPrep['+i+'].tplManual=true"),
   'the template dropdown must set tplManual itself, not rely on a satellite listener');
 assert(app.includes("row.tplManual?'(your pick)':'(auto-matched)'"),
   'the label must stop claiming (auto-matched) for a hand-picked template');
+
+/* silentpass-1.0.0 (2026-08-28): this suite ran its assertions and said
+   NOTHING. run-all.js judges a suite on its exit code alone, so it could
+   not tell "ran and passed" from "did nothing at all" - which is exactly
+   how four other suites in this corpus were passing while executing none
+   of themselves. Announcing what was proved is what makes that
+   distinguishable. */
+console.log('PASS op-note graded against what the model saw: the grade is computed from the evidence actually sent, never from text the model never received');

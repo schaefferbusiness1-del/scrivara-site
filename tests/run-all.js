@@ -1983,12 +1983,44 @@ if (duplicates.length || missing.length || stale.length) {
 console.log(`GATE_PLAN total=${tests.length}`);
 if (process.argv.includes('--plan')) process.exit(0);
 let executed = 0;
+/* silentpass-1.0.0 (2026-08-28): AN EXIT CODE IS NOT PROOF A SUITE RAN.
+ *
+ * This loop judged every suite on `r.status !== 0` with stdio:'inherit', so it
+ * never saw output. A suite whose assertions live inside an async wrapper can
+ * exit 0 having run NONE of them - the promise never settles, node drains the
+ * event loop, and the process exits cleanly with no output. That is counted
+ * here as a PASS, and silent green is worse than red because red gets looked
+ * at.
+ *
+ * Measured on 2026-08-28 across all 878 suites: FOUR were doing exactly this
+ * (qol-off-path-fails-loudly, schedule-calendar-partial-diagnostics-runtime,
+ * 1p-daynote-column-and-not-yet-runtime, day-note-foldin-contract, plus
+ * visit-summary-quality-contract whose ensureSummaries await never settled on
+ * an inert setTimeout stub). Between them they were skipping the Full-Notes-ON
+ * causal control, three importAppts failure cases, and 84 visit-summary checks.
+ * A further nine ran fine but announced nothing, so they were indistinguishable
+ * from the broken ones; each now prints what it proved.
+ *
+ * stdout is piped and echoed rather than inherited, so a suite that passes
+ * without saying anything is now a failure. stderr stays inherited so a crash
+ * still streams live.
+ */
 for (const test of tests) {
   const file = path.join(__dirname, test);
-  const r = spawnSync(process.execPath, [file], { stdio: 'inherit' });
+  const r = spawnSync(process.execPath, [file], { stdio: ['inherit', 'pipe', 'inherit'] });
+  const out = r.stdout ? r.stdout.toString() : '';
+  if (out) process.stdout.write(out);
   if (r.status !== 0) {
     console.log(`GATE_INCOMPLETE executed=${executed} of=${tests.length} failedAt=${test}`);
     process.exit(r.status || 1);
+  }
+  if (!out.trim()) {
+    console.log(`GATE_SILENT executed=${executed} of=${tests.length} silentAt=${test}`);
+    console.log('That suite exited 0 and printed NOTHING. In this corpus a passing suite says what it ' +
+      'proved, so no output means it did not finish - typically an await inside an async wrapper that ' +
+      'never settles (an inert setTimeout stub, or nothing holding the event loop open). It is not a ' +
+      'pass. Give it a completion guard and make it announce, or fix the stall.');
+    process.exit(1);
   }
   executed++;
 }
