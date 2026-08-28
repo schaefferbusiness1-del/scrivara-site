@@ -218,11 +218,15 @@ context.postMessage = msg => {
      so a bare verb count can no longer say what the assertion below claims
      ("day-facts asked the extension for HISTORICAL visit bodies"). A Full Notes
      OFF pull legitimately performs one scoped same-day read per row, which is
-     why this has been red on main. Both markers are checked, so a same-day call
-     that ever forgets its scope is still counted as historical and still trips
-     the assertion. The request is still SERVED below either way - only the
-     historical tally is guarded. */
-  if (!(String(msg.initiator || '') === 'schedule-batch-same-day' || msg.onlyDate)) allVisitsRequests++;
+     why this has been red on main. The request is still SERVED below either way
+     - only the historical tally is guarded.
+     dfcount-1.0.1 (2026-08-28): forgive only the CONJUNCTION - same-day AND
+     scoped. This was a disjunction on `msg.onlyDate`, and bridge() shallow-
+     copies the payload while the engine nests the scope under `hint`, so that
+     term was inert AND either marker alone bought a pass. A same-day read that
+     drops its scope, or a historical read wearing the same-day label, now both
+     count and trip the assertion. */
+  if (!(String(msg.initiator || '') === 'schedule-batch-same-day' && !!(msg.hint && msg.hint.onlyDate))) allVisitsRequests++;
   queueMicrotask(() => {
     const target = patients.find(p => (msg.hint.athenaId && p.mrn === msg.hint.athenaId) || (p.name === msg.hint.name && p.dob === msg.hint.dob));
     assert(target, 'history request must carry Athena MRN or name+DOB, never rely on a local patient ID');

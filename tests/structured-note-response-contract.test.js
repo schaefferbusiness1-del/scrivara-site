@@ -48,6 +48,17 @@ const RETIRED = (() => {
 assert.ok(RETIRED.size > 0,
   'could not read RETIRED_HTML from the publication boundary - failing closed rather than silently checking fewer shells');
 const SHELLS = ALL_SHELLS.filter((s) => !RETIRED.has(s));
+/* stgret-1.0.1 (2026-08-28): pin WHICH shells this suite is allowed to skip.
+   Reading the retired set from another file buys a single source of truth, but
+   it also means a stray quoted .html anywhere inside that array region - in a
+   comment, say - would silently drop a SERVED shell from this contract and the
+   suite would still pass, reporting full coverage over fewer files. The two
+   named-shell checks that stood here only covered two of the four. This pins
+   the exclusion set exactly: retire another shell and this fails, so the
+   coverage reduction has to be made deliberately rather than discovered. */
+assert.deepStrictEqual(ALL_SHELLS.filter((s) => RETIRED.has(s)), ['ScribeFlow-staging.html'],
+  'the set of shells skipped as retired changed - if that is intended, update this list on purpose; ' +
+  'if it is not, a served shell just silently stopped being held to the generation contract');
 assert.ok(SHELLS.includes('1pScribeFlow.html') && SHELLS.includes('ScribeFlow.html'),
   'a SERVED shell was filtered out as retired - that is a publication-boundary error, not a reason to skip it here');
 

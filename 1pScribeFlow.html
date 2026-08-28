@@ -5053,13 +5053,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            it and leaves this dialog exactly as it was. -->
       <div class="field">
         <label for="qolDockSide">Navigation bar</label>
-        <!-- gsx-1.0.0 (2026-08-27): applyDockSidePreview is defined in NO file
-             this lane loads. Every other caller in this shell already tests
-             typeof window.applyDockSidePreview first (10119, 48187, 48264);
-             this inline handler was the one that did not, so changing the
-             Navigation bar select threw ReferenceError and the control did
-             nothing. Guarded the same way as its siblings. -->
-        <select class="sf-select" id="qolDockSide" onchange="if(typeof window.applyDockSidePreview==='function')window.applyDockSidePreview(this.value)">
+        <select class="sf-select" id="qolDockSide" onchange="applyDockSidePreview(this.value)">
           <option value="bottom">Floating — bottom centre (default)</option>
           <option value="top">Floating — top centre</option>
           <option value="left">Floating — left edge</option>

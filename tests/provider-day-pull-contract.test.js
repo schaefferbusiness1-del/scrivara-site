@@ -602,11 +602,20 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
      I nearly reported that as a live defect. The engine is correct: it scopes
      the read by onlyDate and refuses a reader that answers unscoped
      ("scoped-read-unsupported-by-reader"). The COUNTER was wrong.
-     Excluding on BOTH markers, so a future same-day call that forgets its scope
-     still counts as historical and still trips these assertions. */
+     dfcount-1.0.1 (2026-08-28): the exclusion is the CONJUNCTION - a read is
+     forgiven only if it is same-day AND scoped. Two corrections got it there.
+     It read `!m.onlyDate`, but bridge() shallow-copies the payload onto the
+     message and the engine nests the scope inside `hint`, so `m.onlyDate` was
+     always undefined and that term excluded nothing - the comment claimed two
+     markers while one was inert. And the terms were ANDed as two independent
+     exclusions, which forgave a same-day call that had forgotten its scope -
+     the opposite of what this comment promised. Now: a same-day read that
+     drops onlyDate, or a historical read mislabelled with the same-day
+     initiator, both COUNT and both trip the assertions below. */
+  const scopedSameDay = (m) => String(m.initiator || '') === 'schedule-batch-same-day'
+    && !!(m.hint && m.hint.onlyDate);
   const countVisitReads = () => posted.filter(m => m.type === 'mlsAppReadAllVisits'
-    && String(m.initiator || '') !== 'schedule-batch-same-day'
-    && !m.onlyDate).length;
+    && !scopedSameDay(m)).length;
 
   /* ============ 1. Full visit notes ON = the mandatory floor + every
      historical body. Unchanged by dayfacts-1.0.0 except that the receipt now

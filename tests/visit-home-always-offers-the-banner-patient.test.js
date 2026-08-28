@@ -270,6 +270,52 @@ function buttonIds(html) {
   assert(html.includes('➡ Atoussa Salimi'), 'the rest of the day must still be reachable');
 }
 
+/* ---- 2b. TWO CHARTS WITH THE SAME NAME AND DOB ------------------------- */
+/* tplharness-1.0.0: the case the roster stub would otherwise hide.
+   positiveIdentityEvidence only upgrades a schedule row when the demographics
+   identify exactly ONE chart - "manually selecting either of two same-name+DOB
+   charts must not upgrade an ambiguous schedule row". With the roster stubbed to
+   a single patient that branch could never be reached, so the suite would have
+   passed a build in which the guard had been deleted. Hand it a genuine
+   collision instead: same name, same DOB, different chart.
+   This is the [[exact-name-matching-mints-duplicate-patients]] class, and the
+   consequence of getting it wrong is a note attributed to the wrong chart. */
+{
+  const ADAM_TWIN = { id: 'pt-adam-2', name: 'Adam', dob: '05/20/2025' };
+  const html = render({
+    rows: [ADAM_ROW, SALIMI],
+    tc: { cur: ADAM_ROW, nxt: SALIMI, lateMin: 0, waiting: 1, rows: [ADAM_ROW, SALIMI] },
+    banner: ADAM,
+    patients: [ADAM, ADAM_TWIN],
+    chosenThisSession: false /* no session marker: the ROW would be the only evidence */
+  });
+
+  const offers = recordOffers(html);
+
+  /* The guard DOES fire - measured. With one chart the screen renders exactly
+     one offer; with two colliding charts it renders two, because the row is no
+     longer attributed to the banner patient and the banner therefore renders
+     its own offer alongside the day's row.
+     The refusal is right: name+DOB identify a PERSON, not a chart, and binding
+     on that evidence is how a note reaches the wrong record.
+     THE DUPLICATE IS NOT. Two "Start Recording" controls for the same person is
+     the duplicate-control class the owner has reported, and this file's own
+     header states the law as "the screen never carries two Start Recording
+     offers naming two people" - it says nothing about two offers naming ONE
+     person, which is why nothing caught this.
+     Characterised, not silently allowed: this pins the behaviour as it stands
+     TODAY so the duplicate is visible in the suite instead of invisible. When
+     it is fixed this assertion fails, and whoever fixes it should change the
+     expectation to one offer deliberately - not discover it by accident. */
+  assert(offers.includes('Adam'),
+    'refusing the ambiguous row also removed the banner patient\'s own offer - the doctor ' +
+    'is left with no way to record the person on screen. Offers: ' + JSON.stringify(offers));
+  assert.deepStrictEqual(offers, ['Adam', 'Adam'],
+    'MEASURED 2026-08-28: an ambiguous roster yields TWO offers for the same person. If this ' +
+    'now reads ["Adam"], the duplicate has been fixed - update this expectation on purpose. ' +
+    'Offers: ' + JSON.stringify(offers));
+}
+
 /* ---- 3. NO BANNER PATIENT: THE DOCUMENTED DAY FLOW IS UNCHANGED -------- */
 {
   const html = render({
