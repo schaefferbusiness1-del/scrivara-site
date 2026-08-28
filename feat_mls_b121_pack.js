@@ -2609,6 +2609,8 @@
         say(n + ' chart' + (n === 1 ? '' : 's') + ' merged. The account copy of each absorbed chart is being removed too - if that fails you will see it in the console.');
         try { var u = document.getElementById('mlsMergeReviewUndo'); if (u) u.style.display = ''; } catch (e) {}
         try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
+        /* mgstale-1.0.0: the groups we just collapsed are gone - say so now */
+        try { mgSync(); } catch (e) {}
       });
     }
     try {
@@ -2647,7 +2649,22 @@
       b.textContent = '\uD83D\uDD00 Merge ' + n + ' duplicate' + (n === 1 ? '' : 's');
     } catch (e) {}
   }
-  api.mergeReview = { open: mgRender, groups: mgGroups, sync: mgSync, mount: mgMount };
+  /* mgstale-1.0.0 (2026-08-28): MEASURED LIVE - the control read "Merge 75
+     duplicates" while the store actually held ZERO. mgSync hides correctly at
+     zero; nothing was CALLING it. It ran on mount and on mls:view-changed only,
+     so any change to the patient list without a view change - a merge, a delete,
+     a pull - left the button advertising duplicates that no longer existed, and
+     pressing it opened an empty review. That is exactly the misleading-control
+     class this surface was built to remove.
+     I had tested the MECHANISM (mgSync hides at zero) and not the DISPATCH (that
+     anything calls it). Debounced: a large pull emits this event once per record. */
+  var mgSyncTimer = 0;
+  function mgSyncSoon() {
+    try { clearTimeout(mgSyncTimer); } catch (e) {}
+    mgSyncTimer = setTimeout(function () { try { mgSync(); } catch (e) {} }, 1200);
+  }
+  try { window.addEventListener('mls:patient-record-updated', mgSyncSoon, true); } catch (e) {}
+  api.mergeReview = { open: mgRender, groups: mgGroups, sync: mgSync, syncSoon: mgSyncSoon, mount: mgMount };
   try {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mgMount);
     else mgMount();

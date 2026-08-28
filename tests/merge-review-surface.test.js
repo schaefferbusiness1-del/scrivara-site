@@ -99,6 +99,26 @@ for (const lane of LANES) {
   ok(/\b4 duplicates\b/.test(many.textContent),
     lane + ': the label does not report the real duplicate count (got: ' + many.textContent + ')');
 
+  /* ---- 3b. THE DISPATCH, not just the mechanism ----
+     Measured live: the control read "Merge 75 duplicates" while the store held
+     ZERO. mgSync hides correctly at zero - nothing was CALLING it after the
+     patient list changed. Testing that the mechanism works while never testing
+     that anything invokes it is how a stale, misleading button ships. */
+  ok(/addEventListener\('mls:patient-record-updated'/.test(src),
+    lane + ': nothing re-syncs the merge control when the patient list changes - it will keep ' +
+    'advertising duplicates that were already merged, deleted or re-pulled away');
+  ok(/clearTimeout\(mgSyncTimer\)/.test(src),
+    lane + ': the re-sync is not debounced - a large pull emits patient-record-updated once per ' +
+    'record and would rescan the whole store each time');
+  {
+    /* and our OWN merge must re-sync before the doctor can look again */
+    const render = lift(src, 'mgRender');
+    const after = render.slice(render.indexOf('runOnce'));
+    ok(/mgSync\(\)/.test(after),
+      lane + ': after a merge the control is not re-synced, so it still offers the groups it just ' +
+      'collapsed');
+  }
+
   /* ---- 4. the surface must offer undo and must not merge without a click ---- */
   const render = lift(src, 'mgRender');
   ok(/mlsMergeReviewUndo/.test(render), lane + ': no undo control is offered after a merge');
