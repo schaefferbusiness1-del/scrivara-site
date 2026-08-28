@@ -51,6 +51,15 @@ const mc = fs.readFileSync(path.join(__dirname, '..', 'mls-connect.js'), 'utf8')
    So this pins the INVARIANT the old assertion was really protecting, and pins
    it harder: the tail runs only in the OFF path, it is bound to the row's own
    day, and the superseding contract must still be the one in force. */
+/* A TRIPWIRE, not a primary guard - and the weakest line in this file, so know
+   what it is for. The behavioural assertions below already pin the contract's
+   EFFECT and will fail first if the engine is reverted. This one catches the
+   case they cannot: a refactor that keeps the code shape (same variable names,
+   same per-row states) while changing the INTENT - the tail quietly becoming
+   optional again. Then the regexes still match and only the contract sentence
+   is gone. Cost of a false break is rewording one regex; cost of a silent
+   revert without it is a product regression. If this is the ONLY line failing,
+   re-derive the suite against the new contract - do not just delete it. */
 assert.ok(/dayfacts-1\.0\.1: the pulled-day note is MANDATORY in both modes now/.test(si),
   'the superseding owner DAY contract is gone - if the pulled-day note is no longer mandatory in both modes, this suite must be re-derived, not silenced');
 assert.ok(/todayNoteDayById\[pid\] = batchRowDay\(r\)/.test(si),
