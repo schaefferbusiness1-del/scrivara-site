@@ -20958,7 +20958,9 @@ function goNewUnassignedVisit(){
 async function deletePatient(id){
   if(!await mlsConfirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
   savePatients(getPatients().filter(p=>p.id!==id),undefined,{allowRemovals:true});
-  // hosted mode: best-effort server delete (owner-only; skips silently if no server id known)
+  // hosted mode: server delete (owner-only). ptdel-1.0.0: this NO LONGER skips
+  // silently on an unknown server id - it resolves the id from the server list and
+  // reports a verdict, because skipping is what made deleted patients come back.
   /* ptdel-1.0.0: AWAITED. The old call was fire-and-forget while the success
      toast below fired unconditionally, so every failure in this path was
      invisible - the doctor was told the patient was deleted whether the server
@@ -41894,7 +41896,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1108';
+  window.__MLS_AV='b1109';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
