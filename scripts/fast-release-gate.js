@@ -140,6 +140,25 @@ const INVARIANTS = Object.freeze([
      effectively free - measured 0s and 2s. */
   { label: 'ui-control-coverage', args: ['tests/ui-control-coverage.test.js'], require: /PASS ui-control-coverage:/ },
   { label: 'wipes-contract', args: ['tests/wipes-contract.test.js'], require: /PASS sj-2\.0 wipes contract:/ },
+  /* copilotgate-1.0.0 (2026-08-28): the FIVE suites guarding an entire
+     owner-listed feature area - Copilot answering from pulled visit history -
+     were in run-all but in NO gate group, fast or focused. Nothing before a
+     push exercised them.
+     What they hold shut is the owner's own complaint: never say "not pulled
+     from Athena" about data that WAS imported, keep missing data distinct from
+     not-yet-pulled data, and answer visit/trend questions only from
+     exact-patient VERIFIED bodies. The failure mode is silent and clinical -
+     a Copilot that quietly widens to a foreign or unverified visit still
+     answers fluently, and the answer looks right.
+     They live here rather than in a FOCUSED group because the evidence they
+     read is assembled in the shell, mls-connect AND the feat_ copilot files,
+     so no single changed-area net covers them. Measured 85-106ms each, 0.5s
+     for all five. */
+  { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
+  { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
+  { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },
+  { label: 'copilot-request-binding', args: ['tests/copilot-request-binding-contract.test.js'], require: /PASS Copilot request binding:/ },
+  { label: 'assistant-request-ownership', args: ['tests/assistant-request-ownership-runtime.test.js'], require: /PASS Assistant Copilot ownership:/ },
 ]);
 
 const FOCUSED = Object.freeze({
