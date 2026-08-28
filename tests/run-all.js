@@ -1537,6 +1537,7 @@ const tests = [
      still correct the moment the new UI is reverted or declines the device. */
   'phone-app-is-its-own-app.test.js',
   'phone-menu-and-controls.test.js',
+  'phone-day-picker-and-stale-pull.test.js',
   'phone-day-row-record-identity-runtime.test.js',
   'phone-remote-stop-canonical-runtime.test.js',
   /* The avatar intake summary reaching the workspace app, and the quick history

@@ -40,8 +40,21 @@ const ROOT = path.resolve(__dirname, '..');
    generation-structured-profile-unlinked-runtime landed with ac8ffc49 /
    bfd2ad76 on 2026-08-27 and were never registered, so the gate had never once
    executed either of them. run-all's own registry check caught it while 879 was
-   being added. */
-const FULL_GATE_TESTS = 884;
+   being added.
+   2026-08-28 continued (the ledger had stopped at 882 while the constant moved,
+   which defeats the point of keeping one - a completeness review caught that):
+   + dock-settings-controls-never-throw = 883
+       the two Settings dock controls, EXECUTED with their dynamically loaded
+       owners present and absent (b1099)
+   + upload-templates-button-cannot-vanish = 884
+       the three silent ways the injected "Upload templates" control can
+       disappear - anchor prose, click-interception label, navigator ids
+   + phone-day-picker-and-stale-pull = 885
+       the phone day control shipped in b1092 with no behavioural test at all;
+       this executes goToDay and pullDay, and pins that a pull answering after
+       the doctor has moved day is DROPPED rather than painted under the wrong
+       heading (the phday-1.0.1 guard) */
+const FULL_GATE_TESTS = 885;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

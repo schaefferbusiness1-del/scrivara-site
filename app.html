@@ -1002,7 +1002,22 @@ function relayPull(kind, payload, dedupeKey, onDone){
 
 function pullDay(){
   var date = S.date;
+  /* phday-1.0.1 (2026-08-28): DROP AN ANSWER ABOUT A DAY THE DOCTOR HAS LEFT.
+     Every branch below writes S.msg and renders, and until now none of them
+     asked whether S.date still equals the day this pull was started for. So a
+     pull for Tuesday that lands after the doctor has moved to Wednesday paints
+     Tuesday's sentence - "3 patients are on this phone for Tuesday", or a
+     Tuesday error - under Wednesday's heading. refreshToday() has had exactly
+     this guard since it was written ("the day moved under us; drop the stale
+     answer"); pullDay never got one.
+     phday-1.0.0 is what made it easy to hit: before the day picker, changing
+     day mid-pull took real effort; now it is one tap on #dayInput, which is
+     the whole point of that control. A message naming a day the screen is not
+     showing is the misleading-state class, so the answer is dropped rather
+     than repainted. The pull itself is unaffected - only the report is. */
+  function stale(){ return S.date !== date; }
   relayPull('pullDay', { date: date, provider: null }, 'pullDay|' + date + '|all|b0', function(res){
+    if (stale()) return;
     if (!res.ok){
       S.msg = { kind:'bad', text:'Your office computer reported: ' + (res.error || 'the pull failed') };
       return render();
@@ -1018,6 +1033,10 @@ function pullDay(){
     S.msg = { kind:'ok', text:'Pulled — reading it back…' };
     render();
     refreshToday().then(function(){
+      /* The read-back is async too, and the doctor can move during it. Same
+         rule: the count belongs to `date`, so it may only be shown while the
+         screen is still on `date`. */
+      if (stale()) return;
       var n = (S.appts || []).length;
       S.msg = n
         ? { kind:'ok', text: n + (n === 1 ? ' patient is' : ' patients are') + ' on this phone for ' + longDate(date) + '.' }
