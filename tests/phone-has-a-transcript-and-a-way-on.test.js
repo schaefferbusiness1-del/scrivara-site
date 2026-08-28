@@ -36,9 +36,41 @@ assert(connect.includes("'html body.mls-phone #ez3QuickTools{ display:inline-fle
   'the phone must keep ONE disclosure that reaches every folded control');
 
 /* B5 - source + runtime */
-assert(app.includes('try{ if(!w.offsetParent){ toast(msg,\'err\'); } }catch(e){}'),
+/* micv-1.0.0 (2026-08-28): the PROPERTY is unchanged and is still the point -
+   an invisible #micWarn must fall through to a visible toast, because a silent
+   mic failure looks like a dead button. What changed is the condition beside
+   it. The literal pinned here suppressed nothing; a later change added
+   `&& !phoneOwns` (body.mls-ph3) so the phone's own persistent banner would not
+   be duplicated - a real requirement, but implemented as a PROXY for "the
+   doctor can already read this", and the proxy is wrong exactly when the phone
+   has not lifted the sentence into its banner. The condition now asks whether
+   the message is visible ANYWHERE, which serves both requirements at once.
+   Pinning the old spelling would have forced a choice between silence and
+   stacking, so this pins the two things that actually matter: the fallback
+   exists, and it is NOT gated on merely being a phone. The runtime checks
+   below remain the real gate - they exercise both directions. */
+assert(/if\(!w\.offsetParent[^)]*\)\{ toast\(msg,'err'\); \}/.test(app),
   'an invisible #micWarn must fall through to a visible toast');
-const fn = app.slice(app.indexOf('function showMicWarn(msg){'), app.indexOf('/* ===== RECORD-FIRST HERO'));
+assert(!/!w\.offsetParent&&!phoneOwns/.test(app),
+  'the mic fallback must not be suppressed by merely being on a phone - that is how a mic failure goes silent');
+/* micv-1.0.0: extract EXACTLY showMicWarn by brace-matching. The old slice ran
+   from this function to the RECORD-FIRST HERO marker, which swept in the whole
+   DIRECT PHONE CAPTURE block - ~300 lines that call window.addEventListener at
+   load. That never mattered because the source assertion above threw first, so
+   these runtime checks - the ones that actually prove the behaviour - had never
+   executed. They do now. */
+const fn = (function () {
+  const start = app.indexOf('function showMicWarn(msg){');
+  assert(start >= 0, 'showMicWarn disappeared');
+  let depth = 0, end = -1;
+  for (let i = app.indexOf('{', start); i < app.length; i++) {
+    const c = app[i];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (!depth) { end = i + 1; break; } }
+  }
+  assert(end > start, 'showMicWarn is unbalanced');
+  return app.slice(start, end);
+})();
 const toasts = [];
 const warnNode = { style: {}, offsetParent: null, querySelector: function () { return { textContent: '' }; } };
 const ctx = { document: { getElementById: function () { return warnNode; } }, toast: function (m) { toasts.push(String(m)); }, console: console };

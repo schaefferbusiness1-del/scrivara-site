@@ -270,8 +270,21 @@ function sourceContracts() {
       `${rel}: phone capture tries Web Speech before the reliable MediaRecorder path`);
 
     const warn = source.slice(source.indexOf('function showMicWarn(msg)'), source.indexOf(START));
-    ok(/phoneOwns/.test(warn) && /!w\.offsetParent\s*&&\s*!phoneOwns/.test(warn),
+    /* micv-1.0.0 (2026-08-28): the PROPERTY pinned here is unchanged - a hidden
+       host warning must not stack a duplicate toast over the phone's own
+       persistent banner. What changed is that the suppression no longer tests
+       `phoneOwns` (body.mls-ph3), which was a PROXY for "the doctor can already
+       read this" and was wrong exactly when the phone had not lifted the
+       sentence into its banner: the mic failure then announced itself to
+       nobody, which is the defect phone-has-a-transcript-and-a-way-on exists to
+       prevent. Those two suites were pinning opposite spellings of the same
+       requirement. The condition now asks whether the message is VISIBLE, which
+       satisfies both, so this pins that instead - and adds the second half,
+       that a bare is-a-phone test must never come back. */
+    ok(/alreadyVisible/.test(warn) && /!w\.offsetParent\s*&&\s*!alreadyVisible/.test(warn) && /mlsPh3Note/.test(warn),
       `${rel}: hidden host mic warnings can still stack a duplicate toast over the phone owner`);
+    ok(!/classList\.contains\('mls-ph3'\)/.test(warn),
+      `${rel}: the mic fallback is suppressed by merely being on a phone - that is how a real mic failure goes silent`);
   });
   return compatibilityErrors;
 }

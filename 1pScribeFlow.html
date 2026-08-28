@@ -25831,11 +25831,29 @@ function showMicWarn(msg){
      like a dead button. If the warn node has no rendered box, say it where
      the doctor actually is. */
   try{
-    /* The phone shell owns one persistent explanation. A host toast here would
-       stack a second copy over the same Record control. Desktop keeps its toast
-       because #micWarn can be hidden there without another owner. */
-    var phoneOwns=!!(document.body&&document.body.classList.contains('mls-ph3'));
-    if(!w.offsetParent&&!phoneOwns){ toast(msg,'err'); }
+    /* micv-1.0.0 (2026-08-28): this used to suppress the fallback whenever the
+       body carried .mls-ph3, on the reasoning that "the phone shell owns one
+       persistent explanation" and a host toast would stack a second copy over
+       the Record control. Both halves of that are real requirements - a silent
+       mic looks like a dead button, and stacked duplicate warnings were their
+       own reported defect - but "we are on the phone" is a PROXY for "the
+       doctor can already read this", and the proxy is wrong exactly when it
+       matters: the phone's banner only carries this sentence once the phone
+       has ASKED for it (captureStartExplanation lifts #micWarn's text), so a
+       mic failure outside that path announced itself to nobody at all.
+       Ask the real question instead - is this sentence visible ANYWHERE right
+       now - and the two requirements stop competing: no stacking when the
+       phone is already showing it, no silence when it is not. */
+    var alreadyVisible=false;
+    try{
+      var ph=document.getElementById('mlsPh3Note');
+      if(ph&&ph.offsetParent!==null){
+        var pht=document.getElementById('mlsPh3NoteTxt');
+        var shown=String((pht&&pht.textContent)||ph.textContent||'');
+        alreadyVisible=shown.indexOf(msg)>=0;
+      }
+    }catch(ePhoneNote){}
+    if(!w.offsetParent&&!alreadyVisible){ toast(msg,'err'); }
   }catch(e){}
 }
 
