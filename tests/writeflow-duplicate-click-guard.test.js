@@ -42,8 +42,21 @@ assert(wf.includes('athenaActionRunning = true;'), 'the in-flight flag never arm
    regression, so this counts fail-closed exits BOTH ways and separately proves
    the helper really does clear the flag - which the old literal count could
    only ever assume. */
-assert(/function refuseAction\(action, opts, message\) \{[\s\S]{0,400}?athenaActionRunning = false;/.test(wf),
-  'refuseAction must clear the in-flight flag itself');
+/* wfrep-1.0.1: the clear must be UNCONDITIONAL. This was a proximity regex -
+   `function refuseAction(...) {[\s\S]{0,400}?athenaActionRunning = false;` -
+   which is equally satisfied by a clear sitting inside an `if`. The audit's
+   bypass:
+       if (opts && opts.standDown !== false) athenaActionRunning = false;
+   still matches, and then any caller passing {standDown:false} leaves the
+   in-flight flag ARMED after a refusal - so every later Athena action is
+   refused as busy, with nothing to clear it. The old literal proved the clear
+   at the call site and could not be made conditional without changing pinned
+   bytes; routing it into the helper moved that proof somewhere weaker.
+   Pinned as the helper's actual opening statements, in order, so the clear
+   cannot acquire a condition. */
+assert(/function refuseAction\(action, opts, message\) \{\s*\n\s*actionSay\(opts, message, 'err'\);\s*\n\s*athenaActionRunning = false;/.test(wf),
+  'refuseAction must clear the in-flight flag ITSELF and UNCONDITIONALLY - a clear behind an `if` lets a ' +
+  'caller leave the flag armed after a refusal, and then every subsequent Athena action is refused as busy');
 /* This must match the CALL, not the typeof guard beside it. Written the loose
    way first, and a canary that deleted the invocation still passed - the regex
    was matching `typeof opts.onResult === 'function'` and calling that proof. */

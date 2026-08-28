@@ -358,6 +358,20 @@ ok(/\bscopeDay:\s*retryScopeDay\b/.test(retryOpts),
   'the retry no longer scopes the re-entered batch to the receipt own day, so it could reach a different day than the one that failed');
 ok(/\bretryPass:\s*true\b/.test(retryOpts),
   'the re-entered batch is no longer marked as a retry pass, so the named-omission reconciliation below never runs on it');
+/* retryspell-1.0.1 (2026-08-28): AND THE OPTION SET IS CLOSED. Reading it as an
+   open set - "these two must be present" - lets an ADDED option neutralise the
+   retry while both asserted members stay present and asserted. The audit's
+   bypass appended `deadlineCapAt: Date.now() - 1`, so the batch re-enters with
+   its deadline already past and does nothing; a `...retryOverrides` spread does
+   the same by overriding scopeDay, since last write wins in an object literal.
+   The literal I replaced was closed BY ACCIDENT - any added option changed the
+   pinned bytes. This is closed ON PURPOSE: exactly these two, in this order. A
+   third has to be added here deliberately, which is what a pin on a retry that
+   re-enters the write-adjacent batch is for. */
+ok(/^\s*scopeDay:\s*retryScopeDay,\s*retryPass:\s*true\s*$/.test(retryOpts),
+  'the retry option set is no longer exactly { scopeDay, retryPass } - it is ' + JSON.stringify(retryOpts.trim()) +
+  '. An extra option can neutralise the retry with both named options still present and asserted: a past ' +
+  'deadlineCapAt makes the re-entered batch do nothing, and a spread can override scopeDay outright.');
 ok(/if \(sweepOpts && sweepOpts\.retryPass === true\) taxReconcileNamedOmissions\(receipt\);/.test(importer),
   'retryPass no longer drives the named-omission reconciliation - the flag would then be decoration');
 

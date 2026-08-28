@@ -138,6 +138,36 @@ async function __checkBoundedGeneration() {
     assert(r.error, 'an already-aborted generation still waited for a promise that will never settle');
   }
 }
+/* gentimeout-1.0.1 (2026-08-28): I PROVED THE HELPER AND NOT THE DISPATCH.
+   The block above executes _mlsAwaitGeneration and shows it aborts, clears its
+   timer and settles once - but it hands the helper the 90000 itself, so it only
+   proves the helper behaves when someone gives it a deadline. Nothing tied it
+   to generateNote's actual OpenAI wait. An adversarial audit deleted the
+   wrapper from generateNote so the call became a bare
+   `await callOpenAI(...)` - completely unbounded, the exact hang this file is
+   named for - and every assertion here still passed, because
+   _mlsAwaitGeneration stays DEFINED for the draft-tuning setup wait and the
+   optional-template run.
+   The old literal was the race INSIDE generateNote, so it pinned the bound's
+   existence AND its value at the call site. Both are pinned again here, at the
+   site, and the 90 s budget is tied to the sentence the doctor is shown. */
+{
+  const gen = app.indexOf('async function generateNote()') >= 0
+    ? app.indexOf('async function generateNote()') : app.indexOf('function generateNote()');
+  assert(gen >= 0, 'generateNote is gone');
+  const body = app.slice(gen, gen + 60000);
+  const wait = /result\s*=\s*await\s+_mlsAwaitGeneration\(\s*run,\s*callOpenAI\(([\s\S]{0,200}?)\),\s*_mlsGenerationTimeoutMs\('main',\s*(\d+)\),\s*'generation-timeout'\s*\)/.exec(body);
+  assert(wait,
+    "generateNote's OpenAI call is no longer wrapped in _mlsAwaitGeneration with a 'main' budget and a " +
+    "generation-timeout reason. The wait is UNBOUNDED - the helper being defined elsewhere proves nothing " +
+    'about this call site, which is the one that hangs.');
+  assert.strictEqual(wait[2], '90000',
+    "generateNote's generation budget is " + wait[2] + " ms, but the doctor is told \"timed out after 90 " +
+    'seconds\". A budget the message does not match is a lie either way round.');
+  assert(/signal:\s*run\.controller\.signal/.test(wait[1]),
+    'the OpenAI call no longer receives the run controller signal, so aborting the run cannot cancel it');
+}
+
 /* ...and the doctor is told, in words, with the transcript preserved. */
 assert(app.includes("}else if(abortCode==='generation-timeout'){"),
   'the generation-timeout outcome has no branch of its own, so a timeout would be reported as some other failure');
