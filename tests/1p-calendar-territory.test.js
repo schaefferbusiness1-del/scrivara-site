@@ -444,20 +444,24 @@ async function runtime() {
         gradients: Array.prototype.slice.call(box.querySelectorAll('*'))
           .filter((n) => /gradient/.test(getComputedStyle(n).backgroundImage)).length };
     });
-    ok(fb.fixpack, 'the fixpack that owns the day-panel fallback is not installed, so nothing below was measured');
-    ok(fb.mounted, 'the day-panel fallback did not mount, so the calm override is unmeasured');
-    eq(fb.rows, 6, `the fallback listed ${fb.rows} of the 6 appointments`);
-    eq(fb.heads, 2, `the fallback opened with ${fb.heads} heading lines, not 2`);
-    eq(fb.gradients, 0, 'the fallback still paints a gradient somewhere — the wall of dark banners is back');
-    /* the rows are calm */
-    eq(fb.row.img, 'none', `an appointment row still carries a background image: ${fb.row.img}`);
-    eq(fb.row.bg, 'rgb(255, 255, 255)', `an appointment row is not a white card: ${fb.row.bg}`);
-    eq(fb.row.blw, '3px', `an appointment row lost its thin brand accent (border-left ${fb.row.blw})`);
-    ok(fb.row.color !== 'rgb(255, 255, 255)', 'an appointment row still prints white text');
-    /* and the headings are NOT rows */
-    eq(fb.head.blw, '0px', `the heading "${fb.headText}" is painted as an appointment card (border-left ${fb.head.blw})`);
-    eq(fb.head.fw, '800', `the heading "${fb.headText}" lost its weight (font-weight ${fb.head.fw})`);
-    measured.fallback = { rows: fb.rows, heads: fb.heads, rowBg: fb.row.bg, headFw: fb.head.fw };
+    /* fpday-1.0.0 (2026-08-28): the owner had this block REMOVED - "get rid of
+       that top part calander alreayd has everything we need". Everything below
+       used to verify that the block was CALM (white rows, no gradients, headings
+       that are not cards). Those assertions cannot survive a block that no longer
+       renders, so the property is re-expressed rather than deleted: the box must
+       NOT mount at all.
+       This is strictly stronger than what it replaces. "Calm" allowed the block to
+       exist; this does not. If a future change revives it - or a stale build ships
+       one - this fails, and it fails for the right reason. The fixpack itself must
+       still be installed, because the same module owns other calendar fixes and a
+       silently absent fixpack would make this assertion pass for the wrong reason. */
+    ok(fb.fixpack, 'the fixpack that owns the calendar fixes is not installed, so nothing below was measured');
+    eq(fb.mounted, false,
+      'the top day-appointment list (#mlsFpDayFallback) mounted again. It duplicates the month grid ' +
+      'below it from the SAME window._calAppts, prints browser-local times where every other ' +
+      'appointment surface prints the practice timezone, and follows _calRefDate rather than the ' +
+      'month on screen. The owner had it removed.');
+    measured.fallback = { mounted: false, removedBy: 'fpday-1.0.0' };
 
     /* ============================ 2 + 3: STAFF PREP JOB CARD =========== */
     await openStaff(page);

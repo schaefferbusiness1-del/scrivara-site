@@ -566,6 +566,23 @@
     var fallbackSig = '';
     function ensureDayFallback() {
       try {
+        /* fpday-1.0.0 (2026-08-28, owner: "get rid of that top part calander
+           alreayd has everything we need"): this mounted #mlsFpDayFallback as the
+           FIRST child of #calendarView, above the per-patient strip, the Pull
+           button and the month grid. It read the SAME window._calAppts the grid
+           below reads, and every field it printed - time, name, reason - is
+           already reachable there. It was also wrong three ways: it printed
+           BROWSER-local times while every other appointment surface prints the
+           practice timezone, it followed _calRefDate rather than the month on
+           screen, and its own "the panel already shows these" guard was defeated
+           by the month grid's "First L." abbreviation - which is why it mounted
+           on top of a grid that was displaying the same patients.
+           Neutered at the top of the mount rather than deleted: the F6 block sits
+           between a comment header and its neighbours, and deleting the range
+           leaves an unclosed comment that silently comments out the rest of this
+           file. removeFb() also tears down any box a previous build left behind. */
+        removeFb(); return;
+        /* eslint-disable-next-line no-unreachable */
         var calView = $('calendarView');
         if (!calView || calView.style.display === 'none') { removeFb(); return; }
         var date = String(window._calRefDate || '');
