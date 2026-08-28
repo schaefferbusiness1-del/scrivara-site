@@ -140,7 +140,15 @@
   };
   var EXTRA = {
     hpi: { key: 'hpiOrganization', label: 'HPI organization', choices: [['chronological', 'Chronological'], ['oldcarts', 'OLDCARTS when supported'], ['problem_focused', 'Problem-focused']] },
-    opnote: { key: 'templateMode', label: 'Template handling', choices: [['strict', 'Follow template strictly'], ['adapt', 'Adapt only where supported'], ['guide', 'Use template as a guide']] },
+    /* dtc-1.0.0 (2026-08-27): the Op Note "Template handling" select is GONE
+       because it could never do anything. PROFILE_FAMILIES is FAMILY_IDS
+       verbatim, so opnote takes the isProfileFamily branch, and that branch
+       assigns `merged.templateMode = selected.templateMode` unconditionally on
+       every read and every capture - overwriting whatever this control wrote.
+       Two controls were bound to one stored field and the loser was always this
+       one. The live control is the per-format Template handling inside the saved
+       format itself. Deleting the dead twin is safer than adding a second
+       writer to a field that already has one. */
     avs: { key: 'readingLevel', label: 'Reading level', choices: [['grade6', 'Plain language (grade 6)'], ['grade8', 'Plain language (grade 8)'], ['clinical', 'Clinical language']] },
     referral: { key: 'recipientStyle', label: 'Recipient style', choices: [['consultative', 'Consultative'], ['specialist_concise', 'Specialist concise'], ['payer_formal', 'Payer formal']] },
     priorauth: { key: 'placeholderPolicy', label: 'Missing facts', choices: [['explicit', 'Show explicit placeholders'], ['omit', 'Omit unsupported optional sections']] },
@@ -777,9 +785,30 @@
   // Carry all five bounded section payloads alongside SOAP so saved formats
   // remain effective without competing with the visit's note format contract.
   function structuredFamily(transient) {
-    var soap = mergeFamily('soap', transient);
     var nested = transient && typeof transient === 'object' && !Array.isArray(transient)
       ? transient.families : null;
+    /* dtc-1.0.0 (2026-08-27): SOAP's conditionally-routed saved format was
+       computed and then thrown away - the ONE family of the seven where that
+       happened. autoRoute resolves the routed choice and writes it to
+       `out.families.soap.profileId`, but this function passed the whole
+       `transient` to mergeFamily('soap', ...), and mergeFamily reads
+       `request.profileId || request.activeProfile` off the object it is HANDED.
+       transient has no top-level profileId, so it fell through to
+       base.activeProfile and the routing decision never reached the request.
+       The five nested sections below were always fine because they are handed
+       `nested.hpi` etc. DIRECTLY - that is the working shape, and this now
+       matches it. Only the two identity keys are overlaid, so the top-level
+       length/tone/structure/instructions that autoRoute set stay untouched. */
+    var routedSoap = nested && nested.soap && typeof nested.soap === 'object' && !Array.isArray(nested.soap)
+      ? nested.soap : null;
+    var soapRequest = transient;
+    if (routedSoap && (routedSoap.profileId || routedSoap.activeProfile)) {
+      soapRequest = Object.assign({}, transient, {
+        profileId: routedSoap.profileId || routedSoap.activeProfile,
+        activeProfile: routedSoap.activeProfile || routedSoap.profileId
+      });
+    }
+    var soap = mergeFamily('soap', soapRequest);
     return {
       schemaVersion: 1,
       family: 'soap',
@@ -1383,7 +1412,14 @@
     p.length = enumValue('length', q('mlsDtLength').value, p.length);
     p.tone = enumValue('tone', q('mlsDtTone').value, p.tone);
     p.structure = enumValue('structure', q('mlsDtStructure').value, p.structure);
-    p.instructions = cleanText((q('mlsDtFamilyInstructions') && q('mlsDtFamilyInstructions').value) || p.instructions, MAX_INSTRUCTIONS);
+    /* dtc-1.0.0 (2026-08-27): `|| p.instructions` made the box unclearable.
+       An empty textarea is '', which is falsy, so deleting your standing
+       instruction silently restored the previous one - the only way to get rid
+       of an AI comment was to overwrite it with different text. Presence of the
+       control is the right test; its value is then authoritative, empty or not.
+       Nothing downstream distinguishes "cleared" from "never set". */
+    var instrEl = q('mlsDtFamilyInstructions');
+    p.instructions = cleanText(instrEl ? instrEl.value : p.instructions, MAX_INSTRUCTIONS);
     var ex = EXTRA[id], extra = q('mlsDtExtra');
     if (ex && extra) p[ex.key] = enumValue(ex.key, extra.value, p[ex.key]);
     if (isProfileFamily(id)) {

@@ -5067,7 +5067,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            it and leaves this dialog exactly as it was. -->
       <div class="field">
         <label for="qolDockSide">Navigation bar</label>
-        <select class="sf-select" id="qolDockSide" onchange="applyDockSidePreview(this.value)">
+        <!-- gsx-1.0.0 (2026-08-27): applyDockSidePreview is defined in NO file
+             this lane loads. Every other caller in this shell already tests
+             typeof window.applyDockSidePreview first (10119, 48187, 48264);
+             this inline handler was the one that did not, so changing the
+             Navigation bar select threw ReferenceError and the control did
+             nothing. Guarded the same way as its siblings. -->
+        <select class="sf-select" id="qolDockSide" onchange="if(typeof window.applyDockSidePreview==='function')window.applyDockSidePreview(this.value)">
           <option value="bottom">Floating — bottom centre (default)</option>
           <option value="top">Floating — top centre</option>
           <option value="left">Floating — left edge</option>
@@ -17453,6 +17459,14 @@ async function suOpenSetupRun(automatic,m,gen){
     if(msg){msg.style.color='#c0392b';msg.textContent=SU_STATE.error+' Retry before continuing so another account’s setup is never reused.';}
     if(retry) retry.style.display='';
     openSetup._loaded=false;
+    /* obf-1.0.0 (2026-08-27): on the AUTOMATIC path this wrote the failure text
+       and revealed the Retry button into a modal that is never shown. Only the
+       user-initiated path opens it (the `if(!automatic)` above, before the
+       fetch), so a background setup prompt that failed to reach the backend
+       announced itself to nobody: the doctor's account/practice setup silently
+       never happened and nothing on screen said why. The user-initiated path is
+       already correct and is deliberately left alone. */
+    try{ if(automatic) toast(SU_STATE.error,'err'); }catch(eOpenFail){}
     return false;
   }
   if(!live()) return false;
@@ -19413,10 +19427,19 @@ function _copilotInjectionRelated(row){
 function _copilotCoverageDisclosure(coverage){
   var c=coverage&&typeof coverage==='object'?coverage:{};
   var omitted=Math.max(0,Number(c.omittedByLimit)||0), unscanned=Math.max(0,Number(c.sourceRowsNotScanned)||0);
-  if(!omitted&&!unscanned) return '';
+  /* cvx-1.0.0 (2026-08-27): rows dropped by the identity guard above
+     (coverage.excludedUnverified, incremented where identityVerified===false or
+     the row is bound to another patient) were counted and then never mentioned.
+     If every gap was of that kind this function returned '' and Copilot answered
+     as though the evidence simply did not exist - which is how "not pulled from
+     Athena" gets said about a chart that WAS pulled. Excluded is not absent, and
+     the clinician has to be able to tell the difference. */
+  var excluded=Math.max(0,Number(c.excludedUnverified)||0);
+  if(!omitted&&!unscanned&&!excluded) return '';
   var included=Math.max(0,Number(c.included)||0), bits=['Based on the most recent '+included+' included record'+(included===1?'':'s')];
   if(omitted) bits.push(omitted+' additional evidence row'+(omitted===1?' was':'s were')+' outside the response limit');
   if(unscanned) bits.push(unscanned+' source row'+(unscanned===1?' was':'s were')+' not scanned');
+  if(excluded) bits.push(excluded+' pulled row'+(excluded===1?' was':'s were')+' held back because its patient identity was not verified (pulled, not missing)');
   return bits.join('; ')+'. Older or omitted records may contain additional evidence.';
 }
 function _copilotBuildLongitudinalPatient(ap, question){
@@ -28673,7 +28696,17 @@ function _mlsStartGeneration(transcriptEl,evidence){
   _mlsAbortActiveGeneration('superseded');
   var run={id:++_mlsGenerationSequence,controller:new AbortController(),settled:false,abortReason:'',evidence:evidence||null,sourceEl:transcriptEl,sourceHandler:null};
   if(transcriptEl&&typeof transcriptEl.addEventListener==='function'){
-    run.sourceHandler=function(){_mlsAbortGenerationRun(run,'source-changed');};
+    /* gsx-1.0.0 (2026-08-27): this is the DOCTOR TYPING, not a patient change.
+       It shares the 'source-changed' abort code with the genuine binding aborts,
+       so editing your own transcript mid-generation produced "The patient or
+       visit source changed while MLS was generating" - an alarming sentence
+       about a patient mix-up that had not happened.
+       The CODE is deliberately left alone: generate-note-lifecycle-runtime pins
+       this receipt vocabulary on both the main and the optional run, and the
+       code is an internal contract, not a sentence. Only the MESSAGE was wrong,
+       so only the message is fixed - this flag tells the handler which of the
+       two very different situations actually occurred. */
+    run.sourceHandler=function(){run.abortWasTranscriptEdit=true;_mlsAbortGenerationRun(run,'source-changed');};
     transcriptEl.addEventListener('input',run.sourceHandler);
   }
   _mlsActiveGeneration=run;
@@ -28775,6 +28808,14 @@ function _mlsRefuseGeneration(code,message,showToast){
   return false;
 }
 function _mlsExpectedTemplateCancellation(reason){
+  /* gsx-1.0.0 (2026-08-27): this list is UNCHANGED, and deliberately so. I first
+     removed 'template-timeout' on a report that the on-screen receipt goes on
+     claiming the template was applied. That report was wrong:
+     __mlsLastTemplateGenerationReceipt.reason IS set to 'template-timeout'
+     honestly, and generate-note-lifecycle-runtime asserts BOTH that honest
+     receipt AND templateReports.length === 0. Only the red toast is suppressed,
+     because the MAIN note already succeeded and a formatting-failure toast
+     would contradict the draft still sitting on screen. Leave it alone. */
   return /^(?:source-changed|superseded|generation-aborted|template-timeout|aborted)$/.test(String(reason||''));
 }
 function _mlsStartOptionalTemplate(transcript,expectedBinding,expectedEpoch,sourceEl){
@@ -28782,6 +28823,11 @@ function _mlsStartOptionalTemplate(transcript,expectedBinding,expectedEpoch,sour
   var controller=new AbortController();
   var run={controller:controller,abortReason:'',settled:false,sourceEl:sourceEl||null,sourceHandler:null,promise:null};
   if(sourceEl&&typeof sourceEl.addEventListener==='function'){
+    /* gsx-1.0.0: the OPTIONAL template run deliberately keeps 'source-changed'.
+       Its reason never reaches a human - the report is suppressed and the only
+       toast is the main draft's success - and generate-note-lifecycle-runtime
+       pins this receipt vocabulary. The rename belongs on the MAIN run above,
+       which is the one that speaks to the doctor. */
     run.sourceHandler=function(){_mlsAbortGenerationRun(run,'source-changed');};
     sourceEl.addEventListener('input',run.sourceHandler);
   }
@@ -29016,8 +29062,17 @@ async function generateNote(){
       outcome='aborted'; outcomeCode=abortCode; outcomeMessage='';
     }else if(abortCode==='source-changed'){
       outcome='aborted'; outcomeCode=abortCode;
-      outcomeMessage='The patient or visit source changed while MLS was generating. The older result was discarded—review the current visit and generate again.';
-      toast(outcomeMessage,'err');
+      if(run&&run.abortWasTranscriptEdit===true){
+        /* gsx-1.0.0: the doctor edited the transcript. Nothing is wrong, nothing
+           was mixed up, and this is not an error - say so, and say what to do.
+           No toast type: the neutral skin, plus role=status/aria-live=polite
+           instead of the assertive alert an 'err' would raise. */
+        outcomeMessage='You edited the transcript, so MLS stopped that draft. Your text is safe—click Generate when you are ready.';
+        toast(outcomeMessage,'');
+      }else{
+        outcomeMessage='The patient or visit source changed while MLS was generating. The older result was discarded—review the current visit and generate again.';
+        toast(outcomeMessage,'err');
+      }
     }else if(abortCode==='generation-timeout'){
       outcomeCode=abortCode;
       outcomeMessage='Note generation timed out after 90 seconds. Your transcript is safe—click Generate again.';
