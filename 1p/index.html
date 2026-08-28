@@ -1173,7 +1173,7 @@
     100%{box-shadow:0 0 0 0 rgba(180,35,30,0)}
   }
   .mls-gate-flash{animation:mlsGateShake .5s ease-in-out,mlsGateGlow .9s ease-out;
-    outline:2px solid var(--red);outline-offset:3px;border-radius:8px}
+    outline:2px solid var(--red);outline-offset:3px;border-radius:var(--r-ctl,10px)}
   .mls-gate-flash:focus{outline:2px solid var(--red);outline-offset:3px}
   /* The toast already owns translateX(-50%); shaking it would tear it off
      centre, so it pulses instead. Higher specificity wins the animation. */

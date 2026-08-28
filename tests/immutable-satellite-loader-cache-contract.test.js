@@ -54,7 +54,6 @@ const assets = [
   ['feat_mls_patientpick.js', '20260811pick171', '20260811pick170'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
   ['feat_mls_strip_day_couple.js', '20260808sdc202perf1', '20260719sdc201'],
-  ['feat_mls_wb_console.js', '20260802wbc132', '20260630wbc1c1-B177'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260808cmd106perf2', '20260808cmd105perf1'],
@@ -169,6 +168,22 @@ for (const [label, text] of [['production', connect], ['staging', staging]]) {
 }
 assert(connect.includes("feat_mls_copilot_request_safety.js?v='+(window.__MLS_AV||Date.now())"),
   'production: Copilot request ownership must follow the shared build cache token');
+
+/* wbcache-1.0.0 (2026-08-28): feat_mls_wb_console.js LEFT the hand-maintained
+   list above, exactly the way feat_athena_doctor.js and feat_mls_b121_pack.js
+   did and for the reason this file already gives: "A literal token is only as
+   good as the human bumping it; this one now follows the build number and
+   cannot go stale again." Its production loader is the build-bound form, so
+   the pinned literal 20260802wbc132 matched nothing and this suite has been
+   red on main - reporting a stale cache token for an asset that had just been
+   made incapable of having one.
+   Note the quoting: this loader is double-quoted where its neighbours are
+   single-quoted, so it needs its own literal rather than the shared one. */
+assert(connect.includes('var A="feat_mls_wb_console.js"') &&
+  connect.includes('s.src=A+"?v="+(window.__MLS_AV||Date.now())'),
+  'production: the writeback console must follow the shared build cache token');
+assert(!connect.includes('20260802wbc132') && !connect.includes('20260630wbc1c1-B177'),
+  'production: a retired hand-maintained writeback-console token is still reachable');
 assert(!connect.includes('20260802crs121') && !connect.includes('20260718crs111'),
   'production: a retired Copilot request-safety token is still reachable');
 

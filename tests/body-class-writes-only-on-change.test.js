@@ -111,6 +111,16 @@ const GUARDED = [
      zero. On a Lite account it is an unguarded add() on setInterval(tick, 1500) -
      ~40 no-op whole-document style invalidations per minute, all session. Same
      defect as the original, on the one population nobody sampled. */
+  /* bodycensus-1.0.0 (2026-08-28): syncTopGenerationOwnership was the 34th site
+     and took the census red. Enumerating it in the manifest alone was NOT
+     enough - I removed its guard as a canary and the suite still passed,
+     because the manifest counts OPERATIONS and the operation text is unchanged
+     either way. Pinned here too, where the guard literal itself is checked.
+     Like the other toggle entries this is belt-and-braces (toggle(name, force)
+     returns early when presence already matches), but an unpinned guard is one
+     refactor away from becoming an unguarded add/remove. */
+  ['mls-connect.js', 'syncTopGenerationOwnership', 'toggle — belt-and-braces',
+    "if (body && body.classList.contains('ez3fl-top-gen-owns') !== owns) body.classList.toggle('ez3fl-top-gen-owns', owns);"],
   ['mls-connect.js', 'applyDoctorRestrictions (LITE USERS ONLY)', 'add() — ~40/min all session',
     "if (!document.body.classList.contains('mls-lite')) document.body.classList.add('mls-lite');"],
   ['mls-connect.js', 'clearDoctorRestrictions (NON-LITE USERS)', 'remove() — ~40/min all session',
@@ -268,10 +278,13 @@ const scanned = PUBLISHED.length;
    add/remove calls in syncRouteLayout(). They are O(1) route-state repairs,
    never recurring passes, and prevent a stale patient identity from showing
    while its cold record refresh waits for browser idle. */
-/* 2026-08-24: mls-connect is 33 syntactic matches. Six came with the P1 dock
+/* 2026-08-28 (bodycensus-1.0.0): mls-connect is 34 syntactic matches - the
+   thirty-fourth is syncTopGenerationOwnership's ez3fl-top-gen-owns toggle,
+   enumerated at the end of the manifest below and audited as change-safe.
+   2026-08-24: mls-connect was 33 syntactic matches. Six came with the P1 dock
    guard; the seventh is `var body = $('mlsEz3Body')`, a local element that the
    broad scanner deliberately over-counts. The review-step state marker adds
-   one contains-guarded force-toggle. The manifest below accounts for all 33
+   one contains-guarded force-toggle. The manifest below accounts for all 34
    individually by operation/count and records why each is either guarded,
    force-toggle safe, local-element-only, or a one-shot transition/teardown.
    A new operation or changed multiplicity cannot pass by raising one number. */
@@ -300,7 +313,17 @@ const CONNECT_BODY_SITE_AUDIT = [
   { op: "remove('mls-ds-otherday')", count: 1, reasons: ['local #mlsEz3Body plus contains() guard'] },
   { op: "remove('mls-phone')", count: 4, reasons: ['contains() guard in repeating new-UI handoff', 'on/has state guard', 'explicit user exit click', 'phone-owner revert'] },
   { op: "add('mls-phone')", count: 1, reasons: ['on/has state guard'] },
-  { op: "remove('mls-xdc-active')", count: 1, reasons: ['one-shot hot-upgrade retirement'] }
+  { op: "remove('mls-xdc-active')", count: 1, reasons: ['one-shot hot-upgrade retirement'] },
+  /* bodycensus-1.0.0 (2026-08-28): syncTopGenerationOwnership (mls-connect.js
+     :8065) arrived after this list was written and took the count to 34, so
+     this suite has been red on main. Audited: it is change-safe in exactly the
+     way this file demands - it reads contains() and compares to the value it
+     wants BEFORE toggling, so a steady state writes nothing.
+       if (body && body.classList.contains('ez3fl-top-gen-owns') !== owns)
+         body.classList.toggle('ez3fl-top-gen-owns', owns);
+     Enumerated rather than the total simply bumped, so the next new site still
+     has to be read by a person. */
+  { op: "toggle('ez3fl-top-gen-owns', owns)", count: 1, reasons: ['contains() !== owns guard before the toggle'] }
 ];
 const connectBodyOps = new Map();
 const connectBodyRe = /(?:document\.body|\bbody)\.classList\.(add|remove|toggle)\(([^\n;]*)\)/g;
@@ -310,10 +333,10 @@ while ((connectBodyMatch = connectBodyRe.exec(connectText))) {
   const op = connectBodyMatch[1] + '(' + connectBodyMatch[2] + ')';
   connectBodyOps.set(op, (connectBodyOps.get(op) || 0) + 1);
 }
-assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 33,
-  'mls-connect body-class audit no longer enumerates exactly 33 syntactic sites');
-assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 33,
-  'the documented mls-connect body-class audit does not account for all 33 sites');
+assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 34,
+  'mls-connect body-class audit no longer enumerates exactly 34 syntactic sites');
+assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 34,
+  'the documented mls-connect body-class audit does not account for all 34 sites');
 assert.strictEqual(connectBodyOps.size, CONNECT_BODY_SITE_AUDIT.length,
   'mls-connect gained or lost an operation shape without an explicit audit entry');
 for (const row of CONNECT_BODY_SITE_AUDIT) {
@@ -366,7 +389,7 @@ for (const row of SCRIBEFLOW_BODY_SITE_AUDIT) {
     'every ScribeFlow occurrence needs its own guard or exact exception: ' + row.op);
 }
 
-const SITES = { 'mls-connect.js': 33, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
+const SITES = { 'mls-connect.js': 34, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -411,4 +434,4 @@ assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.4'") &&
 assert(!connect.includes('20260808rd332perf2') && !connect.includes('20260804rd331'),
   'a retired hand-maintained redesign cache token is still reachable');
 
-console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 33 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');
+console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 34 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');

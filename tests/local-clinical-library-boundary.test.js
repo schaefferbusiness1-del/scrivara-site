@@ -26,7 +26,14 @@ const productionAdjunctRequirements = new Map([
 
 const freshHardcodedLoaderTags = new Map([
   ['mls-outcome-study.js', '20260807lib7'],
-  ['mls-opnote-pro.js', '20260807lib7'],
+  /* libtag-1.0.0 (2026-08-28): advanced 20260807lib7 -> 20260826lib8 to follow
+     the source. mls-opnote-pro.js was edited in 7825b324 (b1075, 2026-08-26,
+     the opnsend/opnq pack) and its loader token was bumped in THAT SAME
+     COMMIT - the discipline this pin exists to enforce worked exactly as
+     intended; only this file was left behind, so the suite has been red on
+     main while reporting the opposite of what happened. Its three siblings
+     still change together at lib7 and are unchanged here. */
+  ['mls-opnote-pro.js', '20260826lib8'],
   ['mls-procedure-report.js', '20260807lib7'],
   ['feat_mls_assistant_exact.js', '20260820asst220perf2'],
   ['feat_mls_outcome_pdf.js', '20260807lib7'],

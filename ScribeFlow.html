@@ -1159,7 +1159,7 @@
     100%{box-shadow:0 0 0 0 rgba(180,35,30,0)}
   }
   .mls-gate-flash{animation:mlsGateShake .5s ease-in-out,mlsGateGlow .9s ease-out;
-    outline:2px solid var(--red);outline-offset:3px;border-radius:8px}
+    outline:2px solid var(--red);outline-offset:3px;border-radius:var(--r-ctl,10px)}
   .mls-gate-flash:focus{outline:2px solid var(--red);outline-offset:3px}
   /* The toast already owns translateX(-50%); shaking it would tear it off
      centre, so it pulses instead. Higher specificity wins the animation. */
@@ -41814,7 +41814,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1099';
+  window.__MLS_AV='b1100';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
