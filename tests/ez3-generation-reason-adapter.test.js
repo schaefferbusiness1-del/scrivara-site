@@ -22,10 +22,20 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'mls-connect.js'), 'latin1');
+/* ez3stamp-1.0.0: the generation events are EMITTED by the shell and
+   CONSUMED by mls-connect, so pinning the legacy alias needs both files. */
+const shellSrc = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
-/* scope every lookup to the LIVE Easy block: from the 3.7.3 marker to the
- * first retired-copy marker, so a retired near-duplicate can never satisfy a
- * pin meant for the live bytes */
+/* Scope every lookup to the LIVE bytes: everything BEFORE the first
+ * retired-copy marker, so a retired near-duplicate can never satisfy a pin
+ * meant for the live block.
+ * ez3stamp-1.0.0 (2026-08-28): the comment used to say "from the 3.7.3 marker",
+ * which the slice never did - it starts at 0. That is CORRECT and the comment
+ * was wrong: one of the four sites this file names, the direct engine
+ * fallback, lives ABOVE the 3.7.3 marker (mls-connect.js:7807). Slicing from
+ * liveStart would silently drop it and the census below would then be counting
+ * a different set than the assertion describes. liveStart is asserted purely to
+ * prove the live marker still exists. */
 const liveStart = src.indexOf('3.7.3');
 assert.ok(liveStart > 0, 'live Easy 3.7.3 marker present');
 const retiredAt = src.indexOf('Retired historical Easy', liveStart);
@@ -62,9 +72,65 @@ const stampSrc = extractFn(live, 'function ez3StampGenClick()');
  * helper so a stale engine reason from a PREVIOUS attempt can never be
  * echoed as the current one, and the completion listener wires exactly once */
 assert.ok(stampSrc.includes('S.genErrBefore = ez3RawEngineErr()'), 'the stamp helper snapshots the pre-click error text');
-assert.strictEqual((live.match(/ez3StampGenClick\(\);/g) || []).length, 4,
-  'all four generate stamp sites (engine open, #ez3Gen, #ez3Regen, noteGenerationStarted) funnel through the snapshot helper');
-assert.ok(live.includes('window.__ez3GenEvtWired'), 'the generation-complete listener is one-shot guarded');
+/* ez3stamp-1.0.0: was pinned at 4 and the live block now has 8, so this has
+   been red on main. Audited all eight on 2026-08-28 - every one is a real
+   generate entry point that stamps through the snapshot helper, and each is
+   typeof-guarded so an older shell without the helper degrades instead of
+   throwing:
+     7807   direct engine fallback   stamps, then clicks
+     21855  lockAndStart, unbound    stamps, then clicks
+     21876  lockAndStart, bound      stamps, then clicks
+     22761  auto-advance after stop  stamps, then clicks
+     23051  #ez3Gen                  stamps, then clicks
+     23053  #ez3Regen                stamps, then clicks
+     24812  noteGenerationStarted    stamps (a listener - there is no click to
+                                     precede; it records the attempt the engine
+                                     has already begun)
+     24941  phone lane               stamps, then clicks
+   The count grew because generate gained entry points, not because anything
+   stopped funnelling. Pinned as the PROPERTY as well, which is what the
+   original number was standing in for: no stamp site may reach a generate
+   click without snapshotting first, and none may call the helper unguarded. */
+const stampSites = [...live.matchAll(/ez3StampGenClick\(\);/g)];
+assert.strictEqual(stampSites.length, 8,
+  'the number of generate stamp sites changed (' + stampSites.length + ', expected 8) - audit the new one ' +
+  'and confirm it snapshots BEFORE it clicks, then move this pin');
+for (const site of stampSites) {
+  const before = live.slice(Math.max(0, site.index - 120), site.index);
+  assert.ok(/typeof ez3StampGenClick === 'function'/.test(before),
+    'a generate stamp site calls the helper unguarded - on a shell that predates it, generate would throw ' +
+    'instead of degrading. Context: ' + JSON.stringify(before.slice(-90)));
+  const after = live.slice(site.index, site.index + 140);
+  const clickAt = after.indexOf('.click()');
+  if (clickAt >= 0) {
+    assert.ok(after.indexOf('ez3StampGenClick();') < clickAt,
+      'a generate click happens BEFORE its snapshot, so a stale engine reason from the previous attempt ' +
+      'can be echoed as this one. Context: ' + JSON.stringify(after.slice(0, 90)));
+  }
+}
+/* ez3stamp-1.0.0: the one-shot mechanism CHANGED. It was a global
+   window.__ez3GenEvtWired flag; the canonical owner now registers the three
+   generation listeners once and pushes a matching teardown onto its cleanup
+   list, while the module itself claims __mlsEasyV3 so an older copy bails
+   before it can register a second set. Symmetric add/remove with explicit
+   teardown is a stronger guarantee than a boolean nobody clears - a flag
+   survives a re-init and silently prevents the RE-registration a teardown
+   makes safe. Pinned as the property: every generation listener added is also
+   removed, and the count matches. */
+{
+  const added = [...live.matchAll(/window\.addEventListener\('mls:generation-([a-z]+)', (on[A-Za-z]+)\);/g)];
+  const removed = [...live.matchAll(/window\.removeEventListener\('mls:generation-([a-z]+)', (on[A-Za-z]+)\);/g)];
+  assert.ok(added.length >= 3,
+    'the canonical owner no longer listens for the generation lifecycle (' + added.length + ' listeners) - ' +
+    'the card could not report generating/failed/settled at all');
+  assert.deepStrictEqual(
+    added.map((m) => m[1] + ':' + m[2]).sort(),
+    removed.map((m) => m[1] + ':' + m[2]).sort(),
+    'a generation listener is added without a matching teardown - a re-init would stack a second handler ' +
+    'and every generate would be counted twice');
+  assert.ok(/__mlsEasyV3/.test(live),
+    'the canonical owner no longer claims the __mlsEasyV3 name, so an older retired copy could register its own listeners alongside');
+}
 
 /* ez3adapt-1.0.2 (Codex reply 9): the engine owns the WHOLE evidence
  * contract - it can accept a sparse statement when trusted verified history
@@ -78,8 +144,19 @@ assert.ok(phaseSrc.includes('ez3EngineReason() ||'),
   'computePhase prefers the engine-written reason over its generic text in BOTH failure branches');
 assert.strictEqual((phaseSrc.match(/ez3EngineReason\(\) \|\|/g) || []).length, 2,
   'both the fast-fail and the timeout branch consult the engine reason');
-assert.ok(live.includes("window.addEventListener('mls:generation-complete'"),
+/* ez3stamp-1.0.0: the settlement event was RENAMED. The canonical name is
+   'mls:generation-settled'; 'mls:generation-complete' survives only as a
+   legacy alias the shell still dispatches alongside it, for refresh-burst
+   owners that were written against the old name. The live Easy owner listens
+   to the canonical one, so this pin - which looked for the legacy name - has
+   been red on main while the behaviour it describes works.
+   Accept either, and pin the alias separately: dropping it would silently
+   break every consumer that was never migrated. */
+assert.ok(/window\.addEventListener\('mls:generation-(?:settled|complete)'/.test(live),
   'the live Easy block snaps its phase on the engine completion event instead of only polling');
+assert.ok(/if\(kind==='settled'\)try\{window\.dispatchEvent\(new CustomEvent\('mls:generation-complete'/.test(shellSrc),
+  'the legacy mls:generation-complete alias is no longer emitted alongside the canonical settled event - ' +
+  'any refresh-burst owner still written against the old name would stop hearing settlements');
 
 function el(id) { return { id, textContent: '', value: '', disabled: false, style: {}, focused: 0, focus() { this.focused++; } }; }
 
