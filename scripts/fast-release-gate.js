@@ -170,6 +170,14 @@ const INVARIANTS = Object.freeze([
      the honesty of the toast lives in the shell while the resolve/delete lives
      next to the hydration loader, and no changed-area net covers both. 102ms. */
   { label: 'patient-delete-reaches-server', args: ['tests/patient-delete-reaches-the-server.test.js'], require: /PASS patient-delete-reaches-the-server:/ },
+  /* f5merge-1.0.0 (2026-08-28): a PATIENT-SAFETY contract. The F5 gate wraps
+     upsertPatient and is the LAST thing before a new row is persisted, so its
+     rule beats every stronger comparator upstream - and it merged two records on
+     NAME ALONE whenever either side lacked a DOB, with no MRN veto and no
+     uniqueness check. MRN is missing on ~76% of records here. An invariant
+     because it guards WHO a record is, and because the gate sits in the shared
+     engine where no changed-area net reliably reaches it. 118ms. */
+  { label: 'f5-automerge-identity', args: ['tests/f5-automerge-needs-positive-identity.test.js'], require: /PASS f5-automerge-needs-positive-identity:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },

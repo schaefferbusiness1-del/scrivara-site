@@ -25619,7 +25619,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                 }
                 if (cand) {
                   var pd = normDob(p.dob), cd2 = normDob(cand.dob);
-                  if (pd && cd2 && pd !== cd2) {
+                  /* f5merge-1.0.0 (owner ruling 2026-08-28): auto-merge ONLY on
+                     the same MRN, or the same name AND DOB. Anything weaker is a
+                     SUGGESTION, never a silent merge.
+                     This gate used to merge unless BOTH dobs were present and
+                     DIFFERENT - so whenever either side had no DOB it merged two
+                     records on NAME ALONE, with no MRN veto and no uniqueness
+                     check, taking the first same-name candidate it found. MRN is
+                     missing on ~76% of records and schedule-imported rows often
+                     arrive with no DOB, so that was a live silent wrong-person
+                     merge path, and the weakest comparator in the codebase.
+                     The rule below mirrors positiveIdentityEvidence: POSITIVE
+                     agreement on DOB or MRN, no conflict on either, and exactly
+                     ONE same-name candidate - demographics can identify a chart
+                     only when they identify ONE chart.
+                     Declining costs a duplicate, which is recoverable. Merging
+                     two people is not. */
+                  var __f5key = function (v) { return String(v == null ? '' : v).replace(/[^0-9a-z]/gi, '').toUpperCase(); };
+                  var pm = __f5key(p.mrn), cm = __f5key(cand.mrn);
+                  var __f5same = 0;
+                  for (var __q = 0; __q < arr.length; __q++) { if (arr[__q] && normName(arr[__q].name) === key) __f5same++; }
+                  var __f5conflict = !!((pd && cd2 && pd !== cd2) || (pm && cm && pm !== cm));
+                  var __f5agrees = !!((pd && cd2 && pd === cd2) || (pm && cm && pm === cm));
+                  /* A declined non-conflicting near-match is exactly what the
+                     one-click merge suggestion surface needs. Ids only - PHI-lean,
+                     capped, same discipline as the merge receipts below. */
+                  if (!__f5conflict && !(__f5agrees && __f5same === 1)) {
+                    try {
+                      var __sg = window.__mlsPtsMergeSuggestions = window.__mlsPtsMergeSuggestions || [];
+                      if (__sg.length < 60) __sg.push({ keep: String(cand.id), candidate: String(p.id), why: (__f5same !== 1 ? 'ambiguous-name' : 'no-dob-or-mrn-agreement'), at: Date.now() });
+                    } catch (e0) {}
+                  }
+                  if (__f5conflict || __f5same !== 1 || !__f5agrees) {
                     api.dedupStats.kept++;           /* same name, DIFFERENT person — keep separate */
                   } else {
                     /* merge: existing record wins the identity; CLINICAL CONTEXT
