@@ -190,6 +190,13 @@ const INVARIANTS = Object.freeze([
      surviving at zero duplicates as a dead button. Also pins that neither
      mounting nor refreshing the count can trigger a merge. 86ms. */
   { label: 'merge-review-surface', args: ['tests/merge-review-surface.test.js'], require: /PASS merge-review-surface:/ },
+  /* ptedit-1.0.0 (2026-08-28): savePatient's edit branch was DEAD - every
+     assignment to editingPtId was null - so "editing" a patient minted a
+     duplicate and a wrong date of birth could not be corrected. The regression is
+     silent and invisible (the modal looks identical), and it FEEDS the duplicate
+     problem, so it is pinned as an invariant rather than left to a changed-area
+     net. 106ms. */
+  { label: 'patient-demographics-editable', args: ['tests/patient-demographics-are-editable.test.js'], require: /PASS patient-demographics-are-editable:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },

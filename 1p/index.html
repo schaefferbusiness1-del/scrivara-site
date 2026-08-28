@@ -3325,6 +3325,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="card" id="profileCard" style="margin-top:20px;display:none">
       <h2 aria-labelledby="profName" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">🗃️</span> <span id="profName">Patient</span> — profile
         <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="goNewVisitForPatient()">🎙️ Start visit</button>
+        <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="editActivePatient()" title="Correct this patient&#39;s name, date of birth, sex or MRN">&#9998; Edit details</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book an appointment for this patient">📅 Schedule</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openShareModal()">📤 Share / Export</button>
@@ -21013,6 +21014,32 @@ function newPatientFromSearch(){
   const sb=document.getElementById('ptSearch');
   newPatient(sb ? sb.value.trim() : '');
 }
+/* ptedit-1.0.0 (2026-08-28): savePatient() has always had a correct EDIT
+   branch - `editingPtId ? findPatient(editingPtId) : null` - but editingPtId
+   had exactly two assignments in the whole codebase and BOTH were null, so the
+   branch was unreachable and every save minted a brand new record. That is why
+   a wrong date of birth could not be corrected: the modal was new-only, and
+   "editing" a patient silently created a duplicate instead.
+   This is the missing assignment, not a new save path. It reuses newPatient()
+   for the modal, focus trap and Escape handling, then converts it to an edit. */
+function editPatient(id){
+  var p=(typeof findPatient==='function')?findPatient(id):null;
+  if(!p){ try{ toast('That patient no longer exists.','err'); }catch(e){} return; }
+  newPatient();
+  editingPtId=p.id;
+  try{ document.getElementById('patientModalTitle').textContent='\uD83D\uDC64 Edit patient'; }catch(e){}
+  try{
+    document.getElementById('ptName').value=String(p.name||'');
+    document.getElementById('ptMrn').value=String(p.mrn||'');
+    document.getElementById('ptSex').value=String(p.sex||'');
+    document.getElementById('ptDob').value=String(p.dob||'');
+  }catch(e){}
+}
+function editActivePatient(){
+  var id=(typeof getActivePtId==='function')?getActivePtId():'';
+  if(!id){ try{ toast('Open a patient first.','err'); }catch(e){} return; }
+  editPatient(id);
+}
 function newPatient(prefillName){
   editingPtId=null;
   const active=document.activeElement;
@@ -21051,10 +21078,29 @@ function closePatientModal(){
     if(target){try{target.focus({preventScroll:true});}catch(e){target.focus();}}
   },0);
 }
-function savePatient(){
+async function savePatient(){
   const name=document.getElementById('ptName').value.trim();
   if(!name){ toast('Enter a name or label for the patient.','err'); return; }
   let p = editingPtId ? findPatient(editingPtId) : null;
+  /* ptedit-1.0.0: the Athena coverage receipt binds to p.id ONLY - it carries no
+     name, DOB or MRN, and nothing invalidates it when demographics change. So a
+     corrected date of birth leaves a receipt still attesting a chart that was
+     read for the OLD details. Do not silently re-label pulled data as belonging
+     to someone else: say so and let the doctor decide. Warn-and-confirm, never
+     block - correcting a wrong DOB is exactly what this is for. */
+  if(p && typeof _athenaChartLanded==='function' && _athenaChartLanded(p)){
+    var _idChanged=[];
+    try{
+      if(String(p.name||'')!==name) _idChanged.push('name');
+      if(String(p.dob||'')!==document.getElementById('ptDob').value.trim()) _idChanged.push('date of birth');
+      if(String(p.mrn||'')!==document.getElementById('ptMrn').value.trim()) _idChanged.push('MRN');
+    }catch(eIdc){ _idChanged=[]; }
+    if(_idChanged.length){
+      var _goOn=false;
+      try{ _goOn=await mlsConfirm('This chart has an Athena pull on file. Changing the '+_idChanged.join(' and ')+' does not re-check it against athenaOne, so the problems, medications and allergies shown below are still the ones read for the OLD details. Change it anyway?'); }catch(eCf){ _goOn=false; }
+      if(!_goOn){ try{ toast('No change made.',''); }catch(e){} return; }
+    }
+  }
   if(!p){
     p={ id:'p'+Date.now()+Math.random().toString(36).slice(2,5),
         problems:'', meds:'', allergies:'', summary:'', docs:[] };
