@@ -20957,7 +20957,30 @@ function goNewUnassignedVisit(){
   newVisit();
 }
 async function deletePatient(id){
-  if(!await mlsConfirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
+  /* ptdel-1.1.0 (2026-08-28): the dialog said "This cannot be undone" and stopped
+     there, which reads as "this patient is gone for good". For a chart that came
+     off an Athena schedule that is NOT true: the appointment is still on the real
+     schedule, the importer mints patient ids deterministically, and pulling that
+     day again re-creates the same patient under the same id.
+     Deliberately NOT solved by pruning the appointment or suppressing the
+     re-import. The appointment is REAL - hiding it would make the day look
+     emptier than it is and a doctor could miss a patient - and suppressing the
+     re-import would mean silently editing what a pull is allowed to return.
+     So the delete keeps its scope and the dialog stops overpromising. */
+  var _delScheduled=false;
+  try{
+    var _dp=(typeof findPatient==='function')?findPatient(id):null;
+    if(_dp && String(_dp.source||'')==='athena-schedule') _delScheduled=true;
+    if(!_delScheduled){
+      var _ap=(window._calAppts||(typeof _calAppts!=='undefined'?_calAppts:[])||[]);
+      _delScheduled=_ap.some(function(a){ return a && String(a.patient_external_id||'')===String(id); });
+    }
+  }catch(eDs){ _delScheduled=false; }
+  var _delMsg='Delete this patient and their profile from this device and your account? Their saved visit notes stay in History but become unassigned.';
+  _delMsg+=_delScheduled
+    ? ' Their appointment stays on the schedule, so pulling that day from Athena again will re-create this chart.'
+    : ' This cannot be undone.';
+  if(!await mlsConfirm(_delMsg)) return;
   savePatients(getPatients().filter(p=>p.id!==id),undefined,{allowRemovals:true});
   // hosted mode: server delete (owner-only). ptdel-1.0.0: this NO LONGER skips
   // silently on an unknown server id - it resolves the id from the server list and

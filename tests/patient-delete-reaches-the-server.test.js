@@ -137,6 +137,52 @@ const okList = { ok: true, status: 200, json: async () => ([{ external_id: 'ext-
     /* the local removal must still be additive-safe */
     ok(/allowRemovals\s*:\s*true/.test(delFn),
       shell + ': the local delete lost {allowRemovals:true} and would silently no-op');
+
+    /* ptdel-1.1.0: the dialog must not promise more than the delete delivers.
+       A chart that came off an Athena schedule WILL come back when that day is
+       pulled again - the appointment is still real and the importer mints ids
+       deterministically - so "This cannot be undone" is a false promise there.
+       EXECUTED: run deletePatient and read the sentence it actually asked. */
+    async function askedWhenDeleting(patient, appts) {
+      let asked = '';
+      const fn = new Function(
+        'mlsConfirm', 'findPatient', 'savePatients', 'getPatients', 'backendMode', 'bkToken',
+        'deletePatientOnServer', 'getNotes', 'saveNotes', 'getActivePtId', 'setActivePtId',
+        'renderPatients', 'renderProfile', 'renderPatientBar', 'toast', 'window',
+        delFn + '\nreturn deletePatient;'
+      )(
+        m => { asked = String(m); return Promise.resolve(false); },  /* decline: nothing mutates */
+        () => patient,
+        () => {}, () => [], () => false, () => '',
+        async () => ({ ok: true }), () => [], () => {}, () => '', () => {},
+        () => {}, () => {}, () => {}, () => {},
+        { _calAppts: appts || [] }
+      );
+      await fn('pt-1');
+      return asked;
+    }
+
+    const scheduled = await askedWhenDeleting({ id: 'pt-1', source: 'athena-schedule' }, []);
+    ok(/pulling that day/i.test(scheduled),
+      shell + ': deleting a SCHEDULE-imported chart does not warn that pulling that day again ' +
+      're-creates it - the dialog promises a permanence the delete cannot deliver');
+    ok(!/cannot be undone/i.test(scheduled),
+      shell + ': a schedule-imported chart is still told the delete "cannot be undone", which is ' +
+      'false - it returns on the next pull of that day');
+
+    const byAppt = await askedWhenDeleting({ id: 'pt-1' }, [{ patient_external_id: 'pt-1' }]);
+    ok(/pulling that day/i.test(byAppt),
+      shell + ': a chart with an appointment on the schedule is not warned about re-import');
+
+    const plain = await askedWhenDeleting({ id: 'pt-1' }, [{ patient_external_id: 'someone-else' }]);
+    ok(/cannot be undone/i.test(plain),
+      shell + ': a chart with NO appointment lost the honest permanence warning');
+    ok(!/pulling that day/i.test(plain),
+      shell + ': a chart with no appointment is wrongly told a pull will bring it back');
+
+    /* declining must change nothing at all */
+    ok(/^\s*if\(!await mlsConfirm\(_delMsg\)\) return;/m.test(delFn) || /mlsConfirm\(_delMsg\)\) return;/.test(delFn),
+      shell + ': declining the delete dialog does not abort before any mutation');
   }
 
   console.log('PASS patient-delete-reaches-the-server: ' + checks + ' checks - an unknown server id ' +

@@ -8918,12 +8918,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21304,
+   "line": 21327,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-21386-save",
+   "id": "1pscribeflow-html-21409-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -8935,12 +8935,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21386,
+   "line": 21409,
    "gated": false,
    "handler": "saveProfField(' ')"
   },
   {
-   "id": "1pscribeflow-html-21387-cancel",
+   "id": "1pscribeflow-html-21410-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -8952,12 +8952,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21387,
+   "line": 21410,
    "gated": false,
    "handler": "cancelProfField()"
   },
   {
-   "id": "1pscribeflow-html-21462-save",
+   "id": "1pscribeflow-html-21485-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -8969,12 +8969,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21462,
+   "line": 21485,
    "gated": false,
    "handler": "saveInsurance()"
   },
   {
-   "id": "1pscribeflow-html-21463-cancel",
+   "id": "1pscribeflow-html-21486-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -8986,12 +8986,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21463,
+   "line": 21486,
    "gated": false,
    "handler": "cancelInsurance()"
   },
   {
-   "id": "1pscribeflow-html-21517-delete-document",
+   "id": "1pscribeflow-html-21540-delete-document",
    "label": "Delete document",
    "accessibleName": "Delete document",
    "title": "Delete document",
@@ -9003,7 +9003,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21517,
+   "line": 21540,
    "gated": false,
    "handler": "event.stopPropagation();deleteDoc(' ')"
   },
@@ -9020,7 +9020,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21589,
+   "line": 21612,
    "gated": false,
    "handler": null
   },
@@ -9037,12 +9037,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 21590,
+   "line": 21613,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-22361-match-template",
+   "id": "1pscribeflow-html-22384-match-template",
    "label": "Match template",
    "accessibleName": "Match template",
    "title": "Find the best-matching template for this procedure",
@@ -9054,12 +9054,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 22361,
+   "line": 22384,
    "gated": false,
    "handler": "_opAutoTpl( )"
   },
   {
-   "id": "1pscribeflow-html-22381-save-to-s-chart",
+   "id": "1pscribeflow-html-22404-save-to-s-chart",
    "label": "Save to ’s chart",
    "accessibleName": "Save to ’s chart",
    "title": "",
@@ -9071,12 +9071,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 22381,
+   "line": 22404,
    "gated": false,
    "handler": "opPrepSave( )"
   },
   {
-   "id": "1pscribeflow-html-22381-send-to-athena",
+   "id": "1pscribeflow-html-22404-send-to-athena",
    "label": "Send to Athena",
    "accessibleName": "Send to Athena",
    "title": "",
@@ -9088,12 +9088,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 22381,
+   "line": 22404,
    "gated": false,
    "handler": "opPrepSendToAthena( )"
   },
   {
-   "id": "1pscribeflow-html-22694-skip",
+   "id": "1pscribeflow-html-22717-skip",
    "label": "Skip",
    "accessibleName": "Skip",
    "title": "",
@@ -9105,12 +9105,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 22694,
+   "line": 22717,
    "gated": false,
    "handler": "opPrepBlankSkip( )"
   },
   {
-   "id": "1pscribeflow-html-22695-fill-all-at-once",
+   "id": "1pscribeflow-html-22718-fill-all-at-once",
    "label": "Fill all at once",
    "accessibleName": "Fill all at once",
    "title": "Fill every remaining blank with whatever you’ve typed so far",
@@ -9122,12 +9122,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 22695,
+   "line": 22718,
    "gated": false,
    "handler": "opPrepApplyAll( )"
   },
   {
-   "id": "1pscribeflow-html-23165-open-in-history",
+   "id": "1pscribeflow-html-23188-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -9139,12 +9139,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23165,
+   "line": 23188,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "1pscribeflow-html-23170-open-in-history",
+   "id": "1pscribeflow-html-23193-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -9156,12 +9156,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23170,
+   "line": 23193,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "1pscribeflow-html-23295-suggest-from-this-template",
+   "id": "1pscribeflow-html-23318-suggest-from-this-template",
    "label": "Suggest from this template",
    "accessibleName": "Suggest from this template",
    "title": "Read this template and propose the keywords that should choose it",
@@ -9173,12 +9173,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23295,
+   "line": 23318,
    "gated": false,
    "handler": "tplSuggestKeywords()"
   },
   {
-   "id": "1pscribeflow-html-23306-save-changes",
+   "id": "1pscribeflow-html-23329-save-changes",
    "label": "Save changes",
    "accessibleName": "Save changes",
    "title": "",
@@ -9190,12 +9190,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23306,
+   "line": 23329,
    "gated": false,
    "handler": "tplDetailSave()"
   },
   {
-   "id": "1pscribeflow-html-23307-use-on-current-note",
+   "id": "1pscribeflow-html-23330-use-on-current-note",
    "label": "Use on current note",
    "accessibleName": "Use on current note",
    "title": "Reformat the note you have open right now to match this template",
@@ -9207,12 +9207,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23307,
+   "line": 23330,
    "gated": false,
    "handler": "useTemplateNow(' ')"
   },
   {
-   "id": "1pscribeflow-html-23309-duplicate",
+   "id": "1pscribeflow-html-23332-duplicate",
    "label": "Duplicate",
    "accessibleName": "Duplicate",
    "title": "",
@@ -9224,12 +9224,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23309,
+   "line": 23332,
    "gated": false,
    "handler": "duplicateTemplate(' ')"
   },
   {
-   "id": "1pscribeflow-html-23310-delete",
+   "id": "1pscribeflow-html-23333-delete",
    "label": "Delete…",
    "accessibleName": "Delete…",
    "title": "",
@@ -9241,12 +9241,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23310,
+   "line": 23333,
    "gated": false,
    "handler": "deleteTemplate(' ')"
   },
   {
-   "id": "1pscribeflow-html-23312-restore",
+   "id": "1pscribeflow-html-23335-restore",
    "label": "Restore",
    "accessibleName": "Restore",
    "title": "",
@@ -9258,12 +9258,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23312,
+   "line": 23335,
    "gated": false,
    "handler": "tplRestoreRevision(' ')"
   },
   {
-   "id": "1pscribeflow-html-23589-undo-delete",
+   "id": "1pscribeflow-html-23612-undo-delete",
    "label": "Undo delete",
    "accessibleName": "Undo delete",
    "title": "",
@@ -9275,12 +9275,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 23589,
+   "line": 23612,
    "gated": false,
    "handler": "tplUndoDelete()"
   },
   {
-   "id": "1pscribeflow-html-24272-add-selected-to-my-templates",
+   "id": "1pscribeflow-html-24295-add-selected-to-my-templates",
    "label": "Add selected to my templates",
    "accessibleName": "Add selected to my templates",
    "title": "",
@@ -9292,12 +9292,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 24272,
+   "line": 24295,
    "gated": false,
    "handler": "tplAddSplit()"
   },
   {
-   "id": "1pscribeflow-html-25563-remove-the-extras",
+   "id": "1pscribeflow-html-25586-remove-the-extras",
    "label": "Remove the extras",
    "accessibleName": "Remove the extras",
    "title": "",
@@ -9309,12 +9309,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 25563,
+   "line": 25586,
    "gated": false,
    "handler": "cleanupDuplicateNotes();return false;"
   },
   {
-   "id": "1pscribeflow-html-25610-clear-search",
+   "id": "1pscribeflow-html-25633-clear-search",
    "label": "Clear search",
    "accessibleName": "Clear search",
    "title": "",
@@ -9326,12 +9326,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 25610,
+   "line": 25633,
    "gated": false,
    "handler": "var s=document.getElementById('histSearch');if(s)s.value='';var f=document.getEl"
   },
   {
-   "id": "1pscribeflow-html-25655-attach",
+   "id": "1pscribeflow-html-25678-attach",
    "label": "Attach",
    "accessibleName": "Attach",
    "title": "Attach this visit to",
@@ -9343,12 +9343,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 25655,
+   "line": 25678,
    "gated": false,
    "handler": "event.stopPropagation();attachNoteToActive(' ')"
   },
   {
-   "id": "1pscribeflow-html-25658-review-athena-actions",
+   "id": "1pscribeflow-html-25681-review-athena-actions",
    "label": "Review Athena actions",
    "accessibleName": "Review Athena actions",
    "title": "Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action.",
@@ -9360,12 +9360,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 25658,
+   "line": 25681,
    "gated": false,
    "handler": "event.stopPropagation();pushHistoryNoteToAthena(' ')"
   },
   {
-   "id": "1pscribeflow-html-25659-handler",
+   "id": "1pscribeflow-html-25682-handler",
    "label": "—",
    "accessibleName": "Open saved visit for : ,",
    "title": "",
@@ -9377,12 +9377,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 25659,
+   "line": 25682,
    "gated": false,
    "handler": "openNoteFromHistory(' ')"
   },
   {
-   "id": "1pscribeflow-html-25667-delete",
+   "id": "1pscribeflow-html-25690-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete",
@@ -9394,12 +9394,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 25667,
+   "line": 25690,
    "gated": false,
    "handler": "event.stopPropagation();deleteNote(' ')"
   },
   {
-   "id": "1pscribeflow-html-25670-athena-chart-import-receipt",
+   "id": "1pscribeflow-html-25693-athena-chart-import-receipt",
    "label": "Athena chart-import receipt",
    "accessibleName": "View collapsed Athena chart-import receipts",
    "title": "",
@@ -9411,12 +9411,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 25670,
+   "line": 25693,
    "gated": false,
    "handler": "var f=document.getElementById('histFilter');if(f){f.value='imports';renderHistor"
   },
   {
-   "id": "1pscribeflow-html-26402-maybe-later",
+   "id": "1pscribeflow-html-26425-maybe-later",
    "label": "Maybe later",
    "accessibleName": "Maybe later",
    "title": "",
@@ -9428,7 +9428,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 26402,
+   "line": 26425,
    "gated": false,
    "handler": "_dismissAssistPrompt()"
   },
@@ -9445,12 +9445,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 27052,
+   "line": 27075,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-27735-iscur-meta",
+   "id": "1pscribeflow-html-27758-iscur-meta",
    "label": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "accessibleName": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "title": "",
@@ -9462,12 +9462,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 27735,
+   "line": 27758,
    "gated": false,
    "handler": "_heroPickPatient( )"
   },
   {
-   "id": "1pscribeflow-html-27779-button",
+   "id": "1pscribeflow-html-27802-button",
    "label": "‹",
    "accessibleName": "‹",
    "title": "Earlier patients",
@@ -9479,12 +9479,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 27779,
+   "line": 27802,
    "gated": false,
    "handler": "_heroWin(-1)"
   },
   {
-   "id": "1pscribeflow-html-27780-button",
+   "id": "1pscribeflow-html-27803-button",
    "label": "›",
    "accessibleName": "›",
    "title": "Later patients",
@@ -9496,12 +9496,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 27780,
+   "line": 27803,
    "gated": false,
    "handler": "_heroWin(1)"
   },
   {
-   "id": "1pscribeflow-html-27788-view-tomorrow",
+   "id": "1pscribeflow-html-27811-view-tomorrow",
    "label": "view tomorrow",
    "accessibleName": "view tomorrow",
    "title": "",
@@ -9513,12 +9513,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 27788,
+   "line": 27811,
    "gated": false,
    "handler": "_heroToggleTom()"
   },
   {
-   "id": "1pscribeflow-html-31594-button",
+   "id": "1pscribeflow-html-31617-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -9530,12 +9530,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 31594,
+   "line": 31617,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "1pscribeflow-html-31598-close-plan",
+   "id": "1pscribeflow-html-31621-close-plan",
    "label": "Close plan",
    "accessibleName": "Close plan",
    "title": "",
@@ -9547,12 +9547,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 31598,
+   "line": 31621,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "1pscribeflow-html-31705-times",
+   "id": "1pscribeflow-html-31728-times",
    "label": "&times;",
    "accessibleName": "Close",
    "title": "",
@@ -9564,7 +9564,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 31705,
+   "line": 31728,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
@@ -9581,7 +9581,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 31710,
+   "line": 31733,
    "gated": false,
    "handler": "_athenaReceiptAction('write_note')"
   },
@@ -9598,12 +9598,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 31711,
+   "line": 31734,
    "gated": false,
    "handler": "_athenaReceiptAction('save_draft')"
   },
   {
-   "id": "1pscribeflow-html-31713-close-review",
+   "id": "1pscribeflow-html-31736-close-review",
    "label": "Close review",
    "accessibleName": "Close review",
    "title": "",
@@ -9615,12 +9615,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 31713,
+   "line": 31736,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "1pscribeflow-html-32256-add-this-order",
+   "id": "1pscribeflow-html-32279-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -9632,12 +9632,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 32256,
+   "line": 32279,
    "gated": false,
    "handler": "acceptSuggestion( )"
   },
   {
-   "id": "1pscribeflow-html-32274-add-this-order",
+   "id": "1pscribeflow-html-32297-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -9649,12 +9649,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 32274,
+   "line": 32297,
    "gated": false,
    "handler": "acceptAiSuggestion( )"
   },
   {
-   "id": "1pscribeflow-html-32454-remove-order",
+   "id": "1pscribeflow-html-32477-remove-order",
    "label": "Remove order",
    "accessibleName": "Remove order",
    "title": "Remove this order",
@@ -9666,12 +9666,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 32454,
+   "line": 32477,
    "gated": false,
    "handler": "removeVisitOrder(' ')"
   },
   {
-   "id": "1pscribeflow-html-32692-remove",
+   "id": "1pscribeflow-html-32715-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -9683,7 +9683,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 32692,
+   "line": 32715,
    "gated": false,
    "handler": "event.stopPropagation();removeOrder(' ')"
   },
@@ -9700,7 +9700,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 33605,
+   "line": 33628,
    "gated": false,
    "handler": null
   },
@@ -9717,12 +9717,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 33606,
+   "line": 33629,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-33970-handler",
+   "id": "1pscribeflow-html-33993-handler",
    "label": ".",
    "accessibleName": ".",
    "title": "",
@@ -9734,12 +9734,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 33970,
+   "line": 33993,
    "gated": false,
    "handler": "insertDot( )"
   },
   {
-   "id": "1pscribeflow-html-34272-add-selected",
+   "id": "1pscribeflow-html-34295-add-selected",
    "label": "+ Add selected",
    "accessibleName": "+ Add selected",
    "title": "",
@@ -9751,12 +9751,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 34272,
+   "line": 34295,
    "gated": false,
    "handler": "applyTeachSuggestions()"
   },
   {
-   "id": "1pscribeflow-html-34273-dismiss",
+   "id": "1pscribeflow-html-34296-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -9768,12 +9768,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 34273,
+   "line": 34296,
    "gated": false,
    "handler": "document.getElementById('teachCard').style.display='none'"
   },
   {
-   "id": "1pscribeflow-html-34497-remove",
+   "id": "1pscribeflow-html-34520-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -9785,12 +9785,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 34497,
+   "line": 34520,
    "gated": false,
    "handler": "removeMmeRow( )"
   },
   {
-   "id": "1pscribeflow-html-37463-executed-pdf",
+   "id": "1pscribeflow-html-37486-executed-pdf",
    "label": "Executed PDF",
    "accessibleName": "Executed PDF",
    "title": "",
@@ -9802,12 +9802,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 37463,
+   "line": 37486,
    "gated": false,
    "handler": "downloadAgreementExecuted( )"
   },
   {
-   "id": "1pscribeflow-html-37466-review-countersign",
+   "id": "1pscribeflow-html-37489-review-countersign",
    "label": "Review & countersign",
    "accessibleName": "Review & countersign",
    "title": "",
@@ -9819,12 +9819,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 37466,
+   "line": 37489,
    "gated": false,
    "handler": "openCountersign( )"
   },
   {
-   "id": "1pscribeflow-html-37466-signed-receipt",
+   "id": "1pscribeflow-html-37489-signed-receipt",
    "label": "Signed receipt",
    "accessibleName": "Signed receipt",
    "title": "",
@@ -9836,12 +9836,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 37466,
+   "line": 37489,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "1pscribeflow-html-37470-open-current-site-admin",
+   "id": "1pscribeflow-html-37493-open-current-site-admin",
    "label": "Open current-site Admin",
    "accessibleName": "Open current-site Admin",
    "title": "",
@@ -9853,12 +9853,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 37470,
+   "line": 37493,
    "gated": false,
    "handler": "adminOpenLegacyAgreement( )"
   },
   {
-   "id": "1pscribeflow-html-37475-download",
+   "id": "1pscribeflow-html-37498-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -9870,12 +9870,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 37475,
+   "line": 37498,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "1pscribeflow-html-37580-download-the-exact-signed-receipt",
+   "id": "1pscribeflow-html-37603-download-the-exact-signed-receipt",
    "label": "Download the exact signed receipt",
    "accessibleName": "Download the exact signed receipt",
    "title": "",
@@ -9887,12 +9887,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 37580,
+   "line": 37603,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "1pscribeflow-html-38091-open-chart",
+   "id": "1pscribeflow-html-38114-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "",
@@ -9904,12 +9904,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38091,
+   "line": 38114,
    "gated": false,
    "handler": "selectPatient(' ');showView('patients')"
   },
   {
-   "id": "1pscribeflow-html-38092-text",
+   "id": "1pscribeflow-html-38115-text",
    "label": "Text",
    "accessibleName": "Text",
    "title": "",
@@ -9921,12 +9921,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38092,
+   "line": 38115,
    "gated": false,
    "handler": "recComposeText(' ')"
   },
   {
-   "id": "1pscribeflow-html-38093-mark-done",
+   "id": "1pscribeflow-html-38116-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -9938,12 +9938,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38093,
+   "line": 38116,
    "gated": false,
    "handler": "recResolveMsg( )"
   },
   {
-   "id": "1pscribeflow-html-38109-send-text",
+   "id": "1pscribeflow-html-38132-send-text",
    "label": "Send text",
    "accessibleName": "Send text",
    "title": "",
@@ -9955,12 +9955,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38109,
+   "line": 38132,
    "gated": false,
    "handler": "recSend('sms',this)"
   },
   {
-   "id": "1pscribeflow-html-38109-call-read-it-aloud",
+   "id": "1pscribeflow-html-38132-call-read-it-aloud",
    "label": "Call & read it aloud",
    "accessibleName": "Call & read it aloud",
    "title": "",
@@ -9972,12 +9972,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38109,
+   "line": 38132,
    "gated": false,
    "handler": "recSend('voice',this)"
   },
   {
-   "id": "1pscribeflow-html-38151-save-settings",
+   "id": "1pscribeflow-html-38174-save-settings",
    "label": "Save settings",
    "accessibleName": "Save settings",
    "title": "",
@@ -9989,12 +9989,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38151,
+   "line": 38174,
    "gated": false,
    "handler": "saveRecSettings(this)"
   },
   {
-   "id": "1pscribeflow-html-38248-revoke",
+   "id": "1pscribeflow-html-38271-revoke",
    "label": "revoke",
    "accessibleName": "revoke",
    "title": "",
@@ -10006,12 +10006,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38248,
+   "line": 38271,
    "gated": false,
    "handler": "revokeApiKey( );return false"
   },
   {
-   "id": "1pscribeflow-html-38303-remove",
+   "id": "1pscribeflow-html-38326-remove",
    "label": "remove",
    "accessibleName": "remove",
    "title": "",
@@ -10023,12 +10023,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38303,
+   "line": 38326,
    "gated": false,
    "handler": "schedApiDeleteWebhook( );return false"
   },
   {
-   "id": "1pscribeflow-html-38475-case-intake-unavailable",
+   "id": "1pscribeflow-html-38498-case-intake-unavailable",
    "label": "Case intake unavailable",
    "accessibleName": "Case intake unavailable",
    "title": "Case intake is unavailable in this evaluation build",
@@ -10040,12 +10040,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38475,
+   "line": 38498,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-38531-button",
+   "id": "1pscribeflow-html-38554-button",
    "label": "( )",
    "accessibleName": "( )",
    "title": "Upload the cover letter, signed patient authorization/release, and medical records for the doctor",
@@ -10057,12 +10057,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38531,
+   "line": 38554,
    "gated": false,
    "handler": "toggleAttachPanel(' ')"
   },
   {
-   "id": "1pscribeflow-html-38532-messages",
+   "id": "1pscribeflow-html-38555-messages",
    "label": "Messages",
    "accessibleName": "Messages",
    "title": "Secure messages with the physician about this matter",
@@ -10074,12 +10074,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38532,
+   "line": 38555,
    "gated": false,
    "handler": "toggleLawMessages(' ',' ')"
   },
   {
-   "id": "1pscribeflow-html-38536-report-delivery-unavailable",
+   "id": "1pscribeflow-html-38559-report-delivery-unavailable",
    "label": "Report delivery unavailable",
    "accessibleName": "Report delivery unavailable",
    "title": "Medical-legal report delivery is unavailable in this build",
@@ -10091,12 +10091,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38536,
+   "line": 38559,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-38538-release-unavailable",
+   "id": "1pscribeflow-html-38561-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Payment and report release are unavailable in this evaluation build",
@@ -10108,12 +10108,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38538,
+   "line": 38561,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-38544-request-testimony",
+   "id": "1pscribeflow-html-38567-request-testimony",
    "label": "Request testimony",
    "accessibleName": "Request testimony",
    "title": "",
@@ -10125,12 +10125,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38544,
+   "line": 38567,
    "gated": false,
    "handler": "lawRequestAppearance(' ')"
   },
   {
-   "id": "1pscribeflow-html-38554-open-chart",
+   "id": "1pscribeflow-html-38577-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "Open this client's chart in MLS",
@@ -10142,12 +10142,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38554,
+   "line": 38577,
    "gated": false,
    "handler": "legalOpenPatient(' ')"
   },
   {
-   "id": "1pscribeflow-html-38555-schedule",
+   "id": "1pscribeflow-html-38578-schedule",
    "label": "Schedule",
    "accessibleName": "Schedule",
    "title": "Schedule an appointment / IME for this client",
@@ -10159,12 +10159,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38555,
+   "line": 38578,
    "gated": false,
    "handler": "legalSchedulePatient(' ')"
   },
   {
-   "id": "1pscribeflow-html-38562-release-unavailable",
+   "id": "1pscribeflow-html-38585-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Patient authorization and recipient verification are not implemented",
@@ -10176,12 +10176,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38562,
+   "line": 38585,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-38565-delete",
+   "id": "1pscribeflow-html-38588-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete this request from your inbox (e.g. clear out test entries)",
@@ -10193,7 +10193,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38565,
+   "line": 38588,
    "gated": false,
    "handler": "deleteLegalRequest(' ')"
   },
@@ -10210,12 +10210,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38641,
+   "line": 38664,
    "gated": false,
    "handler": "uploadLegalAttachment(' ')"
   },
   {
-   "id": "1pscribeflow-html-38796-download",
+   "id": "1pscribeflow-html-38819-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -10227,12 +10227,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38796,
+   "line": 38819,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
   {
-   "id": "1pscribeflow-html-38839-download",
+   "id": "1pscribeflow-html-38862-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -10244,7 +10244,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38839,
+   "line": 38862,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
@@ -10261,12 +10261,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38859,
+   "line": 38882,
    "gated": false,
    "handler": "uploadDoctorAttachment(' ')"
   },
   {
-   "id": "1pscribeflow-html-38999-set-up-direct-payouts-to-receive-this",
+   "id": "1pscribeflow-html-39022-set-up-direct-payouts-to-receive-this",
    "label": "Set up direct payouts to receive this",
    "accessibleName": "Set up direct payouts to receive this",
    "title": "",
@@ -10278,7 +10278,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 38999,
+   "line": 39022,
    "gated": false,
    "handler": "startConnectOnboard();return false;"
   },
@@ -10295,12 +10295,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39042,
+   "line": 39065,
    "gated": false,
    "handler": "submitSelfRequest()"
   },
   {
-   "id": "1pscribeflow-html-39043-cancel",
+   "id": "1pscribeflow-html-39066-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -10312,12 +10312,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39043,
+   "line": 39066,
    "gated": false,
    "handler": "toggleSelfRequestForm()"
   },
   {
-   "id": "1pscribeflow-html-39108-save-draft-and-review-choice",
+   "id": "1pscribeflow-html-39131-save-draft-and-review-choice",
    "label": "Save draft and review choice",
    "accessibleName": "Save draft and review choice",
    "title": "",
@@ -10329,12 +10329,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39108,
+   "line": 39131,
    "gated": false,
    "handler": "saveExpertProfile()"
   },
   {
-   "id": "1pscribeflow-html-39138-manage-payout-account",
+   "id": "1pscribeflow-html-39161-manage-payout-account",
    "label": "Manage payout account",
    "accessibleName": "Manage payout account",
    "title": "",
@@ -10346,12 +10346,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39138,
+   "line": 39161,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "1pscribeflow-html-39141-finish-payout-setup",
+   "id": "1pscribeflow-html-39164-finish-payout-setup",
    "label": "Finish payout setup",
    "accessibleName": "Finish payout setup",
    "title": "",
@@ -10363,12 +10363,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39141,
+   "line": 39164,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "1pscribeflow-html-39143-set-up-direct-payouts",
+   "id": "1pscribeflow-html-39166-set-up-direct-payouts",
    "label": "Set up direct payouts",
    "accessibleName": "Set up direct payouts",
    "title": "",
@@ -10380,12 +10380,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39143,
+   "line": 39166,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "1pscribeflow-html-39387-add-line",
+   "id": "1pscribeflow-html-39410-add-line",
    "label": "+ Add line",
    "accessibleName": "+ Add line",
    "title": "",
@@ -10397,12 +10397,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39387,
+   "line": 39410,
    "gated": false,
    "handler": "legalInvAddRow()"
   },
   {
-   "id": "1pscribeflow-html-39391-save-invoice",
+   "id": "1pscribeflow-html-39414-save-invoice",
    "label": "Save invoice",
    "accessibleName": "Save invoice",
    "title": "",
@@ -10414,12 +10414,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39391,
+   "line": 39414,
    "gated": false,
    "handler": "saveLegalInvoice()"
   },
   {
-   "id": "1pscribeflow-html-39392-download-pdf",
+   "id": "1pscribeflow-html-39415-download-pdf",
    "label": "Download PDF",
    "accessibleName": "Download PDF",
    "title": "",
@@ -10431,12 +10431,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39392,
+   "line": 39415,
    "gated": false,
    "handler": "downloadLegalInvoicePDF()"
   },
   {
-   "id": "1pscribeflow-html-39510-refresh",
+   "id": "1pscribeflow-html-39533-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -10448,12 +10448,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39510,
+   "line": 39533,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "1pscribeflow-html-39524-send",
+   "id": "1pscribeflow-html-39547-send",
    "label": "Send",
    "accessibleName": "Send",
    "title": "",
@@ -10465,12 +10465,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 39524,
+   "line": 39547,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "1pscribeflow-html-40547-edit",
+   "id": "1pscribeflow-html-40570-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -10482,12 +10482,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 40547,
+   "line": 40570,
    "gated": false,
    "handler": "editCustomWidgetAt( )"
   },
   {
-   "id": "1pscribeflow-html-40548-delete",
+   "id": "1pscribeflow-html-40571-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -10499,7 +10499,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 40548,
+   "line": 40571,
    "gated": false,
    "handler": "deleteCustomWidgetAt( )"
   },
@@ -10516,12 +10516,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 40577,
+   "line": 40600,
    "gated": false,
    "handler": "event.stopPropagation();refreshCustomWidget(' ')"
   },
   {
-   "id": "1pscribeflow-html-40578-add-to-note",
+   "id": "1pscribeflow-html-40601-add-to-note",
    "label": "Add to note",
    "accessibleName": "Add to note",
    "title": "Append this widget's content to the current visit note",
@@ -10533,12 +10533,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 40578,
+   "line": 40601,
    "gated": false,
    "handler": "event.stopPropagation();cwPushToNote(' ')"
   },
   {
-   "id": "1pscribeflow-html-40579-copy",
+   "id": "1pscribeflow-html-40602-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -10550,12 +10550,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 40579,
+   "line": 40602,
    "gated": false,
    "handler": "event.stopPropagation();copyExtra('cwText_ ')"
   },
   {
-   "id": "1pscribeflow-html-40580-print",
+   "id": "1pscribeflow-html-40603-print",
    "label": "Print",
    "accessibleName": "Print",
    "title": "",
@@ -10567,7 +10567,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 40580,
+   "line": 40603,
    "gated": false,
    "handler": "event.stopPropagation();printCustomWidget(' ')"
   },
@@ -10584,7 +10584,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 43664,
+   "line": 43687,
    "gated": false,
    "handler": null
   },
@@ -10601,7 +10601,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46751,
+   "line": 46774,
    "gated": false,
    "handler": null
   },
@@ -10618,7 +10618,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46754,
+   "line": 46777,
    "gated": false,
    "handler": null
   },
@@ -10635,7 +10635,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46755,
+   "line": 46778,
    "gated": true,
    "handler": null
   },
@@ -10652,7 +10652,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46760,
+   "line": 46783,
    "gated": true,
    "handler": null
   },
@@ -10669,7 +10669,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46797,
+   "line": 46820,
    "gated": false,
    "handler": null
   },
@@ -10686,7 +10686,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46808,
+   "line": 46831,
    "gated": false,
    "handler": null
   },
@@ -10703,7 +10703,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46809,
+   "line": 46832,
    "gated": true,
    "handler": null
   },
@@ -10720,7 +10720,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46810,
+   "line": 46833,
    "gated": true,
    "handler": null
   },
@@ -10737,7 +10737,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46813,
+   "line": 46836,
    "gated": true,
    "handler": null
   },
@@ -10754,7 +10754,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46814,
+   "line": 46837,
    "gated": false,
    "handler": null
   },
@@ -10771,7 +10771,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46815,
+   "line": 46838,
    "gated": false,
    "handler": null
   },
@@ -10788,7 +10788,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 46816,
+   "line": 46839,
    "gated": false,
    "handler": null
   },
@@ -10805,7 +10805,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48836,
+   "line": 48859,
    "gated": false,
    "handler": null
   },
@@ -10822,7 +10822,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48837,
+   "line": 48860,
    "gated": false,
    "handler": null
   },
@@ -10839,12 +10839,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 52966,
+   "line": 52989,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-57551-copy",
+   "id": "1pscribeflow-html-57574-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -10856,12 +10856,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 57551,
+   "line": 57574,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-57560-pull-this-patient-39-s-chart",
+   "id": "1pscribeflow-html-57583-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -10873,12 +10873,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 57560,
+   "line": 57583,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-57576-show-more-more-lines",
+   "id": "1pscribeflow-html-57599-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -10890,12 +10890,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 57576,
+   "line": 57599,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-57764-state-all-show-only-the-latest-shown-show-all",
+   "id": "1pscribeflow-html-57787-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -10907,7 +10907,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 57764,
+   "line": 57787,
    "gated": false,
    "handler": null
   },
@@ -10924,7 +10924,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 60252,
+   "line": 60275,
    "gated": false,
    "handler": null
   },
@@ -10941,7 +10941,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 60256,
+   "line": 60279,
    "gated": false,
    "handler": null
   },
@@ -19747,12 +19747,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21318,
+   "line": 21341,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-21400-save",
+   "id": "1p-index-html-21423-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -19764,12 +19764,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21400,
+   "line": 21423,
    "gated": false,
    "handler": "saveProfField(' ')"
   },
   {
-   "id": "1p-index-html-21401-cancel",
+   "id": "1p-index-html-21424-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -19781,12 +19781,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21401,
+   "line": 21424,
    "gated": false,
    "handler": "cancelProfField()"
   },
   {
-   "id": "1p-index-html-21476-save",
+   "id": "1p-index-html-21499-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -19798,12 +19798,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21476,
+   "line": 21499,
    "gated": false,
    "handler": "saveInsurance()"
   },
   {
-   "id": "1p-index-html-21477-cancel",
+   "id": "1p-index-html-21500-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -19815,12 +19815,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21477,
+   "line": 21500,
    "gated": false,
    "handler": "cancelInsurance()"
   },
   {
-   "id": "1p-index-html-21531-delete-document",
+   "id": "1p-index-html-21554-delete-document",
    "label": "Delete document",
    "accessibleName": "Delete document",
    "title": "Delete document",
@@ -19832,7 +19832,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21531,
+   "line": 21554,
    "gated": false,
    "handler": "event.stopPropagation();deleteDoc(' ')"
   },
@@ -19849,7 +19849,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21603,
+   "line": 21626,
    "gated": false,
    "handler": null
   },
@@ -19866,12 +19866,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 21604,
+   "line": 21627,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-22375-match-template",
+   "id": "1p-index-html-22398-match-template",
    "label": "Match template",
    "accessibleName": "Match template",
    "title": "Find the best-matching template for this procedure",
@@ -19883,12 +19883,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 22375,
+   "line": 22398,
    "gated": false,
    "handler": "_opAutoTpl( )"
   },
   {
-   "id": "1p-index-html-22395-save-to-s-chart",
+   "id": "1p-index-html-22418-save-to-s-chart",
    "label": "Save to ’s chart",
    "accessibleName": "Save to ’s chart",
    "title": "",
@@ -19900,12 +19900,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 22395,
+   "line": 22418,
    "gated": false,
    "handler": "opPrepSave( )"
   },
   {
-   "id": "1p-index-html-22395-send-to-athena",
+   "id": "1p-index-html-22418-send-to-athena",
    "label": "Send to Athena",
    "accessibleName": "Send to Athena",
    "title": "",
@@ -19917,12 +19917,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 22395,
+   "line": 22418,
    "gated": false,
    "handler": "opPrepSendToAthena( )"
   },
   {
-   "id": "1p-index-html-22708-skip",
+   "id": "1p-index-html-22731-skip",
    "label": "Skip",
    "accessibleName": "Skip",
    "title": "",
@@ -19934,12 +19934,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 22708,
+   "line": 22731,
    "gated": false,
    "handler": "opPrepBlankSkip( )"
   },
   {
-   "id": "1p-index-html-22709-fill-all-at-once",
+   "id": "1p-index-html-22732-fill-all-at-once",
    "label": "Fill all at once",
    "accessibleName": "Fill all at once",
    "title": "Fill every remaining blank with whatever you’ve typed so far",
@@ -19951,12 +19951,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 22709,
+   "line": 22732,
    "gated": false,
    "handler": "opPrepApplyAll( )"
   },
   {
-   "id": "1p-index-html-23179-open-in-history",
+   "id": "1p-index-html-23202-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -19968,12 +19968,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23179,
+   "line": 23202,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "1p-index-html-23184-open-in-history",
+   "id": "1p-index-html-23207-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -19985,12 +19985,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23184,
+   "line": 23207,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "1p-index-html-23309-suggest-from-this-template",
+   "id": "1p-index-html-23332-suggest-from-this-template",
    "label": "Suggest from this template",
    "accessibleName": "Suggest from this template",
    "title": "Read this template and propose the keywords that should choose it",
@@ -20002,12 +20002,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23309,
+   "line": 23332,
    "gated": false,
    "handler": "tplSuggestKeywords()"
   },
   {
-   "id": "1p-index-html-23320-save-changes",
+   "id": "1p-index-html-23343-save-changes",
    "label": "Save changes",
    "accessibleName": "Save changes",
    "title": "",
@@ -20019,12 +20019,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23320,
+   "line": 23343,
    "gated": false,
    "handler": "tplDetailSave()"
   },
   {
-   "id": "1p-index-html-23321-use-on-current-note",
+   "id": "1p-index-html-23344-use-on-current-note",
    "label": "Use on current note",
    "accessibleName": "Use on current note",
    "title": "Reformat the note you have open right now to match this template",
@@ -20036,12 +20036,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23321,
+   "line": 23344,
    "gated": false,
    "handler": "useTemplateNow(' ')"
   },
   {
-   "id": "1p-index-html-23323-duplicate",
+   "id": "1p-index-html-23346-duplicate",
    "label": "Duplicate",
    "accessibleName": "Duplicate",
    "title": "",
@@ -20053,12 +20053,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23323,
+   "line": 23346,
    "gated": false,
    "handler": "duplicateTemplate(' ')"
   },
   {
-   "id": "1p-index-html-23324-delete",
+   "id": "1p-index-html-23347-delete",
    "label": "Delete…",
    "accessibleName": "Delete…",
    "title": "",
@@ -20070,12 +20070,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23324,
+   "line": 23347,
    "gated": false,
    "handler": "deleteTemplate(' ')"
   },
   {
-   "id": "1p-index-html-23326-restore",
+   "id": "1p-index-html-23349-restore",
    "label": "Restore",
    "accessibleName": "Restore",
    "title": "",
@@ -20087,12 +20087,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23326,
+   "line": 23349,
    "gated": false,
    "handler": "tplRestoreRevision(' ')"
   },
   {
-   "id": "1p-index-html-23603-undo-delete",
+   "id": "1p-index-html-23626-undo-delete",
    "label": "Undo delete",
    "accessibleName": "Undo delete",
    "title": "",
@@ -20104,12 +20104,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 23603,
+   "line": 23626,
    "gated": false,
    "handler": "tplUndoDelete()"
   },
   {
-   "id": "1p-index-html-24286-add-selected-to-my-templates",
+   "id": "1p-index-html-24309-add-selected-to-my-templates",
    "label": "Add selected to my templates",
    "accessibleName": "Add selected to my templates",
    "title": "",
@@ -20121,12 +20121,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 24286,
+   "line": 24309,
    "gated": false,
    "handler": "tplAddSplit()"
   },
   {
-   "id": "1p-index-html-25577-remove-the-extras",
+   "id": "1p-index-html-25600-remove-the-extras",
    "label": "Remove the extras",
    "accessibleName": "Remove the extras",
    "title": "",
@@ -20138,12 +20138,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 25577,
+   "line": 25600,
    "gated": false,
    "handler": "cleanupDuplicateNotes();return false;"
   },
   {
-   "id": "1p-index-html-25624-clear-search",
+   "id": "1p-index-html-25647-clear-search",
    "label": "Clear search",
    "accessibleName": "Clear search",
    "title": "",
@@ -20155,12 +20155,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 25624,
+   "line": 25647,
    "gated": false,
    "handler": "var s=document.getElementById('histSearch');if(s)s.value='';var f=document.getEl"
   },
   {
-   "id": "1p-index-html-25669-attach",
+   "id": "1p-index-html-25692-attach",
    "label": "Attach",
    "accessibleName": "Attach",
    "title": "Attach this visit to",
@@ -20172,12 +20172,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 25669,
+   "line": 25692,
    "gated": false,
    "handler": "event.stopPropagation();attachNoteToActive(' ')"
   },
   {
-   "id": "1p-index-html-25672-review-athena-actions",
+   "id": "1p-index-html-25695-review-athena-actions",
    "label": "Review Athena actions",
    "accessibleName": "Review Athena actions",
    "title": "Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action.",
@@ -20189,12 +20189,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 25672,
+   "line": 25695,
    "gated": false,
    "handler": "event.stopPropagation();pushHistoryNoteToAthena(' ')"
   },
   {
-   "id": "1p-index-html-25673-handler",
+   "id": "1p-index-html-25696-handler",
    "label": "—",
    "accessibleName": "Open saved visit for : ,",
    "title": "",
@@ -20206,12 +20206,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 25673,
+   "line": 25696,
    "gated": false,
    "handler": "openNoteFromHistory(' ')"
   },
   {
-   "id": "1p-index-html-25681-delete",
+   "id": "1p-index-html-25704-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete",
@@ -20223,12 +20223,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 25681,
+   "line": 25704,
    "gated": false,
    "handler": "event.stopPropagation();deleteNote(' ')"
   },
   {
-   "id": "1p-index-html-25684-athena-chart-import-receipt",
+   "id": "1p-index-html-25707-athena-chart-import-receipt",
    "label": "Athena chart-import receipt",
    "accessibleName": "View collapsed Athena chart-import receipts",
    "title": "",
@@ -20240,12 +20240,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 25684,
+   "line": 25707,
    "gated": false,
    "handler": "var f=document.getElementById('histFilter');if(f){f.value='imports';renderHistor"
   },
   {
-   "id": "1p-index-html-26416-maybe-later",
+   "id": "1p-index-html-26439-maybe-later",
    "label": "Maybe later",
    "accessibleName": "Maybe later",
    "title": "",
@@ -20257,7 +20257,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 26416,
+   "line": 26439,
    "gated": false,
    "handler": "_dismissAssistPrompt()"
   },
@@ -20274,12 +20274,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 27066,
+   "line": 27089,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-27749-iscur-meta",
+   "id": "1p-index-html-27772-iscur-meta",
    "label": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "accessibleName": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "title": "",
@@ -20291,12 +20291,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 27749,
+   "line": 27772,
    "gated": false,
    "handler": "_heroPickPatient( )"
   },
   {
-   "id": "1p-index-html-27793-button",
+   "id": "1p-index-html-27816-button",
    "label": "‹",
    "accessibleName": "‹",
    "title": "Earlier patients",
@@ -20308,12 +20308,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 27793,
+   "line": 27816,
    "gated": false,
    "handler": "_heroWin(-1)"
   },
   {
-   "id": "1p-index-html-27794-button",
+   "id": "1p-index-html-27817-button",
    "label": "›",
    "accessibleName": "›",
    "title": "Later patients",
@@ -20325,12 +20325,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 27794,
+   "line": 27817,
    "gated": false,
    "handler": "_heroWin(1)"
   },
   {
-   "id": "1p-index-html-27802-view-tomorrow",
+   "id": "1p-index-html-27825-view-tomorrow",
    "label": "view tomorrow",
    "accessibleName": "view tomorrow",
    "title": "",
@@ -20342,12 +20342,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 27802,
+   "line": 27825,
    "gated": false,
    "handler": "_heroToggleTom()"
   },
   {
-   "id": "1p-index-html-31608-button",
+   "id": "1p-index-html-31631-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -20359,12 +20359,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 31608,
+   "line": 31631,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "1p-index-html-31612-close-plan",
+   "id": "1p-index-html-31635-close-plan",
    "label": "Close plan",
    "accessibleName": "Close plan",
    "title": "",
@@ -20376,12 +20376,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 31612,
+   "line": 31635,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "1p-index-html-31719-times",
+   "id": "1p-index-html-31742-times",
    "label": "&times;",
    "accessibleName": "Close",
    "title": "",
@@ -20393,7 +20393,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 31719,
+   "line": 31742,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
@@ -20410,7 +20410,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 31724,
+   "line": 31747,
    "gated": false,
    "handler": "_athenaReceiptAction('write_note')"
   },
@@ -20427,12 +20427,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 31725,
+   "line": 31748,
    "gated": false,
    "handler": "_athenaReceiptAction('save_draft')"
   },
   {
-   "id": "1p-index-html-31727-close-review",
+   "id": "1p-index-html-31750-close-review",
    "label": "Close review",
    "accessibleName": "Close review",
    "title": "",
@@ -20444,12 +20444,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 31727,
+   "line": 31750,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "1p-index-html-32270-add-this-order",
+   "id": "1p-index-html-32293-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -20461,12 +20461,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 32270,
+   "line": 32293,
    "gated": false,
    "handler": "acceptSuggestion( )"
   },
   {
-   "id": "1p-index-html-32288-add-this-order",
+   "id": "1p-index-html-32311-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -20478,12 +20478,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 32288,
+   "line": 32311,
    "gated": false,
    "handler": "acceptAiSuggestion( )"
   },
   {
-   "id": "1p-index-html-32468-remove-order",
+   "id": "1p-index-html-32491-remove-order",
    "label": "Remove order",
    "accessibleName": "Remove order",
    "title": "Remove this order",
@@ -20495,12 +20495,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 32468,
+   "line": 32491,
    "gated": false,
    "handler": "removeVisitOrder(' ')"
   },
   {
-   "id": "1p-index-html-32706-remove",
+   "id": "1p-index-html-32729-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -20512,7 +20512,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 32706,
+   "line": 32729,
    "gated": false,
    "handler": "event.stopPropagation();removeOrder(' ')"
   },
@@ -20529,7 +20529,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 33619,
+   "line": 33642,
    "gated": false,
    "handler": null
   },
@@ -20546,12 +20546,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 33620,
+   "line": 33643,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-33984-handler",
+   "id": "1p-index-html-34007-handler",
    "label": ".",
    "accessibleName": ".",
    "title": "",
@@ -20563,12 +20563,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 33984,
+   "line": 34007,
    "gated": false,
    "handler": "insertDot( )"
   },
   {
-   "id": "1p-index-html-34286-add-selected",
+   "id": "1p-index-html-34309-add-selected",
    "label": "+ Add selected",
    "accessibleName": "+ Add selected",
    "title": "",
@@ -20580,12 +20580,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 34286,
+   "line": 34309,
    "gated": false,
    "handler": "applyTeachSuggestions()"
   },
   {
-   "id": "1p-index-html-34287-dismiss",
+   "id": "1p-index-html-34310-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -20597,12 +20597,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 34287,
+   "line": 34310,
    "gated": false,
    "handler": "document.getElementById('teachCard').style.display='none'"
   },
   {
-   "id": "1p-index-html-34511-remove",
+   "id": "1p-index-html-34534-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -20614,12 +20614,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 34511,
+   "line": 34534,
    "gated": false,
    "handler": "removeMmeRow( )"
   },
   {
-   "id": "1p-index-html-37477-executed-pdf",
+   "id": "1p-index-html-37500-executed-pdf",
    "label": "Executed PDF",
    "accessibleName": "Executed PDF",
    "title": "",
@@ -20631,12 +20631,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 37477,
+   "line": 37500,
    "gated": false,
    "handler": "downloadAgreementExecuted( )"
   },
   {
-   "id": "1p-index-html-37480-review-countersign",
+   "id": "1p-index-html-37503-review-countersign",
    "label": "Review & countersign",
    "accessibleName": "Review & countersign",
    "title": "",
@@ -20648,12 +20648,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 37480,
+   "line": 37503,
    "gated": false,
    "handler": "openCountersign( )"
   },
   {
-   "id": "1p-index-html-37480-signed-receipt",
+   "id": "1p-index-html-37503-signed-receipt",
    "label": "Signed receipt",
    "accessibleName": "Signed receipt",
    "title": "",
@@ -20665,12 +20665,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 37480,
+   "line": 37503,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "1p-index-html-37484-open-current-site-admin",
+   "id": "1p-index-html-37507-open-current-site-admin",
    "label": "Open current-site Admin",
    "accessibleName": "Open current-site Admin",
    "title": "",
@@ -20682,12 +20682,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 37484,
+   "line": 37507,
    "gated": false,
    "handler": "adminOpenLegacyAgreement( )"
   },
   {
-   "id": "1p-index-html-37489-download",
+   "id": "1p-index-html-37512-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -20699,12 +20699,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 37489,
+   "line": 37512,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "1p-index-html-37594-download-the-exact-signed-receipt",
+   "id": "1p-index-html-37617-download-the-exact-signed-receipt",
    "label": "Download the exact signed receipt",
    "accessibleName": "Download the exact signed receipt",
    "title": "",
@@ -20716,12 +20716,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 37594,
+   "line": 37617,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "1p-index-html-38105-open-chart",
+   "id": "1p-index-html-38128-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "",
@@ -20733,12 +20733,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38105,
+   "line": 38128,
    "gated": false,
    "handler": "selectPatient(' ');showView('patients')"
   },
   {
-   "id": "1p-index-html-38106-text",
+   "id": "1p-index-html-38129-text",
    "label": "Text",
    "accessibleName": "Text",
    "title": "",
@@ -20750,12 +20750,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38106,
+   "line": 38129,
    "gated": false,
    "handler": "recComposeText(' ')"
   },
   {
-   "id": "1p-index-html-38107-mark-done",
+   "id": "1p-index-html-38130-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -20767,12 +20767,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38107,
+   "line": 38130,
    "gated": false,
    "handler": "recResolveMsg( )"
   },
   {
-   "id": "1p-index-html-38123-send-text",
+   "id": "1p-index-html-38146-send-text",
    "label": "Send text",
    "accessibleName": "Send text",
    "title": "",
@@ -20784,12 +20784,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38123,
+   "line": 38146,
    "gated": false,
    "handler": "recSend('sms',this)"
   },
   {
-   "id": "1p-index-html-38123-call-read-it-aloud",
+   "id": "1p-index-html-38146-call-read-it-aloud",
    "label": "Call & read it aloud",
    "accessibleName": "Call & read it aloud",
    "title": "",
@@ -20801,12 +20801,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38123,
+   "line": 38146,
    "gated": false,
    "handler": "recSend('voice',this)"
   },
   {
-   "id": "1p-index-html-38165-save-settings",
+   "id": "1p-index-html-38188-save-settings",
    "label": "Save settings",
    "accessibleName": "Save settings",
    "title": "",
@@ -20818,12 +20818,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38165,
+   "line": 38188,
    "gated": false,
    "handler": "saveRecSettings(this)"
   },
   {
-   "id": "1p-index-html-38262-revoke",
+   "id": "1p-index-html-38285-revoke",
    "label": "revoke",
    "accessibleName": "revoke",
    "title": "",
@@ -20835,12 +20835,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38262,
+   "line": 38285,
    "gated": false,
    "handler": "revokeApiKey( );return false"
   },
   {
-   "id": "1p-index-html-38317-remove",
+   "id": "1p-index-html-38340-remove",
    "label": "remove",
    "accessibleName": "remove",
    "title": "",
@@ -20852,12 +20852,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38317,
+   "line": 38340,
    "gated": false,
    "handler": "schedApiDeleteWebhook( );return false"
   },
   {
-   "id": "1p-index-html-38489-case-intake-unavailable",
+   "id": "1p-index-html-38512-case-intake-unavailable",
    "label": "Case intake unavailable",
    "accessibleName": "Case intake unavailable",
    "title": "Case intake is unavailable in this evaluation build",
@@ -20869,12 +20869,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38489,
+   "line": 38512,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1p-index-html-38545-button",
+   "id": "1p-index-html-38568-button",
    "label": "( )",
    "accessibleName": "( )",
    "title": "Upload the cover letter, signed patient authorization/release, and medical records for the doctor",
@@ -20886,12 +20886,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38545,
+   "line": 38568,
    "gated": false,
    "handler": "toggleAttachPanel(' ')"
   },
   {
-   "id": "1p-index-html-38546-messages",
+   "id": "1p-index-html-38569-messages",
    "label": "Messages",
    "accessibleName": "Messages",
    "title": "Secure messages with the physician about this matter",
@@ -20903,12 +20903,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38546,
+   "line": 38569,
    "gated": false,
    "handler": "toggleLawMessages(' ',' ')"
   },
   {
-   "id": "1p-index-html-38550-report-delivery-unavailable",
+   "id": "1p-index-html-38573-report-delivery-unavailable",
    "label": "Report delivery unavailable",
    "accessibleName": "Report delivery unavailable",
    "title": "Medical-legal report delivery is unavailable in this build",
@@ -20920,12 +20920,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38550,
+   "line": 38573,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1p-index-html-38552-release-unavailable",
+   "id": "1p-index-html-38575-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Payment and report release are unavailable in this evaluation build",
@@ -20937,12 +20937,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38552,
+   "line": 38575,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1p-index-html-38558-request-testimony",
+   "id": "1p-index-html-38581-request-testimony",
    "label": "Request testimony",
    "accessibleName": "Request testimony",
    "title": "",
@@ -20954,12 +20954,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38558,
+   "line": 38581,
    "gated": false,
    "handler": "lawRequestAppearance(' ')"
   },
   {
-   "id": "1p-index-html-38568-open-chart",
+   "id": "1p-index-html-38591-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "Open this client's chart in MLS",
@@ -20971,12 +20971,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38568,
+   "line": 38591,
    "gated": false,
    "handler": "legalOpenPatient(' ')"
   },
   {
-   "id": "1p-index-html-38569-schedule",
+   "id": "1p-index-html-38592-schedule",
    "label": "Schedule",
    "accessibleName": "Schedule",
    "title": "Schedule an appointment / IME for this client",
@@ -20988,12 +20988,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38569,
+   "line": 38592,
    "gated": false,
    "handler": "legalSchedulePatient(' ')"
   },
   {
-   "id": "1p-index-html-38576-release-unavailable",
+   "id": "1p-index-html-38599-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Patient authorization and recipient verification are not implemented",
@@ -21005,12 +21005,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38576,
+   "line": 38599,
    "gated": true,
    "handler": null
   },
   {
-   "id": "1p-index-html-38579-delete",
+   "id": "1p-index-html-38602-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete this request from your inbox (e.g. clear out test entries)",
@@ -21022,7 +21022,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38579,
+   "line": 38602,
    "gated": false,
    "handler": "deleteLegalRequest(' ')"
   },
@@ -21039,12 +21039,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38655,
+   "line": 38678,
    "gated": false,
    "handler": "uploadLegalAttachment(' ')"
   },
   {
-   "id": "1p-index-html-38810-download",
+   "id": "1p-index-html-38833-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -21056,12 +21056,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38810,
+   "line": 38833,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
   {
-   "id": "1p-index-html-38853-download",
+   "id": "1p-index-html-38876-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -21073,7 +21073,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38853,
+   "line": 38876,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
@@ -21090,12 +21090,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 38873,
+   "line": 38896,
    "gated": false,
    "handler": "uploadDoctorAttachment(' ')"
   },
   {
-   "id": "1p-index-html-39013-set-up-direct-payouts-to-receive-this",
+   "id": "1p-index-html-39036-set-up-direct-payouts-to-receive-this",
    "label": "Set up direct payouts to receive this",
    "accessibleName": "Set up direct payouts to receive this",
    "title": "",
@@ -21107,7 +21107,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39013,
+   "line": 39036,
    "gated": false,
    "handler": "startConnectOnboard();return false;"
   },
@@ -21124,12 +21124,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39056,
+   "line": 39079,
    "gated": false,
    "handler": "submitSelfRequest()"
   },
   {
-   "id": "1p-index-html-39057-cancel",
+   "id": "1p-index-html-39080-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -21141,12 +21141,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39057,
+   "line": 39080,
    "gated": false,
    "handler": "toggleSelfRequestForm()"
   },
   {
-   "id": "1p-index-html-39122-save-draft-and-review-choice",
+   "id": "1p-index-html-39145-save-draft-and-review-choice",
    "label": "Save draft and review choice",
    "accessibleName": "Save draft and review choice",
    "title": "",
@@ -21158,12 +21158,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39122,
+   "line": 39145,
    "gated": false,
    "handler": "saveExpertProfile()"
   },
   {
-   "id": "1p-index-html-39152-manage-payout-account",
+   "id": "1p-index-html-39175-manage-payout-account",
    "label": "Manage payout account",
    "accessibleName": "Manage payout account",
    "title": "",
@@ -21175,12 +21175,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39152,
+   "line": 39175,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "1p-index-html-39155-finish-payout-setup",
+   "id": "1p-index-html-39178-finish-payout-setup",
    "label": "Finish payout setup",
    "accessibleName": "Finish payout setup",
    "title": "",
@@ -21192,12 +21192,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39155,
+   "line": 39178,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "1p-index-html-39157-set-up-direct-payouts",
+   "id": "1p-index-html-39180-set-up-direct-payouts",
    "label": "Set up direct payouts",
    "accessibleName": "Set up direct payouts",
    "title": "",
@@ -21209,12 +21209,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39157,
+   "line": 39180,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "1p-index-html-39401-add-line",
+   "id": "1p-index-html-39424-add-line",
    "label": "+ Add line",
    "accessibleName": "+ Add line",
    "title": "",
@@ -21226,12 +21226,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39401,
+   "line": 39424,
    "gated": false,
    "handler": "legalInvAddRow()"
   },
   {
-   "id": "1p-index-html-39405-save-invoice",
+   "id": "1p-index-html-39428-save-invoice",
    "label": "Save invoice",
    "accessibleName": "Save invoice",
    "title": "",
@@ -21243,12 +21243,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39405,
+   "line": 39428,
    "gated": false,
    "handler": "saveLegalInvoice()"
   },
   {
-   "id": "1p-index-html-39406-download-pdf",
+   "id": "1p-index-html-39429-download-pdf",
    "label": "Download PDF",
    "accessibleName": "Download PDF",
    "title": "",
@@ -21260,12 +21260,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39406,
+   "line": 39429,
    "gated": false,
    "handler": "downloadLegalInvoicePDF()"
   },
   {
-   "id": "1p-index-html-39524-refresh",
+   "id": "1p-index-html-39547-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -21277,12 +21277,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39524,
+   "line": 39547,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "1p-index-html-39538-send",
+   "id": "1p-index-html-39561-send",
    "label": "Send",
    "accessibleName": "Send",
    "title": "",
@@ -21294,12 +21294,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 39538,
+   "line": 39561,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "1p-index-html-40561-edit",
+   "id": "1p-index-html-40584-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -21311,12 +21311,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 40561,
+   "line": 40584,
    "gated": false,
    "handler": "editCustomWidgetAt( )"
   },
   {
-   "id": "1p-index-html-40562-delete",
+   "id": "1p-index-html-40585-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -21328,7 +21328,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 40562,
+   "line": 40585,
    "gated": false,
    "handler": "deleteCustomWidgetAt( )"
   },
@@ -21345,12 +21345,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 40591,
+   "line": 40614,
    "gated": false,
    "handler": "event.stopPropagation();refreshCustomWidget(' ')"
   },
   {
-   "id": "1p-index-html-40592-add-to-note",
+   "id": "1p-index-html-40615-add-to-note",
    "label": "Add to note",
    "accessibleName": "Add to note",
    "title": "Append this widget's content to the current visit note",
@@ -21362,12 +21362,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 40592,
+   "line": 40615,
    "gated": false,
    "handler": "event.stopPropagation();cwPushToNote(' ')"
   },
   {
-   "id": "1p-index-html-40593-copy",
+   "id": "1p-index-html-40616-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -21379,12 +21379,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 40593,
+   "line": 40616,
    "gated": false,
    "handler": "event.stopPropagation();copyExtra('cwText_ ')"
   },
   {
-   "id": "1p-index-html-40594-print",
+   "id": "1p-index-html-40617-print",
    "label": "Print",
    "accessibleName": "Print",
    "title": "",
@@ -21396,7 +21396,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 40594,
+   "line": 40617,
    "gated": false,
    "handler": "event.stopPropagation();printCustomWidget(' ')"
   },
@@ -21413,7 +21413,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 43678,
+   "line": 43701,
    "gated": false,
    "handler": null
   },
@@ -21430,7 +21430,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46765,
+   "line": 46788,
    "gated": false,
    "handler": null
   },
@@ -21447,7 +21447,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46768,
+   "line": 46791,
    "gated": false,
    "handler": null
   },
@@ -21464,7 +21464,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46769,
+   "line": 46792,
    "gated": true,
    "handler": null
   },
@@ -21481,7 +21481,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46774,
+   "line": 46797,
    "gated": true,
    "handler": null
   },
@@ -21498,7 +21498,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46811,
+   "line": 46834,
    "gated": false,
    "handler": null
   },
@@ -21515,7 +21515,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46822,
+   "line": 46845,
    "gated": false,
    "handler": null
   },
@@ -21532,7 +21532,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46823,
+   "line": 46846,
    "gated": true,
    "handler": null
   },
@@ -21549,7 +21549,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46824,
+   "line": 46847,
    "gated": true,
    "handler": null
   },
@@ -21566,7 +21566,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46827,
+   "line": 46850,
    "gated": true,
    "handler": null
   },
@@ -21583,7 +21583,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46828,
+   "line": 46851,
    "gated": false,
    "handler": null
   },
@@ -21600,7 +21600,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46829,
+   "line": 46852,
    "gated": false,
    "handler": null
   },
@@ -21617,7 +21617,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 46830,
+   "line": 46853,
    "gated": false,
    "handler": null
   },
@@ -21634,7 +21634,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48850,
+   "line": 48873,
    "gated": false,
    "handler": null
   },
@@ -21651,7 +21651,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48851,
+   "line": 48874,
    "gated": false,
    "handler": null
   },
@@ -21668,12 +21668,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 52980,
+   "line": 53003,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-57565-copy",
+   "id": "1p-index-html-57588-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -21685,12 +21685,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 57565,
+   "line": 57588,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-57574-pull-this-patient-39-s-chart",
+   "id": "1p-index-html-57597-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -21702,12 +21702,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 57574,
+   "line": 57597,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-57590-show-more-more-lines",
+   "id": "1p-index-html-57613-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -21719,12 +21719,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 57590,
+   "line": 57613,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-57778-state-all-show-only-the-latest-shown-show-all",
+   "id": "1p-index-html-57801-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -21736,7 +21736,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 57778,
+   "line": 57801,
    "gated": false,
    "handler": null
   },
@@ -21753,7 +21753,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 60266,
+   "line": 60289,
    "gated": false,
    "handler": null
   },
@@ -21770,7 +21770,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 60270,
+   "line": 60293,
    "gated": false,
    "handler": null
   },
@@ -40215,12 +40215,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21304,
+   "line": 21327,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-21386-save",
+   "id": "scribeflow-html-21409-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -40232,12 +40232,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21386,
+   "line": 21409,
    "gated": false,
    "handler": "saveProfField(' ')"
   },
   {
-   "id": "scribeflow-html-21387-cancel",
+   "id": "scribeflow-html-21410-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -40249,12 +40249,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21387,
+   "line": 21410,
    "gated": false,
    "handler": "cancelProfField()"
   },
   {
-   "id": "scribeflow-html-21462-save",
+   "id": "scribeflow-html-21485-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -40266,12 +40266,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21462,
+   "line": 21485,
    "gated": false,
    "handler": "saveInsurance()"
   },
   {
-   "id": "scribeflow-html-21463-cancel",
+   "id": "scribeflow-html-21486-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -40283,12 +40283,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21463,
+   "line": 21486,
    "gated": false,
    "handler": "cancelInsurance()"
   },
   {
-   "id": "scribeflow-html-21517-delete-document",
+   "id": "scribeflow-html-21540-delete-document",
    "label": "Delete document",
    "accessibleName": "Delete document",
    "title": "Delete document",
@@ -40300,7 +40300,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21517,
+   "line": 21540,
    "gated": false,
    "handler": "event.stopPropagation();deleteDoc(' ')"
   },
@@ -40317,7 +40317,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21589,
+   "line": 21612,
    "gated": false,
    "handler": null
   },
@@ -40334,12 +40334,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 21590,
+   "line": 21613,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-22361-match-template",
+   "id": "scribeflow-html-22384-match-template",
    "label": "Match template",
    "accessibleName": "Match template",
    "title": "Find the best-matching template for this procedure",
@@ -40351,12 +40351,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 22361,
+   "line": 22384,
    "gated": false,
    "handler": "_opAutoTpl( )"
   },
   {
-   "id": "scribeflow-html-22381-save-to-s-chart",
+   "id": "scribeflow-html-22404-save-to-s-chart",
    "label": "Save to ’s chart",
    "accessibleName": "Save to ’s chart",
    "title": "",
@@ -40368,12 +40368,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 22381,
+   "line": 22404,
    "gated": false,
    "handler": "opPrepSave( )"
   },
   {
-   "id": "scribeflow-html-22381-send-to-athena",
+   "id": "scribeflow-html-22404-send-to-athena",
    "label": "Send to Athena",
    "accessibleName": "Send to Athena",
    "title": "",
@@ -40385,12 +40385,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 22381,
+   "line": 22404,
    "gated": false,
    "handler": "opPrepSendToAthena( )"
   },
   {
-   "id": "scribeflow-html-22694-skip",
+   "id": "scribeflow-html-22717-skip",
    "label": "Skip",
    "accessibleName": "Skip",
    "title": "",
@@ -40402,12 +40402,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 22694,
+   "line": 22717,
    "gated": false,
    "handler": "opPrepBlankSkip( )"
   },
   {
-   "id": "scribeflow-html-22695-fill-all-at-once",
+   "id": "scribeflow-html-22718-fill-all-at-once",
    "label": "Fill all at once",
    "accessibleName": "Fill all at once",
    "title": "Fill every remaining blank with whatever you’ve typed so far",
@@ -40419,12 +40419,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 22695,
+   "line": 22718,
    "gated": false,
    "handler": "opPrepApplyAll( )"
   },
   {
-   "id": "scribeflow-html-23165-open-in-history",
+   "id": "scribeflow-html-23188-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -40436,12 +40436,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23165,
+   "line": 23188,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "scribeflow-html-23170-open-in-history",
+   "id": "scribeflow-html-23193-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -40453,12 +40453,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23170,
+   "line": 23193,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "scribeflow-html-23295-suggest-from-this-template",
+   "id": "scribeflow-html-23318-suggest-from-this-template",
    "label": "Suggest from this template",
    "accessibleName": "Suggest from this template",
    "title": "Read this template and propose the keywords that should choose it",
@@ -40470,12 +40470,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23295,
+   "line": 23318,
    "gated": false,
    "handler": "tplSuggestKeywords()"
   },
   {
-   "id": "scribeflow-html-23306-save-changes",
+   "id": "scribeflow-html-23329-save-changes",
    "label": "Save changes",
    "accessibleName": "Save changes",
    "title": "",
@@ -40487,12 +40487,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23306,
+   "line": 23329,
    "gated": false,
    "handler": "tplDetailSave()"
   },
   {
-   "id": "scribeflow-html-23307-use-on-current-note",
+   "id": "scribeflow-html-23330-use-on-current-note",
    "label": "Use on current note",
    "accessibleName": "Use on current note",
    "title": "Reformat the note you have open right now to match this template",
@@ -40504,12 +40504,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23307,
+   "line": 23330,
    "gated": false,
    "handler": "useTemplateNow(' ')"
   },
   {
-   "id": "scribeflow-html-23309-duplicate",
+   "id": "scribeflow-html-23332-duplicate",
    "label": "Duplicate",
    "accessibleName": "Duplicate",
    "title": "",
@@ -40521,12 +40521,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23309,
+   "line": 23332,
    "gated": false,
    "handler": "duplicateTemplate(' ')"
   },
   {
-   "id": "scribeflow-html-23310-delete",
+   "id": "scribeflow-html-23333-delete",
    "label": "Delete…",
    "accessibleName": "Delete…",
    "title": "",
@@ -40538,12 +40538,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23310,
+   "line": 23333,
    "gated": false,
    "handler": "deleteTemplate(' ')"
   },
   {
-   "id": "scribeflow-html-23312-restore",
+   "id": "scribeflow-html-23335-restore",
    "label": "Restore",
    "accessibleName": "Restore",
    "title": "",
@@ -40555,12 +40555,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23312,
+   "line": 23335,
    "gated": false,
    "handler": "tplRestoreRevision(' ')"
   },
   {
-   "id": "scribeflow-html-23589-undo-delete",
+   "id": "scribeflow-html-23612-undo-delete",
    "label": "Undo delete",
    "accessibleName": "Undo delete",
    "title": "",
@@ -40572,12 +40572,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 23589,
+   "line": 23612,
    "gated": false,
    "handler": "tplUndoDelete()"
   },
   {
-   "id": "scribeflow-html-24272-add-selected-to-my-templates",
+   "id": "scribeflow-html-24295-add-selected-to-my-templates",
    "label": "Add selected to my templates",
    "accessibleName": "Add selected to my templates",
    "title": "",
@@ -40589,12 +40589,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 24272,
+   "line": 24295,
    "gated": false,
    "handler": "tplAddSplit()"
   },
   {
-   "id": "scribeflow-html-25563-remove-the-extras",
+   "id": "scribeflow-html-25586-remove-the-extras",
    "label": "Remove the extras",
    "accessibleName": "Remove the extras",
    "title": "",
@@ -40606,12 +40606,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 25563,
+   "line": 25586,
    "gated": false,
    "handler": "cleanupDuplicateNotes();return false;"
   },
   {
-   "id": "scribeflow-html-25610-clear-search",
+   "id": "scribeflow-html-25633-clear-search",
    "label": "Clear search",
    "accessibleName": "Clear search",
    "title": "",
@@ -40623,12 +40623,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 25610,
+   "line": 25633,
    "gated": false,
    "handler": "var s=document.getElementById('histSearch');if(s)s.value='';var f=document.getEl"
   },
   {
-   "id": "scribeflow-html-25655-attach",
+   "id": "scribeflow-html-25678-attach",
    "label": "Attach",
    "accessibleName": "Attach",
    "title": "Attach this visit to",
@@ -40640,12 +40640,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 25655,
+   "line": 25678,
    "gated": false,
    "handler": "event.stopPropagation();attachNoteToActive(' ')"
   },
   {
-   "id": "scribeflow-html-25658-review-athena-actions",
+   "id": "scribeflow-html-25681-review-athena-actions",
    "label": "Review Athena actions",
    "accessibleName": "Review Athena actions",
    "title": "Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action.",
@@ -40657,12 +40657,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 25658,
+   "line": 25681,
    "gated": false,
    "handler": "event.stopPropagation();pushHistoryNoteToAthena(' ')"
   },
   {
-   "id": "scribeflow-html-25659-handler",
+   "id": "scribeflow-html-25682-handler",
    "label": "—",
    "accessibleName": "Open saved visit for : ,",
    "title": "",
@@ -40674,12 +40674,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 25659,
+   "line": 25682,
    "gated": false,
    "handler": "openNoteFromHistory(' ')"
   },
   {
-   "id": "scribeflow-html-25667-delete",
+   "id": "scribeflow-html-25690-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete",
@@ -40691,12 +40691,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 25667,
+   "line": 25690,
    "gated": false,
    "handler": "event.stopPropagation();deleteNote(' ')"
   },
   {
-   "id": "scribeflow-html-25670-athena-chart-import-receipt",
+   "id": "scribeflow-html-25693-athena-chart-import-receipt",
    "label": "Athena chart-import receipt",
    "accessibleName": "View collapsed Athena chart-import receipts",
    "title": "",
@@ -40708,12 +40708,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 25670,
+   "line": 25693,
    "gated": false,
    "handler": "var f=document.getElementById('histFilter');if(f){f.value='imports';renderHistor"
   },
   {
-   "id": "scribeflow-html-26402-maybe-later",
+   "id": "scribeflow-html-26425-maybe-later",
    "label": "Maybe later",
    "accessibleName": "Maybe later",
    "title": "",
@@ -40725,7 +40725,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 26402,
+   "line": 26425,
    "gated": false,
    "handler": "_dismissAssistPrompt()"
   },
@@ -40742,12 +40742,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 27052,
+   "line": 27075,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-27735-iscur-meta",
+   "id": "scribeflow-html-27758-iscur-meta",
    "label": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "accessibleName": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "title": "",
@@ -40759,12 +40759,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 27735,
+   "line": 27758,
    "gated": false,
    "handler": "_heroPickPatient( )"
   },
   {
-   "id": "scribeflow-html-27779-button",
+   "id": "scribeflow-html-27802-button",
    "label": "‹",
    "accessibleName": "‹",
    "title": "Earlier patients",
@@ -40776,12 +40776,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 27779,
+   "line": 27802,
    "gated": false,
    "handler": "_heroWin(-1)"
   },
   {
-   "id": "scribeflow-html-27780-button",
+   "id": "scribeflow-html-27803-button",
    "label": "›",
    "accessibleName": "›",
    "title": "Later patients",
@@ -40793,12 +40793,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 27780,
+   "line": 27803,
    "gated": false,
    "handler": "_heroWin(1)"
   },
   {
-   "id": "scribeflow-html-27788-view-tomorrow",
+   "id": "scribeflow-html-27811-view-tomorrow",
    "label": "view tomorrow",
    "accessibleName": "view tomorrow",
    "title": "",
@@ -40810,12 +40810,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 27788,
+   "line": 27811,
    "gated": false,
    "handler": "_heroToggleTom()"
   },
   {
-   "id": "scribeflow-html-31594-button",
+   "id": "scribeflow-html-31617-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -40827,12 +40827,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 31594,
+   "line": 31617,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-31598-close-plan",
+   "id": "scribeflow-html-31621-close-plan",
    "label": "Close plan",
    "accessibleName": "Close plan",
    "title": "",
@@ -40844,12 +40844,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 31598,
+   "line": 31621,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-31705-times",
+   "id": "scribeflow-html-31728-times",
    "label": "&times;",
    "accessibleName": "Close",
    "title": "",
@@ -40861,7 +40861,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 31705,
+   "line": 31728,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
@@ -40878,7 +40878,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 31710,
+   "line": 31733,
    "gated": false,
    "handler": "_athenaReceiptAction('write_note')"
   },
@@ -40895,12 +40895,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 31711,
+   "line": 31734,
    "gated": false,
    "handler": "_athenaReceiptAction('save_draft')"
   },
   {
-   "id": "scribeflow-html-31713-close-review",
+   "id": "scribeflow-html-31736-close-review",
    "label": "Close review",
    "accessibleName": "Close review",
    "title": "",
@@ -40912,12 +40912,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 31713,
+   "line": 31736,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-32256-add-this-order",
+   "id": "scribeflow-html-32279-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -40929,12 +40929,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 32256,
+   "line": 32279,
    "gated": false,
    "handler": "acceptSuggestion( )"
   },
   {
-   "id": "scribeflow-html-32274-add-this-order",
+   "id": "scribeflow-html-32297-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -40946,12 +40946,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 32274,
+   "line": 32297,
    "gated": false,
    "handler": "acceptAiSuggestion( )"
   },
   {
-   "id": "scribeflow-html-32454-remove-order",
+   "id": "scribeflow-html-32477-remove-order",
    "label": "Remove order",
    "accessibleName": "Remove order",
    "title": "Remove this order",
@@ -40963,12 +40963,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 32454,
+   "line": 32477,
    "gated": false,
    "handler": "removeVisitOrder(' ')"
   },
   {
-   "id": "scribeflow-html-32692-remove",
+   "id": "scribeflow-html-32715-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -40980,7 +40980,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 32692,
+   "line": 32715,
    "gated": false,
    "handler": "event.stopPropagation();removeOrder(' ')"
   },
@@ -40997,7 +40997,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 33605,
+   "line": 33628,
    "gated": false,
    "handler": null
   },
@@ -41014,12 +41014,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 33606,
+   "line": 33629,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-33970-handler",
+   "id": "scribeflow-html-33993-handler",
    "label": ".",
    "accessibleName": ".",
    "title": "",
@@ -41031,12 +41031,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 33970,
+   "line": 33993,
    "gated": false,
    "handler": "insertDot( )"
   },
   {
-   "id": "scribeflow-html-34272-add-selected",
+   "id": "scribeflow-html-34295-add-selected",
    "label": "+ Add selected",
    "accessibleName": "+ Add selected",
    "title": "",
@@ -41048,12 +41048,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 34272,
+   "line": 34295,
    "gated": false,
    "handler": "applyTeachSuggestions()"
   },
   {
-   "id": "scribeflow-html-34273-dismiss",
+   "id": "scribeflow-html-34296-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -41065,12 +41065,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 34273,
+   "line": 34296,
    "gated": false,
    "handler": "document.getElementById('teachCard').style.display='none'"
   },
   {
-   "id": "scribeflow-html-34497-remove",
+   "id": "scribeflow-html-34520-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -41082,12 +41082,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 34497,
+   "line": 34520,
    "gated": false,
    "handler": "removeMmeRow( )"
   },
   {
-   "id": "scribeflow-html-37463-executed-pdf",
+   "id": "scribeflow-html-37486-executed-pdf",
    "label": "Executed PDF",
    "accessibleName": "Executed PDF",
    "title": "",
@@ -41099,12 +41099,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 37463,
+   "line": 37486,
    "gated": false,
    "handler": "downloadAgreementExecuted( )"
   },
   {
-   "id": "scribeflow-html-37466-review-countersign",
+   "id": "scribeflow-html-37489-review-countersign",
    "label": "Review & countersign",
    "accessibleName": "Review & countersign",
    "title": "",
@@ -41116,12 +41116,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 37466,
+   "line": 37489,
    "gated": false,
    "handler": "openCountersign( )"
   },
   {
-   "id": "scribeflow-html-37466-signed-receipt",
+   "id": "scribeflow-html-37489-signed-receipt",
    "label": "Signed receipt",
    "accessibleName": "Signed receipt",
    "title": "",
@@ -41133,12 +41133,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 37466,
+   "line": 37489,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "scribeflow-html-37470-open-current-site-admin",
+   "id": "scribeflow-html-37493-open-current-site-admin",
    "label": "Open current-site Admin",
    "accessibleName": "Open current-site Admin",
    "title": "",
@@ -41150,12 +41150,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 37470,
+   "line": 37493,
    "gated": false,
    "handler": "adminOpenLegacyAgreement( )"
   },
   {
-   "id": "scribeflow-html-37475-download",
+   "id": "scribeflow-html-37498-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -41167,12 +41167,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 37475,
+   "line": 37498,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "scribeflow-html-37580-download-the-exact-signed-receipt",
+   "id": "scribeflow-html-37603-download-the-exact-signed-receipt",
    "label": "Download the exact signed receipt",
    "accessibleName": "Download the exact signed receipt",
    "title": "",
@@ -41184,12 +41184,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 37580,
+   "line": 37603,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "scribeflow-html-38091-open-chart",
+   "id": "scribeflow-html-38114-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "",
@@ -41201,12 +41201,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38091,
+   "line": 38114,
    "gated": false,
    "handler": "selectPatient(' ');showView('patients')"
   },
   {
-   "id": "scribeflow-html-38092-text",
+   "id": "scribeflow-html-38115-text",
    "label": "Text",
    "accessibleName": "Text",
    "title": "",
@@ -41218,12 +41218,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38092,
+   "line": 38115,
    "gated": false,
    "handler": "recComposeText(' ')"
   },
   {
-   "id": "scribeflow-html-38093-mark-done",
+   "id": "scribeflow-html-38116-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -41235,12 +41235,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38093,
+   "line": 38116,
    "gated": false,
    "handler": "recResolveMsg( )"
   },
   {
-   "id": "scribeflow-html-38109-send-text",
+   "id": "scribeflow-html-38132-send-text",
    "label": "Send text",
    "accessibleName": "Send text",
    "title": "",
@@ -41252,12 +41252,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38109,
+   "line": 38132,
    "gated": false,
    "handler": "recSend('sms',this)"
   },
   {
-   "id": "scribeflow-html-38109-call-read-it-aloud",
+   "id": "scribeflow-html-38132-call-read-it-aloud",
    "label": "Call & read it aloud",
    "accessibleName": "Call & read it aloud",
    "title": "",
@@ -41269,12 +41269,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38109,
+   "line": 38132,
    "gated": false,
    "handler": "recSend('voice',this)"
   },
   {
-   "id": "scribeflow-html-38151-save-settings",
+   "id": "scribeflow-html-38174-save-settings",
    "label": "Save settings",
    "accessibleName": "Save settings",
    "title": "",
@@ -41286,12 +41286,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38151,
+   "line": 38174,
    "gated": false,
    "handler": "saveRecSettings(this)"
   },
   {
-   "id": "scribeflow-html-38248-revoke",
+   "id": "scribeflow-html-38271-revoke",
    "label": "revoke",
    "accessibleName": "revoke",
    "title": "",
@@ -41303,12 +41303,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38248,
+   "line": 38271,
    "gated": false,
    "handler": "revokeApiKey( );return false"
   },
   {
-   "id": "scribeflow-html-38303-remove",
+   "id": "scribeflow-html-38326-remove",
    "label": "remove",
    "accessibleName": "remove",
    "title": "",
@@ -41320,12 +41320,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38303,
+   "line": 38326,
    "gated": false,
    "handler": "schedApiDeleteWebhook( );return false"
   },
   {
-   "id": "scribeflow-html-38475-case-intake-unavailable",
+   "id": "scribeflow-html-38498-case-intake-unavailable",
    "label": "Case intake unavailable",
    "accessibleName": "Case intake unavailable",
    "title": "Case intake is unavailable in this evaluation build",
@@ -41337,12 +41337,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38475,
+   "line": 38498,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-38531-button",
+   "id": "scribeflow-html-38554-button",
    "label": "( )",
    "accessibleName": "( )",
    "title": "Upload the cover letter, signed patient authorization/release, and medical records for the doctor",
@@ -41354,12 +41354,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38531,
+   "line": 38554,
    "gated": false,
    "handler": "toggleAttachPanel(' ')"
   },
   {
-   "id": "scribeflow-html-38532-messages",
+   "id": "scribeflow-html-38555-messages",
    "label": "Messages",
    "accessibleName": "Messages",
    "title": "Secure messages with the physician about this matter",
@@ -41371,12 +41371,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38532,
+   "line": 38555,
    "gated": false,
    "handler": "toggleLawMessages(' ',' ')"
   },
   {
-   "id": "scribeflow-html-38536-report-delivery-unavailable",
+   "id": "scribeflow-html-38559-report-delivery-unavailable",
    "label": "Report delivery unavailable",
    "accessibleName": "Report delivery unavailable",
    "title": "Medical-legal report delivery is unavailable in this build",
@@ -41388,12 +41388,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38536,
+   "line": 38559,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-38538-release-unavailable",
+   "id": "scribeflow-html-38561-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Payment and report release are unavailable in this evaluation build",
@@ -41405,12 +41405,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38538,
+   "line": 38561,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-38544-request-testimony",
+   "id": "scribeflow-html-38567-request-testimony",
    "label": "Request testimony",
    "accessibleName": "Request testimony",
    "title": "",
@@ -41422,12 +41422,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38544,
+   "line": 38567,
    "gated": false,
    "handler": "lawRequestAppearance(' ')"
   },
   {
-   "id": "scribeflow-html-38554-open-chart",
+   "id": "scribeflow-html-38577-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "Open this client's chart in MLS",
@@ -41439,12 +41439,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38554,
+   "line": 38577,
    "gated": false,
    "handler": "legalOpenPatient(' ')"
   },
   {
-   "id": "scribeflow-html-38555-schedule",
+   "id": "scribeflow-html-38578-schedule",
    "label": "Schedule",
    "accessibleName": "Schedule",
    "title": "Schedule an appointment / IME for this client",
@@ -41456,12 +41456,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38555,
+   "line": 38578,
    "gated": false,
    "handler": "legalSchedulePatient(' ')"
   },
   {
-   "id": "scribeflow-html-38562-release-unavailable",
+   "id": "scribeflow-html-38585-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Patient authorization and recipient verification are not implemented",
@@ -41473,12 +41473,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38562,
+   "line": 38585,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-38565-delete",
+   "id": "scribeflow-html-38588-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete this request from your inbox (e.g. clear out test entries)",
@@ -41490,7 +41490,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38565,
+   "line": 38588,
    "gated": false,
    "handler": "deleteLegalRequest(' ')"
   },
@@ -41507,12 +41507,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38641,
+   "line": 38664,
    "gated": false,
    "handler": "uploadLegalAttachment(' ')"
   },
   {
-   "id": "scribeflow-html-38796-download",
+   "id": "scribeflow-html-38819-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -41524,12 +41524,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38796,
+   "line": 38819,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
   {
-   "id": "scribeflow-html-38839-download",
+   "id": "scribeflow-html-38862-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -41541,7 +41541,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38839,
+   "line": 38862,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
@@ -41558,12 +41558,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38859,
+   "line": 38882,
    "gated": false,
    "handler": "uploadDoctorAttachment(' ')"
   },
   {
-   "id": "scribeflow-html-38999-set-up-direct-payouts-to-receive-this",
+   "id": "scribeflow-html-39022-set-up-direct-payouts-to-receive-this",
    "label": "Set up direct payouts to receive this",
    "accessibleName": "Set up direct payouts to receive this",
    "title": "",
@@ -41575,7 +41575,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 38999,
+   "line": 39022,
    "gated": false,
    "handler": "startConnectOnboard();return false;"
   },
@@ -41592,12 +41592,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39042,
+   "line": 39065,
    "gated": false,
    "handler": "submitSelfRequest()"
   },
   {
-   "id": "scribeflow-html-39043-cancel",
+   "id": "scribeflow-html-39066-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -41609,12 +41609,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39043,
+   "line": 39066,
    "gated": false,
    "handler": "toggleSelfRequestForm()"
   },
   {
-   "id": "scribeflow-html-39108-save-draft-and-review-choice",
+   "id": "scribeflow-html-39131-save-draft-and-review-choice",
    "label": "Save draft and review choice",
    "accessibleName": "Save draft and review choice",
    "title": "",
@@ -41626,12 +41626,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39108,
+   "line": 39131,
    "gated": false,
    "handler": "saveExpertProfile()"
   },
   {
-   "id": "scribeflow-html-39138-manage-payout-account",
+   "id": "scribeflow-html-39161-manage-payout-account",
    "label": "Manage payout account",
    "accessibleName": "Manage payout account",
    "title": "",
@@ -41643,12 +41643,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39138,
+   "line": 39161,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-39141-finish-payout-setup",
+   "id": "scribeflow-html-39164-finish-payout-setup",
    "label": "Finish payout setup",
    "accessibleName": "Finish payout setup",
    "title": "",
@@ -41660,12 +41660,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39141,
+   "line": 39164,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-39143-set-up-direct-payouts",
+   "id": "scribeflow-html-39166-set-up-direct-payouts",
    "label": "Set up direct payouts",
    "accessibleName": "Set up direct payouts",
    "title": "",
@@ -41677,12 +41677,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39143,
+   "line": 39166,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-39387-add-line",
+   "id": "scribeflow-html-39410-add-line",
    "label": "+ Add line",
    "accessibleName": "+ Add line",
    "title": "",
@@ -41694,12 +41694,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39387,
+   "line": 39410,
    "gated": false,
    "handler": "legalInvAddRow()"
   },
   {
-   "id": "scribeflow-html-39391-save-invoice",
+   "id": "scribeflow-html-39414-save-invoice",
    "label": "Save invoice",
    "accessibleName": "Save invoice",
    "title": "",
@@ -41711,12 +41711,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39391,
+   "line": 39414,
    "gated": false,
    "handler": "saveLegalInvoice()"
   },
   {
-   "id": "scribeflow-html-39392-download-pdf",
+   "id": "scribeflow-html-39415-download-pdf",
    "label": "Download PDF",
    "accessibleName": "Download PDF",
    "title": "",
@@ -41728,12 +41728,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39392,
+   "line": 39415,
    "gated": false,
    "handler": "downloadLegalInvoicePDF()"
   },
   {
-   "id": "scribeflow-html-39510-refresh",
+   "id": "scribeflow-html-39533-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -41745,12 +41745,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39510,
+   "line": 39533,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "scribeflow-html-39524-send",
+   "id": "scribeflow-html-39547-send",
    "label": "Send",
    "accessibleName": "Send",
    "title": "",
@@ -41762,12 +41762,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 39524,
+   "line": 39547,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "scribeflow-html-40547-edit",
+   "id": "scribeflow-html-40570-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -41779,12 +41779,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 40547,
+   "line": 40570,
    "gated": false,
    "handler": "editCustomWidgetAt( )"
   },
   {
-   "id": "scribeflow-html-40548-delete",
+   "id": "scribeflow-html-40571-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -41796,7 +41796,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 40548,
+   "line": 40571,
    "gated": false,
    "handler": "deleteCustomWidgetAt( )"
   },
@@ -41813,12 +41813,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 40577,
+   "line": 40600,
    "gated": false,
    "handler": "event.stopPropagation();refreshCustomWidget(' ')"
   },
   {
-   "id": "scribeflow-html-40578-add-to-note",
+   "id": "scribeflow-html-40601-add-to-note",
    "label": "Add to note",
    "accessibleName": "Add to note",
    "title": "Append this widget's content to the current visit note",
@@ -41830,12 +41830,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 40578,
+   "line": 40601,
    "gated": false,
    "handler": "event.stopPropagation();cwPushToNote(' ')"
   },
   {
-   "id": "scribeflow-html-40579-copy",
+   "id": "scribeflow-html-40602-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -41847,12 +41847,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 40579,
+   "line": 40602,
    "gated": false,
    "handler": "event.stopPropagation();copyExtra('cwText_ ')"
   },
   {
-   "id": "scribeflow-html-40580-print",
+   "id": "scribeflow-html-40603-print",
    "label": "Print",
    "accessibleName": "Print",
    "title": "",
@@ -41864,7 +41864,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 40580,
+   "line": 40603,
    "gated": false,
    "handler": "event.stopPropagation();printCustomWidget(' ')"
   },
@@ -41881,7 +41881,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 43664,
+   "line": 43687,
    "gated": false,
    "handler": null
   },
@@ -41898,7 +41898,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46751,
+   "line": 46774,
    "gated": false,
    "handler": null
   },
@@ -41915,7 +41915,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46754,
+   "line": 46777,
    "gated": false,
    "handler": null
   },
@@ -41932,7 +41932,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46755,
+   "line": 46778,
    "gated": true,
    "handler": null
   },
@@ -41949,7 +41949,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46760,
+   "line": 46783,
    "gated": true,
    "handler": null
   },
@@ -41966,7 +41966,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46797,
+   "line": 46820,
    "gated": false,
    "handler": null
   },
@@ -41983,7 +41983,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46808,
+   "line": 46831,
    "gated": false,
    "handler": null
   },
@@ -42000,7 +42000,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46809,
+   "line": 46832,
    "gated": true,
    "handler": null
   },
@@ -42017,7 +42017,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46810,
+   "line": 46833,
    "gated": true,
    "handler": null
   },
@@ -42034,7 +42034,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46813,
+   "line": 46836,
    "gated": true,
    "handler": null
   },
@@ -42051,7 +42051,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46814,
+   "line": 46837,
    "gated": false,
    "handler": null
   },
@@ -42068,7 +42068,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46815,
+   "line": 46838,
    "gated": false,
    "handler": null
   },
@@ -42085,7 +42085,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 46816,
+   "line": 46839,
    "gated": false,
    "handler": null
   },
@@ -42102,7 +42102,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48836,
+   "line": 48859,
    "gated": false,
    "handler": null
   },
@@ -42119,7 +42119,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48837,
+   "line": 48860,
    "gated": false,
    "handler": null
   },
@@ -42136,12 +42136,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 52966,
+   "line": 52989,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-57551-copy",
+   "id": "scribeflow-html-57574-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -42153,12 +42153,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 57551,
+   "line": 57574,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-57560-pull-this-patient-39-s-chart",
+   "id": "scribeflow-html-57583-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -42170,12 +42170,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 57560,
+   "line": 57583,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-57576-show-more-more-lines",
+   "id": "scribeflow-html-57599-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -42187,12 +42187,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 57576,
+   "line": 57599,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-57764-state-all-show-only-the-latest-shown-show-all",
+   "id": "scribeflow-html-57787-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -42204,7 +42204,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 57764,
+   "line": 57787,
    "gated": false,
    "handler": null
   },
@@ -42221,7 +42221,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 60252,
+   "line": 60275,
    "gated": false,
    "handler": null
   },
@@ -42238,7 +42238,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 60256,
+   "line": 60279,
    "gated": false,
    "handler": null
   },
@@ -60666,12 +60666,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21318,
+   "line": 21341,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-21400-save",
+   "id": "cloned-index-html-21423-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -60683,12 +60683,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21400,
+   "line": 21423,
    "gated": false,
    "handler": "saveProfField(' ')"
   },
   {
-   "id": "cloned-index-html-21401-cancel",
+   "id": "cloned-index-html-21424-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -60700,12 +60700,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21401,
+   "line": 21424,
    "gated": false,
    "handler": "cancelProfField()"
   },
   {
-   "id": "cloned-index-html-21476-save",
+   "id": "cloned-index-html-21499-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -60717,12 +60717,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21476,
+   "line": 21499,
    "gated": false,
    "handler": "saveInsurance()"
   },
   {
-   "id": "cloned-index-html-21477-cancel",
+   "id": "cloned-index-html-21500-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -60734,12 +60734,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21477,
+   "line": 21500,
    "gated": false,
    "handler": "cancelInsurance()"
   },
   {
-   "id": "cloned-index-html-21531-delete-document",
+   "id": "cloned-index-html-21554-delete-document",
    "label": "Delete document",
    "accessibleName": "Delete document",
    "title": "Delete document",
@@ -60751,7 +60751,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21531,
+   "line": 21554,
    "gated": false,
    "handler": "event.stopPropagation();deleteDoc(' ')"
   },
@@ -60768,7 +60768,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21603,
+   "line": 21626,
    "gated": false,
    "handler": null
   },
@@ -60785,12 +60785,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 21604,
+   "line": 21627,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-22375-match-template",
+   "id": "cloned-index-html-22398-match-template",
    "label": "Match template",
    "accessibleName": "Match template",
    "title": "Find the best-matching template for this procedure",
@@ -60802,12 +60802,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 22375,
+   "line": 22398,
    "gated": false,
    "handler": "_opAutoTpl( )"
   },
   {
-   "id": "cloned-index-html-22395-save-to-s-chart",
+   "id": "cloned-index-html-22418-save-to-s-chart",
    "label": "Save to ’s chart",
    "accessibleName": "Save to ’s chart",
    "title": "",
@@ -60819,12 +60819,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 22395,
+   "line": 22418,
    "gated": false,
    "handler": "opPrepSave( )"
   },
   {
-   "id": "cloned-index-html-22395-send-to-athena",
+   "id": "cloned-index-html-22418-send-to-athena",
    "label": "Send to Athena",
    "accessibleName": "Send to Athena",
    "title": "",
@@ -60836,12 +60836,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 22395,
+   "line": 22418,
    "gated": false,
    "handler": "opPrepSendToAthena( )"
   },
   {
-   "id": "cloned-index-html-22708-skip",
+   "id": "cloned-index-html-22731-skip",
    "label": "Skip",
    "accessibleName": "Skip",
    "title": "",
@@ -60853,12 +60853,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 22708,
+   "line": 22731,
    "gated": false,
    "handler": "opPrepBlankSkip( )"
   },
   {
-   "id": "cloned-index-html-22709-fill-all-at-once",
+   "id": "cloned-index-html-22732-fill-all-at-once",
    "label": "Fill all at once",
    "accessibleName": "Fill all at once",
    "title": "Fill every remaining blank with whatever you’ve typed so far",
@@ -60870,12 +60870,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 22709,
+   "line": 22732,
    "gated": false,
    "handler": "opPrepApplyAll( )"
   },
   {
-   "id": "cloned-index-html-23179-open-in-history",
+   "id": "cloned-index-html-23202-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -60887,12 +60887,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23179,
+   "line": 23202,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "cloned-index-html-23184-open-in-history",
+   "id": "cloned-index-html-23207-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -60904,12 +60904,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23184,
+   "line": 23207,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "cloned-index-html-23309-suggest-from-this-template",
+   "id": "cloned-index-html-23332-suggest-from-this-template",
    "label": "Suggest from this template",
    "accessibleName": "Suggest from this template",
    "title": "Read this template and propose the keywords that should choose it",
@@ -60921,12 +60921,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23309,
+   "line": 23332,
    "gated": false,
    "handler": "tplSuggestKeywords()"
   },
   {
-   "id": "cloned-index-html-23320-save-changes",
+   "id": "cloned-index-html-23343-save-changes",
    "label": "Save changes",
    "accessibleName": "Save changes",
    "title": "",
@@ -60938,12 +60938,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23320,
+   "line": 23343,
    "gated": false,
    "handler": "tplDetailSave()"
   },
   {
-   "id": "cloned-index-html-23321-use-on-current-note",
+   "id": "cloned-index-html-23344-use-on-current-note",
    "label": "Use on current note",
    "accessibleName": "Use on current note",
    "title": "Reformat the note you have open right now to match this template",
@@ -60955,12 +60955,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23321,
+   "line": 23344,
    "gated": false,
    "handler": "useTemplateNow(' ')"
   },
   {
-   "id": "cloned-index-html-23323-duplicate",
+   "id": "cloned-index-html-23346-duplicate",
    "label": "Duplicate",
    "accessibleName": "Duplicate",
    "title": "",
@@ -60972,12 +60972,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23323,
+   "line": 23346,
    "gated": false,
    "handler": "duplicateTemplate(' ')"
   },
   {
-   "id": "cloned-index-html-23324-delete",
+   "id": "cloned-index-html-23347-delete",
    "label": "Delete…",
    "accessibleName": "Delete…",
    "title": "",
@@ -60989,12 +60989,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23324,
+   "line": 23347,
    "gated": false,
    "handler": "deleteTemplate(' ')"
   },
   {
-   "id": "cloned-index-html-23326-restore",
+   "id": "cloned-index-html-23349-restore",
    "label": "Restore",
    "accessibleName": "Restore",
    "title": "",
@@ -61006,12 +61006,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23326,
+   "line": 23349,
    "gated": false,
    "handler": "tplRestoreRevision(' ')"
   },
   {
-   "id": "cloned-index-html-23603-undo-delete",
+   "id": "cloned-index-html-23626-undo-delete",
    "label": "Undo delete",
    "accessibleName": "Undo delete",
    "title": "",
@@ -61023,12 +61023,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 23603,
+   "line": 23626,
    "gated": false,
    "handler": "tplUndoDelete()"
   },
   {
-   "id": "cloned-index-html-24286-add-selected-to-my-templates",
+   "id": "cloned-index-html-24309-add-selected-to-my-templates",
    "label": "Add selected to my templates",
    "accessibleName": "Add selected to my templates",
    "title": "",
@@ -61040,12 +61040,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 24286,
+   "line": 24309,
    "gated": false,
    "handler": "tplAddSplit()"
   },
   {
-   "id": "cloned-index-html-25577-remove-the-extras",
+   "id": "cloned-index-html-25600-remove-the-extras",
    "label": "Remove the extras",
    "accessibleName": "Remove the extras",
    "title": "",
@@ -61057,12 +61057,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 25577,
+   "line": 25600,
    "gated": false,
    "handler": "cleanupDuplicateNotes();return false;"
   },
   {
-   "id": "cloned-index-html-25624-clear-search",
+   "id": "cloned-index-html-25647-clear-search",
    "label": "Clear search",
    "accessibleName": "Clear search",
    "title": "",
@@ -61074,12 +61074,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 25624,
+   "line": 25647,
    "gated": false,
    "handler": "var s=document.getElementById('histSearch');if(s)s.value='';var f=document.getEl"
   },
   {
-   "id": "cloned-index-html-25669-attach",
+   "id": "cloned-index-html-25692-attach",
    "label": "Attach",
    "accessibleName": "Attach",
    "title": "Attach this visit to",
@@ -61091,12 +61091,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 25669,
+   "line": 25692,
    "gated": false,
    "handler": "event.stopPropagation();attachNoteToActive(' ')"
   },
   {
-   "id": "cloned-index-html-25672-review-athena-actions",
+   "id": "cloned-index-html-25695-review-athena-actions",
    "label": "Review Athena actions",
    "accessibleName": "Review Athena actions",
    "title": "Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action.",
@@ -61108,12 +61108,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 25672,
+   "line": 25695,
    "gated": false,
    "handler": "event.stopPropagation();pushHistoryNoteToAthena(' ')"
   },
   {
-   "id": "cloned-index-html-25673-handler",
+   "id": "cloned-index-html-25696-handler",
    "label": "—",
    "accessibleName": "Open saved visit for : ,",
    "title": "",
@@ -61125,12 +61125,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 25673,
+   "line": 25696,
    "gated": false,
    "handler": "openNoteFromHistory(' ')"
   },
   {
-   "id": "cloned-index-html-25681-delete",
+   "id": "cloned-index-html-25704-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete",
@@ -61142,12 +61142,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 25681,
+   "line": 25704,
    "gated": false,
    "handler": "event.stopPropagation();deleteNote(' ')"
   },
   {
-   "id": "cloned-index-html-25684-athena-chart-import-receipt",
+   "id": "cloned-index-html-25707-athena-chart-import-receipt",
    "label": "Athena chart-import receipt",
    "accessibleName": "View collapsed Athena chart-import receipts",
    "title": "",
@@ -61159,12 +61159,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 25684,
+   "line": 25707,
    "gated": false,
    "handler": "var f=document.getElementById('histFilter');if(f){f.value='imports';renderHistor"
   },
   {
-   "id": "cloned-index-html-26416-maybe-later",
+   "id": "cloned-index-html-26439-maybe-later",
    "label": "Maybe later",
    "accessibleName": "Maybe later",
    "title": "",
@@ -61176,7 +61176,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 26416,
+   "line": 26439,
    "gated": false,
    "handler": "_dismissAssistPrompt()"
   },
@@ -61193,12 +61193,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 27066,
+   "line": 27089,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-27749-iscur-meta",
+   "id": "cloned-index-html-27772-iscur-meta",
    "label": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "accessibleName": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "title": "",
@@ -61210,12 +61210,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 27749,
+   "line": 27772,
    "gated": false,
    "handler": "_heroPickPatient( )"
   },
   {
-   "id": "cloned-index-html-27793-button",
+   "id": "cloned-index-html-27816-button",
    "label": "‹",
    "accessibleName": "‹",
    "title": "Earlier patients",
@@ -61227,12 +61227,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 27793,
+   "line": 27816,
    "gated": false,
    "handler": "_heroWin(-1)"
   },
   {
-   "id": "cloned-index-html-27794-button",
+   "id": "cloned-index-html-27817-button",
    "label": "›",
    "accessibleName": "›",
    "title": "Later patients",
@@ -61244,12 +61244,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 27794,
+   "line": 27817,
    "gated": false,
    "handler": "_heroWin(1)"
   },
   {
-   "id": "cloned-index-html-27802-view-tomorrow",
+   "id": "cloned-index-html-27825-view-tomorrow",
    "label": "view tomorrow",
    "accessibleName": "view tomorrow",
    "title": "",
@@ -61261,12 +61261,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 27802,
+   "line": 27825,
    "gated": false,
    "handler": "_heroToggleTom()"
   },
   {
-   "id": "cloned-index-html-31608-button",
+   "id": "cloned-index-html-31631-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -61278,12 +61278,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 31608,
+   "line": 31631,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "cloned-index-html-31612-close-plan",
+   "id": "cloned-index-html-31635-close-plan",
    "label": "Close plan",
    "accessibleName": "Close plan",
    "title": "",
@@ -61295,12 +61295,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 31612,
+   "line": 31635,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "cloned-index-html-31719-times",
+   "id": "cloned-index-html-31742-times",
    "label": "&times;",
    "accessibleName": "Close",
    "title": "",
@@ -61312,7 +61312,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 31719,
+   "line": 31742,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
@@ -61329,7 +61329,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 31724,
+   "line": 31747,
    "gated": false,
    "handler": "_athenaReceiptAction('write_note')"
   },
@@ -61346,12 +61346,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 31725,
+   "line": 31748,
    "gated": false,
    "handler": "_athenaReceiptAction('save_draft')"
   },
   {
-   "id": "cloned-index-html-31727-close-review",
+   "id": "cloned-index-html-31750-close-review",
    "label": "Close review",
    "accessibleName": "Close review",
    "title": "",
@@ -61363,12 +61363,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 31727,
+   "line": 31750,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "cloned-index-html-32270-add-this-order",
+   "id": "cloned-index-html-32293-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -61380,12 +61380,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 32270,
+   "line": 32293,
    "gated": false,
    "handler": "acceptSuggestion( )"
   },
   {
-   "id": "cloned-index-html-32288-add-this-order",
+   "id": "cloned-index-html-32311-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -61397,12 +61397,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 32288,
+   "line": 32311,
    "gated": false,
    "handler": "acceptAiSuggestion( )"
   },
   {
-   "id": "cloned-index-html-32468-remove-order",
+   "id": "cloned-index-html-32491-remove-order",
    "label": "Remove order",
    "accessibleName": "Remove order",
    "title": "Remove this order",
@@ -61414,12 +61414,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 32468,
+   "line": 32491,
    "gated": false,
    "handler": "removeVisitOrder(' ')"
   },
   {
-   "id": "cloned-index-html-32706-remove",
+   "id": "cloned-index-html-32729-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -61431,7 +61431,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 32706,
+   "line": 32729,
    "gated": false,
    "handler": "event.stopPropagation();removeOrder(' ')"
   },
@@ -61448,7 +61448,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 33619,
+   "line": 33642,
    "gated": false,
    "handler": null
   },
@@ -61465,12 +61465,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 33620,
+   "line": 33643,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-33984-handler",
+   "id": "cloned-index-html-34007-handler",
    "label": ".",
    "accessibleName": ".",
    "title": "",
@@ -61482,12 +61482,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 33984,
+   "line": 34007,
    "gated": false,
    "handler": "insertDot( )"
   },
   {
-   "id": "cloned-index-html-34286-add-selected",
+   "id": "cloned-index-html-34309-add-selected",
    "label": "+ Add selected",
    "accessibleName": "+ Add selected",
    "title": "",
@@ -61499,12 +61499,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 34286,
+   "line": 34309,
    "gated": false,
    "handler": "applyTeachSuggestions()"
   },
   {
-   "id": "cloned-index-html-34287-dismiss",
+   "id": "cloned-index-html-34310-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -61516,12 +61516,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 34287,
+   "line": 34310,
    "gated": false,
    "handler": "document.getElementById('teachCard').style.display='none'"
   },
   {
-   "id": "cloned-index-html-34511-remove",
+   "id": "cloned-index-html-34534-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -61533,12 +61533,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 34511,
+   "line": 34534,
    "gated": false,
    "handler": "removeMmeRow( )"
   },
   {
-   "id": "cloned-index-html-37477-executed-pdf",
+   "id": "cloned-index-html-37500-executed-pdf",
    "label": "Executed PDF",
    "accessibleName": "Executed PDF",
    "title": "",
@@ -61550,12 +61550,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 37477,
+   "line": 37500,
    "gated": false,
    "handler": "downloadAgreementExecuted( )"
   },
   {
-   "id": "cloned-index-html-37480-review-countersign",
+   "id": "cloned-index-html-37503-review-countersign",
    "label": "Review & countersign",
    "accessibleName": "Review & countersign",
    "title": "",
@@ -61567,12 +61567,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 37480,
+   "line": 37503,
    "gated": false,
    "handler": "openCountersign( )"
   },
   {
-   "id": "cloned-index-html-37480-signed-receipt",
+   "id": "cloned-index-html-37503-signed-receipt",
    "label": "Signed receipt",
    "accessibleName": "Signed receipt",
    "title": "",
@@ -61584,12 +61584,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 37480,
+   "line": 37503,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "cloned-index-html-37484-open-current-site-admin",
+   "id": "cloned-index-html-37507-open-current-site-admin",
    "label": "Open current-site Admin",
    "accessibleName": "Open current-site Admin",
    "title": "",
@@ -61601,12 +61601,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 37484,
+   "line": 37507,
    "gated": false,
    "handler": "adminOpenLegacyAgreement( )"
   },
   {
-   "id": "cloned-index-html-37489-download",
+   "id": "cloned-index-html-37512-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -61618,12 +61618,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 37489,
+   "line": 37512,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "cloned-index-html-37594-download-the-exact-signed-receipt",
+   "id": "cloned-index-html-37617-download-the-exact-signed-receipt",
    "label": "Download the exact signed receipt",
    "accessibleName": "Download the exact signed receipt",
    "title": "",
@@ -61635,12 +61635,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 37594,
+   "line": 37617,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "cloned-index-html-38105-open-chart",
+   "id": "cloned-index-html-38128-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "",
@@ -61652,12 +61652,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38105,
+   "line": 38128,
    "gated": false,
    "handler": "selectPatient(' ');showView('patients')"
   },
   {
-   "id": "cloned-index-html-38106-text",
+   "id": "cloned-index-html-38129-text",
    "label": "Text",
    "accessibleName": "Text",
    "title": "",
@@ -61669,12 +61669,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38106,
+   "line": 38129,
    "gated": false,
    "handler": "recComposeText(' ')"
   },
   {
-   "id": "cloned-index-html-38107-mark-done",
+   "id": "cloned-index-html-38130-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -61686,12 +61686,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38107,
+   "line": 38130,
    "gated": false,
    "handler": "recResolveMsg( )"
   },
   {
-   "id": "cloned-index-html-38123-send-text",
+   "id": "cloned-index-html-38146-send-text",
    "label": "Send text",
    "accessibleName": "Send text",
    "title": "",
@@ -61703,12 +61703,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38123,
+   "line": 38146,
    "gated": false,
    "handler": "recSend('sms',this)"
   },
   {
-   "id": "cloned-index-html-38123-call-read-it-aloud",
+   "id": "cloned-index-html-38146-call-read-it-aloud",
    "label": "Call & read it aloud",
    "accessibleName": "Call & read it aloud",
    "title": "",
@@ -61720,12 +61720,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38123,
+   "line": 38146,
    "gated": false,
    "handler": "recSend('voice',this)"
   },
   {
-   "id": "cloned-index-html-38165-save-settings",
+   "id": "cloned-index-html-38188-save-settings",
    "label": "Save settings",
    "accessibleName": "Save settings",
    "title": "",
@@ -61737,12 +61737,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38165,
+   "line": 38188,
    "gated": false,
    "handler": "saveRecSettings(this)"
   },
   {
-   "id": "cloned-index-html-38262-revoke",
+   "id": "cloned-index-html-38285-revoke",
    "label": "revoke",
    "accessibleName": "revoke",
    "title": "",
@@ -61754,12 +61754,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38262,
+   "line": 38285,
    "gated": false,
    "handler": "revokeApiKey( );return false"
   },
   {
-   "id": "cloned-index-html-38317-remove",
+   "id": "cloned-index-html-38340-remove",
    "label": "remove",
    "accessibleName": "remove",
    "title": "",
@@ -61771,12 +61771,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38317,
+   "line": 38340,
    "gated": false,
    "handler": "schedApiDeleteWebhook( );return false"
   },
   {
-   "id": "cloned-index-html-38489-case-intake-unavailable",
+   "id": "cloned-index-html-38512-case-intake-unavailable",
    "label": "Case intake unavailable",
    "accessibleName": "Case intake unavailable",
    "title": "Case intake is unavailable in this evaluation build",
@@ -61788,12 +61788,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38489,
+   "line": 38512,
    "gated": true,
    "handler": null
   },
   {
-   "id": "cloned-index-html-38545-button",
+   "id": "cloned-index-html-38568-button",
    "label": "( )",
    "accessibleName": "( )",
    "title": "Upload the cover letter, signed patient authorization/release, and medical records for the doctor",
@@ -61805,12 +61805,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38545,
+   "line": 38568,
    "gated": false,
    "handler": "toggleAttachPanel(' ')"
   },
   {
-   "id": "cloned-index-html-38546-messages",
+   "id": "cloned-index-html-38569-messages",
    "label": "Messages",
    "accessibleName": "Messages",
    "title": "Secure messages with the physician about this matter",
@@ -61822,12 +61822,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38546,
+   "line": 38569,
    "gated": false,
    "handler": "toggleLawMessages(' ',' ')"
   },
   {
-   "id": "cloned-index-html-38550-report-delivery-unavailable",
+   "id": "cloned-index-html-38573-report-delivery-unavailable",
    "label": "Report delivery unavailable",
    "accessibleName": "Report delivery unavailable",
    "title": "Medical-legal report delivery is unavailable in this build",
@@ -61839,12 +61839,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38550,
+   "line": 38573,
    "gated": true,
    "handler": null
   },
   {
-   "id": "cloned-index-html-38552-release-unavailable",
+   "id": "cloned-index-html-38575-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Payment and report release are unavailable in this evaluation build",
@@ -61856,12 +61856,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38552,
+   "line": 38575,
    "gated": true,
    "handler": null
   },
   {
-   "id": "cloned-index-html-38558-request-testimony",
+   "id": "cloned-index-html-38581-request-testimony",
    "label": "Request testimony",
    "accessibleName": "Request testimony",
    "title": "",
@@ -61873,12 +61873,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38558,
+   "line": 38581,
    "gated": false,
    "handler": "lawRequestAppearance(' ')"
   },
   {
-   "id": "cloned-index-html-38568-open-chart",
+   "id": "cloned-index-html-38591-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "Open this client's chart in MLS",
@@ -61890,12 +61890,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38568,
+   "line": 38591,
    "gated": false,
    "handler": "legalOpenPatient(' ')"
   },
   {
-   "id": "cloned-index-html-38569-schedule",
+   "id": "cloned-index-html-38592-schedule",
    "label": "Schedule",
    "accessibleName": "Schedule",
    "title": "Schedule an appointment / IME for this client",
@@ -61907,12 +61907,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38569,
+   "line": 38592,
    "gated": false,
    "handler": "legalSchedulePatient(' ')"
   },
   {
-   "id": "cloned-index-html-38576-release-unavailable",
+   "id": "cloned-index-html-38599-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Patient authorization and recipient verification are not implemented",
@@ -61924,12 +61924,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38576,
+   "line": 38599,
    "gated": true,
    "handler": null
   },
   {
-   "id": "cloned-index-html-38579-delete",
+   "id": "cloned-index-html-38602-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete this request from your inbox (e.g. clear out test entries)",
@@ -61941,7 +61941,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38579,
+   "line": 38602,
    "gated": false,
    "handler": "deleteLegalRequest(' ')"
   },
@@ -61958,12 +61958,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38655,
+   "line": 38678,
    "gated": false,
    "handler": "uploadLegalAttachment(' ')"
   },
   {
-   "id": "cloned-index-html-38810-download",
+   "id": "cloned-index-html-38833-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -61975,12 +61975,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38810,
+   "line": 38833,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
   {
-   "id": "cloned-index-html-38853-download",
+   "id": "cloned-index-html-38876-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -61992,7 +61992,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38853,
+   "line": 38876,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
@@ -62009,12 +62009,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 38873,
+   "line": 38896,
    "gated": false,
    "handler": "uploadDoctorAttachment(' ')"
   },
   {
-   "id": "cloned-index-html-39013-set-up-direct-payouts-to-receive-this",
+   "id": "cloned-index-html-39036-set-up-direct-payouts-to-receive-this",
    "label": "Set up direct payouts to receive this",
    "accessibleName": "Set up direct payouts to receive this",
    "title": "",
@@ -62026,7 +62026,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39013,
+   "line": 39036,
    "gated": false,
    "handler": "startConnectOnboard();return false;"
   },
@@ -62043,12 +62043,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39056,
+   "line": 39079,
    "gated": false,
    "handler": "submitSelfRequest()"
   },
   {
-   "id": "cloned-index-html-39057-cancel",
+   "id": "cloned-index-html-39080-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -62060,12 +62060,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39057,
+   "line": 39080,
    "gated": false,
    "handler": "toggleSelfRequestForm()"
   },
   {
-   "id": "cloned-index-html-39122-save-draft-and-review-choice",
+   "id": "cloned-index-html-39145-save-draft-and-review-choice",
    "label": "Save draft and review choice",
    "accessibleName": "Save draft and review choice",
    "title": "",
@@ -62077,12 +62077,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39122,
+   "line": 39145,
    "gated": false,
    "handler": "saveExpertProfile()"
   },
   {
-   "id": "cloned-index-html-39152-manage-payout-account",
+   "id": "cloned-index-html-39175-manage-payout-account",
    "label": "Manage payout account",
    "accessibleName": "Manage payout account",
    "title": "",
@@ -62094,12 +62094,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39152,
+   "line": 39175,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "cloned-index-html-39155-finish-payout-setup",
+   "id": "cloned-index-html-39178-finish-payout-setup",
    "label": "Finish payout setup",
    "accessibleName": "Finish payout setup",
    "title": "",
@@ -62111,12 +62111,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39155,
+   "line": 39178,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "cloned-index-html-39157-set-up-direct-payouts",
+   "id": "cloned-index-html-39180-set-up-direct-payouts",
    "label": "Set up direct payouts",
    "accessibleName": "Set up direct payouts",
    "title": "",
@@ -62128,12 +62128,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39157,
+   "line": 39180,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "cloned-index-html-39401-add-line",
+   "id": "cloned-index-html-39424-add-line",
    "label": "+ Add line",
    "accessibleName": "+ Add line",
    "title": "",
@@ -62145,12 +62145,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39401,
+   "line": 39424,
    "gated": false,
    "handler": "legalInvAddRow()"
   },
   {
-   "id": "cloned-index-html-39405-save-invoice",
+   "id": "cloned-index-html-39428-save-invoice",
    "label": "Save invoice",
    "accessibleName": "Save invoice",
    "title": "",
@@ -62162,12 +62162,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39405,
+   "line": 39428,
    "gated": false,
    "handler": "saveLegalInvoice()"
   },
   {
-   "id": "cloned-index-html-39406-download-pdf",
+   "id": "cloned-index-html-39429-download-pdf",
    "label": "Download PDF",
    "accessibleName": "Download PDF",
    "title": "",
@@ -62179,12 +62179,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39406,
+   "line": 39429,
    "gated": false,
    "handler": "downloadLegalInvoicePDF()"
   },
   {
-   "id": "cloned-index-html-39524-refresh",
+   "id": "cloned-index-html-39547-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -62196,12 +62196,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39524,
+   "line": 39547,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "cloned-index-html-39538-send",
+   "id": "cloned-index-html-39561-send",
    "label": "Send",
    "accessibleName": "Send",
    "title": "",
@@ -62213,12 +62213,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 39538,
+   "line": 39561,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "cloned-index-html-40561-edit",
+   "id": "cloned-index-html-40584-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -62230,12 +62230,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 40561,
+   "line": 40584,
    "gated": false,
    "handler": "editCustomWidgetAt( )"
   },
   {
-   "id": "cloned-index-html-40562-delete",
+   "id": "cloned-index-html-40585-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -62247,7 +62247,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 40562,
+   "line": 40585,
    "gated": false,
    "handler": "deleteCustomWidgetAt( )"
   },
@@ -62264,12 +62264,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 40591,
+   "line": 40614,
    "gated": false,
    "handler": "event.stopPropagation();refreshCustomWidget(' ')"
   },
   {
-   "id": "cloned-index-html-40592-add-to-note",
+   "id": "cloned-index-html-40615-add-to-note",
    "label": "Add to note",
    "accessibleName": "Add to note",
    "title": "Append this widget's content to the current visit note",
@@ -62281,12 +62281,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 40592,
+   "line": 40615,
    "gated": false,
    "handler": "event.stopPropagation();cwPushToNote(' ')"
   },
   {
-   "id": "cloned-index-html-40593-copy",
+   "id": "cloned-index-html-40616-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -62298,12 +62298,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 40593,
+   "line": 40616,
    "gated": false,
    "handler": "event.stopPropagation();copyExtra('cwText_ ')"
   },
   {
-   "id": "cloned-index-html-40594-print",
+   "id": "cloned-index-html-40617-print",
    "label": "Print",
    "accessibleName": "Print",
    "title": "",
@@ -62315,7 +62315,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 40594,
+   "line": 40617,
    "gated": false,
    "handler": "event.stopPropagation();printCustomWidget(' ')"
   },
@@ -62332,7 +62332,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 43678,
+   "line": 43701,
    "gated": false,
    "handler": null
   },
@@ -62349,7 +62349,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46765,
+   "line": 46788,
    "gated": false,
    "handler": null
   },
@@ -62366,7 +62366,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46768,
+   "line": 46791,
    "gated": false,
    "handler": null
   },
@@ -62383,7 +62383,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46769,
+   "line": 46792,
    "gated": true,
    "handler": null
   },
@@ -62400,7 +62400,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46774,
+   "line": 46797,
    "gated": true,
    "handler": null
   },
@@ -62417,7 +62417,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46811,
+   "line": 46834,
    "gated": false,
    "handler": null
   },
@@ -62434,7 +62434,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46822,
+   "line": 46845,
    "gated": false,
    "handler": null
   },
@@ -62451,7 +62451,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46823,
+   "line": 46846,
    "gated": true,
    "handler": null
   },
@@ -62468,7 +62468,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46824,
+   "line": 46847,
    "gated": true,
    "handler": null
   },
@@ -62485,7 +62485,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46827,
+   "line": 46850,
    "gated": true,
    "handler": null
   },
@@ -62502,7 +62502,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46828,
+   "line": 46851,
    "gated": false,
    "handler": null
   },
@@ -62519,7 +62519,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46829,
+   "line": 46852,
    "gated": false,
    "handler": null
   },
@@ -62536,7 +62536,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 46830,
+   "line": 46853,
    "gated": false,
    "handler": null
   },
@@ -62553,7 +62553,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48850,
+   "line": 48873,
    "gated": false,
    "handler": null
   },
@@ -62570,7 +62570,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48851,
+   "line": 48874,
    "gated": false,
    "handler": null
   },
@@ -62587,12 +62587,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 52980,
+   "line": 53003,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-57565-copy",
+   "id": "cloned-index-html-57588-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -62604,12 +62604,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 57565,
+   "line": 57588,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-57574-pull-this-patient-39-s-chart",
+   "id": "cloned-index-html-57597-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -62621,12 +62621,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 57574,
+   "line": 57597,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-57590-show-more-more-lines",
+   "id": "cloned-index-html-57613-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -62638,12 +62638,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 57590,
+   "line": 57613,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-57778-state-all-show-only-the-latest-shown-show-all",
+   "id": "cloned-index-html-57801-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -62655,7 +62655,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 57778,
+   "line": 57801,
    "gated": false,
    "handler": null
   },
@@ -62672,7 +62672,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 60266,
+   "line": 60289,
    "gated": false,
    "handler": null
   },
@@ -62689,7 +62689,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 60270,
+   "line": 60293,
    "gated": false,
    "handler": null
   },
