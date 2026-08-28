@@ -863,4 +863,20 @@ async function main() {
     'vp.runForPatient (two scoped reads per row per day; the contract allows one) - see part 5b');
 }
 
-main().catch(error => { console.error(error); process.exit(1); });
+
+/* silentpass-1.0.0 (2026-08-28): THIS SUITE COULD EXIT 0 WITHOUT FINISHING.
+   Every assertion lives inside main(), whose only success output is its final
+   console.log. Measured on this date: the bare run exited 0 with ZERO stdout -
+   main() had not finished, node found nothing keeping the event loop alive and
+   exited cleanly. tests/run-all.js judges a suite on `r.status !== 0` with
+   stdio:'inherit', so that counted as a PASS while assertions never ran.
+   Holding the loop open with a live (NOT unref'd) timer is what lets the
+   pending work finish; if it ever genuinely stalls, this now says so loudly
+   instead of exiting green. */
+const __watchdog = setTimeout(() => {
+  console.error('day-note-foldin-contract DID NOT COMPLETE - an await inside main() never settled. ' +
+    'Without this guard node exits 0 with no output and the gate counts it as a PASS.');
+  process.exit(1);
+}, 150000);
+
+main().then(() => clearTimeout(__watchdog)).catch(error => { clearTimeout(__watchdog); console.error(error); process.exit(1); });

@@ -18,7 +18,20 @@ function response(ok, status, body) {
 const context = {
   console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
   encodeURIComponent, isFinite,
-  setTimeout: () => 1, clearTimeout: () => {}, setInterval: () => 1, clearInterval: () => {},
+  /* inerttimer-1.0.0 (2026-08-28): setTimeout was `() => 1` - a stub that
+     returns a handle and NEVER invokes its callback. Every engine path that
+     makes progress through a timer (a deadline, a retry, a deferred
+     continuation) therefore could not complete, and the three async
+     importAppts cases below have never run: the file entered its IIFE, awaited
+     the first importAppts, and the process exited 0 with the PASS line never
+     printed. tests/run-all.js judges on exit code alone, so it counted green.
+     Real timers now, clamped so a long engine deadline cannot make this suite
+     slow. Callbacks are queued for real, which is the whole point - an inert
+     timer is indistinguishable from a hang. */
+  setTimeout: (fn, ms) => setTimeout(fn, Math.min(Number(ms) || 0, 25)),
+  clearTimeout: (h) => clearTimeout(h),
+  setInterval: (fn, ms) => setInterval(fn, Math.max(Math.min(Number(ms) || 0, 25), 5)),
+  clearInterval: (h) => clearInterval(h),
   location: { pathname: '/ScribeFlow-staging.html', origin: 'https://mlsscribe.com' },
   localStorage: {
     getItem: key => storage.has(key) ? storage.get(key) : null,
