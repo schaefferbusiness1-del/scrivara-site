@@ -1530,6 +1530,13 @@
       var profiles = sanitizeSectionProfiles(id, p.profiles), selected = activeSectionProfile(id, profiles, q('mlsDtSectionProfile').value);
       selected.label = cleanReusableText(q('mlsDtSectionName').value, 80) || selected.label || ('Format ' + (profiles.indexOf(selected) + 1));
       selected.sectionMode = enumValue('sectionMode', q('mlsDtSectionMode').value, selected.sectionMode);
+      /* opnk-1.0.0 NOTE FOR THE NEXT READER: for the OPNOTE family this stored
+         profile field is VESTIGIAL. The op-note generator reads one global key
+         and nothing else, so a per-profile template mode has never reached a
+         draft; the line below still writes it only because every other family
+         genuinely uses it. If op-note template handling should one day differ
+         per saved format, that is a real feature and it starts in the
+         generator - not here. */
       selected.templateMode = enumValue('templateMode', q('mlsDtSectionTemplate').value, selected.templateMode);
       /* opnk-1.0.0: and for op notes, write THROUGH to the key the generator
          actually reads, so choosing a mode here changes the next draft instead
