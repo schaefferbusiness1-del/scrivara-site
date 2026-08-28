@@ -777,6 +777,19 @@
            makes the per-visit instruction untruncatable by a preference. */
         var room = Math.max(0, MAX_INSTRUCTIONS - (one ? one.length + 3 : 0));
         var account = cleanText(base.instructions, room);
+        /* sfi-1.0.0: yielding the space is the right trade - a shortened
+           standing preference is an inconvenience, a fabricated exam finding is
+           a patient-safety incident - but it must not be SILENT. Say it once,
+           with the numbers, so a shortened instruction is diagnosable instead
+           of mysterious. */
+        try {
+          var full = cleanText(base.instructions, MAX_INSTRUCTIONS);
+          if (full && account !== full && typeof console !== 'undefined' && console.warn) {
+            console.warn('[mls draft tuning] the standing instruction for "' + id + '" was shortened from ' +
+              full.length + ' to ' + account.length + ' characters so this visit\'s instruction (' +
+              one.length + ' characters, which may carry a safety rule) reaches the model intact.');
+          }
+        } catch (eRoom) {}
         merged.instructions = cleanText([account, one].filter(Boolean).join(' | '), MAX_INSTRUCTIONS);
       } else if (request[key] != null) {
         merged[key] = enumValue(key, request[key], merged[key]);
