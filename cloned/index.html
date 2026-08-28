@@ -5067,14 +5067,14 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            it and leaves this dialog exactly as it was. -->
       <div class="field">
         <label for="qolDockSide">Navigation bar</label>
-        <select class="sf-select" id="qolDockSide" onchange="applyDockSidePreview(this.value)">
+        <select class="sf-select" id="qolDockSide" onchange="qolDockSideChanged(this.value)">
           <option value="bottom">Floating — bottom centre (default)</option>
           <option value="top">Floating — top centre</option>
           <option value="left">Floating — left edge</option>
           <option value="right">Floating — right edge</option>
         </select>
         <label for="qolDockAutoHide" style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-top:8px">
-          <input type="checkbox" id="qolDockAutoHide" style="width:17px;height:17px;cursor:pointer" onchange="applyDockAutoHidePreview(this.checked)">
+          <input type="checkbox" id="qolDockAutoHide" style="width:17px;height:17px;cursor:pointer" onchange="qolDockAutoHideChanged(this.checked)">
           <span>Auto-hide until hovered, tapped, or focused</span>
         </label>
         <div style="font-size:12px;color:var(--muted);margin-top:4px">It keeps hovering over the page wherever you put it. Changes apply straight away.</div>
@@ -10121,6 +10121,43 @@ async function clearDeviceData(){
   }
   setTimeout(()=>{ try{ location.reload(); }catch(e){ location.href=location.href; } },_pwOk?400:4200);
 }
+/* dockfn-1.0.0 (2026-08-28): the two dock settings controls called functions
+   that are not always present, from inline handlers that never checked.
+     applyDockSidePreview     lives in feat_mls_calm_shell.js, which the
+       deferred-asset scheduler queues with fallback:'classic' - so it is absent
+       on the fallback path and in the window before the asset lands.
+     applyDockAutoHidePreview lives in mls-connect.js, which is loaded
+       dynamically rather than linked, and which deletes the function again in
+       its own retire path (mls-connect.js:49723).
+   In those windows changing either control threw ReferenceError, so the control
+   was dead and silent - the owner's "buttons that do nothing" class. Every
+   other caller in this shell already tests typeof first: saveSettings directly
+   below, and the dock guard near the end. These two were the only ones that did
+   not.
+   Named functions rather than an inline if(...) for a reason worth recording:
+   public-inline-handler-contract resolves the FIRST call in a handler, so an
+   inline guard parses as a call to a function named `if`. The bare calls only
+   satisfied that contract by accident - its resolver accepts
+   `window.applyDockSidePreview ===` as a definition, and neither function is
+   defined in ANY statically linked script. */
+function qolDockSideChanged(side){
+  if(typeof window.applyDockSidePreview==='function'){ window.applyDockSidePreview(side); return; }
+  /* Only the calm shell can MOVE the dock, but it reads this key when it loads,
+     so remember the choice instead of dropping it. Same key the shell itself
+     writes (dockKey() -> uns('qolDockSide')), and only ever a value this very
+     control offers, so nothing unexpected can reach the store. */
+  try{
+    var sel=document.getElementById('qolDockSide');
+    var allowed=sel?Array.prototype.map.call(sel.options,function(o){return o.value;}):[];
+    if(allowed.indexOf(side)>=0) localStorage.setItem(uns('qolDockSide'),side);
+  }catch(e){}
+}
+function qolDockAutoHideChanged(on){
+  /* Deliberately no fallback write: the pinned state belongs to mls-connect's
+     own store and guessing its key could disagree with it. */
+  if(typeof window.applyDockAutoHidePreview==='function') window.applyDockAutoHidePreview(on);
+}
+
 function saveSettings(){
   const k=document.getElementById('apiKey').value.trim();
   localStorage.setItem(uns('apikey'),k);

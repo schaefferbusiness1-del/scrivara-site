@@ -1600,6 +1600,7 @@ const tests = [
   'recent-patients-exact-event-lifecycle-runtime.test.js',
   'patient-banner-minimal-contract.test.js',
   'recording-ai-visibility-contract.test.js',
+  'dock-settings-controls-never-throw.test.js',
   'documents-dialog-meds-runtime.test.js',
   'orders-required-fields-runtime.test.js',
   'intake-kiosk-navigation-contract.test.js',

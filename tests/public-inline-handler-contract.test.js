@@ -20,13 +20,27 @@ function pageCode(name, html) {
   return code;
 }
 
+/* inlinedef-1.0.0 (2026-08-28): an assignment is `=` NOT followed by `=`.
+   These patterns ended in a bare `=`, so a COMPARISON counted as a definition:
+   `if (typeof window.applyDockSidePreview === 'function')` satisfied the
+   window-property pattern and this suite reported the handler resolved. It did
+   not. Neither applyDockSidePreview nor applyDockAutoHidePreview is defined in
+   any statically linked script - they arrive with feat_mls_calm_shell.js and
+   mls-connect.js, both loaded dynamically - so both inline handlers threw
+   ReferenceError whenever those had not landed, while this contract stayed
+   green on the strength of the guards that were there BECAUSE the functions are
+   unreliable. A test that reads a defensive typeof check as proof of definition
+   is measuring the symptom as the cure.
+   Measured across all 2,436 scanned handlers, exactly two depended on the loose
+   form; both are fixed in this same change, so tightening costs no coverage. */
 function isDefined(code, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const assign = '=(?!=)';
   const patterns = [
     `function\\s+${escaped}\\s*\\(`,
-    `(?:var|let|const)\\s+${escaped}\\s*=`,
-    `(?:window|globalThis|W)\\s*\\.\\s*${escaped}\\s*=`,
-    `(?:window|globalThis|W)\\s*\\[\\s*["']${escaped}["']\\s*\\]\\s*=`,
+    `(?:var|let|const)\\s+${escaped}\\s*${assign}`,
+    `(?:window|globalThis|W)\\s*\\.\\s*${escaped}\\s*${assign}`,
+    `(?:window|globalThis|W)\\s*\\[\\s*["']${escaped}["']\\s*\\]\\s*${assign}`,
     `${escaped}\\s*:\\s*(?:function|\\([^)]*\\)\\s*=>)`
   ];
   return patterns.some(pattern => new RegExp(pattern).test(code));
