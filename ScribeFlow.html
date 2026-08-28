@@ -19425,7 +19425,7 @@ function _copilotCoverageDisclosure(coverage){
   var included=Math.max(0,Number(c.included)||0), bits=['Based on the most recent '+included+' included record'+(included===1?'':'s')];
   if(omitted) bits.push(omitted+' additional evidence row'+(omitted===1?' was':'s were')+' outside the response limit');
   if(unscanned) bits.push(unscanned+' source row'+(unscanned===1?' was':'s were')+' not scanned');
-  if(excluded) bits.push(excluded+' pulled row'+(excluded===1?' was':'s were')+' held back because its patient identity was not verified (pulled, not missing)');
+  if(excluded) bits.push(excluded+(excluded===1?' pulled row was held back because its':' pulled rows were held back because their')+' patient identity was not verified (pulled, not missing)');
   return bits.join('; ')+'. Older or omitted records may contain additional evidence.';
 }
 function _copilotBuildLongitudinalPatient(ap, question){
