@@ -48504,7 +48504,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
-;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260826fp121";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- exact ID/account-bound Find routing + pull progress panel + any-day pull clarity, op-prep procedure autodetect, note model with honest fallback cascade, agenda/calendar polish, formatted note preview, and fill-in-the-blanks restore. */
+;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- exact ID/account-bound Find routing + pull progress panel + any-day pull clarity, op-prep procedure autodetect, note model with honest fallback cascade, agenda/calendar polish, formatted note preview, and fill-in-the-blanks restore. */
 
 /* item80 (Templates suite + Simple-mode tunnel + MLS Agent dock) WAS injected
    here, and the injection was doing nothing but costing a 404.
