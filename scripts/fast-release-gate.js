@@ -54,7 +54,21 @@ const ROOT = path.resolve(__dirname, '..');
        this executes goToDay and pullDay, and pins that a pull answering after
        the doctor has moved day is DROPPED rather than painted under the wrong
        heading (the phday-1.0.1 guard) */
-const FULL_GATE_TESTS = 885;
+/* 2026-08-28 patient-record lane: 885 -> 894. All NINE were added with a gate
+   INVARIANT but were never registered in tests/run-all.js, which made run-all
+   ERROR OUT instead of running - the canonical full gate was dead for those
+   builds while the fast gate stayed green. run-all's own registry check is what
+   caught it. Registering them moved GATE_PLAN total to 894.
+   + suspect-notice-cannot-be-hidden = 886
+   + patient-delete-reaches-the-server = 887
+   + patient-delete-can-be-undone = 888
+   + f5-automerge-needs-positive-identity = 889
+   + patient-merge-is-durable = 890
+   + merge-review-surface = 891
+   + patient-demographics-are-editable = 892
+   + prep-summary-is-folded-not-lost = 893
+   + visit-timeline-not-shown-twice = 894 */
+const FULL_GATE_TESTS = 894;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

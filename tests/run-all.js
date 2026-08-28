@@ -711,6 +711,38 @@ const tests = [
      verbatim, so they must be flattened at the door before any reader sees
      them - "p.problems.trim is not a function". */
   'patient-chart-fields-normalize-at-the-door.test.js',
+  /* 2026-08-28 patient-record lane. Every one of these was added with a gate
+     INVARIANT but NOT registered here, which made run-all error out instead of
+     running - the canonical full gate was dead until this line. The registry
+     check is what caught it, exactly as designed. */
+  /* The cross-patient contamination alert was display:none in the card's
+     DEFAULT state, from two independent causes at once. ~260 records carry it. */
+  'suspect-notice-cannot-be-hidden.test.js',
+  /* A local delete issued NO server DELETE whenever the in-memory server-id map
+     was cold - which it is on every page load - so deleted patients came back. */
+  'patient-delete-reaches-the-server.test.js',
+  /* A mis-click on the hover trash destroyed the patient's uploaded documents
+     permanently; the delete now has an undo that restores the exact record. */
+  'patient-delete-can-be-undone.test.js',
+  /* The F5 gate merged two patient records on NAME ALONE whenever either side
+     lacked a DOB - a silent wrong-person merge, and the weakest comparator in
+     the repo. Owner ruling: MRN, or name AND DOB, or it is a suggestion. */
+  'f5-automerge-needs-positive-identity.test.js',
+  /* The only real patient merge undid itself: it saved without
+     {allowRemovals:true} and never deleted the absorbed row on the server. */
+  'patient-merge-is-durable.test.js',
+  /* ...and it had no UI at all, so duplicates were never merged in practice. */
+  'merge-review-surface.test.js',
+  /* savePatient's edit branch was DEAD - every assignment to editingPtId was
+     null - so a wrong date of birth could not be corrected and "editing" a
+     patient silently minted a duplicate. */
+  'patient-demographics-are-editable.test.js',
+  /* The prep summary reprinted nine facts that each already had a card AND a
+     tile on the same screen. Folded, not deleted. */
+  'prep-summary-is-folded-not-lost.test.js',
+  /* The chart rendered the same visits twice. Folded, not deleted - the sync
+     module appends visits that exist only as text inside p.summary. */
+  'visit-timeline-not-shown-twice.test.js',
   '1p-easy-generate-sparse-runtime.test.js',
   /* Browser-level Generate-one-note facade: click the real top control and
      prove one canonical dispatch, lifecycle reasons, bounded no-op failure,
