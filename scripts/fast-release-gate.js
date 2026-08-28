@@ -185,6 +185,11 @@ const INVARIANTS = Object.freeze([
      merge is theatre; an invariant because the local save and the server delete
      live in different files. 87ms. */
   { label: 'patient-merge-durable', args: ['tests/patient-merge-is-durable.test.js'], require: /PASS patient-merge-is-durable:/ },
+  /* mergeui-1.0.0 (2026-08-28): the merge review surface. Guards two things that
+     silently rot - a patient NAME reaching innerHTML unescaped, and the control
+     surviving at zero duplicates as a dead button. Also pins that neither
+     mounting nor refreshing the count can trigger a merge. 86ms. */
+  { label: 'merge-review-surface', args: ['tests/merge-review-surface.test.js'], require: /PASS merge-review-surface:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },

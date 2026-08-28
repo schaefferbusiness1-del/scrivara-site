@@ -2516,6 +2516,143 @@
     return { undoneRows: undone };
   };
 
+  /* ---------------------------------------------------------------------
+     mergeui-1.0.0 (2026-08-28): the merge had NO UI. The only way to collapse
+     a duplicate patient was __mlsDedupById.runOnce({confirm:"EXECUTE"}) in the
+     console, which means in practice duplicates were never merged at all.
+     This mounts a review surface on the ALREADY-EXISTING read-only scanner:
+     scan() groups only by the STRONG rule (matchRow), which is the same bar
+     the owner set for auto-merge - same MRN, or same name AND DOB - so a group
+     shown here is one the app is already willing to collapse.
+     Nothing merges without a click. The button only appears when there is
+     something to do, because the owner's standing complaint is that the UI is
+     over-stuffed - a permanent zero-state control is clutter.
+     Undo is offered inline because revert() already exists and a merge the
+     doctor cannot take back is not one they will risk pressing. */
+  function mgEsc(s) {
+    return S(s).replace(/[&<>"]/g, function (c) {
+      return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+    });
+  }
+  function mgGroups() {
+    try {
+      var sc = api._scan();
+      var g = (sc && sc.groups) || [];
+      return g.filter(function (x) { return x && x.length > 1; });
+    } catch (e) { return []; }
+  }
+  function mgVisitCount(p) {
+    try {
+      if (Array.isArray(p && p.visits)) return p.visits.length;
+    } catch (e) {}
+    return 0;
+  }
+  function mgRowHtml(p, keep) {
+    var bits = [];
+    if (S(p.dob)) bits.push('DOB ' + mgEsc(p.dob));
+    if (S(p.mrn)) bits.push('MRN ' + mgEsc(p.mrn));
+    var vc = mgVisitCount(p);
+    if (vc) bits.push(vc + ' visit' + (vc === 1 ? '' : 's'));
+    return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0">' +
+      '<span style="font-weight:' + (keep ? '700' : '400') + '">' + mgEsc(p.name || '(no name)') + '</span>' +
+      '<span style="color:#6b7a72;font-size:12.5px">' + bits.join(' &middot; ') + '</span>' +
+      (keep ? '<span style="margin-left:auto;font-size:12px;color:#1f6f43;font-weight:700">KEEPS THIS CHART</span>' : '') +
+      '</div>';
+  }
+  function mgClose() {
+    try { var m = document.getElementById('mlsMergeReview'); if (m && m.parentNode) m.parentNode.removeChild(m); } catch (e) {}
+  }
+  function mgRender() {
+    mgClose();
+    var groups = mgGroups();
+    var wrap = document.createElement('div');
+    wrap.id = 'mlsMergeReview';
+    wrap.setAttribute('role', 'dialog');
+    wrap.setAttribute('aria-label', 'Review duplicate patients');
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(12,20,16,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+    var body = groups.map(function (g, i) {
+      var keep = g[0];
+      try { keep = g.slice().sort(function (a, b) { return mgVisitCount(b) - mgVisitCount(a); })[0]; } catch (e) {}
+      return '<div style="border:1px solid #e3e9e5;border-radius:10px;padding:10px 12px;margin:0 0 10px">' +
+        '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#6b7a72;margin-bottom:4px">Duplicate ' + (i + 1) + '</div>' +
+        g.map(function (p) { return mgRowHtml(p, p === keep); }).join('') +
+        '</div>';
+    }).join('');
+    if (!groups.length) {
+      body = '<p style="margin:0;color:#41504a">No duplicate charts found. MLS only groups charts that share an MRN, or share a name AND date of birth - a name match on its own is never treated as the same person.</p>';
+    }
+    wrap.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:620px;width:100%;max-height:80vh;overflow:auto;padding:18px 20px;box-shadow:0 18px 50px rgba(0,0,0,.28)">' +
+      '<h3 style="margin:0 0 4px;font-size:17px">Review duplicate patients</h3>' +
+      '<p style="margin:0 0 12px;color:#6b7a72;font-size:13px">Merging keeps one chart and moves the other chart\'s notes, visits and clinical text onto it. Nothing is deleted from athenaOne.</p>' +
+      body +
+      '<div id="mlsMergeReviewStatus" role="status" style="margin:8px 0 0;font-size:13px;color:#41504a"></div>' +
+      '<div style="display:flex;gap:8px;margin-top:14px">' +
+      (groups.length ? '<button type="button" id="mlsMergeReviewGo" class="btn-primary" style="font-size:14px;padding:9px 15px">Merge ' + groups.length + ' duplicate' + (groups.length === 1 ? '' : 's') + '</button>' : '') +
+      '<button type="button" id="mlsMergeReviewUndo" class="btn-ghost" style="font-size:14px;padding:9px 15px;display:none">Undo this merge</button>' +
+      '<button type="button" id="mlsMergeReviewClose" class="btn-ghost" style="font-size:14px;padding:9px 15px;margin-left:auto">Close</button>' +
+      '</div></div>';
+    document.body.appendChild(wrap);
+    try { wrap.addEventListener('click', function (e) { if (e.target === wrap) mgClose(); }); } catch (e) {}
+    try { document.getElementById('mlsMergeReviewClose').addEventListener('click', mgClose); } catch (e) {}
+    var st = document.getElementById('mlsMergeReviewStatus');
+    function say(m) { try { if (st) st.textContent = m; } catch (e) {} }
+    var go = document.getElementById('mlsMergeReviewGo');
+    if (go) {
+      go.addEventListener('click', function () {
+        go.disabled = true;
+        say('Merging...');
+        var res = null;
+        try { res = api.runOnce({ confirm: 'EXECUTE' }); }
+        catch (e) { say('Merge failed: ' + ((e && e.message) || e) + ' - nothing was changed.'); go.disabled = false; return; }
+        if (res && res.aborted) { say('Merge did not run (' + mgEsc(res.aborted) + '). Nothing was changed.'); go.disabled = false; return; }
+        var n = (res && res.merged) || 0;
+        say(n + ' chart' + (n === 1 ? '' : 's') + ' merged. The account copy of each absorbed chart is being removed too - if that fails you will see it in the console.');
+        try { var u = document.getElementById('mlsMergeReviewUndo'); if (u) u.style.display = ''; } catch (e) {}
+        try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
+      });
+    }
+    try {
+      document.getElementById('mlsMergeReviewUndo').addEventListener('click', function () {
+        try {
+          var r = api.revert();
+          say('Undone: ' + ((r && r.undoneRows) || 0) + ' chart(s) restored.');
+          if (typeof window.renderPatients === 'function') window.renderPatients();
+        } catch (e) { say('Undo failed: ' + ((e && e.message) || e)); }
+      });
+    } catch (e) {}
+  }
+  function mgMount() {
+    try {
+      if (document.getElementById('mlsMergeReviewBtn')) { mgSync(); return; }
+      var anchor = document.getElementById('ptNewBtn');
+      if (!anchor || !anchor.parentNode) return;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.id = 'mlsMergeReviewBtn';
+      b.className = 'btn-ghost';
+      b.style.cssText = 'margin-left:8px;font-size:14px;padding:9px 15px;display:none';
+      b.title = 'Two charts for the same person. Review them and merge, keeping one chart.';
+      b.addEventListener('click', mgRender);
+      anchor.parentNode.insertBefore(b, anchor.nextSibling);
+      mgSync();
+    } catch (e) {}
+  }
+  function mgSync() {
+    try {
+      var b = document.getElementById('mlsMergeReviewBtn');
+      if (!b) return;
+      var n = mgGroups().length;
+      /* zero-state control is clutter - hide rather than show a dead button */
+      b.style.display = n ? '' : 'none';
+      b.textContent = '\uD83D\uDD00 Merge ' + n + ' duplicate' + (n === 1 ? '' : 's');
+    } catch (e) {}
+  }
+  api.mergeReview = { open: mgRender, groups: mgGroups, sync: mgSync, mount: mgMount };
+  try {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mgMount);
+    else mgMount();
+    window.addEventListener('mls:view-changed', function () { mgMount(); }, true);
+  } catch (e) {}
   window.__mlsDedupById = api;
 })();
 
