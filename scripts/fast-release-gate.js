@@ -124,6 +124,22 @@ const INVARIANTS = Object.freeze([
   { label: 'extension-package', args: ['tests/extension-package.test.js'], require: /PASS extension package:/ },
   { label: 'extension-core-digest', args: ['scripts/extension-core-digest.js', '--verify'], require: /^OK /m },
   { label: 'extension-badge', args: ['tests/extension-badge-never-claims-currency.test.js'], require: /PASS extension badge:/ },
+  /* gatemiss-1.0.0 (2026-08-28): ADDED BECAUSE THE SAME MISTAKE HAPPENED TWICE
+     IN ONE DAY. Neither of these suites appeared anywhere in this gate, so a
+     shell or mls-connect edit could pass it while breaking them - and did:
+       b1099 (dockfn) inserted two functions between clearDeviceData and its
+             neighbour, breaking wipes-contract's extraction. A DEVICE-WIPE
+             contract was red for four builds.
+       b1103 (bpwhy) changed a control's label, making
+             tests/fixtures/ui-control-manifest.json stale. Shipped red; caught
+             only on the next neighbourhood run.
+     Both times the diagnosis was the same: a changed-area net only covers the
+     area you THINK you changed, and remembering to re-run the right suite is
+     not a control. They are invariants rather than scope-focused because they
+     guard the shipped shells whatever lane the change is in, and they are
+     effectively free - measured 0s and 2s. */
+  { label: 'ui-control-coverage', args: ['tests/ui-control-coverage.test.js'], require: /PASS ui-control-coverage:/ },
+  { label: 'wipes-contract', args: ['tests/wipes-contract.test.js'], require: /PASS sj-2\.0 wipes contract:/ },
 ]);
 
 const FOCUSED = Object.freeze({
