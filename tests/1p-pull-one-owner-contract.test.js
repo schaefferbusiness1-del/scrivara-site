@@ -160,7 +160,16 @@ function statics() {
   ok(conn.indexOf("(f.read ? '<button type=\"button\" class=\"pvr-read\">Read from Athena</button>' : '')") < 0,
     '1p-mls-connect.js still draws a Read-from-Athena button per chip');
   ok(conn.indexOf("one.id = 'pvrPullOne'") > 0, '1p-mls-connect.js does not draw the one whole-chart pull control');
-  ok(conn.indexOf(':not(#pvrPullOne){display:none!important;}') > 0,
+  /* suspectvis-1.0.0 (2026-08-28): this pinned the SPELLING of the whole collapse
+     rule, so adding a NEW exemption to it - :not(#profImportSuspect), which is
+     what stops the cross-patient contamination alert being display:none - reddened
+     a suite that the change strengthened. The property is "the collapse rule
+     exempts #pvrPullOne", not "the rule ends in exactly this substring". Parsed
+     rather than matched literally, so a future exemption cannot red it while
+     REMOVING this one still does. */
+  const collapseRule = (conn.match(/#profileCard\.pf2-collapsed > \*([^{]*)\{display:none!important;\}/) || [])[1];
+  ok(collapseRule, '1p-mls-connect.js no longer has the pf2 collapse rule at all');
+  ok(collapseRule.indexOf(':not(#pvrPullOne)') >= 0,
     'the one pull control is hidden by the profile collapse the card ships with');
   ok(conn.indexOf("window.addEventListener('mls:patient-record-updated', onPatientRecordUpdated)") > 0,
     'same-patient chart updates do not trigger the seven-tile strip repaint');
