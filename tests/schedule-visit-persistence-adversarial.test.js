@@ -7,10 +7,25 @@ const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
+/* slicefn-1.0.0 (2026-08-28): the end boundary was the NEXT named function, so
+   when historyVerdictCensus was inserted between the two, the slice became two
+   function declarations and `(function a(){} function b(){})` stopped parsing.
+   This suite has not run an assertion since. Brace-matched to saveVerifiedVisits
+   own closing brace, so a future neighbour cannot break it again. */
 const start = source.indexOf('  function saveVerifiedVisits(target, r) {');
-const end = source.indexOf('\n  async function runHistoryBatch', start);
-assert(start >= 0 && end > start, 'saveVerifiedVisits source was not found');
+assert(start >= 0, 'saveVerifiedVisits source was not found');
+const end = (() => {
+  let i = source.indexOf('{', start), depth = 0;
+  for (; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') { depth--; if (depth === 0) return i + 1; }
+  }
+  return -1;
+})();
+assert(end > start, 'could not brace-match saveVerifiedVisits');
 const saveVerifiedVisitsSource = source.slice(start, end).trim();
+assert(!/\n\s{0,2}(?:async )?function\s/.test(saveVerifiedVisitsSource),
+  'the saveVerifiedVisits slice swallowed a NEIGHBOURING top-level function again - it would not parse when wrapped');
 
 function aliases(visit) {
   const out = [];

@@ -21,10 +21,29 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
+/* slicefn-1.0.0 (2026-08-28): this sliced from saveVerifiedVisits to the NEXT
+   named function and wrapped the result in parentheses. When
+   historyVerdictCensus was later inserted between the two boundaries, the slice
+   became TWO function declarations, and `(function a(){} function b(){})` is a
+   SyntaxError - so this suite has not parsed, let alone run an assertion, since
+   that function landed. A neighbour-keyed boundary breaks whenever a neighbour
+   moves in, which is a thing source files do.
+   Brace-matched instead: take exactly saveVerifiedVisits and stop at its own
+   closing brace, so inserting anything after it is harmless. */
 const start = source.indexOf('  function saveVerifiedVisits(target, r) {');
-const end = source.indexOf('\n  async function runHistoryBatch', start);
-assert.ok(start >= 0 && end > start, 'saveVerifiedVisits present');
+assert.ok(start >= 0, 'saveVerifiedVisits present');
+const end = (() => {
+  let i = source.indexOf('{', start), depth = 0;
+  for (; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') { depth--; if (depth === 0) return i + 1; }
+  }
+  return -1;
+})();
+assert.ok(end > start, 'could not brace-match saveVerifiedVisits');
 const saveSource = source.slice(start, end).trim();
+assert.ok(!/\n\s{0,2}(?:async )?function\s/.test(saveSource),
+  'the saveVerifiedVisits slice swallowed a NEIGHBOURING top-level function again - it would not parse when wrapped');
 assert.ok(saveSource.includes('dscope'), 'the scoped-additive branch exists (dscope-1.0.0)');
 assert.ok(saveSource.includes('reconcile: false, scopeDate: dscopeDate'), 'scoped persistence pins reconcile:false');
 
