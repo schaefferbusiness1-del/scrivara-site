@@ -203,6 +203,13 @@ const INVARIANTS = Object.freeze([
      delete the clinical text, and a future change must not silently re-open the
      fold and put the wall of duplication back. 279ms. */
   { label: 'prep-summary-folded', args: ['tests/prep-summary-is-folded-not-lost.test.js'], require: /PASS prep-summary-is-folded-not-lost:/ },
+  /* tlfold-1.0.0 (2026-08-28): the chart rendered the SAME visits twice. The
+     classic timeline is FOLDED, not deleted, because feat_mls_timeline_sync
+     appends visits that exist only as text inside p.summary and appear on no
+     other surface - an earlier review proposed deleting this box and was wrong.
+     Pinned in both directions: the fold must stay closed, and BOTH container ids
+     must survive or the renderer and the shared sync module break. 112ms. */
+  { label: 'visit-timeline-once', args: ['tests/visit-timeline-not-shown-twice.test.js'], require: /PASS visit-timeline-not-shown-twice:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },

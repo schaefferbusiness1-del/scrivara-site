@@ -3362,8 +3362,22 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <!-- PER-PATIENT VISIT TIMELINE -->
       <div class="prof-box" style="margin-top:16px">
         <h3>📚 Visit timeline</h3>
+        <!-- tlfold-1.0.0 (2026-08-28): the chart renders the SAME visits twice.
+             #mlsVisitHistoryExt ("Visit history") is the richer list - search, type
+             and date filters, year grouping, per-visit source chips - and this
+             classic box repeats those same rows with strictly less information.
+             That is the owner's "so many duplicate ways to show same things".
+             FOLDED, not removed. feat_mls_timeline_sync wraps renderPtTimeline and
+             APPENDS rows for visits that exist only as text bullets inside
+             p.summary, labelled "From patient summary (read-only)" - those appear
+             on NO other surface, so deleting this box would lose real visits.
+             The fold wraps the CONTAINERS and keeps both ids, so renderPtTimeline
+             and the sync module are untouched - no JS change at all. -->
+        <details class="mls-pt-timeline-fold">
+        <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;padding:2px 0">Show the classic visit timeline</summary>
         <div id="ptTimelineEmpty" class="mini" style="color:var(--muted)">No visits yet for this patient.</div>
         <div class="ptimeline" id="ptTimeline"></div>
+        </details>
       </div>
     </div>
 
@@ -41983,7 +41997,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1115';
+  window.__MLS_AV='b1116';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
