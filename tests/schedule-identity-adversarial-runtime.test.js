@@ -88,6 +88,9 @@ let chartSaves = 0;
    still gates, so it needs its own counter — a day-facts batch may open
    charts freely but must never ask the extension for visit bodies. */
 let allVisitsRequests = 0;
+/* dfcount-1.0.2: the reads the counter above FORGIVES, kept so they can be
+   held to the contract they were forgiven under rather than vanishing. */
+const forgivenSameDayReads = [];
 /* dayfacts-1.0.1: the pulled-day encounter note is MANDATORY in both modes and
    is read through window.__mlsVisitSavePref.runForPatient with a date-SCOPED
    {onlyDate}. Every such call is recorded so "day-facts really attempted the
@@ -226,7 +229,19 @@ context.postMessage = msg => {
      term was inert AND either marker alone bought a pass. A same-day read that
      drops its scope, or a historical read wearing the same-day label, now both
      count and trip the assertion. */
-  if (!(String(msg.initiator || '') === 'schedule-batch-same-day' && !!(msg.hint && msg.hint.onlyDate))) allVisitsRequests++;
+  /* dfcount-1.0.2 (2026-08-28): RECORD what is forgiven, do not merely skip it.
+     The exclusion is right - the mandatory same-day read shares this verb - but
+     an unrecorded exclusion is a blind spot. A completeness review proved by
+     execution that scoping every same-day read to a DIFFERENT day, or issuing
+     TWO per row, both sailed through untouched: the reads simply vanished from
+     the tally. Forgiven reads are now kept so the assertions can hold them to
+     the contract they were forgiven under - one per row, scoped to the day
+     actually being pulled. */
+  if (String(msg.initiator || '') === 'schedule-batch-same-day' && !!(msg.hint && msg.hint.onlyDate)) {
+    forgivenSameDayReads.push({ onlyDate: String(msg.hint.onlyDate), patientId: String(msg.hint.patientId || '') });
+  } else {
+    allVisitsRequests++;
+  }
   queueMicrotask(() => {
     const target = patients.find(p => (msg.hint.athenaId && p.mrn === msg.hint.athenaId) || (p.name === msg.hint.name && p.dob === msg.hint.dob));
     assert(target, 'history request must carry Athena MRN or name+DOB, never rely on a local patient ID');
@@ -664,6 +679,7 @@ assert(api && api.version === canonicalVersion[1],
     const callsBefore = assistCalls;
     const savesBefore = chartSaves;
     const bodyReadsBefore = allVisitsRequests;
+    const forgivenBefore = forgivenSameDayReads.length;
     /* instrument reachability: a body-read counter that never fired in the ON
        lane would make every "day-facts read no bodies" pin below vacuous. */
     assert(bodyReadsBefore > 0, 'the historical-body counter never fired for Full Notes ON — the OFF pins would prove nothing');
@@ -735,6 +751,26 @@ assert(api && api.version === canonicalVersion[1],
     /* --- and ONLY the historical bodies were skipped --- */
     assert.strictEqual(allVisitsRequests, bodyReadsBefore,
       'day-facts asked the extension for historical visit bodies');
+    /* dfcount-1.0.2: and the reads the counter FORGAVE are held to the contract
+       they were forgiven under. Without this, scoping every same-day read to
+       another day, or issuing two per row, both pass - the reads just vanish
+       from the tally above. Proven by a completeness review, both bypasses
+       executed. */
+    {
+      const forgiven = forgivenSameDayReads.slice(forgivenBefore);
+      assert.ok(forgiven.length >= 1,
+        'day-facts forgave ZERO same-day bridge reads, so the historical tally above would read the ' +
+        'same on an engine that performs no reads at all');
+      assert.ok(forgiven.length <= 2,
+        'day-facts forgave ' + forgiven.length + ' same-day reads for 2 scheduled rows - the contract is ' +
+        'ONE scoped read per row, and a second is duplicated Athena work the exclusion hides entirely');
+      forgiven.forEach((one) => {
+        assert.strictEqual(one.onlyDate, dayFactsDay,
+          'a forgiven same-day read was scoped to ' + JSON.stringify(one.onlyDate) + ' rather than the day ' +
+          'being pulled (' + dayFactsDay + '). It is excluded from the historical tally BECAUSE it is the ' +
+          'pulled day own note; scoped elsewhere it is an unaccounted read of a different day.');
+      });
+    }
     assert.strictEqual(patients[0].visits.length, visitsABefore, 'day-facts persisted historical visit bodies');
     assert.strictEqual(patients[1].visits.length, visitsBBefore, 'day-facts persisted historical visit bodies');
 

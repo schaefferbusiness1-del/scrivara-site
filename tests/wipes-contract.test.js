@@ -214,9 +214,42 @@ const unsOk = k => PFX + k;
   const cddHead = 'async function clearDeviceData(){';
   const cddAt = patched[SF].indexOf(cddHead);
   assert.ok(cddAt > 0, 'C: clearDeviceData head missing from patched SF');
-  const cddEnd = patched[SF].indexOf('\n}\nfunction saveSettings(){', cddAt);
-  assert.ok(cddEnd > cddAt, 'C: clearDeviceData end marker missing');
+  /* wipeslice-1.0.0 (2026-08-28): the end marker was '\n}\nfunction saveSettings(){'
+     - it required clearDeviceData to be IMMEDIATELY followed by saveSettings.
+     That adjacency broke when dockfn-1.0.0 (b1099) inserted
+     qolDockSideChanged/qolDockAutoHideChanged between them, and this suite went
+     red for a change that has nothing to do with wiping a device. A
+     neighbour-keyed slice fails whenever a neighbour moves in, which is a thing
+     source files do; the same class killed two persistence suites earlier the
+     same day.
+     Brace-matched to clearDeviceData's own closing brace, and QUOTE-AWARE
+     because a brace inside a string is not structure. Inserting anything after
+     it is now harmless. */
+  const cddEnd = (() => {
+    /* The end is still the function's own `\n}` at column 0 - that part was
+       always right. What was wrong was requiring a SPECIFIC next function.
+       Take the first such close that is followed, after any blank lines and
+       comments, by ANY top-level function declaration.
+       (Brace-matching was tried and is NOT safe here: this source contains
+       regex literals with braces, which a brace counter miscounts - it cut in
+       the wrong place and the lifted slice failed to parse.) */
+    let from = cddAt;
+    for (;;) {
+      const at = patched[SF].indexOf('\n}\n', from);
+      if (at < 0) return -1;
+      const rest = patched[SF].slice(at + 3, at + 4000)
+        .replace(/^(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*\n)+/, '');
+      if (/^(?:async\s+)?function\s/.test(rest)) return at;
+      from = at + 1;
+    }
+  })();
+  assert.ok(cddEnd > cddAt,
+    'C: clearDeviceData end marker missing - no top-level function follows its close');
   const cddSrc = patched[SF].slice(cddAt, cddEnd + 2); /* include closing brace */
+  /* No separate swallow-guard here on purpose: this slice is EXECUTED a few
+     lines below (vm.runInContext(cddSrc + ...)), so a cut in the wrong place
+     fails loudly there as a SyntaxError rather than passing quietly. A second
+     textual check would only be another thing to keep in sync. */
 
   function cddCtx(opts) {
     opts = opts || {};

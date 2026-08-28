@@ -617,6 +617,40 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   const countVisitReads = () => posted.filter(m => m.type === 'mlsAppReadAllVisits'
     && !scopedSameDay(m)).length;
 
+  /* dfcount-1.0.2 (2026-08-28): MEASURE WHAT IS FORGIVEN, not just what is not.
+     dfcount-1.0.0/1.0.1 taught this file to EXCLUDE the mandatory same-day read
+     from the historical tally - correctly, since the two share a verb - but
+     nothing then bounded or inspected the excluded set. A completeness review
+     proved by execution that two real harms sail straight through:
+       - scope EVERY same-day read to 1999-01-01 instead of the pulled day  -> PASSED
+       - issue TWO same-day reads per row instead of one                    -> PASSED
+     Both are named elsewhere in this corpus as the harm worth stopping: the
+     wrong-DAY reach that visit-pull-toggle guards, and the duplicate chart open
+     that provider-month-exact-routing bounds. Here there was no bound at all.
+     Note honestly what this is: NOT a weakening - the 8e81c003 counter was
+     already red on clean source - but a coverage gap that my harness edit
+     created, which is the class an assertion-diff cannot see. */
+  /* posted is cumulative across every section of this file, so the forgiven set
+     is measured as a DELTA from a marker taken before the section - the same
+     shape the historical tallies above already use. A total would fold the ON
+     section's reads into the OFF section's budget. */
+  const forgivenReads = (fromIdx) => posted.slice(fromIdx || 0)
+    .filter(m => m.type === 'mlsAppReadAllVisits' && scopedSameDay(m));
+  const assertForgivenIsHonest = (label, day, rows, fromIdx) => {
+    const forgiven = forgivenReads(fromIdx);
+    for (const m of forgiven) {
+      assert.strictEqual(String(m.hint.onlyDate), String(day),
+        label + ': a same-day read was scoped to ' + JSON.stringify(m.hint.onlyDate) + ' instead of the day ' +
+        'being pulled (' + day + '). It is excluded from the historical tally BECAUSE it is the pulled ' +
+        "day's own note - scoped to another day it is simply an unaccounted read of a different day.");
+    }
+    assert.ok(forgiven.length <= rows,
+      label + ': ' + forgiven.length + ' same-day reads were forgiven for ' + rows + ' scheduled row(s). ' +
+      'The contract is ONE scoped read per row; a second is duplicated Athena work that the exclusion ' +
+      'hides completely.');
+    return forgiven.length;
+  };
+
   /* ============ 1. Full visit notes ON = the mandatory floor + every
      historical body. Unchanged by dayfacts-1.0.0 except that the receipt now
      also declares the floor explicitly. ============ */
@@ -654,6 +688,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
      Shape is the REAL calendar Pull button: includeHistory true, no bodies
      boolean, so the engine's admission gate freezes the settled OFF choice. */
   const visitReadsBeforeDayFacts = countVisitReads();
+  const postedBeforeDayFacts = posted.length;
   const chartReadsBeforeDayFacts = chartReadCalls.length;
   const chartSavesBeforeDayFacts = chartSaveCalls.length;
   const visitsStoredBeforeDayFacts = patient.visits.length;
@@ -718,6 +753,13 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   /* ADVERSARIAL HALF THAT SURVIVES: OFF still traverses NO historical body. */
   assert.strictEqual(dayFactsPatient.visitsSkipped, true, 'dayfacts-1.0.0: historical visit traversal is skipped with the checkbox off');
   assert.strictEqual(countVisitReads(), visitReadsBeforeDayFacts, 'day-facts mode must not read Athena historical visit bodies');
+  {
+    const n = assertForgivenIsHonest('day-facts OFF', DAY_FACTS_DAY, 1, postedBeforeDayFacts);
+    assert.ok(n >= 1,
+      'day-facts OFF forgave ZERO same-day reads. The historical tally above is then vacuous - it ' +
+      'would read the same on an engine that performs no reads at all, which is exactly what an ' +
+      'exclusion predicate must never be allowed to hide.');
+  }
   assert.strictEqual(patient.visits.length, visitsStoredBeforeDayFacts, 'day-facts mode must not store new historical visit bodies');
   /* ===== dayfacts-1.0.1: the THIRD mandatory element, now MEASURED =========
      Round 1 could only assert the forward-compatible subset (scoping,
@@ -769,6 +811,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
      mandatory day-facts batch - chart open, facts save, pulled-day note - and
      must still skip the historical bodies. ============ */
   const visitReadsBeforeExplicitOff = countVisitReads();
+  const postedBeforeExplicitOff = posted.length;
   const chartReadsBeforeExplicitOff = chartReadCalls.length;
   const chartSavesBeforeExplicitOff = chartSaveCalls.length;
   const scopedNotesBeforeExplicitOff = scopedNoteCalls.length;
@@ -802,6 +845,12 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   /* ADVERSARIAL HALF THAT SURVIVES: still no historical body traversal. */
   assert.strictEqual(((eofr.patients || [])[0] || {}).visitsSkipped, true, 'an explicit bodies:false pull must still skip the historical traversal');
   assert.strictEqual(countVisitReads(), visitReadsBeforeExplicitOff, 'an explicit bodies:false pull must read no Athena historical visit bodies');
+  {
+    const n = assertForgivenIsHonest('explicit Full Notes OFF', EXPLICIT_OFF_DAY, 1, postedBeforeExplicitOff);
+    assert.ok(n >= 1,
+      'an explicit Full Notes OFF pull forgave ZERO same-day reads, so the zero-historical ' +
+      'assertion above proves nothing about this mode.');
+  }
   assert.strictEqual(patient.visits.length, visitsStoredBeforeExplicitOff, 'an explicit bodies:false pull must store no new historical visit bodies');
   assert(explicitOffStatus.every(s => !/no patient charts or visit notes were opened/i.test(s) && !/^Schedule-only complete:/.test(s)),
     'dayfacts-1.0.1: an explicit bodies:false pull may not report itself as the revoked schedule-only no-op');
