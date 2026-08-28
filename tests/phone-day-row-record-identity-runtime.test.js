@@ -115,6 +115,25 @@ const activationRuntime = between(
   easyOwner,
   'canonical Easy activation'
 );
+/* liftbusy-1.0.2 (2026-08-28): the activation slice CALLS captureBusy() - the
+   mid-recording patient-switch block is its very first statement - but does not
+   DEFINE it, and this sandbox never supplied it. So every startVisitFor threw
+   "ReferenceError: captureBusy is not defined", the phone's own safe() wrapper
+   swallowed the throw, and its handler refused. From outside that looked exactly
+   like a phone declining an unresolved row: zero engine calls, zero renders,
+   zero engine-side toasts. It is why case 0b saw no receipt, and why the same
+   symptom reproduced on the untouched baseline - the harness was broken, not
+   the product.
+   Same defect and same cure as tests/1p-easy-generate-sparse-runtime and
+   tests/visit-exact-action-gate-runtime: lift the guard REAL and fake only its
+   leaf bridge, so both disjuncts stay reachable. */
+const captureBusyRuntime = between(
+  connectSource,
+  '  function directCaptureStatus()',
+  '  function noteText()',
+  easyOwner,
+  'canonical capture-busy guard'
+);
 const patientLifecycleRuntime = between(
   connectSource,
   '  function visitBindingOwnsPatient(nextId) {',
@@ -309,7 +328,7 @@ function makeEngine(options) {
 
   vm.createContext(context);
   vm.runInContext(
-    `${historyTargetRuntime}\n${calRuntime}\n${easyIdentityRuntime}\n${computePhaseRuntime}\n${bindingNoticeRuntime}\n${patientLifecycleRuntime}\n${activationRuntime}\n` +
+    `${historyTargetRuntime}\n${calRuntime}\n${easyIdentityRuntime}\n${computePhaseRuntime}\n${bindingNoticeRuntime}\n${captureBusyRuntime}\n${patientLifecycleRuntime}\n${activationRuntime}\n` +
     `this.__remoteHost = {\n${remoteRuntime}\n};\nthis.__engineState = S;`,
     context,
     { filename: 'phone-day-row-real-engine.js' }
