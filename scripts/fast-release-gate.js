@@ -163,6 +163,13 @@ const INVARIANTS = Object.freeze([
      two halves live in different files and in different lanes: break either one
      and the alert silently disappears again. 343ms. */
   { label: 'suspect-notice-visible', args: ['tests/suspect-notice-cannot-be-hidden.test.js'], require: /PASS suspect-notice-cannot-be-hidden:/ },
+  /* ptdel-1.0.0 (2026-08-28): a DATA-INTEGRITY contract. The single-row delete
+     issued no DELETE at all whenever the in-memory server-id map was cold - which
+     it is on every page load - so a deleted patient came back with their whole
+     chart, and the toast said "Patient deleted." either way. An invariant because
+     the honesty of the toast lives in the shell while the resolve/delete lives
+     next to the hydration loader, and no changed-area net covers both. 102ms. */
+  { label: 'patient-delete-reaches-server', args: ['tests/patient-delete-reaches-the-server.test.js'], require: /PASS patient-delete-reaches-the-server:/ },
   { label: 'copilot-longitudinal-context', args: ['tests/copilot-longitudinal-context-runtime.test.js'], require: /PASS Copilot longitudinal context:/ },
   { label: 'copilot-procedure-answer', args: ['tests/copilot-procedure-answer-runtime.test.js'], require: /PASS Copilot procedure answer:/ },
   { label: 'copilot-request-preflight', args: ['tests/copilot-request-preflight-runtime.test.js'], require: /PASS Copilot request preflight:/ },

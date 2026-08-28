@@ -14315,17 +14315,54 @@ async function syncPatientToServer(patient,scope){
     }
   }catch(e){if(stillCurrent())_pendingSyncAdd(patient.id,pendingKey,true);return {ok:false}; /* offline — re-pushed while the session lives */ }
 }
+/* ptdel-1.0.0 (2026-08-28): a local delete WITHOUT a server delete makes the
+   patient RESURRECT on the next hydration, and the sign-out purge turns that
+   from "might" into "will" - logout wipes the local store and rebuilds it from
+   /api/patients.
+   The old body bailed out SILENTLY whenever _serverPtIds did not already hold
+   this patient's server id. That map is a bare in-memory object, EMPTY on every
+   page load until a boot hydration finishes, and hydration is deliberately
+   deferred behind user-input quiet windows. So the ordinary case - open MLS, go
+   to Patients, delete a row in the first seconds - took the silent-skip path and
+   the patient came back with their whole chart.
+   purgeAthenaImportedPatients already had this right: it RE-READS the server
+   list to resolve real ids instead of trusting the in-memory map. This mirrors
+   that proven approach for the single-row delete, and returns a VERDICT so the
+   caller can stop claiming a success it does not have.
+   Deliberately NOT solved with a persisted delete queue: every key under the
+   account prefix is removed at logout (clinical-state-purge.js
+   shouldRemoveLocalKey), so such a queue would die exactly when it is needed,
+   and keeping patient ids alive PAST logout would reintroduce the PHI-retention
+   defect that purge exists to prevent. */
+async function _ptResolveServerId(externalId){
+  if(_serverPtIds[externalId]) return _serverPtIds[externalId];
+  try{
+    const r=await fetch(bkBase()+'/api/patients',{headers:{'Authorization':'Bearer '+bkToken()}});
+    if(r.status===401){ handle401(); return null; }
+    if(!r.ok) return null;
+    const d=await r.json();
+    const rows=Array.isArray(d)?d:((d&&d.patients)||[]);
+    for(let i=0;i<rows.length;i++){
+      const row=rows[i];
+      if(row&&row.external_id&&row.id!=null) _serverPtIds[row.external_id]=row.id;
+    }
+  }catch(e){ return null; }
+  return _serverPtIds[externalId]||null;
+}
 async function deletePatientOnServer(externalId){
-  if(!backendMode()||!bkToken()||!externalId) return;
-  const sid=_serverPtIds[externalId];
-  if(!sid) return; // no server id known — skip (don't error)
+  if(!backendMode()||!bkToken()||!externalId) return {ok:false,reason:'offline'};
+  const sid=await _ptResolveServerId(externalId);
+  /* No row on the server means there is nothing left to resurrect FROM. */
+  if(!sid) return {ok:true,reason:'no-server-row'};
   try{
     const r=await fetch(bkBase()+'/api/patients/'+encodeURIComponent(sid),{
       method:'DELETE', headers:{'Authorization':'Bearer '+bkToken()}
     });
-    if(r.status===401){ handle401(); return; }
-    if(r.ok) delete _serverPtIds[externalId];
-  }catch(e){/* best-effort */}
+    if(r.status===401){ handle401(); return {ok:false,reason:'signed-out'}; }
+    /* 404 is success: the row is gone, which is the outcome we wanted. */
+    if(r.ok||r.status===404){ delete _serverPtIds[externalId]; return {ok:true,reason:r.ok?'deleted':'already-gone'}; }
+    return {ok:false,reason:'http-'+r.status};
+  }catch(e){ return {ok:false,reason:'network'}; }
 }
 /* Pull the caller's OWN server patients and merge into the local list,
    matching on external_id so nothing is duplicated. */
@@ -20922,14 +20959,26 @@ async function deletePatient(id){
   if(!await mlsConfirm('Delete this patient and their profile from this device? Their saved visit notes stay in History but become unassigned. This cannot be undone.')) return;
   savePatients(getPatients().filter(p=>p.id!==id),undefined,{allowRemovals:true});
   // hosted mode: best-effort server delete (owner-only; skips silently if no server id known)
-  if(backendMode() && bkToken()){ try{ deletePatientOnServer(id); }catch(e){} }
+  /* ptdel-1.0.0: AWAITED. The old call was fire-and-forget while the success
+     toast below fired unconditionally, so every failure in this path was
+     invisible - the doctor was told the patient was deleted whether the server
+     row survived, the id was unknown, the request failed or the network was down. */
+  var _delVerdict={ok:true,reason:'local-only'};
+  if(backendMode() && bkToken()){
+    try{ _delVerdict=await deletePatientOnServer(id); }catch(e){ _delVerdict={ok:false,reason:'threw'}; }
+  }
   // unassign their notes
   const notes=getNotes(); let changed=false;
   notes.forEach(n=>{ if(n.patientId===id){ n.patientId=''; changed=true; } });
   if(changed) saveNotes(notes);
   if(getActivePtId()===id) setActivePtId('');
   renderPatients(); renderProfile(); renderPatientBar();
-  toast('Patient deleted.','');
+  if(_delVerdict&&_delVerdict.ok){ toast('Patient deleted.',''); }
+  else{
+    /* Honest and actionable: the row is gone HERE but the account copy is not,
+       so the next sync or sign-in brings it back. Silence would be a false success. */
+    toast('Removed on this device, but the copy on your account could NOT be removed ('+((_delVerdict&&_delVerdict.reason)||'unknown')+'). It will come back on the next sync - try again once you are back online.','err');
+  }
 }
 
 /* ---------- NEW / EDIT PATIENT MODAL ---------- */
