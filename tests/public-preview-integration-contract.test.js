@@ -98,11 +98,48 @@ assert(bundle.includes('function startPoll()') &&
 const syncTopLaneAt = bundle.indexOf('function syncTopLane(rec) {');
 const liveRecordLaneAt = bundle.indexOf('var live = recordingNow();', syncTopLaneAt);
 const previewRecordGuard = bundle.slice(syncTopLaneAt, liveRecordLaneAt);
-assert(syncTopLaneAt >= 0 && liveRecordLaneAt > syncTopLaneAt &&
-  previewRecordGuard.includes('__MLS_PUBLIC_PREVIEW') &&
-  previewRecordGuard.includes('Recording off in preview') &&
-  /Sample workspace only[^;]+;\s*return;/.test(previewRecordGuard),
-  'the primary record-lane owner can repaint live recording copy over the preview boundary');
+/* previewreturn-1.0.0 (2026-08-28): the last clause was
+     /Sample workspace only[^;]+;\s*return;/
+   - a character class that cannot cross a semicolon, so it required the sample
+   hint to be the LAST statement before the return. A statement was added
+   between them (syncTopGenerationOwnership(rec, null);), and the suite went red
+   for it, while the boundary it guards never moved.
+   The property is: the preview branch paints the read-only copy and RETURNS
+   before the live record lane. The slice already ends at
+   `var live = recordingNow();`, so ANY return inside it after the hint proves
+   exactly that - no fragile adjacency needed. */
+assert(syncTopLaneAt >= 0 && liveRecordLaneAt > syncTopLaneAt,
+  'the primary record-lane owner or its live-recording read could not be located');
+assert(previewRecordGuard.includes('__MLS_PUBLIC_PREVIEW'),
+  'the primary record-lane owner no longer checks the preview boundary at all');
+assert(previewRecordGuard.includes('Recording off in preview'),
+  'the preview record lane lost its off-state copy');
+{
+  /* Scope to the preview BRANCH, brace-matched. My first version searched the
+     whole syncTopLane slice for a `return;` after the hint, and my own canary
+     caught it: deleting the branch's return still passed, because a LATER
+     return elsewhere in the function satisfied the search. An assertion that
+     any nearby return can satisfy is not an assertion about this branch. */
+  const branchAt = previewRecordGuard.indexOf('if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {');
+  assert(branchAt >= 0, 'the preview branch of the primary record lane could not be located');
+  const branch = (() => {
+    let i = previewRecordGuard.indexOf('{', branchAt), depth = 0;
+    for (; i < previewRecordGuard.length; i++) {
+      if (previewRecordGuard[i] === '{') depth++;
+      else if (previewRecordGuard[i] === '}') { depth--; if (depth === 0) return previewRecordGuard.slice(branchAt, i + 1); }
+    }
+    return '';
+  })();
+  assert(branch, 'could not brace-match the preview branch');
+  const hintAt = branch.indexOf('Sample workspace only');
+  assert(hintAt >= 0,
+    'the preview record lane no longer says it is a sample workspace, so a reader could believe recording works here');
+  assert(/\breturn;/.test(branch.slice(hintAt)),
+    'the preview branch paints its read-only copy and then FALLS THROUGH into the live record lane - ' +
+    'live recording copy would be repainted over the preview boundary');
+  assert(/data-mls-preview-blocked/.test(branch),
+    'the preview record control is no longer marked blocked, so it would look pressable in the sample workspace');
+}
 for (const asset of [
   'feat_task3_frontsync.js', 'feat_copilot_slim.js', 'feat_b18_qa.js',
   'feat_mls_provider_passthrough.js', 'feat_mls_b121_pack.js'
