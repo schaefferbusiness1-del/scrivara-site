@@ -109,7 +109,9 @@ function testActivePatientFieldSync() {
   });
 
   vm.runInContext(read('feat_mls_active_patient_sync.js'), context, { filename: 'feat_mls_active_patient_sync.js' });
-  assert(window.__mlsActivePtSync && window.__mlsActivePtSync.version === 'aps-1.2.2', 'reviewed active-patient runtime did not install');
+  /* pin moved with the marker (aps-1.2.3, 2026-08-31): a dangling id clears the
+     stale name from the header instead of leaving the previous patient's. */
+  assert(window.__mlsActivePtSync && window.__mlsActivePtSync.version === 'aps-1.2.3', 'reviewed active-patient runtime did not install');
   assert.strictEqual(clock.intervalCreates, 1, 'active-patient sync must install exactly one compatibility backstop');
   assert.strictEqual(clock.intervalDelay, 15000, 'active-patient rename backstop is not the reviewed 15-second cadence');
   assert.strictEqual(patientReads, 0, 'active-patient sync decoded the roster while installing');

@@ -205,12 +205,7 @@
     safe(function () { window.addEventListener('mls:job-progress', jobHandler, false); });
   }
 
-  /* NOTE FOR THE RELEASE THAT SHIPS THIS: the two fixes dated 2026-08-31 above
-     (the {allowRemovals:true} on the removing save, and the selection following
-     the merge survivor) are a version move. `version` is left at pm-1.0.1 here
-     ONLY because tests/pull-progress-merge-defer-runtime.test.js:103 pins that
-     literal - bump the marker and the pin together, never one alone. */
-  window.__mlsPatientMerge = { installed: true, version: 'pm-1.0.1', run: run, resolveAlias: resolveAlias };
+  window.__mlsPatientMerge = { installed: true, version: 'pm-1.0.3', run: run, resolveAlias: resolveAlias };
   window.__mlsPatientMerge_revert = function () {
     stopped = true;
     if (bootT) { safe(function () { clearTimeout(bootT); }); bootT = null; }

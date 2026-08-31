@@ -100,7 +100,9 @@ function makeSandbox() {
   assert.strictEqual(sb.patientCount(), 1, 'the duplicate pair must merge when the pull is idle');
 }
 
-assert(pmSource.includes("version: 'pm-1.0.1'"), 'patient-merge deferral release marker missing');
+/* pin moved with the marker (pm-1.0.3, 2026-08-31): {allowRemovals:true} on the
+   removing save + the selection follows the merge survivor. */
+assert(pmSource.includes("version: 'pm-1.0.3'"), 'patient-merge deferral release marker missing');
 
 /* si-1.7.9 (live 2026-07-18): the MANUAL history retry enters runHistoryBatch
  * without pull()'s busy stamping, so the deferred merge fired MID-RETRY and

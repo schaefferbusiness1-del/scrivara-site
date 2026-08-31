@@ -1,4 +1,4 @@
-/* feat_mls_active_patient_sync.js  (item27, aps-1.2.2)
+/* feat_mls_active_patient_sync.js  (item27, aps-1.2.3)
    UNIFY the "active patient" across surfaces.
    Bug: the NEXT UP picker card click updates the hero "Patient name"
    (#heroPtName) and the "Patient label" (#patientLabel) fields, but the
@@ -310,7 +310,7 @@
 
   window.__mlsActivePtSync = {
     installed: true,
-    version: 'aps-1.2.2',
+    version: 'aps-1.2.3',
     revert: function () {
       stopped = true;
       stop();
