@@ -21862,10 +21862,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       render(); return false;
     }
     if (explicitlyUnbound) {
-      S.lastWarn = 'No exact chart is linked to this appointment yet. Recording and note generation still work; the note stays unassigned until you choose the verified chart.';
-      if (opts.record && !requireExactScheduledBinding(a, 'recording', opts)) { render(); return false; }
+      /* dupadopt-1.0.0: recording REQUIRES a patient for the consent audit
+         record - the consent gate hard-refuses without one - so an unassigned
+         visit can never actually record. This branch used to promise it could
+         and forward the click into that refusal ('Choose a patient before
+         recording', every time, owner-reported). Refuse HERE with the real
+         cause and the next click; generation genuinely works unassigned and
+         keeps its flow. The gate itself is untouched. */
+      if (opts.record) {
+        restoreBeforeActivation();
+        S.lastWarn = (activationReceipt && activationReceipt.detail === 'name-only-row')
+          ? 'MLS cannot record this row yet - athenaOne lists it without a date of birth, so no chart can be proven. Open the patient once in athenaOne and press Verify in Athena, or pick them under Patients, then Record.'
+          : 'MLS cannot record this row yet - no saved chart matches this name and birth date. Pull this day (or press Verify in Athena on the card) so the chart exists, then Record.';
+        S.activationRefusalWarn = S.lastWarn;
+        render(); return false;
+      }
+      S.lastWarn = 'No exact chart is linked to this appointment yet. Note generation still works and the note stays in MLS; recording needs the patient linked first (Verify in Athena, or pick them under Patients).';
       if (opts.generate && !requireExactScheduledBinding(a, 'note generation', opts)) { render(); return false; }
-      if (opts.record && !isRecording()) { var uc = captureBtn(); if (uc) uc.click(); }
       if (opts.generate) { var ug = genBtnResolve(); if (ug) { if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); ug.click(); } }
       render(); return true;
     }

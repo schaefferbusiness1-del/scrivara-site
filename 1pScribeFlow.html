@@ -11119,7 +11119,9 @@ function _mlsWriteConsentRecord(rec,accountId,storageKey){
 function _mlsRequestEncounterConsent(actionLabel){
   if(_mlsConsentAsk) return _mlsConsentAsk;
   var p=null; try{ p=activePatient(); }catch(e){}
-  if(!p||!p.id){ try{ toast('Choose a patient before recording.','err'); }catch(e){} return Promise.resolve(false); }
+  /* dupadopt-1.0.0: the gate is unchanged - consent needs a chart to attach
+     to - but the refusal now names the cause and the next click. */
+  if(!p||!p.id){ try{ toast('No patient is linked to this visit, so there is no chart to attach the recording consent to. Pick the patient under Patients, or press Verify in Athena on the visit card, then Record.','err'); }catch(e){} return Promise.resolve(false); }
   var key=_mlsConsentKey(), encId=_mlsConsentEncounterId(), accountId=_mlsConsentAccountId(), consentEpoch=++_mlsConsentEpoch;
   var consentStorageKey='';try{consentStorageKey=uns('consentLog');}catch(e){}
   var ptId=String(p.id), ptLabel=String(p.name||'this patient')+(p.dob?(' · DOB '+p.dob):'');
@@ -16746,6 +16748,17 @@ function _calResolveLocalPatient(a){
       return !!((db&&pd&&db===pd)||(mr&&pm&&mr===pm));
     });
     if(hits.length===1&&hits[0]&&hits[0].id!=null){ a._mlsTargetPatientId=String(hits[0].id); return hits[0].id; }
+    /* dupadopt-1.0.0: two-plus charts matching the SAME tolerant name with an
+       agreeing DOB/MRN are duplicate rows of ONE person (owner identity ruling
+       2026-08-28: name+DOB is identity), minted while the silent auto-merge was
+       off. Refusing them as "ambiguous" locked recording out permanently. Adopt
+       one deterministic survivor; refuse only when the pool carries two
+       DIFFERENT MRNs or DOBs - that really is two people. */
+    if(hits.length>1){
+      var _hs=_calDupSurvivor(hits);
+      if(_hs&&_hs.id!=null){ a._mlsTargetPatientId=String(_hs.id); return _hs.id; }
+      return null;
+    }
     /* 2026-07-29: the exact-string compare above cannot reconcile the name
        shapes athenaOne delivers (Last-comma-First, a middle name or initial,
        a Jr/Sr suffix) with a chart stored as First-Last. When it missed,
@@ -16767,9 +16780,42 @@ function _calResolveLocalPatient(a){
           return _calNameKeyFL(p.name)===want;
         });
         if(fb.length===1){ a._mlsTargetPatientId=String(fb[0].id); return fb[0].id; }
+        /* dupadopt-1.0.0: same survivor rule on the canonical first+last
+           fallback - the DOB already agreed for every candidate here. */
+        if(fb.length>1){
+          var _fs=_calDupSurvivor(fb);
+          if(_fs&&_fs.id!=null){ a._mlsTargetPatientId=String(_fs.id); return _fs.id; }
+        }
       }
     }
     return null;
+  }catch(e){ return null; }
+}
+/* dupadopt-1.0.0: pick the one chart a duplicate pool should act as. The pool
+   already passed a tolerant-name + agreeing-DOB/MRN filter; this refuses when
+   the pool still holds two DIFFERENT athena identities (two distinct MRNs, or
+   two distinct DOBs), and otherwise prefers the MRN-bearing row, then the row
+   with the most saved visits, then the oldest - so repeated pulls always land
+   on the same survivor. Selection only: nothing is merged or deleted here. */
+function _calDupSurvivor(pool){
+  try{
+    if(!Array.isArray(pool)||!pool.length) return null;
+    if(pool.length===1) return pool[0];
+    var mrns={}, dobs={}, i, p, pm, pd;
+    for(i=0;i<pool.length;i++){ p=pool[i]||{};
+      pm=String(p.mrn||p.athenaId||'').replace(/\D/g,''); if(pm) mrns[pm]=1;
+      pd=_calDobKey(p.dob); if(pd) dobs[pd]=1;
+    }
+    if(Object.keys(mrns).length>1) return null;
+    if(Object.keys(dobs).length>1) return null;
+    var s=pool.slice().sort(function(x,y){
+      var xm=(x.mrn||x.athenaId)?1:0, ym=(y.mrn||y.athenaId)?1:0;
+      if(xm!==ym) return ym-xm;
+      var xv=Array.isArray(x.visits)?x.visits.length:0, yv=Array.isArray(y.visits)?y.visits.length:0;
+      if(xv!==yv) return yv-xv;
+      return (Number(x.created)||0)-(Number(y.created)||0);
+    });
+    return s[0]||null;
   }catch(e){ return null; }
 }
 function calStartVisit(id){
@@ -16837,7 +16883,10 @@ function calStartVisit(id){
   try{ var pl=document.getElementById('patientLabel'); if(pl) pl.value=_calLabelOf(a); }catch(e){}
   try{ var cb=document.getElementById('contextBox'); if(cb && a.reason) cb.value=(cb.value?cb.value+'\n':'')+'Reason for visit: '+a.reason; }catch(e){}
   try{ toast('Started a visit for '+_calLabelOf(a)+' — dictate or paste, then Generate.','ok'); }catch(e){}
-  return {ok:true,bound:false,patientId:'',reason:'patient-unresolved'};
+  /* dupadopt-1.0.0: say WHICH way resolution failed so the caller can refuse
+     recording with the real cause instead of a bare 'Choose a patient'. */
+  return {ok:true,bound:false,patientId:'',reason:'patient-unresolved',
+    detail:(String(a.dob||'').trim()||String(a.mrn||a.athenaId||a.patient_mrn||'').trim())?'no-matching-chart':'name-only-row'};
 }
 // "Now in your waiting room" — surfaces checked-in/roomed patients on the Visit
 // screen with one-tap Start visit, so the doctor never hunts for who's next.
