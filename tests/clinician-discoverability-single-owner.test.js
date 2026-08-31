@@ -116,7 +116,7 @@ for (const [name, bundle] of [['production', connect], ['staging', staging]]) {
   const legacy = between(bundle, '/* ---- module: feat_cmdk.js ---- */', '/* ---- module: feat_timeline.js ---- */', `${name} legacy Cmd-K module`);
   assert(legacy.includes('compatibilityOnly:true') && legacy.includes("owner:'canonical-find'"), `${name} legacy Cmd-K API is not compatibility-only`);
   assert(!legacy.includes("document.addEventListener('keydown', onKey, true)"), `${name} legacy Cmd-K still owns a capture listener`);
-  assert(bundle.includes("V='cpal-1.0.4',api=window.__mlsCmdPalette") && bundle.includes("old.removeAttribute('data-mls-asset')"),
+  assert(bundle.includes("V='cpal-1.0.5',api=window.__mlsCmdPalette") && bundle.includes("old.removeAttribute('data-mls-asset')"),
     `${name} cannot replace an already-mounted older Find compatibility asset in the same document`);
   assert(bundle.includes("V='1.0.10',api=window.__mlsTopbar"), `${name} cannot hot-upgrade the truthful Find field label`);
 }

@@ -1558,9 +1558,26 @@ async function runtime() {
       await page.waitForTimeout(1800);
       const list = await page.evaluate(() => window.__opn.shape());
       measured.budgetList = list;
-      /* opnote-day-3.0.1: budget 7 — the owner asked for the Templates button by name. */
-      ok(list.railN <= 7,
-        `the rail shows ${list.railN} controls that are not a patient: ${JSON.stringify(list.railIds)} (budget 7: ‹ day › Today search + Draft all + Templates)`);
+      /* opnote-day-3.0.1: budget 7 — the owner asked for the Templates button by name.
+         opfollow-1.0.0: budget 10 — and it is the SAME kind of move, made for the
+         same reason, by the owner's own words twice over:
+           2026-07-29  "give ioptiopns on how I want the op nopte to follow those
+                        tempaltes"  -> the three-mode control was built
+           2026-08-31  "follow templates the way we want that feature was removed
+                        and needs to be added back"
+         What actually removed it was CSS, not code: 24948c24 folded every child
+         of #oprDayRail except #mlsOpnRail in Simple and Normal, and Normal is
+         the default. The control is back in the shell, so the three buttons of
+         #oprTplMode now count here — hence 7 -> 10.
+         This is a CALM budget, not a safety gate: it exists so the rail cannot
+         sprawl, and it still fails at 11. The three options are one titled
+         region ("How drafts follow your template"), not three loose controls,
+         and each one is real at BOTH ends of the pipeline — a prompt clause and
+         the fidelity gate's wording relaxation (feat_mls_opnote_integrity.js
+         :1627, :1687, :1747). Nothing about what may be asserted of a patient
+         moves with it. */
+      ok(list.railN <= 10,
+        `the rail shows ${list.railN} controls that are not a patient: ${JSON.stringify(list.railIds)} (budget 10: ‹ day › Today search + Draft all + Templates + the three template-follow modes)`);
       ok(list.paneN <= 1,
         `the note pane shows ${list.paneN} controls with nothing selected: ${JSON.stringify(list.paneIds)}`);
       await page.evaluate(() => window.__mlsOpDay.openNote(0));

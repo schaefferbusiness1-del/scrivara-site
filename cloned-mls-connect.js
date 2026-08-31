@@ -16056,7 +16056,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var out = [], n = normName(name);
     var ap = ctxPatient(ctx, name, dob);
     (ctx.notesIdx[n] || []).forEach(function (nt) {
-      var d = ymd(nt.date || nt.visitDate || (nt.created ? new Date(nt.created).toISOString() : ''));
+      /* tzcarry-1.0.0: harvested visit dates line up beside Athena's own
+         practice-day rows, so the fallback day must be minted in the practice
+         zone. toISOString() names the UTC day and moved every evening note a
+         day forward in the harvested history. */
+      var _ntDay = '';
+      if (!nt.date && !nt.visitDate && nt.created) {
+        try { if (typeof window._acctDateKeyOf === 'function') _ntDay = String(window._acctDateKeyOf(new Date(nt.created)) || ''); } catch (e) {}
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(_ntDay)) { try { _ntDay = new Date(nt.created).toISOString(); } catch (e) { _ntDay = ''; } }
+      }
+      var d = ymd(nt.date || nt.visitDate || _ntDay);
       out.push({ date: d, type: S(nt.cc || nt.visitType || nt.kind || 'Visit note'),
         detail: S(nt.text || nt.soap || nt.note || '').slice(0, 8000), source: 'mls-note' });
     });
@@ -25282,7 +25291,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function dayLocalOfIso(iso) { return dayInTz(new Date(iso), acctTz()); }
   function localYmd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
-  function todayLocal() { return localYmd(new Date()); }
+  /* tzcarry-1.0.0: F1 stamps every row's day_local FROM THE PRACTICE ZONE
+     (dayLocalOfIso -> acctTz), so "today" must be minted in the same zone or
+     the comparison mixes two classes. localYmd(new Date()) is the BROWSER's
+     day: on a clinician's laptop in Central time an 11:30 PM ET row already
+     reads as tomorrow here, and todayCount()/seenToday/the day strip silently
+     drop it. The browser day survives only as the last resort. */
+  function todayLocal() {
+    var k = safe(function () { return isFn(window._acctTodayKey) ? String(window._acctTodayKey() || '') : ''; }, '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k)) return k;
+    return dayInTz(new Date(), acctTz()) || localYmd(new Date());
+  }
   function prettyDay(k) {
     return safe(function () { return new Date(k + 'T12:00').toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }); }, k);
   }
@@ -31675,7 +31694,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function pad2(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
   function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
-  function todayLocal() { return ymd(new Date()); }
+  /* tzcarry-1.0.0: the practice zone decides the day, never the device — the
+     same guarded form the other day-strip builds already use. */
+  function todayLocal() { try { if (typeof window._acctTodayKey === 'function') return window._acctTodayKey(); } catch (e) {} return ymd(new Date()); }
   function tomorrowLocal() { var d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); }
   function viewMonthRange(offset) {
     var d = new Date(), y = d.getFullYear(), m = d.getMonth() + (offset || 0);
@@ -33342,7 +33363,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-  function todayLocal() { return ymd(new Date()); }
+  /* tzcarry-1.0.0: the practice zone decides the day, never the device — the
+     same guarded form the other day-strip builds already use. */
+  function todayLocal() { try { if (typeof window._acctTodayKey === 'function') return window._acctTodayKey(); } catch (e) {} return ymd(new Date()); }
   function tomorrowLocal() { var d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); }
   function monthRange(offset) {
     var d = new Date(), y = d.getFullYear(), m = d.getMonth() + (offset || 0);
@@ -36845,7 +36868,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var host = $("patientsView"); if (!host) return;
           var bar = $("dailyBriefBar");
           if (!bar) { bar = document.createElement("div"); bar.id = "dailyBriefBar"; bar.style.cssText = "margin:0 0 12px"; host.insertBefore(bar, host.firstChild); }
-          var today = new Date().toISOString().slice(0, 10);
+          /* tzcarry-1.0.0: appt_date is a PRACTICE day key (F1 stamps it from
+             acctTz). toISOString() is the UTC day, so from 8 PM ET onward this
+             "today" named TOMORROW and the daily brief went blank on exactly
+             the evening the doctor still had patients on the board. */
+          var today = ""; try { if (typeof window._acctTodayKey === "function") today = S(window._acctTodayKey()).slice(0, 10); } catch (e) {}
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) { var _dNow = new Date(); today = _dNow.getFullYear() + "-" + ("0" + (_dNow.getMonth() + 1)).slice(-2) + "-" + ("0" + _dNow.getDate()).slice(-2); }
           var appts = [];
           try { appts = (window._calAppts || []).filter(function (a) { return S(a.appt_date || "").slice(0, 10) === today && S(a.name).trim(); }); } catch (e) {}
           if (!appts.length) { bar.style.display = "none"; bar.innerHTML = ""; return; }
@@ -36962,7 +36990,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           $("mlsR3LegalAttach").onclick = function () {
             try {
               var k = "mls_legal_visit_links"; var arr = JSON.parse(localStorage.getItem(k) || "[]");
-              arr.push({ patient: name, date: new Date().toISOString().slice(0, 10), at: Date.now() });
+              /* tzcarry-1.0.0: the DAY this visit was attached is a practice
+                 day, not a UTC one — an evening attach must not file itself on
+                 tomorrow's legal request. `at` keeps the exact instant. */
+              var _lday = ""; try { if (typeof window._acctTodayKey === "function") _lday = String(window._acctTodayKey() || "").slice(0, 10); } catch (e) {}
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(_lday)) { var _ld = new Date(); _lday = _ld.getFullYear() + "-" + ("0" + (_ld.getMonth() + 1)).slice(-2) + "-" + ("0" + _ld.getDate()).slice(-2); }
+              arr.push({ patient: name, date: _lday, at: Date.now() });
               localStorage.setItem(k, JSON.stringify(arr.slice(-200)));
             } catch (e) {}
             this.textContent = "✓ Attached — it will be flagged in Legal requests";
@@ -37045,7 +37078,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function allNotes() { try { return (window.getNotes && window.getNotes()) || []; } catch (e) { return []; } }
   function allPatients() { try { return (window.getPatients && window.getPatients()) || []; } catch (e) { return []; } }
   function allAppts() { try { return window._calAppts || []; } catch (e) { return []; } }
-  function noteDate(n) { return S(n.date || n.visitDate || (n.created && new Date(n.created).toISOString())).slice(0, 10); }
+  /* tzcarry-1.0.0: n.created is an epoch instant; the note's DAY is the day the
+     practice was living in when it was written, not the UTC day. A note saved
+     at 8:30 PM ET used to file itself on tomorrow's study record. */
+  function noteDate(n) {
+    var d = S(n.date || n.visitDate || '').slice(0, 10);
+    if (d) return d;
+    if (!n.created) return '';
+    /* `isFn` is a per-module helper and is NOT in this IIFE's scope — a bare
+       isFn() here would throw inside the try and degrade to the UTC answer
+       silently, which is the defect wearing a guard. Test the type directly. */
+    var k = ''; try { if (typeof window._acctDateKeyOf === 'function') k = String(window._acctDateKeyOf(new Date(n.created)) || ''); } catch (e) {}
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k)) return k;
+    return S(new Date(n.created).toISOString()).slice(0, 10);
+  }
   function notePt(n) { return S(n.patientName || n.name || n.patient || "").trim(); }
   function noteText(n) { return S(n.note || n.text || n.body || n.content || ""); }
   function buildRecords(filterFn) {
@@ -42097,6 +42143,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var activeJob=null, priorityInFlight=0, priorityBarrierInFlight=0, priorityErrors=0, assetErrors=0, readyAt=0, listeners=[];
   var priorityFoundationFailed=false, errorJobs=[];
   var INITIAL_QUIET_MS=2500, FIRST_USE_MS=30000, FIRST_USE_GAP=250, STEADY_GAP=80;
+  /* stallwd-1.0.0: the outer bound on a request that produces NEITHER a load
+     nor an error event. Deliberately far outside any real optional asset - it
+     is not a performance deadline, it is the answer to "what if the browser
+     never answers at all", which is the one case every other timer here
+     assumes away. */
+  var STALL_MS=90000;
   function now(){ return Date.now(); }
   function normalGap(){ return now()<firstUseUntil?FIRST_USE_GAP:STEADY_GAP; }
   function inputPending(){
@@ -42252,8 +42304,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function finishActive(kind,job){
     if(!job||activeJob!==job) return;
     activeJob=null;
-    var failed=kind==='error'||!verifyOwner(job);
-    if(failed){ recordFailure(job,kind==='error'?'load-error':'owner-missing'); if(job.priority===0) priorityErrors++; }
+    var failed=kind==='error'||kind==='timeout'||!verifyOwner(job);
+    if(failed){ recordFailure(job,kind==='error'?'load-error':kind==='timeout'?'load-timeout':'owner-missing'); if(job.priority===0) priorityErrors++; }
     /* A script's load event fires after its evaluation. Keep a real first-use
        breathing gap between optional initializers, then retain a smaller
        steady-state gap. Direct user/route activity still owns the separate
@@ -42265,9 +42317,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     activeJob=job;
     var scripts=appendedScripts(job.fn,deadline);
     if(!scripts.length){ finishActive(scripts.__mlsCallbackFailed?'error':'sync',job); return; }
-    var remaining=scripts.length, failed=!!scripts.__mlsCallbackFailed, done=false;
+    var remaining=scripts.length, failed=!!scripts.__mlsCallbackFailed, done=false, stallTimer=0;
     function stop(kind){
       if(done) return; done=true;
+      if(stallTimer){ clearTimeout(stallTimer); stallTimer=0; }
       finishActive(kind,job);
     }
     function settle(kind){
@@ -42287,6 +42340,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        can never overlap or double-evaluate beside a cloned retry. */
     /* Normal optional loading may stall without affecting the usable app. Do
        not fake completion: only the browser's real load/error advances it. */
+    /* stallwd-1.0.0: ...and that stayed true right up to the case where the
+       browser produces NO event at all. activeJob is checked first by both
+       arm() and drain(), so a request that never resolves does not merely
+       delay this job - it strands every remaining optional module and pins
+       __mlsDeferredAssetsReadyAt at 0 for the rest of the session. Measured on
+       this exact block: with three normals queued and the first script silent,
+       two never ran and the scheduler was left holding ZERO wake timers.
+       This is still not faked completion - the job is recorded as a
+       load-timeout FAILURE, so the settled event stays red and defer.stats()
+       names the asset. The owner guard (when the job has one) is retired
+       first, so a response that lands after the deadline evaluates to a no-op
+       instead of appearing beside a later job. */
+    if(!done) stallTimer=setTimeout(function(){
+      stallTimer=0;
+      retireLateOwner(job,'load-timeout');
+      stop('timeout');
+    },STALL_MS);
   }
   function runPriorityJob(job,deadline){
     var scripts=appendedScripts(job.fn,deadline);
@@ -42298,13 +42368,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var barrier=!!(job.options&&job.options.barrier);
     priorityInFlight++;
     if(barrier) priorityBarrierInFlight++;
-    var remaining=scripts.length, failed=!!scripts.__mlsCallbackFailed, done=false, loadTimer=0, stalled=false;
+    var remaining=scripts.length, failed=!!scripts.__mlsCallbackFailed, done=false, loadTimer=0, stallTimer=0, stalled=false;
     function stop(kind){
       if(done) return; done=true;
       if(loadTimer) clearTimeout(loadTimer);
+      if(stallTimer){ clearTimeout(stallTimer); stallTimer=0; }
       priorityInFlight=Math.max(0,priorityInFlight-1);
       if(barrier) priorityBarrierInFlight=Math.max(0,priorityBarrierInFlight-1);
-      var failed=kind==='error'||!verifyOwner(job);
+      /* A released deadline is a FAILURE, not a recovery. Without this leg an
+         ownerless timeout fell through to the `stalled` branch below and
+         DECREMENTED priorityErrors - un-counting an asset that never loaded. */
+      var failed=kind==='error'||kind==='timeout'||!verifyOwner(job);
       if(failed){
         if(!stalled) priorityErrors++;
         recordFailure(job,kind==='error'?'load-error':kind==='timeout'?'load-timeout':'owner-missing');
@@ -42333,6 +42407,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          Ownerless dynamic scripts retain strict real-event ownership. */
       if(job.options&&job.options.owner){ retireLateOwner(job,'load-timeout'); stop('timeout'); }
     },10000);
+    /* stallwd-1.0.0: the 10-second diagnostic above releases the lane only for
+       an owner-named module, because retiring that exact guard is what makes a
+       late response safe. An OWNERLESS priority script has no guard to retire,
+       so it was left holding priorityInFlight with no deadline at all - and
+       busyDelay() returns -1 outright while any priority job is in flight.
+       One hung ownerless request therefore froze the ENTIRE normal queue for
+       the rest of the session once the gate lifted (measured: the queued
+       normal job still had not run 12.6s past the diagnostic, and defer.stats()
+       reported priorityQueued:1 forever). Bound it. The 10s owner path above
+       is untouched; this only ever fires when nothing else released the job,
+       and an ownerless script that really arrives before it still settles
+       normally and clears its own stalled error. */
+    if(!done) stallTimer=setTimeout(function(){
+      stallTimer=0; stop('timeout');
+    },STALL_MS);
     /* Network fetches may overlap, but callback admission stays paced and the
        readiness count remains nonzero through every script's evaluation. */
     arm(35);
@@ -46516,7 +46605,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var y=m[3]; if(y.length===2) y=(parseInt(y,10)>50?'19':'20')+y;
     return y+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2);
   }
-  function todayIso(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  /* tzcarry-1.0.0: this gates ensureCalendarEntry to "today or later". The
+     date it is compared against (toIsoDate of an athenaOne cell) is a PRACTICE
+     wall-clock day, so a browser-minted today mixes classes and refuses a real
+     same-day appointment from a laptop one zone west. */
+  function todayIso(){
+    try{ if(typeof window._acctTodayKey==='function'){ var k=String(window._acctTodayKey()||''); if(/^\d{4}-\d{2}-\d{2}$/.test(k)) return k; } }catch(e){}
+    var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+  }
   function isFutureOrToday(iso){ return iso && iso>=todayIso(); }
   function rowTime(line){ var m=String(line||'').match(/\b([01]?\d|2[0-3]):([0-5]\d)\s*(a\.?m\.?|p\.?m\.?)?/i); return m?m[0].replace(/\s+/g,''):''; }
   function startIso(iso, t){
@@ -49475,7 +49571,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b904: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 /* Staff account provisioning is intentionally held; Staff Prep remains available from Menu. */
-;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.4',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260808cmd106perf2';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Ctrl+K converges on canonical Find; bounded roster-identity-cached patient search (cpal-1.0.4; revert()). */
+;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.5',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260831cpal107';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Ctrl+K converges on canonical Find; bounded roster-identity-cached patient search (cpal-1.0.5; revert()). */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260821vtl104';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1400);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_tele_doctor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_tele_doctor.js?v=20260805td100';s.setAttribute('data-mls-asset','feat_mls_tele_doctor.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:3000});}catch(e){}})(); /* post-op video visits: the doctor's accept + call surface. Ships DARK  polls only when signed in to the backend and renders nothing without a real pending request. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
@@ -56582,7 +56678,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       var lp = lastPullDay();
       var today = '';
-      try { today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10); } catch (e) {}
+      /* tzcarry-1.0.0: lastPullDay() returns an imported PRACTICE day key, so
+         shifting UTC by the BROWSER's offset compares two different clocks —
+         a phone in Central time reported "your pull is stale" on a day that
+         had in fact been pulled. */
+      try { if (typeof window._acctTodayKey === 'function') today = String(window._acctTodayKey() || '').slice(0, 10); } catch (e) {}
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) { try { var _hd = new Date(); today = _hd.getFullYear() + '-' + ('0' + (_hd.getMonth() + 1)).slice(-2) + '-' + ('0' + _hd.getDate()).slice(-2); } catch (e) { today = ''; } }
       if (lp) {
         out.rows.push(row(lp >= today ? true : null, 'Last schedule pull', 'newest imported day on this device: ' + esc(lp) + '.', lp >= today ? null : 'pull today from the Visit page if you expected fresher data.'));
       } else {

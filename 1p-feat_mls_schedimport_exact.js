@@ -276,7 +276,25 @@
   function estTodayKey() {
     return safe(function () {
       return new Intl.DateTimeFormat("en-CA", { timeZone: EST_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    }, new Date().toISOString().slice(0, 10));
+    }, (function () {
+      /* tzcarry-1.0.0: if Intl is unavailable the fallback must still be a
+         WALL-CLOCK day. toISOString() is the UTC day and, from 8 PM ET on,
+         named tomorrow — which is the one answer this function must never
+         give, because dayNoteFuture() then declares today to be the future
+         and skips every day note. The device's own day is wrong by at most a
+         zone; the UTC day is wrong by a day on every clinic evening. */
+      var d = new Date();
+      return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+    })());
+  }
+  /* tzcarry-1.0.0: the practice wall clock "HH:MM" of an instant. Backend
+     start_at is a true instant; every parsed athenaOne time is a practice wall
+     clock, so an identity key that mixes the two never matches and the same
+     appointment is imported twice. */
+  function accountTimeFromInstant(value) {
+    var f = gfn("_apptHHMMTz");
+    var t = f ? safe(function () { return String(f(value) || ""); }, "") : "";
+    return /^\d{2}:\d{2}$/.test(t) ? t : "";
   }
   /* p1-date-guard-1.0: backend start_at is an instant, while every pull
      receipt is an account-wall date. Never use the browser's local zone for
@@ -2868,8 +2886,19 @@
       for (var eri = 0; eri < backendAppointments.length; eri++) {
         var x = backendAppointments[eri];
         var rawBackendId = backendRowId(x); if (rawBackendId) backendById[rawBackendId] = x;
-        var lt = ""; safe(function () { if (x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); });
-        var ld = x.appt_date || ""; if (!ld) safe(function () { if (x.start_at) { var dd = new Date(x.start_at); ld = dd.getFullYear() + "-" + ("0" + (dd.getMonth() + 1)).slice(-2) + "-" + ("0" + dd.getDate()).slice(-2); } });
+        /* tzcarry-1.0.0: this (ld, lt) pair is the EXISTING-row half of the
+           idempotency key. The other half is built from Athena's parsed cells,
+           which are PRACTICE wall clocks. Deriving these from the browser's
+           zone made the two halves disagree on any device that is not in the
+           practice's timezone, and the disagreement does not read as an error:
+           the key simply misses and the same appointment is imported again.
+           The old browser-local answer stays as the last resort, because an
+           EMPTY key would collapse different days onto one another. */
+        var lt = ""; safe(function () { if (x.start_at) lt = accountTimeFromInstant(x.start_at); });
+        if (!lt) safe(function () { if (x.start_at) lt = new Date(x.start_at).toTimeString().slice(0, 5); });
+        var ld = String(x.appt_date || x.day_local || "").slice(0, 10);
+        if (!ld) safe(function () { if (x.start_at) ld = accountDayFromInstant(x.start_at); });
+        if (!ld) safe(function () { if (x.start_at) { var dd = new Date(x.start_at); ld = dd.getFullYear() + "-" + ("0" + (dd.getMonth() + 1)).slice(-2) + "-" + ("0" + dd.getDate()).slice(-2); } });
         var linked = patientByLocalId[String(x && x.patient_external_id || "")] || null;
         var bound = {}; for (var bx in x) if (x.hasOwnProperty(bx)) bound[bx] = x[bx];
         if (linked && linked.id) bound.patient_external_id = String(linked.id);
@@ -3386,8 +3415,16 @@
           var cal = window._calAppts; if (!Array.isArray(cal)) return;
           for (var i = 0; i < cal.length; i++) {
             var r = cal[i]; if (!r || (r.provider && String(r.provider).trim())) continue;
-            var dt = r.appt_date || (r.start_at ? new Date(r.start_at).toISOString().slice(0, 10) : "");
-            var tm = ""; safe(function () { if (r.start_at) tm = new Date(r.start_at).toTimeString().slice(0, 5); });
+            /* tzcarry-1.0.0: provByKey above was keyed with a PRACTICE day
+               (a._date / normDate) and a PRACTICE time (normTime of the parsed
+               cell). Re-deriving the same pair here as a UTC day plus a
+               BROWSER-local time is two different mismatches at once, so the
+               lookup missed and provider was never re-stamped onto a row that
+               lacked appt_date. Both halves now come from the practice zone. */
+            var dt = String(r.appt_date || r.day_local || "").slice(0, 10);
+            if (!dt && r.start_at) dt = accountDayFromInstant(r.start_at) || "";
+            var tm = ""; safe(function () { if (r.start_at) tm = accountTimeFromInstant(r.start_at); });
+            if (!tm) safe(function () { if (r.start_at) tm = new Date(r.start_at).toTimeString().slice(0, 5); });
             var p = provByKey[appointmentIdentity(r, dt, tm, true)] || provByKey[appointmentSlotIdentity(r, dt, tm, true)];
             if (p) r.provider = p;
           }
@@ -9403,9 +9440,36 @@
                   ? (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name only, and MLS's verified roster carries more than one distinct clinician under that name, so a name alone cannot pick between them. Nothing was imported. Choose the exact clinician in Choose a provider, or open the full Day view once so the rows carry structured ids, then pull again - and if this repeats, use the error-report button so the rows are named.")
                   : (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name, but athenaOne exposed no structured provider id on them and MLS's roster could not clear the name (" + (pBasis || "no-basis") + "), so another clinician with the same display name cannot be ruled out. Nothing was imported. Open the full Day view once so the rows carry ids, then pull again - and if this repeats, use the error-report button so the rows are named."))
                 : ((pUn || "Some") + " of " + (pSrc || "the") + " schedule rows carry no provider identity MLS can verify, even though the day grid finished loading. Nothing was imported - filing those rows would risk the wrong chart. Pull again with the provider column visible in the Day view; if this repeats, use the error-report button so the rows are named.");
+              /* provscope-1.0.1: b1126 gave provider-not-on-calendar its own
+                 actionable sentence, but placed it in the post-verification
+                 status ladder further down (the "res.reason ===
+                 provider-not-on-calendar" line), which only runs AFTER a day
+                 has already cleared provider verification. A provider-scope
+                 refusal sets receipt.complete = false, so it ALWAYS returns
+                 from this branch first and that sentence can never be reached
+                 - measured by reading the dispatch, not the mechanism: there
+                 is exactly one emitter of it and this early return precedes
+                 it. The doctor therefore only ever saw the generic "could not
+                 verify" line, which names no cure. Say the curable thing here,
+                 where the refusal actually happens, and name the providers the
+                 surface DID paint: ONE name means athena is parked on someone
+                 else's single-provider view; a LONG list means it is an
+                 all-provider view and the target simply had no rows that day.
+                 That distinction is the doctor's only way to tell the two
+                 cases apart until the extension can report a viewScope.
+                 MESSAGE ONLY - the refusal, its reason, the receipt and the
+                 fail() below are byte-for-byte untouched. */
+              var pSurf = Array.isArray(pRec.surfaceProviders)
+                ? pRec.surfaceProviders.map(function (n) { return String(n == null ? "" : n).trim(); }).filter(function (n) { return !!n; })
+                : [];
+              var pSurfTxt = pSurf.length ? (" Athena's calendar is currently showing: " + pSurf.slice(0, 6).join(", ") + ".") : "";
+              var notOnCalMsg = "Athena's calendar is showing a DIFFERENT provider's view, so " + (selectedProvider.name || "the selected provider") + "'s day cannot be read (and an empty screen proves nothing)." + pSurfTxt +
+                " In the Athena tab set the calendar's View to " + (selectedProvider.name || "that provider") + " or an all-provider view, then retry. Nothing was saved for " + date + ".";
               onStatus(providerReason === "provider-incomplete"
                 ? incompleteMsg
-                : (selectedProvider.mode === "selected" ? "MLS could not verify the selected provider on this Athena day. Nothing was imported; the pull was not widened to other providers." : "MLS could not prove complete provider coverage for this Athena day. Nothing was imported."), "err");
+                : providerReason === "provider-not-on-calendar"
+                  ? notOnCalMsg
+                  : (selectedProvider.mode === "selected" ? "MLS could not verify the selected provider on this Athena day. Nothing was imported; the pull was not widened to other providers." : "MLS could not prove complete provider coverage for this Athena day. Nothing was imported."), "err");
               return fail(providerReason, { scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, retry: { schedule: true, provider: selectedProvider.mode === "selected" ? selectedProvider.name : "all" } });
             }
             var attempted = Number(res.attempted != null ? res.attempted : rows.length), accounted = Number(res.created || 0) + Number(res.repaired || 0) + Number(res.skipped || 0);

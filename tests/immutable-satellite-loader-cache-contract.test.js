@@ -56,7 +56,7 @@ const assets = [
   ['feat_mls_strip_day_couple.js', '20260808sdc202perf1', '20260719sdc201'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
-  ['feat_mls_command_palette.js', '20260808cmd106perf2', '20260808cmd105perf1'],
+  ['feat_mls_command_palette.js', '20260831cpal107', '20260808cmd106perf2'],
   /* feat_mls_copilot_request_safety.js now follows the shared build token so
      request-ownership repairs cannot sit behind a frozen URL. */
   ['feat_mls_copilot_dock_fix.js', '20260726cdf210', '20260716cdf200'],
@@ -284,7 +284,7 @@ assert(staging.includes('feat_mls_checker.js?v=20260827chk3084'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');
-assert(staging.includes('feat_mls_command_palette.js?v=20260808cmd106perf2'),
+assert(staging.includes('feat_mls_command_palette.js?v=20260831cpal107'),
   'staging must load the same canonical Ctrl/Cmd+K owner as production');
 assert(staging.includes('feat_mls_assistant_exact.js?v=20260820asst220perf2') &&
   !staging.includes('20260725asst217'),

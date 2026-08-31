@@ -3537,6 +3537,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <label class="genopt-chk">Assessment <select id="genAssessmentProfile" aria-label="One-visit Assessment format override"></select></label>
           <label class="genopt-chk">Plan <select id="genPlanProfile" aria-label="One-visit Plan format override"></select></label>
         </div>
+        <!-- ===== autodraft-1.0.0 — per-visit control; hidden unless the Settings
+             toggle is on AND this patient has a finished prior note ===== -->
+        <div class="genopt-row" id="genSeedRow" style="display:none">
+          <span class="genopt-lbl">Last note</span>
+          <label class="genopt-chk" title="Seed this note from this patient's last saved note"><input type="checkbox" id="genSeedPrior" checked onchange="refreshAutoDraftPriorRow()"> Seed from last note</label>
+          <span class="mini" id="genSeedPriorHint" style="color:var(--muted)"></span>
+        </div>
         <input id="genInstr" aria-label="Focus this note" placeholder="Focus this note — e.g. “emphasize the injection plan”, “add return-to-work status”, “warmer tone”…" style="display:none">
       </div>
       <div class="row tight">
@@ -4999,6 +5006,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
             <option value="detailed">Detailed</option>
           </select>
         </div>
+      </div>
+      <!-- ===== autodraft-1.0.0 — seed today's draft from this patient's last note ===== -->
+      <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:10px">
+        <label for="autoDraftPrior" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
+          <input type="checkbox" id="autoDraftPrior" style="width:17px;height:17px;cursor:pointer">
+          <span>🧬 Auto-draft from the patient's last note <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
+        </label>
+        <p class="note" style="margin:4px 0 0 26px">When this patient already has a saved, finished note in their chart, MLS seeds today's draft from it: the same section layout, plus their stable history — <b>past medical, past surgical, family and social history, and allergies</b> — copied forward word for word and marked <b>“carried from last visit - review”</b> so you can always see it was not written today.<br>
+          <b>Today's HPI, ROS, exam, assessment and plan are always written from today's visit alone</b>, and <b>medications, doses, frequencies and routes are never carried forward</b> — you document those fresh every visit.<br>
+          <span style="color:var(--muted)">A SOAP note has only its five sections, so on SOAP this seeds the layout and carries nothing. Pick H&amp;P (or Narrative / Problem-based / APSO) under <b>Style</b> on the visit screen to carry the history sections forward. You can switch it off for a single visit from the visit screen.</span></p>
       </div>
       <p class="note" style="margin:2px 0 0">Tip: your standing follow-up interval lives below under Provider preferences.</p>
     </div>
@@ -10032,6 +10049,7 @@ function openSettings(){
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) _gbu.value=localStorage.getItem(uns('googleBusinessUrl'))||'';
   if(typeof renderLogoSetting==='function') renderLogoSetting();
   const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
+  const _adp=document.getElementById('autoDraftPrior'); if(_adp) _adp.checked=getAutoDraftPrior(); /* autodraft-1.0.0 */
   const _nm=document.getElementById('noteModelSel'); if(_nm){ _nm.value=getNoteModel(); const _nmPrem=(typeof effectivePremium==='function')?effectivePremium():false; _nm.disabled=!_nmPrem; const _nmh=document.getElementById('noteModelHint'); if(_nmh && !_nmPrem) _nmh.textContent='Model selection is a Premium feature — Standard always uses the fast model. Upgrade to choose the stronger model.'; }
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) _nst.value=getMlsNoteStyle();
   // MLS additive — 📋 Patient intake custom questions (one per line)
@@ -10204,6 +10222,7 @@ function saveSettings(){
   const _facA=document.getElementById('facilityAddress'); if(_facA) localStorage.setItem(uns('facilityAddress'),(_facA.value||'').trim());
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) localStorage.setItem(uns('googleBusinessUrl'),(_gbu.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
+  const _adp=document.getElementById('autoDraftPrior'); if(_adp) setAutoDraftPrior(!!_adp.checked); /* autodraft-1.0.0 */
   const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(['gpt-5.6-luna','gpt-5-mini','gpt-4o','gpt-4o-mini'].indexOf(_nm.value)>=0)?_nm.value:'gpt-5.6-luna'); /* 2026-08-11: honor every offered model; the old ternary coerced any non-4o pick (incl. the shipped gpt-5-mini default) back to gpt-4o on every Settings save */
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
   // MLS additive — persist 📋 Patient intake custom questions
@@ -10214,6 +10233,7 @@ function saveSettings(){
   snapshotQolCommits();
   if(typeof applyLegalUI==='function') applyLegalUI(); // show/hide the optional ⚖️ Legal button
   if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide
+  try{ if(typeof refreshAutoDraftPriorRow==='function') refreshAutoDraftPriorRow(); }catch(eAdRow){} /* autodraft-1.0.0 */
   if(typeof applyVisitCommentToNote==='function') applyVisitCommentToNote(); // refresh signature on any open note
   const idleSel=document.getElementById('idleMins');
   if(idleSel){
@@ -10283,6 +10303,11 @@ const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolC
      instructions. feat_mls_opnote_fill.js:670 already calls
      syncPrefsToServer() after writing it, which is what made the omission
      invisible: the push ran and carried nothing. */
+  /* autodraft-1.0.0: "Auto-draft from the patient's last note" is a standing
+     documentation decision, not a device preference - same class as noteStyle
+     and defaultFormat above. A doctor who turns it on once must not find it
+     silently off on the laptop. */
+  'autoDraftPriorV1',
   'useTemplates','templateActive','templateAuto','intakeQuestions','templates','customWidgets','opFieldDefaultsV1','opFieldDefaultsUserV1',
   'studio_widgets'];
 /* A tool the doctor built and saved is their work product — it must survive a new
@@ -16314,6 +16339,22 @@ function _findCanonicalScheduleAppt(a,list,dateKey){ var rows=_apptScheduleCandi
    string — so saving/rescheduling an appointment stores the right instant regardless of the
    doctor's browser zone. */
 function _acctWallToUtcIso(dateKey, hhmm){
+  /* tzcarry-1.0.0: there were TWO wall-clock->instant writers. This one did a
+     SINGLE offset lookup (wrong on the two DST changeover mornings, where the
+     offset that converts the guess is not the offset in force at the answer),
+     and its catch fell back to `new Date(dateKey+'T'+hhmm)` — an offset-less
+     string the BROWSER parses in ITS OWN zone, then persisted with
+     toISOString(). That fallback wrote a WRONG INSTANT to the server, which is
+     strictly worse than writing nothing. Defer to the one resolver
+     (apptclock-1.0.0, two-pass); keep the Intl math only as a backstop; and
+     refuse rather than guess. */
+  try{
+    var mz=String(hhmm||'').match(/(\d{1,2}):(\d{2})/);
+    if(mz&&/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey||''))){
+      var zc=window.__mlsApptClock.wallClockIso(dateKey,parseInt(mz[1],10),parseInt(mz[2],10));
+      if(zc) return zc;
+    }
+  }catch(eClock){}
   try{
     var m=String(hhmm||'').match(/(\d{1,2}):(\d{2})/); if(!m||!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey||''))) return null;
     var Y=+dateKey.slice(0,4), Mo=+dateKey.slice(5,7), D=+dateKey.slice(8,10), H=+m[1], Mi=+m[2];
@@ -16323,7 +16364,7 @@ function _acctWallToUtcIso(dateKey, hhmm){
     var shown=Date.UTC(+o.year,+o.month-1,+o.day,(o.hour==='24'?0:+o.hour),+o.minute);
     var offset=shown-asUTC;             // how far the account TZ is ahead of UTC at that instant
     return new Date(asUTC-offset).toISOString();
-  }catch(e){ try{ return new Date(dateKey+'T'+hhmm).toISOString(); }catch(_){ return null; } }
+  }catch(e){ return null; }
 }
 /* Time helpers for the hourly Week/Day agenda grids. */
 function _calFmtHr(mins){ var h=Math.floor(mins/60), m=mins%60; var ap=h<12?'AM':'PM'; var h12=h%12; if(h12===0) h12=12; return h12+(m?(':'+_calPad(m)):'')+' '+ap; }
@@ -16987,6 +17028,36 @@ function calStartVisit(id){
   return {ok:true,bound:false,patientId:'',reason:'patient-unresolved',
     detail:(String(a.dob||'').trim()||String(a.mrn||a.athenaId||a.patient_mrn||'').trim())?'no-matching-chart':'name-only-row'};
 }
+/* calmrg-1.0.0 — A ONE-DAY POLL MUST NOT BECOME THE WHOLE SCHEDULE.
+   _renderWaitingRoom fetches /api/appointments?date=TODAY and then did
+   `_calAppts=appts`, replacing the ENTIRE schedule cache with that one day's
+   rows. _calAppts is a top-level var, so it is window._calAppts — the same
+   array a dozen day-scoped readers filter (the day-note rows, the calendar
+   peek, the appointment census, _findCanonicalScheduleAppt). One 40-second
+   waiting-room poll therefore emptied every OTHER day of the loaded month,
+   and calStartVisit could no longer find an appointment the doctor had been
+   looking at a moment earlier.
+   Merge instead. Fresh rows win on identity, every other day survives, and a
+   row is matched BOTH on this repo's own appointment identity
+   (_apptScheduleId) and on its raw backend id — so a row that carries only
+   one of the two cannot come back as a duplicate. A PRIOR row with no
+   identifier at all is not carried across: calStartVisit's lookup is by id,
+   so such a row can never be started, and re-adding it on every poll would
+   grow the cache without bound. Fresh rows are kept exactly as before. */
+function _calMergeApptRows(fresh){
+  var prior=Array.isArray(_calAppts)?_calAppts:[];
+  if(!Array.isArray(fresh)) return prior;
+  var seen=Object.create(null), out=[];
+  function ids(a){
+    var sid=''; try{ sid=(typeof _apptScheduleId==='function')?_apptScheduleId(a):''; }catch(e){ sid=''; }
+    return {s:sid, r:String((a&&a.id!=null)?a.id:'').trim()};
+  }
+  function known(k){ return !!((k.s&&seen['s:'+k.s])||(k.r&&seen['r:'+k.r])); }
+  function mark(k){ if(k.s) seen['s:'+k.s]=1; if(k.r) seen['r:'+k.r]=1; }
+  for(var i=0;i<fresh.length;i++){ var kf=ids(fresh[i]); if(known(kf)) continue; mark(kf); out.push(fresh[i]); }
+  for(var j=0;j<prior.length;j++){ var kp=ids(prior[j]); if(!kp.s&&!kp.r) continue; if(known(kp)) continue; mark(kp); out.push(prior[j]); }
+  return out;
+}
 // "Now in your waiting room" — surfaces checked-in/roomed patients on the Visit
 // screen with one-tap Start visit, so the doctor never hunts for who's next.
 async function _renderWaitingRoom(){
@@ -17007,7 +17078,7 @@ async function _renderWaitingRoom(){
   }
   var waiting=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).sort(function(x,y){ var xu=(x.time_unknown||!x.start_at)?1:0, yu=(y.time_unknown||!y.start_at)?1:0; return (xu-yu)||String(x.start_at||'').localeCompare(String(y.start_at||'')); });
   if(!waiting.length){ bar.style.display='none'; bar.innerHTML=''; return; }
-  try{ _calAppts=appts; }catch(e){}
+  try{ _calAppts=_calMergeApptRows(appts); }catch(e){}   /* calmrg-1.0.0: merge today in, never truncate the month */
   var rows=waiting.map(function(a){
     var nm=(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'Patient'));
     var tm=_fmtApptTime(a.start_at);
@@ -22970,6 +23041,36 @@ function _opHistoryRepaintSoon(){
     try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){}
   },120);
 }
+/* opdb-1.0.0 — AN AUTOSAVED DRAFT THAT NEVER LEFT THE DEVICE IS NOT A BACKUP.
+   opPrepAutosaveDraft() exists so a drafted op note "lands in History right
+   away — never lost". It wrote localStorage and stopped there. Every FINALIZE
+   path mirrors the note to /api/records (opPrepSaveNote does it explicitly
+   after proving the local write) — but the autosave, the one whose entire job
+   is surviving a crash, did not. A browser that died between drafting and
+   finalizing lost that operative text with no server copy to restore from, and
+   a doctor who moved to another device never saw the draft at all.
+   Mirror it. The FIRST save of a note id goes out AT ONCE, because the crash
+   this guards against can happen in the next second; only the re-saves — one
+   per template blank filled in — are coalesced onto a trailing timer. The
+   record is re-read from getNotes() when that timer fires, so a note finalized
+   in the meantime is never overwritten with the older draft body.
+   saveNoteToBackend() is already fail-soft (no session, offline, or a server
+   refusal all end in its own retry queue) and every call here is additionally
+   wrapped, so a backend problem can never block the local save or change what
+   opPrepAutosaveDraft returns. */
+var _opDraftBackupT={}, _opDraftBackupSeen={};
+function _opQueueDraftBackup(id){
+  if(!id||typeof saveNoteToBackend!=='function') return;
+  function push(){
+    try{
+      var rec=((typeof getNotes==='function'?getNotes():[])||[]).find(function(x){ return x&&x.id===id; });
+      if(rec) saveNoteToBackend(rec);
+    }catch(e){}
+  }
+  if(!_opDraftBackupSeen[id]){ _opDraftBackupSeen[id]=1; push(); return; }
+  try{ if(_opDraftBackupT[id]) clearTimeout(_opDraftBackupT[id]); }catch(e){}
+  _opDraftBackupT[id]=setTimeout(function(){ delete _opDraftBackupT[id]; push(); },1500);
+}
 function opPrepAutosaveDraft(i){
   try{
     var row=(window._opPrep||[])[i]; if(!row||!row.note) return;
@@ -22979,6 +23080,8 @@ function opPrepAutosaveDraft(i){
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
+    /* opdb-1.0.0: the server copy, queued the moment the device copy exists */
+    try{ _opQueueDraftBackup(row._noteId); }catch(eDb){}
     /* b965 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
        This autosave runs after every drafted row, and it rebuilt the whole
        History view and the nav counts synchronously each time - a screen the
@@ -25785,7 +25888,10 @@ function recordMeta(rec){
   }catch(e){}
   const d=new Date(rec.updated||rec.created||Date.now());
   return {
-    note_date: isNaN(d.getTime())?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10),
+    /* tzcarry-1.0.0: the note's DAY is the practice day it was written on.
+       toISOString() gave the UTC day, so every note saved after ~8 PM ET was
+       filed on TOMORROW in the outcomes/registry export. */
+    note_date: _acctDateKeyOf(isNaN(d.getTime())?new Date():d),
     em: em,
     visit_type: /^9920[2-5]$/.test(em)?'new':(/^9921[1-5]$/.test(em)?'established':(rec.isDraft?'draft':'')),
     cpt: cpt,
@@ -27969,7 +28075,15 @@ async function cleanupDuplicateAppointments(btn){
   var seen={}, dupes=[];
   // Sort so the earliest-timed appt per patient/day is the keeper.
   all.slice().sort(function(p,q){ return String(p.start_at||'').localeCompare(String(q.start_at||'')); }).forEach(function(x){
-    var ld=x.appt_date||''; if(!ld){ try{ if(x.start_at){ var dd=new Date(x.start_at); ld=dd.getFullYear()+'-'+('0'+(dd.getMonth()+1)).slice(-2)+'-'+('0'+dd.getDate()).slice(-2); } }catch(_){} }
+    /* tzcarry-1.0.0: this key decides what gets DELETED, so the day it names
+       must be the practice's day (apptclock-1.0.0 via _calDateOf), not the
+       browser's — otherwise an evening appointment on a laptop one zone east
+       lands on the next day and stops looking like the duplicate it is.
+       And it now fails CLOSED: a row whose day cannot be proven is left alone
+       rather than grouped under an EMPTY key, which would have collapsed a
+       patient's whole history into one bucket and deleted all but one. */
+    var ld=''; try{ ld=String(_calDateOf(x)||'').slice(0,10); }catch(_){}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(ld)) return;
     // Collapse to ONE appointment per patient per day (kills repeated-pull stacking).
     var k=String(x.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+ld;
     if(seen[k]){ dupes.push(x); } else { seen[k]=1; }
@@ -28022,9 +28136,18 @@ async function _importPulledSchedule(appts){
     return;
   }
   try{ var ed=await er.json(); (ed.appointments||[]).forEach(function(x){
-    // Compare in LOCAL clock time (start_at is stored UTC) so keys match the parsed times.
-    var lt=''; try{ if(x.start_at) lt=new Date(x.start_at).toTimeString().slice(0,5); }catch(_){}
-    var ld=x.appt_date||''; if(!ld){ try{ if(x.start_at) ld=new Date(x.start_at).getFullYear()+'-'+('0'+(new Date(x.start_at).getMonth()+1)).slice(-2)+'-'+('0'+new Date(x.start_at).getDate()).slice(-2); }catch(_){} }
+    /* tzcarry-1.0.0: these keys are matched against _apptKey(name, date, time)
+       built from Athena's PARSED cells, which are practice wall clocks. The old
+       comment said "LOCAL clock time" and meant the BROWSER's — the same thing
+       only while the laptop sits in the practice's zone. Everywhere else the
+       key missed and the appointment was imported a second time. Route both
+       halves through the one resolver (apptclock-1.0.0); the browser answer
+       survives only as the last resort, because an EMPTY key would fold
+       different days together and skip real imports. */
+    var lt=''; try{ lt=_apptHHMMTz(x.start_at)||''; }catch(_){}
+    if(!lt){ try{ if(x.start_at) lt=new Date(x.start_at).toTimeString().slice(0,5); }catch(_){} }
+    var ld=''; try{ ld=String(_calDateOf(x)||'').slice(0,10); }catch(_){}
+    if(!ld){ try{ if(x.start_at) ld=new Date(x.start_at).getFullYear()+'-'+('0'+(new Date(x.start_at).getMonth()+1)).slice(-2)+'-'+('0'+new Date(x.start_at).getDate()).slice(-2); }catch(_){} }
     existingKeys[_apptKey(x.name, ld, lt)]=1;
     existingKeys['D:'+String(x.name||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+ld]=1; // also block same patient + same day (any time)
   }); }catch(e){
@@ -30258,7 +30381,23 @@ const STANDARDS=`CLINICAL FORMAT & CODING STANDARDS (follow precisely):
 
 /* Read the chosen specialty preset, note style, and pasted context. */
 function getPreset(){ const el=document.getElementById('specialtyPreset'); var v=el?el.value:''; return /^tpl:/.test(v)?'':v; } // an uploaded-template pick isn't a "specialty" string — the template engine handles it
-function getNoteStyle(){ const el=document.getElementById('noteStyle'); return el?el.value:'SOAP'; }
+/* gns-1.0.0: #noteStyle has not existed in this page since the Style segment
+   replaced the old Settings select, so this read resolved to null and the
+   function answered 'SOAP' unconditionally — a dead read wearing the name of a
+   live preference. Its one caller is getGenStyle(), which uses it to SEED the
+   note FORMAT when nothing has been stored yet, so read the control that
+   actually ships that value: the selected button in #genStyleSeg.
+   Deliberately NOT #mlsNoteStyle. That select holds balanced / concise /
+   detailed — VERBOSITY, a different preference with its own reader
+   (getMlsNoteStyle) and its own storage key — and feeding it into a format
+   switch would be a category error that answers 'soap' for every value it can
+   hold while looking like it read a real preference. A legacy #noteStyle
+   select still wins if some host page provides one. */
+function getNoteStyle(){
+  const el=document.getElementById('noteStyle'); if(el) return el.value;
+  try{ const on=document.querySelector('#genStyleSeg button.on'); const v=on&&on.getAttribute('data-v'); if(v) return v; }catch(e){}
+  return 'SOAP';
+}
 /* ===== NOTE GENERATION OPTIONS — per-visit style / length / focus that feed the
    main Generate Note call. Style & length persist; focus is per-visit. ===== */
 function getGenStyle(){ var v=localStorage.getItem(uns('genStyle')); if(v) return v; var ns=(getNoteStyle()||'SOAP').toLowerCase(); return ns==='apso'?'apso':(ns==='narrative'?'narrative':'soap'); }
@@ -30281,10 +30420,10 @@ function getGenLength(){ return localStorage.getItem(uns('genLength'))||'standar
 function getGenInstr(){ var el=document.getElementById('genInstr'); return el?el.value.trim():''; }
 function getGenPatientSummary(){ var el=document.getElementById('genPatientSummary'); return !!(el&&el.checked); }
 function _genSegSet(segId, v){ var seg=document.getElementById(segId); if(!seg) return; var btns=seg.querySelectorAll('button'); for(var i=0;i<btns.length;i++){ btns[i].classList.toggle('on', btns[i].getAttribute('data-v')===v); } }
-function setGenStyle(v){ try{ localStorage.setItem(uns('genStyle'), v); }catch(e){} _genSegSet('genStyleSeg', v); }
+function setGenStyle(v){ try{ localStorage.setItem(uns('genStyle'), v); }catch(e){} _genSegSet('genStyleSeg', v); try{ refreshAutoDraftPriorRow(); }catch(eAdRow){} /* autodraft-1.0.0: the carry depends on the style */ }
 function setGenLength(v){ try{ localStorage.setItem(uns('genLength'), v); }catch(e){} _genSegSet('genLenSeg', v); }
 function toggleGenFocus(){ var el=document.getElementById('genInstr'); var b=document.getElementById('genFocusToggle'); if(!el) return; var show=el.style.display==='none'; el.style.display=show?'block':'none'; if(b) b.classList.toggle('on',show); if(show) el.focus(); }
-function initGenOptions(){ _genSegSet('genStyleSeg', getGenStyle()); _genSegSet('genLenSeg', getGenLength()); try{refreshGenSectionProfiles();}catch(e){} }
+function initGenOptions(){ _genSegSet('genStyleSeg', getGenStyle()); _genSegSet('genLenSeg', getGenLength()); try{refreshGenSectionProfiles();}catch(e){} try{refreshAutoDraftPriorRow();}catch(eAdRow){} /* autodraft-1.0.0 */ }
 var GEN_STYLE_LINE={
   soap:'FORMAT THE NOTE AS STANDARD SOAP using EXACTLY five flat top-level sections in this exact order, each heading alone on its own line: HPI, ROS, EXAM, ASSESSMENT, PLAN. Use no SUBJECTIVE/OBJECTIVE wrapper headings, do not combine ASSESSMENT and PLAN, and do not put content on a heading line. These exact headings are required for optional five-field Athena staging.',
   apso:'FORMAT THE NOTE AS APSO: put ASSESSMENT and PLAN FIRST, then SUBJECTIVE and OBJECTIVE (same content, reordered) — clinicians scan A/P first.',
@@ -30452,6 +30591,237 @@ function _mlsTranscriptHasDraftableTodayEvidence(text){
   return words.length>=4&&clinical.test(src)&&!generic.test(src);
 }
 
+/* ===== autodraft-1.0.0 ==========================================================
+   AUTO-DRAFT FROM THE PATIENT'S LAST NOTE  (Settings -> Note defaults)
+
+   OFF by default. When it is ON and the active patient already has a SAVED,
+   FINISHED note in this chart, the generation SEED - the prompt, never the model
+   output - gains two things and nothing else:
+
+     1. SKELETON  - the prior note's section headings, in order. Layout only, and
+        the NOTE STYLE contract explicitly WINS wherever the two disagree, so this
+        can never break the five-section `note`/`athena_note` contracts.
+     2. CARRIED_FORWARD - stable history sections lifted VERBATIM out of the prior
+        note, each labelled "(carried from last visit - review)".
+
+   THE CARRY LIST IS A CLOSED ALLOWLIST OF FIVE HEADINGS. Everything else - every
+   today's-visit section, and every medication section - is unreachable by
+   construction rather than by ban-list, so a new heading in a prior note can
+   never quietly become carry-eligible.
+
+   On top of that closed list sits a SECOND, INDEPENDENT line gate: any carried
+   line naming a dose, strength, frequency, route, sig, refill or taper is
+   dropped, so a drug/dose line cannot ride forward even inside an allowed
+   section. Medications are documented fresh at every visit. That is a patient-
+   safety rule, not a preference, and the gate is deliberately over-inclusive:
+   losing a true PMH line is cheap, carrying a stale dose is not.
+
+   WHY 'soap' CARRIES NOTHING: _flatSoapNote() rewrites a SOAP note down to
+   exactly HPI/ROS/EXAM/ASSESSMENT/PLAN, and any trailing history block would be
+   swallowed into PLAN on the way through. Rather than fold history into today's
+   plan, the carry is SUPPRESSED under 'soap' and only the layout seed is sent.
+   The Settings copy and the per-visit row both say so in the doctor's words.
+   ============================================================================= */
+var AUTODRAFT_MARKER_TEXT='carried from last visit - review';
+var AUTODRAFT_MARKER='('+AUTODRAFT_MARKER_TEXT+')';
+/* CLOSED allowlist. Nothing carries forward unless it matches one of these. */
+var AUTODRAFT_CARRY=[
+  {name:'PAST MEDICAL HISTORY',  re:/^(?:past\s+medical\s+history|medical\s+history|past\s+medical\s+hx|pmh|pmhx)$/i},
+  {name:'PAST SURGICAL HISTORY', re:/^(?:past\s+surgical\s+history|surgical\s+history|past\s+surgeries|past\s+surgical\s+hx|psh|pshx)$/i},
+  {name:'FAMILY HISTORY',        re:/^(?:family\s+history|family\s+hx|fh|fhx)$/i},
+  {name:'SOCIAL HISTORY',        re:/^(?:social\s+history|social\s+hx|sh|shx)$/i},
+  {name:'ALLERGIES',             re:/^(?:allergies|allergy|drug\s+allergies)$/i}
+];
+/* Note styles with room for a stable-history section. 'soap' is absent on
+   purpose - see the header. */
+var AUTODRAFT_CARRY_STYLES={hp:true,narrative:true,problem:true,apso:true};
+/* Section names accepted as headings even in Title Case. ALL-CAPS lines are
+   accepted on their own. */
+var AUTODRAFT_KNOWN=[
+  /^(?:chief\s+complaint|cc)$/i,/^(?:hpi|history\s+of\s+present\s+illness)$/i,
+  /^(?:ros|review\s+of\s+systems)$/i,/^(?:subjective|objective)$/i,
+  /^(?:exam|examination|physical\s+exam(?:ination)?)$/i,
+  /^(?:assessment|impression|diagnos(?:is|es))$/i,
+  /^(?:plan|assessment\s*(?:and|&|\/)\s*plan|a\/p|follow[\s-]?up|disposition)$/i,
+  /^(?:medications?|current\s+medications?|meds)$/i,/^(?:vitals?|vital\s+signs)$/i,
+  /^(?:labs?|imaging|studies|procedure|mdm|medical\s+decision\s+making)$/i,
+  /^(?:past\s+medical\s+history|medical\s+history|past\s+medical\s+hx|pmh|pmhx)$/i,
+  /^(?:past\s+surgical\s+history|surgical\s+history|past\s+surgeries|past\s+surgical\s+hx|psh|pshx)$/i,
+  /^(?:family\s+history|family\s+hx|fh|fhx)$/i,/^(?:social\s+history|social\s+hx|sh|shx)$/i,
+  /^(?:allergies|allergy|drug\s+allergies)$/i
+];
+var AUTODRAFT_MAX_SECTION_LINES=12, AUTODRAFT_MAX_LINE_CHARS=200, AUTODRAFT_MAX_SKELETON=24;
+
+function getAutoDraftPrior(){ try{ return localStorage.getItem(uns('autoDraftPriorV1'))==='1'; }catch(e){ return false; } }
+function setAutoDraftPrior(on){ try{ localStorage.setItem(uns('autoDraftPriorV1'), on?'1':'0'); }catch(e){} }
+
+/* Second gate. A line naming a dose, strength, frequency, route, sig, refill or
+   taper NEVER rides forward, whichever allowed section it was found in.
+   Deliberately over-inclusive: "CKD stage IV" and "smokes daily" are dropped
+   too, and that is the correct trade against carrying a stale dose. */
+function _autoDraftDoseLine(line){
+  var s=String(line||'');
+  if(/\d\s*(?:mg|mcg|ug|g|gm|gram|grams|ml|cc|unit|units|iu|meq|mmol|puffs?|drops?|tabs?|tablets?|caps?|capsules?|patch(?:es)?)\b/i.test(s))return true;
+  if(/\b(?:bid|tid|qid|qhs|qam|qpm|qod|qd|prn|hs|q\d+\s*(?:h|hr|hrs|hour|hours))\b/i.test(s))return true;
+  if(/\b(?:once|twice|three\s+times|four\s+times)\s+(?:a\s+|per\s+)?(?:day|daily|week|weekly)\b/i.test(s))return true;
+  if(/\b(?:daily|nightly|every\s+\d+\s+(?:hours?|days?|weeks?))\b/i.test(s))return true;
+  if(/\b(?:po|pr|iv|im|sq|subq|subcut(?:aneous)?|sublingual|topical|inhaled|transdermal)\b/i.test(s))return true;
+  if(/\bsig\s*:/i.test(s))return true;
+  if(/\b(?:refill|dispense|titrat|taper)\w*/i.test(s))return true;
+  return false;
+}
+function _autoDraftIsHeading(head){
+  var h=String(head||'').trim();
+  if(!h)return false;
+  if(/[.?!,;]$/.test(h))return false;
+  if(h.split(/\s+/).filter(Boolean).length>6)return false;
+  if(/^[A-Z0-9 &/()'.-]+$/.test(h)&&/[A-Z]/.test(h))return true;
+  for(var i=0;i<AUTODRAFT_KNOWN.length;i++)if(AUTODRAFT_KNOWN[i].test(h))return true;
+  return false;
+}
+/* Split a saved note into [{heading, body:[lines]}]. Anything before the first
+   recognised heading is discarded - a preamble is not a section. */
+function _autoDraftSections(text){
+  var lines=String(text||'').replace(/\r\n?/g,'\n').split('\n'), out=[], cur=null;
+  var hdr=/^\s{0,6}(?:[-*#>]+\s*)?([A-Za-z][A-Za-z0-9 &/'().-]{0,48}?)\s*:\s*(.*)$/;
+  for(var i=0;i<lines.length;i++){
+    var m=hdr.exec(lines[i]), head=m?String(m[1]).replace(/\s+/g,' ').trim():'';
+    if(head&&_autoDraftIsHeading(head)){
+      cur={heading:head,body:[]}; out.push(cur);
+      if(m[2]&&m[2].trim())cur.body.push(m[2].trim());
+    }else if(cur){ cur.body.push(lines[i]); }
+  }
+  return out;
+}
+function _autoDraftCarryName(head){
+  var h=String(head||'').replace(/\s+/g,' ').trim();
+  for(var i=0;i<AUTODRAFT_CARRY.length;i++)if(AUTODRAFT_CARRY[i].re.test(h))return AUTODRAFT_CARRY[i].name;
+  return '';
+}
+/* The most recent SAVED, FINISHED visit note in this patient's chart. A draft,
+   an op note and a raw Athena chart import are not the doctor's visit note and
+   are never used as a seed. */
+function _autoDraftPriorNote(patientId,excludeId){
+  var pid=String(patientId||'').trim(); if(!pid)return null;
+  var arr=[]; try{ arr=getNotes()||[]; }catch(e){ return null; }
+  if(!Array.isArray(arr))return null;
+  var best=null,bestTs=-1;
+  for(var i=0;i<arr.length;i++){
+    var n=arr[i]; if(!n||typeof n!=='object')continue;
+    if(String(n.patientId||'')!==pid)continue;
+    if(excludeId&&String(n.id||'')===String(excludeId))continue;
+    if(n.isDraft===true)continue;
+    var kind=String(n.kind||'').toLowerCase();
+    if(kind&&kind!=='soap'&&kind!=='visit'&&kind!=='note')continue;
+    if(/athena\s+chart\s+import/i.test(String(n.cc||'')))continue;
+    if(String(n.text||'').replace(/\s+/g,'').length<40)continue;
+    var ts=Number(n.updated||n.created||0); if(!isFinite(ts))ts=0;
+    if(ts>bestTs){ bestTs=ts; best=n; }
+  }
+  return best;
+}
+function _autoDraftBuildSeed(priorText,style){
+  var sections=_autoDraftSections(priorText), skeleton=[], carried=[], dropped=0, seenHead={}, seenCarry={};
+  var carryAllowed=AUTODRAFT_CARRY_STYLES[String(style||'').toLowerCase()]===true;
+  for(var i=0;i<sections.length;i++){
+    var s=sections[i], head=String(s.heading||'').replace(/\s+/g,' ').trim(); if(!head)continue;
+    var up=head.toUpperCase();
+    if(!seenHead[up]&&skeleton.length<AUTODRAFT_MAX_SKELETON){ seenHead[up]=1; skeleton.push(head); }
+    var name=_autoDraftCarryName(head);
+    if(!name||!carryAllowed||seenCarry[name])continue;
+    var out=[];
+    for(var j=0;j<s.body.length;j++){
+      var ln=String(s.body[j]||'').replace(/\s+$/,'');
+      if(!ln.trim())continue;
+      if(_autoDraftDoseLine(ln)){ dropped++; continue; }
+      out.push(ln.slice(0,AUTODRAFT_MAX_LINE_CHARS));
+      if(out.length>=AUTODRAFT_MAX_SECTION_LINES)break;
+    }
+    if(out.length){ seenCarry[name]=1; carried.push({name:name,lines:out}); }
+  }
+  return {skeleton:skeleton,carried:carried,droppedDoseLines:dropped,carryAllowed:carryAllowed};
+}
+function _autoDraftSeedBlock(seed,meta){
+  if(!seed)return '';
+  var when=String((meta&&meta.when)||'').trim(), out=[];
+  out.push('PRIOR_NOTE_SEED_BEGIN');
+  out.push('This patient already has a finished note in this chart'+(when?(', saved '+when):'')+'. Exactly two things are taken from it, and nothing else.');
+  out.push('');
+  out.push('1. LAYOUT. Where the NOTE STYLE contract above leaves the choice open, use the same section headings, in the same order and the same capitalisation, as SKELETON below. SKELETON is headings only and carries no content. Where SKELETON and the NOTE STYLE contract disagree, THE NOTE STYLE CONTRACT WINS. The athena_note field is unaffected and stays exactly HPI, ROS, EXAM, ASSESSMENT, PLAN.');
+  out.push('');
+  out.push('SKELETON:');
+  out.push(seed.skeleton.length?seed.skeleton.join('\n'):'(no headings recognised)');
+  out.push('');
+  if(seed.carried.length){
+    out.push('2. CARRIED_FORWARD. The blocks below are this patient\'s STABLE HISTORY, copied out of the prior note word for word. Reproduce each block in the "note" field character for character under its own heading, keeping the '+AUTODRAFT_MARKER+' marker on the heading line. Do not reword, summarise, expand, merge, re-order or add to them, and do not repeat them inside any other section.');
+    out.push('');
+    out.push('CARRIED_FORWARD_BEGIN');
+    for(var i=0;i<seed.carried.length;i++){
+      out.push(seed.carried[i].name+' '+AUTODRAFT_MARKER+':');
+      out.push(seed.carried[i].lines.join('\n'));
+      out.push('');
+    }
+    out.push('CARRIED_FORWARD_END');
+  }else{
+    out.push('2. CARRIED_FORWARD: none. Copy no content whatsoever out of the prior note.');
+  }
+  out.push('');
+  out.push('HARD LIMITS - these override everything above:');
+  out.push('- HPI, ROS, EXAM, ASSESSMENT and PLAN are written from TODAY_TRANSCRIPT alone. No prior-note content may appear in them, and no CARRIED_FORWARD text may be repeated inside them.');
+  out.push('- NEVER carry a medication, dose, strength, frequency, route, refill or sig out of the prior note into any part of today\'s note. Today\'s medications come from TODAY_TRANSCRIPT only.');
+  out.push('- The prior note is not evidence that anything was reviewed, examined, assessed, ordered, continued or planned today.');
+  out.push('- Every carried block keeps its '+AUTODRAFT_MARKER+' marker so the clinician can see it was not written today.');
+  out.push('PRIOR_NOTE_SEED_END');
+  return out.join('\n');
+}
+/* Returns {block,seed,noteId,when} or null. Never throws: a null return is an
+   exact byte-for-byte no-op on the prompt, which is what OFF must mean. */
+function _mlsAutoDraftPriorSeed(style){
+  try{
+    if(!getAutoDraftPrior())return null;
+    var box=document.getElementById('genSeedPrior');
+    if(box&&box.checked===false)return null;                       /* per-visit opt-out */
+    var pid=''; try{ pid=(typeof getActivePtId==='function')?String(getActivePtId()||''):''; }catch(ePid){}
+    if(!pid)return null;
+    var exclude=''; try{ exclude=(typeof currentNoteId!=='undefined'&&currentNoteId)?String(currentNoteId):''; }catch(eEx){}
+    var prior=_autoDraftPriorNote(pid,exclude); if(!prior)return null;
+    var st=String(style||((typeof getGenStyle==='function')?getGenStyle():'soap')||'soap').toLowerCase();
+    var seed=_autoDraftBuildSeed(String(prior.text||''),st);
+    if(!seed.skeleton.length&&!seed.carried.length)return null;
+    var when=''; try{ var d=new Date(Number(prior.updated||prior.created||0)); if(!isNaN(d.getTime())&&d.getTime()>0)when=d.toLocaleDateString(); }catch(eW){}
+    var block=_autoDraftSeedBlock(seed,{when:when});
+    return block?{block:block,seed:seed,noteId:String(prior.id||''),when:when}:null;
+  }catch(e){ return null; }
+}
+/* Per-visit row. Hidden whenever the account setting is off or this patient has
+   no eligible prior note, so it never promises something that will not happen. */
+function refreshAutoDraftPriorRow(){
+  try{
+    var row=document.getElementById('genSeedRow'), box=document.getElementById('genSeedPrior'), hint=document.getElementById('genSeedPriorHint');
+    if(!row)return;
+    if(!getAutoDraftPrior()){ row.style.display='none'; if(box)box.checked=true; return; }
+    var pid=''; try{ pid=(typeof getActivePtId==='function')?String(getActivePtId()||''):''; }catch(ePid){}
+    var prior=pid?_autoDraftPriorNote(pid,(typeof currentNoteId!=='undefined'&&currentNoteId)?String(currentNoteId):''):null;
+    if(!prior){ row.style.display='none'; return; }
+    row.style.display='flex';
+    if(!hint)return;
+    if(box&&box.checked===false){ hint.textContent='Off for this visit — today’s note will be written from today’s visit alone.'; return; }
+    var st=(typeof getGenStyle==='function')?String(getGenStyle()||'soap').toLowerCase():'soap';
+    var seed=_autoDraftBuildSeed(String(prior.text||''),st);
+    var when=''; try{ var d=new Date(Number(prior.updated||prior.created||0)); if(!isNaN(d.getTime())&&d.getTime()>0)when=d.toLocaleDateString(); }catch(eW){}
+    var src=when?('the note saved '+when):'their last saved note';
+    if(seed.carried.length){
+      hint.textContent='Layout from '+src+', and '+seed.carried.map(function(c){return c.name.toLowerCase();}).join(', ')+' carried forward marked “'+AUTODRAFT_MARKER_TEXT+'”. Today’s HPI, exam and plan stay open; medications are never carried.';
+    }else if(AUTODRAFT_CARRY_STYLES[st]===true){
+      hint.textContent='Layout from '+src+'. That note has no stable-history sections to carry forward.';
+    }else{
+      hint.textContent='Layout from '+src+'. SOAP has no history sections — pick H&P under Style to carry past medical, surgical, family and social history forward.';
+    }
+  }catch(e){}
+}
+try{ window.__mlsAutoDraftPrior={version:'autodraft-1.0.0',seed:_mlsAutoDraftPriorSeed,build:_autoDraftBuildSeed,prior:_autoDraftPriorNote,doseLine:_autoDraftDoseLine}; }catch(eAdx){}
+/* ===== end autodraft-1.0.0 ===== */
+
 async function callOpenAI(transcript,key,options){
   options=options||{};
   const preset=getPreset();
@@ -30523,7 +30893,15 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
      "Specialty template" picker, else the saved Settings specialty. It was
      being folded into `specLine` inside `sys` and nowhere else, and the hosted
      structured-note lane does not transport `sys` at all (see aiCallRaw). */
-  return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
+  /* autodraft-1.0.0: the "auto-draft from the patient's last note" setting rides
+     the USER payload for the same reason turnsBlock does - it is the one field
+     the hosted structured-note transport actually carries. OFF, no active
+     patient, no finished prior note, or the per-visit box unticked all return
+     null, and seedLine is then the empty string: an exact no-op on the prompt. */
+  var autoDraftSeed=null;
+  try{ autoDraftSeed=(typeof _mlsAutoDraftPriorSeed==='function')?_mlsAutoDraftPriorSeed(genStyle):null; }catch(eAutoDraft){ autoDraftSeed=null; }
+  var seedLine=(autoDraftSeed&&autoDraftSeed.block)?('\n\n'+autoDraftSeed.block):'';
+  return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
 }
 
 /* ---------------------------------------------------------
@@ -41804,7 +42182,10 @@ function cwBuildPriorVisits(){
       .sort((a,b)=>(b.updated||0)-(a.updated||0))
       .slice(0,8);
     if(!notes.length) return '';
-    const fmtDate=ts=>{ try{ return ts?new Date(ts).toISOString().slice(0,10):''; }catch(e){ return ''; } };
+    /* tzcarry-1.0.0: these dates label prior visits INSIDE the prompt the model
+       reads. A UTC day moved an evening visit to the next date, which is a
+       clinical fact the note then repeats back. Practice day, always. */
+    const fmtDate=ts=>{ try{ return ts?(_acctDateKeyOf(new Date(ts))||new Date(ts).toISOString().slice(0,10)):''; }catch(e){ return ''; } };
     const blocks=notes.map((n,idx)=>{
       const date=fmtDate(n.updated);
       const body=String(n.soap||n.insurance||'').replace(/\s+/g,' ').trim().slice(0,600);
@@ -45999,6 +46380,99 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #opPrepModal[data-mlsopn="simple"]:not([data-mlsopn-more="open"]) #oprDayRail > *:not(#mlsOpnRail),
 #opPrepModal[data-mlsopn="normal"]:not([data-mlsopn-more="open"]) #oprDayRail > *:not(#mlsOpnRail){
   display:none !important;
+}
+
+/* ===== opfollow-1.0.0 — OWNER 2026-08-31: "follow templates the way we want,
+   that feature was removed and needs to be added back." ====================
+
+   WHAT WAS REMOVED, AND BY WHAT. The blanket rule directly above (24948c24,
+   2026-08-18) hides EVERY child of #oprDayRail except #mlsOpnRail in Simple
+   and Normal. That is not a rare configuration: level() maps the shell's own
+   default data-msl of "calm" onto "normal", and `moreOpen` starts false with
+   no user-facing control at all — window.__mlsOpNotes.setMore() is the only
+   writer — so on a default install the fold is ON and the single way out of it
+   is switching the WHOLE app to Everything. Two things went with it, and only
+   one of them had a replacement:
+
+     #oprTplRail   the per-procedure template picker. REPLACED — the new rail
+                   carries its own template row (#mlsOpnTplLib) and the note
+                   pane its tpl disclosure. It stays folded; nothing here
+                   touches it.
+     #oprTplMode   "How drafts follow your template" — the three-mode control
+                   the owner asked for on 2026-07-29 ("give options on how I
+                   want the op note to follow those templates"). NOT replaced
+                   anywhere in this room. It is not decoration either: the
+                   value it writes is the one feat_mls_opnote_integrity.js:1627
+                   reads on EVERY draft, and each mode is real at both ends of
+                   the pipeline — a prompt clause (TPL_MODE_CLAUSE) and the
+                   deterministic fidelity gate's wording relaxation. The
+                   Settings draft-tuning select reaches the same key
+                   (opnk-1.0.0), which is why this reads as "removed" rather
+                   than "broken" — but that is three screens away from the room
+                   where he is deciding how this day's notes get written.
+
+   So: exempt exactly that one node, by id, and nothing else. The fold's stated
+   purpose — one patient list in this column, not two — is untouched.
+
+   AND FIX WHAT MADE IT FOLDABLE, so this is not a straight revert. The fold's
+   own comment records the measurement: "three patient buttons were still
+   painted OVER by #oprTplMode ... as a SIBLING of #oprTplRail rather than
+   inside it." That is a layout fault, not a reason to take a control off the
+   screen. #oprDayRail is a flex column in which #mlsOpnRail is `flex:1 1 auto`
+   and #oprTplMode carried no flex sizing of its own, so it took part in the
+   free-height fight instead of docking beneath the list. Pinned to
+   `flex:0 0 auto` with `order:99` it CANNOT overlap: the patient list keeps
+   every pixel it is allotted and scrolls inside itself, and the control sits
+   under it behind its own rule.
+
+   .opr-tplmode also had no stylesheet ANYWHERE — feat_mls_opnote_room.js
+   styles .opr-nav-item and .opr-tpl-item and never its own mode buttons — so
+   even in Everything mode the three options painted as bare inline buttons
+   with their sub-caption running on in the same line. Styled here, in the
+   shell that already owns .opr-nav-item, rather than in the shared room
+   module, so this whole change stays inside the 1p lane. Nothing is written to
+   storage and no gate is consulted, relaxed or bypassed by any of it. */
+#opPrepModal[data-mlsopn="simple"]:not([data-mlsopn-more="open"]) #oprDayRail > #oprTplMode,
+#opPrepModal[data-mlsopn="normal"]:not([data-mlsopn-more="open"]) #oprDayRail > #oprTplMode{
+  display:block !important;
+}
+#opPrepModal #oprDayRail > #oprTplMode{
+  flex:0 0 auto; order:99; margin-top:12px; padding-top:10px;
+  border-top:1px solid var(--line);
+}
+/* AND THE REASON IT COULD PAINT OVER ANYTHING AT ALL. Measured by
+   tests/1p-opnote-rail-runtime's own occlusion probe the moment the control
+   came back: patient rows 3-8 answered document.elementFromPoint with .nm and
+   .opr-nav-st — the mode buttons' spans — so the control was ON TOP of six
+   patients. The cause is one declaration in the room's own rule:
+     #mlsOpnRail{ display:flex; flex-direction:column; min-height:0; flex:1 1 auto; }
+   `min-height:0` deliberately defeats the automatic min-content floor, so the
+   list box SHRINKS to make room for any later sibling — and with no overflow
+   of its own its children keep their laid-out height and simply spill out the
+   bottom, where the next sibling paints over them. That is a spill by
+   construction: it needs no second control to be wrong, it needed one to be
+   VISIBLE. Folding the control hid the symptom and left the cause, which is
+   why "painted over" reads in that fold's comment as a property of
+   #oprTplMode rather than of the box above it.
+   Clipping the list to its own box is the cure and it costs nothing when
+   nothing is docked under it: a box that is not shrunk has nothing to clip.
+   #mlsOpDayList keeps its own fit()-computed cap and its own scroller, so the
+   room's taskbar-clearance math is untouched — this only stops the rail
+   drawing outside itself. */
+#opPrepModal[data-mls-opnotes-state] #oprDayRail > #mlsOpnRail{ overflow:auto; }
+#opPrepModal #oprTplMode .opr-rail-title{ margin:0 0 6px; }
+#opPrepModal #oprTplMode .opr-tplmode{
+  display:flex; align-items:flex-start; width:100%; text-align:left;
+  border:1px solid transparent; background:transparent; border-radius:10px;
+  padding:7px 9px; margin:0 0 2px; cursor:pointer;
+  font:400 12.5px/1.35 inherit; font-family:inherit; color:var(--ink);
+}
+#opPrepModal #oprTplMode .opr-tplmode:hover{ background:var(--bg); border-color:var(--line); }
+#opPrepModal #oprTplMode .opr-tplmode.on{ background:var(--bg); border-color:var(--line); font-weight:700; }
+#opPrepModal #oprTplMode .opr-tplmode .nm{ flex:1; min-width:0; }
+#opPrepModal #oprTplMode .opr-tplmode .opr-nav-st{
+  display:block; font-size:10.5px; font-weight:600; color:var(--muted);
+  margin-top:2px; white-space:normal;
 }
 
 /* The Draft-all row in the editor is EMPTY once its button has moved to the

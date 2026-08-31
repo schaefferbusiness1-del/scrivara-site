@@ -1,5 +1,5 @@
 /* =========================================================================
- * MLS -- Find shortcut compatibility  (feat_mls_command_palette.js -> window.__mlsCmdPalette, cpal-1.0.4)
+ * MLS -- Find shortcut compatibility  (feat_mls_command_palette.js -> window.__mlsCmdPalette, cpal-1.0.5)
  * 2026-07-12, final integration sweep (demo polish lane).
  * ----------------------------------------------------------------------------
  * Ctrl+K / Cmd+K opens the same canonical Find surface as the persistent
@@ -14,12 +14,15 @@
  *     coherence bridge for features that were only reachable via the Menu
  *   - NOTES full-text search (>=3 chars) -> opens that patient's History
  * Safety: no writeback, no orders, no signing; "start recording" refuses
- * honestly when no patient is open. Everything is additive and reversible:
+ * honestly when no patient is open. cpalguard-1.0.0 extends that to DISCARDS:
+ * the two rows that can destroy work — stop recording, and regenerate over an
+ * existing or in-flight note — refuse when meaningless and confirm once when
+ * real. Everything is additive and reversible:
  *   window.__mlsCmdPalette.revert()
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'cpal-1.0.4';
+  var VERSION = 'cpal-1.0.5';
   var _priorPalette = null;
   try {
     _priorPalette = window.__mlsCmdPalette || null;
@@ -118,16 +121,62 @@
     return rows;
   }
 
+  /* cpalguard-1.0.0 — A FUZZY MATCH PLUS ENTER IS NOT A DELIBERATE CLINICAL
+     ACTION. This palette ranks rows on a substring score and runs the selected
+     one on Enter, so typing "stop" or "note" puts a state-changing row under
+     the cursor and one keystroke fires it. Most rows here navigate. Two do not:
+       Stop recording  ends a live capture. There is no resume from that point,
+                       and the row ran even when nothing was recording — which
+                       silently reset the capture button and burned a capture
+                       session epoch for no reason.
+       Generate note   calls _mlsAbortActiveGeneration('superseded') and then
+                       replaces the body of #noteBox, so one keystroke could
+                       discard a generation already in flight or overwrite a
+                       note the doctor had been editing.
+     Nothing downstream covers this: generateNote()'s own guards are about
+     transcript evidence and patient binding, not about consent to destroy work
+     that already exists. So refuse honestly when the action is meaningless,
+     and ask once when it would destroy something. The engine sinks are
+     untouched — this is the palette's own front door, and the header claim
+     "no writeback, no orders, no signing" now covers discards too.
+     Fail CLOSED: if no confirm surface exists we do not perform the action. */
+  function recordingNow() { return safe(function () { return window.capturing === true; }, false); }
+  function generationInFlight() { return safe(function () { var b = $('genBtn'); return !!(b && b.disabled); }, false); }
+  function existingNoteText() { return safe(function () { var el = $('noteBox'); return el ? S(el.value).trim() : ''; }, ''); }
+  function ask(message) {
+    var fn = safe(function () { return window.confirm; }, null);
+    if (!isFn(fn)) { toast('This action needs a confirmation this page cannot show — use the on-screen control instead.', 'err'); return false; }
+    return safe(function () { return !!fn.call(window, message); }, false);
+  }
+  function mayGenerate() {
+    if (generationInFlight()) return ask('A note is already being generated for this visit.\n\nStart over? The generation now running will be discarded.');
+    if (existingNoteText()) return ask('This visit already has a generated note.\n\nGenerate again? The note currently on screen will be replaced.');
+    return true;
+  }
   function actionList() {
     var acts = [
       { icon: '🎙️', title: 'Start recording', desc: 'Begin capturing this visit (needs an open patient)', kw: 'start recording record visit capture', run: function () {
           var ap = activePt();
           if (!ap || !ap.name) { toast('No patient is open -- pick one first (try typing their name here).', 'err'); return; }
+          /* cpalguard-1.0.0: never let a fuzzy match disturb a capture that is
+             already live — the mic has one owner and restarting it loses the
+             recognizer stream. */
+          if (recordingNow()) { toast('Already recording this visit.', ''); nav('visit'); return; }
           nav('visit');
           safe(function () { if (isFn(window.startCapture)) window.startCapture(); else if (isFn(window.heroStartVisit)) window.heroStartVisit(); });
         } },
-      { icon: '⏹', title: 'Stop recording', desc: 'Stop the current capture', kw: 'stop recording end finish', run: function () { safe(function () { if (isFn(window.stopCapture)) window.stopCapture(); }); } },
-      { icon: '📝', title: 'Generate note', desc: 'Draft the note from the recording', kw: 'generate note write create', run: function () { nav('visit'); safe(function () { if (isFn(window.generateNote)) window.generateNote(); }); } },
+      { icon: '⏹', title: 'Stop recording', desc: 'Stop the current capture', kw: 'stop recording end finish', run: function () {
+          /* cpalguard-1.0.0 */
+          if (!recordingNow()) { toast('Nothing is recording right now.', ''); return; }
+          if (!ask('Stop the recording now?\n\nThe capture ends immediately and cannot be resumed from this point.')) return;
+          safe(function () { if (isFn(window.stopCapture)) window.stopCapture(); });
+        } },
+      { icon: '📝', title: 'Generate note', desc: 'Draft the note from the recording', kw: 'generate note write create', run: function () {
+          /* cpalguard-1.0.0: ask before discarding an in-flight generation or
+             overwriting a note that is already on screen. */
+          if (!mayGenerate()) return;
+          nav('visit'); safe(function () { if (isFn(window.generateNote)) window.generateNote(); });
+        } },
       { icon: '✉️', title: 'Dictate a letter', desc: 'Draft-and-preview letter tool (never sends)', kw: 'dictate letter referral work excuse', run: function () {
           var b = $('mlsdlLaunch'); if (b) { b.click(); } else { toast('The letter tool has not loaded yet.', 'err'); }
         } },
