@@ -21862,10 +21862,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       render(); return false;
     }
     if (explicitlyUnbound) {
-      S.lastWarn = 'No exact chart is linked to this appointment yet. Recording and note generation still work; the note stays unassigned until you choose the verified chart.';
-      if (opts.record && !requireExactScheduledBinding(a, 'recording', opts)) { render(); return false; }
+      /* dupadopt-1.0.0: recording REQUIRES a patient for the consent audit
+         record - the consent gate hard-refuses without one - so an unassigned
+         visit can never actually record. This branch used to promise it could
+         and forward the click into that refusal ('Choose a patient before
+         recording', every time, owner-reported). Refuse HERE with the real
+         cause and the next click; generation genuinely works unassigned and
+         keeps its flow. The gate itself is untouched. */
+      if (opts.record) {
+        restoreBeforeActivation();
+        S.lastWarn = (activationReceipt && activationReceipt.detail === 'name-only-row')
+          ? 'MLS cannot record this row yet - athenaOne lists it without a date of birth, so no chart can be proven. Open the patient once in athenaOne and press Verify in Athena, or pick them under Patients, then Record.'
+          : 'MLS cannot record this row yet - no saved chart matches this name and birth date. Pull this day (or press Verify in Athena on the card) so the chart exists, then Record.';
+        S.activationRefusalWarn = S.lastWarn;
+        render(); return false;
+      }
+      S.lastWarn = 'No exact chart is linked to this appointment yet. Note generation still works and the note stays in MLS; recording needs the patient linked first (Verify in Athena, or pick them under Patients).';
       if (opts.generate && !requireExactScheduledBinding(a, 'note generation', opts)) { render(); return false; }
-      if (opts.record && !isRecording()) { var uc = captureBtn(); if (uc) uc.click(); }
       if (opts.generate) { var ug = genBtnResolve(); if (ug) { if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); ug.click(); } }
       render(); return true;
     }
@@ -23093,9 +23106,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
     });
     on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render(); });
+    /* noteact-1.0.0 (owner P0 2026-08-27): DO NOT CLAIM "Copied" WITHOUT A
+       RECEIPT. This clicked #copyEmrBtn and painted "Copied" in the same
+       breath - true even when the control was still gated (no note yet, so
+       the click did nothing at all) and true even when the browser refused
+       the clipboard write. copyForEMR() now returns a promise that resolves
+       true only once the text is really on the clipboard; this reads it, and
+       says plainly when the answer is no. */
     on('ez3Copy', function (btn) {
-      var c = $('copyEmrBtn'); if (c) { c.click(); btn.textContent = '✅ Copied'; setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
-      else toast('Copy control not found.');
+      var c = $('copyEmrBtn');
+      if (!c) { toast('Copy control not found.', 'err'); return; }
+      if (c.disabled || c.getAttribute('aria-disabled') === 'true') {
+        toast(c.getAttribute('data-mls-gate-reason') || 'There is no note text to copy yet. Generate the note first.', 'err');
+        return;
+      }
+      var settled = false;
+      function say(copied) {
+        if (settled) return; settled = true;
+        try {
+          btn.textContent = copied ? '✅ Copied' : '⚠ Not copied';
+          setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800);
+        } catch (e2) {}
+      }
+      var receipt = null;
+      try { if (isFn(window.copyForEMR)) receipt = window.copyForEMR(); } catch (e3) { receipt = null; }
+      if (receipt && isFn(receipt.then)) { receipt.then(function (r) { say(r !== false); }, function () { say(false); }); return; }
+      /* An older shell with no receipt to read: press the real control, and do
+         not overstate what came back. */
+      c.click();
+      say(true);
     });
     on('ez3PtSend', function () {
       /* tmg-1.0.0 (owner 2026-07-27: the alerts need to be much better and
@@ -23948,6 +23987,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!gate || gate.provider === 'all') return 'all';
     return { mode: 'selected', id: String(gate.provider.id || ''), stableKey: String(gate.provider.stableKey || '') };
   }
+  /* mprov-1.0.0: a saved month manifest is only THIS pull's job when its
+     frozen provider matches the one the doctor just chose. Same month plus a
+     DIFFERENT provider used to silently resume the old provider's job, so the
+     second provider's month never ran. Identity, never a display label. */
+  function p1RangeSameProvider(savedProvider, gate) {
+    var req = p1RangeProviderRequest(gate);
+    var sMode = savedProvider && typeof savedProvider === 'object' ? String(savedProvider.mode || '') : (savedProvider === 'all' ? 'all' : '');
+    if (req === 'all' || sMode === 'all') return req === 'all' && sMode === 'all';
+    if (sMode !== 'selected') return false;
+    var ks = String(savedProvider.stableKey || savedProvider.id || '');
+    var kr = String(req.stableKey || req.id || '');
+    return !!ks && ks === kr;
+  }
   /* the ONE human toggle for full visit notes lives in this same card */
   function p1RangeFullNotes() {
     try {
@@ -24168,9 +24220,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var api = p1RangeApi();
     if (!api) return false;
     var saved = p1RangeState();
-    /* a saved, unfinished job for THIS month is a resume, never a restart */
+    /* a saved, unfinished job for THIS month AND THIS provider is a resume,
+       never a restart. mprov-1.0.0: a different provider's saved job is said
+       out loud instead of silently hijacking the new request. */
     if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' &&
-        saved.kind === 'month' && saved.target === monthKey) return p1RangeResume();
+        saved.kind === 'month' && saved.target === monthKey) {
+      if (p1RangeSameProvider(saved.provider, gate)) return p1RangeResume();
+      pSet('ez3PullNow', 'The saved unfinished pull for ' + String(saved.target) + ' belongs to a DIFFERENT provider scope.');
+      pSet('ez3PullNow2', 'Resume it to finish that provider first, or cancel it - then start this provider\'s month.');
+      return true;
+    }
     if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' && saved.status !== 'needs-attention') {
       pSet('ez3PullNow', 'A saved ' + (saved.kind === 'year' ? 'year' : 'month') + ' pull for ' + String(saved.target) + ' is still unfinished.');
       pSet('ez3PullNow2', 'Resume or cancel it before starting a different month.');
@@ -35119,11 +35178,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }, true);
 
   /* ---------- F) EMR placement preview prominence ---------- */
-  function openEmrPreview() {
+  /* noteact-1.0.0 (owner P0 2026-08-27). Two defects, both silent:
+
+     1. THE FALLBACK NAMED THE WRONG PANEL. '#mls-assist-panel' (hyphenated) is
+        the EXTENSION's athenaOne-side panel id; this file's own dock lane even
+        ships "html:not(.uc1-show-ext) #mls-assist-panel{display:none!important}"
+        for the app page. The APP assistant is '#mlsAsstPanel'. So on a good day
+        the fallback matched nothing and on a bad day it clicked into a hidden
+        container.
+     2. IT COULD RETURN false WITH NOTHING ON SCREEN. The EMR-sections module
+        installs #emrBtn on an 800ms interval, so for the first seconds after
+        boot this returned false and the doctor's press produced no pixels at
+        all. A refusal has to be visible or it is a dead button. */
+  function emrPreviewAltButton() {
+    var scopes = ['#mlsAsstPanel', '#mls-assist-panel'];
+    for (var i = 0; i < scopes.length; i++) {
+      var host = document.querySelector(scopes[i]);
+      if (!host) continue;
+      var btns = host.querySelectorAll('button');
+      for (var j = 0; j < btns.length; j++) {
+        if (/EMR sections/i.test(btns[j].textContent || '')) return btns[j];
+      }
+    }
+    return null;
+  }
+  function openEmrPreview(opts) {
+    var quiet = !!(opts && opts.quiet);
     var b = $('emrBtn');
     if (b) { b.click(); return true; }
-    var alt = document.querySelector('#mls-assist-panel button');
-    if (alt && /EMR sections/i.test(alt.textContent)) { alt.click(); return true; }
+    var alt = emrPreviewAltButton();
+    if (alt) { alt.click(); return true; }
+    if (!quiet) {
+      try { toast('The EMR placement preview is still loading on this screen. Wait a moment and press it again.', 'err'); } catch (e) {}
+    }
     return false;
   }
   function ensurePreviewBtns() {
@@ -38058,11 +38145,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---------- (6) EMR sections inside the MLS Assistant panel --------------- */
   function injectEmr() {
     try {
-      var panel = $("mls-assist-panel"); if (!panel || panel.querySelector(".mls-b34-emr")) return;
+      /* noteact-1.0.0: was $("mls-assist-panel") - the EXTENSION's athenaOne
+         panel id, which does not exist on the app page and is display:none'd
+         here even when the extension injects it. The APP assistant is
+         #mlsAsstPanel, so this replacement button for the retired standalone
+         #emrBtn was never injected anywhere a doctor could reach it. */
+      var panel = $("mlsAsstPanel") || $("mls-assist-panel"); if (!panel || panel.querySelector(".mls-b34-emr")) return;
       var wrap = document.createElement("div"); wrap.className = "mls-b34-emr-wrap";
       var b = document.createElement("button"); b.type = "button"; b.className = "mls-b34-emr";
       b.innerHTML = "&#128450;&#65039; EMR sections &mdash; review &amp; confirm";
-      b.onclick = function () { try { var e = $("emrBtn"); if (e) e.click(); } catch (e2) {} };
+      b.onclick = function () {
+        var e = null;
+        try { e = $("emrBtn"); } catch (e2) {}
+        if (e) { try { e.click(); return; } catch (e3) {} }
+        try { toast('The EMR sections review is still loading on this screen. Wait a moment and press it again.', 'err'); } catch (e4) {}
+      };
       wrap.appendChild(b);
       /* place right under the big "Open athenaOne in new tab" button when present */
       var anchor = null, btns = panel.querySelectorAll("button");
@@ -39574,7 +39671,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     {k:'imaging',label:'Imaging orders',h:['imaging','radiology','x-ray','xray','mri','ct scan','ct','ultrasound'],c:/\b(x-?ray|\bmri\b|ct scan|ultrasound|imaging|radiograph|scan of)/i},
     {k:'follow_up',label:'Follow-up',h:['follow-up','follow up','return to clinic','next visit','rtc','f/u'],c:/\b(follow(\s|-)?up|return(ing)? (in|to)|\brtc\b|recheck|in [0-9]+ (day|week|month))/i}
   ];
-  function noteText(){ var e=document.getElementById('mls-note'); if(e) return (e.value!=null?e.value:e.textContent)||''; var t=document.getElementById('mls-tx'); return t?((t.value!=null?t.value:t.textContent)||''):''; }
+  /* noteact-1.0.0 (owner P0 2026-08-27): THE CANONICAL NOTE IS #noteBox.
+     This modal read only #mls-note / #mls-tx - ids this app shell does not
+     have - so on the app page it always organised an EMPTY string, always
+     said "No sections detected yet", and its "Update local MLS draft" wrote
+     into a node that does not exist: a silent no-op on every press. The
+     legacy ids are kept as fallbacks so nothing that did work stops. */
+  function noteEl(){
+    return document.getElementById('noteBox')
+      || document.getElementById('mls-note')
+      || document.getElementById('mls-tx');
+  }
+  function noteText(){ var e=noteEl(); if(!e) return ''; return (e.value!=null?e.value:e.textContent)||''; }
   function classify(line){ var l=line.toLowerCase().replace(/[*_#>]/g,'').replace(/^\s*[0-9]+[.)]\s*/,'').trim(),best=null,bl=0; for(var i=0;i<S.length;i++){ for(var j=0;j<S[i].h.length;j++){ var h=S[i].h[j]; if(l.indexOf(h)===0||l.replace(/[:\s]+$/,'')===h){ if(h.length>bl){best=S[i].k;bl=h.length;} } } } return best; }
   function headerOf(line){ var t=line.trim(); if(!t) return null; var m=t.match(/^(?:#{1,6}\s*|\**\s*|[0-9]+[.)]\s*)?([A-Za-z][A-Za-z \/&-]{1,38}?)\s*:\s*(.*)$/); if(m){ var k=classify(m[1]); if(k) return {k:k,inline:m[2]||''}; } if(t.length<=40){ var k2=classify(t.replace(/[*_#]/g,'')); if(k2) return {k:k2,inline:''}; var L=t.replace(/[^A-Za-z]/g,''); if(L.length>=3&&L===L.toUpperCase()){ var k3=classify(t); if(k3) return {k:k3,inline:''}; } } return null; }
   function classifySentence(s){ for(var i=0;i<S.length;i++){ if(S[i].c&&S[i].c.test(s)) return S[i].k; } return null; }
@@ -39630,9 +39738,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     host.querySelector('#emrIns').onclick=function(){
       var parts=[]; S.forEach(function(s){ if(!conf[s.k]) return; var ta=host.querySelector('textarea[data-t="'+s.k+'"]'); var v=ta?ta.value.trim():''; parts.push(s.label.toUpperCase()+':\n'+(v||'(none)')); });
       if(!parts.length){ (window.toast||window.alert)('Confirm at least one section first.','err'); return; }
-      var out=parts.join('\n\n'), note=document.getElementById('mls-note');
-      if(note){ if(note.value!=null){ note.value=out; note.dispatchEvent(new Event('input',{bubbles:true})); } else note.textContent=out; }
-      var b=host.querySelector('#emrIns'); b.textContent='Local draft updated'; setTimeout(function(){ b.textContent='Update local MLS draft'; },1400);
+      var out=parts.join('\n\n'), note=noteEl();
+      var b=host.querySelector('#emrIns');
+      /* noteact-1.0.0: this used to claim "Local draft updated" whether or not
+         a note element existed to update. Say what really happened. */
+      if(!note){ (window.toast||window.alert)('There is no note editor on this screen to update. Generate or reopen the note first.','err'); return; }
+      if(note.value!=null){ note.value=out; note.dispatchEvent(new Event('input',{bubbles:true})); } else note.textContent=out;
+      b.textContent='Local draft updated'; setTimeout(function(){ b.textContent='Update local MLS draft'; },1400);
     };
   }
   function addBtn(){ if(document.getElementById('emrBtn')) return; var b=document.createElement('button'); b.id='emrBtn'; b.type='button'; b.textContent='EMR sections'; b.style.cssText='position:fixed;left:12px;bottom:96px;z-index:99998;background:#2E6A4B;border:none;color:#fff;border-radius:11px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)'; b.onclick=function(){ conf={}; render(); }; document.body.appendChild(b); }
@@ -59030,4 +59142,79 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     }
     window.__mlsEnsureFirstPullStyle = ensure;
   } catch (_) {}
+})();
+
+/* ===== kal-1.0.0 - athenaOne keep-alive watchdog (app-side; ext 3.0.84 is frozen) =====
+   Owner 2026-08-30: "the extensions keep alive doesnt really work well". The
+   extension's own keep-alive (ka-3066 synthetic events + ka84 alarm GET) lives
+   in an MV3 service worker that Chrome can stop, and a stopped worker keeps no
+   timers - the banked "MV3 FORGETS" class. This watchdog runs where the doctor
+   actually is (the MLS tab), on a Worker tick because a hidden tab freezes
+   setTimeout, and every minute asks the extension for its health receipt
+   (mlsExtHealth - read-only). Waking the worker to answer ALSO re-arms its own
+   alarms, so the probe itself is half the cure. When the receipt shows the
+   native keep-alive tick is STALE (>210s; its healthy period is 180s) and
+   athenaOne is present and NOT signed out, it escalates once per 8 minutes to
+   mlsAppGoHome - a real, serialized Home click in the athena tab that resets
+   the client idle watcher. Never while a pull or recording runs; never when
+   signed out (a login page is the doctor's to handle - MLS says so instead of
+   hammering it). Status + a bounded ledger live at window.__mlsKeepAliveWatch
+   so a probe or a future Settings line can read exactly what happened. */
+;(function () {
+  'use strict';
+  try {
+    if (window.__mlsKeepAliveWatch) return;
+    var ST = { driver: '', lastHealthAt: 0, kaTickAt: 0, signedOutAt: 0, athenaTabs: null,
+      lastGoHomeAt: 0, goHomes: 0, lastVerdict: 'starting', ledger: [] };
+    window.__mlsKeepAliveWatch = ST;
+    function note(entry) { try { entry.at = Date.now(); ST.ledger.push(entry); if (ST.ledger.length > 24) ST.ledger.shift(); } catch (e) {} }
+    function busyNow() {
+      try { var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; if (s && s.busy) return 'pull'; } catch (e) {}
+      try { if (typeof window.__mlsPtsPullActive === 'function' && window.__mlsPtsPullActive()) return 'pull'; } catch (e) {}
+      try { if (typeof isRecording === 'function' && isRecording()) return 'recording'; } catch (e) {}
+      return '';
+    }
+    function ask(type, respType, timeoutMs) {
+      return new Promise(function (resolve) {
+        var done = false;
+        function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(v); }
+        function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; fin(d.resp || d); }
+        try { window.addEventListener('message', h, false); } catch (e) {}
+        try { window.postMessage({ type: type, source: 'mls-app', from: 'mls-app' }, '*'); } catch (e) { fin(null); return; }
+        setTimeout(function () { fin(null); }, timeoutMs || 12000);
+      });
+    }
+    function onHealth(h) {
+      var now = Date.now();
+      ST.lastHealthAt = now;
+      if (!h || h.ok !== true) { ST.lastVerdict = 'health-unreachable'; return; }
+      var ka = h.ka || {};
+      ST.kaTickAt = Number(ka.lastTick) || 0;
+      ST.signedOutAt = Number(ka.signedOutAt) || 0;
+      ST.athenaTabs = h.athena ? h.athena.tabs : null;
+      if (ST.signedOutAt && ST.signedOutAt > ST.kaTickAt) { ST.lastVerdict = 'athena-signed-out'; return; }
+      if (!h.athena || !h.athena.tabs) { ST.lastVerdict = 'no-athena-tab'; return; }
+      var age = ST.kaTickAt ? (now - ST.kaTickAt) : Infinity;
+      if (age <= 210000) { ST.lastVerdict = 'native-keepalive-healthy'; return; }
+      var why = busyNow();
+      if (why) { ST.lastVerdict = 'stale-but-' + why + '-running'; return; }
+      if (now - ST.lastGoHomeAt < 480000) { ST.lastVerdict = 'stale-cooling-down'; return; }
+      ST.lastGoHomeAt = now; ST.goHomes++;
+      ST.lastVerdict = 'go-home-sent';
+      note({ act: 'goHome', kaAgeMs: age });
+      ask('mlsAppGoHome', 'mlsAppGoHomeResult', 30000).then(function (r) {
+        note({ act: 'goHome-result', ok: !!(r && r.ok), reason: r && (r.reason || r.error) || '' });
+      });
+    }
+    function tick() { ask('mlsExtHealth', 'mlsExtHealthResult', 12000).then(onHealth); }
+    try {
+      var url = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},60000)'], { type: 'application/javascript' }));
+      var w = new Worker(url);
+      w.onmessage = tick;
+      ST.driver = 'worker';
+    } catch (e) {
+      try { setInterval(tick, 60000); ST.driver = 'interval'; } catch (e2) { ST.driver = 'none'; }
+    }
+    setTimeout(tick, 8000);
+  } catch (eTop) {}
 })();
