@@ -814,6 +814,22 @@
     var day = wfDayKey(expectedContext && expectedContext.visitDate);
     var appointmentId = S(expectedContext && expectedContext.appointmentId).trim();
     if (!day || !appointmentId) return Promise.resolve({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact visit is not bound to a dated Athena appointment, so MLS will not open or guess an encounter.' });
+    /* rowfirst-1.0.0 (measured live 2026-08-31): the Day-view drive's own
+       recovery ladder can DESTROY a perfectly painted schedule (Home-drives on
+       a slow renderer), after which the row hunt honestly finds nothing. The
+       exact-id row click carries every identity gate itself - the landing
+       surface must re-prove name, DOB and the frozen date, and the probe
+       re-proves the banner - so it goes FIRST against whatever athenaOne
+       already paints. Only when the row is not on the current grid does the
+       day-drive run as the cure, exactly as before. */
+    return searchOpenTarget(patient, expectedContext).then(function (firstTry) {
+      firstTry = firstTry || {};
+      wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: 'row-first', ok: firstTry.ok === true,
+        reason: firstTry.reason || firstTry.findReason, error: firstTry.error, expectedDay: day, appointmentIdPresent: true });
+      if (firstTry.ok === true) return firstTry;
+      return navigateThenSearch();
+    }, function () { return navigateThenSearch(); });
+    function navigateThenSearch() {
     return bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000).then(function (nav) {
       nav = nav || {};
       var observed = wfDayKey(nav.schedDate);
@@ -833,6 +849,7 @@
     }, function () {
       return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact encounter-day navigation could not be started. Nothing was opened.' };
     });
+    }
   }
   /* ========================================================================
      wfdx-1.0.0 (1p PREVIEW ONLY) -- PHI-free write-readiness diagnostics.
@@ -2083,12 +2100,42 @@
       wfdxPaintDiag(state);
     }
     var openContext = byName ? { visitDate: visit.visitDate, provider: visit.provider, appointmentId: '' } : visit;
+    /* rowfirst-1.0.0 (measured live 2026-08-31): the Day-view drive's recovery
+       ladder can DESTROY a perfectly painted schedule (Home-drives on a slow
+       renderer), after which the row hunt honestly finds nothing. The exact-id
+       row click carries every identity gate itself, so it runs FIRST against
+       whatever athenaOne already paints; the day-drive is the cure for a
+       row-not-painted refusal, not the gatekeeper. The goto bridge is LAZY now
+       - constructing it eagerly fired the drive even on the row-first path. */
+    function handleOpenSuccess(openRes) {
+      done('', '');
+      if (state.closed || unifiedAthenaState !== state) return;
+      /* openpace-1.0.0: an athenaOne encounter page takes 30-60s to paint -
+         stamp the successful open and give it time before probing. */
+      state.openedOkAt = Date.now(); state.paceReprobes = 0;
+      unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Letting the encounter paint, then re-checking read-only…', '');
+      setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); }, 12000);
+    }
+    var rowFirstEligible = !byName && day && S(visit.appointmentId).trim();
+    unifiedStatus(state, byName
+      ? 'Asking athenaOne’s patient search for this chart read-only — nothing is written…'
+      : (rowFirstEligible
+        ? 'Looking for this exact appointment row on the schedule athenaOne already shows — read-only, nothing is written…'
+        : ('Sending athenaOne’s Day view to ' + day + ' and opening this exact appointment read-only — nothing is written…')), '');
+    var attempt = rowFirstEligible ? searchOpenTarget(manifest.patient, openContext) : Promise.resolve(null);
+    attempt.then(function (first) {
+      first = first || {};
+      if (rowFirstEligible) wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: 'fix-open-row-first', ok: first.ok === true,
+        reason: first.reason || first.findReason, error: first.error, expectedDay: day, appointmentIdPresent: true });
+      if (first.ok === true) { handleOpenSuccess(first); return; }
+      runNavigateChain();
+    }, function () { runNavigateChain(); });
+    function runNavigateChain() {
+    if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
+    if (rowFirstEligible) unifiedStatus(state, 'This exact appointment row is not on the schedule athenaOne shows yet — sending its Day view to ' + day + ' read-only…', '');
     var navigate = (!byName && day)
       ? bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000)
       : Promise.resolve({ ok: true, skipped: true });
-    unifiedStatus(state, byName
-      ? 'Asking athenaOne’s patient search for this chart read-only — nothing is written…'
-      : ('Sending athenaOne’s Day view to ' + day + ' and opening this exact appointment read-only — nothing is written…'), '');
     navigate.then(function (nav) {
       nav = nav || {};
       if (nav.skipped !== true) {
@@ -2127,19 +2174,10 @@
           if (!byName) wfdxOfferNameRoute(state, rowId);
           return;
         }
-        done('', '');
-        if (state.closed || unifiedAthenaState !== state) return;
-        /* openpace-1.0.0 (measured live 2026-08-31): the row click SUCCEEDED and
-           the probe fired 1.5s later - but an athenaOne encounter page takes
-           30-60s to paint, so the probe read a half-loaded surface, refused
-           context-unverified, and the refusal branch re-drove navigation,
-           destroying the very surface this open had just produced. Stamp the
-           successful open and give the page time to paint before probing. */
-        state.openedOkAt = Date.now(); state.paceReprobes = 0;
-        unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Letting the encounter paint, then re-checking read-only…', '');
-        setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); }, 12000);
+        handleOpenSuccess(openRes);
       });
     }, function () { done('One step needed: the read-only open did not start. MLS can try it again, or open the encounter in athenaOne yourself and press Check Athena again. Nothing was changed.', 'fix', true); });
+    }
   }
   function validatedUnifiedProbe(patient, probe) {
     var ctx = probe && probe.context || {};
