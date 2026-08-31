@@ -867,6 +867,21 @@
     var targetSeen = matching.length > 0 || req.rosterVerified || receipt.discoveredProviders.some(function (p) { return providerKey(p) === req.key; });
     if (receipt.unattributedRows > 0) receipt.reason = "provider-incomplete";
     else if (!targetSeen) receipt.reason = "provider-not-found";
+    else if (matching.length === 0 && receipt.discoveredProviders.length &&
+             !receipt.discoveredProviders.some(function (p) { return providerKey(p) === req.key; })) {
+      /* provscope-1.0.0 (measured live 2026-08-30, screenshot receipt): a July
+         pull scoped to one PA read a calendar painted for a DIFFERENT
+         physician's view and verified nine of her days "empty" - roster
+         membership let targetSeen pass, but the roster proves she EXISTS, not
+         that THIS surface could show her appointments. athena's single-provider
+         calendar view hides every other provider, so a surface whose only
+         discovered providers are OTHER people can never prove the target's
+         emptiness. Refuse with the one human step instead of minting a false
+         empty-complete day. Truly all-provider or target-scoped surfaces keep
+         the exact behavior below. */
+      receipt.reason = "provider-not-on-calendar";
+      receipt.surfaceProviders = receipt.discoveredProviders.slice(0, 6);
+    }
     else {
       receipt.complete = true;
       receipt.reason = matching.length ? "provider-complete" : "provider-empty";
@@ -9498,6 +9513,7 @@
             }
             else if (res.skipped > 0) onStatus("Those " + res.skipped + " appointment" + (res.skipped === 1 ? " is" : "s are") + " already on your calendar for " + date + ".", "");
             else if (res.reason === "provider-empty" && selectedProvider.mode === "selected" && calendarReceipt.snapshotPublished) onStatus("Athena verified no appointments for " + selectedProvider.name + " on " + date + ".", "ok");
+            else if (res.reason === "provider-not-on-calendar") onStatus("Athena's calendar is showing a DIFFERENT provider's view, so " + (selectedProvider.name || "the selected provider") + "'s day cannot be read (and an empty screen proves nothing). In the Athena tab set the calendar's View to " + (selectedProvider.name || "that provider") + " or an all-provider view, then retry. Nothing was saved for " + date + ".", "err");
             else if (r.receipt.authoritativeEmpty && calendarReceipt.snapshotPublished) onStatus("Athena verified that " + date + " has no appointments." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
             else onStatus("No verified patients could be imported for " + date + ".", "err");
             if (p1AppointmentCensusComplete && calendarReceipt.complete) {
@@ -10454,7 +10470,7 @@
        a per-day problem: after 3 consecutive days failing with the same
        systemic reason, stop the sweep, mark the remaining days not-attempted
        (they stay in Retry failed days), and say the one real cause. */
-    var SYSTEMIC_REASONS = { "signin": 1, "signin-expired": 1, "no-ext": 1, "pull-in-flight": 1, "no-read": 1, "nav-failed": 1, "wrong-day": 1, "schedule-incomplete": 1, "schedule-request-unbound": 1, "provider-roster-incomplete": 1, "provider-roster-unbound": 1, "unverified-day": 1 };
+    var SYSTEMIC_REASONS = { "signin": 1, "signin-expired": 1, "no-ext": 1, "pull-in-flight": 1, "no-read": 1, "nav-failed": 1, "wrong-day": 1, "schedule-incomplete": 1, "schedule-request-unbound": 1, "provider-roster-incomplete": 1, "provider-roster-unbound": 1, "unverified-day": 1, "provider-not-on-calendar": 1 };
     var SYSTEMIC_TEXT = {
       "signin": "MLS is signed out — sign in to MLS first.",
       "signin-expired": "your MLS sign-in expired — sign in to MLS again, then retry.",
@@ -10467,7 +10483,8 @@
       "schedule-request-unbound": "Athena's replies are not binding to these requests — reload the Athena tab and this MLS tab.",
       "provider-roster-incomplete": "the provider roster cannot be verified — open the full Athena Day schedule once, then retry.",
       "provider-roster-unbound": "the provider roster receipt is not binding to this run — reload the Athena tab, then retry.",
-      "unverified-day": "the date shown in Athena cannot be verified — check the Athena tab."
+      "unverified-day": "the date shown in Athena cannot be verified — check the Athena tab.",
+      "provider-not-on-calendar": "athena's calendar is showing a DIFFERENT provider's view - set the calendar's View to the selected provider (or an all-provider view) in the Athena tab, then retry."
     };
     var breaker = { reason: "", streak: 0, tripped: false, hint: "" };
     var chain = Promise.resolve();

@@ -72,7 +72,7 @@
     'account-changed': 1, 'job-exists': 1, 'job-busy': 1,
     'invalid-range': 1, 'invalid-provider': 1, 'provider-unverified': 1,
     'provider-required': 1, 'provider-roster-incomplete': 1,
-    'provider-roster-unbound': 1, signin: 1, 'signin-expired': 1,
+    'provider-roster-unbound': 1, 'provider-not-on-calendar': 1, signin: 1, 'signin-expired': 1,
     'session-expired': 1, 'athena-session-expired': 1, 'no-athena-tab': 1,
     'no-ext': 1, 'pull-in-flight': 1, 'no-read': 1, 'nav-failed': 1,
     'wrong-day': 1, 'schedule-incomplete': 1, 'schedule-request-unbound': 1,
