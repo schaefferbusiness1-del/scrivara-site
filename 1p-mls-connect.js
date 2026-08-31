@@ -23987,6 +23987,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!gate || gate.provider === 'all') return 'all';
     return { mode: 'selected', id: String(gate.provider.id || ''), stableKey: String(gate.provider.stableKey || '') };
   }
+  /* mprov-1.0.0: a saved month manifest is only THIS pull's job when its
+     frozen provider matches the one the doctor just chose. Same month plus a
+     DIFFERENT provider used to silently resume the old provider's job, so the
+     second provider's month never ran. Identity, never a display label. */
+  function p1RangeSameProvider(savedProvider, gate) {
+    var req = p1RangeProviderRequest(gate);
+    var sMode = savedProvider && typeof savedProvider === 'object' ? String(savedProvider.mode || '') : (savedProvider === 'all' ? 'all' : '');
+    if (req === 'all' || sMode === 'all') return req === 'all' && sMode === 'all';
+    if (sMode !== 'selected') return false;
+    var ks = String(savedProvider.stableKey || savedProvider.id || '');
+    var kr = String(req.stableKey || req.id || '');
+    return !!ks && ks === kr;
+  }
   /* the ONE human toggle for full visit notes lives in this same card */
   function p1RangeFullNotes() {
     try {
@@ -24207,9 +24220,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var api = p1RangeApi();
     if (!api) return false;
     var saved = p1RangeState();
-    /* a saved, unfinished job for THIS month is a resume, never a restart */
+    /* a saved, unfinished job for THIS month AND THIS provider is a resume,
+       never a restart. mprov-1.0.0: a different provider's saved job is said
+       out loud instead of silently hijacking the new request. */
     if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' &&
-        saved.kind === 'month' && saved.target === monthKey) return p1RangeResume();
+        saved.kind === 'month' && saved.target === monthKey) {
+      if (p1RangeSameProvider(saved.provider, gate)) return p1RangeResume();
+      pSet('ez3PullNow', 'The saved unfinished pull for ' + String(saved.target) + ' belongs to a DIFFERENT provider scope.');
+      pSet('ez3PullNow2', 'Resume it to finish that provider first, or cancel it - then start this provider\'s month.');
+      return true;
+    }
     if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' && saved.status !== 'needs-attention') {
       pSet('ez3PullNow', 'A saved ' + (saved.kind === 'year' ? 'year' : 'month') + ' pull for ' + String(saved.target) + ' is still unfinished.');
       pSet('ez3PullNow2', 'Resume or cancel it before starting a different month.');
