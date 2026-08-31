@@ -174,20 +174,38 @@ for (const reason of ['token-sender-mismatch', 'no-athena-tab', 'patient-mismatc
   assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0, 'opt-out: autoOpen:false must disable the auto-open');
 }
 
-// 6. A navigation response that does not prove the observed day is a refusal;
-//    it never falls through to SearchOpen or a second probe.
+// 6. dayfall-1.0.0 (b1128, measured live 2026-08-31): the exact-day drive is a
+//    navigation AID, not an identity gate. Only a POSITIVELY different painted
+//    day refuses; an unproven goto (timeout / "calendar could not be reached"
+//    with no observed day) falls through to the appointment-id row click,
+//    whose landing surface and probe still re-prove identity and date.
+// 6a. A navigation that POSITIVELY reports a different day still refuses.
+{
+  const navResult = { ok: true, supported: true, schedDate: '2026-06-19' };
+  const r = await run({ name: 'nav-wrong-day', probe1: { ok: false, blocked: true, reason: 'context-unverified' }, navResult });
+  assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
+    'a positively different painted day reached SearchOpen');
+  assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppAthenaActionV2').length, 1,
+    'a positively different painted day caused a re-probe');
+  assert(r.h.toasts.some(t => /could not open|exact encounter day|did not prove|different encounter day/i.test(t.m)),
+    'the wrong-day refusal did not surface honestly');
+}
+// 6b. An UNPROVEN navigation result falls through to exactly one SearchOpen
+//     with the frozen identity, and a successful open still re-probes fresh.
 for (const navResult of [
   { ok: true, supported: true },
-  { ok: true, supported: true, schedDate: '2026-06-19' },
   { ok: false, supported: true, reason: 'nav-failed' }
 ]) {
-  const r = await run({ name: 'nav-unverified-' + JSON.stringify(navResult), probe1: { ok: false, blocked: true, reason: 'context-unverified' }, navResult });
-  assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
-    'unverified navigation reached SearchOpen: ' + JSON.stringify(navResult));
-  assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppAthenaActionV2').length, 1,
-    'unverified navigation caused a re-probe: ' + JSON.stringify(navResult));
-  assert(r.h.toasts.some(t => /could not open|exact encounter day|did not prove|different encounter day/i.test(t.m)),
-    'unverified navigation did not surface an honest refusal');
+  const r = await run({ name: 'nav-unproven-' + JSON.stringify(navResult), probe1: { ok: false, blocked: true, reason: 'context-unverified' }, navResult });
+  const opens = r.h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient');
+  assert.strictEqual(opens.length, 1,
+    'an unproven navigation must fall through to exactly one SearchOpen: ' + JSON.stringify(navResult));
+  assert.strictEqual(opens[0].name, 'Adam J Schaeffer', 'fall-through open lost the name');
+  assert.strictEqual(opens[0].appointmentId, '52585999', 'fall-through open lost the appointment id');
+  r.h.deliver({ source: 'mls-ext', type: 'mlsAppSearchOpenResult', requestId: opens[0].requestId, resp: { ok: true, complete: true, requestId: opens[0].requestId } });
+  await r.h.settle();
+  assert.strictEqual(r.h.posted.filter(m => m.type === 'mlsAppAthenaActionV2').length, 2,
+    'fall-through open did not re-probe fresh: ' + JSON.stringify(navResult));
 }
 
 // 7. The public direct lane is also fail-closed when no exact visit is bound.

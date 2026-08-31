@@ -237,7 +237,11 @@ function makeHarness(options) {
     window, document: dom.document, localStorage, location: window.location, console,
     navigator: { userAgent: 'synthetic-test-agent', clipboard: null },
     Intl, Date, Math, JSON, Promise, Object, Array, String, Number, RegExp, isFinite, parseInt, parseFloat,
-    setTimeout: (fn, ms) => { if (Number(ms || 0) <= 2000) Promise.resolve().then(fn); return 1; },
+    /* openpace-1.0.0 (b1129): the paced post-open re-probe waits 12s and the
+       grace re-checks wait 15s - run exactly those two delays immediately so
+       the paced flow is exercised, while genuinely long timers (probe
+       timeouts, minute-scale interims) stay inert as before. */
+    setTimeout: (fn, ms) => { const m = Number(ms || 0); if (m <= 2000 || m === 12000 || m === 15000) Promise.resolve().then(fn); return 1; },
     clearTimeout() {}, setInterval: () => 1, clearInterval() {},
     MutationObserver: function () { this.observe = () => {}; this.disconnect = () => {}; }
   });

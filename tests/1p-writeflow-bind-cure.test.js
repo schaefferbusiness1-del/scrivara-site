@@ -390,8 +390,11 @@ function historicalOpts() {
     }
     ok(h.posted.filter(m => m.type === 'mlsAppGotoDate').length === navCountBefore,
       'a second frame-missing refusal inside the window must NOT auto-open again (loop-proof)');
-    ok(/To unlock: in athenaOne, open this patient|Sending athenaOne|Re-checking the exact encounter/.test(h.resolveId('mlsAthenaUnifiedProbe').textContent),
-      'the repeat refusal falls through to the spoken instruction (probe line: ' + h.resolveId('mlsAthenaUnifiedProbe').textContent.slice(0, 80) + ')');
+    /* openpace-1.0.0 (b1129): a refusal that lands while the open is FRESH now
+       paints the paced-wait line and re-probes instead of instructing or
+       re-driving - both those lines are the correct spoken outcome here. */
+    ok(/To unlock: in athenaOne, open this patient|Sending athenaOne|Re-checking the exact encounter|Letting the encounter paint|still painting the encounter it just opened/.test(h.resolveId('mlsAthenaUnifiedProbe').textContent),
+      'the repeat refusal falls through to the spoken instruction or the paced re-check (probe line: ' + h.resolveId('mlsAthenaUnifiedProbe').textContent.slice(0, 80) + ')');
   }
 
   console.log('PASS 1p writeflow bind cure: ' + checks + ' checks — the owner\'s unbound sheet offers one exactly-named press that navigates, confirms the painted day, pulls it, and rebinds every row to READY; an unpaintable day, an unscheduled patient, a foreign ledger row and a missing MRN all stay CANNOT SEND with the reason named; bindday-1.0.0 offers the patient\'s own scheduled days beside a wrong pinned day so the doctor can cure the binding in one press instead of dead-ending; and seam-1.0.0 auto-runs the read-only encounter open ONCE (time-bounded) when the probe reports the frame missing, so the sheet heals itself instead of instructing the doctor');

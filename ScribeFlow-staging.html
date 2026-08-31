@@ -17032,7 +17032,10 @@ function _athenaOrderPlacementCandidate(order){
     imaging:{required:['study','region','indication'],all:['study','region','indication','laterality','contrast','notes']},
     referral:{required:['specialty','reason'],all:['specialty','reason','notes']}
   };
-  function blocked(badge,reason){return Object.freeze({eligible:false,badge:badge,reason:reason,order:null});}
+  /* aorb-1.0.0: `extra` carries what was already computed before the refusal,
+     so a caller can report the ACCURATE blocker. It never carries a decision:
+     eligible stays false and order stays null on every blocked path. */
+  function blocked(badge,reason,extra){return Object.freeze(Object.assign({eligible:false,badge:badge,reason:reason,order:null},extra||{}));}
   if(type==='medication'||type==='injection')return blocked('Manual in Athena','Medication and injection schemas are not enabled for typed Athena placement.');
   var spec=specs[type];
   if(!spec)return blocked('Manual in Athena','This order type does not have a proven typed Athena adapter.');
@@ -17060,7 +17063,7 @@ function _athenaOrderPlacementCandidate(order){
   if(!/^(provider-entered|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(source))return blocked('Review required','This order source is not approved for supervised placement.');
   var catalogCode=String(item.catalogCode||raw.catalogCode||raw.catalog_code||'').trim();
   var catalogId=String(item.catalogId||raw.catalogId||raw.catalog_id||'').trim();
-  if(!catalogCode&&!catalogId)return blocked('Bind exact Athena catalog item','A durable Athena catalog code or catalog ID is required before this order can be placed.');
+  if(!catalogCode&&!catalogId)return blocked('Bind exact Athena catalog item','A durable Athena catalog code or catalog ID is required before this order can be placed.',{displayLabel:displayLabel,query:displayLabel});
   if(catalogCode.length>100||catalogId.length>160)return blocked('Review required','The Athena catalog code or ID is too long.');
   var canonical={
     clientOrderId:String(item.id),type:type,displayLabel:displayLabel,
