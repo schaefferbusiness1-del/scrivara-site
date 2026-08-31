@@ -1805,6 +1805,10 @@
     /* bx-1.0.0: every settled probe refusal offers this button, so it doubles
        as the refusal settle latch the batch driver waits on. */
     try { state.probeSettled = state.probeGeneration; } catch (eBx) {}
+    /* wfprog-1.1.0: a settled refusal dismisses the pre-write progress; the
+       amber or red status line and the fix strip carry the outcome. A run that
+       already holds write verdicts keeps its surface. */
+    try { wfprogClearPre(state); } catch (ePr) {}
     var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) { return; }
     if (!el) return;
     try {
@@ -2183,6 +2187,10 @@
     setUnifiedReadyTick(null);
     renderUnifiedContext(state, null);
     unifiedStatus(state, 'Checking the exact Athena patient, encounter, destination, and control read-only for ' + row.label + '...', '');
+    /* wfprog-1.1.0: the read-only ladder gets the animated progress surface
+       too - outside a batch (the batch driver owns the surface) and never
+       clobbering a run that already holds write verdicts. */
+    if (!state.batchRunning && (!state.prog || state.prog.done || wfprogPreOnly(state))) { wfprogStart(state, [row], false); wfprogPhase(state, row.id, 'check'); }
     var proofOpts = { receiptSessionId: state.manifest.receiptSessionId };
     var priorWrite = row.action === 'sign_encounter' ? findAnyVerifiedWrite(state.manifest.patient, state.manifest.previewHash, proofOpts, row.payload) : null;
     if (row.action === 'sign_encounter' && (!priorWrite || !priorWrite.noteWriteProof)) { unifiedStatus(state, 'Write the reviewed note to this encounter first — Sign & Save unlocks after MLS verifies the note write in this review.', 'err'); unifiedRecheckButton(state, row.id); return; }
@@ -2379,6 +2387,9 @@
         if (row.action === 'place_order') { go.setAttribute('data-mls-row-hash', row.rowHash); go.setAttribute('data-mls-client-order-id', probedClientOrderId); }
       }
       setUnifiedReadyTick(row.id);
+      /* wfprog-1.1.0: READY dismisses the pre-write progress - the green tick
+         and the enabled Confirm button ARE the finished state of this stretch. */
+      wfprogClearPre(state);
       try { var fixHost = wfdxFixHost(); if (fixHost) fixHost.innerHTML = ''; } catch (eFix) {}
       unifiedStatus(state, (probeOnlyActive() ? 'PROBE ONLY — ' : '') + 'Ready — the exact chart is verified. One click on Confirm & Send runs only ' + row.label + '.' + (probeOnlyActive() ? ' In PROBE ONLY it is rehearsed read-only and nothing is written.' : ' Nothing else.'), '');
     });
@@ -2519,6 +2530,34 @@
     rehearsed: { label: 'rehearsed only', color: '#7a5a16' }
   };
   function wfprogHost() { try { return document.getElementById('mlsAthenaUnifiedProgress'); } catch (e) { return null; } }
+  /* wfprog-1.1.0 (owner 2026-08-31: "an actually good loading screen and UI for
+     everything being written to athena"): 1.0.0 painted only from Confirm &
+     Send onward, but the LONG stretch is the read-only ladder before it -
+     probe, encounter open, paint waits - measured in minutes on a heavy
+     renderer, during which the sheet showed one static text line and read as
+     frozen. The same surface now paints for that pre-write stretch with an
+     ANIMATED indeterminate bar. It stays a renderer: phases come from the
+     probe/open code that already runs, and it disappears the moment the sheet
+     reaches READY (the green tick takes over) or a refusal settles (the amber
+     or red status carries the outcome). */
+  function wfprogPreOnly(state) {
+    var p = state && state.prog;
+    if (!p || p.done) return false;
+    for (var i = 0; i < p.rows.length; i++) { var ph = p.rows[i].phase; if (ph !== 'wait' && ph !== 'check') return false; }
+    return true;
+  }
+  function wfprogClearPre(state) {
+    if (!state || !wfprogPreOnly(state)) return;
+    state.prog = null; wfprogPaint(state);
+  }
+  function wfprogCss() {
+    try {
+      if (document.getElementById('mlsWfprogCss')) return;
+      var st = document.createElement('style'); st.id = 'mlsWfprogCss';
+      st.textContent = '@keyframes mlsWfprogSlide{0%{margin-left:-38%}100%{margin-left:100%}}';
+      (document.head || document.documentElement).appendChild(st);
+    } catch (e) {}
+  }
   function wfprogStart(state, rows, batch) {
     if (!state || state.closed) return;
     state.prog = { total: rows.length, batch: batch === true, secs: 0, done: false, summary: '',
@@ -2575,6 +2614,13 @@
        a settled verdict, exactly as wfsum-1.0.0's button cap did. */
     var settled = n.written + n.refused;
     var pct = (p.done && !n.pending) ? 100 : Math.min(95, Math.round((settled / Math.max(1, p.total)) * 100));
+    /* wfprog-1.1.0: before anything has settled or written, a determinate 0%
+       bar reads as frozen - animate an indeterminate sweep instead. */
+    var indeterminate = !p.done && settled === 0 && wfprogPreOnly(state);
+    if (indeterminate) wfprogCss();
+    var barInner = indeterminate
+      ? '<div style="height:100%;width:38%;border-radius:999px;background:#2f7d5a;animation:mlsWfprogSlide 1.4s linear infinite"></div>'
+      : '<div style="height:100%;width:' + pct + '%;background:#2f7d5a"></div>';
     var lines = p.rows.map(function (r) {
       var meta = WFPROG_PHASE[r.phase] || WFPROG_PHASE.wait;
       return '<div data-mls-prog-row="' + esc(r.id) + '" data-mls-prog-phase="' + esc(r.phase) + '" style="display:flex;gap:8px;border-top:1px solid #e2e8f2;padding:5px 0;font-size:12px">' +
@@ -2585,8 +2631,8 @@
       host.style.display = 'block';
       host.innerHTML = '<div style="border:1px solid #cfe0d7;background:#f7fbf9;border-radius:11px;padding:11px 12px">' +
         '<div data-mls-prog-headline="1" style="font-weight:850;color:#204034;font-size:13px">' + esc(wfprogHeadline(state)) + '</div>' +
-        '<div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '" data-mls-prog-pct="' + pct + '" style="margin-top:8px;height:9px;border-radius:999px;background:#dbe7e0;overflow:hidden">' +
-        '<div style="height:100%;width:' + pct + '%;background:#2f7d5a"></div></div>' +
+        '<div role="progressbar" aria-valuemin="0" aria-valuemax="100" ' + (indeterminate ? 'data-mls-prog-indeterminate="1" ' : 'aria-valuenow="' + pct + '" ') + 'data-mls-prog-pct="' + pct + '" style="margin-top:8px;height:9px;border-radius:999px;background:#dbe7e0;overflow:hidden">' +
+        barInner + '</div>' +
         '<div style="margin-top:7px">' + lines + '</div>' +
         '<div style="margin-top:6px;font-size:11.5px;color:#52675c">' +
         esc(n.written + ' written, ' + n.refused + ' not sent, ' + n.pending + ' still to go. MLS never saves or signs.') +
