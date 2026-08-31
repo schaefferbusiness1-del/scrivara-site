@@ -59143,3 +59143,78 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     window.__mlsEnsureFirstPullStyle = ensure;
   } catch (_) {}
 })();
+
+/* ===== kal-1.0.0 - athenaOne keep-alive watchdog (app-side; ext 3.0.84 is frozen) =====
+   Owner 2026-08-30: "the extensions keep alive doesnt really work well". The
+   extension's own keep-alive (ka-3066 synthetic events + ka84 alarm GET) lives
+   in an MV3 service worker that Chrome can stop, and a stopped worker keeps no
+   timers - the banked "MV3 FORGETS" class. This watchdog runs where the doctor
+   actually is (the MLS tab), on a Worker tick because a hidden tab freezes
+   setTimeout, and every minute asks the extension for its health receipt
+   (mlsExtHealth - read-only). Waking the worker to answer ALSO re-arms its own
+   alarms, so the probe itself is half the cure. When the receipt shows the
+   native keep-alive tick is STALE (>210s; its healthy period is 180s) and
+   athenaOne is present and NOT signed out, it escalates once per 8 minutes to
+   mlsAppGoHome - a real, serialized Home click in the athena tab that resets
+   the client idle watcher. Never while a pull or recording runs; never when
+   signed out (a login page is the doctor's to handle - MLS says so instead of
+   hammering it). Status + a bounded ledger live at window.__mlsKeepAliveWatch
+   so a probe or a future Settings line can read exactly what happened. */
+;(function () {
+  'use strict';
+  try {
+    if (window.__mlsKeepAliveWatch) return;
+    var ST = { driver: '', lastHealthAt: 0, kaTickAt: 0, signedOutAt: 0, athenaTabs: null,
+      lastGoHomeAt: 0, goHomes: 0, lastVerdict: 'starting', ledger: [] };
+    window.__mlsKeepAliveWatch = ST;
+    function note(entry) { try { entry.at = Date.now(); ST.ledger.push(entry); if (ST.ledger.length > 24) ST.ledger.shift(); } catch (e) {} }
+    function busyNow() {
+      try { var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; if (s && s.busy) return 'pull'; } catch (e) {}
+      try { if (typeof window.__mlsPtsPullActive === 'function' && window.__mlsPtsPullActive()) return 'pull'; } catch (e) {}
+      try { if (typeof isRecording === 'function' && isRecording()) return 'recording'; } catch (e) {}
+      return '';
+    }
+    function ask(type, respType, timeoutMs) {
+      return new Promise(function (resolve) {
+        var done = false;
+        function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(v); }
+        function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; fin(d.resp || d); }
+        try { window.addEventListener('message', h, false); } catch (e) {}
+        try { window.postMessage({ type: type, source: 'mls-app', from: 'mls-app' }, '*'); } catch (e) { fin(null); return; }
+        setTimeout(function () { fin(null); }, timeoutMs || 12000);
+      });
+    }
+    function onHealth(h) {
+      var now = Date.now();
+      ST.lastHealthAt = now;
+      if (!h || h.ok !== true) { ST.lastVerdict = 'health-unreachable'; return; }
+      var ka = h.ka || {};
+      ST.kaTickAt = Number(ka.lastTick) || 0;
+      ST.signedOutAt = Number(ka.signedOutAt) || 0;
+      ST.athenaTabs = h.athena ? h.athena.tabs : null;
+      if (ST.signedOutAt && ST.signedOutAt > ST.kaTickAt) { ST.lastVerdict = 'athena-signed-out'; return; }
+      if (!h.athena || !h.athena.tabs) { ST.lastVerdict = 'no-athena-tab'; return; }
+      var age = ST.kaTickAt ? (now - ST.kaTickAt) : Infinity;
+      if (age <= 210000) { ST.lastVerdict = 'native-keepalive-healthy'; return; }
+      var why = busyNow();
+      if (why) { ST.lastVerdict = 'stale-but-' + why + '-running'; return; }
+      if (now - ST.lastGoHomeAt < 480000) { ST.lastVerdict = 'stale-cooling-down'; return; }
+      ST.lastGoHomeAt = now; ST.goHomes++;
+      ST.lastVerdict = 'go-home-sent';
+      note({ act: 'goHome', kaAgeMs: age });
+      ask('mlsAppGoHome', 'mlsAppGoHomeResult', 30000).then(function (r) {
+        note({ act: 'goHome-result', ok: !!(r && r.ok), reason: r && (r.reason || r.error) || '' });
+      });
+    }
+    function tick() { ask('mlsExtHealth', 'mlsExtHealthResult', 12000).then(onHealth); }
+    try {
+      var url = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},60000)'], { type: 'application/javascript' }));
+      var w = new Worker(url);
+      w.onmessage = tick;
+      ST.driver = 'worker';
+    } catch (e) {
+      try { setInterval(tick, 60000); ST.driver = 'interval'; } catch (e2) { ST.driver = 'none'; }
+    }
+    setTimeout(tick, 8000);
+  } catch (eTop) {}
+})();
