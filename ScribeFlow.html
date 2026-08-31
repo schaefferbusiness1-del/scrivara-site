@@ -13814,15 +13814,26 @@ async function purgeAthenaImportedPatients(){
   try{ typedGate=await ((typeof window.mlsPrompt==='function')?window.mlsPrompt('This deletes '+athena.length+' Athena-imported patients (records, imported history, and today’s pulled appointments) from this device AND your account. Patients you created yourself are kept.\n\nType REMOVE to confirm:',''):null); }catch(e){}
   if(String(typedGate||'').trim().toUpperCase()!=='REMOVE'){ try{ toast('Nothing was removed.','ok'); }catch(e){} return 0; }
   var athIds={}; athena.forEach(function(p){ athIds[p.id]=1; });
-  var removed=0;
+  var removed=0, srvFailed=0, srvTried=false;
   if(typeof backendMode==='function' && backendMode() && bkToken()){
+    srvTried=true;
     // Server patients: delete any row that is athena-imported (by source or matching external_id).
     try{
       var r=await fetch(bkBase()+'/api/patients',{headers:{Authorization:'Bearer '+bkToken()}});
       if(r.ok){ var d=await r.json(); var rows=Array.isArray(d)?d:(d&&d.patients)||[];
-        for(var i=0;i<rows.length;i++){ var row=rows[i]; var isAth=(row.data&&row.data.source==='athena-schedule')||(row.external_id&&athIds[row.external_id]); if(isAth&&row.id!=null){ try{ var dr=await fetch(bkBase()+'/api/patients/'+encodeURIComponent(row.id),{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}}); if(dr.ok) removed++; }catch(e){} } }
+        /* ptdel-1.4.0 (2026-08-31): a DELETE that failed used to be counted as
+           nothing at all - `removed` only ever went up - and the closing toast
+           below never read it anyway, so a run in which every server DELETE
+           errored still told the doctor the patients were gone "from your
+           account". A row that survives on the server comes back on the next
+           hydration with its whole chart (loadPatientsFromServer re-adds any
+           unknown server row unconditionally), so this is the difference
+           between a delete and a delay. 404 is success: the row is gone, which
+           is the outcome we wanted. */
+        for(var i=0;i<rows.length;i++){ var row=rows[i]; var isAth=(row.data&&row.data.source==='athena-schedule')||(row.external_id&&athIds[row.external_id]); if(isAth&&row.id!=null){ try{ var dr=await fetch(bkBase()+'/api/patients/'+encodeURIComponent(row.id),{method:'DELETE',headers:{Authorization:'Bearer '+bkToken()}}); if(dr.ok||dr.status===404) removed++; else srvFailed++; }catch(e){ srvFailed++; } } }
       }
-    }catch(e){}
+      else { srvFailed++; }
+    }catch(e){ srvFailed++; }
     // Today's pulled appointments linked to those patients.
     try{
       var today=_acctTodayKey();
@@ -13831,14 +13842,55 @@ async function purgeAthenaImportedPatients(){
     }catch(e){}
   }
   // Local: drop athena patients + their imported notes.
-  try{ savePatients(local.filter(function(p){ return p.source!=='athena-schedule'; }),undefined,{allowRemovals:true}); }catch(e){}
+  /* ptdel-1.4.0: THE ONE SANCTIONED FULL WIPE, AND IT WAS BEING REFUSED.
+     __mlsWipeGuard v1.2.0 hard-blocks savePatients([]) once >= 8 patients are
+     stored - it returns without persisting and toasts "Blocked an attempt to
+     clear all N patients (safety guard)". Its header names the exact caller
+     the escape hatch was written for: "a FUTURE legitimate 'erase all my data'
+     feature ... window.__mlsWipeGuard.allowOnce()". THIS is that feature, and
+     it never called it. On the ordinary case - a roster where every stored
+     chart came off an Athena schedule - the surviving list is [] and the write
+     was silently refused while the closing line still said "Removed N".
+     That is "can u delete patients" answered No by a guard nobody told.
+
+     The guard is NOT weakened: allowOnce() is its own one-shot, consumed by
+     this single save, and it is armed only behind the typed-REMOVE gate above.
+     Every other caller still meets the full block. */
+  var _keep=local.filter(function(p){ return p.source!=='athena-schedule'; });
+  var _blockedBefore=0;
+  try{ _blockedBefore=(window.__mlsWipeGuard&&window.__mlsWipeGuard.blocked)||0; }catch(e){}
+  try{ if(!_keep.length && window.__mlsWipeGuard && typeof window.__mlsWipeGuard.allowOnce==='function') window.__mlsWipeGuard.allowOnce(); }catch(e){}
+  var _localOk=true;
+  try{ savePatients(_keep,undefined,{allowRemovals:true}); }catch(e){ _localOk=false; }
+  /* CONFIRM BY THE GUARD'S OWN COUNTER, not by the call returning. savePatients
+     returns undefined on a block exactly as it does on success, so the only
+     honest evidence that the write landed is that nothing refused it. */
+  try{ if(((window.__mlsWipeGuard&&window.__mlsWipeGuard.blocked)||0)>_blockedBefore) _localOk=false; }catch(e){}
   try{ var ns=getNotes().filter(function(n){ return !athIds[n.patientId]; }); saveNotes(ns); }catch(e){}
+  /* THE SELECTED PATIENT CANNOT SURVIVE THEIR OWN CHART. The per-patient
+     delete has cleared the pointer since ptdel-1.0.0 (see deletePatient); this
+     bulk path never did, so purging the chart you had open left
+     localStorage[activePt] aiming at nothing - the banner says "No active
+     patient" while every getActivePtId() caller still hands out the dead id. */
+  try{ if(_localOk && typeof getActivePtId==='function' && athIds[getActivePtId()] && typeof setActivePtId==='function') setActivePtId(''); }catch(e){}
   try{ window._heroTodayList=[]; var box=document.getElementById('heroToday'); if(box){ box.innerHTML=''; box.style.display='none'; } }catch(e){}
   try{ if(typeof loadCalendar==='function') loadCalendar(); }catch(e){}
   try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){}
+  try{ if(typeof renderProfile==='function') renderProfile(); }catch(e){}
+  try{ if(typeof renderPatientBar==='function') renderPatientBar(); }catch(e){}
   try{ if(typeof loadPatients==='function') loadPatients(); }catch(e){}
-  try{ toast('Removed '+athena.length+' Athena-imported patient'+(athena.length===1?'':'s')+' from your account and this device.','ok'); }catch(e){}
-  return athena.length;
+  /* SAY WHAT ACTUALLY HAPPENED, DEVICE AND ACCOUNT SEPARATELY. The old line
+     was one unconditional sentence claiming both. */
+  try{
+    if(!_localOk){
+      toast('Nothing was removed — the safety guard refused to clear the whole patient list. Reload and try again, or delete them one at a time.','err');
+    } else if(srvTried && srvFailed){
+      toast('Removed '+athena.length+' Athena-imported patient'+(athena.length===1?'':'s')+' from this device, but '+srvFailed+' could NOT be removed from your account — those will come back on the next sync. Try again once you are back online.','err');
+    } else {
+      toast('Removed '+athena.length+' Athena-imported patient'+(athena.length===1?'':'s')+(srvTried?' from your account and this device.':' from this device.'),'ok');
+    }
+  }catch(e){}
+  return _localOk?athena.length:0;
 }
 function ptInitials(name){
   const parts=String(name||'?').replace(/[^A-Za-z0-9 .]/g,'').trim().split(/[\s.]+/).filter(Boolean);
@@ -42918,7 +42970,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1134';
+  window.__MLS_AV='b1135';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -48165,6 +48217,45 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     try { r = n.getBoundingClientRect(); } catch (e3) { return null; }
     return (r && r.width > 0 && r.height > 0) ? n : null;
   }
+  /* ---- WHO IS HOLDING THE DAY'S PRIMARY, AND WHY -----------------------
+     Owner, 2026-08-31, on a screenshot of this exact button: "why is this
+     greyed out".
+
+     MEASURED, not guessed. TWO modules write #opPrepGenAllBtn and neither
+     knew about the other:
+
+       feat_opnote_history.js syncGenButton()  sets `disabled`, an inline
+         opacity:.6 and cursor:not-allowed, and writes the REASON into the
+         label ("Loading history...") while the visit history is still loading.
+       THIS block                              rewrites that label to
+         "Draft all N op notes" on the very next repaint.
+
+     So the reason is erased within one paint and what survives is a button
+     that ANNOUNCES 32 op notes, cannot be pressed, and - through the shell's
+     own `button:disabled{opacity:.5}` over `.btn-primary{background:var(--brand-dk)}`
+     - renders as pale mint with white text. That is the screenshot, and the
+     doctor's question is the correct one: nothing on screen says why.
+
+     genHold() is the ONE place that asks whether anybody is legitimately
+     holding this button. It reads the holder's OWN marker - the dataset flag
+     syncGenButton sets and clears - rather than inferring a hold from the
+     skin, so a hold that is real keeps its reason on screen and a hold that
+     is over leaves no dim behind. It is in the paint signature, so a hold
+     that arrives after a paint still forces the next one. */
+  var HOLD_TIP = 'Still loading the visit history these drafts are written from. This unlocks by itself.';
+  var HOLD_LBL = '⏳ Loading this day’s history…';
+  /* A STRING THIS BLOCK WROTE IS NEVER "THE SHELL'S OWN WORDS". Both of the
+     labels we can produce are refused as a home label, so no repaint - and no
+     interleaving with another writer's restore - can bank one of ours as the
+     button's resting text. Measured: without this, one paint landing during a
+     history hold left the day's FINISHED state reading "Loading ... history". */
+  function ownLabel(s) { return s === HOLD_LBL || /^✨ Draft all \d+ op notes?$/.test(s); }
+  function genHold() {
+    var g = el('opPrepGenAllBtn');
+    if (!g) return '';
+    try { if (g.dataset && g.dataset.mlsHistDisabled === '1') return 'history'; } catch (e) {}
+    return '';
+  }
   function glowId() {
     if (!roomOpen()) return '';
     var st = stateNow();
@@ -48192,7 +48283,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       return '';
     }
     if (t.drafting) return el('tpfStop') ? 'tpfStop' : '';
-    if (t.queued + t.failed > 0) return 'opPrepGenAllBtn';
+    if (t.queued + t.failed > 0) {
+      /* NAME IT ONLY IF IT CAN BE PRESSED - the same rule 4.0.0 wrote for
+         #mlsOpnGo above, which this row never got. A day whose history is
+         still loading holds Draft-all disabled, and lighting a control
+         nobody can press is the one thing nextglow's contract forbids.
+         Returning '' hands nextglow its own tested fallback row. */
+      var ga = el('opPrepGenAllBtn');
+      if (ga && !ga.disabled && !ga.getAttribute('data-mlsopn-hide')) return 'opPrepGenAllBtn';
+      return '';
+    }
     var go = el('mlsOpDayGo');
     if (go && !go.hidden) return 'mlsOpDayGo';
     return '';
@@ -48403,6 +48503,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       day, query, runOn ? 1 : 0, bulkSave() ? 'B' : 'b', plan ? plan.label : '', plan && plan.able ? 1 : 0,
       filed ? 'F' : 'f', fw ? (fmtOpen ? 'O' : 'S') : '-', noteBox() ? 'T' : 't',
       notice, dockBand(), Math.round((window.innerHeight || 0) / 10), allRowKeys.join(','),
+      /* A HOLD ON THE DAY'S PRIMARY IS PART OF THE SCREEN, so it must be part
+         of the signature. Without it, feat_opnote_history.js disabling the
+         button one frame after a paint changed nothing this loop could see,
+         and the rail never repainted to say why. */
+      genHold(),
       shownRefs.map(function (ref) { return ref.key; }).join(',')].join('|');
     for (i = 0; i < r.length; i++) {
       var s0 = statusOf(r[i], i);
@@ -48466,15 +48571,43 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
        start. */
     var gen = el('opPrepGenAllBtn');
     if (gen) {
-      if (!gen.__mlsOpDayLbl) gen.__mlsOpDayLbl = S(gen.textContent);
+      var hold = genHold();
+      /* NEVER CACHE ANOTHER MODULE'S TRANSIENT AS THIS BUTTON'S HOME LABEL.
+         The old line took whatever textContent happened to be there on the
+         first paint. Measured against the real writers, that string is
+         "Loading history..." often enough to matter - and then the day's
+         FINISHED state, and revert(), both put a loading message back onto
+         the shell's own button, permanently. Capture only while nobody is
+         holding it, and keep the shell's own words as the floor. */
+      if (!gen.__mlsOpDayLbl && !hold && !ownLabel(S(gen.textContent))) gen.__mlsOpDayLbl = S(gen.textContent);
+      var home = gen.__mlsOpDayLbl || '✨ Draft all op notes';
       var need = t.queued + t.failed;
-      var want = need
-        ? ('✨ Draft all ' + need + ' op note' + (need === 1 ? '' : 's'))
-        : gen.__mlsOpDayLbl;
+      var want = hold
+        ? HOLD_LBL
+        : (need ? ('✨ Draft all ' + need + ' op note' + (need === 1 ? '' : 's')) : home);
       if (S(gen.textContent) !== want) gen.textContent = want;
       var showGen = !patientMode() && st !== 'templates' && (need > 0 || t.drafting > 0);
       if (showGen) { if (gen.getAttribute('data-mlsopn-hide')) { gen.removeAttribute('data-mlsopn-hide'); gen.style.display = ''; } }
       else { gen.setAttribute('data-mlsopn-hide', '1'); gen.style.display = 'none'; }
+      /* PRESSABLE IS ASSERTED, NOT ASSUMED (owner, 2026-08-31: "why is this
+         greyed out"). With no live hold this button must be enabled AND look
+         enabled: an inline opacity/cursor left behind by a writer that lost
+         its own re-enable is exactly what made a working control read as
+         broken. With a hold, the dim stays and the label CARRIES the reason
+         instead of being overwritten by the count - a greyed control that
+         says why is honest; one that still promises 32 op notes is not.
+         Same-value writes are avoided so a quiet paint stays a few reads. */
+      if (hold) {
+        if (gen.disabled !== true) gen.disabled = true;
+        if (gen.getAttribute('aria-disabled') !== 'true') gen.setAttribute('aria-disabled', 'true');
+        if (gen.getAttribute('data-tip') !== HOLD_TIP) gen.setAttribute('data-tip', HOLD_TIP);
+      } else {
+        if (gen.disabled !== false) gen.disabled = false;
+        if (gen.getAttribute('aria-disabled')) gen.removeAttribute('aria-disabled');
+        if (gen.getAttribute('data-tip') === HOLD_TIP) gen.removeAttribute('data-tip');
+        if (gen.style.opacity) gen.style.opacity = '';
+        if (gen.style.cursor) gen.style.cursor = '';
+      }
     }
 
     /* ---- the patients ---- */
@@ -48878,7 +49011,27 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
            primary that is on screen and cannot be pressed. Always 0 — see
            notePlan(). It is read by the room's own suite, and by anyone who
            wants to know whether the glow can be pointed at a dead control. */
-        deadPrimary: (function () { var g = el('mlsOpnGo'); return (g && !g.hidden && g.disabled) ? 1 : 0; })(),
+        deadPrimary: (function () {
+          var g = el('mlsOpnGo');
+          if (g && !g.hidden && g.disabled) return 1;
+          /* THE RAIL HAS TWO PRIMARIES AND THIS NUMBER ONLY EVER COUNTED ONE.
+             #opPrepGenAllBtn on screen, disabled, with no reason carried on
+             it is precisely the state the owner photographed on 2026-08-31,
+             and this reported 0 for it. A hold that DOES explain itself
+             (aria-disabled + the reason in the label) is not dead - it is
+             blocked, honestly, and stays 0. */
+          var ga = el('opPrepGenAllBtn');
+          if (ga && !ga.getAttribute('data-mlsopn-hide') && ga.disabled &&
+              ga.getAttribute('aria-disabled') !== 'true') return 1;
+          return 0;
+        })(),
+        /* the honest answers about the day's own primary, as values a suite
+           can read instead of a claim it has to trust */
+        genHold: genHold(),
+        genReady: (function () {
+          var ga = el('opPrepGenAllBtn');
+          return !!(ga && !ga.getAttribute('data-mlsopn-hide') && !ga.disabled);
+        })(),
         histShown: (function () { var h = el('mlsOpnHist'); return !!(h && !h.hidden); })(),
         formatted: (function () {
           var out = { total: 0, shut: 0, open: 0, unmarked: 0 };
@@ -50921,10 +51074,54 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     return d === t;
   }
 
+  /* A POINTER AT NO CHART IS NOT A SELECTION (owner, 2026-08-31: "did u fix
+     the patient selected").
+
+     restoredSelectionIsAllowed() asks only whether the choice was DELIBERATE
+     and made TODAY. It never asked the one question that matters after a
+     merge or a bulk removal: does that id still name a chart? So a selection
+     the doctor made twenty minutes ago, whose record has since been absorbed
+     by the duplicate auto-merge (which removes the loser and never moves the
+     pointer) or swept by the Athena purge, passed every boot pass untouched.
+     The banner then reads "No active patient" - renderPatientBar's own
+     null-branch - while localStorage still hands the dead id to every
+     getActivePtId() caller. Blank on screen, live and wrong underneath.
+
+     Two rules, in this order, because they are different facts:
+       - The store must actually be loaded before absence means anything. An
+         empty roster is "not hydrated yet", never "this chart is gone", and
+         judging on it would deselect a perfectly good patient at boot.
+       - A merged-away chart is FOLLOWED, not cleared. The merge writes an
+         alias loser -> winner precisely so stale references can be resolved,
+         and moving the selection onto the survivor is what the doctor meant.
+         Only an id that resolves to nothing at all is dropped. */
+  function activeIdResolves() {
+    var id = activeId();
+    if (!id) return true;
+    var n = safe(function () { return ((typeof getPatients === 'function' ? getPatients() : []) || []).length; }, 0);
+    if (!n) return true;
+    var known = safe(function () { return !!(typeof findPatient === 'function' && findPatient(id)); }, true);
+    if (known) return true;
+    var win = safe(function () {
+      var M = window.__mlsPatientMerge;
+      return (M && typeof M.resolveAlias === 'function') ? str(M.resolveAlias(id)) : '';
+    }, '');
+    if (win && win !== id && safe(function () { return !!(typeof findPatient === 'function' && findPatient(win)); }, false)) {
+      safe(function () { if (typeof setActivePtId === 'function') setActivePtId(win); });
+      api.aliasFollowed++;
+      return true;
+    }
+    return false;
+  }
+
   function enforceEmptyBanner(reason) {
     var id = activeId();
     if (!id) return false;
-    if (restoredSelectionIsAllowed()) return false;
+    var resolves = activeIdResolves();
+    /* activeIdResolves() may have moved the selection onto a merge survivor,
+       so re-read rather than acting on the id we walked in with. */
+    if (resolves) { id = activeId(); if (!id) return false; }
+    if (resolves && restoredSelectionIsAllowed()) return false;
     /* Never take a chart away from work in progress. If sessionStorage is
        unavailable the "chosen" marker can never be written, and without this
        line a later pass would deselect a patient the doctor is recording. */
@@ -50979,6 +51176,18 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     version: VERSION, installed: true,
     cleared: 0, stashed: 0, restored: 0, blocked: [], lastOwner: '',
     bootCleared: 0, lastBootReason: '',
+    /* how many times a selection was moved onto a merge survivor rather than
+       dropped, as a number a suite can read instead of a claim */
+    aliasFollowed: 0,
+    activeIdResolves: activeIdResolves,
+    /* the honest answer to "is the selected patient real": '' when nothing is
+       selected, 'ok' when it names a live chart, 'dangling' when it does not */
+    selectionState: function () {
+      var id = activeId();
+      if (!id) return '';
+      var known = safe(function () { return !!(typeof findPatient === 'function' && findPatient(id)); }, false);
+      return known ? 'ok' : 'dangling';
+    },
     clearVisitResidue: clearVisitResidue,
     stashBeforeSwitch: stashBeforeSwitch,
     restoreFor: restoreFor,

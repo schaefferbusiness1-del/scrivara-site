@@ -2905,6 +2905,18 @@
         go.disabled = true; go.setAttribute('aria-disabled', 'true');
         go.setAttribute('data-mls-primary-blocked', plan.reason); go.title = plan.reason;
       } catch (e3) {}
+    } else if (plan.mode === 'single') {
+      /* sheetux-1.1.0 (measured live 2026-08-31): uncheck -> recheck left the
+         button dead - mode 'none' wrote the disable and 'single' never undid
+         it, so only a fresh probe could revive it. The plan returns 'single'
+         only when the validated probe still matches the selected row, and the
+         armed action attribute survives only the checkbox-sync disable (every
+         real disarm strips it) - so this re-arms exactly the legacy press. */
+      try {
+        if (go.getAttribute('data-mls-primary-blocked') && go.getAttribute('data-mls-athena-action')) {
+          go.disabled = false; go.removeAttribute('aria-disabled'); go.removeAttribute('data-mls-primary-blocked');
+        }
+      } catch (e4) {}
     }
   }
   function runUnifiedPrimarySend(state, btn) {

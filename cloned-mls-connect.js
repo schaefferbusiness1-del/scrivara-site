@@ -12593,6 +12593,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var names = namesFor(prefix);
       var todo = names.filter(function (n) { var p = findPatient(n); return !(p && hasPulled(p) && (p.visits || []).length); });
       var already = names.length - todo.length;
+      /* pullbind-1.0.0 (receipt honesty): this loop mutates the STATE object it
+         CLOSED OVER, and the schedule-import shim replaces
+         window.__mlsDayHistoryPull.state with its own {__si:1} object the first
+         time it paints. After that swap every honesty consumer - the pull-face
+         progress bar's running() (which is allowed to paint 100% only when the
+         ENGINE says it is done), the stuck-queue watcher's pullHolding(), the
+         b121 pack's busy guards - read a detached object that says running
+         false while this walk is opening charts. The floating button calls this
+         closure directly, so no wrapper can re-attach it either. A RUNNING
+         engine owns the surface it reports through: re-publish before the flag
+         goes up. The shim's own guard already refuses to steal a state whose
+         running is true, so it re-takes the surface once this walk ends. */
+      try {
+        var _pubG = window.__mlsDayHistoryPull = window.__mlsDayHistoryPull || {};
+        if (_pubG.state !== STATE) _pubG.state = STATE;
+      } catch (ePub) {}
       STATE.running = true; STATE.total = todo.length; STATE.done = 0; STATE.ok = 0; STATE.failed = 0; STATE.current = ''; STATE.rows = [];
       BUSY = true;
       say('Pulling chart history for ' + todo.length + ' patient' + (todo.length === 1 ? '' : 's') + ' (' + (label || prefix) + ')' + (already ? ' - ' + already + ' already have it.' : '.'));
@@ -21565,7 +21581,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function bindingNotice() {
     try {
       if (!S.appt || S.lastWarn) return;
-      if (exactScheduledBindingMatches(S.appt)) return;
+      /* pullbind-1.0.0: ASK, then accuse. scheduledBindingReady re-runs the
+         unchanged install+match pair before this function is allowed to claim
+         the binding is unprovable; where that helper is not present (isolated
+         harnesses that lift computePhase alone) the original read-only check
+         still decides, byte for byte. */
+      if (typeof scheduledBindingReady === 'function'
+            ? scheduledBindingReady(S.appt)
+            : exactScheduledBindingMatches(S.appt)) return;
       var provider = String(S.appt.provider || '').trim();
       S.lastWarn = S.appt._pt
         ? 'This visit was opened by patient search, not from a schedule row. Recording and note generation work normally and save as an unscheduled visit — open this patient from the day\'s schedule row if you want auto-filing and Athena chart verification.'
@@ -21603,7 +21626,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function bindCureOffered() {
     if (!S.appt || S.appt._pt) return false;
     if (!bindCureDay() || !String(S.appt.provider || '').trim()) return false;
-    if (safe(function () { return exactScheduledBindingMatches(S.appt); }, false)) return false;
+    /* pullbind-1.0.0: the same ASK-then-accuse order the banner now uses, so a
+       row the re-install can bind never renders a "re-pull this day" button. */
+    if (safe(function () {
+      return (typeof scheduledBindingReady === 'function')
+        ? scheduledBindingReady(S.appt) : exactScheduledBindingMatches(S.appt);
+    }, false)) return false;
     return !!bindCureApi();
   }
   /* The schedule row object is replaced wholesale by a pull; never re-check a
@@ -21685,10 +21713,89 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * ===================================================================== */
   function lockPatient(a) { S.locked = { id: a.id, name: a.name || '', dob: dobOf(a), key: rowKey(a) }; }
   function scheduledAppointmentId(a) {
-    return String(a && (a.appointmentId || a.appointment_id || a.apptId || a.appt_id || a.athena_appointment_id || '') || '').trim();
+    var own = String(a && (a.appointmentId || a.appointment_id || a.apptId || a.appt_id || a.athena_appointment_id || '') || '').trim();
+    return own || ledgerScheduledAppointmentId(a);
+  }
+  /* ===== pullbind-1.0.0 (owner 2026-08-31: "from a pull, visits should be
+     auto-bound, right?") ===================================================
+     The day pull writes TWO records of the same appointment: the backend
+     calendar row (window._calAppts) and the account-local schedule-import
+     ledger acct:schedImportIndexV1::<day>, whose keys ARE athenaOne's own
+     appointment ids and whose entries carry {backendAppointmentId, patientId,
+     appt_date}. The write lane has consumed the ledger since b745
+     (feat_mls_writeflow.athenaAppointmentIdFromImportIndex); this reader never
+     did, so a pulled row whose backend record never received
+     athena_appointment_id (create/update HTTP failure, a row booked before the
+     staff sync carried the field) reported "missing its exact Athena
+     appointment ID" while the ledger held it all along.
+
+     THE BACKEND ROW ID IS NEVER RETURNED. It is used only as the JOIN KEY, and
+     what comes back is the ledger entry's own key - athenaOne's appointment id,
+     the exact value feat_mls_writeflow already trusts from the same store. The
+     join is per backend row, not per patient+day, so it can never pick between
+     two same-day appointments for one patient: each backend row maps to exactly
+     one ledger entry. Two entries claiming the same backend row, a day
+     mismatch, a still-pending entry, or no ledger at all all return '' - the
+     caller keeps the honest empty id and the existing refusal. */
+  /* The day-list badge asks this for EVERY visible row on every 700ms paint, so
+     the ledger is parsed once per day per LEDGER_INDEX_TTL and served from a
+     backend-row -> appointment-id map. Nothing is written to the row (a
+     _calAppts row is cached to storage; a memo there would outlive the ledger
+     it came from). */
+  var LEDGER_INDEX_TTL = 3000;
+  var ledgerIdxCache = { day: '', at: 0, map: null };
+  function ledgerDayIndex(day) {
+    var now = Date.now();
+    if (ledgerIdxCache.day === day && ledgerIdxCache.map && now - Number(ledgerIdxCache.at) < LEDGER_INDEX_TTL) return ledgerIdxCache.map;
+    var map = safe(function () {
+      if (!isFn(window.uns)) return null;
+      var raw = window.localStorage.getItem(window.uns('schedImportIndexV1::' + day));
+      if (!raw) return Object.create(null);
+      var rows = (JSON.parse(raw) || {}).rows || {}, byBackend = Object.create(null);
+      Object.keys(rows).forEach(function (k) {
+        var m = /^appointment-id:(\d+)$/.exec(k), e = rows[k];
+        if (!m || !e || e.state !== 'done') return;
+        var b = String(e.backendAppointmentId == null ? '' : e.backendAppointmentId).trim();
+        if (!b || String(e.appt_date == null ? '' : e.appt_date).trim() !== day) return;
+        /* two appointments claiming ONE backend row cannot be told apart: the
+           entry is poisoned to '' rather than resolved to either of them. */
+        if (byBackend[b] === undefined) byBackend[b] = m[1];
+        else if (byBackend[b] !== m[1]) byBackend[b] = '';
+      });
+      return byBackend;
+    }, null);
+    ledgerIdxCache = { day: day, at: now, map: map };
+    return map;
+  }
+  function ledgerScheduledAppointmentId(a) {
+    return safe(function () {
+      if (!a || a._pt) return '';
+      var backendId = String(a.id == null ? '' : a.id).trim(), day = apptDay(a);
+      if (!backendId || !day) return '';
+      var map = ledgerDayIndex(day);
+      return (map && typeof map[backendId] === 'string') ? map[backendId] : '';
+    }, '') || '';
+  }
+  /* pullbind-1.0.0: a row the doctor never activated through calStartVisit -
+     the wholesale-replaced row a day RE-pull hands back to the bind cure - has
+     no _mlsTargetPatientId, so the binding pair fell through to
+     positiveIdentityEvidence and refused every duplicate-chart pool the app's
+     own resolver already adopts a survivor for. Run the SAME resolver the tap
+     path runs (window._calResolveLocalPatient, which stamps
+     _mlsTargetPatientId / _mlsIdentityConflict); one shot per row, never a
+     second opinion of its own. */
+  function ensureRowLocalTarget(a) {
+    return safe(function () {
+      if (!a || a._pt || a.__mlsTargetTried) return;
+      if (a._mlsTargetPatientId || a._mlsIdentityConflict) return;
+      a.__mlsTargetTried = 1;
+      if (isFn(window._calResolveLocalPatient)) window._calResolveLocalPatient(a);
+    });
   }
   function installScheduledVisitBinding(a) {
     try {
+      ensureRowLocalTarget(a);
+      if (a && a._mlsIdentityConflict) return false;
       var apptId = scheduledAppointmentId(a), day = apptDay(a), provider = String(a && a.provider || '').trim();
       /* b438: recording and note generation are LOCAL - audio into MLS's own
          transcript box, generation against MLS's own model. Neither touches
@@ -21757,6 +21864,64 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!binding.patient.patientId || String(binding.patient.patientId) !== String(active.id)) return false;
     return true;
   }
+  /* ===== pullbind-1.0.0 THE MISSING RE-INSTALL ============================
+     exactScheduledBindingMatches only asks whether the CURRENT frozen binding
+     agrees with the row. installScheduledVisitBinding - the thing that puts
+     that binding there - ran in exactly one place: lockAndStart, once, at
+     activation. Every later path that legitimately drops or replaces the
+     binding (newVisit from _athenaPrepareRecording, the explicit demotion in
+     requireExactScheduledBinding, reopening a saved record) therefore left the
+     doctor on a perfectly bindable pull-created row being told MLS "could not
+     prove this row's exact Athena appointment binding" with no way back except
+     a whole day re-pull. Nothing re-tried the install.
+
+     This re-tries it, and only it: the SAME installScheduledVisitBinding, the
+     SAME exactScheduledBindingMatches verdict. It cannot bind anything those
+     two refuse. Three guards keep it safe to call from the render loop:
+       - a binding that already agrees is returned immediately (no churn);
+       - it never touches the binding while audio or a generation is attached
+         to it (freezing a replacement bumps currentVisitAthenaEpoch and would
+         detach a live recorder);
+       - one attempt per (row, appointment id, current binding), so a refusal
+         costs one pass and not one per paint.
+     A successful install always satisfies the match check with the same
+     inputs, so a bind cannot loop; the counter is belt-and-braces. */
+  var bindAutoKey = '', bindAutoTries = 0;
+  var BIND_AUTO_MAX_TRIES = 24;
+  /* A binding this loop may replace. An ABSENT binding is the common case (the
+     visit was reset, or the schedule proof was explicitly demoted). A weaker
+     binding for THIS SAME row - one carrying no appointment and no encounter -
+     is an upgrade of the same visit. Anything that already names a destination
+     (a saved record reopened in the editor, a restored draft, a historical
+     encounter, another appointment) is somebody else's route and is never
+     touched here: the banner stays and the doctor keeps the one-press cure. */
+  function bindAutoReplaceable(a) {
+    var b = safe(function () { return currentVisitBinding(); }, null);
+    if (!b) return true;
+    if (b.historical === true || b.identityConflict === true || b.routeBlocked === true) return false;
+    if (!/^(scheduled-appointment|current|manual-entry|generated|recording|phone-recording)$/.test(String(b.source || ''))) return false;
+    var ctx = b.visitContext || {};
+    if (String(ctx.encounterId || '').trim() || String(ctx.encounterUrl || '').trim()) return false;
+    var bound = String(ctx.appointmentId || '').trim();
+    if (bound && bound !== scheduledAppointmentId(a)) return false;
+    if (b.patient && b.patient.name && a && a.name && !nameMatch(b.patient.name, a.name)) return false;
+    return true;
+  }
+  function scheduledBindingReady(a) {
+    if (safe(function () { return exactScheduledBindingMatches(a); }, false)) return true;
+    if (!a || a._pt) return false;
+    if (safe(function () { return isRecording() || captureBusy(); }, true)) return false;
+    if (S.genClickedAt) return false;
+    if (!safe(function () { return bindAutoReplaceable(a); }, false)) return false;
+    var key = rowKey(a) + '|' + scheduledAppointmentId(a) + '|' +
+      safe(function () { var b = currentVisitBinding(); return String((b && b.id) || ''); }, '');
+    if (bindAutoKey === key) return false;
+    bindAutoKey = key;
+    if (++bindAutoTries > BIND_AUTO_MAX_TRIES) return false;
+    return safe(function () {
+      return installScheduledVisitBinding(a) && exactScheduledBindingMatches(a);
+    }, false);
+  }
   function requireExactScheduledBinding(a, actionLabel, opts) {
     opts = opts || {};
     if (exactScheduledBindingMatches(a)) return true;
@@ -21817,6 +21982,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       S.mode = beforeActivation.mode; S.screen = beforeActivation.screen;
     }
     S.appt = a; lockPatient(a); S.editing = false; S.phase = 'idle'; S.recStart = 0; S.genClickedAt = 0; S.signedAt = 0; S.lastWarn = ''; S.activationRefusalWarn = '';
+    /* pullbind-1.0.0: a deliberate activation is a fresh attempt budget. */
+    bindAutoKey = ''; bindAutoTries = 0;
     var activationReceipt = null;
     try {
       if (a && a._pt) { if (isFn(window.selectPatient)) window.selectPatient(a._patientId); } /* search-picked, no appt id */

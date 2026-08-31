@@ -506,8 +506,9 @@
   var load = {
     serverPending: 0, pullActive: false, watchdog: null,
     wrappedLoad: false, origLoad: null, msgHandler: null,
-    modalObserver: null, btnOrigLabel: null, origGenAll: null, _wasOpen: false
+    modalObserver: null, btnOrigLabel: null, btnWroteLabel: null, origGenAll: null, _wasOpen: false
   };
+  var HOLD_LABEL = '⏳ Loading history…';
 
   function hasModel() { return !!(window.__mlsVisitModel && isFn(window.__mlsVisitModel.getVisits)); }
   function backendOn() {
@@ -577,6 +578,20 @@
 
   function renderChip() {
     try {
+      /* THE DAY'S PRIMARY IS RELEASED BEFORE ANYTHING DECORATIVE IS DRAWN.
+         Owner, 2026-08-31: "why is this greyed out" - a screenshot of
+         #opPrepGenAllBtn pale and dead while per-patient drafting worked.
+
+         syncGenButton() is the ONLY thing that undoes the disable this module
+         applies, and it used to sit BELOW two early returns: one for a closed
+         modal, one for a missing #opPrepHdr (the host of a decorative status
+         chip). So a history load that started while the room was open and
+         finished after it closed - or after another module moved the header
+         node, which the op-note room does - left the button disabled with no
+         path back. The release is not a decoration and does not belong behind
+         one; it only ever touches a button this module itself disabled, so it
+         is safe to run on every call, room open or shut. */
+      syncGenButton(readyState());
       if (!modalOpen()) return;
       var chip = ensureChip(); if (!chip) return;
       var st = readyState();
@@ -599,15 +614,32 @@
     try {
       var btn = document.getElementById('opPrepGenAllBtn');
       if (!btn) return;
-      if (load.btnOrigLabel == null) load.btnOrigLabel = btn.textContent;
+      /* NEVER BANK OUR OWN TRANSIENT AS "THE ORIGINAL LABEL". The capture used
+         to run on every call, guarded only by `== null`, so the first call
+         after we had already written "Loading history..." - which is what a
+         second load in the same session is - froze THAT string as the label to
+         restore. Skip the capture while our own hold is on. */
+      if (load.btnOrigLabel == null && btn.dataset.mlsHistDisabled !== '1') load.btnOrigLabel = btn.textContent;
       if (st.pulling) {
         btn.disabled = true; btn.dataset.mlsHistDisabled = '1';
         btn.style.opacity = '0.6'; btn.style.cursor = 'not-allowed';
-        btn.textContent = '⏳ Loading history…';
+        /* The label is only ours to write on a shell with no other owner. On
+           /1p the op-note rail (opnote-day) relabels this button every paint
+           and would erase this sentence within one frame, leaving a dead
+           button still promising N op notes. There the rail reads
+           dataset.mlsHistDisabled and prints the reason itself; here we write
+           it, and we remember exactly what we wrote so the restore below can
+           tell our string from somebody else's. */
+        if (btn.textContent !== HOLD_LABEL) { btn.textContent = HOLD_LABEL; }
+        load.btnWroteLabel = HOLD_LABEL;
       } else if (btn.dataset.mlsHistDisabled === '1') {
         btn.disabled = false; delete btn.dataset.mlsHistDisabled;
         btn.style.opacity = ''; btn.style.cursor = '';
-        btn.textContent = load.btnOrigLabel || 'Draft all op notes';
+        /* Put OUR words back, never somebody else's: if the live label is no
+           longer the one we wrote, another owner has since spoken and its
+           text is the current truth. */
+        if (btn.textContent === load.btnWroteLabel) btn.textContent = load.btnOrigLabel || 'Draft all op notes';
+        load.btnWroteLabel = null;
       }
     } catch (e) {}
   }

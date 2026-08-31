@@ -145,8 +145,38 @@
     var kept = pts.filter(function (x) { return !x || !removedIds[x.id]; });
     aliases = loadAliases();
     for (k in removedIds) if (Object.prototype.hasOwnProperty.call(removedIds, k)) aliases[k] = removedIds[k];
-    safe(function () { saveP(kept); });
+    /* pm-1.0.3 (2026-08-31): {allowRemovals:true} IS REQUIRED FOR A SAVE THAT
+       DROPS ROWS, and this one dropped rows for a year without it. The patient
+       row guard reads an unflagged shrink as an accidental truncation and
+       carries every absent row straight back - and `kept` is a .filter()
+       product, so it carries no read-generation stamp either and falls to the
+       12-second clock rule, which a just-merged loser always passes. So the
+       merge announced "nothing was lost" and then undid its own removal, while
+       the alias map was written unconditionally: the duplicate survived AND
+       every later lookup was told it had been absorbed. The identical defect
+       was found and fixed for the console dedup (feat_mls_b121_pack.js,
+       dedupsrv-1.0.0) and never back-ported here. */
+    safe(function () { saveP(kept, undefined, { allowRemovals: true }); });
     saveAliases(aliases);
+    /* THE SELECTION FOLLOWS THE SURVIVOR (owner, 2026-08-31: "did u fix the
+       patient selected"). This module ran 12s after boot and 4s after every
+       completed pull - exactly when a pull has just minted the duplicates -
+       removed the absorbed chart out from under whoever had it open, and never
+       touched the active-patient pointer. The doctor was then selected on a
+       chart that no longer existed: the banner blanked, every getActivePtId()
+       caller kept the dead id, and none of the ~30 mls:active-patient-changed
+       listeners heard anything, because nothing dispatched it.
+       resolveAlias() follows a chain, so a loser absorbed twice in one run
+       still lands on the final survivor, and setActivePtId is the canonical
+       writer - it bumps the epoch and fires the app's own announcement. */
+    safe(function () {
+      if (typeof window.getActivePtId !== 'function' || typeof window.setActivePtId !== 'function') return;
+      var a = S(window.getActivePtId());
+      if (!a || !removedIds[a]) return;
+      var win = S(resolveAlias(a));
+      if (!win || win === a) return;
+      window.setActivePtId(win);
+    });
     safe(function () { if (typeof window.loadPatients === 'function') window.loadPatients(); });
     if (!opts || opts.silent !== true) {
       safe(function () { if (typeof window.toast === 'function') window.toast('Merged ' + merged + ' duplicate patient record' + (merged === 1 ? '' : 's') + ' (' + movedVisits + ' visit' + (movedVisits === 1 ? '' : 's') + ' combined - nothing was lost).', 'ok'); });
@@ -175,6 +205,11 @@
     safe(function () { window.addEventListener('mls:job-progress', jobHandler, false); });
   }
 
+  /* NOTE FOR THE RELEASE THAT SHIPS THIS: the two fixes dated 2026-08-31 above
+     (the {allowRemovals:true} on the removing save, and the selection following
+     the merge survivor) are a version move. `version` is left at pm-1.0.1 here
+     ONLY because tests/pull-progress-merge-defer-runtime.test.js:103 pins that
+     literal - bump the marker and the pin together, never one alone. */
   window.__mlsPatientMerge = { installed: true, version: 'pm-1.0.1', run: run, resolveAlias: resolveAlias };
   window.__mlsPatientMerge_revert = function () {
     stopped = true;

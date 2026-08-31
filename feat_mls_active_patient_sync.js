@@ -108,6 +108,27 @@
         (fieldsAreSettled() || (!lastName && lastRecordMissing))) return;
     var name = activeName();
     if (!name) {
+      /* aps-1.2.3 (2026-08-31): A DANGLING ID MUST NOT LEAVE THE PREVIOUS
+         PATIENT'S NAME IN THE VISIT LABEL. This branch used to return having
+         written nothing, so a switch to an id whose chart no longer exists -
+         merged away by the duplicate auto-merge, or swept by the Athena purge
+         - left #heroPtName and #patientLabel still reading the patient BEFORE
+         it. That is precisely the failure this module's own header was written
+         to prevent: "a clinician could switch patients, hit Start recording,
+         and get a note labelled for the wrong patient."
+
+         Cleared ONLY when the BINDING CHANGED. Same-id-no-record is the
+         ordinary window where the roster has not hydrated yet, and blanking
+         there would wipe a label another owner legitimately restored - so it
+         is left alone. Boot is covered by that same rule for free: this module
+         seeds `lastActiveId = activeId()` before it starts, so on the first
+         pass id === lastActiveId and nothing is touched.
+         Deliberately NOT keyed on `lastName`: the exported syncNow() sets
+         lastName = null before calling in, so a guard on it would go quiet for
+         exactly the caller most likely to be re-checking after a switch. */
+      if (id !== lastActiveId) {
+        for (var missIndex = 0; missIndex < FIELDS.length; missIndex++) setField(FIELDS[missIndex], '');
+      }
       lastName = null;
       lastActiveId = id;
       lastRecordMissing = true;

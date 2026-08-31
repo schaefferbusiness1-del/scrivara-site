@@ -65,7 +65,17 @@ function build(src, opts) {
       return opts.del;
     }
   };
-  const body = lift(src, '_ptResolveServerId') + '\n' + lift(src, 'deletePatientOnServer') +
+  /* 2026-08-31: THIS SUITE HAD NOT RUN SINCE b1130. ptdel-1.3.0 split the
+     resolver in two - _ptResolveServerIdEx became the real tri-state lookup and
+     _ptResolveServerId stayed as a thin wrapper over it - and deletePatientOnServer
+     was repointed at the Ex form. This build() still lifted only the wrapper, so
+     every case below died on `_ptResolveServerIdEx is not defined` before a
+     single assertion ran: a ReferenceError, not a failure, which is how the
+     whole server-DELETE honesty contract went untested across four shells while
+     the file still sat in the suite list. Lift the function the subject actually
+     calls. No assertion below is changed or relaxed. */
+  const body = lift(src, '_ptResolveServerIdEx') + '\n' + lift(src, '_ptResolveServerId') + '\n' +
+    lift(src, 'deletePatientOnServer') +
     '\nreturn { del: deletePatientOnServer, ids: _serverPtIds };';
   const fn = new Function('backendMode', 'bkToken', 'bkBase', 'handle401', '_serverPtIds', 'fetch', body);
   const api = fn(env.backendMode, env.bkToken, env.bkBase, env.handle401, env._serverPtIds, env.fetch);

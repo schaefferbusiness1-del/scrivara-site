@@ -1077,7 +1077,24 @@ async function mlsAthenaActionV2DriverFn(req) {
         }
         var appts = hetUniq(/"AppointmentID\\?"\s*:\s*\\?"(\d{3,})/g);
         att.apptCount = appts.length;
-        if (appts.length !== 1) { hetCommit(); return null; }
+        /* het-1.2.0 (3.0.97, measured live 2026-08-31): a patient with TWO
+           same-day appointments paints BOTH AppointmentIDs into the stage
+           frame's embedded JSON, so the strictly-single count refused the
+           surface forever (apptCount:2, qualified:false) even though the
+           reviewed request names EXACTLY ONE expected appointment id. When
+           more than one distinct id is painted, bind IFF exactly one of them
+           equals the request's expected appointment id; any other shape keeps
+           the original refusal. The downstream candidate gate re-checks this
+           same id against expectedContext.appointmentId, so a mismatch can
+           never survive to a write. */
+        if (appts.length !== 1) {
+          var hetWantAppt = '';
+          try { hetWantAppt = digits((expectedContext && expectedContext.appointmentId) || ''); } catch (eHetWa) { hetWantAppt = ''; }
+          var hetApptHits = [];
+          for (var hetAi = 0; hetAi < appts.length; hetAi++) { if (hetWantAppt && digits(appts[hetAi]) === hetWantAppt) hetApptHits.push(appts[hetAi]); }
+          if (hetWantAppt && hetApptHits.length === 1) { appts = hetApptHits; }
+          else { hetCommit(); return null; }
+        }
         att.rank = 3;
         var provs = hetUniq(/"DisplayName\\?"\s*:\s*\\?"([^"\\]{4,70})\\?"/g, function (v) { return /,\s*(?:MD|DO|PA-C|CRNP|NP|DPM)\s*$/.test(v) ? v : ''; });
         att.provCount = provs.length;
@@ -1162,7 +1179,7 @@ async function mlsAthenaActionV2DriverFn(req) {
        the normal refusal path on any doubt. */
     if (action === 'write_note' && requestedNoteSection && requestedNoteSection !== 'note') {
       try {
-        var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P', ap: 'A/P' };
+        var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P', ap: 'A/P', procedure: 'PE' /* procnav-3.0.97: Procedure Documentation lives under the PE stage tab; every other named section already self-navigates - this was the one missing entry (measured live 2026-08-31: identity qualified rank 6, noteTargetFound false until PE was opened by hand). */ };
         var snWant = snTabs[requestedNoteSection] || '';
         if (snWant) {
           var snFrames = sameOriginFrames();
@@ -2254,7 +2271,31 @@ function mlsAthenaTeachWatcherFn(config) {
   var AUTH_CLEANUP_ALARM = 'mls-athena-auth-session-cleanup-v1';
   var AUTH_QUARANTINE_ALARM_PREFIX = 'mls-athena-auth-quarantine-v1.';
   var tokenStateQueue = Promise.resolve();
-  function clean(v) { return String(v == null ? '' : v).trim(); }
+  /* idwellform-3.0.97: token ids derive from athena context strings; a LONE
+     UTF-16 SURROGATE inside one poisons every derived surface - the
+     chrome.storage key AND the quarantine alarm NAME (chrome.alarms.get on an
+     ill-formed name throws, so authQuarantineState reported available:false
+     and every claim died token-state-unavailable with an EMPTY diag ring).
+     Well-form at this single choke-point every token-lane id flows through.
+     Old records keyed by ill-formed ids become unreachable - they are exactly
+     the poisoned ones. */
+  function clean(v) {
+    var str = String(v == null ? '' : v).trim();
+    try {
+      if (typeof str.toWellFormed === 'function') return str.toWellFormed();
+      var outStr = '';
+      for (var ci = 0; ci < str.length; ci++) {
+        var code = str.charCodeAt(ci);
+        if (code >= 0xD800 && code <= 0xDBFF) {
+          var nxt = ci + 1 < str.length ? str.charCodeAt(ci + 1) : 0;
+          if (nxt >= 0xDC00 && nxt <= 0xDFFF) { outStr += str[ci] + str[ci + 1]; ci++; }
+          else outStr += '\uFFFD';
+        } else if (code >= 0xDC00 && code <= 0xDFFF) outStr += '\uFFFD';
+        else outStr += str[ci];
+      }
+      return outStr;
+    } catch (e) { return str; }
+  }
   function norm(v) { return clean(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function digits(v) { return clean(v).replace(/\D/g, ''); }
   function dateKey(v) { var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(clean(v)); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
@@ -2277,10 +2318,40 @@ function mlsAthenaTeachWatcherFn(config) {
       return area && typeof area.get === 'function' && typeof area.set === 'function' ? area : null;
     } catch (e) { return null; }
   }
+  /* tokdiag-3.0.97: PHI-free ring of token-machinery failure steps. */
+  self.tokDiag = self.tokDiag || function (step, extra) { try { self.__mlsTokDiag = (self.__mlsTokDiag || []).slice(-9); self.__mlsTokDiag.push({ t: Date.now(), step: String(step).slice(0, 40), x: String(extra == null ? '' : extra).slice(0, 80) }); try { chrome.storage.local.set({ mlsTokDiagV1: self.__mlsTokDiag }); } catch (e2) {} } catch (e) {} };
+  var tokDiag = self.tokDiag;
+  try { tokDiag('boot-beacon'); } catch (eB) {}
   function tokenStorageKey(id) { return TOKEN_SESSION_PREFIX + clean(id); }
   function noteProofStorageKey(id) { return NOTE_PROOF_SESSION_PREFIX + clean(id); }
   function tokenStateClone(value) {
-    try { return JSON.parse(JSON.stringify(value)); } catch (e) { return null; }
+    /* wellform-3.0.97 (measured live 2026-08-31, tokDiag: tokenSessionWrite-verify
+       "mismatch len 4232 vs 4232"): a LONE UTF-16 SURROGATE inside an embedded
+       context string survives JSON.stringify, but chrome.storage\u0027s structured
+       serialization replaces it with U+FFFD - same length, different bytes -
+       so the fail-closed write-verify could never match and every mint died
+       token-state-unavailable. Well-form every string BEFORE storing so the
+       compared record is byte-identical to what storage keeps. Idempotent on
+       well-formed strings; no gate or value semantics change. */
+    try {
+      return JSON.parse(JSON.stringify(value, function (k, v) {
+        if (typeof v !== 'string') return v;
+        try {
+          if (typeof v.toWellFormed === 'function') return v.toWellFormed();
+          var outStr = '';
+          for (var ci = 0; ci < v.length; ci++) {
+            var code = v.charCodeAt(ci);
+            if (code >= 0xD800 && code <= 0xDBFF) {
+              var nxt = ci + 1 < v.length ? v.charCodeAt(ci + 1) : 0;
+              if (nxt >= 0xDC00 && nxt <= 0xDFFF) { outStr += v[ci] + v[ci + 1]; ci++; }
+              else outStr += '\uFFFD';
+            } else if (code >= 0xDC00 && code <= 0xDFFF) outStr += '\uFFFD';
+            else outStr += v[ci];
+          }
+          return outStr;
+        } catch (eW) { return v; }
+      }));
+    } catch (e) { return null; }
   }
   function withTokenStateLock(fn) {
     var run = tokenStateQueue.then(fn, fn);
@@ -2292,6 +2363,21 @@ function mlsAthenaTeachWatcherFn(config) {
     if (!area) return null;
     try { var key = tokenStorageKey(id), got = await area.get(key); return got && got[key] ? got[key] : null; }
     catch (e) { return null; }
+  }
+  /* canoncmp-3.0.97 (measured live 2026-08-31, tokDiag "tokenSessionWrite-verify
+     mismatch len 4350 vs 4350" with every string well-formed): chrome.storage
+     round-trips records through base::Value dictionaries, which keep keys
+     SORTED - read-back returns the same content with reordered keys, so an
+     order-sensitive JSON.stringify equality can never match a record whose
+     literal key order is not alphabetical (same length, different sequence -
+     the exact measured signature). Compare canonically (sorted keys,
+     recursive); any REAL content difference still fails closed. */
+  function tokenCanonJson(v) {
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) { var arr = []; for (var ai = 0; ai < v.length; ai++) arr.push(tokenCanonJson(v[ai])); return '[' + arr.join(',') + ']'; }
+    var ks = Object.keys(v).sort(), ps = [];
+    for (var ki = 0; ki < ks.length; ki++) ps.push(JSON.stringify(ks[ki]) + ':' + tokenCanonJson(v[ks[ki]]));
+    return '{' + ps.join(',') + '}';
   }
   async function tokenSessionWrite(id, rec) {
     var area = tokenSessionArea();
@@ -2305,9 +2391,12 @@ function mlsAthenaTeachWatcherFn(config) {
          before returning a probe token or crossing the mutation boundary;
          quota/serialization/silent adapter failures therefore fail closed. */
       var got = await area.get(key), actual = got && got[key];
-      return !!actual && JSON.stringify(actual) === JSON.stringify(expected);
+      var okv = !!actual && tokenCanonJson(actual) === tokenCanonJson(expected);
+      if (okv && JSON.stringify(actual) !== JSON.stringify(expected)) tokDiag('verify-order-only', 'keys-reordered-content-equal');
+      if (!okv) tokDiag('tokenSessionWrite-verify', (actual ? 'canon-mismatch keys ' + Object.keys(actual).sort().join('.').slice(0, 70) : 'readback-empty'));
+      return okv;
     }
-    catch (e) { return false; }
+    catch (e) { tokDiag('tokenSessionWrite-throw', (e && e.message) || e); return false; }
   }
   async function noteProofSessionRead(id) {
     var area = tokenSessionArea();
@@ -2323,7 +2412,7 @@ function mlsAthenaTeachWatcherFn(config) {
       item[key] = expected;
       await area.set(item);
       var got = await area.get(key), actual = got && got[key];
-      return !!actual && JSON.stringify(actual) === JSON.stringify(expected);
+      return !!actual && tokenCanonJson(actual) === tokenCanonJson(expected);
     }
     catch (e) { return false; }
   }
@@ -2334,8 +2423,10 @@ function mlsAthenaTeachWatcherFn(config) {
     try {
       if (!chrome.alarms || typeof chrome.alarms.get !== 'function') return { available: false, marked: false };
       var name = authQuarantineAlarmName(kind, id), alarm = await chrome.alarms.get(name);
-      return { available: true, marked: !!(alarm && alarm.name === name) };
-    } catch (e) { return { available: false, marked: false }; }
+      var mk = !!(alarm && alarm.name === name);
+      if (mk) tokDiag('quarantine-marked', kind);
+      return { available: true, marked: mk };
+    } catch (e) { tokDiag('quarantine-state-throw', (e && e.message) || e); return { available: false, marked: false }; }
   }
   async function markAuthQuarantine(kind, id, expiresAt) {
     try {
@@ -2343,8 +2434,10 @@ function mlsAthenaTeachWatcherFn(config) {
       var name = authQuarantineAlarmName(kind, id);
       await chrome.alarms.create(name, { when: Math.max(Date.now() + 1000, Number(expiresAt || 0) + 1000) });
       var alarm = await chrome.alarms.get(name);
-      return !!(alarm && alarm.name === name);
-    } catch (e) { return false; }
+      var okq = !!(alarm && alarm.name === name);
+      if (!okq) tokDiag('quarantine-create-noreadback');
+      return okq;
+    } catch (e) { tokDiag('quarantine-create-throw', (e && e.message) || e); return false; }
   }
   async function clearAuthQuarantine(kind, id) {
     try { if (chrome.alarms && typeof chrome.alarms.clear === 'function') await chrome.alarms.clear(authQuarantineAlarmName(kind, id)); }
@@ -2358,7 +2451,7 @@ function mlsAthenaTeachWatcherFn(config) {
        storage to invalidate the ready capability. If remove and set both become
        unavailable or uncertain, a replacement worker still sees this marker
        and refuses the surviving ready record until its original expiry. */
-    if (!(await markAuthQuarantine(kind, id, terminalRecord && terminalRecord.expiresAt))) return false;
+    if (!(await markAuthQuarantine(kind, id, terminalRecord && terminalRecord.expiresAt))) { tokDiag('consume-mark-fail', kind); return false; }
     try {
       if (typeof area.remove === 'function') {
         await area.remove(key);
@@ -2370,7 +2463,7 @@ function mlsAthenaTeachWatcherFn(config) {
       item[key] = expected;
       await area.set(item);
       var got = await area.get(key), actual = got && got[key];
-      if (actual && JSON.stringify(actual) === JSON.stringify(expected)) {
+      if (actual && tokenCanonJson(actual) === tokenCanonJson(expected)) {
         await clearAuthQuarantine(kind, id);
         return true;
       }
@@ -2478,6 +2571,7 @@ function mlsAthenaTeachWatcherFn(config) {
     prepareActionTokenRecord(id, rec);
     tokens[id] = rec;
     if (await tokenSessionWrite(id, rec)) { await scheduleAuthSessionCleanupUnlocked(rec.expiresAt); return true; }
+    tokDiag('storeActionTokenUnlocked-fail', id ? String(id).length : 0);
     delete tokens[id];
     return false;
   }
@@ -2486,7 +2580,7 @@ function mlsAthenaTeachWatcherFn(config) {
       id = clean(id);
       if (tokenSessionArea()) {
         var quarantine = await authQuarantineState('token', id);
-        if (!quarantine.available || quarantine.marked) return { ok: false, reason: 'token-state-unavailable', detail: quarantine.marked ? 'prior-claim-storage-outcome-unavailable' : 'authorization-quarantine-unavailable' };
+        if (!quarantine.available || quarantine.marked) { tokDiag('claim-quarantine', quarantine.marked ? 'marked' : 'unavailable'); return { ok: false, reason: 'token-state-unavailable', detail: quarantine.marked ? 'prior-claim-storage-outcome-unavailable' : 'authorization-quarantine-unavailable' }; }
       }
       var rec = await loadActionTokenUnlocked(id);
       if (!rec) return { ok: false, reason: 'token-expired' };
@@ -2507,7 +2601,7 @@ function mlsAthenaTeachWatcherFn(config) {
       rec.claimedAt = Date.now();
       var claimed = actionTokenTombstone(id, rec, 'used', 'execute-claimed');
       tokens[id] = claimed;
-      if (!(await consumeSessionRecord('token', id, tokenStorageKey(id), claimed))) return { ok: false, reason: 'token-state-unavailable' };
+      if (!(await consumeSessionRecord('token', id, tokenStorageKey(id), claimed))) { tokDiag('claim-consume-fail', 'token'); return { ok: false, reason: 'token-state-unavailable' }; }
       return { ok: true, rec: rec };
     });
   }
@@ -2799,7 +2893,7 @@ function mlsAthenaTeachWatcherFn(config) {
     return withTokenStateLock(async function () {
       if (tokenSessionArea()) {
         var quarantine = await authQuarantineState('proof', id);
-        if (!quarantine.available || quarantine.marked) return 'token-state-unavailable';
+        if (!quarantine.available || quarantine.marked) { tokDiag('proof-quarantine-a', quarantine.marked ? 'marked' : 'unavailable'); return 'token-state-unavailable'; }
       }
       var proofRecord = await loadNoteWriteProofUnlocked(id);
       if (proofRecord && (proofRecord.state === 'expired' || Date.now() >= proofRecord.expiresAt)) return 'note-write-proof-expired';
@@ -2812,7 +2906,7 @@ function mlsAthenaTeachWatcherFn(config) {
       id = clean(id);
       if (tokenSessionArea()) {
         var quarantine = await authQuarantineState('proof', id);
-        if (!quarantine.available || quarantine.marked) return { ok: false, reason: 'token-state-unavailable' };
+        if (!quarantine.available || quarantine.marked) { tokDiag('proof-quarantine-b', quarantine.marked ? 'marked' : 'unavailable'); return { ok: false, reason: 'token-state-unavailable' }; }
       }
       var proof = await loadNoteWriteProofUnlocked(id);
       if (!proof) return { ok: false, reason: 'verified-note-write-required' };
@@ -2827,7 +2921,7 @@ function mlsAthenaTeachWatcherFn(config) {
       proof.used = true; proof.state = 'used'; proof.usedAt = Date.now();
       var claimed = noteWriteProofTombstone(id, proof, 'used', 'sign-claimed');
       noteWriteProofs[id] = claimed;
-      if (!(await consumeSessionRecord('proof', id, noteProofStorageKey(id), claimed))) return { ok: false, reason: 'token-state-unavailable' };
+      if (!(await consumeSessionRecord('proof', id, noteProofStorageKey(id), claimed))) { tokDiag('claim-consume-fail', 'proof'); return { ok: false, reason: 'token-state-unavailable' }; }
       return { ok: true, proof: proof };
     });
   }
@@ -3292,7 +3386,8 @@ function mlsAthenaTeachWatcherFn(config) {
           lockedContextHash: simpleHash(expectedContextKey(probe.context)),
           locked: probe.context
         };
-        if (!(await storeActionToken(tok, tokenRecord, action === 'place_order' ? { senderTabId: sender.tab.id, previewHash: previewHash } : null))) return { ok: false, blocked: true, reason: 'token-state-unavailable', error: 'Chrome could not preserve the exact one-use authorization for review. Re-check Athena before trying again. Nothing was changed.' };
+        var __mintOk = false; try { (self.tokDiag||function(){})('mint-call', String(tok || '').length + ':' + action); __mintOk = await storeActionToken(tok, tokenRecord, action === 'place_order' ? { senderTabId: sender.tab.id, previewHash: previewHash } : null); (self.tokDiag||function(){})('mint-result', __mintOk === true ? 'ok' : ('falsy:' + typeof __mintOk)); } catch (eMint) { (self.tokDiag||function(){})('mint-throw', (eMint && eMint.message) || eMint); __mintOk = false; }
+        if (!__mintOk) return { ok: false, blocked: true, reason: 'token-state-unavailable', error: 'Chrome could not preserve the exact one-use authorization for review. Re-check Athena before trying again. Nothing was changed.' };
         /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
         return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: tokenExpiresAt, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
       }
@@ -4174,6 +4269,63 @@ function mlsSleepW(ms) { return (function (ms) { var __hsAt = Date.now() + Math.
 /* executeScript with a hard timeout: a frozen athenaOne renderer can hang an
  * injection forever, which used to hang the whole pull ("gohome-failed" x17).
  * Resolves { r } on success, { err } on rejection, { timeout: true } on hang. */
+/* ===== encopen-1.0.0 (3.0.97, owner 2026-08-31: "pulling and writing should
+   be simple and easy and intuitive" / "the extension should be able to open
+   whoever up when its time to write with no user input") =================
+   After ANY successful chart/row open, the driver itself enters the
+   encounter documentation stage: if the machine-typed encounter context
+   (meta encounter_id) is not painted, it clicks the chart header's own
+   "Go to <stage>" opener - the exact button the doctor presses - and waits
+   for the context to appear. It NEVER matches "Done with ...", sign, save
+   or any completing control; a miss is reported honestly and the open
+   response still stands (fail-soft: the probe remains the gate). */
+function mlsEncMetaProbeFn() {
+  try {
+    var metas = document.querySelectorAll('meta');
+    for (var i = 0; i < metas.length; i++) { if ((metas[i].getAttribute('content') || '').indexOf('encounter_id') >= 0) return { meta: true }; }
+  } catch (e) {}
+  return { meta: false };
+}
+function mlsEncStageClickFn() {
+  var out = { found: false, clicked: false, label: '' };
+  try {
+    var RE = /^go to (exam prep|exam|intake|checkout|check-out|sign-?off)$/i;
+    var els = Array.prototype.slice.call(document.querySelectorAll('a,button,div,span')).filter(function (n) {
+      var t = (n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!RE.test(t)) return false;
+      try { var r = n.getBoundingClientRect(); return r.width > 8 && r.height > 8; } catch (e) { return false; }
+    });
+    els.sort(function (a, b) { return (a.textContent || '').length - (b.textContent || '').length; });
+    var el = els[0]; if (!el) return out;
+    out.found = true; out.label = (el.textContent || '').trim().slice(0, 20);
+    var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (et) {
+      try { el.dispatchEvent(new MouseEvent(et, { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y })); } catch (e) {}
+    });
+    out.clicked = true;
+  } catch (e) {}
+  return out;
+}
+async function mlsEnsureEncounterOpen(tabId) {
+  var out = { ran: true, hadMeta: false, clicked: false, stageLabel: '', metaAfter: false, waitedMs: 0 };
+  try {
+    var t0 = Date.now();
+    var p0 = await mlsExecTO({ target: { tabId: tabId, allFrames: true }, func: mlsEncMetaProbeFn }, 6000);
+    out.hadMeta = ((p0 && p0.r) || []).map(function (r) { return r && r.result; }).some(function (v) { return v && v.meta; });
+    if (out.hadMeta) { out.metaAfter = true; return out; }
+    var c = await mlsExecTO({ target: { tabId: tabId, allFrames: true }, func: mlsEncStageClickFn }, 8000);
+    var hits = ((c && c.r) || []).map(function (r) { return r && r.result; }).filter(function (v) { return v && v.clicked; });
+    if (!hits.length) { out.waitedMs = Date.now() - t0; return out; }
+    out.clicked = true; out.stageLabel = String(hits[0].label || '');
+    for (var i = 0; i < 15; i++) {
+      await mlsSleepW(3000);
+      var p1 = await mlsExecTO({ target: { tabId: tabId, allFrames: true }, func: mlsEncMetaProbeFn }, 5000);
+      if (((p1 && p1.r) || []).map(function (r) { return r && r.result; }).some(function (v) { return v && v.meta; })) { out.metaAfter = true; break; }
+    }
+    out.waitedMs = Date.now() - t0;
+  } catch (e) { out.err = String((e && e.message) || e).slice(0, 60); }
+  return out;
+}
 function mlsExecTO(opts, ms) {
   return Promise.race([
     chrome.scripting.executeScript(opts).then(function (r) { return { r: r }; }, function (e) { return { err: String((e && e.message) || e) }; }),
@@ -6975,7 +7127,23 @@ var mlsProv = (function () {
            non-probe path below auto-recovers to the dashboard first. So a probe with
            an athena tab present is always supported; never advertise follow mode. */
         if (msg.probe) return __gotoRespond({ ok: true, supported: true, via: (found && found.via) || 'auto-recovery', controlVisible: !!found });
-        if (!found) {
+                if (!found) {
+          /* patient-retry-3.0.97 (measured live 2026-08-31): the initial
+             injection ran with a 12s budget; on a heavy renderer it times out
+             with the calendar strip PAINTED AND VISIBLE, and the recovery
+             below then drives athena Home - destroying the very view the
+             caller needed (the row hunt that follows finds an empty surface).
+             The recovery rounds already allow 40s for this same call, so one
+             non-destructive retry at that budget comes first. Nothing is
+             clicked beyond the day tab the call was always allowed to click.  */
+          try {
+            const rx2 = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(40000, __gotoLeft()), 'the patient date-navigation retry');
+            const hits2b = ((rx2 && rx2.r) || []).map((r) => r && r.result).filter(Boolean);
+            found = hits2b.find((h) => h.found) || null;
+            GDIAG.patientRetry = { ran: true, found: !!found, timeout: !!(rx2 && rx2.timeout) };
+          } catch (ePr) { GDIAG.patientRetry = { ran: true, err: String((ePr && ePr.message) || ePr).slice(0, 60) }; }
+        }
+if (!found) {
           /* v1.91 (§2.7): NEVER ask the user to move athena by hand. Drive athena
              back to the dashboard ourselves, then retry the weekstrip. Ladder:
              round 0 = Home-logo click (+ CSRF-Continue clear); round 1 = tab reload
@@ -13832,6 +14000,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      This worker-side verifier compares complete URLs by frameId and accepts
      only a newly-created or changed frame whose post-click URL carries the
      exact appointment id. */
+  /* enc-accept-3.0.97 (fix c): read-only encounter-surface reader for the acceptance
+     path in the exact-appointment open. Returns ONLY non-identity surface evidence
+     (href, encounter markers, visible date strings) - identity rides the separate
+     mlsReadChartIdentity injection so the banner-grade bar stays the one the chart
+     read handler already trusts. Never clicks, never navigates. */
+  function mlsEncounterAcceptanceReaderFn() {
+    try {
+      var href = ''; try { href = String(location.href || '').slice(0, 200); } catch (e0) {}
+      var t = '';
+      try { t = String((document.body && document.body.innerText) || '').slice(0, 6000); } catch (e1) {}
+      var encish = /encounter|intake\b|exam\b|sign-?off|checkout|procedure documentation|clinicals/i.test(t) || /encounter|intake|clinicals/i.test(href);
+      var dates = (t.match(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g) || []).slice(0, 12);
+      return { href: href, encish: encish, dates: dates };
+    } catch (e) { return { href: '', encish: false, dates: [] }; }
+  }
+
   function mlsAppointmentNavigationDelta(appointmentId, beforeFrames, afterFrames) {
     try {
       var want = String(appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
@@ -14416,6 +14600,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               if (sched && sched.opened) {
                 var appointmentNavigationProven = !bootstrapIdentity;
                 var appointmentNavigationFrameIds = [];
+                var encounterAcceptedReceipt = false; /* enc-accept-3.0.97 */
                 if (bootstrapIdentity && sched.diag && sched.diag.apptIdBound === true) {
                   var proofUntil = Math.min(openGuard.deadline, Date.now() + 12000);
                   while (!appointmentNavigationProven && Date.now() < proofUntil) {
@@ -14426,6 +14611,64 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     appointmentNavigationProven = navigationDelta.matched === true;
                     appointmentNavigationFrameIds = navigationDelta.changedFrameIds || [];
                   }
+                  /* enc-accept-3.0.97 (fix c): a CHECKED-IN row's click lands on the encounter/intake
+                     surface (or navigates nothing when the encounter is already open), so the URL
+                     delta above can never carry the appointment id - measured live 2026-08-31
+                     (EXT_3085_PLAN.md). Accept ONLY when EXACTLY ONE frame proves banner-grade
+                     identity (the same mlsReadChartIdentity family the chart read trusts) matching
+                     the requested name AND DOB, on an encounter-ish surface that prints the bound
+                     schedule date. Anything else - zero frames, two frames, any mismatch, missing
+                     dob/date inputs, injection timeout - keeps the exact refusal below, verbatim.
+                     The follow-up chart read then re-proves the banner inside this same frame id
+                     (routeBoundBannerSeen), unchanged. */
+                  if (!appointmentNavigationProven && !responseSent) {
+                    try {
+                      var eaTok = function (v) { var sfx = /^(?:jr|sr|ii|iii|iv|v|esq|junior|senior)$/; return String(v || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(function (tk) { return tk && tk.length > 1 && !sfx.test(tk); }); };
+                      var eaNameOk = function (obs, exp) { var have = eaTok(obs), need = eaTok(exp); if (have.length < 2 || need.length < 2) return false; var c = {}; have.forEach(function (tk) { c[tk] = (c[tk] || 0) + 1; }); for (var qi = 0; qi < need.length; qi++) { if (!c[need[qi]]) return false; c[need[qi]]--; } return true; };
+                      var eaDobKey = function (v) { var m = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(String(v || '').trim()); var y, mo, d; if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; } else { m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(v || '').trim()); if (!m) return ''; y = +m[3]; mo = +m[1]; d = +m[2]; } if (y < 1900 || mo < 1 || mo > 12 || d < 1 || d > 31) return ''; return y + '-' + mo + '-' + d; };
+                      var eaWantDob = eaDobKey(msg.dob || '');
+                      var eaWantDate = '';
+                      var eaDm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(frozenScheduleDate || ''));
+                      if (eaDm) eaWantDate = String(+eaDm[2]) + '/' + String(+eaDm[3]) + '/' + eaDm[1];
+                      if (eaWantDob && eaWantDate && (msg.name || '')) {
+                        var eaFramesSettled = await settleOpen(chrome.webNavigation.getAllFrames({ tabId: tab.id }));
+                        var eaAll = (eaFramesSettled && eaFramesSettled.ok && eaFramesSettled.value) || [];
+                        var eaBeforeById = {};
+                        (beforeAppointmentFrames || []).forEach(function (fr) { if (fr && typeof fr.frameId === 'number') eaBeforeById[fr.frameId] = String(fr.url || ''); });
+                        var eaChanged = eaAll.filter(function (fr) { return fr && typeof fr.frameId === 'number' && (!(fr.frameId in eaBeforeById) || eaBeforeById[fr.frameId] !== String(fr.url || '')); });
+                        var eaCand = (eaChanged.length ? eaChanged : eaAll).map(function (fr) { return fr.frameId; }).filter(function (fid) { return typeof fid === 'number' && fid >= 0; }).slice(0, 12);
+                        if (eaCand.length) {
+                          var eaIdX = await execOpen({ target: { tabId: tab.id, frameIds: eaCand }, func: mlsReadChartIdentity }, 15000);
+                          var eaSurX = (eaIdX && eaIdX.timeout) ? { timeout: true } : await execOpen({ target: { tabId: tab.id, frameIds: eaCand }, func: mlsEncounterAcceptanceReaderFn }, 15000);
+                          if (eaIdX && !eaIdX.timeout && eaSurX && !eaSurX.timeout) {
+                            var eaSurById = {};
+                            (eaSurX.r || []).forEach(function (en) { if (en && typeof en.frameId === 'number' && en.result) eaSurById[en.frameId] = en.result; });
+                            var eaMatches = [];
+                            (eaIdX.r || []).forEach(function (en) {
+                              var idr = en && en.result; var sur = (en && typeof en.frameId === 'number') ? eaSurById[en.frameId] : null;
+                              if (!idr || !sur) return;
+                              if (!/^(?:banner|shadow-labels|shadow-banner)$/.test(String(idr.via || ''))) return;
+                              if (!eaNameOk(idr.name, msg.name || '')) return;
+                              var eaGotDob = eaDobKey(idr.dob);
+                              if (!eaGotDob || eaGotDob !== eaWantDob) return;
+                              if (sur.encish !== true) return;
+                              if ((sur.dates || []).indexOf(eaWantDate) < 0) return;
+                              eaMatches.push(en.frameId);
+                            });
+                            eaMatches = eaMatches.filter(function (v, i, a) { return a.indexOf(v) === i; });
+                            if (eaMatches.length === 1) {
+                              appointmentNavigationProven = true;
+                              appointmentNavigationFrameIds = [eaMatches[0]];
+                              encounterAcceptedReceipt = true;
+                              try { sched.diag.encounterAccepted = true; } catch (eEa1) {}
+                            } else if (eaMatches.length > 1) {
+                              try { sched.diag.encounterAcceptAmbiguous = eaMatches.length; } catch (eEa2) {}
+                            }
+                          }
+                        }
+                      }
+                    } catch (eEncAccept) {}
+                  }
                   if (!appointmentNavigationProven) {
                     sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.' }); return;
                   }
@@ -14434,8 +14677,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 /* v1.60: remember WHO we just opened - the follow-up bare chart read
                    uses this to wait for the RIGHT patient's banner instead of
                    accepting a stale/lurking frame's identity. */
-                try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now(), requestId: openGuard.token, appointmentId: frozenApptId, appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), scheduleDate: frozenScheduleDate }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-                sendResponse({ ok: true, opened: true, via: bootstrapIdentity ? 'appointment-id' : 'schedule-click', candidates: sched.candidates, appointmentId: bootstrapIdentity ? frozenApptId : '', appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), athenaTabId: tab.id, diag: sched.diag }); return;
+                try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now(), requestId: openGuard.token, appointmentId: frozenApptId, encounterAccepted: encounterAcceptedReceipt, appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), scheduleDate: frozenScheduleDate }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
+                var __encOpen = await mlsEnsureEncounterOpen(tab.id);
+                sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, via: bootstrapIdentity ? 'appointment-id' : 'schedule-click', candidates: sched.candidates, appointmentId: bootstrapIdentity ? frozenApptId : '', encounterAccepted: encounterAcceptedReceipt, appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), athenaTabId: tab.id, diag: sched.diag }); return;
               }
             } else {
               if (senderTab) progress(senderTab, 'Searching athenaOne patients for “' + (msg.name || '') + '”…', openGuard.token);
@@ -14482,7 +14726,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 if (fro && fro.opened) {
                   try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}
                   try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-                  sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, dobOverride: true, rowDob: fro.rowDob || '', rowMrnMatched: fro.rowMrnMatched === true, diag: { route: 'findpatient-dob-override', rowDobKnown: fro.rowDob ? 1 : 0, rowMrnMatched: fro.rowMrnMatched === true } }); return;
+                  var __encOpen = await mlsEnsureEncounterOpen(tab.id);
+                sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, via: 'findpatient', candidates: 1, dobOverride: true, rowDob: fro.rowDob || '', rowMrnMatched: fro.rowMrnMatched === true, diag: { route: 'findpatient-dob-override', rowDobKnown: fro.rowDob ? 1 : 0, rowMrnMatched: fro.rowMrnMatched === true } }); return;
                 }
                 findRes = fro || findRes;
               }
@@ -14512,7 +14757,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               if (findRes && findRes.opened) {
                 try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}
                 try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-                sendResponse({ ok: true, opened: true, via: 'findpatient', candidates: 1, rowDob: findRes.rowDob || '', rowMrnMatched: findRes.rowMrnMatched === true, diag: { route: 'findpatient', rowDobKnown: findRes.rowDob ? 1 : 0, rowMrnMatched: findRes.rowMrnMatched === true, mrnNarrowed: findRes.mrnNarrowed === true } }); return;
+                var __encOpen = await mlsEnsureEncounterOpen(tab.id);
+                sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, via: 'findpatient', candidates: 1, rowDob: findRes.rowDob || '', rowMrnMatched: findRes.rowMrnMatched === true, diag: { route: 'findpatient', rowDobKnown: findRes.rowDob ? 1 : 0, rowMrnMatched: findRes.rowMrnMatched === true, mrnNarrowed: findRes.mrnNarrowed === true } }); return;
               }
               /* v1.84: if the search RAN and left its RESULTS page on screen
                  (ambiguous / no match), do NOT fall through to the schedule
@@ -14552,7 +14798,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var opened = bestFrameResult(openRes, 'open');
           if (opened && opened.opened) {
             try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-            sendResponse({ ok: true, opened: true, candidates: opened.candidates, diag: opened.diag });
+            var __encOpen = await mlsEnsureEncounterOpen(tab.id);
+                sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, candidates: opened.candidates, diag: opened.diag });
           } else {
             var cands = (openRes || []).map(function (r) { return r && r.result; }).filter(Boolean).reduce(function (a, r) { return a + ((r && r.candidates) || 0); }, 0);
             sendResponse({ ok: false, opened: false, candidates: cands, error: cands > 1 ? ('Found ' + cands + ' possible matches.') : 'No matching patient was found in the results.', diag: opened && opened.diag, findReason: (findRes && (findRes.reason || findRes.error)) || '' });
@@ -17131,6 +17378,25 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     } catch (e) { out.athena = null; }
     try { out.platform = await chrome.runtime.getPlatformInfo(); } catch (e) { out.platform = null; }
     try { out.workerBootAt = self.__mlsWorkerBootAt || null; } catch (e) { out.workerBootAt = null; }
+    /* sessdiag-3.0.97 (measured 2026-08-31): every token claim died with
+       token-state-unavailable across clean worker restarts - the one storage
+       surface that survives reloads is chrome.storage.session, and a full or
+       broken session area fails the terminal-write verify in
+       consumeSessionRecord. Report its true state so this class is
+       diagnosable from the page. */
+    try {
+      var sessArea = chrome && chrome.storage && chrome.storage.session;
+      if (sessArea) {
+        var sessAll = await sessArea.get(null);
+        var sessKeys = Object.keys(sessAll || {});
+        var sessBytes = 0; try { sessBytes = typeof sessArea.getBytesInUse === 'function' ? await sessArea.getBytesInUse(null) : -1; } catch (eB) { sessBytes = -2; }
+        var probeKey = 'mlsSessProbe_' + Date.now();
+        var probeOk = false;
+        try { var pi = {}; pi[probeKey] = { t: Date.now() }; await sessArea.set(pi); var pg = await sessArea.get(probeKey); probeOk = !!(pg && pg[probeKey]); await sessArea.remove(probeKey); } catch (eP) { probeOk = false; }
+        out.sessionStore = { keys: sessKeys.length, bytes: sessBytes, writeVerify: probeOk, quota: (sessArea.QUOTA_BYTES || null) };
+      } else out.sessionStore = { missing: true };
+    } catch (eSess) { out.sessionStore = { err: String((eSess && eSess.message) || eSess).slice(0, 60) }; }
+    try { out.tokDiag = (self.__mlsTokDiag || []).slice(-8); try { var tdBag = await chrome.storage.local.get('mlsTokDiagV1'); if (tdBag && Array.isArray(tdBag.mlsTokDiagV1)) out.tokDiagPersist = tdBag.mlsTokDiagV1.slice(-8); } catch (eTd2) {} } catch (eTd) { out.tokDiag = null; }
     try { var errBag = await chrome.storage.local.get('mlsWorkerErrorLogV1'); out.workerErrors = (errBag && errBag.mlsWorkerErrorLogV1) || []; } catch (e) { out.workerErrors = null; } /* wet-1.1.0: crash log rides the health verb */
     try {
       var kaBag = await chrome.storage.local.get(['mlsKaLedger', 'mlsKeepAliveLastTick', 'mlsAthenaSignedOutAt']);
