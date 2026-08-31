@@ -24,7 +24,20 @@ assert.ok(!moduleSource.includes('/api/section-templates/derive') && !moduleSour
 assert.ok(/CustomEvent\('mls:athena-full-history-pull-complete',[\s\S]{0,180}detail:\s*\{\s*saved:/.test(autopull), 'completion event does not expose only the non-identifying saved count');
 assert.ok(!/CustomEvent\('mls:athena-full-history-pull-complete',[\s\S]{0,220}detail:\s*\{[^}]*patientId/.test(autopull), 'completion event still exposes a patient identifier');
 
-const loaderSource = connect.slice(connect.indexOf('/* first-pull-style-1.1.0'));
+/* Bounded extraction (2026-08-31): this slice used to run marker-to-EOF, so any
+   later block appended to 1p-mls-connect.js executed inside this harness — the
+   kal-1.0.0 keep-alive watchdog's eval-time setTimeout(tick, 8000) landed in
+   `scheduled` and failed the one-bounded-retry count without the loader
+   changing at all. The window now ends at the loader's OWN structural close
+   (its ensure() install + IIFE terminator), so the contract tests the
+   first-pull loader and nothing else. */
+const fpStart = connect.indexOf('/* first-pull-style-1.1.0');
+assert.ok(fpStart >= 0, 'first-pull loader marker is missing from 1p-mls-connect.js');
+const fpInstall = connect.indexOf('window.__mlsEnsureFirstPullStyle = ensure;', fpStart);
+assert.ok(fpInstall > fpStart, 'first-pull loader no longer installs __mlsEnsureFirstPullStyle');
+const fpClose = connect.indexOf('})();', fpInstall);
+assert.ok(fpClose > fpInstall, 'first-pull loader IIFE terminator not found after the ensure install');
+const loaderSource = connect.slice(fpStart, fpClose + '})();'.length);
 const VALID_API = { installed: true, version: 'first-pull-style-1.1.0', bootstrap() {} };
 function runLoader({ outcomes = ['ready'], existing = null, initialApi = null } = {}) {
   const scripts = [], scheduled = [], watchdogs = [], rootAttrs = {};

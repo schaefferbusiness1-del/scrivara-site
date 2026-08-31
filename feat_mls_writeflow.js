@@ -819,8 +819,16 @@
       var observed = wfDayKey(nav.schedDate);
       wfdxNote({ verb: 'mlsAppGotoDate', stage: 'auto-open', ok: nav.ok === true, timeout: nav.__timeout === true,
         reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed, appointmentIdPresent: true });
-      if (nav.ok !== true) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'athenaOne could not be sent to the exact encounter day. Nothing was opened.' };
-      if (observed !== day) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: observed ? 'athenaOne reported a different encounter day. Nothing was opened.' : 'athenaOne did not prove which encounter day is open. Nothing was opened.' };
+      /* dayfall-1.0.0 (measured live 2026-08-31): the Day-view drive is a
+         navigation AID, not an identity gate - the open itself is an exact
+         appointment-id row click that refuses ambiguity, and the landing
+         surface must re-prove name, DOB and the frozen schedule date before
+         anything is accepted (and the probe re-proves the banner after that).
+         Under a heavy athenaOne renderer, mlsAppGotoDate times out or answers
+         "calendar could not be reached" with NO observed day, and that spurious
+         failure was terminal here - the row click never ran. Only a POSITIVELY
+         different painted day may refuse this step. */
+      if (observed && observed !== day) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'athenaOne reported a different encounter day. Nothing was opened.' };
       return searchOpenTarget(patient, expectedContext);
     }, function () {
       return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact encounter-day navigation could not be started. Nothing was opened.' };
@@ -2085,14 +2093,22 @@
         wfdxNote({ verb: 'mlsAppGotoDate', stage: 'fix-open', ok: nav.ok === true, timeout: nav.__timeout === true,
           reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed,
           appointmentIdPresent: !!S(visit.appointmentId).trim() });
-        if (nav.ok !== true) {
+        /* dayfall-1.0.0: only a POSITIVELY different painted day refuses here.
+           A goto that failed with no observed day (timeout, "calendar could not
+           be reached" under a heavy renderer) falls through to the exact
+           appointment-id row click, whose landing surface must re-prove name,
+           DOB and the frozen schedule date before anything is accepted. */
+        if (nav.ok !== true && observed && observed !== day) {
           done('One step needed: athenaOne’s Day view has to be on ' + day + ' once.' +
-            (observed && observed !== day ? ' Its Day view is on ' + observed + ' right now.' : '') +
+            ' Its Day view is on ' + observed + ' right now.' +
             ' MLS can take that step for you, or open ' + day + ' in athenaOne yourself and press Check Athena again. Nothing was changed and nothing was sent.', 'fix', true);
           wfdxOfferNameRoute(state, rowId);
           return;
         }
-        wfdx.observedDay = day; wfdx.observedDayAt = Date.now();
+        if (nav.ok === true) { wfdx.observedDay = day; wfdx.observedDayAt = Date.now(); }
+        else {
+          unifiedStatus(state, 'athenaOne’s Day view could not be re-proven just now - opening this exact appointment row read-only instead. Identity is re-checked before anything can be written…', '');
+        }
       }
       return searchOpenTarget(manifest.patient, openContext).then(function (openRes) {
         openRes = openRes || {};
