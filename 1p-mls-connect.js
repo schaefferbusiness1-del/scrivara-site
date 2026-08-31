@@ -18815,6 +18815,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * ===================================================================== */
   function openPayReports() {
     try {
+      /* payload-1.0.0: load-on-click instead of a dead "still loading" toast */
+      if (window.__mlsEnsurePayReports && window.__mlsEnsurePayReports()) return;
       if (window.__mlsComp && typeof window.__mlsComp.open === "function") { window.__mlsComp.open(); return; }
       var b = $("mlsCompBtn"); if (b) { b.click(); return; }
       (window.toast||window.alert)("Pay Reports is still loading \u2014 give it a moment and try again.");
@@ -38130,7 +38132,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     b.type = "button"; b.className = "mls-b34-pay";
     b.setAttribute("data-tip", "Monthly pay / compensation report (Premium feature)");
     b.innerHTML = "&#128181; Pay Reports <span class=\"b34-prem\">PREMIUM FEATURE</span>";
-    b.onclick = function () { try { if (window.__mlsComp && window.__mlsComp.open) window.__mlsComp.open(); } catch (e) {} };
+    b.onclick = function () { try { if (window.__mlsEnsurePayReports) { window.__mlsEnsurePayReports(); return; } if (window.__mlsComp && window.__mlsComp.open) window.__mlsComp.open(); } catch (e) {} };
     return b;
   }
   function injectPay() {
@@ -48655,7 +48657,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A="feat_b18_qa.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260808b18v14perf2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b18 QA bundle loader: calendar reliability, pull screen fix, writeback safety gate, smart empty states, UI stability (additive, reversible) */
 ;(function(){try{var A="feat_mls_status_center.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260802sc114";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Status Center 1.1.0 -- account/epoch-isolated tasks, honest readiness evidence, one current patient/day/data-source status surface, bounded retries, and sealed-preview early exit. */
 
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718pr5";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* Monthly Pay Report v2.0.0 -- Editorial Calm UI (summary cards, provider chips, month stepper, collapsible per-provider tables, print), auto-build, credential-only PA/NP rate default, unmatched-estimate disclosure, incomplete-total flagging. Same honest data model: grounded estimates + manual overrides. Read-only. Revert: remove this loader. */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_comp_report.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718pr5";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})();
+/* payload-1.0.0 (measured live 2026-08-30): twenty minutes after boot the
+   idle-deferred loader above had never fired - no script tag, __mlsComp
+   undefined - so every Pay Reports opener (Menu row, Calendar tile, AI Studio
+   strip) was a DEAD BUTTON that toasted "still loading" while nothing loaded.
+   One shared on-demand loader: append the asset at CLICK time and open when it
+   lands; a bounded poll, an honest failure toast, never a silent no-op. */
+;(function(){try{
+  if(window.__mlsEnsurePayReports)return;
+  window.__mlsEnsurePayReports=function(){
+    try{ if(window.__mlsComp&&typeof window.__mlsComp.open==='function'){ window.__mlsComp.open(); return true; } }catch(e0){}
+    try{
+      var A='feat_comp_report.js';
+      if(!document.querySelector('script[data-mls-asset="'+A+'"]')){
+        var s=document.createElement('script'); s.src=A+'?v=20260718pr5'; s.setAttribute('data-mls-asset',A); s.async=true;
+        (document.body||document.head||document.documentElement).appendChild(s);
+      }
+      if(typeof window.toast==='function') window.toast('Loading Pay Reports…','');
+      var tries=0, t=setInterval(function(){ tries++;
+        if(window.__mlsComp&&typeof window.__mlsComp.open==='function'){ clearInterval(t); try{window.__mlsComp.open();}catch(eo){} }
+        else if(tries>=24){ clearInterval(t); if(typeof window.toast==='function') window.toast('Pay Reports could not load. Check your connection, reload the page, and try again.','err'); }
+      },250);
+      return true;
+    }catch(e1){ return false; }
+  };
+}catch(e){}})(); /* Monthly Pay Report v2.0.0 -- Editorial Calm UI (summary cards, provider chips, month stepper, collapsible per-provider tables, print), auto-build, credential-only PA/NP rate default, unmatched-estimate disclosure, incomplete-total flagging. Same honest data model: grounded estimates + manual overrides. Read-only. Revert: remove this loader. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_task7_analysis_sg.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260722t7ac3";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* task7: Analysis dashboard + local Study Groups validation/wrong-group fix/remove+rename/inline status/empty-guards/2-col layout. Revert: window.__mlsT7.revert() */
 
 

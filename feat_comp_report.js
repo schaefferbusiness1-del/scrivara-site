@@ -447,9 +447,17 @@
          silently blended - the doctor sees how many came off provider-less
          rows on a single-provider day. */
       var inf = (S.provs[p] && S.provs[p].inferredVisits) | 0;
+      /* rprov-1.0.1: the Unassigned bucket says WHY it exists and what fixes
+         it - these are whole days where NO row carried a provider, so the
+         same-day inference has no anchor and honestly declines. */
+      var noAnchor = '';
+      if (p === 'Unassigned') {
+        var uDates = Object.keys((S.provs[p] && S.provs[p].days) || {}).sort();
+        if (uDates.length) noAnchor = ' &middot; these ' + uDates.length + ' day(s) carry no named provider at all (' + esc(uDates.slice(0, 8).join(', ')) + (uDates.length > 8 ? ', &hellip;' : '') + ') &mdash; re-pull them with the Athena calendar in Provider view to attribute them';
+      }
       h += '<details class="pr-prov"><summary>' + esc(p) +
         '<span class="mini">' + a.totals[2] + ' patients &middot; ' + a.days + ' days &middot; ' + money(a.days * r.perProv[p].rate) + ' daily-rate pay' +
-        (inf > 0 ? ' &middot; ' + inf + ' credited from provider-less rows on their single-provider day(s)' : '') + '</span></summary>' +
+        (inf > 0 ? ' &middot; ' + inf + ' credited from provider-less rows on their single-provider day(s)' : '') + noAnchor + '</span></summary>' +
         '<table class="pr-t"><tr><th>Date</th><th>Morning</th><th>Afternoon</th><th>Total</th><th>AM credit</th><th>PM credit</th><th>Day credit</th></tr>';
       a.rows.forEach(function (row, i) {
         var hv = a.halves[i];

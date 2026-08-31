@@ -1349,6 +1349,9 @@
       btn.addEventListener('click',function(ev){
         try{ if(ev) ev.stopPropagation(); panel.classList.remove('open'); panel.style.display=''; }catch(e){}
         try{
+          /* payload-1.0.0: load-on-click - the idle loader can simply never
+             fire, which left this row a dead button with a lying toast. */
+          if(window.__mlsEnsurePayReports){ window.__mlsEnsurePayReports(); return; }
           if(window.__mlsComp&&typeof window.__mlsComp.open==='function'){ window.__mlsComp.open(); return; }
           var legacy=$('mlsCompBtn'); if(legacy){ legacy.click(); return; }
           if(typeof window.toast==='function') window.toast('Pay Reports is still loading — try again in a moment.','err');
