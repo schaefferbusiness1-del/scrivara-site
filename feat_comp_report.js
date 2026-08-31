@@ -84,16 +84,38 @@
   function aggregate(resp) {
     var doctorName = {};
     (resp.doctors || []).forEach(function (d) { if (d && d.id != null) doctorName[String(d.id)] = d.name || ""; });
-    var provs = {}; // provider -> { days: {date:{am,pm,unk}}, visits:[{date,reason}] }
+    /* rprov-1.0.0: many stored rows carry NO provider (census days paint no
+       per-row provider column), so they fell into "Unassigned" and silently
+       stole visits, provider-days, and pay from whoever really ran the clinic
+       day. First pass: learn each DATE's single distinct named provider from
+       the same non-cancelled rows this report already fetched. A date whose
+       rows name two different providers stays mixed and infers NOTHING - a
+       wrong provider on a pay report is worse than an Unassigned row. Inferred
+       rows are counted separately and disclosed, never silently blended. */
+    var dayProvider = {}, dayMixed = {};
     (resp.appointments || []).forEach(function (x) {
       if (!x || x.status === "cancelled" || x.status === "no_show") return;
-      var p = String(x.provider_name || doctorName[String(x.doctor_user_id)] || "Unassigned").trim() || "Unassigned";
+      var p0 = String(x.provider_name || doctorName[String(x.doctor_user_id)] || "").trim();
+      if (!p0) return;
+      var d0 = String(x.appt_date || (x.start_at || "").slice(0, 10) || "").slice(0, 10);
+      if (!d0) return;
+      if (dayProvider[d0] == null) dayProvider[d0] = p0;
+      else if (dayProvider[d0] !== p0) dayMixed[d0] = true;
+    });
+    var provs = {}; // provider -> { days: {date:{am,pm,unk}}, visits:[{date,reason}], inferredVisits }
+    (resp.appointments || []).forEach(function (x) {
+      if (!x || x.status === "cancelled" || x.status === "no_show") return;
+      var named = String(x.provider_name || doctorName[String(x.doctor_user_id)] || "").trim();
       var d = String(x.appt_date || (x.start_at || "").slice(0, 10) || "").slice(0, 10);
       if (!d) return;
-      var pr = provs[p] || (provs[p] = { days: {}, visits: [] });
+      var inferred = false;
+      var p = named || "Unassigned";
+      if (!named && dayProvider[d] && dayMixed[d] !== true) { p = dayProvider[d]; inferred = true; }
+      var pr = provs[p] || (provs[p] = { days: {}, visits: [], inferredVisits: 0 });
       var day = pr.days[d] || (pr.days[d] = { am: 0, pm: 0, unk: 0 });
       var h = nyHour(x.start_at);
       if (h == null) day.unk++; else if (h < 12) day.am++; else day.pm++;
+      if (inferred) pr.inferredVisits = (pr.inferredVisits | 0) + 1;
       pr.visits.push({ date: d, reason: String(x.reason || "").slice(0, 200) });
     });
     return provs;
@@ -421,8 +443,13 @@
     h += '<h3>Per-provider detail</h3>';
     r.names.forEach(function (p) {
       var a = r.perProv[p].agg;
+      /* rprov-1.0.0: rows credited by same-day inference are disclosed, never
+         silently blended - the doctor sees how many came off provider-less
+         rows on a single-provider day. */
+      var inf = (S.provs[p] && S.provs[p].inferredVisits) | 0;
       h += '<details class="pr-prov"><summary>' + esc(p) +
-        '<span class="mini">' + a.totals[2] + ' patients &middot; ' + a.days + ' days &middot; ' + money(a.days * r.perProv[p].rate) + ' daily-rate pay</span></summary>' +
+        '<span class="mini">' + a.totals[2] + ' patients &middot; ' + a.days + ' days &middot; ' + money(a.days * r.perProv[p].rate) + ' daily-rate pay' +
+        (inf > 0 ? ' &middot; ' + inf + ' credited from provider-less rows on their single-provider day(s)' : '') + '</span></summary>' +
         '<table class="pr-t"><tr><th>Date</th><th>Morning</th><th>Afternoon</th><th>Total</th><th>AM credit</th><th>PM credit</th><th>Day credit</th></tr>';
       a.rows.forEach(function (row, i) {
         var hv = a.halves[i];
