@@ -8534,7 +8534,9 @@
     var operation;
     try {
       if(athenaMgr&&isFn(athenaMgr.claim)){
-        athenaToken=athenaMgr.claim("p1-si-managed",420000)||"";
+        /* colease-1.0.0: name our own month/SI stamp so the lease manager can
+           tell the engine's own day pulls from a genuinely foreign claimer. */
+        athenaToken=athenaMgr.claim("p1-si-managed",420000,SI_LEASE_ID)||"";
         if(!athenaToken){pullRunning=false;return Promise.resolve(busy("other-tab"));}
         siAthenaOwnerToken=athenaToken;
         /* p1-lease-loan-1.0.0 (owner report 2026-08-16, 6/6 today-notes refused).

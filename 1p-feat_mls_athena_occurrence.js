@@ -21,13 +21,24 @@
   var active = null, seq = 0;
   function S(v) { return String(v == null ? '' : v); }
   function liveScheduleLease() { try { var l = window.__mlsSchedulePullLease; if (l && Date.now() - Number(l.at || 0) < 180000) return l; } catch (e) {} return null; }
-  function claim(kind, maxMs) {
+  function claim(kind, maxMs, coLeaseId) {
     var now = Date.now();
     /* An acquired Web Lock is the authoritative cross-tab owner. Never evict
        it because background-tab timer throttling delayed a heartbeat; only
        its explicit terminal release may unlock it. */
     if (active && active.webHeld !== true && now - Number(active.at || 0) >= Number(active.staleMs || 180000)) { try { if (active.unlock) active.unlock(); if (liveScheduleLease() && window.__mlsSchedulePullLease.id === active.token) delete window.__mlsSchedulePullLease; } catch (e0) {} active = null; }
-    if (active || liveScheduleLease()) return null;
+    /* colease-1.0.0 (measured live 2026-08-30, July month pull 0/31 three runs
+       in a row): the month owner stamps the engine's OWN schedule lease for
+       the whole month, then every per-day claim landed here and was refused
+       by that same stamp - the engine exempts its own id (foreignPullLease)
+       but this manager did not, so every day answered pull-in-flight and the
+       three-strike breaker killed the month. A caller may name ONE lease id
+       it legitimately co-owns; only an exact id match is exempted - every
+       other live lease still refuses, and cross-tab ownership stays with the
+       Web Lock below, so nothing foreign is admitted. */
+    var live = liveScheduleLease();
+    if (live && coLeaseId && S(live.id) === S(coLeaseId)) live = null;
+    if (active || live) return null;
     var token = 'p1-athena-read-' + now.toString(36) + '-' + (++seq).toString(36), ttl = Math.max(90000, Math.min(420000, Number(maxMs || 0) || 180000));
     var resolveReady=null,readyPromise=new Promise(function(resolve){resolveReady=resolve;});
     active = { token: token, kind: S(kind || 'read'), at: now, staleMs: ttl, deadlineAt: now + ttl, readyPromise: readyPromise, resolveReady: resolveReady, webHeld: false, unlock: null };
