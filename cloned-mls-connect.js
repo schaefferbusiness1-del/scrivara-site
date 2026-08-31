@@ -34258,12 +34258,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
   function on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
   function clickFirstByText(candidates) {
+    /* ezguard-1.0.0 (P0 audit 2026-08-31): substring matching meant the needle
+       'send to athena' could land on the unified sheet's "Confirm & Send to
+       Athena" (#mlsAthenaUnifiedGo) - a synthetic click on the WRITE-CONFIRM
+       control from a different flow's modal. This helper may only press plain
+       navigation-grade buttons: anything whose text carries a confirm/sign/
+       order/bill/draft verb, or that belongs to the Athena write sheet, is
+       refused. Fail-closed - a refused match falls through to no click. */
     var els = qsa('button,a,[role="button"]');
     for (var c = 0; c < candidates.length; c++) {
       var needle = candidates[c].toLowerCase();
       for (var i = 0; i < els.length; i++) {
-        var t = (els[i].textContent || '').trim().toLowerCase();
-        if (t.indexOf(needle) !== -1) { safe(function () { els[i].click(); }); return els[i]; }
+        var el = els[i];
+        var t = (el.textContent || '').trim().toLowerCase();
+        if (t.indexOf(needle) === -1) continue;
+        if (/\b(confirm|sign|order|bill|draft)\b/.test(t)) continue;
+        if (el.id && String(el.id).indexOf('mlsAthenaUnified') === 0) continue;
+        try { if (el.getAttribute('data-mls-athena-action') || (el.closest && el.closest('[data-mls-athena-action]'))) continue; } catch (eG) { continue; }
+        safe(function () { el.click(); });
+        return el;
       }
     }
     return null;
