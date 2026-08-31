@@ -2125,8 +2125,15 @@
         }
         done('', '');
         if (state.closed || unifiedAthenaState !== state) return;
-        unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Re-checking the exact encounter read-only…', '');
-        setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); }, 1500);
+        /* openpace-1.0.0 (measured live 2026-08-31): the row click SUCCEEDED and
+           the probe fired 1.5s later - but an athenaOne encounter page takes
+           30-60s to paint, so the probe read a half-loaded surface, refused
+           context-unverified, and the refusal branch re-drove navigation,
+           destroying the very surface this open had just produced. Stamp the
+           successful open and give the page time to paint before probing. */
+        state.openedOkAt = Date.now(); state.paceReprobes = 0;
+        unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Letting the encounter paint, then re-checking read-only…', '');
+        setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); }, 12000);
       });
     }, function () { done('One step needed: the read-only open did not start. MLS can try it again, or open the encounter in athenaOne yourself and press Check Athena again. Nothing was changed.', 'fix', true); });
   }
@@ -2239,11 +2246,14 @@
               if (wfdxErrorClass(openRes && openRes.error) === 'appointment-row-open-refused') wfdxOfferNameRoute(state, row.id);
               return;
             }
-            unifiedStatus(state, S(state.manifest.patient.name) + ' is open in Athena (via ' + S(openRes.via || 'patient search') + '). Re-checking the exact destination...', '');
+            /* openpace-1.0.0: same pacing as the fix-strip open - the encounter
+               surface needs time to paint before a probe can verify it. */
+            state.openedOkAt = Date.now(); state.paceReprobes = 0;
+            unifiedStatus(state, S(state.manifest.patient.name) + ' is open in Athena (via ' + S(openRes.via || 'patient search') + '). Letting the encounter paint, then re-checking...', '');
             setTimeout(function () {
               if (state.closed || unifiedAthenaState !== state) return;
               probeUnifiedRow(state, row.id);
-            }, 1500);
+            }, 12000);
           });
           return;
         }
@@ -2259,6 +2269,22 @@
              unbounded auto-open here would loop against a surface athenaOne
              keeps closing; the time bound makes that impossible). A repeat
              failure inside the window falls through to the spoken instruction. */
+          /* openpace-1.0.0: an open that succeeded moments ago means the surface
+             is LOADING, not missing - re-driving navigation here destroys it
+             (measured live: open ok at dt6, probe refused at dt8, the re-drive
+             wedged the renderer and lost the encounter). While the open is
+             fresh, wait and re-probe instead of navigating; up to 4 paced
+             re-probes cover the slowest measured paint. */
+          var openFresh = Number(state.openedOkAt) > Date.now() - 90000;
+          if (openFresh && Number(state.paceReprobes || 0) < 4) {
+            state.paceReprobes = Number(state.paceReprobes || 0) + 1;
+            unifiedStatus(state, 'athenaOne is still painting the encounter it just opened — re-checking read-only in a moment. Nothing was changed…', '');
+            setTimeout(function () {
+              if (state.closed || unifiedAthenaState !== state) return;
+              probeUnifiedRow(state, row.id);
+            }, 15000);
+            return;
+          }
           var autoOpenDue = !(Number(state.autoOpenAt) > Date.now() - 60000);
           if (autoOpenDue && wfdxDayKey(state.manifest.visit && state.manifest.visit.visitDate) && !state.running) {
             state.autoOpenAt = Date.now();
