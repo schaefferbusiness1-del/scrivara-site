@@ -387,7 +387,9 @@ const tests = [
   '1p-ondemand-templates.test.js',
   '1p-autobind-encounter.test.js',
   '1p-athena-write-unlock-frozen-contract-runtime.test.js',
+  '1p-athena-order-review-identity-runtime.test.js',
   '1p-athena-write-unlock-adversarial-runtime.test.js',
+  '1p-generated-note-action-census.test.js',
   /* wfdx-1.0.0 / opvs-1.0.0 / athena-probe-only-1.0.0 (owner 2026-08-17: "get
      this working and not grayed out ... verify that the op notes to Athena
      works too"). Drives the real 1p review against a fake MLS Assist: bound ->

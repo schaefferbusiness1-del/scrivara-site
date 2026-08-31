@@ -23093,9 +23093,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
     });
     on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render(); });
+    /* noteact-1.0.0 (owner P0 2026-08-27): DO NOT CLAIM "Copied" WITHOUT A
+       RECEIPT. This clicked #copyEmrBtn and painted "Copied" in the same
+       breath - true even when the control was still gated (no note yet, so
+       the click did nothing at all) and true even when the browser refused
+       the clipboard write. copyForEMR() now returns a promise that resolves
+       true only once the text is really on the clipboard; this reads it, and
+       says plainly when the answer is no. */
     on('ez3Copy', function (btn) {
-      var c = $('copyEmrBtn'); if (c) { c.click(); btn.textContent = '✅ Copied'; setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800); }
-      else toast('Copy control not found.');
+      var c = $('copyEmrBtn');
+      if (!c) { toast('Copy control not found.', 'err'); return; }
+      if (c.disabled || c.getAttribute('aria-disabled') === 'true') {
+        toast(c.getAttribute('data-mls-gate-reason') || 'There is no note text to copy yet. Generate the note first.', 'err');
+        return;
+      }
+      var settled = false;
+      function say(copied) {
+        if (settled) return; settled = true;
+        try {
+          btn.textContent = copied ? '✅ Copied' : '⚠ Not copied';
+          setTimeout(function () { try { btn.textContent = '📋 Copy for Athena'; } catch (e) {} }, 1800);
+        } catch (e2) {}
+      }
+      var receipt = null;
+      try { if (isFn(window.copyForEMR)) receipt = window.copyForEMR(); } catch (e3) { receipt = null; }
+      if (receipt && isFn(receipt.then)) { receipt.then(function (r) { say(r !== false); }, function () { say(false); }); return; }
+      /* An older shell with no receipt to read: press the real control, and do
+         not overstate what came back. */
+      c.click();
+      say(true);
     });
     on('ez3PtSend', function () {
       /* tmg-1.0.0 (owner 2026-07-27: the alerts need to be much better and
@@ -35119,11 +35145,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }, true);
 
   /* ---------- F) EMR placement preview prominence ---------- */
-  function openEmrPreview() {
+  /* noteact-1.0.0 (owner P0 2026-08-27). Two defects, both silent:
+
+     1. THE FALLBACK NAMED THE WRONG PANEL. '#mls-assist-panel' (hyphenated) is
+        the EXTENSION's athenaOne-side panel id; this file's own dock lane even
+        ships "html:not(.uc1-show-ext) #mls-assist-panel{display:none!important}"
+        for the app page. The APP assistant is '#mlsAsstPanel'. So on a good day
+        the fallback matched nothing and on a bad day it clicked into a hidden
+        container.
+     2. IT COULD RETURN false WITH NOTHING ON SCREEN. The EMR-sections module
+        installs #emrBtn on an 800ms interval, so for the first seconds after
+        boot this returned false and the doctor's press produced no pixels at
+        all. A refusal has to be visible or it is a dead button. */
+  function emrPreviewAltButton() {
+    var scopes = ['#mlsAsstPanel', '#mls-assist-panel'];
+    for (var i = 0; i < scopes.length; i++) {
+      var host = document.querySelector(scopes[i]);
+      if (!host) continue;
+      var btns = host.querySelectorAll('button');
+      for (var j = 0; j < btns.length; j++) {
+        if (/EMR sections/i.test(btns[j].textContent || '')) return btns[j];
+      }
+    }
+    return null;
+  }
+  function openEmrPreview(opts) {
+    var quiet = !!(opts && opts.quiet);
     var b = $('emrBtn');
     if (b) { b.click(); return true; }
-    var alt = document.querySelector('#mls-assist-panel button');
-    if (alt && /EMR sections/i.test(alt.textContent)) { alt.click(); return true; }
+    var alt = emrPreviewAltButton();
+    if (alt) { alt.click(); return true; }
+    if (!quiet) {
+      try { toast('The EMR placement preview is still loading on this screen. Wait a moment and press it again.', 'err'); } catch (e) {}
+    }
     return false;
   }
   function ensurePreviewBtns() {
@@ -38058,11 +38112,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---------- (6) EMR sections inside the MLS Assistant panel --------------- */
   function injectEmr() {
     try {
-      var panel = $("mls-assist-panel"); if (!panel || panel.querySelector(".mls-b34-emr")) return;
+      /* noteact-1.0.0: was $("mls-assist-panel") - the EXTENSION's athenaOne
+         panel id, which does not exist on the app page and is display:none'd
+         here even when the extension injects it. The APP assistant is
+         #mlsAsstPanel, so this replacement button for the retired standalone
+         #emrBtn was never injected anywhere a doctor could reach it. */
+      var panel = $("mlsAsstPanel") || $("mls-assist-panel"); if (!panel || panel.querySelector(".mls-b34-emr")) return;
       var wrap = document.createElement("div"); wrap.className = "mls-b34-emr-wrap";
       var b = document.createElement("button"); b.type = "button"; b.className = "mls-b34-emr";
       b.innerHTML = "&#128450;&#65039; EMR sections &mdash; review &amp; confirm";
-      b.onclick = function () { try { var e = $("emrBtn"); if (e) e.click(); } catch (e2) {} };
+      b.onclick = function () {
+        var e = null;
+        try { e = $("emrBtn"); } catch (e2) {}
+        if (e) { try { e.click(); return; } catch (e3) {} }
+        try { toast('The EMR sections review is still loading on this screen. Wait a moment and press it again.', 'err'); } catch (e4) {}
+      };
       wrap.appendChild(b);
       /* place right under the big "Open athenaOne in new tab" button when present */
       var anchor = null, btns = panel.querySelectorAll("button");
@@ -39574,7 +39638,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     {k:'imaging',label:'Imaging orders',h:['imaging','radiology','x-ray','xray','mri','ct scan','ct','ultrasound'],c:/\b(x-?ray|\bmri\b|ct scan|ultrasound|imaging|radiograph|scan of)/i},
     {k:'follow_up',label:'Follow-up',h:['follow-up','follow up','return to clinic','next visit','rtc','f/u'],c:/\b(follow(\s|-)?up|return(ing)? (in|to)|\brtc\b|recheck|in [0-9]+ (day|week|month))/i}
   ];
-  function noteText(){ var e=document.getElementById('mls-note'); if(e) return (e.value!=null?e.value:e.textContent)||''; var t=document.getElementById('mls-tx'); return t?((t.value!=null?t.value:t.textContent)||''):''; }
+  /* noteact-1.0.0 (owner P0 2026-08-27): THE CANONICAL NOTE IS #noteBox.
+     This modal read only #mls-note / #mls-tx - ids this app shell does not
+     have - so on the app page it always organised an EMPTY string, always
+     said "No sections detected yet", and its "Update local MLS draft" wrote
+     into a node that does not exist: a silent no-op on every press. The
+     legacy ids are kept as fallbacks so nothing that did work stops. */
+  function noteEl(){
+    return document.getElementById('noteBox')
+      || document.getElementById('mls-note')
+      || document.getElementById('mls-tx');
+  }
+  function noteText(){ var e=noteEl(); if(!e) return ''; return (e.value!=null?e.value:e.textContent)||''; }
   function classify(line){ var l=line.toLowerCase().replace(/[*_#>]/g,'').replace(/^\s*[0-9]+[.)]\s*/,'').trim(),best=null,bl=0; for(var i=0;i<S.length;i++){ for(var j=0;j<S[i].h.length;j++){ var h=S[i].h[j]; if(l.indexOf(h)===0||l.replace(/[:\s]+$/,'')===h){ if(h.length>bl){best=S[i].k;bl=h.length;} } } } return best; }
   function headerOf(line){ var t=line.trim(); if(!t) return null; var m=t.match(/^(?:#{1,6}\s*|\**\s*|[0-9]+[.)]\s*)?([A-Za-z][A-Za-z \/&-]{1,38}?)\s*:\s*(.*)$/); if(m){ var k=classify(m[1]); if(k) return {k:k,inline:m[2]||''}; } if(t.length<=40){ var k2=classify(t.replace(/[*_#]/g,'')); if(k2) return {k:k2,inline:''}; var L=t.replace(/[^A-Za-z]/g,''); if(L.length>=3&&L===L.toUpperCase()){ var k3=classify(t); if(k3) return {k:k3,inline:''}; } } return null; }
   function classifySentence(s){ for(var i=0;i<S.length;i++){ if(S[i].c&&S[i].c.test(s)) return S[i].k; } return null; }
@@ -39630,9 +39705,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     host.querySelector('#emrIns').onclick=function(){
       var parts=[]; S.forEach(function(s){ if(!conf[s.k]) return; var ta=host.querySelector('textarea[data-t="'+s.k+'"]'); var v=ta?ta.value.trim():''; parts.push(s.label.toUpperCase()+':\n'+(v||'(none)')); });
       if(!parts.length){ (window.toast||window.alert)('Confirm at least one section first.','err'); return; }
-      var out=parts.join('\n\n'), note=document.getElementById('mls-note');
-      if(note){ if(note.value!=null){ note.value=out; note.dispatchEvent(new Event('input',{bubbles:true})); } else note.textContent=out; }
-      var b=host.querySelector('#emrIns'); b.textContent='Local draft updated'; setTimeout(function(){ b.textContent='Update local MLS draft'; },1400);
+      var out=parts.join('\n\n'), note=noteEl();
+      var b=host.querySelector('#emrIns');
+      /* noteact-1.0.0: this used to claim "Local draft updated" whether or not
+         a note element existed to update. Say what really happened. */
+      if(!note){ (window.toast||window.alert)('There is no note editor on this screen to update. Generate or reopen the note first.','err'); return; }
+      if(note.value!=null){ note.value=out; note.dispatchEvent(new Event('input',{bubbles:true})); } else note.textContent=out;
+      b.textContent='Local draft updated'; setTimeout(function(){ b.textContent='Update local MLS draft'; },1400);
     };
   }
   function addBtn(){ if(document.getElementById('emrBtn')) return; var b=document.createElement('button'); b.id='emrBtn'; b.type='button'; b.textContent='EMR sections'; b.style.cssText='position:fixed;left:12px;bottom:96px;z-index:99998;background:#2E6A4B;border:none;color:#fff;border-radius:11px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)'; b.onclick=function(){ conf={}; render(); }; document.body.appendChild(b); }

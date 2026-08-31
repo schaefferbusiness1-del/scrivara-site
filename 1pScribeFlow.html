@@ -3962,6 +3962,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-green" onclick="pushEntireVisitToAthena(this)" id="pushAllEmrBtn" style="font-weight:800;font-size:14.5px;padding:10px 18px" title="Review exact Athena destinations. Every available READY item is checked and confirmed separately; MANUAL and BLOCKED items are never sent.">Review Athena actions</button>
         <button class="btn-ghost" id="moreToolsBtn" onclick="toggleMoreTools()" title="Show more tools" aria-expanded="false">🛠 More tools ▾</button>
       </div>
+      <!-- noteact-1.0.0 (owner P0 2026-08-27): seventeen controls in the rows
+           above ship natively disabled and turn on only when showNote() runs.
+           A greyed control that says nothing is the owner's "dead button".
+           This is the one VISIBLE sentence that says why they are off, and it
+           carries a real control that performs the next step. enableOutputs()
+           shows and hides it and writes the same reason into each control. -->
+      <div id="noteActionGate" class="mini" role="status" style="display:none;margin-top:8px;background:var(--soft2,#FCFBF8);border:1px solid var(--line,#E4E0D6);border-radius:10px;padding:9px 12px;line-height:1.6">
+        <b>These note actions turn on as soon as there is a note.</b>
+        <span id="noteActionGateWhy">Capture or paste the visit above, then press Generate.</span>
+        <button class="btn-ghost" type="button" id="noteActionGateGo" style="margin-left:8px;font-size:12.5px;padding:5px 11px" onclick="noteActionGateNext()">Take me to the transcript</button>
+      </div>
       <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: every row shows <b>What → exact Where → How → Result</b>. Each READY note section, Save Draft, billing, Sign &amp; Save, or supported catalog-bound imaging/PT/referral/DME order gets its own exact-patient, exact-encounter check and confirmation. Medication/injection orders, unaccepted suggestions, prescriptions, attestation and claim submission remain manual. Nothing auto-chains.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:10px;padding:11px 14px">
@@ -17150,7 +17161,22 @@ function showView(v){
   if(v==='team'&&window.__MLS_TEAM_WORKSPACE_RELEASED!==true){ try{ toast('The Team workspace is not released.','err'); }catch(e){} return false; }
   // TIER GUARD: Lite is note-generation ONLY — any other view bounces back to the Visit screen.
   // This is real access control, not just hidden tabs (a stray button/quick-find can't sneak a Lite user in).
-  try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){ try{ toast('That’s a Standard feature — your Lite plan covers note generation. See plans on the MLS home page to unlock the full app.','err'); }catch(e){} v='visit'; } }catch(e){}
+  /* noteact-1.0.0 (owner P0 2026-08-27): THE BOUNCE HAD TO BE VISIBLE EVERY
+     TIME. This guard is correct and is untouched - a Lite account still cannot
+     reach Orders. What was broken is that the refusal was announced through
+     toast(), which returns early when the identical message is already showing
+     (a deliberate anti-spam rule), and the bounce lands on the Visit screen the
+     doctor is usually already on. So the second and third press of "Add /
+     manage orders" produced zero pixels of change: the reported bounce with no
+     clear result. _mlsShoutGeneration clears the dedupe key so a repeat is
+     re-announced, and the inline emphasis takes the doctor to the sentence. */
+  try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){
+    var _liteMsg='That is a Standard feature - your Lite plan covers note generation. See plans on the MLS home page to unlock the full app.';
+    var _liteSaid=false;
+    try{ if(typeof _mlsShoutGeneration==='function') _liteSaid=!!_mlsShoutGeneration(_liteMsg); }catch(_eLite){}
+    if(!_liteSaid){ try{ toast(_liteMsg,'err'); }catch(_eLite2){} }
+    v='visit';
+  } }catch(e){}
   var previousView=currentView;
   /* A hidden iframe is still a live program and its srcdoc still contains the
      serialized practice snapshot. Leaving Studio or a pinned tool unloads it. */
@@ -28546,10 +28572,92 @@ function setBadge(s){
   b.className='badge '+(s?'signed':'draft');
   b.textContent=s?'✔ Signed':'● Draft';
 }
+/* noteact-1.0.0 (owner P0 2026-08-27). Codex's read-only audit of the Visit
+   review screenshots: the apparently dead buttons are mainly SILENT NO-NOTE
+   GATING. Seventeen controls ship natively disabled and unlock only when
+   showNote() runs, and until now not one of them said why it was off. The
+   remedy is deliberately NOT to enable them - a tool that reads a note it does
+   not have would be a worse defect. Each gated control now carries
+   aria-disabled, a machine-readable reason, and that reason in its title, and
+   one visible sentence under the row carries a control that performs the next
+   step. Nothing about WHEN a control unlocks changes. */
+const NOTE_GATE_WHY={
+  signBtn:'There is no note to review and sign yet. Capture or paste the visit, then press Generate.',
+  saveNoteBtn:'There is no note to save to history yet. Capture or paste the visit, then press Generate.',
+  copyEmrBtn:'There is no note text to copy yet. Capture or paste the visit, then press Generate.',
+  copyBtn:'There is no note text to copy yet. Capture or paste the visit, then press Generate.',
+  printBtn:'There is nothing to print yet. Capture or paste the visit, then press Generate.',
+  dlBtn:'There is nothing to download yet. Capture or paste the visit, then press Generate.',
+  teachBtn:'MLS learns from your edits to a drafted note. Generate a note, edit it, then teach.',
+  fhirBtn:'A FHIR bundle is built from the generated note. Capture or paste the visit, then press Generate.'
+};
+const NOTE_GATE_DEFAULT='This tool reads the generated note. Capture or paste the visit, then press Generate.';
+function _mlsNoteGateWhy(id){ return NOTE_GATE_WHY[id]||NOTE_GATE_DEFAULT; }
+function _mlsMarkNoteGate(el,id,on){
+  if(!el)return;
+  try{
+    /* THE TOOLTIP CARRIER ON THIS SHELL IS data-tip. initTooltips() converts
+       every title to data-tip so the native bubble never doubles the app's
+       own, and its MutationObserver keeps converting - so a reason written
+       only into title is gone within a frame. Both are written: title for a
+       plain reader and for anything that reads the DOM before the sweep,
+       data-tip because that is what this app actually shows on hover. */
+    if(el.__mlsGateTip===undefined)el.__mlsGateTip=el.getAttribute('data-tip')||el.getAttribute('title')||'';
+    if(on){
+      el.removeAttribute('aria-disabled');
+      el.removeAttribute('data-mls-gate-reason');
+      if(el.__mlsGateTip){el.setAttribute('data-tip',el.__mlsGateTip);}else{el.removeAttribute('data-tip');el.removeAttribute('title');}
+      return;
+    }
+    var why=_mlsNoteGateWhy(id);
+    var full=el.__mlsGateTip?(el.__mlsGateTip+' - '+why):why;
+    el.setAttribute('aria-disabled','true');
+    el.setAttribute('data-mls-gate-reason',why);
+    el.setAttribute('data-tip',full);
+    el.setAttribute('title',full);
+  }catch(e){}
+}
+/* The one sentence a reader actually sees. It also decides WHICH next step is
+   real right now, so the control under it is never a dead end. */
+function _mlsPaintNoteActionGate(on){
+  try{
+    var box=document.getElementById('noteActionGate'); if(!box)return;
+    if(on){ box.style.display='none'; return; }
+    var tx=document.getElementById('transcript');
+    var hasTx=!!(tx&&String(tx.value||'').trim());
+    var why=document.getElementById('noteActionGateWhy');
+    var go=document.getElementById('noteActionGateGo');
+    if(why)why.textContent=hasTx?'The visit is captured - press Generate to draft the note.':'Capture or paste the visit above, then press Generate.';
+    if(go)go.textContent=hasTx?'Generate the note':'Take me to the transcript';
+    box.style.display='block';
+  }catch(e){}
+}
+/* The next step, PERFORMED. Never a silent no-op: it either presses Generate,
+   or it takes the doctor to the transcript and says so. */
+function noteActionGateNext(){
+  var tx=document.getElementById('transcript');
+  var hasTx=!!(tx&&String(tx.value||'').trim());
+  if(!hasTx){
+    if(tx){
+      try{tx.scrollIntoView({block:'center'});}catch(e){}
+      try{tx.focus();}catch(e2){}
+    }
+    try{toast('Capture or paste the visit here, then press Generate.','');}catch(e3){}
+    return;
+  }
+  var gb=document.getElementById('genBtn');
+  if(gb&&!gb.disabled){
+    try{gb.scrollIntoView({block:'center'});}catch(e4){}
+    gb.click();
+    return;
+  }
+  try{toast('The Generate control is not on this screen. Reopen the visit and try again.','err');}catch(e5){}
+}
 function enableOutputs(on){
   ['signBtn','copyBtn','copyEmrBtn','printBtn','dlBtn','optBtn','saveNoteBtn','avsBtn','refBtn','imeBtn','billBtn','mipsBtn','handoutBtn','fhirBtn','redflagBtn','ddxBtn','teachBtn'].forEach(id=>{
-    const el=document.getElementById(id); if(el) el.disabled=!on;
+    const el=document.getElementById(id); if(el){ el.disabled=!on; _mlsMarkNoteGate(el,id,!!on); }
   });
+  _mlsPaintNoteActionGate(!!on);
   const heldIme=document.getElementById('imeBtn');
   if(heldIme){ heldIme.hidden=true; heldIme.disabled=true; heldIme.setAttribute('aria-hidden','true'); heldIme.setAttribute('aria-disabled','true'); heldIme.style.display='none'; }
   const r=document.getElementById('secCopyRow'); if(r) r.style.display=on?'flex':'none';
@@ -31224,7 +31332,20 @@ function signNote(){
      an unidentifiable signer should be allowed to sign at all is an owner
      decision. What this change fixes is signing with a DIFFERENT REAL PERSON's
      name, which is worse than signing generically. */
-  const name=clinicalProviderName()||'Clinician';
+  /* noteact-1.0.0 (owner P0 2026-08-27): FAIL CLOSED ON AN UNRESOLVED SIGNER.
+     The line built below is an ELECTRONIC SIGNATURE that saveCurrentNote()
+     writes into the chart. When clinicalProviderName() declines - a roster
+     exists and does not uniquely name this person - the old code signed the
+     chart "Electronically signed by Clinician", an attestation naming nobody.
+     Refusing is the only safe answer, and the refusal names the exact cure. */
+  const resolvedSigner=clinicalProviderName();
+  if(!resolvedSigner){
+    setBadge(false);
+    toast('MLS cannot confirm who is signing this note. Set your provider name in Settings, then sign.','err');
+    try{ if(typeof openSettings==='function') openSettings(); }catch(eSign){}
+    return;
+  }
+  const name=resolvedSigner;
   const ts=new Date().toLocaleString();
   const line=document.getElementById('signLine');
   line.style.display='block';
@@ -31269,11 +31390,16 @@ function emrReadyText(){
   const note=(currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'';
   return String(note||'').trim();
 }
+/* noteact-1.0.0: RETURNS A RECEIPT. The Easy facade used to click this control
+   and immediately paint "Copied" without ever learning whether the clipboard
+   write succeeded. The promise below is that receipt: it resolves true only
+   once the text is really on the clipboard. Every existing caller ignores the
+   return value, so this is additive. */
 function copyForEMR(){
-  if(!currentSoap){ toast('Generate a note first.','err'); return; }
-  navigator.clipboard.writeText(emrReadyText())
-    .then(()=>toast('Clinical note text copied. Diagnoses, billing and orders stay separate for manual review.','ok'))
-    .catch(()=>toast('Could not copy — use Copy or Download instead.','err'));
+  if(!currentSoap){ toast('Generate a note first.','err'); return Promise.resolve(false); }
+  return navigator.clipboard.writeText(emrReadyText())
+    .then(()=>{toast('Clinical note text copied. Diagnoses, billing and orders stay separate for manual review.','ok');return true;})
+    .catch(()=>{toast('Could not copy — use Copy or Download instead.','err');return false;});
 }
 /* ===== Place only the finished clinical note text through the generic paste
    lane. Diagnoses, billing, orders and generated documents are never bundled
@@ -31574,6 +31700,54 @@ function _athenaCanonicalBilling(coding){
 /* Freeze reviewed order drafts separately from generated suggestions. An item
    is not a reviewed draft merely because AI proposed it. Legacy auto-added
    `_ai` items are downgraded back to suggestion-only for safety. */
+/* aorb-1.0.0 (owner P0 2026-08-27) - THE BUNDLE USED TO DROP THE ORDER'S
+   IDENTITY, AND THAT COST THE DOCTOR THE WHOLE FEATURE.
+
+   _athenaOrderReviewBundle rebuilt each accepted draft as
+   {type,fields,summary,originalText,source,complete} and dropped clientOrderId,
+   reviewStatus, displayLabel, query, catalogCode and catalogId. Every one of
+   those six is REQUIRED by the write-flow's canonicalOrder(), so a complete,
+   clinician-accepted, catalog-bound imaging/PT/DME/referral order reached the
+   main Athena review with reviewStatus undefined and was refused as
+   "order-not-reviewed": it degraded to a manual/blocked row, and the doctor
+   re-typed into Athena an order MLS had already reviewed.
+
+   NO GATE IS WEAKENED. The identity is taken from the SAME shipped eligibility
+   computer the single-order route already uses,
+   _athenaOrderPlacementCandidate(), so an order that is not eligible carries no
+   catalog binding and stays blocked - and the write-flow re-validates every
+   field for itself afterwards. Only the honest reason changes. */
+function _athenaCarryOrderIdentity(item,order){
+  try{
+    var id=String((order&&order.id)||'').trim();
+    if(id)item.clientOrderId=id;
+    /* The clinician's acceptance is a fact about the order, not a derived one:
+       carry it even when the catalog binding is still missing, so the review
+       reports the REAL blocker instead of a false "not reviewed". */
+    if(String((order&&order._reviewStatus)||'').toLowerCase().trim()==='accepted')item.reviewStatus='accepted';
+    var code=String((order&&order.catalogCode)||'').trim(); if(code)item.catalogCode=code;
+    var catId=String((order&&order.catalogId)||'').trim(); if(catId)item.catalogId=catId;
+    var candidate=(typeof _athenaOrderPlacementCandidate==='function')?_athenaOrderPlacementCandidate(order):null;
+    if(candidate&&candidate.eligible&&candidate.order){
+      item.clientOrderId=String(candidate.order.clientOrderId||item.clientOrderId||'');
+      item.displayLabel=String(candidate.order.displayLabel||'');
+      item.query=String(candidate.order.query||'');
+      item.catalogCode=String(candidate.order.catalogCode||'');
+      item.catalogId=String(candidate.order.catalogId||'');
+      item.reviewStatus='accepted';
+      item.source=String(candidate.order.source||item.source||'');
+    }else if(candidate&&!candidate.eligible){
+      item.orderPlacementBlockedReason=String(candidate.reason||'');
+      /* A refusal has to name the REAL gap. When everything but the catalog
+         binding is in place the candidate hands back the derived label, so the
+         review says "bind an exact catalog item" instead of the earlier and
+         wrong "this needs a catalog label". The order stays blocked. */
+      if(candidate.displayLabel)item.displayLabel=String(candidate.displayLabel);
+      if(candidate.query)item.query=String(candidate.query);
+    }
+  }catch(e){}
+  return item;
+}
 function _athenaOrderReviewBundle(orders,suggestions){
   var drafts=[],pending=[],acceptedText={};
   (Array.isArray(orders)?orders:[]).forEach(function(o){
@@ -31587,7 +31761,7 @@ function _athenaOrderReviewBundle(orders,suggestions){
     try{complete=!!(ORDER_DEFS[type]&&orderFormHasContent(type,fields));}catch(e2){complete=false;}
     var item={type:type,fields:fields,summary:summary,originalText:original,source:source,complete:complete};
     if(o._ai&&!o._reviewStatus){ item.source='legacy-auto-suggestion'; pending.push(item); }
-    else { item.source=source==='ai-suggestion'?'ai-suggestion-accepted':(source==='rule-suggestion'?'rule-suggestion-accepted':source); drafts.push(item); if(original)acceptedText[original.toLowerCase()]=1; }
+    else { item.source=source==='ai-suggestion'?'ai-suggestion-accepted':(source==='rule-suggestion'?'rule-suggestion-accepted':source); _athenaCarryOrderIdentity(item,o); drafts.push(item); if(original)acceptedText[original.toLowerCase()]=1; }
   });
   (Array.isArray(suggestions)?suggestions:[]).forEach(function(text){
     text=String(text||'').trim(); if(!text||acceptedText[text.toLowerCase()])return;
@@ -32520,7 +32694,10 @@ function _athenaOrderPlacementCandidate(order){
     imaging:{required:['study','region','indication'],all:['study','region','indication','laterality','contrast','notes']},
     referral:{required:['specialty','reason'],all:['specialty','reason','notes']}
   };
-  function blocked(badge,reason){return Object.freeze({eligible:false,badge:badge,reason:reason,order:null});}
+  /* aorb-1.0.0: `extra` carries what was already computed before the refusal,
+     so a caller can report the ACCURATE blocker. It never carries a decision:
+     eligible stays false and order stays null on every blocked path. */
+  function blocked(badge,reason,extra){return Object.freeze(Object.assign({eligible:false,badge:badge,reason:reason,order:null},extra||{}));}
   if(type==='medication'||type==='injection')return blocked('Manual in Athena','Medication and injection schemas are not enabled for typed Athena placement.');
   var spec=specs[type];
   if(!spec)return blocked('Manual in Athena','This order type does not have a proven typed Athena adapter.');
@@ -32548,7 +32725,7 @@ function _athenaOrderPlacementCandidate(order){
   if(!/^(provider-entered|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(source))return blocked('Review required','This order source is not approved for supervised placement.');
   var catalogCode=String(item.catalogCode||raw.catalogCode||raw.catalog_code||'').trim();
   var catalogId=String(item.catalogId||raw.catalogId||raw.catalog_id||'').trim();
-  if(!catalogCode&&!catalogId)return blocked('Bind exact Athena catalog item','A durable Athena catalog code or catalog ID is required before this order can be placed.');
+  if(!catalogCode&&!catalogId)return blocked('Bind exact Athena catalog item','A durable Athena catalog code or catalog ID is required before this order can be placed.',{displayLabel:displayLabel,query:displayLabel});
   if(catalogCode.length>100||catalogId.length>160)return blocked('Review required','The Athena catalog code or ID is too long.');
   var canonical={
     clientOrderId:String(item.id),type:type,displayLabel:displayLabel,
@@ -33541,9 +33718,31 @@ async function gradeVisitExperience(btn){
   if(tx.length<40){ try{ toast('Capture the visit conversation first, then grade.','err'); }catch(e){} return; }
   if(typeof backendMode!=='function'||!backendMode()||!bkToken()){ try{ toast('Sign in to grade visits.','err'); }catch(e){} return; }
   if(btn){ btn.disabled=true; btn.dataset._t=btn.innerHTML; btn.innerHTML='… grading'; }
+  /* noteact-1.0.0 (owner P0 2026-08-27): BIND OR DISCARD. This awaits a network
+     round trip. The doctor can open the next patient while it is in flight, and
+     the old code then rendered that grade into the visit box and SAVED it to
+     whichever patient happened to be active when the answer arrived - a
+     cross-patient write. The identity that asked is frozen here; a result that
+     comes back to a different patient or a different note is discarded, out
+     loud. Exact-patient safety is not relaxed anywhere: the only change is that
+     a stale answer is dropped instead of adopted. */
+  var gradeForPtId='';
+  try{ var gradePt=(typeof activePatient==='function')?activePatient():null; gradeForPtId=String((gradePt&&gradePt.id)||''); }catch(eGid){}
+  var gradeForNoteId=String((typeof currentNoteId!=='undefined'&&currentNoteId)||'');
+  function _gradeStillOurs(){
+    try{
+      var nowPt=(typeof activePatient==='function')?activePatient():null;
+      if(String((nowPt&&nowPt.id)||'')!==gradeForPtId)return false;
+    }catch(eNow){ return false; }
+    return String((typeof currentNoteId!=='undefined'&&currentNoteId)||'')===gradeForNoteId;
+  }
   try{
     var r=await fetch(bkBase()+'/api/visit/grade',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({transcript:tx.slice(0,24000)})});
     var d=await r.json().catch(function(){return {};});
+    if(!_gradeStillOurs()){
+      try{ toast('The visit changed while MLS was grading, so that grade was discarded. Open the visit you want graded and try again.','err'); }catch(eDrop){}
+      return;
+    }
     if(!r.ok){ try{ toast(d.error||'Could not grade this visit.','err'); }catch(e){} return; }
     _renderVisitGrade(d);
     if(d.score!=null){
@@ -34370,7 +34569,14 @@ function showExtra(cardId,bodyId,text){
    ========================================================= */
 function _normForDiff(s){ return String(s||'').replace(/\s+/g,' ').trim(); }
 async function teachFromEdits(){
-  if(!session) return;
+  /* noteact-1.0.0: this was a bare `return` - the doctor pressed Teach MLS and
+     the app did nothing at all, with no message, whenever there was no signed-in
+     session to save a learned preference to. The gate is right; the silence was
+     the defect. */
+  if(!session){
+    try{toast('Sign in to MLS first - learned style preferences are saved to your account, not to this device.','err');}catch(e){}
+    return;
+  }
   if(!lastAIDraft){ toast('Generate a note first — there is no AI draft to compare against yet.','err'); return; }
   const edited=stripCommentBlock(stripSignatureBlock(currentNoteText()));
   if(!edited || !edited.trim()){ toast('Generate a note first.','err'); return; }
