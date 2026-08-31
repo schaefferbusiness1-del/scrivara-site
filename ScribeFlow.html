@@ -10984,6 +10984,39 @@ function _mlsConsentKey(){
     return _mlsConsentAccountId()+'|'+String(p.id)+'|'+_mlsConsentEncounterId();
   }catch(e){ return ''; }
 }
+/* recfence-1.0.0: the ENCOUNTER LABEL moves on its own while the consent
+   dialog is open - installScheduledVisitBinding resolves 'visit:<date>' or
+   'day:<date>' into the real 'appt:<id>', a repaint drops a bound visit back
+   to the day placeholder, or the clock passes midnight and _acctTodayKey()
+   changes. None of those is a patient change, but every one of them moved
+   _mlsConsentKey() and made the in-flight fences below refuse the recording
+   with a message that blamed a patient switch that never happened.
+   Fence the in-flight dialog on the thing that actually protects the chart -
+   account + patient - and treat a PLACEHOLDER label as the same encounter as
+   the appointment it resolves into. Two DIFFERENT concrete appointments are
+   still a real encounter change and still refuse.
+   Deliberately NOT relaxed: _mlsHasEncounterConsent() below keeps comparing
+   the full strict key, so consent is never silently REUSED across encounters.
+   This only decides whether a consent the doctor just confirmed is honored. */
+function _mlsConsentIdentity(){
+  try{
+    var p=activePatient(); if(!p||!p.id) return '';
+    return _mlsConsentAccountId()+'|'+String(p.id);
+  }catch(e){ return ''; }
+}
+function _mlsConsentEncounterCompatible(a,b){
+  a=String(a||''); b=String(b||'');
+  if(!a||!b) return false;
+  if(a===b) return true;
+  var concrete=function(s){ return s.indexOf('appt:')===0; };
+  /* placeholder <-> concrete, in either direction, is one encounter resolving */
+  if(concrete(a)!==concrete(b)) return true;
+  /* two placeholders carry no appointment identity at all, so a day rollover
+     between them proves nothing about the encounter */
+  if(!concrete(a)&&!concrete(b)) return true;
+  /* two different concrete appointments: a genuine encounter change */
+  return false;
+}
 function _mlsHasEncounterConsent(){
   var k=_mlsConsentKey();
   return !!(k&&_mlsConsentCurrent&&_mlsConsentCurrent.key===k);
@@ -11123,6 +11156,7 @@ function _mlsRequestEncounterConsent(actionLabel){
      to - but the refusal now names the cause and the next click. */
   if(!p||!p.id){ try{ toast('No patient is linked to this visit, so there is no chart to attach the recording consent to. Pick the patient under Patients, or press Verify in Athena on the visit card, then Record.','err'); }catch(e){} return Promise.resolve(false); }
   var key=_mlsConsentKey(), encId=_mlsConsentEncounterId(), accountId=_mlsConsentAccountId(), consentEpoch=++_mlsConsentEpoch;
+  var identity=_mlsConsentIdentity(); /* recfence-1.0.0: account|patientId, the fence that must not move */
   var consentStorageKey='';try{consentStorageKey=uns('consentLog');}catch(e){}
   var ptId=String(p.id), ptLabel=String(p.name||'this patient')+(p.dob?(' · DOB '+p.dob):'');
   var encLabel=encId.indexOf('appt:')===0?('Appointment '+encId.slice(5)):(encId.indexOf('visit:')===0?('Visit '+encId.slice(6)):'Today’s visit');
@@ -11151,8 +11185,13 @@ function _mlsRequestEncounterConsent(actionLabel){
       var type=picked();
       /* the patient/encounter can change while this dialog is open — never
          write a consent record for an encounter that will not record */
-      if(_mlsConsentKey()!==key){
+      var idNow=_mlsConsentIdentity(), encNow=_mlsConsentEncounterId();
+      if(!idNow||idNow!==identity){
         try{ toast('The selected patient changed while the consent dialog was open, so nothing was recorded or logged. Reopen the patient and start again.','err'); }catch(e){}
+        finish(false); return;
+      }
+      if(!_mlsConsentEncounterCompatible(encId,encNow)){
+        try{ toast('This visit moved to a different appointment while the consent dialog was open, so nothing was recorded or logged. Open the appointment you meant to record and start again.','err'); }catch(e){}
         finish(false); return;
       }
       if(type==='declined'){
@@ -11164,7 +11203,10 @@ function _mlsRequestEncounterConsent(actionLabel){
       var rec={
         auditId:'consent-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9),
         patientId:ptId,
-        encounterId:encId,
+        /* recfence-1.0.0: stamp the encounter as it stands at CONFIRM time, so
+           the audit names the encounter that actually records rather than the
+           placeholder label the dialog happened to open on */
+        encounterId:encNow,
         provider:(typeof getName==='function'?(getName()||''):''),
         consentType:type,
         at:new Date().toISOString(),
@@ -11184,11 +11226,18 @@ function _mlsRequestEncounterConsent(actionLabel){
         }
         /* IndexedDB is asynchronous; repeat every identity fence after its
            committed write/readback, before remembering consent or capturing. */
-        if(_mlsConsentAccountId()!==accountId||_mlsConsentKey()!==key){
+        if(_mlsConsentAccountId()!==accountId||_mlsConsentIdentity()!==identity||!identity){
           try{ toast('The selected patient changed while consent was being saved, so recording stayed off. Reopen the patient and start again.','err'); }catch(e){}
           finish(false); return;
         }
-        _mlsConsentCurrent={ key:key, ptId:ptId, type:type, at:rec.at };
+        if(!_mlsConsentEncounterCompatible(encNow,_mlsConsentEncounterId())){
+          try{ toast('This visit moved to a different appointment while consent was being saved, so recording stayed off. Open the appointment you meant to record and start again.','err'); }catch(e){}
+          finish(false); return;
+        }
+        /* recfence-1.0.0: remember the consent under the key as it stands NOW.
+           startCapture() re-enters and re-checks the STRICT _mlsHasEncounterConsent(),
+           so storing the stale dialog-open key would re-open this dialog forever. */
+        _mlsConsentCurrent={ key:_mlsConsentKey(), ptId:ptId, type:type, at:rec.at };
         finish(true);
       },function(){
         if(!isOpen())return;
@@ -13967,16 +14016,50 @@ function __mlsHistoryData(all){
     if(!on||!on.patientId)orphans.push(on);
     else { var ob=byPatient.get(on.patientId); if(ob)ob.push(on); else byPatient.set(on.patientId,[on]); }
   }
+  /* dupnote-2.0.0 - "duplicate" must mean THE SAME NOTE ON THE SAME CHART.
+     The previous key was displayName + chiefComplaint + day, and all four of its
+     failure modes were measured by EXECUTING this function, not by reading it:
+       1. two DIFFERENT people who share a name had one patient's note flagged
+          for deletion - the cross-patient contamination class;
+       2. the survivor was whichever row was most recent, so a 1-character stub
+          saved after a 4,000-character finished note DELETED the finished note
+          while the code comment promised "most complete";
+       3. three distinct same-day notes with no chief complaint collapsed to one,
+          destroying two real notes;
+       4. a genuine over-save was MISSED whenever the stored display name
+          differed by a middle initial.
+     Identity is patientId - never the display name, which two people share and
+     which one person is spelled several ways. "Same note" is the note BODY, so
+     an edited version is never silently destroyed; only an exact re-save
+     collapses. A note that cannot prove its identity, or that carries no
+     content to compare, is never auto-removable. This is strictly narrower than
+     what it replaces: every note it flags, the old key flagged too. */
   var byKey=Object.create(null),remove=[];
+  var __dupNorm=function(s){ return String(s==null?'':s).replace(/\s+/g,' ').trim().toLowerCase(); };
+  var __dupKey=function(n){
+    if(!n)return '';
+    var pid=String(n.patientId||'').trim(); if(!pid)return '';
+    var dd=new Date((n.updated)||(n.created)||0); if(isNaN(dd.getTime()))return '';
+    var day=dd.getFullYear()+'-'+('0'+(dd.getMonth()+1)).slice(-2)+'-'+('0'+dd.getDate()).slice(-2);
+    var cc=__dupNorm(n.cc),body=__dupNorm(n.text||n.soap||'');
+    if(!cc&&!body)return '';
+    return pid+'|'+day+'|'+cc+'|'+body;
+  };
   for(var i=0;i<all.length;i++){
-    var n=all[i],d=new Date((n&&n.updated)||(n&&n.created)||0);
-    var day=isNaN(d.getTime())?'':(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2));
-    var key=String((n&&n.patient)||'').trim().toLowerCase()+'|'+String((n&&n.cc)||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+day;
+    var n=all[i],key=__dupKey(n);
+    if(!key)continue;
     (byKey[key]=byKey[key]||[]).push(n);
   }
   Object.keys(byKey).forEach(function(key){
     var rows=byKey[key]; if(rows.length<2)return;
-    rows.sort(function(a,b){var u=(b.updated||b.created||0)-(a.updated||a.created||0);if(u)return u;return String(b.text||b.soap||'').length-String(a.text||a.soap||'').length;});
+    /* Bodies are identical by construction, so the survivor is the most
+       authoritative record: signed outranks unsigned, finished outranks draft,
+       then most recently updated. */
+    rows.sort(function(a,b){
+      var s=(b.signed?1:0)-(a.signed?1:0); if(s)return s;
+      var dr=(a.isDraft?1:0)-(b.isDraft?1:0); if(dr)return dr;
+      return (b.updated||b.created||0)-(a.updated||a.created||0);
+    });
     for(var j=1;j<rows.length;j++)remove.push(rows[j]);
   });
   __mlsHistoryPerfCache={ver:stable?v:-1,ordered:ordered,duplicates:remove,searchByNote:new Map(),byPatient:byPatient,orphans:orphans};
@@ -14363,28 +14446,44 @@ async function syncPatientToServer(patient,scope){
    shouldRemoveLocalKey), so such a queue would die exactly when it is needed,
    and keeping patient ids alive PAST logout would reintroduce the PHI-retention
    defect that purge exists to prevent. */
-async function _ptResolveServerId(externalId){
-  if(_serverPtIds[externalId]) return _serverPtIds[externalId];
+/* ptdel-1.3.0: this resolver had ONE return value - null - standing for three
+   very different facts: "the server has no such row", "the server refused the
+   lookup", and "the network is down". deletePatientOnServer read all three as
+   "nothing left to resurrect from" and answered {ok:true,'no-server-row'}, so a
+   transient blip during a delete reported SUCCESS while the server row lived
+   on - and the next hydration re-added the patient with their whole chart.
+   That is the exact resurrection the block above was written to stop, defeated
+   by an error path instead of by a missing call. The lookup now reports whether
+   it actually KNOWS, and only a complete authoritative list may prove absence. */
+async function _ptResolveServerIdEx(externalId){
+  if(_serverPtIds[externalId]) return {id:_serverPtIds[externalId],known:true};
   try{
     const r=await fetch(bkBase()+'/api/patients',{headers:{'Authorization':'Bearer '+bkToken()}});
-    if(r.status===401){ handle401(); return null; }
-    if(!r.ok) return null;
+    if(r.status===401){ handle401(); return {id:null,known:false,reason:'signed-out'}; }
+    if(!r.ok) return {id:null,known:false,reason:'http-'+r.status};
     const d=await r.json();
     const rows=Array.isArray(d)?d:((d&&d.patients)||[]);
     for(let i=0;i<rows.length;i++){
       const row=rows[i];
       if(row&&row.external_id&&row.id!=null) _serverPtIds[row.external_id]=row.id;
     }
-  }catch(e){ return null; }
-  return _serverPtIds[externalId]||null;
+  }catch(e){ return {id:null,known:false,reason:'network'}; }
+  return {id:_serverPtIds[externalId]||null,known:true};
+}
+/* Preserved contract for any caller that only wants the id. */
+async function _ptResolveServerId(externalId){
+  const found=await _ptResolveServerIdEx(externalId);
+  return found.id;
 }
 async function deletePatientOnServer(externalId){
   if(!backendMode()||!bkToken()||!externalId) return {ok:false,reason:'offline'};
-  const sid=await _ptResolveServerId(externalId);
-  /* No row on the server means there is nothing left to resurrect FROM. */
-  if(!sid) return {ok:true,reason:'no-server-row'};
+  const found=await _ptResolveServerIdEx(externalId);
+  /* Could not determine: never claim a row is gone that may still be there. */
+  if(!found.known) return {ok:false,reason:found.reason||'lookup-failed'};
+  /* A complete server list without this row means nothing can resurrect FROM. */
+  if(!found.id) return {ok:true,reason:'no-server-row'};
   try{
-    const r=await fetch(bkBase()+'/api/patients/'+encodeURIComponent(sid),{
+    const r=await fetch(bkBase()+'/api/patients/'+encodeURIComponent(found.id),{
       method:'DELETE', headers:{'Authorization':'Bearer '+bkToken()}
     });
     if(r.status===401){ handle401(); return {ok:false,reason:'signed-out'}; }
@@ -22791,9 +22890,52 @@ async function opPrepGenerateOne(i){
 /* ===== CANONICAL UNRESOLVED-PLACEHOLDER PARSER =====
    ONE vocabulary and ONE count for every surface (banner, guided filler, save
    gating, bundle counters). Recognizes all placeholder syntaxes this app has
-   ever emitted: [[snake_key]], [FILL:label], [not dictated], and ___ runs.
-   [[key]]/[FILL:] dedupe by key/label (repeats of the same field are one
-   unresolved field); anonymous blanks count individually. */
+   ever emitted: [[snake_key]], [FILL:label], [not dictated], ___ runs, the
+   [CAPS TOKEN] form, and {{curly}}.
+   [[key]]/[FILL:]/[CAPS] dedupe by key/label (repeats of the same field are
+   one unresolved field); anonymous blanks count individually.
+
+   ===== opblank-1.0.0 (2026-08-31, PATIENT SAFETY) =========================
+   THE DEFECT THIS CLOSES, measured on these shipped bytes before the change.
+   feat_mls_opnote_integrity.js:1680 ORDERS the model, as an absolute safety
+   rule, to leave a drug/dose/needle slot AS A BRACKETED PLACEHOLDER:
+     "[LOCAL ANESTHETIC], [STEROID DOSE], [ANESTHETIC], [GAUGE] ... must be
+      LEFT AS A PLACEHOLDER for the doctor to fill."
+   That instruction produces the [CAPS TOKEN] shape - and this parser could not
+   see it. So the MORE faithfully the model obeyed the drug-safety rule, the
+   more certainly the note was scored COMPLETE:
+     - opNoteBlankTokens() returned 0 for a draft holding [LOCAL ANESTHETIC],
+       [STEROID DOSE], [VOLUME] and [GAUGE];
+     - _opGuardDrugBlanks accepts a bare [LABEL] as a surviving blank, so it
+       reported 0 violations and handed an EMPTY missing[] to the Fields box;
+     - opPrepSave therefore set isComplete=true -> filed as a FINISHED op note,
+       not a draft -> signable, PDF-exportable, and offered to Athena with the
+       placeholder text sitting verbatim in the body.
+   It is not an edge case: feat_mls_opnote_fill.js:293-298 records the live
+   measurement at b712 - 8 of 10 blanks in a real draft were this shape.
+   The Fields box was taught this shape (onf-2.11.0) and the SAVE/SIGN/PDF/
+   ATHENA gate was not, so the two surfaces disagreed on the same screen: the
+   box said "N fields need you" while the gate said the note was finished.
+
+   WHY THE [CAPS] PATTERN IS SAFE TO ADD - the risk here runs BOTH ways, and a
+   loose bracket rule would delete or block real clinical prose
+   (see the "window." class of defect). So the character class is not invented:
+   it is taken VERBATIM from feat_mls_opnote_fill.js:301 CAPS_TOKEN_SRC, the
+   detector the Fields box already uses to FIND and FILL these fields. Reusing
+   it means the gate can never demand a field the box cannot resolve. The
+   (?!\[) / (?!\]) guards are the same ones 1pScribeFlow.html already uses on
+   the preview rewriter, and they keep [[snake]] out of the CAPS branch.
+   Proven both directions before shipping: all 12 placeholder shapes counted,
+   and 18 real clinical strings - including "fell through a window.",
+   "Reviewed by the window. No allergies.", "[sic]", "[BP 128/76, HR 72]" and
+   "(ICD-10)" - still count ZERO.
+
+   DIRECTION OF FAILURE: over-counting costs a blank the doctor clears in the
+   Fields box; under-counting ships an operative note that says [STEROID DOSE].
+   {{curly}} is accepted as a placeholder by feat_mls_opnote_integrity.js in
+   six places (:1222 :1264 :1297 :1306 :1309 :1339); no in-tree emitter was
+   measured, so it is included for vocabulary agreement, not for a proven
+   defect. */
 function opNoteBlankTokens(text){
   var s=String(text||''); var seen={}; var out=[]; var m;
   function add(key,label){ var k=String(key||'').toLowerCase(); if(!k||seen[k]) return; seen[k]=1;
@@ -22806,6 +22948,14 @@ function opNoteBlankTokens(text){
   while((m=re3.exec(s))){ nd++; add('not_dictated_'+nd, 'Not dictated #'+nd); }
   var bl=0, re4=/(^|[^_])_{3,}(?!_)/g;
   while((m=re4.exec(s))){ bl++; add('blank_line_'+bl, 'Blank #'+bl); }
+  /* opblank-1.0.0: the [CAPS TOKEN] shape. Class copied verbatim from
+     feat_mls_opnote_fill.js:301 so the gate and the Fields box agree; a
+     [FILL: ...] token can never reach here because ':' is not in the class,
+     and a key already counted above de-dupes rather than double-counting. */
+  var re5=/\[(?!\[)([A-Z][A-Z0-9 \/&-]{1,28}[A-Z0-9])\](?!\])/g;
+  while((m=re5.exec(s))) add(m[1].toLowerCase().replace(/[^a-z0-9]+/g,'_'), m[1]);
+  var re6=/\{\{\s*([A-Za-z0-9_ -]+?)\s*\}\}/g;
+  while((m=re6.exec(s))) add(m[1].toLowerCase().replace(/[^a-z0-9]+/g,'_'), m[1]);
   return out;
 }
 function opNoteBlankCount(text){ return opNoteBlankTokens(text).length; }
@@ -25725,13 +25875,25 @@ function saveNoteToBackend(rec){
 }
 /* Best-effort server-side (soft) delete so a deleted visit doesn't resurrect
    from the server on the next history merge. */
+/* dupnote-2.0.0: this now RETURNS A VERDICT (a promise of true when the server
+   row is provably gone). loadRecordsFromServer re-adds any record id it cannot
+   find locally, so a local removal whose server DELETE quietly failed is not a
+   deletion at all - the note returns on the next sync. Existing callers that
+   ignore the return keep their old fire-and-forget behaviour; the promise is
+   always resolved, never rejected, so no caller can raise an unhandled
+   rejection. */
 function deleteNoteOnServer(id){
-  if(!backendMode()||!bkToken()||!id) return;
+  if(!id) return Promise.resolve(false);
+  /* No backend session: there is no server row to outlive the local delete. */
+  if(!backendMode()||!bkToken()) return Promise.resolve(true);
   try{
-    fetch(bkBase()+'/api/records/'+encodeURIComponent(id),{
+    return fetch(bkBase()+'/api/records/'+encodeURIComponent(id),{
       method:'DELETE', headers:{'Authorization':'Bearer '+bkToken()}
-    }).catch(()=>{});
-  }catch(e){/* best-effort */}
+    }).then(function(r){
+      /* 404 = already absent server-side, which is the state we wanted. */
+      return !!(r&&(r.ok||r.status===404));
+    }).catch(function(){ return false; });
+  }catch(e){ return Promise.resolve(false); }
 }
 /* Pull this clinician's OWN server-stored visit records and merge them into the
    local history (matched on the client record id), so history follows the
@@ -25935,10 +26097,28 @@ async function cleanupDuplicateNotes(btn){
   var remove=_dupNoteList();
   if(!remove.length){ try{ toast('No duplicate notes found — your history is clean.','ok'); }catch(e){} return; }
   if(!await mlsConfirm('Found '+remove.length+' duplicate note'+(remove.length===1?'':'s')+' (same patient, same note, same day). Keep one of each and remove the extras? This cannot be undone.')) return;
-  var ids={}; remove.forEach(function(n){ ids[n.id]=1; try{ deleteNoteOnServer(n.id); }catch(e){} });
-  saveNotes(getNotes().filter(function(n){ return !ids[n.id]; }));
+  /* dupnote-2.0.0: the old code fired every server DELETE without awaiting it,
+     dropped the rows locally regardless, and always reported total success.
+     Because loadRecordsFromServer re-adds any id missing locally, a failed or
+     offline DELETE meant the "removed" duplicates came back on the next sync -
+     while the toast had already claimed they were gone. Remove locally ONLY
+     what the server confirms, keep the rest, and say plainly what happened. */
+  var orig=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.innerHTML='… removing'; }
+  var confirmed={},removed=0,failed=0;
+  try{
+    var verdicts=await Promise.all(remove.map(function(n){
+      try{ return Promise.resolve(deleteNoteOnServer(n.id)).catch(function(){ return false; }); }
+      catch(e){ return Promise.resolve(false); }
+    }));
+    remove.forEach(function(n,i){ if(verdicts[i]&&!confirmed[n.id]){ confirmed[n.id]=1; removed++; } else if(!verdicts[i]) failed++; });
+  }finally{ if(btn){ btn.disabled=false; btn.innerHTML=orig; } }
+  if(removed) saveNotes(getNotes().filter(function(n){ return !confirmed[n.id]; }));
   try{ renderHistory(); }catch(e){} try{ updateNavCounts(); }catch(e){}
-  try{ toast('Removed '+remove.length+' duplicate note'+(remove.length===1?'':'s')+'. Kept one of each.','ok'); }catch(e){}
+  try{
+    if(removed&&!failed) toast('Removed '+removed+' duplicate note'+(removed===1?'':'s')+'. Kept one of each.','ok');
+    else if(removed&&failed) toast('Removed '+removed+'. '+failed+' could not be deleted on the server, so '+(failed===1?'it was':'they were')+' kept — otherwise '+(failed===1?'it':'they')+' would return on the next sync.','warn');
+    else toast('Nothing was removed — the server did not confirm the delete, so your notes are unchanged. Check your connection and try again.','warn');
+  }catch(e){}
 }
 async function deleteNote(id){
   if(!await mlsConfirm('Delete this saved visit from this device? This cannot be undone.')) return;
@@ -42357,7 +42537,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1129';
+  window.__MLS_AV='b1130';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
