@@ -25,6 +25,12 @@
  *      "nothing was changed" honesty, and brings a WORKING do-it-for-me control
  *      that takes the named step and presses the existing re-check. A FATAL
  *      refusal (identity mismatch) stays red and offers no such control.
+ *      re-pinned to rowfirst-1.0.0 (b1133): the named step is now the exact
+ *      appointment-id ROW CLICK against whatever athenaOne already paints, and
+ *      athenaOne's Day view is driven only as the FALLBACK when that row is not
+ *      on the painted grid. Both rungs are pinned: a row-first success must not
+ *      drive the Day view at all, and a row-not-painted refusal must still
+ *      drive it and then retry the click.
  *   5. The repeated per-row boilerplate collapsed: an identical Why/How
  *      sentence renders ONCE above the rows while every per-row unique reason
  *      stays inline.
@@ -415,22 +421,69 @@ function tally(html, needle) { return html.split(needle).length - 1; }
     const boundRow = doIt.getAttribute('data-mls-recover-row');
     ok(manifest.rows.some(r => r.id === boundRow), 'the recovery control is not bound to a real row of this review: ' + boundRow);
 
-    /* the control WORKS: it takes the named step, then presses the re-check */
-    const gotosBefore = h.posted.filter(m => m.type === 'mlsAppGotoDate').length;
+    /* the control WORKS: it takes the named step, then presses the re-check.
+       re-pinned to rowfirst-1.0.0 (b1133): exact-id row click first, day-drive is
+       the fallback. The named step used to BE the Day-view drive; it is now the
+       exact-appointment-id row click against whatever athenaOne already paints
+       (the drive's own recovery ladder can destroy a painted schedule, after
+       which the row hunt honestly finds nothing). When that click proves the
+       open, mlsAppGotoDate must NOT run at all. */
+    const postedBefore = h.posted.length;
     const probesBefore = h.probes().length;
     opts.onGoto = m => ({ ok: true, supported: true, via: 'weekstrip', schedDate: m.date });
     opts.onOpen = () => ({ ok: true, opened: true, via: 'appointment-id' });
     opts.onAction = (m, dflt) => dflt(m);
     doIt.click();
     await settle(600);
-    ok(h.posted.filter(m => m.type === 'mlsAppGotoDate').length > gotosBefore,
-      'the do-it-for-me control did not send athenaOne to the encounter day');
-    ok(h.posted.some(m => m.type === 'mlsAppSearchOpenPatient'),
-      'the do-it-for-me control did not open the exact appointment row');
+    const after = h.posted.slice(postedBefore);
+    const openAt = after.findIndex(m => m.type === 'mlsAppSearchOpenPatient');
+    const gotoAt = after.findIndex(m => m.type === 'mlsAppGotoDate');
+    ok(openAt >= 0, 'the do-it-for-me control did not click the exact appointment row');
+    eq(gotoAt, -1, 'the exact-id row click proved the open, but the control drove athenaOne\'s Day view anyway');
+    const rowClick = after[openAt];
+    eq(rowClick.appointmentId, APPOINTMENT, 'the row click lost the frozen appointment id');
+    eq(rowClick.scheduleDate, DAY, 'the row click lost the frozen schedule date');
     ok(h.probes().length > probesBefore, 'the do-it-for-me control did not press the existing re-check');
     eq(h.executes().length, 0, 'the read-only recovery wrote to Athena');
     ok(!/^One step needed:/.test(String(h.el('mlsAthenaUnifiedProbe').textContent)),
       'the recovery ran but the one-step notice never cleared');
+  }
+  {
+    /* FALLBACK CONTROL for rowfirst-1.0.0 (b1133): when the exact appointment
+       row is NOT on the schedule athenaOne already paints, the Day-view drive
+       must still run — after the row click, never before it — and the row click
+       must then be retried on the day it landed on. The day-drive is the cure,
+       not the gatekeeper, and it may not be lost. */
+    let opens = 0, probes = 0;
+    const opts = {
+      onAction: (m, dflt) => {
+        if (m.mode !== 'probe') return dflt(m);
+        probes++;
+        if (probes === 1) return { ok: false, blocked: true, reason: 'probe-frame-missing', error: 'The encounter frame was not found.' };
+        return dflt(m);
+      },
+      onOpen: () => {
+        opens++;
+        return opens === 1
+          ? { ok: false, opened: false, reason: 'appointment-id-not-found', error: 'The exact Athena appointment row is not on the schedule athenaOne has painted.' }
+          : { ok: true, opened: true, via: 'appointment-id' };
+      },
+      onGoto: m => ({ ok: true, supported: true, via: 'weekstrip', schedDate: m.date })
+    };
+    const h = makeHarness(opts);
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: [SECTIONS[0]], expectedContext: BOUND, receiptSessionId: 'ux-rowfirst-fallback' });
+    await settle(600);
+
+    const ladder = h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient' || m.type === 'mlsAppGotoDate');
+    eq(ladder.length, 3, 'the fallback ladder is not row click -> Day-view drive -> row click (got ' + ladder.map(m => m.type).join(' -> ') + ')');
+    eq(ladder[0].type, 'mlsAppSearchOpenPatient', 'the Day-view drive ran before the exact-id row click');
+    eq(ladder[1].type, 'mlsAppGotoDate', 'a row-not-painted refusal did not fall back to the Day-view drive');
+    eq(ladder[1].date, DAY, 'the fallback Day-view drive lost the frozen encounter day');
+    eq(ladder[2].type, 'mlsAppSearchOpenPatient', 'the row click was not retried on the day the drive landed on');
+    ok(ladder[2].requestId !== ladder[0].requestId, 'the post-nav row click reused the row-first request');
+    eq(h.executes().length, 0, 'the read-only fallback ladder wrote to Athena');
+    ok(!/^One step needed:/.test(String(h.el('mlsAthenaUnifiedProbe').textContent)),
+      'the fallback ladder opened the encounter but the one-step notice never cleared: ' + String(h.el('mlsAthenaUnifiedProbe').textContent));
   }
   {
     /* FATAL control: an identity that does not match stays RED and offers no

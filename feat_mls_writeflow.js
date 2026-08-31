@@ -2148,16 +2148,25 @@
            A goto that failed with no observed day (timeout, "calendar could not
            be reached" under a heavy renderer) falls through to the exact
            appointment-id row click, whose landing surface must re-prove name,
-           DOB and the frozen schedule date before anything is accepted. */
-        if (nav.ok !== true && observed && observed !== day) {
+           DOB and the frozen schedule date before anything is accepted.
+           dayfall-1.0.1: the refusal no longer asks whether the goto SUCCEEDED
+           - a nav that reports ok:true while painting a positively different
+           day is a day mismatch all the same (the other ladder site at
+           navigateAndSearchOpenTarget always judged it this way; the two sites
+           now agree). */
+        if (observed && observed !== day) {
           done('One step needed: athenaOne’s Day view has to be on ' + day + ' once.' +
             ' Its Day view is on ' + observed + ' right now.' +
             ' MLS can take that step for you, or open ' + day + ' in athenaOne yourself and press Check Athena again. Nothing was changed and nothing was sent.', 'fix', true);
           wfdxOfferNameRoute(state, rowId);
           return;
         }
-        if (nav.ok === true) { wfdx.observedDay = day; wfdx.observedDayAt = Date.now(); }
-        else {
+        /* dayfall-1.0.1: a MEASURED painted day is never overwritten by the
+           expected one - the receipt records what athenaOne showed, not what
+           MLS hoped. Only a goto that proved ok with NO measurable schedDate
+           may stamp the expected day, and it is marked as assumed. */
+        if (nav.ok === true && !observed) { wfdx.observedDay = day; wfdx.observedDayAt = Date.now(); wfdx.observedDayAssumed = true; }
+        else if (nav.ok !== true) {
           unifiedStatus(state, 'athenaOne’s Day view could not be re-proven just now - opening this exact appointment row read-only instead. Identity is re-checked before anything can be written…', '');
         }
       }

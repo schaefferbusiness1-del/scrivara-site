@@ -365,19 +365,43 @@ function historicalOpts() {
     const FRAME_FAIL = { ok: false, reason: 'context-unverified', error: 'Could not identify one exact patient encounter frame.' };
     h.reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: probe1.requestId, resp: FRAME_FAIL });
     await tick(); await tick();
+    /* re-pinned to rowfirst-1.0.0 (b1133): exact-id row click first, day-drive is
+       the fallback. The auto-run itself is unchanged and still fires on a
+       frame-missing refusal — only the ladder's FIRST RUNG moved. It is now the
+       exact-appointment-id row click against whatever athenaOne already paints
+       (the Day-view drive's own recovery can destroy a painted schedule), and
+       mlsAppGotoDate is the cure for a row-not-painted refusal. */
+    const rowFirst = h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').pop();
+    ok(!!rowFirst, 'the frame-missing refusal must AUTO-run the read-only open ladder (exact-id row click posted)');
+    ok(h.posted.filter(m => m.type === 'mlsAppGotoDate').length === 0,
+      'the Day-view drive ran BEFORE the exact-id row click on the schedule athenaOne already paints');
+    ok(rowFirst.appointmentId === '70000777' && rowFirst.scheduleDate === DAY,
+      'the row-first click lost the frozen appointment id or schedule date');
+    const openingLine = h.resolveId('mlsAthenaUnifiedProbe').textContent;
+    ok(/MLS is opening it read-only now/.test(openingLine) || h.toasts.some(t => /MLS is opening it read-only now/.test(t)) ||
+      /Sending athenaOne/.test(openingLine) || /Looking for this exact appointment row/.test(openingLine),
+      'the auto-open must say MLS is doing the opening, not instruct the doctor (probe line: ' + openingLine.slice(0, 80) + ')');
+    /* the row is not on the grid athenaOne painted: the Day-view drive is the
+       FALLBACK rung, and the row click is retried on the day it lands */
+    h.reply({ source: 'mls-ext', type: 'mlsAppSearchOpenResult', requestId: rowFirst.requestId,
+      resp: { ok: false, opened: false, reason: 'appointment-id-not-found', error: 'The exact Athena appointment row is not on the schedule athenaOne has painted.' } });
+    await tick(); await tick();
     const nav1 = h.posted.filter(m => m.type === 'mlsAppGotoDate').pop();
-    ok(!!nav1, 'the frame-missing refusal must AUTO-run the read-only open ladder (Day-view nav posted)');
-    ok(/MLS is opening it read-only now/.test(h.resolveId('mlsAthenaUnifiedProbe').textContent) || h.toasts.some(t => /MLS is opening it read-only now/.test(t)) || /Sending athenaOne/.test(h.resolveId('mlsAthenaUnifiedProbe').textContent),
-      'the auto-open must say MLS is doing the opening, not instruct the doctor (probe line: ' + h.resolveId('mlsAthenaUnifiedProbe').textContent.slice(0, 80) + ')');
+    ok(!!nav1 && nav1.date === DAY, 'a row-not-painted refusal must fall back to the read-only Day-view nav on the frozen day');
     h.reply({ source: 'mls-ext', type: 'mlsAppGotoDateResult', requestId: nav1.requestId, ok: true, schedDate: DAY });
     await tick();
     const open1 = h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').pop();
-    ok(!!open1, 'the ladder must then click the exact appointment row read-only');
+    ok(!!open1 && open1.requestId !== rowFirst.requestId,
+      'the ladder must then click the exact appointment row read-only on the day it navigated to');
     h.reply({ source: 'mls-ext', type: 'mlsAppSearchOpenResult', requestId: open1.requestId, resp: { ok: true, via: 'appointment-row' } });
     await tick();
     /* the ladder's tail re-probes (via setTimeout stub -> nothing fires here);
        drive a SECOND frame-missing refusal through the probe path directly */
-    const navCountBefore = h.posted.filter(m => m.type === 'mlsAppGotoDate').length;
+    /* re-pinned to rowfirst-1.0.0 (b1133): exact-id row click first, day-drive is
+       the fallback — so the loop-proof counts BOTH ladder verbs, not just the
+       nav that used to be the only first rung. */
+    const ladderVerbs = () => h.posted.filter(m => m.type === 'mlsAppGotoDate' || m.type === 'mlsAppSearchOpenPatient').length;
+    const ladderCountBefore = ladderVerbs();
     wf.diagnostics.state().manifest.rows.filter(r => r.id === 'write-hpi' || r.action === 'write_note').length; /* touch */
     const probe2 = h.posted.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'probe').pop();
     if (probe2 && probe2.requestId !== probe1.requestId) {
@@ -388,8 +412,8 @@ function historicalOpts() {
       h.reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: probe1.requestId, resp: FRAME_FAIL });
       await tick();
     }
-    ok(h.posted.filter(m => m.type === 'mlsAppGotoDate').length === navCountBefore,
-      'a second frame-missing refusal inside the window must NOT auto-open again (loop-proof)');
+    ok(ladderVerbs() === ladderCountBefore,
+      'a second frame-missing refusal inside the window must NOT run the open ladder again (loop-proof)');
     /* openpace-1.0.0 (b1129): a refusal that lands while the open is FRESH now
        paints the paced-wait line and re-probes instead of instructing or
        re-driving - both those lines are the correct spoken outcome here. */
@@ -397,5 +421,5 @@ function historicalOpts() {
       'the repeat refusal falls through to the spoken instruction or the paced re-check (probe line: ' + h.resolveId('mlsAthenaUnifiedProbe').textContent.slice(0, 80) + ')');
   }
 
-  console.log('PASS 1p writeflow bind cure: ' + checks + ' checks — the owner\'s unbound sheet offers one exactly-named press that navigates, confirms the painted day, pulls it, and rebinds every row to READY; an unpaintable day, an unscheduled patient, a foreign ledger row and a missing MRN all stay CANNOT SEND with the reason named; bindday-1.0.0 offers the patient\'s own scheduled days beside a wrong pinned day so the doctor can cure the binding in one press instead of dead-ending; and seam-1.0.0 auto-runs the read-only encounter open ONCE (time-bounded) when the probe reports the frame missing, so the sheet heals itself instead of instructing the doctor');
+  console.log('PASS 1p writeflow bind cure: ' + checks + ' checks — the owner\'s unbound sheet offers one exactly-named press that navigates, confirms the painted day, pulls it, and rebinds every row to READY; an unpaintable day, an unscheduled patient, a foreign ledger row and a missing MRN all stay CANNOT SEND with the reason named; bindday-1.0.0 offers the patient\'s own scheduled days beside a wrong pinned day so the doctor can cure the binding in one press instead of dead-ending; and seam-1.0.0 auto-runs the read-only encounter open ONCE (time-bounded) when the probe reports the frame missing, so the sheet heals itself instead of instructing the doctor — with rowfirst-1.0.0 that ladder now clicks the exact appointment row on the schedule athenaOne already paints FIRST and drives the Day view only when the row is not there');
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });
