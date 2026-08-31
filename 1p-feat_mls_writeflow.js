@@ -1574,6 +1574,20 @@
   function destinationTeacher() {
     try { return window.__mlsShowAsst && window.__mlsShowAsst.installed ? window.__mlsShowAsst : null; } catch (e) { return null; }
   }
+  /* teachload-1.0.0: the teacher lives in feat_mls_show_assistant.js, appended
+     by an idle-callback loader that can land seconds AFTER the review sheet
+     rendered. A sheet built before it landed called the feature FAILED and
+     wired nothing, so the button was dead until reopen. Resolve the teacher at
+     CLICK time and nudge the loader on demand instead. */
+  function ensureTeachingAsset() {
+    try {
+      var A = 'feat_mls_show_assistant.js';
+      if (document.querySelector('script[data-mls-asset="' + A + '"]')) return;
+      var s = document.createElement('script');
+      s.src = A + '?v=20260718sa3'; s.setAttribute('data-mls-asset', A); s.async = true;
+      (document.body || document.head || document.documentElement).appendChild(s);
+    } catch (e) {}
+  }
   function taughtDestinationFor(manifest, row) {
     var teacher = destinationTeacher();
     if (!teacher || typeof teacher.forRow !== 'function') return null;
@@ -1581,7 +1595,9 @@
   }
   function teachStateFor(manifest, row) {
     var teacher = destinationTeacher();
-    if (!teacher || typeof teacher.statusFor !== 'function') return { state: 'failed', message: 'MLS Assist destination teaching is unavailable.' };
+    /* teachload-1.0.0: not-installed-yet is the ORDINARY case (the lazy asset
+       lands after the sheet renders), not a failure - stop shouting FAILED. */
+    if (!teacher || typeof teacher.statusFor !== 'function') return { state: 'idle', message: 'Optional. The teaching tools finish loading in the background - open the destination screen in athenaOne FIRST, then click Teach destination.' };
     try { return teacher.statusFor(manifest, row) || { state: 'idle', message: 'Not taught yet. Open the destination screen in athenaOne FIRST, then click Teach destination.' }; } catch (e) { return { state: 'failed', message: 'MLS Assist destination teaching is unavailable.' }; }
   }
   function teachingHtml(manifest, row) {
@@ -1673,10 +1689,23 @@
     }
   }
   function wireUnifiedTeaching(state, card) {
-    var teacher = destinationTeacher(); if (!teacher || !card) return;
+    /* teachload-1.0.0: wire regardless of whether the lazy teacher landed yet;
+       resolve it per click so a sheet opened early is not permanently dead. */
+    if (!card) return;
     var starts = card.querySelectorAll('[data-mls-teach-start]');
     for (var i = 0; i < starts.length; i++) starts[i].addEventListener('click', function () {
       var row = unifiedRow(state.manifest, this.getAttribute('data-mls-teach-start')); if (!row || state.running || state.closed) return;
+      var teacher = destinationTeacher();
+      if (!teacher || typeof teacher.startForRow !== 'function') {
+        ensureTeachingAsset();
+        updateTeachingRow(state, row, { state: 'waiting', message: 'Loading the teaching tools now - a few seconds, then click Teach destination again.' });
+        var tries = 0, tick = setInterval(function () {
+          tries++; var t2 = destinationTeacher();
+          if (t2 && typeof t2.startForRow === 'function') { clearInterval(tick); updateTeachingRow(state, row, { state: 'idle', message: 'Teaching tools are ready - click Teach destination again.' }); }
+          else if (tries >= 24) { clearInterval(tick); updateTeachingRow(state, row, { state: 'failed', message: 'The teaching tools did not load in this tab. Reload the page and reopen this review to teach a destination.' }); }
+        }, 250);
+        return;
+      }
       invalidateUnifiedProbeForTeach(state);
       teacher.startForRow(state.manifest, row, function (next) {
         if (state.closed || unifiedAthenaState !== state) return;
@@ -1694,12 +1723,14 @@
     var cancels = card.querySelectorAll('[data-mls-teach-cancel]');
     for (var ci = 0; ci < cancels.length; ci++) cancels[ci].addEventListener('click', function () {
       var row = unifiedRow(state.manifest, this.getAttribute('data-mls-teach-cancel')); if (!row) return;
+      var teacher = destinationTeacher(); if (!teacher || typeof teacher.cancelForRow !== 'function') return;
       teacher.cancelForRow(state.manifest, row); invalidateUnifiedProbeForTeach(state); updateTeachingRow(state, row, { state: 'failed', message: 'Teaching was cancelled. Nothing changed.' });
     });
     var clears = card.querySelectorAll('[data-mls-teach-clear]');
     for (var xi = 0; xi < clears.length; xi++) clears[xi].addEventListener('click', function () {
       var row = unifiedRow(state.manifest, this.getAttribute('data-mls-teach-clear')); if (!row) return;
-      teacher.cancelForRow(state.manifest, row);
+      var teacher = destinationTeacher(); if (!teacher || typeof teacher.clearForRow !== 'function') return;
+      if (typeof teacher.cancelForRow === 'function') teacher.cancelForRow(state.manifest, row);
       teacher.clearForRow(state.manifest, row); invalidateUnifiedProbeForTeach(state); updateTeachingRow(state, row, { state: 'idle', message: 'Cleared only for this exact patient and destination row.' });
       unifiedStatus(state, 'Cleared the taught target only for ' + row.label + '. Nothing was changed in Athena.', '');
       if (state.selectedRowId === row.id) probeUnifiedRow(state, row.id);
@@ -2219,6 +2250,39 @@
               expectedDay: wfdxDayKey(state.manifest.visit.visitDate), appointmentIdPresent: !!S(state.manifest.visit.appointmentId).trim() });
             unifiedStatus(state, 'The encounter is not open in athenaOne. MLS is opening it read-only now — nothing is written…', '');
             wfdxOpenEncounter(state, row.id, null, false);
+            return;
+          }
+          /* procdx-1.0.0: the frozen driver auto-opens a stage tab for every
+             named section EXCEPT procedure (background.js snTabs has no
+             'procedure' entry), so a reachability refusal on the op-note row
+             usually means the Procedure Documentation section is simply not on
+             screen - a state the chart/encounter auto-opens above cannot cure.
+             Ask MLS Assist READ-ONLY what it can see (mode 'probe' is the only
+             mode the frozen build allows; 'prep' answers
+             procedure-template-mutation-disabled), then either re-check once
+             or name the ONE human step. Nothing here writes or clicks Athena. */
+          if (S(row.payload && row.payload.sectionKey) === 'procedure' && !state.procProbed) {
+            state.procProbed = true;
+            unifiedStatus(state, 'Checking read-only whether the Procedure Documentation section is on screen in athenaOne...', '');
+            bridge('mlsAppPrepProcTemplate', { mode: 'probe', params: { sectionName: 'Procedure Documentation', tab: 'PE' } }, 'mlsAppPrepProcTemplateResult', 20000).then(function (proc) {
+              if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
+              proc = proc || {};
+              var seen = proc.observed || {};
+              wfdxNote({ verb: 'mlsAppPrepProcTemplate', stage: 'proc-probe', ok: proc.ok === true,
+                reason: proc.ready === true ? 'template-present' : (seen.sectionReachable ? 'section-on-screen' : 'section-not-on-screen'),
+                expectedDay: state.manifest.visit.visitDate, appointmentIdPresent: !!S(state.manifest.visit.appointmentId).trim() });
+              if (proc.ok === true && (proc.ready === true || seen.sectionReachable === true)) {
+                unifiedStatus(state, 'The Procedure Documentation section is on screen in athenaOne. Re-running the read-only check now - nothing has been sent.', '');
+                setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, row.id); }, 1200);
+                return;
+              }
+              var procStep = (proc.ok === true && seen.tabFound && !seen.sectionReachable)
+                ? 'One step needed: in athenaOne, open the PE tab and choose Procedure Documentation (add your procedure template there if your practice uses one), then press Check Athena again. Nothing was changed and nothing was sent.'
+                : 'One step needed: open this encounter in athenaOne with its Procedure Documentation section on screen, then press Check Athena again. Nothing was changed and nothing was sent.';
+              unifiedStatus(state, procStep, 'fix');
+              unifiedRecheckButton(state, row.id);
+              wfClarityCopyButton(state, row);
+            });
             return;
           }
           probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
