@@ -886,7 +886,13 @@
     if (named && !deadHeat && !classExact && !(top.score >= 10 && margin >= 4 && siblingSafe)) {
       return { tpl:named, candidate:named, confident:true, reason:'the reason names exactly one template', score:top.score, ranked:r };
     }
-    return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score — the level or side is not decisive, so it was not auto-applied'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous')), score:top.score, margin:margin, tie:deadHeat, ranked:r };
+    /* tiename-1.0.0 (measured live 2026-09-01, row "f/u Intracept L5 & S1"):
+       a tie whose candidates the compatibility gate filters offers zero
+       one-click alternatives - correct fail-closed - but the doctor was told
+       "two templates tie" without WHICH two, leaving nothing to act on. Name
+       them in the reason; the manual Template picker stays the resolution. */
+    var tieNames = deadHeat && r[1] && r[1].tpl ? (' (' + S(top.tpl && top.tpl.name).slice(0, 40) + ' vs ' + S(r[1].tpl.name).slice(0, 40) + ')') : '';
+    return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score'+tieNames+' — the level or side is not decisive, so it was not auto-applied; pick one under Template'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous')), score:top.score, margin:margin, tie:deadHeat, ranked:r };
   }
 
   function dobKey(v) {

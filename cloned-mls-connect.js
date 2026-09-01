@@ -27357,7 +27357,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       if (_origApply || !isFn(window.applyTemplateToNote) || window.applyTemplateToNote.__ngv1) return;
       _origApply = window.applyTemplateToNote;
-      var w = function (template, visitText, expectedBinding, expectedEpoch) {
+      /* ngsig-1.0.0 (audit 2026-09-01): the wrapper's sanitized path used to
+         forward only four arguments, silently dropping {signal} - so
+         templateSignal was null on the LIVE path and every abort guard inside
+         applyTemplateToNote (including the last owner check before it mutates
+         the note) was dead in production while the suites proved it worked on
+         the unwrapped shell function. Forward the options through. */
+      var w = function (template, visitText, expectedBinding, expectedEpoch, opts) {
         var self = this, args = arguments;
         return Promise.resolve().then(function () {
           if (!template || !template.text) return _origApply.apply(self, args);
@@ -27366,7 +27372,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (san.stripped) logEvent("sanitize", template.name, true, san.stripped + " canned assertion line(s) stripped before AI apply");
           var nb = $("noteBox");
           var pre = nb ? S(nb.value) : "";
-          return Promise.resolve(_origApply.call(self, safeTpl, visitText, expectedBinding, expectedEpoch)).then(function (r) {
+          return Promise.resolve(_origApply.call(self, safeTpl, visitText, expectedBinding, expectedEpoch, opts)).then(function (r) {
             try {
               if (!expectedBinding || !isFn(window._athenaAsyncBindingStillSafe)
                   || !window._athenaAsyncBindingStillSafe(expectedBinding, "template formatting audit", expectedEpoch)) return r;

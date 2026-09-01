@@ -299,10 +299,18 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert.strictEqual(openReceipt.reason, 'appointment-id-not-found');
     assert.strictEqual(openReceipt.errorClass, 'appointment-row-open-refused',
       'the exact refusal the owner saw was not classified');
+    /* re-pinned to rowfirst-1.0.0 (b1133): the exact-appointment-id row click
+       runs FIRST against whatever athenaOne already paints (the day-drive's
+       recovery ladder can destroy a painted schedule), and the frozen-day
+       navigation is the FALLBACK for a row-not-painted refusal, followed by a
+       fresh row search. Same identity gates, new order. */
     const autoNavIndex = h.posted.findIndex(m => m.type === 'mlsAppGotoDate');
-    const autoOpenIndex = h.posted.findIndex(m => m.type === 'mlsAppSearchOpenPatient');
-    assert(autoNavIndex >= 0 && autoOpenIndex > autoNavIndex,
-      'the automatic no-chart route scanned for the appointment before navigating to its frozen day');
+    const firstOpenIndex = h.posted.findIndex(m => m.type === 'mlsAppSearchOpenPatient');
+    const retryOpenIndex = h.posted.findIndex((m, i) => m.type === 'mlsAppSearchOpenPatient' && i > autoNavIndex);
+    assert(firstOpenIndex >= 0 && autoNavIndex > firstOpenIndex,
+      'the automatic no-chart route must try the exact appointment row FIRST, then navigate to its frozen day');
+    assert(retryOpenIndex > autoNavIndex,
+      'after the frozen-day navigation the route must search the appointment row again');
     assert.strictEqual(h.posted[autoNavIndex].date, DAY, 'the automatic no-chart route navigated to the wrong day');
     const report = h.wf.diagnostics.report();
     assert.strictEqual(report.kind, 'mls-athena-review-error-report');
@@ -408,17 +416,31 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert(openBtn, 'the review offered no read-only "open this encounter" button after a refused open');
     const reportBtn = fix.children.filter(c => String(c.textContent).indexOf('Copy error report') === 0)[0];
     assert(reportBtn, 'the review offered no copyable error report');
+    /* re-pinned to rowfirst-1.0.0 (b1133) + dayfall-1.0.1 (b1136): the exact-id
+       row click legitimately runs ONCE before the goto (its landing surface
+       carries the identity gates, and here it honestly refused). The protected
+       property is unchanged and now pinned tighter: after athenaOne OBSERVES a
+       positively different painted day, NO row search may follow - on the
+       automatic or the manual route. */
     const gotosBeforeManual = h.posted.filter(m => m.type === 'mlsAppGotoDate').length;
     assert.strictEqual(gotosBeforeManual, 1, 'the automatic open did not make exactly one frozen-day navigation attempt');
-    assert.strictEqual(h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
-      'the automatic route scanned the current Day view after its frozen-day navigation failed');
+    const firstGotoAt = h.posted.findIndex(m => m.type === 'mlsAppGotoDate');
+    const preGotoScans = h.posted.filter((m, i) => m.type === 'mlsAppSearchOpenPatient' && i < firstGotoAt).length;
+    assert(preGotoScans <= 1, 'the automatic route may make at most the one row-first attempt before navigating');
+    assert.strictEqual(h.posted.filter((m, i) => m.type === 'mlsAppSearchOpenPatient' && i > firstGotoAt).length, 0,
+      'the automatic route scanned the current Day view after its frozen-day navigation observed the WRONG day');
     openBtn.click();
     await settle(60);
     const gotos = h.posted.filter(m => m.type === 'mlsAppGotoDate');
     assert.strictEqual(gotos.length, gotosBeforeManual + 1, 'the manual helper did not make exactly one fresh day-navigation attempt');
     assert.strictEqual(gotos[gotos.length - 1].date, DAY, 'the helper asked athenaOne for the wrong day');
-    assert.strictEqual(h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length, 0,
-      'the manual route scanned the current Day view after its frozen-day navigation failed');
+    /* the manual route is rowfirst too: its own single pre-goto row attempt is
+       lawful; NOTHING may scan after ITS goto observed the wrong day. */
+    const manualGotoAt = h.posted.map((m, i) => (m.type === 'mlsAppGotoDate' ? i : -1)).filter(i => i >= 0).pop();
+    const betweenScans = h.posted.filter((m, i) => m.type === 'mlsAppSearchOpenPatient' && i > firstGotoAt && i < manualGotoAt).length;
+    assert(betweenScans <= 1, 'the manual route may make at most its one row-first attempt before its own navigation');
+    assert.strictEqual(h.posted.filter((m, i) => m.type === 'mlsAppSearchOpenPatient' && i > manualGotoAt).length, 0,
+      'the manual route scanned the current Day view after its frozen-day navigation observed the WRONG day');
     assert.strictEqual(h.wf.diagnostics.receipts().filter(r => r.verb === 'mlsAppGotoDate' && r.observedDay === wrongDay).length, gotos.length,
       'one or more observed athenaOne day attempts were not recorded');
     const status = h.el('mlsAthenaUnifiedProbe');
