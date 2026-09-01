@@ -342,6 +342,52 @@ const ALLOWED_KEYS = {
   assert.strictEqual(api.capture(bad).written, false, 'a monthless report was persisted');
 }
 
+/* ---- 6b. mrpt-1.1.0 provstatus: the seen-day join is honest ---------------
+ * The pull folds a PHI-free per-provider-per-day status histogram into
+ * uns('mlsProvDayStatusV1') (provstatus-1.0.0). The report joins it read-only:
+ * a day counts as SEEN only when its bucket proves seen > 0; a provider whose
+ * rows carry statuses but zero seen-class ones gets statusDays without
+ * seenDays (booked, provably not seen); a month with no histogram at all
+ * reports any:false so the card paints the honest dash + re-pull guidance. */
+{
+  const key = 'sf_u::owner@example.com::mlsProvDayStatusV1';
+  const store = {
+    v: 1,
+    days: {
+      '2026-08-03': { 'matthew schaeffer, md': { name: 'Matthew Schaeffer, MD', total: 9, seen: 7, statuses: { 'checked out': 6, 'checked in': 1, 'scheduled': 2 } } },
+      '2026-08-04': { 'matthew schaeffer, md': { name: 'Matthew Schaeffer, MD', total: 5, seen: 0, statuses: { 'scheduled': 5 } } },
+      '2026-08-05': {
+        'matthew schaeffer, md': { name: 'Matthew Schaeffer, MD', total: 4, seen: 4, statuses: { 'checked out': 4 } },
+        'uyen phan, pa-c': { name: 'Uyen Phan, PA-C', total: 3, seen: 1, statuses: { 'arrived': 1 } }
+      },
+      '2026-07-31': { 'matthew schaeffer, md': { name: 'Matthew Schaeffer, MD', total: 8, seen: 8, statuses: { 'checked out': 8 } } }
+    }
+  };
+  const env = makeEnv({ rows: AUG, roster: [MATTHEW], account: 'owner@example.com', storage: { [key]: JSON.stringify(store) } });
+  assert(typeof env.api.provStatusFor === 'function', 'mrpt-1.1.0 no longer exposes the seen-day join');
+  const ps = env.api.provStatusFor('2026-08');
+  assert.strictEqual(ps.any, true, 'a month with histogram days reported no status data');
+  const m = ps.byKey[Object.keys(ps.byKey).find((k) => /matthew/.test(k))];
+  assert(m, 'Matthew has histogram days in August and no join bucket');
+  assert.strictEqual(m.statusDays, 3, 'the July day leaked into the August join, or an August day was dropped');
+  assert.strictEqual(m.seenDays, 2, 'a seen day is a day with seen > 0 - the all-scheduled day must NOT count');
+  assert.strictEqual(m.seenAppts, 11, 'seen appointment totals must sum only the seen counters');
+  const u = ps.byKey[Object.keys(ps.byKey).find((k) => /uyen/.test(k))];
+  assert(u && u.seenDays === 1 && u.statusDays === 1, 'a second provider sharing a day must keep its own bucket');
+  /* corrupt / absent stores fail open, never throw */
+  const bare = makeEnv({ rows: AUG, roster: [MATTHEW], account: 'owner@example.com' });
+  assert.strictEqual(bare.api.provStatusFor('2026-08').any, false, 'an absent histogram must report any:false');
+  const corrupt = makeEnv({ rows: AUG, roster: [MATTHEW], account: 'owner@example.com', storage: { [key]: '{not json' } });
+  assert.strictEqual(corrupt.api.provStatusFor('2026-08').any, false, 'a corrupt histogram must fail open, not throw');
+  /* the card renders the new column and the honest dash guidance */
+  assert(moduleSource.indexOf('Days with seen visits') >= 0, 'the seen-days column header is gone from the card');
+  assert(moduleSource.indexOf('Re-pull this month with MLS Assist 3.0.98 or newer') >= 0, 'the dash lost its re-pull guidance');
+  /* and the pull-side fold exists where the histogram is minted */
+  const sched = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
+  assert(sched.indexOf("uns(\"mlsProvDayStatusV1\")") >= 0, 'provstatus-1.0.0 fold is gone from the schedule importer');
+  assert(/check\(\?:ed\)\?\[ -\]\?out\|check\(\?:ed\)\?\[ -\]\?in\|arrived/.test(sched), 'the seen-class regex is gone from the importer fold');
+}
+
 /* ---- 7. the twins are byte-identical derivations of the edited 1p bundle -- */
 {
   ['derive-cloned-from-1p.js', 'derive-production-from-1p.js'].forEach(function (script) {

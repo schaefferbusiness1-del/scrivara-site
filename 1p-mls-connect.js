@@ -42081,6 +42081,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     sanitize: sanitize,
     capture: capture,
     stored: storedFor,
+    provStatusFor: provStatusFor, /* mrpt-1.1.0: read-only seen-day join, exposed for extraction-executed proof */
     report: report,
     open: open,
     close: close,
