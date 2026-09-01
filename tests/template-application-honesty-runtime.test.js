@@ -154,4 +154,66 @@ function harness(options) {
   assert.strictEqual(h.context.state.soap, 'Original note', 'late aborted formatter overwrote the successful original note');
 
   console.log('PASS template application receipts: success mutates; thrown, empty, stale, and late-aborted paths preserve the original note');
+
+/* ngsig-1.0.0 executed pin (2026-09-01): everything above slices the SHELL
+ * formatter, but production runs it through ngv1's wrapApply overlay - which
+ * used to DROP the fifth options/{signal} argument on its sanitized main
+ * path, leaving every abort guard above dead on the live path while this
+ * suite stayed green. Lift the REAL overlay from the production connect lane
+ * (the kind-and-keyword pins suite proves all three lanes carry identical
+ * slices) and prove the SAME signal object reaches the wrapped formatter's
+ * arguments[4] on BOTH paths. */
+(async () => {
+  const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+  const ngv1At = connect.indexOf('var API = { v: "ngv1-1.1.0" };');
+  assert(ngv1At > 0, 'ngv1 overlay is missing from the production connect lane');
+  const wrapAt = connect.indexOf('var _origApply = null;', ngv1At);
+  const wrapEnd = connect.indexOf('* E. keyword backfill', wrapAt);
+  assert(wrapAt > ngv1At && wrapEnd > wrapAt, 'ngv1 wrapApply region moved');
+  const wrapSlice = connect.slice(wrapAt, connect.lastIndexOf('/*', wrapEnd));
+
+  function overlayHarness() {
+    const seen = [];
+    const ctx = {
+      window: {
+        applyTemplateToNote: function (t) { seen.push({ len: arguments.length, opts: arguments[4], tpl: t }); return { applied: true, templateId: t && t.id }; },
+      },
+      Promise, console,
+      isFn: (f) => typeof f === 'function',
+      sanitizeTplText: (t) => ({ text: t, stripped: 0 }),
+      logEvent: () => {}, warnOnce: () => {},
+      $: () => null,
+      S: (v) => String(v == null ? '' : v),
+      MARKERS: [],
+    };
+    vm.createContext(ctx);
+    vm.runInContext(wrapSlice + '\nwrapApply();', ctx, { filename: 'ngv1-wrapApply' });
+    assert(ctx.window.applyTemplateToNote.__ngv1 === 1, 'the overlay did not install');
+    return { ctx, seen };
+  }
+
+  const SIG = { aborted: false, __theOneSignal: true };
+
+  /* sanitized main path: template WITH text */
+  {
+    const { ctx, seen } = overlayHarness();
+    ctx.__SIG = SIG;
+    await vm.runInContext('window.applyTemplateToNote({id:"t1",name:"T",keywords:[],text:"TPL BODY"},"visit text",{bound:1},7,{signal:__SIG})', ctx);
+    assert.strictEqual(seen.length, 1, 'the sanitized path did not reach the wrapped formatter');
+    assert(seen[0].opts && seen[0].opts.signal === SIG,
+      'NGV1 DROPPED THE SIGNAL AGAIN on the sanitized path - the shell reads arguments[4].signal and every abort guard above is dead in production without it');
+    assert.strictEqual(seen[0].tpl.text, 'TPL BODY', 'the sanitized template body did not ride through');
+  }
+
+  /* early path: template with NO text forwards the raw argument list */
+  {
+    const { ctx, seen } = overlayHarness();
+    ctx.__SIG = SIG;
+    await vm.runInContext('window.applyTemplateToNote({id:"t2",name:"T2"},"visit text",{bound:1},7,{signal:__SIG})', ctx);
+    assert.strictEqual(seen.length, 1, 'the no-text path did not reach the wrapped formatter');
+    assert(seen[0].opts && seen[0].opts.signal === SIG, 'the no-text path dropped the signal');
+  }
+
+  console.log('PASS ngv1 overlay signal pin: the exact {signal} object rides arguments[4] through the REAL production overlay on both paths - the shell abort guards are alive on the live path');
+})().catch((e) => { console.error(e); process.exit(1); });
 })();
