@@ -11178,9 +11178,14 @@ function _mlsConsentKey(){
    account + patient - and treat a PLACEHOLDER label as the same encounter as
    the appointment it resolves into. Two DIFFERENT concrete appointments are
    still a real encounter change and still refuse.
-   Deliberately NOT relaxed: _mlsHasEncounterConsent() below keeps comparing
-   the full strict key, so consent is never silently REUSED across encounters.
-   This only decides whether a consent the doctor just confirmed is honored. */
+   Originally this fence applied ONLY to the in-flight dialog, and
+   _mlsHasEncounterConsent() below kept comparing the full strict key.
+   revwork-1.0.0 (b1169) re-aims that: the SAME compatibility rule now also
+   decides whether an already-confirmed consent is still good, because the
+   strict key was re-asking the doctor mid-visit the moment a placeholder
+   label resolved into its own appointment. Two DIFFERENT concrete
+   appointments, or a different patient, still re-ask - see the note on
+   _mlsHasEncounterConsent below. */
 function _mlsConsentIdentity(){
   try{
     var p=activePatient(); if(!p||!p.id) return '';
@@ -11200,9 +11205,31 @@ function _mlsConsentEncounterCompatible(a,b){
   /* two different concrete appointments: a genuine encounter change */
   return false;
 }
+/* revwork-1.0.0 (b1169): THE STRICT KEY RE-ASKED FOR CONSENT MID-VISIT.
+   _mlsConsentKey() is account|patient|encounter and the ENCOUNTER half moves on
+   its own while one visit is open: installScheduledVisitBinding resolves
+   'visit:<date>' / 'day:<date>' into the real 'appt:<id>' the moment the binding
+   lands, and a repaint can drop a bound visit back to the day placeholder.
+   Nothing about the patient or the visit changed, but the key did - so a doctor
+   who had just confirmed consent was asked to confirm it again, mid-encounter,
+   with the recording refused until he did.
+   recfence-1.0.0 already measured this exact movement and already owns the rule
+   for what counts as the same encounter. This reuses that rule, and ONLY along
+   the axis it proved safe:
+     - the account and the patient must be IDENTICAL (_mlsConsentIdentity), and
+     - the two encounter labels must be COMPATIBLE - a placeholder resolving
+       into the concrete appointment it names, in either direction.
+   TWO DIFFERENT CONCRETE APPOINTMENTS ARE STILL A DIFFERENT ENCOUNTER and still
+   re-ask. A different patient still re-asks. newVisit() and the
+   mls:session-boundary listener still clear _mlsConsentCurrent outright, so
+   consent is still never carried across visits or sessions. */
 function _mlsHasEncounterConsent(){
   var k=_mlsConsentKey();
-  return !!(k&&_mlsConsentCurrent&&_mlsConsentCurrent.key===k);
+  if(!k||!_mlsConsentCurrent) return false;
+  if(_mlsConsentCurrent.key===k) return true;
+  var idNow=_mlsConsentIdentity();
+  if(!idNow||String(_mlsConsentCurrent.identity||'')!==idNow) return false;
+  return _mlsConsentEncounterCompatible(_mlsConsentCurrent.encounterId,_mlsConsentEncounterId());
 }
 /* Optional "someone new joined the room" action — next capture start re-asks. */
 function mlsReconfirmConsent(){
@@ -11420,7 +11447,11 @@ function _mlsRequestEncounterConsent(actionLabel){
         /* recfence-1.0.0: remember the consent under the key as it stands NOW.
            startCapture() re-enters and re-checks the STRICT _mlsHasEncounterConsent(),
            so storing the stale dialog-open key would re-open this dialog forever. */
-        _mlsConsentCurrent={ key:_mlsConsentKey(), ptId:ptId, type:type, at:rec.at };
+        /* revwork-1.0.0 (b1169): carry the two facts the reuse check needs -
+           account|patient, and the encounter label exactly as stamped into the
+           audit record - so a placeholder resolving into its own appointment is
+           recognised as the SAME encounter instead of re-asking mid-visit. */
+        _mlsConsentCurrent={ key:_mlsConsentKey(), identity:_mlsConsentIdentity(), encounterId:_mlsConsentEncounterId(), ptId:ptId, type:type, at:rec.at };
         finish(true);
       },function(){
         if(!isOpen())return;
@@ -11449,7 +11480,13 @@ function _mlsRequestEncounterConsent(actionLabel){
          reason, each with this comment; the edit path was the one that did not.
          Assigning `.value` directly (which is what onresult does) fires no
          input event, so this can never feed back on itself. 2026-08-09. */
-      try{ if(id==='transcript' && typeof finalText!=='undefined' && typeof capturing!=='undefined' && capturing){ finalText=(e.target.value||'')+' '; } }catch(_){}
+      try{ if(id==='transcript' && typeof finalText!=='undefined' && typeof capturing!=='undefined' && capturing){ finalText=(e.target.value||'')+' ';
+        /* revwork-1.0.0 (b1169): the value just folded in CONTAINS the in-flight
+           interim, so every result index delivered so far is now inside
+           finalText. Mark them, or onresult appends the same words again the
+           instant that utterance finalises. */
+        try{ _mlsFoldedThroughIndex=_mlsLiveResultCount-1; }catch(_fold){}
+      } }catch(_){}
     } }, true);
     window.addEventListener('beforeunload', function(e){ if(_visitDirty || (typeof capturing!=='undefined' && capturing)){ e.preventDefault(); e.returnValue=''; return ''; } });
   }catch(e){}
@@ -27381,6 +27418,10 @@ function loadRecordIntoEditor(n){
    SPEECH CAPTURE
    ========================================================= */
 let recog=null, capturing=false, finalText='', captureSessionEpoch=0;
+/* revwork-1.0.0 (b1169): how many recognizer results have been seen, and the
+   highest result index a live correction has already folded into finalText.
+   See onresult and the #transcript input handler. */
+let _mlsLiveResultCount=0, _mlsFoldedThroughIndex=-1;
 /* One microphone owner across visit recording, field Dictate, and Copilot Voice.
    Each feature registers a stop callback that resolves only after the browser's
    old SpeechRecognition emits `end`. The next owner starts from that readiness
@@ -27507,12 +27548,25 @@ function initRecog(){
     if(instance._mlsStartPending){ (instance._mlsPendingResults||(instance._mlsPendingResults=[])).push(e); return; }
     if(!capturing||instance._mlsCaptureEpoch!==captureSessionEpoch||!currentVisitAthenaBinding||instance._mlsBindingId!==currentVisitAthenaBinding.id||Number(instance._mlsBindingEpoch)!==Number(currentVisitAthenaEpoch))return;
     if(!_athenaCurrentMatchesBound(currentVisitAthenaBinding)){ currentVisitAthenaCompromised=true; try{stopCapture();}catch(_){} return; }
+    /* revwork-1.0.0 (b1169): A CORRECTION TYPED DURING A RECORDING DUPLICATED
+       THE UTTERANCE IT WAS CORRECTING. #transcript holds (finalText+interim),
+       so the 2026-08-09 re-seed in the input handler folds the IN-FLIGHT interim
+       into finalText - and when the recognizer finalises that same utterance a
+       moment later, the loop below appends it a SECOND time. The doctor fixed
+       one word and got the whole sentence twice, silently, in the middle of a
+       live visit. Web Speech offers no way to cancel a pending utterance, so
+       remember which result indices the correction already folded in and never
+       append those again. A recognizer restart (onend -> start) renumbers from
+       0, which is what the shrinking-results reset below detects. */
+    if(e.results.length<_mlsLiveResultCount){ _mlsLiveResultCount=0; _mlsFoldedThroughIndex=-1; }
     let interim='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       const r=e.results[i];
+      if(i<=_mlsFoldedThroughIndex) continue;
       if(r.isFinal) finalText+=r[0].transcript+' ';
       else interim+=r[0].transcript;
     }
+    _mlsLiveResultCount=e.results.length;
     document.getElementById('transcript').value=(finalText+interim).trim();
     try{_markVisitDirty();}catch(_){}
     try{ if(capturing){ var _w=(finalText+interim).trim().split(/\s+/).filter(Boolean).length; _updateLiveCapture(_w); } }catch(e){}
@@ -27537,7 +27591,12 @@ function initRecog(){
   instance.onend=()=>{
     if(instance!==recog)return;
     if(instance._mlsStartPending){ instance._mlsEndedWhileStarting=true; return; }
-    if(capturing&&instance._mlsCaptureEpoch===captureSessionEpoch&&currentVisitAthenaBinding&&instance._mlsBindingId===currentVisitAthenaBinding.id&&Number(instance._mlsBindingEpoch)===Number(currentVisitAthenaEpoch)){ try{instance.start()}catch(e){} }
+    if(capturing&&instance._mlsCaptureEpoch===captureSessionEpoch&&currentVisitAthenaBinding&&instance._mlsBindingId===currentVisitAthenaBinding.id&&Number(instance._mlsBindingEpoch)===Number(currentVisitAthenaEpoch)){
+      /* revwork-1.0.0 (b1169): a restart renumbers e.results from 0, so the
+         folded-through boundary from the previous run must not survive it. */
+      _mlsLiveResultCount=0; _mlsFoldedThroughIndex=-1;
+      try{instance.start()}catch(e){}
+    }
   };
   return true;
 }

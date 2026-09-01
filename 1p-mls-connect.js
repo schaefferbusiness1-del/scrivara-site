@@ -7763,7 +7763,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try {
         if (seg && typeof seg.isArmed === 'function' && seg.isArmed() && typeof seg.stopSegment === 'function') seg.stopSegment();
         if (seg && typeof seg.startSegment === 'function') {
-          if (!seg.startSegment('visit')) { flowToast('The recorder could not start. Your existing transcript is safe.', 'err'); return; }
+          /* revwork-1.0.0 (b1169): "the recorder could not start" was being
+             painted OVER the consent dialog the very same click had just
+             opened. startCapture() returns false synchronously on the deferred
+             consent path, the segment module used to turn that into null, and
+             this line turned the null into a red refusal - the app
+             contradicting itself in front of the patient. startSegment now
+             answers CONSENT_PENDING for that case and arms the span itself the
+             moment the doctor confirms, so a pending dialog says NOTHING here.
+             A real decline or a real recorder failure is still a null and still
+             gets the unchanged fail-closed refusal. */
+          var started = seg.startSegment('visit');
+          var awaitingConsent = started === (seg.CONSENT_PENDING || 'consent-pending');
+          if (!started && !awaitingConsent) { flowToast('The recorder could not start. Your existing transcript is safe.', 'err'); return; }
         } else cb.click();
       } catch (e) { flowToast('The recorder could not start. Please try again.', 'err'); return; }
     } else {
@@ -8338,8 +8350,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           rb.addEventListener('click', toggleTopRecording);
           var ob = document.createElement('button');
           ob.type = 'button'; ob.className = 'ez3fl-openws';
-          ob.innerHTML = 'Advanced visit workspace';
-          ob.title = 'Type or paste a transcript, edit the note, use the Athena tools';
+          /* revwork-1.0.0 (b1169): same honest wording as #ez3Adv - this is the
+             second door to the SAME room, and the room opens BELOW this lane. */
+          ob.textContent = 'Open the review workspace below';
+          ob.title = 'Opens the review, codes and outcome cards under this flow. The flow itself stays exactly where it is.';
           ob.addEventListener('click', openWorkspace);
           var gb = document.createElement('button');
           gb.type = 'button'; gb.className = 'ez3fl-gen'; gb.id = 'ez3flGen'; gb.hidden = true;
@@ -8447,9 +8461,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             setTimeout(function () { syncPrimaryVoiceTools(rec); }, 50);
           });
           dv.id = 'ez3flDictate'; dv.classList.add('ez3fl-voicechip'); dv.setAttribute('aria-controls', 'ez3flTranscript'); dv.setAttribute('aria-pressed', 'false');
-          mkq('&#128203; Paste a transcript', 'Type or paste the conversation in the transcript box above', function () {
+          /* revwork-1.0.0 (b1169): this chip only ever scrolled to a box that
+             CAN be hidden - the phone lane hides the whole lane, and a repaint
+             window leaves it briefly absent - so "Paste a transcript" read as
+             dead. Ask the one revealer for the transcript that is actually on
+             screen (it rescues the guided flow first, then focuses); the old
+             direct path stays as the bounded fallback, so behaviour when the
+             flow box is already visible is byte-for-byte what it was. */
+          var pasteChip = mkq('&#128203; Paste a transcript', 'Type or paste the conversation in the transcript box above', function () {
+            /* NOT isFn(): this module never defined one. The only two isFn
+               calls in this IIFE resolve to nothing and throw a ReferenceError
+               - see the after-visit-summary chip below, where a try/catch has
+               been swallowing it. A bare typeof is the correct guard here and
+               it is the one thing standing between this chip and doing nothing
+               at all. */
+            var rw = window.__mlsRevWork;
+            if (rw && typeof rw.revealTranscript === 'function' && rw.revealTranscript()) return;
             try { var top = $('ez3flTranscript'); if (top) { top.scrollIntoView({ block: 'center', behavior: 'smooth' }); top.focus(); } } catch (e) {}
           });
+          pasteChip.id = 'ez3flPaste';
           /* phn-1.0.1: this chip was DEAD. startPhoneMicFromEasy (and
              startPhoneMic beneath it) refuse anything whose clickEvent is not
              isTrusted — a deliberate guard so no script can start a recording.
@@ -8470,7 +8500,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
           var avsQuick = mkq('&#128196; After-visit summary', 'A patient-friendly summary of this visit - preview first, nothing sends by itself', function () {
             openWorkspace(false);
-            afterVisitSummaryWhenReady(function () { try { var ab = $('mlsavsBtn'); if (ab) { ab.click(); } else if (window.__mlsAfterVisitSummary && isFn(window.__mlsAfterVisitSummary.open)) { window.__mlsAfterVisitSummary.open(); } else if (typeof window.toast === 'function') { window.toast('After-visit summary is not available on this build.', 'err'); } } catch (e) {} });
+            /* revwork-1.0.0 (b1169): isFn does not exist in this IIFE, so this
+               line threw a ReferenceError into the try/catch above every time
+               #mlsavsBtn was absent - which is exactly the case the fallback
+               was written for. Both later branches were unreachable and the
+               chip failed silently. Same fix as the paste chip: a bare typeof. */
+            afterVisitSummaryWhenReady(function () { try { var ab = $('mlsavsBtn'); if (ab) { ab.click(); } else if (window.__mlsAfterVisitSummary && typeof window.__mlsAfterVisitSummary.open === 'function') { window.__mlsAfterVisitSummary.open(); } else if (typeof window.toast === 'function') { window.toast('After-visit summary is not available on this build.', 'err'); } } catch (e) {} });
           });
           avsQuick.id = 'ez3flAvs';
           mkq('&#128221; Orders', 'See or edit the orders that ride along when you send the visit to Athena', function () {
@@ -22306,9 +22341,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     else renderHome();
   }
 
+  /* revwork-1.0.0 (b1169): the label named a PLACE ("Advanced visit
+     workspace"), and the owner read the closed form as an offer to replace the
+     screen he was on - then pressed it and lost the guided flow. The label now
+     names what the press DOES, and both forms say "below", because the review /
+     codes / outcome cards are an ADDITION under the flow and the flow never
+     goes anywhere. __mlsRevWork re-applies exactly these two strings after any
+     repaint this render did not own. */
   function advRowHtml() {
-    return '<div class="ez3-advrow"><button type="button" id="ez3Adv">' +
-           (S.advOpen ? '▴ Hide advanced visit workspace' : '🔧 Advanced visit workspace') + '</button></div>';
+    return '<div class="ez3-advrow"><button type="button" id="ez3Adv" title="The guided visit flow above always stays where it is. This shows or hides the review, codes and outcome cards underneath it.">' +
+           (S.advOpen ? '▴ Hide the review workspace below' : '▾ Show the review workspace below') + '</button></div>';
   }
   function focusAdvancedKeyboardTarget(attempt) {
     if (!S.advOpen) return;
@@ -23159,6 +23201,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       clickCanonicalControl('mlsDaDock', 'Dictation is still loading.');
     });
     on('ez3QPaste', function () {
+      /* revwork-1.0.0 (b1169): #ez3Transcript is CSS-hidden whenever the guided
+         flow lane owns the top (#mlsEz3Body.ez3fl-top-owns) - which is the
+         NORMAL doctor state - so this chip scrolled to a box nobody could see
+         and then focused it, indistinguishable from a broken control. Ask the
+         one revealer for the transcript that is actually on screen first; the
+         original engine path stays as the bounded fallback. */
+      var rw = window.__mlsRevWork;
+      if (rw && isFn(rw.revealTranscript) && rw.revealTranscript()) return;
       var transcript = $('ez3Transcript');
       if (!transcript) { toast('Open the transcript step before pasting.'); return; }
       try { transcript.scrollIntoView({ block: 'center', behavior: 'smooth' }); transcript.focus(); } catch (e) {}
@@ -61889,3 +61939,662 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   } catch (eTop) {}
 })();
 /* ===== end psr-1.0.0 ===================================================== */
+
+
+/* ===== revwork-1.0.0 begin ============================================== */
+/* =============================================================================
+ * revwork-1.0.0 (b1169)  --  THE REVIEW WORKSPACE, AND A FLOW THAT NEVER GOES
+ * -----------------------------------------------------------------------------
+ * OWNER, 2026-09-01: "the review the note section in the bottom needs a
+ * complete re work and make everything work there as the top part does a lot
+ * too so you need to make everything work together", and about the same screen
+ * "what happened here, how did the thing go away".
+ *
+ * TWO MEASURED FAULTS.
+ *
+ * 1. THE TOGGLE TOOK THE WHOLE GUIDED FLOW WITH IT. Pressing "Advanced visit
+ *    workspace" (#ez3Adv) left the doctor on a screen with the classic three
+ *    cards and NOTHING ELSE - no Up-now banner, no Pull today card, no SHOW
+ *    VISITS FOR, no patient card, no Start Recording - because #ez3Wrap came
+ *    back display:none. Pressing the same button again did NOT bring it back:
+ *    the label flipped to "Hide advanced visit workspace" and the wrap stayed
+ *    hidden. The engine's own handler writes no display anywhere (it only
+ *    toggles body.ez3adv and repaints), which is exactly why its second press
+ *    could not undo it - the button cannot un-write a style it never wrote.
+ *
+ *    So the rule stops being "find the writer" and becomes an INVARIANT owned
+ *    here: THE GUIDED FLOW IS NEVER HIDDEN. #mlsEz3, #mlsEz3Body and #ez3Wrap
+ *    have any inline display:none / visibility:hidden / hidden attribute
+ *    cleared on every signal that could have set one (the toggle's own click,
+ *    a body.ez3adv change, an engine repaint, a view change, and one cheap
+ *    visibility-gated pass), and the toggle is relabelled to say what it
+ *    truly does: it SHOWS or HIDES THE REVIEW WORKSPACE BELOW. The workspace
+ *    is an ADDITION under the flow, never a replacement for it.
+ *
+ *    Only INLINE hiding is cleared, and only while #visitView is itself on
+ *    screen. A class- or media-query-driven hide (the phone lane) is somebody
+ *    else's deliberate decision and is left alone.
+ *
+ * 2. "REVIEW THE NOTE" HAD NO CONTROLS. #mlsAtStep2 is a step banner the flow
+ *    injects into the app's own #noteCard, and that card arrives with an empty
+ *    state ("Your note will appear here. Capture a visit, then press Generate
+ *    Note") over seventeen natively-disabled buttons, while
+ *    `body.ez3adv #noteCard button[onclick*="generateNote"]` deliberately
+ *    hides its Generate and Regenerate. The step the doctor was told to work
+ *    in therefore had no live control on it at all.
+ *
+ *    #mlsRevWork is the real one, built directly under the step banner: the
+ *    note in an editable box, Generate/Regenerate, Copy, Save to history, Send
+ *    to Athena, the op-note prep entry, the after-visit summary, the codes
+ *    step, and one control back up to the transcript.
+ *
+ * NO SECOND COPY OF ANY STATE OR ANY ACTION. Every control here presses the
+ * SAME control the guided flow presses, by id:
+ *    Generate  -> #ez3flGen (the flow lane's own button) else #ez3Gen else
+ *                 #genBtn. The last two ARE generateTopNote()'s own ladder, so
+ *                 both surfaces enter one generator behind one evidence gate.
+ *    Send      -> #pushAllEmrBtn ONLY. That is pushEntireVisitToAthena, which
+ *                 is the reviewed unified sheet. This module declares no Athena
+ *                 action of its own, adds no destination and moves no gate:
+ *                 write_note and save_draft are still confirmed one at a time,
+ *                 and Sign & Save stays the doctor's own click inside athenaOne.
+ *    Save/Copy -> #saveNoteBtn / #copyEmrBtn, the app's own handlers and the
+ *                 app's own guards.
+ *    Op note   -> #ez3Prep2 / #ez3Prep, the engine's existing entries.
+ *    Summary   -> #mlsavsBtn / #avsBtn behind __mlsEnsureAfterVisitSummary.
+ *
+ * The note box is a MIRROR of #noteBox on the same contract the flow lane's
+ * #ez3flNote already uses: write through and dispatch `input`, read back only
+ * while the doctor is not typing here. #noteBox stays the one source of truth,
+ * so a note generated from either surface shows in both, and every widget that
+ * fills from a generated note (injection tracker, billing code maximizer,
+ * billing code) fills from the one generation either button starts.
+ *
+ * NOTHING HERE IS EVER `disabled`. gcx-1.0.0's lesson: a disabled control eats
+ * the click and explains nothing, which is the owner's "dead button". Every
+ * control stays pressable and answers with the reason when it cannot run.
+ *
+ * Reversible: window.__mlsRevWork.revert(). ASCII-only source.
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  var VERSION = 'revwork-1.0.0';
+  try {
+    var prior = window.__mlsRevWork;
+    if (prior && prior.installed === true && typeof prior.revert === 'function') prior.revert();
+  } catch (e0) {}
+
+  /* ---- the ids this module owns ---------------------------------------- */
+  var ID = {
+    root: 'mlsRevWork',
+    status: 'mlsRevStatus',
+    note: 'mlsRevNote',
+    gen: 'mlsRevGen',
+    copy: 'mlsRevCopy',
+    save: 'mlsRevSave',
+    send: 'mlsRevSend',
+    opnote: 'mlsRevOpNote',
+    avs: 'mlsRevAvs',
+    codes: 'mlsRevCodes',
+    capture: 'mlsRevCapture'
+  };
+  /* the three containers of the guided flow. None of them may ever carry an
+     inline hide while the visit view is on screen. */
+  var FLOW_IDS = ['mlsEz3', 'mlsEz3Body', 'ez3Wrap'];
+  /* the flow's own Generate, then generateTopNote()'s exact ladder */
+  var GEN_TARGETS = ['ez3flGen', 'ez3Gen', 'genBtn'];
+  /* the ONE Athena entry - the reviewed unified confirmation sheet */
+  var SEND_TARGET = 'pushAllEmrBtn';
+  /* the transcript surfaces, most-visible first */
+  var TX_TARGETS = ['ez3flTranscript', 'ez3Transcript', 'transcript'];
+
+  var _css = null, _iv = null, _deb = null, _bodyObs = null, _wrapObs = null;
+  var _wrapWatched = null, _noteObs = null, _noteWatched = null;
+  var _installed = false, _advWas = null;
+
+  function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function safe(fn, dflt) { try { return fn(); } catch (e) { return dflt; } }
+  function say(msg, kind) {
+    try { if (isFn(window.toast)) { window.toast(msg, kind || ''); return; } } catch (e) {}
+    try {
+      var f = window.__mlsPullRecFix;
+      if (f && isFn(f.toast)) f.toast(msg, kind || '');
+    } catch (e2) {}
+  }
+
+  /* =======================================================================
+   *  1. THE FLOW IS NEVER HIDDEN
+   * ===================================================================== */
+  /* Clears only an INLINE hide, and reports whether it had to. A class rule or
+     a media query is a deliberate decision by whoever wrote it; an inline
+     display:none on a container the doctor never asked to close is not. */
+  function clearHide(el) {
+    if (!el) return false;
+    var changed = false;
+    if (el.hasAttribute && el.hasAttribute('hidden')) {
+      safe(function () { el.removeAttribute('hidden'); });
+      changed = true;
+    }
+    var st = el.style;
+    if (st) {
+      var d = safe(function () { return st.getPropertyValue ? st.getPropertyValue('display') : st.display; }, '');
+      if (String(d || '').trim() === 'none') {
+        safe(function () { if (st.removeProperty) st.removeProperty('display'); else st.display = ''; });
+        changed = true;
+      }
+      var v = safe(function () { return st.getPropertyValue ? st.getPropertyValue('visibility') : st.visibility; }, '');
+      if (String(v || '').trim() === 'hidden') {
+        safe(function () { if (st.removeProperty) st.removeProperty('visibility'); else st.visibility = ''; });
+        changed = true;
+      }
+    }
+    return changed;
+  }
+  function visitViewOpen() {
+    var vv = $('visitView');
+    if (!vv) return false;
+    var d = safe(function () { return vv.style ? (vv.style.getPropertyValue ? vv.style.getPropertyValue('display') : vv.style.display) : ''; }, '');
+    return String(d || '').trim() !== 'none';
+  }
+  /* THE INVARIANT. Returns how many containers had to be rescued. */
+  function unhideFlow() {
+    if (!visitViewOpen()) return 0;
+    var n = 0;
+    for (var i = 0; i < FLOW_IDS.length; i++) { if (clearHide($(FLOW_IDS[i]))) n++; }
+    return n;
+  }
+
+  /* =======================================================================
+   *  2. AN HONEST TOGGLE
+   * ===================================================================== */
+  function advOpen() {
+    return safe(function () { return !!(document.body && document.body.classList.contains('ez3adv')); }, false);
+  }
+  /* The label the toggle must carry. The old copy ("Advanced visit workspace")
+     described a place; this describes what the press DOES, and the closed form
+     never reads as though the flow is what is about to be hidden. */
+  function advLabel(open) {
+    return open ? '\u25B4 Hide the review workspace below'
+                : '\u25BE Show the review workspace below';
+  }
+  function relabelAdv() {
+    var b = $('ez3Adv');
+    if (!b) return false;
+    var want = advLabel(advOpen());
+    if (b.textContent === want) return false;
+    safe(function () { b.textContent = want; });
+    safe(function () { b.title = 'The guided visit flow above always stays where it is. This shows or hides the review, codes and outcome cards underneath it.'; });
+    return true;
+  }
+  /* Opening from inside this module (the codes jump) must not scroll the page
+     out from under the doctor - the engine's own handler owns the scroll for a
+     deliberate press of the toggle itself. */
+  function openWorkspace() {
+    if (advOpen()) return false;
+    var b = $('ez3Adv');
+    if (b && isFn(b.click)) { safe(function () { b.click(); }); return true; }
+    safe(function () { document.body.classList.add('ez3adv'); });
+    return true;
+  }
+
+  /* =======================================================================
+   *  3. STATE - READ, NEVER STORED
+   * ===================================================================== */
+  function fieldText(id) { var el = $(id); return el ? String(el.value == null ? '' : el.value) : ''; }
+  function noteText() { return fieldText('noteBox'); }
+  function transcriptText() {
+    var t = fieldText('transcript').trim();
+    if (t) return t;
+    /* before the mirror settles the flow copy can be the only one with words */
+    return fieldText('ez3flTranscript').trim();
+  }
+  function readState() {
+    return { note: noteText().trim(), tx: transcriptText().trim() };
+  }
+  function statusFor(s) {
+    s = s || {};
+    if (s.note) {
+      return 'Note ready. Edit it here, then Save to history or Send to Athena. Sign & Save always stays your own click inside athenaOne.';
+    }
+    if (s.tx) return 'Transcript captured. Press Generate note and it appears here.';
+    return 'Nothing captured yet. Use Capture or paste the visit, then press Generate note.';
+  }
+  function genLabelFor(s) { return (s && s.note) ? 'Regenerate note' : 'Generate note'; }
+
+  /* =======================================================================
+   *  4. THE MIRROR  (#mlsRevNote <-> #noteBox, one source of truth)
+   * ===================================================================== */
+  /* _mirrored is the last value the two boxes AGREED on. Without it the mirror
+     is a loaded gun: a note generated into #noteBox that this panel has not
+     read back yet would be overwritten by the review box's stale (usually
+     empty) contents the first time the doctor pressed Save or Send. Only text
+     the doctor actually typed HERE - a value that differs from the last
+     agreement - is ever written upward. */
+  var _mirrored = '';
+  function pushNoteUp() {
+    var r = $(ID.note), n = $('noteBox');
+    if (!r || !n) return false;
+    var rv = String(r.value == null ? '' : r.value);
+    if (rv === _mirrored) return false;                 /* nothing typed here since the last sync */
+    if (String(n.value == null ? '' : n.value) === rv) { _mirrored = rv; return false; }
+    n.value = rv;
+    _mirrored = rv;
+    safe(function () { n.dispatchEvent(new Event('input', { bubbles: true })); });
+    return true;
+  }
+  function pullNoteDown() {
+    var r = $(ID.note), n = $('noteBox');
+    if (!r || !n) return false;
+    if (safe(function () { return document.activeElement === r; }, false)) return false;
+    var want = String(n.value == null ? '' : n.value);
+    if (String(r.value == null ? '' : r.value) === want) { _mirrored = want; return false; }
+    r.value = want;
+    _mirrored = want;
+    return true;
+  }
+
+  /* =======================================================================
+   *  5. THE ACTIONS - every one of them presses the app's own control
+   * ===================================================================== */
+  function inlineHidden(el) {
+    if (!el || !el.style) return false;
+    var d = safe(function () { return el.style.getPropertyValue ? el.style.getPropertyValue('display') : el.style.display; }, '');
+    return String(d || '').trim() === 'none';
+  }
+  function pressable(el) { return !!(el && !el.disabled && !inlineHidden(el) && isFn(el.click)); }
+  function pressFirst(ids) {
+    for (var i = 0; i < ids.length; i++) {
+      var el = $(ids[i]);
+      if (pressable(el)) { safe(function () { el.click(); }); return ids[i]; }
+    }
+    return '';
+  }
+  /* The one transcript revealer. Picks the box that is actually on screen,
+     rescues the flow first in case something hid it, and reports whether it
+     found one - so a caller can keep its own fallback. */
+  function revealTranscript() {
+    unhideFlow();
+    var el = null;
+    for (var i = 0; i < TX_TARGETS.length; i++) {
+      var c = $(TX_TARGETS[i]);
+      if (!c) continue;
+      if (inlineHidden(c)) continue;
+      var box = safe(function () { return c.getBoundingClientRect ? c.getBoundingClientRect() : null; }, null);
+      if (box && !(box.width > 0 && box.height > 0)) continue;
+      el = c; break;
+    }
+    if (!el) return false;
+    safe(function () { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+    safe(function () { el.focus(); });
+    return true;
+  }
+  function doGenerate() {
+    if (!transcriptText()) {
+      say('Capture, dictate or paste the visit first - then press Generate note.', 'err');
+      revealTranscript();
+      return '';
+    }
+    var hit = pressFirst(GEN_TARGETS);
+    if (!hit) say('Generate is not ready yet. Give the visit workspace a moment and press it again.', 'err');
+    return hit;
+  }
+  function doCopy() {
+    pushNoteUp();
+    if (!noteText().trim()) { say('There is no note to copy yet. Press Generate note first.', 'err'); return ''; }
+    var hit = pressFirst(['copyEmrBtn', 'copyBtn']);
+    if (hit) return hit;
+    if (isFn(window.copyForEMR)) { safe(function () { window.copyForEMR(); }); return 'copyForEMR'; }
+    say('Copy is not available on this build.', 'err');
+    return '';
+  }
+  function doSave() {
+    pushNoteUp();
+    if (!noteText().trim()) { say('There is no note to save yet. Press Generate note first.', 'err'); return ''; }
+    var hit = pressFirst(['saveNoteBtn']);
+    if (hit) return hit;
+    if (isFn(window.saveCurrentNote)) { safe(function () { window.saveCurrentNote(true); }); return 'saveCurrentNote'; }
+    say('Save to history is not available on this build.', 'err');
+    return '';
+  }
+  /* The ONLY Athena entry in this module. It opens the reviewed sheet and
+     stops - nothing is written until the doctor confirms there, section by
+     section, exactly as before. */
+  function doSend() {
+    pushNoteUp();
+    if (!noteText().trim()) { say('Generate the note first, then review it before sending.', 'err'); return ''; }
+    var send = $(SEND_TARGET);
+    if (!send) { say('The Athena review step is not on this build.', 'err'); return ''; }
+    if (inlineHidden(send)) {
+      say('Reviewing Athena actions is not part of your plan. Your note is saved in MLS - see plans on the MLS home page to upgrade.', 'err');
+      return '';
+    }
+    if (send.disabled) { say('The Athena review step is not ready yet. Save the note, then press this again.', 'err'); return ''; }
+    safe(function () { send.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
+    safe(function () { send.click(); });
+    return SEND_TARGET;
+  }
+  function doOpNote() {
+    var hit = pressFirst(['ez3Prep2', 'ez3Prep']);
+    if (hit) return hit;
+    say('Op-note prep needs a patient with uploaded op-note templates. Open the visit for that patient and try again.', 'err');
+    return '';
+  }
+  function doAvs() {
+    function run() {
+      var hit = pressFirst(['mlsavsBtn', 'avsBtn']);
+      if (hit) return;
+      var api = window.__mlsAfterVisitSummary;
+      if (api && isFn(api.open)) { safe(function () { api.open(); }); return; }
+      say('After-visit summary is not available on this build.', 'err');
+    }
+    var ensure = window.__mlsEnsureAfterVisitSummary;
+    if (!isFn(ensure)) { run(); return 'direct'; }
+    safe(function () {
+      var pending = ensure();
+      if (pending && isFn(pending.then)) pending.then(run, function () { say('After-visit summary is unavailable on this build.', 'err'); });
+      else run();
+    });
+    return 'ensured';
+  }
+  function doCodes() {
+    openWorkspace();
+    var target = $('mlsAtStep3') || $('emrCard');
+    if (!target) { say('The codes step is not on this build.', 'err'); return ''; }
+    safe(function () { target.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+    var tbl = $('emrTable');
+    if (tbl && inlineHidden(tbl)) {
+      say(noteText().trim()
+        ? 'The codes fill from the note. If they are still empty, press Regenerate note.'
+        : 'Generate the note first - the codes fill from it.');
+    }
+    return 'emrCard';
+  }
+  function doCapture() {
+    if (revealTranscript()) return 'transcript';
+    say('The transcript is still loading. Give it a moment and press this again.', 'err');
+    return '';
+  }
+
+  /* =======================================================================
+   *  6. THE PANEL
+   * ===================================================================== */
+  function styleCss() {
+    return [
+      /* the flow's containers can never be hidden by an attribute either */
+      '#mlsEz3[hidden],#mlsEz3Body[hidden],#ez3Wrap[hidden]{display:block!important}',
+      /* the primary note actions are the doctor last-step row - a stylesheet
+         may not take the whole row away while the workspace is open. A per-
+         control inline hide (the plan gate) is untouched and still wins. */
+      '@media screen{body.ez3adv #noteCard .note-actions:not(#moreTools){display:flex!important}}',
+      '#mlsRevWork{margin:12px 0 16px;padding:14px 15px;border:1px solid #CFE0D2;border-radius:14px;background:#F4F8F4}',
+      '#mlsRevWork .rw-h{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 8px}',
+      '#mlsRevWork .rw-h b{font-size:15px;color:#204034}',
+      '#mlsRevWork .rw-h span{font-size:12px;color:#55605A}',
+      '#mlsRevStatus{display:block;font-size:12.5px;line-height:1.55;color:#55605A;margin:0 0 10px}',
+      '#mlsRevNote{display:block;width:100%;min-height:230px;box-sizing:border-box;resize:vertical;',
+        'background:#fff;color:#1A211C;border:1px solid #CFE0D2;border-radius:10px;padding:12px;',
+        'font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
+      '#mlsRevNote:focus{outline:none;border-color:#78B99D;box-shadow:0 0 0 3px rgba(46,106,75,.14)}',
+      '#mlsRevWork .rw-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}',
+      '#mlsRevWork .rw-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;',
+        'border:1px solid #D9D6CD;background:#fff;color:#1A211C;border-radius:11px;padding:10px 15px;',
+        'font:600 13.5px system-ui,-apple-system,"Segoe UI",sans-serif}',
+      '#mlsRevWork .rw-btn:hover{background:#F4F2EC}',
+      '#mlsRevWork .rw-btn.pri{background:#2E6A4B;border-color:#2E6A4B;color:#fff;font-weight:700}',
+      '#mlsRevWork .rw-btn.pri:hover{background:#204034;border-color:#204034}',
+      '#mlsRevWork .rw-btn.send{background:#204034;border-color:#204034;color:#fff;font-weight:700}',
+      '#mlsRevWork .rw-btn.send:hover{background:#2E6A4B;border-color:#2E6A4B}',
+      '#mlsRevWork .rw-foot{font-size:11.5px;color:#68756E;margin:10px 0 0;line-height:1.55}'
+    ].join('');
+  }
+  function ensureCss() {
+    if (_css && _css.parentNode) return;
+    _css = safe(function () {
+      var el = document.createElement('style');
+      el.id = 'mlsRevWorkCss';
+      el.textContent = styleCss();
+      document.head.appendChild(el);
+      return el;
+    }, null);
+  }
+  function mkBtn(id, label, cls, title, fn) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.id = id;
+    b.className = 'rw-btn' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    if (title) b.title = title;
+    b.addEventListener('click', function () { safe(fn); });
+    return b;
+  }
+  /* Built under the step banner inside the app's own #noteCard, so it is part
+     of "Review the note" rather than a fourth place to look. */
+  function buildPanel() {
+    var card = $('noteCard');
+    if (!card) return null;
+    var have = $(ID.root);
+    if (have && have.parentNode === card) return have;
+    if (have && have.parentNode) safe(function () { have.parentNode.removeChild(have); });
+
+    var root = document.createElement('div');
+    root.id = ID.root;
+
+    var head = document.createElement('div');
+    head.className = 'rw-h';
+    var hb = document.createElement('b');
+    hb.textContent = 'Review the note';
+    var hs = document.createElement('span');
+    hs.textContent = 'The same visit, the same note, the same Athena step as the flow above.';
+    head.appendChild(hb); head.appendChild(hs);
+    root.appendChild(head);
+
+    var status = document.createElement('span');
+    status.id = ID.status;
+    status.setAttribute('role', 'status');
+    status.textContent = statusFor(readState());
+    root.appendChild(status);
+
+    var ta = document.createElement('textarea');
+    _mirrored = '';                                     /* a fresh box agrees with nothing yet */
+    ta.id = ID.note;
+    ta.setAttribute('aria-label', 'Generated note - review and edit');
+    ta.placeholder = 'The generated note appears here. Edit anything before you save or send.';
+    ta.addEventListener('input', function () { pushNoteUp(); paint(); });
+    root.appendChild(ta);
+
+    var row1 = document.createElement('div');
+    row1.className = 'rw-row';
+    row1.appendChild(mkBtn(ID.gen, genLabelFor(readState()), 'pri',
+      'Runs the same generator the guided flow runs, on the same transcript.', doGenerate));
+    row1.appendChild(mkBtn(ID.copy, 'Copy note text', '',
+      'Copies only the clinical note text.', doCopy));
+    row1.appendChild(mkBtn(ID.save, 'Save to history', '',
+      'Saves this note into the patient history inside MLS.', doSave));
+    row1.appendChild(mkBtn(ID.send, 'Send to Athena', 'send',
+      'Opens the Athena review sheet. Nothing is written until you confirm there, and Sign & Save stays your own click inside athenaOne.', doSend));
+    root.appendChild(row1);
+
+    var row2 = document.createElement('div');
+    row2.className = 'rw-row';
+    row2.appendChild(mkBtn(ID.capture, 'Capture or paste the visit', '',
+      'Takes you to the transcript box the flow above is using.', doCapture));
+    row2.appendChild(mkBtn(ID.codes, 'Codes & billing', '',
+      'Jumps to step 3 - the E/M, CPT and ICD fields Athena receives.', doCodes));
+    row2.appendChild(mkBtn(ID.avs, 'After-visit summary', '',
+      'Drafts the patient-facing summary for this visit.', doAvs));
+    row2.appendChild(mkBtn(ID.opnote, 'Op note - prep & draft', '',
+      'Drafts the operative / procedure note from your uploaded templates.', doOpNote));
+    root.appendChild(row2);
+
+    var foot = document.createElement('p');
+    foot.className = 'rw-foot';
+    foot.textContent = 'This workspace edits the one note. Anything typed here is the same note the flow above shows, ' +
+      'and Send opens the same reviewed Athena sheet - one confirmation per section, nothing auto-chains.';
+    root.appendChild(foot);
+
+    var anchor = $('mlsAtStep2');
+    if (anchor && anchor.parentNode === card && anchor.nextSibling) card.insertBefore(root, anchor.nextSibling);
+    else if (anchor && anchor.parentNode === card) card.appendChild(root);
+    else card.insertBefore(root, card.firstChild || null);
+    return root;
+  }
+  function paint() {
+    var root = $(ID.root);
+    if (!root) return false;
+    var s = readState();
+    var st = $(ID.status);
+    var want = statusFor(s);
+    if (st && st.textContent !== want) st.textContent = want;
+    var g = $(ID.gen);
+    var gl = genLabelFor(s);
+    if (g && g.textContent !== gl) g.textContent = gl;
+    return true;
+  }
+  function syncPanel() {
+    buildPanel();
+    pullNoteDown();
+    return paint();
+  }
+
+  /* =======================================================================
+   *  7. RECONCILE - one function, every signal
+   * ===================================================================== */
+  function reconcile() {
+    unhideFlow();
+    relabelAdv();
+    syncPanel();
+    watchWrap();
+    watchNote();
+  }
+  function schedule() {
+    if (_deb) return;
+    _deb = setTimeout(function () { _deb = null; safe(reconcile); }, 90);
+  }
+  function bump() {
+    /* the engine repaints on its own cadence after a toggle; re-check across
+       that window rather than guessing one delay */
+    safe(reconcile);
+    setTimeout(function () { safe(reconcile); }, 140);
+    setTimeout(function () { safe(reconcile); }, 480);
+    setTimeout(function () { safe(reconcile); }, 950);
+  }
+  function onDocClick(ev) {
+    var t = ev && ev.target;
+    if (!t || !t.closest) return;
+    var hit = safe(function () { return t.closest('#ez3Adv,.ez3fl-openws,#ez3flReview'); }, null);
+    if (hit) bump();
+  }
+  function watchWrap() {
+    if (!window.MutationObserver) return;
+    var w = $('ez3Wrap');
+    if (!w || w === _wrapWatched) return;
+    safe(function () { if (_wrapObs) _wrapObs.disconnect(); });
+    _wrapWatched = w;
+    _wrapObs = safe(function () {
+      var o = new MutationObserver(function () { schedule(); });
+      o.observe(w, { childList: true, attributes: true, attributeFilter: ['style', 'hidden', 'class'] });
+      return o;
+    }, null);
+  }
+  function watchNote() {
+    if (!window.MutationObserver) return;
+    var n = $('noteBox');
+    if (!n || n === _noteWatched) return;
+    safe(function () { if (_noteObs) _noteObs.disconnect(); });
+    _noteWatched = n;
+    /* showNote() writes .value and flips style.display without an input event,
+       so the style flip is the honest signal that a note arrived. */
+    _noteObs = safe(function () {
+      var o = new MutationObserver(function () { schedule(); });
+      o.observe(n, { attributes: true, attributeFilter: ['style'] });
+      return o;
+    }, null);
+  }
+  function boot() {
+    if (_installed) return;
+    _installed = true;
+    ensureCss();
+    safe(function () { document.addEventListener('click', onDocClick, true); });
+    safe(function () { window.addEventListener('mls:view-changed', schedule); });
+    safe(function () { window.addEventListener('mls:generation-started', schedule); });
+    safe(function () { window.addEventListener('mls:generation-settled', bump); });
+    safe(function () { window.addEventListener('mls:review-step', bump); });
+    safe(function () {
+      if (!window.MutationObserver || !document.body) return;
+      /* body.classList changes constantly in this app (voice tools, ez3sec0,
+         top-owns, review-step). Only the token this module is about is a
+         reason to do work. */
+      _advWas = advOpen();
+      _bodyObs = new MutationObserver(function () {
+        var now = advOpen();
+        if (now === _advWas) return;
+        _advWas = now;
+        bump();
+      });
+      _bodyObs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    });
+    /* one cheap visibility-gated pass. The mirror and the label both survive a
+       repaint this module did not hear about, and a flow container that some
+       future module hides inline is rescued within one beat. */
+    _iv = safe(function () {
+      return setInterval(function () {
+        try {
+          if (document.hidden) return;
+          if (!visitViewOpen()) return;
+          reconcile();
+        } catch (e) {}
+      }, 3000);
+    }, null);
+    bump();
+  }
+
+  window.__mlsRevWork = {
+    installed: true,
+    version: VERSION,
+    IDS: ID,
+    FLOW_IDS: FLOW_IDS,
+    GEN_TARGETS: GEN_TARGETS,
+    SEND_TARGET: SEND_TARGET,
+    TX_TARGETS: TX_TARGETS,
+    advLabel: advLabel,
+    statusFor: statusFor,
+    genLabelFor: genLabelFor,
+    clearHide: clearHide,
+    unhideFlow: unhideFlow,
+    revealTranscript: revealTranscript,
+    build: buildPanel,
+    sync: syncPanel,
+    reconcile: reconcile,
+    generate: doGenerate,
+    copy: doCopy,
+    save: doSave,
+    send: doSend,
+    codes: doCodes,
+    summary: doAvs,
+    opNote: doOpNote,
+    capture: doCapture,
+    revert: function () {
+      safe(function () { if (_iv) clearInterval(_iv); });
+      safe(function () { if (_deb) clearTimeout(_deb); });
+      safe(function () { if (_bodyObs) _bodyObs.disconnect(); });
+      safe(function () { if (_wrapObs) _wrapObs.disconnect(); });
+      safe(function () { if (_noteObs) _noteObs.disconnect(); });
+      safe(function () { document.removeEventListener('click', onDocClick, true); });
+      safe(function () { window.removeEventListener('mls:view-changed', schedule); });
+      safe(function () { window.removeEventListener('mls:generation-started', schedule); });
+      safe(function () { window.removeEventListener('mls:generation-settled', bump); });
+      safe(function () { window.removeEventListener('mls:review-step', bump); });
+      safe(function () { if (_css && _css.parentNode) _css.parentNode.removeChild(_css); });
+      safe(function () { var r = document.getElementById(ID.root); if (r && r.parentNode) r.parentNode.removeChild(r); });
+      _iv = _deb = _bodyObs = _wrapObs = _noteObs = null;
+      _wrapWatched = _noteWatched = null;
+      _installed = false;
+      try { window.__mlsRevWork.installed = false; } catch (e) {}
+      return true;
+    }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+})();
+/* ===== revwork-1.0.0 end ================================================ */

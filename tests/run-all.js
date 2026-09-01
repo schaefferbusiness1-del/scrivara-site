@@ -8,6 +8,7 @@ const { spawnSync } = require('child_process');
    though their historical filenames predate the .test.js convention. Keep
    the denominator explicit so live/manual proof scripts remain excluded. */
 const AUTOMATED_PROOF_FILES = new Set([
+  'review-workspace-proof.js',
   'pull-resume-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
@@ -1243,6 +1244,7 @@ const tests = [
   'fill-ux-clarity.test.js',
   'write-auto-chain.test.js',
   'month-report-surface.test.js',
+  'review-workspace-proof.js',
   'pull-resume-proof.js',
   'day-writeall.test.js',
   'shared-notes.test.js',

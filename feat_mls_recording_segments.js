@@ -172,6 +172,34 @@
   /* We do not replace the base recorder. We mark a boundary at segment start
    * (current #transcript length), let the base startCapture/stopCapture run, and
    * on stop we slice the newly-appended text as this segment's content. */
+  /* revwork-1.0.0 (b1169): CONSENT PENDING IS NOT A FAILURE.
+   *
+   * The base startCapture() returns false SYNCHRONOUSLY for two completely
+   * different outcomes: a real refusal, and "the consent dialog has just opened
+   * and this same entry will re-run when the doctor confirms" (ScribeFlow's
+   * consent gate: it calls _mlsRequestEncounterConsent('recording').then(...)
+   * and returns false immediately). This function collapsed both into
+   * `armed = null; return null`, and its caller in the visit lane turned that
+   * null into the red toast "The recorder could not start. Your existing
+   * transcript is safe." - painted at the exact moment the consent dialog
+   * appeared, so the app told the doctor it had failed while asking him to
+   * continue. It also left the FIRST span of the visit unarmed: consent
+   * resolved, the base recorder started, and the segment list silently missed
+   * segment one for the rest of the encounter.
+   *
+   * Ask the gate BEFORE calling startCapture, so the two outcomes are never
+   * confused again. When consent is pending this keeps the span armed, returns
+   * the CONSENT_PENDING sentinel (truthy, so no caller can read it as failure),
+   * and starts the recorder itself once the doctor confirms - which is also the
+   * only place the first segment can be armed correctly. A real decline, a real
+   * dialog failure, or a real recorder failure still disarms and still returns
+   * null, so the fail-closed refusal is unchanged. */
+  var CONSENT_PENDING = "consent-pending";
+  function consentPending() {
+    return safe(function () {
+      return isFn(window._mlsHasEncounterConsent) && !window._mlsHasEncounterConsent();
+    }, false);
+  }
   function startSegment(kind) {
     var p = activePt();
     armed = {
@@ -186,6 +214,28 @@
     /* start the base recorder if not already capturing */
     if (!isCapturing()) {
       if (!isFn(window.startCapture)) { armed = null; render(); return null; }
+      if (consentPending() && isFn(window._mlsRequestEncounterConsent)) {
+        var pendingId = armed.id;
+        var disarmPending = function () {
+          if (armed && armed.id === pendingId) { armed = null; render(); }
+        };
+        render();
+        var asked = safe(function () {
+          return Promise.resolve(window._mlsRequestEncounterConsent("recording")).then(function (granted) {
+            if (!granted) { disarmPending(); return; }          /* declined, or fenced out */
+            if (!armed || armed.id !== pendingId) return;        /* superseded meanwhile */
+            /* the span starts NOW, not when the dialog opened */
+            armed.boundaryLen = transcriptVal().length;
+            armed.startedAt = nowMs();
+            if (isCapturing()) { render(); return; }
+            var resumed = safe(function () { return window.startCapture(); }, false);
+            if (resumed === false && !isCapturing()) { disarmPending(); return; }
+            render();
+          }, disarmPending);
+        }, null);
+        if (!asked) { armed = null; render(); return null; }
+        return CONSENT_PENDING;
+      }
       var began = safe(function () { return window.startCapture(); }, false);
       if (began === false || !isCapturing()) { armed = null; render(); return null; }
     }
@@ -533,6 +583,11 @@
     _sameChart: sameChart,
     _buildCombined: buildCombined,
     startSegment: startSegment,
+    /* revwork-1.0.0 (b1169): the sentinel startSegment answers with while the
+       consent dialog is open. Truthy on purpose - a caller that only checks
+       falsiness must NOT read it as a failure - and named here so no caller has
+       to hard-code the string. */
+    CONSENT_PENDING: CONSENT_PENDING,
     stopSegment: stopSegment,
     isArmed: function () { return !!armed; },
     captureCurrentAs: captureCurrentAs,
