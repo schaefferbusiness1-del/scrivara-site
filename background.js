@@ -4695,6 +4695,25 @@ function mlsAthenaContinueFn() {
   try {
     var body = String((document.body && document.body.innerText) || '').slice(0, 12000);
     if (!/unable to complete|could not complete|session (has )?(expired|timed)|please try again/i.test(body)) return { seen: false };
+    /* contfix-1.0.0 (3.0.100, measured live 2026-09-01): the "We were unable
+       to complete the requested action" page is athena's CSRF retry
+       interstitial - its Continue re-issues the SAME read-only navigation
+       with a fresh token. This handler used to only REPORT it
+       (manualActionRequired), so every goHome/gotoDate round re-detected the
+       page and did nothing; a month pull burned whole days until a human
+       clicked Continue (~10 wedges in one pull, each cured by exactly that
+       click). Now the handler presses athena's own Continue - ONLY on the
+       exact retry page, ONLY the exact Continue control, and NEVER on a page
+       carrying sign/order/billing vocabulary. Session-expired variants keep
+       the manual path: a real sign-out is the owner's click, always. */
+    var retryPage = /unable to complete the requested action/i.test(body);
+    if (retryPage && !/sign\s*&?\s*save|place order|billing|payment|prescri/i.test(body)) {
+      var els = document.querySelectorAll('input[type=submit],input[type=button],button,a');
+      for (var i = 0; i < els.length; i++) {
+        var v = String((els[i].value || els[i].textContent || '')).trim();
+        if (/^continue$/i.test(v)) { try { els[i].click(); return { seen: true, clicked: true, via: 'contfix' }; } catch (eClk) { break; } }
+      }
+    }
     return { seen: true, clicked: false, manualActionRequired: true };
   } catch (e) { return { seen: false, error: String((e && e.message) || e).slice(0, 80) }; }
 }

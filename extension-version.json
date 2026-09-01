@@ -1,5 +1,5 @@
 {
-  "version": "3.0.99",
+  "version": "3.0.100",
   "minChrome": 116,
-  "notes": "v3.0.99 - Write reliability for every patient: a date of birth stored the international way (2006-03-24) is no longer misread as a different person; a patient whose name renders with an apostrophe, hyphen or squeezed spelling is still found on their exact appointment row; and a patient who is already CHECKED IN no longer blocks the write chain. Everything from v3.0.98 remains. Requires Chrome 116+."
+  "notes": "v3.0.100 - Reliability: when athenaOne shows its own unable-to-complete Continue page during a schedule pull, MLS Assist now presses that Continue itself (only on that exact page, never anywhere near signing or orders), so month and year pulls keep moving instead of waiting for a person. Everything from v3.0.99 remains. Requires Chrome 116+."
 }
