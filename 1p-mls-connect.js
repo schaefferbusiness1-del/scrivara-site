@@ -41560,6 +41560,506 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 })();
 
 /* ===== end feat_days_worked ===== */
+
+/* ===== mrpt-1.0.0 - MONTH REPORT (per provider) =============================
+ * Owner ask 2026-09-01 ("the monthly thing"): for one month, per provider,
+ * how many days they have appointments and how many appointments - and an
+ * HONEST statement of where each number came from, plus an honest empty state
+ * naming the exact import that is missing.
+ *
+ * WHAT THIS IS NOT. It does not read athenaOne and it never invents a number.
+ * Three measured facts fix the shape of this card:
+ *
+ *  1. THE PROVIDER CHIPS ARE NOT A LIVE MONTH READ. The counted chips on the
+ *     calendar ("Default schedule 389", "Matthew Schaeffer, MD 848", ...) are
+ *     painted by 1p-feat_task3_frontsync.js from Cal._provIdx, which is built
+ *     in Cal.normalize() by walking `Cal._full || window._calAppts` - the
+ *     STORED appointment rows. There is no separate month-view athena read to
+ *     capture, so this card derives from those same rows directly, and adds no
+ *     duplicate copy of them.
+ *     It reads the RAW rows rather than Cal._provIdx on purpose: that index
+ *     skips every appointment-census-owned day (`censusOwnedInPass`), which
+ *     would silently under-count a month.
+ *
+ *  2. A ROW HAS A PROVIDER ONLY IF THE IMPORT COULD PROVE ONE.
+ *     1p-feat_mls_schedimport_exact.js stamps `provider` from the scrape row,
+ *     and fills the requested clinician's name onto a columnless grid ONLY for
+ *     a provider-SCOPED pull (pa-1.0.0). A default "Your athenaOne view" day
+ *     pull is all-scope over a one-column grid, so those rows are stored with
+ *     provider "" - honestly blank, never guessed. This card therefore reports
+ *     "No provider recorded" as its own line instead of folding it into a
+ *     clinician's total.
+ *
+ *  3. AN APPOINTMENT IS A BOOKED SLOT, NOT A COMPLETED VISIT. Every stored row
+ *     carries status "booked" because the extension's schedule read strips
+ *     "arrived / checked in / checked out" as grid noise before a row is built
+ *     (background.js STOP + reason-scrub lists; see the dnpri-1.0.0 note in
+ *     1p-feat_mls_schedimport_exact.js). So the column is "Days with
+ *     appointments", and the card says out loud that it is not proof of a day
+ *     worked.
+ *
+ * THE CAPTURE. Opening the card writes ONE account-scoped, month-keyed,
+ * PHI-FREE record: provider name + ISO dates + integer counts, nothing else -
+ * no patient name, DOB, MRN, reason or id ever reaches it. Its only job is to
+ * be an AS-OF receipt, so a later dedupe/retirement pass in the calendar
+ * cannot silently rewrite what the month looked like when it was read. The
+ * live figures always win in the table; the stored receipt is shown beside
+ * them only when it disagrees.
+ *
+ * Additive, read-only toward Athena and toward the backend. Never dispatches
+ * mls:menu-staff-prep-request - Staff Prep keeps its single Menu owner; this
+ * card only opens the real Menu and prints the exact steps.
+ * Revert: window.__mlsMonthReport.revert()
+ * ========================================================================= */
+(function () {
+  "use strict";
+  if (window.__mlsMonthReport && window.__mlsMonthReport.installed) return;
+
+  var VERSION = 'mrpt-1.0.0';
+  var STORE_SUFFIX = 'mlsMonthReportV1';
+  var MAX_MONTHS = 24;
+  /* same credential token set _calProvKey uses in the shell, so a provider key
+     built here agrees with the one the calendar filter builds. */
+  var CRED = ['md', 'do', 'pa', 'pac', 'pa-c', 'np', 'crna', 'aprn', 'dpm', 'dds', 'dmd', 'crnp', 'dr'];
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function intOf(v) { var n = Number(v); return (isFinite(n) && n >= 0) ? Math.floor(n) : 0; }
+
+  function provKey(v) {
+    return String(v == null ? '' : v).toLowerCase()
+      .replace(/[_,.\/]+/g, ' ').replace(/[^a-z' -]/g, ' ')
+      .split(/\s+/).filter(function (t) { return t && CRED.indexOf(t) < 0; })
+      .sort().join(' ');
+  }
+  function rowDate(a) {
+    return String((a && (a.appt_date || a.day_local || a.date || String((a && a.start_at) || '').slice(0, 10))) || '').slice(0, 10);
+  }
+  function rowProvider(a) {
+    return String((a && (a.provider || a.provider_name || a.providerName || a.doctor_name)) || '').trim();
+  }
+  function isoMonth(v) { var s = String(v == null ? '' : v).slice(0, 7); return /^\d{4}-(?:0[1-9]|1[0-2])$/.test(s) ? s : ''; }
+  function isoDay(v) { var s = String(v == null ? '' : v).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; }
+
+  /* ---------------------------------------------------------------- compute
+   * PURE. Given the month, the appointment rows and a roster of known provider
+   * names, return exactly what can be proved from those rows. Never reads the
+   * DOM, never writes anything, never touches the network. */
+  function compute(opts) {
+    opts = opts || {};
+    var month = isoMonth(opts.month);
+    var rows = Array.isArray(opts.rows) ? opts.rows : [];
+    var roster = Array.isArray(opts.roster) ? opts.roster : [];
+    var out = {
+      version: VERSION,
+      month: month,
+      generatedAt: intOf(opts.now),
+      providers: [],
+      unattributed: { days: 0, appointments: 0, dates: [] },
+      notImported: [],
+      totals: { days: 0, appointments: 0 },
+      provenance: {
+        source: 'imported-schedule',
+        rowsSeen: rows.length,
+        monthRows: 0,
+        attributedRows: 0,
+        unattributedRows: 0,
+        duplicateRowsIgnored: 0,
+        undatedRowsIgnored: 0,
+        rosterCount: roster.length,
+        reason: ''
+      }
+    };
+    if (!month) { out.provenance.reason = 'no-month'; return out; }
+
+    var byKey = {}, seenId = {}, monthDates = {}, unattrDates = {};
+    function bump(bucket, dates, day) {
+      bucket.appointments++;
+      if (!dates[day]) { dates[day] = 1; bucket.dates.push(day); }
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i]; if (!a) continue;
+      var day = isoDay(rowDate(a));
+      if (!day) { out.provenance.undatedRowsIgnored++; continue; }
+      if (day.slice(0, 7) !== month) continue;
+      var id = String((a.id == null) ? '' : a.id);
+      if (id) {
+        if (seenId[id]) { out.provenance.duplicateRowsIgnored++; continue; }
+        seenId[id] = 1;
+      }
+      out.provenance.monthRows++;
+      monthDates[day] = 1;
+      var name = rowProvider(a), key = provKey(name);
+      if (!name || !key) {
+        out.provenance.unattributedRows++;
+        bump(out.unattributed, unattrDates, day);
+        continue;
+      }
+      out.provenance.attributedRows++;
+      if (!byKey[key]) byKey[key] = { name: name, key: key, days: 0, appointments: 0, dates: [], _seen: {} };
+      bump(byKey[key], byKey[key]._seen, day);
+    }
+
+    var k;
+    for (k in byKey) {
+      if (!Object.prototype.hasOwnProperty.call(byKey, k)) continue;
+      var p = byKey[k];
+      p.dates.sort();
+      p.days = p.dates.length;
+      p.avgPerDay = p.days ? Math.round((p.appointments / p.days) * 10) / 10 : 0;
+      delete p._seen;
+      out.providers.push(p);
+    }
+    out.providers.sort(function (x, y) {
+      return (y.days - x.days) || (y.appointments - x.appointments) || String(x.name).localeCompare(String(y.name));
+    });
+    out.unattributed.dates.sort();
+    out.unattributed.days = out.unattributed.dates.length;
+
+    var missing = {}, order = [];
+    for (var r = 0; r < roster.length; r++) {
+      var rn = String(roster[r] == null ? '' : roster[r]).trim();
+      var rk = provKey(rn);
+      if (!rn || !rk || byKey[rk] || missing[rk]) continue;
+      missing[rk] = 1; order.push(rn);
+    }
+    order.sort(function (x, y) { return String(x).localeCompare(String(y)); });
+    out.notImported = order;
+
+    var dayCount = 0, d;
+    for (d in monthDates) if (Object.prototype.hasOwnProperty.call(monthDates, d)) dayCount++;
+    out.totals.days = dayCount;
+    out.totals.appointments = out.provenance.monthRows;
+    if (!out.provenance.monthRows) out.provenance.reason = 'nothing-imported-for-month';
+    return out;
+  }
+
+  /* --------------------------------------------------------------- sanitize
+   * The ONLY shape that may be persisted. Constructed field by field from
+   * primitives, so no row object, patient field or extra key can travel with
+   * it even if compute() were later widened. */
+  function sanitize(report) {
+    report = report || {};
+    var out = {
+      month: isoMonth(report.month),
+      at: intOf(report.generatedAt),
+      providers: [],
+      unattributed: { days: 0, appointments: 0, dates: [] },
+      totals: { days: intOf(report.totals && report.totals.days), appointments: intOf(report.totals && report.totals.appointments) }
+    };
+    var src = Array.isArray(report.providers) ? report.providers : [];
+    for (var i = 0; i < src.length; i++) {
+      var p = src[i] || {};
+      var name = String(p.name == null ? '' : p.name).trim().slice(0, 80);
+      if (!name) continue;
+      out.providers.push({
+        name: name,
+        days: intOf(p.days),
+        appointments: intOf(p.appointments),
+        dates: isoDays(p.dates)
+      });
+    }
+    var u = report.unattributed || {};
+    out.unattributed.days = intOf(u.days);
+    out.unattributed.appointments = intOf(u.appointments);
+    out.unattributed.dates = isoDays(u.dates);
+    return out;
+  }
+  function isoDays(list) {
+    var out = [], seen = {};
+    list = Array.isArray(list) ? list : [];
+    for (var i = 0; i < list.length && out.length < 40; i++) {
+      var d = isoDay(list[i]);
+      if (!d || seen[d]) continue;
+      seen[d] = 1; out.push(d);
+    }
+    out.sort();
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ store
+   * Account-scoped through uns(). Before a session is owned uns() answers a
+   * device-scope key, so nothing is written until unsResolved() is true. */
+  function storeKey() {
+    return safe(function () {
+      if (typeof window.unsResolved === 'function' && !window.unsResolved()) return '';
+      return (typeof window.uns === 'function') ? String(window.uns(STORE_SUFFIX) || '') : '';
+    }, '');
+  }
+  function readStore() {
+    var k = storeKey(); if (!k) return { v: 1, months: {} };
+    var raw = safe(function () { return localStorage.getItem(k); }, null);
+    var parsed = raw ? safe(function () { return JSON.parse(raw); }, null) : null;
+    if (!parsed || parsed.v !== 1 || !parsed.months || typeof parsed.months !== 'object' || Array.isArray(parsed.months)) return { v: 1, months: {} };
+    return parsed;
+  }
+  function capture(report) {
+    var rec = sanitize(report);
+    if (!rec.month) return { written: false, reason: 'no-month', record: rec };
+    /* A month with nothing imported has nothing to be an as-of receipt FOR, and
+       a stored row of zeros is the exact shape this card exists to avoid ever
+       showing. Browsing back through empty months writes nothing. */
+    if (!rec.providers.length && !rec.unattributed.appointments) return { written: false, reason: 'nothing-to-capture', record: rec };
+    var k = storeKey();
+    if (!k) return { written: false, reason: 'no-account-scope', record: rec };
+    var store = readStore();
+    store.months[rec.month] = rec;
+    var keys = Object.keys(store.months).sort();
+    while (keys.length > MAX_MONTHS) delete store.months[keys.shift()];
+    var ok = safe(function () { localStorage.setItem(k, JSON.stringify(store)); return true; }, false);
+    return { written: !!ok, reason: ok ? 'captured' : 'storage-refused', record: rec };
+  }
+  function storedFor(month) {
+    var m = isoMonth(month); if (!m) return null;
+    var store = readStore();
+    var rec = store.months[m];
+    return (rec && typeof rec === 'object') ? rec : null;
+  }
+
+  /* ------------------------------------------------------------- live input */
+  function liveRows() {
+    return safe(function () {
+      var cal = window.MLSCal;
+      var full = cal && cal._full;
+      if (Array.isArray(full) && full.length) return full;
+      return Array.isArray(window._calAppts) ? window._calAppts : [];
+    }, []) || [];
+  }
+  function liveRoster() {
+    var names = [], seen = {};
+    function add(v) {
+      var n = String(v == null ? '' : v).trim();
+      if (!n || /^provider\s*#?\s*\d+$/i.test(n)) return;
+      var k = provKey(n); if (!k || seen[k]) return;
+      seen[k] = 1; names.push(n);
+    }
+    safe(function () {
+      var rp = window.__mlsProviderRoster;
+      if (rp && typeof rp.providers === 'function') (rp.providers() || []).forEach(add);
+    });
+    safe(function () { (window._calProviders || []).forEach(function (p) { add(p && (p.name || p.displayName || p.label)); }); });
+    safe(function () { (window._calApptProviders || []).forEach(function (p) { add(p && (p.label || p.provider_key)); }); });
+    return names;
+  }
+  function report(month) {
+    return compute({ month: month, rows: liveRows(), roster: liveRoster(), now: Date.now() });
+  }
+
+  /* -------------------------------------------------------------------- UI */
+  function monthLabel(m) {
+    return safe(function () { return new Date(m + '-01T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }, m) || m;
+  }
+  function dayLabel(ms) {
+    if (!ms) return '';
+    return safe(function () { return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }, '') || '';
+  }
+  function monthOptions() {
+    var months = {}, i;
+    var rows = liveRows();
+    for (i = 0; i < rows.length; i++) {
+      var m = isoMonth(rowDate(rows[i]));
+      if (m) months[m] = 1;
+    }
+    var now = new Date();
+    for (i = 0; i < 13; i++) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months[d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)] = 1;
+    }
+    return Object.keys(months).sort().reverse().slice(0, MAX_MONTHS);
+  }
+  function defaultMonth() {
+    var opts = monthOptions();
+    var rows = liveRows(), best = '';
+    for (var i = 0; i < rows.length; i++) {
+      var m = isoMonth(rowDate(rows[i]));
+      if (m && m > best) best = m;
+    }
+    return best || opts[0] || '';
+  }
+
+  var RECIPE_HEAD = 'To import a month for one provider:';
+  function recipeHtml(name, month) {
+    var who = name ? esc(name) : 'that provider';
+    return '<ol style="margin:6px 0 0 18px;padding:0;font-size:12.5px;color:#5b6b7c;line-height:1.55">' +
+      '<li>In athenaOne, open that clinician\'s OWN Day schedule. MLS reads the schedule athenaOne is showing; ' +
+      'a pull scoped to ' + who + ' over somebody else\'s calendar is refused (provider&#8209;not&#8209;on&#8209;calendar) rather than saved as empty.</li>' +
+      '<li>In MLS: <b>Menu &rarr; Staff prep &amp; Athena month pull</b>.</li>' +
+      '<li><b>Choose a provider</b> &rarr; ' + who + '.</li>' +
+      '<li>Set the month to <b>' + esc(month || '') + '</b>, then press <b>Start month pull</b>.</li>' +
+      '</ol>';
+  }
+
+  function tableHtml(rep, stored) {
+    var h = '';
+    var hasAny = rep.providers.length || rep.unattributed.appointments;
+    if (!hasAny) {
+      h += '<div style="padding:20px;border:1px solid #f3d9a6;background:#fff8ea;border-radius:10px;color:#7a5b16;font-size:13px;line-height:1.5">' +
+        '<b>Nothing is imported for ' + esc(monthLabel(rep.month)) + ' yet.</b><br>' +
+        'MLS holds ' + rep.provenance.rowsSeen + ' appointment row' + (rep.provenance.rowsSeen === 1 ? '' : 's') +
+        ' in total, and none of them fall in this month. ' + esc(RECIPE_HEAD) +
+        recipeHtml('', rep.month) + '</div>';
+      return h;
+    }
+    h += '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#204034">' +
+      '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Provider</th>' +
+      '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Days with appointments</th>' +
+      '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Appointments</th>' +
+      '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Avg per day</th>' +
+      '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Where this came from</th></tr></thead><tbody>';
+    var i, p, note;
+    for (i = 0; i < rep.providers.length; i++) {
+      p = rep.providers[i];
+      note = 'from the imported schedule';
+      var was = null, s;
+      if (stored && Array.isArray(stored.providers)) {
+        for (s = 0; s < stored.providers.length; s++) {
+          if (provKey(stored.providers[s].name) === p.key) { was = stored.providers[s]; break; }
+        }
+      }
+      if (was && (was.days !== p.days || was.appointments !== p.appointments)) {
+        note += '; captured on ' + esc(dayLabel(stored.at)) + ' as ' + intOf(was.days) + ' day' + (intOf(was.days) === 1 ? '' : 's') + ' / ' + intOf(was.appointments);
+      }
+      h += '<tr>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + esc(p.name) + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + p.days + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">' + p.appointments + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">' + p.avgPerDay + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;color:#5b6b7c;font-size:12px">' + esc(note) + '</td></tr>';
+    }
+    if (rep.unattributed.appointments) {
+      h += '<tr>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700;color:#7a5b16">No provider recorded</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + rep.unattributed.days + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">' + rep.unattributed.appointments + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">&mdash;</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;color:#5b6b7c;font-size:12px">imported from a day view with no provider column, so MLS stored no provider &mdash; these are NOT counted for anyone</td></tr>';
+    }
+    h += '</tbody></table>';
+    return h;
+  }
+
+  function missingHtml(rep) {
+    if (!rep.notImported.length) return '';
+    var h = '<div style="margin-top:16px;padding:12px 14px;border:1px solid #d5e2f2;background:#f6faff;border-radius:10px">' +
+      '<div style="font-weight:700;color:#204034;font-size:13px">Not imported yet for ' + esc(monthLabel(rep.month)) + '</div>' +
+      '<div style="font-size:12.5px;color:#5b6b7c;margin:5px 0 8px">MLS knows these clinicians but holds no appointment of theirs in this month. ' +
+      'That is a MISSING IMPORT, not a zero &mdash; MLS is not saying they did not work.</div><ul style="margin:0 0 0 18px;padding:0;font-size:13px;color:#204034">';
+    for (var i = 0; i < rep.notImported.length; i++) {
+      h += '<li style="margin-bottom:3px"><b>' + esc(rep.notImported[i]) + '</b> &middot; <span style="color:#7a5b16">not imported yet</span></li>';
+    }
+    h += '</ul><div style="margin-top:10px;font-weight:700;color:#204034;font-size:12.5px">' + esc(RECIPE_HEAD) + '</div>' +
+      recipeHtml(rep.notImported[0], rep.month) +
+      '<button type="button" id="mlsMRMenu" style="margin-top:10px;border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open the Menu</button>' +
+      '</div>';
+    return h;
+  }
+
+  function provenanceHtml(rep, cap) {
+    var pv = rep.provenance;
+    var lines = [];
+    lines.push('Read from ' + pv.monthRows + ' appointment row' + (pv.monthRows === 1 ? '' : 's') + ' MLS has imported for this month (' +
+      pv.attributedRows + ' with a provider, ' + pv.unattributedRows + ' without).');
+    lines.push('MLS does not read a month directly from athenaOne. Every number here comes from appointments already imported into MLS, so a month you have not pulled reads as missing, never as zero.');
+    lines.push('An appointment is a BOOKED SLOT. MLS cannot tell arrived / roomed / completed apart: the extension\'s schedule read strips those words as grid noise before a row is built, so "days with appointments" is not proof of a day worked.');
+    if (cap && cap.written) lines.push('Captured as an as-of receipt for ' + esc(rep.month) + ' (provider names, dates and counts only).');
+    else if (cap && cap.reason === 'no-account-scope') lines.push('Not captured: no signed-in account to scope the receipt to.');
+    var h = '<div style="margin-top:16px;padding:11px 13px;border-top:1px solid #F4F2EC;font-size:12px;color:#5b6b7c;line-height:1.5">';
+    for (var i = 0; i < lines.length; i++) h += '<div style="margin-bottom:4px">&middot; ' + lines[i] + '</div>';
+    return h + '</div>';
+  }
+
+  function paint(box, month) {
+    var rep = report(month);
+    var stored = storedFor(month);
+    var cap = capture(rep);
+    var opts = monthOptions(), i, sel = '';
+    for (i = 0; i < opts.length; i++) {
+      sel += '<option value="' + esc(opts[i]) + '"' + (opts[i] === rep.month ? ' selected' : '') + '>' + esc(monthLabel(opts[i])) + '</option>';
+    }
+    var h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">' +
+      '<div style="font-weight:800;font-size:18px;color:#204034">&#128197; Month report</div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+      '<select id="mlsMRMonth" style="border:1px solid #d5e2f2;border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit">' + sel + '</select>' +
+      '<button type="button" id="mlsMRClose" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>' +
+      '</div></div>' +
+      '<div style="font-size:12.5px;color:#5b6b7c;margin-bottom:14px">Days with appointments and appointment volume, per provider, for one month &mdash; with where every number came from.</div>' +
+      tableHtml(rep, stored) + missingHtml(rep) + provenanceHtml(rep, cap);
+    box.innerHTML = h;
+    var msel = box.querySelector('#mlsMRMonth');
+    if (msel) msel.onchange = function () { paint(box, msel.value); };
+    var closeBtn = box.querySelector('#mlsMRClose');
+    if (closeBtn) closeBtn.onclick = close;
+    var menuBtn = box.querySelector('#mlsMRMenu');
+    if (menuBtn) menuBtn.onclick = function () {
+      var b = safe(function () { return document.getElementById('mlsTbMenuBtn'); }, null);
+      if (b) { close(); safe(function () { b.click(); }); return; }
+      safe(function () { if (typeof window.toast === 'function') window.toast('Open the Menu in the top bar, then choose Staff prep & Athena month pull.', ''); });
+    };
+    return rep;
+  }
+  function close() { safe(function () { var b = document.getElementById('mlsMRBack'); if (b) b.remove(); }); }
+
+  function open(month) {
+    if (safe(function () { return document.getElementById('mlsMRBack'); }, null)) return null;
+    var back = document.createElement('div'); back.id = 'mlsMRBack';
+    back.style.cssText = 'position:fixed;inset:0;background:rgba(10,30,60,.5);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:16px;max-width:920px;width:100%;max-height:86vh;overflow:auto;padding:22px;box-shadow:0 12px 44px rgba(0,0,0,.32)';
+    back.appendChild(box);
+    document.body.appendChild(back);
+    back.addEventListener('click', function (e) { if (e.target === back) close(); });
+    return paint(box, isoMonth(month) || defaultMonth());
+  }
+
+  function inject() {
+    safe(function () {
+      var grid = document.getElementById('analysisView');
+      if (!grid || document.getElementById('mlsMRCard')) return;
+      var model = [].slice.call(grid.children).filter(function (c) { return /(^|\s)card(\s|$)/.test((c.className || '').toString()); })[0];
+      var card = (model && model.cloneNode) ? model.cloneNode(false) : document.createElement('div');
+      if (!card.className) card.className = 'card';
+      card.id = 'mlsMRCard';
+      card.innerHTML = '<div style="font-weight:800;color:#204034;font-size:14px">&#128197; Month report</div>' +
+        '<div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days with appointments &amp; volume per provider for one month, with honest provenance and the exact import that is missing.</div>' +
+        '<button id="mlsMROpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
+      card.querySelector('#mlsMROpen').addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open(); });
+      grid.appendChild(card);
+    });
+  }
+  function onViewClick(ev) {
+    safe(function () { if (ev && ev.target && ev.target.closest && ev.target.closest('#nav_analysis')) setTimeout(inject, 0); });
+  }
+
+  var api = {
+    installed: true,
+    version: VERSION,
+    compute: compute,
+    sanitize: sanitize,
+    capture: capture,
+    stored: storedFor,
+    report: report,
+    open: open,
+    close: close,
+    refresh: inject,
+    revert: function () {
+      safe(function () { document.removeEventListener('click', onViewClick, true); });
+      close();
+      safe(function () { var c = document.getElementById('mlsMRCard'); if (c) c.remove(); });
+      api.installed = false;
+      safe(function () { if (window.__mlsMonthReport === api) delete window.__mlsMonthReport; });
+    }
+  };
+  window.__mlsMonthReport = api;
+
+  function boot() { inject(); safe(function () { document.addEventListener('click', onViewClick, true); }); }
+  safe(function () {
+    if (typeof document === 'undefined') return;
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+    else boot();
+  });
+})();
+/* ===== end mrpt-1.0.0 ===== */
+
 /* feat_agent_actions3 — MLS Agent one-tap actions (item #3, 2026-07-03). Supersedes v2:
    use a bounded late-mount retry without layout reads, permanent polling, or a document-wide
    observer. Runs first + sets the shared guard so the older v2 below no-ops. */
