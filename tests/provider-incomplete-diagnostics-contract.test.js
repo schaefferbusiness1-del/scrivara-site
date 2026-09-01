@@ -138,10 +138,65 @@ const branchIdx = siSource.indexOf('providerReason === "provider-incomplete"');
 assert(branchIdx > 0, 'the provider-incomplete branch must remain named');
 assert(!siSource.includes('Some Athena schedule rows did not identify their provider. Nothing was imported; retry after the full day grid finishes loading.'),
   '2026-08-05: this advice was wrong every time it was shown - provider-incomplete requires a COMPLETE schedule read, so waiting for the grid cures nothing. (The empty-day CONTRACT branch may keep its own retry advice; a mid-paint disagreement genuinely can settle.)');
-const branchRegion = siSource.slice(Math.max(0, branchIdx - 2600), branchIdx + 600);
-assert(branchRegion.includes('nameMatchedIdMissingRows'),
-  'the provider-incomplete message must be built from the receipt counters, not a blanket sentence');
-assert(branchRegion.includes('use the error-report button so the rows are named'),
+/* PIN RE-AIMED 2026-09-01, and NOT weakened - it was measuring the wrong thing.
+   The two assertions below used to read a fixed 2600-byte lookback window ending
+   at the branch. A byte window pins PROXIMITY, which is a proxy for the property,
+   not the property. b1134 (provscope-1.0.1) inserted a 2223-byte MESSAGE-ONLY
+   block - the provider-not-on-calendar sentence - between the counter reads and
+   the branch, and both pins fell out of the window while the wiring they exist to
+   protect was never touched. Measured on the two commits: at 8302ffec^ the window
+   carried 'nameMatchedIdMissingRows', at 8302ffec it did not, and
+   'pNim = Number(pRec.nameMatchedIdMissingRows' is byte-identical in both.
+   Pinned structurally instead, end to end and strictly stronger than the window:
+   the message this branch actually EMITS is a named variable; that variable's own
+   builder statement interpolates locals; and each of those locals was read from
+   the provider RECEIPT's counters. receipt -> local -> emitted message. A blanket
+   sentence, a builder that drops any one counter, or advice moved off the emitted
+   message all still redden this - and an unrelated insertion nearby no longer
+   can. */
+function statementFrom(src, start) {
+  /* the single statement beginning at `start`, skipping string literals and
+     comments so a ';' inside prose is never mistaken for the end */
+  var depth = 0, q = null;
+  for (var i = start; i < src.length; i++) {
+    var c = src[i];
+    if (q) {
+      if (c === '\\') { i++; continue; }
+      if (c === q) q = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { q = c; continue; }
+    if (c === '/' && src[i + 1] === '*') { var e = src.indexOf('*/', i + 2); i = e < 0 ? src.length : e + 1; continue; }
+    if (c === '/' && src[i + 1] === '/') { var n = src.indexOf('\n', i); i = n < 0 ? src.length : n; continue; }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') depth--;
+    else if (c === ';' && depth === 0) return src.slice(start, i + 1);
+  }
+  return src.slice(start);
+}
+const emitM = siSource.slice(branchIdx, branchIdx + 400).match(/\?\s*([A-Za-z_$][\w$]*)\s*[\s\r\n]*:/);
+assert(emitM, 'the provider-incomplete arm must emit a named message variable, not an inline literal');
+const msgVar = emitM[1];
+const blockIdx = siSource.lastIndexOf('var providerReason =', branchIdx);
+assert(blockIdx > 0, 'the refusal block must still name providerReason');
+const refusalBlock = siSource.slice(blockIdx, branchIdx);
+const asgIdx = refusalBlock.lastIndexOf('var ' + msgVar + ' =');
+assert(asgIdx > 0, 'the emitted message ' + msgVar + ' must be BUILT inside the refusal block');
+const msgBuilder = statementFrom(refusalBlock, asgIdx);
+for (const counter of ['unattributedRows', 'sourceRows', 'nameMatchedIdMissingRows']) {
+  const declM = refusalBlock.match(new RegExp(
+    '(?:var|let|const|,)\\s*([A-Za-z_$][\\w$]*)\\s*=\\s*Number\\(\\s*[A-Za-z_$][\\w$]*\\.' + counter + '\\b'));
+  assert(declM, 'the refusal block must read receipt.' + counter + ' into a local');
+  /* the local must reach the message TEXT, not merely the statement: a first
+     draft of this pin accepted a bare mention and a mutation that deleted the
+     count from every sentence still passed, because the local also names the
+     ternary GUARD. Require a concatenation position - `pNim + "` or the
+     defaulted `(pUn || "Some") + "` - which a guard can never satisfy. */
+  assert(new RegExp('\\b' + declM[1] + '\\b\\s*(?:\\|\\|\\s*"[^"]*"\\s*)?\\)?\\s*\\+').test(msgBuilder),
+    'the provider-incomplete message must be built from the receipt counters, not a blanket sentence: ' +
+    counter + ' (read into ' + declM[1] + ') never reaches the text of ' + msgVar);
+}
+assert(msgBuilder.includes('use the error-report button so the rows are named'),
   'the refusal must route the user to the report that now carries the row detail');
 
 /* ---- 6. the emailed error report now carries the provider receipt --------- */

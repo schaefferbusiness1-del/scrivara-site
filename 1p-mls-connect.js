@@ -29371,6 +29371,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function pCounts() {
     if (!P) return;
     var done = 0; P.range.keys.forEach(function (k) { var st = P.dayStatus[k]; if (st && /^(done|empty|failed)$/.test(st.status)) done++; });
+    /* SUPERSEDED - DEAD CODE, kept verbatim as the historical record.
+       This is a retired historical Easy owner: the first statement of its IIFE
+       body is an unconditional `return;`, so nothing below it ever executes -
+       neither this pCounts nor the pullPanelHtml further down in this same
+       module, which still labels the retry queue "failed days". Verified
+       2026-09-01 by pairing every column-0 IIFE with its close: the three
+       retired owners each begin with `return;`, only the canonical owner does
+       not. The LIVE month-pull tiles are the honest-tiles-1.0.0 block in that
+       canonical owner earlier in this file, where the tiles paint number AND
+       label together from the durable manifest summary and the retry queue is
+       never called "failed". Fix those, never these. */
     pSet('ez3cFound', String(P.found)); pSet('ez3cSaved', String(P.saved));
     pSet('ez3cDup', String(P.dups)); pSet('ez3cFail', String(P.failedDays.length));
     var bar = $('ez3PullBar'); if (bar) bar.style.width = Math.round(done * 100 / Math.max(1, P.range.keys.length)) + '%';
@@ -31344,6 +31355,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function pCounts() {
     if (!P) return;
     var done = 0; P.range.keys.forEach(function (k) { var st = P.dayStatus[k]; if (st && /^(done|empty|failed)$/.test(st.status)) done++; });
+    /* SUPERSEDED - DEAD CODE, kept verbatim as the historical record.
+       This is a retired historical Easy owner: the first statement of its IIFE
+       body is an unconditional `return;`, so nothing below it ever executes -
+       neither this pCounts nor the pullPanelHtml further down in this same
+       module, which still labels the retry queue "failed days". Verified
+       2026-09-01 by pairing every column-0 IIFE with its close: the three
+       retired owners each begin with `return;`, only the canonical owner does
+       not. The LIVE month-pull tiles are the honest-tiles-1.0.0 block in that
+       canonical owner earlier in this file, where the tiles paint number AND
+       label together from the durable manifest summary and the retry queue is
+       never called "failed". Fix those, never these. */
     pSet('ez3cFound', String(P.found)); pSet('ez3cSaved', String(P.saved));
     pSet('ez3cDup', String(P.dups)); pSet('ez3cFail', String(P.failedDays.length));
     var bar = $('ez3PullBar'); if (bar) bar.style.width = Math.round(done * 100 / Math.max(1, P.range.keys.length)) + '%';
@@ -32921,6 +32943,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function pCounts() {
     if (!P) return;
     var done = 0; P.range.keys.forEach(function (k) { var st = P.dayStatus[k]; if (st && /^(done|empty|failed)$/.test(st.status)) done++; });
+    /* SUPERSEDED - DEAD CODE, kept verbatim as the historical record.
+       This is a retired historical Easy owner: the first statement of its IIFE
+       body is an unconditional `return;`, so nothing below it ever executes -
+       neither this pCounts nor the pullPanelHtml further down in this same
+       module, which still labels the retry queue "failed days". Verified
+       2026-09-01 by pairing every column-0 IIFE with its close: the three
+       retired owners each begin with `return;`, only the canonical owner does
+       not. The LIVE month-pull tiles are the honest-tiles-1.0.0 block in that
+       canonical owner earlier in this file, where the tiles paint number AND
+       label together from the durable manifest summary and the retry queue is
+       never called "failed". Fix those, never these. */
     pSet('ez3cFound', String(P.found)); pSet('ez3cSaved', String(P.saved));
     pSet('ez3cDup', String(P.dups)); pSet('ez3cFail', String(P.failedDays.length));
     var bar = $('ez3PullBar'); if (bar) bar.style.width = Math.round(done * 100 / Math.max(1, P.range.keys.length)) + '%';
