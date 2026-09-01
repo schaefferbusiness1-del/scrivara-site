@@ -4658,7 +4658,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="anaPremiumLocked" style="display:none;border:1px solid var(--line);border-radius:10px;padding:20px;text-align:center;background:var(--card-2,rgba(123,92,255,0.05))">
         <div style="font-size:34px;line-height:1">🔒</div>
         <div style="font-weight:700;font-size:16px;margin-top:6px">Premium feature</div>
-        <p class="sub" style="max-width:480px;margin:8px auto 0">The Data Study engine — advanced AI analysis and charts across your practice data — is a premium add-on. Contact your administrator to enable it.</p>
+        <p class="sub" style="max-width:480px;margin:8px auto 0">The Data Study engine — advanced AI analysis and charts across your practice data — is a premium add-on. See plans on the MLS home page, or ask your practice administrator to enable it.</p>
       </div>
     </div>
 
@@ -16053,7 +16053,7 @@ async function downloadStudyPdf(){
 }
 
 async function runDataStudy(){
-  if(!effectivePremium()){ toast('The Data Study engine is a premium add-on. Contact your administrator to enable it.','err'); applyPremiumUI(); return; }
+  if(!effectivePremium()){ toast('The Data Study engine is a premium add-on. See plans on the MLS home page, or ask your practice administrator to enable it.','err'); applyPremiumUI(); return; }
   const qEl=document.getElementById('anaAskQ');
   const q=(qEl&&qEl.value||'').trim();
   if(!q){ toast('Type a question about your data first.','err'); return; }
@@ -16138,7 +16138,7 @@ async function runDataStudy(){
           // Owner-revoked or never-granted: re-wall the UI and show the upsell.
           if(bkUser) bkUser.premium=false;
           applyPremiumUI();
-          out.innerHTML='<div class="mini" style="color:var(--muted)">🔒 The Data Study engine is a premium add-on. Contact your administrator to enable it.</div>';
+          out.innerHTML='<div class="mini" style="color:var(--muted)">🔒 The Data Study engine is a premium add-on. See plans on the MLS home page, or ask your practice administrator to enable it.</div>';
           return;
         }
         out.innerHTML='<div class="mini" style="color:var(--muted)">Your account doesn\'t have access to run a data study.</div>';
@@ -20214,7 +20214,13 @@ function renderStudioTemplates(){
   _studioTplActive=pers.concat(STUDIO_TEMPLATES);
   box.innerHTML=_studioTplActive.map(function(t,i){ var isP=(i<pers.length); return '<button class="copilot-chip'+(isP?' copilot-chip-ctx':'')+'" onclick="studioTemplate('+i+')">'+_ce(t[0])+'</button>'; }).join('');
 }
-function studioTemplate(i){ var t=_studioTplActive[i]||STUDIO_TEMPLATES[i]; if(!t) return; var p=document.getElementById('studioPrompt'); if(p){ p.value=t[1]; } try{ generateStudioWidget(); }catch(e){} }
+/* aisfix-1.0.0 (b1169): a chip used to overwrite #studioPrompt AND fire
+   generateStudioWidget() in the same tick - a doctor mid-way through typing
+   their own prompt who clicked a chip to read it lost the draft and a model
+   call ran before they meant to press anything. Same contract as the
+   neighboring "Try:" links (studioEx): fill and focus only. "Build it" stays
+   the one trigger. */
+function studioTemplate(i){ var t=_studioTplActive[i]||STUDIO_TEMPLATES[i]; if(!t) return; var p=document.getElementById('studioPrompt'); if(p){ p.value=t[1]; p.focus(); } }
 function renderStudio(){ renderStudioSaved(); renderStudioTemplates(); _copilotInit(); }
 
 /* ===================== MLS COPILOT ===================== */

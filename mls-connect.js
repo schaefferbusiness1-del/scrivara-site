@@ -16296,8 +16296,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return Promise.reject(new Error('No visits fall in the ' + scope.rangeLabel +
         ' for "' + group.name + '" — widen the date range (or add visits) and run again.'));
     }
-    var scopeLine = scope.typeLabel + ' · ' + scope.rangeLabel + ' · ' +
-      a.patientCount + ' patients, ' + a.visitCount + ' visits';
+    /* aisfix-1.0.0 (b1169): the deterministic graph/Excel/PDF are the SAME
+       visit-history-and-volume report for all five Study-type choices -
+       scope.type never changes what scopedRun computes (only the AI
+       narrative below, when it runs, actually analyzes by type). Labeling
+       these three outputs with the raw typeLabel claimed an analysis
+       ("Procedure comparison study") that was never performed. Say what the
+       report actually is, and show the requested type honestly alongside it. */
+    var REPORT_CONTENTS_LABEL = 'Visit history & volume report';
+    var scopeLine = REPORT_CONTENTS_LABEL + ' (requested type: ' + scope.typeLabel + ')' +
+      ' · ' + scope.rangeLabel + ' · ' + a.patientCount + ' patients, ' + a.visitCount + ' visits';
     var svg = '<div style="font:700 12px system-ui;color:#2E6A4B;margin:0 0 6px" ' + MARK + '="1">📐 Scope: ' +
       esc(scopeLine) + '</div>' + sg.chartSVG(a);
     var pv = painSVG(a.pain);
@@ -16312,7 +16320,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var summary = [
         ['MLS Study Group report'],
         ['Group', group.name],
-        ['Study type', scope.typeLabel],
+        ['Report contents', REPORT_CONTENTS_LABEL + ' (the same underlying report for every study type)'],
+        ['Requested study type', scope.typeLabel],
         ['Date range', scope.rangeLabel],
         ['Generated', new Date().toLocaleString()],
         [],
@@ -16344,7 +16353,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       function addPage() { if (pages >= maxPages) return false; doc.addPage(); pages++; return true; }
       doc.setFontSize(20); doc.text('MLS Study Group Report', M, 90);
       doc.setFontSize(13); doc.text(pdfSafe(group.name), M, 120);
-      doc.setFontSize(11); doc.text(pdfSafe(scope.typeLabel + '  |  ' + scope.rangeLabel), M, 140);
+      doc.setFontSize(11); doc.text(pdfSafe(REPORT_CONTENTS_LABEL + ' (requested type: ' + scope.typeLabel + ')  |  ' + scope.rangeLabel), M, 140);
       doc.setFontSize(10); doc.setTextColor(90);
       doc.text('Generated ' + new Date().toLocaleString(), M, 160);
       doc.text(a.patientCount + ' patients   |   ' + a.visitCount + ' visits in range   |   avg ' +
@@ -16361,25 +16370,52 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         doc.text(pdfSafe(a.pain.length + ' scores; first ' + a.pain[0].score + '/10 (' + a.pain[0].date +
           '), last ' + a.pain[a.pain.length - 1].score + '/10 (' + a.pain[a.pain.length - 1].date + ')'), M + 8, y);
       }
+      /* aisfix-1.0.0 (b1169): the 100-page ceiling used to drop every patient
+         past it (and cut the last note mid-sentence) with NOTHING on screen
+         or in the file saying so - a doctor could hand an incomplete PDF to
+         a colleague or an IRB believing it was complete. `truncated` and
+         `placedPatients` track whether the ceiling was actually hit so a
+         truncation page can be stamped honestly; the Excel export always
+         carries every row regardless, and the notice says so. */
+      var truncated = false, placedPatients = 0;
       a.patients.forEach(function (p) {
-        if (pages >= maxPages) return;
-        if (!addPage()) return; y = M;
+        if (pages >= maxPages) { truncated = true; return; }
+        if (!addPage()) { truncated = true; return; }
+        y = M; placedPatients++;
         doc.setFontSize(13); doc.text(pdfSafe(p.name) + (p.dob ? '  (DOB ' + pdfSafe(p.dob) + ')' : ''), M, y); y += 8;
         doc.setDrawColor(200); doc.line(M, y, W - M, y); y += 16; doc.setFontSize(9);
         (p.visits || []).forEach(function (v) {
-          if (pages >= maxPages) return;
+          if (pages >= maxPages) { truncated = true; return; }
           doc.setFont(undefined, 'bold');
           doc.text(pdfSafe((v.date || 'n/d') + '  -  ' + (v.type || 'Visit') + '  [' + (v.source || '') + ']'), M, y);
           y += 13; doc.setFont(undefined, 'normal');
           var lines = doc.splitTextToSize(pdfSafe(v.detail || '(no detail)'), W - M * 2);
           for (var li = 0; li < lines.length; li++) {
-            if (y > H - M) { if (!addPage()) return; y = M; }
+            if (y > H - M) { if (!addPage()) { truncated = true; return; } y = M; }
             doc.text(lines[li], M, y); y += 12;
           }
-          y += 8; if (y > H - M) { if (!addPage()) return; y = M; }
+          y += 8; if (y > H - M) { if (!addPage()) { truncated = true; return; } y = M; }
         });
       });
+      var omittedPatients = a.patients.length - placedPatients;
+      if (truncated) {
+        /* one notice page, added directly (bypassing the maxPages-gated
+           addPage()) so the ceiling stays exactly maxPages content pages
+           plus this one honest page - never silently dropped. */
+        doc.addPage(); pages++;
+        doc.setFontSize(13); doc.setTextColor(0);
+        doc.text('Truncated at the ' + maxPages + '-page ceiling', M, 90);
+        doc.setFontSize(10); doc.setTextColor(90);
+        var truncMsg = omittedPatients > 0
+          ? (omittedPatients + ' of ' + a.patients.length + ' patients are not included in this PDF; the complete row set is in the Excel export.')
+          : ('One or more patient notes near the page ceiling were cut short in this PDF; the complete row set is in the Excel export.');
+        var tLines = doc.splitTextToSize(pdfSafe(truncMsg), W - M * 2);
+        var ty = 112; tLines.forEach(function (tl) { doc.text(tl, M, ty); ty += 14; });
+        doc.setTextColor(0);
+      }
       result.pdfBlob = doc.output('blob'); result.pdfPages = pages;
+      result.pdfTruncated = truncated;
+      result.pdfPatientsOmitted = omittedPatients;
     }).catch(function (e) { result.pdfError = e.message; }));
 
     return Promise.all(jobs).then(function () { return result; });
@@ -16526,15 +16562,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return lines.join('\n');
   }
   function importIntoGroup(sg, groupName, list) {
+    /* aisfix-1.0.0 (b1169): a rebuild under the SAME group name used to keep
+       the stale group and only ever ADD rows (find-by-name, then addPatient
+       never removes) - so pasting list A, building, then pasting a DIFFERENT
+       list B and building again left the cohort holding A+B ("3 of 1 pasted
+       line joined the cohort"). A rebuild must REPLACE: delete the stale
+       group (if any) and create it fresh, so the cohort holds exactly the
+       rows THIS build resolved - never a signature change (see the
+       importIntoGroup END marker in tests/names-lookup-and-study-builder.test.js). */
     var g = null;
     sg.list().forEach(function (x) { if (x.name === groupName) g = x; });
-    if (!g) g = sg.createGroup(groupName);
+    if (g) { sg.deleteGroup(g.id); g = null; }
+    g = sg.createGroup(groupName);
     var bySrc = {};
     list.forEach(function (rec) {
       sg.addPatient(g.id, { name: rec.name, dob: rec.dob, mrn: rec.mrn, visits: rec.visits });
       rec.visits.forEach(function (v) { bySrc[v.source] = (bySrc[v.source] || 0) + 1; });
     });
-    return { group: sg.get(g.id), bySrc: bySrc };
+    /* `joined` is the count of rows THIS build fed in - never
+       rn.group.patients.length, which used to read the pre-fix accumulated
+       total and could report more patients than the doctor just pasted. */
+    return { group: sg.get(g.id), bySrc: bySrc, joined: list.length };
   }
   function srcLabel(bySrc) {
     var names = { 'athena-visit': 'pulled Athena visits', 'mls-note': 'saved notes', 'mls-appt': 'appointments' };
@@ -16598,7 +16646,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              load-bearing - it is the key importIntoGroup looks up - so it must
              survive any writer this repo's deploy path uses. */
           var rn = importIntoGroup(sg, 'Cohort - pasted names', built.included);
-          say('Cohort - pasted names is ready: ' + rn.group.patients.length + ' of ' + built.total +
+          say('Cohort - pasted names is ready: ' + rn.joined + ' of ' + built.total +
             ' pasted line' + (built.total === 1 ? '' : 's') + ' joined the cohort, ' +
             groupVisitTotal(rn.group) + ' individual visit records' +
             (Object.keys(rn.bySrc).length ? ' (harvested: ' + srcLabel(rn.bySrc) + ')' : '') +
@@ -16617,7 +16665,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         setTimeout(function () {
           try {
             var r = importIntoGroup(sg, 'All patients (auto)', buildAll(null));
-            say('✓ “All patients (auto)” ready — ' + r.group.patients.length + ' patients, ' +
+            say('✓ “All patients (auto)” ready — ' + r.joined + ' patients, ' +
               groupVisitTotal(r.group) + ' individual visit records (deduped' +
               (Object.keys(r.bySrc).length ? '; harvested: ' + srcLabel(r.bySrc) : '') +
               '). Select it above and run a study.');
@@ -37891,6 +37939,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function SG() { return window.__mlsStudyGroups || null; }
 
+  /* aisfix-1.0.0 (b1169): every "Run the study" press created two fresh
+     object URLs (xlsx/csv + a PDF that can be tens of MB) via
+     URL.createObjectURL and never revoked them - out.innerHTML="" at the
+     top of the next run destroyed the <a> nodes but not the blobs behind
+     them, so an iterating doctor accumulated one detached PDF per run for
+     the life of the tab. Same shape as the natural-language study-request
+     module's objectUrls/clearUrls (deliberately not spelled as a bare
+     "feat_....js" filename here - tests/boot-script-budget.test.js scans
+     this exact file for feat_*.js references to classify eager vs deferred
+     script loading, and a comment mention with no defer marker nearby would
+     misclassify that module's real, correctly-deferred loader entry). */
+  var proUrls = [];
+  function revokeProUrls() {
+    proUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+    proUrls = [];
+  }
+
   /* ---------- auto-format the app's own data into study records ---------- */
   function allNotes() { try { return (window.getNotes && window.getNotes()) || []; } catch (e) { return []; } }
   function allPatients() { try { return (window.getPatients && window.getPatients()) || []; } catch (e) { return []; } }
@@ -38095,6 +38160,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       } catch (e4) { show("Cohort build failed: " + e4.message, ""); }
     });
     $("sgpRunBtn").addEventListener("click", runPro);
+    /* aisfix-1.0.0 (b1169): Enter did nothing in these two single-line
+       inputs, while the composer directly above teaches Enter-to-submit
+       (generateStudioWidget is not wired here, but the same expectation
+       carries over) - so the silence read as the field being broken.
+       isComposing/229 guard: never submit mid-IME-composition. */
+    function enterSubmits(inputId, btnId) {
+      var el = $(inputId); if (!el || el.__aisfixEnter) return;
+      el.__aisfixEnter = true;
+      el.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229) {
+          ev.preventDefault();
+          var btn = $(btnId); if (btn) btn.click();
+        }
+      });
+    }
+    enterSubmits("sgpProcTx", "sgpProcBtn");
+    enterSubmits("sgpCustomTx", "sgpRunBtn");
   }
   function refreshSgSelect(name) {
     /* nudge the legacy select to show the new group and select it */
@@ -38127,7 +38209,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var months = +($("sgpRange").value) || 0;
     var type = $("sgpType").value;
     var typeLabel = { outcomes: "Retrospective outcomes study", volume: "Visit volume & trends study", procedure: "Procedure comparison study", profile: "Cohort profile / demographics", custom: "Custom study" }[type];
+    /* aisfix-1.0.0 (b1169): scopedRun never reads #sgpCustomTx, and the
+       AI narrative is the only path that does (runNarrative below) - so a
+       typed custom question with the AI box unticked used to run silently,
+       produce a generic report, and never ask it. Refuse before running. */
+    if (type === "custom" && !$("sgpAi").checked) {
+      note.textContent = "A custom question needs the Premium AI narrative — tick the box above, or pick a different study type.";
+      return;
+    }
     note.textContent = "Running “" + typeLabel + "” on " + g.name + "…";
+    /* aisfix-1.0.0 (b1169): revoke the PREVIOUS run's object URLs before
+       discarding their <a> nodes, not after - out.innerHTML="" alone leaked
+       one PDF-sized blob per run for the life of the tab. */
+    revokeProUrls();
     out.innerHTML = "";
     /* 1) local engine: graph + Excel + PDF (unchanged, proven) */
     sg.runStudy(g.id, {}).then(function (res) {
@@ -38135,10 +38229,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       function dl(blob, name, label) {
         if (!blob) return "";
         var u = URL.createObjectURL(blob);
+        proUrls.push(u);
         return '<a class="sgp-dl" href="' + u + '" download="' + name + '">' + label + "</a>";
       }
-      html += dl(res.xlsxBlob, "MLS_Study_" + g.name.replace(/\W+/g, "_") + ".xlsx", "⬇ Excel (per-visit data)");
-      html += dl(res.pdfBlob, "MLS_Study_" + g.name.replace(/\W+/g, "_") + ".pdf", "⬇ PDF report" + (res.pdfPages ? (" · " + res.pdfPages + " pages") : ""));
+      /* aisfix-1.0.0 (b1169): name the file by the format it actually is -
+         a SheetJS load failure falls back to CSV (res.xlsxFallback), and a
+         ".xlsx" that is really a CSV makes Excel refuse it. */
+      html += dl(res.xlsxBlob, "MLS_Study_" + g.name.replace(/\W+/g, "_") + (res.xlsxFallback ? ".csv" : ".xlsx"),
+        "⬇ Excel (per-visit data)" + (res.xlsxFallback ? " (CSV fallback)" : ""));
+      html += dl(res.pdfBlob, "MLS_Study_" + g.name.replace(/\W+/g, "_") + ".pdf",
+        "⬇ PDF report" + (res.pdfPages ? (" · " + res.pdfPages + " pages") : "") + (res.pdfTruncated ? " (truncated)" : ""));
       html += "</div>";
       out.innerHTML = html;
       note.textContent = "✓ Graph + Excel + PDF ready." + ($("sgpAi").checked ? " Writing the AI narrative…" : "");
