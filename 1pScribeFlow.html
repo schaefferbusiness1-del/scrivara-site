@@ -6802,6 +6802,34 @@ window.__mlsRefreshMobileNoticeShelf=mlsRefreshMobileNoticeShelf;
 function mlsNoticeAnchor(){
   let low=0,leftPx=null;
   try{
+    /* phfix-1.0.0 (b1169): THE PHONE APP HIDES ALL THREE BARS THIS WALKS.
+       feat_mls_phone_ui.js sets #appHeader, .mainnav and #patientBar to
+       display:none under body.mls-ph3, so `low` stayed 0 and every notice
+       collapsed to the 12px floor below - which on a phone is straight across
+       #mlsPh3Hdr and #mlsPh3Nav, the ONE navigational control the phone has
+       (Menu on the day screen, "< Day" on a visit). The notice shelf is fixed
+       and z-index 9330, above the 7000 frame, and a save-verification card in
+       it does not fade, so the way back was unreachable until the doctor found
+       the small x. Measure the phone's OWN header instead - the same thing
+       #mlsBootReadiness already does with a hard-coded 58px, except measured.
+       A modal still collapses the anchor exactly as it does on the desktop, so
+       that case falls through to the walk below. */
+    if(document.body&&document.body.classList.contains('mls-ph3')&&!document.querySelector('.modal-bg.show')){
+      const ph=document.getElementById('mlsPh3Hdr');
+      let phLow=0;
+      if(ph){
+        const pcs=getComputedStyle(ph);
+        if(pcs.display!=='none'&&pcs.visibility!=='hidden'){
+          const pr=ph.getBoundingClientRect();
+          if(pr.height>0)phLow=pr.bottom;
+        }
+      }
+      /* no measurable header yet (first paint) - the header's own declared
+         geometry is 46px of control plus 8+10 of padding, before insets */
+      if(!phLow)phLow=64;
+      const pvh=window.innerHeight||800;
+      return {top:Math.max(12,Math.min(Math.round(phLow)+10,Math.round(pvh*0.45))),left:null};
+    }
     for(const id of ['appHeader','mlsCtxBar','patientBar']){
       const el=document.getElementById(id); if(!el) continue;
       const cs=getComputedStyle(el);
@@ -62049,6 +62077,22 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     max-width:none !important;
     margin:0 !important;
     z-index:9330 !important;
+  }
+}
+/* phfix-1.0.0 (b1169): a FLOOR under the phone app, belt to the anchor's
+   braces. mlsNoticeAnchor() now measures #mlsPh3Hdr, but --mls-notice-top is
+   only recomputed by toast() and on resize, so a shelf raised by a
+   save-verification card alone can be painted against a stale value. This
+   keeps it below the phone header either way, and never moves it up. The
+   shelf rule is stated after the block above at equal specificity so it wins
+   on order; #toast is included because it reads the same variable, and it is
+   the one overlay a doctor is expected to see over the frame. */
+@media (max-width:760px){
+  body.mls-ph3 #mlsMobileNoticeShelf.mls-mobile-notice-active{
+    top:max(var(--mls-notice-top, 92px), calc(env(safe-area-inset-top) + 74px)) !important;
+  }
+  body.mls-ph3 #toast{
+    top:max(var(--mls-notice-top, 96px), calc(env(safe-area-inset-top) + 74px)) !important;
   }
 }
 </style>

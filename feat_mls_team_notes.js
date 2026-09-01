@@ -738,13 +738,42 @@
     var p = byId(id);
     return p ? live(listOf(p)).slice() : [];
   }
+  /* phteam-1.0.0 (b1169): THE ADD-AND-PERSIST ENTRY POINT, which this module
+     did not have. `addNote` is a pure list transform and `persist`/`commit`
+     were private, so a second surface (the phone) could READ the thread through
+     forPatient() but had no way to WRITE one without re-implementing the copy
+     + upsertPatient write beside it. A second write path is how two stores are
+     born, so the one write lives here, where the tombstone/union law and the
+     NOTES_MAX refusal already are.
+
+     Purely additive: no existing caller changes, and the desktop's own
+     doAdd -> commit path is untouched. It does NOT toast and it does NOT
+     repaint unless asked - a caller that owns its own surface says what
+     happened in its own words, and renderProfile() is a desktop repaint that a
+     phone has no use for. Returns the same {ok, reason} vocabulary the rest of
+     this file speaks, plus the stored note, so a caller can show it at once
+     instead of waiting for a round trip. */
+  function addFor(ptId, opts) {
+    opts = opts || {};
+    var p = byId(ptId);
+    if (!p) return { ok: false, reason: 'patient-missing' };
+    var res = addNote(listOf(p), {
+      text: opts.text, author: opts.author, ai: opts.ai === true,
+      visit: opts.visit, now: opts.now
+    });
+    if (!res.ok) return { ok: false, reason: res.reason };
+    var w = persist(ptId, res.list);
+    if (!w.ok) return { ok: false, reason: w.reason };
+    if (opts.repaint === true) safe(function () { repaint(); });
+    return { ok: true, reason: 'saved', note: res.note, count: live(res.list).length };
+  }
   function status() {
     return { version: VERSION, installed: true, stopped: stopped, open: openFor, busyAi: busyAi };
   }
 
   window.__mlsTeamNotes = {
     installed: true, version: VERSION,
-    render: render, forPatient: forPatient, status: status,
+    render: render, forPatient: forPatient, addFor: addFor, status: status,
     addNote: addNote, editNote: editNote, removeNote: removeNote, restoreNote: restoreNote,
     union: localUnion, rev: rev, live: live, countOf: countOf,
     recentVisits: recentVisits, providerForDay: providerForDay,

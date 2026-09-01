@@ -56846,6 +56846,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* THE PHONE'S HALF. */
   var PHSEND_ACTIVE_KEY = 'mlsPhSendActive';
   var phsendState = { status: 'idle', line: '', jobId: '', at: 0, noteSent: '' };
+  /* phfix-1.0.0 (b1169): CANCEL HAD NOWHERE TO REACH.
+     phsendPollJob kept its interval id in a function-local (`pi`) and stored no
+     handle anywhere, so nothing outside the poll's own terminal branches could
+     stop it. Cancel closed the sheet, phcClose() zeroed phcState.jobId, and
+     2.5 s later the still-running poll saw status 'taken' with no phoneConfirm
+     and called phcOpen again - past its own re-entrancy guard, which compares
+     against the jobId Cancel had just cleared. The sheet came back on top of
+     whatever the doctor had moved on to, every 2.5 s, for up to eleven
+     minutes, carrying a live hold-to-send control for a note he had refused.
+
+     Two independent stops, because one of them can lose a race: the poll is
+     STOPPED (phsendPollIv), and the refused job id is REMEMBERED (phcRefused)
+     so an in-flight response that was already dispatched when Cancel ran
+     cannot reopen the sheet on its way back. */
+  var phsendPollIv = 0;
+  var phcRefused = '';
+  function phsendStopPoll() { try { if (phsendPollIv) clearInterval(phsendPollIv); } catch (e) {} phsendPollIv = 0; }
   api.sendState = function () { return { status: phsendState.status, line: phsendState.line, jobId: phsendState.jobId }; };
   function phsendSet(status, line, jobId) {
     phsendState.status = status; phsendState.line = line || '';
@@ -56861,8 +56878,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function phsendPollJob(id, officeWho) {
     var who = officeWho || 'your office computer';
     var tries = 0, queuedPolls = 0;
+    /* only ever one poll alive on this device */
+    phsendStopPoll();
     var pi = setInterval(function () {
       tries++;
+      /* phfix-1.0.0 (b1169): a signed-out phone stops polling on the same tick
+         and drops the sheet with it. Without this the poll outlives the
+         account: it keeps asking the server about the previous doctor's job
+         and keeps re-opening a sheet full of that patient's identity over the
+         login card. */
+      if (!authed()) { clearInterval(pi); phsendPollIv = 0; phsendForgetSession(); return; }
       if (tries > 264) { clearInterval(pi); phsendWriteActive(null); phcClose(); phsendSet('failed', 'No answer from ' + who + '. Nothing was sent - the note is still here.'); return; }
       fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
         .then(function (r) { if (r && r.status === 404) return { gone: true }; return r && r.ok ? r.json() : null; })
@@ -56883,6 +56908,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                read live from this phone so it is verbatim and never persisted. */
             var stage = job.stage;
             var answered = !!(job.phoneConfirm && job.phoneConfirm.previewHash);
+            /* phfix-1.0.0 (b1169): a job the doctor already refused on this
+               device is never re-staged to him, even if this response was
+               already in flight when he pressed Cancel. */
+            if (phcRefused && phcRefused === String(id)) { clearInterval(pi); phsendPollIv = 0; phcClose(); return; }
             if (stage && stage.previewHash && !answered) {
               phcOpen(id, stage, phsendState.noteSent);
               phsendSet('confirm', 'Read the note and confirm on this ' + devNoun() + '.');
@@ -56930,7 +56959,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         })
         .catch(function () {});
     }, 2500);
+    phsendPollIv = pi;
   }
+
+  /* phfix-1.0.0 (b1169): EVERYTHING THIS RELAY HOLDS ABOUT A PERSON, DROPPED.
+     The confirm sheet is appended to document.body at z-index 2147483400 and
+     carries the patient's name, DOB, MRN, the encounter date, the provider and
+     the verbatim note. logout() does not reload the page - it hides #appScreen
+     and shows #authScreen - and sfResetTransientSessionDom() only clears
+     '.modal-bg.show' plus a named id list that does not include #mlsPhConfirm.
+     So the sheet stayed painted over the login card, for up to eleven minutes,
+     for whoever picked the phone up next. Every other phone surface drops its
+     PHI at the account boundary (feat_mls_phone_ui.js forgetSession); this one
+     now does too - the sheet, the in-memory note bytes, the resume record and
+     the poll that would rebuild all three. */
+  function phsendForgetSession() {
+    phsendStopPoll();
+    phcRefused = '';
+    try { phcClose(); } catch (e) {}
+    phsendWriteActive(null);
+    phsendState.noteSent = '';
+    phsendSet('idle', '');
+  }
+  api.phsendForgetSession = phsendForgetSession;
+  try { window.addEventListener('mls:session-boundary', function () { try { phsendForgetSession(); } catch (e) {} }, true); } catch (e) {}
 
   api.sendNoteToAthena = function (o) {
     o = o || {};
@@ -56942,6 +56994,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        different text from the one the previewHash binds. Never persisted: the
        phone keeps no PHI at rest. */
     phsendState.noteSent = noteText;
+    /* a new send is a new job id, so the previous refusal has nothing left to
+       protect and must not outlive it */
+    phcRefused = '';
     var action = Object.prototype.hasOwnProperty.call(PHSEND_ACTIONS, String(o.action || '')) ? String(o.action) : 'write_note';
     phsendSet('queued', 'Checking that your office computer is awake...', '');
     return fetch(base() + '/api/relay/presence', { headers: H() })
@@ -56996,6 +57051,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
   api.cancelSend = function () {
     var a = phsendReadActive();
+    /* phfix-1.0.0 (b1169): STOP THE POLL FIRST, and before the network call.
+       The cancel POST is the ordinary phone case for failing - the office
+       computer may be gone, the server unreachable - and a cancel whose effect
+       depended on that POST succeeding is not a cancel. Stopping here means
+       Cancel sticks on this device whatever the server says. */
+    phsendStopPoll();
+    if (a && a.id) phcRefused = String(a.id);
+    else if (phcState.jobId) phcRefused = String(phcState.jobId);
     phsendWriteActive(null);
     if (!a) { phsendSet('idle', ''); return Promise.resolve(false); }
     phsendSet('idle', 'Stopped waiting. Nothing was sent to Athena.');
@@ -57100,6 +57163,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 
   function phcOpen(jobId, stage, noteText) {
+    /* phfix-1.0.0 (b1169): a job this doctor refused on this device never gets
+       another sheet. This guard is the one that does not depend on a timer
+       being stopped in time, so it holds against a response that was already
+       on the wire when Cancel was pressed. */
+    if (jobId && phcRefused && phcRefused === String(jobId)) return;
+    /* phfix-1.0.0 (b1169): a signed-out phone shows nobody a chart. */
+    if (!authed()) return;
     if (phcState.jobId === jobId && document.getElementById('mlsPhConfirm')) return;
     phcClose();
     phcStyle();
@@ -57194,6 +57264,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     if (no) {
       no.addEventListener('click', function () {
+        /* phfix-1.0.0 (b1169): the refusal is recorded BEFORE phcClose(), which
+           zeroes phcState.jobId - reading it afterwards is reading a blank, and
+           that blank is exactly how the poll got past its own guard and put
+           this sheet back up 2.5 s later. The poll is stopped here too rather
+           than left to cancelSend(), so Cancel holds even when there is no
+           active job record on this device to cancel. */
+        var refusedId = String(phcState.jobId || jobId || '');
+        if (refusedId) phcRefused = refusedId;
+        phsendStopPoll();
         phcClose();
         /* cancelSend() sets its own status line synchronously, so it has to run
            BEFORE this one or it overwrites it - and its generic line (or the
@@ -57206,15 +57285,42 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   api.openConfirmSheet = phcOpen;
 
+  function phsendSnapshot() {
+    try { var r = window.__mlsEasyV32; return (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e) { return null; }
+  }
   function phsendVisible() {
     var ph = phsendPhone();
     if (!ph || !ph.installed || typeof ph.state !== 'function') return false;
     var st = null; try { st = ph.state(); } catch (e) { return false; }
     if (!st || !st.mounted || st.screen !== 'visit') return false;
-    var sn = null;
-    try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e2) { sn = null; }
+    var sn = phsendSnapshot();
     if (!sn || !sn.active) return false;
     return String(sn.phase || '') === 'note' || Number(sn.noteLen || 0) > 0;
+  }
+  /* phfix-1.0.0 (b1169): A NOTE THAT IS STILL MOVING MAY NOT BE RELAYED.
+     phsendVisible() decides whether the bar is DRAWN; it deliberately still
+     answers true through a resumed recording, because a control that vanishes
+     and comes back teaches the doctor nothing and moves the layout under his
+     thumb. What was wrong is that the button inside it stayed ENABLED, and
+     phsendNoteText() reads #noteBox LIVE at press time - so one thumb press
+     during a resumed recording relayed the pre-resume text for a chart write,
+     under a bar that at that moment read "Stop recording". The phone's own
+     action bar six pixels above already stands down for exactly these phases
+     (feat_mls_phone_ui.js renders a disabled "Writing the note..." at 'gen').
+     This is a STRENGTHENING: it refuses a send the code used to accept, and
+     changes no gate downstream. */
+  function phsendReady() {
+    var sn = phsendSnapshot();
+    if (!sn || !sn.active) return false;
+    return String(sn.phase || '') === 'note' && Number(sn.noteLen || 0) > 0;
+  }
+  api.phsendReady = phsendReady;
+  function phsendWhyNotReady() {
+    var sn = phsendSnapshot();
+    var phase = String((sn && sn.phase) || '');
+    if (phase === 'rec') return 'Stop the recording first - the note is not written yet.';
+    if (phase === 'gen') return 'The note is still being written. This unlocks when it is finished.';
+    return 'Finish the note before sending it to Athena.';
   }
   function phsendNoteText() {
     try { var el = document.getElementById('noteBox'); return el ? String(el.value || '') : ''; } catch (e) { return ''; }
@@ -57224,9 +57330,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!bar) return;
     var show = phsendVisible();
     bar.style.display = show ? 'block' : 'none';
+    /* phfix-1.0.0 (b1169): the send bar is the frame's bottom element whenever
+       it is on screen, so the action bar above it must give up its home
+       indicator gap while that is true - see the ph3-sendbar-on rule in
+       phcleanStyle(). Toggled from the one place that already knows. */
+    try {
+      var fr = document.getElementById('mlsPh3');
+      if (fr && fr.classList) { if (show) fr.classList.add('ph3-sendbar-on'); else fr.classList.remove('ph3-sendbar-on'); }
+    } catch (eCls) {}
     if (!show) return;
     var busy = phsendState.status === 'queued' || phsendState.status === 'working' || phsendState.status === 'confirm';
-    var line = phsendState.line || 'The note stays in MLS until your office computer confirms it.';
+    var ready = phsendReady();
+    /* While the note is still moving the line SAYS SO rather than leaving a
+       grey button unexplained. A standing receipt ('SENT - confirmed', a
+       refusal) is only displaced once the doctor starts recording again, at
+       which point it describes text that has been superseded anyway. */
+    var line = (!busy && !ready) ? phsendWhyNotReady()
+      : (phsendState.line || 'The note stays in MLS until your office computer confirms it.');
     var lineEl = bar.querySelector('.phsend-line');
     var btnEl = bar.querySelector('.phsend-go');
     if (lineEl) {
@@ -57237,13 +57357,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the 'sent' family - and this is the one state that must never read as a
          completed chart write. Amber is the same attention colour this file
          already uses for "true, but you still have something to do". */
-      lineEl.style.color = phsendState.status === 'sent' ? '#205c43'
+      lineEl.style.color = (!busy && !ready) ? '#55605A'
+        : phsendState.status === 'sent' ? '#205c43'
         : (phsendState.status === 'failed' || phsendState.status === 'unavailable') ? '#9f2d2d'
         : phsendState.status === 'staged' ? '#8A5A00' : '#55605A';
     }
     if (btnEl) {
       btnEl.textContent = busy ? 'Stop waiting' : (phsendState.status === 'sent' ? 'Send again' : 'Send to Athena');
-      btnEl.disabled = false;
+      /* phfix-1.0.0 (b1169): this used to be an unconditional `= false`, which
+         re-enabled the control on every 1.2 s paint no matter what the phase
+         machine said. "Stop waiting" stays live - that one cancels. */
+      btnEl.disabled = !busy && !ready;
+      try {
+        btnEl.style.opacity = btnEl.disabled ? '0.55' : '1';
+        btnEl.style.cursor = btnEl.disabled ? 'default' : 'pointer';
+      } catch (eSty) {}
     }
   }
   function phsendMount() {
@@ -57267,9 +57395,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     go.className = 'phsend-go';
     go.style.cssText = 'width:100%;min-height:46px;border:0;border-radius:12px;background:#204034;color:#fff;font-weight:800;font-size:16px;cursor:pointer';
     go.addEventListener('click', function () {
-      if (phsendState.status === 'queued' || phsendState.status === 'working' || phsendState.status === 'confirm') { phcClose(); api.cancelSend(); return; }
-      var sn = null;
-      try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e3) {}
+      if (phsendState.status === 'queued' || phsendState.status === 'working' || phsendState.status === 'confirm') {
+        /* phfix-1.0.0 (b1169): "Stop waiting" is a Cancel and must stick the
+           same way the sheet's own Cancel does - refuse the id, stop the poll,
+           then close. cancelSend() does the first two; recording the id here
+           covers the case where the sheet is up but no active record survives. */
+        if (phcState.jobId) phcRefused = String(phcState.jobId);
+        phsendStopPoll();
+        phcClose();
+        api.cancelSend();
+        return;
+      }
+      /* phfix-1.0.0 (b1169): the button is already disabled while the note is
+         still moving; this is the second stop, because a disabled attribute is
+         a painting and phsendNoteText() reads #noteBox live at THIS moment. */
+      if (!phsendReady()) { phsendSet('idle', phsendWhyNotReady()); return; }
+      var sn = phsendSnapshot();
       var a = (sn && sn.active) || {};
       /* snapshot().active is { id, name, dob, time } and that `id` is the
          APPOINTMENT id, not a patient id. They are different namespaces, so it
@@ -57293,8 +57434,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.phsendVisible = phsendVisible;
   /* One timer, and only while a phone frame exists. A remount rebuilds the
      frame, so re-check rather than binding to a node that can vanish. */
-  var phsendIv = setInterval(function () { try { phsendMount(); } catch (e) {} }, 1200);
-  setTimeout(function () { try { phsendMount(); } catch (e) {} }, 2500);
+  /* phteam-1.0.0 (b1169) rides THIS timer rather than arming a second one. The
+     phone rebuilds #mlsPh3Body's innerHTML on every signature-changing repaint,
+     so both surfaces have the same job on the same cadence: check, and put
+     yourself back if you were eaten. Each is guarded separately so a throw in
+     one cannot stop the other. */
+  var phsendIv = setInterval(function () {
+    try { phsendMount(); } catch (e) {}
+    try { phtMount(); } catch (e2) {}
+  }, 1200);
+  setTimeout(function () { try { phsendMount(); } catch (e) {} try { phtMount(); } catch (e2) {} }, 2500);
   /* resume a send that was in flight when the phone was reloaded */
   setTimeout(function () {
     var a = phsendReadActive();
@@ -57327,12 +57476,498 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     s.id = 'mlsPhCleanCss';
     s.textContent =
       '#mlsPh3 .ph3-nx{min-width:44px!important;width:44px!important;height:44px!important;' +
-      'display:flex!important;align-items:center!important;justify-content:center!important}';
+      'display:flex!important;align-items:center!important;justify-content:center!important}' +
+      /* phfix-1.0.0 (b1169): ONE HOME INDICATOR, ONE GAP.
+         #mlsPh3Act reserves env(safe-area-inset-bottom) because it is normally
+         the frame's bottom element. #mlsPhSendBar is inserted as its next
+         sibling and reserves the same inset again, so on an iPhone X-class
+         phone in portrait the action bar carried 10 + 34 = 44px of bottom
+         padding ABOVE a visible border, in the middle of the visit screen -
+         about a line and a half of the note the doctor is reading. The class
+         is toggled by phsendPaint() from the same `show` it uses to display
+         the bar, so the inset comes straight back the moment the send bar
+         goes away. A class rather than :has(), so it does not depend on
+         selector support on the device in the doctor's hand. */
+      '#mlsPh3.ph3-sendbar-on #mlsPh3Act{padding-bottom:10px!important}';
     try { (document.head || document.documentElement).appendChild(s); } catch (e) {}
   }
   api.phcleanStyle = phcleanStyle;
 
   /* ===== end phsend-1.0.0 ================================================= */
+
+  /* ===== phteam-1.0.0 (b1169): SHARED TEAM NOTES ON THE PHONE =============
+   * Owner: "the note thing - if someone leaves notes it should show up here on
+   * the phone app too."
+   *
+   * The desktop already has this: the tn-1.0.0 team-notes module keeps one
+   * shared thread per patient in p.teamNotes, written through upsertPatient so
+   * it reaches the account, with a union carry so a stale write-back cannot
+   * lose a colleague's note. This is the SAME thread on the phone. There is no
+   * second store, no second endpoint and no second copy of the model: reads go
+   * through __mlsTeamNotes.forPatient(), the write goes through
+   * __mlsTeamNotes.addFor(), and if that module is not loaded this renders
+   * nothing at all rather than an empty promise with no way to add a note.
+   *
+   * NOTHING HERE TOUCHES ATHENA. A team note is a message between clinicians
+   * on this account. It is not a chart write, it is not staged for one, and it
+   * never reaches the relay.
+   *
+   * WHY THE CARD LIVES IN THIS FILE AND NOT IN THE PHONE MODULE.
+   * feat_mls_phone_ui.js has no 1p fork - it is production bytes - so this lane
+   * may not put a feature in it. That is the same reason phsend's bar and
+   * phclean's overlay live here. The difference is placement: the send bar is a
+   * SIBLING of the repainted region, but the owner asked for this card directly
+   * under QUICK HISTORY, which is inside #mlsPh3Body - and that whole node's
+   * innerHTML is replaced on every signature-changing repaint. So this card is
+   * re-inserted after a repaint eats it, rather than assuming it survives.
+   *
+   * WHICH MEANS THE DRAFT IS MIRRORED ON EVERY KEYSTROKE. The phone's own
+   * caretIsOurs() protects exactly two fields, #mlsPh3Tx and #mlsPh3Find, so a
+   * background repaint arriving mid-word WILL destroy a textarea this file
+   * added. Losing a half-typed note that way is the ph2 transcript defect
+   * wearing a different hat. phtDraft holds the bytes, keyed by patient, and
+   * the re-inserted composer is refilled from it.
+   *
+   * IDENTITY HAS ONE OWNER AND IT IS NOT THIS BLOCK. The phone does not carry
+   * its own idea of which chart a schedule row belongs to (the D-section law in
+   * tests/phone-surface). The patient is read from window.getActivePtId(),
+   * which calStartVisit/selectPatient set through the shared resolver. This
+   * block never searches, never picks and never adopts: it only VERIFIES that
+   * the active chart's name and date of birth agree with the visit on screen,
+   * and REFUSES - visibly - when they do not. A refusal cannot mint a patient.
+   *
+   * It never blocks recording. It has no gate, it disables nothing, and the
+   * action bar is not its business.
+   * ======================================================================*/
+  var PHT_SEEN_KEY = 'mlsPhTeamSeen';
+  var PHT_AUTHOR_KEY = 'mls_team_note_author_v1';   /* the desktop's own key, read-only */
+  var PHT_TEXT_MAX = 4000;
+  var phtDraft = { ptId: '', text: '' };
+  var phtSig = '';          /* what is currently painted: patient + thread revision */
+  var phtNewFor = { ptId: '', n: 0 };
+  var phtLine = '';         /* the one sentence this card says about itself */
+
+  function phtApi() {
+    try {
+      var m = window.__mlsTeamNotes;
+      return (m && m.installed && typeof m.forPatient === 'function') ? m : null;
+    } catch (e) { return null; }
+  }
+  function phtNorm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
+  function phtDob(v) {
+    var s = String(v == null ? '' : v).trim();
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3];
+    m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+    if (m) return m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+    return '';
+  }
+  /* The active chart, and ONLY if it is provably the person on screen. */
+  function phtPatient(sn) {
+    var a = (sn && sn.active) || null;
+    if (!a) return { p: null, why: 'no-visit' };
+    var id = '';
+    try { id = String((typeof window.getActivePtId === 'function' ? window.getActivePtId() : '') || ''); } catch (e) { id = ''; }
+    if (!id) return { p: null, why: 'no-chart' };
+    var p = null;
+    try {
+      var g = window.getPatients;
+      var pts = (typeof g === 'function') ? (g() || []) : [];
+      for (var i = 0; i < pts.length; i++) { if (pts[i] && String(pts[i].id) === id) { p = pts[i]; break; } }
+    } catch (e2) { p = null; }
+    if (!p) return { p: null, why: 'no-chart' };
+    var an = phtNorm(a.name), pn = phtNorm(p.name);
+    var ad = phtDob(a.dob), pd = phtDob(p.dob);
+    if (!an || an !== pn || !ad || ad !== pd) return { p: null, why: 'mismatch' };
+    return { p: p, why: '' };
+  }
+  function phtNotes(ptId) {
+    var m = phtApi();
+    if (!m) return [];
+    var list = null;
+    try { list = m.forPatient(ptId); } catch (e) { list = null; }
+    if (!Array.isArray(list)) return [];
+    /* forPatient hands back the module's union order, which is already newest
+       first. Sorting again here is one line and removes the dependency. */
+    return list.slice().sort(function (x, y) { return (Number(y && y.at) || 0) - (Number(x && x.at) || 0); });
+  }
+  function phtRev(list) {
+    var r = 0;
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      var v = Math.max(Number(n && n.at) || 0, Number(n && n.ed) || 0);
+      if (v > r) r = v;
+    }
+    return list.length + ':' + r;
+  }
+  /* Per-device, per-patient "you have already seen up to here". sessionStorage,
+     not localStorage: this is a patient id next to a timestamp, and it has no
+     business outliving the account that read it - phsendForgetSession drops it
+     with everything else at the boundary. */
+  function phtSeenMap() {
+    try { var v = JSON.parse(sessionStorage.getItem(PHT_SEEN_KEY) || 'null'); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; }
+  }
+  function phtSeenWrite(map) {
+    try { sessionStorage.setItem(PHT_SEEN_KEY, JSON.stringify(map)); } catch (e) {}
+  }
+  /* Counted ONCE per opening of a patient, then the stamp moves forward, so the
+     next opening marks only what arrived after this one. The count is held in
+     memory for as long as the doctor stays on this patient - a marker that
+     cleared itself the instant it was painted would be a marker nobody sees -
+     and notes landing while the card is open are added to it, because they did
+     arrive since the last opening. */
+  function phtNewCount(ptId, list) {
+    var map = phtSeenMap();
+    if (phtNewFor.ptId !== ptId) {
+      var since = Number(map[ptId] || 0);
+      var n = 0;
+      if (since > 0) { for (var i = 0; i < list.length; i++) if ((Number(list[i] && list[i].at) || 0) > since) n++; }
+      phtNewFor = { ptId: ptId, n: n, since: since };
+      map[ptId] = Date.now();
+      phtSeenWrite(map);
+      return n;
+    }
+    var since2 = Number(phtNewFor.since || 0), m2 = 0;
+    if (since2 > 0) { for (var j = 0; j < list.length; j++) if ((Number(list[j] && list[j].at) || 0) > since2) m2++; }
+    if (m2 > phtNewFor.n) phtNewFor.n = m2;
+    return phtNewFor.n;
+  }
+  function phtWhen(ms) {
+    var t = Number(ms) || 0;
+    if (!t) return '';
+    try { return new Date(t).toLocaleString(); } catch (e) { return ''; }
+  }
+  function phtAuthorDefault() {
+    try { return String(localStorage.getItem(PHT_AUTHOR_KEY) || '').slice(0, 80).trim(); } catch (e) { return ''; }
+  }
+  function phtStyle() {
+    if (document.getElementById('mlsPhTeamCss')) return;
+    var s = document.createElement('style');
+    s.id = 'mlsPhTeamCss';
+    /* Deliberately thin: the card reuses ph3-sect / ph3-card / ph3-h / ph3-p
+       so it reads as one of the phone's own sections. Only what those classes
+       do not already provide is stated here. */
+    s.textContent =
+      '#mlsPhTeamHd{display:flex;align-items:center;gap:8px;margin:0 0 9px}' +
+      '#mlsPhTeamHd .pht-t{font-weight:800;font-size:16px;line-height:1.3;margin:0;flex:1;min-width:0}' +
+      '#mlsPhTeamHd .pht-new{flex:none;background:#F0B429;color:#3B2C05;font-weight:800;font-size:11.5px;' +
+      'line-height:1;border-radius:999px;padding:6px 9px;letter-spacing:.2px}' +
+      '#mlsPhTeam .pht-n{border-top:1px solid #E3E8E4;padding:10px 0 0;margin:10px 0 0}' +
+      '#mlsPhTeam .pht-n:first-child{border-top:0;padding-top:0;margin-top:0}' +
+      '#mlsPhTeam .pht-w{font-weight:700;font-size:12px;line-height:1.35;color:#67736C;margin:0 0 4px}' +
+      '#mlsPhTeam .pht-ai{display:inline-block;background:#EDF3EF;color:#2E6A4B;font-weight:800;font-size:10.5px;' +
+      'line-height:1;border-radius:6px;padding:4px 6px;margin-left:6px;letter-spacing:.3px}' +
+      '#mlsPhTeam .pht-b{white-space:pre-wrap;overflow-wrap:anywhere;font-weight:500;font-size:14px;' +
+      'line-height:1.5;color:#12201A;margin:0}' +
+      '#mlsPhTeam .pht-say{font-weight:600;font-size:12.5px;line-height:1.45;color:#67736C;margin:9px 0 0}' +
+      '#mlsPhTeam .pht-ta{width:100%;min-height:84px;border:1px solid #E3E8E4;border-radius:10px;' +
+      'padding:11px 12px;font:500 16px/1.5 inherit;color:#12201A;background:#fff;resize:vertical;margin:0 0 9px}' +
+      '#mlsPhTeam .pht-ta:focus{outline:2px solid #2E6A4B;outline-offset:1px}';
+    try { (document.head || document.documentElement).appendChild(s); } catch (e) {}
+  }
+
+  /* The anchor. The quick history has no id of its own, so it is found by its
+     own section heading - the exact string feat_mls_phone_ui.js renders. The
+     proof suite pins that string against the phone module, so a lane that
+     renames the heading reds a test instead of silently dropping this card to
+     the bottom of the screen. */
+  function phtAnchor(body) {
+    var kids = null;
+    try { kids = body.children; } catch (e) { return null; }
+    if (!kids) return null;
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      var cls = '';
+      try { cls = String(el.className || ''); } catch (e2) { cls = ''; }
+      if (cls.indexOf('ph3-sect') < 0) continue;
+      var t = '';
+      try { t = String(el.textContent || '').trim().toLowerCase(); } catch (e3) { t = ''; }
+      if (t !== 'quick history') continue;
+      /* the card is the heading's next element; insert AFTER it */
+      var card = kids[i + 1] || null;
+      return card || el;
+    }
+    return null;
+  }
+
+  function phtNoteEl(n) {
+    var wrap = document.createElement('div');
+    wrap.className = 'pht-n';
+    var who = document.createElement('p');
+    who.className = 'pht-w';
+    /* textContent, never innerHTML: a team note is clinical prose typed by a
+       human, and the author field is free text. */
+    who.textContent = String((n && n.author) || 'Unsigned') + (phtWhen(n && n.at) ? '  ' + phtWhen(n && n.at) : '');
+    if (n && n.ai === true) {
+      var tag = document.createElement('span');
+      tag.className = 'pht-ai';
+      tag.textContent = 'AI SUMMARY';
+      who.appendChild(tag);
+    }
+    var body = document.createElement('p');
+    body.className = 'pht-b';
+    body.textContent = String((n && n.text) || '');
+    wrap.appendChild(who);
+    wrap.appendChild(body);
+    if (n && n.ai === true) {
+      var warn = document.createElement('p');
+      warn.className = 'pht-say';
+      warn.textContent = 'AI-generated - review before relying on it.';
+      wrap.appendChild(warn);
+    }
+    return wrap;
+  }
+
+  /* Resolve WITHIN the card, never through document.getElementById. phtBuild
+     paints the thread into a card that has not been inserted yet, so a
+     document lookup finds nothing and the doctor gets an empty "Team notes"
+     header over a blank box - the notes are there, the painter just could not
+     see its own container. Walk the subtree it was handed. */
+  function phtIn(root, id) {
+    if (!root) return null;
+    if (root.id === id) return root;
+    var kids = null;
+    try { kids = root.children; } catch (e) { return null; }
+    for (var i = 0; kids && i < kids.length; i++) {
+      var hit = phtIn(kids[i], id);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  function phtPaintList(card, ptId, list) {
+    var listEl = phtIn(card, 'mlsPhTeamList');
+    var hdEl = phtIn(card, 'mlsPhTeamCount');
+    if (!listEl) return;
+    while (listEl.firstChild) { try { listEl.removeChild(listEl.firstChild); } catch (e2) { break; } }
+    if (!list.length) {
+      var none = document.createElement('p');
+      none.className = 'ph3-p';
+      none.textContent = 'No shared notes for this patient yet. Anything you add here is visible to everyone on this account.';
+      listEl.appendChild(none);
+    } else {
+      for (var i = 0; i < list.length; i++) listEl.appendChild(phtNoteEl(list[i]));
+    }
+    var n = phtNewCount(ptId, list);
+    var newEl = phtIn(card, 'mlsPhTeamNew');
+    if (newEl) {
+      newEl.textContent = n > 0 ? (n + ' new') : '';
+      newEl.style.display = n > 0 ? 'inline-block' : 'none';
+    }
+    if (hdEl) hdEl.textContent = list.length ? ('Team notes (' + list.length + ')') : 'Team notes';
+  }
+
+  function phtSay(msg) {
+    phtLine = String(msg || '');
+    var el = null;
+    try { el = document.getElementById('mlsPhTeamSay'); } catch (e) {}
+    if (el) el.textContent = phtLine;
+  }
+
+  function phtAdd(ptId) {
+    var m = phtApi();
+    if (!m || typeof m.addFor !== 'function') { phtSay('Team notes are not available on this device right now. Nothing was saved.'); return; }
+    var ta = null;
+    try { ta = document.getElementById('mlsPhTeamTa'); } catch (e) {}
+    var text = String((ta && ta.value) || '').trim();
+    if (!text) { phtSay('Type the note first.'); return; }
+    var res = null;
+    try { res = m.addFor(ptId, { text: text.slice(0, PHT_TEXT_MAX), author: phtAuthorDefault() }); }
+    catch (e2) { res = { ok: false, reason: 'threw' }; }
+    if (!res || !res.ok) {
+      var why = String((res && res.reason) || '');
+      phtSay(why === 'full' ? 'This patient already has the maximum number of team notes. Nothing was removed - delete one on the office computer first.'
+        : why === 'store-unavailable' ? 'This device cannot reach the patient store, so the note was NOT saved. Try again in a moment.'
+        : why === 'patient-missing' ? 'That chart is no longer open on this device. Nothing was saved.'
+        : 'The note was NOT saved. Nothing was changed.');
+      return;
+    }
+    /* it is stored - clear the draft and show it at once */
+    if (ta) ta.value = '';
+    phtDraft = { ptId: '', text: '' };
+    var list = phtNotes(ptId);
+    phtSig = ptId + '|' + phtRev(list);
+    var card = null;
+    try { card = document.getElementById('mlsPhTeam'); } catch (e3) {}
+    if (card) phtPaintList(card, ptId, list);
+    phtSay('Added. Everyone on this account sees it.');
+  }
+
+  function phtBuild(ptId, list) {
+    phtStyle();
+    var card = document.createElement('div');
+    card.id = 'mlsPhTeam';
+    card.className = 'ph3-card';
+    card.setAttribute('data-phteam', 'phteam-1.0.0');
+
+    var hd = document.createElement('div');
+    hd.id = 'mlsPhTeamHd';
+    var t = document.createElement('p');
+    t.className = 'pht-t';
+    t.id = 'mlsPhTeamCount';
+    t.textContent = 'Team notes';
+    var nw = document.createElement('span');
+    nw.className = 'pht-new';
+    nw.id = 'mlsPhTeamNew';
+    nw.style.display = 'none';
+    hd.appendChild(t);
+    hd.appendChild(nw);
+    card.appendChild(hd);
+
+    var listEl = document.createElement('div');
+    listEl.id = 'mlsPhTeamList';
+    card.appendChild(listEl);
+
+    var ta = document.createElement('textarea');
+    ta.id = 'mlsPhTeamTa';
+    ta.className = 'pht-ta';
+    ta.setAttribute('placeholder', 'Leave a note for the rest of the practice');
+    ta.setAttribute('aria-label', 'Add a shared team note about this patient');
+    ta.style.marginTop = '12px';
+    ta.value = (phtDraft.ptId === ptId) ? String(phtDraft.text || '') : '';
+    /* mirrored on every keystroke - a background repaint replaces this node */
+    ta.addEventListener('input', function () {
+      phtDraft = { ptId: ptId, text: String(ta.value || '') };
+    });
+    card.appendChild(ta);
+
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'ph3-secondary';
+    go.id = 'mlsPhTeamGo';
+    go.textContent = 'Add a note';
+    go.addEventListener('click', function () { phtAdd(ptId); });
+    card.appendChild(go);
+
+    var say = document.createElement('p');
+    say.className = 'pht-say';
+    say.id = 'mlsPhTeamSay';
+    say.textContent = phtLine || 'Shared with everyone on this account. This is not sent to athenaOne.';
+    card.appendChild(say);
+
+    phtPaintList(card, ptId, list);
+    return card;
+  }
+
+  function phtRefuse(why) {
+    phtStyle();
+    var card = document.createElement('div');
+    card.id = 'mlsPhTeam';
+    card.className = 'ph3-card';
+    card.setAttribute('data-phteam', 'phteam-1.0.0');
+    var h = document.createElement('p');
+    h.className = 'ph3-h';
+    h.textContent = 'Team notes';
+    var p = document.createElement('p');
+    p.className = 'ph3-p';
+    p.textContent = why === 'mismatch'
+      ? 'This ' + devNoun() + ' cannot confirm the chart it has open is the patient on this screen, so their shared notes are not shown. Open them from the day list again.'
+      : 'No chart is open for this patient on this ' + devNoun() + ' yet, so there are no shared notes to show.';
+    card.appendChild(h);
+    card.appendChild(p);
+    return card;
+  }
+
+  function phtMount() {
+    /* render NOTHING when the module is not there. Not an empty card, not a
+       placeholder - the phone simply does not claim a surface it cannot serve. */
+    if (!phtApi()) { phtRemove(); return; }
+    var ph = null;
+    try { ph = window.__mlsPhoneUI; } catch (e) { return; }
+    if (!ph || !ph.installed || typeof ph.state !== 'function') { phtRemove(); return; }
+    var st = null;
+    try { st = ph.state(); } catch (e2) { return; }
+    if (!st || !st.mounted || st.screen !== 'visit') { phtRemove(); return; }
+    if (!authed()) { phtRemove(); return; }
+    var body = null;
+    try { body = document.getElementById('mlsPh3Body'); } catch (e3) {}
+    if (!body) return;
+
+    var sn = null;
+    try { var r = window.__mlsEasyV32; sn = (r && r.remote && typeof r.remote.snapshot === 'function') ? r.remote.snapshot() : null; } catch (e4) { sn = null; }
+    if (!sn || !sn.active) { phtRemove(); return; }
+
+    var got = phtPatient(sn);
+    var existing = null;
+    try { existing = document.getElementById('mlsPhTeam'); } catch (e5) {}
+    var anchor = phtAnchor(body);
+
+    if (!got.p) {
+      var wantSig = 'refuse:' + got.why;
+      if (existing && phtSig === wantSig && existing.parentNode === body) return;
+      phtRemove();
+      var rcard = phtRefuse(got.why);
+      phtInsert(body, anchor, rcard);
+      phtSig = wantSig;
+      return;
+    }
+
+    var ptId = String(got.p.id);
+    var list = phtNotes(ptId);
+    var sig = ptId + '|' + phtRev(list);
+
+    /* Still in the document, same patient, same thread: nothing to do. This is
+       what keeps a 1.2 s tick from replacing the composer the doctor is typing
+       into. */
+    if (existing && existing.parentNode === body && phtSig === sig) return;
+
+    if (existing && existing.parentNode === body && phtSig.indexOf(ptId + '|') === 0) {
+      /* same patient, the thread moved: repaint ONLY the list and the header.
+         The composer, its draft and the caret are left alone. */
+      phtPaintList(existing, ptId, list);
+      phtSig = sig;
+      return;
+    }
+
+    if (String(phtDraft.ptId || '') !== ptId) { phtDraft = { ptId: '', text: '' }; phtLine = ''; }
+    phtRemove();
+    phtInsert(body, anchor, phtBuild(ptId, list));
+    phtSig = sig;
+  }
+  function phtInsert(body, anchor, card) {
+    try {
+      var sect = document.createElement('p');
+      sect.className = 'ph3-sect';
+      sect.id = 'mlsPhTeamSect';
+      sect.textContent = 'Team notes';
+      if (anchor && anchor.parentNode === body) {
+        body.insertBefore(sect, anchor.nextSibling);
+        body.insertBefore(card, sect.nextSibling);
+      } else {
+        /* the heading moved or the screen is shaped differently than expected -
+           the notes still have to be reachable, so they go at the end rather
+           than nowhere */
+        body.appendChild(sect);
+        body.appendChild(card);
+      }
+    } catch (e) {}
+  }
+  function phtRemove() {
+    var ids = ['mlsPhTeam', 'mlsPhTeamSect'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = null;
+      try { el = document.getElementById(ids[i]); } catch (e) {}
+      if (el && el.parentNode) { try { el.parentNode.removeChild(el); } catch (e2) {} }
+    }
+    phtSig = '';
+  }
+  function phtForgetSession() {
+    phtRemove();
+    phtDraft = { ptId: '', text: '' };
+    phtNewFor = { ptId: '', n: 0 };
+    phtLine = '';
+    try { sessionStorage.removeItem(PHT_SEEN_KEY); } catch (e) {}
+  }
+  api.phteamMount = phtMount;
+  api.phteamState = function () {
+    return { sig: phtSig, draft: String(phtDraft.text || ''), draftFor: String(phtDraft.ptId || ''), line: phtLine, newFor: phtNewFor.ptId, newCount: phtNewFor.n };
+  };
+  api.phteamForget = phtForgetSession;
+  /* The card holds a patient's shared clinical thread in the DOM and a
+     patient-id-keyed seen map in sessionStorage. Both go at the account
+     boundary, for the same reason the confirm sheet does: the next person to
+     pick this phone up is not necessarily the doctor who read it. */
+  try { window.addEventListener('mls:session-boundary', function () { try { phtForgetSession(); } catch (e) {} }, true); } catch (e) {}
+  /* ===== end phteam-1.0.0 ================================================= */
 
   /* rl-2.0.0/pdp-1.0.0: the OFFICE computer executes phone jobs; a SECONDARY
      computer also runs the agent but polls targetedOnly=1, so it can only

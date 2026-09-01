@@ -6802,6 +6802,34 @@ window.__mlsRefreshMobileNoticeShelf=mlsRefreshMobileNoticeShelf;
 function mlsNoticeAnchor(){
   let low=0,leftPx=null;
   try{
+    /* phfix-1.0.0 (b1169): THE PHONE APP HIDES ALL THREE BARS THIS WALKS.
+       feat_mls_phone_ui.js sets #appHeader, .mainnav and #patientBar to
+       display:none under body.mls-ph3, so `low` stayed 0 and every notice
+       collapsed to the 12px floor below - which on a phone is straight across
+       #mlsPh3Hdr and #mlsPh3Nav, the ONE navigational control the phone has
+       (Menu on the day screen, "< Day" on a visit). The notice shelf is fixed
+       and z-index 9330, above the 7000 frame, and a save-verification card in
+       it does not fade, so the way back was unreachable until the doctor found
+       the small x. Measure the phone's OWN header instead - the same thing
+       #mlsBootReadiness already does with a hard-coded 58px, except measured.
+       A modal still collapses the anchor exactly as it does on the desktop, so
+       that case falls through to the walk below. */
+    if(document.body&&document.body.classList.contains('mls-ph3')&&!document.querySelector('.modal-bg.show')){
+      const ph=document.getElementById('mlsPh3Hdr');
+      let phLow=0;
+      if(ph){
+        const pcs=getComputedStyle(ph);
+        if(pcs.display!=='none'&&pcs.visibility!=='hidden'){
+          const pr=ph.getBoundingClientRect();
+          if(pr.height>0)phLow=pr.bottom;
+        }
+      }
+      /* no measurable header yet (first paint) - the header's own declared
+         geometry is 46px of control plus 8+10 of padding, before insets */
+      if(!phLow)phLow=64;
+      const pvh=window.innerHeight||800;
+      return {top:Math.max(12,Math.min(Math.round(phLow)+10,Math.round(pvh*0.45))),left:null};
+    }
     for(const id of ['appHeader','mlsCtxBar','patientBar']){
       const el=document.getElementById(id); if(!el) continue;
       const cs=getComputedStyle(el);
@@ -17777,7 +17805,7 @@ function showView(v){
     if(!_liteSaid){ try{ toast(_liteMsg,'err'); }catch(_eLite2){} }
     v='visit';
   } }catch(e){}
-  /* noteq-1.1.0 (b1178): warm the note-quality module on Visit-screen entry.
+  /* noteq-1.1.0 (b1177): warm the note-quality module on Visit-screen entry.
      Fire-and-forget and never awaited - by the time Generate is pressed the
      module is normally already resident, so the bounded await at the
      generation sites costs nothing in the common case. */
@@ -24056,7 +24084,7 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
      procedure plus the template law - which is exactly what the owner meant by
      "professional medical quality" for an op note. */
   var noteqOpCtx={template:String(tplText||''),procedureClass:''};
-  /* noteq-1.1.0 (b1178): bounded await so the FIRST op note of a session gets
+  /* noteq-1.1.0 (b1177): bounded await so the FIRST op note of a session gets
      the contract and the grade, not just the second. */
   try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyOp){}
   var noteqOp=__mlsNoteQualityContract('operative-procedure-note',noteqOpCtx);
@@ -26520,7 +26548,7 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
      boilerplate character-for-character with negations intact, every slot
      resolved or explicitly marked, nothing invented to fill a blank. */
   const noteqTplCtx={template:tplForModel,templateName:(template&&template.name)?template.name:''};
-  /* noteq-1.1.0 (b1178): bounded await - the template pass is the one whose
+  /* noteq-1.1.0 (b1177): bounded await - the template pass is the one whose
      whole job is "follow the template well", so it must never run contractless
      just because it was the first thing the session did. */
   try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyTpl){}
@@ -32733,10 +32761,10 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
      only on the single repair pass and carries the prior draft's findings
      verbatim; on a first pass both strings are empty and the prompt is
      byte-for-byte what it was. */
-  /* noteq-1.1.0 (b1178): await the module before building the contract. On the
+  /* noteq-1.1.0 (b1177): await the module before building the contract. On the
      FIRST generation of a session the idle loader has not landed yet, and
      without this the prompt went out with no contract at all - measured live
-     on b1178. Bounded; a module that never arrives yields '' and the prompt is
+     on b1176. Bounded; a module that never arrives yields '' and the prompt is
      byte-for-byte what it was. */
   try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyMain){}
   var noteqBlock=__mlsNoteQualityContract('visit-note-soap',{
@@ -32755,7 +32783,7 @@ async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,ru
   var firstText='';
   try{ firstText=String((result&&result.soap)||''); }catch(eNoteqFirst){ firstText=''; }
   if(!firstText.trim()) return result;
-  /* noteq-1.1.0 (b1178): a generation that STARTED before the module loaded is
+  /* noteq-1.1.0 (b1177): a generation that STARTED before the module loaded is
      still graded - we await here as well as at contract time, so the module
      that arrives mid-flight is used rather than missed. */
   try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyStruct){}
@@ -32810,9 +32838,9 @@ function __mlsNoteQualityApi(){
   catch(eNoteqApi){ return null; }
 }
 
-/* noteq-1.1.0 (b1178): LOAD-ON-DEMAND, BECAUSE THE DEFERRED LOADER LOSES THE RACE.
+/* noteq-1.1.0 (b1177): LOAD-ON-DEMAND, BECAUSE THE DEFERRED LOADER LOSES THE RACE.
 
-   Measured live on b1178: on a fresh page load __mlsNoteQuality was undefined;
+   Measured live on b1176: on a fresh page load __mlsNoteQuality was undefined;
    a transcript was pasted and Generate pressed; the note came back and only
    AFTER that did the module appear. stats() read total 0 - no contract had
    ridden the prompt, no grade ran, no strip painted. The idle loader is
@@ -32895,7 +32923,7 @@ function __mlsNoteQualityWarm(){
   try{ if(!__mlsNoteQualityApi()) __mlsNoteQualityEnsure(); }catch(eNoteqWarm){}
 }
 try{ window.__mlsNoteQualityEnsure=__mlsNoteQualityEnsure; window.__mlsNoteQualityWarm=__mlsNoteQualityWarm; }catch(eNoteqExport){}
-/* noteq-1.1.0 (b1178): the other warm trigger - the first transcript keystroke
+/* noteq-1.1.0 (b1177): the other warm trigger - the first transcript keystroke
    or paste. A doctor who lands straight on Visit and starts typing has given
    us seconds of runway before Generate; spend them loading the module rather
    than making the generation wait. Unbinds itself after one fire. */
@@ -37324,7 +37352,7 @@ async function generateAVS(){
        transcript artifacts, no stigmatizing language, no dangerous
        abbreviations in a document the patient reads the day it is signed. */
     const noteqAvsCtx={avs:true,template:''};
-    /* noteq-1.1.0 (b1178): bounded await before the patient-facing summary. */
+    /* noteq-1.1.0 (b1177): bounded await before the patient-facing summary. */
     try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyAvs){}
     const noteqAvs=__mlsNoteQualityContract('visit-note-soap',noteqAvsCtx);
     let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
@@ -45195,7 +45223,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1178';
+  window.__MLS_AV='b1179';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -62049,6 +62077,22 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     max-width:none !important;
     margin:0 !important;
     z-index:9330 !important;
+  }
+}
+/* phfix-1.0.0 (b1169): a FLOOR under the phone app, belt to the anchor's
+   braces. mlsNoticeAnchor() now measures #mlsPh3Hdr, but --mls-notice-top is
+   only recomputed by toast() and on resize, so a shelf raised by a
+   save-verification card alone can be painted against a stale value. This
+   keeps it below the phone header either way, and never moves it up. The
+   shelf rule is stated after the block above at equal specificity so it wins
+   on order; #toast is included because it reads the same variable, and it is
+   the one overlay a doctor is expected to see over the frame. */
+@media (max-width:760px){
+  body.mls-ph3 #mlsMobileNoticeShelf.mls-mobile-notice-active{
+    top:max(var(--mls-notice-top, 92px), calc(env(safe-area-inset-top) + 74px)) !important;
+  }
+  body.mls-ph3 #toast{
+    top:max(var(--mls-notice-top, 96px), calc(env(safe-area-inset-top) + 74px)) !important;
   }
 }
 </style>
