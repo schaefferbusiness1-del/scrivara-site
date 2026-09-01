@@ -43144,7 +43144,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1139';
+  window.__MLS_AV='b1140';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -62433,5 +62433,190 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
 })();
 </script>
 <!-- ===== end busyall-1.0.0 ================================================ -->
+<!-- ===== ckvisit-1.0.0 - a check-in belongs to ONE visit ================
+     Owner, 2026-08-31, on a screenshot of the Visit screen's check-in strip:
+     "this avatar should reset for a new vivist even if its the same patient."
+
+     MEASURED CAUSE (feat_mls_avatar.js, ensureVisitCard). The strip chose the
+     row it paints with
+
+         if (clean(cache.checkins[i].patient_external_id) === activeId)
+
+     - the PATIENT and nothing else. The rows carry no visit either: the office
+     interview is opened with {clientSessionId, patientExternalId} and the row
+     is read back from /api/avatar/checkins as {id, patient_external_id,
+     ready_at, headline, bullets, summary, audited, flags}. There is no
+     encounter, appointment or visit key anywhere in the record. So the only
+     boundary a check-in ever had was the server's ready -> seen status, which
+     moves only when a human taps "Mark seen" in the inbox panel and never
+     moves back. A check-in nobody marked kept painting on the Visit screen for
+     every later visit of that same patient, forever.
+
+     THIS BLOCK ADDS THE MISSING KEY, and only that: a VISIT TOKEN.
+       - current()   the token of the visit that is open now. localStorage, so
+                     a reload and a second tab agree about which visit this is,
+                     and account-namespaced through uns() like every other
+                     local key in this app.
+       - newVisit()  ends a visit. A NEW token is minted only when the visit
+                     that is ending was REAL - it had a transcript, a note, or
+                     a saved record id. An empty editor is a reset, not a
+                     visit, so a doctor who merely opens a chart and taps "New
+                     visit" does not burn the token and does not lose the
+                     check-in that is in front of him. That distinction is the
+                     whole reason this is not one line inside newVisit().
+       - the record a visit saves is STAMPED with its token, and reopening that
+                     record adopts the token again - so an old visit still
+                     shows the check-in it was actually conducted with.
+
+     Nothing here reads, writes, hides or deletes a check-in. The avatar module
+     owns that decision; this owns only the answer to "which visit is this".
+
+     FAIL-OPEN BY CONSTRUCTION. If this block is absent the avatar module finds
+     no window.__mlsVisitIdentity, resolves no token, and behaves exactly as it
+     did before. Clinical information is never withheld because a dependency
+     failed to load. No regex literals: an escape lost in transport is
+     invisible in a diff and still parses. -->
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsVisitIdentity) return;
+
+  var VERSION = 'ckvisit-1.0.0';
+  var KEY = 'visitToken';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function str(v) { return (v === null || v === undefined) ? '' : String(v); }
+  /* String.prototype.trim, never a regex - the same rule visitowner-1.0.0 keeps. */
+  function trim(v) { var s = str(v); return s.trim ? s.trim() : s; }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+
+  function storeKey() {
+    return safe(function () { return (typeof uns === 'function') ? uns(KEY) : ('mls_' + KEY); }, 'mls_' + KEY);
+  }
+  function mint() {
+    return 'vt' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+  function readToken() { return safe(function () { return trim(localStorage.getItem(storeKey())); }, ''); }
+  function writeToken(value) { return safe(function () { localStorage.setItem(storeKey(), str(value)); return true; }, false); }
+
+  /* The token of the visit that is open right now. Minted on first ask so that
+     a build which has never started a visit still has ONE stable answer - two
+     different answers to "which visit is this" inside one visit would hide a
+     check-in that belongs to the doctor's own open encounter. */
+  function current() {
+    var t = readToken();
+    if (t) return t;
+    t = mint();
+    writeToken(t);
+    return t;
+  }
+
+  /* WAS THE VISIT THAT IS ENDING A REAL ONE? Anything the doctor produced
+     counts, and so does a record id: reopening a saved visit and pressing New
+     visit ends a real encounter even though nothing was typed this time. */
+  function hadWork() {
+    if (safe(function () { return !!trim((el('transcript') || {}).value); }, false)) return true;
+    if (safe(function () { return !!trim((el('noteBox') || {}).value); }, false)) return true;
+    if (safe(function () { return !!trim(typeof currentSoap !== 'undefined' ? currentSoap : ''); }, false)) return true;
+    if (safe(function () { return !!trim(typeof currentInsurance !== 'undefined' ? currentInsurance : ''); }, false)) return true;
+    if (safe(function () { return !!trim(typeof currentNoteId !== 'undefined' ? currentNoteId : ''); }, false)) return true;
+    return false;
+  }
+
+  function announce(tokenValue, reason) {
+    safe(function () {
+      window.dispatchEvent(new CustomEvent('mls:visit-started',
+        { detail: { token: str(tokenValue), reason: str(reason) } }));
+    });
+  }
+
+  /* A new encounter. Every listener repaints against the new token. */
+  function begin(reason) {
+    var next = mint();
+    writeToken(next);
+    api.started++;
+    announce(next, str(reason) || 'begin');
+    return next;
+  }
+
+  /* Re-enter a visit that already has a token (a reopened saved record). */
+  function adopt(tokenValue, reason) {
+    var want = trim(tokenValue);
+    if (!want) return '';
+    if (readToken() !== want) { writeToken(want); api.adopted++; }
+    announce(want, str(reason) || 'adopt');
+    return want;
+  }
+
+  var originals = {};
+  function wrapOnce(name, make) {
+    var fn = safe(function () { return window[name]; }, null);
+    if (typeof fn !== 'function') return false;
+    if (Object.prototype.hasOwnProperty.call(originals, name)) return false;
+    originals[name] = fn;
+    window[name] = make(fn);
+    return true;
+  }
+
+  var api = {
+    version: VERSION,
+    installed: true,
+    started: 0,
+    adopted: 0,
+    stamped: 0,
+    current: current,
+    begin: begin,
+    adopt: adopt,
+    hadWork: hadWork,
+    wrapped: function () { return Object.keys(originals); },
+    revert: function () {
+      Object.keys(originals).forEach(function (n) { window[n] = originals[n]; });
+      originals = {};
+      try { delete window.__mlsVisitIdentity; } catch (e) { window.__mlsVisitIdentity = null; }
+      return true;
+    }
+  };
+  window.__mlsVisitIdentity = api;
+
+  /* newVisit() is the app's one "this encounter is over" resolver - New visit,
+     Next patient, the calendar's start-a-visit and the patient switch all go
+     through it. The work test is read BEFORE orig runs, because orig is what
+     empties the editor. */
+  wrapOnce('newVisit', function (orig) {
+    return function () {
+      var real = safe(hadWork, false);
+      var out = orig.apply(this, arguments);
+      if (real) begin('new-visit'); else announce(current(), 'new-visit-empty');
+      return out;
+    };
+  });
+
+  /* The one choke point that loads a saved record into the editor. */
+  wrapOnce('loadRecordIntoEditor', function (orig) {
+    return function (n) {
+      var out = orig.apply(this, arguments);
+      var want = safe(function () { return trim(n && n.visitToken); }, '');
+      /* A record saved before this block existed has no token. Derive a stable
+         one from its own id rather than inventing a fresh one, so reopening the
+         same old visit twice is the same visit both times. */
+      if (!want) want = safe(function () { return (n && n.id) ? ('note:' + str(n.id)) : ''; }, '');
+      if (want) adopt(want, 'saved-visit-reopened');
+      return out;
+    };
+  });
+
+  /* The single record builder every save path uses. Additive: one field. */
+  wrapOnce('noteRecordFromState', function (orig) {
+    return function () {
+      var rec = orig.apply(this, arguments);
+      safe(function () {
+        if (rec && typeof rec === 'object' && !rec.visitToken) { rec.visitToken = current(); api.stamped++; }
+      });
+      return rec;
+    };
+  });
+})();
+</script>
+<!-- ===== end ckvisit-1.0.0 =============================================== -->
 </body>
 </html>

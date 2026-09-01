@@ -13400,6 +13400,104 @@ function kioskLine(kind, text) {
     return b;
   }
 
+  /* ==== ck-1.0.0 - A CHECK-IN BELONGS TO ONE VISIT ==========================
+     Owner, 2026-08-31: "this avatar should reset for a new vivist even if its
+     the same patient."
+
+     MEASURED KEYING, before this: PER PATIENT, WITH NO VISIT KEY AT ALL. The
+     Visit card picked its row with `clean(row.patient_external_id) === activeId`
+     and nothing else, and the row itself has no visit either - the interview is
+     opened with {clientSessionId, patientExternalId} and read back as
+     {id, patient_external_id, ready_at, headline, bullets, summary, audited,
+     flags}. The only boundary a check-in ever had was the server's ready ->
+     seen status, and that moves only when a human taps "Mark seen" in the inbox
+     panel (one-way: the backend UPDATE is WHERE id = ? AND status = 'ready').
+     So an unmarked check-in painted on the Visit screen for every subsequent
+     visit of that patient, forever - the answers to LAST month's questions
+     sitting above today's encounter as if the patient had just given them.
+
+     THE ASSOCIATION IS LOCAL AND ADDITIVE. The server row is not touched, not
+     marked, not deleted: this is a display association only, and every check-in
+     ever recorded stays in the inbox behind "All check-ins" whatever this says.
+     The ledger holds check-in ids and opaque visit tokens - no name, no chart,
+     no clinical text - and is account-namespaced through uns() like every other
+     local key in this file.
+
+     WRITE-ONCE AND FAIL-OPEN, in that order:
+       - a check-in nobody has claimed yet belongs to whichever visit is open
+         now, so it paints, and that visit claims it;
+       - a check-in claimed by ANOTHER visit does not paint here; it is still
+         one tap away in the inbox, and it paints again the moment that visit is
+         reopened (the record carries its token - see ckvisit-1.0.0);
+       - with no visit identity published at all - an older shell, a block that
+         failed to install - the token is '' and every row is eligible exactly
+         as before. A missing dependency must never withhold a red flag. */
+  var CHECKIN_VISIT_KEY = 'mlsAvCheckinVisitV1';
+  var CHECKIN_VISIT_MAX = 200;
+  function checkinVisitKey() {
+    return safe(function () {
+      return isFn(window.uns) ? (window.uns(CHECKIN_VISIT_KEY) || CHECKIN_VISIT_KEY) : CHECKIN_VISIT_KEY;
+    }, CHECKIN_VISIT_KEY);
+  }
+  function checkinVisitToken() {
+    return clean(safe(function () {
+      var identity = window.__mlsVisitIdentity;
+      return (identity && isFn(identity.current)) ? identity.current() : '';
+    }, ''));
+  }
+  function checkinLedgerRead() {
+    return safe(function () {
+      var raw = localStorage.getItem(checkinVisitKey());
+      if (!raw) return {};
+      var row = JSON.parse(raw);
+      if (!row || typeof row !== 'object' || row.v !== 1 || !row.map || typeof row.map !== 'object') return {};
+      return row.map;
+    }, {});
+  }
+  function checkinLedgerWrite(map) {
+    return safe(function () {
+      var ids = Object.keys(map);
+      /* A ledger is a convenience, not a record: the check-ins themselves live
+         on the server and are never pruned by anything here. Newest kept. */
+      if (ids.length > CHECKIN_VISIT_MAX) {
+        ids.sort(function (a, b) { return (Number(map[b].at) || 0) - (Number(map[a].at) || 0); });
+        for (var i = CHECKIN_VISIT_MAX; i < ids.length; i++) delete map[ids[i]];
+      }
+      localStorage.setItem(checkinVisitKey(), JSON.stringify({ v: 1, map: map }));
+      return true;
+    }, false);
+  }
+  function checkinVisitOf(id) {
+    var key = clean(id);
+    if (!key) return '';
+    var row = checkinLedgerRead()[key];
+    return row ? clean(row.vt) : '';
+  }
+  /* WRITE-ONCE. A second claim would let the visit the doctor happens to have
+     open re-take a check-in that an earlier encounter was already conducted
+     with, which is the defect this exists to end, in the other direction. */
+  function checkinClaim(id, tokenValue) {
+    var key = clean(id), vt = clean(tokenValue);
+    if (!key || !vt) return false;
+    var map = checkinLedgerRead();
+    if (map[key] && clean(map[key].vt)) return false;
+    map[key] = { vt: vt, at: Date.now() };
+    return checkinLedgerWrite(map);
+  }
+  function checkinForVisit(rows, activeId, tokenValue) {
+    var list = Array.isArray(rows) ? rows : [];
+    var want = clean(activeId), vt = clean(tokenValue);
+    if (!want) return null;
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i];
+      if (!row || clean(row.patient_external_id) !== want) continue;
+      if (!vt) return row;
+      var owner = checkinVisitOf(row.id);
+      if (!owner || owner === vt) return row;
+    }
+    return null;
+  }
+
   function ensureVisitCard() {
     if (!operationalSessionCurrent()) return;
     var view = gid('visitView'); if (!view) return;
@@ -13460,12 +13558,14 @@ function kioskLine(kind, text) {
     }, null);
     var total = cache && Array.isArray(cache.checkins) ? (Number(cache.total) || cache.checkins.length) : null;
     var activeId = activePtIdSafe();
-    var activeHit = null;
-    if (cache && activeId) {
-      for (var i = 0; i < cache.checkins.length; i++) {
-        if (clean(cache.checkins[i].patient_external_id) === activeId) { activeHit = cache.checkins[i]; break; }
-      }
-    }
+    /* ck-1.0.0: the patient is no longer the whole key. The row must also be
+       unclaimed, or claimed by THIS visit - see checkinForVisit above. */
+    var visitToken = checkinVisitToken();
+    var activeHit = cache ? checkinForVisit(cache.checkins, activeId, visitToken) : null;
+    /* Claiming here, on the paint, is deliberate: this IS the moment the
+       check-in is put in front of the doctor for this encounter. It is
+       write-once and costs one localStorage write per check-in, ever. */
+    if (activeHit) checkinClaim(activeHit.id, visitToken);
     /* Same content -> no rebuild (buttons keep their done/disabled states). */
     var pend = safe(function () { return ambientRecoverInfo(); }, null);
     /* the signature must include EVERY fact the card draws, or the card will not
@@ -13479,7 +13579,11 @@ function kioskLine(kind, text) {
         ':' + (Array.isArray(activeHit.bullets) ? activeHit.bullets.length : 0) : 'n') + '|' + total + '|' + activeId +
       /* pend.held is in the signature, or a SECOND held capture appearing would
          not rebuild the card and its line would never be drawn */
-      '|' + (pend ? 'r' + pend.bound + ':' + pend.chars + ':' + pend.held : 'r0');
+      '|' + (pend ? 'r' + pend.bound + ':' + pend.chars + ':' + pend.held : 'r0') +
+      /* ck-1.0.0: and the VISIT, so which encounter this card is painting for is
+         part of what makes the paint current. A new visit for the same patient
+         with the same ready list is a different card. */
+      '|' + visitToken;
     if (card.getAttribute('data-mls-av-sig') === sig) return;
     card.setAttribute('data-mls-av-sig', sig);
     card.innerHTML = '';
@@ -13899,6 +14003,15 @@ function kioskLine(kind, text) {
     if (settingsOpenNow()) mountAvatarSettings(true);
   }
   function onVisibility() { if (!document.hidden) refreshCount(false); }
+  /* ck-1.0.0: a NEW visit for the SAME patient changes no view, no chart and no
+     ready list, so not one of the events above fires - which is exactly why the
+     previous visit's check-in stayed on screen. Deliberately NOT folded into
+     onVisitContext: that handler also closes a live ambient recording when the
+     chart moves under it, and a visit boundary is not a chart boundary. */
+  function onVisitStarted() {
+    if (typeof operationalSessionCurrent === 'function' && !operationalSessionCurrent()) return;
+    ensureVisitCard();
+  }
   function onVisitContext() {
     if (typeof operationalSessionCurrent === 'function' && !operationalSessionCurrent()) return;
     /* THE CHART CHANGED UNDER A LIVE RECORDING. Everything said from here
@@ -13928,6 +14041,10 @@ function kioskLine(kind, text) {
        workspace until the next unrelated event. */
     ['mls:view-changed', 'mls:active-patient-changed', 'mls:patient-changed', 'mls:easy-mode-changed'].forEach(function (name) {
       safe(function () { window.addEventListener(name, onVisitContext, false); lifecycleBound.push([name, onVisitContext]); });
+    });
+    safe(function () {
+      window.addEventListener('mls:visit-started', onVisitStarted, false);
+      lifecycleBound.push(['mls:visit-started', onVisitStarted]);
     });
     if (!visBound) {
       safe(function () { document.addEventListener('visibilitychange', onVisibility, false); visBound = true; });
