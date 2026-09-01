@@ -762,6 +762,45 @@
     if (w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1);
     return w;
   }
+  /* ── THE EXACT NAME IS NOT A SCORE ─────────────────────────────────────────
+     Owner, 2026-08-31: "its not choosing the correct temmplates."
+
+     THE HOLE, and it sits one rung above every heuristic below. namedExactlyOne
+     asks "is every word of the reason present in exactly ONE template name" —
+     a CONTAINMENT test, so a library holding both "Genicular Nerve Block" and
+     "Genicular Nerve Block RFA" answers TWO for the reason "Genicular Nerve
+     Block", returns null, and the decision falls through to the scoreboard,
+     where the longer name can out-token the one the doctor literally typed.
+     A reason that IS a template's name is not evidence to be weighed against
+     other evidence; it is the answer.
+
+     Deliberately narrow so it cannot become another guess:
+       - equality of the STEMMED TOKEN SETS, not containment, so a superset name
+         can never satisfy it;
+       - the template's own keywords count, because a keyword is the doctor's
+         own declared alias for that template;
+       - EXACTLY ONE template may match, and a name match beats a keyword match
+         so two templates keyworded alike cannot deadlock a real name;
+       - the compatibility gate still runs at the call site, so an exactly-named
+         template that contradicts the requested side/level/approach is still
+         refused rather than applied. */
+  function tokenKey(text){ return tokens(text).map(stemWord).sort().join(' '); }
+  function exactNameMatch(procedure, list){
+    var want = tokenKey(procedure);
+    if (!want) return null;
+    var byName = [], byKeyword = [];
+    for (var i = 0; i < (list||[]).length; i++) {
+      var t = list[i]; if (!t) continue;
+      if (tokenKey(t.name) === want) { byName.push(t); continue; }
+      var kws = (t.keywords || []);
+      for (var j = 0; j < kws.length; j++) {
+        if (tokenKey(kws[j]) === want) { byKeyword.push(t); break; }
+      }
+    }
+    if (byName.length === 1) return byName[0];
+    if (!byName.length && byKeyword.length === 1) return byKeyword[0];
+    return null;
+  }
 
   function best(procedure) {
     procedure = expandShorthand(procedure);
@@ -775,6 +814,19 @@
     if (classSet.length > 1) return { tpl:null, confident:false, reason:'names more than one procedure ('+classSet.join(', ')+') — choose the template manually', score:0, multi:classSet };
     var r = rank(procedure), top = r[0], second = r[1], list = templates();
     if (!top || !top.tpl) return { tpl:null, confident:false, reason:'no templates', score:0 };
+    /* DETERMINISTIC FIRST, HEURISTIC SECOND. Every safety refusal above still
+       runs before this line (no procedure stated, two procedures named), and
+       the compatibility gate still runs on the hit — an exactly-named template
+       that contradicts the requested side/level/approach falls through to the
+       scoring path, which refuses or warns exactly as it did before. */
+    var exact = exactNameMatch(procedure, list);
+    if (exact && templateCompatibility(procedure, exact).pass) {
+      var exactRow = null;
+      for (var xi = 0; xi < r.length; xi++) if (r[xi] && r[xi].tpl === exact) { exactRow = r[xi]; break; }
+      return { tpl:exact, candidate:exact, confident:true, exactName:true,
+        reason:'the procedure text is exactly this template’s name',
+        score:(exactRow?exactRow.score:top.score), ranked:r };
+    }
     if(!top.compatible)return {tpl:null,candidate:top.tpl,confident:false,reason:'template conflicts with requested procedure',score:top.score,conflicts:top.conflicts,ranked:r};
     var classExact = !!(top.procClass && top.tplClass && top.procClass === top.tplClass);
     /* A one-template library is not clinical evidence. A blank/follow-up row
@@ -986,12 +1038,33 @@
     if (r.candidate && narrowsWithinFamily(text, r.candidate)) return null;
     return r.candidate || null;
   }
+  /* ── AN AMBIGUOUS PICK MUST SHOW ITS ALTERNATIVES ──────────────────────────
+     Owner, 2026-08-31: "its not choosing the correct temmplates."
+     When this module is NOT confident it still applies the closest template
+     (owner directive 2026-07-30: never give up, warn instead) — and until now
+     the alternatives it had already ranked were thrown away, so the doctor was
+     told "check this" with nothing to check it against but a 96-entry dropdown.
+     `ranked` is already computed; carry the next few compatible, positively
+     scored candidates so the room can put them one click away. This CHANGES NO
+     DECISION — it only stops the runner-up being discarded. */
+  function alternativesFrom(direct, chosenId){
+    var r = (direct && direct.ranked) || [], out = [];
+    for (var i = 0; i < r.length && out.length < 3; i++) {
+      var e = r[i];
+      if (!e || !e.tpl) continue;
+      if (S(e.tpl.id) === S(chosenId)) continue;
+      if (e.compatible === false) continue;
+      if (!(e.score > 0)) continue;
+      out.push({ id:S(e.tpl.id), name:S(e.tpl.name), score:e.score });
+    }
+    return out;
+  }
   function bestFor(name, reason, dob, patientId) {
     var direct = best(reason);
-    if (direct.noProcedure) return { tplId:'', source:'no-procedure', score:0, reason:'The visit text states no procedure was performed' };
-    if (direct.confident) return { tplId:direct.tpl.id, source:'reason', score:direct.score, reason:direct.reason };
+    if (direct.noProcedure) return { tplId:'', source:'no-procedure', score:0, reason:'The visit text states no procedure was performed', alternatives:[] };
+    if (direct.confident) return { tplId:direct.tpl.id, source:direct.exactName?'exact-name':'reason', score:direct.score, reason:direct.reason, alternatives:[] };
     var p = exactPatient(name, dob, patientId), hs = historySignal(p), fromHistory = best(hs);
-    if (fromHistory.confident) return { tplId:fromHistory.tpl.id, source:'history', score:fromHistory.score, reason:fromHistory.reason };
+    if (fromHistory.confident) return { tplId:fromHistory.tpl.id, source:'history', score:fromHistory.score, reason:fromHistory.reason, alternatives:alternativesFrom(direct, fromHistory.tpl.id) };
     /* GUESS FROM THE PROCEDURE TEXT ONLY, NEVER FROM HISTORY.
        Caught by the 4e guard on the first attempt at this, which fell back to
        the history branch when the direct one produced nothing: for a row naming
@@ -1007,7 +1080,8 @@
     var guess = closestGuess(direct, reason);
     if (guess) {
       return { tplId:guess.id, source:'closest', guess:true, score:direct.score || 0,
-        reason:'closest match only (' + S(direct.reason || 'ambiguous') + ') — check it, or add a keyword to that template' };
+        reason:'closest match only (' + S(direct.reason || 'ambiguous') + ') — check it, or add a keyword to that template',
+        alternatives:alternativesFrom(direct, guess.id) };
     }
     /* KEEP THE REFUSAL'S REASON INSTEAD OF FLATTENING IT.
        Four quite different refusals used to collapse into one 'unmatched'
@@ -1021,18 +1095,18 @@
        the doctor looking for a second procedure that was never there. */
     if (direct.multi) {
       return { tplId:'', source:'multi-procedure', score:0,
-        reason:S(direct.reason) || 'names more than one procedure' };
+        reason:S(direct.reason) || 'names more than one procedure', alternatives:alternativesFrom(direct, '') };
     }
     if (direct.conflicts) {
       return { tplId:'', source:'conflicting-template', score:direct.score || 0,
-        reason:S(direct.reason) || 'the closest template conflicts with the requested procedure' };
+        reason:S(direct.reason) || 'the closest template conflicts with the requested procedure', alternatives:alternativesFrom(direct, '') };
     }
     if (narrowsWithinFamily(reason, direct.candidate)) {
       return { tplId:'', source:'needs-approach', score:direct.score || 0,
-        reason:S(direct.reason) || 'the approach is not stated' };
+        reason:S(direct.reason) || 'the approach is not stated', alternatives:alternativesFrom(direct, '') };
     }
     return { tplId:'', source:'unmatched', score:0,
-      reason:S(direct.reason) || 'No unambiguous procedure signal' };
+      reason:S(direct.reason) || 'No unambiguous procedure signal', alternatives:alternativesFrom(direct, '') };
   }
   /* ONE matcher for every surface: preview, prep, note formatting, and safety
      checks all resolve through this canonical entry (negation-aware,
@@ -1058,6 +1132,10 @@
        the day view would fill with guessed templates that the draft ledger
        reports as confident, which is the one outcome worse than an empty row. */
     markGuess(built, m);
+    /* The ranked runner-ups travel WITH the row, so the room can offer them
+       without re-running the matcher (which would be a second, possibly
+       disagreeing, decision). */
+    built.tplAlternatives = (m && m.alternatives) || [];
     return built;
   }
   newRow.__omb = true;
@@ -1068,7 +1146,7 @@
     try { var el=document.getElementById('opPrepPrev_'+i); if(el && isFn(window._opPreviewHtml)) el.innerHTML=window._opPreviewHtml(value,row.appt.name,row.dateStr); } catch(e) {}
     if (row.tplManual) return;
     var m=bestFor(row.appt.name,value,row.appt.dob,row.patientId);
-    row.tplId=m.tplId; row.tplMatchSource=m.source; row.tplMatchReason=m.reason;
+    row.tplId=m.tplId; row.tplMatchSource=m.source; row.tplMatchReason=m.reason; row.tplAlternatives=(m&&m.alternatives)||[];
     markGuess(row, m);
     try { var sel=document.getElementById('opPrepTpl_'+i); if(sel) sel.value=row.tplId; } catch(e2) {}
     syncTplStatus(i);
@@ -1088,7 +1166,7 @@
     var row=(window._opPrep||[])[i]; if(!row) return;
     row.tplManual=false;
     var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);
-    row.tplId=m.tplId; row.tplMatchSource=m.source; row.tplMatchReason=m.reason;
+    row.tplId=m.tplId; row.tplMatchSource=m.source; row.tplMatchReason=m.reason; row.tplAlternatives=(m&&m.alternatives)||[];
     markGuess(row, m);
     if(isFn(window.opPrepRender)) window.opPrepRender();
     var nm=(isFn(window.getTemplateById)&&window.getTemplateById(m.tplId))?window.getTemplateById(m.tplId).name:'template';
@@ -1125,6 +1203,8 @@
        standing evidence on screen. Amber, and it says what to do about it. */
     if (row.tplMatchSource === 'closest') return { text:'(closest match — check this, or add a keyword to that template)', color:'#8A5A00' };
     if (row.tplMatchSource === 'history') return { text:"(matched from this patient's history)", color:'#127a55' };
+    if (row.tplMatchSource === 'exact-name') return { text:'(the procedure text is this template’s name)', color:'#127a55' };
+    if (row.tplMatchSource === 'auto-reroute') return { text:'(switched to a compatible template — check this)', color:'#8A5A00' };
     if (row.tplMatchSource === 'reason') return { text:'(matched from procedure)', color:'#127a55' };
     return { text:'(template selected)', color:'#127a55' };
   }
@@ -1516,6 +1596,103 @@
       .replace(/\[\[(sex|gender|patient_sex|patient_gender)\]\]/gi, function (m) { return sex || m; });
   }
 
+  /* ── THE PROCEDURE DATE IS KNOWN, SO NO DRAFT MAY ASK FOR IT ───────────────
+     Owner, 2026-08-31: "in the opn otes date of procidure needs to be known as
+     it knows it."
+
+     MEASURED CAUSE, and it is NOT the prompt — the prompt has said "ALWAYS
+     WRITE THE DATE OF PROCEDURE" since b927. dateStr reaches the model in the
+     user message and reaches forceFacts() as exactly three heading aliases
+     ("date of procedure", "date of operation", "date of service"). Everything
+     else about the date was left to the model:
+       - a template heading spelled "DATE:", "Procedure date:", "Date of
+         surgery:" or "DOS:" matches NONE of those three, so forceFacts skips
+         the line and whatever the model put there stands;
+       - a date slot the model emits anywhere else ("performed on
+         [[date_of_procedure]]", a template's own literal "[DATE]") is matched
+         by no filler at all, so _opReconcileBlanks lists it in row.missing and
+         the Fields box asks the doctor to type a date the app already holds.
+     fillChartSlots resolves history/diagnosis/meds/allergies/bmi/age/sex
+     deterministically for exactly this reason. The date had no equivalent.
+
+     This is a REPAIR guard in the sense this file already defines: the date was
+     GIVEN to us, so writing it invents nothing. An EMPTY dateStr writes nothing
+     and every slot stays visible — an unknown date stays an explicit
+     placeholder, never a guess. */
+  var MONTH_NAMES=['january','february','march','april','may','june','july','august','september','october','november','december'];
+  /* Accepts every shape this app hands to _genOpNote: the ISO day key, the US
+     numeric form, and the long locale string _opDayStr() produces
+     ("Thursday, August 6, 2026"). Returns null rather than guessing. */
+  function parseDayParts(dateStr){
+    var s=S(dateStr).trim(); if(!s) return null;
+    var m=/(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+    if(m) return {y:+m[1],mo:+m[2],d:+m[3]};
+    m=/\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\b/.exec(s);
+    if(m) return {y:+m[3],mo:+m[1],d:+m[2]};
+    var low=s.toLowerCase();
+    for(var i=0;i<MONTH_NAMES.length;i++){
+      var abbr=MONTH_NAMES[i].slice(0,3), hit;
+      hit=new RegExp('\\b'+abbr+'[a-z]*\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b').exec(low);
+      if(hit) return {y:+hit[2],mo:i+1,d:+hit[1]};
+      hit=new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+'+abbr+'[a-z]*\\.?,?\\s+(\\d{4})\\b').exec(low);
+      if(hit) return {y:+hit[2],mo:i+1,d:+hit[1]};
+    }
+    return null;
+  }
+  function dayRenderings(p){
+    if(!p) return [];
+    var pad=function(n){return (n<10?'0':'')+n;};
+    var MON=MONTH_NAMES[p.mo-1]||'', Mon=MON?(MON.charAt(0).toUpperCase()+MON.slice(1)):'';
+    var out=[p.y+'-'+pad(p.mo)+'-'+pad(p.d),p.mo+'/'+p.d+'/'+p.y,pad(p.mo)+'/'+pad(p.d)+'/'+p.y,
+      p.mo+'-'+p.d+'-'+p.y,pad(p.mo)+'-'+pad(p.d)+'-'+p.y,p.mo+'.'+p.d+'.'+p.y];
+    if(Mon){
+      out.push(Mon+' '+p.d+', '+p.y,Mon+' '+pad(p.d)+', '+p.y,Mon+' '+p.d+' '+p.y,
+        Mon.slice(0,3)+' '+p.d+', '+p.y,Mon.slice(0,3)+'. '+p.d+', '+p.y,
+        p.d+' '+Mon+' '+p.y,p.d+' '+Mon.slice(0,3)+' '+p.y);
+    }
+    return out;
+  }
+  /* A STRICT SUPERSET of ScribeFlow's _opNoteHasDate: it accepts everything
+     that one accepts (verbatim, case-insensitive verbatim, the ISO renderings)
+     and additionally recognises the SAME DAY written in another form when the
+     supplied dateStr is a long locale string. That matters because the app
+     supplies exactly that form, so a note reading "Date of Procedure: August 6,
+     2026" was being judged date-less and had a SECOND date line prepended above
+     it. Used only to decide whether the shell's repair guard still has work to
+     do — never to relax a check. */
+  function noteStatesDay(note,dateStr){
+    var s=S(note), d=S(dateStr).trim();
+    if(!d) return true;
+    if(s.indexOf(d)>=0) return true;
+    if(s.toLowerCase().indexOf(d.toLowerCase())>=0) return true;
+    var parts=parseDayParts(d); if(!parts) return false;
+    var low=s.toLowerCase(), r=dayRenderings(parts);
+    for(var i=0;i<r.length;i++) if(low.indexOf(r[i].toLowerCase())>=0) return true;
+    return false;
+  }
+  /* Every date-slot spelling this app's generators emit, and DELIBERATELY not
+     one that names a birth date: a [[dob]] filled with the procedure date is a
+     wrong clinical fact, which is strictly worse than an unfilled blank. */
+  var DATE_SLOT_NAME=/^(?:date|dates|dop|dos|today|todays_date|today_date|current_date|procedure_date|date_of_procedure|date_of_the_procedure|date_of_service|service_date|date_of_surgery|surgery_date|date_of_operation|operation_date|operative_date|date_performed|performed_on|date_of_visit|visit_date|encounter_date|appointment_date|date_of_injection|injection_date|procedure_day)$/;
+  function isDateSlotName(raw){
+    var k=S(raw).toLowerCase().replace(/^fill\s*:?\s*/,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+    if(!k) return false;
+    if(/birth|dob|bday/.test(k)) return false;
+    return DATE_SLOT_NAME.test(k);
+  }
+  function fillDateSlots(note,dateStr){
+    var value=S(dateStr).trim();
+    if(!value) return S(note);                /* unknown date -> honest blank */
+    /* [[key]] first, then {{key}}, then single brackets. By the time the single
+       bracket pass runs every [[...]] is either replaced or contains a nested
+       bracket its character class rejects, so a surviving [[needle_size]] is
+       never mistaken for a date slot. */
+    return S(note)
+      .replace(/\[\[([^\]\n]{1,60})\]\]/g,function(m,k){ return isDateSlotName(k)?value:m; })
+      .replace(/\{\{([^}\n]{1,60})\}\}/g,function(m,k){ return isDateSlotName(k)?value:m; })
+      .replace(/\[([^\[\]\n]{1,60})\]/g,function(m,k){ return isDateSlotName(k)?value:m; });
+  }
+
   function patientAge(dob){
     try{var d=new Date(S(dob));if(isNaN(d.getTime()))return null;var now=new Date(),age=now.getFullYear()-d.getFullYear();if(now.getMonth()<d.getMonth()||(now.getMonth()===d.getMonth()&&now.getDate()<d.getDate()))age--;return age>0&&age<130?age:null;}catch(e){return null;}
   }
@@ -1535,6 +1712,88 @@
     }
     while (out.length && !S(out[out.length-1]).trim()) out.pop();
     return out.join('\n');
+  }
+
+  /* ── TEMPLATE CONFORMANCE — A MEASURE, NOT A GATE ──────────────────────────
+     Owner, 2026-08-31: "the op notes just suck they dont add things and dont
+     follow tempaltes right ... Its like summarizing the op notes not making a
+     medically made op note."
+
+     WHY fidelity() DID NOT CATCH IT. fidelity() is a PASS/FAIL gate on two
+     things: the heading set/order, and "fixed fragments" — and fixedFragments()
+     only collects a line once it has 5+ words or 36+ characters (plus short
+     values bound to a heading). A draft that reproduces the headings and the
+     long boilerplate while compressing everything between them therefore
+     PASSES. Worse, on the two paths where the gate is deliberately relaxed —
+     crossAdapt (fidelity is discarded outright: `check={pass:true,...}`) and
+     'guide' mode (wording failures are re-labelled as passes) — nothing
+     measures template following at all, and the draft is accepted in silence.
+
+     So this is the missing half: a deterministic, always-computed COUNT of how
+     much of the template's own skeleton actually survived into the draft. It
+     grades EVERY non-blank template line that still carries three or more real
+     words after its fill slots are masked out, plus every heading label.
+
+     Three deliberate properties:
+       1. PURE. It reads the note and the template and returns numbers. It never
+          rewrites the draft, never throws, and never blocks a generation — a
+          measure that could refuse would just become another silent failure.
+       2. HONEST ABOUT THE MIDDLE CASE. A template line whose words are mostly
+          present but whose sentence is not is REWORDED, not missing, and it is
+          reported separately. Summarising shows up as reworded+dropped.
+       3. IT NEVER ASKS FOR A CLINICAL FACT. A line absent from the draft is
+          reported, never manufactured. Fixing it is a re-draft, which is the
+          one-click action the room offers — the model may not be told to write
+          a sentence about a patient in order to satisfy an arithmetic. */
+  function conformanceLines(templateText){
+    var out=[];
+    S(templateText).split(/\r?\n/).forEach(function(raw){
+      var line=S(raw);
+      if(!line.trim()) return;
+      var h=headingLabel(line);
+      if(h) out.push({kind:'heading',key:h,text:line.trim().slice(0,140)});
+      var masked=line
+        .replace(/\[\[[^\]]*\]\]/g,' ').replace(/\[(?:FILL\s*:?\s*)?[^\]]*\]/gi,' ')
+        .replace(/\{\{[^}]*\}\}/g,' ').replace(/<[^>]+>/g,' ').replace(/_{2,}/g,' ');
+      var n=normText(masked);
+      if(n && n.split(/\s+/).length>=3) out.push({kind:'line',key:n,text:line.trim().slice(0,140)});
+    });
+    return out;
+  }
+  function templateConformance(note,templateText){
+    var entries=conformanceLines(templateText), total=entries.length;
+    var noteNorm=normText(note), words={}, cursor=0, verbatim=0, reworded=0, dropped=0, lines=[];
+    noteNorm.split(/\s+/).forEach(function(w){ if(w) words[w]=1; });
+    for(var i=0;i<total;i++){
+      var e=entries[i], at=noteNorm.indexOf(e.key,cursor);
+      if(at<0) at=noteNorm.indexOf(e.key);       /* out of order still counts as present */
+      if(at>=0){ verbatim++; if(at>=cursor) cursor=at+e.key.length; continue; }
+      var ws=e.key.split(/\s+/).filter(Boolean), hit=0;
+      for(var j=0;j<ws.length;j++) if(words[ws[j]]) hit++;
+      var how=(ws.length && (hit/ws.length)>=0.6) ? 'reworded' : 'missing';
+      if(how==='reworded') reworded++; else dropped++;
+      if(lines.length<12) lines.push({kind:e.kind,how:how,text:e.text});
+    }
+    var pct=total?Math.round(verbatim/total*100):100;
+    return { total:total, verbatim:verbatim, reworded:reworded, missing:dropped,
+      notFollowed:reworded+dropped, pct:pct, lines:lines,
+      /* Six graded lines is the floor at which a percentage means anything; a
+         three-line template would swing 33 points on one sentence. */
+      belowThreshold: total>=6 && pct<75 };
+  }
+  /* The measure plus the three things that legitimately explain a low one, so
+     the room can say WHY rather than only that it happened. 'guide' is the mode
+     the doctor explicitly asked to be tighter than his template, so a low score
+     there is expected and is not flagged as a failure to follow it. */
+  function conformanceOf(note,tplForModel,mode,tplTruncated,crossAdapt){
+    var c;
+    try{ c=templateConformance(note,tplForModel); }
+    catch(e){ return {total:0,verbatim:0,reworded:0,missing:0,notFollowed:0,pct:100,lines:[],belowThreshold:false,unavailable:true}; }
+    c.mode=S(mode||'adapt');
+    c.templateTruncated=!!tplTruncated;
+    c.crossAdapted=!!crossAdapt;
+    if(c.mode==='guide')c.belowThreshold=false;
+    return c;
   }
 
   async function generateOnce(name,dateStr,procedure,tplText,ctx) {
@@ -1678,7 +1937,18 @@
        slot to fill from clinical knowledge, it is a slot to leave for the
        doctor. There is no routine dose for someone else's patient. */
     sys+=' ABSOLUTE — NEVER INVENT A DRUG OR A DOSE. A [[placeholder]] or bracketed slot naming a MEDICATION, DOSE, CONCENTRATION, DRUG VOLUME, or NEEDLE/DEVICE SIZE (e.g. [LOCAL ANESTHETIC], [STEROID DOSE], [ANESTHETIC], [GAUGE], [ANESTHETIC/SALINE]) must be LEFT AS A PLACEHOLDER for the doctor to fill. Do NOT resolve it from clinical knowledge, from what is typical for this procedure, or from a standard or routine value — there is no routine dose for this patient. Never write a drug name, strength, percentage or milligram figure that is not already written in the SELECTED TEMPLATE, the transcript, or the KNOWN FACTS. If unsure whether a slot is a drug, treat it as a drug and leave the placeholder. An unfilled blank is safe; a plausible invented dose is not.';
-    sys+=' ALWAYS WRITE THE DATE OF PROCEDURE into the note — it is supplied below, it is never a placeholder and never omitted. If the template has a date line, fill it; otherwise add "Date of procedure: <date>" near the top. Do not confuse it with date of birth.';
+    sys+=' ALWAYS WRITE THE DATE OF PROCEDURE into the note — it is supplied below, it is never a placeholder and never omitted. If the template has a date line, fill it; otherwise add "Date of procedure: <date>" near the top. NEVER emit a placeholder, a blank, or a "missing" entry for the date of procedure, the date of service, or the date of surgery: the value is given to you. Do not confuse it with date of birth.';
+    /* 2026-08-31 OWNER: "its not choosing the correct temmplates ... its like
+       summarizing the op notes not making a medically made op note."
+       The clause above this one already asked for heading names, heading order
+       and "fixed boilerplate wording" — and a model reads that as a request
+       about STRUCTURE, which it then satisfies while compressing the prose
+       underneath. State the operation instead of the property: REPRODUCE, then
+       FILL. Stated unconditionally so it also covers 'adapt', which is the
+       default and adds no mode clause of its own; the 'guide' mode is the one
+       place the doctor has explicitly ASKED for tighter prose, so its own
+       clause below overrides the length half of this one. */
+    sys+=' HOW TO PRODUCE THE NOTE — REPRODUCE, THEN FILL. Work through the SELECTED TEMPLATE from its first line to its last and reproduce every line of it, in the template\'s own order and its own words. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else — headings, boilerplate operative language, technique sentences, consent and time-out statements, complication and disposition lines, attestations — is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge or re-order the template\'s sentences. Do NOT drop a template line because it looks routine or repetitive. Do NOT substitute your own outline for the template\'s. The finished note must be a completed copy of the doctor\'s template, not a description of the case. If a fill field has no answer in the KNOWN FACTS, the VERIFIED PATIENT HISTORY or the procedure request, leave it as an explicit [[snake_case]] placeholder and list it in "missing" — never invent a clinical fact, and never delete the sentence that contained it.';
 
     if(crossAdapt)sys+=' EXCEPTION — CROSS-PROCEDURE ADAPTATION: The selected template describes a DIFFERENT procedure than requested. Keep its heading names, heading order, and formatting style, but write the note for the REQUESTED procedure: the requested procedure type, anatomical region, side, level(s), and approach override any conflicting template wording, fixed boilerplate, or technique narrative.';
 
@@ -1700,7 +1970,43 @@
        'procedure' itself is untouched and still drives matching, compatibility
        and the requested-fact contract. */
     var procTitle=procTitleForNote(procedure);
-    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procTitle+(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')+(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')+'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+tplForModel;
+    /* 2026-08-31, owner hypothesis "maybe the op notes suck bcecause its not
+       using the upcoming appointmetn or the patuients history or somthing".
+       AUDITED: the history IS carried (feat_opnote_history.js injects the
+       verified problems / meds / allergies / PMH / chart snapshot / every-visit
+       index at the aiCallRaw layer, which is why legacyHistory is blanked when
+       that owner is installed), and the appointment's provider, facility, date
+       and reason all ride in already. What was NOT carried is the one thing
+       this module had already PARSED and was about to GRADE the draft against:
+       the requested side, level(s), region and approach. The model saw only the
+       raw schedule string ("B/L L4 TF ESI") and had to re-derive them, while
+       clinicalConsistency() judged it on the parsed values. Stating them is
+       deterministic — no fact is added that procedureFacts did not read out of
+       the doctor's own procedure text. */
+    var reqFacts=[]; try{
+      var rf=procedureFacts(procedure);
+      if(rf.side)reqFacts.push('side / laterality: '+rf.side);
+      if(rf.levels&&rf.levels.length)reqFacts.push('level(s): '+rf.levels.join(', ')+' ('+rf.levelCount+' level'+(rf.levelCount===1?'':'s')+')');
+      if(rf.region)reqFacts.push('region: '+String(rf.region).replace(/\+/g,' + '));
+      if(rf.approach)reqFacts.push('approach: '+rf.approach);
+      /* THE RAW SCHEDULING STRING DOES NOT GO IN HERE. The first version of this
+         block added "scheduled as: <raw reason>" for context, and
+         tests/opnote-procedure-title-junk-strip.test.js caught it in one run:
+         opnq-1.0.0 exists precisely to keep the front desk's case number and
+         "#2 PP" suffixes out of DOOR 1 (what the model is told to print), and
+         quoting the raw string next to the title hands them straight back. Only
+         PARSED facts belong here - each one is a value procedureFacts read out
+         of that string, never the string. */
+    }catch(eRF){}
+    /* The trailing `+` stays on the FIRST line on purpose: DOOR 1 is pinned by
+       tests/opnote-procedure-title-junk-strip.test.js as the literal
+       `PROCEDURE: '+procTitle+`, so breaking the line before the operator reds a
+       suite that this change did not weaken. */
+    var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procTitle+
+      (reqFacts.length?'\n\nREQUESTED PROCEDURE FACTS (read from the scheduled procedure text — authoritative, and the draft is checked against them):\n- '+reqFacts.join('\n- '):'')
+      +(known.length?'\n\nKNOWN FACTS:\n- '+known.join('\n- '):'')
+      +(legacyHistory?'\n\nVERIFIED PATIENT HISTORY:\n'+legacyHistory.slice(0,14000):'')
+      +'\n\nSELECTED TEMPLATE — COPY ITS STRUCTURE AND FIXED WORDING:\n'+tplForModel;
     var key=isFn(window.getKey)?window.getKey():'';
     /* maxTokens was never set on the only endpoint op notes use; a long
        template + full JSON-wrapped note rode the server default and could be
@@ -1714,7 +2020,14 @@
     if(S(selectedTpl&&(selectedTpl.id||selectedTpl.templateId)).trim())opts.mlsOpNoteTemplateId=S(selectedTpl.id||selectedTpl.templateId).trim();
     /* opnq-1.0.0: NOTE DOOR 2 - forceFacts()/reanchor() stamp this onto the
        note's own "Procedure:" heading line. */
+    /* 2026-08-31: the date aliases were THREE, and a template heading spelled
+       "DATE:", "Procedure date:", "Date of surgery:" or "DOS:" matched none of
+       them — so forceFacts walked straight past the one line in the note that
+       exists to carry the date. Every alias here resolves to the SAME supplied
+       value, so widening the list cannot introduce a disagreement; "date of
+       birth" is deliberately absent and is owned by its own fact below. */
     var facts={patient:name,'patient name':name,mrn:ctx.mrn,'date of procedure':dateStr,'date of operation':dateStr,'date of service':dateStr,procedure:procTitle};
+    ['date','dos','procedure date','operative date','date of surgery','surgery date','operation date','date performed','service date','date of visit','visit date','encounter date','date of injection'].forEach(function(k){ facts[k]=dateStr; });
     if(ctx.dob){facts['date of birth']=ctx.dob;facts.dob=ctx.dob;facts['patient dob']=ctx.dob;}
     if(ctx.age!=null)facts.age=S(ctx.age);
     if(ctx.sex){facts.sex=ctx.sex;facts.gender=ctx.sex;}
@@ -1729,7 +2042,11 @@
     var first=parseResult(await window.aiCallRaw(sys,user,key,opts));
     if(first&&first.__mlsRawFallback&&S(first.note).length>11000){var teA=new Error('The AI reply was cut off mid-note - this template is too long for one draft. Shorten or split the template, then re-try.');teA.code='MLS_OPNOTE_TRUNCATED';throw teA;}
     generationStage(ctx,'Drafting findings','Preserving chart-grounded findings and filling explicit clinical slots.');
-    first.note=fillChartSlots(fillProcedureSlots(forceFacts(first.note,facts),procedure),p,ctx,procedure);
+    /* fillDateSlots LAST in the chain: forceFacts may itself write a
+       '[[date_of_procedure]]' fallback into a heading whose fact is empty, and
+       the model's own prose slots are only visible after the other fillers have
+       run. Empty dateStr fills nothing. */
+    first.note=fillDateSlots(fillChartSlots(fillProcedureSlots(forceFacts(first.note,facts),procedure),p,ctx,procedure),dateStr);
     var histApi=window.__mlsOpNoteHistory, histValidation=null;
     if(histApi&&histApi.installed){
       histValidation=isFn(histApi.validateBinding)?histApi.validateBinding(opts):{ok:false,reason:'history-binding-validator-unavailable'};
@@ -1749,7 +2066,13 @@
     }
     generationStage(ctx,'Checking required fields','Checking required, optional, and prohibited template language.');
     generationStage(ctx,'Running final consistency check','Verifying clinical facts and exact template structure together.');
-    if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.templateMode=tplMode;first.clinicalConsistency=clinical;if(tplTruncated)first.templateTruncated=true;return first;}
+    /* THE MEASURE IS TAKEN ON THE NOTE THE DOCTOR WILL READ — after the
+       airing pass and the attestation footer, both of which only ADD lines,
+       so nothing the template asked for can be hidden by them. Computed on
+       tplForModel, the same 12k slice fidelity() grades, so a truncated
+       template is never scored against text the model never saw; truncation
+       is reported as its own flag instead. */
+    if(check.pass&&clinical.pass){first.note=attestNote(airSections(first.note),ctx);first.templateFidelity=check;first.templateMode=tplMode;first.clinicalConsistency=clinical;if(tplTruncated)first.templateTruncated=true;first.templateConformance=conformanceOf(first.note,tplForModel,tplMode,tplTruncated,crossAdapt);return first;}
     /* The history wrapper freezes an exact-patient context binding on the first
        request. If that wrapper is installed, a repair must carry the same
        binding; it may not fall back to the shorter pre-injection ctx.history. */
@@ -1764,7 +2087,7 @@
     var repairUser='SELECTED TEMPLATE:\n'+tplForModel+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
-    repaired.note=fillChartSlots(fillProcedureSlots(forceFacts(repaired.note,facts),procedure),p,ctx,procedure);
+    repaired.note=fillDateSlots(fillChartSlots(fillProcedureSlots(forceFacts(repaired.note,facts),procedure),p,ctx,procedure),dateStr);
     generationStage(ctx,'Checking side and level','Rechecking the repaired procedure facts.');
     var check2;
     if(crossAdapt){check2={pass:true,adapted:true};}
@@ -1788,7 +2111,7 @@
            that gets the mark. The flag stays for existing readers. */
         try{ window.__mlsLastOpReconstructed=true; }catch(eRc){}
         try{ repaired.reconstructed=true; }catch(eRc2){}
-        repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplForModel,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplForModel);}
+        repaired.note=fillDateSlots(fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplForModel,facts),procedure),p,ctx,procedure),dateStr);check2=fidelity(repaired.note,tplForModel);}
       if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template.'+(tplTruncated?' Note: this template is longer than the '+12000+'-character limit and was truncated for drafting - shortening it will help.':'')+' Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     }
     generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
@@ -1796,7 +2119,7 @@
     if(crossAdapt)clinical2=adaptedClinical(clinical2);
     generationStage(ctx,'Running final consistency check','Completing the repaired note consistency check.');
     if(!clinical2.pass){var fields=[];clinical2.errors.forEach(function(x){if(fields.indexOf(x.field)<0)fields.push(x.field);});var detail=clinical2.errors.slice(0,2).map(function(x){return x.message;}).join(' ');window.__mlsLastOpFidelityError='Draft stopped because the generated note changed or omitted requested clinical facts ('+fields.join(', ')+'). '+detail+' Nothing was saved; confirm the procedure and retry.';var ce=new Error(window.__mlsLastOpFidelityError);ce.code='MLS_OPNOTE_CLINICAL_CONFLICT';ce.details=clinical2;throw ce;}
-    repaired.note=attestNote(airSections(repaired.note),ctx);repaired.templateFidelity=check2;repaired.clinicalConsistency=clinical2;if(tplTruncated)repaired.templateTruncated=true;return repaired;
+    repaired.note=attestNote(airSections(repaired.note),ctx);repaired.templateFidelity=check2;repaired.templateMode=tplMode;repaired.clinicalConsistency=clinical2;if(tplTruncated)repaired.templateTruncated=true;repaired.templateConformance=conformanceOf(repaired.note,tplForModel,tplMode,tplTruncated,crossAdapt);return repaired;
   }
 
   /* oni-2.10.0: the deterministic provider/facility attestation footer is owned
@@ -1867,7 +2190,20 @@
          whole distinction, and it is the kind a tidying refactor erases because
          the two calls sit on adjacent lines and look symmetrical. */
       try{
-        if(typeof window._opGuardProcedureDate==='function')result=window._opGuardProcedureDate(dateStr,result);
+        /* 2026-08-31 — THE DETERMINISTIC FILL RUNS FIRST, THEN THE REPAIR.
+           fillDateSlots answers every date slot still standing in the note from
+           the value we were GIVEN, so the Fields box can never ask the doctor
+           for a date the app already holds (owner: "date of procidure needs to
+           be known as it knows it"). The shell's repair guard then handles the
+           remaining case - a note with no date anywhere - but only when the day
+           is genuinely absent: _opNoteHasDate tests the supplied string
+           VERBATIM, and this app supplies a long locale string ("Thursday,
+           August 6, 2026"), so a draft reading "Date of Procedure: August 6,
+           2026" was judged date-less and had a SECOND date line prepended above
+           its own. noteStatesDay accepts everything _opNoteHasDate accepts and
+           strictly more, so this narrows no check - it only stops a duplicate. */
+        try{ result.note=fillDateSlots(result.note,dateStr); }catch(eFd){}
+        if(typeof window._opGuardProcedureDate==='function'&&!noteStatesDay(result&&result.note,dateStr))result=window._opGuardProcedureDate(dateStr,result);
         if(typeof window._opGuardDrugBlanks==='function')result=window._opGuardDrugBlanks(tplText,result);
       }catch(eg){}
       /* opnq-1.0.0 THIRD GUARD, and it is a THIRD KIND. The date guard REPAIRS
@@ -1949,7 +2285,7 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;window.__mlsLastOpFidelityError='';window.__mlsLastOpErrorCode='';if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;markGuess(row,m);syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;window.__mlsLastOpFidelityError='';window.__mlsLastOpErrorCode='';if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;row.tplAlternatives=(m&&m.alternatives)||[];markGuess(row,m);syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
         /* oni-2.14.0 owner directive: warn but still go through. Auto-matched
            rows first try a reroute to a genuinely compatible template ("its
            best fix"); manual picks are respected and adapted in place. */
@@ -2038,6 +2374,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){try{var _tpf=window.__mlsTplPrepFix;if(_tpf&&typeof _tpf.draftAll==='function')return await _tpf.draftAll();}catch(_eDA){}var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

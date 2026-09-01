@@ -22721,6 +22721,71 @@ function _opAutoTpl(i){
   if(rank[0].score>0){ try{ delete row._tplClosestGuess; }catch(e2){} opPrepRender(); try{ toast('Matched: '+nm,'ok'); }catch(e){} }
   else { row._tplClosestGuess=true; opPrepRender(); try{ toast('No keyword match — used the closest: '+nm+'. Check it, or add a keyword to that template.','warn'); }catch(e){} }
 }
+/* ===== opnfid-1.0.0 - THE TWO THINGS A DRAFT MUST SAY OUT LOUD ==========
+   Owner, 2026-08-31: "the op notes just suck they dont add things and dont
+   follow tempaltes right" and "its not choosing the correct temmplates".
+
+   Both of those already had machinery behind them and neither had a SURFACE.
+   feat_mls_opnote_integrity.js ranks every candidate template and then threw
+   the runner-ups away; it now measures how much of the chosen template
+   actually survived into the draft and had nowhere to report it. These two
+   renderers are that surface, and they are deliberately the only new UI:
+   one line of amber that names a NUMBER, and buttons that switch a template
+   or re-draft. Neither invents a clinical fact, neither hides a draft, and
+   both render nothing at all when the generator did not supply the data. */
+function _opAltTplHtml(i,row){
+  try{
+    if(!row||row.tplManual) return '';
+    var alts=row.tplAlternatives||[]; if(!alts.length) return '';
+    /* Only where the match was NOT decided. A confident match with a
+       second-place candidate is not a question, and turning every row into
+       one is how a warning stops being read. */
+    var undecided=(!row.tplId)||!!row._tplClosestGuess||row.tplMatchSource==='closest'||row.tplMatchSource==='auto-reroute';
+    if(!undecided) return '';
+    var Q=String.fromCharCode(39);
+    var h='<div class="mini" style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="color:#8A5A00">'+(row.tplId?'Not decided — did you mean:':'No confident match — closest are:')+'</span>';
+    alts.slice(0,3).forEach(function(a){
+      var id=String((a&&a.id)||'').replace(/[^A-Za-z0-9_-]/g,'');
+      if(!id) return;
+      h+='<button class="btn-ghost" style="font-size:11.5px;padding:4px 9px" title="Use this template for this procedure instead" onclick="opPrepPickTemplate('+i+','+Q+id+Q+')">'+esc(String((a&&a.name)||'Template'))+'</button>';
+    });
+    return h+'</div>';
+  }catch(e){ return ''; }
+}
+/* One click = a MANUAL pick, which is exactly what it is: the doctor decided.
+   Marking it manual is also what stops the matcher re-deciding it on the next
+   render or at draft time (opPrepGenerateOne re-runs bestFor for non-manual
+   rows), so anything weaker would silently undo the press. */
+function opPrepPickTemplate(i,id){
+  var row=(window._opPrep||[])[i]; if(!row||!id) return;
+  row.tplId=String(id); row.tplManual=true; row.tplMatchSource='manual'; row.tplMatchReason='Clinician selected';
+  try{ delete row._tplClosestGuess; }catch(e){}
+  try{ opPrepRender(); }catch(e2){}
+  try{ var t=(typeof getTemplateById==='function')?getTemplateById(row.tplId):null;
+       toast('Template set to “'+((t&&t.name)||'that template')+'”. Press Draft op note to use it.','ok'); }catch(e3){}
+}
+/* THE HONEST COUNT. Rendered only when the generator's own deterministic
+   measure says the draft reproduced less than three quarters of the
+   template's graded lines - and never in 'guide' mode, which is the one mode
+   the doctor asked to be tighter than his template. It offers the one action
+   that can actually fix it (re-draft) and NEVER offers to “fill in” the
+   missing lines, because the only thing that could fill them is invention. */
+function _opConformanceHtml(i,row){
+  try{
+    var c=row&&row.tplConformance;
+    if(!c||!c.total||!c.belowThreshold) return '';
+    var n=c.notFollowed||0, tot=c.total||0;
+    var why=[];
+    if(c.crossAdapted) why.push('the selected template is for a different procedure');
+    if(c.templateTruncated) why.push('this template is longer than the drafting limit and was cut');
+    return '<div style="margin-top:10px;background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#7a5a16">'
+      +'<b>⚠ This draft did not follow the template</b> — '+n+' of '+tot+' template line'+(tot===1?'':'s')+' '+(n===1?'is':'are')+' missing or reworded ('+(c.pct||0)+'% reproduced'+(c.reworded?(', '+c.reworded+' reworded'):'')+').'
+      +(why.length?(' '+esc(why.join('; '))+'.'):'')
+      +' Read it against your template before you save it.'
+      +'<div style="margin-top:7px"><button class="btn-ghost" style="font-size:12px;padding:5px 11px" onclick="opPrepGenerateOne('+i+')">↻ Re-draft following the template</button></div>'
+      +'</div>';
+  }catch(e){ return ''; }
+}
 function opPrepRender(){
   var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
   /* b476 (owner 2026-07-21): bulk drafting re-renders this whole list after
@@ -22829,12 +22894,14 @@ function opPrepRender(){
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="opPrepProc_'+i+'" value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;min-height:40px;box-sizing:border-box;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px;min-height:40px;box-sizing:border-box" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">'+(row.tplManual?'(your pick)':'(auto-matched)')+'</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value;window._opPrep['+i+'].tplManual=true" style="font-size:13px;padding:6px 9px;min-height:40px;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px'+(row._confirmRedraft?';background:#b4231e':'')+'" onclick="opPrepGenerateOne('+i+')">'+(row._confirmRedraft?'↻ Discard my edits & re-draft?':(row.gen?'↻ Re-draft':'✨ Draft op note'))+'</button></div>';
+    h+=_opAltTplHtml(i,row);
     if(row.gen){
       if(row.missing&&row.missing.length){
         /* b240: the one-at-a-time blank walker is RETIRED (owner: exactly ONE way to
            fill a blank). [[key]] blanks now surface in the same "Fields" box (onf-1.8.0)
            as [FILL:] tokens — all visible at once, directly above the note text. */
       }
+      h+=_opConformanceHtml(i,row);
       h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value;window._opPrep['+i+'].edited=(this.value!==window._opPrep['+i+']._genNote)">'+esc(row.note||'')+'</textarea>';
       /* opnsend-2.0.0: the Athena control is DISABLED while the canonical
          parser still counts an unresolved field - the same parser opPrepSave
@@ -22991,6 +23058,13 @@ async function opPrepGenerateOne(i){
        which style produced the note in front of him. Recorded per row so the
        receipt above the editor can name it and offer a re-draft in another. */
     row.tplModeUsed=String((out&&out.templateMode)||'');
+    /* opnfid-1.0.0: the deterministic template-conformance MEASURE the
+       installed generator computes on the finished note. It is a count, not
+       a gate - it never blocked this draft and never rewrote it - so the
+       only way it can do any good is if the row carries it to the screen.
+       Null when an older generator produced the note, which renders nothing
+       rather than claiming a score nobody measured. */
+    row.tplConformance=(out&&out.templateConformance)||null;
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
@@ -23287,7 +23361,18 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
        it to render the procedure date, and none of the templates carry a [DATE]
        placeholder for it to land in. So: say it explicitly, and say it in the
        same breath as the rule it was being read as part of. */
-    +'ALWAYS WRITE THE DATE OF PROCEDURE into the note itself — it is given to you below and it is never a placeholder and never omitted. If the TEMPLATE has a date line, fill it; if it has none, add one near the top ("Date of procedure: <date>"). Do not confuse it with date of birth. '
+    +'ALWAYS WRITE THE DATE OF PROCEDURE into the note itself — it is given to you below and it is never a placeholder and never omitted. If the TEMPLATE has a date line, fill it; if it has none, add one near the top ("Date of procedure: <date>"). NEVER emit a placeholder, a blank, or a "missing" entry for the date of procedure, the date of service or the date of surgery — the value is given to you. Do not confuse it with date of birth. '
+    /* 2026-08-31 OWNER: "its like summarizing the op notes not making a
+       medically made op note." The first line of this prompt asks the model
+       to KEEP the template's structure, wording and style - a statement about
+       a PROPERTY, which a model satisfies while compressing the prose
+       underneath it. State the OPERATION instead: reproduce, then fill.
+       NOTE ON REACH: feat_mls_opnote_integrity.js replaces window._genOpNote
+       outright, so this prompt is the FALLBACK generator - it runs only when
+       that owner is absent. The same contract is added there, which is the
+       copy the shipped pipeline actually sends. Both are kept in step on
+       purpose; see the shadowing warning in that file at generate(). */
+    +'HOW TO PRODUCE THE NOTE — REPRODUCE, THEN FILL. Work through the TEMPLATE from its first line to its last and reproduce every line of it, in the template\u2019s own order and its own words. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else — headings, boilerplate operative language, technique sentences, consent and time-out statements, complication and disposition lines, attestations — is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge or re-order the template\u2019s sentences. Do NOT drop a template line because it looks routine or repetitive. Do NOT substitute your own op-note outline for the template\u2019s. The finished note must be a completed copy of the doctor\u2019s template, not a description of the case. If a fill field has no answer in the KNOWN PATIENT FACTS, the PATIENT CHART/HISTORY or the procedure request, leave it as an explicit [[snake_case]] placeholder and list it in "missing" — never invent a clinical fact, and never delete the sentence that contained it. '
     +'ONLY put a [[key]] placeholder (and a "missing" entry) for a detail that genuinely VARIES per case AND is not known — e.g. needle gauge/size, medication name/dose/volume, contrast amount, fluoroscopy time, sedation, or an ambiguous level. '
     +'BE CONSERVATIVE — use the FEWEST placeholders possible. If the TEMPLATE already states a standard value for something (a routine dose, a standard volume, default contrast), KEEP the template’s value rather than blanking it; only blank a detail that truly changes patient-to-patient and is not derivable. Each placeholder key must be UNIQUE and appear exactly once. '
     /* 2026-08-06, PATIENT SAFETY. The line above and the line before it point in
@@ -23335,13 +23420,36 @@ function _opNoteHasDate(note, dateStr){
   var s=String(note||''); var d=String(dateStr||'').trim();
   if(!d) return true;                                   /* nothing to enforce */
   if(s.indexOf(d)>=0) return true;                      /* verbatim */
-  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
-  if(!m) return s.toLowerCase().indexOf(d.toLowerCase())>=0;
-  var y=m[1], mo=+m[2], da=+m[3];
-  var MON=['January','February','March','April','May','June','July','August','September','October','November','December'][mo-1]||'';
+  if(s.toLowerCase().indexOf(d.toLowerCase())>=0) return true;   /* verbatim, any case */
+  /* opnfid-1.0.0 - THIS FUNCTION WAS NEVER HANDED AN ISO DATE.
+     Only ^YYYY-MM-DD$ was parsed; every other shape fell through to a verbatim
+     string compare. openOpPrep passes _opDayStr(dayKey) - "Thursday, August 6,
+     2026" - and openOpPrepForPatient passes the same long form, so a draft that
+     wrote "Date of Procedure: August 6, 2026" (correct, just without the
+     weekday) was judged to carry NO date and _opGuardProcedureDate prepended a
+     SECOND date line above the note's own. Parse the three shapes this app
+     actually supplies, then test the renderings it tested before plus the
+     day-first ones. This only makes the check accept a note that DOES state the
+     supplied day; a note stating a DIFFERENT day still fails, as before. */
+  var y=0, mo=0, da=0, m;
+  var MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  if((m=/(\d{4})-(\d{1,2})-(\d{1,2})/.exec(d))){ y=+m[1]; mo=+m[2]; da=+m[3]; }
+  else if((m=/\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\b/.exec(d))){ y=+m[3]; mo=+m[1]; da=+m[2]; }
+  else {
+    var dlow=d.toLowerCase();
+    for(var k=0;k<MONTHS.length;k++){
+      var ab=MONTHS[k].slice(0,3).toLowerCase(), hit;
+      if((hit=new RegExp('\\b'+ab+'[a-z]*\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b').exec(dlow))){ y=+hit[2]; mo=k+1; da=+hit[1]; break; }
+      if((hit=new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+'+ab+'[a-z]*\\.?,?\\s+(\\d{4})\\b').exec(dlow))){ y=+hit[2]; mo=k+1; da=+hit[1]; break; }
+    }
+  }
+  if(!y||!mo||!da) return false;
+  var MON=MONTHS[mo-1]||'';
   var pats=[
+    y+'-'+String(mo).padStart(2,'0')+'-'+String(da).padStart(2,'0'),
     mo+'/'+da+'/'+y, String(mo).padStart(2,'0')+'/'+String(da).padStart(2,'0')+'/'+y,
-    mo+'-'+da+'-'+y, da+' '+MON+' '+y
+    mo+'-'+da+'-'+y, String(mo).padStart(2,'0')+'-'+String(da).padStart(2,'0')+'-'+y,
+    mo+'.'+da+'.'+y, da+' '+MON+' '+y
   ];
   for(var i=0;i<pats.length;i++) if(s.indexOf(pats[i])>=0) return true;
   if(MON){
@@ -23349,6 +23457,7 @@ function _opNoteHasDate(note, dateStr){
     if(re.test(s)) return true;
     var abbr=MON.slice(0,3);
     if(new RegExp('\\b'+abbr+'\\.?\\s+0?'+da+'(?:st|nd|rd|th)?,?\\s+'+y,'i').test(s)) return true;
+    if(new RegExp('\\b0?'+da+'(?:st|nd|rd|th)?\\s+'+abbr+'[a-z]*\\.?,?\\s+'+y,'i').test(s)) return true;
   }
   return false;
 }

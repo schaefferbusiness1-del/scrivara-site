@@ -449,8 +449,17 @@ if (iCross >= 0 && iRelax > iCross) {
 /* the relaxation exists at exactly one place, and nowhere near the heading check */
 const tplModeSites = [];
 L.forEach((l, i) => { if (/tplMode/.test(l)) tplModeSites.push(i + 1); });
-ok(tplModeSites.length === 5,
-  'tplMode appears at exactly 5 sites - read, append, ctx stamp, gate relaxation, result record',
+/* 2026-08-31, opnfid-1.0.0: SIX, and the sixth is a record, not a relaxation.
+   The REPAIRED result now stamps templateMode alongside its fidelity object,
+   exactly as the first-pass result already did - before this, a draft that
+   needed the repair round-trip came back with no mode on it and the room's
+   receipt could not name the style that produced the note in front of the
+   doctor. The count is a tripwire against a SECOND relaxation site, and it
+   still is one: any seventh mention fails here, and the two assertions below
+   (the repair pass is mode-blind, and the relaxation is the else of the
+   crossAdapt branch) independently pin where a relaxation may live. */
+ok(tplModeSites.length === 6,
+  'tplMode appears at exactly 6 sites - read, append, ctx stamp, gate relaxation, first-pass result record, repaired result record',
   'sites: ' + JSON.stringify(tplModeSites));
 const iCheck2 = lineStarting('    var check2;', 'the repair-pass check');
 const iFidThrow = L.findIndex((l, i) => i > iCheck2 && l.includes('MLS_OPNOTE_TEMPLATE_FIDELITY'));
