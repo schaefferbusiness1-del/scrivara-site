@@ -983,10 +983,18 @@
     };
     wfdx.receipts.push(receipt);
     while (wfdx.receipts.length > WFDX_MAX_RECEIPTS) wfdx.receipts.shift();
+    /* wfauto-1.0.0 sensor: a receipt is the only thing this file writes at the
+       instant a POSITIVE refusal is decided, so the automatic re-check reads
+       receipts rather than wording. Read-only with respect to everything here. */
+    try { wfautoObserveReceipt(receipt); } catch (eWfAuto) {}
     return receipt;
   }
   function wfdxProbeReceipt(state, row, probe, stage) {
     var manifest = (state && state.manifest) || {}, visit = manifest.visit || {};
+    /* wfauto-1.0.0 sensor: the raw answer of the last read-only ROW CHECK, with
+       the probe generation it belongs to. That is the whole evidence base the
+       automatic re-check is allowed to reason from. */
+    try { wfautoRecordProbe(state, row, probe, stage); } catch (eWfAutoP) {}
     var reason = S(probe && probe.reason), lock = 'not-attempted';
     if (probe && probe.__timeout === true) lock = 'no-response';
     else if (probe && probe.ok === true) lock = 'verified';
@@ -1781,6 +1789,9 @@
       var teacher = destinationTeacher();
       if (teacher && typeof teacher.cancelForRow === 'function') state.manifest.rows.forEach(function (row) { if (row.action) try { teacher.cancelForRow(state.manifest, row); } catch (e) {} });
       state.closed = true;
+      /* wfauto-1.0.0: a closed sheet has no automatic re-check. The pending
+         timer and its focus listeners go with it. */
+      try { wfautoCancel(state); } catch (eWaC) {}
       if (state.a11yKeyHandler) {
         try { document.removeEventListener('keydown', state.a11yKeyHandler, true); } catch (e0) {}
         state.a11yKeyHandler = null;
@@ -1843,7 +1854,17 @@
     var row = unifiedRow(state.manifest, state.selectedRowId);
     return (row && p.rowId === row.id && p.rowHash === row.rowHash) ? row : null;
   }
+  /* wfauto-1.0.0: the state line is where an automatic re-check narrates
+     itself. The WORD is untouched - a refusal still reads NEEDS ONE STEP or
+     CAN'T SEND - because the word says what the sheet's gates say; only the
+     short sentence under it gains "...and MLS is re-checking by itself". */
   function sheetclarState(state, kind) {
+    var out = sheetclarStateBase(state, kind);
+    if (!out || WFAUTO_SKIP_LABELS[out.label] === 1) return out;
+    var note = ''; try { note = wfautoNote(state); } catch (e) {}
+    return note ? { label: out.label, color: out.color, short: out.short + note } : out;
+  }
+  function sheetclarStateBase(state, kind) {
     if (state.running || state.batchRunning) {
       return { label: 'SENDING', color: '#204034',
         short: 'MLS is writing the reviewed text into the exact Athena field. It never saves and never signs.' };
@@ -1906,6 +1927,10 @@
       try { el.setAttribute('data-mls-status-kind', isFix ? 'fix' : (S(kind) || 'info')); } catch (eKind) {}
       el.textContent = message;
     }
+    /* wfauto-1.0.0: remember the severity this surface is currently painted at,
+       so an automatic re-check can repaint the state line later WITHOUT
+       inventing a severity of its own or touching this message. */
+    try { state.wfautoLastKind = kind; } catch (eKind2) {}
     /* sheetclar-1.0.0: the scannable state word above the same honest sentence.
        It reads state, not this message, so it cannot contradict the gates. */
     try { paintSheetclarState(state, kind); } catch (eState) {}
@@ -1941,6 +1966,11 @@
     /* sheetux-1.0.0: a settled refusal is also the moment the merged primary
        button becomes the doctor's next move again. */
     try { unifiedSyncPrimaryButton(state); } catch (eSync) {}
+    /* wfauto-1.0.0: ...and it is the exact moment the AUTOMATIC cycle stopped.
+       If the evidence says the surface is simply not ready YET, keep pressing
+       this same read-only re-check on a bounded backoff instead of waiting for
+       a human. A positive refusal never reaches here armed. */
+    try { wfautoOnSettled(state, rowId); } catch (eAuto) {}
   }
   /* sheetux-1.0.0 RECOVERABLE REFUSALS. The message names one step; this puts
      that step on a button and takes it for the doctor. Everything the control
@@ -1967,6 +1997,10 @@
   function unifiedRecoverableStatus(state, rowId, message, run) {
     unifiedStatus(state, message, 'fix');
     unifiedRecoveryButton(state, rowId, SHEETUX_DOIT_LABEL, SHEETUX_DOIT_TITLE, run);
+    /* wfauto-1.0.0: the amber "one step" refusals are the ones the doctor most
+       often clears by hand in athenaOne. This latch is the second place the
+       automatic cycle stops, so it arms the same bounded read-only re-check. */
+    try { wfautoOnSettled(state, rowId); } catch (eAuto) {}
   }
   function unifiedOpenDayRecovery(state, rowId) {
     return function (btn) {
@@ -1977,6 +2011,256 @@
       wfdxOpenEncounter(state, rowId, btn, false);
     };
   }
+  /* ===== wfauto-1.0.0 (owner 2026-08-31: "writes need to be even more
+     seamless and work every time") ==========================================
+     THE SEAM THIS CLOSES, MEASURED LIVE. When athenaOne sits on the dashboard
+     the sheet probes, says so honestly, drives the read-only open (rowfirst
+     ladder) and paces its re-probes (openpace-1.0.0: 12s settle, then up to
+     4 x 15s). In several live runs the encounter finished painting a few
+     seconds AFTER that budget ran out, so the automatic cycle stopped ONE HOP
+     SHORT of READY and sat there waiting for a human press of "Check Athena
+     again" on a surface that was already fine.
+
+     THE TERMINAL STATES THAT STOP THE SHIPPED CHAIN (all measured in source):
+       T1 the openpace budget is exhausted while the open is still fresh - the
+          frame-missing tail prints "To unlock: ... press Check Athena again".
+       T2 the procedure-section read-only probe answers "not on screen" -
+          amber + Check Athena again.
+       T3 wfdxOpenEncounter's own ladder refuses (this exact row is not on the
+          painted grid, the open did not start, the Day view could not be
+          re-proven) - amber + "Open it and re-check".
+       T4 the one-per-review auto-open could not open the chart - red + Check
+          Athena again.
+       T5 any WFCLAR fix-class refusal (no-chart-open, rows-not-rendered,
+          timeout, open-timeout, appointment-id-not-found, unresolved-after-
+          pull, note-editor-not-empty, ...) - amber + Check Athena again. The
+          doctor usually fixes these BY HAND and then has to REMEMBER to press
+          the button.
+     Every one of them ends in unifiedRecheckButton() or
+     unifiedRecoverableStatus() - the two settle latches - which is why this
+     module hooks THERE and nowhere inside the probe / execute / token /
+     identity path. Not one byte of that path changes. This module cannot make
+     a row sendable, cannot mint a token, cannot enable Confirm and cannot
+     write: all it can do is press the SAME read-only re-check the doctor would
+     have pressed, on a bounded backoff, and say so out loud in the state line.
+
+     WHAT IT WILL NEVER DO. Arming is a CLOSED ALLOWLIST of refusal codes
+     (WFAUTO_RETRY). A POSITIVE refusal - wrong patient, wrong DOB/MRN, wrong
+     day, a provider / practice / account conflict, a token or payload refusal,
+     an expired athenaOne session, no athenaOne tab at all - is not on it, and
+     any such receipt ALSO sets a sticky latch that disarms this module for the
+     life of the sheet. A probe that came back ok:true and was then refused by
+     MLS's own gates (identity lock, display-vs-execute day, sign proof, order
+     binding) is positive by construction and latches too. Nothing here ever
+     re-drives navigation (openpace measured that re-driving a painting
+     encounter DESTROYS it), ever presses an execute path, and it is inert
+     while a write, a batch, a rebuild or a rehearsal is in flight. */
+  var WFAUTO_RETRY = {
+    'context-unverified': 1, 'context-mismatch': 1, 'probe-frame-missing': 1, 'no-chart-open': 1,
+    'rows-not-rendered': 1, 'athena-navigation-busy': 1, 'timeout': 1, 'open-timeout': 1,
+    'appointment-id-not-found': 1, 'unresolved-after-pull': 1, 'appointment-id-missing': 1,
+    'ambiguous-athena-tabs': 1, 'note-editor-not-empty': 1, 'no-response': 1
+  };
+  /* The subset that means "the surface MLS just opened has not finished
+     painting YET". These get the paced backoff measured from the open itself. */
+  var WFAUTO_PAINT = {
+    'context-unverified': 1, 'context-mismatch': 1, 'probe-frame-missing': 1, 'no-chart-open': 1,
+    'rows-not-rendered': 1, 'athena-navigation-busy': 1, 'timeout': 1, 'open-timeout': 1,
+    'appointment-id-not-found': 1, 'unresolved-after-pull': 1
+  };
+  /* DEFENCE IN DEPTH ONLY - WFAUTO_RETRY above is the gate that decides. These
+     are the codes that additionally LATCH the sheet out of automatic
+     re-checking for good, however they arrive. */
+  var WFAUTO_POSITIVE = {
+    'patient-mismatch': 1, 'dob-mismatch': 1, 'mrn-conflict': 1, 'chart-identity-mismatch': 1,
+    'provider-mismatch': 1, 'practice-mismatch': 1, 'account-mismatch': 1, 'session-expired': 1,
+    'no-athena-tab': 1, 'display-execute-day-mismatch': 1, 'note-destination-mismatch': 1,
+    'note-payload-mismatch': 1, 'note-section-payload-mismatch': 1, 'note-section-count-mismatch': 1,
+    'preview-hash-mismatch': 1, 'verified-note-write-required': 1, 'sign-prerequisite-mismatch': 1,
+    'unsafe-note-policy': 1, 'unknown-note-section': 1, 'write-safety-final-action-blocked': 1,
+    'write-safety-guard-missing': 1
+  };
+  /* Backoff chosen so the whole automatic stretch fits inside the owner's
+     three-minute bound: 9 + 18 + 30 + 45 + 60 = 162s of waiting across five
+     re-probes, and the deadline clips the last one. */
+  var WFAUTO_BACKOFF_MS = [9000, 18000, 30000, 45000, 60000, 60000];
+  var WFAUTO_IDLE_MS = 20000;          /* owner: "or ~20s elapse" */
+  var WFAUTO_WINDOW_MS = 180000;       /* owner: "e.g. 3 minutes from open" */
+  var WFAUTO_OPEN_FRESH_MS = 180000;
+  var WFAUTO_WAKE_DEBOUNCE_MS = 5000;
+  var WFAUTO_MAX_PAINT = 5;
+  var WFAUTO_MAX_SETTLED = 3;          /* owner: "max a few automatic re-probes" */
+  var WFAUTO_SKIP_LABELS = { SENDING: 1, DONE: 1, READY: 1, 'READY (PROBE ONLY)': 1 };
+  var wfautoOff = false;
+  function wfautoClearTimer(state) {
+    var a = state && state.wfauto;
+    if (a && a.timer) { try { clearTimeout(a.timer); } catch (e) {} a.timer = null; }
+  }
+  function wfautoUnwatch(state) {
+    var a = state && state.wfauto;
+    if (!a || !a.watching) return;
+    a.watching = false;
+    try { document.removeEventListener('visibilitychange', a.onWake, false); } catch (e) {}
+    try { window.removeEventListener('focus', a.onWake, false); } catch (e2) {}
+  }
+  function wfautoCancel(state) {
+    var a = state && state.wfauto;
+    if (!a) return;
+    wfautoClearTimer(state); wfautoUnwatch(state);
+    a.armed = false; a.nextAt = 0;
+  }
+  /* A positive refusal ends the automatic cycle permanently for this sheet.
+     Nothing clears this latch except closing and reopening the review. */
+  function wfautoLatchPositive(state, code) {
+    if (!state) return;
+    if (!state.wfautoPositive) state.wfautoPositive = S(code) || 'positive';
+    wfautoCancel(state);
+  }
+  /* Every wfdxNote receipt passes through here. 'identity-lock' and
+     'target-diff' are the only two stages the pinned probe path uses to
+     announce that it refused on identity or on a display-vs-execute day
+     conflict, so they are read as receipts rather than as wording. */
+  function wfautoObserveReceipt(receipt) {
+    var state = unifiedAthenaState;
+    if (!state || state.closed || !receipt) return;
+    if (receipt.stage === 'identity-lock' || receipt.stage === 'target-diff') { wfautoLatchPositive(state, receipt.reason || receipt.stage); return; }
+    if (WFAUTO_POSITIVE[S(receipt.reason)] === 1) wfautoLatchPositive(state, receipt.reason);
+  }
+  /* The evidence the whole module runs on: what the LAST read-only row check
+     actually answered, in which probe generation. A null / timed-out probe is
+     recorded as 'timeout' - the same code WFCLAR gives it. */
+  function wfautoRecordProbe(state, row, probe, stage) {
+    if (!state || stage !== 'row-check') return;
+    var code = S(probe && probe.reason).trim();
+    if (!probe || probe.__timeout === true) code = 'timeout';
+    state.wfautoProbe = { generation: state.probeGeneration, rowId: S(row && row.id),
+      ok: !!(probe && probe.ok === true), code: code, at: Date.now() };
+  }
+  /* RETRYABLE-BY-EVIDENCE, decided from measured state only. */
+  function wfautoEligible(state) {
+    if (wfautoOff || !state || state.closed || unifiedAthenaState !== state) return null;
+    if (state.running || state.batchRunning || state.generating || state.binding || state.halted) return null;
+    if (state.wfautoPositive) return null;
+    var last = state.wfautoProbe;
+    if (!last || last.generation !== state.probeGeneration) return null;
+    if (last.ok === true) return null;
+    if (WFAUTO_RETRY[last.code] !== 1) return null;
+    if (sheetclarReadyRow(state)) return null;
+    var openedAt = Number(state.openedOkAt) || 0;
+    var painting = WFAUTO_PAINT[last.code] === 1 && openedAt > 0 && (Date.now() - openedAt) <= WFAUTO_OPEN_FRESH_MS;
+    return { rowId: last.rowId, code: last.code, painting: painting, openedAt: openedAt };
+  }
+  function wfautoRepaint(state) {
+    try { paintSheetclarState(state, state.wfautoLastKind); } catch (e) {}
+  }
+  function wfautoWatch(state) {
+    var a = state.wfauto;
+    if (a.watching) return;
+    a.onWake = function () { wfautoWake(state); };
+    try { document.addEventListener('visibilitychange', a.onWake, false); a.watching = true; } catch (e) {}
+    try { window.addEventListener('focus', a.onWake, false); a.watching = true; } catch (e2) {}
+  }
+  /* The doctor went to athenaOne, fixed it by hand, and came back. That return
+     IS the press of "Check Athena again" - so take it for him, read-only. */
+  function wfautoWake(state) {
+    var a = state && state.wfauto;
+    if (!a || !a.armed) return;
+    try { if (document.visibilityState === 'hidden') return; } catch (e) {}
+    if (Date.now() - Number(a.lastProbeAt || 0) < WFAUTO_WAKE_DEBOUNCE_MS) return;
+    wfautoFire(state, state.probeGeneration, a.rowId);
+  }
+  function wfautoArm(state, wait, mode) {
+    var a = state.wfauto;
+    wfautoClearTimer(state);
+    a.armed = true; a.mode = mode; a.waitMs = wait; a.nextAt = Date.now() + wait;
+    a.exhausted = false; a.armedGeneration = state.probeGeneration;
+    var gen = state.probeGeneration, rowId = a.rowId;
+    try { a.timer = setTimeout(function () { wfautoFire(state, gen, rowId); }, wait); } catch (e) { a.timer = null; }
+    wfautoWatch(state);
+    wfautoRepaint(state);
+  }
+  function wfautoStop(state, exhausted) {
+    var a = state && state.wfauto;
+    wfautoCancel(state);
+    if (a && exhausted) { a.exhausted = true; wfautoRepaint(state); }
+    return false;
+  }
+  /* THE ONE ARMING POINT. Called from the two settle latches, i.e. at exactly
+     the moment the shipped chain gave up and a human press became necessary. */
+  function wfautoOnSettled(state, rowId) {
+    var why = wfautoEligible(state);
+    if (!why) return wfautoStop(state, false);
+    var a = state.wfauto, now = Date.now();
+    /* One cycle per uninterrupted stretch of refusals. A successful open that
+       is NEWER than the cycle re-earns the window, because what the sheet is
+       waiting on is genuinely new. */
+    if (!a || (why.openedAt && why.openedAt > a.startedAt)) {
+      /* tear the old cycle down FIRST - its timer and its two wake listeners
+         belong to a window that is over. */
+      wfautoCancel(state);
+      a = state.wfauto = { cycle: (a ? a.cycle : 0) + 1, startedAt: (why.openedAt || now),
+        tries: 0, settledTries: 0, timer: null, armed: false, armedGeneration: -1, watching: false,
+        onWake: null, rowId: '', code: '', mode: '', waitMs: 0, nextAt: 0,
+        exhausted: false, lastProbeAt: now };
+    }
+    /* wfClarityRefusal calls BOTH latches for one refusal - the second call
+       must not restart the clock the first one set. */
+    if (a.armed && a.armedGeneration === state.probeGeneration && a.rowId === S(rowId || why.rowId)) return true;
+    a.rowId = S(rowId) || why.rowId; a.code = why.code; a.painting = why.painting;
+    var deadline = a.startedAt + WFAUTO_WINDOW_MS;
+    if (why.painting) {
+      if (a.tries >= WFAUTO_MAX_PAINT || now >= deadline) return wfautoStop(state, true);
+      var wait = WFAUTO_BACKOFF_MS[Math.min(a.tries, WFAUTO_BACKOFF_MS.length - 1)];
+      if (now + wait > deadline) wait = Math.max(1000, deadline - now);
+      wfautoArm(state, wait, 'paint');
+      return true;
+    }
+    if (a.settledTries >= WFAUTO_MAX_SETTLED) return wfautoStop(state, true);
+    wfautoArm(state, WFAUTO_IDLE_MS, 'settled');
+    return true;
+  }
+  function wfautoFire(state, gen, rowId) {
+    var a = state && state.wfauto;
+    if (!a) return false;
+    a.timer = null;
+    if (!state || state.closed || unifiedAthenaState !== state || state.probeGeneration !== gen) return wfautoStop(state, false);
+    var why = wfautoEligible(state);
+    if (!why) return wfautoStop(state, false);
+    if (a.mode === 'paint' && Date.now() >= a.startedAt + WFAUTO_WINDOW_MS) return wfautoStop(state, true);
+    if (a.mode === 'paint') a.tries += 1; else a.settledTries += 1;
+    a.armed = false; a.nextAt = 0;
+    wfautoClearTimer(state); wfautoUnwatch(state);
+    a.lastProbeAt = Date.now();
+    /* openpace-1.0.0 AUDIT (deliberate, and the only existing field this module
+       writes): while the open MLS just made is still fresh the encounter is
+       LOADING, and re-driving navigation into it destroys it - measured live.
+       state.autoOpenAt is precisely the throttle that suppresses that re-drive,
+       and an open that succeeded moments ago IS the recent open it exists to
+       debounce. Stamping it keeps exactly ONE owner of the retry timing (this
+       cycle) instead of two fighting over the same surface. This module never
+       opens or navigates anything itself. */
+    if (why.painting) state.autoOpenAt = Date.now();
+    wfautoRepaint(state);
+    probeUnifiedRow(state, rowId);
+    return true;
+  }
+  /* The narration, and the ONLY surface this module paints. It is appended to
+     the sheetclar-1.0.0 state line's short sentence; #mlsAthenaUnifiedProbe
+     keeps the refusal's exact textContent, and the disclosure stays forced
+     open, so no refusal is ever softened or folded away by an auto re-check. */
+  function wfautoNote(state) {
+    var a = state && state.wfauto;
+    if (!a || wfautoOff) return '';
+    if (a.exhausted) {
+      return ' MLS re-checked Athena by itself for three minutes and it still refused, so it stopped rather than loop: this one needs you. Fix the step named here, then press Check Athena again.';
+    }
+    if (!a.armed) return '';
+    var secs = Math.max(1, Math.round((Number(a.nextAt) - Date.now()) / 1000));
+    return a.mode === 'paint'
+      ? ' athenaOne is still painting the encounter - MLS is re-checking automatically in about ' + secs + 's (' + (a.tries + 1) + ' of ' + WFAUTO_MAX_PAINT + '). Nothing was changed.'
+      : ' MLS will check Athena again by itself in about ' + secs + 's, and the moment you come back to this tab - or press Check Athena again yourself. Nothing was changed.';
+  }
+  /* ===== end wfauto-1.0.0 ================================================== */
   /* ===== wfclar-1.0.0 (owner 2026-08-27: "not so many things that say
      blocked", "ALSO THE OP NOTES WRITE SHOULD WORK TOO") ====================
      MEASURED against MLS Assist 3.0.84: a refused read-only probe is
@@ -2259,6 +2543,10 @@
            navigateAndSearchOpenTarget always judged it this way; the two sites
            now agree). */
         if (observed && observed !== day) {
+          /* wfauto-1.0.0: a POSITIVELY different painted day is a wrong-day
+             refusal. It is terminal and stays terminal - no automatic
+             re-check may ever run after it on this sheet. */
+          try { wfautoLatchPositive(state, 'day-view-wrong-day'); } catch (eWa) {}
           done('One step needed: athenaOne’s Day view has to be on ' + day + ' once.' +
             ' Its Day view is on ' + observed + ' right now.' +
             ' MLS can take that step for you, or open ' + day + ' in athenaOne yourself and press Check Athena again. Nothing was changed and nothing was sent.', 'fix', true);
@@ -5897,6 +6185,22 @@
       /* wfclar-1.0.0 read-only seam: the refusal table and how one refusal is
          said. Nothing here can send, enable a control, or change a verdict. */
       clarity: { v: 'wfclar-1.0.0', table: WFCLAR, classify: wfClarify, say: wfClarityText },
+      /* wfauto-1.0.0 seam. The two closed sets, the bounds, and the SAME
+         functions the settle latches call - so a suite cannot agree with a
+         reimplementation of them. arm()/fire() can only schedule or run a
+         READ-ONLY re-probe; there is no path from here to an execute. */
+      autoChain: { v: 'wfauto-1.0.0', retryable: WFAUTO_RETRY, painting: WFAUTO_PAINT,
+        positive: WFAUTO_POSITIVE, backoff: WFAUTO_BACKOFF_MS, idleMs: WFAUTO_IDLE_MS,
+        windowMs: WFAUTO_WINDOW_MS, maxPaint: WFAUTO_MAX_PAINT, maxSettled: WFAUTO_MAX_SETTLED,
+        eligible: function () { return wfautoEligible(unifiedAthenaState); },
+        snapshot: function () { var a = unifiedAthenaState && unifiedAthenaState.wfauto; return a ? { cycle: a.cycle, mode: a.mode, armed: a.armed === true, tries: a.tries, settledTries: a.settledTries, waitMs: a.waitMs, exhausted: a.exhausted === true, rowId: a.rowId, code: a.code, watching: a.watching === true } : null; },
+        positiveLatch: function () { return unifiedAthenaState ? S(unifiedAthenaState.wfautoPositive) : ''; },
+        lastProbe: function () { var p = unifiedAthenaState && unifiedAthenaState.wfautoProbe; return p ? { generation: p.generation, rowId: p.rowId, ok: p.ok, code: p.code } : null; },
+        note: function () { return unifiedAthenaState ? wfautoNote(unifiedAthenaState) : ''; },
+        arm: function (rowId) { return wfautoOnSettled(unifiedAthenaState, rowId); },
+        wake: function () { return wfautoWake(unifiedAthenaState); },
+        cancel: function () { return wfautoCancel(unifiedAthenaState); },
+        revert: function () { wfautoOff = true; try { wfautoCancel(unifiedAthenaState); } catch (e) {} return true; } },
       /* wfprog-1.0.0 read-only seam: the loading surface's own state and the
          receipt-derived summary. Nothing here can send. */
       progress: { v: 'wfprog-1.0.0', phases: WFPROG_PHASE, counts: function () { return wfprogCounts(unifiedAthenaState); },

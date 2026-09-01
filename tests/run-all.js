@@ -1240,6 +1240,7 @@ const tests = [
   'section-template-fidelity.test.js',
   'sheet-clarity.test.js',
   'fill-ux-clarity.test.js',
+  'write-auto-chain.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'extension-mac-sleep-and-legacy-review-runtime.test.js',

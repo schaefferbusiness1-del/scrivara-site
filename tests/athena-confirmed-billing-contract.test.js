@@ -494,8 +494,12 @@ assert(templateApply.indexOf('_athenaEditorFingerprint()!==templateFingerprint',
 assert(templateApply.indexOf('currentFormat!==templateFormat', templateApply.indexOf('await aiCallRaw')) < templateApply.indexOf("if(currentFormat==='soap') currentSoap=out"), 'template formatting could put a stale SOAP result into the insurance buffer');
 
 const groundedTemplateWrapper = between(connect, 'var _origApply = null;', '/* =====================================================================\n   * E. keyword backfill');
-assert(groundedTemplateWrapper.includes('function (template, visitText, expectedBinding, expectedEpoch)'), 'grounded template wrapper does not accept the core binding and epoch');
-assert(groundedTemplateWrapper.includes('_origApply.call(self, safeTpl, visitText, expectedBinding, expectedEpoch)'), 'grounded template wrapper dropped the core binding or epoch');
+/* pin moved with ngsig-1.0.0 (b1147): the wrapper now ALSO accepts and
+   forwards the 5th options/{signal} argument - previously dropped, which left
+   every abort guard inside applyTemplateToNote dead on the live path. The
+   binding and epoch still ride exactly as pinned before. */
+assert(groundedTemplateWrapper.includes('function (template, visitText, expectedBinding, expectedEpoch, opts)'), 'grounded template wrapper does not accept the core binding, epoch and options');
+assert(groundedTemplateWrapper.includes('_origApply.call(self, safeTpl, visitText, expectedBinding, expectedEpoch, opts)'), 'grounded template wrapper dropped the core binding, epoch or options');
 assert(groundedTemplateWrapper.indexOf('_athenaAsyncBindingStillSafe(expectedBinding, "template formatting audit", expectedEpoch)') < groundedTemplateWrapper.indexOf('var nb2 = $("noteBox")'), 'grounded template audit could restore patient A text into patient B');
 
 const opTemplateFill = between(connect, 'function fillOpSkeleton(tpl, transcript, expectedBinding, expectedEpoch)', '/* =====================================================================\n   * D. wrap maybeApplyTemplate');
