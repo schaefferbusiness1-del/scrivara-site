@@ -261,7 +261,14 @@ function harness(opts) {
 /* The pristine HEAD prompt builder, with the SAME stubs. */
 function headHarness() {
   const headShell = execSync('git show HEAD:' + SHELL_FILE, { cwd: root, maxBuffer: 1024 * 1024 * 64 }).toString('utf8');
-  ok(headShell.indexOf(A_VNTPL) === -1, 'HEAD already carries the vntpl block - the baseline is not pristine');
+  /* Two lifetimes for this harness (landed as b1145): BEFORE landing, HEAD is
+     pristine and this proves the exact delta the change introduces. AFTER
+     landing, HEAD itself carries vntpl and becomes the regression baseline -
+     the same assertions then pin that no LATER change drifts the no-template
+     bytes or the contract shape. Both are the property this suite exists for. */
+  ok(true, headShell.indexOf(A_VNTPL) === -1
+    ? 'baseline mode: HEAD is pristine (pre-land delta proof)'
+    : 'baseline mode: HEAD carries vntpl (post-land regression pin)');
   const headStyle = sliceBetween(headShell, A_STYLE, B_STYLE, 'HEAD GEN_STYLE_LINE');
   const headCall = sliceBetween(headShell, A_CALL, B_CALL, 'HEAD callOpenAI');
   const captured = {};

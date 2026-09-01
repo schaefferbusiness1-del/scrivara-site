@@ -31642,7 +31642,7 @@ try{ window.__mlsAutoDraftPrior={version:'autodraft-1.0.0',seed:_mlsAutoDraftPri
    Owner, 2026-08-31: "the other sections need to follow the templates there
    given to like the hip and assent and plan so fix that to."
 
-   WHAT WAS ACTUALLY WRONG. b1145 hardened the POST-HOC reformat
+   WHAT WAS ACTUALLY WRONG. b1144 hardened the POST-HOC reformat
    (applyTemplateToNote): a reproduce-then-fill contract, a deterministic
    conformance measure, an amber strip that says out loud when a draft did not
    follow the template. But the template reached the model ONLY there. The
@@ -31741,7 +31741,7 @@ function _mlsTplPromptSanitize(text){
 }
 /* THE TEMPLATE'S OWN SECTION LINES, verbatim and in order - not normalised
    labels. The DECISION is the shipped detector (_mlsTplHeadingLabel, itself
-   the b1145 port of headingLabel from the op-note module); only what is
+   the b1144 port of headingLabel from the op-note module); only what is
    RETURNED differs, so "which lines are sections" can never disagree between
    the contract the model is handed and the measure that grades the answer. */
 function _mlsTplSectionLines(text){
@@ -31818,7 +31818,7 @@ function _mlsResolveGenerationTemplate(visitText){
     return resolveActiveTemplate(visitText)||null;
   }catch(eGenTplResolve){ return null; }
 }
-/* MEASURE THE FIRST DRAFT, not only the reformat. b1145 grades the post-hoc
+/* MEASURE THE FIRST DRAFT, not only the reformat. b1144 grades the post-hoc
    reformat; when a template shaped THIS prompt, the draft on screen right now
    is the one the doctor reads, and a reformat that times out in silence must
    not be what decides whether he is told. Same shipped measure, same amber
@@ -43980,7 +43980,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1145';
+  window.__MLS_AV='b1146';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -58593,9 +58593,21 @@ html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
          re-opens the same review with the same options, and "Copy error
          report" is a quiet link rather than a fifth equal button (23, 24). -->
 <style id="mlsClunkyAthenaCss">
-/* --- 3: the reason for a disabled Confirm travels with the Confirm. */
+/* --- 3: the reason for a disabled Confirm travels with the Confirm.
+   sheetclar-1.0.0 (2026-08-31) — THIS RULE WAS THE MEASURED OVERLAP. It made
+   #mlsAthenaUnifiedProbe and #mlsAthenaUnifiedFix into a SECOND sticky footer
+   pinned to bottom:0 at z-index:6, inside the same scrollport as the sheet's
+   own footer at z-index:3. Two boxes pinned to the same edge, the higher one
+   wins the hit test: document.elementFromPoint at the Confirm button's own
+   centre returned the fix strip, and the owner's physical clicks on Confirm &
+   Send did nothing at all while the button looked perfectly enabled.
+   It does not need to be sticky any more. The sheet's footer is now the card's
+   own second flex item, outside the scrolling body, so Confirm is ALWAYS on
+   screen and the reason above it can never be "below the fold" — and why()'s
+   own scrollIntoView still brings the status line into view when it is far up.
+   Keep the emphasis, drop the positioning. */
 #mlsAthenaUnifiedConfirm [data-mls-clunky-why="1"]{
-  position:sticky; bottom:0; z-index:6;
+  position:static; z-index:auto;
   background:var(--card, #fff);
   padding:8px 0 6px; margin:0;
   box-shadow:0 -8px 14px -12px rgba(20,33,28,.35);

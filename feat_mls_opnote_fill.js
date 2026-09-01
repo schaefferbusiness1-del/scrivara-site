@@ -29,6 +29,46 @@
   'use strict';
   try { if (window.__mlsOpNoteFill && window.__mlsOpNoteFill.installed) return; } catch (e) { return; }
 
+  /* =========================================================================
+   * onfux-1.0.0 (2026-08-31) — THE FILL PANE, MADE PLAIN.
+   * OWNER: "just make the tremplates filling better and more easy and less
+   * confusing ui".
+   *
+   * WHAT WAS CONFUSING, ON THE SCREEN HE WAS LOOKING AT, and what each became.
+   * No capability was removed; one control was MERGED into the control the rest
+   * of the app already points at, and every one of them is enumerated in
+   * tests/fill-ux-clarity.test.js before and after.
+   *
+   *  1. A HEADLINE THAT WAS A STATUS REPORT. "✏️ 4 fields need you (2 blank ·
+   *     2 suggested) · ✓ 6 filled automatically" — four numbers, no verb. Now
+   *     one sentence naming the next action; the auto-filled count is the
+   *     summary of the expander directly under it, where it is acted on.
+   *  2. A FIELD WITH NO CONTEXT. "Volume [type value]" cannot say WHICH volume
+   *     when a template carries three. Every field now shows the sentence out
+   *     of the note that its value lands in, with the slot marked, and focusing
+   *     a field selects and scrolls to that exact span in the draft. Clicking a
+   *     value in the draft rings its field (a ring, never a focus steal — the
+   *     doctor clicks into that textarea to write prose).
+   *  3. TWO DICTATION BUTTONS THAT WERE ONE ACTION. See the merge note at the
+   *     dictHtml build.
+   *  4. "USE EVERY TIME" EXPLAINED IN FINE PRINT AT THE OTHER END OF THE PANE.
+   *     Now five words beside the button, plus a title on the button itself.
+   *  5. A FOOTER THAT PUT A VERDICT IN HIS MOUTH ("✓ Looks right — save to
+   *     History (4 blanks left)") and counted blanks differently from the save
+   *     gate. See the verdict note at saveLabel. Saving over blanks was never
+   *     blocked and still is not.
+   *  6. RED ALARM BARS PER FIELD. An unanswered field is not an error; the
+   *     "needs value" chip is now calm and amber is reserved for the one state
+   *     that wants a second look (an unconfirmed machine suggestion).
+   *  7. A CARD GRID THIS FILE DECLARED AND BOTH ROOM SKINS OVERRODE BACK TO A
+   *     COLUMN with !important. The shipped shape is now declared here.
+   *  8. 390px: the save and dictation rows overflowed their card. They wrap.
+   *
+   * VERSION IS DELIBERATELY NOT MOVED, for the reason recorded at
+   * stampSettled() below: 'onf-2.13.0' is pinned by four suites other lanes are
+   * editing concurrently, and a version bump would collide with them for no
+   * behavioural gain. This pass is marked onfux-1.0.0 at every site it touched.
+   * ========================================================================= */
   var VERSION = 'onf-2.13.0';
   var BAR_ID = 'mlsOnfBar', STYLE_ID = 'mlsOnfStyle';
 
@@ -56,36 +96,88 @@
       '#' + BAR_ID + ' button:hover{filter:brightness(1.05);}',
       '#' + BAR_ID + ' .onf-count{margin-left:auto;font-weight:700;color:#204034;}',
       '.onf-fillbox{margin:8px 0;padding:10px 12px;border:1px solid #e0b877;border-radius:11px;background:#fffdf5;}',
-      '.onf-fillbox .onf-h{font:800 12px/1.3 "Plus Jakarta Sans",system-ui,sans-serif;color:#7a5310;margin:0 0 7px;display:flex;align-items:center;gap:6px;}',
-      '.onf-fillbox .onf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;}',
-      '.onf-fillbox label{display:flex;flex-direction:column;gap:3px;font:700 11px/1.3 system-ui;color:#5a4a24;}',
-      '.onf-fillbox input,.onf-fillbox select{font:600 12.5px system-ui;padding:5px 8px;border:1px solid #d9c48f;border-radius:7px;background:#fff;color:#3a2f12;}',
+      /* onfux-1.0.0 — ONE HEADLINE, IN DOCTOR LANGUAGE. It was a status badge
+         ("4 fields need you (2 blank · 2 suggested) · 6 filled automatically")
+         reading as three facts at once; it is now one sentence that names the
+         next action, so it is set as a block, not as a flex chip rail. */
+      '.onf-fillbox .onf-h{font:800 13px/1.35 "Plus Jakarta Sans",system-ui,sans-serif;color:#6b4a12;margin:0 0 3px;display:block;}',
+      '.onf-fillbox .onf-sub{font:600 11px/1.4 system-ui;color:#8a7130;margin:0 0 8px;display:block;}',
+      /* onfux-1.0.0 — a TIGHT VERTICAL LIST, natively. The box shipped a
+         responsive card grid, and both room skins then overrode it back to a
+         single column with !important - so the shape a doctor actually saw was
+         never the shape this file declared. Declare the shipped shape here, and
+         the two surfaces (in the room, and on the main note editor) finally
+         agree without either one winning a specificity fight. */
+      '.onf-fillbox .onf-grid{display:flex;flex-direction:column;gap:0;}',
+      '.onf-fillbox label{display:flex;flex-direction:column;gap:3px;font:700 11.5px/1.3 system-ui;color:#5a4a24;}',
+      '.onf-fillbox input,.onf-fillbox select{font:600 12.5px system-ui;padding:5px 8px;border:1px solid #d9c48f;border-radius:7px;background:#fff;color:#3a2f12;max-width:100%;box-sizing:border-box;}',
       '.onf-fillbox label.onf-has input,.onf-fillbox label.onf-has select{border-color:#8fce9e;background:#f6fdf8;}',
-      '.onf-fillbox .onf-sug{font:800 9px system-ui;color:#7a5310;background:#fdf0d0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
-      '.onf-fillbox .onf-need{font:800 9px system-ui;color:#8a2a2a;background:#fbe0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
-      '.onf-fillbox .onf-saved{font:800 9px system-ui;color:#1b5e20;background:#dff0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
-      '.onf-fillbox .onf-default{font:800 9px system-ui;color:#204034;background:#dce8fb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
-      '.onf-fillbox .onf-hist{font:800 9px system-ui;color:#204034;background:#e0ecfb;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
-      '.onf-fillbox .onf-field{min-width:0;}',
+      /* onfux-1.0.0 — ONE CALM CHIP SHAPE for all five states. "needs value"
+         was the only one painted as an alarm (#8a2a2a on #fbe0e0), once per
+         unanswered field, so a note with four ordinary blanks rendered four red
+         bars. An empty field is not an error: it is neutral. AMBER is reserved
+         for the one state that really does want a second look - a value the
+         machine suggested and nobody has confirmed. */
+      '.onf-fillbox .onf-sug,.onf-fillbox .onf-need,.onf-fillbox .onf-saved,.onf-fillbox .onf-default,.onf-fillbox .onf-hist' +
+        '{font:700 9.5px/1.6 system-ui;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:middle;border:1px solid transparent;white-space:nowrap;}',
+      '.onf-fillbox .onf-need{color:#4a5568;background:#eef1f5;border-color:#dbe2ea;}',
+      '.onf-fillbox .onf-sug{color:#7a5310;background:#fdf0d0;border-color:#ecd9b0;}',
+      '.onf-fillbox .onf-saved{color:#1b5e20;background:#dff0e0;border-color:#c6e3ca;}',
+      '.onf-fillbox .onf-default{color:#204034;background:#dce8fb;border-color:#c6d6ec;}',
+      '.onf-fillbox .onf-hist{color:#204034;background:#e0ecfb;border-color:#c6d6ec;}',
+      '.onf-fillbox .onf-field{min-width:0;padding:9px 0 10px;border-bottom:1px solid #f0e4c8;}',
+      '.onf-fillbox .onf-field:last-child{border-bottom:0;padding-bottom:2px;}',
+      /* onfux-1.0.0 — THE BLANK'S OWN WORDS. Every field now carries the
+         sentence out of the note that its value lands in, with the slot marked,
+         so "Volume" is answered by reading the note rather than by guessing
+         which of four volumes the template meant. */
+      '.onf-fillbox .onf-ctx{display:block;font:500 11px/1.5 system-ui;color:#7c6a44;background:#fbf6ea;' +
+        'border-left:2px solid #e4d2a4;border-radius:0 6px 6px 0;padding:3px 8px;margin:1px 0 3px;overflow-wrap:anywhere;}',
+      '.onf-fillbox .onf-ctx b{font-weight:800;color:#3a2f12;background:#f6e6b8;border-radius:3px;padding:0 3px;}',
+      /* The slot marker is #5c6672 and NOT the tailwind-ish slate one digit
+         away from it, because that one carries a "bNNN" substring:
+         tests/hex-colour-integrity.test.js pins its exact occurrence count
+         precisely because a plain-replace build bump on that build number
+         would silently rewrite it. Spending one more occurrence of a pinned
+         hazard colour on a decoration is not a trade worth making. */
+      '.onf-fillbox .onf-ctx .onf-slot{font-style:normal;font-weight:800;color:#5c6672;background:#e9edf2;border-radius:3px;padding:0 5px;letter-spacing:.06em;}',
+      /* the reverse link: clicking a filled value in the note rings its field */
+      '.onf-fillbox .onf-field.onf-here{background:#fdf6e3;box-shadow:inset 3px 0 0 #d9a441;border-radius:6px;}',
       '.onf-fillbox .onf-field-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px;}',
       '.onf-fillbox .onf-field-actions button{cursor:pointer;border:1px solid #c9d6e5;border-radius:999px;padding:3px 8px;background:#fff;color:#204034;font:700 10px/1.2 system-ui;max-width:100%;white-space:normal;text-align:left;}',
       '.onf-fillbox .onf-field-actions button:hover{background:#eef4fb;}',
       '.onf-fillbox .onf-field-actions button.onf-stop{color:#8a2a2a;border-color:#e8c6c6;}',
+      /* onfux-1.0.0 — "Use every time" says what it does, where it is pressed. */
+      '.onf-fillbox .onf-hint{font:600 10px/1.3 system-ui;color:#8a7130;}',
       '.onf-fillbox .onf-mic{font-size:12px;padding:2px 7px;}',
       '.onf-fillbox details.onf-auto{margin-top:7px;border:1px dashed #cbd8c9;border-radius:8px;padding:5px 9px;background:#f6faf5;}',
       '.onf-fillbox details.onf-auto summary{cursor:pointer;font:700 11.5px system-ui;color:#16924e;outline-offset:2px;}',
       '.onf-fillbox details.onf-auto[open]{padding-bottom:8px;}',
       '.onf-dict{margin-top:8px;border-top:1px dashed #d8c9a8;padding-top:8px;}',
-      '.onf-dict textarea{width:100%;min-height:52px;font:12.5px system-ui;border:1px solid #c9d6e5;border-radius:7px;padding:6px 8px;margin:6px 0 4px;}',
+      '.onf-dict textarea{width:100%;min-height:46px;font:12.5px system-ui;border:1px solid #c9d6e5;border-radius:7px;padding:6px 8px;margin:6px 0 2px;box-sizing:border-box;}',
       '.onf-dict .onf-dict-status{font:600 11px system-ui;color:#7a5310;margin-left:8px;}',
+      '.onf-dict .onf-dict-help{font:600 10.5px/1.4 system-ui;color:#8a7130;}',
       '.onf-dict button{cursor:pointer;border:1px solid #c9d6e5;border-radius:7px;background:#fff;font:600 11.5px system-ui;padding:4px 10px;margin-right:6px;}',
       '.onf-dict button.onf-dict-go{background:#204034;color:#fff;border-color:#204034;}',
       '.onf-dict button[data-onf-corr]{background:#fff7e6;border-color:#e0b877;color:#7a5310;display:block;margin-top:4px;}',
       '.onf-fillbox .onf-recent{color:#5a4a24!important;border-color:#dcc78d!important;background:#fffaf0!important;}',
-      '.onf-fillbox .onf-note{font:600 10.5px system-ui;color:#8a7130;margin:7px 0 0;}',
+      '.onf-fillbox .onf-save{margin-top:10px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;}',
+      '.onf-fillbox .onf-savenote{font:600 10.5px/1.4 system-ui;color:#7a5310;}',
       '.onf-fillbox .onf-accept{cursor:pointer;border:0;border-radius:8px;padding:8px 15px;font:700 12.5px system-ui;background:#2E6A4B;color:#fff;}',
       '.onf-fillbox .onf-accept:hover{filter:brightness(1.08);}',
-      '@media (max-width:600px){.onf-fillbox .onf-grid{grid-template-columns:1fr;}}'
+      /* onfux-1.0.0 — 390px. The save row and the dictation row were both
+         single-line flex with a long caption beside a long button, so the pane
+         overflowed its card on a phone. Below 430px everything full-widths. */
+      '@media (max-width:600px){.onf-fillbox .onf-grid{grid-template-columns:1fr;}}',
+      '@media (max-width:430px){',
+      '.onf-fillbox{padding:9px 10px;}',
+      '.onf-fillbox .onf-h{font-size:12.5px;}',
+      '.onf-fillbox input,.onf-fillbox select{width:100%;}',
+      '.onf-fillbox .onf-save{gap:6px;}',
+      '.onf-fillbox .onf-accept{width:100%;justify-content:center;text-align:center;}',
+      '.onf-dict button{width:100%;margin-right:0;justify-content:center;}',
+      '.onf-dict .onf-dict-status{margin-left:0;display:block;margin-top:4px;}',
+      '}'
     ].join('');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -356,6 +448,8 @@
     return safe(function () { return (window._opPrep || [])[+ta.id.replace('opPrepNote_', '')]; }, null);
   }
   function isPrepBox(ta) { return !!(ta && ta.id && ta.id.indexOf('opPrepNote_') === 0); }
+  /* the one place the box's control-id namespace is derived from a textarea */
+  function idxOf(ta) { return isPrepBox(ta) ? ta.id.replace('opPrepNote_', '') : 'main'; }
   function mainBoxWithBlanks() {
     var ta = $(MAIN_ID);
     if (!ta || ta.offsetParent === null) return null;
@@ -422,9 +516,25 @@
     if (!ta) return true;
     return ta.__onfSig === sigOf(ta) && (!ta.__onfHadBox || boxPresent(ta));
   }
+  /* onfux-1.0.0 — A REBUILD MUST NOT YANK THE FIELD OUT FROM UNDER A TYPING
+     HAND. buildFillBox replaces box.innerHTML, so every control in it is a NEW
+     node. That was survivable while a typed value only reached the note on
+     blur; now that typing re-renders the draft live (applyLive below), the very
+     next 1s tick would destroy the input the doctor is still inside. The box
+     therefore DEFERS its rebuild while focus is in it - and a deferred rebuild
+     must not be stamped as settled, or the box would stay stale until the next
+     value change. Clearing the signature is what guarantees the tick comes
+     straight back for it the moment focus leaves. */
   function stampSettled(ta) {
     if (!ta) return;
+    if (ta.__onfDeferRebuild) { safe(function () { ta.__onfDeferRebuild = false; ta.__onfSig = ''; }); return; }
     safe(function () { ta.__onfSig = sigOf(ta); ta.__onfHadBox = boxPresent(ta); });
+  }
+  function boxHasFocus(box) {
+    return safe(function () {
+      var a = document.activeElement;
+      return !!(a && box && a !== box && isFn(box.contains) && box.contains(a));
+    }, false);
   }
 
   /* Auto-fill only identity already known from this visit or canonical Settings. */
@@ -946,6 +1056,63 @@
     addLiteral(raw.slice(at));
     return { rendered: rendered, parts: parts };
   }
+  /* =====================================================================
+   * onfux-1.0.0 — THE BLANK'S OWN WORDS.
+   * ---------------------------------------------------------------------
+   * The pane used to name a field and stop there: "Volume  [type value]".
+   * A template can carry three volumes and two levels, and the label alone
+   * cannot say which sentence this one lands in - so the doctor scrolled the
+   * note, found the placeholder, scrolled back, and typed. renderLayout()
+   * already computes exactly what is needed for that (every token's offset in
+   * the RENDERED text), so the context costs one extra pass over parts, not a
+   * second parser. Trimmed on word boundaries so a clipped sentence never
+   * starts mid-word, and capped so one long line cannot own the pane.
+   * ===================================================================== */
+  /* A neighbouring blank must not show the doctor raw placeholder SYNTAX in the
+     context line - "Volume: [FILL: volume] mL" is the very noise this pane
+     exists to hide. Only the surrounding text is prettified; the field's own
+     value is rendered separately. */
+  function prettyBlanks(s) {
+    return S(s)
+      .replace(/\[FILL:\s*[^\]]+?\s*\]/gi, '___')
+      .replace(/\[\[[a-z0-9_]+\]\]/gi, '___')
+      .replace(new RegExp(CAPS_TOKEN_SRC, 'g'), '___');
+  }
+  function ctxWindow(layout, key) {
+    if (!layout) return null;
+    var parts = layout.parts || [], r = S(layout.rendered), i;
+    for (i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (p.kind !== 'token' || S(p.key) !== S(key)) continue;
+      var s = Math.max(0, p.renderStart - 52), e = Math.min(r.length, p.renderEnd + 40);
+      var before = r.slice(s, p.renderStart).replace(/\s+/g, ' ');
+      var after = r.slice(p.renderEnd, e).replace(/\s+/g, ' ');
+      if (s > 0) before = before.replace(/^\S*\s/, '');
+      if (e < r.length) after = after.replace(/\s\S*$/, '');
+      return {
+        before: (s > 0 ? '… ' : '') + prettyBlanks(before),
+        after: prettyBlanks(after) + (e < r.length ? ' …' : ''),
+        value: S(p.rendered), start: p.renderStart, end: p.renderEnd
+      };
+    }
+    return null;
+  }
+  /* Field -> note. Selecting the token's span and scrolling it into view shows
+     the doctor WHERE the answer lands without stealing the caret out of the
+     field being answered (setSelectionRange does not focus). Every step is
+     wrapped: a detached or display:none textarea throws on selection. */
+  function revealInNote(ta, at, len) {
+    safe(function () {
+      if (!ta || !isFn(ta.setSelectionRange)) return;
+      var v = S(ta.value);
+      if (at < 0 || at > v.length) return;
+      ta.setSelectionRange(at, Math.min(v.length, at + len));
+      var lineAt = v.slice(0, at).split('\n').length - 1;
+      var lines = Math.max(1, v.split('\n').length);
+      var h = ta.scrollHeight || 0, view = ta.clientHeight || 0;
+      if (h > view && view > 0) ta.scrollTop = Math.max(0, (h * lineAt / lines) - (view / 2));
+    });
+  }
   function editSpan(base, edited) {
     base = S(base); edited = S(edited);
     var start = 0, max = Math.min(base.length, edited.length);
@@ -1056,6 +1223,35 @@
       var row = rowFor(ta);
       if (!row || row._onfWriting) return;
       acceptExternalEdit(row, ta.value || '');
+    });
+    /* onfux-1.0.0 — NOTE -> FIELD, the other half of the link.
+       Clicking a filled-in value in the note RINGS the field that owns it, so
+       the two surfaces are one thing. Deliberately a ring and NOT a focus
+       change: the doctor clicks into this textarea to edit prose far more often
+       than to find a field, and moving the caret out of the note on every click
+       would make ordinary editing impossible. */
+    ta.addEventListener('click', function () {
+      safe(function () {
+        var row = rowFor(ta);
+        if (!row || row._onfRaw == null) return;
+        var pos = ta.selectionStart;
+        if (typeof pos !== 'number') return;
+        var layout = renderLayout(row._onfRaw, row._onfVals || {}), idx = idxOf(ta), hit = null, i;
+        for (i = 0; i < layout.parts.length; i++) {
+          var p = layout.parts[i];
+          if (p.kind === 'token' && pos >= p.renderStart && pos <= p.renderEnd) { hit = p; break; }
+        }
+        var box = existingFillBox(ta);
+        if (!box || !isFn(box.querySelectorAll)) return;
+        var fields = box.querySelectorAll('.onf-field');
+        for (i = 0; i < fields.length; i++) safe(function (f) { return function () { f.classList.remove('onf-here'); }; }(fields[i]));
+        if (!hit) return;
+        var ctrl = $(fidFor(idx, hit.label));
+        var host = ctrl && isFn(ctrl.closest) && ctrl.closest('.onf-field');
+        if (!host) return;
+        host.classList.add('onf-here');
+        safe(function () { if (isFn(host.scrollIntoView)) host.scrollIntoView({ block: 'nearest' }); });
+      });
     });
   }
   function writeRendered(ta, row, value) {
@@ -1296,7 +1492,7 @@
   }
   function buildFillBox(ta) {
     var prep = isPrepBox(ta);
-    var idx = prep ? ta.id.replace('opPrepNote_', '') : 'main';
+    var idx = idxOf(ta);
     var row = rowFor(ta);
     var existing = existingFillBox(ta);
     /* A newly generated raw draft resets field state. Any other difference from
@@ -1385,6 +1581,12 @@
     });
     /* build the box: EVERY field shown, pre-set, marked known / suggested / blank */
     var box = existing || document.createElement('div');
+    /* onfux-1.0.0 — DEFER while the doctor is inside this box. The note above
+       has already been re-rendered from the current values (writeRendered, just
+       above), so the visible draft is never stale; only the CONTROLS wait, and
+       stampSettled() will not settle a deferred textarea, so the box catches up
+       on the first tick after focus leaves. */
+    if (existing && boxHasFocus(existing)) { safe(function () { ta.__onfDeferRebuild = true; }); return; }
     box.className = 'onf-fillbox';
     /* mg-1.1.0 moment: the box is BORN once per draft — feat_mls_magic styles
        .mgx2-born; re-renders reset className above so it can never replay. */
@@ -1397,6 +1599,9 @@
        suggestions. Every collapsed field stays fully editable inside the
        expander — nothing is hidden, it's just no longer asking. */
     var askHtml = [], autoHtml = [];
+    /* onfux-1.0.0: one layout pass gives every field the sentence it lands in
+       and its exact offset in the rendered note (see ctxWindow/revealInNote). */
+    var layout = safe(function () { return renderLayout(raw, vals); }, null);
     tokens.forEach(function (label) {
       var key = label.toLowerCase(), spec = fieldSpec(label), cur = vals[key] || '', kind = meta[key] || 'blank';
       var fid = 'onfF_' + idx + '_' + key.replace(/[^a-z0-9]+/g, '_'), ctrl;
@@ -1427,6 +1632,15 @@
         : kind === 'history' ? ' <span class="onf-hist">from chart</span>'
         : kind === 'template' ? (pinOverridden ? ' <span class="onf-hist">from template — overrode your default</span>' : ' <span class="onf-hist">from template</span>')
         : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
+      /* onfux-1.0.0: the note's OWN words for this blank, with the slot marked.
+         An empty slot shows as a marker rather than as nothing, so the doctor
+         can see the shape of the sentence before there is a value in it. */
+      var win = layout ? ctxWindow(layout, key) : null;
+      var ctxHtml = win
+        ? ('<span class="onf-ctx">' + esc(win.before) +
+            (cur ? ('<b>' + esc(win.value) + '</b>') : '<i class="onf-slot">&nbsp;&nbsp;&nbsp;&nbsp;</i>') +
+            esc(win.after) + '</span>')
+        : '';
       /* onf-2.9.0: per-field dictation (capture = pinned Dictate-Anywhere engine) */
       acts.push('<button type="button" class="onf-mic" data-onf-mic="' + esc(fid) + '" title="Dictate this field — spoken value is normalized by AI">🎙</button>');
       var reusableSurface = kind !== 'known' && kind !== 'history';
@@ -1439,13 +1653,21 @@
       /* 2026-07-28: the control is offered under EVERY reusable field - tier 1
          for practice/equipment identity, the explicit tier for the rest. */
       if (reusableSurface && defaultOffered(label)) {
-        if (!def) acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '">☆ Use every time</button>');
+        if (!def) acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '" title="Save this answer and fill this same field automatically in every future op note. Nothing is pinned until you press it.">☆ Use every time</button>');
         else {
-          acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '">Change default</button>');
-          acts.push('<button type="button" class="onf-stop" data-onf-default-act="clear" data-onf-default-label="' + esc(label) + '">Stop using</button>');
+          acts.push('<button type="button" data-onf-default-act="save" data-onf-default-control="' + esc(fid) + '" data-onf-default-label="' + esc(label) + '" title="Replace the answer this field fills in automatically.">Change default</button>');
+          acts.push('<button type="button" class="onf-stop" data-onf-default-act="clear" data-onf-default-label="' + esc(label) + '" title="Stop filling this field automatically. This note keeps its value.">Stop using</button>');
         }
+        /* onfux-1.0.0 — EXPLAIN IT WHERE IT IS PRESSED. "☆ Use every time" is
+           the one control here that changes FUTURE notes, and the only place it
+           was ever explained was a paragraph of fine print at the bottom of the
+           pane ("applies only after you choose it"), which is both far from the
+           button and about what it does NOT do. Five words, right beside it. */
+        acts.push('<span class="onf-hint">' + (def ? 'now fills this automatically' : 'fills this in future notes') + '</span>');
       }
-      var fieldHtml = '<div class="onf-field"><label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctrl + '</label>' +
+      var fieldHtml = '<div class="onf-field"' +
+        (win ? (' data-onf-at="' + win.start + '" data-onf-len="' + (win.end - win.start) + '"') : '') +
+        '><label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctxHtml + ctrl + '</label>' +
         (acts.length ? ('<div class="onf-field-actions">' + acts.join('') + '</div>') : '') + '</div>';
       /* silent-fill kinds: filled + not awaiting the doctor. A value that is
          itself an unresolved placeholder can never count as filled. */
@@ -1453,37 +1675,119 @@
       else askHtml.push(fieldHtml);
     });
     var blanks = 0; for (var m in meta) if (meta[m] === 'blank') blanks++;
+    var suggested = 0; for (var m2 in meta) if (meta[m2] === 'suggested') suggested++;
+    /* ===================================================================
+     * onfux-1.0.0 — THE FOOTER VERDICT MUST BE TRUE AND NAME THE NEXT STEP.
+     * -------------------------------------------------------------------
+     * It read "✓ Looks right — save to History (4 blanks left)". Three
+     * problems, all of them the doctor's:
+     *   - "Looks right" puts a verdict in HIS mouth before he has given one;
+     *   - "(4 blanks left)" reads as a refusal, and saving is NOT blocked -
+     *     a note with blanks files as a DRAFT, which is the correct and
+     *     intended behaviour and stays exactly as it was;
+     *   - the number was the BOX's own blank count, while the save/sign/PDF/
+     *     Athena gate counts with opNoteBlankTokens(). Those two surfaces
+     *     disagreeing on one screen is a shipped defect class in this file's
+     *     own history (1pScribeFlow.html:23177). So when the canonical parser
+     *     is on the page the footer quotes IT, and the two can no longer
+     *     differ by construction; without it, the box count still stands.
+     * =================================================================== */
+    var saveBlanks = blanks;
+    safe(function () {
+      if (!isFn(window.opNoteBlankCount)) return;
+      var n = window.opNoteBlankCount(rendered);
+      if (typeof n === 'number' && n >= 0) saveBlanks = n;
+    });
+    /* The verdict is a TAIL on a literal head, deliberately. tools/ui-control-
+       inventory.js reads a control's name out of the source text between the
+       <button> tags and deletes any '+ expr +' splice from it - a label that is
+       ENTIRELY an expression cleans to the empty string and the control drops
+       out of the inventory altogether, which is how a "no feature lost" ledger
+       loses a feature. "Save to History" stays literal so the ledger keeps
+       naming this button; only the changing half is spliced. */
+    var saveTail = saveBlanks
+      ? (' — ' + saveBlanks + (saveBlanks === 1 ? ' blank stays as a placeholder' : ' blanks stay as placeholders'))
+      : ' — complete';
+    var saveNote = 'saves to this patient’s History only — never sent to Athena'
+      + (suggested ? ('; saving also confirms the ' + suggested + ' suggested value' + (suggested === 1 ? '' : 's') + ' above') : '');
     /* onf-2.4.0 (owner: "one or two clicks then it's done"): the accept step IS
        the save step — one green button right here finalizes this note into the
        patient's History. Nothing is ever sent to Athena by this button. */
-    var saveBtn = prep ? ('<div style="margin-top:9px;display:flex;align-items:center;gap:9px;">' +
-      '<button type="button" class="onf-accept" data-onf-accept="' + idx + '">✓ Looks right — save to History' + (blanks ? (' (' + blanks + ' blank' + (blanks === 1 ? '' : 's') + ' left)') : '') + '</button>' +
-      '<span style="font:600 10.5px system-ui;color:#7a5310;">saves to this patient’s History only — never sent to Athena</span></div>') : '';
+    var saveBtn = prep ? ('<div class="onf-save">' +
+      '<button type="button" class="onf-accept" data-onf-accept="' + idx + '">Save to History' + esc(saveTail) + '</button>' +
+      '<span class="onf-savenote">' + esc(saveNote) + '</span></div>') : '';
+    /* ===================================================================
+     * onfux-1.0.0 — ONE DICTATION AFFORDANCE, NOT TWO.
+     * -------------------------------------------------------------------
+     * The pane offered "🎙 Dictate to fill" and "✨ Fill from dictation" side
+     * by side. Read as labels they are a coin-flip; they were never
+     * alternatives at all - they are STEP 1 and STEP 2 of one action (start
+     * the engine into a hidden pad; then stop it and route the transcript
+     * through the AI into the fields). The pad was display:none, so the
+     * second button's only unique capability - routing text the doctor TYPED
+     * instead of spoke - had no way to be reached.
+     *
+     * MERGED, capability for capability, onto the button the rest of the app
+     * already points at:
+     *   - #mlsOnfDictBtn_<idx> stays the id (the twins' next-step glow and its
+     *     fallback both resolve it first: 1pScribeFlow.html:49014, :52492),
+     *     and now also carries class .onf-dict-go so the twins' OTHER selector
+     *     resolves the same real button instead of a control that is gone;
+     *   - it is state-driven: dictate -> stop&fill -> fill-from-typed;
+     *   - the pad is VISIBLE, so typing is a first-class path, which is what
+     *     the retired button uniquely did;
+     *   - routeDictation() - the AI field-router, its correction offers and
+     *     its never-overwrite rule - is unchanged and is what the one button
+     *     drives.
+     * The pad's text is kept on the row because this box is rebuilt from
+     * innerHTML on the 1s tick: a transcript typed or dictated into it used to
+     * vanish the moment any value changed.
+     * =================================================================== */
     var dictHtml = '<div class="onf-dict">' +
-      '<button type="button" id="mlsOnfDictBtn_' + idx + '" title="Dictate all remaining details in one go">🎙 Dictate to fill</button>' +
-      '<button type="button" class="onf-dict-go" id="mlsOnfDictGo_' + idx + '" title="AI places each dictated detail into the right field — already-confirmed fields are never overwritten">✨ Fill from dictation</button>' +
+      '<button type="button" class="onf-dict-go" id="mlsOnfDictBtn_' + idx + '" data-onf-dict="1"' +
+        ' title="Say or type the remaining details in one go — the AI puts each one in its own field and never overwrites an answer you already gave">🎙 Dictate the rest</button>' +
       '<span class="onf-dict-status" id="mlsOnfDictStatus_' + idx + '"></span>' +
-      '<textarea id="mlsOnfDictPad_' + idx + '" style="display:none" placeholder="Speak naturally — e.g. “22 gauge three and a half inch needle, half percent bupivacaine with 10 of dex per level, fluoro time 40 seconds” — or type here."></textarea>' +
+      '<textarea id="mlsOnfDictPad_' + idx + '" placeholder="Speak naturally — e.g. “22 gauge three and a half inch needle, half percent bupivacaine with 10 of dex per level, fluoro time 40 seconds” — or type here.">' +
+        esc(S(row && row._onfDictPad)) + '</textarea>' +
+      '<span class="onf-dict-help">Speak it or type it — then press the button and each detail lands in its own field.</span>' +
       '</div>';
-    var suggested = 0; for (var m2 in meta) if (meta[m2] === 'suggested') suggested++;
-    var header = askHtml.length
-      ? ('✏️ ' + askHtml.length + ' field' + (askHtml.length === 1 ? '' : 's') + ' need' + (askHtml.length === 1 ? 's' : '') + ' you'
-        + (blanks && suggested ? (' (' + blanks + ' blank · ' + suggested + ' suggested)') : ''))
-      : '✅ Nothing needs your input';
-    if (autoHtml.length) header += ' · ✓ ' + autoHtml.length + ' filled automatically';
+    /* onfux-1.0.0 — ONE HEADLINE, IN DOCTOR LANGUAGE, NAMING THE NEXT ACTION.
+       It used to carry three counts at once ("4 fields need you (2 blank ·
+       2 suggested) · ✓ 6 filled automatically"), which is a status report, not
+       an instruction. The auto-filled count is not lost: it is the summary of
+       the expander immediately below, which is where a doctor acts on it. */
+    var other = Math.max(0, askHtml.length - blanks - suggested);
+    var header;
+    if (!askHtml.length) header = '✅ Nothing left to fill — this note is ready';
+    else {
+      var bits = [];
+      if (blanks) bits.push('Fill in ' + blanks + ' blank' + (blanks === 1 ? '' : 's'));
+      if (suggested) bits.push((bits.length ? 'check ' : 'Check ') + suggested + ' suggested value' + (suggested === 1 ? '' : 's'));
+      if (other) bits.push((bits.length ? 'finish ' : 'Finish ') + other + ' more field' + (other === 1 ? '' : 's'));
+      header = bits.join(' and ') + ' to finish this note';
+    }
     var autoBlock = autoHtml.length
       ? ('<details class="onf-auto"><summary>✓ ' + autoHtml.length + ' filled automatically from the chart, schedule & your settings — tap to review or edit</summary>' +
          '<div class="onf-grid">' + autoHtml.join('') + '</div></details>')
       : '';
+    /* onfux-1.0.0 — THE FINE PRINT IS GONE, ANSWERED WHERE IT WAS ASKED.
+       It carried three claims: "anything uncertain stays editable" (the field
+       is right there and editable), "'Use every time' applies only after you
+       choose it" (now a five-word hint and a title on the button itself), and
+       "changing a field updates this draft instantly" - a promise the pane made
+       about itself, which the live re-render below now simply keeps, per
+       keystroke, where the doctor can see it happen. */
     box.innerHTML = '<div class="onf-h">' + header + '</div>' +
+      (askHtml.length ? ('<div class="onf-sub">Each answer drops straight into the note below — nothing is sent anywhere yet.</div>') : '') +
       (askHtml.length ? ('<div class="onf-grid">' + askHtml.join('') + '</div>') : '') +
-      autoBlock +
-      '<div class="onf-note">Anything uncertain stays editable. “Use every time” applies only after you choose it, and changing a field updates this draft instantly.</div>' + dictHtml + saveBtn;
+      autoBlock + dictHtml + saveBtn;
     if (!existing || ta.previousElementSibling !== box) ta.parentNode.insertBefore(box, ta);
     var acc = box.querySelector('[data-onf-accept]');
     if (acc) acc.addEventListener('click', function () {
       safe(function () {
-        /* "Looks right" IS the explicit review of the amber suggestions. */
+        /* Pressing Save IS the explicit review of the amber suggestions — the
+           footer caption says so in words now, instead of the button claiming
+           "Looks right" on the doctor's behalf. */
         var rIdx = +acc.getAttribute('data-onf-accept'), rr = (window._opPrep || [])[rIdx];
         if (rr) rr._onfReviewed = true;
         if (isFn(window.opPrepSave)) window.opPrepSave(rIdx);
@@ -1526,6 +1830,39 @@
             safe(function () { normalizeDictatedField(el, label, row); });
           }
         }
+        /* onfux-1.0.0 — "changing a field updates this draft instantly" was
+           TRUE for a dropdown (change fires on the pick) and FALSE for a typed
+           value, which only reached the note on blur or Enter. applyLive is the
+           cheap half of applyVal: the value model plus one re-render, so the
+           note updates per keystroke. Everything with a side effect - the
+           per-patient memory, the account-scoped dropdown history, the
+           autosave, the AI normalization of a dictated value - deliberately
+           stays on change/blur, because none of those should run once per
+           character. Nothing is lost: applyVal still runs when the field is
+           committed. */
+        function applyLive(el) {
+          if (!row) return;
+          var label = el.getAttribute('data-onf-label'), val = S(el.value).trim();
+          if (val === OTHER) return;
+          row._onfVals = row._onfVals || {}; row._onfVals[label.toLowerCase()] = val;
+          var out = applyVals(row._onfRaw != null ? row._onfRaw : (ta.value || ''), row._onfVals);
+          writeRendered(ta, row, out);
+          if (prep) safe(function () { if (window._opPrep && window._opPrep[+idx]) window._opPrep[+idx].note = out; });
+          var lbl = isFn(el.closest) && el.closest('label'); if (lbl) lbl.classList.toggle('onf-has', !!val);
+        }
+        /* onfux-1.0.0 — focusing a field shows WHERE its answer lands, by
+           selecting that exact span in the note and scrolling it into view.
+           setSelectionRange does not move focus, so the caret stays in the
+           field the doctor is answering. */
+        function reveal(el) {
+          safe(function () {
+            var host = isFn(el.closest) && el.closest('.onf-field');
+            if (!host || !isFn(host.getAttribute)) return;
+            var at = host.getAttribute('data-onf-at');
+            if (at == null) return;
+            revealInNote(ta, +at, +(host.getAttribute('data-onf-len') || 0));
+          });
+        }
         var handler = function () {
           /* "Other (type custom)…" swaps the dropdown for a focused text input
              wired to the same label - typed once, remembered for next time */
@@ -1539,13 +1876,19 @@
             var apply2 = function () { applyVal(inp); };
             inp.addEventListener('change', apply2);
             inp.addEventListener('blur', apply2);
+            inp.addEventListener('input', function () { applyLive(inp); });
+            inp.addEventListener('focus', function () { reveal(inp); });
             inp.focus();
             return;
           }
           applyVal(ctrl);
         };
         ctrl.addEventListener('change', handler);
-        if (ctrl.tagName === 'INPUT') ctrl.addEventListener('blur', handler);
+        ctrl.addEventListener('focus', function () { reveal(ctrl); });
+        if (ctrl.tagName === 'INPUT') {
+          ctrl.addEventListener('blur', handler);
+          ctrl.addEventListener('input', function () { applyLive(ctrl); });
+        }
       })(ctrls[i]);
     }
     var recentBtns = box.querySelectorAll('[data-onf-recent-control]');
@@ -1854,21 +2197,63 @@
         d.toggleFor(el);
       });
     })(mics[i]);
-    var mic = $('mlsOnfDictBtn_' + idx), pad = $('mlsOnfDictPad_' + idx), go = $('mlsOnfDictGo_' + idx), st = $('mlsOnfDictStatus_' + idx);
-    if (mic && !mic.__onfWired) { mic.__onfWired = true; mic.addEventListener('click', function () {
-      var d = dictApi(); if (!d) { toast('Dictation isn’t available in this browser.', 'err'); return; }
-      if (pad) { pad.style.display = 'block'; pad.focus(); }
-      d.toggleFor(pad);
-      if (st) st.textContent = d.isListening && d.isListening() ? '🎙 listening — speak the details, then press Fill' : 'tap the mic chip to talk, then press Fill';
-    }); }
-    if (go && !go.__onfWired) { go.__onfWired = true; go.addEventListener('click', function () {
-      var d = dictApi(); if (d && d.isListening && d.isListening()) { try { d.stop(); } catch (e) {} }
-      var t = S(pad && pad.value).trim();
-      if (!t) { if (st) st.textContent = 'Nothing dictated yet — press 🎙 and speak, or type here.'; return; }
-      routeDictation(idx, ta, row, t, st).then(function (plan) {
-        if (plan && pad && (plan.apply.length || plan.corrections.length)) pad.value = '';
+    /* onfux-1.0.0 — ONE BUTTON, THREE STATES. Both former buttons' behaviour
+       lives here: the mic one started the engine into the pad, the ✨ one
+       stopped it and routed the transcript. As ONE control it can only be
+       pressed in the order the action actually happens, and it says which step
+       it is on. routeDictation() itself is untouched. */
+    var btn = $('mlsOnfDictBtn_' + idx), pad = $('mlsOnfDictPad_' + idx), st = $('mlsOnfDictStatus_' + idx);
+    function listening() { return safe(function () { var d = dictApi(); return !!(d && d.isListening && d.isListening()); }, false); }
+    function relabel() {
+      safe(function () {
+        if (!btn) return;
+        if (listening()) { btn.textContent = '⏹ Stop and fill the fields'; return; }
+        btn.textContent = S(pad && pad.value).trim() ? '✨ Fill the fields from this' : '🎙 Dictate the rest';
       });
+    }
+    function runFill() {
+      var t = S(pad && pad.value).trim();
+      if (!t) { if (st) st.textContent = 'Nothing to work from yet — press 🎙 and speak, or type in the box.'; return; }
+      routeDictation(idx, ta, row, t, st).then(function (plan) {
+        if (plan && pad && (plan.apply.length || plan.corrections.length)) {
+          pad.value = '';
+          safe(function () { if (row) row._onfDictPad = ''; });
+        }
+        relabel();
+      });
+    }
+    if (pad && !pad.__onfWired) {
+      pad.__onfWired = true;
+      pad.addEventListener('input', function () {
+        safe(function () { if (row) row._onfDictPad = pad.value; });
+        relabel();
+      });
+    }
+    if (btn && !btn.__onfWired) { btn.__onfWired = true; btn.addEventListener('click', function () {
+      var d = dictApi();
+      if (listening()) {                                  /* step 2, spoken  */
+        safe(function () { d.stop(); });
+        relabel();
+        runFill();
+        return;
+      }
+      if (S(pad && pad.value).trim()) { runFill(); return; }   /* step 2, typed */
+      if (!d) {                                           /* no engine: typing still works */
+        toast('Dictation isn’t available in this browser — type the details in the box instead.', 'err');
+        if (pad && isFn(pad.focus)) pad.focus();
+        if (st) st.textContent = 'Type the details in the box, then press the button.';
+        return;
+      }
+      d.toggleFor(pad);                                   /* step 1 */
+      /* parity with the retired mic button: the pad takes the caret, so the
+         doctor can correct a misheard word without hunting for it (and the
+         box's rebuild defers while focus is in here, which is what keeps a
+         half-spoken transcript alive). */
+      safe(function () { if (pad && isFn(pad.focus)) pad.focus(); });
+      if (st) st.textContent = '🎙 listening — say the details, then press this same button';
+      relabel();
     }); }
+    relabel();
   }
 
   /* onf-2.11.1: the first tick ran BARE here, so one boot-time throw aborted
@@ -1918,6 +2303,8 @@
     _userFieldDefault: userFieldDefault, _userDefaultEligible: userDefaultEligible, _userDefaultBlocked: userDefaultBlocked, _defaultOffered: defaultOffered,
     _priorValues: priorValues, _anonymousField: anonymousField, _defaultEligible: defaultEligible,
     _scopedKey: scopedKey, _fieldDefault: fieldDefault, _applyVals: applyVals, _sigOf: sigOf,
+    /* onfux-1.0.0: the pure parts of the context line, for the offline probe */
+    _renderLayout: renderLayout, _ctxWindow: ctxWindow, _idxOf: idxOf,
     _adoptRenderedEdits: adoptRenderedEdits, _acceptExternalEdit: acceptExternalEdit, _existingFillBox: existingFillBox,
     _knownValue: knownValue, _buildOptions: buildOptions, _resolveInitialField: resolveInitialField, _buildFillBox: buildFillBox, _ensureHeader: ensureHeader,
     _chartPatient: chartPatient, _chartValue: chartValue, _patientHistText: patientHistText,

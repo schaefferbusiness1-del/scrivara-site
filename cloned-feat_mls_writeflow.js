@@ -1799,6 +1799,100 @@
      conflict - identity mismatch, wrong chart, wrong day, missing write proof -
      stays red. Nothing about the honesty changes: every one of these still says
      that nothing was changed, because nothing was. */
+  /* ===== sheetclar-1.0.0 (owner 2026-08-31: an Athena write must "actually
+     work and be easy to do and understand") =================================
+     The sheet's sentences were honest and DENSE. One paragraph carried the
+     state, the act, the scope and the disclaimer in a single breath:
+
+       "Ready - the exact chart is verified. One click on Confirm & Send runs
+        only Write reviewed Procedure / operative note. Nothing else."
+
+     A doctor between patients SCANS. So the honesty is RESTRUCTURED, never
+     trimmed:
+
+       - one BIG state word - CHECKING / READY / SENDING / NEEDS ONE STEP /
+         CAN'T SEND / PARTLY DONE / DONE - with one short sentence under it;
+       - the full sentence keeps every word it had, one disclosure below;
+       - a REFUSAL opens that disclosure itself, so no refusal is ever folded
+         away. #mlsAthenaUnifiedProbe still holds the exact same textContent
+         it always did - every refusal pin reads that node unchanged.
+
+     THE STATE WORD IS DERIVED FROM MEASURED STATE, NEVER FROM THE WORDING:
+     is a write running, do the receipts say a section landed, is there a
+     validated probe bound to the selected row. That is why not one line of
+     the probe / execute / token / identity path had to change to get it -
+     READY can only be painted by the very fact that enables Confirm. */
+  function sheetclarInAthena(state) {
+    var out = { total: 0, landed: 0 };
+    try {
+      state.manifest.rows.forEach(function (row) {
+        if (row.action !== 'write_note') return;
+        out.total++;
+        var r = receiptStateForRow(state, row);
+        if (r.status === 'verified' || r.status === 'already in Athena') out.landed++;
+      });
+    } catch (e) {}
+    return out;
+  }
+  /* The SAME binding executeUnifiedSelection demands before it will write:
+     a probe bound to this exact selected row, row hash and manifest hash.
+     Nothing weaker may ever paint the word READY. */
+  function sheetclarReadyRow(state) {
+    var p = state.probe;
+    if (!p || p.manifestHash !== state.manifest.manifestHash) return null;
+    var row = unifiedRow(state.manifest, state.selectedRowId);
+    return (row && p.rowId === row.id && p.rowHash === row.rowHash) ? row : null;
+  }
+  function sheetclarState(state, kind) {
+    if (state.running || state.batchRunning) {
+      return { label: 'SENDING', color: '#204034',
+        short: 'MLS is writing the reviewed text into the exact Athena field. It never saves and never signs.' };
+    }
+    var n = sheetclarInAthena(state);
+    /* owner 2026-08-31: after Done, Save / Sign must be unmissable as THE next
+       manual step - it was one line inside a collapsed "final actions" drawer. */
+    if (n.total && n.landed === n.total) {
+      return { label: 'DONE', color: '#205c43',
+        short: 'Now do the last step yourself in athenaOne: Save, then Sign. MLS never saves and never signs.' };
+    }
+    if (n.landed) {
+      return { label: 'PARTLY DONE', color: '#6d5010',
+        short: n.landed + ' of ' + n.total + ' note sections are in Athena; each of the rest keeps its own reason below. Save and Sign stay yours in athenaOne.' };
+    }
+    if (kind === 'fix') {
+      return { label: 'NEEDS ONE STEP', color: '#7a5a16',
+        short: 'Nothing was changed. One read-only step is named below - MLS can usually take it for you.' };
+    }
+    if (kind === 'err') {
+      return { label: 'CAN’T SEND', color: '#8b2525',
+        short: 'MLS refused and changed nothing in Athena. The exact reason is below.' };
+    }
+    var readyRow = sheetclarReadyRow(state);
+    if (readyRow) {
+      return { label: probeOnlyActive() ? 'READY (PROBE ONLY)' : 'READY', color: '#205c43',
+        short: 'One click on Confirm & Send runs only ' + S(readyRow.label) + '. Nothing else' +
+          (probeOnlyActive() ? ' - and in PROBE ONLY even that is rehearsed read-only, so nothing is written.' : ': no save, no signature, no billing, no orders.') };
+    }
+    return { label: 'CHECKING', color: '#6d5010',
+      short: 'MLS is reading the exact Athena chart read-only. Nothing has been sent.' };
+  }
+  function paintSheetclarState(state, kind) {
+    var host = null; try { host = document.getElementById('mlsAthenaUnifiedState'); } catch (e) { return; }
+    if (!host || !state || state.closed) return;
+    var s = sheetclarState(state, kind);
+    try {
+      host.setAttribute('data-mls-sheet-state', s.label);
+      host.innerHTML = '<div data-mls-state-word="1" style="font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + s.color + '">' + esc(s.label) + '</div>' +
+        '<div data-mls-state-short="1" style="margin-top:3px;color:#385b49;font-size:12.5px">' + esc(s.short) + '</div>';
+    } catch (e2) {}
+    /* A refusal is never folded away; anything else reads as one line plus a
+       fold the doctor opens when he wants the whole sentence. */
+    try {
+      var det = document.getElementById('mlsAthenaUnifiedDetails');
+      if (det) det.open = (kind === 'fix' || kind === 'err');
+    } catch (e3) {}
+  }
+  /* ===== end sheetclar-1.0.0 state line ==================================== */
   function unifiedStatus(state, message, kind, behavior) {
     if (!state || state.closed) return;
     var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) {}
@@ -1812,6 +1906,9 @@
       try { el.setAttribute('data-mls-status-kind', isFix ? 'fix' : (S(kind) || 'info')); } catch (eKind) {}
       el.textContent = message;
     }
+    /* sheetclar-1.0.0: the scannable state word above the same honest sentence.
+       It reads state, not this message, so it cannot contradict the gates. */
+    try { paintSheetclarState(state, kind); } catch (eState) {}
     /* a recoverable step is neither a success nor a failure toast */
     actionSay(state.sourceOpts, message, kind === 'fix' ? '' : kind, behavior);
   }
@@ -2601,6 +2698,19 @@
   function wfprogPreOnly(state) {
     var p = state && state.prog;
     if (!p || p.done) return false;
+    /* sheetclar-1.0.0 (2026-08-31), MEASURED: 1p-writeflow-opnote-clarity-progress
+       was ALREADY RED at b1144 with "the progress surface never painted a
+       headline", and this predicate is why. A BATCH's very first step has row 0
+       in 'check' with every later row still in 'wait' - byte for byte the shape
+       "nothing has been written yet" was built to detect. So the moment section
+       1 of N reached READY, wfprogClearPre() nulled state.prog and wiped the
+       whole queue's loading surface, and every later wfprogPhase/Tick fell on a
+       null and painted nothing. The doctor then watched a batch write N sections
+       behind a blank panel.
+       A batch OWNS this surface from its first section to its last (the same
+       rule executeUnifiedSelection and probeUnifiedRow already state in words),
+       so a batch run is never "pre-write only". */
+    if (p.batch === true || state.batchRunning === true) return false;
     for (var i = 0; i < p.rows.length; i++) { var ph = p.rows[i].phase; if (ph !== 'wait' && ph !== 'check') return false; }
     return true;
   }
@@ -2884,17 +2994,22 @@
      single-row press produced. Every refusal path, the never-retry rule, and
      the Sign-after-verified-write gate are untouched. */
   var SHEETUX_ZERO_REASON = 'Check at least one READY note section first - this button sends only the sections you have checked. Nothing was changed.';
+  /* sheetclar-1.0.0: a sheet with NO include checkbox at all - every section
+     blocked or manual - used to be refused with the sentence above, telling the
+     doctor to tick a control that does not exist anywhere on the page. Same
+     fail-closed refusal, honest words: name what is actually true. */
+  var SHEETCLAR_NONE_READY_REASON = 'Nothing here can be sent yet - no note section has passed its read-only Athena check. Fix the reason shown above, then press Check Athena again. Nothing was changed.';
   function bxCheckBoxes() {
     try { return document.querySelectorAll('#mlsAthenaUnifiedConfirm input.mls-bx-check') || []; } catch (e) { return []; }
   }
   function unifiedPrimaryPlan(state) {
-    if (!state || state.closed) return { mode: 'none', rows: [], reason: SHEETUX_ZERO_REASON };
+    if (!state || state.closed) return { mode: 'none', rows: [], reason: SHEETCLAR_NONE_READY_REASON };
     var sel = unifiedRow(state.manifest, state.selectedRowId);
     var selectable = !!(sel && sel.capability === 'ready' && sel.action);
     /* Save / Sign / order rows never join a batch - they keep the legacy path */
     if (selectable && sel.action !== 'write_note') return { mode: 'single', rows: [sel], reason: '' };
     if (!bxCheckBoxes().length) {
-      return selectable ? { mode: 'single', rows: [sel], reason: '' } : { mode: 'none', rows: [], reason: SHEETUX_ZERO_REASON };
+      return selectable ? { mode: 'single', rows: [sel], reason: '' } : { mode: 'none', rows: [], reason: SHEETCLAR_NONE_READY_REASON };
     }
     var rows = bxCheckedRows(state);
     if (!rows.length) return { mode: 'none', rows: [], reason: SHEETUX_ZERO_REASON };
@@ -3479,6 +3594,17 @@
     return '<div style="margin-top:14px"><div style="font-size:12.5px;font-weight:850;color:' + color + '">' + title + '</div>' +
       (note ? '<div style="font-size:11.5px;color:#52675c;margin-top:2px">' + note + '</div>' : '') + '</div>';
   }
+  /* sheetclar-1.0.0: ONE definition of "this section arrives selected", used by
+     both the markup below and the post-render property set in
+     renderUnifiedConfirmation, so the two can never disagree.
+     A READY reviewed note section defaults ON - that is the primary reviewed
+     note the doctor came here to send. Nothing else ever can: Save, Sign,
+     billing and orders carry no include control at all (bx-1.0.0 law), and a
+     blocked or manual row is not a candidate. Defaulting ON selects; it never
+     sends - Confirm & Send is still a human click behind a validated probe. */
+  function unifiedDefaultChecked(row) {
+    return !!(row && row.capability === 'ready' && row.action === 'write_note');
+  }
   function unifiedReadyRowHtml(manifest, row, preChecked) {
     /* wf3: the ready row is a compact selectable pill (real radio inside, so
        every existing change-wire and suite hook still works). The preferred
@@ -3505,7 +3631,7 @@
          controls never fight, and only write_note rows ever get one - Save,
          Sign, billing and orders can never join a batch. */
       (row.action === 'write_note'
-        ? '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:#204034;cursor:pointer"><input type="checkbox" class="mls-bx-check" data-mls-bx-row="' + esc(row.id) + '" checked> Send this section</label>'
+        ? '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:#204034;cursor:pointer"><input type="checkbox" class="mls-bx-check" data-mls-bx-row="' + esc(row.id) + '"' + (unifiedDefaultChecked(row) ? ' checked' : '') + '> Send this section</label>'
         : '') +
       unifiedPayloadDetails(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
@@ -3894,8 +4020,24 @@
     var ov = document.createElement('div'); ov.id = 'mlsAthenaUnifiedConfirm';
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(10,25,50,.55);display:flex;align-items:center;justify-content:center;padding:18px';
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'mlsAthenaUnifiedTitle'); ov.setAttribute('aria-describedby', 'mlsAthenaUnifiedSafety');
-    var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
+    /* sheetclar-1.0.0 THE FOOTER MAY NEVER BE OVERLAID (measured live
+       2026-08-31: document.elementFromPoint at the Confirm button's own centre
+       returned #mlsAthenaUnifiedFix, so physical clicks on Confirm & Send did
+       nothing at all). The old card was ONE scrolling box whose last child was
+       a position:sticky footer: a sticky box shares its coordinate space with
+       everything that scrolls beneath it, so which one wins a hit test comes
+       down to paint order and stacking - one competing z-index, transform or
+       stacking context anywhere in the card and the doctor's click lands on
+       the wrong element.
+       The cure is geometric, not a bigger z-index. The card is now a COLUMN
+       FLEX CONTAINER with exactly two children: a scrolling body and a static
+       footer. Two in-flow siblings of a column flex container cannot occupy
+       the same pixels - no sticky, no absolute, no negative margin - so the
+       Confirm button's box cannot intersect anything inside the body, whatever
+       the stacking. tests/sheet-clarity.test.js pins that shape. */
+    var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);font:13px/1.5 system-ui';
     card.innerHTML =
+      '<div id="mlsAthenaUnifiedBody" style="flex:1 1 auto;min-height:0;overflow:auto;padding:20px 22px 4px">' +
       (probeOnlyActive() ? '<div id="mlsAthenaProbeOnlyBanner" style="margin:0 0 12px;padding:10px 12px;border:2px solid #8b2525;background:#fdf2f2;color:#8b2525;border-radius:10px;font-weight:850">' + esc(PROBE_ONLY_BANNER) + '</div>' : '') +
       /* wfclar-1.0.0 (owner 2026-08-27: "make it easy and simple"): the header
          now leads with WHO and WHICH VISIT - the one thing it did NOT say, and
@@ -3914,7 +4056,24 @@
       unifiedCanonicalGenerationHtml(state) +
       rowsHtml +
       '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> ' + (generationIssue ? 'kept fail-closed while the five local draft fields are generated.' : 'being verified read-only now.') + '</div>' +
-      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">' + (generationIssue ? 'No Athena check or write has started. Generate the local fields first.' : 'Checking the exact chart read-only &mdash; nothing is sent yet.') + '</div>' +
+      /* sheetclar-1.0.0: the one thing a scanning doctor reads - the state word
+         and one short sentence. Derived from measured state (paintSheetclarState),
+         so it can never claim more than the gates allow. */
+      '<div id="mlsAthenaUnifiedState" role="status" aria-live="polite" style="margin-top:11px" data-mls-sheet-state="' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '"><div data-mls-state-word="1" style="font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + (generationIssue ? '#7a5a16' : '#6d5010') + '">' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '</div><div data-mls-state-short="1" style="margin-top:3px;color:#385b49;font-size:12.5px">' + (generationIssue ? 'No Athena check or write has started. Generate the five local draft fields first; nothing here can be sent until they pass.' : 'MLS is reading the exact Athena chart read-only. Nothing has been sent.') + '</div></div>' +
+      /* wfprog-1.1.0 lives with the words it belongs to: the read-only ladder is
+         the LONG stretch, and its bar was rendered far below the state line, off
+         the bottom of a scrolled sheet. It is the second thing you read now. */
+      '<div id="mlsAthenaUnifiedProgress" role="status" aria-live="polite" style="display:none;margin-top:11px"></div>' +
+      /* sheetclar-1.0.0: the full honest sentence, unchanged, one fold below the
+         state word. #mlsAthenaUnifiedProbe keeps EXACTLY the textContent it has
+         always had; a refusal opens this disclosure itself, so nothing that says
+         "MLS refused" is ever hidden. */
+      /* data-mls-clunky-seen="1" is deliberate: the shell's clunky-athena-1.0.0
+         fold pass closes every <details> in this sheet exactly once, and this
+         one's open state is owned here - a refusal must force it OPEN. Wearing
+         that pass's own "already handled" mark keeps the two from fighting. */
+      '<details id="mlsAthenaUnifiedDetails" data-mls-clunky-seen="1" style="margin-top:7px"><summary style="cursor:pointer;font-weight:750;color:#52675c;font-size:11.5px">What MLS is doing, in full</summary>' +
+      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:6px;color:#6d5010">' + (generationIssue ? 'No Athena check or write has started. Generate the local fields first.' : 'Checking the exact chart read-only &mdash; nothing is sent yet.') + '</div></details>' +
       /* mrnadopt-1.0.0: what MLS changed in the patient record to unblock this
          review, stated durably. The status line above is repainted by the very
          next read-only check, so a transient sentence would vanish before the
@@ -3924,20 +4083,30 @@
          count, expected day, whether an appointment id is bound, and the day
          athenaOne is really on) plus the read-only buttons that fix it. */
       '<div id="mlsAthenaUnifiedDiag" style="display:none;margin-top:6px;font-size:11.5px;color:#52675c;overflow-wrap:anywhere"></div>' +
-      '<div id="mlsAthenaUnifiedFix" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>' +
+      /* sheetclar-1.0.0: position:static is deliberate and pinned. This strip is
+         the surface that was measured on top of Confirm & Send; it stays in
+         normal flow inside the scrolling body, ABOVE the footer, and never
+         becomes a positioned box that could share the footer's pixels. */
+      '<div id="mlsAthenaUnifiedFix" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;position:static"></div>' +
       '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (generationIssue ? 'Generate / Regenerate updates only the local MLS draft through the normal validation and persistence gate. It never binds an encounter and never writes Athena; the rebuilt review must still pass exact patient, appointment, and destination checks.' : (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.')) + '</div>' +
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       unifiedIdentityHtml(manifest) +
       /* wfprog-1.0.0: the send's own loading surface - which section, N of M,
-         and a settled verdict per section. Hidden until a send starts. */
-      '<div id="mlsAthenaUnifiedProgress" role="status" aria-live="polite" style="display:none;margin-top:11px"></div>' +
+         and a settled verdict per section - now rendered up with the state line
+         (sheetclar-1.0.0), where the doctor is already looking. */
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
+      '</div>' + /* /#mlsAthenaUnifiedBody - everything above scrolls; the footer below does not */
       /* sheetux-1.0.0: ONE primary send button. "Send checked sections" and
          "Confirm & Send to Athena" were the same act described twice, so the
          second one is gone and this one drives both lanes (see
          runUnifiedPrimarySend). Bolder fill, taller hit area, real shadow -
-         the owner could not tell which button was the send. */
-      '<div style="display:flex;gap:9px;position:sticky;bottom:0;z-index:3;background:#fff;border-top:1px solid #e4e9e6;margin-top:10px;padding:12px 0 10px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:11px;padding:15px 18px;font-size:15.5px;font-weight:900;letter-spacing:.2px;box-shadow:0 2px 0 #14261d,0 7px 18px rgba(32,64,52,.30);cursor:pointer">Confirm &amp; Send to Athena</button></div>';
+         the owner could not tell which button was the send.
+         sheetclar-1.0.0 RE-PINNED (was position:sticky;bottom:0;z-index:3): the
+         footer is a static flex ROW that is the card's own second flex item, so
+         it shares no pixels with the scrolling body above it. Cancel and
+         Confirm & Send are the only two controls in it, and nothing else in the
+         sheet can ever be painted over them. */
+      '<div id="mlsAthenaUnifiedFooter" style="display:flex;gap:9px;align-items:center;flex:0 0 auto;position:static;background:#fff;border-top:1px solid #e4e9e6;padding:12px 22px 14px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:11px;padding:15px 18px;font-size:15.5px;font-weight:900;letter-spacing:.2px;box-shadow:0 2px 0 #14261d,0 7px 18px rgba(32,64,52,.30);cursor:pointer">Confirm &amp; Send to Athena</button></div>';
     ov.appendChild(card); document.body.appendChild(ov);
     var cancel = card.querySelector('#mlsAthenaUnifiedCancel'), close = card.querySelector('#mlsAthenaUnifiedClose'), go = card.querySelector('#mlsAthenaUnifiedGo');
     cancel.onclick = closeUnifiedConfirmation; close.onclick = closeUnifiedConfirmation;
@@ -3948,6 +4117,22 @@
     go.addEventListener('click', function () { runUnifiedPrimarySend(state, go); });
     var bxBoxes = card.querySelectorAll('input.mls-bx-check');
     for (var bxi = 0; bxi < bxBoxes.length; bxi++) bxBoxes[bxi].addEventListener('change', function () { unifiedSyncPrimaryButton(state); });
+    /* sheetclar-1.0.0 (owner 2026-08-31, measured live: the one READY section's
+       "Send this section" box arrived UNCHECKED, so the big Confirm & Send sat
+       grayed with "Check at least one READY note section first" - a pointless
+       extra step on a sheet with exactly one section, and it reads like a
+       malfunction).
+       The markup has always carried `checked`, but a markup `checked` is only
+       the DEFAULT value: the browser is free to hand back a restored state
+       instead (bfcache / soft reload / restored form state), and then the
+       source says checked while the control is not. Decide it here, from the
+       MANIFEST, after the control exists - the arriving state is then the one
+       this code chose, not one restored from somewhere else.
+       This only SELECTS. It cannot send: Confirm stays a human click and still
+       demands its own validated read-only probe and one-use token per row. */
+    for (var bxd = 0; bxd < bxBoxes.length; bxd++) {
+      if (unifiedDefaultChecked(unifiedRow(manifest, bxBoxes[bxd].getAttribute('data-mls-bx-row')))) bxBoxes[bxd].checked = true;
+    }
     var generationButton = card.querySelector('#mlsAthenaUnifiedGenerateSections');
     if (generationButton) generationButton.addEventListener('click', function () { runUnifiedCanonicalGeneration(state, generationButton); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
@@ -5702,6 +5887,13 @@
       sheetUx: { v: 'sheetux-1.0.0', zeroReason: SHEETUX_ZERO_REASON, doItLabel: SHEETUX_DOIT_LABEL,
         plan: unifiedPrimaryPlan, sync: unifiedSyncPrimaryButton, checkedRows: bxCheckedRows,
         press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); } },
+      /* sheetclar-1.0.0 read-only seam: the arrival default, the honest
+         no-ready-section refusal, and the derived state word. Nothing here can
+         send, enable a control, or change a verdict. */
+      sheetClarity: { v: 'sheetclar-1.0.0', noneReadyReason: SHEETCLAR_NONE_READY_REASON,
+        defaultChecked: unifiedDefaultChecked,
+        stateFor: function (kind) { return unifiedAthenaState ? sheetclarState(unifiedAthenaState, kind) : null; },
+        readyRow: function () { return unifiedAthenaState ? sheetclarReadyRow(unifiedAthenaState) : null; } },
       /* wfclar-1.0.0 read-only seam: the refusal table and how one refusal is
          said. Nothing here can send, enable a control, or change a verdict. */
       clarity: { v: 'wfclar-1.0.0', table: WFCLAR, classify: wfClarify, say: wfClarityText },

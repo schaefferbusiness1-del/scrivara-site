@@ -268,10 +268,27 @@ function tally(html, needle) { return html.split(needle).length - 1; }
 {
   ok(FLOW.indexOf('id="mlsAthenaUnifiedBatch"') < 0,
     'the second footer send button is still rendered - the owner asked for ONE');
-  const footerAt = FLOW.indexOf('position:sticky;bottom:0;z-index:3');
-  ok(footerAt > 0, 'the sticky review footer is gone');
+  /* sheetclar-1.0.0 RE-PIN (2026-08-31, deliberate - the UX change below reds
+     the old spelling of this pin, and the property it was protecting is now
+     pinned harder). This used to find the footer by the literal
+     'position:sticky;bottom:0;z-index:3'. That STICKY footer was measured live
+     being overlaid by #mlsAthenaUnifiedFix - document.elementFromPoint at the
+     Confirm button's own centre returned the fix strip, so physical clicks on
+     Confirm & Send did nothing. A sticky box shares its coordinate space with
+     everything scrolling beneath it, so the hit test comes down to stacking.
+     The footer is now the card's own second flex item, in flow, unpositioned:
+     two in-flow siblings of a column flex container cannot share pixels at all.
+     So the marker moves, and the thing that actually matters - that the footer
+     is NOT a positioned box - becomes an assertion instead of an accident.
+     Everything below (exactly two buttons, bold primary, raised fill, exact
+     label) is unchanged. tests/sheet-clarity.test.js pins the whole shape. */
+  const footerAt = FLOW.indexOf('id="mlsAthenaUnifiedFooter"');
+  ok(footerAt > 0, 'the review footer lost its marker');
   const footer = FLOW.slice(footerAt, FLOW.indexOf('</div>\';', footerAt));
-  eq(tally(footer, 'type="button"'), 2, 'the sticky footer must hold exactly Cancel + one primary send button');
+  ok(/position:static/.test(footer), 'the footer no longer declares itself unpositioned');
+  ok(!/position:\s*(sticky|absolute|fixed)/.test(footer),
+    'the footer is a positioned box again - it can be overlaid by the scrolling content, which is exactly the measured defect');
+  eq(tally(footer, 'type="button"'), 2, 'the footer must hold exactly Cancel + one primary send button');
   ok(/id="mlsAthenaUnifiedGo"[^>]*font-weight:900/.test(footer),
     'the merged primary button is not visually bolder than the two it replaced');
   ok(/id="mlsAthenaUnifiedGo"[^>]*box-shadow:/.test(footer), 'the merged primary button carries no raised fill');

@@ -58607,9 +58607,21 @@ html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
          re-opens the same review with the same options, and "Copy error
          report" is a quiet link rather than a fifth equal button (23, 24). -->
 <style id="mlsClunkyAthenaCss">
-/* --- 3: the reason for a disabled Confirm travels with the Confirm. */
+/* --- 3: the reason for a disabled Confirm travels with the Confirm.
+   sheetclar-1.0.0 (2026-08-31) — THIS RULE WAS THE MEASURED OVERLAP. It made
+   #mlsAthenaUnifiedProbe and #mlsAthenaUnifiedFix into a SECOND sticky footer
+   pinned to bottom:0 at z-index:6, inside the same scrollport as the sheet's
+   own footer at z-index:3. Two boxes pinned to the same edge, the higher one
+   wins the hit test: document.elementFromPoint at the Confirm button's own
+   centre returned the fix strip, and the owner's physical clicks on Confirm &
+   Send did nothing at all while the button looked perfectly enabled.
+   It does not need to be sticky any more. The sheet's footer is now the card's
+   own second flex item, outside the scrolling body, so Confirm is ALWAYS on
+   screen and the reason above it can never be "below the fold" — and why()'s
+   own scrollIntoView still brings the status line into view when it is far up.
+   Keep the emphasis, drop the positioning. */
 #mlsAthenaUnifiedConfirm [data-mls-clunky-why="1"]{
-  position:sticky; bottom:0; z-index:6;
+  position:static; z-index:auto;
   background:var(--card, #fff);
   padding:8px 0 6px; margin:0;
   box-shadow:0 -8px 14px -12px rgba(20,33,28,.35);
