@@ -1,5 +1,5 @@
 {
-  "version": "3.0.101",
+  "version": "3.0.102",
   "minChrome": 116,
-  "notes": "v3.0.101 - Reliability: after finishing a day, the schedule pull now returns athenaOne to Calendar - View Calendar by itself (the dashboard cannot switch a provider-scoped day, so pulls used to stall there until someone clicked the menu by hand). Everything from v3.0.100 remains. Requires Chrome 116+."
+  "notes": "v3.0.102 - Reliability: the automatic return to Calendar - View Calendar after each pulled day now finds the menu entry wherever athenaOne draws it (it was looked for in the wrong frame, so pulls could still stall on the dashboard). Everything from v3.0.101 remains. Requires Chrome 116+."
 }
