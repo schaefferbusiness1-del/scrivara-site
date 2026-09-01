@@ -4062,18 +4062,52 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
   <!-- ============ HISTORY VIEW ============ -->
   <div id="historyView" style="display:none">
-  <!-- HISTORY -->
-  <div class="card" id="historyCard">
-    <h2 aria-label="Visit history" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">📚</span> Visit history
-      <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
-      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
+  <!-- histsplit-1.0.0 — History is TWO pages, not one stack.
+       Owner, 2026-08-31, with a screenshot of this screen: "this werid opage u
+       need to find ahts aweful ui it just need to be seprate pages".
+
+       WHAT WAS ON ONE PAGE BEFORE THIS SPLIT, top to bottom: the green "Pull
+       chart from Athena" primary, a "Show more history tools" disclosure, a
+       six-button heading toolbar, the duplicate-notes warning, the storage
+       disclaimer, the AI chart-summary card, the "Visits & encounters" list
+       with its "Copy all N encounters" row, the search row and the visit list.
+       Nine concerns, one scroll.
+
+       NOTHING IS DELETED AND NOTHING IS REBUILT. Every control below is the
+       app's own wired element with its own id, moved into the page it belongs
+       to; both pages are one click apart on the pill row above them, and the
+       duplicate-notes warning stays on the timeline (a data-integrity flag has
+       to be where the data is) with a link across to the cleanup control.
+
+       ORDER MATTERS. #historyToolsCard is the FIRST .card in this view, which
+       is the anchor feat_mls_calm_views.js resolves for its green primary
+       (#mlsCvNxt_history) and its disclosure - that is how the primary lands
+       on the tools page instead of on top of the timeline, without editing a
+       file shared with production. Neither page's heading contains a button
+       any more, so that module's h2-toolbar fold marks nothing and mounts no
+       empty "Show more history tools" disclosure: what it used to hide now has
+       a page of its own.
+
+       #historySubnav must NOT carry class="card", or it would become that
+       anchor instead. -->
+  <div id="historySubnav" role="tablist" aria-label="History pages">
+    <button type="button" role="tab" id="histPaneTabTimeline" class="hxs-pill" aria-selected="true" aria-controls="historyTimelinePane" onclick="showHistoryPane('timeline',true)">📚 Visit history</button>
+    <button type="button" role="tab" id="histPaneTabTools" class="hxs-pill" aria-selected="false" aria-controls="historyToolsPane" onclick="showHistoryPane('tools',true)">🧰 Chart tools</button>
+  </div>
+
+  <!-- ---- PAGE 2: CHART TOOLS (first in the DOM, see the note above) ---- -->
+  <div id="historyToolsPane" role="tabpanel" aria-labelledby="histPaneTabTools" style="display:none">
+  <div class="card" id="historyToolsCard">
+    <h2 aria-label="Chart tools"><span class="ic">🧰</span> Chart tools</h2>
+    <p class="sub">Everything you do <b>to</b> this chart. The visits themselves are on the <b>Visit history</b> page, one press away on the row above.</p>
+    <div id="histToolsRow" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 0">
+      <button class="btn-green" style="font-size:14px;padding:9px 15px" id="histNewVisitBtn" onclick="goNewVisitForPatient()" title="Start a fresh visit for this patient">🎙️ New visit</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="histSchedFollowBtn" onclick="calScheduleForPatient()" title="Book this patient's next appointment">📅 Schedule follow-up</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="pullChartBtn" onclick="pullPatientChartViaAssist(this)" aria-label="Pull this patient's chart" title="Reads the patient selected here in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.">📥 Pull this patient's chart</button><div id="pullChartStatus" style="display:none;font-size:12px;line-height:1.4;margin-top:6px"></div>
-      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
+      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="histOpNoteBtn" onclick="openOpPrepForPatient()" title="Draft an operative / procedure note for this patient from your uploaded op-note templates">💉 Draft op note</button>
       <button class="btn-ghost" style="font-size:14px;padding:9px 15px" id="chartSumBtn" onclick="generateChartSummary()">🧬 Chart summary</button>
       <button class="btn-ghost" id="histDedupeBtn" style="display:none;font-size:14px;padding:9px 15px;color:#a12c2c;border-color:#e8b7b7" onclick="cleanupDuplicateNotes(this)" title="Remove duplicate notes — same patient, same note, same day — keeping one of each">🧹 Remove duplicate notes</button>
-    </h2>
-    <div id="histDupBanner" style="display:none;background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:9px 12px;margin:4px 0 0;font-size:13px;color:#7a5a16"></div>
-    <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
+    </div>
     <div class="disclaim" id="histStorageNote" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🔐 Storage status is verified after this app mode is known.</div>
 
     <!-- AI chart summary / timeline -->
@@ -4084,6 +4118,15 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="sub" style="margin:4px 0 0">Built only from the active patient's saved visits and profile. Review for accuracy.</p>
       <div class="xbody" id="chartSumBody"></div>
     </div>
+  </div>
+  </div><!-- /historyToolsPane -->
+
+  <!-- ---- PAGE 1: VISIT HISTORY — the timeline and nothing else ---- -->
+  <div id="historyTimelinePane" role="tabpanel" aria-labelledby="histPaneTabTimeline">
+  <div class="card" id="historyCard">
+    <h2 aria-label="Visit history" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px"><span class="ic">📚</span> Visit history</h2>
+    <div id="histDupBanner" style="display:none;background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:9px 12px;margin:4px 0 0;font-size:13px;color:#7a5a16"></div>
+    <p class="sub">Click a past visit to reopen it. Showing visits for <b id="histWho">your account</b>.</p>
 
     <div id="histSearchRow" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 4px">
       <input id="histSearch" aria-label="Search visit history" oninput="__mlsDebRender('hist',renderHistory)" placeholder="🔎 Search history — patient, date, procedure, diagnosis, any word in the note…" style="flex:1;min-width:220px;font-size:14px;padding:9px 13px;border:1px solid var(--line);border-radius:10px">
@@ -4100,6 +4143,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div id="histEmpty" class="empty"><span class="big">📭</span>No saved visits yet. Generate a note and press <b>Save to history</b>.</div>
     <div class="hist-list" id="histList"></div>
   </div>
+  </div><!-- /historyTimelinePane -->
   </div><!-- /historyView -->
 
   <!-- ============ RECOMMENDATIONS VIEW ============ -->
@@ -26235,7 +26279,7 @@ function renderHistory(){
   // Surface duplicate notes (e.g. an op note saved several times) so they can be cleaned in one tap.
   try{ var _dups=(typeof _dupNoteList==='function')?_dupNoteList(all):[]; var _db=document.getElementById('histDedupeBtn'); var _bn=document.getElementById('histDupBanner');
     if(_db) _db.style.display=_dups.length?'':'none';
-    if(_bn){ if(_dups.length){ _bn.style.display='block'; _bn.innerHTML='⚠ Found <b>'+_dups.length+'</b> duplicate note'+(_dups.length===1?'':'s')+' (same patient, same note, same day). <a href="#" onclick="cleanupDuplicateNotes();return false;" style="color:#a12c2c;font-weight:700">Remove the extras →</a>'; } else { _bn.style.display='none'; } }
+    if(_bn){ if(_dups.length){ _bn.style.display='block'; _bn.innerHTML='⚠ Found <b>'+_dups.length+'</b> duplicate note'+(_dups.length===1?'':'s')+' (same patient, same note, same day). <a href="#" onclick="cleanupDuplicateNotes();return false;" style="color:#a12c2c;font-weight:700">Remove the extras →</a> <a href="#" onclick="showHistoryPane(\'tools\',true);return false;" style="color:#7a5a16;font-weight:700">Chart tools →</a>'; } else { _bn.style.display='none'; } }
   }catch(e){}
   // Clear any stale chart summary so it never bleeds across patients/views.
   { const cs=document.getElementById('chartSumCard'); if(cs) cs.style.display='none'; const csb=document.getElementById('chartSumBody'); if(csb) csb.textContent=''; }
@@ -62272,6 +62316,207 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
 })();
 </script>
 <!-- ===== end cvfull-1.0.0 ================================================= -->
+<!-- ===== histsplit-1.0.0 — History is two pages and the timeline is one of them =
+     Owner, 2026-08-31, screenshotting Patients > History: "this werid opage u
+     need to find ahts aweful ui it just need to be seprate pages".
+
+     THE MARKUP HALF of this block is up in #historyView (search histsplit-1.0.0
+     there); this is the behaviour half. It owns three things and nothing else:
+
+       1. WHICH PAGE IS SHOWN. window.showHistoryPane('timeline'|'tools', byHand)
+          is the one switch. The pill row, the tools card's back-link and the
+          duplicate-notes notice all call it; so does every deep link below.
+       2. WHICH PAGE A VISIT OPENS ON. History is reached programmatically from
+          at least eight places (the note search results, the patient profile,
+          the copilot, the walkthrough). They all land on #historyView and then
+          want one of two things - the list, or the chart tools - so the router
+          picks by what the TIMELINE ACTUALLY HAS, read off the rendered list
+          and the rendered encounter room, never off a store. A chart with
+          visits opens on the visits; an empty chart opens on the page whose
+          one job is to go and get it. Anything that opens a SAVED VISIT by id
+          is explicit and pins the timeline.
+       3. NOT MOVING THE PAGE UNDER A READER. The verdict is re-taken freely
+          while History is closed (so the right page is already up before the
+          view is shown - a switch after the view appears would be a layout
+          jump, and 1p-ui-shape-contract measures exactly that), and for a
+          short settle window after it opens, because the list and the
+          encounter room fill asynchronously. After that window ONE transition
+          still moves the doctor: a timeline that was empty and is now full,
+          which is a pull landing. Never the reverse. A press on a pill ends
+          all of it until History is left and re-entered.
+
+     WHY NO rAF: a hidden tab never composites, so a requestAnimationFrame
+     scheduler would freeze this router half-painted. setInterval only.
+
+     WHAT THIS BLOCK DOES NOT DO. It does not re-implement, re-label or re-wire
+     a single control - every button on both pages is the app's own element,
+     with its own id and its own handler, and both pages are one click apart.
+     It does not edit feat_mls_calm_views.js: that module's green primary lands
+     on the tools page purely because the tools card is the first .card in the
+     view, which is the anchor it already resolves.
+
+     Reversible: window.__mlsHistSplit.revert() puts both pages on screen at
+     once and stops the router, i.e. the pre-split stack. -->
+<style id="histSplitCss">
+#historySubnav{ display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; }
+#historySubnav .hxs-pill{ min-height:40px; padding:8px 16px; border:1px solid var(--line,#D9D6CD);
+  border-radius:999px; background:var(--card,#fff); color:var(--muted,#5a6b62);
+  font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; }
+#historySubnav .hxs-pill:hover{ background:var(--soft,#EAF1EC); }
+#historySubnav .hxs-pill[aria-selected="true"]{ background:var(--brand,#2E6A4B);
+  border-color:var(--brand,#2E6A4B); color:#fff; }
+/* The public preview hides History's action controls by walking
+   "#historyCard h2 button" (public-preview-runtime.js - a file shared with
+   production and pinned by an asset-token contract, so this lane does not edit
+   it). Two of those buttons carry no id and no longer live in that heading;
+   this rule keeps the preview surface exactly what it was. */
+body.mls-public-preview #histSchedFollowBtn,
+body.mls-public-preview #histOpNoteBtn{ display:none !important; }
+@media (max-width:560px){ #historySubnav .hxs-pill{ flex:1 1 auto; text-align:center; } }
+</style>
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'histsplit-1.0.0';
+  var SETTLE = 2500;
+  var PANES = {
+    timeline: { pane: 'historyTimelinePane', tab: 'histPaneTabTimeline' },
+    tools:    { pane: 'historyToolsPane',    tab: 'histPaneTabTools' }
+  };
+  var KEYS = ['timeline', 'tools'];
+  var current = 'timeline', manual = false, entered = 0, wasOpen = false, wasFilled = null;
+  var timer = null, off = false;
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+
+  function historyOpen() {
+    var v = byId('historyView');
+    if (!v) return false;
+    return safe(function () { return window.getComputedStyle(v).display !== 'none'; }, false);
+  }
+
+  /* "The timeline has something to show", read off the SCREEN. #histList is
+     renderHistory()'s own output and #mlsHxSection is histview-1.0.0's own
+     encounter room; both are already the one resolver for what they hold, so
+     this asks them rather than counting notes a fifth time. No rect reads:
+     this must answer correctly while #historyView is still display:none. */
+  function timelineFilled() {
+    return safe(function () {
+      var list = byId('histList');
+      if (list && list.firstElementChild) return true;
+      var hx = byId('mlsHxSection');
+      if (hx && !hx.hidden && hx.querySelector('.hx-card')) return true;
+      return false;
+    }, false);
+  }
+
+  function paint() {
+    for (var i = 0; i < KEYS.length; i++) {
+      var k = KEYS[i], on = (k === current);
+      var p = byId(PANES[k].pane), t = byId(PANES[k].tab);
+      if (p) {
+        var want = on ? '' : 'none';
+        if (p.style.display !== want) p.style.display = want;
+      }
+      if (t) {
+        var sel = on ? 'true' : 'false';
+        if (t.getAttribute('aria-selected') !== sel) t.setAttribute('aria-selected', sel);
+      }
+    }
+  }
+
+  function show(which, byHand) {
+    if (!PANES[which]) return false;
+    if (byHand) manual = true;
+    current = which;
+    paint();
+    return true;
+  }
+
+  function route() {
+    if (off) return;
+    var open = historyOpen();
+    if (open && !wasOpen) { entered = Date.now(); manual = false; }
+    wasOpen = open;
+    var filled = timelineFilled();
+    if (!manual) {
+      if (!open || (Date.now() - entered) <= SETTLE) show(filled ? 'timeline' : 'tools');
+      else if (filled && wasFilled === false) show('timeline');
+    }
+    wasFilled = filled;
+  }
+
+  /* A deep link that names a SAVED VISIT is asking for the list, whatever the
+     router would otherwise have picked. Wrapped at the CURRENT window value on
+     every pass, because this app reassigns global handlers after the shell
+     defines them and a wrapper installed once at load would be replaced. */
+  function wrapOpener(name) {
+    var fn = safe(function () { return window[name]; }, null);
+    if (typeof fn !== 'function' || fn.__histSplit) return false;
+    var wrapped = function () {
+      safe(function () { show('timeline', true); });
+      return fn.apply(this, arguments);
+    };
+    wrapped.__histSplit = 1;
+    wrapped.__histSplitInner = fn;
+    return safe(function () { window[name] = wrapped; return true; }, false);
+  }
+
+  function tick() {
+    safe(route);
+    safe(function () { wrapOpener('openNoteFromHistory'); });
+  }
+
+  /* Published before arm(), not inside it: the duplicate-notes notice and the
+     pill row name this function in inline attributes that can be clicked the
+     instant they paint. */
+  safe(function () { window.showHistoryPane = function (which, byHand) { return show(which, !!byHand); }; });
+
+  function arm() {
+    tick();
+    /* setTimeout / setInterval only - see the note above about hidden tabs. */
+    timer = safe(function () { return setInterval(tick, 500); }, null);
+    ['mls:view-changed', 'mls:active-patient-changed'].forEach(function (name) {
+      safe(function () {
+        window.addEventListener(name, function () {
+          if (name === 'mls:active-patient-changed') { manual = false; entered = Date.now(); }
+          safe(tick);
+        });
+      });
+    });
+    [60, 300, 900, 1800].forEach(function (ms) { safe(function () { setTimeout(tick, ms); }); });
+  }
+
+  window.__mlsHistSplit = {
+    installed: true, version: VERSION,
+    pane: function () { return current; },
+    show: show,
+    filled: timelineFilled,
+    manual: function () { return manual; },
+    open: historyOpen,
+    _test: { panes: PANES, settle: SETTLE, route: route, paint: paint, wrapOpener: wrapOpener },
+    revert: function () {
+      off = true;
+      safe(function () { if (timer) clearInterval(timer); }); timer = null;
+      for (var i = 0; i < KEYS.length; i++) {
+        var p = byId(PANES[KEYS[i]].pane);
+        if (p) safe(function (n) { return function () { n.style.display = ''; }; }(p));
+      }
+      safe(function () {
+        var f = window.openNoteFromHistory;
+        if (f && f.__histSplitInner) window.openNoteFromHistory = f.__histSplitInner;
+      });
+      var s = byId('histSplitCss'); if (s) safe(function () { s.disabled = true; });
+      return true;
+    }
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm);
+  else arm();
+})();
+</script>
+<!-- ===== end histsplit-1.0.0 =============================================== -->
 <!-- ===== busyall-1.0.0 - every control that starts work says so, AT the control =
      Owner, 2026-08-19: "u added the loading thing to that button - all buttons
      should have a loading." And, watching a long read: "if Maria's chart is
