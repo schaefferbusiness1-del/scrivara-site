@@ -74,7 +74,7 @@ const assets = [
   ['feat_mls_progress_stages.js', '20260826ps150', '20260826ps140'],
   /* feat_task3_frontsync.js now follows the shared build token. It is derived
      across lanes and changes too often for a second hand-maintained token. */
-  ['feat_mls_upnow_activeselect.js', '20260808uas5perf1', '20260804uas4'],
+  ['feat_mls_upnow_activeselect.js', '20260901uas6', '20260804uas4'],
   ['feat_mls_upnow_sync.js', '20260808uns6perf2', '20260808uns5perf1'],
   /* 2026-08-05, unr-1.1.0 -> unr-1.1.1: the module's boot() poll re-ran its
      three installers 60 times while each guarded only on its own window marker,

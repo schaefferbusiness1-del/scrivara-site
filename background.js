@@ -8581,7 +8581,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       function _headCols(){
         var hs=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _provRe.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});
         var cols=[],seen={};
-        hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var nm=cp(cl(e.textContent));var key=nm.toLowerCase();if(nm&&!seen[key]){seen[key]=1;cols.push({name:nm,lo:r.left,rr:r.right});}}}catch(_e){}});
+        hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var nm=cp(cl(e.textContent));var key=nm.toLowerCase();if(nm&&!seen[key]){seen[key]=1;cols.push({name:nm,lo:r.left,rr:r.right,top:r.top});/* stackprov-1.0.0: keep the heading's top so a stacked layout can assign by vertical order */}}}catch(_e){}});
         cols.sort(function(a,b){return a.lo-b.lo;});
         for(var c=0;c<cols.length;c++){var nx=(c+1<cols.length)?cols[c+1].lo:(cols[c].rr+(cols[c].rr-cols[c].lo));cols[c].hi=(cols[c].rr<nx)?nx:cols[c].rr;}
         return cols;
@@ -8594,7 +8594,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         function _collect(){
           var cols=_headCols();
           var cells=[].slice.call(doc.querySelectorAll('div,li,a')).filter(function(e){var t=cl(e.textContent);return ht(t)&&t.length>10&&t.length<140&&pn(t)&&e.querySelectorAll('*').length<=8;});
-          cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}var tm=ft(t),proof=_scheduleRowProofD(e);var key=(prov||'')+'|'+tm+'|'+nm+'|'+_scheduleProofKeyD(proof);if(_seenA[key]){_mergeScheduleProofD(_seenA[key],proof);return;}var row={time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(t),dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};_seenA[key]=row;out.appts.push(row);}catch(_e){}});
+          cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';var _stacked=cols.length>=2&&cols.every(function(c){return Math.abs(c.lo-cols[0].lo)<24;});if(_stacked){/* stackprov-1.0.0 (3.0.105, measured 2026-09-01): headings share one left edge = the dashboard widget's vertical per-provider groups, where the x-range rule below degenerates to an empty range; a row belongs to the nearest heading ABOVE it */var _best=null;for(var k=0;k<cols.length;k++){if(typeof cols[k].top==='number'&&cols[k].top<=r.top+2&&(!_best||cols[k].top>_best.top))_best=cols[k];}if(_best){prov=_best.name;out.diag.stackedTagged=(out.diag.stackedTagged||0)+1;}}else{for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}}var tm=ft(t),proof=_scheduleRowProofD(e);var key=(prov||'')+'|'+tm+'|'+nm+'|'+_scheduleProofKeyD(proof);if(_seenA[key]){_mergeScheduleProofD(_seenA[key],proof);return;}var row={time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(t),dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};_seenA[key]=row;out.appts.push(row);}catch(_e){}});
         }
         if(_scroller){
           var _frac=(CFG&&CFG.scrollStepFrac)||0.55;

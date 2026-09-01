@@ -5386,13 +5386,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.104</b> · requires Chrome 116+</p>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.105</b> · requires Chrome 116+</p>
         <a class="btn-primary" id="extStoreBtn" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px;margin:0 8px 8px 0">🧩 Open MLS Assist in the Chrome Web Store</a>
-        <a class="btn-ghost" id="extDlBtn" href="MLS_Assist_v3.0.104.bin" download="MLS_Assist_v3.0.104.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.104</span> (.zip)</a>
+        <a class="btn-ghost" id="extDlBtn" href="MLS_Assist_v3.0.105.bin" download="MLS_Assist_v3.0.105.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.105</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0"><b>Easiest:</b> install from the Chrome Web Store with the first button — Chrome keeps it updated. The direct download is the second option (exact pinned version). If you download it, then follow the four setup steps under <b>Integrations → Advanced integrations</b> in this dialog — or the illustrated guide at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. Already have it? Updating is the same four steps over the old folder.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.104</span>)</summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.104 - Pull reliability: schedule rows that sit under a provider heading (the way athenaOne groups a Day or Week view by provider) now carry that provider, so a provider-scoped month pull files them instead of refusing every day with "no provider identity"; a date navigation that saw the calendar strip but could not reach the day now runs the full recovery ladder instead of retrying a dead arrow; the date check reads the header of the frame that owns the schedule, not any frame. Everything from v3.0.103 remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.105</span>)</summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.105 - Pull reliability: on the athenaOne dashboard schedule, where each provider is a heading stacked above that provider's rows, every row now carries its heading's provider (v3.0.104 handled only side-by-side columns and table headings), so a provider-scoped month pull files those days instead of refusing them. Everything from v3.0.104 remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -5592,7 +5592,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save every dated prior visit note as well (slower, most complete). Off: pulls still open each scheduled chart and save its identity, chart facts (problems, medications, allergies) and the pulled day's own visit note — only OLDER visit notes are skipped. The single-patient pull button still reads the one patient you explicitly chose.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.104.zip" download="MLS_Assist_v3.0.104.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.104 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.105.zip" download="MLS_Assist_v3.0.105.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.105 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
       </div>
       <!-- ===== advint-1.0.0 — one disclosure for everything a physician never needs =====
