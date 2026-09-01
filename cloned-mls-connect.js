@@ -41673,6 +41673,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function provKey(v) {
     return String(v == null ? '' : v).toLowerCase()
+      /* mrpt-1.1.1: a scraped header can weld the "Provider" COLUMN LABEL onto
+         the name ("Provider MATTHEW SCHAEFFER, MD" - seen live 2026-09-01 as a
+         ghost roster row beside the real Matthew). No human is named Provider;
+         strip the leading label token so the ghost keys onto the real name.
+         Leading only - a hypothetical surname containing "provider" mid-string
+         is untouched. */
+      .replace(/^\s*provider\s+/i, '')
       .replace(/[_,.\/]+/g, ' ').replace(/[^a-z' -]/g, ' ')
       .split(/\s+/).filter(function (t) { return t && CRED.indexOf(t) < 0; })
       .sort().join(' ');

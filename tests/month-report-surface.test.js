@@ -379,6 +379,18 @@ const ALLOWED_KEYS = {
   assert.strictEqual(bare.api.provStatusFor('2026-08').any, false, 'an absent histogram must report any:false');
   const corrupt = makeEnv({ rows: AUG, roster: [MATTHEW], account: 'owner@example.com', storage: { [key]: '{not json' } });
   assert.strictEqual(corrupt.api.provStatusFor('2026-08').any, false, 'a corrupt histogram must fail open, not throw');
+  /* mrpt-1.1.1: the scraped "Provider" column label welded onto a name keys
+     onto the real provider (the ghost roster row seen live 2026-09-01) - two
+     spellings of one clinician fold into ONE bucket, never a ghost row. */
+  {
+    const ghostRows = [
+      { id: 'g1', appt_date: '2026-08-03', provider: 'Matthew Schaeffer, MD' },
+      { id: 'g2', appt_date: '2026-08-04', provider: 'Provider MATTHEW SCHAEFFER, MD' }
+    ];
+    const ghostRep = env.api.compute({ month: '2026-08', rows: ghostRows, roster: [], now: 1 });
+    assert.strictEqual(ghostRep.providers.length, 1, 'the welded Provider label minted a ghost provider row');
+    assert.strictEqual(Number(ghostRep.providers[0].days), 2, 'the ghost spelling did not fold into the real provider');
+  }
   /* the card renders the new column and the honest dash guidance */
   assert(moduleSource.indexOf('Days with seen visits') >= 0, 'the seen-days column header is gone from the card');
   assert(moduleSource.indexOf('Re-pull this month with MLS Assist 3.0.98 or newer') >= 0, 'the dash lost its re-pull guidance');
