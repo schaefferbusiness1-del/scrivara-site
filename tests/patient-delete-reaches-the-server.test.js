@@ -137,6 +137,11 @@ const okList = { ok: true, status: 200, json: async () => ([{ external_id: 'ext-
 
     /* 5. the CALLER must await the verdict and must not toast success unconditionally */
     const delFn = lift(src, 'deletePatient');
+    /* ptfix-1.0.0 (b1169): deletePatient now delegates the "what goes WITH the
+       record" half of the dialog to a named helper, so the lifted body needs it
+       in scope. It is LIFTED, not stubbed - the sentence the doctor actually
+       reads is exactly what the assertions below execute against. */
+    const delDeps = lift(src, '_mlsPtDeleteLossSentence', 'function ') + '\n';
     ok(/await\s+deletePatientOnServer\(/.test(delFn),
       shell + ': deletePatient does not AWAIT the server delete - its outcome cannot affect what ' +
       'the doctor is told');
@@ -159,7 +164,7 @@ const okList = { ok: true, status: 200, json: async () => ([{ external_id: 'ext-
         'mlsConfirm', 'findPatient', 'savePatients', 'getPatients', 'backendMode', 'bkToken',
         'deletePatientOnServer', 'getNotes', 'saveNotes', 'getActivePtId', 'setActivePtId',
         'renderPatients', 'renderProfile', 'renderPatientBar', 'toast', 'window',
-        delFn + '\nreturn deletePatient;'
+        delDeps + delFn + '\nreturn deletePatient;'
       )(
         m => { asked = String(m); return Promise.resolve(false); },  /* decline: nothing mutates */
         () => patient,
@@ -207,7 +212,7 @@ const okList = { ok: true, status: 200, json: async () => ([{ external_id: 'ext-
         'deletePatientOnServer', 'getNotes', 'saveNotes', 'getActivePtId', 'setActivePtId',
         'renderPatients', 'renderProfile', 'renderPatientBar', 'toast', 'window',
         '_pendingBackupAdd', '_retryPendingBackups',
-        delFn + '\nreturn deletePatient;'
+        delDeps + delFn + '\nreturn deletePatient;'
       )(
         () => Promise.resolve(true),               /* CONFIRM - let it mutate */
         () => ({ id: 'pt-1' }),

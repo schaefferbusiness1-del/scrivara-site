@@ -13178,6 +13178,17 @@ function __mlsTeamNotesCarry(dst,src){
   if(!Array.isArray(dst.teamNotes)){ dst.teamNotes=prev.slice(); return; }
   dst.teamNotes=__mlsTeamNotesUnion(dst.teamNotes,prev);
 }
+/* ptfix-1.0.0 (b1169): id+revision signature of a thread. A carry that ADDS a
+   note and a carry that upgrades one to a newer revision are both "the account
+   has not seen this yet", and a length compare only catches the first - so the
+   hydration path measures the thread by what it CONTAINS before deciding
+   whether the recovered note still has to be pushed. */
+function __mlsTeamNotesSig(a){
+  if(!Array.isArray(a))return '';
+  var s='',i,n;
+  for(i=0;i<a.length;i++){ n=a[i]; s+=String((n&&n.id)||'')+':'+__mlsTeamNoteRev(n)+'|'; }
+  return s;
+}
 function __mlsAthenaProofAt(c){ if(!c||!c.capturedAt)return 0; var n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; }
 function __mlsAthenaProofGuard(key,arr,start,end){
   if(!Array.isArray(arr))return;
@@ -14975,6 +14986,27 @@ async function loadPatientsFromServer(opts){
             try{ (globalThis.__mlsVisitHuskGuardLog=globalThis.__mlsVisitHuskGuardLog||[]).push({id:String(row.external_id).slice(0,24),via:'hydrate',at:Date.now()}); }catch(e){}
             try{ _pendingSyncAdd(row.external_id); }catch(e){}
           }
+          /* ptfix-1.0.0 (b1169): TEAM NOTES CARRY ON THE HYDRATION PATH TOO.
+             `local[i]=adopted` is a WHOLESALE replace, and `visits` gets two
+             dedicated guards on the lines directly above (b493 husk, b497
+             mirror body parity) while human-authored teamNotes got none. The
+             carry exists in exactly one other place - upsertPatient, whose own
+             comment states the reason: "a caller carrying an OLDER copy of
+             teamNotes passes the ==null test and would silently drop a
+             colleague's note." A server copy is exactly such a caller: a note
+             written while this patient's server row was refused (History paints
+             those "Device only") is dropped the moment any newer copy arrives
+             from a colleague's pull or another device, with nothing to say a
+             message was lost. The union is id-keyed, highest-revision-wins, so
+             a note the server legitimately holds as DELETED stays deleted -
+             only notes the server never saw survive. */
+          try{
+            var __tnBefore=__mlsTeamNotesSig(adopted.teamNotes);
+            __mlsTeamNotesCarry(adopted,local[i]);
+            /* a carry that actually recovered something has NOT reached the
+               account - queue it, or the next hydration drops it again */
+            if(__mlsTeamNotesSig(adopted.teamNotes)!==__tnBefore){ try{ _pendingSyncAdd(row.external_id); }catch(e){} }
+          }catch(eTnCarry){}
           local[i]=adopted; changed=true;
         }
       }
@@ -21684,6 +21716,31 @@ function renderPatients(){
   /* "N patients" is only true of an unnarrowed list: whatever did the
      narrowing, the count says X of N. */
   if(countEl){ var baseCount=(ql||_plvNarrowed) ? `${matchCount} of ${all.length}` : (capped ? `${all.length} patients · showing 150` : `${all.length} patient${all.length===1?'':'s'}`); countEl.textContent=baseCount+(sortMode==='visits'?' · ranked by visits':''); }
+  /* ptfix-1.0.0 (b1169): AN ARMED PROVIDER FILTER MUST NEVER OFFER TO MINT A
+     DUPLICATE. matchCount is taken AFTER __mlsPlvFilter has narrowed the list,
+     so a real patient of Dr Smith's, searched while "Dr Jones" is armed in the
+     provider dropdown, was reported as "No patient matching X" under a large
+     green button that creates them - and newPatientFromSearch() -> savePatient()
+     mints `id:'p'+Date.now()...` with no duplicate check at all. One click and
+     that person has two charts: the exact duplicate the auto-merge and the
+     dedup console exist to clean up, and the condition that makes the visit
+     resolvers refuse a write as ambiguous. The filter is sticky across reloads
+     (mls_provider_link_filter_v1), so the doctor need not remember arming it.
+     _plvBefore is the pre-filter match count, so when the FILTER is what
+     emptied the list we can say so and offer to clear it instead. The same
+     branch also covers the no-query case, which previously just went blank
+     with a "0 of N" count and nothing saying why. */
+  if(!matchCount && _plvNarrowed && _plvBefore>0){
+    list.innerHTML='';
+    list._mlsRoster=null; list._mlsNotesVer=null; list._mlsSig='';
+    if(noMatch){
+      noMatch.style.display='block';
+      noMatch.innerHTML=(ql?`No patients of the selected provider match “<b>${esc(q)}</b>”.`:'No patients of the selected provider.')
+        +`<br><b>${_plvBefore}</b> patient${_plvBefore===1?'':'s'} ${ql?'match':'exist'} across all providers — the provider filter is hiding ${_plvBefore===1?'it':'them'}.`
+        +`<br><button class="btn-primary" style="margin-top:12px;font-size:14px;padding:9px 16px" onclick="_mlsPtShowAllProviders()">Show all providers</button>`;
+    }
+    return;
+  }
   // Searched but nothing matched → offer to add that name as a new patient.
   if(ql && !matchCount){
     list.innerHTML='';
@@ -21723,6 +21780,29 @@ function renderPatients(){
     list._mlsRoster=roster; list._mlsNotesVer=_ptNotesVer; list._mlsQuery=ql; list._mlsSort=sortMode; list._mlsGroupMode=_ptMode;
   }else{
     list._mlsRoster=null; list._mlsNotesVer=null;
+  }
+}
+/* ptfix-1.0.0 (b1169): disarm the provider filter from the empty state. The
+   filter's ONE writer is feat_mls_provider_link.js (its select's own onchange
+   persists the choice and repaints), so this drives that control rather than
+   inventing a second writer; the localStorage line is the fallback for a
+   roster painted before the select has mounted, and the memo clear is what
+   turns a filter change into an actual repaint (renderPatients returns early
+   when roster/query/sort/group are all unchanged, which they are here). */
+function _mlsPtShowAllProviders(){
+  var handled=false;
+  try{
+    var sel=document.getElementById('mlsPlvSel');
+    if(sel){
+      sel.value='';
+      if(typeof sel.onchange==='function'){ sel.onchange(); handled=true; }
+      else{ try{ sel.dispatchEvent(new Event('change')); handled=true; }catch(eEv){} }
+    }
+  }catch(e){}
+  if(!handled){
+    try{ localStorage.removeItem('mls_provider_link_filter_v1'); }catch(e){}
+    try{ var l=document.getElementById('ptList'); if(l){ l._mlsRoster=null; l._mlsNotesVer=null; l._mlsSig=''; } }catch(e){}
+    try{ renderPatients(); }catch(e){}
   }
 }
 function _ptPatchActive(list, activeId, force){
@@ -21837,6 +21917,34 @@ function goNewUnassignedVisit(){
   showView('visit');
   newVisit();
 }
+/* ptfix-1.0.0 (b1169): NAME EVERYTHING THAT GOES WITH THE RECORD.
+   The delete dialog enumerated what SURVIVES ("their saved visit notes stay in
+   History but become unassigned") and stopped there, so the two things that are
+   DESTROYED read as covered by the reassurance:
+     - the patient's uploaded documents (p.docs - labs, scans, prior records),
+       named only in the adjacent ptundo-1.0.0 comment, never in the sentence
+       the doctor actually reads;
+     - the shared Team notes thread. Team notes live ON the patient record
+       (feat_mls_team_notes writes p.teamNotes) and deletePatient removes that
+       record whole, while nothing re-homes them the way the getNotes() loop
+       re-homes visit notes. So the ONE kind of note that does not survive was
+       the one the dialog implied was safe: a head doctor deleting a stray
+       duplicate destroys the message thread the covering doctors left each
+       other. (The undo snapshot deep-copies the record, so an immediate undo
+       recovers them; once it expires they are gone.)
+   Counts, not categories, so the doctor is deciding against a number. */
+function _mlsPtDeleteLossSentence(p){
+  try{
+    var docs=(p&&Array.isArray(p.docs))?p.docs.length:0;
+    var tn=0;
+    try{ var api=window.__mlsTeamNotes; if(p&&api&&typeof api.countOf==='function') tn=Number(api.countOf(p))||0; }catch(eTn){ tn=0; }
+    var gone=[];
+    if(docs) gone.push(docs+' uploaded document'+(docs===1?'':'s')+' (labs, scans, prior records)');
+    if(tn) gone.push(tn+' Team note'+(tn===1?'':'s')+' — the thread your covering doctors left each other about this patient');
+    if(gone.length) return ' Deleted with the record: '+gone.join(' and ')+'.';
+  }catch(e){}
+  return ' Any uploaded documents and Team notes on this chart are deleted with it.';
+}
 /* ptundo-1.0.0: toast() writes textContent only and is shared by every message
    in the app, so it cannot carry an action without changing a surface everything
    else depends on. A dedicated, self-removing bar above the patient list keeps
@@ -21931,6 +22039,7 @@ async function deletePatient(id){
     }
   }catch(eDs){ _delScheduled=false; }
   var _delMsg='Delete this patient and their profile from this device and your account? Their saved visit notes stay in History but become unassigned.';
+  _delMsg+=_mlsPtDeleteLossSentence(_dp);
   _delMsg+=_delScheduled
     ? ' Their appointment stays on the schedule, so pulling that day from Athena again will re-create this chart.'
     : ' This cannot be undone.';
@@ -27319,7 +27428,19 @@ function renderHistory(){
   else if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
   else if(!q){ _importNotes=ordered.filter(_isImportNote); if(_importNotes.length>3){ ordered=ordered.filter(n=>!_isImportNote(n)); } else { _importNotes=[]; } }
   if(q){ ordered=ordered.filter(n=>{ const hay=String(_pname(n)||'').toLowerCase()+' \n '+__mlsHistorySearchBase(histData,n); return hay.indexOf(q)>=0; }); }
-  const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (total+' visit'+(total===1?'':'s'));
+  /* ptfix-1.0.0 (b1169): ONE DENOMINATOR FOR ONE LIST. `total` is taken BEFORE
+     the type filter, the chart-import collapse and the search, so the footer
+     below printed the un-narrowed count for the same list whose header printed
+     the narrowed one - "412 of 3000 match" above and "Showing the 200 most
+     recent of 3000 visits" ten pixels under it, implying 2,800 more op notes
+     exist. matchedTotal is the size of the list actually being rendered, taken
+     after every narrowing and BEFORE the 200-row cap. It is also the honest
+     default-view count: line 27135 has just removed the Athena chart-import
+     receipts from the list, so `total` counted receipts as visits ("312
+     visits" for 112 real ones after a bulk pull) - the same predicate now
+     governs the list and its count. */
+  const matchedTotal=ordered.length;
+  const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (matchedTotal+' visit'+(matchedTotal===1?'':'s'));
   if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
   empty.style.display='none';
   /* b377 perf: bound the DOM like renderPatients does (PT_CAP). A chart with
@@ -27381,7 +27502,7 @@ function renderHistory(){
     </div>`;
   }).join('');
   if(_importNotes.length){ _histHtml='<div class="hist-item" role="button" tabindex="0" aria-label="View collapsed Athena chart-import receipts" style="cursor:pointer" onclick="var f=document.getElementById(\'histFilter\');if(f){f.value=\'imports\';renderHistory();}" onkeydown="if(event.target===this&&(event.key===\'Enter\'||event.key===\' \'||event.key===\'Spacebar\')){event.preventDefault();this.click();}"><span class="ic">📥</span><div class="hist-main"><div class="t">'+_importNotes.length+' Athena chart-import receipt'+(_importNotes.length===1?'':'s')+'</div><div class="s">Collapsed to keep your real visits on top — click to view them all</div></div></div>'+_histHtml; }
-  if(_histCapped) _histHtml+='<div class="muted" style="padding:10px 12px;font-size:13px;color:#6a829c">Showing the '+HIST_CAP+' most recent of '+total+' visits — use the search box above to find older ones.</div>';
+  if(_histCapped) _histHtml+='<div class="muted" style="padding:10px 12px;font-size:13px;color:#6a829c">Showing the '+HIST_CAP+' most recent of '+matchedTotal+((q||fv)?' matching visits':' visits')+' — use the search box above to find older ones.</div>';
   if(list._mlsSig!==_histHtml||!list.childElementCount){ list.innerHTML=_histHtml; list._mlsSig=_histHtml; }
 }
 

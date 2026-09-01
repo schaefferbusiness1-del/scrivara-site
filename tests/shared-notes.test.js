@@ -1069,7 +1069,7 @@ async function asyncProofs() {
 { /* the merge module keeps its own house shape after the tn change */
   const mbody = mergeSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   ok(!/=>/.test(mbody), 'the merge module must stay ES5 (no arrow functions)');
-  ok(mergeSrc.indexOf("version: 'pm-1.0.4'") > 0, 'the merge release marker must move with the behaviour change');
+  ok(mergeSrc.indexOf("version: 'pm-1.0.5'") > 0, 'the merge release marker must move with the behaviour change');
 }
 { /* the exported surface */
   const sb = makeSandbox({ patients: PT() });

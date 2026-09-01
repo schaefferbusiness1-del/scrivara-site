@@ -104,7 +104,7 @@ function makeSandbox() {
    removing save + the selection follows the merge survivor + tn-1.0.0 unions
    both records' teamNotes instead of letting the scalar FILL_FIELDS pass
    silently discard the loser's thread. */
-assert(pmSource.includes("version: 'pm-1.0.4'"), 'patient-merge deferral release marker missing');
+assert(pmSource.includes("version: 'pm-1.0.5'"), 'patient-merge deferral release marker missing');
 
 /* si-1.7.9 (live 2026-07-18): the MANUAL history retry enters runHistoryBatch
  * without pull()'s busy stamping, so the deferred merge fired MID-RETRY and

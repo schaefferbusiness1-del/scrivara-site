@@ -55,23 +55,133 @@
     return Promise.reject(new Error('no-ai-transport'));
   }
 
-  /* ---------- create-or-find a patient by name+DOB (no duplicate) ---------- */
-  function findExisting(name, dob) {
-    var mod = M();
-    var nn = trim(name).toLowerCase();
-    var nd = mod ? mod._normDob(dob) : trim(dob);
-    if (!nn) return null;
-    return getPatients().find(function (p) {
-      if (!p) return false;
-      var pn = trim(p.name).toLowerCase();
-      var pd = mod ? mod._normDob(p.dob) : trim(p.dob);
-      if (pn !== nn) return false;
-      if (nd && pd) return nd === pd;     // both DOBs present -> must match
-      return true;                         // name match, DOB unknown on a side
-    }) || null;
+  /* ---------- create-or-find a patient: MRN, or NAME+DOB. Nothing weaker ----
+   * ptfix-1.0.0 (b1169): findExisting used to end with `return true` on a bare
+   * name match whenever EITHER side had no DOB - and both save paths of the
+   * shipped Add-patient modal route through it (doSave and doAthena), so the
+   * new patient's demographics and every captured visit were written straight
+   * into the existing chart with no warning and a status line that read
+   * "Saved patient <name> with N visit(s)" exactly as if it had created one.
+   * Two people sharing a common name, one of them a schedule-imported row with
+   * no DOB stored, is cross-patient contamination on the CREATE path - and it
+   * is weaker than the product law, which auto-attaches on an MRN match or a
+   * name+DOB match and treats anything weaker as a one-click SUGGESTION the
+   * doctor confirms. It now fails closed: a weak hit returns no auto-match and
+   * is surfaced as a candidate instead (findSuggestions), which also means the
+   * "Adam Schaeffer" / "Adam J Schaeffer" case that the exact-string compare
+   * used to MINT a duplicate for is now offered as a match.
+   * -------------------------------------------------------------------------*/
+  function normName(s) { return trim(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function nameTokens(s) { var t = normName(s); return t ? t.split(' ') : []; }
+  /* tolerant: every token of the shorter name appears in the longer one, so a
+     middle initial or a suffix does not make two humans. Never used on its own
+     to attach - only to OFFER. */
+  function nameCompatible(a, b) {
+    var ta = nameTokens(a), tb = nameTokens(b), i;
+    if (!ta.length || !tb.length) return false;
+    var shortT = ta.length <= tb.length ? ta : tb, longT = ta.length <= tb.length ? tb : ta;
+    for (i = 0; i < shortT.length; i++) if (longT.indexOf(shortT[i]) < 0) return false;
+    return true;
   }
-  function createOrFindPatient(details) {
-    var existing = findExisting(details.name, details.dob);
+  /* A DOB is an identity only when it is CANONICAL. Prefer the shell's own
+     _opDobKey (the key the op-note resolver matches appointments to charts
+     with) so this module and the shell can never disagree; the local
+     reimplementation keeps the module testable and boot-order independent. */
+  function localDobKey(v) {
+    var s = trim(v); if (!s) return '';
+    var m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+    if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+    m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+    if (m) return m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+    return '';
+  }
+  function dobKey(v) {
+    var out = null;
+    try { if (isFn(window._opDobKey)) out = window._opDobKey(v); } catch (e) { out = null; }
+    if (typeof out !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(out)) out = localDobKey(v);
+    return /^\d{4}-\d{2}-\d{2}$/.test(out) ? out : '';
+  }
+  function mrnKey(p) { return S(p && (p.mrn || p.athenaId)).replace(/\D/g, ''); }
+
+  /* Returns { patient, basis } for an auto-attach, or null. Fail-closed:
+     ambiguity (more than one record claiming the same key) NEVER attaches. */
+  function findExisting(name, dob, mrn) {
+    var all = getPatients();
+    var wantName = normName(name), wantDob = dobKey(dob), wantMrn = S(mrn).replace(/\D/g, '');
+    var i, p, hits;
+    if (!wantName && !wantMrn) return null;
+    /* 1. MRN (>=5 digits, the same threshold the duplicate auto-merge uses) */
+    if (wantMrn.length >= 5) {
+      hits = [];
+      for (i = 0; i < all.length; i++) {
+        p = all[i]; if (!p) continue;
+        if (mrnKey(p) !== wantMrn) continue;
+        /* an MRN hit whose canonical DOB CONTRADICTS the typed one is not the
+           same human - the same veto the merge module applies to MRNs */
+        var pd0 = dobKey(p.dob);
+        if (wantDob && pd0 && pd0 !== wantDob) continue;
+        hits.push(p);
+      }
+      if (hits.length === 1) return hits[0];
+      if (hits.length > 1) return null;
+    }
+    /* 2. NAME + DOB, both present on both sides, exact normalized name */
+    if (!wantName || !wantDob) return null;
+    hits = [];
+    for (i = 0; i < all.length; i++) {
+      p = all[i]; if (!p) continue;
+      if (normName(p.name) !== wantName) continue;
+      if (dobKey(p.dob) !== wantDob) continue;
+      hits.push(p);
+    }
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  /* Everything the auto-attach refused but a human might still recognise:
+     the same name with a DOB missing on a side, or a tolerant name match. */
+  function findSuggestions(name, dob, mrn) {
+    var all = getPatients();
+    var wantName = normName(name), wantDob = dobKey(dob), wantMrn = S(mrn).replace(/\D/g, '');
+    var out = [], i, p, pd, why;
+    if (!wantName && !wantMrn) return out;
+    for (i = 0; i < all.length; i++) {
+      p = all[i]; if (!p || p.id == null) continue;
+      pd = dobKey(p.dob);
+      why = '';
+      if (wantMrn.length >= 5 && mrnKey(p) === wantMrn) why = 'same MRN';
+      else if (!wantName) continue;
+      else if (normName(p.name) === wantName && (!wantDob || !pd)) why = pd || wantDob ? 'same name, date of birth missing on one chart' : 'same name, no date of birth on either chart';
+      else if (normName(p.name) === wantName && pd && wantDob && pd !== wantDob) why = 'same name, DIFFERENT date of birth';
+      else if (nameCompatible(p.name, name) && wantDob && pd === wantDob) why = 'same date of birth, name written differently';
+      else if (nameCompatible(p.name, name) && normName(p.name) !== wantName && (!wantDob || !pd)) why = 'similar name, date of birth missing on one chart';
+      if (!why) continue;
+      out.push({ id: S(p.id), name: S(p.name), dob: S(p.dob), mrn: S(p.mrn || p.athenaId), why: why, visits: (p.visits || []).length });
+      if (out.length >= 5) break;
+    }
+    return out;
+  }
+
+  function patientById(id) {
+    var all = getPatients(), i;
+    for (i = 0; i < all.length; i++) if (all[i] && S(all[i].id) === S(id)) return all[i];
+    return null;
+  }
+
+  function createOrFindPatient(details, opts) {
+    opts = opts || {};
+    var existing = null;
+    /* an explicit doctor decision outranks the automatic test, in both
+       directions - "yes, same person" attaches, "no, new chart" mints */
+    if (opts.attachToId) {
+      existing = patientById(opts.attachToId);
+      if (!existing) return { patient: null, created: false, needsConfirm: false, reason: 'candidate-gone' };
+    } else if (opts.confirmedNew !== true) {
+      existing = findExisting(details.name, details.dob, details.mrn);
+      if (!existing) {
+        var sugg = findSuggestions(details.name, details.dob, details.mrn);
+        if (sugg.length) return { patient: null, created: false, needsConfirm: true, candidates: sugg };
+      }
+    }
     if (existing) {
       // fill in any newly provided demographics without clobbering
       if (!trim(existing.dob) && trim(details.dob)) existing.dob = trim(details.dob);
@@ -80,7 +190,7 @@
       if (!trim(existing.phone) && trim(details.phone)) existing.phone = trim(details.phone);
       if (!Array.isArray(existing.visits)) existing.visits = [];
       upsertPatient(existing);
-      return { patient: existing, created: false };
+      return { patient: existing, created: false, attached: true, confirmed: !!opts.attachToId };
     }
     var p = {
       id: uid(),
@@ -202,6 +312,13 @@
       '#mlsAddPtModal .ap-mode.on{border-color:#2E6A4B;background:#EAF1EE;color:#204034}' +
       '#mlsAddPtModal .ap-card{border:1px solid var(--line,#E7E5DD);border-radius:12px;padding:13px;background:var(--bg2,#FCFBF8)}' +
       '#mlsAddPtModal .ap-pending{margin:10px 0 0}' +
+      /* ptfix-1.0.0 (b1169): identity-confirm surface */
+      '#mlsAddPtModal .ap-confirm{margin:12px 0 0;border:1px solid #f0d9a0;background:#fdf6e3;border-radius:10px;padding:12px}' +
+      '#mlsAddPtModal .ap-cf-hd{font-weight:800;color:#8a5a00;margin-bottom:4px}' +
+      '#mlsAddPtModal .ap-cf-sub{font-size:12.5px;color:#6b5a3a;margin-bottom:10px;line-height:1.45}' +
+      '#mlsAddPtModal .ap-cf-row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid #f0e0b0}' +
+      '#mlsAddPtModal .ap-cf-who{font-size:13px;color:#2b2b2b;min-width:0}' +
+      '#mlsAddPtModal .ap-cf-why{font-size:12px;color:#8a6d3b;margin-top:2px}' +
       '#mlsAddPtModal .ap-pv{display:flex;align-items:center;gap:10px;border:1px solid var(--line,#E7E5DD);border-radius:9px;padding:7px 10px;margin:0 0 6px;background:var(--card,#fff);font-size:12.5px}' +
       '#mlsAddPtModal .ap-pv b{min-width:92px}' +
       '#mlsAddPtModal .ap-pv .ap-pv-t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.85}' +
@@ -354,6 +471,8 @@
             '<div id="apModeHost"></div>' +
           '</div>' +
           '<div class="ap-pending" id="apPending"></div>' +
+          /* ptfix-1.0.0 (b1169): the identity-confirm surface */
+          '<div class="ap-confirm" id="apConfirm" style="display:none"></div>' +
         '</div>' +
         '<div class="ap-ft">' +
           '<button class="ap-btn" id="apSave" type="button">💾 Save patient</button>' +
@@ -426,8 +545,58 @@
 
   function setStatus(modal, msg) { var el = modal.querySelector('#apStatus'); if (el) el.textContent = msg || ''; }
 
+  /* ptfix-1.0.0 (b1169): the one-click "is this the same person?" step. The
+     product law auto-attaches only on an MRN match or a name+DOB match; every
+     weaker resemblance stops here and waits for the doctor. There is no silent
+     path out of this function: if the confirm surface cannot be rendered the
+     save REFUSES and says what to do, because minting-or-attaching on a guess
+     is the defect this replaces. */
+  function clearConfirm(modal) {
+    var host = modal && modal.querySelector && modal.querySelector('#apConfirm');
+    if (!host) return;
+    host.innerHTML = '';
+    host.style.display = 'none';
+  }
+  function renderConfirm(modal, details, candidates, onAttach, onNew) {
+    var host = null;
+    try { host = modal.querySelector('#apConfirm'); } catch (e) { host = null; }
+    if (!host || !host.appendChild) return false;
+    var html = '<div class="ap-cf-hd">Is this the same person?</div>' +
+      '<div class="ap-cf-sub">MLS files a visit into an existing chart automatically only when the MRN matches, or when the name AND date of birth both match. ' +
+      'These charts look close but do not meet that bar, so nothing has been saved yet.</div>';
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      html += '<div class="ap-cf-row"><div class="ap-cf-who"><b>' + esc(c.name || '(no name)') + '</b>' +
+        (c.dob ? ' &nbsp;·&nbsp; DOB ' + esc(c.dob) : ' &nbsp;·&nbsp; no DOB on file') +
+        (c.mrn ? ' &nbsp;·&nbsp; MRN ' + esc(c.mrn) : '') +
+        ' &nbsp;·&nbsp; ' + c.visits + ' visit' + (c.visits === 1 ? '' : 's') +
+        '<div class="ap-cf-why">' + esc(c.why) + '</div></div>' +
+        '<button class="ap-btn" type="button" data-ap-attach="' + esc(c.id) + '">Yes — same person</button></div>';
+    }
+    html += '<div class="ap-cf-row"><div class="ap-cf-who">' + esc(trim(details.name) || 'This patient') +
+      ' is someone else.<div class="ap-cf-why">A separate chart is created. Adding a date of birth first makes the match automatic next time.</div></div>' +
+      '<button class="ap-btn sec" type="button" data-ap-new="1">No — create a new chart</button></div>';
+    host.innerHTML = html;
+    host.style.display = 'block';
+    var btns = host.querySelectorAll ? host.querySelectorAll('button') : [];
+    for (var b = 0; b < btns.length; b++) {
+      (function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.getAttribute('data-ap-attach');
+          clearConfirm(modal);
+          if (id) onAttach(id); else onNew();
+        });
+      })(btns[b]);
+    }
+    return true;
+  }
+  function confirmRefusedMsg(details) {
+    return 'A chart with a similar name already exists, and the date of birth does not match or is missing — MLS will not file this visit into it on a guess. ' +
+      'Add ' + (trim(details.dob) ? 'the MRN' : 'the date of birth') + ' and save again, or open the existing chart from the Patients list.';
+  }
+
   /* ---------- SAVE (manual + AI visits) into the §40 model ---------- */
-  function doSave(modal, details) {
+  function doSave(modal, details, idOpts) {
     var saveEpoch = Number(modal && modal.__mlsAddPatientEpoch);
     if (!modalStillCurrent(modal, saveEpoch)) return Promise.resolve({ saved: false, reason: 'stale-modal' });
     if (!trim(details.name)) { setStatus(modal, 'Enter the patient name first.'); return Promise.resolve({ saved: false, reason: 'missing-name' }); }
@@ -438,7 +607,28 @@
     setStatus(modal, 'Saving patient…');
     var activeAtStart = activePatientId();
     var formAtStart = modalPatientFingerprint(modal);
-    var res = createOrFindPatient(details);
+    var res = createOrFindPatient(details, idOpts);
+    /* ptfix-1.0.0 (b1169): a weak identity match NEVER writes. Nothing has been
+       consumed from _pending at this point, so the doctor's decision resumes
+       the identical save. */
+    if (res && res.needsConfirm) {
+      if (btn) btn.disabled = false;
+      var offered = renderConfirm(modal, details, res.candidates, function (id) {
+        doSave(modal, details, { attachToId: id });
+      }, function () {
+        doSave(modal, details, { confirmedNew: true });
+      });
+      setStatus(modal, offered
+        ? 'Not saved yet — MLS found ' + res.candidates.length + ' chart' + (res.candidates.length === 1 ? '' : 's') + ' that could be this person. Choose below.'
+        : confirmRefusedMsg(details));
+      return Promise.resolve({ saved: false, reason: offered ? 'needs-confirm' : 'needs-confirm-no-surface', candidates: res.candidates });
+    }
+    if (!res || !res.patient) {
+      if (btn) btn.disabled = false;
+      setStatus(modal, 'That chart is no longer here — save again to choose.');
+      return Promise.resolve({ saved: false, reason: (res && res.reason) || 'no-patient' });
+    }
+    clearConfirm(modal);
     var p = res.patient;
     var saved = 0;
     var visitsToSave = _pending.slice();
@@ -461,9 +651,12 @@
     function finish(summaryOk) {
       if (!modalStillCurrent(modal, saveEpoch)) return { saved: true, patientId: p.id, uiUpdated: false };
       var contextMoved = activePatientId() !== activeAtStart || modalPatientFingerprint(modal) !== formAtStart;
+      /* ptfix-1.0.0 (b1169): "Saved patient X" read the same whether a chart
+         was created or an existing one was written into. It now names which. */
+      var what = res.created ? ('new patient “' + p.name + '”') : ('into the existing chart for “' + p.name + '”');
       var base = summaryOk
-        ? ('Saved ' + (res.created ? 'new patient' : 'patient') + ' "' + p.name + '" with ' + mod.getVisits(p).length + ' visit(s).')
-        : ('Saved "' + p.name + '" (summaries can be generated from the profile).');
+        ? ('Saved ' + what + ' — ' + mod.getVisits(p).length + ' visit(s).')
+        : ('Saved ' + what + ' (summaries can be generated from the profile).');
       if (contextMoved) {
         btn.disabled = false;
         setStatus(modal, base + ' Your current patient and form were left unchanged.');
@@ -479,7 +672,7 @@
   }
 
   /* ---------- ATHENA pull from the same UI (reuse §40 copy-every-visit) ---------- */
-  function doAthena(modal, details) {
+  function doAthena(modal, details, idOpts) {
     var athenaEpoch = Number(modal && modal.__mlsAddPatientEpoch);
     if (!modalStillCurrent(modal, athenaEpoch)) return Promise.resolve({ pulled: false, reason: 'stale-modal' });
     if (!trim(details.name)) { setStatus(modal, 'Enter the patient name (and DOB) first — the Athena pull verifies name + DOB.'); return; }
@@ -489,7 +682,28 @@
     }
     var btn = modal.querySelector('#apAthena'); btn.disabled = true;
     setStatus(modal, 'Preparing patient…');
-    var res = createOrFindPatient(details);
+    var res = createOrFindPatient(details, idOpts);
+    /* ptfix-1.0.0 (b1169): the Athena path routes through the SAME resolver, so
+       it takes the same confirm step - a weak name hit must not decide which
+       chart an entire pulled history lands in. */
+    if (res && res.needsConfirm) {
+      if (btn) btn.disabled = false;
+      var offeredA = renderConfirm(modal, details, res.candidates, function (id) {
+        doAthena(modal, details, { attachToId: id });
+      }, function () {
+        doAthena(modal, details, { confirmedNew: true });
+      });
+      setStatus(modal, offeredA
+        ? 'Nothing pulled yet — MLS found ' + res.candidates.length + ' chart' + (res.candidates.length === 1 ? '' : 's') + ' that could be this person. Choose below.'
+        : confirmRefusedMsg(details));
+      return Promise.resolve({ pulled: false, reason: offeredA ? 'needs-confirm' : 'needs-confirm-no-surface', candidates: res.candidates });
+    }
+    if (!res || !res.patient) {
+      if (btn) btn.disabled = false;
+      setStatus(modal, 'That chart is no longer here — try again to choose.');
+      return Promise.resolve({ pulled: false, reason: (res && res.reason) || 'no-patient' });
+    }
+    clearConfirm(modal);
     var p = res.patient;
     // queue any manually-entered visits first so nothing is lost
     var mod = M();
@@ -574,6 +788,10 @@
     _structureWithAI: structureWithAI,
     _createOrFindPatient: createOrFindPatient,
     _findExisting: findExisting,
+    _findSuggestions: findSuggestions,
+    _dobKey: dobKey,
+    _normName: normName,
+    _nameCompatible: nameCompatible,
     _collectGuidedFrom: collectGuided,
     _listToArr: listToArr,
     _STRUCT_SYS: STRUCT_SYS,
