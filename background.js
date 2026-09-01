@@ -7181,7 +7181,7 @@ var mlsProv = (function () {
         let found = hits.find((h) => h.found) || null;
         /* landed-1.0.0 (3.0.104): remember WHICH frame answered with a landed
            control so the date verification below reads that frame's header. */
-        const __gotoFoundFrameOf = (rx) => { try { const rr = ((rx && rx.r) || []).find((r) => r && r.result && r.result.found && r.result.done !== false); return rr && rr.frameId != null ? rr.frameId : null; } catch (e) { return null; } };
+        const __gotoFoundFrameOf = (rx) => { try { const rr = ((rx && rx.r) || []).find((r) => r && r.result && r.result.found); return rr && rr.frameId != null ? rr.frameId : null; } catch (e) { return null; } };
         let __gotoFoundFrame = __gotoFoundFrameOf(initX);
         /* v1.93 diag (PHI-free: tab id + path + counts only) */
         const GDIAG = { tabId: tab.id, tabPath: (function () { try { return new URL(tab.url || '').pathname.slice(0, 40); } catch (e) { return ''; } })(), initFrames: hits.length, initFound: !!found, rounds: [] };
@@ -7193,7 +7193,7 @@ var mlsProv = (function () {
         /* landed-1.0.0 (3.0.104, audit 2026-09-01): 'found' meant a control exists,
            never that the navigation LANDED. A strip that could not reach the day
            returned done:false and the recovery ladder below was skipped. */
-        if (found && found.done === false) { GDIAG.notLanded = String(found.error || 'not-landed').slice(0, 60); found = null; __gotoFoundFrame = null; }
+        if (found && found.done === false) { GDIAG.notLanded = String(found.error || 'not-landed').slice(0, 60); } /* landed-1.0.1 (3.0.106): the found-nulling is REVERTED - measured 2026-09-01: a done:false strip hit is PROGRESS, and sending it through the Home ladder reset athena to today every round (170 s of 'still switching days'); a seen control never enters the ladder, only a missing one does, exactly as before 3.0.104 */
                 if (!found) {
           /* patient-retry-3.0.97 (measured live 2026-08-31): the initial
              injection ran with a 12s budget; on a heavy renderer it times out
@@ -7206,7 +7206,7 @@ var mlsProv = (function () {
           try {
             const rx2 = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(40000, __gotoLeft()), 'the patient date-navigation retry');
             const hits2b = ((rx2 && rx2.r) || []).map((r) => r && r.result).filter(Boolean);
-            found = hits2b.find((h) => h.found && h.done !== false) || null; /* landed-1.0.0 */
+            found = hits2b.find((h) => h.found) || null; /* landed-1.0.1: any seen control counts, as before 3.0.104 */
             if (found) __gotoFoundFrame = __gotoFoundFrameOf(rx2);
             GDIAG.patientRetry = { ran: true, found: !!found, timeout: !!(rx2 && rx2.timeout) };
           } catch (ePr) { GDIAG.patientRetry = { ran: true, err: String((ePr && ePr.message) || ePr).slice(0, 60) }; }
@@ -7263,7 +7263,7 @@ if (!found) {
                   if (at > 0) { try { const cmo = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: ['open'], func: mlsCalendarMenuFn }, Math.min(6000, __gotoLeft()), 'the Calendar menu'); const cmoh = ((cmo && cmo.r) || []).map((r) => r && r.result).filter(Boolean); RD.calmenu = cmoh.length ? cmoh[0] : null; if (cmoh.some((h) => h && h.calendar)) { if (!(await __gotoWait(900, 'the Calendar menu paint'))) { __gotoDeadline('the Calendar menu paint'); return; } const cmp = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: ['pick'], func: mlsCalendarMenuFn }, Math.min(6000, __gotoLeft()), 'the View Calendar entry'); const cmph = ((cmp && cmp.r) || []).map((r) => r && r.result).filter(Boolean); RD.calpick = cmph.length ? cmph[0] : null; if (cmph.some((h) => h && h.viewCalendar)) { if (!(await __gotoWait(6500, 'the View Calendar settle'))) { __gotoDeadline('the View Calendar settle'); return; } } } } catch (eCm) { RD.calmenuErr = String((eCm && eCm.message) || eCm).slice(0, 60); } }
                   const gx = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(40000, __gotoLeft()), 'date navigation');
                   const hits2 = ((gx && gx.r) || []).map((r) => r && r.result).filter(Boolean);
-                  found = hits2.find((h) => h.found && h.done !== false) || null; /* landed-1.0.0 */
+                  found = hits2.find((h) => h.found) || null; /* landed-1.0.1: any seen control counts, as before 3.0.104 */
                   if (found) __gotoFoundFrame = __gotoFoundFrameOf(gx);
                   RD.at.push((gx && gx.timeout) ? 'TO' : (gx && gx.err) ? ('E:' + String(gx.err).slice(0, 40)) : (found ? 'found:' + (found.via || '') : 'f' + hits2.length));
                 }
@@ -8313,11 +8313,11 @@ async function mlsSchedDomInline(doc, CFG){
           if(!rows.length)return;
           var local=[],localSeen={};try{_legacyHeaderTextsL(list).forEach(function(h){var p=_legacyProviderL(h),k=_legacyNormL(p);if(k&&!localSeen[k]){localSeen[k]=1;local.push(p);}});}catch(_eLH){}
           if(local.length!==1)_legacyHeaderProofL=false;
-          var provider=local.length===1?local[0]:(out.diag.singleProviderName||'');
-          if(!provider)_legacyAllBoundL=false;
+          var listProvider=local.length===1?local[0]:(out.diag.singleProviderName||'');/* legacyhdr-1.0.0 (3.0.106): with several headings in one list, each row is bound to the heading that precedes it */var _lgHeadElsL=[];if(local.length>1){try{_lgHeadElsL=[].slice.call(list.querySelectorAll('[class~="appointment-header2"],[class*="appointment-header"],[class*="provider-header"],[class*="provider-name"],[class*="schedule-provider"],[class*="column-header"],[data-provider-name],header,h1,h2,h3,h4,caption,legend')).filter(function(h){var t=cl(tx(h));var inRow=false;try{inRow=!!(h.closest&&h.closest('[class~="filled-appointment-row"]'));}catch(_eIR){}return !!(t&&lh(t)&&!inRow);});}catch(_eLHE){_lgHeadElsL=[];}}
+          /* legacyhdr-1.0.0: bound per row below */
           rows.forEach(function(row){
             out.diag.rowsScanned++;
-            var raw=tx(row),tm=ft(raw),appointmentId=_legacyAttrL(row,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid']),providerId=_legacyAttrL(row,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid']);
+            var provider=listProvider;if(!provider&&_lgHeadElsL.length){var _lgBest=null;for(var _lgH=0;_lgH<_lgHeadElsL.length;_lgH++){try{if(_lgHeadElsL[_lgH].compareDocumentPosition(row)&Node.DOCUMENT_POSITION_FOLLOWING)_lgBest=_lgHeadElsL[_lgH];}catch(_eCDP){}}if(_lgBest){provider=_legacyProviderL(cl(tx(_lgBest)))||'';if(provider)out.diag.headingRows=(out.diag.headingRows||0)+1;}}if(!provider)_legacyAllBoundL=false;var raw=tx(row),tm=ft(raw),appointmentId=_legacyAttrL(row,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid']),providerId=_legacyAttrL(row,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid']);
             _legacyIteratedNodesL.push(row);if(_legacySlotL(raw)){_legacySlotsL++;return;}
             _legacyRawObsL++;
             var parsed=null,name='';try{parsed=mlsParseName(raw);}catch(_ePN){}
@@ -8580,11 +8580,11 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       var _provRe=(CFG&&CFG.provReSource)?new RegExp(CFG.provReSource):/^[A-Z][A-Za-z'’.\-]+_[A-Za-z].*_(MD|DO|PA-?C|NP|CRNA|APRN|DPM|DDS|DMD)\b/;
       function _headCols(){
         var hs=[].slice.call(doc.querySelectorAll('*')).filter(function(e){var t=cl(e.textContent);return _provRe.test(t)&&t.replace(/\s/g,'').length<48&&e.children.length<=4;});
-        var cols=[],seen={};
-        hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var nm=cp(cl(e.textContent));var key=nm.toLowerCase();if(nm&&!seen[key]){seen[key]=1;cols.push({name:nm,lo:r.left,rr:r.right,top:r.top});/* stackprov-1.0.0: keep the heading's top so a stacked layout can assign by vertical order */}}}catch(_e){}});
+        var cols=[],seen={},allHeads=[];/* stackprov-1.1.0: every heading instance, per column */
+        hs.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width>20&&r.width<520){var nm=cp(cl(e.textContent));var key=nm.toLowerCase();if(nm)allHeads.push({name:nm,lo:r.left,top:r.top});/* stackprov-1.1.0: every instance, not just the first per name */if(nm&&!seen[key]){seen[key]=1;cols.push({name:nm,lo:r.left,rr:r.right,top:r.top});/* stackprov-1.0.0: keep the heading's top so a stacked layout can assign by vertical order */}}}catch(_e){}});
         cols.sort(function(a,b){return a.lo-b.lo;});
         for(var c=0;c<cols.length;c++){var nx=(c+1<cols.length)?cols[c+1].lo:(cols[c].rr+(cols[c].rr-cols[c].lo));cols[c].hi=(cols[c].rr<nx)?nx:cols[c].rr;}
-        return cols;
+        cols.all=allHeads;return cols;
       }
       var _cols0=_headCols();
       if(_cols0.length>=2){
@@ -8594,7 +8594,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         function _collect(){
           var cols=_headCols();
           var cells=[].slice.call(doc.querySelectorAll('div,li,a')).filter(function(e){var t=cl(e.textContent);return ht(t)&&t.length>10&&t.length<140&&pn(t)&&e.querySelectorAll('*').length<=8;});
-          cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';var _stacked=cols.length>=2&&cols.every(function(c){return Math.abs(c.lo-cols[0].lo)<24;});if(_stacked){/* stackprov-1.0.0 (3.0.105, measured 2026-09-01): headings share one left edge = the dashboard widget's vertical per-provider groups, where the x-range rule below degenerates to an empty range; a row belongs to the nearest heading ABOVE it */var _best=null;for(var k=0;k<cols.length;k++){if(typeof cols[k].top==='number'&&cols[k].top<=r.top+2&&(!_best||cols[k].top>_best.top))_best=cols[k];}if(_best){prov=_best.name;out.diag.stackedTagged=(out.diag.stackedTagged||0)+1;}}else{for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}}var tm=ft(t),proof=_scheduleRowProofD(e);var key=(prov||'')+'|'+tm+'|'+nm+'|'+_scheduleProofKeyD(proof);if(_seenA[key]){_mergeScheduleProofD(_seenA[key],proof);return;}var row={time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(t),dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};_seenA[key]=row;out.appts.push(row);}catch(_e){}});
+          cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';var _all=cols.all||[];var _same=null;for(var q=0;q<_all.length;q++){var hh=_all[q];if(Math.abs(hh.lo-r.left)<60&&hh.top<=r.top+2&&(!_same||hh.top>_same.top))_same=hh;}if(_same){/* stackprov-1.1.0 (3.0.106, measured 2026-09-01): nearest heading ABOVE the row in the row's OWN column - the widget repeats each heading per day column and dedupe kept the wrong column's copy */prov=_same.name;out.diag.columnTagged=(out.diag.columnTagged||0)+1;}var _stacked=!prov&&cols.length>=2&&cols.every(function(c){return Math.abs(c.lo-cols[0].lo)<24;});if(_stacked){/* stackprov-1.0.0 (3.0.105, measured 2026-09-01): headings share one left edge = the dashboard widget's vertical per-provider groups, where the x-range rule below degenerates to an empty range; a row belongs to the nearest heading ABOVE it */var _best=null;for(var k=0;k<cols.length;k++){if(typeof cols[k].top==='number'&&cols[k].top<=r.top+2&&(!_best||cols[k].top>_best.top))_best=cols[k];}if(_best){prov=_best.name;out.diag.stackedTagged=(out.diag.stackedTagged||0)+1;}}else{for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}}var tm=ft(t),proof=_scheduleRowProofD(e);var key=(prov||'')+'|'+tm+'|'+nm+'|'+_scheduleProofKeyD(proof);if(_seenA[key]){_mergeScheduleProofD(_seenA[key],proof);return;}var row={time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(t),dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};_seenA[key]=row;out.appts.push(row);}catch(_e){}});
         }
         if(_scroller){
           var _frac=(CFG&&CFG.scrollStepFrac)||0.55;
@@ -8861,6 +8861,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           }
         } catch (__eAC) {}
         var __receipt = {
+          reader: { strategy: String(__dd.strategy || ''), via: String(__dd.via || ''), apptCount: Number(__dd.apptCount || 0), providerCount: Number(__dd.providerCount || 0), tables: Number(__dd.tables || 0), rowsScanned: Number(__dd.rowsScanned || 0), scrolled: !!__dd.scrolled, sectionHeaders: Number(__dd.sectionHeaders || 0), sectionTagged: Number(__dd.sectionTagged || 0), stackedTagged: Number(__dd.stackedTagged || 0), columnTagged: Number(__dd.columnTagged || 0), headingRows: Number(__dd.headingRows || 0), coordErr: String(__dd.coordErr || '').slice(0, 60) }, /* readerdiag-1.0.0: PHI-free reader trace */
           sessionProof: __sessionProof, staleRisk: __staleRisk, liveSessionProven: !!__live.proven, dataAgeMs: __dataAgeMs, scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
           expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount, unverifiableRows: __unverifiableRows, unverifiableRowCount: __unverifiableRowCount, provenNonClinicalCount: __provenNonClinical,
           countStrategy: __countStrategy,

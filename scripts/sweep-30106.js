@@ -9,7 +9,7 @@ var fs = require('fs');
 var OLD_ZIP_SHA = '97c8097a2e3cd5bd461ca72550d567ad54909feac25f702401f405a913938e57';
 var NEW_ZIP_SHA = String(process.env.NEW_ZIP_SHA || '').trim();
 if (!/^[0-9a-f]{64}$/.test(NEW_ZIP_SHA)) { console.error('ABORT: NEW_ZIP_SHA env missing/invalid'); process.exit(1); }
-var NEW_NOTES = 'v3.0.106 - Pull reliability: the dashboard schedule repeats each provider heading once per day column; a row now takes the nearest heading above it in its OWN column (v3.0.105 compared against the wrong column's copy of the heading, so the same days were still refused). Everything from v3.0.105 remains. Requires Chrome 116+.';
+var NEW_NOTES = 'v3.0.106 - Pull reliability, measured on a real provider-scoped month: when athenaOne lists more than one clinician in a single schedule list (the dashboard widget stacks every clinician heading and rows in one list), each row now takes the heading that precedes it, so those days import instead of being refused as identity-less; the schedule receipt now carries a PHI-free trace of which reader produced the rows; a navigation that saw the calendar strip but had not landed yet is no longer sent back Home. Everything from v3.0.105 remains. Requires Chrome 116+.';
 
 function swapNotesParagraph(file) {
   var s = fs.readFileSync(file, 'latin1');

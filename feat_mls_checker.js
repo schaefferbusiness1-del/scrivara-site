@@ -41,7 +41,7 @@
   if (win[NS] && win[NS].installed) { return; }
 
   var BACKEND = 'https://scrivara-backend.onrender.com';
-  var SERVER_EXT_VERSION = '3.0.105'; // current digest-pinned MLS Assist stable feed
+  var SERVER_EXT_VERSION = '3.0.106'; // current digest-pinned MLS Assist stable feed
 
   function isFn(f) { return typeof f === 'function'; }
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }

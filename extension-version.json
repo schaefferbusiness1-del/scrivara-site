@@ -1,5 +1,5 @@
 {
-  "version": "3.0.105",
+  "version": "3.0.106",
   "minChrome": 116,
-  "notes": "v3.0.105 - Pull reliability: on the athenaOne dashboard schedule, where each provider is a heading stacked above that provider's rows, every row now carries its heading's provider (v3.0.104 handled only side-by-side columns and table headings), so a provider-scoped month pull files those days instead of refusing them. Everything from v3.0.104 remains. Requires Chrome 116+."
+  "notes": "v3.0.106 - Pull reliability, measured on a real provider-scoped month: when athenaOne lists more than one clinician in a single schedule list (the dashboard widget stacks every clinician heading and rows in one list), each row now takes the heading that precedes it, so those days import instead of being refused as identity-less; the schedule receipt now carries a PHI-free trace of which reader produced the rows; a navigation that saw the calendar strip but had not landed yet is no longer sent back Home. Everything from v3.0.105 remains. Requires Chrome 116+."
 }
