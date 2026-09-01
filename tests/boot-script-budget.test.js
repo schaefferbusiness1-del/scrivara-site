@@ -484,7 +484,33 @@ const LOADER = 'mls-connect.js';
  *     records and this one only stamps a derived field. They must be
  *     separately revertible, because reverting a provider label at 2am must
  *     never disarm the duplicate-chart guard. */
-const CEILING = 267;
+/* 267 -> 268 at reconcile-1.0.0 for feat_mls_pull_reconcile.js. Owner,
+ * 2026-09-01: "can we have them be smart enought to treat athena as fact and
+ * delete any extra appointmets that an old bad extetnion opulled for example
+ * and merg all duplicates."
+ *
+ * The three questions this pin exists to force, answered:
+ *   - DEFERRED (__mlsDeferAsset / requestIdleCallback, 2.5s timeout), inserted
+ *     from the same stanza as feat_mls_patient_merge.js and
+ *     feat_mls_provider_link.js, so EAGER_CEILING does not move and the
+ *     post-login burst this ceiling guards is unchanged.
+ *   - IT DOES NO BOOT WORK AT ALL, and it registers ZERO intervals, so
+ *     INTERVAL_CEILING does not move either - the idle safety net is a
+ *     self-rearming timeout that revert() clears, which is exactly what that
+ *     ceiling's failure message asks for. Loading it defines functions and adds
+ *     two listeners; the first byte of real work happens only after an
+ *     authoritative day is published AND the pull lane has gone idle, which is
+ *     minutes into a month pull at the earliest. Every sweep it then runs is
+ *     chunked and yields, precisely so the doctor's tab keeps painting.
+ *   - It could have been folded into feat_mls_patient_merge.js to keep the
+ *     count flat, and that is the dishonest version: that module owns the
+ *     IDENTITY LAW for combining two charts, and this one DELETES appointment
+ *     rows against athenaOne's own answer. They must be separately revertible,
+ *     because switching off a destructive reconciliation at 2am must never
+ *     disarm the duplicate-chart merge, and vice versa. It also adds no
+ *     interface: one line in the existing pull log, one line on the existing
+ *     Month report provenance block, and no control of its own. */
+const CEILING = 268;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

@@ -245,6 +245,7 @@
     "feat_mls_ptsnapshot.js",
     "feat_mls_pull_dateguard.js",
     "feat_mls_pull_device_picker.js",
+    "feat_mls_pull_reconcile.js",
     "feat_mls_pullflow.js",
     "feat_mls_rangejobs.js",
     "feat_mls_recentpts.js",

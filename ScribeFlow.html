@@ -4973,6 +4973,33 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <button class="btn-primary" id="pwSaveBtn" style="font-size:14px;padding:9px 15px" onclick="changeMyPassword(this)">Update password</button>
       <div id="pwMsg" style="margin-top:8px;font-size:13px"></div>
     </div>
+    <!-- setupvid-1.0.0 + rerunsetup-1.0.0 (owner 2026-09-01: the walkthrough
+         video reachable any time, and "also make it possible to re run the set
+         up process").
+
+         WHY A FIELD INSIDE THIS SECTION AND NOT A NEW .set-section. The
+         organized Settings workspace shows a section only when
+         settingsGroupFor(heading) matches the selected tab, so a NEW heading the
+         classifier does not recognise sits in the DOM reachable from no tab at
+         all, silently - tests/settings-every-section-reachable.test.js exists
+         because that already happened once, to the extension download.
+         "Account &amp; access" is also the one group allowedSettingsGroup() opens
+         for every role, lawyer accounts included, so the walkthrough cannot
+         become role-invisible.
+
+         The re-run button hides itself for roles that have no setup wizard
+         (mlsSvApplySettingsUI, called from openSettings); the video does not,
+         because every role can watch it. -->
+    <div class="field" id="mlsSvSettingsField" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
+      <label style="font-size:15px">&#127916; Walkthrough &amp; setup</label>
+      <p class="note" style="margin:2px 0 8px">The same tutorial video new accounts see on their first sign-in, and a way to walk through the setup steps again.</p>
+      <div class="row tight" style="gap:8px;flex-wrap:wrap">
+        <button class="btn-ghost" type="button" id="mlsSvWatchBtn" style="font-size:14px;padding:9px 15px" onclick="mlsSvWatchWalkthrough(this)">&#9654; Watch the walkthrough</button>
+        <button class="btn-ghost" type="button" id="mlsSvRerunBtn" style="font-size:14px;padding:9px 15px" onclick="mlsSvRerunSetup(this)">&#128260; Re-run setup</button>
+      </div>
+      <div id="mlsSvSettingsHost" data-mls-sv-host="settings" style="margin-top:10px"></div>
+      <p class="note" style="margin:8px 0 0">Re-running setup only reopens the setup wizard at the walkthrough video. It deletes nothing: your patients, notes, templates, availability and saved keys are all left exactly as they are.</p>
+    </div>
     </div><!-- /Account & access section -->
 
     <!-- ============ SECTION: Practice / Provider (MLS — additive) ============ -->
@@ -6075,8 +6102,31 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
     <div style="height:6px;background:#F4F2EC;border-radius:10px;margin:10px 0 14px;overflow:hidden"><div id="su_bar" style="height:100%;width:0;background:linear-gradient(90deg,#3B7C5A,#127a55);transition:width .25s"></div></div>
 
-    <!-- STEP 0: welcome -->
+    <!-- STEP 0: walkthrough video, then welcome -->
     <div class="su_step" id="su_step0">
+      <!-- setupvid-1.0.0 (owner 2026-09-01: "upload to video as the first thing u
+           see when u first log in as part of the set up prosess").
+
+           WHY HERE AND NOT A NEW STEP. su_step0 is already the first pane the
+           wizard paints: suResumeStep() returns 0 while the server status is
+           not_started (a brand-new account), and suOpenSetupRun's non-automatic
+           branch also starts a COMPLETED account at 0, which is what makes
+           "Re-run setup" land on the video. Inserting a sixth step index would
+           have re-numbered SU_MAX, suAllowedSteps(), suShow()'s title table and
+           the server-side completedSteps contract for a pane that saves nothing.
+           Putting the player at the TOP of step 0 makes the video the first
+           thing a new doctor sees with zero changes to the step contract.
+
+           THE PLAYER IS MOUNTED, NOT MARKUP. mlsSvMount() builds it when the
+           pane is actually shown, so no browser asks for the media file until
+           the wizard is on screen, and a missing asset degrades to a friendly
+           card instead of a broken control.
+
+           SETUP IS NEVER BLOCKED BY THE VIDEO. "Skip for now" (#su_skipBtn) and
+           the modal close both stay live on this step in every video state, and
+           "Get started" advances whether the video played, failed or was never
+           touched. -->
+      <div id="mlsSvSetupHost" data-mls-sv-host="setup" style="margin:0 0 12px"></div>
       <div style="text-align:center;padding:6px 4px 2px">
         <div style="font-size:40px">👋</div>
         <h2 style="margin:6px 0 4px;font-size:21px">Welcome to MLS</h2>
@@ -10068,6 +10118,9 @@ function openSettings(){
      select saying "Top bar" while a left sidebar renders. */
   try{ applyNavLayout(); }catch(e){}
   try{ var _cpw=document.getElementById('changePwField'); if(_cpw) _cpw.style.display=(typeof backendMode==='function'&&backendMode()&&bkToken())?'block':'none'; }catch(e){}
+  /* rerunsetup-1.0.0: only the roles the wizard serves are offered the re-run
+     button. The walkthrough video button is not gated - every role may watch. */
+  try{ mlsSvApplySettingsUI(); }catch(eSvSettings){}
   document.getElementById('apiKey').value=getKey();
   document.getElementById('docName').value=getName();
   document.getElementById('docSpec').value=getSpec();
@@ -17872,6 +17925,211 @@ function suApplyCapabilityUI(){
   Array.prototype.forEach.call(document.querySelectorAll('[data-su-cap]'),function(el){ el.style.display=suHasCapability(el.getAttribute('data-su-cap'))?'':'none'; });
   Array.prototype.forEach.call(document.querySelectorAll('.su-provider-only'),function(el){ el.style.display=suIsProvider()?'':'none'; });
 }
+/* =============================================================================
+ * setupvid-1.0.0 (walkthrough video) + rerunsetup-1.0.0 (re-run the wizard)
+ * -----------------------------------------------------------------------------
+ * OWNER, 2026-09-01, verbatim: "upload to video as the first thing u see when u
+ * first log in as part of the set up prosess" and "also make it possible to re
+ * run the set up process".
+ *
+ * WHAT THIS OWNS
+ *   1. mlsSvMount(host) - builds ONE <video> player into a host element.
+ *      Mounted in su_step0 (the first pane of the setup wizard, so it is the
+ *      first thing a new account sees) and behind the Settings "Watch the
+ *      walkthrough" button, from the SAME builder, so the two surfaces cannot
+ *      drift apart.
+ *   2. mlsSvRerunSetup() - Settings -> "Re-run setup". Confirm, reset the two
+ *      flow-progress flags NAMED BELOW, reopen the wizard at step 0.
+ *
+ * THE ASSET DOES NOT EXIST YET, ON PURPOSE. MLS_HowTo_v1.mp4 is a real screen
+ * recording of the live site being produced separately. Until it is published
+ * this surface must be honest and must not stand in the way of a doctor
+ * finishing setup:
+ *   - LAZY. Nothing is requested at page load. The player is built when the
+ *     wizard pane is shown or the Settings button is pressed, so an unpublished
+ *     asset costs zero requests on every other screen in the app.
+ *   - GRACEFUL. The <source> and <video> error events (which is what a 404
+ *     produces) swap the player for a short "being produced" card. No red
+ *     error, no broken control, no dead-end.
+ *   - NEVER BLOCKING. su_step0 carries no gate of any kind on the video:
+ *     "Get started" advances, "Skip for now" (#su_skipBtn, visible for every
+ *     step below SU_MAX) closes, and the modal close button closes, in every
+ *     video state. A doctor can never be trapped by a video.
+ *
+ * PLAYBACK: controls, poster, playsinline, preload=metadata, and NOT muted -
+ * this is a narrated walkthrough, so it plays with sound the moment the doctor
+ * presses play. There is deliberately NO autoplay: a browser blocks unmuted
+ * autoplay anyway, and a video that starts talking by itself on first login is
+ * exactly the surprise this app does not do.
+ *
+ * SAFETY: onboarding UI only. No PHI is read, written or rendered, no Athena
+ * traffic, no server calls of its own, and every node is built with
+ * createElement/textContent.
+ * ===========================================================================*/
+/* PUBLISHING THE ASSET - WHAT THE VIDEO-LANDING COMMIT MUST DO, MEASURED.
+ *
+ * Publishing a new file to mlsscribe.com is a four-surface law, and this commit
+ * deliberately pre-wires NONE of it, because the audit that enforces the law is
+ * fail-closed IN BOTH DIRECTIONS: scripts/audit-pages-build.js refuses a build
+ * with "missing reviewed source file" for an inventory path that has no file on
+ * disk, and "unexpected/unreviewed generated file" for a published file that is
+ * not in the inventory. Listing MLS_HowTo_v1.mp4 today - before the recording
+ * exists - would therefore RED the deploy audit and leave a speculative hole in
+ * the reviewed inventory. So the wiring lands WITH the file, in one commit.
+ *
+ * Measured against this tree (and re-measured every run by PART 8 of
+ * tests/setup-video-proof.js), the four surfaces are:
+ *
+ *   1. _config.yml                                  -> NO EDIT NEEDED.
+ *      There is no exclude glob for *.mp4, so Jekyll publishes an mp4 by
+ *      default, and the mp4 this repo already serves
+ *      (mls-scribe-30-second-overview.mp4) is on NO include line. Adding one
+ *      would be cargo cult. The proof pins BOTH halves, so if anyone ever adds
+ *      an mp4 exclude the walkthrough stops publishing loudly, here.
+ *
+ *   2. pages-publication-inventory.json             -> ADD ONE LINE.
+ *      "MLS_HowTo_v1.mp4", in sorted position. This is the only edit the law
+ *      actually requires, and it must land in the same commit as the file.
+ *
+ *   3. tests/public-publication-boundary.test.js    -> NO EDIT NEEDED.
+ *      'mp4' is already in ROOT_EXT_REVIEWED, so a new root .mp4 is a reviewed
+ *      extension the moment it lands. NOTHING HERE MAY BE WIDENED - the
+ *      allowance already exists; PUBLIC_HTML in particular stays untouched.
+ *
+ *   4. the tree / inventory suites                  -> NO EDIT NEEDED.
+ *      tests/published-tree.js reads the inventory rather than keeping a list;
+ *      no-merge-conflict-markers-in-shipped-assets.test.js only opens
+ *      parse-critical extensions; one-product-name.test.js filters the
+ *      inventory to html/json/webmanifest/js. An mp4 is invisible to all three.
+ *
+ *   PLUS, because it is a proof and not an allowance:
+ *      tests/setup-video-proof.js PART 8 asserts TODAY that the file is absent
+ *      and un-inventoried. The landing commit inverts those two assertions
+ *      (assert it EXISTS, assert it IS in the inventory) and should add the
+ *      size sanity check tests/homepage-sales-video.test.js already models. */
+var MLS_SV_SRC='MLS_HowTo_v1.mp4';
+/* An ALREADY-PUBLISHED still (pages-publication-inventory.json) so the poster
+   frame is never itself a 404 while the video is in production. */
+var MLS_SV_POSTER='cws-screenshot-1280x800.png';
+var MLS_SV_LABEL='MLS walkthrough video';
+/* Source stays ASCII-only (house rule): the clapper-board glyph U+1F3AC is
+   built from its surrogate pair rather than pasted, so no writer, transport or
+   derive step can turn it into control bytes. */
+var MLS_SV_GLYPH=String.fromCharCode(0xD83C,0xDFAC);
+function mlsSvFallbackCard(){
+  var box=document.createElement('div');
+  box.setAttribute('data-mls-sv','fallback');
+  box.style.cssText='background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:11px 13px';
+  var head=document.createElement('div');
+  head.style.cssText='font-weight:700;font-size:14px';
+  head.textContent=MLS_SV_GLYPH+' Your walkthrough video is being produced';
+  var note=document.createElement('p');
+  note.className='note';
+  note.style.cssText='margin:4px 0 0';
+  note.textContent='It is not published yet - continue with setup. As soon as it lands it appears right here, and any time under Settings.';
+  box.appendChild(head); box.appendChild(note);
+  return box;
+}
+function mlsSvMount(host){
+  if(!host) return null;
+  if(host.getAttribute('data-mls-sv-mounted')==='1') return host;
+  host.setAttribute('data-mls-sv-mounted','1');
+  try{ while(host.firstChild) host.removeChild(host.firstChild); }catch(eSvClear){}
+  var v=document.createElement('video');
+  v.setAttribute('controls','');
+  v.setAttribute('playsinline','');
+  v.setAttribute('preload','metadata');
+  v.setAttribute('poster',MLS_SV_POSTER);
+  v.setAttribute('aria-label',MLS_SV_LABEL);
+  v.setAttribute('data-mls-sv','player');
+  /* explicit: a narrated walkthrough is not a silent loop */
+  v.muted=false;
+  v.style.cssText='width:100%;max-width:100%;display:block;border-radius:10px;background:#000';
+  var s=document.createElement('source');
+  s.setAttribute('src',MLS_SV_SRC);
+  s.setAttribute('type','video/mp4');
+  v.appendChild(s);
+  var swapped=false;
+  function mlsSvFail(){
+    if(swapped) return; swapped=true;
+    try{ if(v.parentNode===host) host.removeChild(v); }catch(eSvDrop){}
+    host.appendChild(mlsSvFallbackCard());
+  }
+  s.addEventListener('error',mlsSvFail);
+  v.addEventListener('error',mlsSvFail);
+  host.appendChild(v);
+  return host;
+}
+function mlsSvWatchWalkthrough(btn){
+  var host=document.getElementById('mlsSvSettingsHost');
+  if(!host) return false;
+  mlsSvMount(host);
+  try{ host.scrollIntoView({block:'nearest'}); }catch(eSvScroll){}
+  return true;
+}
+/* rerunsetup-1.0.0 - THE COMPLETE LIST OF KEYS THIS RESETS, and nothing else:
+ *
+ *   localStorage    uns('setupDone')             - the local "the wizard was
+ *                                                  finished on this account"
+ *                                                  flag, written by suFinish()
+ *   sessionStorage  uns('sf_setup_prompted')     - SU_PROMPT_SESSION_KEY, the
+ *                                                  once-per-browser-session
+ *                                                  auto-prompt latch set by
+ *                                                  maybePromptSetup()
+ *
+ * Those two are FLOW PROGRESS and nothing else. This function removes no other
+ * key and writes no key at all. Charts, notes, templates, API keys, provider
+ * identity (docname/providerName/npi/practiceName/...), availability, avatar
+ * configuration and the SERVER-owned onboarding record (completedSteps) are all
+ * left untouched, which is the whole difference between "walk me through setup
+ * again" and "wipe my account". The server record staying intact is deliberate:
+ * a re-run that had cleared it would have re-demanded every required step
+ * before the doctor could close the wizard. */
+function mlsSvRerunKeys(){
+  return { local:[uns('setupDone')], session:[uns(SU_PROMPT_SESSION_KEY)] };
+}
+function mlsSvResetSetupProgress(){
+  var keys=mlsSvRerunKeys(), cleared=[];
+  keys.local.forEach(function(k){ try{ localStorage.removeItem(k); cleared.push(k); }catch(eSvL){} });
+  keys.session.forEach(function(k){ try{ sessionStorage.removeItem(k); cleared.push(k); }catch(eSvS){} });
+  return cleared;
+}
+var MLS_SV_RERUN_CONFIRM='Re-run setup from the beginning?\n\nThis reopens the setup wizard at the walkthrough video. Nothing is deleted - your patients, notes, templates, schedule and saved keys are not touched.';
+async function mlsSvRerunSetup(btn){
+  /* mlsConfirm, never native confirm(): a native dialog freezes the UI thread
+     and is silently suppressed in kiosk/automation contexts, which would leave
+     this button dead with no message (tests/no-native-dialogs-contract.test.js
+     bans it across every production script). The in-app dialog is promise
+     based, traps Escape/Enter and restores focus. Escape / Cancel = false, so
+     an aborted dialog resets nothing. */
+  var agreed=false;
+  try{ agreed=(typeof mlsConfirm==='function')&&await mlsConfirm(MLS_SV_RERUN_CONFIRM,{okLabel:'Re-run setup',cancelLabel:'Keep my setup'})===true; }catch(eSvC){ agreed=false; }
+  if(!agreed) return false;
+  mlsSvResetSetupProgress();
+  try{ if(typeof closeSettings==='function') closeSettings(); }catch(eSvSet){}
+  var opened=false;
+  /* openSetup(false) is the USER-INITIATED path: it shows the modal before it
+     fetches, and its non-automatic branch already starts a COMPLETED account at
+     step 0. A DEFERRED / IN_PROGRESS account would resume mid-wizard, which is
+     not what "re-run" means, so step 0 is asserted again after the open. */
+  try{ opened=await openSetup(false); }catch(eSvOpen){ opened=false; }
+  if(opened){ SU_STEP=0; try{ suShow(); }catch(eSvShow){} }
+  return opened;
+}
+/* Same predicate maybePromptSetup() gates the wizard with. An owner/admin/
+   lawyer account has no setup wizard at all, so offering to re-run one would be
+   a button that cannot work. The walkthrough video is offered to everyone. */
+function mlsSvSetupAvailable(){
+  try{
+    var role=String((bkUser&&bkUser.role)||'').toLowerCase(), caps=(bkUser&&bkUser.capabilities)||{};
+    if(role==='owner'||role==='admin'||role==='lawyer'||(bkUser&&bkUser.isAdmin)||caps.setupAllowed===false) return false;
+    return ['head','doctor','user','nurse','receptionist'].indexOf(role)>=0;
+  }catch(eSvRole){ return false; }
+}
+function mlsSvApplySettingsUI(){
+  var b=document.getElementById('mlsSvRerunBtn');
+  if(b) b.style.display=mlsSvSetupAvailable()?'':'none';
+}
 async function openSetup(autoOpen){
   var m=document.getElementById('setupModal'); if(!m) return false;
   /* surg-1.0.0: openSetup was fully re-entrant — the persistent header
@@ -17952,6 +18210,11 @@ function suShow(){
   var skip=document.getElementById('su_skipBtn'); if(skip) skip.style.display=(SU_STEP>=SU_MAX?'none':'');
   var next=document.getElementById('su_nextBtn'); if(next){ next.textContent = SU_STEP===0?'Get started →' : (SU_STEP>=SU_MAX?'✓ Finish' : 'Next →'); }
   var msg=document.getElementById('setupMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent=SU_STATE.error||''; }
+  /* setupvid-1.0.0: build the walkthrough player the first time the welcome
+     pane is actually shown - never at page load, so an unpublished asset costs
+     no request anywhere else in the app. mlsSvMount is idempotent, so stepping
+     back to 0 does not rebuild it. */
+  if(SU_STEP===0){ try{ mlsSvMount(document.getElementById('mlsSvSetupHost')); }catch(eSvStep0){} }
   if(SU_STEP===2) suRenderSchedule();
   if(SU_STEP===3) suRenderPayments();
 }
@@ -44053,7 +44316,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1162';
+  window.__MLS_AV='b1163';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

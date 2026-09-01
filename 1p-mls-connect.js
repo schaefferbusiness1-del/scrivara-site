@@ -25608,6 +25608,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return true;
       }
     },
+    /* reconcile-1.0.0: the pull log's ONE write seam for post-pull owners.
+       The athena-as-fact reconciliation and the duplicate sweep both settle
+       AFTER the run, when P may be null (a range job started from the Year
+       card never created a pull state here) - so a null P falls through to the
+       same DOM list rather than swallowing the line. Read-only to the pull:
+       this appends a line and touches nothing else. */
+    pullLog: function (message, kind) {
+      var msg = String(message == null ? '' : message);
+      if (!msg) return false;
+      var cls = kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '');
+      if (P) { plog(msg, cls); return true; }
+      var l = $('ez3PullLog');
+      if (!l) return false;
+      var t = new Date(), line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ':' + pad2(t.getSeconds()) + '  ' + msg;
+      l.appendChild(line);
+      while (l.childNodes.length > 300) l.removeChild(l.firstChild);
+      l.scrollTop = l.scrollHeight;
+      return true;
+    },
     /* Internal same-document release seam. It cannot enable an older UI and
        accepts only a different target version. A normal user-facing rollback
        remains intentionally unavailable. */
@@ -42793,6 +42814,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     lines.push('MLS does not read a month directly from athenaOne. Every number here comes from appointments already imported into MLS, so a month you have not pulled reads as missing, never as zero.');
     if (cap && cap.pstatAny) lines.push('An appointment is a BOOKED SLOT; "days with seen visits" is stronger - it counts only days where at least one row carried a seen-class athena status (checked in / checked out / arrived / in room), captured at pull time by MLS Assist 3.0.98+. A dash means the rows were pulled before status capture existed - re-pull that month to fill it in.');
     else lines.push('An appointment is a BOOKED SLOT. These rows were pulled before MLS Assist 3.0.98, which now captures each row\'s athena status (arrived / checked in / checked out) at read time - re-pull the month with 3.0.98+ and this report gains a "days with seen visits" column that IS proof of a day worked.');
+    /* reconcile-1.0.0: where the row COUNT came from is only half the recipe -
+       the other half is what was taken away. A day is reconciled only after
+       athenaOne answered for that whole day with a full coverage receipt, so
+       this line says how many days that was and what it cost. Absent module,
+       or a month it never touched, prints nothing rather than a reassuring
+       zero. */
+    var rcSummary = safe(function () {
+      var rc = window.__mlsPullReconcile;
+      return (rc && rc.installed && typeof rc.monthSummary === 'function') ? rc.monthSummary(rep.month) : null;
+    }, null);
+    if (rcSummary && rcSummary.days > 0) {
+      lines.push('Athena is treated as fact for a day it read completely: on ' + rcSummary.days + ' such day' +
+        (rcSummary.days === 1 ? '' : 's') + ' this month MLS removed ' + rcSummary.removed + ' stale appointment row' +
+        (rcSummary.removed === 1 ? '' : 's') + ' athenaOne no longer shows' +
+        (rcSummary.flagged ? (', and kept ' + rcSummary.flagged + ' more for your review because they carry a visit or note') : '') +
+        (rcSummary.dryRunDays ? ' (' + rcSummary.dryRunDays + ' of those days ran as a dry run and deleted nothing)' : '') +
+        '. A partial, calendar-partial or nav-failed day is never reconciled.');
+    }
     if (cap && cap.written) lines.push('Captured as an as-of receipt for ' + esc(rep.month) + ' (provider names, dates and counts only).');
     else if (cap && cap.reason === 'no-account-scope') lines.push('Not captured: no signed-in account to scope the receipt to.');
     var h = '<div style="margin-top:16px;padding:11px 13px;border-top:1px solid #F4F2EC;font-size:12px;color:#5b6b7c;line-height:1.5">';
@@ -58486,6 +58525,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.5.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260826ps150';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_link.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_link.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_provider_link.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* plv-1.0.0: deferred past first paint, exactly like the auto-merge beside it - a provider derivation is a late surface and has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pull_reconcile.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pull_reconcile.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_pull_reconcile.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* reconcile-1.0.0: athena-as-fact day reconciliation + the post-pull lawful duplicate sweep. Deferred past first paint beside the auto-merge it drives - both are post-pull surfaces and neither has a claim on the sign-in seconds (owner 5s bar). */
 ;(function(){try{
   var A='feat_mls_cross_day_context.js',V='xdc-2.0.4',old=window.__mlsCrossDayContext||null;
   if(old&&old.installed&&old.version===V)return;
