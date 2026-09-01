@@ -41889,7 +41889,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '</ol>';
   }
 
-  function tableHtml(rep, stored) {
+  /* mrpt-1.1.0 (provstatus): PHI-free seen-day join. The pull folds a
+   * per-provider-per-day status histogram into uns('mlsProvDayStatusV1')
+   * (provstatus-1.0.0 in the schedule importer); a day counts as SEEN when at
+   * least one of its rows carried a seen-class athena status (checked in/out,
+   * arrived, in room) - captured by MLS Assist 3.0.98+ at read time. Months
+   * pulled with an older extension have no histogram and honestly show a dash.
+   * Read-only here; joined at render so compute() stays pure. */
+  function provStatusFor(month) {
+    var out = { any: false, byKey: {} };
+    try {
+      if (typeof window.uns !== 'function') return out;
+      var k = String(window.uns('mlsProvDayStatusV1') || ''); if (!k) return out;
+      var raw = localStorage.getItem(k); if (!raw) return out;
+      var store = JSON.parse(raw);
+      if (!store || store.v !== 1 || !store.days) return out;
+      Object.keys(store.days).forEach(function (dt) {
+        if (String(dt).slice(0, 7) !== month) return;
+        var provs = store.days[dt]; if (!provs || typeof provs !== 'object') return;
+        Object.keys(provs).forEach(function (pk) {
+          var b = provs[pk]; if (!b || typeof b !== 'object') return;
+          var key = provKey(b.name || pk); if (!key) key = String(pk);
+          var t = out.byKey[key] || (out.byKey[key] = { seenDays: 0, statusDays: 0, seenAppts: 0 });
+          out.any = true;
+          t.statusDays++;
+          var seen = intOf(b.seen);
+          if (seen > 0) { t.seenDays++; t.seenAppts += seen; }
+        });
+      });
+    } catch (e) {}
+    return out;
+  }
+
+  function tableHtml(rep, stored, pstat) {
+    pstat = pstat || { any: false, byKey: {} };
     var h = '';
     var hasAny = rep.providers.length || rep.unattributed.appointments;
     if (!hasAny) {
@@ -41903,6 +41936,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#204034">' +
       '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Provider</th>' +
       '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Days with appointments</th>' +
+      '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Days with seen visits</th>' +
       '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Appointments</th>' +
       '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Avg per day</th>' +
       '<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Where this came from</th></tr></thead><tbody>';
@@ -41919,9 +41953,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (was && (was.days !== p.days || was.appointments !== p.appointments)) {
         note += '; captured on ' + esc(dayLabel(stored.at)) + ' as ' + intOf(was.days) + ' day' + (intOf(was.days) === 1 ? '' : 's') + ' / ' + intOf(was.appointments);
       }
+      var ps = pstat.byKey[p.key] || null;
+      var seenCell = ps && ps.statusDays > 0
+        ? '<b>' + intOf(ps.seenDays) + '</b>'
+        : '<span title="No athena status captured for these rows yet. Re-pull this month with MLS Assist 3.0.98 or newer to fill this in.">&mdash;</span>';
+      if (ps && ps.statusDays > 0) note += '; seen = at least one checked-in/out, arrived or in-room row that day (athena status, captured at pull time)';
       h += '<tr>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + esc(p.name) + '</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + p.days + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + seenCell + '</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">' + p.appointments + '</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">' + p.avgPerDay + '</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;color:#5b6b7c;font-size:12px">' + esc(note) + '</td></tr>';
@@ -41930,6 +41970,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       h += '<tr>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700;color:#7a5b16">No provider recorded</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + rep.unattributed.days + '</td>' +
+        '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">&mdash;</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">' + rep.unattributed.appointments + '</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">&mdash;</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;color:#5b6b7c;font-size:12px">imported from a day view with no provider column, so MLS stored no provider &mdash; these are NOT counted for anyone</td></tr>';
@@ -41960,7 +42001,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     lines.push('Read from ' + pv.monthRows + ' appointment row' + (pv.monthRows === 1 ? '' : 's') + ' MLS has imported for this month (' +
       pv.attributedRows + ' with a provider, ' + pv.unattributedRows + ' without).');
     lines.push('MLS does not read a month directly from athenaOne. Every number here comes from appointments already imported into MLS, so a month you have not pulled reads as missing, never as zero.');
-    lines.push('An appointment is a BOOKED SLOT. MLS cannot tell arrived / roomed / completed apart: the extension\'s schedule read strips those words as grid noise before a row is built, so "days with appointments" is not proof of a day worked.');
+    if (cap && cap.pstatAny) lines.push('An appointment is a BOOKED SLOT; "days with seen visits" is stronger - it counts only days where at least one row carried a seen-class athena status (checked in / checked out / arrived / in room), captured at pull time by MLS Assist 3.0.98+. A dash means the rows were pulled before status capture existed - re-pull that month to fill it in.');
+    else lines.push('An appointment is a BOOKED SLOT. These rows were pulled before MLS Assist 3.0.98, which now captures each row\'s athena status (arrived / checked in / checked out) at read time - re-pull the month with 3.0.98+ and this report gains a "days with seen visits" column that IS proof of a day worked.');
     if (cap && cap.written) lines.push('Captured as an as-of receipt for ' + esc(rep.month) + ' (provider names, dates and counts only).');
     else if (cap && cap.reason === 'no-account-scope') lines.push('Not captured: no signed-in account to scope the receipt to.');
     var h = '<div style="margin-top:16px;padding:11px 13px;border-top:1px solid #F4F2EC;font-size:12px;color:#5b6b7c;line-height:1.5">';
@@ -41972,6 +42014,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var rep = report(month);
     var stored = storedFor(month);
     var cap = capture(rep);
+    var pstat = provStatusFor(rep.month);
+    if (cap) cap.pstatAny = !!pstat.any; /* mrpt-1.1.0: provenance wording switch only; never stored */
     var opts = monthOptions(), i, sel = '';
     for (i = 0; i < opts.length; i++) {
       sel += '<option value="' + esc(opts[i]) + '"' + (opts[i] === rep.month ? ' selected' : '') + '>' + esc(monthLabel(opts[i])) + '</option>';
@@ -41983,7 +42027,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<button type="button" id="mlsMRClose" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>' +
       '</div></div>' +
       '<div style="font-size:12.5px;color:#5b6b7c;margin-bottom:14px">Days with appointments and appointment volume, per provider, for one month &mdash; with where every number came from.</div>' +
-      tableHtml(rep, stored) + missingHtml(rep) + provenanceHtml(rep, cap);
+      tableHtml(rep, stored, pstat) + missingHtml(rep) + provenanceHtml(rep, cap);
     box.innerHTML = h;
     var msel = box.querySelector('#mlsMRMonth');
     if (msel) msel.onchange = function () { paint(box, msel.value); };

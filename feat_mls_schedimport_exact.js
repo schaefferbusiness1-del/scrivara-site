@@ -2693,6 +2693,10 @@
           date: normDate(a[i].date || a[i].appt_date || "") || String(confirmedDay || ""),
           time: normTime(a[i].start_local || a[i].time || a[i].time_display || ""),
           reason: String(a[i].reason || ""),
+          /* status-1.0.0: ext 3.0.98+ emits the row's athena status; this map
+             rebuilds rows field-by-field, so an unnamed field is a DROPPED
+             field (the provider and DOB bugs above were this same class). */
+          status: String(a[i].status || ""),
           provider: String(a[i].provider || "")
         });
       }
@@ -3415,6 +3419,46 @@
         var slot = appointmentSlotIdentity(a, dt, tm, !!rowLocalPatientId(a));
         if (exact) provByKey[exact] = p;
         if (slot) provByKey[slot] = p;
+      });
+      /* provstatus-1.0.0: PHI-free per-provider-per-day status histogram, folded
+         once per imported day from the SAME resolved provider+date the provByKey
+         map above uses. This is the store the Month report needs to tell a SEEN
+         visit (checked in/out, arrived, in room) from a merely booked one - the
+         signal nothing else persists (the backend row has no status column and
+         the schedImport ledger carries pipeline state only). No names, no DOBs,
+         no MRNs: provider display names, dates and status words only. Rows from
+         a pre-3.0.98 extension have status "" and fold into total, never seen -
+         fail-open, the report just says what it can prove. */
+      safe(function () {
+        var agg = {};
+        appts.forEach(function (a) {
+          var dt = a._date || normDate(a.date) || target; if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dt || ""))) return;
+          var pv = String(a.provider || "").trim();
+          if (!pv && requestedProvider && requestedProvider.mode === "selected") pv = String(requestedProvider.name || "").trim();
+          var pk = pv ? pv.toLowerCase() : "(unattributed)";
+          var st = String(a.status || "").trim().toLowerCase().slice(0, 24);
+          var d = agg[dt] || (agg[dt] = {});
+          var b = d[pk] || (d[pk] = { name: pv || "", total: 0, seen: 0, statuses: {} });
+          b.total++;
+          if (st) b.statuses[st] = (b.statuses[st] || 0) + 1;
+          if (/check(?:ed)?[ -]?out|check(?:ed)?[ -]?in|arrived|in[ -]?room|roomed|completed|seen/.test(st)) b.seen++;
+        });
+        var days = Object.keys(agg); if (!days.length) return;
+        var k = isFn(window.uns) ? String(window.uns("mlsProvDayStatusV1") || "") : "";
+        if (!k) return;
+        var store = safe(function () { var raw = localStorage.getItem(k); return raw ? JSON.parse(raw) : null; }, null);
+        if (!store || typeof store !== "object" || store.v !== 1 || !store.days || typeof store.days !== "object") store = { v: 1, days: {} };
+        days.forEach(function (dt) {
+          var cur = store.days[dt];
+          if (!cur || typeof cur !== "object") cur = store.days[dt] = {};
+          Object.keys(agg[dt]).forEach(function (pk) {
+            /* last read of a day wins for that provider: a re-pull replaces the
+               stale histogram instead of double-counting it. */
+            cur[pk] = agg[dt][pk];
+          });
+        });
+        store.updated = new Date().toISOString();
+        safe(function () { localStorage.setItem(k, JSON.stringify(store)); });
       });
       function stampProviders() {
         safe(function () {
