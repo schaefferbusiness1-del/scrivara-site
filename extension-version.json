@@ -1,5 +1,5 @@
 {
-  "version": "3.0.103",
+  "version": "3.0.104",
   "minChrome": 116,
-  "notes": "v3.0.103 - Privacy hardening: the extension no longer keeps any patient name in its own storage (name-parser statistics now record lengths only, and stored samples from earlier versions are purged at start-up), token diagnostics live in session storage only, the phone-confirm arm message now passes the same trusted-origin check as every other message, and a sample record number was removed from shipped code. Everything from v3.0.102 remains. Requires Chrome 116+."
+  "notes": "v3.0.104 - Pull reliability: schedule rows that sit under a provider heading (the way athenaOne groups a Day or Week view by provider) now carry that provider, so a provider-scoped month pull files them instead of refusing every day with \"no provider identity\"; a date navigation that saw the calendar strip but could not reach the day now runs the full recovery ladder instead of retrying a dead arrow; the date check reads the header of the frame that owns the schedule, not any frame. Everything from v3.0.103 remains. Requires Chrome 116+."
 }

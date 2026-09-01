@@ -7179,6 +7179,10 @@ var mlsProv = (function () {
         const initX = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, !!msg.probe, __gotoGuard], func: mlsAthenaGotoDate }, msg.probe ? 2500 : 12000, 'initial date navigation');
         const hits = ((initX && initX.r) || []).map((r) => r && r.result).filter(Boolean);
         let found = hits.find((h) => h.found) || null;
+        /* landed-1.0.0 (3.0.104): remember WHICH frame answered with a landed
+           control so the date verification below reads that frame's header. */
+        const __gotoFoundFrameOf = (rx) => { try { const rr = ((rx && rx.r) || []).find((r) => r && r.result && r.result.found && r.result.done !== false); return rr && rr.frameId != null ? rr.frameId : null; } catch (e) { return null; } };
+        let __gotoFoundFrame = __gotoFoundFrameOf(initX);
         /* v1.93 diag (PHI-free: tab id + path + counts only) */
         const GDIAG = { tabId: tab.id, tabPath: (function () { try { return new URL(tab.url || '').pathname.slice(0, 40); } catch (e) { return ''; } })(), initFrames: hits.length, initFound: !!found, rounds: [] };
         /* v1.91 (§2.7): the driver can now ALWAYS reach the date control — when no
@@ -7186,6 +7190,10 @@ var mlsProv = (function () {
            non-probe path below auto-recovers to the dashboard first. So a probe with
            an athena tab present is always supported; never advertise follow mode. */
         if (msg.probe) return __gotoRespond({ ok: true, supported: true, via: (found && found.via) || 'auto-recovery', controlVisible: !!found });
+        /* landed-1.0.0 (3.0.104, audit 2026-09-01): 'found' meant a control exists,
+           never that the navigation LANDED. A strip that could not reach the day
+           returned done:false and the recovery ladder below was skipped. */
+        if (found && found.done === false) { GDIAG.notLanded = String(found.error || 'not-landed').slice(0, 60); found = null; __gotoFoundFrame = null; }
                 if (!found) {
           /* patient-retry-3.0.97 (measured live 2026-08-31): the initial
              injection ran with a 12s budget; on a heavy renderer it times out
@@ -7198,7 +7206,8 @@ var mlsProv = (function () {
           try {
             const rx2 = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(40000, __gotoLeft()), 'the patient date-navigation retry');
             const hits2b = ((rx2 && rx2.r) || []).map((r) => r && r.result).filter(Boolean);
-            found = hits2b.find((h) => h.found) || null;
+            found = hits2b.find((h) => h.found && h.done !== false) || null; /* landed-1.0.0 */
+            if (found) __gotoFoundFrame = __gotoFoundFrameOf(rx2);
             GDIAG.patientRetry = { ran: true, found: !!found, timeout: !!(rx2 && rx2.timeout) };
           } catch (ePr) { GDIAG.patientRetry = { ran: true, err: String((ePr && ePr.message) || ePr).slice(0, 60) }; }
         }
@@ -7254,7 +7263,8 @@ if (!found) {
                   if (at > 0) { try { const cmo = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: ['open'], func: mlsCalendarMenuFn }, Math.min(6000, __gotoLeft()), 'the Calendar menu'); const cmoh = ((cmo && cmo.r) || []).map((r) => r && r.result).filter(Boolean); RD.calmenu = cmoh.length ? cmoh[0] : null; if (cmoh.some((h) => h && h.calendar)) { if (!(await __gotoWait(900, 'the Calendar menu paint'))) { __gotoDeadline('the Calendar menu paint'); return; } const cmp = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: ['pick'], func: mlsCalendarMenuFn }, Math.min(6000, __gotoLeft()), 'the View Calendar entry'); const cmph = ((cmp && cmp.r) || []).map((r) => r && r.result).filter(Boolean); RD.calpick = cmph.length ? cmph[0] : null; if (cmph.some((h) => h && h.viewCalendar)) { if (!(await __gotoWait(6500, 'the View Calendar settle'))) { __gotoDeadline('the View Calendar settle'); return; } } } } catch (eCm) { RD.calmenuErr = String((eCm && eCm.message) || eCm).slice(0, 60); } }
                   const gx = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(40000, __gotoLeft()), 'date navigation');
                   const hits2 = ((gx && gx.r) || []).map((r) => r && r.result).filter(Boolean);
-                  found = hits2.find((h) => h.found) || null;
+                  found = hits2.find((h) => h.found && h.done !== false) || null; /* landed-1.0.0 */
+                  if (found) __gotoFoundFrame = __gotoFoundFrameOf(gx);
                   RD.at.push((gx && gx.timeout) ? 'TO' : (gx && gx.err) ? ('E:' + String(gx.err).slice(0, 40)) : (found ? 'found:' + (found.via || '') : 'f' + hits2.length));
                 }
               } catch (eRound) { RD.err = String((eRound && eRound.message) || eRound).slice(0, 80); }
@@ -7336,7 +7346,13 @@ if (!found) {
         const chkX = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaReadHeaderDate }, Math.min(8000, __gotoLeft()), 'date-header verification');
         const chk = (chkX && chkX.r) || [];
         const dates = (chk || []).map((r) => (r && r.result) || '').filter(Boolean);
-        const onTarget = dates.indexOf(date) >= 0;
+        /* landed-1.0.0 (3.0.104): the header date must come from the frame that owns
+           the schedule control - a date read from any other frame (a chart, a
+           letters view) could answer ok for the wrong day. The any-frame rule
+           stays only as the fallback when that frame reported nothing. */
+        const __ownFrame = (chk || []).find((r) => r && __gotoFoundFrame != null && r.frameId === __gotoFoundFrame && r.result);
+        GDIAG.dateFrame = __ownFrame ? 'own' : 'any';
+        const onTarget = __ownFrame ? (String(__ownFrame.result) === date) : (dates.indexOf(date) >= 0);
         return __gotoRespond({ ok: onTarget, supported: true, via: found.via, schedDate: onTarget ? date : (dates[0] || ''), error: onTarget ? '' : ('athena is showing ' + (dates[0] || 'an unreadable date') + ' instead of ' + date + '.') });
       } catch (e) { if (!__gotoResponded) __gotoRespond({ ok: false, supported: false, error: String((e && e.message) || e) }); }
     })();
@@ -8616,7 +8632,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       var pi=-1,ni=-1,ti=-1;
       hc.forEach(function(h,idx){var t=tx(h).toLowerCase();if(pi<0&&/(provider|rendering|resource|clinician|scheduling provider|doctor|seen by|with)/.test(t)&&!/patient/.test(t))pi=idx;if(ni<0&&/(patient|name)/.test(t)&&!/(provider|rendering|resource|clinician|doctor)/.test(t))ni=idx;if(ti<0&&/^(?:(?:appointment|start)\s+)?time\s*:?$/.test(t))ti=idx;});
       if(pi<0)continue;
-      rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r),tm=ft(ti>=0&&cells[ti]?tx(cells[ti]):rt);if(!tm)return;var prov=cells[pi]?np(tx(cells[pi])):'';var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt),proof=_scheduleRowProofD(r);if(nm)out.appts.push({time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(rt),dob:proof.dob||'',mrn:proof.mrn||''});});
+      var secProv='';/* sectionprov-1.0.0 (3.0.104): a timeless row that reads as 'Name, CRED' is athena's provider heading; rows under it inherit it when they carry no provider cell (measured 2026-09-01: 2 of 2 rows refused as identity-less under a visible heading) */rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r),tm=ft(ti>=0&&cells[ti]?tx(cells[ti]):rt);if(!tm){var hdr=String(rt||'').trim();if(hdr.length<=80&&/^[A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){0,4},\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|RN|DPM|DDS|DMD|PHD|MBBS|OD|CRNP)\b/.test(hdr)){secProv=np(hdr)||'';out.diag.sectionHeaders=(out.diag.sectionHeaders||0)+1;}return;}var prov=cells[pi]?np(tx(cells[pi])):'';if(!prov&&secProv){prov=secProv;out.diag.sectionTagged=(out.diag.sectionTagged||0)+1;}var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt),proof=_scheduleRowProofD(r);if(nm)out.appts.push({time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(rt),dob:proof.dob||'',mrn:proof.mrn||''});});
       if(out.appts.length)out.diag.via='table-column';
     }
     if(!out.appts.length){

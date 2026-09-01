@@ -1198,7 +1198,8 @@
        so it cannot drift back into the middle the way it already did once. */
     { id: 'app', label: 'App', items: [
       { label: /^settings$/i, within: '#appHeader' },
-      { id: 'nav_admin' }, { id: 'nav_help' },
+      /* helprow-1.0.0 (b1180, measured live 2026-09-01): with no 'as', these two rows derived their label from the rail ('Navigation:'), so the Simple shell's only Help route read as a nonsense row. Name them. */
+      { id: 'nav_admin', as: 'Admin' }, { id: 'nav_help', as: 'Help' },
       { label: /^log out$/i, within: '#appHeader', last: true }
     ] }
   ];
