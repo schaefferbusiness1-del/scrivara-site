@@ -39,7 +39,11 @@ const freshHardcodedLoaderTags = new Map([
   ['feat_mls_outcome_pdf.js', '20260807lib7'],
   ['feat_mls_studygroups.js', '20260804sg1c8'],
   ['feat_comp_report.js', '20260718pr5'],
-  ['feat_mls_study_request.js', '20260723sr233']
+  /* libtag-1.0.0, again: srcontrast-1.0.0 (2026-09-01) rewrote the study
+     panel's stylesheet, so its loader tag advances sr233 -> sr234 in the same
+     change. A cache tag that does not move republishes the old ghosted CSS to
+     every browser that already has it. */
+  ['feat_mls_study_request.js', '20260901sr234']
 ]);
 
 const stagingAdjunctRequirements = new Map([

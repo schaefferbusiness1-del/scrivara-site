@@ -11321,10 +11321,432 @@
       });
     });
   }
+  /* ======================================================================
+   * nameslookup-1.0.0 - LOOK UP A PASTED SET OF NAMES
+   *
+   * Owner 2026-09-01: "the way the extension currently works, it pulls the
+   * schedule and then looks every single name up. Well, we can just pull any
+   * schedule and ... or any set of names, and it can look everyone up."
+   *
+   * The month/day pull already does exactly two things: it turns Athena
+   * schedule rows into {name, dob, mrn} rows, and it hands the resolved rows
+   * to runHistoryBatch. Only the FIRST half is schedule-shaped. This block
+   * generalises it: a pasted list of people becomes the same rows, and the
+   * SAME runHistoryBatch does the looking up. There is no second driver, no
+   * second identity gate and no second mint path.
+   *
+   * THE IDENTITY LAW IS UNCHANGED AND UNWEAKENED (owner ruling 2026-08-28,
+   * memory: owner-ruling-merge-and-chart-edit / exact-name-matching-mints-
+   * duplicate-patients):
+   *   - a chart is attached automatically ONLY on MRN, or on name+DOB, and
+   *     only through the one shared findPatient() - the tolerant comparator
+   *     with its DOB/MRN gate, never string equality;
+   *   - a name with no second factor is NEVER attached and NEVER minted. It
+   *     is either a named one-click suggestion (exactly one tolerant chart)
+   *     or an honest refusal;
+   *   - ambiguity fails closed and NAMES its candidates;
+   *   - the only mint mirrors materializePatient's guards and re-proves the
+   *     persisted row, so a spelling variant of a chart already on file can
+   *     never become a second chart.
+   *
+   * PHI: every code in this block is a closed vocabulary token. Names, DOBs
+   * and MRNs travel only inside the caller's own receipt rows, which stay in
+   * the page exactly like the pull's do.
+   * ====================================================================== */
+  var NL_VERSION = "nameslookup-1.0.0";
+  var NL_MAX_LINES = 300;
+  var NL_PING_MS = 4000;
+  var NL_BUSY_FRESH_MS = 90000;
+  /* The whole closed verdict vocabulary, in the order a receipt list shows
+     it. A surface may render these and nothing else. */
+  var NL_VERDICTS = [
+    "matched-chart", "new-lookup", "suggest-confirm", "ambiguous",
+    "needs-dob-or-mrn", "duplicate-line", "bad-line",
+    "matched-pulled", "created-pulled", "lookup-failed", "not-found"
+  ];
+  function nlVerdicts() { return NL_VERDICTS.slice(); }
+  /* A leading list marker is dropped: "1. ", "2) ", "- ", "* ", and any
+     bullet GLYPH, matched as "a short run of punctuation followed by a
+     space" so no non-ASCII byte has to appear in this source (memory:
+     latin1-writer-turns-unicode-into-control-bytes). The trailing \s+ is
+     what keeps "#7833832" - an MRN, no space - completely untouched. */
+  function nlStripBullet(s) { return String(s == null ? "" : s).replace(/^\s*(?:[^0-9A-Za-z\s]{1,3}|\d{1,3}[.)])\s+/, ""); }
+  /* One pasted line -> {ok,name,dob,mrn}. Tolerates "Last, First", "First
+     Last", a DOB anywhere in the line in either common spelling, and an MRN
+     as a bare digit run or behind an MRN/#/chart label. Field separators
+     (tab, pipe, semicolon) are honoured; a bare comma is left alone because
+     it is also the "Last, First" separator. */
+  function nlParseLine(rawLine, lineNo) {
+    var raw = String(rawLine == null ? "" : rawLine);
+    var out = { ok: false, raw: raw.slice(0, 200), lineNo: Number(lineNo || 0), name: "", dob: "", mrn: "", reason: "" };
+    var work = nlStripBullet(raw.replace(/\t/g, " | ")).trim();
+    if (!work) { out.reason = "blank-line"; return out; }
+    /* The DOB is claimed FIRST so the MRN scan can never eat a date's digits.
+       A date-SHAPED token that is not a real, non-future calendar date is a
+       typo the doctor must see, not something to silently drop. */
+    var dm = work.match(/(?:^|[^0-9A-Za-z])((?:\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})|(?:\d{4}-\d{1,2}-\d{1,2}))(?![0-9])/);
+    if (dm) {
+      var cand = String(dm[1]);
+      work = work.replace(cand, " ");
+      if (validDobProof(cand)) out.dob = cand;
+      else { out.reason = "unreadable-date"; return out; }
+    }
+    var mm = work.match(/(?:^|[^0-9A-Za-z])(?:mrn|chart|id)?\s*[#:]?\s*(\d[\d-]{3,19})(?![0-9])/i);
+    if (mm) {
+      var mrnRaw = String(mm[1]);
+      if (padoptValidMrn(mrnRaw)) { out.mrn = mrnRaw; work = work.replace(mrnRaw, " "); }
+    }
+    var seg = work.split(/[|;]/);
+    var name = "";
+    for (var i = 0; i < seg.length && !name; i++) {
+      var piece = String(seg[i] || "").replace(/\b(?:mrn|chart id|chart|dob|d\.o\.b\.?)\b\s*[#:]?/gi, " ");
+      piece = piece.replace(/\s+/g, " ").replace(/^[\s,;|#:.-]+|[\s,;|#:.-]+$/g, "").trim();
+      if (/[A-Za-z]/.test(piece)) name = piece;
+    }
+    if (!name) { out.reason = "no-usable-name"; return out; }
+    if (name.length > 120) name = name.slice(0, 120).trim();
+    if (padoptTokens(name).length < 2) { out.reason = "no-usable-name"; out.name = name; return out; }
+    out.name = name;
+    out.ok = true;
+    return out;
+  }
+  function nlParse(text) {
+    var lines = String(text == null ? "" : text).split(/\r\n|\r|\n/);
+    var parsed = [], seen = {}, truncated = false, kept = 0;
+    for (var i = 0; i < lines.length; i++) {
+      if (!String(lines[i]).trim()) continue;
+      if (kept >= NL_MAX_LINES) { truncated = true; break; }
+      kept++;
+      var p = nlParseLine(lines[i], i + 1);
+      if (p.ok) {
+        var key = normName(p.name) + "|" + normDob(p.dob) + "|" + normMrn(p.mrn);
+        if (seen[key]) { p.ok = false; p.reason = "duplicate-line"; p.duplicateOfLine = seen[key]; }
+        else seen[key] = p.lineNo;
+      }
+      parsed.push(p);
+    }
+    return { rows: parsed, truncated: truncated, maxLines: NL_MAX_LINES };
+  }
+  /* Every stored chart whose name SHAPE reconciles with this one. This is the
+     same comparator padoptResolve uses; it proves nothing on its own and is
+     used only to NAME candidates in a refusal and to find the single chart a
+     name-only line may be offered against. */
+  function nlNameCandidates(pts, name) {
+    var out = [];
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (!p || p.id == null || !String(p.id).trim()) continue;
+      if (safe(function () { return padoptNameMatch(p.name, name); }, false)) out.push(p);
+    }
+    return out;
+  }
+  function nlCandidateView(list) {
+    return (list || []).slice(0, 8).map(function (p) {
+      return { id: String(p && p.id || ""), name: String(p && p.name || ""), dob: String(p && p.dob || "") };
+    });
+  }
+  function nlResolveRow(pts, row) {
+    pts = Array.isArray(pts) ? pts : [];
+    row = row || {};
+    var v = {
+      lineNo: Number(row.lineNo || 0), raw: String(row.raw || ""),
+      name: String(row.name || ""), dob: String(row.dob || ""), mrn: String(row.mrn || ""),
+      verdict: "", reason: "", patientId: "", suggestId: "",
+      chartName: "", chartDob: "", chartMrn: "", created: false, candidates: []
+    };
+    if (row.ok !== true) {
+      v.verdict = String(row.reason || "") === "duplicate-line" ? "duplicate-line" : "bad-line";
+      v.reason = String(row.reason || "unreadable-line");
+      if (row.duplicateOfLine) v.duplicateOfLine = Number(row.duplicateOfLine);
+      return v;
+    }
+    var probe = { name: v.name, dob: v.dob, mrn: v.mrn };
+    /* THE ONE AUTOMATIC ATTACH, and it is findPatient's - MRN, or name+DOB,
+       through the tolerant comparator. Nothing weaker reaches this branch. */
+    var hit = safe(function () { return findPatient(pts, probe); }, null);
+    if (hit && hit.id) {
+      v.verdict = "matched-chart";
+      v.reason = padoptValidMrn(v.mrn) ? "mrn-proof" : "name-dob-proof";
+      v.patientId = String(hit.id);
+      v.chartName = String(hit.name || "");
+      v.chartDob = String(hit.dob || "");
+      v.chartMrn = String(hit.mrn || hit.athenaId || "");
+      /* findPatient's exact-name tier deliberately wins over the tolerant one,
+         so a proven match can still coexist with OTHER charts whose name shape
+         reconciles (memory: duplicate-charts-of-one-person). The verdict is
+         unchanged - the proof is real - but the receipt says so out loud
+         instead of letting the doctor assume there is only one. */
+      var alsoAll = nlNameCandidates(pts, v.name);
+      if (alsoAll.length > 1) {
+        v.alsoMatching = alsoAll.length - 1;
+        v.candidates = nlCandidateView(alsoAll.filter(function (p) { return String(p.id) !== v.patientId; }));
+      }
+      return v;
+    }
+    var cands = nlNameCandidates(pts, v.name);
+    v.candidates = nlCandidateView(cands);
+    var hasProof = !!(validDobProof(v.dob) || padoptValidMrn(v.mrn));
+    if (!hasProof) {
+      /* Owner ruling: a name alone is never identity. One reconciling chart
+         is a one-click SUGGESTION the doctor confirms; more than one is
+         ambiguity; none is an honest refusal that names what is missing. */
+      if (cands.length > 1) { v.verdict = "ambiguous"; v.reason = "name-only-many-charts"; return v; }
+      if (cands.length === 1) { v.verdict = "suggest-confirm"; v.reason = "name-only-one-chart"; v.suggestId = String(cands[0].id); return v; }
+      v.verdict = "needs-dob-or-mrn"; v.reason = "name-only-no-chart"; return v;
+    }
+    var why = String(safe(function () { return padoptResolve(pts, probe).why; }, "") || "");
+    if (why === "tolerant-name-no-match") { v.verdict = "new-lookup"; v.reason = "no-chart-on-file"; return v; }
+    if (why === "tolerant-name-conflict") { v.verdict = "new-lookup"; v.reason = "same-name-different-proof"; return v; }
+    /* "unproven" means a chart with this name shape exists but carries NO
+       DOB or MRN of its own. Minting there is exactly how a spelling variant
+       becomes a duplicate chart, so it stops and asks. */
+    if (why === "tolerant-name-unproven") { v.verdict = "suggest-confirm"; v.reason = "chart-has-no-proof"; if (cands.length === 1) v.suggestId = String(cands[0].id); return v; }
+    v.verdict = "ambiguous";
+    v.reason = why || "identity-unresolved";
+    return v;
+  }
+  /* PURE. Give it text (and optionally the patient array) and it tells you
+     exactly what pressing the button would do - no Athena, no store writes. */
+  function nlPlan(text, opts) {
+    opts = opts || {};
+    var pts = Array.isArray(opts.patients) ? opts.patients : ((callG("getPatients") || []) || []);
+    var parsed = nlParse(text);
+    var rows = parsed.rows.map(function (p) { return nlResolveRow(pts, p); });
+    var counts = {};
+    for (var i = 0; i < NL_VERDICTS.length; i++) counts[NL_VERDICTS[i]] = 0;
+    rows.forEach(function (r) { if (counts[r.verdict] === undefined) counts[r.verdict] = 0; counts[r.verdict]++; });
+    return {
+      version: NL_VERSION, rows: rows, counts: counts, total: rows.length,
+      truncated: parsed.truncated === true, maxLines: NL_MAX_LINES,
+      lookupCount: counts["matched-chart"] + counts["new-lookup"]
+    };
+  }
+  /* Is an Athena lane already busy? Same four signals every other engine in
+     this file respects, read-only. */
+  function nlPreflight() {
+    if (pullRunning || monthPullRunning || historyBatchRunning) {
+      return { ok: false, code: "pull-in-flight", error: "An Athena pull is still running in this MLS tab. No names were looked up." };
+    }
+    if (foreignPullLease()) {
+      return { ok: false, code: "other-tab-pulling", error: "Another MLS tab holds the Athena pull lease. No names were looked up." };
+    }
+    var busyAt = Number(safe(function () { return window.__mlsPullBusyAt; }, 0) || 0);
+    if (busyAt > 0 && (Date.now() - busyAt) < NL_BUSY_FRESH_MS) {
+      return { ok: false, code: "pull-in-flight", error: "An Athena pull stamped this tab busy moments ago. No names were looked up." };
+    }
+    var xtab = Number(safe(function () {
+      var key = isFn(window.uns) ? window.uns("mlsPullBusyXTabV1") : "mlsPullBusyXTabV1";
+      return window.localStorage.getItem(key);
+    }, 0) || 0);
+    if (xtab > 0 && (Date.now() - xtab) < NL_BUSY_FRESH_MS) {
+      return { ok: false, code: "other-tab-pulling", error: "Another MLS tab is mid-pull on the shared Athena tab. No names were looked up." };
+    }
+    if (safe(function () { return !!(window.__mlsNotesIdle && isFn(window.__mlsNotesIdle.reading) && window.__mlsNotesIdle.reading() === true); }, false)) {
+      return { ok: false, code: "notes-idle-reading", error: "The background note catch-up is reading a chart right now. No names were looked up." };
+    }
+    return { ok: true, code: "ready", error: "" };
+  }
+  function nlExtensionReachable(ms) {
+    return Promise.resolve().then(function () { return bridge("mlsPong", "mlsPing", Number(ms || NL_PING_MS)); })
+      .then(function (r) { return !!(r && r.reason !== "bridge-deadline-exceeded"); }, function () { return false; });
+  }
+  /* THE ONLY MINT IN THIS LANE, and it is the last resort. It mirrors
+     materializePatient's guards: findPatient must already have refused,
+     patientIdentity must still prove DOB or MRN, and the PERSISTED row must
+     re-prove itself through findPatient before it is handed back. The id
+     shape is the native one the shell's own history mint uses, so a
+     names-lookup chart is never read as capture debris. */
+  function nlMintChart(pts, row) {
+    var found = safe(function () { return findPatient(pts, row); }, null);
+    if (found && found.id) return { patient: found, created: false, why: "already-on-file" };
+    if (!patientIdentity(row, false)) return { patient: null, created: false, why: "no-dob-and-no-mrn" };
+    if (!isFn(window.upsertPatient)) return { patient: null, created: false, why: "store-unavailable" };
+    var np = {
+      id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: String(row && row.name || "").trim(), dob: String(row && row.dob || ""),
+      source: "names-lookup", created: Date.now()
+    };
+    if (padoptValidMrn(row && row.mrn)) { np.athenaId = String(row.mrn); np.mrn = np.athenaId; }
+    if (!safe(function () { window.upsertPatient(np); return true; }, false)) return { patient: null, created: false, why: "store-write-failed" };
+    var persisted = safe(function () {
+      var fresh = (callG("getPatients") || []) || [];
+      for (var i = 0; i < fresh.length; i++) if (String(fresh[i] && fresh[i].id || "") === np.id) return fresh[i];
+      return null;
+    }, null);
+    if (!persisted || safe(function () { return findPatient([persisted], row); }, null) !== persisted) {
+      return { patient: null, created: false, why: "mint-unverified" };
+    }
+    return { patient: persisted, created: true, why: "minted" };
+  }
+  /* The row runHistoryBatch already knows how to read - byte-identical in
+     shape to the one queueHistory builds for a schedule row, minus the
+     appointment/day fields a pasted name genuinely does not have. */
+  function nlHistoryRow(patient, v) {
+    if (!patient || !String(patient.id || "").trim()) return null;
+    var dob = validDobProof(v && v.dob) ? String(v.dob) : String(patient.dob || "");
+    var mrn = padoptValidMrn(v && v.mrn) ? String(v.mrn) : String(patient.mrn || patient.athenaId || "");
+    if (!normDob(dob) && !normMrn(mrn)) return null;
+    return {
+      patient_external_id: String(patient.id), _mlsTargetPatientId: String(patient.id),
+      _mlsTargetDob: dob, _mlsTargetMrn: mrn,
+      name: String(patient.name || (v && v.name) || "").trim(),
+      dob: dob, mrn: mrn, athenaId: mrn,
+      appointmentId: "", appointmentIds: [], date: "", scheduleDate: "", status: "",
+      source: "names-lookup"
+    };
+  }
+  /* Turn the batch's own receipt into per-NAME verdicts. Three passes, and
+     the order matters: the per-patient rows decide success, the retry
+     entries then supply the NAMED reason for a failure (the per-patient row
+     carries the verdict, the retry entry carries the diagnosis), and finally
+     any row the receipt never mentioned at all is a failure - never a
+     silent success. */
+  function nlApplyReceipt(byPid, receipt) {
+    (Array.isArray(receipt && receipt.patients) ? receipt.patients : []).forEach(function (one) {
+      var v = byPid[String(one && one.patientId || "")];
+      if (!v) return;
+      if (one.complete === true) { v.verdict = v.created === true ? "created-pulled" : "matched-pulled"; v.reason = "history-read"; }
+      else {
+        v.verdict = "lookup-failed";
+        v.reason = String(one.reason || one.chartReason ||
+          (one.identityVerified !== true ? "identity-unverified" : "history-incomplete")).slice(0, 60);
+      }
+    });
+    (Array.isArray(receipt && receipt.retry) ? receipt.retry : []).forEach(function (r) {
+      var v = byPid[String(r && r.patientId || "")];
+      if (!v) return;
+      /* A stale retry entry must never un-do a row the receipt proved complete. */
+      if (v.verdict === "matched-pulled" || v.verdict === "created-pulled") return;
+      v.verdict = "lookup-failed";
+      v.reason = String(r.reason || v.reason || "history-partial").slice(0, 60);
+    });
+    Object.keys(byPid).forEach(function (pid) {
+      var v = byPid[pid];
+      if (v && (v.verdict === "matched-chart" || v.verdict === "new-lookup")) { v.verdict = "lookup-failed"; v.reason = "no-row-in-receipt"; }
+    });
+  }
+  function nlBusy(scope) {
+    return {
+      ok: false, started: false, code: scope === "other-tab" ? "other-tab-pulling" : "pull-in-flight",
+      error: scope === "other-tab"
+        ? "Another MLS tab is already driving the shared Athena tab. No names were looked up."
+        : "An Athena pull is already running in this MLS tab. No names were looked up."
+    };
+  }
+  /* Look every resolvable pasted person up, through the SAME history batch
+     the schedule pull uses. Refuses - having started nothing - when an
+     Athena lane is busy, when MLS Assist does not answer, or when no line
+     resolved to something that may honestly be looked up. */
+  function nlRun(text, onStatus, opts) {
+    opts = opts || {};
+    var say = isFn(onStatus) ? onStatus : function () {};
+    var plan = nlPlan(text, opts);
+    /* An explicit per-line confirmation ({lineNo: patientId}) promotes a
+       suggest-confirm row - and ONLY a suggest-confirm row - to an attach.
+       The id must still be a chart that is really in the store. */
+    var confirm = (opts.confirm && typeof opts.confirm === "object") ? opts.confirm : {};
+    plan.rows.forEach(function (v) {
+      if (v.verdict !== "suggest-confirm") return;
+      var wanted = String(confirm[String(v.lineNo)] || confirm[v.lineNo] || "");
+      if (!wanted) return;
+      var p = patientById(wanted);
+      if (!p) return;
+      var allowed = false;
+      for (var i = 0; i < v.candidates.length; i++) if (v.candidates[i].id === String(p.id)) allowed = true;
+      if (!allowed) return;
+      v.verdict = "matched-chart"; v.reason = "doctor-confirmed";
+      v.patientId = String(p.id); v.chartName = String(p.name || "");
+      v.chartDob = String(p.dob || ""); v.chartMrn = String(p.mrn || p.athenaId || "");
+    });
+    plan.counts = (function () {
+      var c = {};
+      for (var i = 0; i < NL_VERDICTS.length; i++) c[NL_VERDICTS[i]] = 0;
+      plan.rows.forEach(function (r) { if (c[r.verdict] === undefined) c[r.verdict] = 0; c[r.verdict]++; });
+      return c;
+    })();
+    plan.lookupCount = plan.counts["matched-chart"] + plan.counts["new-lookup"];
+    function refuse(code, error) {
+      return { ok: false, started: false, code: String(code), error: String(error), plan: plan, receipts: plan.rows, version: NL_VERSION };
+    }
+    var pre = nlPreflight();
+    if (!pre.ok) return Promise.resolve(refuse(pre.code, pre.error));
+    if (!plan.lookupCount) {
+      return Promise.resolve(refuse("nothing-to-look-up",
+        "No pasted line resolved to a chart MLS may look up. Add a date of birth or an MRN to the lines that need one, or confirm a suggested chart. Nothing was started."));
+    }
+    return nlExtensionReachable(NL_PING_MS).then(function (reachable) {
+      if (!reachable) {
+        return refuse("extension-unreachable",
+          "MLS Assist did not answer. Make sure the extension is installed and enabled and your athenaOne tab is open. Nothing was started.");
+      }
+      return runManagedAthenaOperation(function () {
+        return withPatientBatch("names-lookup", function () {
+          safe(function () { window.__mlsPullStopRequested = false; });
+          var pts = (callG("getPatients") || []) || [];
+          var rows = [], byPid = {};
+          plan.rows.forEach(function (v) {
+            if (v.verdict !== "matched-chart" && v.verdict !== "new-lookup") return;
+            var patient = null;
+            if (v.verdict === "matched-chart") {
+              patient = patientById(v.patientId);
+              if (!patient) { v.verdict = "not-found"; v.reason = "chart-vanished"; return; }
+            } else {
+              var minted = nlMintChart(pts, { name: v.name, dob: v.dob, mrn: v.mrn });
+              patient = minted.patient;
+              if (!patient) { v.verdict = "not-found"; v.reason = String(minted.why || "mint-refused"); return; }
+              v.created = minted.created === true;
+              v.patientId = String(patient.id);
+              v.chartName = String(patient.name || "");
+              pts = (callG("getPatients") || []) || pts;
+            }
+            var row = nlHistoryRow(patient, v);
+            if (!row) { v.verdict = "needs-dob-or-mrn"; v.reason = "chart-has-no-proof"; return; }
+            if (byPid[String(patient.id)]) { v.verdict = "duplicate-line"; v.reason = "same-chart-twice"; return; }
+            byPid[String(patient.id)] = v;
+            rows.push(row);
+          });
+          if (!rows.length) {
+            return refuse("nothing-to-look-up", "Nothing survived the identity gate, so no chart was opened in Athena.");
+          }
+          say("Looking up " + rows.length + " " + (rows.length === 1 ? "person" : "people") + " in Athena...");
+          return runHistoryBatch(rows, [], say, { scopeDay: "" }).then(function (receipt) {
+            nlApplyReceipt(byPid, receipt);
+            return {
+              ok: !!(receipt && receipt.complete === true && Number(receipt.failures || 0) === 0),
+              started: true, code: "ran", version: NL_VERSION,
+              requested: rows.length, historyReceipt: receipt, plan: plan, receipts: plan.rows
+            };
+          });
+        });
+      }, nlBusy).then(function (value) {
+        if (value && typeof value === "object" && !value.receipts) { value.plan = plan; value.receipts = plan.rows; }
+        return value;
+      });
+    });
+  }
+  /* ===== end nameslookup-1.0.0 ========================================== */
   window.__mlsSI = {
     installed: true,
     version: VERSION,
     asset: "cloned-feat_mls_schedimport_exact.js",
+    /* nameslookup-1.0.0: the pasted-names lane. parse/plan are PURE and
+       extraction-executable; run is the ONE guarded Athena entry point and
+       reuses runHistoryBatch, never a second driver. */
+    namesLookup: {
+      version: NL_VERSION,
+      maxLines: NL_MAX_LINES,
+      verdicts: nlVerdicts,
+      parseLine: nlParseLine,
+      parse: nlParse,
+      plan: nlPlan,
+      preflight: nlPreflight,
+      candidates: nlNameCandidates,
+      historyRow: nlHistoryRow,
+      run: nlRun,
+      _mint: nlMintChart,
+      _applyReceipt: nlApplyReceipt,
+      _resolveRow: nlResolveRow
+    },
     importAppts: importAppts,
     pull: pull,
     /* cv-1.0.0: the ONE guarded day lane every visible pull owner calls. */

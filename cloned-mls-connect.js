@@ -16430,6 +16430,66 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return !!(ap && (S(ap.problems) + ' ' + S(ap.summary)).toLowerCase().indexOf(kwl) >= 0);
     });
   }
+  /* =====================================================================
+   * nameslookup-1.0.0 - the cohort built from a PASTED LIST of names.
+   *
+   * It reuses the SAME parser and the SAME identity resolver the Staff Prep
+   * lookup uses (__mlsSI.namesLookup.plan - MRN or name+DOB through the one
+   * tolerant comparator, never name alone), and it takes its rows straight
+   * out of buildAll() - the very list Add-ALL imports - so a name-built
+   * cohort and the all-patients cohort are the same records by construction
+   * rather than by resemblance.
+   *
+   * IT NEVER DRIVES ATHENA. A pasted person with no chart on file is
+   * EXCLUDED and named, together with the one instruction that fixes it
+   * (Staff prep -> Look up a list of names). A cohort that quietly dropped
+   * people would make every statistic in the paper a lie.
+   * ===================================================================== */
+  function nlCohortApi() {
+    try { var a = window.__mlsSI; return (a && a.namesLookup && typeof a.namesLookup.plan === 'function') ? a.namesLookup : null; } catch (e) { return null; }
+  }
+  function buildFromPastedNames(text) {
+    var api = nlCohortApi();
+    if (!api) return { ok: false, code: 'engine-missing', included: [], excluded: [], total: 0 };
+    var plan = null;
+    try { plan = api.plan(text); } catch (e) { plan = null; }
+    if (!plan || !plan.rows || !plan.total) return { ok: false, code: 'nothing-parsed', included: [], excluded: [], total: 0 };
+    var wanted = {}, excluded = [];
+    plan.rows.forEach(function (r) {
+      if (r.verdict === 'matched-chart' && r.patientId) { wanted[String(r.patientId)] = r; return; }
+      excluded.push(r);
+    });
+    /* The key is built from the SAME two expressions buildAll uses for a
+       row's name and dob, so the filter can never drift out of step with
+       the rows it filters. */
+    var keep = {};
+    appPatients().forEach(function (p) {
+      if (!p || !wanted[String(p.id)]) return;
+      keep[S(p.name).trim() + '|' + S(p.dob || '')] = 1;
+    });
+    var included = buildAll(buildCtx()).filter(function (rec) { return !!keep[rec.name + '|' + rec.dob]; });
+    return {
+      ok: included.length > 0, code: included.length ? 'built' : 'nothing-resolved',
+      included: included, excluded: excluded, total: plan.total, counts: plan.counts
+    };
+  }
+  var NL_COHORT_WHY = {
+    'new-lookup': 'no chart on file yet',
+    'suggest-confirm': 'a name alone is not proof - confirm the chart in Staff prep first',
+    'ambiguous': 'more than one chart matches, so MLS will not guess',
+    'needs-dob-or-mrn': 'needs a date of birth or an MRN',
+    'duplicate-line': 'the same person appears earlier in the list',
+    'bad-line': 'MLS could not read a name on this line',
+    'not-found': 'no chart could be opened for this person'
+  };
+  function nlExcludedHtml(excluded) {
+    if (!excluded || !excluded.length) return '';
+    var lines = excluded.map(function (r) {
+      return 'line ' + (r.lineNo || '?') + ': ' + (S(r.name) || S(r.raw) || '(empty)') + ' - ' +
+        (NL_COHORT_WHY[r.verdict] || S(r.verdict) || 'excluded');
+    });
+    return lines.join('\n');
+  }
   function importIntoGroup(sg, groupName, list) {
     var g = null;
     sg.list().forEach(function (x) { if (x.name === groupName) g = x; });
@@ -16467,12 +16527,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var t = ev.target; if (!t || !t.closest) return;
       var isAll = t.closest('#sgpAllBtn'), isProc = t.closest('#sgpProcBtn');
-      if (!isAll && !isProc) return;
+      var isNames = t.closest('#sgpNamesBtn'); /* nameslookup-1.0.0 */
+      if (!isAll && !isProc && !isNames) return;
       ev.stopImmediatePropagation(); ev.preventDefault();
       var noteEl = $('sgpBuildNote');
       function say(m) { if (noteEl) noteEl.textContent = m; }
       var sg = SG();
       if (!sg) { say('Study engine not loaded yet — try again in a moment.'); return; }
+      if (isNames) {
+        /* nameslookup-1.0.0: same parser, same resolver, same buildAll rows,
+           and NO Athena driving from a cohort build. */
+        var namesBox = $('sgpNamesTx'), namesOut = $('sgpNamesOut');
+        var namesText = S(namesBox && namesBox.value);
+        function nsay(msg, detail) {
+          say(msg);
+          if (!namesOut) return;
+          namesOut.textContent = S(detail);
+          namesOut.style.display = S(detail) ? '' : 'none';
+        }
+        if (!namesText.trim()) { nsay('Paste at least one name (one person per line) first.', ''); return; }
+        if (!nlCohortApi()) { nsay('The identity engine has not finished loading in this tab, so no cohort was built.', ''); return; }
+        var built = buildFromPastedNames(namesText);
+        var excludedText = nlExcludedHtml(built.excluded);
+        var howTo = built.excluded && built.excluded.length
+          ? '\n\nNothing above was silently dropped. To bring the missing people in, open Menu -> Staff prep -> "Look up a list of names", paste the same list there, and let MLS create and read those charts from Athena. Then build this cohort again. Building a cohort never touches Athena on its own.'
+          : '';
+        if (!built.ok) {
+          nsay('No pasted name matched a chart on file, so no cohort was created (' + S(built.code) + ').',
+            (excludedText || '') + howTo);
+          return;
+        }
+        try {
+          /* ASCII-only in this authored literal (memory:
+             latin1-writer-turns-unicode-into-control-bytes). The group NAME is
+             load-bearing - it is the key importIntoGroup looks up - so it must
+             survive any writer this repo's deploy path uses. */
+          var rn = importIntoGroup(sg, 'Cohort - pasted names', built.included);
+          say('Cohort - pasted names is ready: ' + rn.group.patients.length + ' of ' + built.total +
+            ' pasted line' + (built.total === 1 ? '' : 's') + ' joined the cohort, ' +
+            groupVisitTotal(rn.group) + ' individual visit records' +
+            (Object.keys(rn.bySrc).length ? ' (harvested: ' + srcLabel(rn.bySrc) + ')' : '') +
+            (built.excluded.length ? ('; ' + built.excluded.length + ' excluded and listed below') : '; nothing excluded') +
+            '. Select it above and run a study.');
+          if (namesOut) {
+            namesOut.textContent = built.excluded.length ? ('Excluded from this cohort:\n' + excludedText + howTo) : '';
+            namesOut.style.display = built.excluded.length ? '' : 'none';
+          }
+          refreshGroupSelect(rn.group);
+        } catch (e) { nsay('Cohort build failed: ' + e.message, ''); }
+        return;
+      }
       if (isAll) {
         say('Formatting your data into individual per-visit study records…');
         setTimeout(function () {
@@ -24836,6 +24940,228 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var l = $('ez3PullLog');
     if (l) { l.innerHTML = ''; P.log.forEach(function (e) { var d2 = document.createElement('div'); if (e.c) d2.className = e.c; d2.textContent = e.t + '  ' + e.m; l.appendChild(d2); }); l.scrollTop = l.scrollHeight; }
   }
+
+  /* =======================================================================
+   *  nameslookup-1.0.0 - "look up a set of names"
+   *
+   *  Owner 2026-09-01: the extension pulls a schedule and then looks every
+   *  name up. A PASTED LIST is that same second half without the first, so
+   *  this card hands the pasted lines to __mlsSI.namesLookup, which parses
+   *  and resolves them through the ONE shared identity gate and then runs
+   *  the SAME history batch the schedule pull runs. This surface owns no
+   *  identity rule and no Athena driver of its own: it renders verdicts and
+   *  accepts one explicit confirmation per name-only line. A name alone is
+   *  never attached to a chart and never mints one.
+   * ===================================================================== */
+  var nlText = '', nlPlanState = null, nlNote = '', nlRunning = false, nlConfirm = {}, nlLastReceipts = null;
+  function nlApi() { return safe(function () { var a = window.__mlsSI; return (a && a.namesLookup && isFn(a.namesLookup.plan)) ? a.namesLookup : null; }, null); }
+  /* plan() is deliberately pure and does NOT apply confirmations, so the
+     preview applies them here exactly the way run() will - same allow-list
+     (the line's own named candidates), same refusal when the chart is gone. */
+  function nlApplyConfirmations(plan) {
+    if (!plan || !plan.rows) return plan;
+    var pts = safe(function () { return (isFn(window.getPatients) ? window.getPatients() : []) || []; }, []);
+    plan.rows.forEach(function (r) {
+      if (r.verdict !== 'suggest-confirm') return;
+      var wanted = String(nlConfirm[String(r.lineNo)] || '');
+      if (!wanted) return;
+      var allowed = false;
+      (r.candidates || []).forEach(function (c) { if (c.id === wanted) allowed = true; });
+      if (!allowed) return;
+      var chart = null;
+      for (var i = 0; i < pts.length; i++) if (String(pts[i] && pts[i].id || '') === wanted) chart = pts[i];
+      if (!chart) return;
+      r.verdict = 'matched-chart'; r.reason = 'doctor-confirmed';
+      r.patientId = String(chart.id); r.chartName = String(chart.name || '');
+    });
+    var c = {};
+    plan.rows.forEach(function (r) { c[r.verdict] = (c[r.verdict] || 0) + 1; });
+    plan.counts = c;
+    plan.lookupCount = (c['matched-chart'] || 0) + (c['new-lookup'] || 0);
+    return plan;
+  }
+  function nlPlanNow() {
+    var api = nlApi();
+    if (!api) { nlPlanState = null; return null; }
+    nlPlanState = nlApplyConfirmations(safe(function () { return api.plan(nlText); }, null));
+    return nlPlanState;
+  }
+  var NL_LABEL = {
+    'matched-chart': 'chart on file - will be read',
+    'new-lookup': 'not on file - will be created, then read',
+    'suggest-confirm': 'one chart looks like this person - confirm it below',
+    'ambiguous': 'more than one chart matches - MLS will not guess',
+    'needs-dob-or-mrn': 'add a date of birth or an MRN to this line',
+    'duplicate-line': 'the same person appears earlier in the list',
+    'bad-line': 'MLS could not read a name on this line',
+    'matched-pulled': 'chart read from Athena',
+    'created-pulled': 'chart created and read from Athena',
+    'lookup-failed': 'Athena did not finish this one',
+    'not-found': 'MLS could not open a chart for this person'
+  };
+  var NL_TONE = {
+    'matched-chart': 'ok', 'new-lookup': 'ok', 'matched-pulled': 'ok', 'created-pulled': 'ok',
+    'suggest-confirm': 'warn', 'ambiguous': 'warn', 'needs-dob-or-mrn': 'warn',
+    'duplicate-line': 'dim', 'bad-line': 'dim', 'lookup-failed': 'warn', 'not-found': 'warn'
+  };
+  function nlReceiptRow(r) {
+    var tone = NL_TONE[r.verdict] || 'dim';
+    var who = r.name ? r.name : (r.raw || '(empty line)');
+    var extra = '';
+    if (r.dob) extra += ' &middot; DOB ' + esc(r.dob);
+    if (r.mrn) extra += ' &middot; MRN ' + esc(r.mrn);
+    if (r.duplicateOfLine) extra += ' &middot; first seen on line ' + r.duplicateOfLine;
+    if (r.alsoMatching) extra += ' &middot; ' + r.alsoMatching + ' other chart' + (r.alsoMatching === 1 ? '' : 's') + ' share this name';
+    /* A chart minted from a pasted line that Athena then could not read is
+       still ON FILE. Say so, or the doctor finds an empty chart later with
+       no idea where it came from. */
+    if (r.created === true && r.verdict === 'lookup-failed') extra += ' &middot; the chart was created here and is on file';
+    var body = '<div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid #E4E1D8">' +
+      '<span class="ez3-vchip ' + tone + '" style="flex:0 0 auto;padding:3px 9px;font-size:12px">' + Number(r.lineNo || 0) + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<b style="color:#1A211C">' + esc(who) + '</b><span style="color:#3E4B44;font-size:12px">' + extra + '</span>' +
+        '<div style="color:#3E4B44;font-size:12px;margin-top:2px">' + esc(NL_LABEL[r.verdict] || r.verdict) +
+          ' <span style="color:#55605A">(' + esc(r.reason || r.verdict) + ')</span></div>';
+    if ((r.verdict === 'suggest-confirm' || r.verdict === 'ambiguous') && r.candidates && r.candidates.length) {
+      body += '<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">';
+      r.candidates.forEach(function (c) {
+        body += '<button type="button" class="ez3-sm" data-nl-line="' + Number(r.lineNo || 0) + '" data-nl-pid="' + esc(c.id) +
+          '" style="padding:5px 9px;font-size:12px">Use ' + esc(c.name || c.id) + (c.dob ? ' (' + esc(c.dob) + ')' : '') + '</button>';
+      });
+      body += '</div>';
+    }
+    return body + '</div></div>';
+  }
+  function nlReceiptsHtml() {
+    var rows = nlLastReceipts || (nlPlanState && nlPlanState.rows) || null;
+    if (!rows || !rows.length) return '';
+    var counts = {};
+    rows.forEach(function (r) { counts[r.verdict] = (counts[r.verdict] || 0) + 1; });
+    var summary = Object.keys(counts).map(function (k) { return counts[k] + ' ' + k; }).join(' &middot; ');
+    return '<div style="margin-top:10px"><div class="ez3-status" style="text-align:left;margin:0 0 2px;color:#3E4B44">' +
+      rows.length + ' line' + (rows.length === 1 ? '' : 's') + ' &middot; ' + summary + '</div>' +
+      rows.map(nlReceiptRow).join('') + '</div>';
+  }
+  function namesLookupHtml() {
+    var api = nlApi();
+    var lookupCount = (nlPlanState && Number(nlPlanState.lookupCount || 0)) || 0;
+    var note = nlNote || (api
+      ? 'Nothing checked yet. Paste the list, then press Check the list.'
+      : 'The Athena schedule engine has not finished loading in this tab, so no list can be checked yet.');
+    return '<div class="ez3-card" id="ez3NamesCard">' +
+      '<div class="ez3-toolslbl" style="margin:0 0 7px">&#128269; Look up a list of names</div>' +
+      '<p class="ez3-status" style="text-align:left;margin:0 0 8px;color:#3E4B44">Paste one person per line - <b>Last, First</b> or <b>First Last</b> - with a date of birth (01/02/1980 or 1980-01-02) and/or an MRN on the same line. MLS matches each person against the charts you already have, then looks the rest up with the same Athena reader the schedule pull uses. A name on its own is never attached to a chart automatically.</p>' +
+      '<textarea id="ez3NamesBox" rows="6" spellcheck="false" aria-label="Paste one person per line" placeholder="Schaeffer, Adam  01/02/1980&#10;Bernard P Brooks  MRN 48211937&#10;Mary Anne Smith  05/06/1965" ' +
+        'style="width:100%;box-sizing:border-box;font:500 13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#1A211C;background:#FCFBF8;border:1px solid #C7CFC8;border-radius:10px;padding:10px 12px;resize:vertical">' + esc(nlText) + '</textarea>' +
+      '<div class="ez3-row2" style="margin:9px 0 0">' +
+        '<button type="button" class="ez3-sm" id="ez3NamesCheck"' + (nlRunning ? ' disabled' : '') + '>&#9776; Check the list</button>' +
+        '<button type="button" class="ez3-sm pri" id="ez3NamesRun"' + (nlRunning || !lookupCount ? ' disabled' : '') + '>&#128260; Look up ' +
+          (lookupCount ? (lookupCount + ' ' + (lookupCount === 1 ? 'person' : 'people')) : 'everyone') + ' in Athena</button>' +
+        '<button type="button" class="ez3-sm" id="ez3NamesClear"' + (nlRunning ? ' disabled' : '') + '>Clear</button>' +
+      '</div>' +
+      '<p class="ez3-status" id="ez3NamesNote" aria-live="polite" style="text-align:left;color:#3E4B44">' + esc(note) + '</p>' +
+      nlReceiptsHtml() + '</div>';
+  }
+  function nlRepaint() {
+    var card = $('ez3NamesCard');
+    if (!card) { render(); return; }
+    var box = $('ez3NamesBox');
+    if (box) nlText = String(box.value || '');
+    card.outerHTML = namesLookupHtml();
+    wireNamesLookup();
+  }
+  function wireNamesLookup() {
+    var box = $('ez3NamesBox');
+    if (box && !box.__nlWired) {
+      box.__nlWired = true;
+      box.addEventListener('input', function () { nlText = String(box.value || ''); });
+    }
+    var card = $('ez3NamesCard');
+    if (card && !card.__nlWired) {
+      card.__nlWired = true;
+      card.addEventListener('click', function (ev) {
+        var t = ev.target;
+        while (t && t !== card && !(t.getAttribute && t.getAttribute('data-nl-line'))) t = t.parentNode;
+        if (!t || t === card || !t.getAttribute) return;
+        var line = String(t.getAttribute('data-nl-line') || ''), pid = String(t.getAttribute('data-nl-pid') || '');
+        if (!line || !pid) return;
+        nlConfirm[line] = pid;
+        nlLastReceipts = null;
+        nlPlanNow();
+        nlNote = 'Line ' + line + ' is now bound to the chart you picked. Nothing has been read from Athena yet.';
+        nlRepaint();
+      });
+    }
+    var check = $('ez3NamesCheck');
+    if (check && !check.__nlWired) {
+      check.__nlWired = true;
+      check.addEventListener('click', function () {
+        var b = $('ez3NamesBox'); if (b) nlText = String(b.value || '');
+        nlLastReceipts = null;
+        if (!nlApi()) { nlNote = 'The Athena schedule engine is not loaded in this tab yet. Nothing was checked.'; nlRepaint(); return; }
+        var plan = nlPlanNow();
+        if (!plan) { nlNote = 'MLS could not read that list. Nothing was checked.'; nlRepaint(); return; }
+        if (!plan.total) { nlNote = 'Paste at least one name first.'; nlRepaint(); return; }
+        nlNote = plan.lookupCount
+          ? ('Checked ' + plan.total + ' line' + (plan.total === 1 ? '' : 's') + '. ' + plan.lookupCount + ' can be looked up now; every other line below says exactly what it needs. Nothing has touched Athena yet.')
+          : ('Checked ' + plan.total + ' line' + (plan.total === 1 ? '' : 's') + '. None can be looked up yet - each line below says what it needs. Nothing has touched Athena yet.');
+        if (plan.truncated) nlNote += ' Only the first ' + plan.maxLines + ' lines were read.';
+        nlRepaint();
+      });
+    }
+    var clear = $('ez3NamesClear');
+    if (clear && !clear.__nlWired) {
+      clear.__nlWired = true;
+      clear.addEventListener('click', function () {
+        nlText = ''; nlPlanState = null; nlLastReceipts = null; nlConfirm = {}; nlNote = '';
+        nlRepaint();
+      });
+    }
+    var run = $('ez3NamesRun');
+    if (run && !run.__nlWired) {
+      run.__nlWired = true;
+      run.addEventListener('click', function () {
+        var b = $('ez3NamesBox'); if (b) nlText = String(b.value || '');
+        var api = nlApi();
+        if (!api || !isFn(api.run)) { nlNote = 'The Athena schedule engine is not loaded in this tab yet. Nothing was started.'; nlRepaint(); return; }
+        if (nlRunning) return;
+        nlPlanNow();
+        if (!nlPlanState || !nlPlanState.lookupCount) { nlNote = 'No line on this list can be looked up yet. Nothing was started.'; nlRepaint(); return; }
+        nlRunning = true; nlLastReceipts = null;
+        nlNote = 'Starting the Athena lookup...';
+        nlRepaint();
+        var text = nlText, confirmCopy = {};
+        Object.keys(nlConfirm).forEach(function (k) { confirmCopy[k] = nlConfirm[k]; });
+        Promise.resolve(safe(function () {
+          return api.run(text, function (m) { nlNote = String(m || ''); var n = $('ez3NamesNote'); if (n) n.textContent = nlNote; }, { confirm: confirmCopy });
+        }, null)).then(function (res) {
+          nlRunning = false;
+          if (!res) { nlNote = 'The lookup returned no receipt, so MLS cannot say what happened. Nothing is claimed.'; nlRepaint(); return; }
+          nlLastReceipts = res.receipts || (res.plan && res.plan.rows) || null;
+          if (res.started !== true) {
+            nlNote = String(res.error || 'MLS refused to start the lookup.') + ' (' + String(res.code || 'refused') + ')';
+          } else {
+            var hr = res.historyReceipt || {}, read = 0, failed = 0;
+            (nlLastReceipts || []).forEach(function (r) {
+              if (r.verdict === 'matched-pulled' || r.verdict === 'created-pulled') read++;
+              else if (r.verdict === 'lookup-failed' || r.verdict === 'not-found') failed++;
+            });
+            nlNote = read + ' chart' + (read === 1 ? '' : 's') + ' read from Athena' +
+              (failed ? (', ' + failed + ' did not finish') : '') + '. ' +
+              (hr.complete === true && !Number(hr.failures || 0)
+                ? 'The batch finished complete.'
+                : 'The batch did not report complete, so nothing beyond the rows marked read is claimed.');
+          }
+          nlRepaint();
+        }, function (e) {
+          nlRunning = false;
+          nlNote = 'The lookup stopped: ' + String((e && e.message) || e || 'unknown error');
+          nlRepaint();
+        });
+      });
+    }
+  }
+
   function renderStaff() {
     var rb = staffRangeBounds();
     var all = rowsInRange(rb.from, rb.to);
@@ -24849,6 +25175,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += provSelectHtml();
     h += pullPanelHtml();
     h += athenaApiPrepHtml(rb);
+    h += namesLookupHtml(); /* nameslookup-1.0.0 */
     h += '<div class="ez3-card">' +
       '<div class="ez3-toolslbl" style="margin:0 0 10px">🛠 Practice tools</div>' +
       '<div class="ez3-row2" style="margin:0">' +
@@ -24884,6 +25211,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += advRowHtml();
     setWrapHtml(h, false); /* Staff workspace: the lane is deliberately parked, not shown */
     wireProvSelect(); wireAdv(); wireRecBanner();
+    wireNamesLookup(); /* nameslookup-1.0.0: direct listeners, so a re-render re-binds them */
     on('ez3StaffBack', function () { setEasyMode('doctor', 'home', 'staff-back', false); });
     /* v3.4: registry-based (delegated); range tabs + rows via data attributes */
     on('ez3PullStart', function () { startMonthPull(false); });
@@ -37435,8 +37763,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       "#mlsSgPro button{font:700 13px system-ui;border:0;border-radius:9px;padding:9px 14px;cursor:pointer}",
       "#mlsSgPro .sgp-all{background:linear-gradient(135deg,#204034,#2E6A4B);color:#fff}",
       "#mlsSgPro .sgp-proc{background:#7A5CC0;color:#fff}",
+      /* nameslookup-1.0.0: the pasted-names control. Ink is stated
+         explicitly (never a light gray, never an inherited var) so this row
+         can never join the ghosted-text class of defect. */
+      "#mlsSgPro .sgp-names{background:#204034;color:#fff}",
+      "#mlsSgPro #sgpNamesTx{font:500 13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:8px 10px;border:1px solid #cdd9ea;border-radius:8px;background:#fff;color:#16233a;resize:vertical}",
+      "#mlsSgPro #sgpNamesOut{white-space:pre-wrap;font:500 12px/1.55 system-ui;color:#33423a;background:#fff;border:1px solid #cdd9ea;border-radius:9px;padding:10px 12px;margin:6px 0 0;max-height:260px;overflow:auto}",
       "#mlsSgPro input[type=text],#mlsSgPro select{font:500 13px system-ui;padding:8px 10px;border:1px solid #cdd9ea;border-radius:8px;background:#fff;color:#16233a}",
-      "#mlsSgPro .sgp-note{font:500 12px system-ui;color:#5a6b82}",
+      "#mlsSgPro .sgp-note{font:500 12px system-ui;color:#44544b}",
       "#mlsSgProRun{border-top:1px dashed #EAF1EE;margin-top:10px;padding-top:10px}",
       "#mlsSgProRun label{font:700 12px system-ui;color:#2E6A4B;display:block;margin-bottom:3px}",
       "#mlsSgProRun .sgp-run{background:#2E6A4B;color:#fff;font-size:14px;padding:10px 18px}",
@@ -37455,6 +37789,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<span class="sgp-note">MLS turns your charts, notes and pulled Athena visits into per-visit study records &mdash; no typing.</span></div>' +
       '<div class="sgp-row"><input type="text" id="sgpProcTx" placeholder="Procedure / diagnosis &mdash; e.g. injection, radiculopathy, knee OA" style="min-width:280px;flex:1">' +
       '<button type="button" class="sgp-proc" id="sgpProcBtn">&#127919; Build cohort by procedure</button></div>' +
+      /* nameslookup-1.0.0: the third way to build a cohort. Same parser and
+         same identity resolver as Staff prep's "Look up a list of names";
+         resolved charts join exactly the way Add-ALL's rows do, and every
+         unresolved line is listed with its reason instead of vanishing. */
+      '<div class="sgp-row" style="align-items:flex-start"><textarea id="sgpNamesTx" rows="4" spellcheck="false" aria-label="Paste one person per line"' +
+      ' placeholder="Paste one person per line &mdash; Schaeffer, Adam  01/02/1980" style="min-width:280px;flex:1"></textarea>' +
+      '<button type="button" class="sgp-names" id="sgpNamesBtn">&#128203; Build cohort from a pasted list of names</button></div>' +
+      '<div class="sgp-note" id="sgpNamesHint">Matched on MRN, or on name + date of birth. A name on its own is never attached to a chart. Building a cohort never drives Athena &mdash; look missing people up in Staff prep first.</div>' +
+      '<pre id="sgpNamesOut" style="display:none"></pre>' +
       '<div class="sgp-note" id="sgpBuildNote"></div>' +
       '<div id="mlsSgProRun">' +
       '<h4>&#9654; Run a study &mdash; options</h4>' +
@@ -37508,6 +37851,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           try { refreshSgSelect("Cohort — " + kw); } catch (e) {}
         } catch (e) { n.textContent = "Cohort build failed: " + e.message; }
       }, 30);
+    });
+    /* nameslookup-1.0.0 FALLBACK. sgfix's document-capture handler owns this
+       button in every shipped configuration (it stops propagation before this
+       listener can run) and builds the cohort from buildAll's per-visit rows.
+       This is the honest degraded path for a tab where sgfix is absent: same
+       parser, same resolver, same refusal to drive Athena, b40's own record
+       shape. */
+    $("sgpNamesBtn").addEventListener("click", function () {
+      var box = $("sgpNamesTx"), out = $("sgpNamesOut"), n = $("sgpBuildNote");
+      var text = S(box && box.value);
+      function show(msg, detail) {
+        if (n) n.textContent = msg;
+        if (!out) return;
+        out.textContent = S(detail); out.style.display = S(detail) ? "" : "none";
+      }
+      if (!text.trim()) { show("Paste at least one name (one person per line) first.", ""); return; }
+      var api = null;
+      try { var a = window.__mlsSI; api = (a && a.namesLookup && typeof a.namesLookup.plan === "function") ? a.namesLookup : null; } catch (e) { api = null; }
+      if (!api) { show("The identity engine has not finished loading in this tab, so no cohort was built.", ""); return; }
+      var plan = null;
+      try { plan = api.plan(text); } catch (e2) { plan = null; }
+      if (!plan || !plan.total) { show("MLS could not read any name on that list.", ""); return; }
+      var pts = allPatients(), wantedNames = {}, excluded = [];
+      plan.rows.forEach(function (r) {
+        if (r.verdict === "matched-chart" && r.patientId) {
+          for (var i = 0; i < pts.length; i++) {
+            if (String(pts[i] && pts[i].id || "") === String(r.patientId)) wantedNames[S(pts[i].name).trim().toLowerCase()] = 1;
+          }
+          return;
+        }
+        excluded.push("line " + (r.lineNo || "?") + ": " + (S(r.name) || S(r.raw) || "(empty)") + " - " + S(r.verdict) + " (" + S(r.reason) + ")");
+      });
+      var howTo = excluded.length
+        ? "\n\nNothing above was silently dropped. Open Menu -> Staff prep -> \"Look up a list of names\", paste the same list there, let MLS create and read those charts from Athena, then build this cohort again. Building a cohort never drives Athena on its own."
+        : "";
+      var probe = buildRecords(null);
+      var data = { patients: probe.patients.filter(function (p) { return wantedNames[S(p.name).trim().toLowerCase()]; }) };
+      if (!data.patients.length) { show("No pasted name matched a chart on file, so no cohort was created.", excluded.join("\n") + howTo); return; }
+      try {
+        /* ASCII-only in this authored literal, and the SAME group name the
+           capture handler above uses - the two paths must never file the same
+           cohort under two different keys. */
+        var r2 = importInto("Cohort - pasted names", data);
+        if (n) n.textContent = "Cohort - pasted names is ready: " + data.patients.length + " of " + plan.total +
+          " pasted line" + (plan.total === 1 ? "" : "s") + " joined the cohort" +
+          (excluded.length ? ("; " + excluded.length + " excluded and listed below") : "; nothing excluded") +
+          ". Select it above and run a study." + (r2 ? "" : " (study engine not loaded yet)");
+        if (out) { out.textContent = excluded.length ? ("Excluded from this cohort:\n" + excluded.join("\n") + howTo) : ""; out.style.display = excluded.length ? "" : "none"; }
+        try { refreshSgSelect("Cohort - pasted names"); } catch (e3) {}
+      } catch (e4) { show("Cohort build failed: " + e4.message, ""); }
     });
     $("sgpRunBtn").addEventListener("click", runPro);
   }
@@ -50792,7 +51185,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260731dl1c2-B820';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_dictate_anywhere.js',V='da-1.1.1',api=window.__mlsDictateAnywhere,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719da111h1';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware Dictate Anywhere da-1.1.1; one owner/tag and no ghost mic start. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260802sg2f';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260723sr233";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260901sr234";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* srcontrast-1.0.0 (2026-09-01): the loader cache tag advances WITH the source it loads - libtag-1.0.0 discipline. Without this bump every browser holding the sr233 copy would keep painting the ghosted panel. sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);},A='cloned-feat_mls_study_provenance.js',V='p1sp-1.0.0';function load(){try{var api=window.__mlsP1StudyProvenance,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return true;if(old){try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);return s;}catch(e){return false;}}window.addEventListener('mls:study-lifecycle',function(e){var d=e&&e.detail||{};if(d.reason==='render')load();},true);if(document.getElementById('mlsStudyOv'))load();else sched(load,{timeout:2800,asset:A});}catch(e){}})(); /* /p1-only stored-evidence provenance, exact Study first-use admission plus idle fallback. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260804pr206';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');s.addEventListener('load',function(){try{var m=window.__mlsP1Marketing;if(m&&m.installed===true&&typeof m.reconcile==='function')m.reconcile();var l=window.__mlsP1MarketingLoader;if(l&&l.installed===true&&typeof l.guardReach==='function')l.guardReach();}catch(_marketingReconcileError){}});(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation; 1p Marketing reconciles or fail-closes Reviews after this late owner installs */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */

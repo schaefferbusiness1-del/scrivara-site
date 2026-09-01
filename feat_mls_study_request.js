@@ -1910,34 +1910,78 @@
   }
 
   /* ---------------------------------- UI ---------------------------------- */
+  /* ===== srcontrast-1.0.0 (owner 2026-09-01, screenshot: "this should work
+   * too" over a panel whose description, composer, example placeholder and
+   * helper lines were all barely legible while the heading and the buttons
+   * read normally) ==========================================================
+   *
+   * MEASURED CAUSE, in two halves, and the split is exactly what the
+   * screenshot shows:
+   *
+   *  1. THE TOKENS WERE PLACEHOLDER-GRADE. Against this panel's own card
+   *     (linear-gradient to #f7faf8), the shipped values scored:
+   *       #mlsStudyPrompt::placeholder #91a098 -> 2.60:1   (the "example")
+   *       .sr-hint / .sr-proof span    #738078 -> 3.93:1   (helper lines)
+   *       .sr-result-meta              #65736c -> 4.73:1
+   *       .sr-lede                     #5f6d66 -> 5.17:1   (the description)
+   *     WCAG AA needs 4.5:1 for body text, so the placeholder and the helper
+   *     line FAIL OUTRIGHT - and those are two of the four surfaces the
+   *     owner's screenshot named. The other two clear AA by a hair at
+   *     11.5-14px and are still the lightest prose on the card.
+   *
+   *  2. THE PROSE RULES HAD NO SPECIFICITY. Every ghosted element was styled
+   *     by a BARE single-class selector (.sr-lede, .sr-hint, .sr-eyebrow,
+   *     .sr-example, .sr-chip, .sr-result-meta) at specificity 0-0-1-0 and
+   *     with no !important - while the two elements that READ CORRECTLY are
+   *     the only two written with id specificity or !important
+   *     (#mlsStudyRequest h3, #mlsStudySubmit). In a shell where the studio
+   *     theme packs paint with "#studioView ...{color:var(--stp-mini)}", a
+   *     bare class rule is one late id-scoped rule away from being replaced.
+   *     This module had ALREADY met the same defect once and patched exactly
+   *     one sub-pane for it (see the #mlsStudyAdvancedBody .mls-sg-muted rule
+   *     below, added when the advanced tools ghosted) - the panel's own prose
+   *     never got the same treatment.
+   *
+   * THE FIX IS THE CONTRAST/STATE DEFECT ONLY - no layout, no markup, no
+   * copy, no new elements. Every prose rule is now scoped under
+   * #mlsStudyRequest AND carries !important, and the ink comes from three
+   * named tokens whose measured ratios on this card are:
+   *     --sr-body  #33423a -> 10.09:1     (description, chips, disclosure)
+   *     --sr-muted #44544b ->  7.64:1     (helper lines, meta, proof labels)
+   *     --sr-ph    #5d6c64 ->  5.27:1     (composer placeholder - still
+   *                                        visibly secondary, no longer a
+   *                                        ghost)
+   *     --sr-accent#2c5341 ->  8.26:1     (eyebrow + example)
+   * ...all of them above AA, and the accent/eyebrow stay green so the panel
+   * looks the same, only readable. */
   function injectCss(doc) {
     if (!doc || doc.getElementById(CSS_ID)) return;
     var st = doc.createElement('style'); st.id = CSS_ID;
     st.textContent = [
       '#mlsSgPro{padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}',
-      '#' + UI_ID + '{--sr-ink:#17231d;--sr-green:#204034;--sr-soft:#f3f7f4;--sr-line:#dce6df;font:14px/1.45 system-ui,Segoe UI,sans-serif;color:var(--sr-ink);background:linear-gradient(145deg,#fff 0%,#f7faf8 100%);border:1px solid var(--sr-line);border-radius:20px;padding:22px;box-shadow:0 16px 40px rgba(31,64,52,.08);margin:0 0 12px}',
-      '.sr-eyebrow{font-size:11px;font-weight:850;letter-spacing:.12em;text-transform:uppercase;color:#47705f;margin-bottom:6px}',
-      '#' + UI_ID + ' h3{font:650 25px/1.12 "Newsreader",Georgia,serif;letter-spacing:-.02em;margin:0;color:var(--sr-ink)}',
-      '.sr-lede{color:#5f6d66;max-width:760px;margin:7px 0 15px}',
+      '#' + UI_ID + '{--sr-ink:#17231d;--sr-body:#33423a;--sr-muted:#44544b;--sr-ph:#5d6c64;--sr-accent:#2c5341;--sr-green:#204034;--sr-soft:#f3f7f4;--sr-line:#dce6df;font:14px/1.45 system-ui,Segoe UI,sans-serif;color:var(--sr-ink);background:linear-gradient(145deg,#fff 0%,#f7faf8 100%);border:1px solid var(--sr-line);border-radius:20px;padding:22px;box-shadow:0 16px 40px rgba(31,64,52,.08);margin:0 0 12px}',
+      '#' + UI_ID + ' .sr-eyebrow{font-size:11px;font-weight:850;letter-spacing:.12em;text-transform:uppercase;color:var(--sr-accent)!important;margin-bottom:6px}',
+      '#' + UI_ID + ' h3{font:650 25px/1.12 "Newsreader",Georgia,serif;letter-spacing:-.02em;margin:0;color:var(--sr-ink)!important}',
+      '#' + UI_ID + ' .sr-lede{color:var(--sr-body)!important;max-width:760px;margin:7px 0 15px}',
       '.sr-compose{display:flex;align-items:flex-end;gap:9px;background:#fff;border:1px solid #cfdcd4;border-radius:15px;padding:9px 9px 9px 13px;box-shadow:0 5px 16px rgba(25,48,39,.05)}',
       '.sr-compose:focus-within{border-color:#5a9278;box-shadow:0 0 0 3px rgba(54,120,88,.12)}',
       '#mlsStudyPrompt{border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;resize:none;width:100%;min-height:54px;max-height:150px;padding:5px 0!important;font:600 15px/1.45 system-ui!important;color:var(--sr-ink)!important}',
-      '#mlsStudyPrompt::placeholder{color:#91a098}',
+      '#mlsStudyPrompt::placeholder{color:#5d6c64!important;opacity:1!important}',
       '#mlsStudySubmit{width:40px;height:40px;flex:0 0 40px;border:0!important;border-radius:11px!important;background:var(--sr-green)!important;color:#fff!important;font-size:19px!important;cursor:pointer;padding:0!important}',
       '#mlsStudySubmit:disabled{opacity:.45;cursor:wait}',
-      '.sr-hint{display:flex;justify-content:space-between;gap:12px;color:#738078;font-size:11.5px;margin:7px 2px 0}',
-      '.sr-example{color:#416e59}',
+      '#' + UI_ID + ' .sr-hint{display:flex;justify-content:space-between;gap:12px;color:var(--sr-muted)!important;font-size:11.5px;margin:7px 2px 0}',
+      '#' + UI_ID + ' .sr-example{color:var(--sr-accent)!important}',
       '.sr-spec{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 0}',
-      '.sr-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid #dbe6df;background:#fff;border-radius:999px;padding:5px 9px;font-size:11.5px;color:#42534a}',
-      '.sr-chip b{color:#183c2d}',
-      '.sr-status{margin-top:12px;border-radius:12px;padding:10px 12px;background:#edf5f0;color:#24513d;font-weight:650;font-size:12.5px}',
+      '#' + UI_ID + ' .sr-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid #dbe6df;background:#fff;border-radius:999px;padding:5px 9px;font-size:11.5px;color:var(--sr-body)!important}',
+      '#' + UI_ID + ' .sr-chip b{color:#183c2d!important}',
+      '#' + UI_ID + ' .sr-status{margin-top:12px;border-radius:12px;padding:10px 12px;background:#edf5f0;color:#24513d!important;font-weight:650;font-size:12.5px}',
       '.sr-status[hidden],.sr-spec[hidden],.sr-results[hidden]{display:none!important}',
-      '.sr-status.sr-error{background:#fff4ef;color:#9a3e25;border:1px solid #f0d0c4}',
+      '#' + UI_ID + ' .sr-status.sr-error{background:#fff4ef;color:#8a3520!important;border:1px solid #f0d0c4}',
       '.sr-retry{margin-left:9px;border:1px solid currentColor;background:transparent;border-radius:8px;padding:4px 8px;color:inherit;font-weight:750;cursor:pointer}',
       '.sr-results{margin-top:14px;border-top:1px solid #e2e9e4;padding-top:14px}',
       '.sr-result-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}',
       '.sr-result-head h4{font:700 18px/1.25 "Newsreader",Georgia,serif!important;margin:0!important}',
-      '.sr-result-meta{color:#65736c;font-size:12px;margin-top:3px}',
+      '#' + UI_ID + ' .sr-result-meta{color:var(--sr-muted)!important;font-size:12px;margin-top:3px}',
       '.sr-downloads{display:flex;gap:7px;flex-wrap:wrap}',
       '.sr-download{display:inline-flex;align-items:center;text-decoration:none;border-radius:10px;padding:8px 11px;background:#204034;color:#fff!important;font-size:12px;font-weight:750}',
       '.sr-download.sr-secondary{background:#fff;color:#204034!important;border:1px solid #bfd1c6}',
@@ -1945,9 +1989,9 @@
       '.sr-chart svg{max-width:100%;height:auto}',
       '.sr-proof{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}',
       '.sr-proof>div{background:#fff;border:1px solid #e1e8e3;border-radius:11px;padding:9px}',
-      '.sr-proof b{display:block;font-size:16px;color:#204034}.sr-proof span{font-size:10.5px;color:#738078}',
+      '#' + UI_ID + ' .sr-proof b{display:block;font-size:16px;color:#204034!important}#' + UI_ID + ' .sr-proof span{font-size:10.5px;color:var(--sr-muted)!important}',
       '#' + ADV_ID + '{border:1px solid #e3e5df;border-radius:14px;background:#fff;margin:0 0 14px;overflow:hidden}',
-      '#' + ADV_ID + '>summary{list-style:none;cursor:pointer;padding:12px 15px;font:750 12.5px system-ui;color:#526058;display:flex;align-items:center;gap:8px}',
+      '#' + ADV_ID + '>summary{list-style:none;cursor:pointer;padding:12px 15px;font:750 12.5px system-ui;color:#33423a!important;display:flex;align-items:center;gap:8px}',
       '#' + ADV_ID + '>summary::-webkit-details-marker{display:none}',
       '#' + ADV_ID + '>summary:before{content:"+";display:grid;place-items:center;width:20px;height:20px;border-radius:7px;background:#edf2ee;color:#204034;font-size:15px}',
       '#' + ADV_ID + '[open]>summary:before{content:"-"}',
@@ -1958,7 +2002,10 @@
          never leave the advanced tools ghosted/unreadable */
       '#' + ADV_BODY_ID + '{opacity:1!important;filter:none!important}',
       '#' + ADV_BODY_ID + ' .mls-sg-muted,#' + ADV_BODY_ID + ' .sgp-note{color:#4c5c53!important}',
-      '@media(max-width:700px){#' + UI_ID + '{padding:16px;border-radius:15px}#' + UI_ID + ' h3{font-size:21px}.sr-hint{display:block}.sr-example{display:block;margin-top:3px}.sr-proof{grid-template-columns:1fr}}',
+      /* srcontrast-1.0.0: a stuck pane fade-in must not be able to ghost the
+         PANEL either - the same shield the advanced body already carries. */
+      '#' + UI_ID + '{opacity:1!important;filter:none!important}',
+      '@media(max-width:700px){#' + UI_ID + '{padding:16px;border-radius:15px}#' + UI_ID + ' h3{font-size:21px}#' + UI_ID + ' .sr-hint{display:block}#' + UI_ID + ' .sr-example{display:block;margin-top:3px}.sr-proof{grid-template-columns:1fr}}',
       '@media(prefers-reduced-motion:reduce){#' + UI_ID + ' *{scroll-behavior:auto!important;transition:none!important}}'
     ].join('\n');
     (doc.head || doc.documentElement).appendChild(st);
