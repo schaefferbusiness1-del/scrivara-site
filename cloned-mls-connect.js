@@ -3899,72 +3899,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function todayKey() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function thisMonth() { return todayKey().slice(0, 7); }
 
-  /* ------------- goHome -> gotoDate shim (postMessage interception) --------
-   * WHY THIS SHAPE (measured live 2026-07-10, do not "simplify"):
-   *  - pullOne opens a patient via the extension's search-open, whose OPEN phase
-   *    scans the DISPLAYED schedule for the patient's row. Probed live: with
-   *    today's schedule shown, a June-2 patient returns candidates:0 /
-   *    "No matching patient was found" -> the day MUST be navigated first.
-   *  - mlsAppGotoDate to a 5-week-old date measured 20.3s (week-arrow stepping).
-   *    ground()'s own bridge timeout is 18s, so ANY approach that delays the
-   *    mlsAppGoHomeResult past 18s makes attempt 1 time out.
-   *  - ground() retries goHome up to 3x (~18s + 1.8s each, ~59s total). So we
-   *    SWALLOW the app's mlsAppGoHome, run the real goHome->gotoDate chain
-   *    ourselves, and answer with a synthetic mlsAppGoHomeResult when the chain
-   *    finishes (~25s) - it lands inside ground()'s attempt 2 and ground()
-   *    returns true. Costs one wasted 18s timeout per patient; robust.
-   * Only active while a month pull is running on a NON-today day: normal
-   * today-pulls never enter this path (shim.armed stays false).
-   * ---------------------------------------------------------------------- */
-  var shim = { armed: false, day: '', chain: null };
-  var _post = window.postMessage.bind(window);
-  function rawPost(msg) { try { _post(msg, '*'); } catch (e) {} }
-  function chainNav(day) {
-    /* real goHome (returns athenaOne to the schedule) then real gotoDate(day) */
-    return (async function () {
-      for (var a = 0; a < 3; a++) {
-        var gh = await bridgeRaw('mlsAppGoHome', {}, 'mlsAppGoHomeResult', 20000);
-        if (gh && !gh.__timeout && (gh.ok || gh.clicked)) break;
-        await wait(1500);
-      }
-      await wait(2500);
-      var gd = await bridgeRaw('mlsAppGotoDate', { date: day }, 'mlsAppGotoDateResult', 60000);
-      await wait(2500); /* weekstrip settle; v26.3's header-date verify lies - trust row content */
-      return !!(gd && gd.ok);
-    })();
-  }
-  /* bridge that bypasses our own postMessage wrapper (so content.js sees it) */
-  function bridgeRaw(type, payload, respType, timeout) {
-    return new Promise(function (resolve) {
-      var done = false;
-      function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
-      try { window.addEventListener('message', h, false); } catch (e) {}
-      rawPost(Object.assign({ type: type, source: 'mls-app', from: 'mls-app' }, payload || {}));
-      wait(timeout || 15000).then(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); });
-    });
-  }
-  function wrappedPost(msg, target, transfer) {
-    try {
-      if (shim.armed && msg && msg.source === 'mls-app' && msg.type === 'mlsAppGoHome' && shim.day && shim.day !== todayKey()) {
-        api.shimHits++;
-        if (!shim.chain) {
-          shim.chain = chainNav(shim.day).then(function (ok) {
-            shim.chain = null;
-            /* answer the app's ground() with a synthetic result once we're on the right day */
-            rawPost({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: { ok: !!ok, clicked: true, viaProvMonthPull: true } });
-            return ok;
-          }, function () {
-            shim.chain = null;
-            rawPost({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: { ok: false, clicked: false, viaProvMonthPull: true } });
-            return false;
-          });
-        }
-        return; /* swallowed: do NOT forward the app's goHome to the extension */
-      }
-    } catch (e) {}
-    return _post(msg, target === undefined ? '*' : target, transfer);
-  }
-  try { window.postMessage = wrappedPost; } catch (e) {}
+  /* setfix-1.0.0 (b1169, n=72): the goHome -> gotoDate shim described here
+     REMOVED. shim.armed was read at the swallow check and cleared on revert,
+     but never once set true anywhere in this file — chainNav/bridgeRaw/rawPost
+     existed solely to serve a swallow branch that could never fire, while
+     window.postMessage = wrappedPost still installed UNCONDITIONALLY, routing
+     every postMessage call on the page through an extra wrapper for no
+     behavioral gain. Nothing else in this module called chainNav or bridgeRaw
+     directly (verified by grep), so removing the whole block does not change
+     any pull's actual navigation behavior — the swallow path was already
+     unreachable. If a genuine need for this optimization resurfaces, re-add it
+     armed from the start (set shim.armed=true/shim.day in run()) with a suite
+     asserting api.shimHits>0 on a past-day pull, per the digest finding this
+     removal answers (n=72). */
 
   /* ------------------------------ roster --------------------------------- */
   function providersFor(monthPrefix) {
@@ -4035,8 +3982,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.providersFor = providersFor;
   window.__mlsProvMonthPull = api;
   window.__mlsProvMonthPull_revert = function () {
-    try { shim.armed = false; shim.day = ''; } catch (e) {}
-    try { if (window.postMessage === wrappedPost) window.postMessage = _post; } catch (e) {}
+    /* setfix-1.0.0 (b1169, n=72): the shim.armed reset and the postMessage
+       un-wrap were cleanup for the removed goHome->gotoDate shim above; there
+       is no wrapper installed to undo any more. */
     retireLegacyUi();
     try { delete window.__mlsProvMonthPull; } catch (e) {}
   };
@@ -4743,7 +4691,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         + '<a href="' + String(href).replace(/"/g, '&quot;') + '" target="_blank" rel="noopener">Other install options</a>';
     } catch (e) {}
   }
+  /* setfix-1.0.0 (b1169, n=46): render() used to run unconditionally on every
+     tick, and each run posted a mlsPing to the extension, added a 'message'
+     listener and armed a 2.5s timeout - full cost, even though the row it
+     paints lives inside a Settings section that is display:none until opened
+     (see the comment on slotAnchor() above, which deliberately does not gate
+     on offsetParent for that reason). Gate the EXPENSIVE work here instead,
+     the same way the device-role and EHR cards in this file already gate
+     ensureCard() on modal visibility - the interval keeps ticking cheaply,
+     the ping only fires while a doctor can actually see the row. */
+  function settingsModalOpen() {
+    try {
+      var modal = document.getElementById('settingsModal');
+      return !!(modal && getComputedStyle(modal).display !== 'none');
+    } catch (e) { return false; }
+  }
   function render() {
+    if (document.hidden || !settingsModalOpen()) return;
     fixStaleZipRow();
     var a = slotAnchor();
     if (!a) { return; }
@@ -41412,68 +41376,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 })();
 
 
-/* feat_pull_month_btn — "Pull whole month" button (item: pull entire month). Sends the v1.49
-   mlsAppPullMonth bridge message to the extension, which walks athenaOne's View Calendar backward
-   day-by-day and scrapes each day (all doctors). Aggregates the returned appointments into the
-   app's calendar cache (window._calAppts, deduped) so the Days-worked / monthly report can use a
-   full month. Shows a progress banner. Additive, read-only to Athena. */
-(function(){
-  "use strict";
-  if(window.__mlsPullMonthBtn) return; window.__mlsPullMonthBtn=true;
-  function banner(txt, spin){
-    var b=document.getElementById('mls-month-progress');
-    if(!b){ b=document.createElement('div'); b.id='mls-month-progress';
-      b.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#1A211C;color:#fff;padding:12px 18px;border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.4);font:600 14px system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;gap:12px;max-width:92vw';
-      (document.body||document.documentElement).appendChild(b);
-      if(!document.getElementById('mls-mp-kf')){var st=document.createElement('style');st.id='mls-mp-kf';st.textContent='@keyframes mlsmpspin{to{transform:rotate(360deg)}}';document.head.appendChild(st);} }
-    b.innerHTML=(spin?'<span style="width:16px;height:16px;border:3px solid rgba(255,255,255,.3);border-top-color:#C9DCD2;border-radius:50%;display:inline-block;animation:mlsmpspin .8s linear infinite"></span>':'✓ ')+'<span>'+txt+'</span>';
-    b.style.display='flex'; return b;
-  }
-  function pad2(n){n=String(n);return n.length<2?'0'+n:n;}
-  var running=false;
-  function pullMonth(){
-    if(running) return; running=true;
-    banner('Pulling the whole month from athenaOne — keep athenaOne open on View Calendar. This walks each day and can take a few minutes…', true);
-    var done=false;
-    function onMsg(e){
-      try{
-        var d=e.data; if(!d||d.source!=='mls-ext'||d.type!=='mlsAppPullMonthResult') return;
-        window.removeEventListener('message', onMsg); done=true; running=false;
-        var resp=d.resp||{};
-        if(!resp.ok){ banner('Month pull couldn’t read athenaOne — make sure it’s on Calendar ‣ View Calendar, then try again.', false); setTimeout(function(){var b=document.getElementById('mls-month-progress');if(b)b.style.display='none';},6000); return; }
-        var appts=resp.appts||[];
-        try{
-          var arr=window._calAppts||(window._calAppts=[]);
-          var seen={}; arr.forEach(function(a){ if(a) seen[(a.provider||'')+'|'+(a.appt_date||'')+'|'+(a.time||'')+'|'+(a.name||'')]=1; });
-          var added=0;
-          appts.forEach(function(a){ var k=(a.provider||'')+'|'+(a.appt_date||'')+'|'+(a.time||'')+'|'+(a.name||''); if(!seen[k]){ seen[k]=1; arr.push({provider:a.provider,appt_date:a.appt_date,time:a.time,name:a.name,start_at:(a.appt_date&&a.time)?a.appt_date:'',end_at:''}); added++; } });
-          try{ if(typeof window.renderWhosNext==='function') window.renderWhosNext(); }catch(_){}
-          banner('✓ Pulled '+appts.length+' appointments across '+(resp.daysPulled||0)+' days ('+added+' new). Days-worked/report now has the month.', false);
-        }catch(err){ banner('Month pull finished ('+appts.length+' appointments).', false); }
-        setTimeout(function(){var b=document.getElementById('mls-month-progress');if(b)b.style.display='none';},8000);
-      }catch(err){}
-    }
-    window.addEventListener('message', onMsg);
-    try{ window.postMessage({source:'mls-app', type:'mlsAppPullMonth', days:31}, location.origin); }catch(e){}
-    setTimeout(function(){ if(!done){ window.removeEventListener('message', onMsg); running=false; banner('Month pull timed out — athenaOne may have been busy. Try again with View Calendar open.', false); setTimeout(function(){var b=document.getElementById('mls-month-progress');if(b)b.style.display='none';},6000);} }, 600000);
-  }
-  function addBtn(){
-    if(document.getElementById('mls-pull-month-btn')) return true;
-    // anchor: the "Pull today's patients" quick action card's container
-    var anchor=null;
-    var spans=[].slice.call(document.querySelectorAll('span,div'));
-    for(var i=0;i<spans.length;i++){ var t=(spans[i].textContent||'').replace(/\s+/g,' ').trim(); if(/^Pull today's patients/i.test(t)&&t.length<40){ anchor=spans[i].closest('[class*=card],[class*=action],div'); break; } }
-    if(!anchor||!anchor.parentNode) return false;
-    var btn=document.createElement('button'); btn.id='mls-pull-month-btn'; btn.type='button';
-    btn.textContent='📅 Pull whole month';
-    btn.title='Walks athenaOne day-by-day and pulls the full month (for days-worked / reports). Keep athenaOne on View Calendar.';
-    btn.style.cssText='display:block;width:100%;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(120,120,180,.4);background:rgba(120,120,200,.12);color:inherit;font:600 13px system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer';
-    btn.addEventListener('click', pullMonth);
-    anchor.parentNode.insertBefore(btn, anchor.nextSibling);
-    return true;
-  }
-  if(!addBtn()){ var n=0; var iv=setInterval(function(){ if(addBtn()||++n>40) clearInterval(iv); }, 1200); }
-})();
+/* setfix-1.0.0 (b1169, n=70): feat_pull_month_btn REMOVED. It sent
+   {source:'mls-app', type:'mlsAppPullMonth'} and waited for
+   'mlsAppPullMonthResult' — a verb pair no extension release has ever
+   implemented (absent from MLS_BRIDGE_TYPES and from background.js,
+   background_append_v136.js, content.js, content_append_v136.js and
+   inject_dom.js). Its button (#mls-pull-month-btn) was already permanently
+   CSS-hidden by the MLS Easy silencer a few thousand lines up
+   ('#mls-pull-month-btn{display:none !important;}'), so nothing about this
+   removal is reachable-today behavior change; it only retires a 10-minute
+   dead-end (a 600000ms timeout ending in a false "athenaOne may have been
+   busy" diagnosis) that would have fired the moment anyone un-hid the button.
+   The real month-scoped calendar pulls (feat_mls_lastmonth_b51.js and the
+   month-pull satellite that sits beside it) are untouched — they use the real
+   mlsAppGotoDate/mlsAppPullSchedule verbs and are not part of this removal.
+   The CSS silencer's now-inert #mls-pull-month-btn selector is left alone
+   (harmless — it matches nothing once this button is never created — and
+   touching the MLS Easy silencer block is out of scope for this fix). */
 
 
 /* feat_opnote_quality — improve operative/procedure note generation (items 8/9/11). Wraps the app's
@@ -49843,7 +49762,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})();
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260827chk3084';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */ /* setfix-1.0.0 (b1169): the loader token was hand-pinned to '20260827chk3084' and never bumped across five SERVER_EXT_VERSION moves (3.0.84->3.0.101), so every returning browser kept running the 3.0.84 checker under sw.js's cache-first versioned-asset rule and EXT-003 told doctors they were current when they were not (n=39/60/73). Switched to the same __MLS_AV build token every other feat_* loader in this file uses -- it moves with every release and cannot go stale by omission. */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
@@ -51484,7 +51403,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.4.0 exact-key generation fallback; normal builds install the cache at byte zero before boot work */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pcs-1.2.1: synchronous ownership swap, idle-coalesced identity lookup, frame-coalesced conversation mirrors; no roster poll (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260802rs112';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260901rs113';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260824ne114';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
 ;(function(){try{var A='feat_mls_writeback_safety.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* wbs-1.2.0: event-driven cached preview plus a fresh fail-closed write-click gate; shared build token */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100c1';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */

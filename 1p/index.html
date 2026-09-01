@@ -6193,7 +6193,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="su_step" id="su_step2" style="display:none">
       <p style="font-weight:700;margin:0 0 2px">🕘 Your weekly schedule</p>
       <p class="note" style="margin:0 0 10px">Pick the days and hours patients can request appointments through your authenticated booking link. Use the quick buttons or set each day.</p>
-      <div id="su_schedBox"><div class="note">Loading your availability…</div></div>
+      <div id="su_schedBox" data-availbox><!-- setfix-1.0.0 (b1169): marker so avCloseEditor(), if ever reached from here, targets this pane instead of falling through to an unrelated Patients-view panel (n=40) --><div class="note">Loading your availability…</div></div>
     </div>
 
     <!-- STEP 3: Staff Prep -->
@@ -6212,6 +6212,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <div style="font-weight:600;font-size:14px">📅 Your online booking link</div>
           <div class="note" style="margin:2px 0 7px">Share this so patients can self-book into your open times.</div>
           <button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="copyBookingLink(this)">Get my booking link</button>
+          <!-- setfix-1.0.0 (b1169): wizard-local copy target so a failed clipboard write has somewhere on THIS screen to show the link (n=41) -->
+          <div id="suBookingLinkRow" style="display:none;margin-top:8px">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input id="suBookingLinkInput" aria-label="Booking link" readonly style="flex:1;min-width:200px;border:1px solid #cfe2f8;border-radius:10px;padding:8px 10px;font-size:13px;background:#fff" onclick="this.select()">
+              <button class="btn-primary" style="font-size:13px;padding:8px 14px" aria-label="Copy online booking link" onclick="copyBookingLinkText('suBookingLinkInput')">📋 Copy</button>
+            </div>
+          </div>
         </div>
         <div style="background:#fbf7ff;border:1px solid #e0d4f2;border-radius:10px;padding:11px 13px">
           <div style="font-weight:600;font-size:14px">🔐 Change your password</div>
@@ -8309,6 +8316,23 @@ function _mlsCalendarNavAllowed(user,caps,isHosted,setting){
   if(!isHosted) return !admin&&!lite&&!lawyer;
   return !!user&&!admin&&!lawyer&&!lite&&schedule&&(clinician||setting!==false);
 }
+/* setfix-1.0.0 (b1169, n=42): single source of truth for whether the
+   "🚀 Set up your practice" button may ever be shown. applyAccessUI() used to
+   own the real predicate (role in the provisionable set AND
+   capabilities.setupAllowed!==false AND never admin/lawyer) while
+   togglePtMore()'s "⋯ More" toggle re-derived a weaker one (`hosted`, which
+   only excludes lawyer) and stamped ptSetupBtn from that instead — so an
+   owner/admin account, or any account the server explicitly marked
+   setupAllowed:false, got the button back the moment "⋯ More" was pressed.
+   Both call sites now defer to this one predicate. */
+function mlsSetupButtonAllowed(){
+  if(typeof backendMode!=='function'||!backendMode()||!bkUser) return false;
+  if(bkUser.isAdmin) return false;
+  if(typeof isLawyerUser==='function'&&isLawyerUser()) return false;
+  var caps=bkUser.capabilities||{};
+  var role=String(bkUser.role||'').toLowerCase();
+  return ['head','doctor','user','nurse','receptionist'].indexOf(role)>=0 && caps.setupAllowed!==false;
+}
 function applyAccessUI(){
   /* Undo only the inline mutations owned by the previous role before applying
      the current account. This makes role switches in one tab reversible. */
@@ -8372,11 +8396,9 @@ function applyAccessUI(){
     banner.style.display=show?'flex':'none';
   }
   // 🚀 Setup is capability-aware for every provisionable practice role.
-  const _setupCaps=(bkUser&&bkUser.capabilities)||{};
-  const _setupRole=String((bkUser&&bkUser.role)||'').toLowerCase();
-  const _setupAllowed=['head','doctor','user','nurse','receptionist'].indexOf(_setupRole)>=0&&_setupCaps.setupAllowed!==false;
+  // setfix-1.0.0 (b1169, n=42): now the shared predicate — see mlsSetupButtonAllowed().
   const setupBtn=document.getElementById('ptSetupBtn');
-  if(setupBtn) setupBtn.style.display=(backendMode()&&bkUser&&!isAdmin&&!isLawyer&&_setupAllowed)?'':'none';
+  if(setupBtn) setupBtn.style.display=mlsSetupButtonAllowed()?'':'none';
   // 📅 Calendar follows the scheduling capability the server enforces. A
   // clinician's Calendar is a core workspace, not a front-desk preference:
   // legacy accounts sometimes carry calendarEnabled:false from the old
@@ -10140,7 +10162,17 @@ function mlsBuildSettingsTabs(){
   allSecs.forEach(function(sec){
     const head=sec.querySelector('.set-head');
     const label=head?(head.textContent||''):'';
-    const show = lawyer ? /Display|Security/i.test(label) : true;
+    /* setfix-1.0.0 (b1169, n=43): "Account & access" was missing from this
+       legacy-tab predicate, even though it is the section that actually holds
+       #changePwField and #mlsSvSettingsField (the walkthrough) — and the
+       comment right above those fields (line 5010) already documents that
+       allowedSettingsGroup(), the organized-Settings path, opens this exact
+       group for every role including lawyer. The two paths now agree. The
+       clinical fields also in this section (API key, practice name/specialty)
+       stay gated the way they already were: applyBackendModeUI() hides
+       #apiKeyField for every hosted account regardless of role, and
+       mlsSvApplySettingsUI() hides #mlsSvRerunBtn for roles with no wizard. */
+    const show = lawyer ? /Display|Security|Account & access/i.test(label) : true;
     sec.setAttribute('data-set-hidden', show?'0':'1');
     sec.style.display = show?'':'none';
   });
@@ -10237,6 +10269,11 @@ function openSettings(){
   try{ if(typeof __mlsJunkScrubRender==='function') __mlsJunkScrubRender(); }catch(eJsr){} /* junkscrub-1.0.0 */
   document.getElementById('settingsModal').classList.add('show');
   try{ if(window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcileSettings==='function') window.__mlsUiUnification.reconcileSettings(); }catch(e){}
+  /* setfix-1.0.0 (b1169, n=46): the live extension-version row's render() now
+     gates on the modal actually being visible (see __mlsExtVerLive in
+     1p-mls-connect.js), so force one render right after the modal opens
+     instead of waiting up to 4s for the next tick. */
+  try{ if(window.__mlsExtVerLive&&typeof window.__mlsExtVerLive.render==='function') window.__mlsExtVerLive.render(); }catch(eExtVer){}
 }
 /* Theme, text size and compact are PREVIEW-only: applyThemePreview and friends
    toggle body classes and nothing else, and only Save writes them to storage.
@@ -18500,7 +18537,7 @@ async function suRenderSchedule(){
     var d=await r.json().catch(function(){return{};});
     if(!r.ok){ box.innerHTML='<div class="note" style="color:#c0392b">'+esc((d&&d.error)||'Your plan or role does not include schedule setup.')+'</div>'; SU_STATE.error=(d&&d.error)||'Schedule setup is unavailable.'; return false; }
     try{ if(d&&d.availability&&d.availability.tz) localStorage.setItem(uns('acctTz'),String(d.availability.tz)); }catch(e){}
-    box.innerHTML=(typeof _avRenderEditor==='function')?_avRenderEditor((d&&d.availability)||{}):'<div class="note">Schedule editor unavailable.</div>';
+    box.innerHTML=(typeof _avRenderEditor==='function')?_avRenderEditor((d&&d.availability)||{},{chrome:false}):'<div class="note">Schedule editor unavailable.</div>';
     return true;
   }catch(e){ box.innerHTML='<div class="note" style="color:#c0392b">Could not load your schedule.</div>'; SU_STATE.error='Could not load your schedule.'; return false; }
 }
@@ -18596,14 +18633,25 @@ async function copyBookingLink(btn){
     const d=await r.json().catch(()=>({}));
     if(!d.token){ toast('Could not get your booking link — try again.','err'); return; }
     const link=location.origin+'/booking.html?token='+encodeURIComponent(d.token);
-    const inp=document.getElementById('bookingLinkInput'); if(inp) inp.value=link;
-    const row=document.getElementById('bookingLinkRow'); if(row) row.style.display='block';
+    /* setfix-1.0.0 (b1169, n=41): #bookingLinkRow lives inside #patientsView,
+       which is not on screen while the setup wizard modal is open, so the old
+       unconditional "ready below" toast pointed at a row the doctor could not
+       see or reach from step 4. Populate every mounted copy target and judge
+       "shown" by which one is actually visible (offsetParent!==null) rather
+       than assuming the Patients-view row is the one on screen. */
+    var shown=false;
+    [['bookingLinkInput','bookingLinkRow'],['suBookingLinkInput','suBookingLinkRow']].forEach(function(pair){
+      var inp=document.getElementById(pair[0]); if(inp) inp.value=link;
+      var row=document.getElementById(pair[1]); if(!row) return;
+      row.style.display='block';
+      if(row.offsetParent!==null) shown=true;
+    });
     let copied=false; try{ await navigator.clipboard.writeText(link); copied=true; }catch(e){}
-    toast(copied?'Booking link copied — share it with patients.':'Booking link ready below — tap Copy.','ok');
+    toast(copied?'Booking link copied — share it with patients.':(shown?'Booking link ready below — tap Copy.':'Could not copy automatically. Your booking link: '+link),'ok');
   }catch(e){ if(btn) btn.disabled=false; toast('Could not get your booking link.','err'); }
 }
-function copyBookingLinkText(){
-  const inp=document.getElementById('bookingLinkInput'); if(!inp||!inp.value) return;
+function copyBookingLinkText(id){
+  const inp=document.getElementById(id||'bookingLinkInput'); if(!inp||!inp.value) return;
   inp.select();
   let ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
   if(!ok && navigator.clipboard){ navigator.clipboard.writeText(inp.value).then(function(){toast('Copied!','ok');}).catch(function(){}); return; }
@@ -19006,7 +19054,15 @@ function emailLawyerInvite(){
 var _fuDays=3, _fuAuto=false;
 // ===== BOOKING AVAILABILITY (doctor sets the days/hours patients can book) =====
 var _AVDN=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-function _avRenderEditor(av){
+function _avRenderEditor(av,opts){
+  /* setfix-1.0.0 (b1169, n=40): opts.chrome===false omits the injected
+     Save/Close footer row. The setup wizard's own Back / Next / Skip row
+     already saves this step (suNext() calls saveAvailability() directly at
+     SU_STEP===2), so the injected "Close" button was dead chrome there --
+     pressing it did nothing visible in the wizard and instead hid an
+     unrelated Patients-view panel (#availBox) that shares avCloseEditor's
+     fallback. Standalone hosts (#calAvailBox, #availBox) keep the row. */
+  opts=opts||{}; var chrome=opts.chrome!==false;
   av=av||{}; var days=av.days||{}; var tz=av.tz||(typeof _acctTz==='function'?_acctTz():'America/New_York'); var slot=av.slotMin||30;
   var tzs=['America/New_York','America/Chicago','America/Denver','America/Phoenix','America/Los_Angeles','America/Anchorage','Pacific/Honolulu'];
   var h='<div style="font-weight:700;font-size:15px;margin-bottom:4px">🕘 Booking availability</div>';
@@ -19028,8 +19084,11 @@ function _avRenderEditor(av){
       +'<input type="time" id="avEnd'+d+'" value="'+e+'" '+(on?'':'disabled')+' style="padding:6px;border:1px solid var(--line);border-radius:10px">'
       +'</div>';
   }
-  h+='</div><div style="margin-top:12px"><button class="btn-primary" onclick="saveAvailability(this)">💾 Save availability</button> '
-    +'<button class="btn-ghost" onclick="avCloseEditor(this)">Close</button></div>';
+  h+='</div>';
+  if(chrome){
+    h+='<div style="margin-top:12px"><button class="btn-primary" onclick="saveAvailability(this)">💾 Save availability</button> '
+      +'<button class="btn-ghost" onclick="avCloseEditor(this)">Close</button></div>';
+  }
   h+='<div id="availMsg" class="mini" style="margin-top:8px;color:var(--muted)"></div>';
   return h;
 }
@@ -24612,12 +24671,20 @@ function settingsSearchChanged(){
     sec.classList.toggle('set-tab-hidden',!any);
   });
 }
-var _SET_SCOPES={ 'Account & access':'Your account · this device key', 'Practice & provider':'Practice', 'Note defaults':'Your account', 'AI personalization':'Your account', 'Display':'This device', 'Provider preferences':'Provider', 'Features':'Your account', 'App tabs':'This device', 'Security & privacy':'Your account', 'Legal expert profile':'Practice', 'Integrations':'Practice' };
+/* setfix-1.0.0 (b1169, n=45): three live Settings headings had no entry here
+   — 'Patient check-in avatar' and 'MLS Assist extension' are baked sections
+   (this file, near the App tabs / Security sections); 'AI draft tuning' is
+   injected at runtime by the draft-tuning fork module. All three are exactly the groups where "who
+   does this belong to" matters most (a practice-shared avatar config; a
+   per-device extension; an account-level AI format), and decorateSettingsScopes()
+   used to bail on them silently. */
+var _SET_SCOPES={ 'Account & access':'Your account · this device key', 'Practice & provider':'Practice', 'Note defaults':'Your account', 'AI personalization':'Your account', 'Display':'This device', 'Provider preferences':'Provider', 'Features':'Your account', 'App tabs':'This device', 'Security & privacy':'Your account', 'Legal expert profile':'Practice', 'Integrations':'Practice', 'Patient check-in avatar':'Practice', 'MLS Assist extension':'This device', 'AI draft tuning':'Your account' };
 function decorateSettingsScopes(){
   document.querySelectorAll('#settingsModal .set-head').forEach(function(h){
     if(h.querySelector('.set-scope')) return;
     var name=(h.textContent||'').replace(/^[^\w]*\s*/,'').replace(/\s+/g,' ').trim();
-    var scope=_SET_SCOPES[name]; if(!scope) return;
+    var scope=_SET_SCOPES[name];
+    if(!scope){ try{ console.warn('decorateSettingsScopes: no ownership scope mapped for Settings section "'+name+'"'); }catch(eWarn){} return; }
     var chip=document.createElement('span'); chip.className='set-scope';
     chip.style.cssText='margin-left:8px;font-size:10.5px;font-weight:600;color:#4a6a58;background:#eef5f0;border:1px solid #d7e6dc;border-radius:999px;padding:2px 8px;vertical-align:middle';
     chip.textContent=scope; chip.title='Who this group of settings belongs to';
@@ -30300,7 +30367,7 @@ function togglePtMore(){
     ptReceptionBtn:false,
     ptLinkBtn:hosted,
     ptIntakeBtn:hosted,
-    ptSetupBtn:hosted,
+    ptSetupBtn:mlsSetupButtonAllowed(), /* setfix-1.0.0 (b1169, n=42): was `hosted`, a weaker predicate that ignored role/capabilities.setupAllowed */
     ptBookLinkBtn:hosted,
     ptBoardBtn:hosted,
     ptAvailBtn:hosted,

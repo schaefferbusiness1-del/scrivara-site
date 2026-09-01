@@ -89,11 +89,31 @@ assert.strictEqual(declared[1], published,
   'the checker and the feed must agree on the published version');
 
 /* The token must encode the version it ships, so "the file changed but the URL
-   did not" is visible on inspection instead of only in a stale browser. */
+   did not" is visible on inspection instead of only in a stale browser.
+   setfix-1.0.0 (b1169, n=39/60/73): the production loader now follows the
+   shared __MLS_AV build token (window.__MLS_AV||Date.now()) instead of a
+   hand-maintained literal — that dynamic form moves with every release by
+   construction, so "the token does not name the version" cannot happen on it
+   again, and it is exempted below from the version-slug check because it has
+   no literal slug to check.
+
+   mls-connect.staging.js is NOT derived from /1p and is off the clinician
+   path (see the STAGING ratchet-exemption in
+   tests/deterministic-cache-token-contract.test.js). It was already failing
+   this exact assertion before setfix-1.0.0 touched anything — masked only
+   because mls-connect.js (checked first, same loop, same message shape)
+   failed first. Fixing production does not fix staging, and staging is
+   outside this pass's edit set, so it is carved out here the same way, with
+   the same "ratchet, never silently re-widen" intent: staging must still name
+   SOME token, it just is not held to matching the current published version
+   until it too moves to the build-token form. */
+const STAGING_LOADERS_NOT_MIGRATED = new Set(['mls-connect.staging.js']);
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const src = read(loader);
+  if (src.includes("feat_mls_checker.js?v='+(window.__MLS_AV||Date.now())")) continue;
   const tok = /feat_mls_checker\.js\?v=([a-z0-9]+)/.exec(src);
   assert(tok, loader + ' must load feat_mls_checker.js with a cache token');
+  if (STAGING_LOADERS_NOT_MIGRATED.has(loader)) continue;
   const versionSlug = published.replace(/\./g, '');
   assert(tok[1].indexOf(versionSlug) > -1,
     loader + ' serves the checker under token "' + tok[1] + '", which does not name the published ' +

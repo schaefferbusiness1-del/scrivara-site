@@ -39,7 +39,16 @@ const assets = [
      that bit copilot_actions, its loader now follows the build number. The
      build-form + dead-literal assertions live below with feat_visits'. */
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
-  ['feat_mls_checker.js', '20260827chk3084', '20260827chk3082'],
+  /* feat_mls_checker.js LEFT THIS LIST at setfix-1.0.0 (b1169, n=39/60/73):
+     the hand-maintained token 20260827chk3084 was set once at b1130 and then
+     never moved across the five releases that changed SERVER_EXT_VERSION
+     underneath it (3.0.84 -> 3.0.97 -> 3.0.98 -> 3.0.99 -> 3.0.100 -> 3.0.101),
+     so sw.js's cache-first versioned-asset rule kept serving the 3.0.84
+     checker to every returning browser -- on the one file whose entire job is
+     telling a doctor whether their extension is current. The production
+     loader now follows the shared build number the way feat_athena_doctor.js
+     and feat_mls_b121_pack.js already do above; the form + both retired
+     tokens are pinned in the block after this table. */
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
@@ -267,6 +276,13 @@ assert(connect.includes("feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now())
 assert(!/feat_mls_b121_pack\.js\?v=20\d{6}/.test(connect),
   'production: a hand-maintained feat_mls_b121_pack token came back — it will go stale at the next change');
 
+/* setfix-1.0.0 (b1169, n=39/60/73): MLS Checker, same cure as b121_pack above. */
+assert(connect.includes("feat_mls_checker.js?v='+(window.__MLS_AV||Date.now())"),
+  'production: MLS Checker must load with the build-number cache-buster');
+assert(!connect.includes('feat_mls_checker.js?v=20260827chk3084') &&
+  !connect.includes('feat_mls_checker.js?v=20260827chk3082'),
+  'production: a retired hand-maintained MLS Checker token is still reachable');
+
 /* feat_mls_avatar.js, same rule, from av-5.7.0. See the note in the list above:
    this file changes more than once a day, which is exactly the drift a
    date-granular staleness gate cannot see. */
@@ -280,8 +296,13 @@ for (const dead of ['20260807av567', '20260807av566']) {
   assert(!connect.includes(dead), 'retired avatar cache token ' + dead + ' is back in the loader');
 }
 
+/* mls-connect.staging.js is not derived from /1p and is off the clinician
+   path (see the STAGING ratchet-exemption in
+   tests/deterministic-cache-token-contract.test.js); setfix-1.0.0 (b1169)
+   migrated only the production loader, so staging still carries its last
+   hand-maintained token here on purpose. */
 assert(staging.includes('feat_mls_checker.js?v=20260827chk3084'),
-  'staging checker loader must use the same corrected immutable URL');
+  'staging checker loader still carries its last hand-maintained token (not migrated in this pass)');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');
 assert(staging.includes('feat_mls_command_palette.js?v=20260831cpal107'),
