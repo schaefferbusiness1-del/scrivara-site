@@ -2062,16 +2062,16 @@
     try {
       var sjStoreSr = window.__mlsPtsStore;
       if (sjStoreSr && typeof sjStoreSr.isReady === 'function' && sjStoreSr.isReady()) {
-        /* sj-2.0 REFUSE-AND-REPORT (design: tests/live-e2e-artifacts/2026-08-11-sj2-patients-idb-design.md):
-           post-migration the blob key is retired, so the read below returns null
-           and the merge lane refuses on 'no-snapshot' - correct, but its
-           "storage quota?" framing would misdiagnose. Say the true reason. And
-           minting a multi-MB JSON snapshot into localStorage here would re-create
-           the exact quota ceiling sj-2.0 removes, so pre-merge snapshots are NOT
-           minted in idb mode until the b121 snapshot lane moves to IndexedDB
-           (open question in the sj-2.0 rogues NOTES). Merges stay fail-closed:
-           no snapshot, no merge - unchanged semantics, honest message. */
-        log('sj-2.0: pre-merge snapshots are not minted post-migration (the patients blob left localStorage). Merges refuse fail-closed until the b121 snapshot lane moves to IndexedDB.');
+        /* sj-2.1 (2026-08-31, the open question from the sj-2.0 rogues NOTES is
+           now answered): pre-merge snapshots mint INTO IndexedDB via
+           mintSnapshot() - the review dialog awaits that write before it runs
+           the merge, and this gate only verifies the mint CONFIRMED (put
+           oncomplete) moments ago. localStorage stays untouched: a multi-MB
+           blob here is the exact quota ceiling sj-2.0 removed. No fresh
+           confirmed mint -> refuse exactly as before, honest message. */
+        var mintedAt = Number(api.state.snapshotMintedAt || 0);
+        if (mintedAt && (Date.now() - mintedAt) < 60000) return 'idb::' + key + '::b121backup::1';
+        log('sj-2.1: no fresh IndexedDB pre-merge snapshot - the review dialog mints one itself; from the console run __mlsDedupById.mintSnapshot() first. Merges stay fail-closed.');
         return '';
       }
       var raw = localStorage.getItem(key);
@@ -2083,6 +2083,88 @@
       return b1;
     } catch (e) { return ''; } /* quota -> fail closed, caller refuses to merge */
   }
+  /* sj-2.1: the b121 snapshot lane's own IndexedDB home - its own database,
+     its own two-generation rotation; the sj-2.0 primitive's database is never
+     touched. */
+  function snapDb() {
+    return new Promise(function (resolve, reject) {
+      try {
+        var rq = indexedDB.open('mlsB121SnapshotsV1', 1);
+        rq.onupgradeneeded = function () { try { rq.result.createObjectStore('snaps'); } catch (e) {} };
+        rq.onsuccess = function () { resolve(rq.result); };
+        rq.onerror = function () { reject(rq.error || new Error('idb-open-failed')); };
+      } catch (e) { reject(e); }
+    });
+  }
+  function snapPut(db, k, v) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var tx = db.transaction('snaps', 'readwrite');
+        tx.objectStore('snaps').put(v, k);
+        tx.oncomplete = function () { resolve(true); };
+        tx.onerror = tx.onabort = function () { reject(tx.error || new Error('idb-write-failed')); };
+      } catch (e) { reject(e); }
+    });
+  }
+  function snapGet(db, k) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var rq = db.transaction('snaps', 'readonly').objectStore('snaps').get(k);
+        rq.onsuccess = function () { resolve(rq.result || null); };
+        rq.onerror = function () { reject(rq.error || new Error('idb-read-failed')); };
+      } catch (e) { reject(e); }
+    });
+  }
+  api.mintSnapshot = function () {
+    /* Serialize the CURRENT roster and write the rotated pair; resolves true
+       only after IndexedDB confirms the newest generation is committed. */
+    try {
+      var key = patientsKey(); if (!key) return Promise.resolve(false);
+      var rows = getP();
+      if (!Array.isArray(rows)) return Promise.resolve(false);
+      var payload = { at: new Date().toISOString(), raw: JSON.stringify(rows), plainRows: true };
+      var b1 = key + '::b121backup::1', b2 = key + '::b121backup::2';
+      return snapDb().then(function (db) {
+        return snapGet(db, b1).then(function (prev) {
+          return (prev ? snapPut(db, b2, prev) : Promise.resolve(true)).then(function () { return snapPut(db, b1, payload); });
+        }).then(function () {
+          try { db.close(); } catch (e) {}
+          api.state.snapshotMintedAt = Date.now();
+          api.state.snapshotKeys = ['idb:' + b1, 'idb:' + b2];
+          log('sj-2.1: pre-merge snapshot minted into IndexedDB (' + rows.length + ' rows, two generations kept).');
+          return true;
+        });
+      }).catch(function (e) { log('sj-2.1: snapshot mint FAILED (' + ((e && e.message) || e) + ') - merges stay refused.'); return false; });
+    } catch (e) { return Promise.resolve(false); }
+  };
+  api._restoreSnapshotRows = function (bk) {
+    /* sj-2.0 ROGUE RE-ROUTE (design: tests/live-e2e-artifacts/2026-08-11-sj2-patients-idb-design.md):
+       post-migration the patients blob key is RETIRED. A direct setItem here
+       would re-create a stale localStorage blob, trip the primitive's
+       both-blob-and-idb-present fail-closed boot, and silently diverge from
+       the IndexedDB copy. The rewind routes through the primitive's bulk
+       confirm-awaiting path (a whole-roster delta can never honestly fit the
+       256KB sync journal) with allowRemovals - a human-confirmed whole-store
+       rewind IS an intentional removal path (it clears the foreign-carry set
+       by design, exactly like purge). Returns a PROMISE; this is a
+       console-only emergency API and log() reports the settled verdict.
+       sj-2.1: idb-minted snapshots store the rows as PLAIN JSON (plainRows) -
+       those skip the blob decode. */
+    var sjStore = window.__mlsPtsStore;
+    var sjRaw = bk.raw;
+    if (bk.plainRows !== true) { try { if (typeof window.__mlsPtsDecode === 'function') sjRaw = window.__mlsPtsDecode(sjRaw); } catch (eSjDec) {} }
+    var sjRows = null;
+    try { sjRows = JSON.parse(sjRaw); } catch (eSjParse) { sjRows = null; }
+    if (!Array.isArray(sjRows)) return 'restore-refused: the snapshot does not decode to a patient array - nothing was written';
+    return sjStore.saveAsync(sjRows, { allowRemovals: true }).then(function (sjRes) {
+      refreshRenders();
+      log('restored snapshot from ' + bk.at + ' via __mlsPtsStore: ' + sjRows.length + ' row(s), IndexedDB-confirmed gen ' + ((sjRes && sjRes.confirmedGen) || '?') + '.');
+      return 'restored snapshot from ' + bk.at + ' (' + sjRows.length + ' rows, IndexedDB-confirmed)';
+    }, function (eSjSave) {
+      log('restore FAILED in __mlsPtsStore: ' + ((eSjSave && eSjSave.message) || eSjSave) + ' - the retired blob key was NOT rewritten. Check __mlsPtsStore.receipt(): a degraded write-behind may still hold the rewind in memory awaiting IndexedDB.');
+      return 'restore-failed: ' + ((eSjSave && eSjSave.message) || eSjSave);
+    });
+  };
   api._clearBackups = function (o) {
     if (!o || o.confirm !== 'EXECUTE') return 'Backups kept. Pass {confirm:"EXECUTE"} to delete the rotated pre-merge backups once you are happy with a merge.';
     var key = patientsKey(); if (!key) return 'no-storage-key';
@@ -2099,33 +2181,23 @@
     if (!o || o.confirm !== 'EXECUTE') return 'Pass {confirm:"EXECUTE"} to rewind the patients store to the newest pre-merge snapshot. Prefer __mlsDedupById.revert() - it undoes ONLY what this module changed.';
     try {
       var key = patientsKey(); if (!key) return 'no-storage-key';
-      var bk = JSON.parse(localStorage.getItem(key + '::b121backup::1') || 'null');
-      if (!bk || typeof bk.raw !== 'string') return 'no-snapshot';
       var sjStore = window.__mlsPtsStore;
-      if (sjStore && typeof sjStore.isReady === 'function' && sjStore.isReady()) {
-        /* sj-2.0 ROGUE RE-ROUTE (design: tests/live-e2e-artifacts/2026-08-11-sj2-patients-idb-design.md):
-           post-migration the patients blob key is RETIRED. A direct setItem here
-           would re-create a stale localStorage blob, trip the primitive's
-           both-blob-and-idb-present fail-closed boot, and silently diverge from
-           the IndexedDB copy. The rewind now routes through the primitive's bulk
-           confirm-awaiting path (a whole-roster delta can never honestly fit the
-           256KB sync journal) with allowRemovals - a human-confirmed whole-store
-           rewind IS an intentional removal path (it clears the foreign-carry set
-           by design, exactly like purge). Returns a PROMISE in this mode; this is
-           a console-only emergency API and log() reports the settled verdict. */
-        var sjRaw = bk.raw;
-        try { if (typeof window.__mlsPtsDecode === 'function') sjRaw = window.__mlsPtsDecode(sjRaw); } catch (eSjDec) {}
-        var sjRows = null;
-        try { sjRows = JSON.parse(sjRaw); } catch (eSjParse) { sjRows = null; }
-        if (!Array.isArray(sjRows)) return 'restore-refused: the snapshot does not decode to a patient array - nothing was written';
-        return sjStore.saveAsync(sjRows, { allowRemovals: true }).then(function (sjRes) {
-          refreshRenders();
-          log('restored snapshot from ' + bk.at + ' via __mlsPtsStore: ' + sjRows.length + ' row(s), IndexedDB-confirmed gen ' + ((sjRes && sjRes.confirmedGen) || '?') + '.');
-          return 'restored snapshot from ' + bk.at + ' (' + sjRows.length + ' rows, IndexedDB-confirmed)';
-        }, function (eSjSave) {
-          log('restore FAILED in __mlsPtsStore: ' + ((eSjSave && eSjSave.message) || eSjSave) + ' - the retired blob key was NOT rewritten. Check __mlsPtsStore.receipt(): a degraded write-behind may still hold the rewind in memory awaiting IndexedDB.');
-          return 'restore-failed: ' + ((eSjSave && eSjSave.message) || eSjSave);
-        });
+      var sjMode = !!(sjStore && typeof sjStore.isReady === 'function' && sjStore.isReady());
+      var bk = JSON.parse(localStorage.getItem(key + '::b121backup::1') || 'null');
+      if ((!bk || typeof bk.raw !== 'string') && sjMode) {
+        /* sj-2.1: post-migration the snapshot lives in the b121 IndexedDB
+           home, not localStorage - read it there and continue the same
+           primitive-routed rewind. Returns a PROMISE, like the branch below. */
+        return snapDb().then(function (db) {
+          return snapGet(db, key + '::b121backup::1').then(function (got) { try { db.close(); } catch (eC) {} return got; });
+        }).then(function (got) {
+          if (!got || typeof got.raw !== 'string') return 'no-snapshot';
+          return api._restoreSnapshotRows(got);
+        }).catch(function (eIdb) { return 'restore-failed: ' + ((eIdb && eIdb.message) || eIdb); });
+      }
+      if (!bk || typeof bk.raw !== 'string') return 'no-snapshot';
+      if (sjMode) {
+        return api._restoreSnapshotRows(bk);
       }
       localStorage.setItem(key, bk.raw);
       refreshRenders();
@@ -2600,6 +2672,14 @@
     if (go) {
       go.addEventListener('click', function () {
         go.disabled = true;
+        /* sj-2.1: in idb mode the pre-merge snapshot is minted (and CONFIRMED)
+           first; the merge still runs synchronously after it. A failed mint
+           refuses exactly like the old no-snapshot path. */
+        var sjLive = null; try { sjLive = window.__mlsPtsStore; } catch (eSjL) {}
+        var needsMint = !!(sjLive && typeof sjLive.isReady === 'function' && sjLive.isReady() && typeof api.mintSnapshot === 'function');
+        if (needsMint) say('Writing the pre-merge safety snapshot…');
+        (needsMint ? api.mintSnapshot() : Promise.resolve(true)).then(function (minted) {
+        if (needsMint && !minted) { say('Merge did not run (the pre-merge safety snapshot could not be written). Nothing was changed.'); go.disabled = false; return; }
         say('Merging...');
         var res = null;
         try { res = api.runOnce({ confirm: 'EXECUTE' }); }
@@ -2611,6 +2691,7 @@
         try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
         /* mgstale-1.0.0: the groups we just collapsed are gone - say so now */
         try { mgSync(); } catch (e) {}
+        });
       });
     }
     try {
