@@ -33643,6 +33643,61 @@ function _athenaFreezeVisitBinding(patient,meta){
   try{Object.freeze(pt);if(ctx)Object.freeze(ctx);Object.freeze(binding);}catch(e){}
   return binding;
 }
+/* dayvs-1.0.0 (owner 2026-09-01: "visits need to be stored correctly in mls").
+   THE COMMENT BELOW HAS BEEN FALSE SINCE IT WAS WRITTEN. It says the live
+   visit's appointmentId "still comes from the day schedule import when
+   present"; the visitContext literal it describes carried visitDate and
+   provider and NOTHING ELSE, so _athenaFreezeVisitBinding coerced
+   appointmentId and encounterId to '' and noteRecordFromState stored those
+   empty strings on every visit note the app has ever filed. A saved visit
+   therefore could not be tied back to the Athena appointment it was FOR, even
+   when the day's own schedule import knew exactly which one it was - the op
+   note lane resolved it (opvs-1.0.0 / _opVisitStamp) and the visit lane, which
+   is where most of a day's notes come from, did not.
+
+   THIS IS RESOLUTION, NOT SELECTION, and the distinction is the whole safety
+   of it. MLS must never PICK an appointment for a patient. So this answers only
+   when the answer is forced: exactly ONE appointment on that day for that exact
+   patient id, and exactly ONE appointment-id in that day's own schedule-import
+   ledger keyed to that patient AND that appointment row AND that day. Two
+   candidates, zero candidates, a missing ledger, a different patient - every
+   one of those returns '' and the binding is exactly what it was before. Those
+   are the same rules _opVisitStamp already ships and the same ledger it reads;
+   nothing new is inferred here.
+
+   It also cannot make a write easier: an appointmentId only ever narrows the
+   write chain (it takes the exact appointment-row open path instead of the
+   by-name one, and the landing surface still re-proves name, DOB and the frozen
+   schedule date before anything is accepted). Where it stays '', apptpick-1.0.0
+   asks athenaOne for the day's appointments at the review, exactly as today. */
+function _athenaCurrentApptStamp(patientId,day){
+  var out={appointmentId:'',provider:''};
+  try{
+    var pid=String(patientId||'').trim();
+    if(!pid||!/^\d{4}-\d{2}-\d{2}$/.test(String(day||'')))return out;
+    var rows=((window._calAppts||[])||[]).filter(function(a){
+      if(!a)return false;
+      var aday=String(a.appt_date||a.day_local||String(a.start_at||'').slice(0,10)).slice(0,10);
+      if(aday!==day)return false;
+      return String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||'').trim()===pid;
+    });
+    if(rows.length!==1)return out;                    /* ambiguity fails closed */
+    var a=rows[0];
+    out.provider=String(a.providerName||a.provider_name||a.provider||'').trim();
+    if(typeof window.uns!=='function')return out;
+    var raw=null; try{raw=localStorage.getItem(window.uns('schedImportIndexV1::'+day));}catch(eLs){raw=null;}
+    var parsed=raw?JSON.parse(raw):null,ledger=(parsed&&parsed.rows)||null,hits=[];
+    if(ledger&&typeof ledger==='object'&&!Array.isArray(ledger)){
+      Object.keys(ledger).forEach(function(k){
+        var m=/^appointment-id:(\d+)$/.exec(k),e=ledger[k];
+        if(!m||!e)return;
+        if(String(e.patientId||'').trim()===pid&&String(e.backendAppointmentId||'').trim()===String(a.id||'').trim()&&String(e.appt_date||'').slice(0,10)===day)hits.push(m[1]);
+      });
+    }
+    if(hits.length===1)out.appointmentId=hits[0];
+  }catch(e){}
+  return out;
+}
 function _athenaBindingForCurrentVisit(source){
   var p=null; try{p=(typeof activePatient==='function')?activePatient():null;}catch(e){}
   var label=''; try{label=(document.getElementById('patientLabel')||{}).value||'';}catch(e2){}
@@ -33654,7 +33709,11 @@ function _athenaBindingForCurrentVisit(source){
      same values now ship as visitContext; appointmentId still comes from the
      day schedule import when present, which is what the blocked-row remedy
      asks for. */
-  return _athenaFreezeVisitBinding(_athenaPatientSnapshot(p,label),{source:source||'current',historical:false,noteTimestamp:now,displayDate:_athenaLocalDay(now),displayProvider:provider,visitContext:{visitDate:_athenaLocalDay(now),provider:provider}});
+  var _vday=_athenaLocalDay(now);
+  /* dayvs-1.0.0: the forced answer, or ''. Never a guess, never a default. */
+  var _vstamp={appointmentId:'',provider:''};
+  try{_vstamp=_athenaCurrentApptStamp(String((p&&(p.id||p.patientId))||''),_vday)||_vstamp;}catch(eVs){}
+  return _athenaFreezeVisitBinding(_athenaPatientSnapshot(p,label),{source:source||'current',historical:false,noteTimestamp:now,displayDate:_vday,displayProvider:provider||_vstamp.provider,visitContext:{visitDate:_vday,provider:provider||_vstamp.provider,appointmentId:_vstamp.appointmentId}});
 }
 /* mergeid-1.0.0 (owner 2026-09-01, after 85 duplicate charts were merged):
    A NOTE OUTLIVES THE CHART ID IT WAS SAVED UNDER. When two charts of one
