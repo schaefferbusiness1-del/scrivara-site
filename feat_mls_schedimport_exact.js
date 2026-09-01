@@ -467,6 +467,42 @@
     if (!name || /^all(?:\s+(?:providers?|doctors?))?$/i.test(name)) return { mode: "all", name: "All providers", id: id, stableKey: stableKey, raw: providerRaw, key: "", rosterVerified: rosterVerified, detectedOnly: false };
     return { mode: "selected", name: name, id: id, stableKey: stableKey, raw: providerRaw, key: providerKey(name), rosterVerified: rosterVerified, detectedOnly: detectedOnly };
   }
+  /* ===== scopefrozen-1.0.0 (a RESUME does not re-verify what START proved) ==
+     OWNER 2026-09-01: "if a month pull, year pull stops or fials or if a day
+     pull stops or failes it sohuld be possible to resume and iot acatlly
+     work".
+
+     MEASURED the same day: a settled month job refused every Resume/Retry with
+     "The full Athena provider roster is not verified yet." The month manifest
+     had already FROZEN its provider at Start, but the all-provider branch
+     below re-demanded a LIVE complete roster receipt on every execute, and a
+     roster receipt is only complete while athenaOne is showing a readable full
+     Day schedule at that instant. So the resume of a job whose scope was
+     proved hours earlier died on a check that had nothing left to decide.
+
+     THE RULE, exactly:
+       - a NEW start still verifies the live roster. Nothing below relaxes it.
+       - a RESUME of a durable job may present the scope stamp its own manifest
+         recorded when that job's scope WAS verified live. It is accepted only
+         for the all-provider mode, only when the live receipt is the one thing
+         missing, only while the stamp is inside FROZEN_SCOPE_MAX_AGE_MS, and
+         only through the private option name below - the public
+         _resolveProviderRequest strips it, so no other caller can present one.
+       - selected-provider resumes need no relaxation at all: that branch
+         already resolves from the persisted roster entry (detectedOnly), which
+         is why only All was ever failing.
+     Per-day safety is untouched: scopeProviderRows still requires the complete
+     two-dimensional schedule receipt and provider attribution on every row. */
+  var FROZEN_SCOPE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+  function frozenAllScopeOk(stamp) {
+    if (!stamp || typeof stamp !== "object") return null;
+    if (Number(stamp.v) !== 1 || String(stamp.mode || "") !== "all" || stamp.verified !== true) return null;
+    var at = Number(stamp.at || 0);
+    if (!isFinite(at) || at <= 0) return null;
+    var age = Date.now() - at;
+    if (age < 0 || age > FROZEN_SCOPE_MAX_AGE_MS) return null;
+    return { v: 1, mode: "all", verified: true, at: Math.floor(at), listed: Math.max(0, Math.floor(Number(stamp.listed || 0) || 0)) };
+  }
   /* Every selected-provider route shares this one gate. A display name or an
      appointment-derived provider list is never a roster. The canonical roster
      must carry a complete Athena sweep receipt, then the selected stable
@@ -484,7 +520,9 @@
     if (req.mode === "all") {
       if (opts.allowAll !== true) return no("provider-required", "Choose one verified provider first.");
       if (opts.requireRosterForAll === true && !(receipt && receipt.complete === true)) {
-        return no("provider-roster-incomplete", "The full Athena provider roster is not verified yet. Re-pull the Day schedule and retry.");
+        var frozenAll = frozenAllScopeOk(opts.__frozenAllScope);
+        if (!frozenAll) return no("provider-roster-incomplete", "The full Athena provider roster is not verified yet. Re-pull the Day schedule and retry.");
+        return { ok: true, complete: true, request: req, provider: "all", receipt: receipt, frozenScope: frozenAll };
       }
       return { ok: true, complete: true, request: req, provider: "all", receipt: receipt };
     }
@@ -10521,9 +10559,15 @@
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var onDayCheckpoint = isFn(opts.onDayCheckpoint) ? opts.onDayCheckpoint : null;
     var shouldStop = isFn(opts.shouldStop) ? opts.shouldStop : null;
-    var gate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: true, allowDetectedProvider: true });
+    /* scopefrozen-1.0.0: the ONE caller allowed to present a frozen all-provider
+       scope is a durable range job resuming its own manifest. It reaches the
+       gate under the private option name; the public _resolveProviderRequest
+       export strips it, so a fresh Start can never carry one. */
+    var gate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: true, allowDetectedProvider: true, __frozenAllScope: opts.frozenAllScope });
+    var monthScopeFrozen = !!(gate && gate.ok === true && gate.frozenScope);
+    if (monthScopeFrozen) onStatus("Resuming under the provider scope this pull verified when it started.", "");
     function failed(reason, error) {
-      return { ok: false, complete: false, reason: reason, error: error || "", month: month, includeHistory: includeHistory, historyRequested: includeHistory, visitNotesRequested: monthPullVisitBodies !== null ? monthPullVisitBodies : undefined, visitNotesMode: monthFullNotesOff ? "day-facts" : (monthPullVisitBodies === true ? "full" : "unspecified"), provider: gate.provider || null, providerRosterReceipt: gate.receipt || null, days: [], totals: { days: 0, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 }, retry: { dates: [] } };
+      return { ok: false, complete: false, reason: reason, error: error || "", month: month, includeHistory: includeHistory, historyRequested: includeHistory, visitNotesRequested: monthPullVisitBodies !== null ? monthPullVisitBodies : undefined, visitNotesMode: monthFullNotesOff ? "day-facts" : (monthPullVisitBodies === true ? "full" : "unspecified"), provider: gate.provider || null, providerRosterReceipt: gate.receipt || null, providerScopeFrozen: monthScopeFrozen, days: [], totals: { days: 0, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 }, retry: { dates: [] } };
     }
     if (!dates || !dates.length) return Promise.resolve(failed("invalid-month", "Choose the current or a past month."));
     if (!gate.ok) { onStatus(gate.error || "The provider roster is incomplete.", "err"); return Promise.resolve(failed(gate.reason, gate.error)); }
@@ -10566,6 +10610,9 @@
       historyRequested: includeHistory, visitNotesRequested: monthPullVisitBodies !== null ? monthPullVisitBodies : undefined,
       visitNotesMode: monthFullNotesOff ? "day-facts" : (monthPullVisitBodies === true ? "full" : "unspecified"),
       provider: frozenProvider, providerRosterReceipt: gate.receipt || null,
+      /* scopefrozen-1.0.0: a resume that ran under the manifest's recorded
+         scope says so on its own receipt. Nothing is hidden. */
+      providerScopeFrozen: monthScopeFrozen,
       /* prs-1.0.0: an ALL-provider MONTH pull inherits exactly the same
          painted-grid coverage limit as the day pull it repeats. */
       providerScope: providerScopeReceipt(frozenProvider === "all" ? "all" : "selected"), days: [],
@@ -11837,7 +11884,16 @@
        verdict over the top of this one after the promise resolved. */
     contentNotice: contentNotice,
     _providerKey: providerKey,
-    _resolveProviderRequest: resolveProviderRequest,
+    /* scopefrozen-1.0.0: the public gate can never be handed a frozen scope.
+       Only pullMonth's own private call site may present one, and only from a
+       durable job's own manifest, so a NEW start always verifies live. */
+    _resolveProviderRequest: function (raw, opts) {
+      var passed = {}, key;
+      if (opts && typeof opts === "object") {
+        for (key in opts) if (Object.prototype.hasOwnProperty.call(opts, key) && key !== "__frozenAllScope") passed[key] = opts[key];
+      }
+      return resolveProviderRequest(raw, passed);
+    },
     _monthDateKeys: monthDateKeys,
     _scopeProviderRows: scopeProviderRows,
     _hydrateMissingScheduleProof: hydrateMissingScheduleProof,

@@ -24070,6 +24070,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function pConn(kind, label) { var d2 = $('ez3PullDot'); if (d2) d2.className = 'dot ' + kind; pSet('ez3PullConn', label); }
   function pCounts() {
+    /* pickfreeze-1.0.0: FIRST, and outside the no-P early return below - the
+       reload case (no P yet, saved job present) is exactly the case where the
+       picker was misleading. A bare try/catch, not safe(): pCounts is lifted
+       verbatim into two suites' VM hosts, and a helper this function does not
+       already use would fail them for the wrong reason. */
+    try { p1RangeFreezePicker(); } catch (ePf) {}
     /* honest-tiles-1.0.1: a FRESH tab with a saved durable job has no live P,
        so the early return below used to skip the durable tile paint and the
        four tiles read 0 / 0 / 0 / 0 under a strip saying "18 of 31 days saved"
@@ -24322,6 +24328,60 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      receipt. The raw pullMonth stays reachable as the engine call underneath
      (and as the fallback if the range engine is not installed). */
   var p1RangeWatchTimer = null;
+  /* ===== pickfreeze-1.0.0 (the card may not show a scope the job is not
+     using) ==============================================================
+     OWNER 2026-09-01, with a screenshot: after a reload the "Pulling for"
+     picker read "Your athenaOne view (default)" while a saved month job was
+     frozen to a different scope. The selector is rebuilt from S.providerRef,
+     and S resets on every reload, so the card described a pull that was not
+     the pull that was saved.
+
+     The saved manifest is the authority while its job is unfinished: this
+     writes the job's frozen provider into #ez3Prov (minting the option when
+     the roster no longer lists it) and says out loud, under the picker, that
+     the scope is locked until the job settles. It NEVER disables the control -
+     #ez3Prov is also the visit-list filter, and taking that away would cost the
+     doctor a working feature to fix a label. Returns the value it painted, or
+     '' when no saved job owns the card. */
+  function p1RangeFreezePicker() {
+    var sel = $('ez3Prov'), note = $('ez3PullScopeLock');
+    if (!sel) return '';
+    var st = p1RangeState();
+    var frozen = (st && st.provider && (p1RangeRunning(st) || p1RangeResumable(st))) ? st.provider : null;
+    if (!frozen) {
+      if (sel.getAttribute && sel.getAttribute('data-mls-jobscope')) sel.removeAttribute('data-mls-jobscope');
+      if (note) { note.textContent = ''; note.style.display = 'none'; }
+      return '';
+    }
+    /* This block is lifted verbatim into two suites' synthetic hosts, so it
+       may not depend on a constant those hosts do not define. */
+    var want = '__all', label = (typeof DEFAULT_PROVIDER_SCOPE_LABEL === 'string') ? DEFAULT_PROVIDER_SCOPE_LABEL : 'Your athenaOne view (default)';
+    if (String(frozen.mode || '') === 'selected') {
+      var key = String(frozen.stableKey || frozen.id || '');
+      if (!key) return '';
+      want = 'pv:' + encodeURIComponent(key);
+      var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+      var entry = rp && isFn(rp.resolve) ? safe(function () { return rp.resolve(key); }, null) : null;
+      label = String((entry && entry.name) || '') || 'the provider this pull was started for';
+    }
+    var found = false;
+    for (var i = 0; i < sel.options.length; i++) { if (sel.options[i] && sel.options[i].value === want) { found = true; break; } }
+    if (!found) {
+      safe(function () {
+        var opt = document.createElement('option');
+        opt.value = want; opt.textContent = label;
+        sel.appendChild(opt);
+      });
+    }
+    if (sel.value !== want) sel.value = want;
+    if (sel.setAttribute) sel.setAttribute('data-mls-jobscope', want);
+    if (note) {
+      note.textContent = 'This saved pull is locked to ' + label + ' until it finishes or is cancelled.';
+      note.style.display = '';
+    }
+    return want;
+  }
+  /* ===== end pickfreeze-1.0.0 ========================================== */
   function p1RangeApi() {
     var api = safe(function () { return window.__mlsP1RangeJobs; }, null);
     return api && api.installed === true && isFn(api.startMonth) && isFn(api.resume) ? api : null;
@@ -24543,8 +24603,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     else if (status === 'paused') pSet('ez3PullNow', 'Paused. Resume continues from the saved checkpoint.');
     else if (status === 'cancelled') pSet('ez3PullNow', 'Cancelled. Days already saved stay saved.');
     else if (status === 'waiting-login') pSet('ez3PullNow', 'athenaOne signed you out — sign in again and press Resume.');
-    else if (result && result.ok === false && !st) pSet('ez3PullNow', 'The month pull did not start: ' + String(result.reason || 'unknown') + '.');
-    else pSet('ez3PullNow', 'Stopped safely — press Resume to continue where it left off.');
+    else if (result && result.ok === false && !st) pSet('ez3PullNow', p1RangeReasonCopy(result.reason) || ('The month pull did not start: ' + String(result.reason || 'unknown') + '.'));
+    /* pullresume-1.0.0: 'waiting-retry' is where every named cause used to be
+       swallowed by one generic sentence - athena signed out, MLS Assist
+       unreachable, a day athena would not verify. Say the job's OWN reason. */
+    else pSet('ez3PullNow', (st && st.reason ? p1RangeReasonCopy(st.reason) : '') || 'Stopped safely — press Resume to continue where it left off.');
     pCounts(); safe(function () { if (isFn(window.loadCalendar)) window.loadCalendar(); }); render();
   }
   function p1RangeRun(promise) {
@@ -24559,6 +24622,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       pCounts();
     });
   }
+  /* pullresume-1.0.0: the sentence for a reason code, taken from the range
+     engine's own copy table so the month card and the year card can never
+     disagree about what stopped a pull. */
+  function p1RangeReasonCopy(reason) {
+    var api = p1RangeApi();
+    return safe(function () { return api && isFn(api.reasonCopy) ? String(api.reasonCopy(reason) || '') : ''; }, '');
+  }
+  /* pullresume-1.0.0: a resume that genuinely cannot proceed is REFUSED BY THE
+     ENGINE, by its own name - 'signin' when MLS is signed out,
+     'importer-not-ready' when the schedule reader is not loaded, 'no-ext' when
+     MLS Assist is unreachable, 'signin-expired' when athenaOne signed the
+     doctor out. Every one of those already reaches this panel as a reason code
+     and is spoken through the ONE copy table above. A second, local preflight
+     here would be a second source of truth about the same failures, and the
+     first thing it would do is disagree with the engine. There isn't one. */
   function p1RangeResume() {
     var api = p1RangeApi();
     if (!api) return false;
@@ -24608,6 +24686,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (retryOnly !== true && choiceAdmitted !== true) {
       admitStaffVisitChoice(function (on) { startMonthPull(retryOnly, rosterRetried, true, on); });
       return;
+    }
+    /* ===== pullresume-1.0.0 (a RETRY of a saved job is a RESUME, and a resume
+       does not re-argue the roster) ======================================
+       OWNER 2026-09-01: "if a month pull, year pull stops or fials ... it
+       sohuld be possible to resume and iot acatlly work".
+
+       MEASURED the same day: every press of "Retry failed days" over a settled
+       month job answered "The full Athena provider roster is not verified yet.
+       Re-pull the Day schedule and retry" - because this function ran the LIVE
+       all-provider gate (and then its automatic Day-schedule re-verify) BEFORE
+       reaching the durable resume forty lines below. The gate has nothing to
+       decide for a saved job: that job already froze its provider, and
+       scopefrozen-1.0.0 records the scope check it passed. A retry therefore
+       routes straight to the same resume the Resume button uses, and only a
+       brand-new Start ever reaches the roster gate (which is unchanged). */
+    if (retryOnly === true && p1RangeApi()) {
+      var savedForRetry = p1RangeState();
+      if (savedForRetry && (p1RangeResumable(savedForRetry) || p1RangeRunning(savedForRetry))) {
+        if (p1RangeResume()) return;
+      }
     }
     var exact = safe(function () { return window.__mlsSI; }, null);
     var exactMonthEl = $('ez3sMonth'), exactMonth = exactMonthEl ? exactMonthEl.value : prevYm();
@@ -24923,6 +25021,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       (providerList().length <= 1 ? '<p class="ez3-status" style="text-align:left;margin:2px 0 6px">' + (providerList().length === 0 ?
         '<b>No providers detected yet.</b> Tap <b>↻ Refresh Athena providers</b> while the Athena Day schedule is open.' :
         '<b>Only 1 provider detected.</b> If Athena currently shows more clinicians, tap <b>↻ Refresh Athena providers</b>.') + '</p>' : '') +
+      /* pickfreeze-1.0.0 (owner 2026-09-01, screenshot: the picker read "Your
+         athenaOne view (default)" over a saved job frozen to something else).
+         A saved job owns the scope until it settles. This line is written by
+         pCounts from the SAVED manifest, so a reload can never show a scope
+         the running job is not using. */
+      '<p class="ez3-status" id="ez3PullScopeLock" style="text-align:left;margin:2px 0 6px;display:none"></p>' +
       '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — <b>1)</b> pick the month · <b>2)</b> press Start. MLS pulls the schedule and files every visit automatically.</span></div>' +
       '<div class="barwrap"><div class="bar" id="ez3PullBar"></div></div>' +
       '<div class="ez3-status" id="ez3PullBarLbl" style="text-align:left;margin:0 0 4px"></div>' +
@@ -52150,7 +52254,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        one sentence a SECOND failure adds, naming what was tried. */
     __psrFirst: null, __psrRec: null, __psrNote: '', __psrPending: false,
     /* dsdiag-1.1.0: minted at every pull entry, quoted by the copyable report */
-    pullId: '', pullStartedAt: 0 };
+    pullId: '', pullStartedAt: 0,
+    /* dayresume-1.0.0: the short-lived answer to "is this day a resume?" */
+    __resumeCache: null };
   function dsPsrApi() {
     var p = null;
     try { p = window.__mlsPullSelfRecovery; } catch (ePsr) { p = null; }
@@ -52213,6 +52319,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     };
   }
   function dsPersistTerminalReceipt(receipt) {
+    /* dayresume-1.0.0: every terminal attempt flows through here, so this is
+       the one seam where the resume answer can go stale. Drop it. */
+    try { DS.__resumeCache = null; } catch (eRc) {}
     var key = dsTerminalReceiptKey();
     if (!key) return { ok: false, durable: false, reason: 'account-namespace-unsettled' };
     try {
@@ -52254,6 +52363,71 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     DS.terminalReceipt = dsLoadTerminalReceipt(DS.day);
     return DS.terminalReceipt;
   }
+
+  /* ===== dayresume-1.0.0 (a stopped day pull RESUMES; it does not restart) ==
+     OWNER 2026-09-01: "if a month pull, year pull stops or fials or if a day
+     pull stops or failes it sohuld be possible to resume and iot acatlly
+     work".
+
+     MEASURED FIRST, before writing anything: the engine already continues. The
+     exact importer claims every row in the account-scoped import ledger
+     (schedImportIndexV1::<day>) and marks it 'done' when it lands, and claim()
+     returns "" for a row already 'done' - so a second press re-reads the
+     schedule and files only what is missing. The gap was never storage; it was
+     that NOTHING SAID SO. The button still read "Pull today", the status line
+     still read "Starting the Athena pull", and a half-finished day looked
+     exactly like a day that had to be done again from zero.
+
+     So no second storage surface is minted here - minting one beside a ledger
+     that already holds the answer is how a lane ends up with two truths. This
+     reads the ledger for what landed, and the dtr-1.0.0 terminal receipt for
+     what the last attempt made of the day and how many rows athena declared. */
+  function dsLedgerDone(day) {
+    var out = { ok: false, done: 0, pending: 0 };
+    var key = '';
+    try { if (window && typeof window.uns === 'function') key = String(window.uns('schedImportIndexV1::' + String(day || '')) || ''); } catch (eLk) { key = ''; }
+    if (!key || /::_::|::undefined::/.test(key)) return out;
+    var parsed = null;
+    try { parsed = JSON.parse((window.localStorage && window.localStorage.getItem(key)) || 'null'); } catch (eLr) { parsed = null; }
+    if (!parsed || parsed.v !== 1 || !parsed.rows || typeof parsed.rows !== 'object') return out;
+    out.ok = true;
+    for (var rowKey in parsed.rows) {
+      if (!Object.prototype.hasOwnProperty.call(parsed.rows, rowKey)) continue;
+      var row = parsed.rows[rowKey];
+      if (!row || typeof row !== 'object') continue;
+      if (row.state === 'done') out.done++;
+      else if (row.state === 'pending') out.pending++;
+    }
+    return out;
+  }
+  /* syncStrip runs on a recovery interval and asks for this every pass, so the
+     two reads are held for a moment. Every write path clears it explicitly. */
+  function dsResumeCacheClear() { DS.__resumeCache = null; }
+  function dsResumeState(day) {
+    day = dsReceiptDay(day) || DS.day;
+    var cache = DS.__resumeCache;
+    if (cache && cache.day === day && (Date.now() - cache.at) < 1500) return cache.value;
+    var ledger = dsLedgerDone(day), receipt = dsLoadTerminalReceipt(day);
+    var total = ledger.done + ledger.pending;
+    if (receipt && receipt.schedule) total = Math.max(total, dsReceiptCount(receipt.schedule.parsed), dsReceiptCount(receipt.schedule.expected));
+    if (receipt && receipt.history) total = Math.max(total, dsReceiptCount(receipt.history.requested));
+    /* Only a REAL prior attempt makes a day resumable. A day nothing has ever
+       touched, and a day whose last attempt completed, both read as a fresh
+       pull - the button must never promise a checkpoint that is not there. */
+    var unfinished = !!receipt && receipt.status !== 'complete';
+    var value = {
+      day: day, done: ledger.done, total: total, unfinished: unfinished,
+      resumable: !!(unfinished && total > 0 && ledger.done < total)
+    };
+    DS.__resumeCache = { day: day, at: Date.now(), value: value };
+    return value;
+  }
+  /* The one sentence the doctor reads when a second press continues a day. */
+  function dsResumeLine(stateValue, day) {
+    return 'Resuming - ' + stateValue.done + ' of ' + stateValue.total + ' already saved. Continuing ' +
+      fmtDay(day) + ' - the appointments already saved are skipped, not pulled again.';
+  }
+  /* ===== end dayresume-1.0.0 =========================================== */
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -52356,7 +52530,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function dsPullVerb(day) {
     var k = String(day || DS.day || todayKey()).slice(0, 10);
-    if (k === todayKey()) return 'Pull today';
+    /* dayresume-1.0.0: a day with an unfinished attempt and saved rows behind
+       it is RESUMED, and the button says so before the click. */
+    var verb = 'Pull';
+    try { if (dsResumeState(k).resumable) verb = 'Resume'; } catch (eRv) { verb = 'Pull'; }
+    if (k === todayKey()) return verb + ' today';
     /* No helper dependencies here: this module has no local safe(), so the
        b470 version's safe(...) call threw ReferenceError into syncStrip's
        catch and the button NEVER renamed for a non-today day (found live
@@ -52366,7 +52544,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var d = new Date(k + 'T12:00:00');
       label = d.toLocaleDateString('en-US', { weekday: 'long' }) + ' the ' + dsOrdinal(d.getDate());
     } catch (e) { label = ''; }
-    return 'Pull ' + (label || k);
+    return verb + ' ' + (label || k);
   }
   function syncStrip() {
     var lb = $('mlsDsDayLbl'), tb = $('mlsDsTodayBtn');
@@ -53688,8 +53866,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var dsLocalEpoch = dsBeginPullEpoch(sessionSerial); /* pts-1.1.0: the one epoch owner */
     var day = DS.day;
     var btn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
-    if (stat) { stat.style.display = 'block'; stat.textContent = 'Starting the Athena pull for ' + fmtDay(day) + '...'; }
+    /* dayresume-1.0.0: read the checkpoint BEFORE this attempt writes to it,
+       so the sentence names what a previous attempt actually left behind. */
+    var dsResumeAt = dsResumeState(day);
+    dsResumeCacheClear();
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> ' + (dsResumeAt.resumable ? 'Resuming ' : 'Pulling ') + esc(fmtDay(day)) + '...'; }
+    if (stat) { stat.style.display = 'block'; stat.textContent = dsResumeAt.resumable ? dsResumeLine(dsResumeAt, day) : ('Starting the Athena pull for ' + fmtDay(day) + '...'); }
     var closed = false;
     function done(ok, msg, keepStatus, signinRequired) {
       if (sessionSerial !== DS.sessionSerial) return;
@@ -54356,6 +54538,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.resetSession = resetDaySwitchSession;
   api.rowsFor = rowsFor;
   api.pullDay = startPull;
+  /* dayresume-1.0.0: read-only. The same answer the button label and the
+     status line use, so a live probe and a proof read ONE function. */
+  api.resumeState = function (day) { return dsResumeState(day); };
+  api.pullVerb = function (day) { return dsPullVerb(day); };
   api.renderList = renderList;
   api.isBusy = function () { return !!(DS.pulling || DS.retrying || DS.__autoRetrying); };
   api.revert = function () {

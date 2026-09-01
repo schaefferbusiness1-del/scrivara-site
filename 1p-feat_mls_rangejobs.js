@@ -33,6 +33,9 @@
   var uiFullNotesChoice = false;
   var uiFullNotesInitialized = false;
   var uiYearChoice = '';
+  /* yearpicker-1.0.0: the doctor's own scope choice on the YEAR card. Empty
+     means "still mirroring the month card's selector". */
+  var uiProvChoice = '';
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function isFn(value) { return typeof value === 'function'; }
@@ -409,6 +412,52 @@
     if (!id && !stableKey) return null;
     return { mode: 'selected', id: id, stableKey: stableKey };
   }
+  /* ===== scopefrozen-1.0.0 (the job records the scope check it PASSED) =====
+     OWNER 2026-09-01: a resume must actually work. MEASURED the same day: a
+     settled month job refused Resume and Retry with "The full Athena provider
+     roster is not verified yet ... could not read the Athena Day schedule",
+     because every execute of the job re-ran the LIVE all-provider roster gate,
+     and that gate can only pass while athenaOne is showing a readable full Day
+     schedule at that instant. The manifest already froze WHICH provider; it
+     never recorded that the scope had been verified, so there was nothing for
+     a resume to stand on.
+
+     This stamp is that record: written the first time this job's scope is
+     verified live, carried in the manifest, and presented on a RESUME only.
+     It is counts, a mode and a timestamp - no provider name, no roster keys,
+     nothing that is not already in the manifest. A brand-new Start has no
+     stamp to present, so a new Start still verifies live, always. */
+  function sanitizeScope(raw) {
+    raw = raw && typeof raw === 'object' ? raw : null;
+    if (!raw || Number(raw.v) !== 1 || raw.verified !== true) return null;
+    var mode = String(raw.mode || '');
+    if (mode !== 'all' && mode !== 'selected') return null;
+    var at = finiteStamp(raw.at);
+    if (!at) return null;
+    return {
+      v: 1, mode: mode, verified: true, at: at,
+      listed: Math.max(0, Math.min(4000, Math.floor(Number(raw.listed || 0) || 0))),
+      scopeKind: cleanText(raw.scopeKind, 60) || 'unstated'
+    };
+  }
+  /* The live proof, taken at the moment the gate said yes. */
+  function currentScopeStamp(mode) {
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var receipt = roster && isFn(roster.getReceipt) ? safe(function () { return roster.getReceipt(); }, null) : null;
+    return sanitizeScope({
+      v: 1, mode: mode === 'all' ? 'all' : 'selected', verified: true, at: now(),
+      listed: receipt ? Number(receipt.listedCount || receipt.observedCount || 0) : 0,
+      scopeKind: receipt ? String(receipt.rosterScope || receipt.scope || '') : ''
+    });
+  }
+  /* An all-provider job may resume under its own recorded stamp. A selected
+     job never needs to: that branch of the importer gate already resolves from
+     the persisted roster entry, which is why only All was ever failing. */
+  function frozenScopeForResume(manifest) {
+    if (!manifest || !manifest.provider || String(manifest.provider.mode || '') !== 'all') return null;
+    var scope = sanitizeScope(manifest.scope);
+    return scope && scope.mode === 'all' ? scope : null;
+  }
   function sanitizeManifest(raw) {
     if (!raw || typeof raw !== 'object' || Number(raw.v) !== MANIFEST_VERSION) return null;
     var kind = String(raw.kind || ''), target = String(raw.target || '');
@@ -496,6 +545,10 @@
       run: sanitizeRun(raw.run),
       months: months
     };
+    /* scopefrozen-1.0.0: an absent or malformed stamp is simply absent - such a
+       job resumes the way it always did (live gate), it does not fail. */
+    var scopeStamp = sanitizeScope(raw.scope);
+    if (scopeStamp) clean.scope = scopeStamp;
     /* p1-range-continue-1.0.0: a job cannot claim it is settled while a day is
        still retryable, and cannot claim retryable work that no longer exists. */
     if (clean.status === 'needs-attention' && anyRetryable(clean)) clean.status = 'waiting-retry';
@@ -656,7 +709,7 @@
     return true;
   }
 
-  function resolveStoredProvider(stored) {
+  function resolveStoredProvider(stored, frozenScope) {
     var si = safe(function () { return window.__mlsSI; }, null);
     if (!si || !isFn(si.pullMonth)) return { ok: false, reason: 'importer-not-ready' };
     if (stored.mode === 'all') {
@@ -664,9 +717,17 @@
       var allGate = safe(function () {
         return si._resolveProviderRequest('all', { allowAll: true, requireRosterForAll: true, allowDetectedProvider: true });
       }, null);
-      return allGate && allGate.ok === true && allGate.provider === 'all'
-        ? { ok: true, provider: 'all' }
-        : { ok: false, reason: reasonCode(allGate && allGate.reason || 'provider-roster-incomplete') };
+      if (allGate && allGate.ok === true && allGate.provider === 'all') return { ok: true, provider: 'all' };
+      /* scopefrozen-1.0.0: only a RESUME reaches here with a stamp, and only a
+         roster-completeness refusal may be answered by one. Every other
+         refusal - no importer, roster unbound to this account, provider gone -
+         still refuses, under its own name. */
+      var stamp = frozenScope ? sanitizeScope(frozenScope) : null;
+      var allReason = reasonCode(allGate && allGate.reason || 'provider-roster-incomplete');
+      if (stamp && stamp.mode === 'all' && allReason === 'provider-roster-incomplete') {
+        return { ok: true, provider: 'all', frozenScope: stamp };
+      }
+      return { ok: false, reason: allReason };
     }
     var roster = safe(function () { return window.__mlsProviderRoster; }, null);
     if (!roster || !isFn(roster.resolve) || !isFn(si._resolveProviderRequest)) return { ok: false, reason: 'provider-unverified' };
@@ -927,7 +988,7 @@
     var sameAccount = currentManifestKey() === ctx.key;
     return { ok: complete, complete: complete, status: manifest.status, reason: reasonCode(manifest.reason), state: sameAccount ? copy(manifest) : null };
   }
-  function executeLocked(key, manifest, onStatus) {
+  function executeLocked(key, manifest, onStatus, resumed) {
     if (active) return Promise.resolve(refusal('job-busy', manifest));
     var ctx = { key: key, manifest: manifest, control: '', storageFailure: '', onStatus: isFn(onStatus) ? onStatus : function () {} };
     active = ctx;
@@ -943,11 +1004,21 @@
       plannedDays: beforeRun.days - beforeRun.complete
     });
     if (!persistContext(ctx)) { active = null; return Promise.resolve(outcome(ctx)); }
-    var liveProvider = resolveStoredProvider(manifest.provider);
+    /* scopefrozen-1.0.0: a RESUME may present this job's own recorded stamp; a
+       START passes nothing, so it is gated live exactly as before. */
+    var liveProvider = resolveStoredProvider(manifest.provider, resumed === true ? frozenScopeForResume(manifest) : null);
     if (!liveProvider.ok) {
       manifest.status = 'waiting-retry'; manifest.reason = reasonCode(liveProvider.reason);
       persistContext(ctx); active = null; return Promise.resolve(outcome(ctx));
     }
+    /* The scope just passed LIVE - record it, so the next resume has something
+       true to stand on. A resume that ran on the stamp keeps the stamp it used
+       and never re-dates itself off its own evidence. */
+    if (!liveProvider.frozenScope) {
+      var freshScope = currentScopeStamp(String(manifest.provider.mode || ''));
+      if (freshScope) { manifest.scope = freshScope; persistContext(ctx); }
+    }
+    var frozenScopeInUse = liveProvider.frozenScope || null;
     var monthKeys = Object.keys(manifest.months).sort();
 
     /* ===== p1-range-continue-1.0.0 (a pass over the whole range) =====
@@ -1009,6 +1080,10 @@
         month: monthKey,
         dates: dates.slice(),
         provider: liveProvider.provider,
+        /* scopefrozen-1.0.0: the importer runs the same all-provider gate for
+           every month of the range, so the stamp has to travel with the run or
+           the resume dies on month one with the identical roster sentence. */
+        frozenAllScope: frozenScopeInUse,
         /* fvn-1.1.0 (Codex reply 38): a persisted legacy manifest could carry
            includeHistory:false from a pre-dayfacts build and resume a range
            pull without the mandatory floor. Execution is normalized to the
@@ -1164,7 +1239,9 @@
       if (existingBlocksStart(existing.manifest)) return refusal('job-exists', existing.manifest);
       var saved = writeManifestAt(key, manifest);
       if (!saved.ok) { manifest.status = 'storage-failed'; manifest.reason = saved.reason; return refusal(saved.reason, manifest); }
-      return executeLocked(key, manifest, parsed.opts.onStatus);
+      /* scopefrozen-1.0.0: a NEW start is never a resume. No stamp is offered,
+         so the live provider gate is the only thing that can admit it. */
+      return executeLocked(key, manifest, parsed.opts.onStatus, false);
     });
   }
   function resume(opts) {
@@ -1187,7 +1264,11 @@
          new intent - re-arm exactly the days that hit the attempt cap. */
       if (manifest.status === 'needs-attention') rearmAttention(manifest);
       manifest.status = 'running'; manifest.reason = '';
-      return executeLocked(key, manifest, opts.onStatus);
+      /* scopefrozen-1.0.0: THIS is the resume. It may stand on the scope this
+         job proved when it started; it re-verifies live first and only falls
+         back to the stamp when the live roster receipt is the one thing
+         missing. */
+      return executeLocked(key, manifest, opts.onStatus, true);
     });
   }
   function setControl(kind) {
@@ -1231,7 +1312,7 @@
     var eligible = manifest.status === 'running' || manifest.status === 'pending';
     if (opts.allowWaitingLogin === true && manifest.status === 'waiting-login') eligible = true;
     if (!eligible) return Promise.resolve(refusal(manifest.reason || manifest.status, manifest));
-    var providerReady = resolveStoredProvider(manifest.provider);
+    var providerReady = resolveStoredProvider(manifest.provider, frozenScopeForResume(manifest));
     if (!providerReady.ok) return Promise.resolve(refusal(providerReady.reason, manifest));
     return resume(opts);
   }
@@ -1283,6 +1364,97 @@
     select.disabled = !!blocksStart || !!uiAction;
     return chosen;
   }
+  /* yearpicker-1.0.0: the year card's own "Pulling for" options, built from
+     the same two roster surfaces the month card's selector uses. Escaping is
+     done here because these labels are clinician-entered Athena text. */
+  function uiEsc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"]/g, function (ch) {
+      return ch === '&' ? '&amp;' : (ch === '<' ? '&lt;' : (ch === '>' ? '&gt;' : '&quot;'));
+    });
+  }
+  function uiProviderOptionsHtml(pinned) {
+    var list = uiRosterList(), seen = uiRosterSeenOnCalendar(), counts = {}, html = '';
+    var known = { __all: 1 };
+    html += '<option value="__all">' + uiEsc(UI_DEFAULT_SCOPE_LABEL) + '</option>';
+    list.forEach(function (entry) { var k = String(entry && entry.name || '').toLowerCase(); counts[k] = (counts[k] || 0) + 1; });
+    list.forEach(function (entry) {
+      var value = uiProviderValue(entry), label = cleanText(entry && entry.name, 120);
+      if (!value || !label || known[value]) return;
+      if (counts[label.toLowerCase()] > 1) label += entry.id ? (' - ID ' + entry.id) : (' - ' + String(entry.stableKey || ''));
+      known[value] = 1;
+      html += '<option value="' + uiEsc(value) + '">' + uiEsc(label) + '</option>';
+    });
+    /* csp-1.0.0: clinicians athena NAMED on the calendar without proving an
+       identity. Same labelled group, same law - the pull still verifies the
+       exact clinician and still refuses somebody else's view. */
+    var calendarOnly = '';
+    seen.forEach(function (entry) {
+      var value = uiProviderValue(entry), label = cleanText(entry && entry.name, 120);
+      if (!value || !label || known[value]) return;
+      known[value] = 1;
+      calendarOnly += '<option value="' + uiEsc(value) + '">' + uiEsc(label) + '</option>';
+    });
+    if (calendarOnly) html += '<optgroup label="Seen on the athena calendar - not verified yet">' + calendarOnly + '</optgroup>';
+    /* The choice this card has to SHOW - a frozen job's provider, or the one
+       the month card is already scoped to - must exist here even when neither
+       roster surface lists it, or the card would silently answer "default"
+       for a pull that is not scoped to the default. */
+    if (pinned && pinned.value && !known[pinned.value]) html += '<option value="' + uiEsc(pinned.value) + '">' + uiEsc(pinned.label) + '</option>';
+    return html;
+  }
+  /* The value the card must SHOW: a frozen job's own provider while that job
+     owns the card, the doctor's own choice otherwise. */
+  function uiFrozenProviderChoice(manifest, blocksStart) {
+    if (!manifest || !manifest.provider || !blocksStart) return null;
+    if (String(manifest.provider.mode || '') === 'all') return { value: '__all', label: UI_DEFAULT_SCOPE_LABEL };
+    var key = cleanText(manifest.provider.stableKey) || cleanText(manifest.provider.id);
+    if (!key) return null;
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var entry = roster && isFn(roster.resolve) ? safe(function () { return roster.resolve(key); }, null) : null;
+    return { value: 'pv:' + encodeURIComponent(key), label: cleanText(entry && entry.name, 120) || 'Saved verified provider' };
+  }
+  /* Until the doctor touches the year card's own picker it MIRRORS the month
+     card's selector, so adding this control changed no existing behaviour: the
+     year still follows the one "Show visits for" choice made above it. */
+  function uiMonthCardProviderValue() {
+    if (!uiDocumentReady()) return '';
+    var monthSelect = document.getElementById('ez3Prov');
+    return monthSelect ? String(monthSelect.value || '') : '';
+  }
+  function uiSelectHasValue(select, value) {
+    if (!select || !value) return false;
+    for (var i = 0; i < select.options.length; i++) if (select.options[i] && select.options[i].value === value) return true;
+    return false;
+  }
+  /* A value the card must show, resolved into {value,label} through the same
+     roster the pull uses. Returns null for the default scope. */
+  function uiPinnedChoice(value) {
+    value = String(value || '');
+    if (!value || value === '__all') return null;
+    var ref = value;
+    if (ref.slice(0, 3) === 'pv:') { ref = safe(function () { return decodeURIComponent(value.slice(3)); }, ''); }
+    if (!ref) return null;
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var entry = roster && isFn(roster.resolve) ? safe(function () { return roster.resolve(ref); }, null) : null;
+    var key = cleanText(entry && entry.stableKey) || cleanText(ref);
+    if (!key) return null;
+    return { value: 'pv:' + encodeURIComponent(key), label: cleanText(entry && entry.name, 120) || 'Selected provider' };
+  }
+  function uiFillProviderSelect(select, manifest, blocksStart) {
+    if (!select || select.id !== 'mlsP1YearProv') return null;
+    var frozen = uiFrozenProviderChoice(manifest, blocksStart);
+    var wanted = frozen || uiPinnedChoice(uiProvChoice || uiMonthCardProviderValue());
+    var html = uiProviderOptionsHtml(wanted);
+    if (select.getAttribute('data-prov-options') !== html) {
+      select.innerHTML = html;
+      select.setAttribute('data-prov-options', html);
+    }
+    var want = wanted ? wanted.value : '__all';
+    if (!uiSelectHasValue(select, want)) want = '__all';
+    if (select.value !== want) select.value = want;
+    select.disabled = !!blocksStart || !!uiAction;
+    return frozen;
+  }
   function uiCanonicalCard() {
     if (!uiDocumentReady()) return null;
     var start = document.getElementById('ez3PullStart'), node = start;
@@ -1303,9 +1475,38 @@
     if (folded && isFn(card.contains) && card.contains(folded)) return folded;
     return card;
   }
+  /* ===== yearpicker-1.0.0 (owner 2026-09-01: "also make the pulling for
+     slecter also here") ==================================================
+     The year card used to borrow the month card's #ez3Prov selector, which
+     lives far above it: to scope a year the doctor had to scroll away from the
+     control they were about to press, and after a reload that selector shows
+     its own default ("Your athenaOne view (default)") while a saved job is
+     frozen to something else - a card that misleads. The year card now owns a
+     picker with the SAME options, including the csp-1.0.0 calendar-only group,
+     and it is frozen (disabled, showing the job's provider) while a job runs.
+     #ez3Prov stays the fallback so a host that has not mounted the year card
+     behaves exactly as before. */
+  var UI_DEFAULT_SCOPE_LABEL = 'Your athenaOne view (default)';
+  function uiProviderSelect() {
+    if (!uiDocumentReady()) return null;
+    return document.getElementById('mlsP1YearProv') || document.getElementById('ez3Prov');
+  }
+  function uiRosterList() {
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var list = roster && isFn(roster.list) ? (safe(function () { return roster.list(); }, []) || []) : [];
+    return list.slice().sort(function (a, b) { return String(a && a.name || '').localeCompare(String(b && b.name || '')); });
+  }
+  function uiRosterSeenOnCalendar() {
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    return (roster && isFn(roster.seenOnCalendar) ? (safe(function () { return roster.seenOnCalendar(); }, []) || []) : []);
+  }
+  function uiProviderValue(entry) {
+    var key = cleanText(entry && entry.stableKey);
+    return key ? ('pv:' + encodeURIComponent(key)) : '';
+  }
   function uiProviderSelection() {
     if (!uiDocumentReady()) return { ok: false, reason: 'provider-required', label: 'Provider unavailable' };
-    var select = document.getElementById('ez3Prov');
+    var select = uiProviderSelect();
     if (!select) return { ok: false, reason: 'provider-required', label: 'Choose a provider above' };
     var value = String(select.value || ''), option = select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
     var label = cleanText(option && option.textContent, 120) || (value === '__all' ? 'Your athenaOne view (default)' : 'Selected provider');
@@ -1472,6 +1673,12 @@
       '#mlsP1YearPull .p1yr-note{margin:0;font:400 12.5px/1.45 system-ui,sans-serif;color:var(--muted,#52645d)}' +
       '#mlsP1YearPull .p1yr-picker{display:flex;align-items:center;gap:8px;min-height:44px;font:600 12.5px/1.35 system-ui,sans-serif}' +
       '#mlsP1YearPull .p1yr-picker select{min-height:44px;max-width:140px}' +
+      '#mlsP1YearPull .p1yr-prov select{max-width:260px;flex:1 1 auto;min-width:0}' +
+      '#mlsP1YearPull .p1yr-prov select[disabled]{background:#F6F5F1;color:#3B4741;opacity:1}' +
+      '#mlsP1YearPull .p1yr-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}' +
+      '#mlsP1YearPull .p1yr-tile{border:1px solid rgba(32,64,52,.14);border-radius:9px;padding:6px 8px;text-align:center;min-width:0}' +
+      '#mlsP1YearPull .p1yr-tile b{display:block;font:700 15px/1.2 system-ui,sans-serif;color:inherit}' +
+      '#mlsP1YearPull .p1yr-tile span{display:block;font:600 10.5px/1.3 system-ui,sans-serif;color:var(--muted,#52645d);overflow-wrap:anywhere}' +
       '#mlsP1YearPull .p1yr-choice{display:inline-flex;align-items:center;gap:8px;min-height:44px;width:max-content;max-width:100%;font:600 12.5px/1.35 system-ui,sans-serif;cursor:pointer}' +
       '#mlsP1YearPull .p1yr-choice input{width:18px;height:18px;flex:0 0 auto}' +
       '#mlsP1YearPull .p1yr-progress{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}' +
@@ -1492,6 +1699,7 @@
       'max-width:100%;font:600 12px/1.35 system-ui,sans-serif;cursor:pointer}' +
       '#mlsP1YearPull .p1yr-healswitch input{width:18px;height:18px;flex:0 0 auto}' +
       '@media(max-width:640px){#mlsP1YearPull .p1yr-progress{grid-template-columns:1fr}#mlsP1YearPull .p1yr-count{white-space:normal}' +
+      '#mlsP1YearPull .p1yr-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}#mlsP1YearPull .p1yr-prov select{max-width:none}' +
       '#mlsP1YearPull .p1yr-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}' +
       '#mlsP1YearPull .p1yr-actions button{width:100%;min-width:0}#mlsP1YearPull #mlsP1YearStart{grid-column:1/-1}}';
     (document.head || document.documentElement).appendChild(style); uiStyle = style; return style;
@@ -1565,6 +1773,9 @@
       else yearSelect.value = uiYearChoice;
       queueUiRefresh(0);
     };
+    /* yearpicker-1.0.0: a scope change is a repaint, never a pull. */
+    var provSelect = root.querySelector('#mlsP1YearProv');
+    if (provSelect) provSelect.onchange = function () { uiProvChoice = String(provSelect.value || ''); uiNotice = ''; queueUiRefresh(0); };
     var start = root.querySelector('#mlsP1YearStart');
     if (start) start.onclick = function () {
       var selected = uiProviderSelection(), manifest = state(), choices = uiYearOptions(manifest);
@@ -1597,7 +1808,7 @@
   }
   function refreshYearUi(root) {
     if (!root || !installedApi || installedApi.installed !== true) return;
-    var manifest = state(), selected = uiProviderSelection(), progress = uiProgress(manifest);
+    var manifest = state(), progress = uiProgress(manifest);
     var status = manifest && manifest.status || '', running = status === 'running' || status === 'pending';
     /* p1-range-continue-1.0.0: 'needs-attention' is terminal (a new pull is
        admitted) AND resumable (one more bounded round on those days). */
@@ -1605,11 +1816,23 @@
     var blocksStart = !!(manifest && !terminal);
     var resumable = status === 'paused' || status === 'waiting-login' || status === 'waiting-retry' ||
       status === 'storage-failed' || status === 'needs-attention';
+    /* yearpicker-1.0.0: fill and freeze the card's own scope selector BEFORE
+       anything reads a selection from it. uiProviderSelection() now prefers
+       this control, so reading it first would read an empty select and paint
+       "Choose a provider above" over a card that is correctly scoped. */
+    var frozenProv = uiFillProviderSelect(root.querySelector('#mlsP1YearProv'), manifest, blocksStart);
+    var selected = uiProviderSelection();
     var error = !!uiNotice || (!blocksStart && !selected.ok) || status === 'waiting-retry' ||
       status === 'storage-failed' || status === 'account-changed' || status === 'needs-attention';
     root.setAttribute('data-status', status || 'ready'); root.setAttribute('data-error', error ? 'true' : 'false');
     root.setAttribute('aria-busy', running ? 'true' : 'false');
     var year = uiFillYearSelect(root.querySelector('#mlsP1YearChoice'), manifest, blocksStart);
+    var provLock = root.querySelector('#mlsP1YearProvLock');
+    uiSetHidden(provLock, !frozenProv);
+    if (provLock && frozenProv) {
+      uiSetText(provLock, 'This saved pull is locked to ' + frozenProv.label +
+        '. Cancel it to pull for somebody else.');
+    }
     uiSetText(root.querySelector('#mlsP1YearTitle'), 'Year pull');
     uiSetText(root.querySelector('#mlsP1YearProvider'), 'Provider: ' + uiManifestProviderLabel(manifest, selected, blocksStart));
     var full = root.querySelector('#mlsP1YearFullNotes');
@@ -1629,6 +1852,18 @@
       bar.setAttribute('aria-valuetext', progress.totalDays ? progress.completeDays + ' of ' + progress.totalDays + ' days complete' : 'No year pull started');
     }
     uiSetText(root.querySelector('#mlsP1YearCount'), progress.totalDays ? progress.completeDays + ' / ' + progress.totalDays + ' days' : 'Not started');
+    /* yeartiles-1.0.0: the month card's strip says "N of M days saved"; a year
+       needs its months beside that, or 31 of 365 reads like nothing happened.
+       The compact count above keeps its own shape - this is the sentence. */
+    uiSetText(root.querySelector('#mlsP1YearMonths'), progress.totalDays
+      ? (progress.completeMonths + ' of ' + progress.totalMonths + ' month' + (progress.totalMonths === 1 ? '' : 's') +
+         ' complete - ' + progress.completeDays + ' of ' + progress.totalDays + ' days saved')
+      : 'Nothing pulled for this year yet.');
+    var tileSummary = (manifest && manifest.summary) || summarize(manifest);
+    uiSetText(root.querySelector('#mlsP1YearTileRows'), manifest ? tileSummary.withRows : 0);
+    uiSetText(root.querySelector('#mlsP1YearTileSaved'), manifest ? tileSummary.complete : 0);
+    uiSetText(root.querySelector('#mlsP1YearTileEmpty'), manifest ? tileSummary.empty : 0);
+    uiSetText(root.querySelector('#mlsP1YearTileAttention'), manifest ? tileSummary.needsAttention : 0);
     var statusNode = root.querySelector('#mlsP1YearStatus');
     if (statusNode) {
       statusNode.setAttribute('role', 'status'); statusNode.setAttribute('aria-live', 'polite');
@@ -1662,8 +1897,23 @@
         '<p class="p1yr-note" id="mlsP1YearScopeNote"><b>Before you start:</b> in the athenaOne tab set the calendar\'s View to the provider selected above (or an all-provider view). ' +
         'MLS reads the schedule athenaOne is showing, so a year scoped to one provider over somebody else\'s calendar is refused (provider-not-on-calendar) rather than saved as empty.</p>' +
         '<label class="p1yr-picker" for="mlsP1YearChoice"><span>Year</span><select id="mlsP1YearChoice" aria-label="Year to pull"></select></label>' +
+        /* yearpicker-1.0.0: the year card scopes itself. Same options as the
+           month card's selector; frozen to the running job's provider. */
+        '<label class="p1yr-picker p1yr-prov" for="mlsP1YearProv"><span>Pulling for</span><select id="mlsP1YearProv" aria-label="Pull this year for provider"></select></label>' +
+        '<p class="p1yr-note" id="mlsP1YearProvLock" hidden></p>' +
         '<label class="p1yr-choice" for="mlsP1YearFullNotes"><input type="checkbox" id="mlsP1YearFullNotes"> Include full visit notes <span>(slower)</span></label>' +
         '<div class="p1yr-progress"><progress id="mlsP1YearProgress" max="1" value="0" aria-label="Year pull progress"></progress><span class="p1yr-count" id="mlsP1YearCount"></span></div>' +
+        '<p class="p1yr-note" id="mlsP1YearMonths"></p>' +
+        /* yeartiles-1.0.0 (owner 2026-09-01: "for the yera pull to there needs
+           to be an indictarer jjust like ithe the month pull"). The same four
+           honest-tiles-1.0.0 quantities the month card paints, from the same
+           recounted manifest summary - never a second story. */
+        '<div class="p1yr-tiles" id="mlsP1YearTiles" role="group" aria-label="Year pull progress detail">' +
+        '<div class="p1yr-tile"><b id="mlsP1YearTileRows">0</b><span>days with visits</span></div>' +
+        '<div class="p1yr-tile"><b id="mlsP1YearTileSaved">0</b><span>days saved</span></div>' +
+        '<div class="p1yr-tile"><b id="mlsP1YearTileEmpty">0</b><span>verified empty</span></div>' +
+        '<div class="p1yr-tile"><b id="mlsP1YearTileAttention">0</b><span>need attention</span></div>' +
+        '</div>' +
         '<p class="p1yr-status" id="mlsP1YearStatus" aria-atomic="true"></p>' +
         '<div class="p1yr-actions"><button type="button" class="ez3-sm pri" id="mlsP1YearStart"></button>' +
         '<button type="button" class="ez3-sm" id="mlsP1YearPause">Pause</button>' +
@@ -1716,7 +1966,7 @@
     removeUiNodes();
     var style = uiStyle || (uiDocumentReady() ? document.getElementById('mlsP1RangeJobsCss') : null);
     if (style && style.parentNode) safe(function () { style.parentNode.removeChild(style); }); uiStyle = null;
-    uiActionSequence++; uiAction = ''; uiNotice = ''; uiFullNotesChoice = false; uiFullNotesInitialized = false; uiYearChoice = '';
+    uiActionSequence++; uiAction = ''; uiNotice = ''; uiFullNotesChoice = false; uiFullNotesInitialized = false; uiYearChoice = ''; uiProvChoice = '';
   }
 
   /* =======================================================================
@@ -2291,7 +2541,7 @@
       persistContext(active);
       stopImporter();
     }
-    uiNotice = ''; uiFullNotesChoice = false; uiFullNotesInitialized = false; uiYearChoice = ''; queueUiRefresh(0);
+    uiNotice = ''; uiFullNotesChoice = false; uiFullNotesInitialized = false; uiYearChoice = ''; uiProvChoice = ''; queueUiRefresh(0);
     scheduleBoot(true);
   }
   function addListener(target, type, fn, capture) {
@@ -2309,7 +2559,7 @@
         var eligible = manifest.status === 'running' || manifest.status === 'pending' ||
           (allowWaitingLogin === true && manifest.status === 'waiting-login');
         if (!eligible) return;
-        if (resolveStoredProvider(manifest.provider).ok) {
+        if (resolveStoredProvider(manifest.provider, frozenScopeForResume(manifest)).ok) {
           maybeResume({ allowWaitingLogin: allowWaitingLogin === true });
           return;
         }
@@ -2349,6 +2599,10 @@
     cancel: function () { return setControl('cancelled'); },
     state: state,
     maybeResume: maybeResume,
+    /* pullresume-1.0.0: ONE copy table for "what stopped this pull", so the
+       Staff Prep month card cannot invent a different sentence than the year
+       card for the same reason code. Read-only. */
+    reasonCopy: function (reason) { return uiReasonCopy(reason); },
     /* pullheal-1.0.0: the supervisor's own surface. Read-only except for the
        two acts it is allowed - re-arm days an older MLS Assist failed, and
        turn itself off. */
