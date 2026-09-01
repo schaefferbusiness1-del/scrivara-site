@@ -238,6 +238,7 @@
     "feat_mls_protocol.js",
     "feat_mls_protocol_pickfix.js",
     "feat_mls_provider_label.js",
+    "feat_mls_provider_link.js",
     "feat_mls_provider_names.js",
     "feat_mls_provider_passthrough.js",
     "feat_mls_ptcard_contain.js",

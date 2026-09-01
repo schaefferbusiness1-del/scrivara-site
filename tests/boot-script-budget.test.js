@@ -468,7 +468,23 @@ const LOADER = 'mls-connect.js';
  * boot, while the verified full-history receipt calls it later and the actual
  * script insertion goes through __mlsDeferAsset. It removes setup work by
  * deriving blank starter formats automatically; EAGER_CEILING does not move. */
-const CEILING = 266;
+/* 266 -> 267 at plv-1.0.0 for feat_mls_provider_link.js. Owner, 2026-09-01:
+ * "the providers needs to be linked to there patients."
+ *
+ * The three questions this pin exists to force, answered:
+ *   - DEFERRED (__mlsDeferAsset / requestIdleCallback, 2.5s timeout), inserted
+ *     from the same stanza as feat_mls_patient_merge.js, so EAGER_CEILING does
+ *     not move and the post-login burst this ceiling guards is unchanged.
+ *   - IT DOES NO BOOT WORK. Loading it defines functions and arms two timers;
+ *     the first derivation is 14 SECONDS after boot, deliberately behind the
+ *     auto-merge's 12s sweep, and it defers again if a pull is running. A run
+ *     over an unchanged roster ends at a JSON comparison and saves nothing.
+ *   - It could have been folded into feat_mls_patient_merge.js to keep the
+ *     count flat, and that is the dishonest version: the merge module COMBINES
+ *     records and this one only stamps a derived field. They must be
+ *     separately revertible, because reverting a provider label at 2am must
+ *     never disarm the duplicate-chart guard. */
+const CEILING = 267;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

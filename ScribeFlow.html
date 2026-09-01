@@ -13815,6 +13815,15 @@ function upsertPatient(p){
         p.visits=__prev.visits;
         try{ (globalThis.__mlsVisitHuskGuardLog=globalThis.__mlsVisitHuskGuardLog||[]).push({id:String(p.id).slice(0,24),keptBodies:__prevBodies,at:Date.now()}); }catch(e){}
       }
+      /* plv-1.0.0: providerLink is DERIVED state with exactly one writer
+         (feat_mls_provider_link.js). No caller of this function produces it,
+         so an incoming object without it is always a caller that simply never
+         saw it - not an erasure anybody asked for. arr[i]=p replaces the
+         record wholesale, so without this line every demographics edit and
+         every stale-reference write-back would silently drop the patient's
+         provider until the next pull re-derived it. Fill-only: a value the
+         caller DOES carry is never overwritten. */
+      if(__prev.providerLink&&p.providerLink==null)p.providerLink=__prev.providerLink;
     }
     arr[i]=p;
   } else { p.created=Date.now(); arr.unshift(p); }
@@ -21188,11 +21197,19 @@ function renderPatients(){
   // exactly as before.
   var qTokens=ql?ql.split(/\s+/).filter(Boolean):[];
   var matched=qTokens.length?ranked.filter(function(row){for(var qi=0;qi<qTokens.length;qi++){if(row.search.indexOf(qTokens[qi])<0)return false;}return true;}):ranked;
+  /* plv-1.0.0: the provider filter narrows the RANKED roster, before the
+     150-row cap below - filtering the capped page instead would silently hide
+     every patient of that provider who sorts past position 150. */
+  var _plvBefore=matched.length;
+  try{ if(typeof window.__mlsPlvFilter==='function'){ var _plvOut=window.__mlsPlvFilter(matched); if(Array.isArray(_plvOut)) matched=_plvOut; } }catch(e){}
+  var _plvNarrowed=matched.length!==_plvBefore;
   const PT_CAP=150;                 // cap rendered rows so the DOM stays fast on huge rosters
   const matchCount=matched.length;
   const capped=matchCount>PT_CAP;
   const shown=(capped?matched.slice(0,PT_CAP):matched).map(function(row){return row.patient;});
-  if(countEl){ var baseCount=ql ? `${matchCount} of ${all.length}` : (capped ? `${all.length} patients · showing 150` : `${all.length} patient${all.length===1?'':'s'}`); countEl.textContent=baseCount+(sortMode==='visits'?' · ranked by visits':''); }
+  /* "N patients" is only true of an unnarrowed list: whatever did the
+     narrowing, the count says X of N. */
+  if(countEl){ var baseCount=(ql||_plvNarrowed) ? `${matchCount} of ${all.length}` : (capped ? `${all.length} patients · showing 150` : `${all.length} patient${all.length===1?'':'s'}`); countEl.textContent=baseCount+(sortMode==='visits'?' · ranked by visits':''); }
   // Searched but nothing matched → offer to add that name as a new patient.
   if(ql && !matchCount){
     list.innerHTML='';
@@ -21275,6 +21292,10 @@ function _ptItemHtml(p, activeId){
   const chip='font-size:11px;color:var(--muted);background:var(--soft);border-radius:999px;padding:2px 9px;white-space:nowrap';
   let chips='';
   if(fromAthena) chips+='<span style="font-size:11px;color:#204034;background:#EAF1EC;border:1px solid #d3e4fb;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap">📥 Athena</span>';
+  /* plv-1.0.0: the patient's DERIVED provider, or nothing at all. The module
+     owns the whole chip (and returns '' when no attributed appointment ever
+     named a provider) so this list never has to guess one. */
+  try{ if(typeof window.__mlsPlvChip==='function') chips+=(window.__mlsPlvChip(p)||''); }catch(e){}
   chips+='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
   if(noteCount) chips+='<span style="'+chip+'">'+noteCount+' note'+(noteCount===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
@@ -21749,7 +21770,10 @@ function renderProfile(){
   if(chip) chip.style.display='';
   card.style.display='block';
   document.getElementById('profName').textContent=p.name;
-  const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):''].filter(Boolean).join(' · ');
+  /* plv-1.0.0: the chart says who this patient's provider is, when an
+     attributed appointment established one. filter(Boolean) drops it silently
+     when nothing has - the card never guesses a provider. */
+  const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):'',((p.providerLink&&p.providerLink.v===1&&p.providerLink.primaryProvider)?('Provider '+p.providerLink.primaryProvider):'')].filter(Boolean).join(' · ');
   document.getElementById('profDemo').textContent=demo||'No demographics on file (optional).';
   try{ if(typeof _renderProfAtGlance==='function') _renderProfAtGlance(p); }catch(e){}
   fieldBody('profProblems',p.problems,_athenaProfileEmptyText(p,'problems','No problems recorded. Generate a visit or analyze a document to populate, or edit.'));
@@ -43980,7 +44004,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1154';
+  window.__MLS_AV='b1155';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
