@@ -6476,6 +6476,19 @@ const _SF_DEMO = (function(){
   }catch(e){}
   return false;
 })();
+/* rwfix-1.0.0 (b1169): PUBLISH THE DEMO FLAG WHERE ITS ONE GUARD CAN SEE IT.
+   _SF_DEMO is a top-level `const` in a classic script, so it is a lexical
+   global and NEVER a property of the global object - `window._SF_DEMO` was
+   permanently undefined. feat_mls_writeflow.js's syntheticLocalRuntime() (the
+   only thing that keeps a demo build's Confirm & Send off the installed MLS
+   Assist and a real athenaOne encounter) tests exactly `window._SF_DEMO ===
+   true`, so that arm of the guard could never fire: a "try the demo" link on
+   the real site ran with no backend AND with a live Athena bridge.
+   This publishes the value the const already computed and changes nothing
+   else. On a real account (https host, no ?demo=1, no public preview) the
+   const is false, so window._SF_DEMO is false and the guard stays silent -
+   proven in tests/review-write-fixes-proof.js. */
+try{ window._SF_DEMO = _SF_DEMO; }catch(e){}
 const BACKEND_URL = _SF_DEMO ? "" : "https://scrivara-backend.onrender.com"; // hosted mode: server holds the OpenAI key; no key needed on this device
 function backendMode(){ return !!(BACKEND_URL && BACKEND_URL.trim()); }
 function bkBase(){ return BACKEND_URL.replace(/\/$/,''); }
@@ -24848,7 +24861,11 @@ var _tplPendingCarry=[];
 var _tplUnreadableRows=[];
 function _tplAppendUnreadableRows(){
   for(var i=0;i<_tplUnreadableRows.length;i++){ var u=_tplUnreadableRows[i];
-    _tplPendingSplit.push({ name:String(u.name||'File').replace(/\.[^.]+$/,'')+' — couldn’t read', text:(u.text&&u.text.trim())||('(No readable text could be extracted from “'+String(u.name||'this file')+'”. Re-save it as .docx or PDF and upload it again.)'), keep:false, unreadable:true });
+    /* rwfix-1.0.0 (b1169): the row now names the REAL cause the reader
+       recorded for this exact file, not one fixed sentence for all of them.
+       A file read through a stubbed or older reader carries no reason and
+       still gets the shipped sentence, unchanged. */
+    _tplPendingSplit.push({ name:String(u.name||'File').replace(/\.[^.]+$/,'')+' — couldn’t read', text:(u.text&&u.text.trim())||('(No readable text could be extracted from “'+String(u.name||'this file')+'”. '+_tplReadAdvice(u.reason)+')'), keep:false, unreadable:true, reason:String(u.reason||'') });
   }
   _tplUnreadableRows=[];
 }
@@ -24970,16 +24987,52 @@ function _tplTextForDraft(text){
   }
   return s;
 }
+/* rwfix-1.0.0 (b1169): WHY A FILE COULD NOT BE READ, IN ITS OWN WORDS.
+   _tplReadAnyFile has always answered '' for EVERY failure, so the review row
+   and the batch status line could only ever give one piece of advice - "old
+   .doc file? re-save it as .docx or PDF" - and that advice is wrong, and
+   unactionable, for the two cases a doctor uploading a scanned template binder
+   actually hits. A photo is read by the BACKEND's reader, so a signed-out
+   device refuses every image before it sends anything; and a scanned PDF has
+   no text layer at all, so extracting text from it can never succeed. In both
+   cases re-saving the file produces the identical refusal for ever.
+   The reader now RECORDS which refusal it made. What it returns is unchanged
+   (the same string, '' on failure), so every caller and every wrapper -
+   feat_mls_template_library.js's progress wrapper included - is untouched, and
+   a stubbed reader simply leaves the reason empty and gets today's wording. */
+var _tplReadReason='';
+var _TPL_READ_ADVICE={
+  'needs-sign-in':'MLS reads pictures with its server reader, and this device is not signed in to MLS. Sign in and upload it again - re-saving the file will not help.',
+  'vision-refused':'MLS is signed in, but its picture reader returned no text for this image. Try a sharper, straighter photo, or upload the document it was made from.',
+  'no-text-layer':'This PDF is a scan (a picture of a page), so it carries no text to extract. Upload the original document (.docx is best), or sign in to MLS and upload a photo of the page so the picture reader can read it.',
+  'legacy-doc':'This is an old Word .doc. Re-save it as .docx or PDF and upload it again.',
+  'docx-empty':'This .docx opened but held almost no text. Check that the template text is in the document body itself, not only inside a text box or a pasted picture.',
+  'unreadable':'MLS could not extract any text from this file. Re-save it as .docx or PDF and upload it again.'
+};
+function _tplReadAdvice(reason){ return _TPL_READ_ADVICE[String(reason||'')]||_TPL_READ_ADVICE.unreadable; }
+/* One shared cause is stated once; a mixed batch points at the per-row reasons
+   rather than picking a winner and being wrong for the rest. */
+function _tplUnreadableWhy(rows){
+  var seen={}, only='', n=0, i;
+  for(i=0;i<(rows||[]).length;i++){ var r=String((rows[i]&&rows[i].reason)||''); if(!seen[r]){ seen[r]=1; n++; only=r; } }
+  return n===1?_tplReadAdvice(only):'Each row below says why that file could not be read.';
+}
+function _tplLetters(t){ return (String(t||'').match(/[A-Za-z]/g)||[]).length; }
+/* The SAME 40-letter bar tplMultiFile judges by, so a recorded reason can never
+   disagree with the verdict it is there to explain: text that passes clears the
+   reason, text that does not keeps it. */
+function _tplReadDone(reason,text){ _tplReadReason=(_tplLetters(text)>=40)?'':String(reason||''); return text; }
 async function _tplReadAnyFile(file){
   var lower=(file.name||'').toLowerCase(), mime=(file.type||'').toLowerCase();
-  if(lower.endsWith('.pdf')||mime==='application/pdf'){ try{ return await extractPdfText(file); }catch(e){ return ''; } }
-  if(lower.endsWith('.docx')||mime.indexOf('officedocument.wordprocessingml')>=0){ try{ return await _extractDocxText(file); }catch(e){ return ''; } }
-  if(lower.endsWith('.doc')||lower.endsWith('.dot')||mime==='application/msword'){ try{ var legacy=await _extractLegacyDocText(file); if((legacy.match(/[A-Za-z]/g)||[]).length>=40) return legacy; }catch(e){} try{ return _tplStripWordJunk(_cleanExtractedText(await file.text(), lower)); }catch(e){ return ''; } }
+  _tplReadReason='';
+  if(lower.endsWith('.pdf')||mime==='application/pdf'){ try{ return _tplReadDone('no-text-layer', await extractPdfText(file)); }catch(e){ return _tplReadDone('unreadable',''); } }
+  if(lower.endsWith('.docx')||mime.indexOf('officedocument.wordprocessingml')>=0){ try{ return _tplReadDone('docx-empty', await _extractDocxText(file)); }catch(e){ return _tplReadDone('unreadable',''); } }
+  if(lower.endsWith('.doc')||lower.endsWith('.dot')||mime==='application/msword'){ try{ var legacy=await _extractLegacyDocText(file); if((legacy.match(/[A-Za-z]/g)||[]).length>=40) return _tplReadDone('legacy-doc',legacy); }catch(e){} try{ return _tplReadDone('legacy-doc',_tplStripWordJunk(_cleanExtractedText(await file.text(), lower))); }catch(e){ return _tplReadDone('legacy-doc',''); } }
   if(/^image\//.test(mime)||/\.(png|jpe?g|webp|gif|bmp|heic|heif|jfif|tiff)$/.test(lower)){
-    if(!backendMode()||!bkToken()) return '';
-    try{ var dataUrl=await readFileAsDataUrl(file); var rv=await fetch(bkBase()+'/api/vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({image:dataUrl,mimetype:mime||'image/png'})}); var jv={}; try{ jv=await rv.json(); }catch(e){} return rv.ok?((jv.text||'').trim()):''; }catch(e){ return ''; }
+    if(!backendMode()||!bkToken()) return _tplReadDone('needs-sign-in','');
+    try{ var dataUrl=await readFileAsDataUrl(file); var rv=await fetch(bkBase()+'/api/vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({image:dataUrl,mimetype:mime||'image/png'})}); var jv={}; try{ jv=await rv.json(); }catch(e){} return _tplReadDone('vision-refused', rv.ok?((jv.text||'').trim()):''); }catch(e){ return _tplReadDone('vision-refused',''); }
   }
-  try{ return _cleanExtractedText(await file.text(), lower); }catch(e){ return ''; }
+  try{ return _tplReadDone('unreadable', _cleanExtractedText(await file.text(), lower)); }catch(e){ return _tplReadDone('unreadable',''); }
 }
 /* Count how many SEPARATE notes a blob holds — by counting note TITLES / per-note "Patient:" lines,
    NOT section headers (a single op note has many section headers but is still one form). */
@@ -25205,19 +25258,27 @@ async function tplMultiFile(ev){
   var perFileText=[], unreadable=0; _tplUnreadableRows=[];
   for(var fi=0; fi<files.length; fi++){
     _tplMultiStatus('Reading files… '+(fi+1)+'/'+files.length+' ('+(files[fi].name||'file')+')');
-    var t=''; try{ t=await _tplReadAnyFile(files[fi]); }catch(e){}
+    /* rwfix-1.0.0 (b1169): carry the reader's own reason for THIS file. Reads
+       are strictly sequential here (one await per file), so the reason read
+       back immediately after the await is this file's and no other's. */
+    var t=''; _tplReadReason=''; try{ t=await _tplReadAnyFile(files[fi]); }catch(e){}
+    var rsn=String(_tplReadReason||'');
     // Guard against binary garbage (e.g. an old .doc that didn't extract) — needs real letters.
     var letters=(String(t).match(/[A-Za-z]/g)||[]).length;
     if(t && t.trim() && letters>=40){ perFileText.push({ name:(files[fi].name||('Template '+(fi+1))).replace(/\.[^.]+$/,''), text:t.trim() }); }
-    else if(files[fi]){ unreadable++; _tplUnreadableRows.push({ name:files[fi].name||('File '+(fi+1)), text:String(t||'').trim() }); }
+    else if(files[fi]){ unreadable++; _tplUnreadableRows.push({ name:files[fi].name||('File '+(fi+1)), text:String(t||'').trim(), reason:rsn }); }
   }
   if(!perFileText.length){
     /* b940 — an all-unreadable batch used to DEAD-END here ("No readable text
        found") and the whole upload was stamped failed. The files are shown
        instead: named, unchecked, with the re-save advice attached to each. */
     if(!_tplUnreadableRows.length){ _tplMultiStatus('No files could be read.','#b4231e'); return; }
+    /* rwfix-1.0.0 (b1169): read the shared cause BEFORE the rows are consumed,
+       and say THAT instead of guessing "old .doc files?" at a batch of scans or
+       at a signed-out device the picture reader could not be asked. */
+    var whyAll=_tplUnreadableWhy(_tplUnreadableRows);
     _tplPendingSplit=_tplPendingCarry.slice(); _tplAppendUnreadableRows();
-    _tplMultiStatus(_tplPendingSplit.length+' file'+(_tplPendingSplit.length===1?'':'s')+' couldn’t be read as text (old .doc files? re-save them as .docx or PDF and upload again). Each is listed below so nothing is lost:','#b4231e');
+    _tplMultiStatus(_tplPendingSplit.length+' file'+(_tplPendingSplit.length===1?'':'s')+' couldn’t be read as text. '+whyAll+' Each is listed below so nothing is lost:','#b4231e');
     _renderTplSplitPreview();
     return;
   }
@@ -44520,7 +44581,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1171';
+  window.__MLS_AV='b1172';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -49589,7 +49650,23 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var ids = athSendable();
     if (!ids.length) { athSay('No op note on this day is in the chart yet. Save them to the charts first, then send. Nothing was sent.'); return; }
     var res = batch.start({ noteIds: ids });
-    if (!res || res.started !== true) athSay(S(res && res.reason) || 'The Athena send did not start. Nothing was sent.');
+    /* rwfix-1.0.0 (b1169): A NOTE THE QUEUE REFUSED IS SAID OUT LOUD.
+       batch.start() has always answered with `refused` - the notes this room
+       offered that its own screen would not queue (a quarantined binding, an
+       identity conflict, an unresolved field, one already written this
+       session) - and this button read only `started`. A day with two refusals
+       therefore finished "6 of 6 written into Athena" with nothing anywhere
+       saying the other two were never attempted. The progress card now paints
+       them as NOT QUEUED with each reason; this names the count at the moment
+       the doctor presses, so he is told before he walks away. */
+    var refused = (res && res.refused) || [];
+    if (!res || res.started !== true) {
+      athSay((S(res && res.reason) || 'The Athena send did not start. Nothing was sent.') +
+        (refused.length ? (' ' + refused.length + ' of the ' + ids.length + ' note' + (ids.length === 1 ? '' : 's') + ' on this day were refused by name, each with its reason.') : ''));
+    } else if (refused.length) {
+      athSay(refused.length + ' of ' + ids.length + ' note' + (ids.length === 1 ? '' : 's') + ' could NOT be queued and nothing will be sent for ' +
+        (refused.length === 1 ? 'it' : 'them') + '. Each is listed as NOT QUEUED, with its reason, in the progress card.');
+    }
     refresh();
   }
   function runDayPrimary() {

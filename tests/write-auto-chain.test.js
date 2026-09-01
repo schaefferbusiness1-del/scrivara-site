@@ -580,7 +580,29 @@ function rowIdOf(h) {
     eq(pEnd.tries, 5, 'the paint counter disagrees with the probes it caused');
     eq(pEnd.armed, false, 'the paint cycle is still armed past its bound');
     eq(pEnd.exhausted, true, 'the paint cycle did not record that it gave up');
-    ok(/three minutes/.test(h.shortLine()), 'the three-minute bound is not said out loud: ' + h.shortLine());
+    /* RE-AIMED DELIBERATELY, rwfix-1.0.0 (b1169). This used to pin the literal
+       words "three minutes", and that sentence was a constant: the settled lane
+       exhausts after three 20s re-probes (60 seconds of elapsed time) and a
+       paint lane armed against an open that is already 175s old clips its last
+       wait to a second or two - both then told the doctor MLS had hammered the
+       surface for three minutes, so he stopped pressing a button that would
+       very likely have landed. The cycle now MEASURES its own stretch and the
+       number of automatic re-checks it actually ran, and this pin asserts the
+       sentence against that measurement rather than against a constant - a
+       stronger pin, not a weaker one: it fails if the words and the measurement
+       ever disagree, which the old one could not see. The bound itself
+       (WFAUTO_WINDOW_MS, five paint tries) is unchanged and still pinned above
+       by pEnd.tries / probes().length. */
+    eq(pEnd.autoChecks, 5, 'the exhausted cycle did not count the re-checks it actually ran: ' + JSON.stringify(pEnd));
+    ok(pEnd.exhaustedMs > 0, 'the exhausted cycle never measured its own automatic stretch: ' + JSON.stringify(pEnd));
+    const spanSecs = Math.max(1, Math.round(pEnd.exhaustedMs / 1000));
+    const spanSaid = spanSecs < 120
+      ? (spanSecs + ' second' + (spanSecs === 1 ? '' : 's'))
+      : (Math.round(spanSecs / 60) + ' minute' + (Math.round(spanSecs / 60) === 1 ? '' : 's'));
+    ok(h.shortLine().indexOf('re-checked Athena by itself 5 times over about ' + spanSaid) >= 0,
+      'the exhausted sentence does not state the stretch it actually ran (' + spanSaid + '): ' + h.shortLine());
+    ok(!/by itself for three minutes/.test(h.shortLine()),
+      'the exhausted sentence still claims a fixed three-minute stretch: ' + h.shortLine());
 
     /* openpace-1.0.0 LAW: re-driving navigation into a painting encounter
        destroys it. The automatic cycle re-probes and NOTHING else. */

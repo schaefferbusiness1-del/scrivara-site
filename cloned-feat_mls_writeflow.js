@@ -1899,6 +1899,29 @@
       return { label: 'CAN’T SEND', color: '#8b2525',
         short: 'MLS refused and changed nothing in Athena. The exact reason is below.' };
     }
+    /* rwfix-1.0.0 (b1169): AN ALL-UNCHECKED SHEET MAY NOT READ READY.
+       The include checkboxes had exactly one handler - unifiedSyncPrimaryButton
+       - and its 'none' branch wrote the refusal into data-mls-primary-blocked
+       and the button's title, both invisible. Unchecking every section left the
+       word READY in big green letters above a grey, dead Confirm, and the only
+       way to learn why was to hover it: the same "reads like a malfunction"
+       complaint sheetclar-1.0.0 fixed for the arrival case.
+       The word is now derived from the SAME plan that enables the button, so
+       the two can no longer disagree, and the plan's own reason is the sentence
+       under it. Scoped to a sheet that really has checkboxes, so a sheet still
+       checking (no boxes yet) keeps CHECKING, and a refusal already painted -
+       kind 'fix' or 'err' above - still wins. This decides one word and one
+       sentence; it cannot enable a button or send anything. */
+    var bxNow = null;
+    try { bxNow = bxCheckBoxes(); } catch (eBx) { bxNow = null; }
+    if (bxNow && bxNow.length) {
+      var planNow = null;
+      try { planNow = unifiedPrimaryPlan(state); } catch (ePlan) { planNow = null; }
+      if (planNow && planNow.mode === 'none') {
+        return { label: 'NOTHING CHECKED', color: '#7a5a16',
+          short: S(planNow.reason) || SHEETUX_ZERO_REASON };
+      }
+    }
     var readyRow = sheetclarReadyRow(state);
     if (readyRow) {
       return { label: probeOnlyActive() ? 'READY (PROBE ONLY)' : 'READY', color: '#205c43',
@@ -2201,6 +2224,11 @@
   function wfautoArm(state, wait, mode) {
     var a = state.wfauto;
     wfautoClearTimer(state);
+    /* rwfix-1.0.0 (b1169): the moment MLS actually started re-checking by
+       itself. a.startedAt is the cycle's WINDOW origin (the successful open,
+       which can be up to three minutes old before the first arm), so it cannot
+       be used to tell the doctor how long the automatic stretch really ran. */
+    if (!a.firstArmedAt) a.firstArmedAt = Date.now();
     a.armed = true; a.mode = mode; a.waitMs = wait; a.nextAt = Date.now() + wait;
     a.exhausted = false; a.armedGeneration = state.probeGeneration;
     var gen = state.probeGeneration, rowId = a.rowId;
@@ -2211,7 +2239,21 @@
   function wfautoStop(state, exhausted) {
     var a = state && state.wfauto;
     wfautoCancel(state);
-    if (a && exhausted) { a.exhausted = true; wfautoRepaint(state); }
+    if (a && exhausted) {
+      a.exhausted = true;
+      /* rwfix-1.0.0 (b1169): MEASURE THE STRETCH THE SENTENCE CLAIMS.
+         The exhausted narration used to say "three minutes" whatever had
+         actually happened - and the settled lane exhausts after three 20s
+         re-probes (60 seconds), while a paint lane armed against an open that
+         is already 175s old can clip to a single 5-second wait. Both told the
+         doctor the surface had been hammered for three minutes, so he stopped
+         pressing a button that would very likely have landed. Recorded here,
+         at the one place a cycle can give up, and only ever read for words. */
+      a.exhaustedAt = Date.now();
+      a.exhaustedMs = Math.max(0, a.exhaustedAt - (Number(a.firstArmedAt) || Number(a.startedAt) || a.exhaustedAt));
+      a.autoChecks = (Number(a.tries) || 0) + (Number(a.settledTries) || 0);
+      wfautoRepaint(state);
+    }
     return false;
   }
   /* THE ONE ARMING POINT. Called from the two settle latches, i.e. at exactly
@@ -2230,6 +2272,8 @@
       a = state.wfauto = { cycle: (a ? a.cycle : 0) + 1, startedAt: (why.openedAt || now),
         tries: 0, settledTries: 0, timer: null, armed: false, armedGeneration: -1, watching: false,
         onWake: null, rowId: '', code: '', mode: '', waitMs: 0, nextAt: 0,
+        /* rwfix-1.0.0 (b1169): this cycle's own measurement of itself. */
+        firstArmedAt: 0, exhaustedAt: 0, exhaustedMs: 0, autoChecks: 0,
         exhausted: false, lastProbeAt: now };
     }
     /* wfClarityRefusal calls BOTH latches for one refusal - the second call
@@ -2277,11 +2321,24 @@
      the sheetclar-1.0.0 state line's short sentence; #mlsAthenaUnifiedProbe
      keeps the refusal's exact textContent, and the disclosure stays forced
      open, so no refusal is ever softened or folded away by an auto re-check. */
+  /* rwfix-1.0.0 (b1169): a measured stretch in the doctor's units. */
+  function wfautoSpanText(ms) {
+    var secs = Math.max(1, Math.round((Number(ms) || 0) / 1000));
+    if (secs < 120) return secs + ' second' + (secs === 1 ? '' : 's');
+    var mins = Math.round(secs / 60);
+    return mins + ' minute' + (mins === 1 ? '' : 's');
+  }
   function wfautoNote(state) {
     var a = state && state.wfauto;
     if (!a || wfautoOff) return '';
     if (a.exhausted) {
-      return ' MLS re-checked Athena by itself for three minutes and it still refused, so it stopped rather than loop: this one needs you. Fix the step named here, then press Check Athena again.';
+      /* rwfix-1.0.0 (b1169): the REAL stretch and the REAL number of automatic
+         re-checks, measured in wfautoStop. The old sentence claimed three
+         minutes after as little as five seconds. */
+      var n = Number(a.autoChecks) || 0;
+      if (!n) return ' MLS could not get a single automatic re-check in before its three-minute window closed, so it stopped rather than loop: this one needs you. Fix the step named here, then press Check Athena again.';
+      return ' MLS re-checked Athena by itself ' + n + ' time' + (n === 1 ? '' : 's') + ' over about ' + wfautoSpanText(a.exhaustedMs) +
+        ' and it still refused, so it stopped rather than loop: this one needs you. Fix the step named here, then press Check Athena again.';
     }
     if (!a.armed) return '';
     var secs = Math.max(1, Math.round((Number(a.nextAt) - Date.now()) / 1000));
@@ -3426,6 +3483,16 @@
         }
       } catch (e4) {}
     }
+  }
+  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler, with the visible
+     half it never had. The button sync is unchanged and still decides enabled
+     vs disabled; this repaints the state word and its sentence from that same
+     plan, at the severity the sheet is already painted at, so a doctor who
+     unchecks everything is told why the Confirm went grey instead of reading
+     READY over a dead button. It paints; it presses nothing. */
+  function unifiedSyncFromIncludeCheckbox(state) {
+    unifiedSyncPrimaryButton(state);
+    try { paintSheetclarState(state, state && state.wfautoLastKind); } catch (e) {}
   }
   function runUnifiedPrimarySend(state, btn) {
     if (!state || state.closed) return;
@@ -4593,7 +4660,9 @@
        execute for a selected Save / Sign / order row. No new send loop. */
     go.addEventListener('click', function () { runUnifiedPrimarySend(state, go); });
     var bxBoxes = card.querySelectorAll('input.mls-bx-check');
-    for (var bxi = 0; bxi < bxBoxes.length; bxi++) bxBoxes[bxi].addEventListener('change', function () { unifiedSyncPrimaryButton(state); });
+    /* rwfix-1.0.0 (b1169): same sync, now with the visible half - see
+       unifiedSyncFromIncludeCheckbox. */
+    for (var bxi = 0; bxi < bxBoxes.length; bxi++) bxBoxes[bxi].addEventListener('change', function () { unifiedSyncFromIncludeCheckbox(state); });
     /* sheetclar-1.0.0 (owner 2026-08-31, measured live: the one READY section's
        "Send this section" box arrived UNCHECKED, so the big Confirm & Send sat
        grayed with "Check at least one READY note section first" - a pointless
@@ -6165,9 +6234,12 @@
       if (seen[id]) continue;
       seen[id] = 1;
       if (want && !want[id]) continue;
-      if (opBatchSent[id]) { if (want) refused.push({ id: id, why: 'already written into Athena in this session' }); continue; }
+      /* rwfix-1.0.0 (b1169): a refusal carries the PATIENT'S NAME as well as
+         the note id, because the surface that paints it is read by a doctor,
+         not by a debugger. Nothing about who is refused, or why, changed. */
+      if (opBatchSent[id]) { if (want) refused.push({ id: id, name: S(byId[id] && byId[id].patient), why: 'already written into Athena in this session' }); continue; }
       var scr = opBatchScreen(byId[id]);
-      if (!scr.ok) { if (want) refused.push({ id: id, why: scr.why }); continue; }
+      if (!scr.ok) { if (want) refused.push({ id: id, name: S(byId[id] && byId[id].patient), why: scr.why }); continue; }
       items.push(opBatchItem(byId[id]));
     }
     return { items: items, refused: refused };
@@ -6304,6 +6376,13 @@
     if (c.rehearsed) bits.push(c.rehearsed + ' rehearsed (probe only - nothing written)');
     if (c.skipped) bits.push(c.skipped + ' skipped, each with its reason below');
     if (c.left) bits.push(c.left + ' not run');
+    /* rwfix-1.0.0 (b1169): THE FOURTH GROUP THE SUMMARY USED TO SWALLOW.
+       `n` is the QUEUE, not the day: every note this run's own screen refused
+       before the queue was built was dropped out of the arithmetic entirely,
+       so an 8-note day with 2 refusals finished "6 of 6 written into Athena"
+       and the doctor closed the day believing it complete. The refusals are
+       counted here and named row by row in the card. */
+    if ((run.refused || []).length) bits.push(run.refused.length + ' not queued at all, each named with its reason below');
     return bits.join('; ') + '. Nothing was saved and nothing was signed - Save and Sign & Save stay yours in athenaOne, per note.' +
       (run.stop ? (' ' + run.stop) : '');
   }
@@ -6322,6 +6401,25 @@
         '<span style="float:right;font-weight:800;color:' + ph.c + '">' + esc(live ? (ph.t + '...') : ph.t) + '</span>' +
         '<div style="clear:both;color:#52675c;font-size:11.5px">' + esc(x.why || '') + '</div></div>';
     }).join('');
+    /* rwfix-1.0.0 (b1169): THE FOURTH PHASE GROUP - NOT QUEUED.
+       opBatchEligible has always answered with the notes its own screen
+       refused, and this card painted only the survivors: the two op notes
+       quarantined for an unsafe patient binding simply were not on the screen,
+       under any heading, and the summary counted 6 of 6. They are now a grey
+       group of their own, each one NAMED, each with the screen's own sentence.
+       This paints refusals; it queues nothing and can send nothing. */
+    var refusedRows = (run.refused || []);
+    var refusedHtml = refusedRows.map(function (x) {
+      return '<div data-mls-opbatch-refused="' + esc(S(x && x.id)) + '" style="border-top:1px solid #e2e8e5;padding:6px 0">' +
+        '<b style="font-weight:750">' + esc(S(x && x.name) || 'This note') + '</b>' +
+        '<span style="float:right;font-weight:800;color:#6b7a72">not queued</span>' +
+        '<div style="clear:both;color:#52675c;font-size:11.5px">' + esc(S(x && x.why) || 'MLS would not queue this one.') + '</div></div>';
+    }).join('');
+    var refusedBlock = refusedHtml
+      ? ('<div data-mls-opbatch-refused-group="1" style="margin-top:10px;padding:7px 10px 3px;border:1px solid #dfe6e2;background:#f5f8f6;border-radius:9px">' +
+        '<div style="font-weight:850;color:#4a5a52;font-size:11.5px;letter-spacing:.3px">NOT QUEUED - ' + refusedRows.length + ' note' +
+        (refusedRows.length === 1 ? ' was' : 's were') + ' never sent and never attempted</div>' + refusedHtml + '</div>')
+      : '';
     host.innerHTML =
       '<div style="display:flex;gap:8px;align-items:flex-start">' +
         '<div style="flex:1;font-weight:850;font-size:13px">' + esc(S(run.title) || 'Sending op notes to Athena') + '</div>' +
@@ -6331,7 +6429,7 @@
       '<div data-mls-opbatch-headline="1" style="margin-top:5px;color:#204034;font-weight:700">' + esc(opBatchHeadline(run)) + '</div>' +
       '<div style="margin-top:7px;height:8px;border-radius:6px;background:#e6efe9;overflow:hidden">' +
         '<div style="height:100%;width:' + pct + '%;background:#2f7d5a"></div></div>' +
-      '<div style="margin-top:8px">' + rowsHtml + '</div>' +
+      '<div style="margin-top:8px">' + rowsHtml + '</div>' + refusedBlock +
       '<div style="margin-top:9px;padding:8px 10px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:11.5px">' +
         '<b>Nothing is saved and nothing is signed.</b> Each note gets its own read-only Athena check, its own confirmation-bound write and its own receipt, one at a time. Save and Sign &amp; Save stay yours in athenaOne.</div>';
     try {
@@ -7157,7 +7255,10 @@
         positive: WFAUTO_POSITIVE, backoff: WFAUTO_BACKOFF_MS, idleMs: WFAUTO_IDLE_MS,
         windowMs: WFAUTO_WINDOW_MS, maxPaint: WFAUTO_MAX_PAINT, maxSettled: WFAUTO_MAX_SETTLED,
         eligible: function () { return wfautoEligible(unifiedAthenaState); },
-        snapshot: function () { var a = unifiedAthenaState && unifiedAthenaState.wfauto; return a ? { cycle: a.cycle, mode: a.mode, armed: a.armed === true, tries: a.tries, settledTries: a.settledTries, waitMs: a.waitMs, exhausted: a.exhausted === true, rowId: a.rowId, code: a.code, watching: a.watching === true } : null; },
+        /* rwfix-1.0.0 (b1169): exhaustedMs / autoChecks are what the exhausted
+           sentence now states out loud, so a suite can pin the narration
+           against the cycle's own measurement instead of a constant. */
+        snapshot: function () { var a = unifiedAthenaState && unifiedAthenaState.wfauto; return a ? { cycle: a.cycle, mode: a.mode, armed: a.armed === true, tries: a.tries, settledTries: a.settledTries, waitMs: a.waitMs, exhausted: a.exhausted === true, exhaustedMs: Number(a.exhaustedMs) || 0, autoChecks: Number(a.autoChecks) || 0, rowId: a.rowId, code: a.code, watching: a.watching === true } : null; },
         positiveLatch: function () { return unifiedAthenaState ? S(unifiedAthenaState.wfautoPositive) : ''; },
         lastProbe: function () { var p = unifiedAthenaState && unifiedAthenaState.wfautoProbe; return p ? { generation: p.generation, rowId: p.rowId, ok: p.ok, code: p.code } : null; },
         note: function () { return unifiedAthenaState ? wfautoNote(unifiedAthenaState) : ''; },

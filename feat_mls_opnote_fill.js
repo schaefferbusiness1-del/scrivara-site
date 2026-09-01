@@ -266,8 +266,24 @@
     /* onf-2.4.0 (owner: "one or two clicks then it's done"): click 1 = Draft all,
        click 2 = this. Finalizes every drafted note into its patient's History
        via the app's own opPrepSave (exact-identity gated, never Athena). */
+    /* rwfix-1.0.0 (b1169): TWO DEFECTS ON THE SAME TWO LINES, BOTH ABOUT WHAT
+       THIS BUTTON CLAIMS.
+       (a) THE safe() WRAPPER WAS MIS-PARENTHESIZED. `safe(f(i)())` evaluates
+           f(i) to the inner closure, INVOKES it, and hands safe() the result -
+           so opPrepSave ran OUTSIDE the try/catch it looked wrapped in, and one
+           throwing note ended the whole loop in silence with every note after
+           it unsaved and no message at all. The closure is now inside safe().
+       (b) `saved++` COUNTED ATTEMPTS, NOT SAVES. opPrepSave refuses - and
+           returns quietly - when the exact patient identity cannot be verified,
+           and it refuses again when its own opsv-1.0.0 readback proves the note
+           did not reach the store (a full-quota device). Both printed as
+           "Saved N notes to History". Each note is now re-read from the SAME
+           store opPrepSave verified against, by the id opPrepSave stamps on the
+           row, and only a note that reads back is counted as saved. Nothing
+           about the save itself changed: this file still calls the app's own
+           exact-identity-gated opPrepSave and never writes a chart record. */
     var sa = $('mlsOnfSaveAll'); if (sa) sa.addEventListener('click', function () {
-      var op = window._opPrep || [], saved = 0, blanksLeft = 0, skipped = 0;
+      var op = window._opPrep || [], saved = 0, blanksLeft = 0, skipped = 0, refused = 0, unverified = 0;
       for (var i = 0; i < op.length; i++) {
         var r = op[i];
         if (!r || !S(r.note).trim()) { skipped++; continue; }
@@ -275,11 +291,28 @@
            save gate and every other surface */
         blanksLeft += (isFn(window.opNoteBlankCount) ? window.opNoteBlankCount(S(r.note)) : (S(r.note).match(/\[FILL:[^\]]*\]|\[\[[a-z0-9_]+\]\]/gi) || []).length);
         r._onfReviewed = true;   /* onf-2.8.0: "Save all drafted" is the explicit accept */
-        safe(function (j) { return function () { if (isFn(window.opPrepSave)) window.opPrepSave(j); }; }(i)());
-        saved++;
+        var ran = safe(function (row, j) {
+          return function () { if (!isFn(window.opPrepSave)) return false; window.opPrepSave(j); return true; };
+        }(r, i), false) === true;
+        if (!ran) { refused++; continue; }
+        if (!isFn(window.getNotes)) { unverified++; continue; }
+        var landed = safe(function (row) {
+          return function () {
+            var id = S(row._noteId); if (!id) return false;
+            var ns = window.getNotes() || [];
+            for (var k = 0; k < ns.length; k++) if (ns[k] && S(ns[k].id) === id) return true;
+            return false;
+          };
+        }(r), false) === true;
+        if (landed) saved++; else refused++;
       }
-      if (!saved) { toast('Nothing drafted yet — press "Draft all op notes" first.', 'err'); return; }
-      toast('✓ Saved ' + saved + ' note' + (saved === 1 ? '' : 's') + ' to History' + (skipped ? ' · ' + skipped + ' not drafted' : '') + (blanksLeft ? ' · ' + blanksLeft + ' blank(s) still marked in the text' : ''), blanksLeft ? 'err' : 'ok');
+      if (!saved && !refused && !unverified) { toast('Nothing drafted yet — press "Draft all op notes" first.', 'err'); return; }
+      toast((saved ? ('✓ Saved ' + saved + ' note' + (saved === 1 ? '' : 's') + ' to History') : '⚠ No note reached a chart')
+        + (refused ? (' · ' + refused + ' NOT saved (open each one and press Save to read its reason)') : '')
+        + (unverified ? (' · ' + unverified + ' could not be verified on this device') : '')
+        + (skipped ? ' · ' + skipped + ' not drafted' : '')
+        + (blanksLeft ? ' · ' + blanksLeft + ' blank(s) still marked in the text' : ''),
+        (refused || unverified || blanksLeft || !saved) ? 'err' : 'ok');
     });
     updateBarCount();
   }
