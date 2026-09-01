@@ -27340,6 +27340,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     return { text: out.join("\n"), stripped: stripped };
   }
+  /* vntpl-1.0.0: EXPORT THE SANITISER, do not let a second copy be written.
+     The PRIMARY generation prompt now states the doctor's template too (shell
+     _mlsGenTemplateContract), and it must show the model the SAME text this
+     layer shows the reformat - canned clinical-assertion lines reduced to
+     their label - or a reproduce-then-fill contract would turn "the patient
+     tolerated the procedure well" into a claim about today. Exporting the
+     decision, not re-deriving it, is what keeps the two prompts from drifting
+     apart the first time this marker list changes. The shell falls back to a
+     local port when this overlay is absent, and its receipt says which one
+     ran. Read-only: nothing here changes what wrapApply does. */
+  API.sanitizeTemplateText = function (text) { return sanitizeTplText(text); };
 
   var _origApply = null;
   function wrapApply() {

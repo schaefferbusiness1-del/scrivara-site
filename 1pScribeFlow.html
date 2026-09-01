@@ -26061,6 +26061,33 @@ function _mlsConsumeTemplateOverride(){
   try{ if(typeof _mlsRenderTplPickReceipt==='function') _mlsRenderTplPickReceipt(); }catch(eTplOv5){}
   return tpl;
 }
+/* vntpl-1.0.0 - THIS GENERATION'S OWN TEMPLATE, HANDED FORWARD.
+   The primary prompt (callOpenAI) now resolves the active template so the
+   FIRST draft can follow it. resolveActiveTemplate is the ANNOUNCING path -
+   it toasts, renders #tplPickReceipt and writes the pick log - so resolving
+   it a second time down here would ask an identical question of identical
+   inputs and tell the doctor the answer twice. The primary run parks its
+   answer; this reformat consumes it.
+   It lives HERE, beside _mlsConsumeTemplateOverride, because every helper
+   maybeApplyTemplate reaches for has always lived inside this block: a shipped
+   suite executes exactly this region, and a helper outside it would red that
+   suite with a ReferenceError instead of a finding.
+   Consumed on read, and only for the transcript it was decided from: a
+   different transcript is a different decision, and a handoff older than two
+   minutes is not this generation's at all. Either way the caller falls
+   through to a fresh resolve, which is exactly what shipped before. */
+var _mlsGenTplHandoff=null;
+function _mlsSetGenTemplateHandoff(tpl,visitText){
+  try{ _mlsGenTplHandoff=(tpl&&tpl.text)?{tpl:tpl,text:String(visitText==null?'':visitText),at:Date.now()}:null; }
+  catch(eGenTplSet){ _mlsGenTplHandoff=null; }
+}
+function _mlsConsumeGenTemplateHandoff(visitText){
+  var h=_mlsGenTplHandoff; _mlsGenTplHandoff=null;
+  if(!h||!h.tpl) return null;
+  if(String(visitText==null?'':visitText)!==String(h.text)) return null;
+  if(!(Date.now()-Number(h.at||0)<120000)) return null;
+  return h.tpl;
+}
 /* Entry point called from generateNote AFTER a note is produced.
    No-op (and never touches the prompt) unless the toggle is ON. */
 async function maybeApplyTemplate(visitText,expectedBinding,expectedEpoch){
@@ -26077,7 +26104,17 @@ async function maybeApplyTemplate(visitText,expectedBinding,expectedEpoch){
      the one seam both paths pass through. */
   const tplOverride=_mlsConsumeTemplateOverride();
   if(tplOverride) tpl=tplOverride;
-  else try{ tpl=resolveActiveTemplate(visitText); }catch(e){ return {applied:false,reason:'template-selection-error'}; }
+  else{
+    /* vntpl-1.0.0: THE SAME TEMPLATE THE PRIMARY PROMPT WAS GIVEN, when this
+       is that generation's own reformat. Resolving a second time would ask an
+       identical question of identical inputs and announce the answer twice.
+       A transcript that does not match the handoff, or a handoff older than
+       two minutes, is not this generation - and falls through to exactly the
+       fresh resolve that shipped before. */
+    const tplHandoff=_mlsConsumeGenTemplateHandoff(visitText);
+    if(tplHandoff) tpl=tplHandoff;
+    else try{ tpl=resolveActiveTemplate(visitText); }catch(e){ return {applied:false,reason:'template-selection-error'}; }
+  }
   if(!tpl){ return {applied:false,reason:'no-template'}; }
   let result;
   try{ result=await applyTemplateToNote(tpl,visitText,expectedBinding||currentVisitAthenaBinding,expectedEpoch==null?currentVisitAthenaEpoch:expectedEpoch,templateOptions); }
@@ -30282,6 +30319,11 @@ function _mlsStartOptionalTemplate(transcript,expectedBinding,expectedEpoch,sour
     try{if(run.sourceEl&&run.sourceHandler)run.sourceEl.removeEventListener('input',run.sourceHandler);}catch(e){}
     if(_mlsActiveGenerationTemplate===run)_mlsActiveGenerationTemplate=null;
     try{window.__mlsLastTemplateGenerationReceipt=Object.assign({},receipt||{});}catch(eReceipt){}
+    /* vntpl-1.0.0: the reformat did not land. maybeApplyTemplate cleared the
+       fidelity strip on its way in, so the measure taken on the FIRST draft -
+       the draft still on screen - is the only true thing anyone has about
+       this note. Put it back rather than leave the doctor with silence. */
+    try{ if(!(receipt&&receipt.applied===true)) _mlsRestorePrimaryTplNotice(); }catch(eVntplRestore){}
     return receipt;
   }
   var templatePromise;
@@ -30501,6 +30543,12 @@ async function generateNote(){
     _mlsSettleGeneration(run,outcome,outcomeCode,outcomeMessage);
     /* Optional formatting may improve the retained draft, but launch failure
        cannot unwind the already-validated/rendered main result. */
+    /* vntpl-1.0.0: grade the draft the doctor is reading RIGHT NOW against
+       the template that shaped its prompt, and say it out loud when it fell
+       short. No silent accept - and no refusal either: the draft stands, and
+       the only action offered is asking again. A no-op when no template
+       shaped this generation. */
+    try{_mlsMeasurePrimaryTemplateFidelity(currentSoap);}catch(eVntplMeasure){}
     try{_mlsStartOptionalTemplate(transcript,generationBinding,generationEpoch,transcriptEl);}catch(eTemplateLaunch){
       try{window.__mlsLastTemplateGenerationReceipt={applied:false,reason:'template-launch-failed'};}catch(eTemplateReceipt){}
     }
@@ -31590,6 +31638,218 @@ function refreshAutoDraftPriorRow(){
 try{ window.__mlsAutoDraftPrior={version:'autodraft-1.0.0',seed:_mlsAutoDraftPriorSeed,build:_autoDraftBuildSeed,prior:_autoDraftPriorNote,doseLine:_autoDraftDoseLine}; }catch(eAdx){}
 /* ===== end autodraft-1.0.0 ===== */
 
+/* ===== vntpl-1.0.0 - THE FIRST DRAFT FOLLOWS THE TEMPLATE ================
+   Owner, 2026-08-31: "the other sections need to follow the templates there
+   given to like the hip and assent and plan so fix that to."
+
+   WHAT WAS ACTUALLY WRONG. b1144 hardened the POST-HOC reformat
+   (applyTemplateToNote): a reproduce-then-fill contract, a deterministic
+   conformance measure, an amber strip that says out loud when a draft did not
+   follow the template. But the template reached the model ONLY there. The
+   PRIMARY generation never saw one at all: resolveActiveTemplate is called
+   from maybeApplyTemplate, which _mlsStartOptionalTemplate launches AFTER the
+   main draft has already been validated, rendered and toasted. So the
+   doctor's FIRST draft was always written to the generic NOTE STYLE, and
+   whether his template was followed depended on a SECOND AI call that runs on
+   a 12-second deadline and is deliberately allowed to fail in silence
+   (_mlsExpectedTemplateCancellation suppresses the 'template-timeout' toast,
+   correctly, because the main draft succeeded). "The other sections need to
+   follow the template" is exactly that gap: HPI, assessment and plan came out
+   generic first, and only a second pass that might not happen fixed them.
+
+   WHAT THIS BLOCK DOES. It states the template to the PRIMARY prompt, in the
+   same words the op-note lane uses (feat_mls_opnote_integrity.js, "HOW TO
+   PRODUCE THE NOTE - REPRODUCE, THEN FILL"), so the two lanes speak one
+   language and a doctor who learns one has learned both.
+
+   FOUR THINGS IT MUST NOT DO, and does not:
+
+   1. IT RIDES THE USER PAYLOAD. The hosted structured lane POSTs
+      {transcript, model, notePreferences, draftFamily, draftTuning} and does
+      NOT transport 'sys' at all - the same measured reason turnsBlock and the
+      autodraft seed ride there (spec-1.0.0 found the specialty was reaching
+      nothing for precisely this reason). A short 'sys' clause is added too,
+      for per-device-key mode, and says the same thing in fewer words.
+
+   2. athena_note IS UNTOUCHED. The sidecar is a machine contract of exactly
+      five flat sections that _mlsValidateAthenaNote enforces byte-for-byte -
+      a template heading inside it fails that validator closed. A template
+      shapes the DISPLAY note only, and the block says so explicitly, in the
+      one place a model could otherwise read a contradiction between "follow
+      this template" and "return five flat sections". Two fields, two
+      contracts, stated as such: that is the same pattern the autodraft seed
+      block already uses for its note-field-only exception.
+
+   3. WITH NO ACTIVE TEMPLATE IT IS THE EMPTY STRING, so the prompt is
+      byte-for-byte what shipped before. That is what OFF has to mean, and it
+      is asserted against pristine HEAD bytes rather than asserted by eye.
+
+   4. IT NEVER FEEDS RAW TEMPLATE PROSE. The connect bundle's grounded-apply
+      layer (ngv1) strips canned clinical-assertion lines out of a template
+      before the reformat ever sees it, precisely so a reproduce-then-fill
+      contract cannot turn "the patient tolerated the procedure well" into a
+      claim about today. The primary prompt asks that SAME sanitiser for the
+      SAME text; when the overlay is absent a local port of its marker list
+      runs instead, and the receipt says which one ran, so a probe can never
+      mistake one for the other. */
+
+/* REUSE, NEVER RE-DERIVE - the marker list below is the fallback only. */
+var VNTPL_ASSERTION_MARKERS=[
+  /\binformed consent\b|\bconsent (was |were )?(obtained|signed|reviewed)\b/i,
+  /\bprepped and draped\b|\bsterile (fashion|technique|conditions)\b|\baseptic\b/i,
+  /\bneedle\b|\bgauge\b|\b\d{2}\s?g\b/i,
+  /\bfluoroscop\w*\b|\bultrasound[- ]guid\w*\b|\bunder (us|xray|x-ray) guidance\b/i,
+  /\blidocaine\b|\bbupivacaine\b|\bropivacaine\b|\btriamcinolone\b|\bkenalog\b|\bdepo-?medrol\b|\bmethylprednisolone\b|\bdexamethasone\b|\bcontrast\b|\bomnipaque\b/i,
+  /\bprocedure (was )?performed\b|\bwe performed\b|\bwas injected\b|\binjected under\b|\bneedle (was )?(advanced|placed|inserted)\b/i,
+  /\btolerated the procedure\b|\btolerated (it|this) well\b/i,
+  /\bcomplications?\s*:?\s*(none|no immediate|nil)\b/i,
+  /\bdischarged (home )?(in )?(a )?stable\b|\bdisposition\s*:\s*discharged\b/i
+];
+function _mlsTplPromptHeadingLine(line){
+  var l=String(line==null?'':line).trim();
+  if(!l) return false;
+  if(l.length<=48&&/:\s*$/.test(l)) return true;
+  if(l.length<=40&&l===l.toUpperCase()&&/[A-Z]/.test(l)) return true;
+  return false;
+}
+function _mlsTplPromptSanitizeLocal(text){
+  var lines=String(text==null?'':text).split(/\r?\n/),out=[],stripped=0;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    if(_mlsTplPromptHeadingLine(line)){ out.push(line); continue; }
+    var hit=false;
+    for(var j=0;j<VNTPL_ASSERTION_MARKERS.length;j++){ if(VNTPL_ASSERTION_MARKERS[j].test(line)){ hit=true; break; } }
+    if(hit){
+      var m=/^(\s*[A-Za-z][A-Za-z \/&()-]{1,38}:)/.exec(line);
+      out.push(m?m[1]:'');
+      stripped++;
+      continue;
+    }
+    out.push(line);
+  }
+  return {text:out.join('\n'),stripped:stripped,source:'local-port'};
+}
+function _mlsTplPromptSanitize(text){
+  try{
+    var api=(typeof window!=='undefined')?window.__mlsNoteGroundV1:null;
+    if(api&&typeof api.sanitizeTemplateText==='function'){
+      var r=api.sanitizeTemplateText(text);
+      if(r&&typeof r.text==='string') return {text:r.text,stripped:Number(r.stripped||0),source:'ngv1'};
+    }
+  }catch(eTplSan){}
+  return _mlsTplPromptSanitizeLocal(text);
+}
+/* THE TEMPLATE'S OWN SECTION LINES, verbatim and in order - not normalised
+   labels. The DECISION is the shipped detector (_mlsTplHeadingLabel, itself
+   the b1144 port of headingLabel from the op-note module); only what is
+   RETURNED differs, so "which lines are sections" can never disagree between
+   the contract the model is handed and the measure that grades the answer. */
+function _mlsTplSectionLines(text){
+  var out=[],seen={};
+  String(text==null?'':text).split(/\r?\n/).forEach(function(raw){
+    var line=String(raw).trim(); if(!line) return;
+    var label=''; try{ label=_mlsTplHeadingLabel(line); }catch(eTplHl){ label=''; }
+    if(!label||seen[label]) return;
+    seen[label]=1;
+    var colon=line.indexOf(':');
+    out.push(colon>=0?line.slice(0,colon+1):line);
+  });
+  return out;
+}
+/* The block itself. Returns null - never a partial contract - whenever there
+   is nothing real to state, so the caller's no-op path is a single test. */
+function _mlsGenTemplateContract(tpl){
+  if(!tpl||!tpl.text) return null;
+  var san=_mlsTplPromptSanitize(String(tpl.text||''));
+  var body='';
+  try{ body=(typeof _tplTextForDraft==='function')?_tplTextForDraft(san.text):String(san.text||''); }
+  catch(eTplDraft){ body=String(san.text||''); }
+  body=String(body==null?'':body).slice(0,12000);
+  if(!body.trim()) return null;
+  var sections=_mlsTplSectionLines(body).slice(0,40);
+  var name=String((tpl&&tpl.name)||'').replace(/[\r\n]+/g,' ').slice(0,120);
+  var out=[];
+  out.push('TEMPLATE_CONTRACT_BEGIN');
+  out.push('This visit has an ACTIVE TEMPLATE'+(name?(': "'+name+'"'):'')+'. It governs the "note" field of your JSON answer - its layout, its section headings and its standard language. It changes no other field, and it relaxes no rule.');
+  out.push('');
+  out.push('HOW TO PRODUCE THE NOTE - REPRODUCE, THEN FILL. Work through the TEMPLATE below from its first line to its last and reproduce EVERY line of it, in the order the template uses and in the words the template uses. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else - headings, field labels, boilerplate sentences, standing instructions, attestations - is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge, re-order or omit any template line. Do NOT drop a template line because it looks routine or repetitive. Do NOT replace the outline of the template with your own, and do NOT substitute a generic SOAP outline for it. The finished "note" must be a completed copy of the template, not a description of the visit.');
+  out.push('');
+  out.push('THEN FILL - EVERY SECTION, NOT ONLY THE FIRST. Each section the template defines - the history of present illness, the review of systems, the examination, the assessment and the plan alike - keeps its own heading and its own standing language, and is filled from TODAY_TRANSCRIPT and the chart facts already given to you. A template field with no answer KEEPS ITS LINE and gets the explicit placeholder "not documented" - never an invented finding, history, value or date, and never a deleted line. Never write a clinical fact TODAY_TRANSCRIPT does not support in order to make a template line look complete: an unfilled line is safe, a plausible invented one is not.');
+  if(sections.length){
+    out.push('');
+    out.push('SECTIONS - the "note" field must carry these headings, spelled exactly as written here and in this order:');
+    out.push(sections.join('\n'));
+  }
+  out.push('');
+  out.push('TEMPLATE TO REPRODUCE - every line of it, in this order:');
+  out.push('"""');
+  out.push(body);
+  out.push('"""');
+  out.push('');
+  out.push('ATHENA EXCEPTION - THE "athena_note" FIELD IS NOT TEMPLATED. Everything above applies to the "note" field ONLY. The "athena_note" field keeps its own contract exactly as the JSON shape states it: the SAME visit in EXACTLY five flat top-level sections, in this exact order - HPI, ROS, EXAM, ASSESSMENT, PLAN - each heading alone on its own line with a non-empty body, and no template heading, template boilerplate, extra section, wrapper or preamble anywhere in it. Where the template\'s structure and those five sections differ, that is NOT a conflict to resolve: the "note" field follows the TEMPLATE, the "athena_note" field follows its five sections, and the same clinical content simply appears in both shapes.');
+  out.push('');
+  out.push('PRECEDENCE - the "note" field only. Where this TEMPLATE_CONTRACT and the NOTE STYLE line disagree about the layout, heading names or wording of the "note" field - or where a PRIOR_NOTE_SEED SKELETON is also present - THIS CONTRACT WINS for that field. Nothing else moves: every safety rule stated anywhere above remains absolutely binding and is NOT relaxed by anything in this block, including the PRIOR_NOTE_SEED HARD LIMITS, the BACKGROUND_ONLY rule, the coding ethics, the evidence-quote requirement, and never inventing what the transcript does not support.');
+  out.push('TEMPLATE_CONTRACT_END');
+  return {
+    name:name,
+    id:String((tpl&&tpl.id)||''),
+    templateText:body,
+    sections:sections,
+    sanitizeSource:String(san.source||''),
+    stripped:Number(san.stripped||0),
+    block:out.join('\n'),
+    sysLine:'\n\nACTIVE TEMPLATE FOR THIS VISIT: the user message carries a TEMPLATE_CONTRACT block. It governs the "note" field only - reproduce every line of that template, in its order and in its words, and fill its fields from TODAY_TRANSCRIPT. It never changes the "athena_note" field, which stays exactly its five flat sections HPI, ROS, EXAM, ASSESSMENT, PLAN. Where the TEMPLATE_CONTRACT and the NOTE STYLE line disagree about the "note" field, the TEMPLATE_CONTRACT wins; every safety and coding rule above is unchanged.'
+  };
+}
+/* ONE RESOLVE PER GENERATION. resolveActiveTemplate is the ANNOUNCING path -
+   it toasts, renders #tplPickReceipt and writes the pick log - and it is the
+   one the connect bundle REPLACES, so this is the honest way to ask. Asking
+   it here moves that single announcement to BEFORE the draft appears instead
+   of after it, and the answer is handed to the optional reformat so the same
+   template shapes both passes and the doctor is told once, not twice. The
+   parking spot itself (_mlsSetGenTemplateHandoff / _mlsConsumeGenTemplateHandoff)
+   lives up beside _mlsConsumeTemplateOverride, with maybeApplyTemplate's other
+   helpers - a shipped suite executes exactly that region. */
+var _mlsGenTplMeasure=null;
+function _mlsResolveGenerationTemplate(visitText){
+  try{
+    if(typeof useTemplatesOn!=='function'||!useTemplatesOn()) return null;
+    if(typeof resolveActiveTemplate!=='function') return null;
+    return resolveActiveTemplate(visitText)||null;
+  }catch(eGenTplResolve){ return null; }
+}
+/* MEASURE THE FIRST DRAFT, not only the reformat. b1144 grades the post-hoc
+   reformat; when a template shaped THIS prompt, the draft on screen right now
+   is the one the doctor reads, and a reformat that times out in silence must
+   not be what decides whether he is told. Same shipped measure, same amber
+   strip, same one-click ask-again. It can never refuse or rewrite the draft -
+   a formatter that could silently discard a draft is the same silent failure
+   wearing a fresh label - and it never asks for a clinical fact. */
+function _mlsMeasurePrimaryTemplateFidelity(noteText){
+  var m=_mlsGenTplMeasure;
+  if(!m||!m.text) return null;
+  var c=null;
+  try{ c=_mlsTplConformance(String(noteText==null?'':noteText),m.text); }catch(eGenConf){ c=null; }
+  if(!c) return null;
+  var info={conformance:c,conservation:null,templateId:String(m.id||''),templateName:String(m.name||''),stage:'primary',at:Date.now()};
+  try{ window.__mlsLastPrimaryTemplateConformance=info; }catch(eGenStash){}
+  try{ _mlsRenderTplFidelityNotice(info); }catch(eGenNotice){}
+  return info;
+}
+/* The reformat did NOT land - it timed out, was superseded, had no template,
+   or had no AI. maybeApplyTemplate has already cleared the strip on its way
+   in, so without this the honest count taken on the first draft would vanish
+   for exactly the runs where it is the only true thing anyone has. */
+function _mlsRestorePrimaryTplNotice(){
+  var info=null;
+  try{ info=window.__mlsLastPrimaryTemplateConformance; }catch(eGenRead){ info=null; }
+  if(!info||!info.conformance) return '';
+  try{ return _mlsRenderTplFidelityNotice(info); }catch(eGenRender){ return ''; }
+}
+try{ window.__mlsVisitTemplateContract={version:'vntpl-1.0.0',build:_mlsGenTemplateContract,
+  sanitize:_mlsTplPromptSanitize,sections:_mlsTplSectionLines,measure:_mlsMeasurePrimaryTemplateFidelity}; }catch(eVntplX){}
+/* ===== end vntpl-1.0.0 ===== */
+
 async function callOpenAI(transcript,key,options){
   options=options||{};
   const preset=getPreset();
@@ -31669,7 +31929,31 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
   var autoDraftSeed=null;
   try{ autoDraftSeed=(typeof _mlsAutoDraftPriorSeed==='function')?_mlsAutoDraftPriorSeed(genStyle):null; }catch(eAutoDraft){ autoDraftSeed=null; }
   var seedLine=(autoDraftSeed&&autoDraftSeed.block)?('\n\n'+autoDraftSeed.block):'';
-  return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
+  /* vntpl-1.0.0: THE ACTIVE TEMPLATE, RESOLVED ONCE AND STATED HERE. It rides
+     the USER payload for the same measured reason turnsBlock and seedLine do:
+     the hosted structured lane POSTs {transcript, model, notePreferences,
+     draftFamily, draftTuning} and does not transport 'sys' at all. Templates
+     off, no template resolved, or an empty template body all leave
+     tplContract null, and both added strings are then the empty string - an
+     exact byte-for-byte no-op on the prompt, which is what OFF must mean.
+     Every read is inside a catch: template machinery may never be able to
+     break a generation. */
+  try{ window.__mlsLastPrimaryTemplateConformance=null; }catch(eGenClearNotice){}
+  _mlsGenTplMeasure=null;
+  var tplContract=null;
+  try{
+    var genTemplate=_mlsResolveGenerationTemplate(transcript);
+    _mlsSetGenTemplateHandoff(genTemplate,transcript);
+    tplContract=genTemplate?_mlsGenTemplateContract(genTemplate):null;
+    if(tplContract) _mlsGenTplMeasure={id:tplContract.id,name:tplContract.name,text:tplContract.templateText,at:Date.now()};
+  }catch(eGenTplContract){ tplContract=null; }
+  /* The receipt carries the DECISION and its shape, never the note. */
+  try{ window.__mlsLastGenTemplateContract=tplContract?{name:tplContract.name,id:tplContract.id,
+    sections:tplContract.sections.slice(),sanitizer:tplContract.sanitizeSource,stripped:tplContract.stripped,
+    chars:tplContract.templateText.length,at:Date.now()}:null; }catch(eGenTplReceipt){}
+  var tplSysLine=tplContract?tplContract.sysLine:'';
+  var tplBlock=tplContract?('\n\n'+tplContract.block):'';
+  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
 }
 
 /* ---------------------------------------------------------

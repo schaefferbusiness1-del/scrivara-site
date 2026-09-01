@@ -229,7 +229,15 @@ assert(/go\.addEventListener\('click', function \(\) \{ runUnifiedPrimarySend\(s
   const EXPECTED = {
     runUnifiedPrimarySend: [
       "go.addEventListener('click', function () { runUnifiedPrimarySend(state, go); });",
-      'press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); }'
+      'press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); }',
+      /* pin moved deliberately (b1145 audit of the b1141 opbatch caller): the
+         batch queue's press starts only from a HUMAN press of the batch
+         button, and opBatch's closed OPBATCH_ACTIONS allowlist
+         ({write_note, save_draft}) screens EVERY row of the sheet's primary
+         plan BEFORE this call - a plan carrying billing/sign/order rows skips
+         the note entirely (tests/opnote-batch-send.test.js pins that with 175
+         checks). Billing stays unreachable from this site. */
+      "item.phase = 'write'; opBatchPaint(); try { runUnifiedPrimarySend(st2, null); }"
     ],
     runUnifiedBatchSend: ['runUnifiedBatchSend(state, btn);'],
     executeUnifiedSelection: ['executeUnifiedSelection(state); return;', 'executeUnifiedSelection(state);']
