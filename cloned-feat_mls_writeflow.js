@@ -2137,6 +2137,13 @@
       ? bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000)
       : Promise.resolve({ ok: true, skipped: true });
     navigate.then(function (nav) {
+      /* navepoch-1.0.0 (qwen review HIGH, 2026-08-31): this continuation used
+         to fire the row search even after the sheet closed or a newer probe
+         took over mid-goto - the second drive then fought whoever owns the
+         athena surface now (measured live: it wiped a manually painted
+         encounter). Every async hop of the chain re-proves ownership before
+         touching athena again. */
+      if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
       nav = nav || {};
       if (nav.skipped !== true) {
         var observed = wfdxDayKey(nav.schedDate);
@@ -2171,6 +2178,10 @@
         }
       }
       return searchOpenTarget(manifest.patient, openContext).then(function (openRes) {
+        /* navepoch-1.0.0: same ownership re-proof after the row search - a
+           stale generation must not paint refusals or fix offers over the
+           surface a newer probe (or the doctor) now owns. */
+        if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
         openRes = openRes || {};
         wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: byName ? 'fix-open-by-name' : 'fix-open', ok: openRes.ok === true,
           reason: openRes.reason || openRes.findReason, error: openRes.error, expectedDay: day,
