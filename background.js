@@ -4238,6 +4238,34 @@ function mlsAthenaReadHeaderDate() {
 // schedule row must be on screen to open the chart). Injected into ALL frames of the
 // athena tab; only the GlobalNav frame carries the logo. READ-ONLY navigation — clicks
 // the logo only (never Save/Sign/any chart control).
+function mlsCalendarMenuFn() {
+  /* calmenu-1.0.0 (3.0.101): runs ONLY in the globalnav frame; clicks the
+     exact 'Calendar' menu then its exact 'View Calendar' entry. Anything
+     else returns receipts untouched. */
+  try {
+    if (!/globalnav/i.test(String(location.pathname || ''))) return null;
+    function exact(txt) {
+      var els = document.querySelectorAll('a, span, td, div, li');
+      for (var i = 0; i < els.length; i++) {
+        var own = '';
+        try { own = String(els[i].textContent || '').replace(/\s+/g, ' ').trim(); } catch (e0) {}
+        if (own === txt && els[i].offsetParent !== null) return els[i];
+      }
+      return null;
+    }
+    var cal = exact('Calendar');
+    if (!cal) return { frame: 'globalnav', calendar: false };
+    try { cal.click(); } catch (e1) {}
+    var t0 = Date.now();
+    return new Promise(function (res) {
+      var iv = setInterval(function () {
+        var vc = exact('View Calendar');
+        if (vc) { clearInterval(iv); try { vc.click(); } catch (e2) {} res({ frame: 'globalnav', calendar: true, viewCalendar: true }); return; }
+        if (Date.now() - t0 > 3500) { clearInterval(iv); res({ frame: 'globalnav', calendar: true, viewCalendar: false }); }
+      }, 250);
+    });
+  } catch (e) { return { err: String((e && e.message) || e).slice(0, 60) }; }
+}
 function mlsGoHomeDriverFn(requestGuard) {
   try {
     var guarded = !!(requestGuard && requestGuard.token && Number(requestGuard.deadline));
@@ -7221,6 +7249,8 @@ if (!found) {
                 }
                 for (let at = 0; at < 3 && !found; at++) {
                   if (!(await __gotoWait(at === 0 ? 5200 : 3200, 'the schedule frameset settle'))) { __gotoDeadline('the schedule frameset settle'); return; } /* frameset rebuild settle */
+                  /* calmenu-1.0.0 (3.0.101): the dashboard's widget cannot express a provider-scoped day switch (measured 2026-09-01 - every manual cure was Calendar > View Calendar, and each one made the next days land). From the second attempt on, drive athena's own globalnav menu to the classic schedule surface first, then let the existing weekstrip try. */
+                  if (at > 0) { try { const cm = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, func: mlsCalendarMenuFn }, Math.min(9000, __gotoLeft()), 'the Calendar menu'); const cmh = ((cm && cm.r) || []).map((r) => r && r.result).filter(Boolean); RD.calmenu = cmh.length ? cmh[0] : null; if (cmh.some((h) => h && h.viewCalendar)) { if (!(await __gotoWait(6500, 'the View Calendar settle'))) { __gotoDeadline('the View Calendar settle'); return; } } } catch (eCm) { RD.calmenuErr = String((eCm && eCm.message) || eCm).slice(0, 60); } }
                   const gx = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(40000, __gotoLeft()), 'date navigation');
                   const hits2 = ((gx && gx.r) || []).map((r) => r && r.result).filter(Boolean);
                   found = hits2.find((h) => h.found) || null;
