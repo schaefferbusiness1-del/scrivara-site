@@ -23957,6 +23957,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
   }
   function pSet(id, txt) { var e = $(id); if (e) e.textContent = txt; }
+  /* honest-tiles-1.0.0: set a tile's number AND its label together, so a tile
+     can never wear a label from one engine and a number from another. */
+  function pTile(id, val, label) {
+    var e = $(id); if (!e) return;
+    e.textContent = String(val == null ? 0 : val);
+    try { var s2 = e.parentNode && e.parentNode.querySelector('span'); if (s2 && label) s2.textContent = label; } catch (eT) {}
+  }
   function pConn(kind, label) { var d2 = $('ez3PullDot'); if (d2) d2.className = 'dot ' + kind; pSet('ez3PullConn', label); }
   function pCounts() {
     if (!P) return;
@@ -23977,6 +23984,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        Pause and Cancel. */
     var durable = p1RangeState(), live = p1RangeRunning(durable), resumable = p1RangeResumable(durable);
     var durableStatus = durable ? String(durable.status || '') : '';
+    /* ===== honest-tiles-1.0.0 (owner 2026-09-01: "this is unacceptable and
+       has to be better") =====
+       With a durable month job on this card, the four tiles kept painting the
+       legacy P counters - 0 FOUND / 0 SAVED / 0 ALREADY THERE / 20 FAILED DAYS
+       while the strip one line above truthfully said "11 of 31 days saved".
+       Two engines, one card, two stories. The durable manifest's recounted
+       summary is the only truth for a durable run, so it paints the tiles
+       too - and the retry queue is a QUEUE, not a failure, so nothing unretried
+       ever wears the word "failed" again. Legacy pulls (no durable job) keep
+       the legacy tiles untouched. */
+    try {
+      if (durable && durable.summary && (live || resumable || /^(complete|needs-attention|waiting-retry)$/.test(durableStatus))) {
+        var dsum = durable.summary;
+        pTile('ez3cFound', dsum.withRows, 'days with visits');
+        pTile('ez3cSaved', dsum.complete, 'days saved');
+        pTile('ez3cDup', dsum.empty, 'verified empty');
+        pTile('ez3cFail', dsum.needsAttention, 'need attention');
+      }
+    } catch (eHt) {}
+    /* ===== end honest-tiles-1.0.0 ===== */
     /* An INTERRUPTED job is continued ("Resume"); a job that SETTLED with days
        it could not verify is retried ("Retry failed days"). Both are the same
        safe resume() of the same manifest - only the sentence differs, and only
