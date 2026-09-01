@@ -51178,8 +51178,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, lastAttemptResult: null, terminalReceipt: null, terminalReceiptKey: '', sessionSerial: 0,
     pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null,
     preferenceGatePending: false, pullVisitBodies: null,
+    /* psr-1.0.0 (end of this file): the ONE recovery-and-retry cycle this lane
+       may run for the wedged-athena class. __psrFirst holds attempt 1's own
+       result so the retry's receipt carries both attempts; __psrNote is the
+       one sentence a SECOND failure adds, naming what was tried. */
+    __psrFirst: null, __psrRec: null, __psrNote: '', __psrPending: false,
     /* dsdiag-1.1.0: minted at every pull entry, quoted by the copyable report */
     pullId: '', pullStartedAt: 0 };
+  function dsPsrApi() {
+    var p = null;
+    try { p = window.__mlsPullSelfRecovery; } catch (ePsr) { p = null; }
+    return (p && p.installed === true && typeof p.run === 'function' && typeof p.eligible === 'function') ? p : null;
+  }
 
   /* ===== dtr-1.0.0 (durable, PHI-free day-pull terminal receipt) ==========
      The visible DaySwitch result used to live only in DS.lastAttemptResult.
@@ -52620,6 +52630,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       DS.statusOmitted = 0;
       DS.providerRosterRetryReceipt = null;
       DS.providerAttributionCoverage = null;
+      /* psr-1.0.0: a MANUAL press is a new intent and buys a fresh recovery
+         budget, exactly as it resets the transient re-read budget. */
+      DS.__psrFirst = null; DS.__psrRec = null; DS.__psrNote = ''; DS.__psrPending = false;
+      var dsPsrReset = dsPsrApi();
+      if (dsPsrReset && typeof dsPsrReset.reset === 'function') { try { dsPsrReset.reset(DS.day); } catch (ePsrR) {} }
     }
     DS.__autoRetrying = false;
     /* b257: NO extension here (a phone) -> route the SAME button through the
@@ -52754,6 +52769,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var paintDsProgress = function (m) {
         try {
           if (!stat) return;
+          /* liveness-1.0.0: the placeholder is bound to the ENGINE'S own
+             liveness. A late status from a dead engine could re-mount a fresh
+             "Starting…" bar after done() had taken it down, so a settled pull
+             sat under a bar claiming it was starting. No run, no bar. */
+          if (!(DS.pulling || DS.__autoRetrying || DS.retrying)) {
+            try { var deadBar = document.getElementById('mlsDsPullBar'); if (deadBar) deadBar.style.display = 'none'; } catch (eDead) {}
+            return;
+          }
           var msg = String(m || '');
           var bar = document.getElementById('mlsDsPullBar');
           if (!bar) {
@@ -52768,8 +52791,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
             var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
             bar.style.display = 'block'; fill.style.width = pct + '%'; fill.textContent = phase + ' ' + mm[1] + '/' + mm[2] + (DS.pullStartedAt ? ' · ' + Math.floor((Date.now() - DS.pullStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - DS.pullStartedAt) % 60000) / 1000) + 's' : '');
-          } else if (bar.style.display !== 'block') {
-            bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Starting…';
+          } else {
+            /* liveness-1.0.0: a placeholder that never ages reads as "the pull
+               just began" however long athenaOne has been silent. It carries
+               the run's own clock, so a stuck leg looks stuck. */
+            var dsSince = DS.pullStartedAt ? Math.max(0, Date.now() - DS.pullStartedAt) : 0;
+            var dsPlaceholder = dsSince > 20000
+              ? ('Waiting on athenaOne · ' + Math.floor(dsSince / 60000) + 'm ' + Math.floor((dsSince % 60000) / 1000) + 's')
+              : 'Starting…';
+            if (bar.style.display !== 'block') {
+              bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = dsPlaceholder;
+            } else if (/^(Starting|Waiting on athenaOne)/.test(String(fill.textContent || ''))) {
+              fill.textContent = dsPlaceholder;
+            }
           }
         } catch (e) {}
       };
@@ -52835,7 +52869,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             result.providerRosterReceipt = enrichedRosterReceipt;
           }
           var terminalAttribution = dsFullyRowUnattributed(result, attributionCoverage);
+          /* psr-1.0.0: this settle is the RETRY of a recovered pull. Both
+             attempts ride the receipt before anything reads it, so a doctor's
+             error report and a probe see the whole story - and a second
+             failure keeps its own honest verdict, never an upgraded one. */
+          var psrDsStamp = dsPsrApi();
+          if (psrDsStamp && DS.__psrPending === true) {
+            DS.__psrPending = false;
+            result = psrDsStamp.stampAttempts(DS.__psrFirst, result, DS.__psrRec);
+            DS.lastAttemptResult = result;
+            if (!(result && result.ok === true)) DS.__psrNote = psrDsStamp.terminalNote(DS.__psrRec);
+            DS.__psrFirst = null;
+          }
           var outcome = pullOutcome(result, day), retryCount = syncRetryControl(result);
+          /* psr-1.0.0: the engine's verdict, plus one sentence naming what was
+             tried on top of it. Folded into outcome.message itself so every
+             existing terminal painter keeps its exact call shape; a success
+             carries no note and is left verbatim. */
+          if (DS.__psrNote) {
+            var psrNoted = {}, psrK;
+            for (psrK in outcome) { if (Object.prototype.hasOwnProperty.call(outcome, psrK)) psrNoted[psrK] = outcome[psrK]; }
+            psrNoted.message = String(outcome.message || '') + ' ' + DS.__psrNote;
+            outcome = psrNoted;
+            DS.__psrNote = '';
+          }
           /* 2026-07-28 owner order: transient grid refusals must not end at a
              'retry after the grid finishes loading' banner. When the engine
              itself marks the refusal retryable (grid mid-paint, roster not
@@ -52938,6 +52995,72 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             done(false, __navMsg, retryCount > 0, false);
             return;
           }
+          /* ===== psr-1.0.0: the wedged-athena class gets the medicine, once ==
+             The transient ladder below re-runs the SAME pull against the SAME
+             wedged athenaOne tab - three identical refusals, which is exactly
+             what the owner watched live on 2026-08-31. Drive the extension's
+             own tab recovery first (one mlsAppGoHome, which reaches its
+             rec-1.0.0 dashboard navigation), wait a bounded moment, then
+             re-run this pull ONCE with the same day and parameters.
+
+             The blind budget is CONSUMED, never added to, so this class can
+             take at most one automatic retry in total. With the module absent
+             the branch is inert and the ladder keeps its proven behaviour. */
+          var psrDsRun = dsPsrApi();
+          /* the admission decision may never throw into this settle: an
+             exception here would escape the engine's own then() and leave the
+             strip spinning with no verdict. */
+          var psrDsAdmit = false;
+          if (psrDsRun && sessionSerial === DS.sessionSerial && pullSerial === DS.pullSerial) {
+            try { psrDsAdmit = psrDsRun.eligible(result, { day: day, lane: 'day-strip', attempt: DS.autoRePull | 0 }).ok === true; } catch (ePsrE) { psrDsAdmit = false; }
+          }
+          if (psrDsAdmit) {
+            DS.autoRePull = 2;
+            DS.__psrFirst = result; DS.__psrRec = null; DS.__psrNote = ''; DS.__psrPending = false;
+            DS.pulling = false;
+            DS.__autoRetrying = true; /* api.isBusy() stays true; no second engine may start */
+            var psrRecMsg = psrDsRun.messages.recovering;
+            try { var psrStat = $('mlsDsStatus'); if (psrStat) { psrStat.style.display = 'block'; psrStat.textContent = psrRecMsg; } } catch (ePsrS) {}
+            dsStatusLog(psrRecMsg);
+            var psrSettleRefusal = function (rr) {
+              if (sessionSerial !== DS.sessionSerial) return;
+              if (pullSerial !== DS.pullSerial) { DS.__autoRetrying = false; return; }
+              DS.__autoRetrying = false;
+              DS.__psrFirst = null; DS.__psrPending = false;
+              DS.__psrRec = (rr && rr.recovery) || DS.__psrRec;
+              var refusedResult = psrDsRun.stampRefusal(result, DS.__psrRec);
+              DS.lastAttemptResult = refusedResult;
+              var refusedOutcome = pullOutcome(refusedResult, day);
+              var refusedNote = String((rr && rr.message) || psrDsRun.terminalNote(DS.__psrRec));
+              var refusedRetry = syncRetryControl(refusedResult);
+              done(false, refusedOutcome.message + (refusedNote ? ' ' + refusedNote : ''),
+                refusedRetry > 0 || refusedOutcome.keepStatus === true, refusedOutcome.signinRequired === true);
+            };
+            Promise.resolve((function () {
+              try {
+                return psrDsRun.run({ day: day, lane: 'day-strip', onStatus: dsOnStatus });
+              } catch (ePsrRun) { return null; }
+            })()).then(function (rr) {
+              if (sessionSerial !== DS.sessionSerial) return;
+              if (pullSerial !== DS.pullSerial) { DS.__autoRetrying = false; return; }
+              DS.__psrRec = (rr && rr.recovery) || null;
+              if (rr && rr.ok === true) {
+                /* the same cross-tab/lease guard every other automatic restart
+                   in this lane honours - a recovery is not a licence to start
+                   an engine over somebody else's running pull. */
+                if (dsRosterRetryBlocked(day, sessionSerial)) { psrSettleRefusal({ message: psrDsRun.messages.busy, recovery: DS.__psrRec }); return; }
+                DS.__psrPending = true; /* the NEXT settle in this lane is this cycle's retry */
+                var psrGoMsg = String(rr.message || psrDsRun.messages.retrying);
+                try { var psrStat2 = $('mlsDsStatus'); if (psrStat2) { psrStat2.style.display = 'block'; psrStat2.textContent = psrGoMsg; } } catch (ePsrS2) {}
+                dsStatusLog(psrGoMsg);
+                startPull(DS_AUTO_RETRY);
+                return;
+              }
+              psrSettleRefusal(rr);
+            }, function () { psrSettleRefusal({ message: psrDsRun.messages.beatUnanswered, recovery: DS.__psrRec }); });
+            return;
+          }
+          /* ===== end psr-1.0.0 (day-strip admission) ===== */
           if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial && pullSerial === DS.pullSerial) {
             DS.autoRePull = (DS.autoRePull | 0) + 1;
             var waitMs = DS.autoRePull === 1 ? 4000 : 9000;
@@ -59075,6 +59198,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var sessionSerial = 0;
   var choicePending = false;
   var activeFullNotes = null;
+  /* psr-1.0.0 (end of this file): the ONE recovery-and-retry cycle this lane
+     is allowed for the wedged-athena class. psrFirst holds attempt 1's own
+     result so the retry's receipt can carry both; psrNote is the one sentence
+     appended to a SECOND failure saying what was tried. */
+  var psrFirst = null, psrRec = null, psrNote = '', psrPending = false;
+  function psrApi() {
+    var p = safe(function () { return window.__mlsPullSelfRecovery; }, null);
+    return (p && p.installed === true && isFn(p.run) && isFn(p.eligible)) ? p : null;
+  }
 
   function todayKey() {
     var acct = safe(function () { return isFn(window._acctTodayKey) ? String(window._acctTodayKey() || '') : ''; }, '');
@@ -59142,8 +59274,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { if (anchor && anchor.parentNode && b.previousSibling !== anchor) anchor.parentNode.insertBefore(b, anchor.nextSibling); } catch (e) {}
     return b;
   }
+  /* liveness-1.0.0 (measured live 2026-08-31): the hero bar mounted its
+     "Starting…" placeholder on the first status paint and then NOTHING ever
+     took it down - paintBar only writes the placeholder when the bar is not
+     already shown, and settle() painted its verdict without touching the bar.
+     So a pull that had already SETTLED nav-failed left "Starting…" on screen
+     beside the failure, and a long silent navigation leg showed "Starting…"
+     for minutes while nothing was starting. The placeholder is now bound to
+     the run's own liveness marker - the same __mlsCalPullDay that
+     runHeroPull() sets at entry and settle() clears at the one true end - so
+     it cannot be minted after the engine stops and cannot outlive it. */
+  function heroRunLive() {
+    return String(safe(function () { return window.__mlsCalPullDay || ''; }, '')) !== '';
+  }
   function paintBar(anchor, msg) {
     try {
+      /* the engine is not running: converge, never paint a fresh "Starting…" */
+      if (!heroRunLive()) { hideBar(); return; }
       var b = barEl(anchor), fill = b.firstElementChild;
       /* U0 (2026-08-17): this literal shipped with its backslashes lost - the
          backslashes were lost in authoring (the whole literal had been through
@@ -59158,8 +59305,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var el2 = barStartedAt ? (' · ' + Math.floor((Date.now() - barStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - barStartedAt) % 60000) / 1000) + 's') : '';
         b.style.display = 'block'; fill.style.width = pct + '%';
         fill.textContent = phase + ' ' + mm[1] + '/' + mm[2] + el2;
-      } else if (b.style.display !== 'block') {
-        b.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Starting…';
+      } else {
+        /* liveness-1.0.0: a placeholder that never ages reads as "the pull
+           just began" no matter how long athenaOne has been silent. It now
+           carries the run's own clock, so a stuck leg looks stuck. */
+        var sinceMs = barStartedAt ? Math.max(0, Date.now() - barStartedAt) : 0;
+        var placeholder = sinceMs > 20000
+          ? ('Waiting on athenaOne · ' + Math.floor(sinceMs / 60000) + 'm ' + Math.floor((sinceMs % 60000) / 1000) + 's')
+          : 'Starting…';
+        if (b.style.display !== 'block') {
+          b.style.display = 'block'; fill.style.width = '3%'; fill.textContent = placeholder;
+        } else if (/^(Starting|Waiting on athenaOne)/.test(String(fill.textContent || ''))) {
+          fill.textContent = placeholder;
+        }
       }
     } catch (e) {}
   }
@@ -59411,6 +59569,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var mySerial = ++sessionSerial;
     if (!isAutoRetry) { autoRetryCount = 0; clearDiag(); }
     var day = targetDay();
+    /* psr-1.0.0: a MANUAL press is a new intent and buys a fresh recovery
+       budget, exactly as it resets the transient re-read budget above.
+       liveness-1.0.0: and its own clock - barStartedAt was set once for the
+       lifetime of the tab, so every later pull inherited the FIRST pull's
+       elapsed time. Automatic retries keep the clock running on purpose: one
+       press is one run on screen (the cvc-1.0.0 law). */
+    if (!isAutoRetry) {
+      psrFirst = null; psrRec = null; psrNote = ''; psrPending = false;
+      barStartedAt = 0;
+      var psrReset = psrApi();
+      if (psrReset && isFn(psrReset.reset)) safe(function () { psrReset.reset(day); });
+    }
     /* ===== calday-1.0.0 (the hero may not change day under a running pull) ===
        Two publications, both read by the caldaysel block below:
          __mlsCalPullDay  - the day this pull is for, while it runs.
@@ -59443,6 +59613,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var deterministicRefusal = refusalReason === 'pull-in-flight' || /^provider-/.test(refusalReason);
     var transientRefusal = !!(result && result.ok !== true && !deterministicRefusal &&
       ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(refusalReason)));
+    /* ===== psr-1.0.0: the wedged-athena class gets the medicine, once ======
+       The blind ladder below re-runs the SAME pull against the SAME wedged
+       tab. For the nav class that is three identical refusals, which is what
+       the owner watched happen live on 2026-08-31. Here the extension's own
+       tab recovery is driven first (one mlsAppGoHome), and then the pull is
+       re-run exactly ONCE with the same day and the same parameters.
+
+       The blind budget is CONSUMED rather than added to (autoRetryCount = 2),
+       so this class can never take more than one automatic retry in total.
+       When the module is absent this whole branch is inert and the ladder
+       below keeps its proven behaviour byte for byte. */
+    var psrHero = psrApi();
+    /* the admission decision may never throw into this settle: an exception
+       here would escape the engine's own then() and strand the button. */
+    var psrAdmit = !!(psrHero && safe(function () {
+      return psrHero.eligible(result, { day: day, lane: 'calendar-hero', attempt: autoRetryCount }).ok === true;
+    }, false));
+    if (psrAdmit) {
+      autoRetryCount = 2;
+      psrFirst = result; psrRec = null; psrNote = ''; psrPending = false;
+      busy = false; /* release so the retry can re-enter; the button stays disabled */
+      paint(el, safe(function () { return psrHero.messages.recovering; }, 'Recovering athenaOne...'), '');
+      Promise.resolve(safe(function () {
+        return psrHero.run({
+          day: day, lane: 'calendar-hero',
+          onStatus: function (m) { if (mySerial === sessionSerial) paint(el, String(m || ''), ''); }
+        });
+      }, null)).then(function (rr) {
+        if (mySerial !== sessionSerial) return;
+        psrRec = (rr && rr.recovery) || null;
+        if (rr && rr.ok === true) {
+          psrPending = true; /* the NEXT settle in this lane is this cycle's retry */
+          paint(el, String(rr.message || psrHero.messages.retrying), '');
+          runHeroPull(el, true);
+          return;
+        }
+        /* the recovery refused, so exactly ONE pull attempt ever happened:
+           attempt 1's verdict stands with the refusal named beside it. */
+        psrNote = String((rr && rr.message) || psrHero.terminalNote(psrRec));
+        psrFirst = null; psrPending = false;
+        settle(el, psrHero.stampRefusal(result, psrRec), day, mySerial);
+      }, function () {
+        if (mySerial !== sessionSerial) return;
+        psrNote = psrHero.messages.beatUnanswered;
+        psrFirst = null; psrPending = false;
+        settle(el, psrHero.stampRefusal(result, psrRec), day, mySerial);
+      });
+      return;
+    }
+    /* ===== end psr-1.0.0 (hero admission) ===== */
     if (transientRefusal && autoRetryCount < 2) {
       autoRetryCount++;
       var waitMs = autoRetryCount === 1 ? 4000 : 9000;
@@ -59467,12 +59687,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       activeFullNotes = null;
       return;
     }
+    /* psr-1.0.0: this is the RETRY of a recovered pull. Both attempts ride
+       the receipt, and a second failure keeps its own honest verdict with one
+       sentence naming what was tried. A success is left verbatim. */
+    var psrTerm = psrApi();
+    if (psrTerm && psrPending) {
+      psrPending = false;
+      result = psrTerm.stampAttempts(psrFirst, result, psrRec);
+      if (!(result && result.ok === true)) psrNote = psrTerm.terminalNote(psrRec);
+      psrFirst = null;
+    }
     var outcome = classify(result, day);
+    var psrMessage = outcome.message + (psrNote ? ' ' + psrNote : '');
+    psrNote = '';
     /* calmreceipt-1.0.0: one sentence on screen, the whole receipt one click
        in. paintVerdict falls back to the byte-identical plain paint for any
        message that is not a "<day> is ready —" verdict. */
-    var vParts = paintVerdict(el, outcome.message, outcome.ok ? 'ok' : 'err', result);
-    try { if (isFn(window.toast)) window.toast(vParts ? vParts.head : outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}
+    var vParts = paintVerdict(el, psrMessage, outcome.ok ? 'ok' : 'err', result);
+    try { if (isFn(window.toast)) window.toast(vParts ? vParts.head : psrMessage, outcome.ok ? 'ok' : 'err'); } catch (e) {}
     if (!outcome.ok) armDiag(el, result, day); else clearDiag();
     activeFullNotes = null;
     try { if (isFn(window.loadCalendar)) window.loadCalendar(); } catch (e) {}
@@ -60069,3 +60301,358 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     setTimeout(tick, 8000);
   } catch (eTop) {}
 })();
+
+/* ===== psr-1.0.0 - the pull recovers athenaOne once, by itself =============
+   OWNER 2026-08-31: "making the pulls perfect ... work every time."
+
+   MEASURED LIVE, the same evening. A day pull settled
+
+     { ok:false, complete:false, reason:'nav-failed',
+       error:'athena date navigation: the calendar view could not be reached
+              automatically' }
+
+   because the athenaOne tab was a WEDGED NEAR-BLANK RENDERER. The pull
+   machinery was correct and honest the whole way: it refused, it named the
+   class, it imported nothing. What it did not do was FIX the tab. The cure
+   was manual - drive the athena tab to the app root, clear athena's own
+   "Continue" interstitial, press Pull again - after which the identical pull
+   ran 34/34 clean. A doctor sees only "the pull failed".
+
+   ===================================================================
+   WHAT ALREADY EXISTS, AND WHY IT WAS NOT ENOUGH
+   ===================================================================
+   Both pull lanes in this file (the Visit day strip's startPull() and the
+   calendar hero's settle()) already auto-re-run a nav-class refusal twice on
+   a 4s/9s ladder. That ladder is BLIND: it re-runs the same pull against the
+   same wedged tab and gets the same refusal three times. A settling grid and
+   a dead renderer are not the same fault and the same medicine cannot treat
+   both.
+
+   The extension has the real medicine and has had it since 3.0.84
+   (rec-1.0.0): mlsRecoverAthenaTab() performs ONE bounded, same-origin
+   navigation of the wedged tab to its own practice dashboard - the exact
+   manual cure - guarded to never touch a signed-out session, a login page or
+   another EMR, and throttled per tab.
+
+   THE APP-SIDE VERB THAT REACHES IT IS mlsAppGoHome, and it is the only one.
+   Measured against the shipped extension (3.0.97, background.js, OFF-LIMITS
+   and untouched here):
+
+     - mlsAppGoHome           -> serialized Home-logo click; when the injection
+                                 times out or returns no frames (exactly the
+                                 wedged-renderer shape) it calls
+                                 mlsRecoverAthenaTab() and retries the click.
+                                 No user gesture required.
+     - mlsAppWakeAthenaAndRetryV1 -> refuses without a one-use TRUSTED-CLICK
+                                 gesture token ('wake-gesture-required'), so it
+                                 can never be driven automatically.
+     - mlsAppAthenaRefreshV1  -> needs the readTabId of a FAILED HISTORY READ;
+                                 a nav-class refusal never produces one.
+
+   So the recovery beat is one mlsAppGoHome. No new extension verb is invented
+   and no extension file is touched.
+
+   ===================================================================
+   THE CYCLE - ONE, NEVER TWO
+   ===================================================================
+   On a settled nav-class refusal the owning lane runs exactly ONE
+   recovery-and-retry cycle:
+
+     1. closed admission (eligible)  - the reason is in the CLOSED nav class,
+        the doctor did not cancel, no other pull/lease owns athena, MLS is
+        signed in, and this day has not already spent its one recovery;
+     2. signed-in re-check (run)     - mlsExtHealth must prove athenaOne is
+        present and NOT signed out. A signed-out session is never driven: the
+        existing honest sentence is surfaced instead;
+     3. the recovery beat            - one mlsAppGoHome, ceilinged at 30s;
+     4. a bounded settle wait        - 6s, hidden-tab-safe (__mlsBgSleep);
+     5. ONE re-run of the SAME pull with the SAME parameters, narrated.
+
+   A second failure is TERMINAL and keeps the engine's own message plus one
+   sentence naming what was tried. The budget is per day and per ten minutes;
+   a manual press calls reset() and buys a fresh one.
+
+   HONESTY IS NOT WEAKENED ANYWHERE. No gate moves, no receipt is upgraded,
+   nothing is retried that the doctor stopped. The retry's outcome stamps
+   honestly whichever way it ends, and the FIRST failure is retained on the
+   receipt as attempts:[{attempt:1,...},{attempt:2,...}] beside a PHI-free
+   selfRecovery record of the beat itself (booleans, reason codes, a wait in
+   milliseconds - never page text, never a name).
+
+   Reverse: window.__mlsPullSelfRecovery.revert(). ======================== */
+;(function () {
+  'use strict';
+  try {
+    if (window.__mlsPullSelfRecovery && window.__mlsPullSelfRecovery.installed) return;
+    var VERSION = 'psr-1.0.0';
+
+    function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+    function isFn(f) { return typeof f === 'function'; }
+    function now() { return Date.now(); }
+
+    /* CLOSED nav class. 'wrong-day' is deliberately NOT here: athena answered
+       and landed somewhere real, which is a different fault with its own
+       already-proven handling (the nav-1.0.0 landed-day veto). Widening this
+       set is how a recovery beat starts firing at faults it cannot cure. */
+    var NAV_CLASS = { 'nav-failed': 1, 'calendar-unreachable': 1 };
+
+    var BUDGET_MS = 600000;   /* one recovery per day per ten minutes */
+    var BEAT_MS = 30000;      /* mlsAppGoHome ceiling (its own lock waits 25s) */
+    var HEALTH_MS = 6000;     /* mlsExtHealth ceiling */
+    var SETTLE_MS = 6000;     /* bounded post-recovery wait */
+
+    var MSG = {
+      recovering: 'athenaOne was stuck - recovering it automatically...',
+      retrying: 'athenaOne was stuck - recovered it, retrying the pull automatically (attempt 2 of 2)...',
+      mlsSignedOut: 'Sign in to import the schedule.',
+      athenaSignedOut: 'Athena sign-in required. Sign in to athenaOne, then select Retry.',
+      extUnreachable: 'MLS Assist did not answer, so athenaOne was not touched and nothing was retried.',
+      beatUnanswered: 'MLS Assist did not answer the automatic recovery, so nothing was retried.',
+      navBusy: 'Another athenaOne navigation was still finishing, so the automatic retry was not started.',
+      busy: 'Another pull started, so the automatic retry was not started.',
+      stopped: 'You stopped the pull, so the automatic retry was not started.',
+      triedAndFailed: ' athenaOne was recovered automatically and the pull was retried once - it failed the same way.',
+      notTried: ' The automatic recovery was not attempted ('
+    };
+
+    var state = { used: {}, last: null, runs: 0, retries: 0 };
+
+    function defaultAsk(type, respType, ms) {
+      return new Promise(function (resolve) {
+        var done = false, timer = null;
+        function fin(v) {
+          if (done) return; done = true;
+          safe(function () { if (timer != null) clearTimeout(timer); });
+          safe(function () { window.removeEventListener('message', h, false); });
+          resolve(v);
+        }
+        function h(ev) {
+          var d = ev && ev.data;
+          if (!d || d.source !== 'mls-ext' || d.type !== respType) return;
+          fin(d.resp || d);
+        }
+        safe(function () { window.addEventListener('message', h, false); });
+        var posted = safe(function () { window.postMessage({ source: 'mls-app', type: type, from: 'mls-app' }, '*'); return true; }, false);
+        if (!posted) { fin(null); return; }
+        timer = setTimeout(function () { fin(null); }, Number(ms) > 0 ? Number(ms) : 12000);
+      });
+    }
+    /* A hidden tab freezes setTimeout, and this wait sits between a recovery
+       and a retry - the exact place a frozen timer would strand the doctor. */
+    function defaultSleep(ms) {
+      return safe(function () {
+        return isFn(window.__mlsBgSleep) ? Promise.resolve(window.__mlsBgSleep(ms)) : new Promise(function (r) { setTimeout(r, ms); });
+      }, new Promise(function (r) { setTimeout(r, ms); }));
+    }
+
+    function stoppedByUser(result) {
+      if (safe(function () { return window.__mlsPullStopRequested === true; }, false)) return true;
+      if (!result || typeof result !== 'object') return false;
+      if (String(result.reason || '') === 'stopped-by-user') return true;
+      return !!(result.historyReceipt && result.historyReceipt.stoppedByUser === true);
+    }
+    /* The cross-tab pull shield and the shared schedule lease are the two
+       existing owners of "someone else is driving athena". Both are honoured
+       exactly as dsRosterRetryBlocked() honours them. */
+    function busyElsewhere(result) {
+      if (result && typeof result === 'object') {
+        if (result.busyInFlight === true) return 'busy-in-flight';
+        if (String(result.reason || '') === 'pull-in-flight') return 'pull-in-flight';
+      }
+      if (safe(function () { return !!(isFn(window.__mlsPullShieldForeign) && window.__mlsPullShieldForeign()); }, false)) return 'foreign-pull';
+      var lease = safe(function () { return window.__mlsSchedulePullLease; }, null);
+      if (lease && (now() - Number(lease.at || 0)) < 180000) return 'pull-lease-held';
+      return '';
+    }
+    function mlsSignedIn() {
+      var mode = safe(function () { return isFn(window.backendMode) && window.backendMode() === true; }, false);
+      var tok = safe(function () { return isFn(window.bkToken) ? String(window.bkToken() || '') : ''; }, '');
+      return !!(mode && tok);
+    }
+    function isNavClass(result) {
+      if (!result || typeof result !== 'object') return false;
+      if (result.ok === true) return false;
+      return NAV_CLASS[String(result.reason || '')] === 1;
+    }
+    function budgetKey(day) { return String(day || '(no-day)'); }
+    function spent(day) {
+      var e = state.used[budgetKey(day)];
+      return !!(e && (now() - Number(e.at || 0)) < BUDGET_MS);
+    }
+    function claim(day) { state.used[budgetKey(day)] = { at: now() }; }
+    function reset(day) {
+      if (day === undefined || day === null) { state.used = {}; return true; }
+      delete state.used[budgetKey(day)];
+      return true;
+    }
+
+    function no(code) { return { ok: false, code: String(code || 'refused') }; }
+    /* The whole admission law, in one closed decision. Every caller gets the
+       same answer, and a `no` names itself so a receipt can say why. */
+    function eligible(result, ctx) {
+      ctx = ctx || {};
+      if (!result || typeof result !== 'object') return no('no-result');
+      if (result.ok === true) return no('pull-succeeded');
+      if (!isNavClass(result)) return no('not-nav-class');
+      if (stoppedByUser(result)) return no('stopped-by-user');
+      var b = busyElsewhere(result);
+      if (b) return no(b);
+      if (!mlsSignedIn()) return no('mls-signed-out');
+      if (spent(ctx.day)) return no('recovery-already-used');
+      return { ok: true, code: 'nav-class-recoverable' };
+    }
+
+    function refuse(rec, message) { return { ok: false, recovery: rec, message: String(message || '') }; }
+
+    function run(opts) {
+      opts = opts || {};
+      var day = String(opts.day || '');
+      var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
+      var ask = isFn(opts.bridge) ? opts.bridge : defaultAsk;
+      var sleep = isFn(opts.sleep) ? opts.sleep : defaultSleep;
+      var rec = {
+        version: VERSION, via: 'mlsAppGoHome', day: day, lane: String(opts.lane || '').slice(0, 24),
+        ran: false, answered: false, ok: false, clicked: false,
+        reason: '', health: '', waitedMs: 0, at: now()
+      };
+      state.last = rec; state.runs++;
+      claim(day); /* the budget is spent by the ATTEMPT, not by its verdict */
+      if (!mlsSignedIn()) { rec.reason = 'mls-signed-out'; return Promise.resolve(refuse(rec, MSG.mlsSignedOut)); }
+      return Promise.resolve(safe(function () { return ask('mlsExtHealth', 'mlsExtHealthResult', HEALTH_MS); }, null)).then(function (h) {
+        if (!h || typeof h !== 'object' || h.ok !== true) {
+          rec.health = 'health-unreachable'; rec.reason = 'health-unreachable';
+          return refuse(rec, MSG.extUnreachable);
+        }
+        var ka = (h.ka && typeof h.ka === 'object') ? h.ka : {};
+        var signedOutAt = Number(ka.signedOutAt || 0), lastTick = Number(ka.lastTick || 0);
+        /* the extension's own signed-out stamp outranks everything: a
+           signed-out athena is the doctor's to fix and is never driven. */
+        if (signedOutAt && signedOutAt > lastTick) {
+          rec.health = 'athena-signed-out'; rec.reason = 'athena-signed-out';
+          return refuse(rec, MSG.athenaSignedOut);
+        }
+        if (!h.athena || !(Number(h.athena.tabs || 0) > 0)) {
+          rec.health = 'no-athena-tab'; rec.reason = 'no-athena-tab';
+          return refuse(rec, MSG.athenaSignedOut);
+        }
+        rec.health = 'athena-present';
+        rec.ran = true;
+        safe(function () { onStatus(MSG.recovering); });
+        return Promise.resolve(safe(function () { return ask('mlsAppGoHome', 'mlsAppGoHomeResult', BEAT_MS); }, null)).then(function (g) {
+          rec.answered = !!(g && typeof g === 'object');
+          if (!rec.answered) { rec.reason = 'recovery-unanswered'; return refuse(rec, MSG.beatUnanswered); }
+          rec.ok = g.ok === true;
+          rec.clicked = g.clicked === true;
+          rec.reason = String(g.reason || '').slice(0, 40);
+          if (rec.reason === 'athena-navigation-busy') return refuse(rec, MSG.navBusy);
+          /* the beat's own answer can name a sign-out the health probe missed
+             (the tab finder excludes login pages); that is still a sign-out. */
+          if (/sign-?in page|signed[- ]?out|no signed-?in athenaone/i.test(String((g && g.error) || ''))) {
+            rec.reason = 'athena-signed-out';
+            return refuse(rec, MSG.athenaSignedOut);
+          }
+          return Promise.resolve(safe(function () { return sleep(SETTLE_MS); }, null)).then(function () {
+            rec.waitedMs = SETTLE_MS;
+            /* the doctor may have pressed Stop, or another lane may have
+               claimed athena, WHILE we were recovering. Re-ask both. */
+            if (stoppedByUser(null)) { rec.reason = 'stopped-by-user'; return refuse(rec, MSG.stopped); }
+            var b2 = busyElsewhere(null);
+            if (b2) { rec.reason = b2; return refuse(rec, MSG.busy); }
+            state.retries++;
+            return { ok: true, recovery: rec, message: MSG.retrying };
+          });
+        });
+      });
+    }
+
+    function attemptBrief(r, n) {
+      r = (r && typeof r === 'object') ? r : {};
+      return {
+        attempt: Number(n) || 0,
+        ok: r.ok === true,
+        complete: r.complete === true,
+        reason: String(r.reason || '').slice(0, 80),
+        error: String(r.error || '').slice(0, 200),
+        at: now()
+      };
+    }
+    /* The retry's result carries BOTH attempts. Nothing is upgraded and
+       nothing is hidden: attempt 1's own refusal stays on the receipt in the
+       shape every other receipt uses, so a doctor's error report and a probe
+       both read the whole story. */
+    function stampAttempts(first, second, rec) {
+      var out = (second && typeof second === 'object') ? second : { ok: false, complete: false, reason: 'unverified-result' };
+      safe(function () {
+        var list = (Array.isArray(first && first.attempts) && first.attempts.length)
+          ? first.attempts.slice(0, 3)
+          : [attemptBrief(first, 1)];
+        list = list.concat([attemptBrief(out, list.length + 1)]);
+        out.attempts = list;
+        out.selfRecovery = {
+          version: VERSION,
+          via: String((rec && rec.via) || 'mlsAppGoHome'),
+          ran: !!(rec && rec.ran),
+          answered: !!(rec && rec.answered),
+          ok: !!(rec && rec.ok),
+          clicked: !!(rec && rec.clicked),
+          reason: String((rec && rec.reason) || '').slice(0, 40),
+          health: String((rec && rec.health) || '').slice(0, 40),
+          waitedMs: Number((rec && rec.waitedMs) || 0),
+          at: Number((rec && rec.at) || 0)
+        };
+      });
+      return out;
+    }
+    /* The recovery REFUSED (signed out, busy, unanswered): only ONE pull
+       attempt ever happened, so only one attempt may appear. Claiming a
+       second here would be the exact dishonesty this block exists to avoid. */
+    function stampRefusal(result, rec) {
+      var out = (result && typeof result === 'object') ? result : { ok: false, complete: false, reason: 'unverified-result' };
+      safe(function () {
+        if (!Array.isArray(out.attempts) || !out.attempts.length) out.attempts = [attemptBrief(out, 1)];
+        out.selfRecovery = {
+          version: VERSION,
+          via: String((rec && rec.via) || 'mlsAppGoHome'),
+          ran: !!(rec && rec.ran),
+          answered: !!(rec && rec.answered),
+          ok: false,
+          clicked: !!(rec && rec.clicked),
+          reason: String((rec && rec.reason) || 'not-attempted').slice(0, 40),
+          health: String((rec && rec.health) || '').slice(0, 40),
+          waitedMs: Number((rec && rec.waitedMs) || 0),
+          retried: false,
+          at: Number((rec && rec.at) || 0)
+        };
+      });
+      return out;
+    }
+    /* One sentence appended to a SECOND failure's own message. It never
+       replaces the engine's verdict - it says what was tried on top of it. */
+    function terminalNote(rec) {
+      if (!rec || typeof rec !== 'object') return '';
+      if (rec.ran === true && rec.answered === true) return MSG.triedAndFailed;
+      return MSG.notTried + String(rec.reason || 'not-attempted').slice(0, 40) + ').';
+    }
+
+    window.__mlsPullSelfRecovery = {
+      installed: true,
+      version: VERSION,
+      NAV_CLASS: NAV_CLASS,
+      budgetMs: BUDGET_MS,
+      settleMs: SETTLE_MS,
+      beatMs: BEAT_MS,
+      messages: MSG,
+      isNavClass: isNavClass,
+      eligible: eligible,
+      run: run,
+      reset: reset,
+      stampAttempts: stampAttempts,
+      stampRefusal: stampRefusal,
+      terminalNote: terminalNote,
+      _state: function () { return { runs: state.runs, retries: state.retries, last: state.last, used: state.used }; },
+      _seams: { stoppedByUser: stoppedByUser, busyElsewhere: busyElsewhere, mlsSignedIn: mlsSignedIn, spent: spent },
+      revert: function () { state = { used: {}, last: null, runs: 0, retries: 0 }; this.installed = false; return true; }
+    };
+  } catch (eTop) {}
+})();
+/* ===== end psr-1.0.0 ===================================================== */

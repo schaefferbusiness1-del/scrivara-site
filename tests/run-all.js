@@ -1242,6 +1242,7 @@ const tests = [
   'fill-ux-clarity.test.js',
   'write-auto-chain.test.js',
   'month-report-surface.test.js',
+  'pull-self-recovery.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'extension-mac-sleep-and-legacy-review-runtime.test.js',
