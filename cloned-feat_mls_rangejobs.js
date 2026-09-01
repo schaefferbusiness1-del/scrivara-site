@@ -1457,6 +1457,13 @@
         '<div class="p1yr-head"><div class="p1yr-title" id="mlsP1YearTitle" role="heading" aria-level="3"></div>' +
         '<div class="p1yr-provider" id="mlsP1YearProvider"></div></div>' +
         '<p class="p1yr-note">Runs month by month, saves each verified day, and resumes from the saved checkpoint. Keep athenaOne signed in.</p>' +
+        /* provscope-1.0.0, stated where the year is started. The prerequisite
+           does not relax because the range got longer - it gets MORE important:
+           a year read off the wrong provider's calendar would be twelve months
+           of false empties instead of one day's. Same law, same refusal code,
+           worded as the importer words it. */
+        '<p class="p1yr-note" id="mlsP1YearScopeNote"><b>Before you start:</b> in the athenaOne tab set the calendar\'s View to the provider selected above (or an all-provider view). ' +
+        'MLS reads the schedule athenaOne is showing, so a year scoped to one provider over somebody else\'s calendar is refused (provider-not-on-calendar) rather than saved as empty.</p>' +
         '<label class="p1yr-picker" for="mlsP1YearChoice"><span>Year</span><select id="mlsP1YearChoice" aria-label="Year to pull"></select></label>' +
         '<label class="p1yr-choice" for="mlsP1YearFullNotes"><input type="checkbox" id="mlsP1YearFullNotes"> Include full visit notes <span>(slower)</span></label>' +
         '<div class="p1yr-progress"><progress id="mlsP1YearProgress" max="1" value="0" aria-label="Year pull progress"></progress><span class="p1yr-count" id="mlsP1YearCount"></span></div>' +

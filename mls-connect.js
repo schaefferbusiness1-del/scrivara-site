@@ -21083,9 +21083,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
     var list = providerList();
+    /* csp-1.0.0: resolved BEFORE the empty-roster bail. A practice where athena
+       proves no identity at all but paints several clinicians on the calendar
+       is exactly the case the owner reported; bailing on an empty VERIFIED
+       roster would suppress the whole selector and hide them again. */
+    var seenOnCal = safe(function () {
+      var rp = window.__mlsProviderRoster;
+      return rp && isFn(rp.seenOnCalendar) ? (rp.seenOnCalendar() || []) : [];
+    }, []) || [];
     /* pdr-1.0.0: the selector is the only thing that may narrow the render, so
        it files the render receipt every time it draws. */
-    if (!list.length) { rememberRenderedProvider(''); return ''; }
+    if (!list.length && !seenOnCal.length) { rememberRenderedProvider(''); return ''; }
     var cur = renderedProvider(), counts = {};
     var canonicalSelectedRef = '';
     if (S.providerRef) {
@@ -21104,8 +21112,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var selected = canonicalSelectedRef ? canonicalSelectedRef === key : (counts[name.toLowerCase()] === 1 && cur === name);
       opts += '<option value="pv:' + encodeURIComponent(key) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
     });
+    /* csp-1.0.0 (owner 2026-09-01: "you should be able to pull any provider
+       even the one's just on calander"). Clinicians the athena view NAMED but
+       the roster could not prove an identity for. They go in their own labelled
+       group so the doctor can see which choices are verified and which are only
+       "I saw this name on the calendar" - the pull still verifies the exact
+       clinician, and still refuses if athena is showing somebody else's view. */
+    if (seenOnCal.length) {
+      opts += '<optgroup label="Seen on the athena calendar - not verified yet">';
+      seenOnCal.forEach(function (p) {
+        var key = String(p && p.stableKey || ''), name = String(p && p.name || '');
+        if (!key || !name) return;
+        opts += '<option value="pv:' + encodeURIComponent(key) + '"' +
+          (canonicalSelectedRef === key ? ' selected' : '') + '>' + esc(name) + '</option>';
+      });
+      opts += '</optgroup>';
+    }
     return '<div class="ez3-prov"><label for="ez3Prov">Show visits for</label>' +
-           '<div class="selwrap"><select id="ez3Prov" aria-label="Show visits for provider">' + opts + '</select></div></div>';
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Show visits for provider">' + opts + '</select></div></div>' +
+           (seenOnCal.length ? '<p class="ez3-status" style="text-align:left;margin:2px 0 6px">' +
+             seenOnCal.length + ' clinician' + (seenOnCal.length === 1 ? ' was' : 's were') +
+             ' seen on the athena calendar without a verified identity. You can still pull for them &mdash; MLS checks the exact clinician before importing, and refuses if athena is showing a different provider\'s view.</p>' : '');
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
@@ -41609,7 +41636,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * Additive, read-only toward Athena and toward the backend. Never dispatches
  * mls:menu-staff-prep-request - Staff Prep keeps its single Menu owner; this
  * card only opens the real Menu and prints the exact steps.
- * Revert: window.__mlsMonthReport.revert()
+ *
+ * yrpt-1.0.0 - THE YEAR VIEW (owner ask 2026-09-01, "don't forget year").
+ * A Month|Year selector on the same card. The year view is a provider x month
+ * grid built by calling compute() once per month, so a month's numbers are the
+ * SAME numbers the Month view shows for it - one derivation, two
+ * presentations, which is why the two can never disagree.
+ *
+ * It inherits every honesty rule above and adds the one the grid needs: a cell
+ * has three states, and only one of them is a number. A month with no imported
+ * rows at all, and a provider with no rows inside an imported month, both
+ * render as an em dash that carries the exact import recipe - never as 0, and
+ * never summed into a total. Each row states how many of the twelve months it
+ * actually covers, so the total says what it is a total OF.
+ *
+ * The year view WRITES NOTHING. capture() stays the Month view's job; a grid
+ * that persisted twelve receipts per repaint would be a new storage surface
+ * for no new fact.
+ * Revert: window.__mlsMonthReport.revert()  (window.__mlsYearReport is the
+ * same object under a second name, never a second installer.)
  * ========================================================================= */
 (function () {
   "use strict";
@@ -41734,6 +41779,128 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return out;
   }
 
+  /* ----------------------------------------------------------- compute year
+   * yrpt-1.0.0 (owner ask 2026-09-01: "don't forget year"). The same question
+   * as compute(), asked twelve times and laid out as a provider x month grid.
+   *
+   * PURE, and it adds NO new derivation: every cell is compute() for that one
+   * month, so a month's numbers are identical whether it is read in the Month
+   * view or as a column here. That is the whole point - one derivation, two
+   * presentations, so the two can never disagree.
+   *
+   * THE HONESTY RULE, which is the only reason this function is not a loop
+   * over `days.length`. There are THREE cell states and only one of them is a
+   * number:
+   *   'imported'           - this provider has rows in this month; show them.
+   *   'not-imported'       - the month HAS imported rows, but none of them are
+   *                          this provider's. mrpt's own law (see notImported
+   *                          above) is that this is a MISSING IMPORT, not a
+   *                          zero: a provider-scoped pull for someone else
+   *                          leaves this provider's month unread, and MLS is
+   *                          not entitled to say they did not work.
+   *   'month-not-imported' - the month has NO rows at all for anybody. Nothing
+   *                          about any provider can be said.
+   * Neither missing state ever renders as 0, and neither is ever summed into a
+   * total. A row's totals carry `monthsImported` so the total itself declares
+   * how much of the year it actually covers. */
+  function isoYear(v) { var s = String(v == null ? '' : v).slice(0, 4); return /^\d{4}$/.test(s) ? s : ''; }
+  function monthKeyOf(year, index) { return year + '-' + (index < 10 ? '0' : '') + index; }
+  function computeYear(opts) {
+    opts = opts || {};
+    var year = isoYear(opts.year);
+    var rows = Array.isArray(opts.rows) ? opts.rows : [];
+    var roster = Array.isArray(opts.roster) ? opts.roster : [];
+    var when = intOf(opts.now);
+    var out = {
+      version: VERSION,
+      year: year,
+      generatedAt: when,
+      months: [],
+      monthImported: {},
+      notImportedMonths: [],
+      providers: [],
+      unattributed: null,
+      totals: { days: 0, appointments: 0, monthsImported: 0 },
+      byMonth: {},
+      provenance: {
+        source: 'imported-schedule',
+        rowsSeen: rows.length,
+        yearRows: 0,
+        monthsWithRows: 0,
+        rosterCount: roster.length,
+        reason: ''
+      }
+    };
+    if (!year) { out.provenance.reason = 'no-year'; return out; }
+
+    var byKey = {}, order = [], unattr = null, mi, monthKey, rep;
+    /* every roster clinician gets a row even if the whole year is unread, so
+       the grid can say "not imported" about them instead of omitting them. */
+    function rowFor(name, key) {
+      if (!byKey[key]) {
+        byKey[key] = { name: name, key: key, cells: {}, days: 0, appointments: 0, monthsImported: 0, monthsMissing: 0 };
+        order.push(key);
+      }
+      return byKey[key];
+    }
+    for (mi = 1; mi <= 12; mi++) {
+      monthKey = monthKeyOf(year, mi);
+      out.months.push(monthKey);
+      rep = compute({ month: monthKey, rows: rows, roster: roster, now: when });
+      var imported = rep.provenance.monthRows > 0;
+      out.monthImported[monthKey] = imported;
+      out.byMonth[monthKey] = {
+        imported: imported,
+        days: imported ? rep.totals.days : 0,
+        appointments: imported ? rep.totals.appointments : 0
+      };
+      out.provenance.yearRows += rep.provenance.monthRows;
+      if (!imported) { out.notImportedMonths.push(monthKey); continue; }
+      out.provenance.monthsWithRows++;
+      out.totals.monthsImported++;
+      out.totals.days += rep.totals.days;
+      out.totals.appointments += rep.totals.appointments;
+      for (var pi = 0; pi < rep.providers.length; pi++) {
+        var p = rep.providers[pi], row = rowFor(p.name, p.key);
+        row.cells[monthKey] = { state: 'imported', days: p.days, appointments: p.appointments };
+        row.days += p.days; row.appointments += p.appointments; row.monthsImported++;
+      }
+      if (rep.unattributed.appointments) {
+        if (!unattr) unattr = { name: 'No provider recorded', key: '', cells: {}, days: 0, appointments: 0, monthsImported: 0, monthsMissing: 0 };
+        unattr.cells[monthKey] = { state: 'imported', days: rep.unattributed.days, appointments: rep.unattributed.appointments };
+        unattr.days += rep.unattributed.days; unattr.appointments += rep.unattributed.appointments; unattr.monthsImported++;
+      }
+      /* a roster clinician absent from an IMPORTED month is a missing import
+         for that provider, not a zero - mint the row so the grid says so. */
+      for (var ri = 0; ri < rep.notImported.length; ri++) {
+        var rn = String(rep.notImported[ri] == null ? '' : rep.notImported[ri]).trim();
+        var rk = provKey(rn);
+        if (rn && rk) rowFor(rn, rk);
+      }
+    }
+
+    /* fill every hole explicitly, so a consumer never has to decide what an
+       absent key means. */
+    function finish(row) {
+      for (var i = 0; i < out.months.length; i++) {
+        var mk = out.months[i];
+        if (row.cells[mk]) continue;
+        row.cells[mk] = { state: out.monthImported[mk] ? 'not-imported' : 'month-not-imported', days: 0, appointments: 0 };
+        row.monthsMissing++;
+      }
+      row.avgPerDay = row.days ? Math.round((row.appointments / row.days) * 10) / 10 : 0;
+      return row;
+    }
+    for (var oi = 0; oi < order.length; oi++) out.providers.push(finish(byKey[order[oi]]));
+    out.providers.sort(function (x, y) {
+      return (y.days - x.days) || (y.appointments - x.appointments) || String(x.name).localeCompare(String(y.name));
+    });
+    if (unattr) out.unattributed = finish(unattr);
+    if (!out.provenance.yearRows) out.provenance.reason = 'nothing-imported-for-year';
+    else if (out.notImportedMonths.length) out.provenance.reason = 'year-partially-imported';
+    return out;
+  }
+
   /* --------------------------------------------------------------- sanitize
    * The ONLY shape that may be persisted. Constructed field by field from
    * primitives, so no row object, patient field or extra key can travel with
@@ -41844,6 +42011,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function report(month) {
     return compute({ month: month, rows: liveRows(), roster: liveRoster(), now: Date.now() });
   }
+  function yearReport(year) {
+    return computeYear({ year: year, rows: liveRows(), roster: liveRoster(), now: Date.now() });
+  }
 
   /* -------------------------------------------------------------------- UI */
   function monthLabel(m) {
@@ -41877,15 +42047,57 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return best || opts[0] || '';
   }
 
+  /* yrpt-1.0.0. The year axis is fixed (Jan..Dec); the CHOICE is which year.
+     Offer every year the imported rows actually touch, plus a short recent
+     window so a year that has never been pulled is still selectable - that is
+     the whole "it reads as missing, never as zero" case. */
+  var YEAR_WINDOW = 6;
+  function yearOptions() {
+    var years = {}, rows = liveRows(), i;
+    for (i = 0; i < rows.length; i++) {
+      var y = isoYear(rowDate(rows[i]));
+      if (y) years[y] = 1;
+    }
+    var now = new Date().getFullYear();
+    for (i = 0; i < YEAR_WINDOW; i++) years[String(now - i)] = 1;
+    return Object.keys(years).sort().reverse();
+  }
+  function defaultYear() {
+    var rows = liveRows(), best = '';
+    for (var i = 0; i < rows.length; i++) {
+      var y = isoYear(rowDate(rows[i]));
+      if (y && y > best) best = y;
+    }
+    return best || yearOptions()[0] || '';
+  }
+
   var RECIPE_HEAD = 'To import a month for one provider:';
+  var YEAR_RECIPE_HEAD = 'To import a whole year for one provider:';
+  /* provscope-1.0.0, said in the report's voice. Identical wording in both
+     recipes on purpose: the prerequisite does not change because the range
+     got longer, and a year pull that reads somebody else's calendar would
+     mint twelve months of false empties instead of one. */
+  var PROVSCOPE_STEP =
+    'In athenaOne, open that clinician\'s OWN Day schedule. MLS reads the schedule athenaOne is showing; ' +
+    'a pull scoped to WHO over somebody else\'s calendar is refused (provider&#8209;not&#8209;on&#8209;calendar) rather than saved as empty.';
+  function provscopeStep(who) { return PROVSCOPE_STEP.replace('WHO', who); }
   function recipeHtml(name, month) {
     var who = name ? esc(name) : 'that provider';
     return '<ol style="margin:6px 0 0 18px;padding:0;font-size:12.5px;color:#5b6b7c;line-height:1.55">' +
-      '<li>In athenaOne, open that clinician\'s OWN Day schedule. MLS reads the schedule athenaOne is showing; ' +
-      'a pull scoped to ' + who + ' over somebody else\'s calendar is refused (provider&#8209;not&#8209;on&#8209;calendar) rather than saved as empty.</li>' +
+      '<li>' + provscopeStep(who) + '</li>' +
       '<li>In MLS: <b>Menu &rarr; Staff prep &amp; Athena month pull</b>.</li>' +
       '<li><b>Choose a provider</b> &rarr; ' + who + '.</li>' +
       '<li>Set the month to <b>' + esc(month || '') + '</b>, then press <b>Start month pull</b>.</li>' +
+      '</ol>';
+  }
+  function yearRecipeHtml(name, year) {
+    var who = name ? esc(name) : 'that provider';
+    return '<ol style="margin:6px 0 0 18px;padding:0;font-size:12.5px;color:#5b6b7c;line-height:1.55">' +
+      '<li>' + provscopeStep(who) + '</li>' +
+      '<li>In MLS: <b>Menu &rarr; Staff prep &amp; Athena month pull</b>.</li>' +
+      '<li><b>Choose a provider</b> &rarr; ' + who + '.</li>' +
+      '<li>In <b>Year pull</b>, set the year to <b>' + esc(year || '') + '</b> and press <b>Start ' + esc(year || '') + ' year pull</b>.</li>' +
+      '<li>It runs one month at a time and saves every verified day, so you can pause it, close the tab, and press <b>Resume</b> later &mdash; it continues from the saved checkpoint instead of re-reading what it already proved.</li>' +
       '</ol>';
   }
 
@@ -41979,6 +42191,124 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return h;
   }
 
+  /* ------------------------------------------------------------- year table
+   * One row per provider, twelve month cells and the year's totals. A cell is
+   * a NUMBER only when compute() proved rows for that provider in that month;
+   * every other cell is an em dash that is also the button carrying the exact
+   * import recipe for that provider and that month. There is no code path in
+   * here that can print 0 for an unread month. */
+  var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var TH = 'padding:5px 4px;border-bottom:2px solid #E7E5DD;font-weight:700';
+  var TD = 'padding:5px 4px;border-bottom:1px solid #F4F2EC;text-align:center';
+  function cellHtml(rowKey, rowName, monthKey, cell) {
+    if (cell && cell.state === 'imported') {
+      return '<td style="' + TD + '" data-state="imported" title="' + esc(rowName + ' - ' + monthLabel(monthKey) + ': ' +
+        cell.days + ' day' + (cell.days === 1 ? '' : 's') + ' with appointments, ' + cell.appointments + ' appointment' + (cell.appointments === 1 ? '' : 's')) + '">' +
+        '<b style="font-size:13px;color:#204034">' + cell.days + '</b>' +
+        '<div style="font-size:11px;color:#5b6b7c;line-height:1.2">' + cell.appointments + '</div></td>';
+    }
+    var whole = !!(cell && cell.state === 'month-not-imported');
+    var why = whole
+      ? monthLabel(monthKey) + ' has no imported appointments at all, for anybody.'
+      : 'MLS holds appointments for ' + monthLabel(monthKey) + ', but none of them are ' + rowName + '’s.';
+    return '<td style="' + TD + '" data-state="' + (whole ? 'month-not-imported' : 'not-imported') + '">' +
+      '<button type="button" class="mlsMRCell" data-p="' + esc(rowKey) + '" data-n="' + esc(rowName) + '" data-m="' + esc(monthKey) + '"' +
+      ' title="' + esc(why + ' Not imported yet - click for the import recipe.') + '"' +
+      ' aria-label="' + esc(rowName + ', ' + monthLabel(monthKey) + ': not imported yet. Show the import recipe.') + '"' +
+      ' style="border:none;background:transparent;color:#a8894a;font-size:15px;font-weight:700;cursor:pointer;padding:2px 6px;border-radius:5px;font-family:inherit">&mdash;</button></td>';
+  }
+  function yearRowHtml(rep, row) {
+    var h = '<tr><td style="padding:5px 8px;border-bottom:1px solid #F4F2EC;font-weight:700;text-align:left;white-space:nowrap' +
+      (row.key ? '' : ';color:#7a5b16') + '">' + esc(row.name) + '</td>';
+    for (var i = 0; i < rep.months.length; i++) h += cellHtml(row.key, row.name, rep.months[i], row.cells[rep.months[i]]);
+    var covered = row.monthsImported + ' of 12 months imported';
+    /* A row that covers NO month has nothing to total. Printing "0 days" there
+       would be the same false zero the cells refuse to print - it would read
+       as "this clinician worked zero days in 2025" when MLS simply never
+       imported a month of theirs. The total is a dash until there is at least
+       one imported month to total. */
+    var totalled = row.monthsImported > 0;
+    h += '<td style="' + TD + ';border-left:2px solid #E7E5DD" title="' + esc(covered) + '">' +
+      (totalled ? '<b style="font-size:13px;color:#204034">' + row.days + '</b>' : '<span style="color:#a8894a;font-weight:700">&mdash;</span>') + '</td>' +
+      '<td style="' + TD + '" title="' + esc(covered) + '">' +
+      (totalled ? row.appointments : '<span style="color:#a8894a;font-weight:700">&mdash;</span>') + '</td>' +
+      '<td style="' + TD + ';color:#5b6b7c;font-size:11.5px;text-align:left;white-space:nowrap">' +
+      (totalled ? esc(covered) : '<span style="color:#a8894a">nothing imported for ' + esc(row.name) + ' all year</span>') + '</td></tr>';
+    return h;
+  }
+  function yearTableHtml(rep) {
+    var hasAny = rep.provenance.yearRows > 0;
+    if (!hasAny) {
+      return '<div style="padding:20px;border:1px solid #f3d9a6;background:#fff8ea;border-radius:10px;color:#7a5b16;font-size:13px;line-height:1.5">' +
+        '<b>Nothing is imported for ' + esc(rep.year) + ' yet.</b><br>' +
+        'MLS holds ' + rep.provenance.rowsSeen + ' appointment row' + (rep.provenance.rowsSeen === 1 ? '' : 's') +
+        ' in total, and none of them fall in this year. Every month below would read as missing, not as zero. ' + esc(YEAR_RECIPE_HEAD) +
+        yearRecipeHtml('', rep.year) + '</div>';
+    }
+    var h = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px"><thead><tr style="color:#204034">' +
+      '<th style="' + TH + ';text-align:left;padding-left:8px">Provider</th>';
+    var i;
+    for (i = 0; i < rep.months.length; i++) {
+      var mk = rep.months[i], live = rep.monthImported[mk];
+      h += '<th style="' + TH + ';text-align:center' + (live ? '' : ';color:#a8894a') + '" title="' +
+        esc(live ? monthLabel(mk) + ' is imported' : monthLabel(mk) + ' has no imported appointments at all') + '">' + MONTH_ABBR[i] + '</th>';
+    }
+    h += '<th style="' + TH + ';text-align:center;border-left:2px solid #E7E5DD">Days</th>' +
+      '<th style="' + TH + ';text-align:center">Appts</th>' +
+      '<th style="' + TH + ';text-align:left">Coverage</th></tr></thead><tbody>';
+    for (i = 0; i < rep.providers.length; i++) h += yearRowHtml(rep, rep.providers[i]);
+    if (rep.unattributed) h += yearRowHtml(rep, rep.unattributed);
+    /* the month footer: what the whole practice has imported per month. */
+    h += '<tr style="background:#FAF9F5"><td style="padding:6px 8px;border-top:2px solid #E7E5DD;font-weight:700;text-align:left;white-space:nowrap">All imported rows</td>';
+    for (i = 0; i < rep.months.length; i++) {
+      var b = rep.byMonth[rep.months[i]];
+      h += '<td style="padding:6px 4px;border-top:2px solid #E7E5DD;text-align:center">' +
+        (b.imported ? '<b style="font-size:12.5px;color:#204034">' + b.days + '</b><div style="font-size:11px;color:#5b6b7c;line-height:1.2">' + b.appointments + '</div>'
+          : '<span style="color:#a8894a;font-weight:700">&mdash;</span>') + '</td>';
+    }
+    h += '<td style="padding:6px 4px;border-top:2px solid #E7E5DD;text-align:center;border-left:2px solid #E7E5DD"><b>' + rep.totals.days + '</b></td>' +
+      '<td style="padding:6px 4px;border-top:2px solid #E7E5DD;text-align:center">' + rep.totals.appointments + '</td>' +
+      '<td style="padding:6px 4px;border-top:2px solid #E7E5DD;text-align:left;color:#5b6b7c;font-size:11.5px;white-space:nowrap">' +
+      rep.totals.monthsImported + ' of 12 months imported</td></tr>';
+    h += '</tbody></table></div>' +
+      '<div style="margin-top:8px;font-size:12px;color:#5b6b7c;line-height:1.5">' +
+      'Each cell shows <b>days with appointments</b> over <b>appointments</b>. ' +
+      'A <b style="color:#a8894a">&mdash;</b> is <b>not imported yet</b>, never a zero &mdash; tap one for the exact import that is missing.</div>';
+    return h;
+  }
+  function yearFocusHtml(rep, focus) {
+    if (!focus || !focus.month) return '';
+    var whole = rep.monthImported[focus.month] !== true;
+    return '<div style="margin-top:14px;padding:12px 14px;border:1px solid #d5e2f2;background:#f6faff;border-radius:10px">' +
+      '<div style="font-weight:700;color:#204034;font-size:13px">' + esc(focus.name) + ' &middot; ' + esc(monthLabel(focus.month)) + ' &middot; <span style="color:#7a5b16">not imported yet</span></div>' +
+      '<div style="font-size:12.5px;color:#5b6b7c;margin:5px 0 8px">' +
+      (whole
+        ? 'MLS holds no appointment at all in this month, for anybody. It is not saying ' + esc(focus.name) + ' did not work &mdash; it has never read this month.'
+        : 'MLS has imported this month, but no row in it is attributed to ' + esc(focus.name) + '. A month pulled for a different clinician leaves this one unread, so this is a MISSING IMPORT, not a zero.') +
+      '</div>' +
+      '<div style="font-weight:700;color:#204034;font-size:12.5px">' + esc(RECIPE_HEAD) + '</div>' +
+      recipeHtml(focus.name, focus.month) +
+      '<div style="margin-top:10px;font-weight:700;color:#204034;font-size:12.5px">' + esc(YEAR_RECIPE_HEAD) + '</div>' +
+      yearRecipeHtml(focus.name, rep.year) +
+      '<button type="button" id="mlsMRMenu" style="margin-top:10px;border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open the Menu</button>' +
+      '</div>';
+  }
+  function yearProvenanceHtml(rep) {
+    var lines = [];
+    lines.push('Read from ' + rep.provenance.yearRows + ' appointment row' + (rep.provenance.yearRows === 1 ? '' : 's') +
+      ' MLS has imported for ' + esc(rep.year) + ', across ' + rep.provenance.monthsWithRows + ' of 12 months.');
+    lines.push('Every month cell is the SAME derivation the Month view uses for that month, so the two views can never disagree.');
+    lines.push('MLS does not read a year directly from athenaOne. A month you have not pulled reads as missing (&mdash;), never as zero, and is never added into a total &mdash; each row says how many of the twelve months it actually covers.');
+    lines.push('An appointment is a BOOKED SLOT. MLS cannot tell arrived / roomed / completed apart: the extension\'s schedule read strips those words as grid noise before a row is built, so "days with appointments" is not proof of a day worked.');
+    if (rep.notImportedMonths.length) {
+      lines.push('No appointments imported at all for: ' + rep.notImportedMonths.map(function (m) { return MONTH_ABBR[Number(m.slice(5, 7)) - 1]; }).join(', ') + '.');
+    }
+    var h = '<div style="margin-top:16px;padding:11px 13px;border-top:1px solid #F4F2EC;font-size:12px;color:#5b6b7c;line-height:1.5">';
+    for (var i = 0; i < lines.length; i++) h += '<div style="margin-bottom:4px">&middot; ' + lines[i] + '</div>';
+    return h + '</div>';
+  }
+
   function missingHtml(rep) {
     if (!rep.notImported.length) return '';
     var h = '<div style="margin-top:16px;padding:12px 14px;border:1px solid #d5e2f2;background:#f6faff;border-radius:10px">' +
@@ -42010,7 +42340,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return h + '</div>';
   }
 
-  function paint(box, month) {
+  /* yrpt-1.0.0 view state. `uiScope` picks the derivation; `uiFocus` is the
+     one not-imported cell whose recipe is currently expanded. Both are reset
+     by close() so a reopened card never inherits a stale focus. */
+  var uiScope = 'month', uiPeriod = '', uiFocus = null;
+  function scopeSelectHtml() {
+    return '<select id="mlsMRScope" aria-label="Report period" style="border:1px solid #d5e2f2;border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit">' +
+      '<option value="month"' + (uiScope === 'year' ? '' : ' selected') + '>Month</option>' +
+      '<option value="year"' + (uiScope === 'year' ? ' selected' : '') + '>Year</option></select>';
+  }
+  function headHtml(title, periodSelect) {
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">' +
+      '<div style="font-weight:800;font-size:18px;color:#204034">&#128197; ' + esc(title) + '</div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' + scopeSelectHtml() + periodSelect +
+      '<button type="button" id="mlsMRClose" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>' +
+      '</div></div>';
+  }
+  function wireCommon(box) {
+    var scope = box.querySelector('#mlsMRScope');
+    if (scope) scope.onchange = function () {
+      uiScope = scope.value === 'year' ? 'year' : 'month';
+      uiFocus = null; uiPeriod = '';
+      paint(box, '');
+    };
+    var closeBtn = box.querySelector('#mlsMRClose');
+    if (closeBtn) closeBtn.onclick = close;
+    var menuBtn = box.querySelector('#mlsMRMenu');
+    if (menuBtn) menuBtn.onclick = function () {
+      var b = safe(function () { return document.getElementById('mlsTbMenuBtn'); }, null);
+      if (b) { close(); safe(function () { b.click(); }); return; }
+      safe(function () { if (typeof window.toast === 'function') window.toast('Open the Menu in the top bar, then choose Staff prep & Athena month pull.', ''); });
+    };
+  }
+  function paintMonth(box, month) {
     var rep = report(month);
     var stored = storedFor(month);
     var cap = capture(rep);
@@ -42020,31 +42382,63 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     for (i = 0; i < opts.length; i++) {
       sel += '<option value="' + esc(opts[i]) + '"' + (opts[i] === rep.month ? ' selected' : '') + '>' + esc(monthLabel(opts[i])) + '</option>';
     }
-    var h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px">' +
-      '<div style="font-weight:800;font-size:18px;color:#204034">&#128197; Month report</div>' +
-      '<div style="display:flex;gap:8px;align-items:center">' +
-      '<select id="mlsMRMonth" style="border:1px solid #d5e2f2;border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit">' + sel + '</select>' +
-      '<button type="button" id="mlsMRClose" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>' +
-      '</div></div>' +
+    uiPeriod = rep.month;
+    box.innerHTML = headHtml('Month report',
+      '<select id="mlsMRMonth" aria-label="Month to report" style="border:1px solid #d5e2f2;border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit">' + sel + '</select>') +
       '<div style="font-size:12.5px;color:#5b6b7c;margin-bottom:14px">Days with appointments and appointment volume, per provider, for one month &mdash; with where every number came from.</div>' +
       tableHtml(rep, stored, pstat) + missingHtml(rep) + provenanceHtml(rep, cap);
-    box.innerHTML = h;
     var msel = box.querySelector('#mlsMRMonth');
     if (msel) msel.onchange = function () { paint(box, msel.value); };
-    var closeBtn = box.querySelector('#mlsMRClose');
-    if (closeBtn) closeBtn.onclick = close;
-    var menuBtn = box.querySelector('#mlsMRMenu');
-    if (menuBtn) menuBtn.onclick = function () {
-      var b = safe(function () { return document.getElementById('mlsTbMenuBtn'); }, null);
-      if (b) { close(); safe(function () { b.click(); }); return; }
-      safe(function () { if (typeof window.toast === 'function') window.toast('Open the Menu in the top bar, then choose Staff prep & Athena month pull.', ''); });
-    };
+    wireCommon(box);
     return rep;
   }
-  function close() { safe(function () { var b = document.getElementById('mlsMRBack'); if (b) b.remove(); }); }
+  function paintYear(box, year) {
+    var rep = yearReport(year);
+    var opts = yearOptions(), i, sel = '';
+    for (i = 0; i < opts.length; i++) {
+      sel += '<option value="' + esc(opts[i]) + '"' + (opts[i] === rep.year ? ' selected' : '') + '>' + esc(opts[i]) + '</option>';
+    }
+    uiPeriod = rep.year;
+    /* the focus must belong to THIS year, or a year switch would print last
+       year's recipe against this year's grid. */
+    if (uiFocus && String(uiFocus.month || '').slice(0, 4) !== rep.year) uiFocus = null;
+    box.innerHTML = headHtml('Year report',
+      '<select id="mlsMRYear" aria-label="Year to report" style="border:1px solid #d5e2f2;border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit">' + sel + '</select>') +
+      '<div style="font-size:12.5px;color:#5b6b7c;margin-bottom:14px">Days with appointments and appointment volume, per provider, for every month of ' + esc(rep.year) +
+      ' &mdash; with a month MLS has not imported shown as missing, never as zero.</div>' +
+      yearTableHtml(rep) + yearFocusHtml(rep, uiFocus) + yearProvenanceHtml(rep);
+    var ysel = box.querySelector('#mlsMRYear');
+    if (ysel) ysel.onchange = function () { uiFocus = null; paint(box, ysel.value); };
+    var cells = box.querySelectorAll('.mlsMRCell');
+    for (i = 0; i < cells.length; i++) {
+      (function (btn) {
+        btn.onclick = function () {
+          uiFocus = { key: btn.getAttribute('data-p') || '', name: btn.getAttribute('data-n') || '', month: btn.getAttribute('data-m') || '' };
+          paint(box, rep.year);
+        };
+      })(cells[i]);
+    }
+    wireCommon(box);
+    return rep;
+  }
+  function paint(box, value) {
+    if (uiScope === 'year') return paintYear(box, isoYear(value) || uiPeriod || defaultYear());
+    return paintMonth(box, isoMonth(value) || uiPeriod || defaultMonth());
+  }
+  function close() {
+    uiFocus = null; uiPeriod = '';
+    safe(function () { var b = document.getElementById('mlsMRBack'); if (b) b.remove(); });
+  }
 
+  /* open() accepts 'YYYY-MM' (month view, unchanged), 'YYYY' or
+     {scope:'year', year:'YYYY'} for the year view. */
   function open(month) {
     if (safe(function () { return document.getElementById('mlsMRBack'); }, null)) return null;
+    var wanted = month, scope = '';
+    if (month && typeof month === 'object') { scope = String(month.scope || ''); wanted = month.year || month.month || ''; }
+    wanted = String(wanted == null ? '' : wanted);
+    uiScope = (scope === 'year' || (!isoMonth(wanted) && isoYear(wanted))) ? 'year' : 'month';
+    uiFocus = null; uiPeriod = '';
     var back = document.createElement('div'); back.id = 'mlsMRBack';
     back.style.cssText = 'position:fixed;inset:0;background:rgba(10,30,60,.5);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
     var box = document.createElement('div');
@@ -42052,7 +42446,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     back.appendChild(box);
     document.body.appendChild(back);
     back.addEventListener('click', function (e) { if (e.target === back) close(); });
-    return paint(box, isoMonth(month) || defaultMonth());
+    return paint(box, wanted);
   }
 
   function inject() {
@@ -42063,10 +42457,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var card = (model && model.cloneNode) ? model.cloneNode(false) : document.createElement('div');
       if (!card.className) card.className = 'card';
       card.id = 'mlsMRCard';
-      card.innerHTML = '<div style="font-weight:800;color:#204034;font-size:14px">&#128197; Month report</div>' +
-        '<div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days with appointments &amp; volume per provider for one month, with honest provenance and the exact import that is missing.</div>' +
-        '<button id="mlsMROpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
+      card.innerHTML = '<div style="font-weight:800;color:#204034;font-size:14px">&#128197; Month &amp; year report</div>' +
+        '<div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days with appointments &amp; volume per provider &mdash; one month, or every month of a year &mdash; with honest provenance and the exact import that is missing.</div>' +
+        '<button id="mlsMROpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>' +
+        '<button id="mlsMROpenYear" type="button" style="margin-left:8px;border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Year</button>';
       card.querySelector('#mlsMROpen').addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open(); });
+      card.querySelector('#mlsMROpenYear').addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open({ scope: 'year' }); });
       grid.appendChild(card);
     });
   }
@@ -42078,12 +42474,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     installed: true,
     version: VERSION,
     compute: compute,
+    computeYear: computeYear,
     sanitize: sanitize,
     capture: capture,
     stored: storedFor,
     provStatusFor: provStatusFor, /* mrpt-1.1.0: read-only seen-day join, exposed for extraction-executed proof */
     report: report,
+    yearReport: yearReport,
+    yearOptions: yearOptions,
     open: open,
+    openYear: function (year) { return open({ scope: 'year', year: year }); },
     close: close,
     refresh: inject,
     revert: function () {
@@ -42092,9 +42492,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       safe(function () { var c = document.getElementById('mlsMRCard'); if (c) c.remove(); });
       api.installed = false;
       safe(function () { if (window.__mlsMonthReport === api) delete window.__mlsMonthReport; });
+      safe(function () { if (window.__mlsYearReport === api) delete window.__mlsYearReport; });
     }
   };
   window.__mlsMonthReport = api;
+  /* yrpt-1.0.0: the Year view is the same module and the same derivation, so
+     it is the SAME object under a second name rather than a second installer
+     that could drift out of step with it. */
+  window.__mlsYearReport = api;
 
   function boot() { inject(); safe(function () { document.addEventListener('click', onViewClick, true); }); }
   safe(function () {

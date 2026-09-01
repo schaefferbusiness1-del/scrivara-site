@@ -96,7 +96,15 @@ const selStart = source.indexOf('  function provSelectHtml() {');
 const selEnd = source.indexOf('  function wireProvSelect() {', selStart);
 assert(selStart >= 0 && selEnd > selStart, 'the 1p provider selector markup is missing');
 const selSource = source.slice(selStart, selEnd);
-assert(/if \(!list\.length\) \{ rememberRenderedProvider\(''\); return ''; \}/.test(selSource),
+/* csp-1.0.0 (2026-09-01): the PROPERTY this pins is "the bail branch files the
+ * render receipt before returning nothing" - not the exact condition that
+ * reaches it. The condition legitimately widened to
+ * `!list.length && !seenOnCal.length`, because bailing on an empty VERIFIED
+ * roster used to suppress the whole selector and hide every clinician the
+ * athena calendar had named but the roster could not prove. Pinning the
+ * receipt and leaving the condition open keeps the guard and stops it from
+ * failing a change that strengthened the selector. */
+assert(/if \(!list\.length[^)]*\) \{ rememberRenderedProvider\(''\); return ''; \}/.test(selSource),
   'the empty-roster branch of the selector leaves a stale render receipt behind');
 assert(/else \{ cur = rememberRenderedProvider\(''\); \}/.test(selSource),
   'an unresolvable saved provider ref leaves a stale render receipt behind');

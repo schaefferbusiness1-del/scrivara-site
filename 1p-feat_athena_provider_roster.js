@@ -502,6 +502,115 @@
       root._calProviders = out;
     });
   }
+
+  /* ===== csp-1.0.0 - PROVIDERS SEEN ON THE CALENDAR =======================
+   * Owner, 2026-09-01: "you should be able to pull any provider even the
+   * one's just on calander."
+   *
+   * WHY THEY WERE UNSELECTABLE. makeEntry() marks an entry providerEligible
+   * only when it carries a machine id, a credential, or an explicit provider
+   * prefix, and listEntries() then drops every ineligible entry. That rule is
+   * what keeps grid noise - patients, insurers, rooms, reasons - out of the
+   * "Choose a provider" list, and NOTHING here relaxes it. But it also hides a
+   * real clinician whose athena header is a bare "Jane Smith": the doctor can
+   * SEE her on the calendar and could not pick her.
+   *
+   * WHAT THIS ADDS. The names the current athena view itself named as
+   * PROVIDERS - r.providerRoster, r.providers, and the text recovery's
+   * provider headers - are kept as a SECOND, clearly separate set: "seen on
+   * the calendar, not verified yet". Appointment rows are deliberately not a
+   * source, so no patient name can reach this list.
+   *
+   * WHAT THIS DOES NOT WEAKEN, each one load-bearing:
+   *  - These names are NOT written into the roster cache, so _cacheSanitized
+   *    and the completeness receipt are untouched. A calendar-seen name must
+   *    never upgrade OR downgrade the roster's own verdict about itself.
+   *  - A name the verified roster already carries is never duplicated here;
+   *    the proven identity always wins.
+   *  - resolveProviderRequest() still classifies them as detectedOnly, so only
+   *    the routes that explicitly opt in with allowDetectedProvider (the
+   *    guarded day pull, the month pull, the year range job) may use them.
+   *  - provscope-1.0.0 is untouched. Pulling X still requires athena to be
+   *    SHOWING X: a calendar-seen pick aimed at somebody else's view is
+   *    refused with provider-not-on-calendar exactly as a roster pick is.
+   * PHI: clinician name strings only, capped and deduped. Nothing else. */
+  var SEEN_KEY = 'mlsProviderSeenOnCalV1';
+  var MAX_SEEN = 60;
+  var _seenCache = null;
+  function seenStored() {
+    if (_seenCache) return _seenCache;
+    var raw = unsGet(SEEN_KEY);
+    var parsed = raw ? safe(function () { return JSON.parse(raw); }, null) : null;
+    _seenCache = Array.isArray(parsed) ? parsed.map(clean).filter(Boolean).slice(0, MAX_SEEN) : [];
+    return _seenCache;
+  }
+  /* the ONLY shape a calendar-seen name may take. Built field by field from a
+     cleaned string, so it can never carry a stray row property. */
+  function seenEntry(name) {
+    var n = cleanProvider(name);
+    if (!n || n.length > 80) return null;
+    if (PROVIDER_NOISE.test(n)) return null;
+    if (/^provider\s*#?\s*\d+$/i.test(n)) return null;
+    var eq = providerEquivalentKey(n, true, true);
+    if (!eq) return null;
+    return {
+      stableKey: 'calendar-seen:' + eq,
+      id: '',
+      raw: n,
+      name: n,
+      source: 'calendar-seen',
+      rosterVerified: false,
+      equivalentKey: eq,
+      providerEligible: false,
+      seenOnCalendar: true,
+      aliases: []
+    };
+  }
+  function recordSeenOnCalendar(names, owner) {
+    if (!current(owner)) return [];
+    var kept = [], seen = {};
+    seenStored().concat(Array.isArray(names) ? names : []).forEach(function (n) {
+      var e = seenEntry(n);
+      if (!e || seen[e.stableKey]) return;
+      seen[e.stableKey] = 1; kept.push(e.name);
+    });
+    if (kept.length > MAX_SEEN) kept = kept.slice(kept.length - MAX_SEEN);
+    _seenCache = kept;
+    unsSet(SEEN_KEY, JSON.stringify(kept), owner);
+    return kept;
+  }
+  /* The selectable set: every name the calendar showed that the verified
+     roster does NOT already carry. Recomputed on read, so a name that later
+     earns a real roster identity silently stops appearing here instead of
+     becoming a duplicate choice. */
+  function seenOnCalendar() {
+    var known = {};
+    listEntries().forEach(function (e) {
+      if (e && e.equivalentKey) known[e.equivalentKey] = 1;
+      if (e && e.name) known[normKey(e.name)] = 1;
+    });
+    var out = [], dup = {};
+    seenStored().forEach(function (n) {
+      var e = seenEntry(n);
+      if (!e || dup[e.stableKey] || known[e.equivalentKey] || known[normKey(e.name)]) return;
+      dup[e.stableKey] = 1; out.push(e);
+    });
+    out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+    return out;
+  }
+  function resolveSeenOnCalendar(raw) {
+    var ref = clean(raw);
+    if (ref.indexOf('pv:') === 0) { ref = safe(function () { return decodeURIComponent(ref.slice(3)); }, ''); }
+    if (!ref) return null;
+    var list = seenOnCalendar();
+    var hit = list.filter(function (e) { return e.stableKey === ref; });
+    if (hit.length === 1) return hit[0];
+    hit = list.filter(function (e) { return normKey(e.name) === normKey(ref); });
+    if (hit.length === 1) return hit[0];
+    var eq = providerEquivalentKey(ref, true, true);
+    hit = eq ? list.filter(function (e) { return e.equivalentKey === eq; }) : [];
+    return hit.length === 1 ? hit[0] : null; // same-name ambiguity fails closed
+  }
   /* prs-1.0.0: providers OBSERVED on appointments MLS has already pulled.
      This is real evidence of a real clinician and it was being thrown away:
      the canonical roster only ever learned from the painted Day grid and the
@@ -792,7 +901,13 @@
     if (exact.length === 1) return exact[0];
     var eq = providerEquivalentKey(raw, true);
     exact = eq ? entries.filter(function (e) { return e.equivalentKey === eq; }) : [];
-    return exact.length === 1 ? exact[0] : null; // same-name ambiguity fails closed
+    if (exact.length === 1) return exact[0]; // same-name ambiguity fails closed
+    /* csp-1.0.0: LAST, and only after every verified path missed. A clinician
+       the calendar named but the roster could not prove still resolves, so a
+       scoped pull can be aimed at her - carrying seenOnCalendar:true and
+       rosterVerified:false, which is what keeps her on the detectedOnly route
+       and under the provscope refusal. */
+    return resolveSeenOnCalendar(raw);
   }
 
   // diag for the live tuning run (PHI-FREE — provider names + counts only)
@@ -864,6 +979,21 @@
       structuredProviders.forEach(function (p) { union.push(p); });
       structuredAppts.forEach(function (a) { if (a && a.provider) { var apptProvider = makeEntry(a.provider, 'appointment-attribution'); if (apptProvider) union.push(apptProvider); } });
       rec.providers.forEach(function (p) { var recoveredProvider = makeEntry(p, 'text-recovery'); if (recoveredProvider) union.push(recoveredProvider); });
+
+      /* csp-1.0.0: keep every name THIS view named as a provider, including
+         the ones makeEntry just refused for lacking a credential or an id.
+         Provider-intent fields only - structuredAppts is deliberately absent,
+         because an appointment row's neighbour text is where a patient name
+         would come from. Written to its own key, never to the roster cache. */
+      var seenNames = [];
+      function seenPush(v) {
+        var n = clean(v && typeof v === 'object' ? (v.name || v.displayName || v.label || v.raw || v.provider || '') : v);
+        if (n) seenNames.push(n);
+      }
+      structuredRosterRaw.forEach(seenPush);
+      structuredProvidersRaw.forEach(seenPush);
+      rec.providers.forEach(seenPush);
+      if (seenNames.length) recordSeenOnCalendar(seenNames, boundOperation.owner);
 
       var diag = {
         version: VERSION,
@@ -998,6 +1128,10 @@
     sessionGeneration++;operationSerial++;
     _armedOperation=null;lastReceipt=null;receiptOwner='';lastDiag=null;
     _cacheSanitized=false;_lastMergeIdentityConflict=false;
+    /* csp-1.0.0: the calendar-seen set is account-scoped through uns(), but the
+       in-memory copy is not - drop it so the next account cannot read the
+       previous one's clinician names out of this tab's memory. */
+    _seenCache=null;
     _ingestSeenObjects=typeof WeakMap==='function'?new WeakMap():null;
     _ingestByRequest=Object.create(null);_ingestRequestOrder=[];_ingestStats={processed:0,deduped:0};
     if(_bootSweepT){clearInterval(_bootSweepT);_bootSweepT=null;}
@@ -1030,6 +1164,11 @@
     ingestResp: ingestResp,
     sweepSchedRaw: sweepSchedRaw,
     list: listEntries,
+    /* csp-1.0.0: the calendar-seen set is a SEPARATE list on purpose. list()
+       keeps its exact meaning ("identities the roster can prove"), so every
+       existing caller and pin is unaffected; a surface that wants to offer the
+       unverified ones asks for them by name and must label them. */
+    seenOnCalendar: seenOnCalendar,
     providers: function () { return listEntries().map(function (e) { return e.name; }); },
     merge: function(list,source,owner){return mergeEntries(list,source,owner);},
     resolve: resolveProvider,
