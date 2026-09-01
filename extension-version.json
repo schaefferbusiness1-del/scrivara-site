@@ -1,5 +1,5 @@
 {
-  "version": "3.0.84",
+  "version": "3.0.97",
   "minChrome": 116,
-  "notes": "v3.0.84 - Athena reliability: when a read, search, or day-jump fails because the athenaOne page is stuck, MLS Assist now recovers its own tab to the practice dashboard and retries instead of giving up; a gentle background request keeps the signed-in session fresh (no simulated input, signed-out sessions are never touched); and one-use write authorizations survive browser service-worker restarts with exact patient and encounter binding. Everything from v3.0.82 remains. Requires Chrome 116+."
+  "notes": "v3.0.97 - Write reliability: the one-use write authorization now survives Chrome's own storage round-trip exactly (a key-ordering mismatch inside Chrome made op-note sends refuse with 'Chrome could not preserve the exact one-use authorization'); the driver now opens the encounter and its documentation stage itself; two same-day appointments resolve to the exact booked one; and procedure notes bind to their Physical Exam stage. Everything from v3.0.84 remains. Requires Chrome 116+."
 }

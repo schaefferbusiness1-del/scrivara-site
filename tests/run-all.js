@@ -1229,6 +1229,8 @@ const tests = [
   'pricing-billing-truth.test.js',
   'visit-binding-notice-persistence.test.js',
   'writeflow-auto-open-runtime.test.js',
+  'autodraft-soap-carry-appendix.test.js',
+  'pullbind-auto-bound-from-the-pull.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'extension-mac-sleep-and-legacy-review-runtime.test.js',

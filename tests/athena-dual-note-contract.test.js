@@ -170,9 +170,13 @@ function runPlan(source, file, setup) {
     eq(canonicalBlock(source, file), firstCanonical, file + ': canonical Athena contract drifted from the canonical 1p lane');
     ok(source.includes('"athena_note": "<the SAME visit as plain text in EXACTLY five flat top-level sections'), file + ': generation prompt does not require athena_note');
     const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result);');
-    const athenaValidation = source.indexOf('_mlsValidateAthenaNote(result.athena_note==null?result.note:result.athena_note);', displayValidation);
+    /* re-pinned to autodraft-1.1.0: the fallback strips the marked carried
+       appendix (display-only) before validating; the sidecar is preferred
+       exactly as before and never cleaned. */
+    const fallbackExpr = "result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note";
+    const athenaValidation = source.indexOf('_mlsValidateAthenaNote(' + fallbackExpr + ');', displayValidation);
     ok(athenaValidation > displayValidation, file + ': athena_note fallback was not validated after the display note contract');
-    ok(source.includes('result.athena_note==null?result.note:result.athena_note'), file + ': present athena_note was not preferred over the legacy display-note fallback');
+    ok(source.includes(fallbackExpr), file + ': present athena_note was not preferred over the legacy display-note fallback');
     const canonicalCapture = source.indexOf("_mlsSetAthenaNote(canonicalAthenaNote.text,'generated');", source.indexOf('const canonicalAthenaNote='));
     ok(canonicalCapture > source.indexOf('const canonicalAthenaNote='), file + ': canonical sidecar is not captured after validation');
     const settledComment = source.lastIndexOf('applyVisitCommentToNote();', canonicalCapture);

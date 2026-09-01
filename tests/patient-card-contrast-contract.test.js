@@ -76,7 +76,7 @@ for (const state of states) {
   assert(contrast(state.foreground, state.background) >= 4.5, `${state.name}: contrast is below WCAG AA`);
 }
 
-assert(app.includes("window.__MLS_AV='b1137'"), 'production shell asset version was not bumped to b1137');
+assert(app.includes("window.__MLS_AV='b1138'"), 'production shell asset version was not bumped to b1138');
 const shellBuild = (app.match(/var P1_BUILD='(main-\d{8}-r\d+)'/) || [])[1];
 const bundleBuild = (source.match(/var MLS_APP_BUILD='([^']+)'/) || [])[1];
 assert(shellBuild, 'production shell has no immutable main-lineage build');

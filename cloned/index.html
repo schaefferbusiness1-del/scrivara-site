@@ -5028,8 +5028,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span>🧬 Auto-draft from the patient's last note <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
         </label>
         <p class="note" style="margin:4px 0 0 26px">When this patient already has a saved, finished note in their chart, MLS seeds today's draft from it: the same section layout, plus their stable history — <b>past medical, past surgical, family and social history, and allergies</b> — copied forward word for word and marked <b>“carried from last visit - review”</b> so you can always see it was not written today.<br>
-          <b>Today's HPI, ROS, exam, assessment and plan are always written from today's visit alone</b>, and <b>medications, doses, frequencies and routes are never carried forward</b> — you document those fresh every visit.<br>
-          <span style="color:var(--muted)">A SOAP note has only its five sections, so on SOAP this seeds the layout and carries nothing. Pick H&amp;P (or Narrative / Problem-based / APSO) under <b>Style</b> on the visit screen to carry the history sections forward. You can switch it off for a single visit from the visit screen.</span></p>
+          <b>Today's HPI, ROS, exam, assessment and plan are always written from today's visit alone</b>, and <b>medication doses, strengths, frequencies and routes are never carried forward</b> — you document medications fresh every visit.<br>
+          <span style="color:var(--muted)">On SOAP and APSO the carried history appears after the note's sections, clearly marked, never inside them — and the copy MLS sends to athenaOne always stays exactly the five SOAP sections. You can switch it off for a single visit from the visit screen.</span></p>
       </div>
       <p class="note" style="margin:2px 0 0">Tip: your standing follow-up interval lives below under Provider preferences.</p>
     </div>
@@ -5280,12 +5280,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.84</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.84.bin" download="MLS_Assist_v3.0.84.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.84</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.97</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.97.bin" download="MLS_Assist_v3.0.97.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.97</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Download it, then follow the four setup steps under <b>Integrations → Advanced integrations</b> in this dialog — or the illustrated guide at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. Already have it? Updating is the same four steps over the old folder.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.84</span>)</summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.84 - Athena reliability: when a read, search, or day-jump fails because the athenaOne page is stuck, MLS Assist now recovers its own tab to the practice dashboard and retries instead of giving up; a gentle background request keeps the signed-in session fresh (no simulated input, signed-out sessions are never touched); and one-use write authorizations survive browser service-worker restarts with exact patient and encounter binding. Everything from v3.0.82 remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.97</span>)</summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.97 - Write reliability: the one-use write authorization now survives Chrome’s own storage round-trip exactly (a key-ordering mismatch inside Chrome made op-note sends refuse with “Chrome could not preserve the exact one-use authorization”); the driver now opens the encounter and its documentation stage itself; two same-day appointments resolve to the exact booked one; and procedure notes bind to their Physical Exam stage. Everything from v3.0.84 remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -5485,7 +5485,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save every dated prior visit note as well (slower, most complete). Off: pulls still open each scheduled chart and save its identity, chart facts (problems, medications, allergies) and the pulled day's own visit note — only OLDER visit notes are skipped. The single-patient pull button still reads the one patient you explicitly chose.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.84.zip" download="MLS_Assist_v3.0.84.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.84 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.97.zip" download="MLS_Assist_v3.0.97.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.97 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
       </div>
       <!-- ===== advint-1.0.0 — one disclosure for everything a physician never needs =====
@@ -9074,9 +9074,20 @@ function applyVisitCommentToNote(){
   const beforeCommentMutation=currentSoap;
   // Strip any prior signature first so the COMMENT regex sees a clean tail,
   // then fold in the comment, then re-append the signature (both idempotent).
-  currentSoap=stripSignatureBlock(currentSoap);
-  currentSoap=withCommentBlock(currentSoap);
-  currentSoap=withSignatureBlock(currentSoap);
+  /* autodraft-1.1.0: split the appendix out FIRST - the greedy signature
+     strip otherwise eats everything after "Electronically signed by:", which
+     on the second call (generate then Save) silently deleted the whole
+     carried history (measured). Comment and signature then fold into today's
+     body and the appendix stays last. */
+  var __adSplit=null;
+  try{ if(typeof _autoDraftSplitCarried==='function')__adSplit=_autoDraftSplitCarried(currentSoap); }catch(eAdc){ __adSplit=null; }
+  if(__adSplit&&__adSplit.appendix){
+    currentSoap=withSignatureBlock(withCommentBlock(stripSignatureBlock(__adSplit.core)))+'\n\n'+__adSplit.appendix;
+  }else{
+    currentSoap=stripSignatureBlock(currentSoap);
+    currentSoap=withCommentBlock(currentSoap);
+    currentSoap=withSignatureBlock(currentSoap);
+  }
   const nb=document.getElementById('noteBox');
   if(nb && nb.style.display!=='none' && currentFormat==='soap'){ nb.value=currentSoap; }
   if(currentSoap!==beforeCommentMutation)try{_mlsSyncAthenaAfterStandardNoteMutation('visit comment or signature changed the standard note');}catch(eCanonicalComment){}
@@ -29371,6 +29382,14 @@ function _mlsValidateAthenaNote(text){
   var bodies={}, current=null, seen={}, order=[];
   for(var i=0;i<lines.length;i++){
     var line=lines[i], trimmed=line.trim(); if(!trimmed)continue;
+    /* autodraft-1.1.0 backstop: carried-forward history is display-note-only.
+       The doors upstream strip declared blocks; MACHINERY-SHAPED remnants that
+       still reach here fail CLOSED: (a) a parenthetical containing "carried",
+       or a prior-visit phrase together with "review"; (b) a parenthesized
+       history wrapper heading; (c) a sentinel remnant. Plain prose ABOUT the
+       last visit ("the medication list carried forward from the last visit
+       was reviewed") stays writable - measured false-positive class. */
+    if(/\([^)\n]*carried[^)\n]*\)/i.test(line)||/\([^)\n]*(?:last|prior|previous)\s+visit[^)\n]*review/i.test(line)||/\([^)\n]*review[^)\n]*(?:last|prior|previous)\s+visit[^)\n]*\)/i.test(line)||/^\s*(?:PAST\s+MEDICAL\s+HISTORY|MEDICAL\s+HISTORY|PAST\s+MEDICAL\s+HX|PMHX?|PAST\s+SURGICAL\s+HISTORY|SURGICAL\s+HISTORY|PAST\s+SURGERIES|PAST\s+SURGICAL\s+HX|PSHX?|FAMILY\s+HISTORY|FAMILY\s+HX|FHX?|SOCIAL\s+HISTORY|SOCIAL\s+HX|SHX?|ALLERGIES|ALLERGY|DRUG\s+ALLERGIES)\s*\([^)\n]*\)\s*:/i.test(line)||/={2,}\s*(?:END\s+)?CARRIED\s+HISTORY/i.test(line))throw _mlsAthenaNoteQualityError('carried-forward content is not allowed in athena_note');
     if(combinedWrapper.test(line))throw _mlsAthenaNoteQualityError('combined Assessment and Plan heading is not allowed');
     var m=flat.exec(line);
     if(m){
@@ -29421,6 +29440,11 @@ function _mlsAthenaNoteWithVisitComment(text){
      trailing comment shape so stale repair and repeated edits stay idempotent. */
   var source=String(text==null?'':text);
   try{if(typeof stripSignatureBlock==='function')source=stripSignatureBlock(source);}catch(eSignature){}
+  /* autodraft-1.1.0: marked carried-history blocks live in the DISPLAY note
+     only. This is the door every athena_note derivation passes through
+     ('generated' and 'edited' alike), so strip them here - normalise at the
+     door, not at fourteen readers. */
+  try{ if(typeof _autoDraftStripCarried==='function')source=_autoDraftStripCarried(source); }catch(eCarryDoor){}
   var canonical=_mlsValidateAthenaNote(source), comment='';
   try{comment=String((document.getElementById('visitComment')||{}).value||'').replace(/\s+/g,' ').trim();}catch(e){}
   var commentLine='COMMENT: '+comment, headings={hpi:'HPI',ros:'ROS',exam:'EXAM',assessment:'ASSESSMENT',plan:'PLAN'};
@@ -29894,7 +29918,11 @@ async function generateNote(){
        note without the newer athena_note sidecar. Reuse it only when it
        independently passes the exact five-destination validator; narrative,
        malformed, and ambiguous responses still fail closed. */
-    const canonicalAthenaNote=_mlsValidateAthenaNote(result.athena_note==null?result.note:result.athena_note);
+    /* autodraft-1.1.0: on the legacy no-sidecar fallback the DISPLAY note is
+       the source, so its marked carried appendix must be stripped first. The
+       real sidecar is NOT cleaned - a model that leaks the marker into
+       athena_note fails validation closed instead of shipping stale history. */
+    const canonicalAthenaNote=_mlsValidateAthenaNote(result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note);
     if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch))throw _mlsGenerationAbortError('source-changed');
     if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint||_mlsAthenaGenerationSourceFingerprint(generationBinding)!==generationSourceFingerprint){
       throw _mlsGenerationAbortError('source-changed');
@@ -30508,20 +30536,27 @@ var GEN_LENGTH_LINE={
    original note if it can't confidently find the S/O/A/P sections. */
 function _flatSoapNote(note){
   try{
-    const src=String(note||'').replace(/\r\n?/g,'\n').trim(); if(!src) return '';
+    const src0=String(note||'').replace(/\r\n?/g,'\n').trim(); if(!src0) return '';
+    /* autodraft-1.1.0: a MARKED carried-history appendix is display-only. Lift
+       it out before the five-section parse (this loop used to fold it into
+       whatever section preceded it - measured as PLAN pollution) and re-attach
+       it AFTER the flat sections. Unmarked text is untouched. */
+    let appendix='', src=src0;
+    try{ if(typeof _autoDraftSplitCarried==='function'){ const sp=_autoDraftSplitCarried(src0); if(sp&&sp.appendix){ src=String(sp.core||'').trim(); appendix=sp.appendix; } } }catch(eCarry){}
+    const withApp=t=>(t&&appendix)?(t+'\n\n'+((typeof _autoDraftScreenAppendix==='function')?_autoDraftScreenAppendix(appendix):appendix)):t;
     const keys=['hpi','ros','exam','assessment','plan'];
     const label={hpi:'HPI',ros:'ROS',exam:'EXAM',assessment:'ASSESSMENT',plan:'PLAN'};
     const rows=b=>{for(const k of keys)if(!String((b[k]||[]).join('\n')).trim())return null;return keys.map(k=>label[k]+':\n'+String(b[k].join('\n')).trim()).join('\n\n');};
     const flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, lines=src.split('\n');
     let b={}, cur='', order=[], first=lines.find(line=>line.trim())||'';
     if(!/^\s*(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*:?/i.test(first)) for(const line of lines){const m=flat.exec(line);if(m){const k=m[1].toLowerCase();if(b[k])return null;b[k]=[];cur=k;order.push(k);if(m[2].trim())b[k].push(m[2]);}else{if(!cur&&line.trim())return null;if(cur)b[cur].push(line);}}
-    if(order.join('|')===keys.join('|')){const out=rows(b);if(out)return out;}
+    if(order.join('|')===keys.join('|')){const out=rows(b);if(out)return withApp(out);}
     const top=/^\s*(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, wrapped={}, topOrder=[];let topKey='';
     for(const line of lines){const m=top.exec(line);if(m){const k=m[1].toLowerCase();if(wrapped[k])return null;wrapped[k]=[];topOrder.push(k);topKey=k;if(m[2].trim())wrapped[k].push(m[2]);}else{if(!topKey&&line.trim())return null;if(topKey)wrapped[topKey].push(line);}}
     if(topOrder.join('|')!=='subjective|objective|assessment|plan')return null;
     function nested(input, allowed){const out={}, seq=[], seen={};let active='';for(const line of input){const m=/^\s*(HPI|ROS|PHYSICAL\s+EXAM|EXAM)\s*:?\s*(.*)$/i.exec(line);if(m&&allowed[m[1].toLowerCase()]){let k=m[1].toLowerCase();if(k==='physical exam')k='exam';if(seen[k])return null;seen[k]=1;seq.push(k);active=k;out[k]=[];if(m[2].trim())out[k].push(m[2]);}else{if(/^\s*[A-Z][A-Z /&-]{1,32}:/.test(line)||(!active&&line.trim()))return null;if(active)out[active].push(line);}}return {out:out,seq:seq};}
     const subj=nested(wrapped.subjective,{hpi:1,ros:1}), obj=nested(wrapped.objective,{exam:1,'physical exam':1}); if(!subj||!obj||subj.seq.join('|')!=='hpi|ros'||obj.seq.join('|')!=='exam')return null;
-    return rows({hpi:subj.out.hpi||[],ros:subj.out.ros||[],exam:obj.out.exam||[],assessment:wrapped.assessment||[],plan:wrapped.plan||[]})||null;
+    return withApp(rows({hpi:subj.out.hpi||[],ros:subj.out.ros||[],exam:obj.out.exam||[],assessment:wrapped.assessment||[],plan:wrapped.plan||[]})||null);
   }catch(e){return null;}
 }
 function _reorderNoteForStyle(note, style){
@@ -30529,9 +30564,14 @@ function _reorderNoteForStyle(note, style){
     if(!note) return note;
     if(style==='soap') return _flatSoapNote(note)||note;
     if(style!=='apso') return note;
+    /* autodraft-1.1.0: same appendix rule for APSO - marked carried blocks are
+       lifted out first so the reorder cannot drag them to the front glued to
+       Plan, then re-attached at the end. */
+    var apsoAppendix='', apsoCore=note;
+    try{ if(typeof _autoDraftSplitCarried==='function'){ var spA=_autoDraftSplitCarried(note); if(spA&&spA.appendix){ apsoCore=String(spA.core||'').trim(); apsoAppendix=spA.appendix; } } }catch(eCarryA){}
     var hdrRe=/^\s{0,6}(?:[-*•]\s*)?(subjective|objective|hpi|ros|exam|physical\s+exam|assessment(?:\s*(?:and|&|\/)\s*plan)?|plan|assessment)\b[^\n]*?:/i;
     function classify(h){ h=String(h).toLowerCase(); if(/assessment/.test(h)&&/plan/.test(h)) return 'AP'; if(/assessment/.test(h)) return 'A'; if(/\bplan\b/.test(h)) return 'P'; if(/subjective|\bhpi\b|\bros\b/.test(h)) return 'S'; if(/objective|\bexam\b|physical\s+exam/.test(h)) return 'O'; return 'other'; }
-    var lines=note.split('\n'); var segs=[]; var cur={cls:'pre',lines:[]};
+    var lines=apsoCore.split('\n'); var segs=[]; var cur={cls:'pre',lines:[]};
     lines.forEach(function(ln){ if(hdrRe.test(ln)){ segs.push(cur); cur={cls:classify(ln),lines:[ln]}; } else cur.lines.push(ln); });
     segs.push(cur);
     var hasA=segs.some(function(s){return s.cls==='A'||s.cls==='AP';});
@@ -30542,7 +30582,8 @@ function _reorderNoteForStyle(note, style){
     var body=[];
     order.forEach(function(c){ segs.forEach(function(s){ if(s.cls!=='pre' && s.cls===c) body.push(s); }); });
     var out=pre.concat(body).map(function(s){ return s.lines.join('\n').replace(/\s+$/,''); }).filter(function(x){return x.length;}).join('\n\n');
-    return out.replace(/\n{3,}/g,'\n\n').trim();
+    var reordered=out.replace(/\n{3,}/g,'\n\n').trim();
+    return apsoAppendix?(reordered+'\n\n'+((typeof _autoDraftScreenAppendix==='function')?_autoDraftScreenAppendix(apsoAppendix):apsoAppendix)):reordered;
   }catch(e){ return note; }
 }
 function getContext(){ const el=document.getElementById('contextBox'); return el?el.value.trim():''; }
@@ -30682,11 +30723,18 @@ function _mlsTranscriptHasDraftableTodayEvidence(text){
    safety rule, not a preference, and the gate is deliberately over-inclusive:
    losing a true PMH line is cheap, carrying a stale dose is not.
 
-   WHY 'soap' CARRIES NOTHING: _flatSoapNote() rewrites a SOAP note down to
-   exactly HPI/ROS/EXAM/ASSESSMENT/PLAN, and any trailing history block would be
-   swallowed into PLAN on the way through. Rather than fold history into today's
-   plan, the carry is SUPPRESSED under 'soap' and only the layout seed is sent.
-   The Settings copy and the per-visit row both say so in the doctor's words.
+   SOAP AND THE APPENDIX (autodraft-1.1.0): 'soap' used to suppress the carry
+   because _flatSoapNote() folded any trailing history block into PLAN. The
+   carry now rides under every style: a MARKED carried block (closed-allowlist
+   heading plus the exact marker) is recognised by _autoDraftSplitCarried(),
+   kept OUT of the five-section parse, and re-attached AFTER the flat sections
+   in the DISPLAY note only. Three independent locks keep it display-only:
+     1. _flatSoapNote()/_reorderNoteForStyle() re-attach it after the sections;
+     2. every athena_note derivation door (_mlsAthenaNoteWithVisitComment and
+        the legacy result.note fallback) strips marked blocks first;
+     3. _mlsValidateAthenaNote() REFUSES any line carrying the marker, so a
+        leak that survives 1-2 fails closed instead of reaching athenaOne.
+   athena_note therefore stays exactly HPI/ROS/EXAM/ASSESSMENT/PLAN.
    ============================================================================= */
 var AUTODRAFT_MARKER_TEXT='carried from last visit - review';
 var AUTODRAFT_MARKER='('+AUTODRAFT_MARKER_TEXT+')';
@@ -30698,9 +30746,9 @@ var AUTODRAFT_CARRY=[
   {name:'SOCIAL HISTORY',        re:/^(?:social\s+history|social\s+hx|sh|shx)$/i},
   {name:'ALLERGIES',             re:/^(?:allergies|allergy|drug\s+allergies)$/i}
 ];
-/* Note styles with room for a stable-history section. 'soap' is absent on
-   purpose - see the header. */
-var AUTODRAFT_CARRY_STYLES={hp:true,narrative:true,problem:true,apso:true};
+/* Every style carries. Under 'soap'/'apso' the carried blocks live in a marked
+   display-only appendix after the sections - see the header. */
+var AUTODRAFT_CARRY_STYLES={hp:true,narrative:true,problem:true,apso:true,soap:true};
 /* Section names accepted as headings even in Title Case. ALL-CAPS lines are
    accepted on their own. */
 var AUTODRAFT_KNOWN=[
@@ -30764,6 +30812,91 @@ function _autoDraftCarryName(head){
   for(var i=0;i<AUTODRAFT_CARRY.length;i++)if(AUTODRAFT_CARRY[i].re.test(h))return AUTODRAFT_CARRY[i].name;
   return '';
 }
+/* autodraft-1.1.0 v3: the appendix boundary is never re-parsed out of free
+   text alone - two adversarial rounds measured every regex-only boundary
+   trading SWALLOW (real sections silently deleted from athena_note) for
+   SPILL (stale history validated into PLAN). The boundary is DECLARED:
+   1. PRIMARY - the seed has the model wrap the whole carried appendix in two
+      distinctive sentinel lines; everything between them is appendix, with
+      no content heuristics. A five-flat heading inside the block still
+      closes it (defense against a dropped END sentinel swallowing a real
+      section); a missing END otherwise runs to end-of-note.
+   2. SECONDARY - an un-sentineled block is lifted only from a STRICT marked
+      heading: closed-allowlist head + a parenthetical naming a
+      last/prior/previous visit + colon, ALONE on its line (an inline mention
+      never lifts). It ends at any five-flat heading, or at a known heading
+      that follows a BLANK line - carried prose like "Labs: A1c 7.1" is
+      contiguous with its block and stays in it (measured spill class).
+   3. The validator backstop refuses machinery-shaped remnants (see there),
+      so what neither recognizer lifts fails CLOSED at the athena door.
+   Never throws; on any doubt the text stays exactly where it was. */
+var AUTODRAFT_SENTINEL_BEGIN='==== CARRIED HISTORY (from last visit - review; not written today) ====';
+var AUTODRAFT_SENTINEL_END='==== END CARRIED HISTORY ====';
+var AUTODRAFT_SENTINEL_BEGIN_RE=/^\s*={2,}\s*CARRIED\s+HISTORY\b[^\n]*$/i;
+var AUTODRAFT_SENTINEL_END_RE=/^\s*={2,}\s*END\s+CARRIED\s+HISTORY\b[^\n]*$/i;
+var AUTODRAFT_FIVEFLAT_RE=/^\s*(?:HPI|ROS|EXAM|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE)\s*:(?:\s|$)/i;
+var AUTODRAFT_SPLIT_HEAD=/^\s*(?:[-*#>]+\s*)?([A-Za-z][A-Za-z0-9 &/'.-]{0,48}?)\s*\(([^)\n]{0,80})\)\s*:?\s*$/;
+function _autoDraftMarkedHead(ln){
+  var m=AUTODRAFT_SPLIT_HEAD.exec(String(ln==null?'':ln));
+  return !!(m&&_autoDraftCarryName(m[1])&&/(?:last|prior|previous)\s+visit/i.test(m[2]));
+}
+function _autoDraftStopHead(ln,prevBlank){
+  var s=String(ln==null?'':ln);
+  if(AUTODRAFT_FIVEFLAT_RE.test(s))return true;
+  if(!prevBlank)return false;
+  var m=/^\s*(?:[-*#>]+\s*)?([A-Za-z][A-Za-z0-9 &/'().-]{0,48}?)\s*:(?:\s|$)/.exec(s);
+  if(!m)return false;
+  var h=String(m[1]).replace(/\s+/g,' ').trim();
+  if(/[.?!,;]$/.test(h)||h.split(/\s+/).filter(Boolean).length>6)return false;
+  if(/^(?:addendum|comment|attestation|signature|patient\s+instructions)$/i.test(h))return true;
+  for(var j=0;j<AUTODRAFT_KNOWN.length;j++)if(AUTODRAFT_KNOWN[j].test(h))return true;
+  return /^[A-Z0-9 &/()'.-]+$/.test(h)&&/[A-Z]/.test(h)&&/\s/.test(h);
+}
+function _autoDraftSplitCarried(text){
+  try{
+    var src=String(text==null?'':text).replace(/\r\n?/g,'\n');
+    if(!/carried/i.test(src))return {core:src,appendix:''};
+    var lines=src.split('\n'), core=[], app=[], mode='core', prevBlank=true, took=false;
+    for(var i=0;i<lines.length;i++){
+      var ln=lines[i];
+      if(mode!=='sent'&&!AUTODRAFT_SENTINEL_END_RE.test(ln)&&AUTODRAFT_SENTINEL_BEGIN_RE.test(ln)){ mode='sent'; app.push(ln); took=true; prevBlank=false; continue; }
+      if(mode==='sent'){
+        if(AUTODRAFT_SENTINEL_END_RE.test(ln)){ app.push(ln); mode='core'; prevBlank=false; continue; }
+        if(AUTODRAFT_FIVEFLAT_RE.test(ln)){ mode='core'; core.push(ln); prevBlank=false; continue; }
+        app.push(ln); prevBlank=!ln.trim(); continue;
+      }
+      if(_autoDraftMarkedHead(ln)){ mode='blk'; app.push(ln); took=true; prevBlank=false; continue; }
+      if(mode==='blk'){
+        if(_autoDraftStopHead(ln,prevBlank)){ mode='core'; core.push(ln); }
+        else app.push(ln);
+        prevBlank=!ln.trim(); continue;
+      }
+      core.push(ln); prevBlank=!ln.trim();
+    }
+    if(!took)return {core:src,appendix:''};
+    return {core:core.join('\n').replace(/\n{3,}/g,'\n\n').replace(/\s+$/,''),appendix:app.join('\n').replace(/\n{3,}/g,'\n\n').trim()};
+  }catch(e){ return {core:String(text==null?'':text),appendix:''}; }
+}
+function _autoDraftStripCarried(text){
+  var sp=_autoDraftSplitCarried(text);
+  return (sp&&typeof sp.core==='string')?sp.core:String(text==null?'':text);
+}
+/* The displayed appendix is MODEL output. The seed's carried lines are dose-
+   free by construction, so a dose line here means the model added one - and
+   the medications-are-documented-fresh rule outranks displaying it. Withheld
+   lines are counted out loud, never silently. */
+function _autoDraftScreenAppendix(appendix){
+  try{
+    var lines=String(appendix==null?'':appendix).split('\n'), out=[], dropped=0;
+    for(var i=0;i<lines.length;i++){
+      var ln=lines[i];
+      if(ln.trim()&&!_autoDraftMarkedHead(ln)&&_autoDraftDoseLine(ln)){ dropped++; continue; }
+      out.push(ln);
+    }
+    if(dropped)out.push('('+dropped+' medication/dose line'+(dropped===1?'':'s')+' withheld - document medications fresh today)');
+    return out.join('\n');
+  }catch(e){ return String(appendix==null?'':appendix); }
+}
 /* The most recent SAVED, FINISHED visit note in this patient's chart. A draft,
    an op note and a raw Athena chart import are not the doctor's visit note and
    are never used as a seed. */
@@ -30780,14 +30913,37 @@ function _autoDraftPriorNote(patientId,excludeId){
     var kind=String(n.kind||'').toLowerCase();
     if(kind&&kind!=='soap'&&kind!=='visit'&&kind!=='note')continue;
     if(/athena\s+chart\s+import/i.test(String(n.cc||'')))continue;
-    if(String(n.text||'').replace(/\s+/g,'').length<40)continue;
+    /* autodraft-1.1.0: a normally saved visit note stores its content under
+       `soap`, not `text` - reading only .text meant the carry NEVER found a
+       real prior note in production (pre-existing since 1.0.0, measured). */
+    if(String(n.text||n.soap||'').replace(/\s+/g,'').length<40)continue;
     var ts=Number(n.updated||n.created||0); if(!isFinite(ts))ts=0;
     if(ts>bestTs){ bestTs=ts; best=n; }
   }
   return best;
 }
+/* autodraft-1.1.0: a prior note saved by THIS feature ends in a sentinel
+   appendix whose marked headings nothing downstream would re-recognise as
+   history sections - the carry chain died after exactly one visit (measured).
+   Unwrap: appendix headings become plain allowlist headings again, sentinel
+   and withheld-notice lines drop, and the seed builder sees ordinary
+   sections. */
+function _autoDraftUnwrapPrior(text){
+  try{
+    var sp=_autoDraftSplitCarried(text);
+    if(!sp||!sp.appendix)return String(text==null?'':text);
+    var app=sp.appendix.split('\n').filter(function(l){
+      return !AUTODRAFT_SENTINEL_BEGIN_RE.test(l)&&!AUTODRAFT_SENTINEL_END_RE.test(l)&&!/withheld - document medications fresh today\)\s*$/.test(l);
+    }).map(function(l){
+      var m=AUTODRAFT_SPLIT_HEAD.exec(l);
+      if(m&&_autoDraftCarryName(m[1]))return _autoDraftCarryName(m[1])+':';
+      return l;
+    });
+    return sp.core+'\n\n'+app.join('\n');
+  }catch(e){ return String(text==null?'':text); }
+}
 function _autoDraftBuildSeed(priorText,style){
-  var sections=_autoDraftSections(priorText), skeleton=[], carried=[], dropped=0, seenHead={}, seenCarry={};
+  var sections=_autoDraftSections(_autoDraftUnwrapPrior(priorText)), skeleton=[], carried=[], dropped=0, seenHead={}, seenCarry={};
   var carryAllowed=AUTODRAFT_CARRY_STYLES[String(style||'').toLowerCase()]===true;
   for(var i=0;i<sections.length;i++){
     var s=sections[i], head=String(s.heading||'').replace(/\s+/g,' ').trim(); if(!head)continue;
@@ -30820,6 +30976,13 @@ function _autoDraftSeedBlock(seed,meta){
   out.push('');
   if(seed.carried.length){
     out.push('2. CARRIED_FORWARD. The blocks below are this patient\'s STABLE HISTORY, copied out of the prior note word for word. Reproduce each block in the "note" field character for character under its own heading, keeping the '+AUTODRAFT_MARKER+' marker on the heading line. Do not reword, summarise, expand, merge, re-order or add to them, and do not repeat them inside any other section.');
+    if(/^(?:soap|apso)$/i.test(String((meta&&meta.style)||''))){
+      out.push('This style fixes the note\'s sections, so - as the ONE exception to that section list, applying to the "note" field only - reproduce the carried history as ONE block AFTER the final section: first this exact line, copied character for character:');
+      out.push(AUTODRAFT_SENTINEL_BEGIN);
+      out.push('then every carried block exactly as given below, then this exact closing line:');
+      out.push(AUTODRAFT_SENTINEL_END);
+      out.push('The athena_note field never gains any of this and stays exactly its five sections.');
+    }
     out.push('');
     out.push('CARRIED_FORWARD_BEGIN');
     for(var i=0;i<seed.carried.length;i++){
@@ -30852,10 +31015,10 @@ function _mlsAutoDraftPriorSeed(style){
     var exclude=''; try{ exclude=(typeof currentNoteId!=='undefined'&&currentNoteId)?String(currentNoteId):''; }catch(eEx){}
     var prior=_autoDraftPriorNote(pid,exclude); if(!prior)return null;
     var st=String(style||((typeof getGenStyle==='function')?getGenStyle():'soap')||'soap').toLowerCase();
-    var seed=_autoDraftBuildSeed(String(prior.text||''),st);
+    var seed=_autoDraftBuildSeed(String(prior.text||prior.soap||''),st);
     if(!seed.skeleton.length&&!seed.carried.length)return null;
     var when=''; try{ var d=new Date(Number(prior.updated||prior.created||0)); if(!isNaN(d.getTime())&&d.getTime()>0)when=d.toLocaleDateString(); }catch(eW){}
-    var block=_autoDraftSeedBlock(seed,{when:when});
+    var block=_autoDraftSeedBlock(seed,{when:when,style:st});
     return block?{block:block,seed:seed,noteId:String(prior.id||''),when:when}:null;
   }catch(e){ return null; }
 }
@@ -30873,15 +31036,16 @@ function refreshAutoDraftPriorRow(){
     if(!hint)return;
     if(box&&box.checked===false){ hint.textContent='Off for this visit — today’s note will be written from today’s visit alone.'; return; }
     var st=(typeof getGenStyle==='function')?String(getGenStyle()||'soap').toLowerCase():'soap';
-    var seed=_autoDraftBuildSeed(String(prior.text||''),st);
+    var seed=_autoDraftBuildSeed(String(prior.text||prior.soap||''),st);
     var when=''; try{ var d=new Date(Number(prior.updated||prior.created||0)); if(!isNaN(d.getTime())&&d.getTime()>0)when=d.toLocaleDateString(); }catch(eW){}
     var src=when?('the note saved '+when):'their last saved note';
     if(seed.carried.length){
-      hint.textContent='Layout from '+src+', and '+seed.carried.map(function(c){return c.name.toLowerCase();}).join(', ')+' carried forward marked “'+AUTODRAFT_MARKER_TEXT+'”. Today’s HPI, exam and plan stay open; medications are never carried.';
+      var placeTail=/^(?:soap|apso)$/.test(st)?' They appear after the note’s sections, never inside them.':'';
+      hint.textContent='Layout from '+src+', and '+seed.carried.map(function(c){return c.name.toLowerCase();}).join(', ')+' carried forward marked “'+AUTODRAFT_MARKER_TEXT+'”. Today’s HPI, exam and plan stay open; medication doses are never carried.'+placeTail;
     }else if(AUTODRAFT_CARRY_STYLES[st]===true){
       hint.textContent='Layout from '+src+'. That note has no stable-history sections to carry forward.';
     }else{
-      hint.textContent='Layout from '+src+'. SOAP has no history sections — pick H&P under Style to carry past medical, surgical, family and social history forward.';
+      hint.textContent='Layout from '+src+'. This style seeds the layout only — history sections are not carried under it.';
     }
   }catch(e){}
 }
@@ -32463,7 +32627,17 @@ function _athenaBuildPlan(binding){
   }else{
     try{
       var parser=window.__mlsWriteFlow&&window.__mlsWriteFlow.parseGeneratedSoapSections;
-      if(typeof parser==='function') parsedSoap=parser(noteText);
+      /* autodraft-1.1.0: a typed/pasted note can contain a carried appendix
+         (e.g. copied from an older generated display note); the five clinical
+         destinations must never receive it, and THIS branch has no validator
+         behind it - so any surviving carried/sentinel remnant demotes the
+         write to the generic NOTE TEXT row, where the text ships verbatim
+         with its marker visible. */
+      if(typeof parser==='function'){
+        var __typedSrc=(typeof _autoDraftStripCarried==='function')?_autoDraftStripCarried(noteText):noteText;
+        if(/\([^)\n]*carried[^)\n]*\)|={2,}\s*(?:END\s+)?CARRIED\s+HISTORY/i.test(__typedSrc)) parsedSoap=null;
+        else parsedSoap=parser(__typedSrc);
+      }
     }catch(eSoap){ parsedSoap=null; }
   }
   var parsedSoapValid=!!(parsedSoap&&parsedSoap.ok&&Array.isArray(parsedSoap.sections)&&parsedSoap.sections.length===5);

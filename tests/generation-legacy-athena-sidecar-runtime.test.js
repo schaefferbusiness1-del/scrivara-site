@@ -36,7 +36,11 @@ function extractFunction(source, marker) {
 let checks = 0;
 for (const file of shells) {
   const source = fs.readFileSync(path.join(root, file), 'utf8');
-  assert(source.includes('result.athena_note==null?result.note:result.athena_note'), file + ': legacy sidecar fallback missing');
+  /* re-pinned to autodraft-1.1.0: the legacy fallback still validates the
+     display note, but strips the marked carried-history appendix (display-only
+     by contract) before it can become athena_note. The real sidecar is never
+     cleaned - a leaked marker there fails validation closed. */
+  assert(source.includes("result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note"), file + ': legacy sidecar fallback missing');
   checks += 1;
   const sandbox = {};
   const canonicalStart = source.indexOf('function _mlsAthenaNoteQualityError(reason)');
