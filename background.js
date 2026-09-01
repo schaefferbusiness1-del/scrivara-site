@@ -1114,7 +1114,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         return { encounterId: encId, appointmentId: digits(appts[0]), provider: text(provs[0]), visitDate: visitDate };
       } catch (eHet) { hetCommit(); return null; }
     }
-    function encounterMetadataFor(frame, actionRoot, identityRoot) {
+    function encounterMetadataFor(frame, actionRoot, identityRoot, expectedVisitKey) {
       var root = actionRoot, guard = 0;
       while (root && guard++ < 18) {
         var tag = String(root.tagName || '').toUpperCase();
@@ -1124,6 +1124,8 @@ async function mlsAthenaActionV2DriverFn(req) {
           if (/\b(encounter|visit|clinical|chart|documentation)\b/.test(descriptor)) {
             var dates = discoverLabeled(root, 'date'), providers = discoverLabeled(root, 'provider');
             if (dates.length === 1 && providers.length === 1) return { root: root, visitDate: dateKey(dates[0]), provider: text(providers[0]) };
+            /* ckmeta-1.0.0 (3.0.99): a CHECKED-IN header paints a second labeled date (arrival), so the strictly-single count refused the surface forever (meta-missing -> probe-frame-missing -> ladder re-clicks a row that is already open; measured 2026-08-31). het-1.2.0 shape: with more than one date, bind IFF exactly one equals the caller's EXPECTED visit date - the downstream visit-date gate re-checks the same equality, so a wrong date can never survive. Provider stays strictly single. */
+            if (expectedVisitKey && dates.length > 1 && providers.length === 1) { var ckHits = []; for (var ckI = 0; ckI < dates.length; ckI++) { if (dateKey(dates[ckI]) === expectedVisitKey) ckHits.push(dates[ckI]); } if (ckHits.length === 1) return { root: root, visitDate: dateKey(ckHits[0]), provider: text(providers[0]), checkedInDateAccepted: true }; }
           }
         }
         root = parentAcrossRoots(root);
@@ -1286,7 +1288,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (expectedContext.encounterId && digits(expectedContext.encounterId) !== digits(eid)) { if (hetStage) hetDiag.postGate = 'encounter-id'; continue; }
       var observedAppointmentId = hetStage ? hetStage.appointmentId : appointmentIdFor(fr, targetRoot, observedIdentity.root);
       if (digits(expectedContext.appointmentId) && observedAppointmentId !== digits(expectedContext.appointmentId)) { if (hetStage) hetDiag.postGate = 'appointment-id'; continue; }
-      var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root);
+      var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root, dateKey(expectedContext.visitDate));
       if (!encounterMeta || !encounterMeta.visitDate || !encounterMeta.provider) { if (hetStage) hetDiag.postGate = 'meta-missing'; continue; }
       if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) { if (hetStage) hetDiag.postGate = 'visit-date'; continue; }
       if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) { if (hetStage) hetDiag.postGate = 'provider'; continue; }
@@ -2298,7 +2300,7 @@ function mlsAthenaTeachWatcherFn(config) {
   }
   function norm(v) { return clean(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function digits(v) { return clean(v).replace(/\D/g, ''); }
-  function dateKey(v) { var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(clean(v)); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
+  function dateKey(v) { /* isodob-1.0.0 (3.0.99): an ISO DOB (1962-03-04) must not be scanned by the M/D/Y reader - it first matches inside the YEAR and reads a different person (measured b1157 app-side; this is the extension twin). Anchored ISO branch first; the M/D/Y branch below is unchanged. */ var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(clean(v)); if (iso) { return Number(iso[3]) + '/' + Number(iso[4]) + '/' + iso[2]; } var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(clean(v)); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
   function simpleHash(v) { var s = String(v || ''), h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8); }
   function patientKey(p) { p = p || {}; return [clean(p.patientId), norm(p.name), dateKey(p.dob)].join('|'); }
   function noteNorm(v) { return String(v == null ? '' : v).replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').split('\n').map(function (line) { return line.replace(/[ \t]+$/g, ''); }).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
@@ -13916,6 +13918,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               if (vis(row)) {
                 var t = rowText(row).toLowerCase();
                 if (t && t.length < 700 && lname && t.indexOf(lname) !== -1 && (!fname || t.indexOf(fname) !== -1)) { matchedRow = row; break; }
+                /* rowfold-1.0.0 (3.0.99): id-anchored echo check tolerates apostrophes/hyphens/welds - letters-only fold, additive fallback only. */
+                if (t && t.length < 700 && lname) { var tF0 = t.replace(/[^a-z]/g, ''), lF0 = String(lname).replace(/[^a-z]/g, ''), fF0 = String(fname || '').replace(/[^a-z]/g, ''); if (lF0 && tF0.indexOf(lF0) !== -1 && (!fF0 || tF0.indexOf(fF0) !== -1)) { matchedRow = row; break; } }
               }
               row = row.parentElement;
             }

@@ -1,5 +1,5 @@
 {
-  "version": "3.0.98",
+  "version": "3.0.99",
   "minChrome": 116,
-  "notes": "v3.0.98 - Schedule intelligence: every pulled appointment row now carries its athena status (checked in, checked out, arrived, and more), so MLS reads notes for patients already seen first and month reports can tell a seen visit from a booked one. Everything from v3.0.97 remains. Requires Chrome 116+."
+  "notes": "v3.0.99 - Write reliability for every patient: a date of birth stored the international way (2006-03-24) is no longer misread as a different person; a patient whose name renders with an apostrophe, hyphen or squeezed spelling is still found on their exact appointment row; and a patient who is already CHECKED IN no longer blocks the write chain. Everything from v3.0.98 remains. Requires Chrome 116+."
 }
