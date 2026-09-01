@@ -249,6 +249,11 @@ function receiptCases() {
     safe: fn => fn(),
     summarize: () => ({ days: 1, complete: 0, empty: 0, withRows: 0, failed: 1, pending: 0, months: 1, completeMonths: 0, needsAttention: 0, attention: [] }),
     queueUiRefresh() {}, storageFailureReason: () => 'metadata-persist-failed',
+    /* pullheal-1.0.0: writeManifestAt now names WHICH of its four arms
+       refused, into a PHI-free diag ring. The returned code is unchanged, so
+       this gate keeps asking exactly what it asked before. */
+    persistFailure: (stage, key, reason) => ({ ok: false, reason: String(reason || 'metadata-persist-failed'), stage: String(stage) }),
+    healKick() {},
     JSON, String, Object
   });
   vm.runInContext(persist + '\nthis.__persist = writeManifestAt;', persistCtx);

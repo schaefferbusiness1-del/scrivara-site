@@ -55190,7 +55190,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* pullone-1.0.0: the strip's ONE pull control must survive the collapse -
        the strip is the surface the doctor reads (the card ships COLLAPSED), so
        hiding the control that fills it would put the only pull behind Expand. */
-    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled):not(#pvrPullOne):not(#profImportSuspect){display:none!important;}',
+    /* tn-1.0.0 adds #pf2TeamNotes to this allowlist. The card ships
+       COLLAPSED, so anything not named here is display:none in the state the
+       doctor normally sees - and a shared-notes surface nobody can see without
+       first expanding the full profile is not a shared-notes surface. Its one
+       collapsed line ("Team notes - 3") is the whole point: the count is
+       readable at a glance and the thread costs nothing until it is opened. */
+    '#profileCard.pf2-collapsed > *:not(h2):not(#pf2Quick):not(#pf2ExpandAll):not(#profUnpulled):not(#pvrPullOne):not(#profImportSuspect):not(#pf2TeamNotes){display:none!important;}',
     '#profileCard.pf2-collapsed #pf2SumExtra > *{display:none!important;}',
     '.pf2-sec.open .pf2-b{display:block;}',
     '.pf2-b > *{margin-top:8px !important;}',
@@ -56157,6 +56163,38 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { go.click(); return true; } catch (e3) { return false; }
   }
 
+  /* phrefuse-1.0.0: turn one of startAthenaAction's pre-sheet refusals into a
+     sentence for a doctor who is not in the room. The writeflow answers a local
+     caller through actionSay(); it has no callback, so the machine token on the
+     resolved value is all that crosses the gap.
+
+     THREE TIERS, most-true first. A token this file recognises gets the sentence
+     that also names the next move. Anything carrying a space is already a human
+     sentence - the read-only probe's own `error` reaches here that way, and the
+     extension's wording about the chart in front of it beats anything invented
+     here. An unrecognised token is printed verbatim rather than smoothed over:
+     the phone saying a word the doctor can read back is worth more than a tidy
+     sentence that hides which refusal fired. */
+  var PHSEND_REFUSALS = {
+    'unified-review-open': 'Another Athena review is already open on your office computer - most likely an op-note batch. Finish or close it there, then send again. Nothing was sent.',
+    'busy': 'Another Athena action is already awaiting confirmation on your office computer. Finish or cancel it there, then send again. Nothing was sent.',
+    'incomplete-patient-identity': 'That patient needs both a name and a date of birth on the office computer before Athena can be checked. Nothing was sent.',
+    'no-reviewed-note': 'The reviewed note was empty by the time the office computer read it. Nothing was sent.',
+    'exact-encounter-context-missing': 'Your office computer cannot tie this note to one exact Athena visit (date, provider, and an appointment or encounter id). Pull or re-bind that day there, then send again. Nothing was sent.',
+    'historical-encounter-context-missing': 'Your office computer cannot tie this note to one exact Athena visit. Pull or re-bind that day there, then send again. Nothing was sent.',
+    'unsupported-action': 'Your office computer does not support that action. Nothing was sent.',
+    'manual-only-final-action': 'That action has to be completed by hand in Athena. Nothing was sent.'
+  };
+  function phsendRefusalLine(out) {
+    var reason = '';
+    try { reason = String((out && (out.error || out.message || out.reason)) || '').trim(); } catch (e) { reason = ''; }
+    if (Object.prototype.hasOwnProperty.call(PHSEND_REFUSALS, reason)) return PHSEND_REFUSALS[reason];
+    if (reason && /\s/.test(reason)) return reason + ' Nothing was sent.';
+    return 'Your office computer refused this note before anything was opened in Athena (' +
+      (reason || 'no reason given') + '). Nothing was sent.';
+  }
+  api.phsendRefusalLine = phsendRefusalLine;
+
   /* THE OFFICE COMPUTER'S HALF. */
   function runSendNote(job) {
     return new Promise(function (res) {
@@ -56285,12 +56323,53 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }
       };
 
-      var startedOk = true;
-      try { wf.startAthenaAction(action, opts); } catch (e) { startedOk = false; }
+      var startedOk = true, startedPromise = null;
+      try { startedPromise = wf.startAthenaAction(action, opts); } catch (e) { startedOk = false; }
       if (!startedOk) {
         stopTimers(); lb(false);
         finish({ ok: false, error: 'This computer could not start the Athena check. Nothing was opened.' });
         return;
+      }
+      /* ===== phrefuse-1.0.0 (2026-09-01) =====================================
+       * startAthenaAction REFUSES in eleven places before the confirmation sheet
+       * is ever built - unsupported action, another review already open, another
+       * action running, missing patient identity, empty reviewed note, no exact
+       * encounter binding, and the read-only probe coming back not-ok. Every one
+       * of those returns a rejected promise value and NONE of them calls
+       * opts.onResult, because a locally-started action gets its answer from
+       * actionSay() painting the desk status line and toasting - a surface a
+       * doctor two rooms away cannot see.
+       *
+       * This runner used to discard the returned promise entirely. So a refused
+       * send did not fail: it went quiet. sawSheet stayed false, the beat kept
+       * saying "Waiting for your confirmation", and nine minutes later the phone
+       * reported "Nobody confirmed ... within nine minutes" - blaming the doctor
+       * for a refusal the computer made in the first second.
+       *
+       * opbatch made that routine rather than rare. Before it, the unified
+       * review held one note at a time; an op-note batch now holds
+       * unifiedAthenaState open across a whole day's queue, so
+       * 'unified-review-open' is the ordinary answer to a phone send mid-batch.
+       *
+       * NOTHING HERE CHANGES A GATE. The refusals are the writeflow's and they
+       * are untouched; this only carries the one already made back to the person
+       * waiting on it, and only when the flow is provably dead. A resolved
+       * ok === true means the sheet is up and the answer still arrives through
+       * onResult, exactly as before - and finish() is idempotent, so a refusal
+       * that DID reach onResult (showActionConfirm's own refuseAction path)
+       * cannot be double-reported.
+       * ====================================================================*/
+      if (startedPromise && typeof startedPromise.then === 'function') {
+        startedPromise.then(function (out) {
+          if (settled) return;
+          if (out && out.ok === true) return;
+          stopTimers(); lb(false);
+          finish({ ok: false, error: phsendRefusalLine(out) });
+        }, function () {
+          if (settled) return;
+          stopTimers(); lb(false);
+          finish({ ok: false, error: 'This computer stopped partway through the Athena check and did not say why. Nothing was written - check the open encounter there before sending again.' });
+        });
       }
       toast(remote
         ? 'A note arrived from your phone - confirm it there and it will be written here.'
@@ -58526,7 +58605,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_link.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_link.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_provider_link.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* plv-1.0.0: deferred past first paint, exactly like the auto-merge beside it - a provider derivation is a late surface and has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pull_reconcile.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pull_reconcile.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_pull_reconcile.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* reconcile-1.0.0: athena-as-fact day reconciliation + the post-pull lawful duplicate sweep. Deferred past first paint beside the auto-merge it drives - both are post-pull surfaces and neither has a claim on the sign-in seconds (owner 5s bar). */
-;(function(){try{
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_team_notes.js"]'))return;var s=document.createElement('script');s.src='feat_mls_team_notes.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_team_notes.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* tn-1.0.0: deferred past first paint, exactly like the provider link and the auto-merge beside it - the patient card is a late surface and has no claim on the sign-in seconds (owner 5s bar) */;(function(){try{
   var A='feat_mls_cross_day_context.js',V='xdc-2.0.4',old=window.__mlsCrossDayContext||null;
   if(old&&old.installed&&old.version===V)return;
   if(old){try{if(typeof old.revert==='function')old.revert();}catch(e0){}try{delete window.__mlsCrossDayContext;}catch(e1){window.__mlsCrossDayContext=null;}}

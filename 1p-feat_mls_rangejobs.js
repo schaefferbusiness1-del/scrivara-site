@@ -160,7 +160,105 @@
       ? 'storage-full' : 'metadata-persist-failed';
   }
 
-  function currentManifestKey() {
+  /* ===== pullheal-1.0.0 instrumentation (name the failing write) ===========
+     MEASURED live 2026-09-01 on a month pull: status 'storage-failed' with
+     reason 'metadata-persist-failed' recurred while localStorage was healthy
+     (1.7MB) and api.resume() cured it EVERY time. 'metadata-persist-failed' is
+     returned from FOUR different places in writeManifestAt - an empty computed
+     key, a failed serialize, a read-back that did not match, and a throw - and
+     the durable manifest records only the one collapsed code, so nobody could
+     tell which. The suspicion is the computed key, not the store: window.uns()
+     is account-scoped and keys shaped `sf_u::undefined::` exist on this
+     machine, so a scope flap between one write and the next would present as
+     exactly this. These rings measure that, PHI-free: bounded stage codes, a
+     key SHAPE (the suffix plus whether the account segment is real, literally
+     'undefined', or the logged-out '_'), counts, and booleans. Never a key,
+     never an account, never a hash of either. In memory only. */
+  var PERSIST_DIAG_MAX = 20;
+  var SCOPE_DIAG_MAX = 20;
+  var persistDiag = [];
+  var scopeWatch = { last: null, flaps: 0, ring: [] };
+  function keyShape(key) {
+    key = String(key == null ? '' : key);
+    if (!key) return 'empty';
+    var parts = /^(.*?)::(.*)::([A-Za-z0-9_]+)$/.exec(key);
+    if (!parts) return 'unrecognized';
+    var account = parts[2];
+    var band = account === '_' ? 'logged-out'
+      : (account === 'undefined' || account === 'null' ? account : (account ? 'account' : 'blank'));
+    return cleanText(parts[1], 20) + '::' + band + '::' + cleanText(parts[3], 40);
+  }
+  function noteScope(key) {
+    if (scopeWatch.last === key) return key;
+    if (scopeWatch.last !== null) {
+      scopeWatch.flaps++;
+      scopeWatch.ring.push({ at: now(), from: keyShape(scopeWatch.last), to: keyShape(key) });
+      if (scopeWatch.ring.length > SCOPE_DIAG_MAX) scopeWatch.ring.shift();
+    }
+    scopeWatch.last = key;
+    return key;
+  }
+  /* Measured only on a failure - never on the hot success path. Bounded so a
+     store with thousands of keys cannot turn a diagnostic into a stall. */
+  function storeSizeChars() {
+    return safe(function () {
+      var total = 0, count = Math.min(400, Number(localStorage.length || 0));
+      for (var i = 0; i < count; i++) {
+        var name = localStorage.key(i);
+        total += String(name || '').length + String(localStorage.getItem(name) || '').length;
+      }
+      return total;
+    }, -1);
+  }
+  function persistFailure(stage, key, reason, wroteChars, readChars) {
+    var live = safe(currentManifestKey, '');
+    persistDiag.push({
+      at: now(), stage: String(stage || ''), reason: reasonCode(reason),
+      keyShape: keyShape(key), liveShape: keyShape(live),
+      /* THE question nobody had an answer to: did the computed key move
+         between the write and the read-back? */
+      keyMoved: !!(key && live && key !== live),
+      liveKeyMissing: !live,
+      scopeFlaps: Number(scopeWatch.flaps || 0),
+      wroteChars: Math.max(0, Number(wroteChars || 0)),
+      readChars: Number(readChars == null ? -1 : readChars),
+      storeChars: storeSizeChars()
+    });
+    if (persistDiag.length > PERSIST_DIAG_MAX) persistDiag.shift();
+    return { ok: false, reason: reasonCode(reason) };
+  }
+  /* ===== pullheal-1.0.0 (a day's failures belong to the extension that spent
+     them). MEASURED 2026-09-01: days settled 'needs-attention' at the attempt
+     cap because all three attempts were spent under an extension version whose
+     driver could not clear athena's CSRF interstitial. Fixing the extension
+     did not drain needs-attention - the cap is durable. So each spent attempt
+     records the extension version that spent it, and a day whose attempts were
+     spent under a STRICTLY OLDER extension re-arms itself. A day whose
+     attempts were spent under the CURRENT extension NEVER re-arms: the cap
+     must still stop a live broken loop. An unknown version proves nothing, so
+     it fails closed and the cap stands. */
+  var MAX_EXT_VERSION = 20;
+  function extVersionShape(value) {
+    value = cleanText(value, MAX_EXT_VERSION);
+    return /^\d{1,4}(?:\.\d{1,4}){0,3}$/.test(value) ? value : '';
+  }
+  function currentExtVersion() {
+    return extVersionShape(safe(function () { return window.__mlsExtReportedVersion; }, ''));
+  }
+  function compareExtVersions(left, right) {
+    left = extVersionShape(left); right = extVersionShape(right);
+    if (!left || !right) return null;
+    var a = left.split('.'), b = right.split('.');
+    for (var i = 0; i < 4; i++) {
+      var av = Number(a[i] || 0), bv = Number(b[i] || 0);
+      if (av !== bv) return av > bv ? 1 : -1;
+    }
+    return 0;
+  }
+  /* ===== end pullheal-1.0.0 instrumentation ===== */
+
+  function currentManifestKey() { return noteScope(computeManifestKey()); }
+  function computeManifestKey() {
     if (!isFn(window.uns)) return '';
     var key = safe(function () { return String(window.uns(MANIFEST_SUFFIX) || ''); }, '');
     var probe = safe(function () { return String(window.uns(MANIFEST_SCOPE_PROBE_SUFFIX) || ''); }, '');
@@ -275,18 +373,25 @@
   }
   /* ===== end p1-range-receipt-1.0.0 ===== */
   function writeManifestAt(key, manifest) {
-    if (!key || !manifest) return { ok: false, reason: 'metadata-persist-failed' };
+    /* pullheal-1.0.0: the four arms that all reported one code now each name
+       themselves in the diag ring. Behaviour and returned codes are unchanged. */
+    if (!key || !manifest) return persistFailure(key ? 'no-manifest' : 'no-key', key, 'metadata-persist-failed', 0, null);
     manifest.updatedAt = now();
     manifest.summary = summarize(manifest);
     var raw = safe(function () { return JSON.stringify(manifest); }, '');
-    if (!raw) return { ok: false, reason: 'metadata-persist-failed' };
+    if (!raw) return persistFailure('serialize-failed', key, 'metadata-persist-failed', 0, null);
     try {
       localStorage.setItem(key, raw);
-      if (localStorage.getItem(key) !== raw) return { ok: false, reason: 'metadata-persist-failed' };
+      var back = localStorage.getItem(key);
+      if (back !== raw) {
+        return persistFailure(back == null ? 'readback-absent' : 'readback-mismatch', key,
+          'metadata-persist-failed', raw.length, back == null ? -1 : String(back).length);
+      }
       queueUiRefresh(0);
+      healKick();
       return { ok: true };
     } catch (error) {
-      return { ok: false, reason: storageFailureReason(error) };
+      return persistFailure('setitem-threw', key, storageFailureReason(error), raw.length, null);
     }
   }
   function readRawAt(key) {
@@ -339,12 +444,19 @@
            stored status says - including manifests written before the cap
            existed. The cap is enforced on READ as well as on write. */
         if (dayStatus === 'retry' && dayAttempts >= DAY_ATTEMPT_CAP) dayStatus = 'needs-attention';
-        days[dayKey] = {
+        var dayOut = {
           status: dayStatus,
           reason: reasonCode(dayRaw.reason),
           attempts: dayAttempts,
           updatedAt: finiteStamp(dayRaw.updatedAt)
         };
+        /* pullheal-1.0.0: the extension version that spent this day's newest
+           attempt. Written only when it is a real dotted version, so every
+           manifest written before pullheal keeps its exact stored shape and a
+           garbage value can never mint a re-arm. */
+        var dayExtV = extVersionShape(dayRaw.attemptExtV);
+        if (dayExtV) dayOut.attemptExtV = dayExtV;
+        days[dayKey] = dayOut;
       }
       var sanitizedMonthStatus = MONTH_STATUS[String(monthRaw.status || '')] ? String(monthRaw.status) : 'retry';
       if (sanitizedMonthStatus === 'complete') {
@@ -621,6 +733,66 @@
     }
     return rearmed;
   }
+  /* ===== pullheal-1.0.0 (needs-attention drains itself after an extension fix)
+     THE RULE, exactly: a day settled 'needs-attention' re-arms iff it carries
+     an attemptExtV AND the CURRENT reported extension version is STRICTLY
+     NEWER than it. Every other case keeps the cap:
+       - no attemptExtV (pre-pullheal manifest, or no version was reported when
+         the attempt was spent)   -> keeps the cap; absence proves nothing.
+       - attemptExtV EQUAL to the current version -> keeps the cap. This is the
+         load-bearing half: a live broken loop must still stop.
+       - attemptExtV NEWER than current (a downgrade) -> keeps the cap.
+       - no current version reported                 -> nothing re-arms at all.
+     Days already retryable are untouched; only a settled day is re-armed. */
+  function rearmOutdatedVersionDays(manifest) {
+    var out = { rearmed: 0, from: '', to: currentExtVersion() };
+    if (!out.to || !manifest || !manifest.months) return out;
+    var months = Object.keys(manifest.months), stamp = now(), oldest = '';
+    for (var mi = 0; mi < months.length; mi++) {
+      var month = manifest.months[months[mi]], days = Object.keys(month.days), touched = false;
+      for (var di = 0; di < days.length; di++) {
+        var day = month.days[days[di]];
+        if (!day || day.status !== 'needs-attention') continue;
+        var spent = extVersionShape(day.attemptExtV);
+        if (!spent || compareExtVersions(out.to, spent) !== 1) continue;
+        day.status = 'retry'; day.attempts = 0; day.updatedAt = stamp;
+        delete day.attemptExtV;
+        if (!oldest || compareExtVersions(spent, oldest) === -1) oldest = spent;
+        out.rearmed++; touched = true;
+      }
+      if (touched && month.status === 'needs-attention') { month.status = 'retry'; month.updatedAt = stamp; }
+    }
+    out.from = oldest;
+    return out;
+  }
+  function rearmOutdatedVersions() {
+    var key = currentManifestKey();
+    if (!key || !sessionReady()) return Promise.resolve(refusal('signin'));
+    if (active) return Promise.resolve(refusal('job-busy', active.manifest));
+    if (!lockApi()) return Promise.resolve(refusal('range-lock-unavailable'));
+    return withAccountLock(key, function () {
+      if (active) return refusal('job-busy', active.manifest);
+      var read = readManifestAt(key), manifest = read.manifest;
+      if (!read.ok) return refusal(read.reason);
+      if (!manifest) return refusal('manifest-invalid');
+      var done = rearmOutdatedVersionDays(manifest);
+      if (!done.rearmed) {
+        return { ok: true, complete: false, status: manifest.status, reason: reasonCode(manifest.reason),
+          rearmed: 0, from: '', to: done.to, state: copy(manifest) };
+      }
+      /* The days are retryable again, so the job may no longer claim it is
+         settled. sanitizeManifest enforces the same invariant on every read;
+         stating it here makes the write itself honest. */
+      if (manifest.status === 'needs-attention' && anyRetryable(manifest)) {
+        manifest.status = 'waiting-retry'; manifest.reason = 'month-partial';
+      }
+      var saved = writeManifestAt(key, manifest);
+      if (!saved.ok) return refusal(saved.reason, manifest);
+      return { ok: true, complete: false, status: manifest.status, reason: reasonCode(manifest.reason),
+        rearmed: done.rearmed, from: done.from, to: done.to, state: copy(manifest) };
+    });
+  }
+  /* ===== end pullheal-1.0.0 version-scoped attempts ===== */
   function checkpointDay(ctx, monthKey, payload, seen) {
     if (!payload || typeof payload !== 'object') return false;
     /* A result that settles after an MLS account switch is not allowed to
@@ -650,7 +822,15 @@
     /* p1-range-continue-1.0.0: only a day Athena was actually DRIVEN through
        spends an attempt, and only such a day can reach the cap. */
     var attemptable = !complete && NON_ATTEMPT_REASONS[code] !== 1 && !isLoginReason(code);
-    if (first && attemptable) day.attempts = Math.min(1000, Number(day.attempts || 0) + 1);
+    if (first && attemptable) {
+      day.attempts = Math.min(1000, Number(day.attempts || 0) + 1);
+      /* pullheal-1.0.0: stamp the extension that spent THIS attempt. Versions
+         only move forward, so the stamp always names the newest extension that
+         has failed this day - which is exactly the version a later re-arm must
+         compare against. */
+      var spentUnder = currentExtVersion();
+      if (spentUnder) day.attemptExtV = spentUnder;
+    }
     day.status = complete ? 'complete'
       : (attemptable && Number(day.attempts || 0) >= DAY_ATTEMPT_CAP ? 'needs-attention' : 'retry');
     day.reason = code;
@@ -999,6 +1179,10 @@
       if (!manifest) return refusal('manifest-invalid');
       if (manifest.status === 'complete') return { ok: true, complete: true, status: 'complete', reason: 'complete', state: copy(manifest) };
       if (manifest.status === 'cancelled') return refusal('cancelled', manifest);
+      /* pullheal-1.0.0: before anything else, give back the attempts that were
+         spent under an extension that has since been fixed, and say so. */
+      var byVersion = rearmOutdatedVersionDays(manifest);
+      if (byVersion.rearmed) healNoteRearm(byVersion);
       /* p1-range-continue-1.0.0: a human pressing Resume on a settled job is a
          new intent - re-arm exactly the days that hit the attempt cap. */
       if (manifest.status === 'needs-attention') rearmAttention(manifest);
@@ -1253,10 +1437,12 @@
     }
     var count = progress.completeDays + ' of ' + progress.totalDays + ' days complete';
     var scope = manifest.kind === 'year' ? manifest.target : ('month ' + manifest.target);
-    if (manifest.status === 'complete') return 'Complete: ' + scope + ' · ' + uiReceiptCopy(manifest);
+    /* pullheal-1.0.0: the completion line says plainly whether it took any
+       automatic help to get there. */
+    if (manifest.status === 'complete') return 'Complete: ' + scope + ' · ' + uiReceiptCopy(manifest) + healOutcomeCopy(manifest);
     if (manifest.status === 'needs-attention') {
       return 'Finished with exceptions: ' + scope + ' · ' + uiReceiptCopy(manifest) + ' ' +
-        uiAttentionCopy(manifest) + ' ' + uiReasonCopy('needs-attention');
+        uiAttentionCopy(manifest) + ' ' + uiReasonCopy('needs-attention') + healOutcomeCopy(manifest);
     }
     if (manifest.status === 'cancelled') return 'Cancelled: ' + scope + ' · ' + count + '. Starting again requires a new click.';
     if (manifest.status === 'paused') return 'Paused: ' + scope + ' · ' + count + '. Resume continues from the saved checkpoint.';
@@ -1296,6 +1482,15 @@
       '#mlsP1YearPull .p1yr-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0}' +
       '#mlsP1YearPull .p1yr-actions button{min-height:44px;max-width:100%}' +
       '#mlsP1YearPull [hidden]{display:none!important}' +
+      /* pullheal-1.0.0 tracker: one collapsed line by default, opened on demand */
+      '#mlsP1YearPull .p1yr-heal{border-top:1px dashed rgba(32,64,52,.16);padding-top:8px}' +
+      '#mlsP1YearPull .p1yr-healline{min-height:32px;display:flex;align-items:center;cursor:pointer;' +
+      'font:600 12px/1.4 system-ui,sans-serif;color:var(--muted,#52645d)}' +
+      '#mlsP1YearPull .p1yr-healbody{display:grid;gap:6px;padding:6px 0 2px}' +
+      '#mlsP1YearPull .p1yr-healrow{margin:0;font:400 11.5px/1.5 system-ui,sans-serif;color:var(--muted,#52645d);overflow-wrap:anywhere}' +
+      '#mlsP1YearPull .p1yr-healswitch{display:inline-flex;align-items:center;gap:8px;min-height:44px;width:max-content;' +
+      'max-width:100%;font:600 12px/1.35 system-ui,sans-serif;cursor:pointer}' +
+      '#mlsP1YearPull .p1yr-healswitch input{width:18px;height:18px;flex:0 0 auto}' +
       '@media(max-width:640px){#mlsP1YearPull .p1yr-progress{grid-template-columns:1fr}#mlsP1YearPull .p1yr-count{white-space:normal}' +
       '#mlsP1YearPull .p1yr-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}' +
       '#mlsP1YearPull .p1yr-actions button{width:100%;min-width:0}#mlsP1YearPull #mlsP1YearStart{grid-column:1/-1}}';
@@ -1398,6 +1593,7 @@
     };
     var cancelButton = root.querySelector('#mlsP1YearCancel');
     if (cancelButton) cancelButton.onclick = function () { runUiAction('cancel', function () { return installedApi.cancel(); }); };
+    healWirePanel(root);
   }
   function refreshYearUi(root) {
     if (!root || !installedApi || installedApi.installed !== true) return;
@@ -1443,6 +1639,7 @@
     var pause = root.querySelector('#mlsP1YearPause'); uiSetHidden(pause, !running); if (pause) pause.disabled = !!uiAction;
     var resumeButton = root.querySelector('#mlsP1YearResume'); uiSetHidden(resumeButton, !resumable); if (resumeButton) resumeButton.disabled = !!uiAction;
     var cancelButton = root.querySelector('#mlsP1YearCancel'); uiSetHidden(cancelButton, !blocksStart); if (cancelButton) cancelButton.disabled = !!uiAction;
+    healRefreshPanel(root, manifest);
   }
   function mountYearUi() {
     if (!installedApi || installedApi.installed !== true || !uiDocumentReady()) return false;
@@ -1471,7 +1668,11 @@
         '<div class="p1yr-actions"><button type="button" class="ez3-sm pri" id="mlsP1YearStart"></button>' +
         '<button type="button" class="ez3-sm" id="mlsP1YearPause">Pause</button>' +
         '<button type="button" class="ez3-sm pri" id="mlsP1YearResume">Resume</button>' +
-        '<button type="button" class="ez3-sm warn" id="mlsP1YearCancel">Cancel</button></div>';
+        '<button type="button" class="ez3-sm warn" id="mlsP1YearCancel">Cancel</button></div>' +
+        /* pullheal-1.0.0: the health tracker rides the same section, so it is
+           read where the pull is started and it costs the canonical Staff Prep
+           card zero edits. */
+        healPanelHtml();
       host.appendChild(existing); wireYearUi(existing);
     }
     refreshYearUi(existing); return true;
@@ -1518,6 +1719,565 @@
     uiActionSequence++; uiAction = ''; uiNotice = ''; uiFullNotesChoice = false; uiFullNotesInitialized = false; uiYearChoice = '';
   }
 
+  /* =======================================================================
+   * pullheal-1.0.0 - the self-healing supervisor and the health tracker.
+   *
+   * OWNER, 2026-09-01: "needs attention needs to be 0 or its not even worth
+   * doing as this has to be accurate. why dont u make a self healing fixer and
+   * tracker to make sure things always work".
+   *
+   * Every cure below was applied BY HAND during a live August month pull on
+   * 2026-09-01. This is those exact cures, productized - nothing speculative:
+   *
+   *  (a) athena's CSRF retry interstitial wedged every navigation until a human
+   *      clicked its Continue. That is FIXED EXTENSION-SIDE (contfix-1.0.0, MLS
+   *      Assist 3.0.100 - the driver presses it itself). The supervisor never
+   *      touches athena; the extension owns athena. All it does is COUNT the
+   *      shape that a still-wedging interstitial makes on this side - days
+   *      settling 'nav-failed' - so "did it come back?" is answerable from the
+   *      ledger instead of from memory.
+   *  (b) status 'storage-failed' / reason 'metadata-persist-failed', recurring
+   *      while localStorage was healthy at 1.7MB. api.resume() cured it every
+   *      single time. The supervisor now does that resume, BOUNDED, with a
+   *      receipt each time, and stops and says so honestly past the bound.
+   *      What actually fails is instrumented in writeManifestAt above.
+   *  (c) days settled 'needs-attention' at the attempt cap having spent all
+   *      three attempts under a BROKEN extension. Version-scoped attempts
+   *      (rearmOutdatedVersionDays above) drain those to zero automatically
+   *      after an extension fix, without ever touching a day the CURRENT
+   *      extension failed.
+   *  (d) rapid pause+resume bounced the engine. Every supervisor action is
+   *      therefore serialized: pause -> confirm paused -> act -> resume ->
+   *      confirm running. Never fire-and-forget, never two at once.
+   *
+   * LAWS IT KEEPS: one tab runs engines (it acts only through pause/resume,
+   * which take the account Web Lock, so a second tab's supervisor is refused
+   * and that refusal costs it nothing); it never weakens a gate; it reads
+   * state() and never drives athena; its clock is hidden-tab-safe; and it has
+   * an off switch that a human owns.
+   * ==================================================================== */
+  var HEAL_VERSION = 'pullheal-1.0.0';
+  var HEAL_SUFFIX = 'p1PullHealV1';
+  var HEAL_OFF_SUFFIX = 'p1PullHealOffV1';
+  var HEAL_TICK_MS = 30000;
+  var HEAL_RESUME_MAX_PER_HOUR = 6;
+  var HEAL_RESUME_WINDOW_MS = 3600000;
+  var HEAL_STALL_TICKS = 2;
+  var HEAL_SETTLE_TRIES = 8;
+  var HEAL_SETTLE_MS = 500;
+  var HEAL_NAVFAIL_SUSPECT = 2;
+  var HEAL_HISTORY_MAX = 20;
+  var HEAL_IDLE_TICKS = 4;
+  var HEAL_RUN_KIND = { year: 1, month: 1 };
+  var healLedger = null;
+  var healResumeStamps = [];
+  var healBusy = false;
+  var healWorker = null;
+  var healWorkerUrl = null;
+  var healInterval = null;
+  var healLastTickAt = 0;
+  var healIdleTicks = 0;
+
+  function healKeyFor(suffix) {
+    /* Scoped by the manifest key itself, so the health record can never be
+       written into a namespace the job would refuse - including the shared
+       logged-out sf_u::_:: one. */
+    var base = currentManifestKey();
+    return base ? base.slice(0, -MANIFEST_SUFFIX.length) + suffix : '';
+  }
+  function healEnabled() {
+    var key = healKeyFor(HEAL_OFF_SUFFIX);
+    if (!key) return false;
+    return safe(function () { return localStorage.getItem(key) !== '1'; }, true);
+  }
+  function healSetEnabled(on) {
+    var key = healKeyFor(HEAL_OFF_SUFFIX);
+    if (!key) return false;
+    var wrote = safe(function () {
+      if (on) localStorage.removeItem(key); else localStorage.setItem(key, '1');
+      return (localStorage.getItem(key) !== '1') === !!on;
+    }, false);
+    if (wrote && on) healKick(); else if (wrote) healStopClock();
+    queueUiRefresh(0);
+    return wrote;
+  }
+
+  /* ---- the durable health record: a CLOSED allowlist, rebuilt on read and
+     on write, so no field a caller invents can ever reach the store. Numbers,
+     booleans, and values drawn from fixed vocabularies only. ---------------- */
+  function healNum(value, max) {
+    value = Math.floor(Number(value || 0) || 0);
+    max = Number(max || 100000);
+    return value < 0 ? 0 : (value > max ? max : value);
+  }
+  function healSanitizeRun(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    var kind = String(raw.kind || '');
+    if (HEAL_RUN_KIND[kind] !== 1) return null;
+    var target = String(raw.target || '');
+    if (!/^\d{4}(?:-(?:0[1-9]|1[0-2]))?$/.test(target)) return null;
+    var outcome = String(raw.outcome || '');
+    if (JOB_STATUS[outcome] !== 1) return null;
+    return {
+      v: 1, at: finiteStamp(raw.at), kind: kind, target: target, outcome: outcome,
+      days: healNum(raw.days, 400), complete: healNum(raw.complete, 400),
+      needsAttention: healNum(raw.needsAttention, 400),
+      stalls: healNum(raw.stalls, 999), resumes: healNum(raw.resumes, 999),
+      refusals: healNum(raw.refusals, 999), rearmedDays: healNum(raw.rearmedDays, 400),
+      interstitials: healNum(raw.interstitials, 999),
+      persistFailures: healNum(raw.persistFailures, 999),
+      bounded: raw.bounded === true,
+      ext: extVersionShape(raw.ext), from: extVersionShape(raw.from)
+    };
+  }
+  function healHistory() {
+    var key = healKeyFor(HEAL_SUFFIX);
+    if (!key) return [];
+    var raw = safe(function () { return localStorage.getItem(key); }, null);
+    if (!raw || String(raw).length > 40000) return [];
+    var parsed = safe(function () { return JSON.parse(raw); }, null);
+    var rows = parsed && Array.isArray(parsed.runs) ? parsed.runs : [];
+    var out = [];
+    for (var i = 0; i < rows.length && out.length < HEAL_HISTORY_MAX; i++) {
+      var row = healSanitizeRun(rows[i]);
+      if (row) out.push(row);
+    }
+    return out;
+  }
+  function healWriteHistory(rows) {
+    var key = healKeyFor(HEAL_SUFFIX);
+    if (!key) return false;
+    var clean = [];
+    for (var i = 0; i < rows.length && clean.length < HEAL_HISTORY_MAX; i++) {
+      var row = healSanitizeRun(rows[i]);
+      if (row) clean.push(row);
+    }
+    return safe(function () {
+      localStorage.setItem(key, JSON.stringify({ v: 1, build: HEAL_VERSION, runs: clean }));
+      return true;
+    }, false);
+  }
+
+  /* ---- the per-run ledger ------------------------------------------------ */
+  function healNewLedger(manifest) {
+    return {
+      v: 1, jobId: cleanText(manifest && manifest.jobId, 100),
+      kind: String(manifest && manifest.kind || ''), target: String(manifest && manifest.target || ''),
+      startedAt: now(), stalls: 0, resumes: 0, refusals: 0, rearmedDays: 0, rearmRuns: 0,
+      interstitials: 0, persistFailures: 0, navSeen: 0, bounded: false,
+      lastHeartbeatAt: 0, lastAction: '', lastActionAt: 0, lastRearm: '',
+      sig: '', stallTicks: 0, recorded: '', versionCheckedAt: ''
+    };
+  }
+  function healNoteRearm(done) {
+    if (!healLedger) return;
+    var count = healNum(done && done.rearmed, 400);
+    if (!count) return;
+    healLedger.rearmedDays += count;
+    healLedger.rearmRuns++;
+    /* The receipt the owner asked for, kept on its OWN field so a later
+       recovery line can never overwrite the sentence that explains WHY those
+       days came back. */
+    healLedger.lastRearm = 're-armed ' + count + ' day' + (count === 1 ? '' : 's') +
+      ' - their failures happened under MLS Assist ' + ((done && done.from) || 'an older version');
+    healLedger.lastAction = healLedger.lastRearm;
+    healLedger.lastActionAt = now();
+  }
+  function healSignature(manifest) {
+    var receipt = (manifest && manifest.summary) || summarize(manifest);
+    return [manifest.status, manifest.currentMonth || '', receipt.complete, receipt.failed,
+      receipt.needsAttention, finiteStamp(manifest.lastCheckpointAt), finiteStamp(manifest.updatedAt)].join('|');
+  }
+  function healCountDayReason(manifest, code) {
+    var months = Object.keys((manifest && manifest.months) || {}), total = 0;
+    for (var mi = 0; mi < months.length; mi++) {
+      var days = manifest.months[months[mi]].days || {}, keys = Object.keys(days);
+      for (var di = 0; di < keys.length; di++) {
+        var day = days[keys[di]];
+        if (day && day.status !== 'complete' && day.reason === code) total++;
+      }
+    }
+    return total;
+  }
+  function healCountPersistSince(since) {
+    var total = 0;
+    for (var i = 0; i < persistDiag.length; i++) if (persistDiag[i].at >= since) total++;
+    return total;
+  }
+  function healRecordRun(manifest) {
+    if (!healLedger || healLedger.recorded === manifest.status) return;
+    healLedger.recorded = manifest.status;
+    var receipt = manifest.summary || summarize(manifest);
+    var rows = healHistory();
+    rows.unshift({
+      at: now(), kind: manifest.kind, target: manifest.target, outcome: manifest.status,
+      days: receipt.days, complete: receipt.complete, needsAttention: receipt.needsAttention,
+      stalls: healLedger.stalls, resumes: healLedger.resumes, refusals: healLedger.refusals,
+      rearmedDays: healLedger.rearmedDays, interstitials: healLedger.interstitials,
+      persistFailures: healLedger.persistFailures, bounded: healLedger.bounded === true,
+      ext: currentExtVersion(), from: ''
+    });
+    /* One row per range PER OUTCOME, newest kept: re-pulling 2026-09 to
+       'complete' three times leaves one 'complete' row, while a 'complete'
+       and an earlier 'needs-attention' for the same month BOTH stand - the
+       history says what happened, not how many times it was clicked. */
+    var seen = {}, kept = [];
+    for (var i = 0; i < rows.length; i++) {
+      var stamp = rows[i].kind + '|' + rows[i].target + '|' + rows[i].outcome;
+      if (seen[stamp]) continue;
+      seen[stamp] = 1; kept.push(rows[i]);
+    }
+    healWriteHistory(kept);
+  }
+
+  /* ---- bounded automatic recovery --------------------------------------- */
+  function healResumeBudget() {
+    var cutoff = now() - HEAL_RESUME_WINDOW_MS, kept = [];
+    for (var i = 0; i < healResumeStamps.length; i++) if (healResumeStamps[i] > cutoff) kept.push(healResumeStamps[i]);
+    healResumeStamps = kept;
+    return HEAL_RESUME_MAX_PER_HOUR - kept.length;
+  }
+  /* Hidden-tab-safe: the shell's worker-backed sleep when it exists, otherwise
+     a MessageChannel yield against the WALL CLOCK - a hidden tab's setTimeout
+     is clamped and then bucketed to a minute, which would stretch a 500ms
+     settle wait into a lie. */
+  function healSleep(ms) {
+    ms = Math.max(0, Number(ms || 0));
+    var worker = safe(function () { return window.__mlsBgSleep; }, null);
+    if (isFn(worker)) {
+      var handed = safe(function () { return worker(ms); }, null);
+      if (handed && isFn(handed.then)) return Promise.resolve(handed);
+    }
+    var at = now() + ms;
+    return new Promise(function (resolve) {
+      if (typeof document === 'undefined' || !document.hidden) { setTimeout(resolve, ms); return; }
+      var channel = safe(function () { return new MessageChannel(); }, null);
+      if (!channel) { setTimeout(resolve, ms); return; }
+      function close() { safe(function () { channel.port1.onmessage = null; channel.port1.close(); channel.port2.close(); }); }
+      channel.port1.onmessage = function () {
+        if (now() >= at) { close(); resolve(); return; }
+        if (!document.hidden) { close(); setTimeout(resolve, Math.max(0, at - now())); return; }
+        safe(function () { channel.port2.postMessage(0); });
+      };
+      safe(function () { channel.port2.postMessage(0); });
+    });
+  }
+  function healSettle(predicate, tries, gap) {
+    function step(left) {
+      var manifest = safe(state, null);
+      if (predicate(manifest)) return Promise.resolve({ ok: true, state: manifest });
+      if (left <= 0) return Promise.resolve({ ok: false, state: manifest });
+      return healSleep(gap).then(function () { return step(left - 1); });
+    }
+    return step(Math.max(0, Number(tries || 0)));
+  }
+  /* Refusals that mean "this is not our stall to heal" - another MLS tab owns
+     the job, or there is nothing to resume. They are recorded, and they must
+     NOT spend the recovery budget. */
+  var HEAL_NOT_OURS = {
+    'range-lock-denied': 1, 'range-lock-unavailable': 1, 'job-busy': 1,
+    signin: 1, 'manifest-invalid': 1, cancelled: 1
+  };
+  function healSerializedResume(label) {
+    if (healBusy || !healLedger) return Promise.resolve({ ok: false, reason: 'job-busy' });
+    if (healResumeBudget() <= 0) {
+      healLedger.bounded = true;
+      healLedger.lastAction = 'stopped trying: ' + HEAL_RESUME_MAX_PER_HOUR +
+        ' automatic recoveries in one hour is the bound, and this needs a person';
+      healLedger.lastActionAt = now();
+      queueUiRefresh(0);
+      return Promise.resolve({ ok: false, reason: 'heal-bound' });
+    }
+    healBusy = true;
+    healLedger.stalls++;
+    var before = safe(state, null);
+    var claimsRunning = !!(before && (before.status === 'running' || before.status === 'pending'));
+    /* (d) SERIALIZED. Never a bare resume on top of a job that still claims to
+       be running - that is the bounce that was measured. Pause first, and
+       CONFIRM the pause landed before touching anything. */
+    var stopped = claimsRunning
+      ? Promise.resolve(safe(function () { return installedApi.pause(); }, null)).then(function () {
+        return healSettle(function (m) {
+          return !!m && m.status !== 'running' && m.status !== 'pending';
+        }, HEAL_SETTLE_TRIES, HEAL_SETTLE_MS);
+      }, function () { return { ok: false }; })
+      : Promise.resolve({ ok: true });
+    return stopped.then(function (paused) {
+      if (!paused.ok) {
+        healLedger.refusals++;
+        healLedger.lastAction = 'the engine would not confirm it had stopped, so nothing was restarted';
+        return { ok: false, reason: 'pause-unconfirmed' };
+      }
+      var refused = '';
+      healResumeStamps.push(now());
+      var request = safe(function () {
+        return installedApi.resume({ onStatus: function () { queueUiRefresh(0); } });
+      }, null);
+      if (request && isFn(request.then)) {
+        request.then(function (result) {
+          if (result && result.ok === false && HEAL_NOT_OURS[reasonCode(result.reason)] === 1) refused = reasonCode(result.reason);
+        }, function () {});
+      }
+      /* resume() resolves only when the WHOLE range settles, which is minutes.
+         Admission is what proves the restart, exactly as the card's own Resume
+         button proves it. */
+      return healSettle(function (m) {
+        return !!refused || !!(m && (m.status === 'running' || m.status === 'pending' || m.status === 'complete'));
+      }, HEAL_SETTLE_TRIES, HEAL_SETTLE_MS).then(function (settled) {
+        if (refused) {
+          healResumeStamps.pop();
+          healLedger.refusals++;
+          healLedger.lastAction = refused === 'range-lock-denied' || refused === 'job-busy'
+            ? 'another MLS tab owns this pull, so this tab left it alone'
+            : 'automatic recovery refused (' + refused + ')';
+          return { ok: false, reason: refused };
+        }
+        if (settled.ok) {
+          healLedger.resumes++;
+          healLedger.lastAction = 'automatic recovery: ' + label;
+        } else {
+          healLedger.refusals++;
+          healLedger.lastAction = 'automatic recovery tried (' + label + ') but the engine never confirmed it restarted';
+        }
+        return { ok: settled.ok === true, reason: settled.ok ? '' : 'resume-unconfirmed' };
+      });
+    }).then(function (out) {
+      healBusy = false; healLedger.lastActionAt = now(); queueUiRefresh(0); return out;
+    }, function () {
+      healBusy = false; healLedger.refusals++; queueUiRefresh(0); return { ok: false, reason: 'exception' };
+    });
+  }
+  function healVersionHeal() {
+    if (healBusy || !healLedger) return;
+    var live = currentExtVersion();
+    /* Try once per extension version per job: a fresh MLS Assist is the only
+       thing that can change the answer, so re-asking every 30s is noise. */
+    if (!live || healLedger.versionCheckedAt === live) return;
+    healLedger.versionCheckedAt = live;
+    healBusy = true;
+    Promise.resolve(safe(function () { return rearmOutdatedVersions(); }, null)).then(function (result) {
+      healBusy = false;
+      if (!result || result.ok !== true || !healNum(result.rearmed, 400)) { queueUiRefresh(0); return; }
+      healNoteRearm(result);
+      queueUiRefresh(0);
+      healSerializedResume('re-armed ' + result.rearmed + ' day' + (result.rearmed === 1 ? '' : 's') +
+        ' after MLS Assist ' + result.to);
+    }, function () { healBusy = false; });
+  }
+
+  /* ---- the clock (Worker; a hidden tab is still running a pull) ---------- */
+  function healClockRunning() { return !!healWorker || healInterval !== null; }
+  function healTimerKind() { return healWorker ? 'worker' : (healInterval !== null ? 'interval' : 'none'); }
+  function healStartClock() {
+    if (healClockRunning()) return;
+    healWorkerUrl = safe(function () {
+      return window.URL.createObjectURL(new window.Blob(
+        ['onmessage=function(e){setInterval(function(){postMessage(1)},e.data)}'],
+        { type: 'application/javascript' }));
+    }, null);
+    if (healWorkerUrl) {
+      healWorker = safe(function () {
+        var made = new window.Worker(healWorkerUrl);
+        made.onmessage = function () { safe(healOnTick); };
+        made.postMessage(HEAL_TICK_MS);
+        return made;
+      }, null);
+    }
+    if (!healWorker) {
+      safe(function () { if (healWorkerUrl) window.URL.revokeObjectURL(healWorkerUrl); });
+      healWorkerUrl = null;
+      var handle = safe(function () { return setInterval(function () { safe(healOnTick); }, HEAL_TICK_MS); }, null);
+      /* a timer handle of 0 is FALSY - compare with !== null, the phone-sync law */
+      healInterval = (handle === undefined || handle === null) ? null : handle;
+    }
+  }
+  function healStopClock() {
+    safe(function () { if (healWorker) healWorker.terminate(); });
+    healWorker = null;
+    safe(function () { if (healWorkerUrl) window.URL.revokeObjectURL(healWorkerUrl); });
+    healWorkerUrl = null;
+    if (healInterval !== null) { safe(function () { clearInterval(healInterval); }); healInterval = null; }
+  }
+  /* THE hidden-safe property, stated once: whichever clock is running, a tick
+     is admitted only when the WALL CLOCK says a full interval has passed. A
+     hidden tab that throttles the fallback interval to one tick a minute
+     therefore heals LATE - never twice, and never on a burst of catch-up
+     ticks when the tab comes back to the front. */
+  function healOnTick() {
+    var at = now();
+    if (healLastTickAt && at - healLastTickAt < HEAL_TICK_MS - 250) return;
+    healLastTickAt = at;
+    healTick();
+  }
+  function healKick() {
+    if (!installedApi || installedApi.installed !== true) return;
+    healIdleTicks = 0;
+    if (!healClockRunning() && healEnabled()) healStartClock();
+  }
+  function healIdle() {
+    healIdleTicks++;
+    if (healIdleTicks >= HEAL_IDLE_TICKS) healStopClock();
+  }
+  function healTick() {
+    if (!installedApi || installedApi.installed !== true) { healStopClock(); return; }
+    if (!healEnabled()) { healStopClock(); queueUiRefresh(0); return; }
+    var manifest = safe(state, null);
+    if (!manifest) { healLedger = null; healIdle(); return; }
+    if (!healLedger || healLedger.jobId !== cleanText(manifest.jobId, 100)) healLedger = healNewLedger(manifest);
+    healIdleTicks = 0;
+    healLedger.lastHeartbeatAt = now();
+
+    var signature = healSignature(manifest);
+    if (signature !== healLedger.sig) { healLedger.sig = signature; healLedger.stallTicks = 0; }
+    else healLedger.stallTicks++;
+
+    /* (a) the shape a still-wedging interstitial makes on THIS side. The
+       extension presses athena's Continue itself since 3.0.100; this only
+       counts, so "did it come back?" is answered from data. */
+    var navBlocked = healCountDayReason(manifest, 'nav-failed');
+    /* One blocked day is noise; two or more is the shape. Past that threshold
+       every blocked day counts once, and only the DELTA is added, so a beat
+       that observes the same ledger twice never double-counts. */
+    if (navBlocked >= HEAL_NAVFAIL_SUSPECT && navBlocked > healLedger.navSeen) {
+      healLedger.interstitials += navBlocked - healLedger.navSeen;
+      healLedger.navSeen = navBlocked;
+    }
+    healLedger.persistFailures = healCountPersistSince(healLedger.startedAt);
+
+    var settled = manifest.status === 'complete' || manifest.status === 'cancelled';
+    if (settled || manifest.status === 'needs-attention') healRecordRun(manifest);
+    if (settled) { queueUiRefresh(0); healIdle(); return; }
+    if (healBusy) return;
+
+    /* (b) the measured transient: metadata-persist-failed, cured by resume. */
+    if (manifest.status === 'storage-failed' && reasonCode(manifest.reason) === 'metadata-persist-failed') {
+      healSerializedResume('progress could not be verified after saving');
+      return;
+    }
+    /* (c) needs-attention whose attempts were spent under an older extension. */
+    if (manifest.status === 'needs-attention') { healVersionHeal(); return; }
+    /* (d) a job whose ledger claims it is running while no engine owns it in
+       this tab and nothing has moved for two whole intervals. A LIVE engine
+       (active) is never interrupted, however slow athena is being. */
+    if ((manifest.status === 'running' || manifest.status === 'pending') && !active &&
+        healLedger.stallTicks >= HEAL_STALL_TICKS) {
+      healSerializedResume('the pull stopped moving');
+      return;
+    }
+    queueUiRefresh(0);
+  }
+
+  /* ---- the tracker's copy ------------------------------------------------ */
+  function healAgo(stamp) {
+    stamp = finiteStamp(stamp);
+    if (!stamp) return 'never';
+    var seconds = Math.max(0, Math.floor((now() - stamp) / 1000));
+    if (seconds < 90) return seconds + 's ago';
+    var minutes = Math.floor(seconds / 60);
+    return minutes < 90 ? minutes + 'm ago' : Math.floor(minutes / 60) + 'h ago';
+  }
+  /* A recovery is a CONFIRMED restart. Re-armed days are named separately
+     rather than added in, so the count can never overstate what happened. */
+  function healWhatItDid(ledger) {
+    var parts = [], resumes = healNum(ledger && ledger.resumes, 999);
+    var rearmed = healNum(ledger && ledger.rearmedDays, 400);
+    if (resumes) parts.push(resumes + ' automatic ' + (resumes === 1 ? 'recovery' : 'recoveries'));
+    if (rearmed) parts.push('re-armed ' + rearmed + ' day' + (rearmed === 1 ? '' : 's') + ' after an MLS Assist update');
+    return parts;
+  }
+  function healLedgerFor(manifest) {
+    if (!manifest) return null;
+    return healLedger && healLedger.jobId === cleanText(manifest.jobId, 100) ? healLedger : null;
+  }
+  /* The one sentence the doctor reads on a finished pull. */
+  function healOutcomeCopy(manifest) {
+    var ledger = healLedgerFor(manifest);
+    if (!ledger) return '';
+    var parts = healWhatItDid(ledger);
+    if (manifest.status === 'complete') {
+      return parts.length ? ' Finished after ' + parts.join(' and ') + '.' : ' Finished clean.';
+    }
+    if (ledger.bounded) {
+      return ' Self-healing stopped after ' + HEAL_RESUME_MAX_PER_HOUR +
+        ' automatic recoveries in an hour - this needs a person.';
+    }
+    if (!parts.length) return ' Self-healing found nothing it could safely fix.';
+    return ' Self-healing did ' + parts.join(' and ') + '.';
+  }
+  function healLineCopy(manifest) {
+    if (!healEnabled()) return 'Self-healing is OFF. Pull problems will wait for you.';
+    var ledger = healLedgerFor(manifest);
+    if (!ledger) return 'Self-healing is on. Watching; nothing to fix.';
+    if (ledger.bounded) {
+      return 'Self-healing paused - ' + HEAL_RESUME_MAX_PER_HOUR + ' recoveries in an hour is the bound.';
+    }
+    var parts = healWhatItDid(ledger);
+    return 'Self-healing is on - ' + (parts.length ? parts.join(' and ') + ' this run.' : 'no recoveries needed this run.');
+  }
+  function healNowCopy(manifest) {
+    var ledger = healLedgerFor(manifest);
+    if (!ledger) return 'This run: nothing recorded yet. Heartbeat ' + healAgo(healLedger && healLedger.lastHeartbeatAt) + '.';
+    return 'This run: ' + ledger.stalls + ' stall' + (ledger.stalls === 1 ? '' : 's') + ' detected, ' +
+      ledger.resumes + ' automatic resume' + (ledger.resumes === 1 ? '' : 's') + ', ' +
+      ledger.rearmedDays + ' day' + (ledger.rearmedDays === 1 ? '' : 's') + ' re-armed, ' +
+      ledger.interstitials + ' navigation block' + (ledger.interstitials === 1 ? '' : 's') + ' seen, ' +
+      ledger.persistFailures + ' save' + (ledger.persistFailures === 1 ? '' : 's') + ' refused, ' +
+      'heartbeat ' + healAgo(ledger.lastHeartbeatAt) + ' (' + healTimerKind() + ' clock).' +
+      (ledger.lastAction ? ' Last action: ' + ledger.lastAction + ' (' + healAgo(ledger.lastActionAt) + ').' : '') +
+      (ledger.lastRearm && ledger.lastRearm !== ledger.lastAction ? ' Also ' + ledger.lastRearm + '.' : '');
+  }
+  function healDiagCopy() {
+    if (!persistDiag.length) return 'No refused progress saves on this tab.';
+    var newest = persistDiag[persistDiag.length - 1];
+    return 'Newest refused save: ' + newest.stage + ' on ' + newest.keyShape +
+      '; the live key ' + (newest.keyMoved ? 'HAD MOVED to ' + newest.liveShape : 'was the same') +
+      (newest.liveKeyMissing ? ' (no account-scoped key at all)' : '') +
+      '; ' + newest.scopeFlaps + ' account-scope change' + (newest.scopeFlaps === 1 ? '' : 's') + ' seen; ' +
+      'wrote ' + newest.wroteChars + ' chars, read back ' + newest.readChars + '; store ' + newest.storeChars + ' chars.';
+  }
+  function healHistoryCopy() {
+    var rows = healHistory();
+    if (!rows.length) return 'No finished pulls recorded yet.';
+    var shown = rows.slice(0, 5).map(function (row) {
+      var recoveries = row.resumes + (row.rearmedDays ? 1 : 0);
+      return row.target + ' ' + row.kind + ': ' + row.outcome.replace(/-/g, ' ') + ' (' +
+        row.complete + '/' + row.days + ' days, ' + recoveries + ' auto ' + (recoveries === 1 ? 'recovery' : 'recoveries') +
+        (row.needsAttention ? ', ' + row.needsAttention + ' needing attention' : '') + ')';
+    });
+    return 'Last ' + rows.length + ' run' + (rows.length === 1 ? '' : 's') + ': ' + shown.join('; ') +
+      (rows.length > shown.length ? '; ...' : '') + '.';
+  }
+  function healPanelHtml() {
+    return '<details class="p1yr-heal" id="mlsP1HealPanel">' +
+      '<summary class="p1yr-healline" id="mlsP1HealLine">Self-healing</summary>' +
+      '<div class="p1yr-healbody">' +
+      '<p class="p1yr-healrow" id="mlsP1HealNow"></p>' +
+      '<p class="p1yr-healrow" id="mlsP1HealHistory"></p>' +
+      '<p class="p1yr-healrow" id="mlsP1HealDiag"></p>' +
+      '<label class="p1yr-healswitch" for="mlsP1HealSwitch"><input type="checkbox" id="mlsP1HealSwitch">' +
+      ' Fix pull problems automatically</label>' +
+      '</div></details>';
+  }
+  function healWirePanel(root) {
+    var toggle = root.querySelector('#mlsP1HealSwitch');
+    if (!toggle) return;
+    toggle.onchange = function () {
+      var wanted = toggle.checked === true;
+      if (!healSetEnabled(wanted)) { toggle.checked = healEnabled(); uiNotice = 'The self-healing setting could not be saved. Nothing changed.'; }
+      queueUiRefresh(0);
+    };
+  }
+  function healRefreshPanel(root, manifest) {
+    if (!root) return;
+    uiSetText(root.querySelector('#mlsP1HealLine'), healLineCopy(manifest));
+    uiSetText(root.querySelector('#mlsP1HealNow'), healNowCopy(manifest));
+    uiSetText(root.querySelector('#mlsP1HealHistory'), healHistoryCopy());
+    uiSetText(root.querySelector('#mlsP1HealDiag'), healDiagCopy());
+    var toggle = root.querySelector('#mlsP1HealSwitch');
+    if (toggle) { var on = healEnabled(); if (toggle.checked !== on) toggle.checked = on; }
+  }
+  /* ===== end pullheal-1.0.0 ===== */
+
   function onSessionBoundary(event) {
     var detail = event && event.detail || {}, next = String(detail.nextAccount || '').trim().toLowerCase();
     if (active) {
@@ -1563,6 +2323,7 @@
       persistContext(active); stopImporter();
     }
     if (bootTimer != null) { safe(function () { clearTimeout(bootTimer); }); bootTimer = null; }
+    healStopClock(); healLedger = null; healBusy = false;
     removeYearUi();
     for (var i = 0; i < listeners.length; i++) {
       (function (entry) { safe(function () { entry[0].removeEventListener(entry[1], entry[2], entry[3]); }); })(listeners[i]);
@@ -1588,6 +2349,32 @@
     cancel: function () { return setControl('cancelled'); },
     state: state,
     maybeResume: maybeResume,
+    /* pullheal-1.0.0: the supervisor's own surface. Read-only except for the
+       two acts it is allowed - re-arm days an older MLS Assist failed, and
+       turn itself off. */
+    rearmOutdatedVersions: rearmOutdatedVersions,
+    heal: {
+      version: HEAL_VERSION,
+      tickMs: HEAL_TICK_MS,
+      resumeBoundPerHour: HEAL_RESUME_MAX_PER_HOUR,
+      enabled: healEnabled,
+      setEnabled: healSetEnabled,
+      ledger: function () { return copy(healLedger); },
+      history: healHistory,
+      timerKind: healTimerKind,
+      persistDiag: function () { return copy(persistDiag) || []; },
+      scopeDiag: function () { return copy({ flaps: scopeWatch.flaps, ring: scopeWatch.ring }); },
+      extVersion: currentExtVersion,
+      /* the exact sentence the card is showing right now, so a live probe and
+         a proof suite read the SAME string the doctor reads. */
+      statusLine: function () {
+        var manifest = state();
+        return uiStatusCopy(manifest, uiProgress(manifest), uiProviderSelection());
+      },
+      panelLine: function () { return healLineCopy(state()); },
+      tick: healOnTick,
+      kick: healKick
+    },
     revert: revert
   };
   window.__mlsP1RangeJobs = installedApi;
@@ -1598,4 +2385,5 @@
   addListener(document, 'visibilitychange', function () { if (!document.hidden) scheduleBoot(false); }, false);
   installYearUi();
   scheduleBoot(false);
+  healKick();
 })();

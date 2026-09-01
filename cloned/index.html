@@ -3353,6 +3353,30 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
+      <!-- TEAM NOTES (tn-1.0.0). Owner, 2026-09-01: "a head docotr and the
+           docotrs under them ... leave shared notes to each otehr for a
+           patient ... and maek it easy to use".
+
+           THE ID STARTS WITH pf2 ON PURPOSE, and it is not decoration. The
+           profile card is laid out by feat_mls_redesign's pf2 pass
+           (cloned-mls-connect.js), which does two things to a plain .prof-box
+           dropped in here: its adopt loop moves any classifiable direct child
+           below the anchor into a fold, and .prof-box with an unrecognized
+           heading classifies as pf2Misc - so Team notes would be buried inside
+           "Vitals & extras". The adopt loop skips ids matching /^pf2/, which
+           is the module's own documented escape hatch. The second half is the
+           pf2-collapsed allowlist beside it: #profileCard ships COLLAPSED by
+           default, so every child outside that :not() list is display:none in
+           the state a doctor normally sees - the exact way the cross-patient
+           notice went invisible. #pf2TeamNotes is registered there, which is
+           what lets a head doctor read "Team notes - 3" without expanding the
+           whole chart. Both halves are required; either one alone hides it.
+
+           feat_mls_team_notes.js owns the whole body and unhides the box when
+           it renders, so a lane where the module failed to load shows nothing
+           at all rather than an empty promise with no way to add a note. -->
+      <div class="prof-box" style="margin-top:16px;display:none" id="pf2TeamNotes"></div>
+
       <!-- INSURANCE & BENEFITS (per-patient; drives the cost estimate) -->
       <div class="prof-box" style="margin-top:16px" id="insBox">
         <h3>💳 Insurance &amp; benefits
@@ -13014,6 +13038,58 @@ function __mlsAthenaCarryPartial(dst,src,receipt){
     if(receipt.fields[f]&&receipt.fields[f].status==='found'&&__mlsAthenaFieldHasContent(src[f]))dst[f]=src[f];
   });
 }
+/* tn-1.0.0: TEAM NOTES SURVIVE A STALE-REFERENCE WRITE-BACK - and they need a
+   UNION, not the fill-only carry providerLink gets in upsertPatient below.
+   providerLink is DERIVED: if a caller drops it, the next derivation puts it
+   back. A team note has NO other source. If a caller that materialized this
+   patient BEFORE a colleague saved a note writes its older object back,
+   arr[i]=p would delete that colleague's note permanently and no sweep would
+   ever restore it - the same class as the merge that deleted chart facts, one
+   surface over. The dangerous caller here is NOT the one carrying no notes, it
+   is the one carrying an OLDER COPY of the array, which a fill-only carry
+   waves straight through.
+   So: notes are matched by id and the HIGHER REVISION STAMP wins. That is what
+   also makes an edit and a soft delete propagate rather than be reverted by
+   whichever writer happens to land last, and it is why a delete is a TOMBSTONE
+   (del/delAt) and never a splice - a spliced note is indistinguishable from a
+   note the stale caller simply never saw, so the union would resurrect it.
+   NOTHING IS EVER DROPPED HERE. A carry that can drop is the defect this
+   exists to prevent, so there is no cap and no pruning on this path. */
+function __mlsTeamNoteRev(n){
+  if(!n||typeof n!=='object')return 0;
+  var a=Number(n.at)||0,e=Number(n.ed)||0,d=Number(n.delAt)||0;
+  return Math.max(a,e,d);
+}
+function __mlsTeamNotesUnion(a,b){
+  var lists=[Array.isArray(a)?a:[],Array.isArray(b)?b:[]],out=[],slot=Object.create(null),li,i,n,id,at;
+  for(li=0;li<lists.length;li++){
+    for(i=0;i<lists[li].length;i++){
+      n=lists[li][i];
+      if(!n||typeof n!=='object')continue;
+      id=String(n.id||'');
+      if(!id)continue;
+      at=slot[id];
+      if(at===undefined){ slot[id]=out.length; out.push(n); }
+      else if(__mlsTeamNoteRev(n)>__mlsTeamNoteRev(out[at])) out[at]=n;
+    }
+  }
+  /* newest first, id as the tiebreak so two unions over the same data cannot
+     disagree about the order */
+  out.sort(function(x,y){
+    var d=(Number(y.at)||0)-(Number(x.at)||0);
+    if(d)return d;
+    var xi=String(x.id||''),yi=String(y.id||'');
+    return xi<yi?1:xi>yi?-1:0;
+  });
+  return out;
+}
+function __mlsTeamNotesCarry(dst,src){
+  if(!dst||!src)return;
+  var prev=Array.isArray(src.teamNotes)?src.teamNotes:null;
+  if(!prev||!prev.length)return;
+  if(!Array.isArray(dst.teamNotes)){ dst.teamNotes=prev.slice(); return; }
+  dst.teamNotes=__mlsTeamNotesUnion(dst.teamNotes,prev);
+}
 function __mlsAthenaProofAt(c){ if(!c||!c.capturedAt)return 0; var n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; }
 function __mlsAthenaProofGuard(key,arr,start,end){
   if(!Array.isArray(arr))return;
@@ -13891,6 +13967,11 @@ function upsertPatient(p){
          provider until the next pull re-derived it. Fill-only: a value the
          caller DOES carry is never overwritten. */
       if(__prev.providerLink&&p.providerLink==null)p.providerLink=__prev.providerLink;
+      /* tn-1.0.0: and the team notes, by UNION - see __mlsTeamNotesCarry. The
+         fill-only line above is right for a DERIVED field and wrong for
+         human-authored text: a caller carrying an OLDER copy of teamNotes
+         passes the ==null test and would silently drop a colleague's note. */
+      __mlsTeamNotesCarry(p,__prev);
     }
     arr[i]=p;
   } else { p.created=Date.now(); arr.unshift(p); }
@@ -22053,6 +22134,10 @@ function renderProfile(){
   const demo=[p.sex,p.dob,p.mrn?('MRN '+p.mrn):'',((p.providerLink&&p.providerLink.v===1&&p.providerLink.primaryProvider)?('Provider '+p.providerLink.primaryProvider):'')].filter(Boolean).join(' · ');
   document.getElementById('profDemo').textContent=demo||'No demographics on file (optional).';
   try{ if(typeof _renderProfAtGlance==='function') _renderProfAtGlance(p); }catch(e){}
+  /* tn-1.0.0: the shared Team notes section, rendered for the patient this
+     card is showing. Optional call in the house shape - the module owns its
+     box, including leaving it hidden when it is not installed. */
+  try{ if(typeof window.__mlsTeamNotesRender==='function') window.__mlsTeamNotesRender(p); }catch(e){}
   fieldBody('profProblems',p.problems,_athenaProfileEmptyText(p,'problems','No problems recorded. Generate a visit or analyze a document to populate, or edit.'));
   fieldBody('profMeds',p.meds,_athenaProfileEmptyText(p,'meds','No medications recorded.'));
   /* Patricia Kirwin, live 2026-08-08: a schedule-imported record with ZERO
@@ -63510,7 +63595,33 @@ body.mls-public-preview #histOpNoteBtn{ display:none !important; }
     return safe(function () { window[name] = wrapped; return true; }, false);
   }
 
+  /* ph3quiet-1.0.0 (2026-09-01): the phone app owns the whole viewport, and it
+     has no History screen at all - its two screens are day and visit. Every
+     pass of this poller on a handheld therefore does exactly nothing, and it
+     does it at a real price: route() -> historyOpen() calls getComputedStyle(),
+     a forced style resolution, plus a dozen getElementById lookups, twice a
+     second, forever, on a device that spends most of its life in a pocket.
+     feat_mls_phone_ui.js states the budget it is breaking in its own header:
+     "A MOUNTED, IDLE, VISIBLE PHONE HOLDS NO TIMERS AT ALL."
+
+     The frame id is the honest test, and it is order-independent: arm() runs at
+     DOMContentLoaded and the phone module can mount either side of that, so the
+     check has to live where it is re-evaluated rather than only where the timer
+     is created. Leaving the phone app is location.reload() (the menu's "Show the
+     full app"), so a reclaimed timer always comes back with the desktop.
+
+     The event listeners and the bounded setTimeout ladder are deliberately left
+     alone - they are what actually route History, they cost nothing when idle,
+     and narrowing them would change desktop behaviour for no gain. */
+  function phoneOwnsPage() {
+    return safe(function () { return !!document.getElementById('mlsPh3'); }, false);
+  }
+
   function tick() {
+    if (phoneOwnsPage()) {
+      if (timer) { safe(function () { clearInterval(timer); }); timer = null; }
+      return;
+    }
     safe(route);
     safe(function () { wrapOpener('openNoteFromHistory'); });
   }
@@ -63522,8 +63633,11 @@ body.mls-public-preview #histOpNoteBtn{ display:none !important; }
 
   function arm() {
     tick();
-    /* setTimeout / setInterval only - see the note above about hidden tabs. */
-    timer = safe(function () { return setInterval(tick, 500); }, null);
+    /* setTimeout / setInterval only - see the note above about hidden tabs.
+       ph3quiet-1.0.0: never minted at all when the phone app is already up. The
+       self-retire in tick() covers the other order; this covers this one, so a
+       phone that mounted first never pays even one pass. */
+    if (!phoneOwnsPage()) timer = safe(function () { return setInterval(tick, 500); }, null);
     ['mls:view-changed', 'mls:active-patient-changed'].forEach(function (name) {
       safe(function () {
         window.addEventListener(name, function () {

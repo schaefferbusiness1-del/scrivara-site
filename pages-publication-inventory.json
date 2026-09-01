@@ -276,6 +276,7 @@
     "feat_mls_studygroups.js",
     "feat_mls_submit_checklist.js",
     "feat_mls_task7_analysis_sg.js",
+    "feat_mls_team_notes.js",
     "feat_mls_tele_doctor.js",
     "feat_mls_template_library.js",
     "feat_mls_template_modes.js",

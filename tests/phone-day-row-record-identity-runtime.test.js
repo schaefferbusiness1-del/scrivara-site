@@ -718,10 +718,33 @@ function assertBoundReceipt(receipt, patientId, label) {
     'external-id collision preserved the coincidental local chart as active');
 }
 
-/* 9. Name+DOB is evidence only when it identifies one local chart. After an
- * ambiguous open stays unbound, manually selecting either duplicate must not
- * retain or exact-bind that schedule row. */
+/* 9. Duplicate rows of ONE person, and two people wearing one name.
+ *
+ * RE-AIMED 2026-09-01. This case used to pin "two charts sharing a name and a
+ * DOB are ambiguous, so refuse". dupadopt-1.0.0 (b1124, 2026-08-30) changed
+ * that deliberately under the owner's 2026-08-28 identity ruling - name+DOB IS
+ * identity, so two such charts are duplicate rows of one person minted while
+ * the silent auto-merge was off, and refusing them locked Start Recording out
+ * of the day permanently. The phone reaches the SAME _calExactLocalTarget /
+ * _calDupSurvivor pair the desktop does, so the phone suite went red at b1124
+ * and stayed red: the dupadopt lane ran six suites and this was not one of
+ * them.
+ *
+ * The old assertion was pinning a superseded spelling. What follows pins the
+ * PROPERTY dupadopt actually installed, in BOTH directions, so the safety half
+ * is now covered here where it was not covered before:
+ *   9a  duplicates of one person adopt exactly ONE deterministic survivor, and
+ *       the same pool lands on the same survivor every time;
+ *   9b  the MRN-bearing chart is the survivor when only one carries an MRN;
+ *   9c  two DIFFERENT MRNs under one name+DOB is TWO PEOPLE - still refused,
+ *       still released on manual selection, and recording on the released row
+ *       is still refused. That last assertion is the property; the old
+ *       `binding() === null` proxy is deliberately not reinstated, because the
+ *       release path leaves an inert binding record behind in every branch
+ *       (case 7 above included) while the action gate is what actually stops
+ *       the capture. */
 {
+  /* 9a */
   const localA = patient('duplicate-a', 'Sam Duplicate', '1986-06-16');
   const localB = patient('duplicate-b', 'Sam Duplicate', '1986-06-16');
   const chain = makeChain({
@@ -729,14 +752,56 @@ function assertBoundReceipt(receipt, patientId, label) {
     patients: [localA, localB], activeId: localA.id
   });
   const receipt = tapOpen(chain, 'row-duplicate');
-  assert.strictEqual(receipt.bound, false, 'duplicate name+DOB charts produced an exact activation');
+  assert.strictEqual(receipt.bound, true,
+    'duplicate rows of one person did not adopt a survivor, so the phone cannot record');
+  assert.strictEqual(receipt.patientId, localA.id,
+    'duplicate pool adopted a non-deterministic survivor');
+  assert.strictEqual(chain.engine.rows[0]._mlsTargetPatientId, localA.id,
+    'adopted survivor was not stamped back onto the schedule row');
+  /* determinism: an identical pool resolved again must land on the same chart */
+  const again = makeChain({
+    rows: [row('row-duplicate', 'appt-duplicate', localA.name, localA.dob)],
+    patients: [localA, localB], activeId: localA.id
+  });
+  assert.strictEqual(tapOpen(again, 'row-duplicate').patientId, localA.id,
+    'the same duplicate pool adopted a different survivor on a second resolution');
+}
+{
+  /* 9b - the MRN-bearing row wins regardless of pool order */
+  const plain = patient('duplicate-plain', 'Sam Duplicate', '1986-06-16');
+  const carded = Object.assign(patient('duplicate-carded', 'Sam Duplicate', '1986-06-16'), { mrn: '333333' });
+  const chain = makeChain({
+    rows: [row('row-duplicate', 'appt-duplicate', plain.name, plain.dob)],
+    patients: [plain, carded], activeId: plain.id
+  });
+  assert.strictEqual(tapOpen(chain, 'row-duplicate').patientId, carded.id,
+    'duplicate pool preferred a chart with no MRN over the MRN-bearing one');
+}
+{
+  /* 9c - two DIFFERENT MRNs is two people, and the refusal must hold */
+  const oneA = Object.assign(patient('two-people-a', 'Sam Duplicate', '1986-06-16'), { mrn: '111111' });
+  const oneB = Object.assign(patient('two-people-b', 'Sam Duplicate', '1986-06-16'), { mrn: '222222' });
+  const chain = makeChain({
+    rows: [row('row-duplicate', 'appt-duplicate', oneA.name, oneA.dob)],
+    patients: [oneA, oneB], activeId: oneA.id
+  });
+  const receipt = tapOpen(chain, 'row-duplicate');
+  assert.strictEqual(receipt.bound, false,
+    'two charts carrying DIFFERENT MRNs were adopted as one person');
+  assert.strictEqual(receipt.patientId, '', 'conflicting-MRN pool leaked a local patient id');
+  assert.strictEqual(chain.engine.rows[0]._mlsTargetPatientId, undefined,
+    'conflicting-MRN pool was stamped into the canonical MLS-local namespace');
   assert.strictEqual(chain.engine.remote.snapshot().active.id, 'row-duplicate',
     'ambiguous row did not remain available as an unbound local encounter');
-  chain.engine.context.setActivePtId(localA.id);
+  chain.engine.context.setActivePtId(oneA.id);
   assert.strictEqual(chain.engine.remote.snapshot().active, null,
-    'manual selection of one duplicate retained the ambiguous schedule row');
-  assert.strictEqual(chain.engine.binding(), null,
-    'manual selection of one duplicate installed an exact Athena binding');
+    'manual selection of one of two people retained the ambiguous schedule row');
+  assert.strictEqual(chain.engine.state.locked, null,
+    'stale Easy patient lock survived the released ambiguous row');
+  assert.strictEqual(chain.engine.remote.record(), false,
+    'recording was allowed on a released ambiguous row');
+  assert.strictEqual(chain.engine.calls.capture, 0,
+    'a released ambiguous row still reached the real capture control');
 }
 
 console.log('PASS phone Day-row identity/recording chain: stale charts heal to exact targets; unresolved targets clear to one-warning unbound recording; contradictory DOB stays blocked; ISO/US DOB and Last, First names match safely; and a second appointment for the same patient resets encounter state');

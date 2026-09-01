@@ -40,6 +40,9 @@ function makeHost(options) {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
     setItem: (k, v) => {
       if (options.onWrite) { const r = options.onWrite(k, String(v)); if (r) throw r; }
+      /* A write that neither throws nor lands - the exact shape the read-back
+         verification exists to catch. */
+      if (options.dropWrite && options.dropWrite(k, String(v))) return;
       store.set(k, String(v));
     },
     removeItem: (k) => store.delete(k),
@@ -328,9 +331,20 @@ const YEAR = String(new Date().getUTCFullYear() - 1);
     measured.quota = { status: res && res.status, reason: res && res.reason };
     ok(res && (res.status === 'storage-failed' || res.reason === 'storage-full'),
       `a QuotaExceededError produced status=${res && res.status} reason=${res && res.reason}, expected a storage-failed pause`);
-    /* the read-back verification, which is what makes "saved" truthful */
-    ok(/if \(localStorage\.getItem\(key\) !== raw\) return \{ ok: false, reason: 'metadata-persist-failed' \};/.test(RANGE),
-      'writeManifestAt no longer reads the manifest back after writing it');
+    /* The read-back verification, which is what makes "saved" truthful -
+       EXECUTED, not spelled. A write that neither throws nor lands must be
+       caught by the read-back and refused as metadata-persist-failed.
+       (Re-aimed 2026-09-01 for pullheal-1.0.0: the old assertion pinned one
+       exact source line, so instrumenting WHICH arm failed reddened a suite
+       the change strengthened - the spelling-not-property class.) */
+    const host2b = makeHost({ dropWrite: (k) => String(k).endsWith('p1RangeJobV1') });
+    installImporter(host2b, () => ({ ok: false, complete: false, reason: 'no-read' }));
+    const dropped = await host2b.api.startYear(YEAR);
+    await settle(80);
+    measured.readback = { status: dropped && dropped.status, reason: dropped && dropped.reason };
+    ok(dropped && dropped.reason === 'metadata-persist-failed',
+      `a write that silently did not land produced status=${dropped && dropped.status} reason=${dropped && dropped.reason}, expected the read-back to refuse it as metadata-persist-failed`);
+    ok(!host2b.store.has(MKEY), 'the dropped write was stored after all, so the read-back was never exercised');
     ok(/name === 'QuotaExceededError'/.test(RANGE), 'the quota error is no longer classified');
 
     /* (c) the projected footprint, from the engine's OWN full-year ledger */

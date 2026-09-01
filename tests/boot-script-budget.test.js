@@ -510,7 +510,25 @@ const LOADER = 'mls-connect.js';
  *     disarm the duplicate-chart merge, and vice versa. It also adds no
  *     interface: one line in the existing pull log, one line on the existing
  *     Month report provenance block, and no control of its own. */
-const CEILING = 268;
+/* 267 -> 268 at tn-1.0.0 for feat_mls_team_notes.js. Owner, 2026-09-01: "leave
+ * shared notes to each otehr for a patient ... and maek it easy to use."
+ *
+ * The same three questions, answered:
+ *   - DEFERRED (__mlsDeferAsset / requestIdleCallback, 2.5s timeout), inserted
+ *     from the same stanza as the provider link and the auto-merge above it, so
+ *     EAGER_CEILING does not move and the post-login burst is unchanged.
+ *   - IT DOES LESS BOOT WORK THAN EITHER OF THEM: it arms NO timers at all.
+ *     Loading it defines functions and nothing else. It first runs when
+ *     renderProfile calls __mlsTeamNotesRender with a patient - that is, when a
+ *     doctor opens a chart - and the collapsed default means even then it
+ *     renders one header line until somebody asks for the thread.
+ *   - It could have been folded into feat_mls_provider_link.js, which it reads
+ *     providerLink from, and that is the dishonest version: that module DERIVES
+ *     an attribution from appointments and this one stores what a human typed.
+ *     They must be separately revertible, because reverting a notes surface
+ *     must never disarm the provider derivation the roster filter depends on -
+ *     and, the other way round, a doctor's written notes must not be reachable
+ *     by a revert aimed at a provider label. */const CEILING = 269;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

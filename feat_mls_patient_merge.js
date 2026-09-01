@@ -63,11 +63,71 @@
   /* Fields that may be copied INTO an empty winner slot. Never overwrites. */
   var FILL_FIELDS = ['dob', 'mrn', 'athenaId', 'phone', 'email', 'summary', 'meds', 'problems', 'allergies', 'vitals', 'provider', 'insurance', 'address'];
 
+  /* tn-1.0.0: the team-note revision stamp and union. The shell owns the
+     canonical copy (__mlsTeamNotesUnion, beside upsertPatient) and it wins
+     whenever it is loaded; this fallback exists so the module stays testable
+     and boot-order independent, and the suite pins the two against each
+     other - the same arrangement plv uses for provKey/dobKey. */
+  function noteRev(n) {
+    if (!n || typeof n !== 'object') return 0;
+    var a = Number(n.at) || 0, e = Number(n.ed) || 0, d = Number(n.delAt) || 0;
+    return Math.max(a, e, d);
+  }
+  function localNoteUnion(a, b) {
+    var lists = [Array.isArray(a) ? a : [], Array.isArray(b) ? b : []], out = [], slot = {}, li, i, n, id, at;
+    for (li = 0; li < lists.length; li++) {
+      for (i = 0; i < lists[li].length; i++) {
+        n = lists[li][i];
+        if (!n || typeof n !== 'object') continue;
+        id = String(n.id || '');
+        if (!id) continue;
+        at = slot[id];
+        if (at === undefined) { slot[id] = out.length; out.push(n); }
+        else if (noteRev(n) > noteRev(out[at])) out[at] = n;
+      }
+    }
+    out.sort(function (x, y) {
+      var d = (Number(y.at) || 0) - (Number(x.at) || 0);
+      if (d) return d;
+      var xi = String(x.id || ''), yi = String(y.id || '');
+      return xi < yi ? 1 : xi > yi ? -1 : 0;
+    });
+    return out;
+  }
+  function unionNotes(a, b) {
+    var f = window.__mlsTeamNotesUnion;
+    if (typeof f === 'function') { var o = safe(function () { return f(a, b); }, null); if (Array.isArray(o)) return o; }
+    return localNoteUnion(a, b);
+  }
+
   function mergePair(winner, loser) {
     var moved = 0, fi, f;
     for (fi = 0; fi < FILL_FIELDS.length; fi++) {
       f = FILL_FIELDS[fi];
       if (!S(winner[f]).trim() && S(loser[f]).trim()) winner[f] = loser[f];
+    }
+    /* tn-1.0.0: TEAM NOTES UNION - and it CANNOT ride in FILL_FIELDS above.
+       That loop is a scalar fill: it copies only into an EMPTY winner slot, so
+       a winner that already carried a single team note would silently discard
+       the loser's entire thread, and S(array).trim() is meaningless on an
+       array anyway. These two records are the SAME human by this module's own
+       exact-identity criterion, so both threads are about that human and both
+       have to survive - a merge that loses one doctor's message to another is
+       the "our merge deletes chart facts" class landing on a communication
+       surface, where the loss is a conversation nobody knows is missing.
+       Union by id with the highest revision stamp winning is the identical
+       rule the shell's upsertPatient carry uses, so a merge and a stale
+       write-back can never disagree about which copy of a note is current, and
+       a note deleted before the merge stays deleted after it. */
+    var notesMoved = 0;
+    var lNotes = Array.isArray(loser.teamNotes) ? loser.teamNotes : [];
+    if (lNotes.length) {
+      var had = {}, wNotes = Array.isArray(winner.teamNotes) ? winner.teamNotes : [], ni;
+      for (ni = 0; ni < wNotes.length; ni++) if (wNotes[ni] && wNotes[ni].id != null) had[String(wNotes[ni].id)] = 1;
+      for (ni = 0; ni < lNotes.length; ni++) {
+        if (lNotes[ni] && lNotes[ni].id != null && !had[String(lNotes[ni].id)] && !lNotes[ni].del) notesMoved++;
+      }
+      winner.teamNotes = unionNotes(wNotes, lNotes);
     }
     var have = {}, wi;
     var wv = winner.visits = winner.visits || [];
@@ -85,7 +145,7 @@
       wv.push(mv);
       moved++;
     }
-    return moved;
+    return { visits: moved, notes: notesMoved };
   }
 
   /* pm-1.0.1: an explicit pull keeps __mlsPullBusyAt fresh (stamped at start,
@@ -120,7 +180,7 @@
       if (nn && dd.length >= 6) keys.push('n|' + nn + '|' + dd);
       for (ki = 0; ki < keys.length; ki++) (byKey[keys[ki]] = byKey[keys[ki]] || []).push(p);
     }
-    var seenPair = {}, removedIds = {}, aliases = null, merged = 0, movedVisits = 0, k;
+    var seenPair = {}, removedIds = {}, aliases = null, merged = 0, movedVisits = 0, movedNotes = 0, k;
     for (k in byKey) {
       if (!Object.prototype.hasOwnProperty.call(byKey, k)) continue;
       var group = byKey[k].filter(function (x) { return !removedIds[x.id]; });
@@ -135,7 +195,9 @@
         /* extra guard: if BOTH records carry an MRN and they disagree, never merge */
         var wm = digits(w.mrn || w.athenaId), lm = digits(l.mrn || l.athenaId);
         if (wm.length >= 5 && lm.length >= 5 && wm !== lm) break;
-        movedVisits += mergePair(w, l);
+        var pairRes = mergePair(w, l);
+        movedVisits += pairRes.visits;
+        movedNotes += pairRes.notes;
         removedIds[l.id] = String(w.id);
         merged++;
         uniq = [w].concat(uniq.slice(2)).filter(function (x) { return !removedIds[x.id]; });
@@ -179,9 +241,9 @@
     });
     safe(function () { if (typeof window.loadPatients === 'function') window.loadPatients(); });
     if (!opts || opts.silent !== true) {
-      safe(function () { if (typeof window.toast === 'function') window.toast('Merged ' + merged + ' duplicate patient record' + (merged === 1 ? '' : 's') + ' (' + movedVisits + ' visit' + (movedVisits === 1 ? '' : 's') + ' combined - nothing was lost).', 'ok'); });
+      safe(function () { if (typeof window.toast === 'function') window.toast('Merged ' + merged + ' duplicate patient record' + (merged === 1 ? '' : 's') + ' (' + movedVisits + ' visit' + (movedVisits === 1 ? '' : 's') + ' combined' + (movedNotes ? (', ' + movedNotes + ' team note' + (movedNotes === 1 ? '' : 's') + ' kept') : '') + ' - nothing was lost).', 'ok'); });
     }
-    return { merged: merged, movedVisits: movedVisits };
+    return { merged: merged, movedVisits: movedVisits, movedNotes: movedNotes };
   }
 
   /* alias resolver for stale references */
@@ -205,7 +267,7 @@
     safe(function () { window.addEventListener('mls:job-progress', jobHandler, false); });
   }
 
-  window.__mlsPatientMerge = { installed: true, version: 'pm-1.0.3', run: run, resolveAlias: resolveAlias };
+  window.__mlsPatientMerge = { installed: true, version: 'pm-1.0.4', run: run, resolveAlias: resolveAlias, unionNotes: unionNotes };
   window.__mlsPatientMerge_revert = function () {
     stopped = true;
     if (bootT) { safe(function () { clearTimeout(bootT); }); bootT = null; }
