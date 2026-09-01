@@ -1233,6 +1233,7 @@ const tests = [
   'pullbind-auto-bound-from-the-pull.test.js',
   'sj21-premerge-snapshot.test.js',
   'checkin-resets-per-visit.test.js',
+  'opnote-batch-send.test.js',
   'provider-roster-provenance.test.js',
   'athena-tab-lease-over-pin.test.js',
   'extension-mac-sleep-and-legacy-review-runtime.test.js',

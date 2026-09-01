@@ -5179,10 +5179,504 @@
     try { var b = document.getElementById('wf2OneClick'); if (b) b.remove(); } catch (e) {}
     try { var a = document.getElementById('wf2AthenaActions'); if (a) a.remove(); } catch (e2) {}
     try { var g = document.getElementById('wf2AthenaGuide'); if (g) g.remove(); } catch (e3) {}
+    /* opbatch-1.0.0: a queue is stopped (never abandoned mid-write) and its
+       progress surface removed before the sheet it drives is closed. */
+    try { opBatchRevert(); } catch (e4) {}
     closeUnifiedConfirmation();
     closeActionConfirm();
     window.__mlsWriteFlow.installed = false;
   }
+
+  /* ===== opbatch-1.0.0 =====================================================
+     Owner, 2026-08-31, verbatim: "for the op notes wirght to atehna i sohuld
+     be ab le to write a bunch of op ntoes at teh saem time."
+
+     WHAT THIS IS. The op-note room already drafts a whole day in one press
+     ("Draft all N op notes") and files the finished ones in one more ("Save
+     all drafted"). The Athena write was the single step still done one note
+     at a time: open the review, wait for READY, press Confirm, close, pick
+     the next patient, repeat. This block makes that last stretch ONE press.
+
+     WHAT THIS IS NOT. It is not a second write path, and it knows nothing
+     about Athena. There are exactly TWO verbs here that reach the write lane
+     at all, and both are the ones a human press already uses:
+
+         window.pushHistoryNoteToAthena(id)   opens the SAME review
+         runUnifiedPrimarySend(state, null)   is the SAME call the sheet's own
+                                              #mlsAthenaUnifiedGo makes
+
+     Everything the single-note press does still happens, per note, in full:
+     its own read-only probe against the exact encounter, its own identity
+     lock (patient, DOB, MRN, day, appointment binding), its own one-use
+     token, its own receipt. A note that refuses for ANY reason is SKIPPED
+     with the sheet's own words recorded and shown, and the queue moves to
+     the next one. Nothing is retried, chained, guessed or re-derived here.
+
+     THE FOUR INVARIANTS, restated because they are the whole safety of it:
+
+       1. SEQUENTIAL. One athenaOne tab, one engine. "At the same time" means
+          ONE CLICK STARTS THE QUEUE - never that two writes overlap. The next
+          note is not opened until the previous review has been closed.
+
+       2. NO NEW ACTION, EVER. OPBATCH_ACTIONS is a CLOSED allowlist of the
+          only two actions a queue may drive. Sign & Save, billing staging and
+          order placement are not in it and must never be added: the doctor
+          signs each note himself, in athenaOne, per note. A review whose own
+          primary plan would run anything outside that set is SKIPPED and the
+          reason is named. (An open ban-list would rot the moment a new action
+          shipped; this is the closed pin.)
+
+       3. CANCELLABLE BETWEEN NOTES, NEVER MID-WRITE. Cancel is a flag, read
+          before a note is opened and again after its review has closed. A
+          write that has already started runs to its own receipt - abandoning
+          one is exactly what makes an outcome uncertain.
+
+       4. HALT ON UNCERTAINTY. The sheet sets state.halted when an outcome is
+          uncertain. The queue stops there and says so, rather than opening
+          the next chart while a partial mutation may be sitting in Athena.
+
+     REFUSES TO START while a pull/import is running (the same engines
+     __mlsDedupById.pullRunning() reads, plus the schedule importer's own
+     lease/busy stamp), while any Athena review or action confirm is already
+     open, and while a queue is already running.
+
+     Public seam (also the test seam):
+       window.__mlsOpBatchSend { start, cancel, status, eligible, ... }
+     ==================================================================== */
+  var OPBATCH_V = 'opbatch-1.0.0';
+  /* THE CLOSED SET. Read invariant 2 above before touching this line. */
+  var OPBATCH_ACTIONS = { write_note: 1, save_draft: 1 };
+  var OPBATCH_OPEN_MS = 6000;      /* the review opens synchronously or not at all */
+  var OPBATCH_READY_MS = 150000;   /* the same read-only bound the section queue uses */
+  var OPBATCH_WRITE_MS = 180000;   /* the same write bound the section queue uses */
+  var OPBATCH_CLOSE_MS = 700;      /* let the closed sheet settle before the next open */
+  var OPBATCH_PHASE = {
+    waiting: { t: 'Waiting', c: '#52675c' },
+    opening: { t: 'Opening its review', c: '#6d5010' },
+    check: { t: 'Checking Athena read-only', c: '#6d5010' },
+    write: { t: 'Writing', c: '#6d5010' },
+    written: { t: 'WRITTEN', c: '#205c43' },
+    rehearsed: { t: 'REHEARSED', c: '#204034' },
+    skipped: { t: 'SKIPPED', c: '#8b2525' },
+    stopped: { t: 'NOT RUN', c: '#52675c' }
+  };
+  var opBatchRun = null;
+  /* WHAT LANDED IN THIS BROWSER SESSION. Written only from a VERIFIED receipt,
+     read only to make the queue SMALLER - it can never enable a note. A note
+     already written is not offered again (and the op-note room's own count
+     therefore falls as they land); a page reload forgets it and the sheet's
+     own "the exact Athena field already holds text" refusal is what stops a
+     duplicate then. */
+  var opBatchSent = Object.create(null);
+
+  function opBatchNorm(v) { return S(v).replace(/\s+/g, ' ').trim(); }
+  /* The op-note room repaints itself from its own signals; a queue is not one
+     of them, so it is told once when the count it prints has changed. */
+  function opBatchNudgeRoom() {
+    try { var d = window.__mlsOpDay; if (d && typeof d.refresh === 'function') d.refresh(); } catch (e) {}
+  }
+  function opBatchNotes() {
+    try { return (typeof window.getNotes === 'function' ? window.getNotes() : []) || []; } catch (e) { return []; }
+  }
+  /* The app's own blank-token counter when it is on the page; the room's own
+     fallback literal otherwise. A note with any unresolved placeholder never
+     reaches the queue - and pushHistoryNoteToAthena refuses it again anyway. */
+  function opBatchBlanks(text) {
+    try { if (typeof window.opNoteBlankTokens === 'function') return (window.opNoteBlankTokens(text) || []).length; } catch (e) {}
+    var m = S(text).match(/\[\[[a-z0-9_]+\]\]/gi);
+    return m ? m.length : 0;
+  }
+  /* THE SAME THREE ENGINES __mlsDedupById.pullRunning() READS, plus the
+     schedule importer's lease/busy stamp wfbind already honours. A queue
+     started under a running import would fight it for the one athenaOne tab. */
+  function opBatchPullRunning() {
+    try { var D = window.__mlsDayHistoryPull; if (D && D.state && D.state.running) return true; } catch (e) {}
+    try { var M = window.__mlsProvMonthPull; if (M && M.running) return true; } catch (e2) {}
+    try {
+      var E = window.__mlsEasyV32;
+      if (E && typeof E.state === 'function') { var s = E.state(); if (s && s.pull && s.pull.running) return true; }
+    } catch (e3) {}
+    try { if (wfbindPullBusy()) return true; } catch (e4) {}
+    return false;
+  }
+  /* ONE CHART RECORD, PRE-SCREENED THE WAY pushHistoryNoteToAthena WILL JUDGE
+     IT. This exists for the QUEUE's shape and the button's count only. Every
+     gate below is re-run by the real entry point, and the real entry point is
+     the one that decides. Nothing here can make a note sendable. */
+  function opBatchScreen(rec) {
+    if (!rec || !S(rec.id)) return { ok: false, why: 'that note is no longer in the chart' };
+    if (S(rec.kind) !== 'opnote') return { ok: false, why: 'that record is not an op note' };
+    if (rec.isDraft) return { ok: false, why: 'still a draft - finish and save it to the chart first' };
+    var body = S(rec.text || rec.soap || '');
+    if (!opBatchNorm(body)) return { ok: false, why: 'it has no note text to send' };
+    var blanks = opBatchBlanks(body);
+    if (blanks) return { ok: false, why: blanks + ' unresolved field' + (blanks === 1 ? '' : 's') + ' still to fill in' };
+    try {
+      if (typeof window._athenaBindingForSavedRecord === 'function') {
+        var b = window._athenaBindingForSavedRecord(rec);
+        if (b && b.routeBlocked) return { ok: false, why: 'quarantined - its patient binding was not safe' };
+        if (b && b.identityConflict) return { ok: false, why: 'its patient identity conflicts with the linked chart' };
+      }
+    } catch (eB) {}
+    return { ok: true, why: '' };
+  }
+  function opBatchItem(rec) {
+    return { id: S(rec.id), name: S(rec.patient), patientId: S(rec.patientId),
+      body: opBatchNorm(S(rec.text || rec.soap || '')).slice(0, 400), phase: 'waiting', why: '', action: '' };
+  }
+  /* THE DAY'S OP NOTES, IN THE ORDER THE ROOM PAINTS THEM. window._opPrep is
+     the op-note room's own row array and row._noteId is the chart record its
+     save produced, so the queue is the day on screen - never the whole chart.
+     An explicit id list (what the room's own button passes) is filtered by the
+     same screen and never trusted: an id the screen refuses is reported, not
+     queued. */
+  function opBatchEligible(ids) {
+    var want = null;
+    if (Array.isArray(ids) && ids.length) { want = {}; ids.forEach(function (x) { if (S(x)) want[S(x)] = 1; }); }
+    var byId = {};
+    opBatchNotes().forEach(function (n) { if (n && S(n.id)) byId[S(n.id)] = n; });
+    var order = [], rows = [];
+    try { rows = window._opPrep || []; } catch (e) { rows = []; }
+    for (var i = 0; i < rows.length; i++) { var nid = S(rows[i] && rows[i]._noteId); if (nid) order.push(nid); }
+    if (want) Object.keys(want).forEach(function (k) { if (order.indexOf(k) < 0) order.push(k); });
+    var seen = {}, items = [], refused = [];
+    for (var j = 0; j < order.length; j++) {
+      var id = order[j];
+      if (seen[id]) continue;
+      seen[id] = 1;
+      if (want && !want[id]) continue;
+      if (opBatchSent[id]) { if (want) refused.push({ id: id, why: 'already written into Athena in this session' }); continue; }
+      var scr = opBatchScreen(byId[id]);
+      if (!scr.ok) { if (want) refused.push({ id: id, why: scr.why }); continue; }
+      items.push(opBatchItem(byId[id]));
+    }
+    return { items: items, refused: refused };
+  }
+  /* IS THE OPEN REVIEW THIS NOTE'S REVIEW? Identity is checked again here
+     before anything is pressed - the sheet's own lock is the authority, this
+     only refuses to press a sheet that is about a different patient or a
+     different body of text (a rebind, a stale sheet, a race). */
+  function opBatchSheetMatches(state, item) {
+    try {
+      if (!state || state.closed || !state.manifest || !item) return false;
+      var p = state.manifest.patient || {};
+      if (S(item.patientId) && S(p.patientId) && S(p.patientId).trim() !== S(item.patientId).trim()) return false;
+      if (S(item.name) && S(p.name) && !nameMatch(p.name, item.name)) return false;
+      if (!S(item.body)) return false;
+      var rows = state.manifest.rows || [];
+      for (var i = 0; i < rows.length; i++) {
+        var t = opBatchNorm(rows[i] && rows[i].payload && rows[i].payload.noteText);
+        if (t && t.slice(0, 400) === item.body) return true;
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+  /* THE SHEET'S OWN WORDS FOR ITS OWN REFUSAL. Never paraphrased here. */
+  function opBatchRefusalText(state) {
+    var said = '';
+    try { var n = document.getElementById('mlsAthenaUnifiedProbe'); said = opBatchNorm(n && n.textContent); } catch (e) { said = ''; }
+    if (!said) { try { said = opBatchNorm(unifiedPrimaryPlan(state).reason); } catch (e2) { said = ''; } }
+    return said || 'the read-only Athena check did not verify this exact encounter';
+  }
+
+  /* ---- the progress surface (wfprog-1.1.0's shape, outside the sheet) ----
+     The sheet's own #mlsAthenaUnifiedProgress is destroyed with every close,
+     so a cross-note queue needs a host that outlives it. Same vocabulary,
+     same colours, same "which one, N of M, and what happened to the ones
+     before it" - and it sits ABOVE the sheet so it never disappears behind
+     the review it is driving. */
+  function opBatchHost(make) {
+    var host = null;
+    try { host = document.getElementById('mlsOpBatchProgress'); } catch (e) { return null; }
+    if (host || !make) return host;
+    try {
+      host = document.createElement('div');
+      host.id = 'mlsOpBatchProgress';
+      host.setAttribute('role', 'status');
+      host.setAttribute('aria-live', 'polite');
+      host.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:2147483610;width:min(370px,92vw);max-height:72vh;overflow:auto;' +
+        'background:#fff;color:#204034;border:1px solid #cfe0d7;border-radius:12px;box-shadow:0 18px 46px rgba(10,30,70,.30);' +
+        'padding:12px 13px;font:12.5px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif';
+      document.body.appendChild(host);
+    } catch (e2) { return null; }
+    return host;
+  }
+  function opBatchCloseHost() { try { var h = document.getElementById('mlsOpBatchProgress'); if (h) h.remove(); } catch (e) {} }
+  function opBatchCounts(run) {
+    var out = { written: 0, rehearsed: 0, skipped: 0, left: 0 };
+    (run.items || []).forEach(function (x) {
+      if (x.phase === 'written') out.written++;
+      else if (x.phase === 'rehearsed') out.rehearsed++;
+      else if (x.phase === 'skipped') out.skipped++;
+      else if (x.phase === 'waiting' || x.phase === 'stopped') out.left++;
+    });
+    return out;
+  }
+  function opBatchHeadline(run) {
+    var n = run.items.length;
+    if (run.done) return run.summary || 'Finished.';
+    if (run.cancel) return 'Stopping after this note - nothing after it will run.';
+    var at = Math.max(0, Math.min(run.i, n - 1)) + 1;
+    var cur = run.items[run.i];
+    var phase = OPBATCH_PHASE[(cur && cur.phase) || 'waiting'] || OPBATCH_PHASE.waiting;
+    return phase.t + ' - note ' + at + ' of ' + n + (cur && cur.name ? (' (' + cur.name + ')') : '');
+  }
+  function opBatchSummaryText(run) {
+    var c = opBatchCounts(run), n = run.items.length, bits = [];
+    bits.push(c.written + ' of ' + n + ' written into Athena');
+    if (c.rehearsed) bits.push(c.rehearsed + ' rehearsed (probe only - nothing written)');
+    if (c.skipped) bits.push(c.skipped + ' skipped, each with its reason below');
+    if (c.left) bits.push(c.left + ' not run');
+    return bits.join('; ') + '. Nothing was saved and nothing was signed - Save and Sign & Save stay yours in athenaOne, per note.' +
+      (run.stop ? (' ' + run.stop) : '');
+  }
+  function opBatchPaint() {
+    var run = opBatchRun;
+    var host = opBatchHost(!!run);
+    if (!host) return;
+    if (!run) { opBatchCloseHost(); return; }
+    var c = opBatchCounts(run), n = run.items.length;
+    var pct = n ? Math.round(((c.written + c.rehearsed + c.skipped) / n) * 100) : 0;
+    var rowsHtml = run.items.map(function (x, i) {
+      var ph = OPBATCH_PHASE[x.phase] || OPBATCH_PHASE.waiting;
+      var live = (!run.done && i === run.i && x.phase !== 'written' && x.phase !== 'skipped' && x.phase !== 'rehearsed');
+      return '<div data-mls-opbatch-row="' + esc(x.id) + '" style="border-top:1px solid #e6efe9;padding:6px 0">' +
+        '<b style="font-weight:750">' + esc(x.name || 'This op note') + '</b>' +
+        '<span style="float:right;font-weight:800;color:' + ph.c + '">' + esc(live ? (ph.t + '...') : ph.t) + '</span>' +
+        '<div style="clear:both;color:#52675c;font-size:11.5px">' + esc(x.why || '') + '</div></div>';
+    }).join('');
+    host.innerHTML =
+      '<div style="display:flex;gap:8px;align-items:flex-start">' +
+        '<div style="flex:1;font-weight:850;font-size:13px">Sending op notes to Athena</div>' +
+        '<button type="button" id="mlsOpBatchStop" style="border:1px solid #d8ddd9;background:#fff;color:#204034;border-radius:9px;padding:6px 10px;font-weight:750;cursor:pointer;font:700 11.5px/1.2 inherit">' +
+        (run.done ? 'Close' : 'Stop after this note') + '</button>' +
+      '</div>' +
+      '<div data-mls-opbatch-headline="1" style="margin-top:5px;color:#204034;font-weight:700">' + esc(opBatchHeadline(run)) + '</div>' +
+      '<div style="margin-top:7px;height:8px;border-radius:6px;background:#e6efe9;overflow:hidden">' +
+        '<div style="height:100%;width:' + pct + '%;background:#2f7d5a"></div></div>' +
+      '<div style="margin-top:8px">' + rowsHtml + '</div>' +
+      '<div style="margin-top:9px;padding:8px 10px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:11.5px">' +
+        '<b>Nothing is saved and nothing is signed.</b> Each note gets its own read-only Athena check, its own confirmation-bound write and its own receipt, one at a time. Save and Sign &amp; Save stay yours in athenaOne.</div>';
+    try {
+      var stop = document.getElementById('mlsOpBatchStop');
+      if (stop) stop.addEventListener('click', function () { if (opBatchRun && !opBatchRun.done) opBatchCancel(''); else opBatchCloseHost(); }, false);
+    } catch (e) {}
+  }
+  function opBatchSay(message, kind) {
+    try { if (typeof window.toast === 'function') window.toast(message, kind || ''); } catch (e) {}
+  }
+
+  function opBatchSettle(run, item, phase, why, action) {
+    item.phase = phase;
+    item.why = S(why);
+    item.action = S(action || '');
+    /* Recorded ONLY from a settled written verdict, which is itself only ever
+       set from a receipt whose status is 'verified'. */
+    if (phase === 'written' && S(item.id)) opBatchSent[S(item.id)] = new Date().toISOString();
+    opBatchPaint();
+  }
+  function opBatchFinish(run) {
+    if (opBatchRun !== run || run.done) return;
+    (run.items || []).forEach(function (x) { if (x.phase === 'waiting') { x.phase = 'stopped'; if (!x.why) x.why = 'the queue stopped before this one'; } });
+    run.done = true;
+    run.finishedAt = Date.now();
+    run.summary = opBatchSummaryText(run);
+    opBatchPaint();
+    opBatchSay(run.summary, opBatchCounts(run).written ? '' : 'err');
+    opBatchNudgeRoom();
+  }
+  function opBatchNext(run, i) {
+    if (opBatchRun !== run || run.done) return;
+    /* CANCELLABLE BETWEEN NOTES. This is the only place a stop takes effect,
+       and it is always AFTER a review has closed - never inside a write. */
+    if (run.cancel) { opBatchFinish(run); return; }
+    bxSleep(OPBATCH_CLOSE_MS).then(function () { opBatchStep(run, i + 1); });
+  }
+  function opBatchCloseSheet() {
+    try { closeUnifiedConfirmation(); } catch (e) {}
+  }
+  function opBatchStep(run, i) {
+    if (opBatchRun !== run || run.done) return;
+    if (run.cancel || i >= run.items.length) { opBatchFinish(run); return; }
+    run.i = i;
+    var item = run.items[i];
+    item.phase = 'opening';
+    item.why = '';
+    opBatchPaint();
+    var before = unifiedAthenaState;
+    /* THE ONE ENTRY POINT. Every gate pushHistoryNoteToAthena owns - draft,
+       unresolved blank tokens, route quarantine, identity conflict, the saved
+       canonical payload check - runs here exactly as it does for a single
+       human press, because it IS the single human press. */
+    try { window.pushHistoryNoteToAthena(item.id); }
+    catch (eOpen) {
+      opBatchSettle(run, item, 'skipped', 'MLS could not open the Athena review for this note. Nothing was sent for it.');
+      opBatchNext(run, i); return;
+    }
+    bxWait(function () {
+      var st = unifiedAthenaState;
+      return !!(st && st !== before && !st.closed && st.manifest);
+    }, OPBATCH_OPEN_MS).then(function () {
+      if (opBatchRun !== run || run.done) return;
+      var st = unifiedAthenaState;
+      if (!st || st === before || st.closed || !st.manifest) {
+        opBatchSettle(run, item, 'skipped', 'The Athena review refused to open for this note - MLS said why on screen. Nothing was sent for it.');
+        opBatchNext(run, i); return;
+      }
+      if (!opBatchSheetMatches(st, item)) {
+        opBatchSettle(run, item, 'skipped', 'The review that opened is not this note - MLS will not press a sheet it cannot match to the note it queued. Nothing was sent for it.');
+        opBatchCloseSheet(); opBatchNext(run, i); return;
+      }
+      item.phase = 'check';
+      opBatchPaint();
+      /* THE SAME SETTLE LATCH THE PER-SECTION QUEUE WAITS ON: a validated
+         probe, or a probe generation that settled without one. */
+      bxWait(function () {
+        var s = unifiedAthenaState;
+        if (!s || s.closed) return true;
+        if (s.probe) return true;
+        return s.probeSettled === s.probeGeneration && !s.probe;
+      }, OPBATCH_READY_MS).then(function (settledInTime) {
+        if (opBatchRun !== run || run.done) return;
+        var st2 = unifiedAthenaState;
+        if (!st2 || st2.closed) {
+          opBatchSettle(run, item, 'skipped', 'The Athena review closed before its read-only check finished. Nothing was sent for it.');
+          opBatchNext(run, i); return;
+        }
+        if (!opBatchSheetMatches(st2, item)) {
+          opBatchSettle(run, item, 'skipped', 'The open review stopped matching this note during its read-only check. Nothing was sent for it.');
+          opBatchCloseSheet(); opBatchNext(run, i); return;
+        }
+        if (!st2.probe) {
+          opBatchSettle(run, item, 'skipped', settledInTime === false
+            ? 'Its read-only Athena check ran past the 150-second bound and was left alone. Nothing was sent for it.'
+            : (opBatchRefusalText(st2) + ' Nothing was sent for it.'));
+          opBatchCloseSheet(); opBatchNext(run, i); return;
+        }
+        var plan = unifiedPrimaryPlan(st2);
+        if (plan.mode === 'none' || !plan.rows || !plan.rows.length) {
+          opBatchSettle(run, item, 'skipped', (opBatchNorm(plan.reason) || opBatchRefusalText(st2)) + ' Nothing was sent for it.');
+          opBatchCloseSheet(); opBatchNext(run, i); return;
+        }
+        /* INVARIANT 2, ENFORCED AT THE PRESS. Every row this press would run
+           must be in the closed set. Anything else - Sign & Save, billing,
+           an order - is the doctor's own deliberate single confirmation and
+           never a queue's. */
+        var outside = plan.rows.filter(function (r) { return !OPBATCH_ACTIONS[S(r && r.action)]; });
+        if (outside.length) {
+          opBatchSettle(run, item, 'skipped', 'This review would run an action a batch may never drive (' +
+            outside.map(function (r) { return S(r && r.label) || S(r && r.action); }).join(', ') +
+            '). Open it yourself and confirm it on its own. Nothing was sent for it.');
+          opBatchCloseSheet(); opBatchNext(run, i); return;
+        }
+        item.phase = 'write';
+        opBatchPaint();
+        /* THE SAME CALL #mlsAthenaUnifiedGo MAKES. No second send loop. */
+        try { runUnifiedPrimarySend(st2, null); }
+        catch (eSend) {
+          opBatchSettle(run, item, 'skipped', 'The send did not start for this note. Nothing was sent for it.');
+          opBatchCloseSheet(); opBatchNext(run, i); return;
+        }
+        bxWait(function () {
+          var s3 = unifiedAthenaState;
+          if (!s3 || s3 !== st2 || s3.closed) return true;
+          if (s3.running || s3.batchRunning) return false;
+          for (var k in s3.receipts) { if (Object.prototype.hasOwnProperty.call(s3.receipts, k)) return true; }
+          return false;
+        }, OPBATCH_WRITE_MS).then(function (wroteInTime) {
+          if (opBatchRun !== run || run.done) return;
+          var s3 = unifiedAthenaState;
+          var receipts = (s3 && s3 === st2 && s3.receipts) ? s3.receipts : {};
+          var keys = Object.keys(receipts);
+          var verified = keys.filter(function (k) { return receipts[k] && receipts[k].status === 'verified'; });
+          var rehearsed = keys.filter(function (k) { return receipts[k] && receipts[k].status === 'rehearsed'; });
+          var uncertain = keys.filter(function (k) { return receipts[k] && receipts[k].status === 'uncertain'; });
+          if (verified.length) opBatchSettle(run, item, 'written', S(receipts[verified[0]].message), S(receipts[verified[0]].action));
+          else if (rehearsed.length) opBatchSettle(run, item, 'rehearsed', S(receipts[rehearsed[0]].message), S(receipts[rehearsed[0]].action));
+          else if (uncertain.length) opBatchSettle(run, item, 'skipped', S(receipts[uncertain[0]].message), S(receipts[uncertain[0]].action));
+          else if (!keys.length && wroteInTime === false) opBatchSettle(run, item, 'skipped', 'Its write ran past the 180-second bound with no receipt - inspect that exact Athena field before retrying this one.');
+          else opBatchSettle(run, item, 'skipped', keys.length ? S(receipts[keys[0]].message) : 'Athena returned no receipt for this note. Nothing is claimed for it.');
+          /* INVARIANT 4: an uncertain outcome halts the queue where it stands. */
+          var halted = !!(s3 && s3 === st2 && s3.halted) || uncertain.length > 0;
+          opBatchCloseSheet();
+          if (halted) {
+            run.stop = 'The queue stopped here: one outcome was uncertain. Inspect that exact Athena destination before anything else runs.';
+            run.cancel = true;
+            opBatchFinish(run);
+            return;
+          }
+          opBatchNext(run, i);
+        });
+      });
+    });
+  }
+  function opBatchStart(opts) {
+    opts = opts || {};
+    if (opBatchRun && !opBatchRun.done) return { started: false, reason: 'A batch send is already running. Nothing new was started.' };
+    if (typeof window.pushHistoryNoteToAthena !== 'function') return { started: false, reason: 'The Athena review is not available on this page yet. Nothing was sent.' };
+    if (typeof document === 'undefined' || !document.body) return { started: false, reason: 'The page is not ready. Nothing was sent.' };
+    if (opBatchPullRunning()) return { started: false, reason: 'A pull or import is running. Let it finish, then send these op notes to Athena. Nothing was sent.' };
+    if (unifiedAthenaState && !unifiedAthenaState.closed) return { started: false, reason: 'An Athena review is already open. Finish or close it, then start the send. Nothing was sent.' };
+    if (athenaActionRunning) return { started: false, reason: 'Another Athena action is awaiting confirmation. Finish it first. Nothing was sent.' };
+    var found = opBatchEligible(opts.noteIds);
+    if (!found.items.length) {
+      return { started: false, refused: found.refused,
+        reason: 'No op note on this day is ready for Athena yet. A note must be drafted, have every field filled in, and be saved to the chart before it can be sent.' };
+    }
+    var run = { v: OPBATCH_V, startedAt: Date.now(), finishedAt: 0, items: found.items, refused: found.refused,
+      i: 0, cancel: false, done: false, stop: '', summary: '' };
+    opBatchRun = run;
+    opBatchPaint();
+    opBatchNudgeRoom();
+    opBatchStep(run, 0);
+    return { started: true, total: run.items.length, refused: found.refused,
+      ids: run.items.map(function (x) { return x.id; }) };
+  }
+  function opBatchCancel(why) {
+    var run = opBatchRun;
+    if (!run || run.done) return { cancelled: false, reason: 'No batch send is running.' };
+    run.cancel = true;
+    run.stop = opBatchNorm(why) || 'Stopped by the doctor. The note already being written finishes on its own; nothing after it runs.';
+    opBatchPaint();
+    return { cancelled: true, at: run.i, total: run.items.length };
+  }
+  function opBatchStatus() {
+    var run = opBatchRun;
+    if (!run) return { v: OPBATCH_V, running: false, done: false, cancelRequested: false, total: 0, index: -1,
+      written: 0, rehearsed: 0, skipped: 0, summary: '', stop: '', notes: [] };
+    var c = opBatchCounts(run);
+    return { v: OPBATCH_V, running: !run.done, done: run.done, cancelRequested: run.cancel,
+      total: run.items.length, index: run.i, written: c.written, rehearsed: c.rehearsed, skipped: c.skipped,
+      summary: run.summary, stop: run.stop,
+      notes: run.items.map(function (x) { return { id: x.id, name: x.name, phase: x.phase, why: x.why, action: x.action }; }) };
+  }
+  function opBatchRevert() {
+    if (opBatchRun && !opBatchRun.done) opBatchCancel('The write flow was reverted.');
+    opBatchRun = null;
+    opBatchSent = Object.create(null);
+    opBatchCloseHost();
+    return true;
+  }
+  var OPBATCH_API = {
+    v: OPBATCH_V, version: OPBATCH_V,
+    start: opBatchStart, cancel: opBatchCancel, status: opBatchStatus,
+    /* read-only seams: nothing below can open a review or send anything */
+    eligible: function (ids) {
+      var found = opBatchEligible(ids);
+      return { count: found.items.length, refused: found.refused,
+        items: found.items.map(function (x) { return { id: x.id, name: x.name }; }),
+        ids: found.items.map(function (x) { return x.id; }) };
+    },
+    screen: opBatchScreen, pullRunning: opBatchPullRunning, matches: opBatchSheetMatches,
+    sent: function () { return Object.keys(opBatchSent); },
+    actions: OPBATCH_ACTIONS, phases: OPBATCH_PHASE,
+    bounds: { open: OPBATCH_OPEN_MS, ready: OPBATCH_READY_MS, write: OPBATCH_WRITE_MS, close: OPBATCH_CLOSE_MS },
+    summaryText: function () { return opBatchRun ? opBatchSummaryText(opBatchRun) : ''; },
+    headline: function () { return opBatchRun ? opBatchHeadline(opBatchRun) : ''; },
+    revert: opBatchRevert
+  };
+  window.__mlsOpBatchSend = OPBATCH_API;
+  /* ===== end opbatch-1.0.0 ================================================ */
 
   window.__mlsWriteFlow = {
     installed: true, version: VERSION, state: STATE,
@@ -5240,6 +5734,10 @@
       run: function () { return mrnAdoptPass(unifiedAthenaState); },
       last: function () { return mrnAdoptLast; },
       revert: function () { mrnAdoptOff = true; return true; } },
+    /* opbatch-1.0.0: the cross-NOTE queue. It owns no write of its own - it
+       presses the sheet's own primary, one note at a time. Same object as
+       window.__mlsOpBatchSend. */
+    opBatch: OPBATCH_API,
     revert: revert
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

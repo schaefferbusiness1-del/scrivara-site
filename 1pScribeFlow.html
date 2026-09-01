@@ -46897,6 +46897,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
 }
 #mlsOpDayGo[hidden]{ display:none; }
+/* opbatch-1.0.0 (owner 2026-08-31: "for the op notes wirght to atehna i sohuld
+   be ab le to write a bunch of op ntoes at teh saem time"). ONE press queues
+   every op note this day already has in the chart through the SAME per-note
+   Athena review, one at a time. Quieter than the day's own primary because it
+   is never the day's next step - it is what is left after the notes are in the
+   chart - and it is never a glow candidate (glowId does not name it). */
+#mlsOpnAthAll{
+  width:100%; box-sizing:border-box; min-height:48px;
+  font:700 13px/1.25 var(--sans); padding:13px 14px;
+  border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
+  background:var(--card,#fff); color:var(--brand,#2E6A4B); cursor:pointer; text-align:center;
+}
+#mlsOpnAthAll:hover{ background:#F1F7F3; }
+#mlsOpnAthAll[hidden]{ display:none; }
 #mlsOpDayTools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 9px; }
 #mlsOpnSearch{
   flex:1 1 140px; min-width:0; min-height:44px; box-sizing:border-box;
@@ -48053,6 +48067,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
           '<p id="mlsOpnNotice" role="status" hidden></p>' +
           '<div id="mlsOpnRailAct">' +
             '<button type="button" id="mlsOpDayGo" hidden></button>' +
+            '<button type="button" id="mlsOpnAthAll" hidden></button>' +
           '</div>' +
           '<div id="mlsOpDayTools">' +
             '<input type="search" id="mlsOpnSearch" placeholder="Search this day" aria-label="Search this day by name or procedure">' +
@@ -48068,6 +48083,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       rail.querySelector('#mlsOpnDayIn').addEventListener('change', function () { setDay(this.value); }, false);
       rail.querySelector('#mlsOpnSearch').addEventListener('input', function () { query = S(this.value); paint(); }, false);
       rail.querySelector('#mlsOpDayGo').addEventListener('click', function () { runDayPrimary(); }, false);
+      rail.querySelector('#mlsOpnAthAll').addEventListener('click', function () { runAthenaAll(); }, false);
     }
     /* THE RAIL GOES FIRST in its column. Only this block's own nodes move -
        plus the one shell button named above; not one node the room or its four
@@ -48140,6 +48156,64 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      nothing else). PRESENCE, NOT VISIBILITY: in Simple the whole Fields bar is
      folded, and its handler runs whether or not the button is on screen. */
   function bulkSave() { return el('mlsOnfSaveAll'); }
+  /* ---- opbatch-1.0.0: THE WHOLE DAY'S ATHENA WRITE, IN ONE PRESS ------
+     Owner, 2026-08-31, verbatim: "for the op notes wirght to atehna i sohuld
+     be ab le to write a bunch of op ntoes at teh saem time."
+
+     THIS ROOM DECIDES NOTHING ABOUT ATHENA. It counts the op notes this day
+     already has in the chart - the exact rows whose own single-note primary is
+     "Review for Athena" - and hands those chart-record ids to the ONE queue
+     driver on the page. That driver opens each note's OWN review through the
+     app's own pushHistoryNoteToAthena() and presses that sheet's OWN primary,
+     one note at a time. Every per-note gate is untouched: its own read-only
+     probe against the exact encounter, its own identity verification, its own
+     one-use token, its own receipt. A note that refuses is SKIPPED with its
+     reason shown, and the queue moves on. Save and Sign & Save are never
+     queued and never will be - they stay the doctor's own click, per note, in
+     athenaOne.
+
+     The driver re-screens every id it is given, so this list is a SHAPE, not
+     a permission: an id this room offers that the driver refuses is reported
+     by the driver, never sent. */
+  function athBatch() {
+    try { var b = window.__mlsOpBatchSend; return (b && typeof b.start === 'function' && typeof b.status === 'function') ? b : null; }
+    catch (e) { return null; }
+  }
+  /* filedRecord() is the SAME test notePlan() uses before it may offer
+     "Review for Athena" at all, and blanksLeft() is the same blank-token count
+     that branch returns before it. Both read this pass's own caches, so
+     counting the day costs the paint nothing extra. */
+  function athSendable() {
+    var r = rows(), out = [], i, rec;
+    for (i = 0; i < r.length; i++) {
+      /* ONE CHART SCAN PER PASS, NOT TWO. statusOf() is already computed and
+         cached for every row of this paint, and only a row it calls 'filed'
+         or 'saved' can possibly have a chart record - so the walk below costs
+         one extra filedRecord() per FILED row rather than a second N x M scan
+         of the whole notes store on every repaint (the b965 shape). */
+      var k = statusOf(r[i], i).k;
+      if (k !== 'filed' && k !== 'saved') continue;
+      if (blanksLeft(r[i])) continue;
+      rec = filedRecord(r[i]);
+      if (!rec || S(rec.kind) !== 'opnote') continue;
+      if (out.indexOf(rec.id) < 0) out.push(rec.id);
+    }
+    return out;
+  }
+  function athSay(msg) { try { if (typeof window.toast === 'function') window.toast(msg, 'err'); } catch (e) {} }
+  function runAthenaAll() {
+    var batch = athBatch();
+    if (!batch) { athSay('The Athena send is still loading. Nothing was sent.'); return; }
+    var st = batch.status();
+    /* WHILE A QUEUE IS RUNNING THIS BUTTON IS ITS STOP. Cancel is read
+       between notes only - the note already being written finishes. */
+    if (st && st.running) { batch.cancel(''); refresh(); return; }
+    var ids = athSendable();
+    if (!ids.length) { athSay('No op note on this day is in the chart yet. Save them to the charts first, then send. Nothing was sent.'); return; }
+    var res = batch.start({ noteIds: ids });
+    if (!res || res.started !== true) athSay(S(res && res.reason) || 'The Athena send did not start. Nothing was sent.');
+    refresh();
+  }
   function runDayPrimary() {
     var st = dayState(), i;
     if (st === 'review') { i = firstOfKind('review'); if (i >= 0) openNote(i); return; }
@@ -48738,6 +48812,28 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         go.textContent = '';
       }
     }
+    /* opbatch-1.0.0: the day's Athena send. HIDDEN, never disabled, when
+       there is nothing in the chart to send - a primary nobody can press is
+       the exact thing 4.0.0 exists to remove. */
+    var ath = el('mlsOpnAthAll');
+    if (ath) {
+      var batch = athBatch();
+      var bst = batch ? batch.status() : null;
+      var running = !!(bst && bst.running);
+      var sendIds = running ? [] : (batch ? athSendable() : []);
+      if (running) {
+        ath.hidden = false;
+        ath.textContent = '\u23F9 Stop after this note (' + (bst.index + 1) + ' of ' + bst.total + ')';
+        ath.title = 'Stop the Athena send. The note being written finishes on its own; nothing after it runs.';
+      } else if (sendIds.length) {
+        ath.hidden = false;
+        ath.textContent = '\uD83D\uDE80 Send ' + sendIds.length + ' op note' + (sendIds.length === 1 ? '' : 's') + ' to Athena';
+        ath.title = 'Opens each of these notes in its own Athena review, in turn, and presses that review\u2019s own Confirm & Send. Every note keeps its own read-only check, its own identity verification and its own receipt. Nothing is saved and nothing is signed.';
+      } else {
+        ath.hidden = true;
+        ath.textContent = '';
+      }
+    }
     /* Relabel, never rebuild: opPrepRender() writes only this button's
        display, so a label written here survives every repaint, and revert()
        puts the shell's own words back. It is HIDDEN only when the day has
@@ -49169,6 +49265,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     notice: function () { var n = el('mlsOpnNotice'); return (n && !n.hidden) ? S(n.textContent) : ''; },
     selected: function () { return sel; },
     notePlan: function () { var p = notePlan(); return p ? { label: p.label, able: !!p.able } : null; },
+    /* opbatch-1.0.0 read-only seams. sendable() is the id list this room
+       offers; sendAll() is exactly what the button's own click runs. */
+    sendable: athSendable,
+    sendAll: runAthenaAll,
     setDetails: function (v) { detOpen = !!v; paint(); return detOpen; },
     setTemplate: function (v) { tplOpen = !!v; paint(); return tplOpen; },
     /* The honest answer to "what is on this screen", counted, not asserted. */
