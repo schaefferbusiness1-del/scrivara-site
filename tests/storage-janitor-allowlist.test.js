@@ -54,7 +54,10 @@ const store = makeStore({
   'sf_u::_::copilotHistByPt': 'x'.repeat(60),
   /* (2) adversarial near-misses — must SURVIVE */
   ['mls_todays_backup_' + FRESH]: 'FRESH BACKUP',                       /* too young */
-  [NS + 'schedImportIndexV1::' + OLDDASH.slice(0, 8) + '31']: '',        /* handled below: own ledger young */
+  /* "own ledger young" survives is exercised below via a RELATIVE date
+     (Date.now() - 5 days), not a hardcoded calendar date — a fixed literal
+     here (formerly 2026-07-31) ages past LEDGER_MIN_AGE_DAYS on its own and
+     silently becomes debris again as the calendar moves forward. */
   ['sf_u::other@y::schedImportIndexV1::2026-07-06']: 'FOREIGN LEDGER',   /* foreign namespace */
   'mls_todays_backup_notadate': 'BAD DATE',                              /* unparseable date */
   'mlsRepairBackup_20260701_extra': 'SUFFIXED',                          /* pattern near-miss */

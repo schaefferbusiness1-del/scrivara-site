@@ -48,7 +48,6 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const FILL_PATH = path.join(ROOT, 'feat_mls_opnote_fill.js');
@@ -66,12 +65,21 @@ function ok(cond, label, detail) {
 }
 function head(t) { console.log('\n' + t); }
 
-/* The pristine bytes this pass started from. If git cannot produce them the
-   before/after ledger is unprovable and this suite must say so, not skip. */
+/* The pristine bytes this pass started from - FROZEN, not chased. Reading
+   `git show HEAD:...` only worked while this suite's own commit (b1146,
+   02158d65) was still uncommitted or freshly landed; once it merged, HEAD
+   *is* the working copy and every "the old pane DID X (not vacuous)" check
+   became unsatisfiable by construction (PRISTINE_SRC === NEW_SRC). The
+   before-state is a fact about history, not about the branch tip, so it is
+   captured once from the parent of the clarity-pass commit
+   (`git show 02158d65^:feat_mls_opnote_fill.js`, the b944 shape: two
+   dictation buttons, no instant-keystroke update) into a fixture that never
+   moves again. If a FUTURE pass wants a new non-vacuity baseline, freeze a
+   new fixture deliberately - never point this back at HEAD. */
+const PRISTINE_FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'fill-pane-pristine-b944.js');
 let PRISTINE_SRC = '';
 try {
-  PRISTINE_SRC = execFileSync('git', ['show', 'HEAD:feat_mls_opnote_fill.js'],
-    { cwd: ROOT, encoding: 'utf8', maxBuffer: 40 * 1024 * 1024 });
+  PRISTINE_SRC = fs.readFileSync(PRISTINE_FIXTURE, 'utf8');
 } catch (e) {
   PRISTINE_SRC = '';
 }
@@ -388,8 +396,8 @@ async function main() {
 /* ===================================================================== */
 head('PART 1 - THE CONTROL LEDGER: what the old pane rendered, the new one still does');
 
-ok(PRISTINE_SRC.length > 1000, 'the PRISTINE module was read out of git HEAD (the ledger is not vacuous)',
-  'git show HEAD:feat_mls_opnote_fill.js produced ' + PRISTINE_SRC.length + ' bytes');
+ok(PRISTINE_SRC.length > 1000, 'the PRISTINE module was read from the frozen b944 fixture (the ledger is not vacuous)',
+  PRISTINE_FIXTURE + ' produced ' + PRISTINE_SRC.length + ' bytes');
 const before = PRISTINE_SRC ? ledgerOf(PRISTINE_SRC) : null;
 const after = ledgerOf(NEW_SRC);
 ok(!!before && !!after, 'both modules built a Fields box over the same draft');

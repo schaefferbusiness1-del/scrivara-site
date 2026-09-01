@@ -164,9 +164,16 @@ assert(app.includes('var ds=__mlsHistoryDateSearch(d);'),
   let textReads = 0;
   const newest = { id: 'n-new', patientId: 'p2', patient: 'Patient Two', cc: 'Follow up', updated: Date.parse('2026-08-03T12:00:00Z') };
   Object.defineProperty(newest, 'text', { configurable: true, enumerable: true, get() { textReads++; return 'needle content'; } });
+  /* dupnote-2.0.0 narrowed "duplicate" from displayName+cc+day to
+     patientId+day+cc+BODY (ScribeFlow.html:14325-14332) - a same-patient,
+     same-day, same-cc pair is only a duplicate when its body is a
+     byte-identical re-save, never merely because the chief complaint and
+     day line up. n-old/n-mid share patientId/day/cc and now carry the same
+     text, so together they still exercise the duplicate path for real,
+     under the current rule instead of the retired one. */
   let notes = [
-    { id: 'n-old', patientId: 'p1', patient: 'Patient One', cc: 'Visit', updated: Date.parse('2026-08-02T10:00:00Z'), text: 'older' },
-    { id: 'n-mid', patientId: 'p1', patient: 'Patient One', cc: 'Visit', updated: Date.parse('2026-08-02T12:00:00Z'), text: 'newer' },
+    { id: 'n-old', patientId: 'p1', patient: 'Patient One', cc: 'Visit', updated: Date.parse('2026-08-02T10:00:00Z'), text: 'same visit note body' },
+    { id: 'n-mid', patientId: 'p1', patient: 'Patient One', cc: 'Visit', updated: Date.parse('2026-08-02T12:00:00Z'), text: 'same visit note body' },
     newest
   ];
   let patientRaw = 'patients-v1';

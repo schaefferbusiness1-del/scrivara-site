@@ -271,7 +271,14 @@ assert(consumeAt >= 0 && liveTabRequeryAt > consumeAt && contextRecheckAt > cons
  * schedule context. A partially supplied expectation is more dangerous than
  * an omitted one and must fail closed. Execute still uses the full lock. */
 const contextHelpersSource = between(handler, 'function clean(v)', 'function billingKey');
-const contextHelpers = Function(`${contextHelpersSource}\nreturn { expectedContextShape: expectedContextShape, expectedContextMatches: expectedContextMatches };`)();
+/* background.js is an MV3 service worker: `self` is its global object. The
+ * slice above (clean..billingKey) has grown to include tokdiag-3.0.97's
+ * top-level `self.tokDiag = self.tokDiag || function(){...}` beacon, which
+ * Node has no `self` for - the extraction window widens as background.js
+ * grows, and it threw before a single helper below was even defined. Shim
+ * the one global this slice touches at eval time rather than narrowing the
+ * window again, which will just widen and break the same way next time. */
+const contextHelpers = Function(`var self = {};\n${contextHelpersSource}\nreturn { expectedContextShape: expectedContextShape, expectedContextMatches: expectedContextMatches };`)();
 const fullExpected = { encounterId: '12345', encounterUrl: 'https://athenanet.athenahealth.com/encounter/12345', visitDate: '07/14/2026', provider: 'Example Provider, MD' };
 assert.strictEqual(contextHelpers.expectedContextShape({}, false), true, 'an omitted probe expectedContext must preserve unique read-only discovery');
 assert.strictEqual(contextHelpers.expectedContextShape({ visitDate: '', provider: '', encounterId: '', encounterUrl: '' }, false), true, 'sanitized empty probe context must preserve discovery');

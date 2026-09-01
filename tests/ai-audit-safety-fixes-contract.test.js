@@ -79,7 +79,13 @@ assert(app.includes('SPEAKER-TURN HYPOTHESES (UNVERIFIED'),
    comes last and still carries draft tuning. Extra options are allowed - that
    is how specialty reached the request. */
 {
-  const call = /return await postChat\(sys,'TODAY_TRANSCRIPT_BEGIN\\n'\+transcript\+'\\nTODAY_TRANSCRIPT_END'\+([A-Za-z0-9_+]*),key,\{(.*?)\}\);/.exec(app);
+  /* b1145 (94eac3c0, "the template reaches the FIRST draft") made the first
+     argument sys+tplSysLine instead of the bare identifier sys - the third
+     time this literal has drifted while the property it protects (transcript
+     wrapped UNCHANGED between its two markers) stayed true. Loosen only that
+     first argument; the rest of the pattern is what carries the guarantee
+     and must not move. */
+  const call = /return await postChat\(sys[A-Za-z0-9_+]*,'TODAY_TRANSCRIPT_BEGIN\\n'\+transcript\+'\\nTODAY_TRANSCRIPT_END'\+([A-Za-z0-9_+]*),key,\{(.*?)\}\);/.exec(app);
   assert(call, 'the generation call no longer wraps the UNCHANGED transcript between its two markers - anything ' +
     'that edits the transcript on the way out is a clinical-content change the doctor never made');
   assert(/ctxLine\+turnsBlock/.test(call[1]),

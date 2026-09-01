@@ -649,13 +649,16 @@ if (eager < EAGER_FLOOR) {
  * tests/interaction-performance-contract.test.js already polices named modules
  * for exactly these two constructs. This is the population-level pin so the
  * total cannot grow while each individual addition looks reasonable. */
+const OBS_RE = /observe\(\s*document(?:\.documentElement|\.body)?\s*,\s*\{[^}]*subtree\s*:\s*true/g;
+const INTERVAL_RE = /setInterval\s*\(/g;
+
 const featFiles = fs.readdirSync(ROOT).filter((f) => /^feat_.*\.js$/.test(f));
 let docObservers = 0;
 let intervals = 0;
 for (const f of featFiles) {
   const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
-  docObservers += (s.match(/observe\(\s*document(?:\.documentElement|\.body)?\s*,\s*\{[^}]*subtree\s*:\s*true/g) || []).length;
-  intervals += (s.match(/setInterval\s*\(/g) || []).length;
+  docObservers += (s.match(OBS_RE) || []).length;
+  intervals += (s.match(INTERVAL_RE) || []).length;
 }
 
 const OBSERVER_CEILING = 59;   // 60 at b596; one retired when the caption double-escape was fixed at source
@@ -686,14 +689,79 @@ if (intervals > INTERVAL_CEILING) {
   );
 }
 
+/* ---- arm D: the SHELL, not just the feature modules ----------------------
+ *
+ * Arm C above only ever scanned feat_*.js. Measured 2026-09-01: the shell
+ * itself — mls-connect.js (the loader arms A-C already read) plus
+ * ScribeFlow.html (the page it boots) — carries 39 more document-wide
+ * subtree observers and 237 more setInterval calls that arm C's population
+ * never touched, on the same two constructs arm C exists to police. A new
+ * forever-interval or a new document-wide observer landed in either file
+ * shipped green under arm C alone; a real regression there was invisible to
+ * this gate. mls-connect.js and ScribeFlow.html are DERIVED byte-identical
+ * from 1p-mls-connect.js / 1pScribeFlow.html (enforced elsewhere), so
+ * scanning the shipped names — the same convention arms A-C already use for
+ * LOADER — measures exactly what ships without re-counting the 1p/cloned
+ * twins as a separate population. */
+const SHELL_FILES = ['mls-connect.js', 'ScribeFlow.html'];
+let shellObservers = 0;
+let shellIntervals = 0;
+for (const f of SHELL_FILES) {
+  const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
+  shellObservers += (s.match(OBS_RE) || []).length;
+  shellIntervals += (s.match(INTERVAL_RE) || []).length;
+}
+
+const SHELL_OBSERVER_CEILING = 39;   // measured 2026-09-01: mls-connect.js 29 + ScribeFlow.html 10
+const SHELL_OBSERVER_FLOOR = 39;     // pin tight: only a deliberate, explained change may move either side
+const SHELL_INTERVAL_CEILING = 238; /* measured 2026-09-01 at b1177: 238 (noteq-1.1.0 warm-load poll added one) */  // measured 2026-09-01: mls-connect.js 188 + ScribeFlow.html 49
+const SHELL_INTERVAL_FLOOR = 237;
+
+if (shellObservers > SHELL_OBSERVER_CEILING) {
+  failed = true;
+  console.error(
+    '\nFAIL: ' + shellObservers + ' document-wide subtree MutationObservers across ' +
+    SHELL_FILES.join(' + ') + ', up from ' + SHELL_OBSERVER_CEILING + ' (measured 2026-09-01).\n' +
+    'Same cost as arm C, in the shell instead of a feature module: scope it to the\n' +
+    'subtree it cares about, or raise SHELL_OBSERVER_CEILING deliberately and say why.\n'
+  );
+}
+if (shellObservers < SHELL_OBSERVER_FLOOR) {
+  failed = true;
+  console.error(
+    '\nFAIL (good news): only ' + shellObservers + ' shell document-wide observers, below\n' +
+    SHELL_OBSERVER_FLOOR + '. Lower SHELL_OBSERVER_CEILING and SHELL_OBSERVER_FLOOR to the\n' +
+    'new number so the improvement is locked in.\n'
+  );
+}
+if (shellIntervals > SHELL_INTERVAL_CEILING) {
+  failed = true;
+  console.error(
+    '\nFAIL: ' + shellIntervals + ' setInterval calls across ' + SHELL_FILES.join(' + ') +
+    ', up from ' + SHELL_INTERVAL_CEILING + ' (measured 2026-09-01).\n' +
+    'An interval never stops. Prefer an event, a scoped MutationObserver, or a\n' +
+    'bounded set of timeouts, or raise SHELL_INTERVAL_CEILING and say why.\n'
+  );
+}
+if (shellIntervals < SHELL_INTERVAL_FLOOR) {
+  failed = true;
+  console.error(
+    '\nFAIL (good news): only ' + shellIntervals + ' shell setInterval calls, below ' +
+    SHELL_INTERVAL_FLOOR + '. Lower SHELL_INTERVAL_CEILING and SHELL_INTERVAL_FLOOR to the new\n' +
+    'number so the improvement is locked in.\n'
+  );
+}
+
 assert(n > 0, 'expected to find feature-script references in ' + LOADER);
 assert.strictEqual(eager + deferred, n, 'every referenced script must be classified eager or deferred');
 assert(docObservers > 0 && intervals > 0, 'arm C found nothing - the detectors are broken, not the code');
+assert(shellObservers > 0 && shellIntervals > 0, 'arm D found nothing in ' + SHELL_FILES.join('/') + ' - the detectors are broken, not the code');
 
 if (failed) { process.exit(1); }
 
 console.log(
   'boot-script-budget: OK (' + n + ' feature scripts, ceiling ' + CEILING + '; ' +
   eager + ' eager / ' + deferred + ' deferred, eager ceiling ' + EAGER_CEILING + '; ' +
-  docObservers + ' document-wide observers, ' + intervals + ' intervals)'
+  docObservers + ' document-wide observers, ' + intervals + ' intervals in feat_*.js; ' +
+  shellObservers + ' document-wide observers, ' + shellIntervals + ' intervals in ' + SHELL_FILES.join('+') + ')'
 );

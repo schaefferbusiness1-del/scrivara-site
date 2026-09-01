@@ -112,6 +112,23 @@ for (const name of [
     name + ' must remain in the secure-gate critical asset list');
 }
 
+/* payload-1.0.0 (measured live 2026-08-30) gave feat_comp_report.js a SECOND
+   locator: the idle-deferred loader above never fires until something asks
+   for it, so a click-time on-demand loader was added inside a named
+   window.__mlsEnsure*() function that runs only when a Pay Reports opener is
+   pressed - never at boot. "Exactly one locator" is not the invariant this
+   suite protects; "no late surface loads eagerly on boot" is. A locator line
+   is safe when it is idle/deferred (requestIdleCallback / __mlsDeferAsset)
+   OR sits inside a named on-demand ensure*() function that boot never calls
+   for itself; it is unsafe only when it is a bare synchronous append. */
+function insideOnDemandEnsureFn(position) {
+  const LOOKBEHIND = 4000;
+  const behind = connect.slice(Math.max(0, position - LOOKBEHIND), position);
+  const ensureIdx = behind.lastIndexOf('window.__mlsEnsure');
+  if (ensureIdx < 0) return false;
+  return /window\.__mlsEnsure[A-Za-z0-9_]*\s*=\s*function\s*\(\s*\)\s*\{/.test(behind.slice(ensureIdx));
+}
+
 for (const name of TRANCHE) {
   const positions = [
     connect.indexOf('data-mls-asset="' + name + '"'),
@@ -120,7 +137,7 @@ for (const name of TRANCHE) {
     connect.indexOf("A='" + name + "'")
   ].filter((position) => position >= 0);
   const locatorLines = [...new Set(positions.map((position) => connect.lastIndexOf('\n', position) + 1))];
-  assert.strictEqual(locatorLines.length, 1, name + ' loader locator is missing or ambiguous');
+  assert(locatorLines.length >= 1, name + ' loader locator is missing');
   const i = Math.min(...positions);
   if (name === 'feat_after_visit_summary.js') {
     /* AVS has an action-time readiness controller so a real click can admit
@@ -131,12 +148,17 @@ for (const name of TRANCHE) {
       name + ' action-time loader lost its idle+async fallback');
     continue;
   }
-  const lineStart = connect.lastIndexOf('\n', i) + 1;
-  const line = connect.slice(lineStart, connect.indexOf('\n', i));
-  assert(line.indexOf('requestIdleCallback') >= 0,
-    name + ' is EAGER again - a late surface re-entered the sign-in path and every boot pays for it');
-  assert(line.indexOf("s.async=true") >= 0,
-    name + ' loads with async=false - it re-serializes the main thread it was moved off of');
+  for (const lineAt of locatorLines) {
+    const line = connect.slice(lineAt, connect.indexOf('\n', lineAt));
+    const deferred = line.indexOf('requestIdleCallback') >= 0 || line.indexOf('__mlsDeferAsset') >= 0;
+    const onDemand = !deferred && insideOnDemandEnsureFn(lineAt);
+    assert(deferred || onDemand,
+      name + ' is EAGER again at one of its loader sites - a late surface re-entered the sign-in path and every boot pays for it');
+    if (deferred) {
+      assert(line.indexOf('s.async=true') >= 0,
+        name + ' loads with async=false - it re-serializes the main thread it was moved off of');
+    }
+  }
 }
 
 /* 2026-07-29: Procedure Report snapshots RVU values on first mount, so its

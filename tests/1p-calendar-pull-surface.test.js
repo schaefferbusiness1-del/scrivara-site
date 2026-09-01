@@ -97,10 +97,22 @@ for (const [name, open, close] of BLOCKS) {
   ok(!/\.slice\(0, ?\d+\)[^\n]*parts\.full/.test(MC), 'the folded receipt is being trimmed');
   ok(/sum\.textContent = 'Details';/.test(MC), 'the fold is not labelled "Details"');
   ok(!/det\.open = true/.test(MC), 'the Details fold is opened by default');
-  ok(/var vParts = paintVerdict\(el, outcome\.message, outcome\.ok \? 'ok' : 'err', result\);/.test(MC),
-    'settle() does not route the verdict through paintVerdict');
-  ok(/window\.toast\(vParts \? vParts\.head : outcome\.message/.test(MC),
-    'the toast still repeats the whole paragraph');
+  /* psr-1.0.0 moved the literal settle() passes to paintVerdict from
+     outcome.message to psrMessage (outcome.message plus an optional retry
+     note) so a second attempt keeps its own honest verdict. Pin the
+     PROPERTY, not that spelling: whatever identifier settle() computes and
+     hands to paintVerdict must be the exact same identifier it falls back
+     to for the toast, so the on-screen sentence and the repeated toast can
+     never drift apart. */
+  const verdictArgM = MC.match(/var vParts = paintVerdict\(el, (\w+(?:\.\w+)*), outcome\.ok \? 'ok' : 'err', result\);/);
+  ok(verdictArgM, 'settle() does not route the verdict through paintVerdict');
+  measured.settleVerdictArg = verdictArgM && verdictArgM[1];
+  const toastArgM = MC.match(/window\.toast\(vParts \? vParts\.head : (\w+(?:\.\w+)*), outcome\.ok \? 'ok' : 'err'\)/);
+  ok(toastArgM, 'the toast still repeats the whole paragraph');
+  if (verdictArgM && toastArgM) {
+    eq(verdictArgM[1], toastArgM[1],
+      'paintVerdict and its toast fallback no longer fold the same message — they can drift apart');
+  }
 }
 
 /* --- ITEM 3: no painter paints violet any more --------------------------- */

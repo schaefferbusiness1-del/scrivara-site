@@ -8,8 +8,18 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_fixpack_0701.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
-assert(connect.includes('feat_mls_fixpack_0701.js') && connect.includes('?v=20260826fp121'),
-  'canonical Find fix is not loaded through a fresh immutable asset URL');
+/* The loader used to carry a hand-moved release token (?v=20260826fp121) that
+ * had to advance on every fixpack change; the cache-token migration replaced
+ * it with the build-number scheme `?v=' + (window.__MLS_AV || Date.now())`,
+ * which follows the build number and cannot go stale again (this is the
+ * exact fix the cache-token suite's own failure text recommends). Pin the
+ * PROPERTY - a fresh, cache-busting asset URL - not either spelling, so
+ * neither a hand-carried token nor the build-number form trips this suite
+ * for being the wrong kind of correct. */
+const fixpackLoader = connect.match(/var A="feat_mls_fixpack_0701\.js";[\s\S]{0,200}?s\.src=A\+"\?v="\+([^;]+);/);
+assert(fixpackLoader, 'canonical Find fix has no loader for feat_mls_fixpack_0701.js');
+assert(/^"[0-9]{8}fp\d+"$/.test(fixpackLoader[1]) || fixpackLoader[1] === '(window.__MLS_AV||Date.now())',
+  'canonical Find fix is not loaded through a fresh immutable asset URL, got cache-buster: ' + fixpackLoader[1]);
 /* 2026-08-24 (b1049 train): the fixpack token advanced to 20260824fp120 when
    the module changed, so this release pin must advance with the immutable URL.
    The separate cache-token contract proves the token matches file history. */

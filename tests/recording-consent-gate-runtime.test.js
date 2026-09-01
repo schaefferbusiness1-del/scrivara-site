@@ -411,10 +411,26 @@ function drive(ctx, choice, opts) {
   ctx.__pt = null;
   assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), false, 'consent dialog opened with no patient');
 
-  /* 2026-07-22 hardening pins */
-  /* a mid-dialog patient switch must refuse AND log nothing (the audit trail
-     must never claim consent for an encounter that will not record) */
-  assert(consentSrc.includes('_mlsConsentKey()!==key'), 'decide() lost its mid-dialog patient-switch recheck');
+  /* 2026-07-22 hardening pins, re-aimed at recfence-1.0.0 (b1130): the
+     single _mlsConsentKey()!==key recheck this suite used to pin was
+     replaced by a stronger pair inside decide() - an identity check plus
+     _mlsConsentEncounterCompatible() - so a placeholder label resolving
+     into its own appointment no longer false-refuses, while an actual
+     patient switch still does. Drive the property live instead of pinning
+     the new spelling: switch the patient WHILE the dialog is open, before
+     it is confirmed, and prove decide() refuses AND writes nothing to the
+     audit trail (the audit must never claim consent for an encounter that
+     will not record). */
+  ctx = harness();
+  drive(ctx, 'patient-verbal', { deferDecision: true });
+  pending = ctx._mlsRequestEncounterConsent('recording');
+  ctx.__pt = { id: 'pt2', name: 'Bob Beta' };
+  ctx.__dialogControls.els._mlsAskYes.onclick();
+  assert.strictEqual(await pending, false, 'a mid-dialog patient switch (before confirm) allowed capture');
+  assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'mid-dialog patient switch armed consent for the new patient');
+  assert(!ctx.__store['test::consentLog'], 'mid-dialog patient switch wrote an audit record for an encounter that will not record');
+  assert.strictEqual(ctx.__idb.puts, 0, 'mid-dialog patient switch fell through to a durable write instead of refusing outright');
+  assert(ctx.__toasts.some(t => /selected patient changed/i.test(t.m)), 'mid-dialog patient switch lost its explanation toast');
   /* every NEW encounter re-asks — newVisit clears the consent memory */
   const nvAt = app.indexOf('function newVisit(opts){');
   assert(nvAt >= 0, 'newVisit missing');

@@ -308,12 +308,32 @@ assert.strictEqual(provenEmpty.complete, true);
 assert.strictEqual(provenEmpty.reason, 'provider-empty');
 assert.strictEqual(provenEmpty.rows.length, 0);
 
-const rosterProvenEmpty = api._scopeProviderRows(
+/* provscope-1.0.0 (measured live 2026-08-30): a roster ID alone proves the
+ * target clinician EXISTS, not that THIS surface could ever show her
+ * appointments — Athena's single-provider calendar view hides every other
+ * provider, so a day whose only discovered providers are someone else can
+ * never be verified empty for the roster-verified target. A surface like
+ * that must refuse, naming the provider(s) it actually saw, instead of
+ * minting a false empty-complete day. */
+const rosterNotOnCalendar = api._scopeProviderRows(
   [{ name: 'Patient Two', provider: 'Michael Schaeffer, MD' }],
   { id: '7', name: 'Matthew Schaeffer, MD', rosterVerified: true },
   { receipt: { complete: true }, providers: ['Michael Schaeffer, MD'] }
 );
-assert.strictEqual(rosterProvenEmpty.complete, true, 'an exact calendar roster ID plus a fully attributed day proves a selected-provider empty day');
+assert.strictEqual(rosterNotOnCalendar.complete, false, 'a surface whose only discovered providers are someone else must not prove the roster-verified target empty');
+assert.strictEqual(rosterNotOnCalendar.reason, 'provider-not-on-calendar');
+assert.strictEqual(rosterNotOnCalendar.rows.length, 0, 'a refused day must never import rows');
+assert.deepStrictEqual(Array.from(rosterNotOnCalendar.receipt.surfaceProviders), ['Michael Schaeffer, MD'], 'the refusal must name the provider(s) the surface actually showed');
+
+/* The genuine 'provider-empty' path stays pinned: when the target IS among
+ * the day's discovered providers (even with zero matching rows), the day is
+ * still provably empty for them and completes. */
+const rosterProvenEmpty = api._scopeProviderRows(
+  [{ name: 'Patient Two', provider: 'Michael Schaeffer, MD' }],
+  { id: '7', name: 'Matthew Schaeffer, MD', rosterVerified: true },
+  { receipt: { complete: true }, providers: ['Matthew Schaeffer, MD', 'Michael Schaeffer, MD'] }
+);
+assert.strictEqual(rosterProvenEmpty.complete, true, 'when the target IS among the discovered providers, a roster-verified empty day still proves complete');
 assert.strictEqual(rosterProvenEmpty.reason, 'provider-empty');
 assert.strictEqual(rosterProvenEmpty.receipt.rosterVerified, true);
 

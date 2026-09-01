@@ -59,8 +59,17 @@ assert(/updates only the local MLS note draft; it never writes or sends anything
 assert(/background:#FCFBF8[^']*color:#203b2e/.test(connector),
   'the local-only handoff text must keep readable dark-on-light contrast');
 const localHandler = between(localPanel, "host.querySelector('#emrIns').onclick=function(){", 'function addBtn(){');
-assert(/getElementById\('mls-note'\)/.test(localHandler),
+/* noteact-1.0.0 refactored the direct getElementById('mls-note') into a
+   shared noteEl() resolver that also tries #noteBox/#mls-tx and tells the
+   truth when no editor exists on screen (instead of claiming "Local draft
+   updated" either way). Pin the PROPERTY - the handler still resolves the
+   MLS note, one way or the other - not the literal call, and separately
+   pin that noteEl() itself still names 'mls-note' among its fallbacks. */
+assert(/noteEl\(\)|getElementById\('mls-note'\)/.test(localHandler),
   'the local update must still update the MLS note');
+const noteElFn = between(connector, 'function noteEl(){', 'function ');
+assert(/getElementById\('mls-note'\)/.test(noteElFn),
+  'noteEl() dropped mls-note from its fallback chain');
 assert(!/postMessage|mlsAppAthenaAction|pushEntireVisitToAthena|openUnifiedConfirmation/.test(localHandler),
   'the local update button must not cross the Athena bridge');
 

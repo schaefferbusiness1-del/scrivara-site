@@ -52,9 +52,19 @@ const gate = fs.readFileSync(path.join(root, 'feat_mls_premium_gate.js'), 'utf8'
  * the suite now checks every shipped surface that can block a user, not just the
  * one that was caught first. Staging is included deliberately — it drifted from
  * production seven times in a single day by being forgotten. */
+/* Match the MESSAGE, not the call shape: b1130-era code passed the Lite
+ * sentence straight to toast('...'), but a later refactor (ScribeFlow.html)
+ * lifted it into a var (_liteMsg='...') and calls toast(_liteMsg,'err')
+ * instead — same guard, same words, different call shape. A quoted-string
+ * scan (either quote style, never crossing a delimiter) finds the sentence
+ * wherever it lives, inline or assigned. */
+const LITE_STRING = /(['"])((?:(?!\1).)*Lite plan(?:(?!\1).)*)\1/g;
 for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
   const shell = fs.readFileSync(path.join(root, file), 'utf8');
-  const blocks = shell.match(/toast\('[^']*Lite plan[^']*'/g) || [];
+  const blocks = [];
+  let m;
+  LITE_STRING.lastIndex = 0;
+  while ((m = LITE_STRING.exec(shell))) blocks.push(m[2]);
   assert(blocks.length, file + ': the Lite block message is gone — if the guard was ' +
     'removed that is fine, but confirm Lite users are not silently redirected instead');
   for (const b of blocks) {
