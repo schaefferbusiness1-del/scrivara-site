@@ -11369,7 +11369,7 @@
      bullet GLYPH, matched as "a short run of punctuation followed by a
      space" so no non-ASCII byte has to appear in this source (memory:
      latin1-writer-turns-unicode-into-control-bytes). The trailing \s+ is
-     what keeps "#7833832" - an MRN, no space - completely untouched. */
+     what keeps "#1234567" - an MRN, no space - completely untouched. */
   function nlStripBullet(s) { return String(s == null ? "" : s).replace(/^\s*(?:[^0-9A-Za-z\s]{1,3}|\d{1,3}[.)])\s+/, ""); }
   /* One pasted line -> {ok,name,dob,mrn}. Tolerates "Last, First", "First
      Last", a DOB anywhere in the line in either common spelling, and an MRN

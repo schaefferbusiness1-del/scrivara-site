@@ -1,5 +1,5 @@
 {
-  "version": "3.0.102",
+  "version": "3.0.103",
   "minChrome": 116,
-  "notes": "v3.0.102 - Reliability: the automatic return to Calendar - View Calendar after each pulled day now finds the menu entry wherever athenaOne draws it (it was looked for in the wrong frame, so pulls could still stall on the dashboard). Everything from v3.0.101 remains. Requires Chrome 116+."
+  "notes": "v3.0.103 - Privacy hardening: the extension no longer keeps any patient name in its own storage (name-parser statistics now record lengths only, and stored samples from earlier versions are purged at start-up), token diagnostics live in session storage only, the phone-confirm arm message now passes the same trusted-origin check as every other message, and a sample record number was removed from shipped code. Everything from v3.0.102 remains. Requires Chrome 116+."
 }

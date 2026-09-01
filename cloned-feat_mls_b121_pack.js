@@ -1559,7 +1559,7 @@
  *    fully unwraps it.
  *  - Ext v1.89 adds chartMrn (the athena banner patient id) to the
  *    mlsAppReadChart response. CONFIRMED LIVE 2026-07-10: ident.mrn is the
- *    STABLE chart-level athena patient id (banner #7833832 == the findpatient
+ *    STABLE chart-level athena patient id (banner #1234567 == the findpatient
  *    row ID for the same patient), NOT a per-encounter number. We capture it
  *    off the mlsAppChartResult message (capture-phase, read-only) and stamp
  *    row.athenaId under strict identity gates (below).

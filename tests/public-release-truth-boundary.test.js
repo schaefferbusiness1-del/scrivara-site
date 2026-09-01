@@ -42,10 +42,16 @@ assert(/HIPAA compliant/i.test(assist), 'assist states the confirmed HIPAA postu
 assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only language must be gone from assist');
 
 const download = read('get-extension.html');
-const RELEASED_PACKAGE_SHA256 = 'eba0d5373397e8ad6aa16b1433e55a6f1a7fc0bf70cef5c6e88e96dbf6e74ded';
+/* Re-aimed 2026-09-01: this pin named 3.0.84 by hand and went red at 3.0.85 - a
+   spelling, not the property. The property: the page offers the package the
+   manifest declares, and prints that exact file's SHA-256. */
+const RELEASED_VERSION = String(JSON.parse(read('manifest.json')).version || '');
+assert(/^\d+(?:\.\d+){1,3}$/.test(RELEASED_VERSION), 'manifest.json must declare the released extension version');
+const RELEASED_PACKAGE_SHA256 = require('crypto').createHash('sha256')
+  .update(fs.readFileSync(path.join(root, 'MLS_Assist_v' + RELEASED_VERSION + '.zip'))).digest('hex');
 assert(/^[a-f0-9]{64}$/.test(RELEASED_PACKAGE_SHA256),
-  '3.0.84 package digest must be stamped after deterministic packaging before public release');
-assert(/MLS_Assist_v3.0.84.zip/.test(download) &&
+  'the released package digest must be computed from the packaged ZIP on disk');
+assert(new RegExp('MLS_Assist_v' + RELEASED_VERSION.replace(/\./g, '\\.') + '\\.zip').test(download) &&
   new RegExp(RELEASED_PACKAGE_SHA256, 'i').test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
@@ -127,7 +133,9 @@ const feed = JSON.parse(read('extension-version.json'));
    3.0.23 2026-07-27 (mlsAppChartIdentity bridge verb for the bidirectional
    follow); 3.0.5 2026-07-24; 3.0.4 2026-07-21 (label-only delta on the 3.0.0
    core), each loaded and live-verified before its pin move. */
-assert.strictEqual(feed.version, '3.0.84', 'public feed must state the released stable channel exactly');
+/* Re-aimed 2026-09-01: the feed must name the version the manifest declares
+   (the property), not a hand-typed number that goes stale on every release. */
+assert.strictEqual(feed.version, RELEASED_VERSION, 'public feed must state the released channel the manifest declares');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));

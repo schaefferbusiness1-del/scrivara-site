@@ -2321,7 +2321,7 @@ function mlsAthenaTeachWatcherFn(config) {
     } catch (e) { return null; }
   }
   /* tokdiag-3.0.97: PHI-free ring of token-machinery failure steps. */
-  self.tokDiag = self.tokDiag || function (step, extra) { try { self.__mlsTokDiag = (self.__mlsTokDiag || []).slice(-9); self.__mlsTokDiag.push({ t: Date.now(), step: String(step).slice(0, 40), x: String(extra == null ? '' : extra).slice(0, 80) }); try { chrome.storage.local.set({ mlsTokDiagV1: self.__mlsTokDiag }); } catch (e2) {} } catch (e) {} };
+  self.tokDiag = self.tokDiag || function (step, extra) { try { self.__mlsTokDiag = (self.__mlsTokDiag || []).slice(-9); self.__mlsTokDiag.push({ t: Date.now(), step: String(step).slice(0, 40), x: String(extra == null ? '' : extra).slice(0, 80) }); try { var __tdp = chrome.storage.session.set({ mlsTokDiagV1: self.__mlsTokDiag }); if (__tdp && typeof __tdp.catch === 'function') __tdp.catch(function () {}); } catch (e2) {} /* phi-1.0.0 (3.0.103): session area only - the token law */ } catch (e) {} };
   var tokDiag = self.tokDiag;
   try { tokDiag('boot-beacon'); } catch (eB) {}
   function tokenStorageKey(id) { return TOKEN_SESSION_PREFIX + clean(id); }
@@ -8100,7 +8100,7 @@ async function mlsSchedDomInline(doc, CFG){
         N.differs++;
         if(!newName)N.canonicalRejected++;
         if(!oldName)N.canonicalAdded++;
-        if(N.samples.length<10)N.samples.push({kind:!newName?'canonical-reject':(!oldName?'canonical-add':'rename'),o:oldName,n:newName});
+        if(N.samples.length<10)N.samples.push({kind:!newName?'canonical-reject':(!oldName?'canonical-add':'rename'),oLen:oldName.length,nLen:newName.length}); /* phi-1.0.0 (3.0.103): lengths only - never a name */
       }
     }catch(_eS){}}
     function pn(line){var r=_pnCore(line);_pnShadow(line,r);return r;}
@@ -8876,7 +8876,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
                 T.checked += __sh.checked; T.differs += __sh.differs;
                 T.canonicalRejected += (__sh.canonicalRejected || 0);
                 T.canonicalAdded += (__sh.canonicalAdded || 0);
-                (__sh.samples || []).forEach(function (sm) { if (T.samples.length < 40) T.samples.push(sm); });
+                (__sh.samples || []).forEach(function (sm) { if (T.samples.length < 40 && sm && !('o' in sm) && !('n' in sm)) T.samples.push(sm); }); /* phi-1.0.0: refuse any legacy name-bearing sample */
                 var schedDay = (pick && pick.s && pick.s.schedDate) || '';
                 if (schedDay) T.days[schedDay] = (T.days[schedDay] || 0) + __sh.checked;
                 else T.daysUnknown = (T.daysUnknown || 0) + __sh.checked;
@@ -10251,7 +10251,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         if (!pageText.trim()) return sendResponse({ error: 'The EMR tab had no readable text.' });
         const res = await callBackend('/api/assist/extract', { pageText, url: tab.url });
         /* cap-mrn-1.0.0: the backend echoes the banner's raw MRN decoration
-           and it VARIES run-to-run ('7833832' vs '#7833832' measured on
+           and it VARIES run-to-run ('1234567' vs '#1234567' measured on
            consecutive captures of one open chart). Every downstream identity
            comparator keys on digits - normalize at the reply boundary. */
         try { if (res && res.captured && res.captured.mrn != null) res.captured.mrn = String(res.captured.mrn).replace(/\D+/g, ''); } catch (eCapMrn) {}
@@ -10416,6 +10416,24 @@ async function scheduleBackupAlarm() {
   if (next.getTime() <= now.getTime() + 5000) next.setDate(next.getDate() + 1);
   try { chrome.alarms.create('mlsNightlyBackup', { when: next.getTime(), periodInMinutes: 1440 }); } catch (e) {}
 }
+/* phi-1.0.1 (3.0.103): one-time boot purge of the two durable rings that
+   3.0.97-3.0.102 wrote into chrome.storage.local - the tokDiag ring (now
+   session-only) and any name-bearing nameShadow samples. Counts stay. Lives
+   here, outside the token section, because that section runs under a
+   durable-storage tripwire and this purge is housekeeping, not token state. */
+try { chrome.storage.local.remove('mlsTokDiagV1', function () {}); } catch (ePg1) {}
+try {
+  chrome.storage.local.get(['mlsNameShadowTotals'], function (st) {
+    try {
+      var T = st && st.mlsNameShadowTotals;
+      if (!T || !Array.isArray(T.samples)) return;
+      var kept = T.samples.filter(function (sm) { return sm && !('o' in sm) && !('n' in sm); });
+      if (kept.length === T.samples.length) return;
+      T.samples = kept; T.phiPurgedAt = Date.now();
+      chrome.storage.local.set({ mlsNameShadowTotals: T }, function () {});
+    } catch (ePg3) {}
+  });
+} catch (ePg2) {}
 try { chrome.alarms.onAlarm.addListener(a => { if (a && a.name === 'mlsNightlyBackup') runNightlyBackup('schedule'); }); } catch (e) {}
 try { chrome.runtime.onStartup.addListener(scheduleBackupAlarm); } catch (e) {}
 try { chrome.runtime.onInstalled.addListener(scheduleBackupAlarm); } catch (e) {}
@@ -17463,7 +17481,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         out.sessionStore = { keys: sessKeys.length, bytes: sessBytes, writeVerify: probeOk, quota: (sessArea.QUOTA_BYTES || null) };
       } else out.sessionStore = { missing: true };
     } catch (eSess) { out.sessionStore = { err: String((eSess && eSess.message) || eSess).slice(0, 60) }; }
-    try { out.tokDiag = (self.__mlsTokDiag || []).slice(-8); try { var tdBag = await chrome.storage.local.get('mlsTokDiagV1'); if (tdBag && Array.isArray(tdBag.mlsTokDiagV1)) out.tokDiagPersist = tdBag.mlsTokDiagV1.slice(-8); } catch (eTd2) {} } catch (eTd) { out.tokDiag = null; }
+    try { out.tokDiag = (self.__mlsTokDiag || []).slice(-8); try { var tdBag = await chrome.storage.session.get('mlsTokDiagV1'); if (tdBag && Array.isArray(tdBag.mlsTokDiagV1)) out.tokDiagPersist = tdBag.mlsTokDiagV1.slice(-8); } catch (eTd2) {} } catch (eTd) { out.tokDiag = null; }
     try { var errBag = await chrome.storage.local.get('mlsWorkerErrorLogV1'); out.workerErrors = (errBag && errBag.mlsWorkerErrorLogV1) || []; } catch (e) { out.workerErrors = null; } /* wet-1.1.0: crash log rides the health verb */
     try {
       var kaBag = await chrome.storage.local.get(['mlsKaLedger', 'mlsKeepAliveLastTick', 'mlsAthenaSignedOutAt']);

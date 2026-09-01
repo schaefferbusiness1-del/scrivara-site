@@ -154,6 +154,7 @@
     if (!data || typeof data !== 'object') return;
     if (data.source !== 'mls-app') return;
     if (data.type !== 'mlsAppAthenaRemoteArmV1') return;
+    if (!mlsTrustedOrigin(event.origin)) return; /* ra-origin-1.0.0 (3.0.103): the same trusted-origin gate every other bridge verb passes */
 
     var requestId = String(data.requestId || '');
     var action = String(data.action || '');
