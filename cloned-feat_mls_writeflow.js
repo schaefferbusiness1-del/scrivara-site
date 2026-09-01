@@ -224,9 +224,20 @@
   /* Athena cannot match the local MLS patient id, but the extension keeps it
      in the one-use authorization and result receipt as an audit binding. DOM
      identity still requires the exact Athena name + DOB + MRN tuple. */
+  /* isodob-1.0.0: the installed MLS Assist parses the DOB it is handed with its
+     OWN M/D/Y reader (background.js dateKey) and misreads an ISO date the same
+     way this file used to - so an ISO-stored patient was refused
+     'patient-mismatch' on the extension side as well, before anything was even
+     compared against the chart. Hand it the one shape it can read.
+     This is the SAME date, canonicalised - never a different one and never an
+     invented one: a string nrmDob cannot read at all is passed through exactly
+     as before, and the extension's own gates judge it exactly as before. The
+     manifest, the preview hash and every row hash use the manifest's patient,
+     not this object, so nothing hashed changes. */
   function bridgePatient(p) {
     p = p || {};
-    return { name: S(p.name).trim(), dob: S(p.dob).trim(), mrn: S(p.mrn || p.athenaId || '').trim(), patientId: S(p.patientId || p.id || '').trim() };
+    var rawDob = S(p.dob).trim(), canonDob = nrmDob(rawDob);
+    return { name: S(p.name).trim(), dob: canonDob || rawDob, mrn: S(p.mrn || p.athenaId || '').trim(), patientId: S(p.patientId || p.id || '').trim() };
   }
   function visitDay(v) {
     var raw = S(v).trim(), m = /(\d{4}-\d{2}-\d{2})/.exec(raw);
@@ -1996,6 +2007,24 @@
   }
   function unifiedRecoverableStatus(state, rowId, message, run) {
     unifiedStatus(state, message, 'fix');
+    /* wfgen-1.0.0 (2026-09-01): THIS IS THE SECOND SETTLE LATCH, and it was the
+       only terminal that never wrote it. unifiedRecheckButton latches
+       probeSettled; wfClarityRefusal reaches that latch because it calls the
+       button afterwards. But wfdxOpenEncounter's own ladder refusals - "one
+       step needed: athenaOne's Day view has to be on <day>", "this exact
+       appointment row is not on the grid", "the read-only open did not start" -
+       land HERE and nowhere else. A queued send (bx-1.0.0's checked-section
+       queue, opbatch-1.0.0's op-note queue) waits on
+       `probeSettled === probeGeneration && !probe`, so an unlatched terminal
+       made the queue burn its whole 150s read-only bound and then report the
+       WRONG sentence ("ran past the 150-second bound and was left alone")
+       instead of the honest step the sheet had already printed on screen.
+       That refusal is the COMMON case for any patient whose chart is not
+       already open - i.e. everyone except the one the doctor is looking at.
+       This records that this probe generation has answered. It cannot enable a
+       row, mint a token or make anything sendable: every reader additionally
+       requires `!state.probe`, and the probe lock is untouched. */
+    try { state.probeSettled = state.probeGeneration; } catch (eSettle) {}
     unifiedRecoveryButton(state, rowId, SHEETUX_DOIT_LABEL, SHEETUX_DOIT_TITLE, run);
     /* wfauto-1.0.0: the amber "one step" refusals are the ones the doctor most
        often clears by hand in athenaOne. This latch is the second place the
@@ -2440,9 +2469,23 @@
        row, so the probe path's own recheck control never appears. Offer the
        same words the blocked row's Why sentence names. */
     try { mrnAdoptOfferCure(state, host); } catch (eMrnCure) {}
-    if (day && S(rowId).trim()) {
+    /* mrnopen-1.0.0 (owner 2026-09-01; 76% of charts carry no MRN in MLS).
+       THE SEAM. mrnadopt-1.0.0 reads the MRN off the OPEN athenaOne chart, so on
+       an MRN-only-blocked review it is the whole cure - but it refuses
+       'no-chart-open' when nothing is open, and that review paints NO ready row,
+       so this strip's read-only opener was gated out by `S(rowId).trim()` and
+       the doctor was told to go open the chart by hand. MLS already knows the
+       exact appointment and day for this review; opening it read-only is the
+       identical ladder every other refusal already offers. Gate on the EVIDENCE
+       (a bound visit) rather than on a ready row, so the majority-of-patients
+       path gets the same one press the MRN-carrying path always had. Nothing
+       here writes: the ladder is Day view -> this exact appointment row. */
+    var canOpenUnrowed = !S(rowId).trim() && p1VisitBound(visit);
+    if (day && (S(rowId).trim() || canOpenUnrowed)) {
       host.appendChild(wfdxButton('Open this patient’s encounter in athenaOne',
-        'Read-only: sends athenaOne’s Day view to ' + day + ', clicks this exact appointment row, then re-runs the read-only check. Nothing is written.',
+        'Read-only: sends the athenaOne Day view to ' + day + ', clicks this exact appointment row, then ' +
+        (canOpenUnrowed ? 'reads that verified chart identity so this review can be checked. Nothing is written.'
+          : 're-runs the read-only check. Nothing is written.'),
         function (btn) { wfdxOpenEncounter(state, rowId, btn, false); }));
     }
     wfdxAppendCopyReport(state, host);
@@ -2494,8 +2537,29 @@
       /* openpace-1.0.0: an athenaOne encounter page takes 30-60s to paint -
          stamp the successful open and give it time before probing. */
       state.openedOkAt = Date.now(); state.paceReprobes = 0;
+      /* mrnopen-1.0.0: an open started from a review with NO ready row (the
+         MRN-only block) has no row to re-probe - probeUnifiedRow would answer
+         "that destination is not executable", which is true and useless. The
+         cure for THAT review is the read-only identity read, so run it, and
+         leave the strip repainted either way. Still nothing written. */
+      if (!S(rowId).trim()) {
+        unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Reading its verified identity read-only in a moment - nothing is written...', '');
+        wfPaceThen(12000, function () {
+          if (state.closed || unifiedAthenaState !== state) return;
+          var ran = false;
+          try { ran = mrnAdoptPass(state) === true; } catch (eMP) { ran = false; }
+          if (!ran) { try { wfdxShowFixStrip(state, ''); } catch (eS2) {} }
+        });
+        return;
+      }
       unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Letting the encounter paint, then re-checking read-only…', '');
-      setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); }, 12000);
+      /* wfgen-1.0.0: bxSleep, never a bare timer. During a write the extension
+         is asked to bring athenaOne forward (probeUnifiedRow's foregroundOk),
+         so the MLS tab is HIDDEN for exactly this stretch - and a hidden tab's
+         setTimeout is clamped, then bucketed to one minute once it has been
+         hidden for five. A 12s settle silently becoming 60s is what pushes a
+         queued note past its 150s read-only bound. */
+      wfPaceThen(12000, function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); });
     }
     var rowFirstEligible = !byName && day && S(visit.appointmentId).trim();
     unifiedStatus(state, byName
@@ -2701,10 +2765,10 @@
                surface needs time to paint before a probe can verify it. */
             state.openedOkAt = Date.now(); state.paceReprobes = 0;
             unifiedStatus(state, S(state.manifest.patient.name) + ' is open in Athena (via ' + S(openRes.via || 'patient search') + '). Letting the encounter paint, then re-checking...', '');
-            setTimeout(function () {
+            wfPaceThen(12000, function () {          /* wfgen-1.0.0: hidden-safe */
               if (state.closed || unifiedAthenaState !== state) return;
               probeUnifiedRow(state, row.id);
-            }, 12000);
+            });
           });
           return;
         }
@@ -2730,10 +2794,10 @@
           if (openFresh && Number(state.paceReprobes || 0) < 4) {
             state.paceReprobes = Number(state.paceReprobes || 0) + 1;
             unifiedStatus(state, 'athenaOne is still painting the encounter it just opened — re-checking read-only in a moment. Nothing was changed…', '');
-            setTimeout(function () {
+            wfPaceThen(15000, function () {          /* wfgen-1.0.0: hidden-safe */
               if (state.closed || unifiedAthenaState !== state) return;
               probeUnifiedRow(state, row.id);
-            }, 15000);
+            });
             return;
           }
           var autoOpenDue = !(Number(state.autoOpenAt) > Date.now() - 60000);
@@ -2766,7 +2830,7 @@
                 expectedDay: state.manifest.visit.visitDate, appointmentIdPresent: !!S(state.manifest.visit.appointmentId).trim() });
               if (proc.ok === true && (proc.ready === true || seen.sectionReachable === true)) {
                 unifiedStatus(state, 'The Procedure Documentation section is on screen in athenaOne. Re-running the read-only check now - nothing has been sent.', '');
-                setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, row.id); }, 1200);
+                wfPaceThen(1200, function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, row.id); });
                 return;
               }
               var procStep = (proc.ok === true && seen.tabFound && !seen.sectionReachable)
@@ -3244,6 +3308,27 @@
       ch.port2.postMessage(0);
     });
   }
+  /* wfgen-1.0.0 (owner 2026-09-01: writing must "work for anybody and any
+     appointment... smooth no matter the circumstances"). ONE paced wait for the
+     read-only ladder, and it is bxSleep's wall clock - not a bare timer.
+
+     THE CIRCUMSTANCE THIS IS ABOUT. probeUnifiedRow asks the extension to bring
+     athenaOne FORWARD for the read-only check (foregroundOk, mdx-2.0.0), which
+     means the MLS tab is hidden for precisely the stretch these waits cover.
+     Chrome clamps a hidden tab's setTimeout, then buckets it to one minute once
+     the tab has been hidden five minutes - which a multi-note queue reaches
+     easily. openpace's measured budget (12s settle, then up to 4 x 15s) is 72s
+     awake and up to 300s hidden, and the queue's own read-only bound is 150s.
+     So on the shipped code the LAST patient in a batch got a materially
+     different pacing budget from the first one. bxSleep yields through a
+     MessageChannel while hidden, so the budget is the same wall clock for
+     every note. It changes no gate: every callback still re-proves it owns the
+     sheet before it touches anything. */
+  function wfPaceThen(ms, fn) {
+    try { return bxSleep(ms).then(function () { try { fn(); } catch (eRun) {} }); }
+    catch (e) { try { setTimeout(fn, ms); } catch (e2) {} }
+    return null;
+  }
   function bxWait(pred, timeoutMs) {
     var until = Date.now() + timeoutMs;
     function step() {
@@ -3600,6 +3685,17 @@
         if (!resolved) {
           if (ticks < WFBIND_POLL_TICKS) return;
           clearInterval(timer); wfbindFinish(state, btn, label);
+          /* apptpick-1.0.0: "cannot name ONE" has two very different causes, and
+             the doctor could not tell them apart. Say which one it is - several
+             appointments is a CHOICE that is already on screen, not a dead end. */
+          var many = wfbindApptChoices(state.manifest, day);
+          if (many.length > 1) {
+            unifiedStatus(state, 'The day pull for ' + day + ' finished and this patient has ' + many.length +
+              ' appointments on that day, so MLS will not choose between them. Pick the one this note belongs to below - it is bound read-only and re-checked before anything can be sent. Nothing was written.', 'fix');
+            try { wfdxShowFixStrip(state, ''); } catch (eS1) {}
+            wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: false, reason: 'appointment-ambiguous-on-day', expectedDay: day, appointmentIdPresent: false });
+            return;
+          }
           unifiedStatus(state, 'The day pull for ' + day + ' finished, but MLS still cannot name one exact Athena appointment for this patient on that day. This review stays unsendable and nothing was written. Check that ' + day + ' is the right day and that this patient is on athenaOne’s schedule for it.', 'err');
           wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: false, reason: 'unresolved-after-pull', expectedDay: day, appointmentIdPresent: false });
           return;
@@ -3692,6 +3788,95 @@
       return { ok: false, message: 'The read-only day navigation could not be started. Nothing was changed.' };
     });
   }
+  /* ===== apptpick-1.0.0 (owner 2026-09-01, "any appointment... it should work
+     for everyone") =========================================================
+     THE CIRCUMSTANCE. A patient seen TWICE on one day - a morning visit and an
+     afternoon procedure, a re-check after imaging, a walk-in on top of a booked
+     slot - is the one shape expectedVisitContext cannot answer. Its resolver
+     binds an appointment only when the day holds EXACTLY ONE row for this
+     patient (`dayRows.length === 1`); with two it honestly returns nothing, the
+     manifest blocks with "the exact visit needs its ... appointment ID", and
+     the wfbind cure re-pulls the day and asks the SAME resolver again - which
+     answers the same way, forever. Measured on the shipped code: that patient
+     is permanently unwritable through this sheet unless the saved note happened
+     to carry an appointment id of its own.
+
+     THE CURE IS A CHOICE, NOT A GUESS. This lists the day's own resolvable
+     Athena appointments for THIS patient and lets the doctor name the one the
+     note belongs to - the same law bindday-1.0.0 already uses for several
+     candidate DAYS ("MLS still never picks a day"). It invents nothing: every
+     id here came from the day's schedule-import index or the booking row, the
+     chosen id is handed to the ordinary reopen path as expectedContext, and the
+     read-only probe remains the fail-closed arbiter afterwards - a wrong pick
+     refuses at check time exactly as any other wrong context does. One
+     appointment needs no control at all, because the resolver already binds it.
+     ==================================================================== */
+  function wfbindApptTimeLabel(row) {
+    try {
+      var raw = S(row && row.start_at).trim();
+      if (!raw) return '';
+      var d = new Date(raw);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    } catch (e) { return ''; }
+  }
+  /* Every DISTINCT Athena appointment this exact patient has on this exact day,
+     resolved by the same two resolvers expectedVisitContext itself uses. An id
+     neither resolver can name is not offered - MLS never shows a control it
+     cannot honestly bind. */
+  function wfbindApptChoices(manifest, day) {
+    var out = [];
+    try {
+      var pid = S(manifest && manifest.patient && manifest.patient.patientId).trim();
+      var key = wfdxDayKey(day);
+      if (!pid || !key) return out;
+      var seen = {};
+      calendarRows().forEach(function (a) {
+        if (!a || S(a.patient_external_id || a.patientId || '').trim() !== pid) return;
+        if (wfdxDayKey(visitDay(a.day_local || a.appt_date || a.start_at)) !== key) return;
+        var id = athenaAppointmentIdFromImportIndex(pid, a.id, key) || athenaAppointmentIdFromBookingRow(a) || '';
+        if (!id || seen[id]) return;
+        seen[id] = 1;
+        out.push({ appointmentId: id, time: wfbindApptTimeLabel(a), provider: apptProvider(a) });
+      });
+    } catch (e) {}
+    return out;
+  }
+  /* The chosen appointment rides in on the SAME detached reopen options the day
+     cure uses; the manifest is never mutated in place and every hash recomputes
+     through openUnifiedConfirmation. The row's own provider is filled in only
+     when the review has none - it comes from the same schedule row as the id,
+     and the probe re-proves it against Athena either way. */
+  function wfbindOptsForAppointment(state, day, choice) {
+    var o = wfbindOptsForDay(state, day);
+    if (!o || !choice || !S(choice.appointmentId).trim()) return null;
+    o.expectedContext.appointmentId = S(choice.appointmentId).trim();
+    if (!S(o.expectedContext.provider).trim() && S(choice.provider).trim()) o.expectedContext.provider = S(choice.provider).trim();
+    return o;
+  }
+  function wfbindOfferApptChoice(state, host, day) {
+    if (!state || state.closed || !host) return false;
+    var choices = wfbindApptChoices(state.manifest, day);
+    if (choices.length < 2) return false;                 /* one is bound by the resolver; none is an honest refusal */
+    try { if (host.querySelector('[data-mls-appt-pick]')) return false; } catch (eQ) {}
+    choices.slice(0, 8).forEach(function (choice, i) {
+      var when = S(choice.time).trim(), who = S(choice.provider).trim();
+      var label = 'Bind to the ' + (when || ('#' + (i + 1))) + ' appointment' + (who ? (' with ' + who) : '');
+      var b = wfbindButton(label,
+        'This patient has ' + choices.length + ' appointments on ' + wfdxDayKey(day) + ' and MLS will not choose between them. ' +
+        'Binds this review to Athena appointment ' + choice.appointmentId + ', then re-runs the read-only check. Nothing is written, and a wrong choice refuses at that check.',
+        function () {
+          if (!state || state.closed || unifiedAthenaState !== state || state.running || state.binding) return;
+          var opts = wfbindOptsForAppointment(state, day, choice);
+          if (!opts) return;
+          unifiedStatus(state, 'Binding this review to the ' + (when || 'chosen') + ' appointment on ' + wfdxDayKey(day) + ' and re-checking read-only. Nothing was sent.', '');
+          openUnifiedConfirmation(opts);
+        });
+      b.setAttribute('data-mls-appt-pick', choice.appointmentId);
+      host.appendChild(b);
+    });
+    return true;
+  }
   /* The strip control(s). One candidate day is one press; several are named. */
   function wfbindOfferCure(state, host) {
     if (!state || state.closed || !host) return false;
@@ -3699,6 +3884,10 @@
     if (p1VisitBound(visit)) return false;
     var days = wfbindCandidateDays(manifest);
     if (!days.length) return false;
+    /* apptpick-1.0.0: an AMBIGUOUS day is not a missing day. When the review's
+       own day already holds several of this patient's appointments, re-pulling
+       it cannot help - offer the choice first, above the re-pull controls. */
+    try { wfbindOfferApptChoice(state, host, days[0]); } catch (ePick) {}
     if (days.length === 1) {
       var one = wfbindButton(WFBIND_LABEL,
         'Sends athenaOne’s Day view to ' + days[0] + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.',
@@ -5102,20 +5291,104 @@
      app's "is this the right chart?" judgment is identical to the driver's
      gate. Used to REFUSE a false "written" claim when the chart the driver
      reports it verified is NOT the patient we intended. ---------------------- */
-  function nrmName(s) { return S(s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
-  function nameMatch(a, b) {
-    var ta = nrmName(a).split(' ').filter(function (x) { return x.length > 1; });
-    var tb = nrmName(b).split(' ').filter(function (x) { return x.length > 1; });
+  /* wfgen-1.0.0 (owner 2026-09-01, "it should work for everyone"): FOLD THE
+     RENDERING, NEVER THE RULE.
+
+     THE DEFECT, in the shipped normalizer. `[^a-z0-9 ] -> space` deletes every
+     letter that is not plain ASCII, so a name carrying a diacritic is not
+     normalized, it is TRUNCATED: "Garcia" with an accented i became the token
+     "garc" plus the stray "a". The write chain's identity lock
+     (validatedUnifiedProbe) demands >=2 overlapping tokens between the name MLS
+     holds and the name Athena's own read-only reply reports, so the moment ONE
+     of those two surfaces spells the name with the accent and the other does
+     not - which is the ordinary case, because an EMR banner, a schedule cell
+     and a typed patient row are three different renderings - the tokens no
+     longer overlap and the write refuses. It refuses SAFELY: nothing is written
+     to the wrong chart. But it refuses for that patient forever, and no message
+     on the sheet can tell the doctor why, because nothing is actually wrong.
+
+     Stripping the combining marks is the same normalization applied to both
+     sides of the comparison. It cannot admit a pair the rule below would
+     otherwise reject on substance: two-token overlap is unchanged, exact DOB
+     equality is unchanged, MRN equality when MRN is known is unchanged, and
+     Athena's own response identity is still recorded on the receipt (W3). */
+  function wfFoldMarks(v) {
+    /* Combining marks are U+0300..U+036F. Filtered by code point on purpose:
+       this file is written through a latin1 pipeline, so it may not carry a
+       non-ASCII byte anywhere - not even inside a character class. */
+    try {
+      if (!v || typeof v.normalize !== 'function') return v;
+      var d = v.normalize('NFD'), out = '';
+      for (var i = 0; i < d.length; i++) { var c = d.charCodeAt(i); if (c >= 768 && c <= 879) continue; out += d.charAt(i); }
+      return out;
+    } catch (e) {}
+    return v;
+  }
+  /* The fold is applied through a guard on purpose: several suites LIFT nrmName
+     out of this file as a standalone slice and evaluate it alone, and a bare
+     call to a helper that did not come with it would throw where the shipped
+     code cannot. A missing fold degrades to the old normalization - never to an
+     exception, and never to a looser rule. */
+  function nrmName(s) {
+    var v = S(s);
+    try { v = wfFoldMarks(v); } catch (e) {}
+    return v.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  /* A WELDED rendering ("AdaSample" from a textContent read of two elements,
+     "MaryJane" from a hyphen the surface dropped) is ONE token to the
+     normalizer and can never overlap the spaced spelling. Splitting on the
+     lower-to-upper boundary recovers it - but it also splits real names
+     ("McDonald" -> "mc donald"), so it is a RETRY, never a replacement: it runs
+     only after the plain comparison has already declined, so no pair that
+     matched before can stop matching now. Same shape as
+     _athenaHistoryNameCompatible's own camel retry in the app shell. */
+  function nrmNameCamel(s) { return nrmName(S(s).replace(/([a-z0-9])([A-Z])/g, '$1 $2')); }
+  function nameTokens(normalized) { return S(normalized).split(' ').filter(function (x) { return x.length > 1; }); }
+  function nameOverlapOk(ta, tb) {
     if (!ta.length || !tb.length) return false;
     var o = ta.filter(function (x) { return tb.indexOf(x) >= 0; }).length;
     return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1);
   }
+  function nameMatch(a, b) {
+    var na = nrmName(a), nb = nrmName(b);
+    var ta = nameTokens(na), tb = nameTokens(nb);
+    if (nameOverlapOk(ta, tb)) return true;
+    var ca = nrmNameCamel(a), cb = nrmNameCamel(b);
+    if (ca === na && cb === nb) return false;      /* nothing was welded - the answer above stands */
+    return nameOverlapOk(nameTokens(ca), nameTokens(cb));
+  }
+  /* isodob-1.0.0 (owner 2026-09-01, "it should work for everyone").
+     THE WRITE CHAIN COULD NOT READ AN ISO DATE OF BIRTH, AND SAID SO AS AN
+     IDENTITY REFUSAL. The reader below is M/D/Y only, and it does not DECLINE
+     an ISO date - it MISREADS one. Run left to right over "1962-03-04" the
+     M/D/Y pattern first matches at the "2-03-04" that starts inside the year,
+     so the date of birth 4 March 1962 was read as 3 February 2004. The same
+     string on the chart banner ("03/04/1962") reads correctly, so the two never
+     compare equal and validatedUnifiedProbe refuses:
+       "The read-only Athena check did not return a complete matching patient
+        name, DOB, and MRN. Nothing was changed."
+     Adam is stored M/D/Y and never met it. A patient stored the other way -
+     which is what an ISO-shaped import produces, and exactly the shape
+     idread-1.0.0 measured in the app shell for the PULL guard - could never be
+     written to at all, with a message that blames Athena for the app's own
+     reader.
+
+     ISO IS READ FIRST, on its own anchored pattern, because a four-digit year
+     in front is unambiguous. The M/D/Y branch is untouched, so no date that
+     parsed before parses differently now. This makes one date read as itself;
+     it can never make two different dates compare equal, and the equality the
+     identity lock demands is unchanged. */
   function nrmDob(s) {
-    var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(S(s));
-    if (!m) return '';
-    var pivot = (new Date().getFullYear() % 100) + 1;
-    var y = m[3].length === 2 ? ((Number(m[3]) > pivot ? '19' : '20') + m[3]) : m[3];
-    var mo = Number(m[1]), dy = Number(m[2]);
+    var v = S(s), mo, dy, y;
+    var iso = /\b(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/.exec(v);
+    if (iso) { y = iso[1]; mo = Number(iso[2]); dy = Number(iso[3]); }
+    else {
+      var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(v);
+      if (!m) return '';
+      var pivot = (new Date().getFullYear() % 100) + 1;
+      y = m[3].length === 2 ? ((Number(m[3]) > pivot ? '19' : '20') + m[3]) : m[3];
+      mo = Number(m[1]); dy = Number(m[2]);
+    }
     if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
     return mo + '/' + dy + '/' + y;
   }
@@ -6159,6 +6432,13 @@
     previewHash: hashPreview, normalizeBilling: normalizeBilling,
     canonicalSectionKey: canonicalSectionKey, parseGeneratedSoapSections: parseGeneratedSoapSections, parseCanonicalAthenaNote: parseCanonicalAthenaNote, destinations: DESTINATION,
     inspectSections: gatherSections,
+    /* wfgen-1.0.0 read-only identity seam: the EXACT comparators the write
+       chain's identity lock uses (validatedUnifiedProbe, the one-click identity
+       gate, the mrn-adopt chart proof). Exposed so a suite pins the shipped
+       functions instead of agreeing with a reimplementation of them. Nothing
+       here can send, enable a control, or change a verdict. */
+    identity: { v: 'wfgen-1.0.0', nameMatch: nameMatch, normName: nrmName, normNameCamel: nrmNameCamel,
+      normDob: nrmDob, normId: nrmId, foldMarks: wfFoldMarks },
     /* wfdx-1.0.0 / athena-probe-only-1.0.0 test + support seam (read-only) */
     diagnostics: { report: function () { return wfdxReport(unifiedAthenaState && unifiedAthenaState.manifest); },
       receipts: function () { return wfdx.receipts.slice(); }, envLine: function () { return wfdxEnvLine(unifiedAthenaState && unifiedAthenaState.manifest, wfdx.env); },
@@ -6213,6 +6493,11 @@
       candidateDays: wfbindCandidateDays, curableRow: wfbindCurableRow,
       optsForDay: wfbindOptsForDay, resolvedOpts: wfbindResolvedOpts, pullBusy: wfbindPullBusy,
       run: function (day) { return wfbindRun(unifiedAthenaState, day, null); },
+      /* apptpick-1.0.0 read-only seam: the day's distinct resolvable Athena
+         appointments for this patient, and the detached reopen options one
+         chosen appointment produces. Neither can send or enable anything. */
+      apptChoices: function (day, manifest) { return wfbindApptChoices(manifest || (unifiedAthenaState && unifiedAthenaState.manifest), day); },
+      optsForAppointment: function (day, choice) { return wfbindOptsForAppointment(unifiedAthenaState, day, choice); },
       /* wfx-1.0.0 write-fidelity seam (read-only, render-time, advisory) */
       fidelity: { v: 'wfx-1.0.0', facts: wfxFacts, factList: wfxFactList,
         contradictions: wfxContradictions, tally: wfxTally,

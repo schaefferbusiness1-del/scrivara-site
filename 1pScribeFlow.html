@@ -33294,10 +33294,59 @@ function _athenaBindingForCurrentVisit(source){
      asks for. */
   return _athenaFreezeVisitBinding(_athenaPatientSnapshot(p,label),{source:source||'current',historical:false,noteTimestamp:now,displayDate:_athenaLocalDay(now),displayProvider:provider,visitContext:{visitDate:_athenaLocalDay(now),provider:provider}});
 }
+/* mergeid-1.0.0 (owner 2026-09-01, after 85 duplicate charts were merged):
+   A NOTE OUTLIVES THE CHART ID IT WAS SAVED UNDER. When two charts of one
+   person are merged, the loser's id stops resolving - but every note, draft and
+   queued Athena review saved under it still carries it. findPatient() then
+   misses, the review falls back to the note's own stored snapshot, and the
+   write goes out addressed to a patientId that no longer names anything in MLS.
+   Nothing lands on the wrong chart (Athena's own name/DOB/MRN reply is still
+   the arbiter, and the receipt records what Athena SAID the chart was), but the
+   receipt, the verified-write proof and the ledger are all keyed to a dead id -
+   so a second section write for the same encounter cannot find the first one's
+   proof, and Sign stays locked behind a proof it will never match.
+
+   This resolves the SURVIVOR, and only on the dupmatch-1.0 law: the tolerant
+   name comparator AND a hard second factor (same DOB digits, or same MRN
+   digits) - never name alone - with exactly one unambiguous hit. Anything else
+   keeps today's behaviour exactly. It adopts the survivor's ID ONLY: the note's
+   own stored name/DOB/MRN still describe the identity, so this can introduce no
+   new identity conflict and no new refusal. */
+function _athenaSurvivorPatientId(n){
+  try{
+    var want=String((n&&n.patientId)||'').trim();
+    if(!want||typeof getPatients!=='function')return '';
+    if(typeof _athenaHistoryNameCompatible!=='function')return '';
+    var wantName=String((n&&n.patient)||'').trim();
+    var wantDobRaw=String((n&&(n.patientDob||n.dob))||'').trim();
+    var wantDob=_athenaDigits(wantDobRaw);
+    var wantMrn=_athenaDigits((n&&(n.patientMrn||n.mrn))||'');
+    if(!wantName||(!wantDob&&!wantMrn))return '';           /* name alone never binds */
+    var rows=getPatients()||[],hits=[];
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i];if(!r)continue;
+      var rid=String(r.id||'').trim();if(!rid||rid===want)continue;
+      /* idread-1.0.0's own comparator: same birthday, any spelling - never a
+         raw digit run, which reads 03/04/1962 and 1962-03-04 as two dates. */
+      var second=(!!wantDob&&_athenaHistoryDobSame(r.dob,wantDobRaw))||(!!wantMrn&&_athenaDigits(r.mrn||r.athenaId)===wantMrn);
+      if(!second)continue;
+      if(!_athenaHistoryNameCompatible(String(r.name||''),wantName))continue;
+      hits.push(rid);
+    }
+    return hits.length===1?hits[0]:'';                      /* ambiguity fails closed to today's behaviour */
+  }catch(e){return '';}
+}
 function _athenaBindingForSavedRecord(n){
   n=n||{}; var p=null;
   try{if(n.patientId&&typeof findPatient==='function')p=findPatient(n.patientId)||null;}catch(e){}
-  var stored=_athenaPatientSnapshot({patientId:n.patientId,name:n.patient,dob:n.patientDob||n.dob,mrn:n.patientMrn||n.mrn},n.patient);
+  /* mergeid-1.0.0: only when the stored id resolves to NOTHING. A chart that is
+     still on file is never second-guessed. */
+  /* Guarded because suites LIFT this function out of the shell as a standalone
+     slice: a missing survivor lookup degrades to the stored id - never to an
+     exception, and never to a looser identity. */
+  var boundId=String(n.patientId||'');
+  if(n.patientId&&!p){try{var surv=_athenaSurvivorPatientId(n);if(surv)boundId=surv;}catch(eSurv){}}
+  var stored=_athenaPatientSnapshot({patientId:boundId,name:n.patient,dob:n.patientDob||n.dob,mrn:n.patientMrn||n.mrn},n.patient);
   var pt=p?_athenaPatientSnapshot(p,n.patient):stored;
   var identityConflict=!!(p&&((_athenaNormIdentity(stored.name)&&_athenaNormIdentity(stored.name)!==_athenaNormIdentity(pt.name))||(_athenaDigits(stored.dob)&&_athenaDigits(pt.dob)&&_athenaDigits(stored.dob)!==_athenaDigits(pt.dob))||(_athenaDigits(stored.mrn)&&_athenaDigits(pt.mrn)&&_athenaDigits(stored.mrn)!==_athenaDigits(pt.mrn))));
   var noteTimestamp=Number(n.visitTimestamp||n.encounterTimestamp||0)||null;

@@ -82,9 +82,16 @@ const HEAD_REGIONS = [
   ['identity-lock (validatedUnifiedProbe: token + name/DOB/MRN + exact encounter)',
     '  function validatedUnifiedProbe(patient, probe) {', '  function renderUnifiedContext(state, lock) {',
     '5132fb2c3047b18f75647b0dea7df7ce21c2d5a89325cfaa77e82e193d3533a1'],
+  /* MOVED DELIBERATELY, wfgen-1.0.0 (2026-09-01): the read-only ladder's
+     paced re-probes stopped being bare timers (a hidden tab buckets those to
+     one minute, and the MLS tab IS hidden while the extension fronts
+     athenaOne for the check). Only the WAIT changed - every refusal, the
+     auto-open, the day-mismatch gate and the identity lock are byte-identical,
+     which is why the other six regions below did not move. Proven in
+     tests/write-generality-proof.js. */
   ['probe ladder (probeUnifiedRow: every refusal, auto-open, day-mismatch gate)',
     '  function probeUnifiedRow(state, rowId) {', '  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet',
-    'f6721307c51e92cc4a26cb506f4e9f24ab47677004791f01818aa952f9bcc506'],
+    'b969672ecd13d4afd4c8f4e86e12cbc6a0799e32ffdee30744a4c68a1f8c2005'],
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
     '82451a857daa88c986222abdca94ea4bdf504207cf11a6ac894bc25a52824de9'],
