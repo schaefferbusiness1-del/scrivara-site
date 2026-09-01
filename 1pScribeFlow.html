@@ -17777,6 +17777,11 @@ function showView(v){
     if(!_liteSaid){ try{ toast(_liteMsg,'err'); }catch(_eLite2){} }
     v='visit';
   } }catch(e){}
+  /* noteq-1.1.0 (b1177): warm the note-quality module on Visit-screen entry.
+     Fire-and-forget and never awaited - by the time Generate is pressed the
+     module is normally already resident, so the bounded await at the
+     generation sites costs nothing in the common case. */
+  try{ if(v==='visit'&&typeof __mlsNoteQualityWarm==='function') __mlsNoteQualityWarm(); }catch(eNoteqWarmView){}
   var previousView=currentView;
   /* A hidden iframe is still a live program and its srcdoc still contains the
      serialized practice snapshot. Leaving Studio or a pinned tool unloads it. */
@@ -24051,6 +24056,9 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
      procedure plus the template law - which is exactly what the owner meant by
      "professional medical quality" for an op note. */
   var noteqOpCtx={template:String(tplText||''),procedureClass:''};
+  /* noteq-1.1.0 (b1177): bounded await so the FIRST op note of a session gets
+     the contract and the grade, not just the second. */
+  try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyOp){}
   var noteqOp=__mlsNoteQualityContract('operative-procedure-note',noteqOpCtx);
   var raw=await aiCallRaw(sys+noteqOp, user, (typeof getKey==='function'?getKey():''), {freeform:true,family:'opnote',mlsOpNotePatientId:String(exactPatient.id)});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
@@ -26512,6 +26520,10 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
      boilerplate character-for-character with negations intact, every slot
      resolved or explicitly marked, nothing invented to fill a blank. */
   const noteqTplCtx={template:tplForModel,templateName:(template&&template.name)?template.name:''};
+  /* noteq-1.1.0 (b1177): bounded await - the template pass is the one whose
+     whole job is "follow the template well", so it must never run contractless
+     just because it was the first thing the session did. */
+  try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyTpl){}
   const noteqTpl=__mlsNoteQualityContract('template-fidelity',noteqTplCtx);
   try{
     let out=(await aiCallRaw(sys+noteqTpl,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat',signal:templateSignal})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
@@ -32721,6 +32733,12 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
      only on the single repair pass and carries the prior draft's findings
      verbatim; on a first pass both strings are empty and the prompt is
      byte-for-byte what it was. */
+  /* noteq-1.1.0 (b1177): await the module before building the contract. On the
+     FIRST generation of a session the idle loader has not landed yet, and
+     without this the prompt went out with no contract at all - measured live
+     on b1176. Bounded; a module that never arrives yields '' and the prompt is
+     byte-for-byte what it was. */
+  try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyMain){}
   var noteqBlock=__mlsNoteQualityContract('visit-note-soap',{
     template:(tplContract&&tplContract.templateText)?tplContract.templateText:'',
     templateName:(tplContract&&tplContract.name)?tplContract.name:'',
@@ -32737,6 +32755,10 @@ async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,ru
   var firstText='';
   try{ firstText=String((result&&result.soap)||''); }catch(eNoteqFirst){ firstText=''; }
   if(!firstText.trim()) return result;
+  /* noteq-1.1.0 (b1177): a generation that STARTED before the module loaded is
+     still graded - we await here as well as at contract time, so the module
+     that arrives mid-flight is used rather than missed. */
+  try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyStruct){}
   var tplText='';
   try{ tplText=(_mlsGenTplMeasure&&_mlsGenTplMeasure.text)?_mlsGenTplMeasure.text:''; }catch(eNoteqTpl){ tplText=''; }
   var ctx={template:tplText};
@@ -32787,6 +32809,115 @@ function __mlsNoteQualityApi(){
   try{ return (window.__mlsNoteQuality && typeof window.__mlsNoteQuality.grade==='function') ? window.__mlsNoteQuality : null; }
   catch(eNoteqApi){ return null; }
 }
+
+/* noteq-1.1.0 (b1177): LOAD-ON-DEMAND, BECAUSE THE DEFERRED LOADER LOSES THE RACE.
+
+   Measured live on b1176: on a fresh page load __mlsNoteQuality was undefined;
+   a transcript was pasted and Generate pressed; the note came back and only
+   AFTER that did the module appear. stats() read total 0 - no contract had
+   ridden the prompt, no grade ran, no strip painted. The idle loader is
+   correct for boot cost and wrong as the ONLY path: the very first generation
+   of a session is exactly the one that misses it, and that is the generation a
+   doctor judges the product by.
+
+   So presence is no longer assumed anywhere. Every generation site AWAITS this
+   before it builds a contract or grades, and it is also fired as a warm-up at
+   Visit-screen entry and on the first transcript keystroke so the common case
+   has the module resident long before Generate is pressed.
+
+   THREE PROPERTIES THIS MUST HAVE, ALL PROVEN IN tests/note-quality-proof.js:
+     1. BOUNDED. A slow or dead asset can never hold a note hostage: the wait
+        is capped (NOTEQ_LOAD_TIMEOUT_MS) and on expiry we resolve null and the
+        note ships ungraded rather than late. A quality check is worth less
+        than a delivered note.
+     2. SINGLE-FLIGHT. Concurrent generations share one in-flight promise and
+        one <script> element, keyed on the same data-mls-asset attribute the
+        idle loader uses, so the two paths can never double-insert.
+     3. HONEST. If the module never arrives we say so ONCE to the console and
+        then stay quiet - a per-generation warning would train the doctor to
+        ignore the console. */
+var NOTEQ_ASSET = 'feat_mls_note_quality.js';
+var NOTEQ_LOAD_TIMEOUT_MS = 4000;
+var __noteqLoadPromise = null;
+var __noteqMissingSaid = false;
+
+function __mlsNoteQualityEnsure(timeoutMs){
+  try{
+    var ready=__mlsNoteQualityApi();
+    if(ready) return Promise.resolve(ready);
+    if(__noteqLoadPromise) return __noteqLoadPromise;
+    if(typeof document==='undefined'||!document) return Promise.resolve(null);
+
+    var budget=(typeof timeoutMs==='number'&&timeoutMs>0)?timeoutMs:NOTEQ_LOAD_TIMEOUT_MS;
+    __noteqLoadPromise=new Promise(function(resolve){
+      var done=false;
+      function finish(){
+        if(done) return;
+        done=true;
+        var api=__mlsNoteQualityApi();
+        if(!api&&!__noteqMissingSaid){
+          __noteqMissingSaid=true;
+          try{ console.warn('[noteq] '+NOTEQ_ASSET+' did not load within '+budget+'ms; notes will generate and ship ungraded.'); }catch(eNoteqWarn){}
+        }
+        /* Allow a later attempt to retry rather than caching the failure
+           forever - a transient network blip must not disable the floor for
+           the rest of the session. */
+        if(!api) __noteqLoadPromise=null;
+        resolve(api);
+      }
+      var timer=setTimeout(finish,budget);
+      function settle(){ try{ clearTimeout(timer); }catch(eNoteqClear){} finish(); }
+      try{
+        var existing=document.querySelector('script[data-mls-asset="'+NOTEQ_ASSET+'"]');
+        if(existing){
+          /* The idle loader already inserted it and it is still in flight.
+             Ride that same element instead of adding a second one. */
+          existing.addEventListener('load',settle);
+          existing.addEventListener('error',settle);
+          /* It may also have finished between the api check and here. */
+          if(__mlsNoteQualityApi()) settle();
+          return;
+        }
+        var s=document.createElement('script');
+        s.src=NOTEQ_ASSET+'?v='+(window.__MLS_AV||Date.now());
+        s.setAttribute('data-mls-asset',NOTEQ_ASSET);
+        s.async=true;
+        s.addEventListener('load',settle);
+        s.addEventListener('error',settle);
+        (document.body||document.head||document.documentElement).appendChild(s);
+      }catch(eNoteqInject){ settle(); }
+    });
+    return __noteqLoadPromise;
+  }catch(eNoteqEnsure){ return Promise.resolve(null); }
+}
+/* Warm-up: fire and forget, never awaited, never throws into a caller. */
+function __mlsNoteQualityWarm(){
+  try{ if(!__mlsNoteQualityApi()) __mlsNoteQualityEnsure(); }catch(eNoteqWarm){}
+}
+try{ window.__mlsNoteQualityEnsure=__mlsNoteQualityEnsure; window.__mlsNoteQualityWarm=__mlsNoteQualityWarm; }catch(eNoteqExport){}
+/* noteq-1.1.0 (b1177): the other warm trigger - the first transcript keystroke
+   or paste. A doctor who lands straight on Visit and starts typing has given
+   us seconds of runway before Generate; spend them loading the module rather
+   than making the generation wait. Unbinds itself after one fire. */
+(function(){
+  function bindNoteqWarm(){
+    try{
+      var tx=document.getElementById('transcript');
+      if(!tx||tx.__noteqWarmBound) return;
+      tx.__noteqWarmBound=true;
+      var fire=function(){
+        try{ tx.removeEventListener('input',fire); tx.removeEventListener('paste',fire); }catch(eNoteqOff){}
+        try{ __mlsNoteQualityWarm(); }catch(eNoteqFire){}
+      };
+      tx.addEventListener('input',fire);
+      tx.addEventListener('paste',fire);
+    }catch(eNoteqBind){}
+  }
+  try{
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',bindNoteqWarm);
+    else bindNoteqWarm();
+  }catch(eNoteqBindOuter){}
+})();
 function __mlsNoteQualityContract(noteType,opts){
   try{
     var q=__mlsNoteQualityApi();
@@ -37193,6 +37324,8 @@ async function generateAVS(){
        transcript artifacts, no stigmatizing language, no dangerous
        abbreviations in a document the patient reads the day it is signed. */
     const noteqAvsCtx={avs:true,template:''};
+    /* noteq-1.1.0 (b1177): bounded await before the patient-facing summary. */
+    try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyAvs){}
     const noteqAvs=__mlsNoteQualityContract('visit-note-soap',noteqAvsCtx);
     let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     try{

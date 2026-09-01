@@ -41692,12 +41692,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var orig=window.aiCallRaw;
     if(typeof orig!=='function') return false;
     if(orig.__mlsNoteQualityWrapped){ installed=true; return true; }
+    /* noteq-1.1.0 (b1177): the wrapper AWAITS the module, but only for a prompt
+       that actually wants the op-note contract and only while the module is
+       absent. Measured live on b1176: the first op note of a session went out
+       contractless because the idle loader had not landed. Every other prompt -
+       and every prompt once the module is resident - takes the synchronous path
+       and pays nothing. The wait itself is bounded inside the shell's ensure(),
+       so a dead asset can never hold an op note hostage. */
     var w=function(){
+      var self=this, args=arguments;
       try{
-        var a0=arguments[0];
-        if(typeof a0==='string' && a0) arguments[0]=augment(a0);
+        var a0=args[0];
+        if(typeof a0==='string' && a0 && wantsOpNoteContract(a0) && !window.__mlsNoteQuality &&
+           typeof window.__mlsNoteQualityEnsure==='function'){
+          return window.__mlsNoteQualityEnsure().then(function(){
+            try{ if(typeof args[0]==='string' && args[0]) args[0]=augment(args[0]); }catch(e2){}
+            return orig.apply(self,args);
+          },function(){ return orig.apply(self,args); });
+        }
+        if(typeof a0==='string' && a0) args[0]=augment(a0);
       }catch(e){}
-      return orig.apply(this,arguments);
+      return orig.apply(self,args);
     };
     w.__mlsNoteQualityWrapped=true;
     /* deliberately NOT __mlsWrapped — see the header note */

@@ -534,11 +534,282 @@ ok(!/(localStorage|getItem|settings|fetch)/i.test(floorFn),
 ok(/var FLOORS = \{\};/.test(MOD), 'the FLOORS constant table is missing from the module');
 
 /* ---------------------------------------------------------------------------
+ * 9. THE LOADER RACE  (noteq-1.1.0, b1177)
+ *
+ * Measured live on b1176: on a fresh page load __mlsNoteQuality was undefined,
+ * a transcript was pasted, Generate was pressed, the note came back, and only
+ * THEN did the module appear - stats() read total 0, no grade had run and no
+ * strip painted. The idle loader loses the race with the first generation of a
+ * session, which is precisely the generation a doctor judges the product by.
+ *
+ * These checks execute the SHIPPED ensure() out of the derived bytes against a
+ * fake DOM whose script element loads late, never, or twice.
+ * ------------------------------------------------------------------------- */
+
+/* --- static: every site awaits before it builds a contract or grades ------ */
+[
+  ['primary visit note contract', /try\{ await __mlsNoteQualityEnsure\(\); \}catch\(eNoteqReadyMain\)\{\}[\s\S]{0,400}?noteqBlock=__mlsNoteQualityContract/],
+  ['primary visit note grade', /try\{ await __mlsNoteQualityEnsure\(\); \}catch\(eNoteqReadyStruct\)\{\}/],
+  ['op note', /try\{ await __mlsNoteQualityEnsure\(\); \}catch\(eNoteqReadyOp\)\{\}[\s\S]{0,300}?noteqOp=__mlsNoteQualityContract/],
+  ['template reformat', /try\{ await __mlsNoteQualityEnsure\(\); \}catch\(eNoteqReadyTpl\)\{\}[\s\S]{0,400}?noteqTpl=__mlsNoteQualityContract/],
+  ['after-visit summary', /try\{ await __mlsNoteQualityEnsure\(\); \}catch\(eNoteqReadyAvs\)\{\}[\s\S]{0,200}?noteqAvs=__mlsNoteQualityContract/]
+].forEach(([name, re]) => {
+  ok(re.test(SHIP), `the ${name} site does not await the module before using it - it will run contractless on the first generation of a session`);
+});
+
+/* --- static: the warm triggers exist ------------------------------------- */
+ok(/if\(v==='visit'&&typeof __mlsNoteQualityWarm==='function'\) __mlsNoteQualityWarm\(\);/.test(SHIP),
+  'the Visit-screen entry warm trigger is missing');
+ok(/tx\.addEventListener\('input',fire\);/.test(SHIP) && /tx\.addEventListener\('paste',fire\);/.test(SHIP),
+  'the first-transcript-keystroke warm trigger is missing');
+ok(/getElementById\('transcript'\)[\s\S]{0,200}?__noteqWarmBound/.test(SHIP),
+  'the transcript warm trigger does not guard against double-binding');
+
+/* --- static: the op-note chokepoint wrapper awaits too -------------------- */
+ok(/window\.__mlsNoteQualityEnsure\(\)\.then\(function\(\)\{/.test(CONNECT),
+  'the aiCallRaw chokepoint wrapper does not await the module, so the first op note of a session goes out contractless');
+ok(/wantsOpNoteContract\(a0\) && !window\.__mlsNoteQuality &&/.test(CONNECT),
+  'the chokepoint wrapper awaits unconditionally - only an op-note prompt with the module absent may wait');
+
+/* --- runtime: execute the shipped ensure() against a fake DOM ------------- */
+const vm = require('vm');
+
+function shippedLoaderSource() {
+  const start = SHIP.indexOf('function __mlsNoteQualityApi(){');
+  const end = SHIP.indexOf('function __mlsNoteQualityContract(noteType,opts){');
+  if (start < 0 || end < 0 || end <= start) return '';
+  return SHIP.slice(start, end);
+}
+
+/* A fake document whose script elements resolve on a schedule we control. */
+function makeHost(opts) {
+  opts = opts || {};
+  const created = [];
+  const inserted = [];
+  const warns = [];
+  const host = {
+    console: { warn: (m) => warns.push(String(m)), log: () => {}, error: () => {} },
+    setTimeout, clearTimeout, Promise, Date
+  };
+  host.window = host;
+  const doc = {
+    readyState: 'complete',
+    addEventListener: () => {},
+    querySelector: (sel) => {
+      const m = /data-mls-asset="([^"]+)"/.exec(sel || '');
+      if (!m) return null;
+      return inserted.find((s) => s.__asset === m[1]) || null;
+    },
+    createElement: () => {
+      const el = {
+        __handlers: {},
+        setAttribute(k, v) { if (k === 'data-mls-asset') el.__asset = v; },
+        addEventListener(ev, fn) { (el.__handlers[ev] = el.__handlers[ev] || []).push(fn); },
+        removeEventListener() {},
+        fire(ev) { (el.__handlers[ev] || []).forEach((fn) => fn()); }
+      };
+      created.push(el);
+      return el;
+    },
+    getElementById: () => null
+  };
+  doc.body = {
+    appendChild(el) {
+      inserted.push(el);
+      if (opts.onInsert) opts.onInsert(el, host);
+      return el;
+    }
+  };
+  host.document = doc;
+  host.__host = { created, inserted, warns };
+  return host;
+}
+
+function bootLoader(host) {
+  const src = shippedLoaderSource();
+  if (!src) throw new Error('could not slice the shipped loader out of ScribeFlow.html');
+  const ctx = vm.createContext(host);
+  vm.runInContext(src, ctx, { filename: 'ScribeFlow.html#noteq-loader' });
+  return ctx;
+}
+
+async function loaderProofs() {
+  ok(shippedLoaderSource().length > 500,
+    'the shipped ensure() could not be sliced out of the derived ScribeFlow.html');
+
+  /* (a) A GENERATION STARTED BEFORE THE MODULE LOADS IS STILL GRADED.
+     ensure() is called while __mlsNoteQuality is undefined; the script
+     "loads" 60ms later and publishes the real module. The promise must
+     resolve to a usable api, and a grade must then run for real. */
+  {
+    const host = makeHost({
+      onInsert: (el, h) => setTimeout(() => { h.__mlsNoteQuality = Q; el.fire('load'); }, 60)
+    });
+    bootLoader(host);
+    ok(host.__mlsNoteQuality === undefined, 'the module was resident before the race test started');
+    const api = await host.__mlsNoteQualityEnsure();
+    ok(api && typeof api.grade === 'function',
+      'a generation that started before the module loaded did not get the module when it arrived');
+    const res = api.grade(EX_OP, 'op note', {});
+    ok(res && typeof res.score === 'number',
+      'the late-arriving module did not produce a grade');
+    eq(res.pass, true, 'the late-arriving module graded the professional exemplar as failing');
+    eq(host.__host.created.length, 1, 'the on-demand loader inserted more than one script element');
+  }
+
+  /* (b) A PERMANENTLY MISSING MODULE NEVER BLOCKS THE NOTE.
+     The script never fires load and never publishes anything. ensure() must
+     resolve null inside its bound rather than hang, and must not throw. */
+  {
+    const host = makeHost({ onInsert: () => {} });
+    bootLoader(host);
+    const t0 = Date.now();
+    let threw = null;
+    let api = 'unset';
+    try { api = await host.__mlsNoteQualityEnsure(120); } catch (e) { threw = e; }
+    const elapsed = Date.now() - t0;
+    ok(!threw, 'a missing module made ensure() throw into the generation path');
+    eq(api, null, 'a missing module did not resolve null');
+    ok(elapsed < 2000, `a missing module blocked the note for ${elapsed}ms - the wait must be bounded`);
+    ok(host.__host.warns.length === 1,
+      `a missing module logged ${host.__host.warns.length} warnings; it must say so exactly once`);
+    ok(/did not load within/.test(host.__host.warns[0] || ''),
+      'the missing-module warning does not say what happened');
+
+    /* A later generation RETRIES rather than inheriting the cached failure.
+       The correct retry rides the element already in the document instead of
+       inserting a duplicate, so the property to assert is that the second
+       call is a fresh bounded attempt that DOES pick the module up when it
+       finally arrives - not that a second <script> appears. */
+    const late = host.__host.inserted[0];
+    setTimeout(() => { host.__mlsNoteQuality = Q; late.fire('load'); }, 30);
+    const api2 = await host.__mlsNoteQualityEnsure(400);
+    ok(api2 && typeof api2.grade === 'function',
+      'a transient load failure permanently disabled the quality floor - the next generation must retry and pick up the module');
+    eq(host.__host.created.length, 1,
+      'the retry inserted a duplicate script instead of riding the element already in the document');
+  }
+
+  /* (c) SINGLE-FLIGHT: concurrent generations share one load, one element. */
+  {
+    const host = makeHost({
+      onInsert: (el, h) => setTimeout(() => { h.__mlsNoteQuality = Q; el.fire('load'); }, 40)
+    });
+    bootLoader(host);
+    const [a, b, c] = await Promise.all([
+      host.__mlsNoteQualityEnsure(),
+      host.__mlsNoteQualityEnsure(),
+      host.__mlsNoteQualityEnsure()
+    ]);
+    ok(a && a === b && b === c, 'concurrent ensure() calls did not share one resolved module');
+    eq(host.__host.created.length, 1,
+      'concurrent ensure() calls inserted more than one script element');
+  }
+
+  /* (d) It RIDES the idle loader's element instead of adding a second one. */
+  {
+    const host = makeHost({ onInsert: () => {} });
+    bootLoader(host);
+    /* simulate the deferred loader in mls-connect.js having already inserted it */
+    const pre = host.document.createElement('script');
+    pre.setAttribute('data-mls-asset', 'feat_mls_note_quality.js');
+    host.document.body.appendChild(pre);
+    const createdBefore = host.__host.created.length;
+    const p = host.__mlsNoteQualityEnsure(400);
+    setTimeout(() => { host.__mlsNoteQuality = Q; pre.fire('load'); }, 30);
+    const api = await p;
+    ok(api && typeof api.grade === 'function',
+      'ensure() did not ride the idle loader\'s in-flight script element');
+    eq(host.__host.created.length, createdBefore,
+      'ensure() inserted a duplicate script alongside the idle loader\'s element');
+  }
+
+  /* (f) THE OP-NOTE CHOKEPOINT, EXECUTED. feat_mls_opnote_integrity replaces
+     _genOpNote and calls window.aiCallRaw directly, so this wrapper is the only
+     thing that puts the contract on the op note that actually runs. Prove that
+     with the module ABSENT the wrapper waits for it and the prompt that finally
+     reaches the transport carries the contract - the exact case that was broken
+     live on b1176. */
+  {
+    const start = CONNECT.lastIndexOf('(function(){', CONNECT.indexOf('if(window.__mlsNoteQualityReach) return;'));
+    const end = CONNECT.indexOf('/* feat_pkg_templates');
+    ok(start > 0 && end > start, 'could not slice the op-note chokepoint wrapper out of mls-connect.js');
+    const wrapperSrc = CONNECT.slice(start, end);
+
+    function runWrapper(moduleArrivesAfterMs) {
+      const seen = [];
+      const host = {
+        setTimeout, clearTimeout, Promise, Date,
+        console: { warn: () => {}, log: () => {}, error: () => {} },
+        aiCallRaw: function (sys) { seen.push(String(sys || '')); return Promise.resolve('{"note":"x","missing":[]}'); }
+      };
+      host.window = host;
+      host.document = { querySelector: () => null, createElement: () => ({ setAttribute() {}, addEventListener() {} }), body: { appendChild() {} }, addEventListener() {}, readyState: 'complete' };
+      if (moduleArrivesAfterMs === null) {
+        host.__mlsNoteQuality = Q;
+      } else {
+        host.__mlsNoteQualityEnsure = function () {
+          return new Promise((resolve) => setTimeout(() => { host.__mlsNoteQuality = Q; resolve(Q); }, moduleArrivesAfterMs));
+        };
+      }
+      vm.runInContext(wrapperSrc, vm.createContext(host), { filename: 'mls-connect.js#noteq-reach' });
+      return { host, seen };
+    }
+
+    const OP_SYS = 'You write a full operative note text for an interventional pain procedure. Return ONLY JSON.';
+    const OTHER_SYS = 'You extract appointment schedule from raw HTML. Return ONLY JSON.';
+
+    /* module absent at press time -> the wrapper waits, then augments */
+    const late = runWrapper(40);
+    ok(late.host.__mlsNoteQuality === undefined, 'the wrapper test started with the module already resident');
+    await late.host.aiCallRaw(OP_SYS, 'user', 'key', {});
+    ok(late.seen.length === 1, 'the wrapper did not forward the call to the transport exactly once');
+    ok(/=== MLS PROFESSIONAL NOTE CONTRACT/.test(late.seen[0]),
+      'the first op note of a session still reached the model with NO quality contract');
+    ok(/operative-procedure-note/.test(late.seen[0]),
+      'the op-note prompt did not receive the operative-procedure-note contract');
+
+    /* module already resident -> synchronous path still augments */
+    const warm = runWrapper(null);
+    await warm.host.aiCallRaw(OP_SYS, 'user', 'key', {});
+    ok(/=== MLS PROFESSIONAL NOTE CONTRACT/.test(warm.seen[0]),
+      'a resident module did not augment the op-note prompt');
+
+    /* an ingestion prompt is never touched and never waits */
+    const ingest = runWrapper(40);
+    const t0 = Date.now();
+    await ingest.host.aiCallRaw(OTHER_SYS, 'user', 'key', {});
+    ok(!/MLS PROFESSIONAL NOTE CONTRACT/.test(ingest.seen[0]),
+      'an ingestion prompt was contaminated with the note contract');
+    ok(Date.now() - t0 < 30,
+      'an ingestion prompt waited on the note-quality module - only op-note prompts may wait');
+  }
+
+  /* (e) When the module is already resident, ensure() is free and synchronous
+     in effect - no element, no wait. */
+  {
+    const host = makeHost({ onInsert: () => {} });
+    bootLoader(host);
+    host.__mlsNoteQuality = Q;
+    const t0 = Date.now();
+    const api = await host.__mlsNoteQualityEnsure();
+    ok(api === Q, 'ensure() did not return the already-resident module');
+    eq(host.__host.created.length, 0, 'ensure() inserted a script for an already-resident module');
+    ok(Date.now() - t0 < 100, 'ensure() waited even though the module was already resident');
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * REPORT
  * ------------------------------------------------------------------------- */
-if (failures.length) {
-  console.error(`FAIL note-quality: ${failures.length} of ${checks} checks failed`);
-  failures.forEach((f) => console.error('  - ' + f));
+loaderProofs().then(() => {
+  if (failures.length) {
+    console.error(`FAIL note-quality: ${failures.length} of ${checks} checks failed`);
+    failures.forEach((f) => console.error('  - ' + f));
+    process.exit(1);
+  }
+  console.log(`PASS note-quality: ${checks} checks`);
+}, (err) => {
+  console.error('FAIL note-quality: the loader proofs threw - ' + (err && err.stack ? err.stack : err));
   process.exit(1);
-}
-console.log(`PASS note-quality: ${checks} checks`);
+});
