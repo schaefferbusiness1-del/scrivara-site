@@ -6236,6 +6236,15 @@ var mlsProv = (function () {
      AM/PM here can bind a patient to the wrong appointment.  In table readers
      this is called on the isolated Time cell because row.textContent joins
      adjacent cells (for example "8:30 AMAlpha") without a boundary. */
+  /* status-1.0.0 (3.0.98): per-row appointment status, read from the RAW row
+     text BEFORE any scrub. The scrubbers below intentionally delete this exact
+     vocabulary to keep names and reasons clean (correct - unchanged); the app's
+     seen-ranking (tnSeenRank) and month attribution need it, so it is captured
+     here first and rides each row as `status`. Conservative on purpose: only
+     the -ed / hyphenated forms of check-in\/out match, so reason prose like
+     "check in 3 months" never mints a false checked-in. Fail-open: no match
+     emits '' and the consumer falls back to the clock. */
+  function mlsApptStatusFromRaw(t) { try { var s = ' ' + String(t == null ? '' : t).replace(/\s+/g, ' ') + ' '; if (/\bchecked[\s-]?out\b/i.test(s)) return 'checked out'; if (/\bchecked[\s-]?in\b/i.test(s)) return 'checked in'; if (/\b(?:with\s+provider|in\s+(?:exam\s+)?room|roomed|ready\s+for\s+provider|intake\s+complete)\b/i.test(s)) return 'in room'; if (/\barrived\b/i.test(s)) return 'arrived'; if (/\bno[\s-]?show\b/i.test(s)) return 'no show'; if (/\bcancell?ed\b/i.test(s)) return 'cancelled'; if (/\bresched(?:uled)?\b/i.test(s)) return 'rescheduled'; if (/\bconfirmed\b/i.test(s)) return 'confirmed'; if (/\bscheduled\b/i.test(s)) return 'scheduled'; return ''; } catch (e) { return ''; } }
   function firstTime(s) {
     var raw = S(s);
     var m = /\b(\d{1,2}):(\d{2})\s*([aApP])\.?\s*[mM]\.?(?=[A-Z])/.exec(raw)
@@ -6392,7 +6401,7 @@ var mlsProv = (function () {
                 out.diag.tabularMalformedRows++;
                 continue;
               }
-              out.appts.push({ time: tabTime, name: tabName, provider: tabProvider || '' });
+              out.appts.push({ time: tabTime, name: tabName, provider: tabProvider || '', status: mlsApptStatusFromRaw(ln) });
               out.diag.tabularRowCount++;
               continue;
             }
@@ -6425,7 +6434,7 @@ var mlsProv = (function () {
           if (ln.search(RE_TIME) > 2) { out.diag.timeMidlineRowsSkipped++; }
           else {
             var nm = patientNameFromRow(ln);
-            if (nm) out.appts.push({ time: firstTime(ln), name: nm, provider: current || '' });
+            if (nm) out.appts.push({ time: firstTime(ln), name: nm, provider: current || '', status: mlsApptStatusFromRaw(ln) });
           }
         }
       }
@@ -6602,7 +6611,7 @@ var mlsProv = (function () {
           if (nm) {
             var ids = sourceIds(r, providerCell);
             var identity = explicitRowIdentity(r);
-            out.appts.push({ time: parsedTime, name: clean(nm), provider: prov || '', appointmentId: ids.appointmentId || '', providerId: ids.providerId || '', dob: identity.dob || '', mrn: identity.mrn || '' });
+            out.appts.push({ time: parsedTime, name: clean(nm), provider: prov || '', appointmentId: ids.appointmentId || '', providerId: ids.providerId || '', dob: identity.dob || '', mrn: identity.mrn || '', status: mlsApptStatusFromRaw(rowText) });
           }
         });
         if (out.appts.length) out.diag.via = 'table-column';
@@ -6639,7 +6648,7 @@ var mlsProv = (function () {
             if (nm2) {
               var ids2 = sourceIds(n.el, null);
               var identity2 = explicitRowIdentity(n.el);
-              out.appts.push({ time: firstTime(n.text), name: nm2, provider: inRow || cur || '', appointmentId: ids2.appointmentId || '', providerId: ids2.providerId || '', dob: identity2.dob || '', mrn: identity2.mrn || '' });
+              out.appts.push({ time: firstTime(n.text), name: nm2, provider: inRow || cur || '', appointmentId: ids2.appointmentId || '', providerId: ids2.providerId || '', dob: identity2.dob || '', mrn: identity2.mrn || '', status: mlsApptStatusFromRaw(n.text) });
             }
           }
         });
@@ -6761,7 +6770,7 @@ var mlsProv = (function () {
       return matches.length ? { ambiguous: matches.length !== 1, row: matches.length === 1 ? matches[0] : null } : null;
     }
     function mergeRowFields(prior, a, lane) {
-      ['provider', 'providerId', 'provider_id', 'athenaProviderId', 'athena_provider_id', 'appointmentId', 'appointment_id', 'athenaAppointmentId', 'athena_appointment_id', 'date', 'appt_date', 'reason'].forEach(function (field) {
+      ['provider', 'providerId', 'provider_id', 'athenaProviderId', 'athena_provider_id', 'appointmentId', 'appointment_id', 'athenaAppointmentId', 'athena_appointment_id', 'date', 'appt_date', 'reason', 'status'].forEach(function (field) {
         if (!clean(prior[field]) && clean(a && a[field])) { prior[field] = a[field]; mergedFields++; }
       });
       ['dob', 'mrn'].forEach(function (field) {
@@ -8049,6 +8058,10 @@ async function mlsSchedDomInline(doc, CFG){
        display parsing: only this exact row's semantic attributes or explicit
        DOB/MRN labels qualify. Bare dates/numbers (including appointment and
        reason dates) are ignored. Conflicting values fail closed. */
+    /* status-1.0.0 (3.0.98): same contract as mlsApptStatusFromRaw in the
+       text\/dom extractor module - injected-driver copy (this closure is
+       serialized separately, so the module helper is not reachable here). */
+    function _mlsApptStatusD(t){try{var s=' '+String(t==null?'':t).replace(/\s+/g,' ')+' ';if(/\bchecked[\s-]?out\b/i.test(s))return 'checked out';if(/\bchecked[\s-]?in\b/i.test(s))return 'checked in';if(/\b(?:with\s+provider|in\s+(?:exam\s+)?room|roomed|ready\s+for\s+provider|intake\s+complete)\b/i.test(s))return 'in room';if(/\barrived\b/i.test(s))return 'arrived';if(/\bno[\s-]?show\b/i.test(s))return 'no show';if(/\bcancell?ed\b/i.test(s))return 'cancelled';if(/\bresched(?:uled)?\b/i.test(s))return 'rescheduled';if(/\bconfirmed\b/i.test(s))return 'confirmed';if(/\bscheduled\b/i.test(s))return 'scheduled';return '';}catch(_e){return '';}}
     function _scheduleRowProofD(root){
       var outD={dob:'',mrn:'',dobConflict:false,mrnConflict:false};
       function dobD(value){var raw=cl(value),m=/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(raw);if(!m){var iso=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw);if(iso)m=[iso[0],iso[2],iso[3],iso[1]];}if(!m)return '';var y=+m[3],mo=+m[1],d=+m[2],now=new Date(),exact=new Date(Date.UTC(y,mo-1,d));if(y<1900||exact.getUTCFullYear()!==y||exact.getUTCMonth()!==mo-1||exact.getUTCDate()!==d||exact.getTime()>now.getTime())return '';return('0'+mo).slice(-2)+'/'+('0'+d).slice(-2)+'/'+y;}
@@ -8244,14 +8257,14 @@ async function mlsSchedDomInline(doc, CFG){
             var nameTokens=name.replace(/[^A-Za-z'â€™\-]+/g,' ').trim().split(/\s+/).filter(Boolean);
             if(!tm||nameTokens.length<2){_legacyUnresolvedL.push({time:tm||'',provider:provider||'',appointmentId:appointmentId||'',rawKey:_legacyNormL(raw),node:row});return;}
             var rowProof=_scheduleRowProofD(row);
-            _legacyClaimedNodesL.push(row);_legacyObsL.push({time:tm,name:name,provider:provider||'',providerKey:_legacyNormL(provider),appointmentId:appointmentId||'',providerId:providerId||'',reason:_legacyReasonL(row),dob:rowProof.dob||'',mrn:rowProof.mrn||'',dobConflict:rowProof.dobConflict===true,mrnConflict:rowProof.mrnConflict===true,rawKey:_legacyNormL(raw)});
+            _legacyClaimedNodesL.push(row);_legacyObsL.push({time:tm,name:name,provider:provider||'',providerKey:_legacyNormL(provider),appointmentId:appointmentId||'',providerId:providerId||'',reason:_legacyReasonL(row),status:_mlsApptStatusD(raw),dob:rowProof.dob||'',mrn:rowProof.mrn||'',dobConflict:rowProof.dobConflict===true,mrnConflict:rowProof.mrnConflict===true,rawKey:_legacyNormL(raw)});
           });
         });
         /* 2026-07-29 bounded per-row re-verify: a legacy row whose DOM changed underneath the reader lands in _legacyUnresolvedL. Re-locate THAT row by its stable key (its own still-connected node, its appointment id, else a unique unclaimed same-time row) after a short settle and re-verify, up to 2 extra passes. Rows that still refuse are classified: no-identity-cell means PROVABLY no appointment id, no patient-name shape and no DOB/MRN (a hold/block/frame row); everything else stays mutating and keeps the day incomplete. A patient row is never guessed. */
         var _lgPassesL=0,_lgSnapRecovL=0,_lgSlotWordsL=/^(open|available|unavailable|blocked?|hold|reserved|lunch|break|admin|administrative|meeting|closed|buffer|frozen|freeze|slot|slots|capacity|frame)$/i;
         function _lgNoIdentityL(row,raw){try{if(_legacyAttrL(row,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid']))return false;var proof=_scheduleRowProofD(row);if(proof.dob||proof.mrn||proof.dobConflict||proof.mrnConflict)return false;var parsed=null;try{parsed=mlsParseName(raw);}catch(_eNI1){}if(parsed&&parsed.confident)return false;var nm=cl(pn(raw));if(nm&&nm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean).length>=2)return false;if(_legacySlotL(raw))return true;var toks=cl(String(raw||'').replace(RTG,' ')).replace(/[^A-Za-z'\- ]+/g,' ').split(/\s+/).filter(Boolean).filter(function(w){return !STOP.test(w)&&!CI.test(w.toLowerCase())&&!_lgSlotWordsL.test(w);});return toks.length===0;}catch(_eNI0){return false;}}
         function _lgRelocateL(u){try{if(u.node&&u.node.isConnected!==false&&(!doc.contains||doc.contains(u.node)))return u.node;}catch(_eRL0){}try{if(u.appointmentId){var el=doc.querySelector('[data-appointment-id="'+u.appointmentId+'"],[data-appointmentid="'+u.appointmentId+'"],[data-appt-id="'+u.appointmentId+'"]');if(el)return el;}}catch(_eRL1){}try{var cands=[].slice.call(doc.querySelectorAll('[class~="filled-appointment-row"]')).filter(function(r2){return u.time&&ft(tx(r2))===u.time&&_legacyClaimedNodesL.indexOf(r2)<0;});if(cands.length===1)return cands[0];}catch(_eRL2){}return null;}
-        while(_lgPassesL<2&&_legacyUnresolvedL.length&&__scheduleActionAllowed()){_lgPassesL++;if(!(await __scheduleActionSleep(280)))break;var _lgStillL=[];for(var _lgI=0;_lgI<_legacyUnresolvedL.length;_lgI++){var _lgU=_legacyUnresolvedL[_lgI],_lgRow=_lgRelocateL(_lgU);if(_lgRow){var _lgSnap=_snapCapture(_lgRow);if(_lgSnap){var _lgIdn=_snapIdentity(_lgSnap,_lgU.time,_lgU.appointmentId);if(_lgIdn.ok){_lgSnapRecovL++;_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgIdn.time||_lgU.time,name:_lgIdn.name,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_lgIdn.appointmentId||'',providerId:'',reason:'',dob:_lgIdn.dob||'',mrn:_lgIdn.mrn||'',dobConflict:false,mrnConflict:false,rawKey:_legacyNormL(_snapText(_lgSnap))});continue;}_lgU._unvKind=_lgIdn.noIdentity?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._snap=true;_lgU._snapParse=String(_lgIdn.snapshotParse||'');_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgRaw=tx(_lgRow),_lgTm=ft(_lgRaw);if(_legacySlotL(_lgRaw)){_lgU._unvKind='no-identity-cell';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgParsed=null,_lgNm='';try{_lgParsed=mlsParseName(_lgRaw);}catch(_ePR2){}if(_lgParsed&&_lgParsed.confident)_lgNm=cl(_lgParsed.display);else _lgNm=cl(pn(_lgRaw));var _lgTk=_lgNm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean);if(_lgTm&&_lgTk.length>=2){var _lgProof=_scheduleRowProofD(_lgRow);_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgTm,name:_lgNm,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_legacyAttrL(_lgRow,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid'])||'',providerId:_legacyAttrL(_lgRow,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid'])||'',reason:_legacyReasonL(_lgRow),dob:_lgProof.dob||'',mrn:_lgProof.mrn||'',dobConflict:_lgProof.dobConflict===true,mrnConflict:_lgProof.mrnConflict===true,rawKey:_legacyNormL(_lgRaw)});continue;}_lgU._unvKind=_lgNoIdentityL(_lgRow,_lgRaw)?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgU.node=_lgRow;_lgStillL.push(_lgU);}else{_lgU._unvKind=_lgU._unvKind||'mutating';_lgU._relocated=false;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);}}_legacyUnresolvedL=_lgStillL;}
+        while(_lgPassesL<2&&_legacyUnresolvedL.length&&__scheduleActionAllowed()){_lgPassesL++;if(!(await __scheduleActionSleep(280)))break;var _lgStillL=[];for(var _lgI=0;_lgI<_legacyUnresolvedL.length;_lgI++){var _lgU=_legacyUnresolvedL[_lgI],_lgRow=_lgRelocateL(_lgU);if(_lgRow){var _lgSnap=_snapCapture(_lgRow);if(_lgSnap){var _lgIdn=_snapIdentity(_lgSnap,_lgU.time,_lgU.appointmentId);if(_lgIdn.ok){_lgSnapRecovL++;_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgIdn.time||_lgU.time,name:_lgIdn.name,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_lgIdn.appointmentId||'',providerId:'',reason:'',status:_mlsApptStatusD(_snapText(_lgSnap)),dob:_lgIdn.dob||'',mrn:_lgIdn.mrn||'',dobConflict:false,mrnConflict:false,rawKey:_legacyNormL(_snapText(_lgSnap))});continue;}_lgU._unvKind=_lgIdn.noIdentity?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._snap=true;_lgU._snapParse=String(_lgIdn.snapshotParse||'');_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgRaw=tx(_lgRow),_lgTm=ft(_lgRaw);if(_legacySlotL(_lgRaw)){_lgU._unvKind='no-identity-cell';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgParsed=null,_lgNm='';try{_lgParsed=mlsParseName(_lgRaw);}catch(_ePR2){}if(_lgParsed&&_lgParsed.confident)_lgNm=cl(_lgParsed.display);else _lgNm=cl(pn(_lgRaw));var _lgTk=_lgNm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean);if(_lgTm&&_lgTk.length>=2){var _lgProof=_scheduleRowProofD(_lgRow);_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgTm,name:_lgNm,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_legacyAttrL(_lgRow,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid'])||'',providerId:_legacyAttrL(_lgRow,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid'])||'',reason:_legacyReasonL(_lgRow),status:_mlsApptStatusD(_lgRaw),dob:_lgProof.dob||'',mrn:_lgProof.mrn||'',dobConflict:_lgProof.dobConflict===true,mrnConflict:_lgProof.mrnConflict===true,rawKey:_legacyNormL(_lgRaw)});continue;}_lgU._unvKind=_lgNoIdentityL(_lgRow,_lgRaw)?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgU.node=_lgRow;_lgStillL.push(_lgU);}else{_lgU._unvKind=_lgU._unvKind||'mutating';_lgU._relocated=false;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);}}_legacyUnresolvedL=_lgStillL;}
         var _legacyByIdL={},_legacyByKeyL={},_legacyRowsFinalL=[];
         _legacyObsL.forEach(function(a){
           var base=a.time+'|'+_legacyNormL(a.name),key=base+'|'+(a.providerKey||'')+'|'+_scheduleProofKeyD(a),prior=null;
@@ -8285,7 +8298,7 @@ var _legacyUnresolvedSeenL={},_legacyUnresolvedCountL=0;
           }
           return true;
         });
-        out.appts=_legacyRowsFinalL.map(function(a){return{time:a.time,name:a.name,provider:a.provider||'',providerId:a.providerId||'',appointmentId:a.appointmentId||'',reason:a.reason||'',dob:a.dob||'',mrn:a.mrn||''};});
+        out.appts=_legacyRowsFinalL.map(function(a){return{time:a.time,name:a.name,provider:a.provider||'',providerId:a.providerId||'',appointmentId:a.appointmentId||'',reason:a.reason||'',status:a.status||'',dob:a.dob||'',mrn:a.mrn||''};});
         out.providers=_legacyProviderOrderL.slice();
         var _legacyRosterCompleteL=_legacyHeaderProofL&&_legacyAllBoundL&&out.providers.length>0;
         out.providerRoster=out.providers.map(function(raw){return{stableKey:'athena:'+_legacyNormL(raw),raw:raw,name:raw,source:'athena-schedule-header'};});
@@ -8375,7 +8388,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
               delete _pendingS[anchor.key];valid++;_rawCandidateObsS++;
               var proof=_scheduleRowProofD(b),logicalKey=anchor.appointmentId?('appt:'+anchor.appointmentId):('person:'+tm+'|'+nameKey+'|'+provKey+'|'+_scheduleProofKeyD(proof));
               var prior=_candS[logicalKey];
-              if(!prior)_candS[logicalKey]={prov:prov,time:tm,name:nm,reason:_reasonS(t),appointmentId:anchor.appointmentId||'',base:tm+'|'+nameKey,providerKey:provKey,dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};
+              if(!prior)_candS[logicalKey]={prov:prov,time:tm,name:nm,reason:_reasonS(t),status:_mlsApptStatusD(t),appointmentId:anchor.appointmentId||'',base:tm+'|'+nameKey,providerKey:provKey,dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};
               else{if(!prior.prov&&prov){prior.prov=prov;prior.providerKey=provKey;}if(!prior.reason)prior.reason=_reasonS(t);_mergeScheduleProofD(prior,proof);}
             });
           });
@@ -8445,7 +8458,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         while(_reverifyPassesS<2&&_unvPendingCountS()>0&&__scheduleActionAllowed()){_reverifyPassesS++;if(!(await _sleepS(Math.max(240,_settleBaseS))))break;var _rvHdrS=_hdrsS();if(_rvHdrS.length)_cachedHdrS=_rvHdrS;_collectS(_cachedHdrS);}
         /* 2026-07-29 snapshot recovery: for each still-unverified pending row, ONE synchronous outerHTML capture at relocation time, parsed as a STRING (_snapIdentity) - a string cannot lose to React subtree churn. A confident snapshot identity joins _candS through the normal dedup; anything else is classified below and never guessed. */
         function _unvLocateS(p,k){try{if(p.appointmentId){var el=doc.querySelector('[data-appointment-id="'+p.appointmentId+'"],[data-appointmentid="'+p.appointmentId+'"],[data-appt-id="'+p.appointmentId+'"]');if(el)return el;}}catch(_eUL1){}try{if(String(k).indexOf('node:')===0){var nid=String(k).slice(5,String(k).lastIndexOf('|')),el2=null;if(nid&&doc.getElementById)el2=doc.getElementById(nid);if(!el2&&nid)el2=doc.querySelector('[data-testid="'+nid+'"]');if(el2)return el2;}}catch(_eUL2){}try{var cands=[].slice.call(doc.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).filter(function(b){var t=cl(b.textContent);if(ft(t)!==p.time)return false;var nm=_nmS(t);return !nm||_normS(nm).split(/\s+/).filter(Boolean).length<2;});if(cands.length===1)return cands[0];}catch(_eUL3){}return null;}
-        var _snapRecoveredS=0;Object.keys(_pendingS).forEach(function(pk3){var p=_pendingS[pk3];if(!(p.strong||p.seen>=2))return;if(p.appointmentId&&_candS['appt:'+p.appointmentId])return;var elR=_unvLocateS(p,pk3);p._liveEl=elR||null;var snapR=elR?_snapCapture(elR):'';p._snapHad=!!snapR;if(!snapR)return;var idnR=_snapIdentity(snapR,p.time,p.appointmentId);if(idnR.ok){var provKeyR=_normS(p.prov),nameKeyR=_normS(idnR.name),aidR=p.appointmentId||idnR.appointmentId||'';var proofKeyR=idnR.mrn?('mrn:'+String(idnR.mrn).toLowerCase().replace(/[^a-z0-9]/g,'')):(idnR.dob?('dob:'+String(idnR.dob).replace(/[^0-9]/g,'')):'');var lkR=aidR?('appt:'+aidR):('person:'+(idnR.time||p.time)+'|'+nameKeyR+'|'+provKeyR+'|'+proofKeyR);if(!_candS[lkR])_candS[lkR]={prov:p.prov||'',time:idnR.time||p.time,name:idnR.name,reason:'',appointmentId:aidR,base:(idnR.time||p.time)+'|'+nameKeyR,providerKey:provKeyR,dob:idnR.dob||'',mrn:idnR.mrn||'',dobConflict:false,mrnConflict:false};delete _pendingS[pk3];_snapRecoveredS++;return;}p._snapNoIdentity=idnR.noIdentity===true;p._snapParse=String(idnR.snapshotParse||'');});
+        var _snapRecoveredS=0;Object.keys(_pendingS).forEach(function(pk3){var p=_pendingS[pk3];if(!(p.strong||p.seen>=2))return;if(p.appointmentId&&_candS['appt:'+p.appointmentId])return;var elR=_unvLocateS(p,pk3);p._liveEl=elR||null;var snapR=elR?_snapCapture(elR):'';p._snapHad=!!snapR;if(!snapR)return;var idnR=_snapIdentity(snapR,p.time,p.appointmentId);if(idnR.ok){var provKeyR=_normS(p.prov),nameKeyR=_normS(idnR.name),aidR=p.appointmentId||idnR.appointmentId||'';var proofKeyR=idnR.mrn?('mrn:'+String(idnR.mrn).toLowerCase().replace(/[^a-z0-9]/g,'')):(idnR.dob?('dob:'+String(idnR.dob).replace(/[^0-9]/g,'')):'');var lkR=aidR?('appt:'+aidR):('person:'+(idnR.time||p.time)+'|'+nameKeyR+'|'+provKeyR+'|'+proofKeyR);if(!_candS[lkR])_candS[lkR]={prov:p.prov||'',time:idnR.time||p.time,name:idnR.name,reason:'',status:_mlsApptStatusD(_snapText(snapR)),appointmentId:aidR,base:(idnR.time||p.time)+'|'+nameKeyR,providerKey:provKeyR,dob:idnR.dob||'',mrn:idnR.mrn||'',dobConflict:false,mrnConflict:false};delete _pendingS[pk3];_snapRecoveredS++;return;}p._snapNoIdentity=idnR.noIdentity===true;p._snapParse=String(idnR.snapshotParse||'');});
         var _rawRowsS=Object.keys(_candS).map(function(k){return _candS[k];}),_finalRowsS=[],_apptRowsS={},_baseRowsS={};
         _rawRowsS.forEach(function(a){
           if(a.appointmentId){
@@ -8465,7 +8478,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         });
         var _resolvedTPsS={};_finalRowsS.forEach(function(a){_resolvedTPsS[a.time+'|'+(a.providerKey||'')]=1;_resolvedTPsS[a.time+'|']=1;});
         var _unmS=0,_unvRowsS=[],_unvSlotWordsS=/^(open|available|unavailable|blocked?|hold|reserved|lunch|break|admin|administrative|meeting|closed|buffer|frozen|freeze|slot|slots|capacity|frame)$/i;function _unvNoIdentityS(el){if(!el)return false;var t=cl(el.textContent);try{if(cl(el.getAttribute('data-appointment-id')||el.getAttribute('data-appointmentid')||el.getAttribute('data-appt-id')))return false;}catch(_eUN1){}var proof=_scheduleRowProofD(el);if(proof.dob||proof.mrn||proof.dobConflict||proof.mrnConflict)return false;var nm=_nmS(t);if(nm&&_normS(nm).split(/\s+/).filter(Boolean).length>=2)return false;if(_slotS(t))return true;var toks=cl(String(t).replace(RTG,' ')).replace(/[^A-Za-z'\- ]+/g,' ').split(/\s+/).filter(Boolean).filter(function(w){return !STOP.test(w)&&!CI.test(w.toLowerCase())&&!_unvSlotWordsS.test(w);});return toks.length===0;}Object.keys(_pendingS).forEach(function(k){var p=_pendingS[k],pk=_normS(p.prov);if(p.appointmentId&&_apptRowsS[p.appointmentId])return;if(!p.strong&&_resolvedTPsS[p.time+'|'+pk])return;if(!(p.strong||p.seen>=2))return;_unmS++;if(_unvRowsS.length<20){var kindU,relocU=p._snapHad===true||!!p._liveEl;if(p._snapHad===true)kindU=p._snapNoIdentity===true?'no-identity-cell':'mutating';else{var elU=p._liveEl||_unvLocateS(p,k);relocU=relocU||!!elU;kindU=_unvNoIdentityS(elU)?'no-identity-cell':'mutating';}_unvRowsS.push({kind:kindU,time:p.time||'',provider:p.prov||'',appointmentId:p.appointmentId||'',relocated:relocU,passes:_reverifyPassesS,snapshot:p._snapHad===true,snapshotParse:p._snapHad===true?String(p._snapParse||''):'',lane:'structure-id'});}});
-        out.appts=_finalRowsS.map(function(a){return{time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||'',appointmentId:a.appointmentId||'',dob:a.dob||'',mrn:a.mrn||''};});
+        out.appts=_finalRowsS.map(function(a){return{time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||'',status:a.status||'',appointmentId:a.appointmentId||'',dob:a.dob||'',mrn:a.mrn||''};});
         if(out.appts.length||_unmS||_provOrderS.length){
           out.appts.forEach(function(a){if(a.provider)_noteProvS(a.provider);});
           var _declProvS=0;try{var _pmS,_ptS=String(doc.body&&doc.body.innerText||''),_preS=/\b(\d{1,3})\s+providers?\b/gi;while((_pmS=_preS.exec(_ptS)))_declProvS=Math.max(_declProvS,Number(_pmS[1]||0));}catch(_e){}
@@ -8513,7 +8526,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         function _collect(){
           var cols=_headCols();
           var cells=[].slice.call(doc.querySelectorAll('div,li,a')).filter(function(e){var t=cl(e.textContent);return ht(t)&&t.length>10&&t.length<140&&pn(t)&&e.querySelectorAll('*').length<=8;});
-          cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}var tm=ft(t),proof=_scheduleRowProofD(e);var key=(prov||'')+'|'+tm+'|'+nm+'|'+_scheduleProofKeyD(proof);if(_seenA[key]){_mergeScheduleProofD(_seenA[key],proof);return;}var row={time:tm,name:cl(nm),provider:prov||'',dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};_seenA[key]=row;out.appts.push(row);}catch(_e){}});
+          cells.forEach(function(e){try{var r=e.getBoundingClientRect();if(r.width<8||r.width>460)return;var t=cl(e.textContent);var nm=pn(t);if(!nm)return;var cx=r.left+Math.min(18,r.width/2);var prov='';for(var k=0;k<cols.length;k++){if(cx>=cols[k].lo-6&&cx<cols[k].hi){prov=cols[k].name;break;}}var tm=ft(t),proof=_scheduleRowProofD(e);var key=(prov||'')+'|'+tm+'|'+nm+'|'+_scheduleProofKeyD(proof);if(_seenA[key]){_mergeScheduleProofD(_seenA[key],proof);return;}var row={time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(t),dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};_seenA[key]=row;out.appts.push(row);}catch(_e){}});
         }
         if(_scroller){
           var _frac=(CFG&&CFG.scrollStepFrac)||0.55;
@@ -8551,7 +8564,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       var pi=-1,ni=-1,ti=-1;
       hc.forEach(function(h,idx){var t=tx(h).toLowerCase();if(pi<0&&/(provider|rendering|resource|clinician|scheduling provider|doctor|seen by|with)/.test(t)&&!/patient/.test(t))pi=idx;if(ni<0&&/(patient|name)/.test(t)&&!/(provider|rendering|resource|clinician|doctor)/.test(t))ni=idx;if(ti<0&&/^(?:(?:appointment|start)\s+)?time\s*:?$/.test(t))ti=idx;});
       if(pi<0)continue;
-      rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r),tm=ft(ti>=0&&cells[ti]?tx(cells[ti]):rt);if(!tm)return;var prov=cells[pi]?np(tx(cells[pi])):'';var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt),proof=_scheduleRowProofD(r);if(nm)out.appts.push({time:tm,name:cl(nm),provider:prov||'',dob:proof.dob||'',mrn:proof.mrn||''});});
+      rows.forEach(function(r){out.diag.rowsScanned++;var cells=[].slice.call(r.querySelectorAll('th, td, [role="cell"], [role="gridcell"]'));if(!cells.length)return;var rt=tx(r),tm=ft(ti>=0&&cells[ti]?tx(cells[ti]):rt);if(!tm)return;var prov=cells[pi]?np(tx(cells[pi])):'';var nm=ni>=0&&cells[ni]?tx(cells[ni]):pn(rt),proof=_scheduleRowProofD(r);if(nm)out.appts.push({time:tm,name:cl(nm),provider:prov||'',status:_mlsApptStatusD(rt),dob:proof.dob||'',mrn:proof.mrn||''});});
       if(out.appts.length)out.diag.via='table-column';
     }
     if(!out.appts.length){
@@ -8559,7 +8572,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       var seq=[];
       all.forEach(function(el){var own=tx(el);if(!own||own.length>400)return;if(own.length<=80&&lh(own)&&el.querySelectorAll('*').length<=6){seq.push({k:'p',t:own,el:el});}else if(ht(own)&&own.length<300&&pn(own)){var cb=false;for(var c=0;c<el.children.length;c++){var ct=tx(el.children[c]);if(ht(ct)&&pn(ct)){cb=true;break;}}if(!cb)seq.push({k:'a',t:own,el:el});}});
       var cur='';
-      seq.forEach(function(n){out.diag.rowsScanned++;if(n.k==='p'){cur=np(n.t);}else{var inRow='';if(RC.test(n.t)){var mN=n.t.match(/([A-Z][A-Za-z'’-]+\s*,\s*[A-Z][A-Za-z'’-]+\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|RN|DPM|DDS|DMD|PHD|MBBS|OD)\b)/);if(mN)inRow=np(mN[1]);}var nm2=pn(n.t),proof=_scheduleRowProofD(n.el);if(nm2)out.appts.push({time:ft(n.t),name:nm2,provider:inRow||cur||'',dob:proof.dob||'',mrn:proof.mrn||''});}});
+      seq.forEach(function(n){out.diag.rowsScanned++;if(n.k==='p'){cur=np(n.t);}else{var inRow='';if(RC.test(n.t)){var mN=n.t.match(/([A-Z][A-Za-z'’-]+\s*,\s*[A-Z][A-Za-z'’-]+\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|RN|DPM|DDS|DMD|PHD|MBBS|OD)\b)/);if(mN)inRow=np(mN[1]);}var nm2=pn(n.t),proof=_scheduleRowProofD(n.el);if(nm2)out.appts.push({time:ft(n.t),name:nm2,provider:inRow||cur||'',status:_mlsApptStatusD(n.t),dob:proof.dob||'',mrn:proof.mrn||''});}});
       if(out.appts.length&&!out.diag.via)out.diag.via='grouped-dom';
     }
     var used={};out.appts.forEach(function(a){if(a.provider)used[a.provider.toLowerCase()]=a.provider;});

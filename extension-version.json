@@ -1,5 +1,5 @@
 {
-  "version": "3.0.97",
+  "version": "3.0.98",
   "minChrome": 116,
-  "notes": "v3.0.97 - Write reliability: the one-use write authorization now survives Chrome's own storage round-trip exactly (a key-ordering mismatch inside Chrome made op-note sends refuse with 'Chrome could not preserve the exact one-use authorization'); the driver now opens the encounter and its documentation stage itself; two same-day appointments resolve to the exact booked one; and procedure notes bind to their Physical Exam stage. Everything from v3.0.84 remains. Requires Chrome 116+."
+  "notes": "v3.0.98 - Schedule intelligence: every pulled appointment row now carries its athena status (checked in, checked out, arrived, and more), so MLS reads notes for patients already seen first and month reports can tell a seen visit from a booked one. Everything from v3.0.97 remains. Requires Chrome 116+."
 }

@@ -3066,6 +3066,12 @@
            appointmentIds: rowAppointmentId(a) ? [String(rowAppointmentId(a))] : [],
            date: String(date || ""),
            scheduleDate: String(date || ""),
+           /* status-1.0.0: ext 3.0.98+ emits per-row appointment status; rows
+              that pass through untouched keep it automatically, so this rebuilt
+              lane must carry it too or tnSeenRank sees a blank on exactly the
+              rows that took the history path. Fail-open: pre-3.0.98 rows have
+              no status and this stays "". */
+           status: String((a && a.status) || ""),
            source: "athena-schedule-history"
          };
         historyTargets.push(targetRow);

@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 326,
  "totals": {
-  "controls": 4686,
+  "controls": 4689,
   "gated": 382,
-  "active": 4304,
+  "active": 4307,
   "byKind": {
-   "button": 4361,
+   "button": 4364,
    "handler": 249,
    "navtab": 76
   }
@@ -30,7 +30,7 @@
   "analysisView": 76,
   "legalReqView": 8,
   "studioView": 48,
-  "dynamic": 1704,
+  "dynamic": 1707,
   "page:1p\\index.html": 645,
   "page:AuthPilot.html": 9,
   "page:app.html": 3,
@@ -63,7 +63,7 @@
  "routes": {
   "auth": 56,
   "intakeView": 24,
-  "global": 1993,
+  "global": 1996,
   "chrome:header": 28,
   "chrome:rail": 50,
   "chrome:patientbar": 4,
@@ -108,7 +108,7 @@
   "page:send-portal-invite.html": 5
  },
  "surfaces": {
-  "clinician": 3238,
+  "clinician": 3241,
   "1p": 645,
   "public": 148,
   "cloned": 645,
@@ -10720,7 +10720,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48896,
+   "line": 48898,
    "gated": false,
    "handler": null
   },
@@ -10737,7 +10737,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48899,
+   "line": 48901,
    "gated": false,
    "handler": null
   },
@@ -10754,7 +10754,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48900,
+   "line": 48902,
    "gated": true,
    "handler": null
   },
@@ -10771,7 +10771,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48905,
+   "line": 48907,
    "gated": true,
    "handler": null
   },
@@ -10788,7 +10788,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48906,
+   "line": 48908,
    "gated": true,
    "handler": null
   },
@@ -10805,7 +10805,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48944,
+   "line": 48946,
    "gated": false,
    "handler": null
   },
@@ -10822,7 +10822,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48955,
+   "line": 48957,
    "gated": false,
    "handler": null
   },
@@ -10839,7 +10839,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48956,
+   "line": 48958,
    "gated": true,
    "handler": null
   },
@@ -10856,7 +10856,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48957,
+   "line": 48959,
    "gated": true,
    "handler": null
   },
@@ -10873,7 +10873,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48960,
+   "line": 48962,
    "gated": true,
    "handler": null
   },
@@ -10890,7 +10890,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48961,
+   "line": 48963,
    "gated": false,
    "handler": null
   },
@@ -10907,7 +10907,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48962,
+   "line": 48964,
    "gated": false,
    "handler": null
   },
@@ -10924,7 +10924,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 48963,
+   "line": 48965,
    "gated": false,
    "handler": null
   },
@@ -10941,7 +10941,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 51168,
+   "line": 51170,
    "gated": false,
    "handler": null
   },
@@ -10958,7 +10958,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 51169,
+   "line": 51171,
    "gated": false,
    "handler": null
   },
@@ -10975,12 +10975,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 55354,
+   "line": 55356,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-59951-copy",
+   "id": "1pscribeflow-html-59953-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -10992,12 +10992,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 59951,
+   "line": 59953,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-59960-pull-this-patient-39-s-chart",
+   "id": "1pscribeflow-html-59962-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -11009,12 +11009,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 59960,
+   "line": 59962,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-59976-show-more-more-lines",
+   "id": "1pscribeflow-html-59978-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -11026,12 +11026,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 59976,
+   "line": 59978,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1pscribeflow-html-60164-state-all-show-only-the-latest-shown-show-all",
+   "id": "1pscribeflow-html-60166-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -11043,7 +11043,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 60164,
+   "line": 60166,
    "gated": false,
    "handler": null
   },
@@ -11060,7 +11060,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 62652,
+   "line": 62654,
    "gated": false,
    "handler": null
   },
@@ -11077,7 +11077,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "1pScribeFlow.html",
-   "line": 62656,
+   "line": 62658,
    "gated": false,
    "handler": null
   },
@@ -21685,7 +21685,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48910,
+   "line": 48912,
    "gated": false,
    "handler": null
   },
@@ -21702,7 +21702,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48913,
+   "line": 48915,
    "gated": false,
    "handler": null
   },
@@ -21719,7 +21719,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48914,
+   "line": 48916,
    "gated": true,
    "handler": null
   },
@@ -21736,7 +21736,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48919,
+   "line": 48921,
    "gated": true,
    "handler": null
   },
@@ -21753,7 +21753,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48920,
+   "line": 48922,
    "gated": true,
    "handler": null
   },
@@ -21770,7 +21770,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48958,
+   "line": 48960,
    "gated": false,
    "handler": null
   },
@@ -21787,7 +21787,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48969,
+   "line": 48971,
    "gated": false,
    "handler": null
   },
@@ -21804,7 +21804,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48970,
+   "line": 48972,
    "gated": true,
    "handler": null
   },
@@ -21821,7 +21821,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48971,
+   "line": 48973,
    "gated": true,
    "handler": null
   },
@@ -21838,7 +21838,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48974,
+   "line": 48976,
    "gated": true,
    "handler": null
   },
@@ -21855,7 +21855,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48975,
+   "line": 48977,
    "gated": false,
    "handler": null
   },
@@ -21872,7 +21872,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48976,
+   "line": 48978,
    "gated": false,
    "handler": null
   },
@@ -21889,7 +21889,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 48977,
+   "line": 48979,
    "gated": false,
    "handler": null
   },
@@ -21906,7 +21906,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 51182,
+   "line": 51184,
    "gated": false,
    "handler": null
   },
@@ -21923,7 +21923,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 51183,
+   "line": 51185,
    "gated": false,
    "handler": null
   },
@@ -21940,12 +21940,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 55368,
+   "line": 55370,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-59965-copy",
+   "id": "1p-index-html-59967-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -21957,12 +21957,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 59965,
+   "line": 59967,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-59974-pull-this-patient-39-s-chart",
+   "id": "1p-index-html-59976-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -21974,12 +21974,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 59974,
+   "line": 59976,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-59990-show-more-more-lines",
+   "id": "1p-index-html-59992-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -21991,12 +21991,12 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 59990,
+   "line": 59992,
    "gated": false,
    "handler": null
   },
   {
-   "id": "1p-index-html-60178-state-all-show-only-the-latest-shown-show-all",
+   "id": "1p-index-html-60180-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -22008,7 +22008,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 60178,
+   "line": 60180,
    "gated": false,
    "handler": null
   },
@@ -22025,7 +22025,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 62666,
+   "line": 62668,
    "gated": false,
    "handler": null
   },
@@ -22042,7 +22042,7 @@
    "surface": "1p",
    "shellChecked": false,
    "file": "1p\\index.html",
-   "line": 62670,
+   "line": 62672,
    "gated": false,
    "handler": null
   },
@@ -42289,7 +42289,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48896,
+   "line": 48898,
    "gated": false,
    "handler": null
   },
@@ -42306,7 +42306,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48899,
+   "line": 48901,
    "gated": false,
    "handler": null
   },
@@ -42323,7 +42323,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48900,
+   "line": 48902,
    "gated": true,
    "handler": null
   },
@@ -42340,7 +42340,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48905,
+   "line": 48907,
    "gated": true,
    "handler": null
   },
@@ -42357,7 +42357,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48906,
+   "line": 48908,
    "gated": true,
    "handler": null
   },
@@ -42374,7 +42374,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48944,
+   "line": 48946,
    "gated": false,
    "handler": null
   },
@@ -42391,7 +42391,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48955,
+   "line": 48957,
    "gated": false,
    "handler": null
   },
@@ -42408,7 +42408,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48956,
+   "line": 48958,
    "gated": true,
    "handler": null
   },
@@ -42425,7 +42425,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48957,
+   "line": 48959,
    "gated": true,
    "handler": null
   },
@@ -42442,7 +42442,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48960,
+   "line": 48962,
    "gated": true,
    "handler": null
   },
@@ -42459,7 +42459,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48961,
+   "line": 48963,
    "gated": false,
    "handler": null
   },
@@ -42476,7 +42476,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48962,
+   "line": 48964,
    "gated": false,
    "handler": null
   },
@@ -42493,7 +42493,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 48963,
+   "line": 48965,
    "gated": false,
    "handler": null
   },
@@ -42510,7 +42510,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 51168,
+   "line": 51170,
    "gated": false,
    "handler": null
   },
@@ -42527,7 +42527,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 51169,
+   "line": 51171,
    "gated": false,
    "handler": null
   },
@@ -42544,12 +42544,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 55354,
+   "line": 55356,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-59951-copy",
+   "id": "scribeflow-html-59953-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -42561,12 +42561,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 59951,
+   "line": 59953,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-59960-pull-this-patient-39-s-chart",
+   "id": "scribeflow-html-59962-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -42578,12 +42578,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 59960,
+   "line": 59962,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-59976-show-more-more-lines",
+   "id": "scribeflow-html-59978-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -42595,12 +42595,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 59976,
+   "line": 59978,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-60164-state-all-show-only-the-latest-shown-show-all",
+   "id": "scribeflow-html-60166-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -42612,7 +42612,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 60164,
+   "line": 60166,
    "gated": false,
    "handler": null
   },
@@ -42629,7 +42629,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 62652,
+   "line": 62654,
    "gated": false,
    "handler": null
   },
@@ -42646,7 +42646,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "ScribeFlow.html",
-   "line": 62656,
+   "line": 62658,
    "gated": false,
    "handler": null
   },
@@ -62876,7 +62876,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48910,
+   "line": 48912,
    "gated": false,
    "handler": null
   },
@@ -62893,7 +62893,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48913,
+   "line": 48915,
    "gated": false,
    "handler": null
   },
@@ -62910,7 +62910,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48914,
+   "line": 48916,
    "gated": true,
    "handler": null
   },
@@ -62927,7 +62927,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48919,
+   "line": 48921,
    "gated": true,
    "handler": null
   },
@@ -62944,7 +62944,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48920,
+   "line": 48922,
    "gated": true,
    "handler": null
   },
@@ -62961,7 +62961,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48958,
+   "line": 48960,
    "gated": false,
    "handler": null
   },
@@ -62978,7 +62978,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48969,
+   "line": 48971,
    "gated": false,
    "handler": null
   },
@@ -62995,7 +62995,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48970,
+   "line": 48972,
    "gated": true,
    "handler": null
   },
@@ -63012,7 +63012,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48971,
+   "line": 48973,
    "gated": true,
    "handler": null
   },
@@ -63029,7 +63029,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48974,
+   "line": 48976,
    "gated": true,
    "handler": null
   },
@@ -63046,7 +63046,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48975,
+   "line": 48977,
    "gated": false,
    "handler": null
   },
@@ -63063,7 +63063,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48976,
+   "line": 48978,
    "gated": false,
    "handler": null
   },
@@ -63080,7 +63080,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 48977,
+   "line": 48979,
    "gated": false,
    "handler": null
   },
@@ -63097,7 +63097,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 51182,
+   "line": 51184,
    "gated": false,
    "handler": null
   },
@@ -63114,7 +63114,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 51183,
+   "line": 51185,
    "gated": false,
    "handler": null
   },
@@ -63131,12 +63131,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 55368,
+   "line": 55370,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-59965-copy",
+   "id": "cloned-index-html-59967-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -63148,12 +63148,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 59965,
+   "line": 59967,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-59974-pull-this-patient-39-s-chart",
+   "id": "cloned-index-html-59976-pull-this-patient-39-s-chart",
    "label": "Pull this patient&#39;s chart",
    "accessibleName": "Pull this patient&#39;s chart",
    "title": "",
@@ -63165,12 +63165,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 59974,
+   "line": 59976,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-59990-show-more-more-lines",
+   "id": "cloned-index-html-59992-show-more-more-lines",
    "label": "Show more ( more lines)",
    "accessibleName": "Show more ( more lines)",
    "title": "",
@@ -63182,12 +63182,12 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 59990,
+   "line": 59992,
    "gated": false,
    "handler": null
   },
   {
-   "id": "cloned-index-html-60178-state-all-show-only-the-latest-shown-show-all",
+   "id": "cloned-index-html-60180-state-all-show-only-the-latest-shown-show-all",
    "label": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "accessibleName": "' + (state.all ? 'Show only the latest ' + SHOWN : 'Show all",
    "title": "",
@@ -63199,7 +63199,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 60178,
+   "line": 60180,
    "gated": false,
    "handler": null
   },
@@ -63216,7 +63216,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 62666,
+   "line": 62668,
    "gated": false,
    "handler": null
   },
@@ -63233,7 +63233,7 @@
    "surface": "cloned",
    "shellChecked": false,
    "file": "cloned\\index.html",
-   "line": 62670,
+   "line": 62672,
    "gated": false,
    "handler": null
   },
@@ -68282,7 +68282,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_schedimport_exact.js",
-   "line": 10849,
+   "line": 10855,
    "gated": false,
    "handler": null
   },
@@ -68299,7 +68299,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_schedimport_exact.js",
-   "line": 10850,
+   "line": 10856,
    "gated": false,
    "handler": null
   },
@@ -68316,7 +68316,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_schedimport_exact.js",
-   "line": 10851,
+   "line": 10857,
    "gated": false,
    "handler": null
   },
@@ -69766,7 +69766,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1636-cancel-watcher",
+   "id": "feat-mls-writeflow-js-1644-cancel-watcher",
    "label": "Cancel watcher",
    "accessibleName": "Cancel watcher",
    "title": "",
@@ -69778,12 +69778,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 1636,
+   "line": 1644,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-1637-clear",
+   "id": "feat-mls-writeflow-js-1645-clear",
    "label": "Clear",
    "accessibleName": "Clear",
    "title": "",
@@ -69795,12 +69795,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 1637,
+   "line": 1645,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-3471-accept-this-proposed-order",
+   "id": "feat-mls-writeflow-js-3759-accept-this-proposed-order",
    "label": "Accept this proposed order",
    "accessibleName": "Accept this proposed order",
    "title": "",
@@ -69812,12 +69812,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 3471,
+   "line": 3759,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-3591-copy-payload",
+   "id": "feat-mls-writeflow-js-3879-copy-payload",
    "label": "Copy payload",
    "accessibleName": "Copy payload",
    "title": "",
@@ -69829,12 +69829,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 3591,
+   "line": 3879,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-writeflow-js-3880-copy-note",
+   "id": "feat-mls-writeflow-js-4168-copy-note",
    "label": "Copy note",
    "accessibleName": "Copy note",
    "title": "",
@@ -69846,7 +69846,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 3880,
+   "line": 4168,
    "gated": false,
    "handler": null
   },
@@ -69863,7 +69863,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 3914,
+   "line": 4202,
    "gated": false,
    "handler": null
   },
@@ -69880,7 +69880,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 4054,
+   "line": 4342,
    "gated": false,
    "handler": null
   },
@@ -69897,7 +69897,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 4109,
+   "line": 4397,
    "gated": false,
    "handler": null
   },
@@ -69914,7 +69914,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 4109,
+   "line": 4397,
    "gated": true,
    "handler": null
   },
@@ -69931,7 +69931,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "feat_mls_writeflow.js",
-   "line": 5636,
+   "line": 5924,
    "gated": false,
    "handler": null
   },
@@ -72838,7 +72838,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28170,
+   "line": 28176,
    "gated": false,
    "handler": null
   },
@@ -72855,7 +72855,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28171,
+   "line": 28177,
    "gated": false,
    "handler": null
   },
@@ -72872,7 +72872,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28418,
+   "line": 28424,
    "gated": false,
    "handler": null
   },
@@ -72889,7 +72889,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28452,
+   "line": 28458,
    "gated": false,
    "handler": null
   },
@@ -72906,7 +72906,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28484,
+   "line": 28490,
    "gated": false,
    "handler": null
   },
@@ -72923,7 +72923,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28489,
+   "line": 28495,
    "gated": false,
    "handler": null
   },
@@ -72940,12 +72940,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28496,
+   "line": 28502,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28499-all-patients-seen-today",
+   "id": "mls-connect-js-28505-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -72957,7 +72957,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28499,
+   "line": 28505,
    "gated": true,
    "handler": null
   },
@@ -72974,7 +72974,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28509,
+   "line": 28515,
    "gated": false,
    "handler": null
   },
@@ -72991,7 +72991,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28510,
+   "line": 28516,
    "gated": false,
    "handler": null
   },
@@ -73008,7 +73008,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28626,
+   "line": 28632,
    "gated": false,
    "handler": null
   },
@@ -73025,49 +73025,15 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28631,
+   "line": 28637,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28649-more-actions-for-this-patient",
+   "id": "mls-connect-js-28655-more-actions-for-this-patient",
    "label": "More actions for this patient",
    "accessibleName": "More actions for this patient",
    "title": "More actions for this patient",
-   "kind": "button",
-   "tag": "button",
-   "domId": null,
-   "view": "dynamic",
-   "route": "global",
-   "surface": "clinician",
-   "shellChecked": true,
-   "file": "mls-connect.js",
-   "line": 28649,
-   "gated": false,
-   "handler": null
-  },
-  {
-   "id": "mls-connect-js-28654-start-recording-activates-this-patient",
-   "label": "Start Recording Activates this patient",
-   "accessibleName": "Start Recording Activates this patient",
-   "title": "",
-   "kind": "button",
-   "tag": "button",
-   "domId": null,
-   "view": "dynamic",
-   "route": "global",
-   "surface": "clinician",
-   "shellChecked": true,
-   "file": "mls-connect.js",
-   "line": 28654,
-   "gated": false,
-   "handler": null
-  },
-  {
-   "id": "mls-connect-js-28655-pull-chart-context-read-only-this-patient",
-   "label": "Pull Chart Context Read-only, this patient",
-   "accessibleName": "Pull Chart Context Read-only, this patient",
-   "title": "",
    "kind": "button",
    "tag": "button",
    "domId": null,
@@ -73081,7 +73047,41 @@
    "handler": null
   },
   {
-   "id": "mls-connect-js-28656-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-28660-start-recording-activates-this-patient",
+   "label": "Start Recording Activates this patient",
+   "accessibleName": "Start Recording Activates this patient",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "mls-connect.js",
+   "line": 28660,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mls-connect-js-28661-pull-chart-context-read-only-this-patient",
+   "label": "Pull Chart Context Read-only, this patient",
+   "accessibleName": "Pull Chart Context Read-only, this patient",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "mls-connect.js",
+   "line": 28661,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mls-connect-js-28662-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -73093,12 +73093,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28656,
+   "line": 28662,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28657-review-athena-actions-exact-destinations-separat",
+   "id": "mls-connect-js-28663-review-athena-actions-exact-destinations-separat",
    "label": "Review Athena actions Exact destinations & separate confirmation",
    "accessibleName": "Review Athena actions Exact destinations & separate confirmation",
    "title": "",
@@ -73110,7 +73110,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28657,
+   "line": 28663,
    "gated": false,
    "handler": null
   },
@@ -73127,7 +73127,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28715,
+   "line": 28721,
    "gated": false,
    "handler": null
   },
@@ -73144,12 +73144,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28736,
+   "line": 28742,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28771-button",
+   "id": "mls-connect-js-28777-button",
    "label": "' + '",
    "accessibleName": "' + '",
    "title": "",
@@ -73161,7 +73161,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28771,
+   "line": 28777,
    "gated": false,
    "handler": null
   },
@@ -73178,7 +73178,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28812,
+   "line": 28818,
    "gated": false,
    "handler": null
   },
@@ -73195,7 +73195,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28828,
+   "line": 28834,
    "gated": false,
    "handler": null
   },
@@ -73212,7 +73212,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28832,
+   "line": 28838,
    "gated": false,
    "handler": null
   },
@@ -73229,12 +73229,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28834,
+   "line": 28840,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28836-generating-the-note",
+   "id": "mls-connect-js-28842-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -73246,7 +73246,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28836,
+   "line": 28842,
    "gated": true,
    "handler": null
   },
@@ -73263,7 +73263,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28844,
+   "line": 28850,
    "gated": false,
    "handler": null
   },
@@ -73280,7 +73280,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28845,
+   "line": 28851,
    "gated": false,
    "handler": null
   },
@@ -73297,7 +73297,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28846,
+   "line": 28852,
    "gated": false,
    "handler": null
   },
@@ -73314,7 +73314,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28847,
+   "line": 28853,
    "gated": false,
    "handler": null
   },
@@ -73331,7 +73331,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28854,
+   "line": 28860,
    "gated": false,
    "handler": null
   },
@@ -73348,7 +73348,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28855,
+   "line": 28861,
    "gated": false,
    "handler": null
   },
@@ -73365,7 +73365,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28859,
+   "line": 28865,
    "gated": false,
    "handler": null
   },
@@ -73382,7 +73382,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28861,
+   "line": 28867,
    "gated": false,
    "handler": null
   },
@@ -73399,7 +73399,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28864,
+   "line": 28870,
    "gated": false,
    "handler": null
   },
@@ -73416,7 +73416,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28866,
+   "line": 28872,
    "gated": false,
    "handler": null
   },
@@ -73433,7 +73433,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28872,
+   "line": 28878,
    "gated": false,
    "handler": null
   },
@@ -73450,7 +73450,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28874,
+   "line": 28880,
    "gated": false,
    "handler": null
   },
@@ -73467,7 +73467,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28876,
+   "line": 28882,
    "gated": false,
    "handler": null
   },
@@ -73484,7 +73484,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28882,
+   "line": 28888,
    "gated": false,
    "handler": null
   },
@@ -73501,7 +73501,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28883,
+   "line": 28889,
    "gated": false,
    "handler": null
   },
@@ -73518,7 +73518,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28884,
+   "line": 28890,
    "gated": false,
    "handler": null
   },
@@ -73535,7 +73535,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 28885,
+   "line": 28891,
    "gated": false,
    "handler": null
   },
@@ -73552,7 +73552,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29127,
+   "line": 29133,
    "gated": false,
    "handler": null
   },
@@ -73569,7 +73569,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29128,
+   "line": 29134,
    "gated": false,
    "handler": null
   },
@@ -73586,7 +73586,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29173,
+   "line": 29179,
    "gated": false,
    "handler": null
   },
@@ -73603,7 +73603,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29174,
+   "line": 29180,
    "gated": false,
    "handler": null
   },
@@ -73620,7 +73620,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29542,
+   "line": 29548,
    "gated": true,
    "handler": null
   },
@@ -73637,7 +73637,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29543,
+   "line": 29549,
    "gated": true,
    "handler": null
   },
@@ -73654,7 +73654,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29544,
+   "line": 29550,
    "gated": true,
    "handler": null
   },
@@ -73671,7 +73671,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29545,
+   "line": 29551,
    "gated": false,
    "handler": null
   },
@@ -73688,7 +73688,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29567,
+   "line": 29573,
    "gated": false,
    "handler": null
   },
@@ -73705,7 +73705,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29568,
+   "line": 29574,
    "gated": false,
    "handler": null
   },
@@ -73722,7 +73722,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29569,
+   "line": 29575,
    "gated": false,
    "handler": null
   },
@@ -73739,7 +73739,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 29592,
+   "line": 29598,
    "gated": false,
    "handler": null
   },
@@ -73756,7 +73756,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30365,
+   "line": 30371,
    "gated": false,
    "handler": null
   },
@@ -73773,7 +73773,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30366,
+   "line": 30372,
    "gated": false,
    "handler": null
   },
@@ -73790,7 +73790,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30498,
+   "line": 30504,
    "gated": false,
    "handler": null
   },
@@ -73807,7 +73807,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30552,
+   "line": 30558,
    "gated": false,
    "handler": null
   },
@@ -73824,7 +73824,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30557,
+   "line": 30563,
    "gated": false,
    "handler": null
   },
@@ -73841,12 +73841,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30564,
+   "line": 30570,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30567-all-patients-seen-today",
+   "id": "mls-connect-js-30573-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -73858,7 +73858,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30567,
+   "line": 30573,
    "gated": true,
    "handler": null
   },
@@ -73875,7 +73875,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30577,
+   "line": 30583,
    "gated": false,
    "handler": null
   },
@@ -73892,7 +73892,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30578,
+   "line": 30584,
    "gated": false,
    "handler": null
   },
@@ -73909,7 +73909,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30695,
+   "line": 30701,
    "gated": false,
    "handler": null
   },
@@ -73926,49 +73926,15 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30700,
+   "line": 30706,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30719-more-actions-for-this-patient",
+   "id": "mls-connect-js-30725-more-actions-for-this-patient",
    "label": "More actions for this patient",
    "accessibleName": "More actions for this patient",
    "title": "More actions for this patient",
-   "kind": "button",
-   "tag": "button",
-   "domId": null,
-   "view": "dynamic",
-   "route": "global",
-   "surface": "clinician",
-   "shellChecked": true,
-   "file": "mls-connect.js",
-   "line": 30719,
-   "gated": false,
-   "handler": null
-  },
-  {
-   "id": "mls-connect-js-30724-start-recording-activates-this-patient",
-   "label": "Start Recording Activates this patient",
-   "accessibleName": "Start Recording Activates this patient",
-   "title": "",
-   "kind": "button",
-   "tag": "button",
-   "domId": null,
-   "view": "dynamic",
-   "route": "global",
-   "surface": "clinician",
-   "shellChecked": true,
-   "file": "mls-connect.js",
-   "line": 30724,
-   "gated": false,
-   "handler": null
-  },
-  {
-   "id": "mls-connect-js-30725-pull-chart-context-read-only-this-patient",
-   "label": "Pull Chart Context Read-only, this patient",
-   "accessibleName": "Pull Chart Context Read-only, this patient",
-   "title": "",
    "kind": "button",
    "tag": "button",
    "domId": null,
@@ -73982,7 +73948,41 @@
    "handler": null
   },
   {
-   "id": "mls-connect-js-30726-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-30730-start-recording-activates-this-patient",
+   "label": "Start Recording Activates this patient",
+   "accessibleName": "Start Recording Activates this patient",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "mls-connect.js",
+   "line": 30730,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mls-connect-js-30731-pull-chart-context-read-only-this-patient",
+   "label": "Pull Chart Context Read-only, this patient",
+   "accessibleName": "Pull Chart Context Read-only, this patient",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "mls-connect.js",
+   "line": 30731,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mls-connect-js-30732-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -73994,12 +73994,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30726,
+   "line": 30732,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30727-review-athena-actions-exact-destinations-separat",
+   "id": "mls-connect-js-30733-review-athena-actions-exact-destinations-separat",
    "label": "Review Athena actions Exact destinations & separate confirmation",
    "accessibleName": "Review Athena actions Exact destinations & separate confirmation",
    "title": "",
@@ -74011,7 +74011,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30727,
+   "line": 30733,
    "gated": false,
    "handler": null
   },
@@ -74028,7 +74028,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30785,
+   "line": 30791,
    "gated": false,
    "handler": null
   },
@@ -74045,12 +74045,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30814,
+   "line": 30820,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30883-button",
+   "id": "mls-connect-js-30889-button",
    "label": "' + '",
    "accessibleName": "' + '",
    "title": "",
@@ -74062,7 +74062,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30883,
+   "line": 30889,
    "gated": false,
    "handler": null
   },
@@ -74079,7 +74079,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30929,
+   "line": 30935,
    "gated": false,
    "handler": null
   },
@@ -74096,7 +74096,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30945,
+   "line": 30951,
    "gated": false,
    "handler": null
   },
@@ -74113,12 +74113,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30949,
+   "line": 30955,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30952-generating-the-note",
+   "id": "mls-connect-js-30958-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -74130,7 +74130,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30952,
+   "line": 30958,
    "gated": true,
    "handler": null
   },
@@ -74147,7 +74147,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30960,
+   "line": 30966,
    "gated": false,
    "handler": null
   },
@@ -74164,7 +74164,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30961,
+   "line": 30967,
    "gated": false,
    "handler": null
   },
@@ -74181,7 +74181,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30962,
+   "line": 30968,
    "gated": false,
    "handler": null
   },
@@ -74198,7 +74198,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30966,
+   "line": 30972,
    "gated": false,
    "handler": null
   },
@@ -74215,7 +74215,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30968,
+   "line": 30974,
    "gated": false,
    "handler": null
   },
@@ -74232,7 +74232,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30971,
+   "line": 30977,
    "gated": false,
    "handler": null
   },
@@ -74249,7 +74249,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30973,
+   "line": 30979,
    "gated": false,
    "handler": null
   },
@@ -74266,7 +74266,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30979,
+   "line": 30985,
    "gated": false,
    "handler": null
   },
@@ -74283,7 +74283,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30981,
+   "line": 30987,
    "gated": false,
    "handler": null
   },
@@ -74300,7 +74300,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30983,
+   "line": 30989,
    "gated": false,
    "handler": null
   },
@@ -74317,7 +74317,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30989,
+   "line": 30995,
    "gated": false,
    "handler": null
   },
@@ -74334,7 +74334,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30990,
+   "line": 30996,
    "gated": false,
    "handler": null
   },
@@ -74351,7 +74351,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30991,
+   "line": 30997,
    "gated": false,
    "handler": null
   },
@@ -74368,7 +74368,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 30992,
+   "line": 30998,
    "gated": false,
    "handler": null
   },
@@ -74385,7 +74385,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31172,
+   "line": 31178,
    "gated": false,
    "handler": null
   },
@@ -74402,7 +74402,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31173,
+   "line": 31179,
    "gated": false,
    "handler": null
   },
@@ -74419,7 +74419,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31515,
+   "line": 31521,
    "gated": true,
    "handler": null
   },
@@ -74436,7 +74436,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31516,
+   "line": 31522,
    "gated": true,
    "handler": null
   },
@@ -74453,7 +74453,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31517,
+   "line": 31523,
    "gated": true,
    "handler": null
   },
@@ -74470,7 +74470,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31518,
+   "line": 31524,
    "gated": false,
    "handler": null
   },
@@ -74487,7 +74487,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31539,
+   "line": 31545,
    "gated": false,
    "handler": null
   },
@@ -74504,7 +74504,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31540,
+   "line": 31546,
    "gated": false,
    "handler": null
   },
@@ -74521,7 +74521,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 31563,
+   "line": 31569,
    "gated": false,
    "handler": null
   },
@@ -74538,7 +74538,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32249,
+   "line": 32255,
    "gated": false,
    "handler": null
   },
@@ -74555,7 +74555,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32250,
+   "line": 32256,
    "gated": false,
    "handler": null
   },
@@ -74572,7 +74572,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32353,
+   "line": 32359,
    "gated": false,
    "handler": null
   },
@@ -74589,12 +74589,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32382,
+   "line": 32388,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-32385-all-patients-seen-today",
+   "id": "mls-connect-js-32391-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -74606,12 +74606,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32385,
+   "line": 32391,
    "gated": true,
    "handler": null
   },
   {
-   "id": "mls-connect-js-32387-no-patients-pulled-for-today-yet-open-staff-prep",
+   "id": "mls-connect-js-32393-no-patients-pulled-for-today-yet-open-staff-prep",
    "label": "No patients pulled for today yet' + ' Open Staff prep to pull today’s schedule from Athena",
    "accessibleName": "No patients pulled for today yet' + ' Open Staff prep to pull today’s schedule from Athena",
    "title": "",
@@ -74623,7 +74623,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32387,
+   "line": 32393,
    "gated": true,
    "handler": null
   },
@@ -74640,7 +74640,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32390,
+   "line": 32396,
    "gated": false,
    "handler": null
   },
@@ -74657,7 +74657,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32393,
+   "line": 32399,
    "gated": false,
    "handler": null
   },
@@ -74674,12 +74674,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32394,
+   "line": 32400,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-32443-start-recording-activates-this-patient",
+   "id": "mls-connect-js-32449-start-recording-activates-this-patient",
    "label": "Start Recording Activates this patient",
    "accessibleName": "Start Recording Activates this patient",
    "title": "",
@@ -74691,12 +74691,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32443,
+   "line": 32449,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-32444-pull-chart-context-read-only-this-patient",
+   "id": "mls-connect-js-32450-pull-chart-context-read-only-this-patient",
    "label": "Pull Chart Context Read-only, this patient",
    "accessibleName": "Pull Chart Context Read-only, this patient",
    "title": "",
@@ -74708,12 +74708,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32444,
+   "line": 32450,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-32445-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-32451-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -74725,12 +74725,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32445,
+   "line": 32451,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-32446-review-athena-actions-exact-destinations-separat",
+   "id": "mls-connect-js-32452-review-athena-actions-exact-destinations-separat",
    "label": "Review Athena actions Exact destinations & separate confirmation",
    "accessibleName": "Review Athena actions Exact destinations & separate confirmation",
    "title": "",
@@ -74742,7 +74742,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32446,
+   "line": 32452,
    "gated": false,
    "handler": null
   },
@@ -74759,7 +74759,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32458,
+   "line": 32464,
    "gated": false,
    "handler": null
   },
@@ -74776,7 +74776,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32467,
+   "line": 32473,
    "gated": false,
    "handler": null
   },
@@ -74793,7 +74793,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32508,
+   "line": 32514,
    "gated": false,
    "handler": null
   },
@@ -74810,7 +74810,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32522,
+   "line": 32528,
    "gated": false,
    "handler": null
   },
@@ -74827,12 +74827,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32526,
+   "line": 32532,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-32529-generating-the-note",
+   "id": "mls-connect-js-32535-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -74844,7 +74844,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32529,
+   "line": 32535,
    "gated": true,
    "handler": null
   },
@@ -74861,7 +74861,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32537,
+   "line": 32543,
    "gated": false,
    "handler": null
   },
@@ -74878,7 +74878,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32538,
+   "line": 32544,
    "gated": false,
    "handler": null
   },
@@ -74895,7 +74895,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32539,
+   "line": 32545,
    "gated": false,
    "handler": null
   },
@@ -74912,7 +74912,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32543,
+   "line": 32549,
    "gated": false,
    "handler": null
   },
@@ -74929,7 +74929,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32545,
+   "line": 32551,
    "gated": false,
    "handler": null
   },
@@ -74946,7 +74946,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32548,
+   "line": 32554,
    "gated": false,
    "handler": null
   },
@@ -74963,7 +74963,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32550,
+   "line": 32556,
    "gated": false,
    "handler": null
   },
@@ -74980,7 +74980,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32556,
+   "line": 32562,
    "gated": false,
    "handler": null
   },
@@ -74997,7 +74997,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32558,
+   "line": 32564,
    "gated": false,
    "handler": null
   },
@@ -75014,7 +75014,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32560,
+   "line": 32566,
    "gated": false,
    "handler": null
   },
@@ -75031,7 +75031,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32566,
+   "line": 32572,
    "gated": false,
    "handler": null
   },
@@ -75048,7 +75048,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32567,
+   "line": 32573,
    "gated": false,
    "handler": null
   },
@@ -75065,7 +75065,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32568,
+   "line": 32574,
    "gated": false,
    "handler": null
   },
@@ -75082,7 +75082,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32569,
+   "line": 32575,
    "gated": false,
    "handler": null
   },
@@ -75099,7 +75099,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32749,
+   "line": 32755,
    "gated": false,
    "handler": null
   },
@@ -75116,7 +75116,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 32750,
+   "line": 32756,
    "gated": false,
    "handler": null
   },
@@ -75133,7 +75133,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33092,
+   "line": 33098,
    "gated": true,
    "handler": null
   },
@@ -75150,7 +75150,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33093,
+   "line": 33099,
    "gated": true,
    "handler": null
   },
@@ -75167,7 +75167,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33094,
+   "line": 33100,
    "gated": true,
    "handler": null
   },
@@ -75184,7 +75184,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33095,
+   "line": 33101,
    "gated": false,
    "handler": null
   },
@@ -75201,7 +75201,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33116,
+   "line": 33122,
    "gated": false,
    "handler": null
   },
@@ -75218,7 +75218,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33117,
+   "line": 33123,
    "gated": false,
    "handler": null
   },
@@ -75235,7 +75235,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33140,
+   "line": 33146,
    "gated": false,
    "handler": null
   },
@@ -75252,7 +75252,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33874,
+   "line": 33880,
    "gated": false,
    "handler": null
   },
@@ -75269,7 +75269,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33875,
+   "line": 33881,
    "gated": false,
    "handler": null
   },
@@ -75286,7 +75286,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33876,
+   "line": 33882,
    "gated": false,
    "handler": null
   },
@@ -75303,12 +75303,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33988,
+   "line": 33994,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-33991-all-patients-seen-today",
+   "id": "mls-connect-js-33997-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -75320,12 +75320,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33991,
+   "line": 33997,
    "gated": true,
    "handler": null
   },
   {
-   "id": "mls-connect-js-33993-no-patients-pulled-for-today-yet-ask-the-front-d",
+   "id": "mls-connect-js-33999-no-patients-pulled-for-today-yet-ask-the-front-d",
    "label": "No patients pulled for today yet' + ' Ask the front desk to “Pull today’s patients” (Staff prep)",
    "accessibleName": "No patients pulled for today yet' + ' Ask the front desk to “Pull today’s patients” (Staff prep)",
    "title": "",
@@ -75337,7 +75337,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33993,
+   "line": 33999,
    "gated": true,
    "handler": null
   },
@@ -75354,7 +75354,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33996,
+   "line": 34002,
    "gated": false,
    "handler": null
   },
@@ -75371,7 +75371,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 33999,
+   "line": 34005,
    "gated": false,
    "handler": null
   },
@@ -75388,7 +75388,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34000,
+   "line": 34006,
    "gated": false,
    "handler": null
   },
@@ -75405,12 +75405,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34001,
+   "line": 34007,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34046-start-recording-activates-this-patient",
+   "id": "mls-connect-js-34052-start-recording-activates-this-patient",
    "label": "Start Recording Activates this patient",
    "accessibleName": "Start Recording Activates this patient",
    "title": "",
@@ -75422,12 +75422,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34046,
+   "line": 34052,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34047-pull-chart-context-read-only-this-patient",
+   "id": "mls-connect-js-34053-pull-chart-context-read-only-this-patient",
    "label": "Pull Chart Context Read-only, this patient",
    "accessibleName": "Pull Chart Context Read-only, this patient",
    "title": "",
@@ -75439,12 +75439,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34047,
+   "line": 34053,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34048-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-34054-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -75456,12 +75456,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34048,
+   "line": 34054,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34049-review-athena-actions-exact-destinations-separat",
+   "id": "mls-connect-js-34055-review-athena-actions-exact-destinations-separat",
    "label": "Review Athena actions Exact destinations & separate confirmation",
    "accessibleName": "Review Athena actions Exact destinations & separate confirmation",
    "title": "",
@@ -75473,7 +75473,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34049,
+   "line": 34055,
    "gated": false,
    "handler": null
   },
@@ -75490,7 +75490,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34061,
+   "line": 34067,
    "gated": false,
    "handler": null
   },
@@ -75507,7 +75507,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34070,
+   "line": 34076,
    "gated": false,
    "handler": null
   },
@@ -75524,7 +75524,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34110,
+   "line": 34116,
    "gated": false,
    "handler": null
   },
@@ -75541,7 +75541,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34124,
+   "line": 34130,
    "gated": false,
    "handler": null
   },
@@ -75558,12 +75558,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34128,
+   "line": 34134,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34131-generating-the-note",
+   "id": "mls-connect-js-34137-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -75575,7 +75575,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34131,
+   "line": 34137,
    "gated": true,
    "handler": null
   },
@@ -75592,7 +75592,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34138,
+   "line": 34144,
    "gated": false,
    "handler": null
   },
@@ -75609,7 +75609,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34139,
+   "line": 34145,
    "gated": false,
    "handler": null
   },
@@ -75626,7 +75626,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34140,
+   "line": 34146,
    "gated": false,
    "handler": null
   },
@@ -75643,7 +75643,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34143,
+   "line": 34149,
    "gated": false,
    "handler": null
   },
@@ -75660,7 +75660,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34145,
+   "line": 34151,
    "gated": false,
    "handler": null
   },
@@ -75677,7 +75677,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34150,
+   "line": 34156,
    "gated": false,
    "handler": null
   },
@@ -75694,7 +75694,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34152,
+   "line": 34158,
    "gated": false,
    "handler": null
   },
@@ -75711,7 +75711,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34154,
+   "line": 34160,
    "gated": false,
    "handler": null
   },
@@ -75728,7 +75728,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34160,
+   "line": 34166,
    "gated": false,
    "handler": null
   },
@@ -75745,7 +75745,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34161,
+   "line": 34167,
    "gated": false,
    "handler": null
   },
@@ -75762,7 +75762,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34162,
+   "line": 34168,
    "gated": false,
    "handler": null
   },
@@ -75779,7 +75779,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34163,
+   "line": 34169,
    "gated": false,
    "handler": null
   },
@@ -75796,7 +75796,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34280,
+   "line": 34286,
    "gated": false,
    "handler": null
   },
@@ -75813,7 +75813,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34281,
+   "line": 34287,
    "gated": false,
    "handler": null
   },
@@ -75830,7 +75830,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34315,
+   "line": 34321,
    "gated": false,
    "handler": null
   },
@@ -75847,7 +75847,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34316,
+   "line": 34322,
    "gated": false,
    "handler": null
   },
@@ -75864,7 +75864,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34317,
+   "line": 34323,
    "gated": false,
    "handler": null
   },
@@ -75881,7 +75881,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34318,
+   "line": 34324,
    "gated": false,
    "handler": null
   },
@@ -75898,12 +75898,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34345,
+   "line": 34351,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34630-cancel",
+   "id": "mls-connect-js-34636-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -75915,12 +75915,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34630,
+   "line": 34636,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34631-yes-send",
+   "id": "mls-connect-js-34637-yes-send",
    "label": "Yes, send",
    "accessibleName": "Yes, send",
    "title": "",
@@ -75932,12 +75932,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34631,
+   "line": 34637,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34660-start-recording",
+   "id": "mls-connect-js-34666-start-recording",
    "label": "Start Recording",
    "accessibleName": "Start Recording",
    "title": "",
@@ -75949,12 +75949,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34660,
+   "line": 34666,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34661-pull-chart-context",
+   "id": "mls-connect-js-34667-pull-chart-context",
    "label": "Pull Chart Context",
    "accessibleName": "Pull Chart Context",
    "title": "",
@@ -75966,12 +75966,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34661,
+   "line": 34667,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34664-generate-note",
+   "id": "mls-connect-js-34670-generate-note",
    "label": "Generate Note",
    "accessibleName": "Generate Note",
    "title": "",
@@ -75983,12 +75983,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34664,
+   "line": 34670,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34665-send-to-athena",
+   "id": "mls-connect-js-34671-send-to-athena",
    "label": "Send to Athena",
    "accessibleName": "Send to Athena",
    "title": "",
@@ -76000,7 +76000,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 34665,
+   "line": 34671,
    "gated": false,
    "handler": null
   },
@@ -76017,7 +76017,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 35275,
+   "line": 35281,
    "gated": false,
    "handler": null
   },
@@ -76034,7 +76034,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 35807,
+   "line": 35813,
    "gated": false,
    "handler": null
   },
@@ -76051,7 +76051,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36316,
+   "line": 36322,
    "gated": false,
    "handler": null
   },
@@ -76068,7 +76068,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36317,
+   "line": 36323,
    "gated": false,
    "handler": null
   },
@@ -76085,7 +76085,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36344,
+   "line": 36350,
    "gated": false,
    "handler": null
   },
@@ -76102,7 +76102,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36354,
+   "line": 36360,
    "gated": false,
    "handler": null
   },
@@ -76119,7 +76119,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36355,
+   "line": 36361,
    "gated": false,
    "handler": null
   },
@@ -76136,7 +76136,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36427,
+   "line": 36433,
    "gated": false,
    "handler": null
   },
@@ -76153,7 +76153,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36588,
+   "line": 36594,
    "gated": false,
    "handler": null
   },
@@ -76170,12 +76170,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 36592,
+   "line": 36598,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-37093-u-1f399-start-seeing-patients",
+   "id": "mls-connect-js-37099-u-1f399-start-seeing-patients",
    "label": "\\u{1F399} Start seeing patients",
    "accessibleName": "\\u{1F399} Start seeing patients",
    "title": "",
@@ -76187,12 +76187,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37093,
+   "line": 37099,
    "gated": false,
    "handler": "showView('visit')"
   },
   {
-   "id": "mls-connect-js-37094-u-1f4c5-see-schedule",
+   "id": "mls-connect-js-37100-u-1f4c5-see-schedule",
    "label": "\\u{1F4C5} See schedule",
    "accessibleName": "\\u{1F4C5} See schedule",
    "title": "",
@@ -76204,7 +76204,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37094,
+   "line": 37100,
    "gated": false,
    "handler": "showView('calendar')"
   },
@@ -76221,7 +76221,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37192,
+   "line": 37198,
    "gated": false,
    "handler": null
   },
@@ -76238,7 +76238,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37361,
+   "line": 37367,
    "gated": false,
    "handler": null
   },
@@ -76255,7 +76255,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37364,
+   "line": 37370,
    "gated": false,
    "handler": null
   },
@@ -76272,12 +76272,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37385,
+   "line": 37391,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-37505-u-1f4cb-copy",
+   "id": "mls-connect-js-37511-u-1f4cb-copy",
    "label": "\\u{1F4CB} Copy",
    "accessibleName": "\\u{1F4CB} Copy",
    "title": "",
@@ -76289,7 +76289,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37505,
+   "line": 37511,
    "gated": false,
    "handler": "navigator.clipboard.writeText(document.getElementById('mlsSgProNarr').textConten"
   },
@@ -76306,12 +76306,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37832,
+   "line": 37838,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-37889-skip-tour",
+   "id": "mls-connect-js-37895-skip-tour",
    "label": "Skip tour",
    "accessibleName": "Skip tour",
    "title": "",
@@ -76323,12 +76323,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37889,
+   "line": 37895,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-37890-8592-back",
+   "id": "mls-connect-js-37896-8592-back",
    "label": "&#8592; Back",
    "accessibleName": "&#8592; Back",
    "title": "",
@@ -76340,12 +76340,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 37890,
+   "line": 37896,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-38616-button",
+   "id": "mls-connect-js-38622-button",
    "label": "×",
    "accessibleName": "Close",
    "title": "",
@@ -76357,12 +76357,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 38616,
+   "line": 38622,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-38623-got-it",
+   "id": "mls-connect-js-38629-got-it",
    "label": "Got it",
    "accessibleName": "Got it",
    "title": "",
@@ -76374,12 +76374,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 38623,
+   "line": 38629,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-38624-ask-mls-a-question",
+   "id": "mls-connect-js-38630-ask-mls-a-question",
    "label": "Ask MLS a question",
    "accessibleName": "Ask MLS a question",
    "title": "",
@@ -76391,12 +76391,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 38624,
+   "line": 38630,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-39434-open-in-calendar",
+   "id": "mls-connect-js-39440-open-in-calendar",
    "label": "Open in Calendar",
    "accessibleName": "Open in Calendar",
    "title": "",
@@ -76408,12 +76408,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39434,
+   "line": 39440,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-39690-u2190-back",
+   "id": "mls-connect-js-39696-u2190-back",
    "label": "\\u2190 Back",
    "accessibleName": "\\u2190 Back",
    "title": "",
@@ -76425,12 +76425,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39690,
+   "line": 39696,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-39690-4-disabled-step-4-all-set-next-lb-step-1-u2192",
+   "id": "mls-connect-js-39696-4-disabled-step-4-all-set-next-lb-step-1-u2192",
    "label": "=4?' disabled':'')+'>'+(step>=4?'All set':'Next: '+LB[step+1]+' \\u2192')+'",
    "accessibleName": "=4?' disabled':'')+'>'+(step>=4?'All set':'Next: '+LB[step+1]+' \\u2192')+'",
    "title": "",
@@ -76442,7 +76442,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39690,
+   "line": 39696,
    "gated": false,
    "handler": null
   },
@@ -76459,7 +76459,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39878,
+   "line": 39884,
    "gated": false,
    "handler": null
   },
@@ -76476,7 +76476,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39879,
+   "line": 39885,
    "gated": false,
    "handler": null
   },
@@ -76493,7 +76493,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39883,
+   "line": 39889,
    "gated": false,
    "handler": null
   },
@@ -76510,7 +76510,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39987,
+   "line": 39993,
    "gated": false,
    "handler": null
   },
@@ -76527,7 +76527,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39987,
+   "line": 39993,
    "gated": false,
    "handler": null
   },
@@ -76544,7 +76544,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39987,
+   "line": 39993,
    "gated": false,
    "handler": null
   },
@@ -76561,7 +76561,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 39987,
+   "line": 39993,
    "gated": false,
    "handler": null
   },
@@ -76578,7 +76578,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 40207,
+   "line": 40213,
    "gated": false,
    "handler": null
   },
@@ -76595,7 +76595,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 40208,
+   "line": 40214,
    "gated": false,
    "handler": null
   },
@@ -76612,7 +76612,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 41503,
+   "line": 41509,
    "gated": false,
    "handler": null
   },
@@ -76629,7 +76629,58 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 41537,
+   "line": 41543,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsMRMenu",
+   "label": "Open the Menu",
+   "accessibleName": "Open the Menu",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsMRMenu",
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "mls-connect.js",
+   "line": 41952,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsMRClose",
+   "label": "Close",
+   "accessibleName": "Close",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsMRClose",
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "mls-connect.js",
+   "line": 41983,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsMROpen",
+   "label": "Open",
+   "accessibleName": "Open",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsMROpen",
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "mls-connect.js",
+   "line": 42024,
    "gated": false,
    "handler": null
   },
@@ -76646,7 +76697,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 41846,
+   "line": 42352,
    "gated": false,
    "handler": null
   },
@@ -76663,7 +76714,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 41847,
+   "line": 42353,
    "gated": true,
    "handler": null
   },
@@ -76680,7 +76731,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 42168,
+   "line": 42674,
    "gated": false,
    "handler": null
   },
@@ -76697,7 +76748,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 42169,
+   "line": 42675,
    "gated": false,
    "handler": null
   },
@@ -76714,7 +76765,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 42998,
+   "line": 43504,
    "gated": false,
    "handler": null
   },
@@ -76731,7 +76782,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43373,
+   "line": 43879,
    "gated": false,
    "handler": null
   },
@@ -76748,7 +76799,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43576,
+   "line": 44082,
    "gated": false,
    "handler": null
   },
@@ -76765,7 +76816,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43686,
+   "line": 44192,
    "gated": false,
    "handler": null
   },
@@ -76782,7 +76833,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43699,
+   "line": 44205,
    "gated": false,
    "handler": null
   },
@@ -76799,7 +76850,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43715,
+   "line": 44221,
    "gated": false,
    "handler": null
   },
@@ -76816,12 +76867,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43715,
+   "line": 44221,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-43829-dismiss",
+   "id": "mls-connect-js-44335-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -76833,12 +76884,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43829,
+   "line": 44335,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-43832-schedule-follow-up",
+   "id": "mls-connect-js-44338-schedule-follow-up",
    "label": "Schedule follow-up",
    "accessibleName": "Schedule follow-up",
    "title": "",
@@ -76850,12 +76901,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43832,
+   "line": 44338,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-43833-recommendations",
+   "id": "mls-connect-js-44339-recommendations",
    "label": "Recommendations",
    "accessibleName": "Recommendations",
    "title": "",
@@ -76867,12 +76918,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43833,
+   "line": 44339,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-43834-history",
+   "id": "mls-connect-js-44340-history",
    "label": "History",
    "accessibleName": "History",
    "title": "",
@@ -76884,7 +76935,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 43834,
+   "line": 44340,
    "gated": false,
    "handler": null
   },
@@ -76901,7 +76952,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44094,
+   "line": 44600,
    "gated": false,
    "handler": null
   },
@@ -76918,7 +76969,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44096,
+   "line": 44602,
    "gated": false,
    "handler": null
   },
@@ -76935,7 +76986,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44098,
+   "line": 44604,
    "gated": false,
    "handler": null
   },
@@ -76952,7 +77003,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44135,
+   "line": 44641,
    "gated": false,
    "handler": null
   },
@@ -76969,7 +77020,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44230,
+   "line": 44736,
    "gated": false,
    "handler": null
   },
@@ -76986,7 +77037,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44231,
+   "line": 44737,
    "gated": false,
    "handler": null
   },
@@ -77003,7 +77054,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44734,
+   "line": 45240,
    "gated": false,
    "handler": null
   },
@@ -77020,7 +77071,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44750,
+   "line": 45256,
    "gated": false,
    "handler": null
   },
@@ -77037,7 +77088,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44751,
+   "line": 45257,
    "gated": false,
    "handler": null
   },
@@ -77054,7 +77105,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44752,
+   "line": 45258,
    "gated": false,
    "handler": null
   },
@@ -77071,7 +77122,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44753,
+   "line": 45259,
    "gated": false,
    "handler": null
   },
@@ -77088,12 +77139,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44758,
+   "line": 45264,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-44797-edit",
+   "id": "mls-connect-js-45303-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -77105,7 +77156,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44797,
+   "line": 45303,
    "gated": false,
    "handler": null
   },
@@ -77122,7 +77173,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44837,
+   "line": 45343,
    "gated": false,
    "handler": null
   },
@@ -77139,7 +77190,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44838,
+   "line": 45344,
    "gated": false,
    "handler": null
   },
@@ -77156,12 +77207,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 44904,
+   "line": 45410,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-46129-close",
+   "id": "mls-connect-js-46635-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -77173,12 +77224,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46129,
+   "line": 46635,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-46133-by-name-dob",
+   "id": "mls-connect-js-46639-by-name-dob",
    "label": "By name + DOB",
    "accessibleName": "By name + DOB",
    "title": "",
@@ -77190,12 +77241,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46133,
+   "line": 46639,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-46134-by-procedure",
+   "id": "mls-connect-js-46640-by-procedure",
    "label": "By procedure",
    "accessibleName": "By procedure",
    "title": "",
@@ -77207,12 +77258,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46134,
+   "line": 46640,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-46135-cohorts",
+   "id": "mls-connect-js-46641-cohorts",
    "label": "Cohorts",
    "accessibleName": "Cohorts",
    "title": "",
@@ -77224,7 +77275,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46135,
+   "line": 46641,
    "gated": false,
    "handler": null
   },
@@ -77241,7 +77292,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46167,
+   "line": 46673,
    "gated": false,
    "handler": null
   },
@@ -77258,7 +77309,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46168,
+   "line": 46674,
    "gated": false,
    "handler": null
   },
@@ -77275,7 +77326,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46232,
+   "line": 46738,
    "gated": false,
    "handler": null
   },
@@ -77292,7 +77343,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46233,
+   "line": 46739,
    "gated": false,
    "handler": null
   },
@@ -77309,7 +77360,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46244,
+   "line": 46750,
    "gated": false,
    "handler": null
   },
@@ -77326,7 +77377,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46251,
+   "line": 46757,
    "gated": true,
    "handler": null
   },
@@ -77343,7 +77394,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46370,
+   "line": 46876,
    "gated": false,
    "handler": null
   },
@@ -77360,7 +77411,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46451,
+   "line": 46957,
    "gated": false,
    "handler": null
   },
@@ -77377,7 +77428,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46456,
+   "line": 46962,
    "gated": false,
    "handler": null
   },
@@ -77394,7 +77445,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 46976,
+   "line": 47482,
    "gated": false,
    "handler": null
   },
@@ -77411,7 +77462,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 48492,
+   "line": 48998,
    "gated": false,
    "handler": null
   },
@@ -77428,7 +77479,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 48495,
+   "line": 49001,
    "gated": false,
    "handler": null
   },
@@ -77445,7 +77496,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 48496,
+   "line": 49002,
    "gated": false,
    "handler": null
   },
@@ -77462,7 +77513,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 48780,
+   "line": 49286,
    "gated": false,
    "handler": null
   },
@@ -77479,7 +77530,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 48782,
+   "line": 49288,
    "gated": false,
    "handler": null
   },
@@ -77496,7 +77547,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 48783,
+   "line": 49289,
    "gated": false,
    "handler": null
   },
@@ -77513,7 +77564,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 52646,
+   "line": 53275,
    "gated": false,
    "handler": null
   },
@@ -77530,7 +77581,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 52648,
+   "line": 53277,
    "gated": false,
    "handler": null
   },
@@ -77547,7 +77598,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 52649,
+   "line": 53278,
    "gated": false,
    "handler": null
   },
@@ -77564,7 +77615,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 52650,
+   "line": 53279,
    "gated": false,
    "handler": null
   },
@@ -77581,7 +77632,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 52651,
+   "line": 53280,
    "gated": false,
    "handler": null
   },
@@ -77598,7 +77649,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 52652,
+   "line": 53281,
    "gated": true,
    "handler": null
   },
@@ -77615,7 +77666,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 52653,
+   "line": 53282,
    "gated": false,
    "handler": null
   },
@@ -77632,12 +77683,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 53283,
+   "line": 53912,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-53531-unmark",
+   "id": "mls-connect-js-54160-unmark",
    "label": "Unmark",
    "accessibleName": "Unmark",
    "title": "",
@@ -77649,7 +77700,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 53531,
+   "line": 54160,
    "gated": false,
    "handler": null
   },
@@ -77666,7 +77717,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 55084,
+   "line": 55713,
    "gated": false,
    "handler": null
   },
@@ -77683,12 +77734,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 55088,
+   "line": 55717,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-55446-got-it",
+   "id": "mls-connect-js-56075-got-it",
    "label": "Got it",
    "accessibleName": "Got it",
    "title": "Got it",
@@ -77700,7 +77751,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 55446,
+   "line": 56075,
    "gated": false,
    "handler": "try{localStorage.setItem('mlsRlPhoneIntroSeen','1')}catch(e){};this.parentNode.r"
   },
@@ -77717,7 +77768,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 55784,
+   "line": 56413,
    "gated": false,
    "handler": null
   },
@@ -77734,7 +77785,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56058,
+   "line": 56687,
    "gated": false,
    "handler": null
   },
@@ -77751,7 +77802,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56059,
+   "line": 56688,
    "gated": false,
    "handler": null
   },
@@ -77768,12 +77819,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56060,
+   "line": 56689,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-56484-label-solid-suggested",
+   "id": "mls-connect-js-57113-label-solid-suggested",
    "label": "\" + label + (solid ? ' (suggested)' : '') + '",
    "accessibleName": "\" + label + (solid ? ' (suggested)' : '') + '",
    "title": "",
@@ -77785,7 +77836,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56484,
+   "line": 57113,
    "gated": false,
    "handler": null
   },
@@ -77802,7 +77853,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56488,
+   "line": 57117,
    "gated": false,
    "handler": null
   },
@@ -77819,12 +77870,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56572,
+   "line": 57201,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-56610-desktop",
+   "id": "mls-connect-js-57239-desktop",
    "label": "Desktop",
    "accessibleName": "Desktop",
    "title": "",
@@ -77836,12 +77887,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56610,
+   "line": 57239,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-56611-laptop",
+   "id": "mls-connect-js-57240-laptop",
    "label": "Laptop",
    "accessibleName": "Laptop",
    "title": "",
@@ -77853,12 +77904,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56611,
+   "line": 57240,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-56612-phone",
+   "id": "mls-connect-js-57241-phone",
    "label": "Phone",
    "accessibleName": "Phone",
    "title": "",
@@ -77870,12 +77921,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56612,
+   "line": 57241,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-56617-automatic",
+   "id": "mls-connect-js-57246-automatic",
    "label": "Automatic",
    "accessibleName": "Automatic",
    "title": "",
@@ -77887,12 +77938,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56617,
+   "line": 57246,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-56618-full-app",
+   "id": "mls-connect-js-57247-full-app",
    "label": "Full app",
    "accessibleName": "Full app",
    "title": "",
@@ -77904,12 +77955,12 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56618,
+   "line": 57247,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-56619-simple-phone-app",
+   "id": "mls-connect-js-57248-simple-phone-app",
    "label": "Simple phone app",
    "accessibleName": "Simple phone app",
    "title": "",
@@ -77921,7 +77972,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56619,
+   "line": 57248,
    "gated": false,
    "handler": null
   },
@@ -77938,7 +77989,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56623,
+   "line": 57252,
    "gated": false,
    "handler": null
   },
@@ -77955,7 +78006,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56626,
+   "line": 57255,
    "gated": false,
    "handler": null
   },
@@ -77972,7 +78023,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 56913,
+   "line": 57542,
    "gated": false,
    "handler": null
   },
@@ -77989,7 +78040,7 @@
    "surface": "clinician",
    "shellChecked": true,
    "file": "mls-connect.js",
-   "line": 58201,
+   "line": 58830,
    "gated": false,
    "handler": null
   },
