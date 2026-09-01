@@ -27243,6 +27243,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              generation's receipt must never be read as this one's. */
           try { window.__mlsLastTemplatePick = null; } catch (eClear) {}
           if (autoOn) {
+            /* vnfid-1.0.0: THE EXACT NAME IS NOT A SCORE - and this overlay,
+               not the shell, is what actually decides on the live SOAP lane.
+               The shell owns the RULE (window._mlsTplExactNamePick, which is
+               token-set equality against the booking reason, kind-gated); this
+               only asks for the answer and then runs the SAME class gate the
+               explicit-default path below already runs, so a procedure
+               template still cannot land on an office transcript. If the shell
+               export is absent this degrades to exactly what shipped before. */
+            var xnPick = null;
+            try { if (isFn(window._mlsTplExactNamePick)) xnPick = window._mlsTplExactNamePick(S(visitText)); } catch (eXn) { xnPick = null; }
+            if (xnPick && xnPick.tpl) {
+              var xnGate = gateActive(S(visitText), xnPick.tpl);
+              if (xnGate.allow) {
+                try {
+                  window.__mlsLastTemplatePick = { name: S(xnPick.tpl.name), id: S(xnPick.tpl.id),
+                    kind: (isFn(window._mlsTplKindOf) ? window._mlsTplKindOf(xnPick.tpl) : ''),
+                    score: 0, matched: [], matchedName: [], alternatives: [], margin: 0, exactName: true,
+                    considered: 0, noteKind: '', reason: 'exact-name', at: Date.now() };
+                } catch (eXnReceipt) {}
+                try { if (isFn(window._mlsRenderTplPickReceipt)) window._mlsRenderTplPickReceipt(); } catch (eXnRender) {}
+                toast('Matched template by name: ' + S(xnPick.tpl.name), '');
+                logEvent('exact-name', xnPick.tpl.name, true, xnPick.reason);
+                return xnPick.tpl;
+              }
+              logEvent('exact-name-gated', xnPick.tpl.name, true, xnGate.reason);
+            }
             var pick = classAwarePick(S(visitText));
             if (pick.tpl) {
               /* SAY WHICH TEMPLATE AND WHY. A silent pick is how the wrong

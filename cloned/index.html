@@ -3589,6 +3589,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            doctor's own keywords chose it. Written with textContent only. -->
       <div id="tplPickReceipt" class="mini" role="status" aria-live="polite" style="display:none;margin-top:8px;color:var(--muted)"></div>
 
+      <!-- vnfid-1.0.0: the runner-up templates, one click away - but only
+           where the pick was NOT decided. Filled by _mlsRenderTplPickAlts
+           with createElement/textContent; a template name is untrusted data. -->
+      <div id="tplPickAlts" class="mini" style="display:none;margin-top:6px;gap:6px;align-items:center;flex-wrap:wrap"></div>
+
+      <!-- vnfid-1.0.0: the deterministic count of how much of the template the
+           reformat actually reproduced, and whether any dictated sentence did
+           not survive it. Rendered only when a measure says so, and it offers
+           a re-format - never an offer to fill the missing lines in. -->
+      <div id="tplFidelityNotice" role="status" aria-live="polite" style="display:none;margin-top:10px;background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#7a5a16"></div>
+
       <!-- Insurance-Ready toggle -->
       <div class="toggle-row" id="formatToggleRow" style="display:none;margin-top:12px">
         <span style="font-size:14px;color:var(--muted);font-weight:600">Format:</span>
@@ -25479,6 +25490,77 @@ function _mlsTplBeats(a,b,want){
   if(a.name!==b.name) return a.name<b.name;
   return a.id<b.id;
 }
+/* -- THE EXACT NAME IS NOT A SCORE (vnfid-1.0.0) -------------------------
+   Ported from exactNameMatch in feat_mls_opnote_integrity.js, which the
+   op-note lane grew on 2026-08-31 for the same complaint the owner makes
+   about this one. A booking reason that IS the name of a template kept
+   losing on the scoreboard below, because a LONGER name out-tokens the one
+   the doctor literally booked: "Genicular Nerve Block RFA" beats "Genicular
+   Nerve Block" for the reason "Genicular Nerve Block". A reason that IS the
+   name of a template is not evidence to be weighed against other evidence;
+   it is the answer.
+   Deliberately narrow, exactly as over there:
+     - equality of the STEMMED TOKEN SETS, never containment, so a superset
+       name can never satisfy it;
+     - the keywords of a template count, because a keyword is the alias the
+       doctor declared for it;
+     - EXACTLY ONE template may match, and a name match beats a keyword match
+       so two templates keyworded alike cannot deadlock a real name;
+     - the caller gates eligibility by declared note kind FIRST, so this can
+       only ever choose among templates already allowed to compete;
+     - the TRANSCRIPT is never asked: prose cannot BE the name of a template,
+       and testing it would only manufacture false exactness. */
+function _mlsTplStem(w){
+  w=String(w==null?'':w);
+  if(w.length>4&&/ies$/.test(w)) return w.slice(0,-3)+'y';
+  if(w.length>3&&/s$/.test(w)&&!/ss$/.test(w)) return w.slice(0,-1);
+  return w;
+}
+function _mlsTplTokenKey(text){
+  return String(text==null?'':text).toLowerCase().split(/[^a-z0-9]+/)
+    .filter(Boolean).map(_mlsTplStem).sort().join(' ');
+}
+function _mlsTplExactName(text,list){
+  var want=_mlsTplTokenKey(text); if(!want) return null;
+  var byName=[],byKeyword=[];
+  for(var i=0;i<((list&&list.length)||0);i++){
+    var t=list[i]; if(!t||typeof t!=='object') continue;
+    if(_mlsTplTokenKey(t.name)===want){ byName.push(t); continue; }
+    var kws=_mlsTplKeywords(t);
+    for(var j=0;j<kws.length;j++){ if(_mlsTplTokenKey(kws[j])===want){ byKeyword.push(t); break; } }
+  }
+  if(byName.length===1) return byName[0];
+  if(!byName.length&&byKeyword.length===1) return byKeyword[0];
+  return null;
+}
+/* THE RUNNER-UP IS NOT RUBBISH. It was already ranked, and throwing it away
+   is what left the doctor with a receipt saying "no confident match" and
+   nothing to check it against but the whole library. Same rule as
+   alternativesFrom() in the op-note module: at most three, never the chosen
+   one, never a zero score, and in the SAME total order the winner was chosen
+   by - so "did you mean" can never disagree with "why". Carrying them
+   CHANGES NO DECISION; only the surface. */
+function _mlsTplRanked(cands,want){
+  var a=(cands||[]).slice();
+  a.sort(function(x,y){ if(x===y) return 0; if(_mlsTplBeats(x,y,want)) return -1; if(_mlsTplBeats(y,x,want)) return 1; return 0; });
+  return a;
+}
+function _mlsTplAlternatives(cands,chosenId,want){
+  var r=_mlsTplRanked(cands,want),alts=[];
+  for(var i=0;i<r.length&&alts.length<3;i++){
+    var e=r[i];
+    if(!e||!e.template) continue;
+    if(String(e.id)===String(chosenId)) continue;
+    if(!(e.score>0)) continue;
+    alts.push({id:String(e.id||''),name:String(e.name||''),score:e.score});
+  }
+  return alts;
+}
+function _mlsTplRunnerUpScore(cands,chosenId,want){
+  var r=_mlsTplRanked(cands,want);
+  for(var i=0;i<r.length;i++) if(r[i]&&String(r[i].id)!==String(chosenId)) return r[i].score||0;
+  return 0;
+}
 /* Where a keyword hits is worth more than that it hit: the scheduled procedure
    NAMES the note, the booking reason describes it, the transcript merely
    mentions it. A name word is always the weak signal, wherever it lands. */
@@ -25486,6 +25568,7 @@ function _mlsTplPick(list,ctx,kind){
   var want=String(kind||'').trim().toLowerCase();
   if(want!=='soap'&&want!=='insurance'&&want!=='op') want='';
   var out={template:null,id:'',name:'',kind:'',score:0,matched:[],matchedName:[],
+           alternatives:[],margin:0,exactName:false,
            considered:0,noteKind:want,reason:'no-templates'};
   if(!list||!list.length) return out;
   var fields=[
@@ -25493,12 +25576,12 @@ function _mlsTplPick(list,ctx,kind){
     [String((ctx&&ctx.reason)||'').toLowerCase(),2],
     [String((ctx&&ctx.transcript)||'').toLowerCase(),1]
   ];
-  var best=null;
+  var best=null, cands=[], eligible=[];
   for(var i=0;i<list.length;i++){
     var t=list[i]; if(!t||typeof t!=='object') continue;
     var tk=_mlsTplKindOf(t);
     if(want&&tk&&tk!==want) continue;
-    out.considered++;
+    out.considered++; eligible.push(t);
     var kws=_mlsTplKeywords(t), score=0, matched=[], matchedName=[], j, f, w;
     for(j=0;j<kws.length;j++){
       w=0;
@@ -25512,22 +25595,47 @@ function _mlsTplPick(list,ctx,kind){
     if(score<=0) continue;
     var cand={template:t,id:String(t.id||''),name:String(t.name||''),kind:tk,
               score:score,matched:matched,matchedName:matchedName};
+    cands.push(cand);
     if(best===null||_mlsTplBeats(cand,best,want)) best=cand;
+  }
+  /* vnfid-1.0.0 - DETERMINISTIC FIRST, HEURISTIC SECOND, the same order the
+     op-note lane uses. The kind gate above still owns eligibility, so an
+     exactly-named template of the wrong declared kind never reaches here. */
+  var exact=_mlsTplExactName((ctx&&ctx.procedure)||'',eligible)||_mlsTplExactName((ctx&&ctx.reason)||'',eligible);
+  if(exact){
+    var xrow=null;
+    for(var xi=0;xi<cands.length;xi++) if(cands[xi].template===exact){ xrow=cands[xi]; break; }
+    out.template=exact; out.id=String(exact.id||''); out.name=String(exact.name||'');
+    out.kind=_mlsTplKindOf(exact);
+    out.score=xrow?xrow.score:0;
+    out.matched=xrow?xrow.matched:[]; out.matchedName=xrow?xrow.matchedName:[];
+    out.reason='exact-name'; out.exactName=true;
+    out.alternatives=_mlsTplAlternatives(cands,out.id,want);
+    out.margin=out.score-_mlsTplRunnerUpScore(cands,out.id,want);
+    return out;
   }
   if(!best){ out.reason=out.considered?'no-match':'no-candidate-of-this-kind'; return out; }
   out.template=best.template; out.id=best.id; out.name=best.name; out.kind=best.kind;
   out.score=best.score; out.matched=best.matched; out.matchedName=best.matchedName;
   out.reason='matched';
+  out.alternatives=_mlsTplAlternatives(cands,out.id,want);
+  out.margin=out.score-_mlsTplRunnerUpScore(cands,out.id,want);
   return out;
 }
 /* ONE definition of "what kind did the doctor declare" and ONE definition of
    "does this keyword hit". The note-grounding overlay in the connect bundle
    replaces resolveActiveTemplate outright, so it must reach THESE - a second
    copy over there would drift from this one the first time either changed. */
-try{ window._mlsTplKindOf=_mlsTplKindOf; window._mlsTplHit=_mlsTplHit; window._mlsTplKeywords=_mlsTplKeywords; }catch(_tplExportError){}
+try{ window._mlsTplKindOf=_mlsTplKindOf; window._mlsTplHit=_mlsTplHit; window._mlsTplKeywords=_mlsTplKeywords; window._mlsTplExactName=_mlsTplExactName; }catch(_tplExportError){}
 /* The one sentence the surface shows: which template, and why it won. */
 function _mlsTplPickSentence(pick){
-  if(!pick||pick.reason!=='matched') return '';
+  if(!pick) return '';
+  /* vnfid-1.0.0: the two decisions that are NOT a score say so in their own
+     words, so "why this template" is never a number the doctor has to take
+     on trust. */
+  if(pick.reason==='exact-name') return 'Template: '+(pick.name||'(unnamed)')+' - the visit reason is exactly this template name ('+_mlsTplKindLabel(pick.kind)+')';
+  if(pick.reason==='chosen') return 'Template: '+(pick.name||'(unnamed)')+' - you chose it for this note ('+_mlsTplKindLabel(pick.kind)+')';
+  if(pick.reason!=='matched') return '';
   var s='Template: '+(pick.name||'(unnamed)');
   var why=(pick.matched||[]).slice();
   if(why.length) s+=' - matched your keywords: '+why.join(', ');
@@ -25568,6 +25676,29 @@ function _mlsVisitTemplateContext(visitText){
   }catch(e){}
   return ctx;
 }
+/* THE OVERLAY MUST BE ABLE TO ASK THE SAME QUESTION. The connect bundle
+   REPLACES resolveActiveTemplate outright (ngv1 wrapResolve), so an
+   exact-name short-circuit living only inside _mlsTplPick would never run on
+   the live generation path - verify the dispatch, not the mechanism. What is
+   exported is the DECISION, not a second copy of the rule; ngv1 then runs its
+   OWN class gate on the answer, so the guard that stops a procedure template
+   landing on an office transcript is not weakened by any of this. */
+function _mlsTplExactNamePick(visitText){
+  try{
+    var ctx=_mlsVisitTemplateContext(visitText), want=_mlsCurrentNoteKind();
+    var list=_tplStore(), eligible=[];
+    for(var i=0;i<list.length;i++){
+      var t=list[i]; if(!t||typeof t!=='object') continue;
+      var tk=_mlsTplKindOf(t);
+      if(want&&tk&&tk!==want) continue;
+      eligible.push(t);
+    }
+    var hit=_mlsTplExactName(ctx.procedure||'',eligible)||_mlsTplExactName(ctx.reason||'',eligible);
+    if(!hit) return null;
+    return {tpl:_tplClone(hit),reason:'the visit reason is exactly this template name'};
+  }catch(eXnPick){ return null; }
+}
+try{ window._mlsTplExactNamePick=_mlsTplExactNamePick; }catch(_tplExactExportError){}
 /* Auto-choose: score saved templates against the visit by case-insensitive
    keyword matching. Returns the best template or null - the same contract the
    bundle overlays and the op-note lane have always called. The receipt of the
@@ -25600,14 +25731,51 @@ function _mlsRenderTplPickReceipt(fallbackTpl){
      auto-choose being OFF leaves behind. */
   if(!(typeof useTemplatesOn==='function'&&useTemplatesOn())) text='';
   else if(fallbackTpl&&fallbackTpl.name) text='No template matched this visit - using your default: '+String(fallbackTpl.name);
-  else if(pick&&pick.reason==='matched') text=_mlsTplPickSentence(pick);
+  else if(pick&&(pick.reason==='matched'||pick.reason==='exact-name'||pick.reason==='chosen')) text=_mlsTplPickSentence(pick);
   else if(pick&&pick.reason==='no-candidate-of-this-kind') text='No template is set up for this note kind - the note was left unformatted.';
   else if(pick&&pick.reason!=='no-templates') text='No template matched this visit - the note was left unformatted.';
   if(el){
     el.textContent=text;
     el.style.display=text?'':'none';
   }
+  /* vnfid-1.0.0: the runner-ups ride WITH the receipt, so both pick paths get
+     them - the connect bundle replaces resolveActiveTemplate but still calls
+     THIS renderer, which is the only place both paths meet. */
+  try{ _mlsRenderTplPickAlts((typeof useTemplatesOn==='function'&&useTemplatesOn())?pick:null); }catch(_tplAltError){}
   return text;
+}
+/* AN UNDECIDED PICK MUST SHOW ITS ALTERNATIVES - the op-note room's
+   _opAltTplHtml, in the shape this lane needs. Only where the match was NOT
+   decided: an exact name is an answer and a clear margin is a decision, and
+   turning every note into a question is how a warning stops being read.
+   Buttons are built with createElement/textContent because a template name is
+   untrusted data, and one click re-formats THIS note with that template - it
+   never edits the note itself and never changes the stored default. */
+function _mlsRenderTplPickAlts(pick){
+  var el=null; try{ el=document.getElementById('tplPickAlts'); }catch(eAltEl){ return ''; }
+  if(!el) return '';
+  try{ while(el.firstChild) el.removeChild(el.firstChild); }catch(eAltWipe){}
+  var alts=(pick&&Object.prototype.toString.call(pick.alternatives)==='[object Array]')?pick.alternatives:[];
+  var decided=!pick||pick.exactName===true||pick.reason==='chosen'||((pick.margin||0)>=2&&(pick.score||0)>0);
+  if(!alts.length||decided){ el.style.display='none'; return ''; }
+  var lead=document.createElement('span');
+  lead.style.color='#8A5A00';
+  lead.textContent=pick.id?'Not decided - did you mean:':'No confident match - closest are:';
+  el.appendChild(lead);
+  var names=[];
+  for(var ai=0;ai<alts.length&&names.length<3;ai++){
+    var a=alts[ai], aid=String((a&&a.id)||''); if(!aid) continue;
+    var b=document.createElement('button');
+    b.type='button'; b.className='btn-ghost';
+    b.style.fontSize='11.5px'; b.style.padding='4px 9px';
+    b.title='Re-format this note with that template instead';
+    b.textContent=String((a&&a.name)||'Template');
+    b.onclick=(function(pickedId){ return function(){ try{ _mlsRetryTemplateFormat(pickedId); }catch(eAltClick){} }; })(aid);
+    el.appendChild(b); names.push(b.textContent);
+  }
+  if(!names.length){ el.style.display='none'; return ''; }
+  el.style.display='flex';
+  return lead.textContent+' '+names.join(', ');
 }
 
 /* Resolve which template (if any) to apply right now, honoring the toggle.
@@ -25657,8 +25825,9 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
   if(!baseNote.trim()) return {applied:false,reason:'empty-note'};
   const templateFingerprint=_athenaEditorFingerprint();
   const templateFormat=currentFormat;
-  const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
-  const user='TEMPLATE (match this format exactly):\n"""\n'+_tplTextForDraft(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
+  const sys='You are a clinical documentation assistant. What you are doing is a MECHANICAL OPERATION on the TEMPLATE the doctor wrote, not a rewrite of the note. HOW TO PRODUCE THE NOTE -- REPRODUCE, THEN FILL. Work through the TEMPLATE from its first line to its last and reproduce EVERY line of it, in the order the template uses and in the words the template uses. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else -- headings, field labels, boilerplate sentences, standing instructions, attestations -- is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge, re-order or omit any template line. Do NOT drop a template line because it looks routine or repetitive. Do NOT replace the outline of the template with your own, or with a generic SOAP outline. The finished note must be a completed copy of the template, not a description of the visit. THEN FILL: move the clinical content of the VISIT NOTE (and, for fields the note does not cover, the TRANSCRIPT) into the field where it belongs. NOTHING THE DOCTOR DOCUMENTED MAY BE LOST -- every clinical statement in the VISIT NOTE must appear somewhere in your output: in the template field where it belongs, or, when the template has no field for it, under whatever catch-all the template itself provides (an "Other", "Comments" or "Additional findings" line if it has one), or otherwise appended at the end under a single "ADDITIONAL FINDINGS:" heading. Never delete a clinical fact in order to make it fit the template. A template field with no answer in the note or the transcript KEEPS ITS LINE and gets the explicit placeholder "not documented" -- never an invented finding, history, value or date, and never a deleted line. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
+  const tplForModel=_tplTextForDraft(template.text).slice(0,12000);
+  const user='TEMPLATE TO REPRODUCE - every line of it, in this order:\n"""\n'+tplForModel+'\n"""\n\nVISIT NOTE - EVERY CLINICAL STATEMENT IN IT MUST SURVIVE:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   try{
     let out=(await aiCallRaw(sys,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat',signal:templateSignal})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     /* A deadline may already have released the Generate button while a legacy
@@ -25678,7 +25847,24 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
       if(nb && nb.style.display!=='none') nb.value=out;
       if(currentFormat==='soap')try{_mlsSyncAthenaAfterStandardNoteMutation('template changed the standard note');}catch(eCanonicalTemplate){}
       try{_markVisitDirty();}catch(_){}
-      return {applied:true,templateId:template.id};
+      /* vnfid-1.0.0 - MEASURE WHAT CAME BACK, THEN SAY IT OUT LOUD. Both
+         measures run on the text that was actually applied, and the template
+         they grade it against is the text the MODEL was shown: the connect
+         bundle sanitises canned assertion lines out of a template before this
+         function ever sees it, so grading against the original document would
+         report a failure the model was never asked to avoid. Neither measure
+         can refuse the note - a formatter that could silently discard a draft
+         is the same silent failure wearing a fresh label - and neither ever
+         asks for a clinical fact: a missing line is REPORTED, and the only
+         action offered is asking again. */
+      var tplFidelity=null,tplConserved=null;
+      try{ tplFidelity=_mlsTplConformance(out,tplForModel); }catch(eTplConf){}
+      try{ tplConserved=_mlsTplContentConservation(baseNote,out); }catch(eTplCons){}
+      try{ window.__mlsLastTemplateConformance={conformance:tplFidelity,conservation:tplConserved,
+        templateId:String(template.id||''),templateName:String(template.name||''),at:Date.now()}; }catch(eTplStash){}
+      try{ _mlsRenderTplFidelityNotice({conformance:tplFidelity,conservation:tplConserved,
+        templateId:String(template.id||''),templateName:String(template.name||'')}); }catch(eTplNotice){}
+      return {applied:true,templateId:template.id,conformance:tplFidelity,conservation:tplConserved};
     }
     return {applied:false,reason:'empty-output'};
   }catch(e){
@@ -25686,13 +25872,226 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
   }
 }
 
+/* ===== vnfid-1.0.0 - THE VISIT NOTE MUST FOLLOW ITS TEMPLATE TOO ==========
+   Owner, 2026-08-31: "that really all needs to be fixed both for the op notes
+   and for the other sections to."
+
+   The op-note lane was fixed first (feat_mls_opnote_integrity.js: a
+   reproduce-then-fill prompt contract, a deterministic templateConformance
+   measure, and an amber strip that says out loud when a draft did not follow
+   the template). This lane had the SAME hole in a different shape.
+
+   WHAT WAS ACTUALLY WRONG HERE. applyTemplateToNote is a POST-HOC REFORMAT of
+   an already-generated note, and its prompt asked the model for a PROPERTY -
+   "EXACTLY matches the structure, sections, field labels and order" - and then
+   accepted whatever came back. Its ONLY structural test was
+   `if(out===baseNote) return 'unchanged-output'`. A draft that keeps the
+   headings and compresses everything between them is not equal to the base
+   note, so it passed. That is exactly the "summarised, not followed" the
+   owner reported, and nothing here measured it.
+
+   These helpers are the missing half and they are all MEASURES: they read the
+   note and the template, return numbers, never rewrite a draft, never throw,
+   never block a generation, and never ask for a clinical fact. The only
+   action offered is asking the model again, because the only thing that could
+   FILL a missing line is invention. */
+
+/* REUSE, NEVER RE-DERIVE. feat_mls_opnote_integrity.js already ships the
+   graded measure and the normaliser it grades with; a second copy would drift
+   from that one the first time either changed. The connect bundle injects the
+   module on every load, so the handle is normally there. The local port below
+   runs ONLY when it is not - it grades the same three-real-word lines and the
+   same heading labels with a generic normaliser - and the result SAYS which
+   one ran, so a probe can never mistake one for the other. */
+function _mlsTplConformance(note,templateText){
+  try{
+    var api=(typeof window!=='undefined')?window.__mlsOpNoteIntegrity:null;
+    if(api&&typeof api.templateConformance==='function'){
+      var c=api.templateConformance(note,templateText);
+      if(c&&typeof c.total==='number'){ c.source='opnote-integrity'; return c; }
+    }
+  }catch(eTplReuse){}
+  return _mlsTplConformanceLocal(note,templateText);
+}
+function _mlsTplNormText(x){
+  return String(x==null?'':x).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+/* A faithful-enough port of headingLabel from that module: a colon label or an
+   ALL-CAPS line, never a prose sentence. Deliberately NARROWER than the
+   original (it carries none of the clinical vocabulary list), so the fallback
+   can under-count headings but can never invent one. */
+function _mlsTplHeadingLabel(line){
+  var t=String(line==null?'':line).trim(); if(!t) return '';
+  var m=t.match(/^([^:]{2,70}):(?:\s+.*)?$/), label=m?m[1].trim():t;
+  if(!m&&t.length>90) return '';
+  var caps=label.length>2&&label===label.toUpperCase()&&/[A-Z]/.test(label);
+  var custom=false;
+  if(m&&/^[A-Za-z][A-Za-z0-9 \/&()\-]{1,69}$/.test(label)){
+    var tail=String(t.slice(t.indexOf(':')+1)).trim(), words=label.split(/\s+/);
+    var minor=/^(?:a|an|and|or|of|the|to|for|with|without|per)$/i;
+    var titleLike=words.length<=6&&words.every(function(w,wi){ return (minor.test(w)&&wi>0)||/^[A-Z0-9][A-Za-z0-9\/&()\-]*$/.test(w); });
+    custom=!tail||titleLike;
+  }
+  if(!m&&!caps) return '';
+  if(!caps&&!custom) return '';
+  return _mlsTplNormText(label);
+}
+function _mlsTplConformanceLocal(note,templateText){
+  var entries=[];
+  String(templateText==null?'':templateText).split(/\r?\n/).forEach(function(raw){
+    var line=String(raw); if(!line.trim()) return;
+    var h=_mlsTplHeadingLabel(line);
+    if(h) entries.push({kind:'heading',key:h,text:line.trim().slice(0,140)});
+    var masked=line.replace(/\[\[[^\]]*\]\]/g,' ').replace(/\[(?:FILL\s*:?\s*)?[^\]]*\]/gi,' ')
+      .replace(/\{\{[^}]*\}\}/g,' ').replace(/<[^>]+>/g,' ').replace(/_{2,}/g,' ');
+    var n=_mlsTplNormText(masked);
+    if(n&&n.split(/\s+/).length>=3) entries.push({kind:'line',key:n,text:line.trim().slice(0,140)});
+  });
+  var total=entries.length,noteNorm=_mlsTplNormText(note),words={},cursor=0,verbatim=0,reworded=0,dropped=0,lines=[];
+  noteNorm.split(/\s+/).forEach(function(w){ if(w) words[w]=1; });
+  for(var i=0;i<total;i++){
+    var e=entries[i],at=noteNorm.indexOf(e.key,cursor);
+    if(at<0) at=noteNorm.indexOf(e.key);       /* out of order still counts as present */
+    if(at>=0){ verbatim++; if(at>=cursor) cursor=at+e.key.length; continue; }
+    var ws=e.key.split(/\s+/).filter(Boolean),hit=0;
+    for(var j=0;j<ws.length;j++) if(words[ws[j]]) hit++;
+    var how=(ws.length&&(hit/ws.length)>=0.6)?'reworded':'missing';
+    if(how==='reworded') reworded++; else dropped++;
+    if(lines.length<12) lines.push({kind:e.kind,how:how,text:e.text});
+  }
+  var pct=total?Math.round(verbatim/total*100):100;
+  return {total:total,verbatim:verbatim,reworded:reworded,missing:dropped,
+    notFollowed:reworded+dropped,pct:pct,lines:lines,
+    belowThreshold:total>=6&&pct<75,source:'local-port'};
+}
+/* CONTENT CONSERVATION - DID THE REFORMAT DROP ANYTHING HE DICTATED?
+   Conformance grades the lines of the TEMPLATE. This grades the lines of the
+   NOTE, and it is the more dangerous of the two failures: a reformat that
+   reproduces the template perfectly and quietly loses two sentences of the
+   assessment has DELETED clinical documentation. Only real sentences are
+   graded - five words or more, with any leading field label removed - because
+   a heading or a two-word value is not a clinical statement. A sentence whose
+   words survived counts as KEPT even when it was reworded into a template
+   field, which is exactly what the reformat is for. Reported, never repaired:
+   putting a dropped sentence back is the job of a re-format, not this
+   function guessing where it belonged. */
+function _mlsTplSentences(text){
+  var out=[];
+  String(text==null?'':text).split(/\r?\n/).forEach(function(raw){
+    var line=String(raw).trim(); if(!line) return;
+    var body=line.replace(/^[A-Za-z][A-Za-z0-9 \/&()\-]{0,60}:\s*/,'');
+    body.split(/[.;!?]+(?:\s+|$)/).forEach(function(piece){
+      var n=_mlsTplNormText(piece); if(!n) return;
+      var ws=n.split(/\s+/);
+      if(ws.length<5) return;
+      out.push({text:String(piece).trim().slice(0,160),key:n,words:ws});
+    });
+  });
+  return out;
+}
+function _mlsTplContentConservation(baseNote,formatted){
+  var sents=_mlsTplSentences(baseNote),outNorm=_mlsTplNormText(formatted),words={},examples=[],kept=0;
+  outNorm.split(/\s+/).forEach(function(w){ if(w) words[w]=1; });
+  for(var i=0;i<sents.length;i++){
+    var s=sents[i];
+    if(s.key&&outNorm.indexOf(s.key)>=0){ kept++; continue; }
+    var hit=0;
+    for(var j=0;j<s.words.length;j++) if(words[s.words[j]]) hit++;
+    if(s.words.length&&(hit/s.words.length)>=0.7){ kept++; continue; }
+    if(examples.length<6) examples.push(s.text);
+  }
+  var total=sents.length,lost=total-kept;
+  return {total:total,kept:kept,dropped:lost,examples:examples,lostContent:lost>0};
+}
+/* THE HONEST NOTICE. Rendered only when a deterministic measure says so: the
+   reformat reproduced less than three quarters of the graded template lines,
+   or a clinical sentence from the generated note did not survive it. It names
+   a NUMBER, it offers the one action that can actually fix it, and it NEVER
+   offers to fill the missing lines in. Built with createElement/textContent
+   because a template name is untrusted data. */
+function _mlsRenderTplFidelityNotice(info){
+  var el=null; try{ el=document.getElementById('tplFidelityNotice'); }catch(eTplEl){ return ''; }
+  if(!el) return '';
+  try{ while(el.firstChild) el.removeChild(el.firstChild); }catch(eTplWipe){}
+  var c=info&&info.conformance,k=info&&info.conservation;
+  var bad=!!(c&&c.total&&c.belowThreshold),lost=!!(k&&k.lostContent);
+  if(!bad&&!lost){ try{ el.textContent=''; }catch(eTplHide){} el.style.display='none'; return ''; }
+  var head=bad?'\u26A0 This note did not follow the template':'\u26A0 The reformat dropped clinical content';
+  var say='';
+  if(bad) say+=(c.notFollowed||0)+' of '+(c.total||0)+' template line'+((c.total===1)?'':'s')+' '+((c.notFollowed===1)?'is':'are')+' missing or reworded ('+(c.pct||0)+'% reproduced'+(c.reworded?(', '+c.reworded+' reworded'):'')+'). ';
+  if(lost) say+=(k.dropped||0)+' sentence'+((k.dropped===1)?'':'s')+' from the generated note did not survive the reformat. ';
+  say+='Read it against your template before you sign it.';
+  var b=document.createElement('b'); b.textContent=head;
+  el.appendChild(b);
+  el.appendChild(document.createTextNode(' - '+say));
+  var row=document.createElement('div'); row.style.marginTop='7px';
+  var btn=document.createElement('button');
+  btn.type='button'; btn.className='btn-ghost';
+  btn.style.fontSize='12px'; btn.style.padding='5px 11px';
+  btn.textContent='\u21BB Re-format following the template';
+  btn.onclick=function(){ try{ _mlsRetryTemplateFormat(info&&info.templateId); }catch(eTplRetry){} };
+  row.appendChild(btn); el.appendChild(row);
+  el.style.display='';
+  return head+' - '+say;
+}
+/* ONE CLICK = ASK AGAIN, never "fix it for me". It re-runs the formatter the
+   doctor already trusts, through the SAME bounded owner generateNote uses, so
+   a retry inherits the abort/timeout/staleness machinery instead of growing a
+   second copy of it. An id argument means "and use THIS template instead",
+   which is what the alternatives chips press. */
+function _mlsRetryTemplateFormat(templateId){
+  try{
+    if(templateId){ try{ window.__mlsTemplateOverrideId=String(templateId); }catch(eTplSet){} }
+    var el=null; try{ el=document.getElementById('transcript'); }catch(eTplTx){}
+    var text=String((el&&el.value)||'');
+    var binding=null,epoch=null;
+    try{ binding=currentVisitAthenaBinding; }catch(eTplB){}
+    try{ epoch=currentVisitAthenaEpoch; }catch(eTplE){}
+    if(typeof _mlsStartOptionalTemplate!=='function'){
+      try{ if(typeof toast==='function') toast('Cannot re-format right now - reload the page and press Generate Note again.','err'); }catch(eTplT){}
+      return null;
+    }
+    try{ _mlsRenderTplFidelityNotice(null); }catch(eTplN){}
+    try{ if(typeof toast==='function') toast('Re-formatting to the template...',''); }catch(eTplT2){}
+    return _mlsStartOptionalTemplate(text,binding,epoch,el);
+  }catch(eTplRetryOuter){ return null; }
+}
+/* THE ONE-SHOT OVERRIDE, read by maybeApplyTemplate - the only template seam
+   the connect bundle does NOT replace. Consumed on read, so a template chosen
+   for THIS note can never silently shape the next one. */
+function _mlsConsumeTemplateOverride(){
+  var id='';
+  try{ id=String((typeof window!=='undefined'&&window.__mlsTemplateOverrideId)||''); }catch(eTplOv){}
+  try{ if(typeof window!=='undefined') window.__mlsTemplateOverrideId=''; }catch(eTplOv2){}
+  if(!id) return null;
+  var tpl=null;
+  try{ tpl=(typeof getTemplateById==='function')?getTemplateById(id):null; }catch(eTplOv3){}
+  if(!tpl) return null;
+  try{
+    window.__mlsLastTemplatePick={name:String(tpl.name||''),id:String(tpl.id||''),
+      kind:(typeof _mlsTplKindOf==='function')?_mlsTplKindOf(tpl):'',score:0,matched:[],matchedName:[],
+      alternatives:[],margin:0,exactName:false,considered:0,noteKind:'',reason:'chosen',at:Date.now()};
+  }catch(eTplOv4){}
+  try{ if(typeof _mlsRenderTplPickReceipt==='function') _mlsRenderTplPickReceipt(); }catch(eTplOv5){}
+  return tpl;
+}
 /* Entry point called from generateNote AFTER a note is produced.
    No-op (and never touches the prompt) unless the toggle is ON. */
 async function maybeApplyTemplate(visitText,expectedBinding,expectedEpoch){
   const templateOptions=arguments[3]||{};
+  /* vnfid-1.0.0: a fidelity notice belongs to ONE reformat. One left over from
+     an earlier generation would name a count THIS note never produced - the
+     same class of lie the stale pick receipt was. */
+  try{ _mlsRenderTplFidelityNotice(null); }catch(eTplClear){}
   if(!useTemplatesOn()) return {applied:false,reason:'templates-off'};               // OFF path: do nothing
   let tpl;
-  try{ tpl=resolveActiveTemplate(visitText); }catch(e){ return {applied:false,reason:'template-selection-error'}; }
+  /* vnfid-1.0.0: THE ONE-CLICK CHOICE IS READ HERE, and only here. The connect
+     bundle REPLACES resolveActiveTemplate outright, so an override honoured
+     inside that function would never run in production; maybeApplyTemplate is
+     the one seam both paths pass through. */
+  const tplOverride=_mlsConsumeTemplateOverride();
+  if(tplOverride) tpl=tplOverride;
+  else try{ tpl=resolveActiveTemplate(visitText); }catch(e){ return {applied:false,reason:'template-selection-error'}; }
   if(!tpl){ return {applied:false,reason:'no-template'}; }
   let result;
   try{ result=await applyTemplateToNote(tpl,visitText,expectedBinding||currentVisitAthenaBinding,expectedEpoch==null?currentVisitAthenaEpoch:expectedEpoch,templateOptions); }

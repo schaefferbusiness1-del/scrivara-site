@@ -14,7 +14,12 @@ const production = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const applyStart = 'async function applyTemplateToNote(template,visitText,expectedBinding,expectedEpoch)';
 const applyEnd = '\nfunction openDoc';
 const applySource = production.slice(production.indexOf(applyStart), production.indexOf(applyEnd, production.indexOf(applyStart)));
-assert(applySource.includes('return {applied:true,templateId:template.id}'), 'production formatter does not return a success receipt');
+/* vnfid-1.0.0: this pinned the exact SPELLING of the success receipt, so a
+ * receipt that grew an honest extra field (the template-conformance measure)
+ * would red a suite that the change strengthened. Pin the PROPERTY instead:
+ * applied:true carrying the template it applied. */
+const SUCCESS_RECEIPT = /return \{applied:true,templateId:template\.id[,}]/;
+assert(SUCCESS_RECEIPT.test(applySource), 'production formatter does not return a success receipt');
 assert(applySource.includes('reason:\'empty-output\''), 'production formatter does not report empty model output');
 assert(applySource.includes('function reportTemplateApplication'), 'automatic template result reporter is missing');
 const maybeSource = applySource.slice(applySource.indexOf('async function maybeApplyTemplate'), applySource.indexOf('function reportTemplateApplication'));
@@ -31,7 +36,7 @@ for (const file of ['1pScribeFlow.html', '1p/index.html', 'cloned/index.html', '
   assert(start >= 0, `${file} has no template formatter`);
   const end = source.indexOf('\nfunction openDoc', start);
   const block = source.slice(start, end);
-  assert(block.includes('return {applied:true,templateId:template.id}'), `${file} has no honest success receipt`);
+  assert(SUCCESS_RECEIPT.test(block), `${file} has no honest success receipt`);
   assert(block.includes('reason:\'ai-error\''), `${file} does not report thrown formatter errors`);
   const maybe = block.slice(block.indexOf('async function maybeApplyTemplate'), block.indexOf('function reportTemplateApplication'));
   assert.strictEqual((maybe.match(/resolveActiveTemplate\(/g) || []).length, 1, `${file} resolves the active template more than once`);
