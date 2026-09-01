@@ -24070,7 +24070,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function pConn(kind, label) { var d2 = $('ez3PullDot'); if (d2) d2.className = 'dot ' + kind; pSet('ez3PullConn', label); }
   function pCounts() {
-    if (!P) return;
+    /* honest-tiles-1.0.1: a FRESH tab with a saved durable job has no live P,
+       so the early return below used to skip the durable tile paint and the
+       four tiles read 0 / 0 / 0 / 0 under a strip saying "18 of 31 days saved"
+       (measured 2026-09-01 18:2x on a reloaded tab). With no P, paint from the
+       manifest summary and return; everything after this line is unchanged. */
+    if (!P) {
+      try {
+        var dur0 = p1RangeState();
+        if (dur0 && dur0.summary && /^(running|pending|paused|waiting-login|waiting-retry|storage-failed|needs-attention|complete|account-changed)$/.test(String(dur0.status || ''))) {
+          var ds0 = dur0.summary;
+          pTile('ez3cFound', ds0.withRows, 'days with visits');
+          pTile('ez3cSaved', ds0.complete, 'days saved');
+          pTile('ez3cDup', ds0.empty, 'verified empty');
+          pTile('ez3cFail', ds0.needsAttention, 'need attention');
+        }
+      } catch (eHt0) {}
+      return;
+    }
     var done = 0; P.range.keys.forEach(function (k) { var st = P.dayStatus[k]; if (st && /^(done|empty|failed|cancelled)$/.test(st.status)) done++; /* cxl-1.0.0: a cancelled day is settled for THIS run */ });
     pSet('ez3cFound', String(P.found)); pSet('ez3cSaved', String(P.saved));
     pSet('ez3cDup', String(P.dups));
