@@ -73,11 +73,12 @@ function eq(a, b, msg) {
 /* ==========================================================================
  * 0.  THE MODULE EXISTS, AND IT IS THE ONLY THING THIS SUITE RUNS
  * ======================================================================== */
-const BEGIN = '/* ===== revwork-1.0.0 begin ============================================== */';
-const END = '/* ===== revwork-1.0.0 end ================================================ */';
-ok(CONNECT.indexOf(BEGIN) > 0, 'the revwork-1.0.0 block is missing from 1p-mls-connect.js');
-ok(CONNECT.indexOf(END) > CONNECT.indexOf(BEGIN), 'the revwork-1.0.0 block has no end marker');
-eq(CONNECT.split(BEGIN).length - 1, 1, 'the revwork-1.0.0 block is duplicated');
+const BEGIN = '/* ===== revwork-1.1.0 begin ============================================== */';
+const END = '/* ===== revwork-1.1.0 end ================================================ */';
+ok(CONNECT.indexOf(BEGIN) > 0, 'the revwork block is missing from 1p-mls-connect.js');
+ok(CONNECT.indexOf(END) > CONNECT.indexOf(BEGIN), 'the revwork block has no end marker');
+eq(CONNECT.split(BEGIN).length - 1, 1, 'the revwork block is duplicated');
+const ANCHOR = read('feat_mls_upnow_activeselect.js');
 const BLOCK = CONNECT.slice(CONNECT.indexOf(BEGIN) + BEGIN.length, CONNECT.indexOf(END));
 /* The block's own prose explains at length which Athena actions it does NOT
    touch, so a token scan has to read the CODE. This module carries no regex
@@ -132,15 +133,40 @@ ok(/Open the review workspace below/.test(CONNECT),
 /* ==========================================================================
  * 3.  THE REVIEW WORKSPACE  (static half)
  * ======================================================================== */
-const CONTROL_IDS = ['mlsRevWork', 'mlsRevStatus', 'mlsRevNote', 'mlsRevGen', 'mlsRevCopy',
-  'mlsRevSave', 'mlsRevSend', 'mlsRevOpNote', 'mlsRevAvs', 'mlsRevCodes', 'mlsRevCapture'];
+const CONTROL_IDS = ['mlsRevWork', 'mlsRevStatus', 'mlsRevIdentity', 'mlsRevNote',
+  'mlsRevSave', 'mlsRevSend', 'mlsRevCodes'];
 for (const id of CONTROL_IDS) {
   ok(CODE.indexOf("'" + id + "'") > 0, 'the review workspace no longer declares the id ' + id);
+}
+/* OWNER, 2026-09-01: "Make sure you're not adding in features that already work
+   without removing anything, creating duplicate stuff." Each of these five had
+   a working original in the guided flow, so the workspace copy is gone and the
+   original is wired instead. One control per job. */
+const RETIRED_DUPLICATES = [
+  ['mlsRevGen', 'ez3Regen'], ['mlsRevCopy', 'ez3Copy'], ['mlsRevOpNote', 'ez3Prep2'],
+  ['mlsRevAvs', 'ez3flAvs'], ['mlsRevCapture', 'ez3flPaste']
+];
+for (const [dup, original] of RETIRED_DUPLICATES) {
+  ok(CODE.indexOf("'" + dup + "'") < 0,
+    'the workspace still ships ' + dup + ', which duplicates the flow control ' + original);
+  ok(CONNECT.indexOf(original) > 0, 'the original control ' + original + ' disappeared - nothing may be removed');
 }
 ok(/\$\('noteCard'\)/.test(CODE), 'the review workspace is no longer built inside #noteCard');
 ok(/\$\('mlsAtStep2'\)/.test(CODE), 'the review workspace is no longer anchored on the #mlsAtStep2 step banner');
 /* gcx-1.0.0: a disabled control eats the click and explains nothing. */
 ok(!/\.disabled\s*=\s*true/.test(CODE), 'a review control now ships disabled - it must refuse out loud instead');
+
+/* THE ORIGINALS. The capture-phase router must reach the style chips, Edit and
+   Regenerate - and must NOT press them a second time (ez3Click is registered
+   on the same target first, so the engine half has already run). */
+ok(/t\.closest\('#ez3StyleChips \[data-chip\]'\)/.test(CODE), 'the style chips are not routed');
+ok(/t\.closest\('#ez3Edit,#ez3Regen'\)/.test(CODE), 'Edit note and Regenerate are not routed');
+ok(!/stopImmediatePropagation|stopPropagation/.test(CODE),
+  'the router stops propagation - that would disable the engine half these controls still need');
+ok(!/setGenStyle|setGenLength/.test(CODE),
+  'the router writes the style preference itself - that is the engine half, and repeating it is a duplicate');
+ok(/ORIGINALS\s*=\s*\{/.test(CODE) && /edit: 'ez3Edit'/.test(CODE) && /regen: 'ez3Regen'/.test(CODE),
+  'the original control ids are no longer named in one place');
 
 /* ==========================================================================
  * 4.  ONE GENERATOR, ONE ATHENA DOOR  (static half)
@@ -207,12 +233,28 @@ function makeDom() {
   const winListeners = Object.create(null);
   const dom = {};
 
+  function simpleMatch(el, tok) {
+    if (!el || !tok) return false;
+    if (tok[0] === '#') return el.id === tok.slice(1);
+    if (tok[0] === '.') return String(el.className || '').split(/\s+/).indexOf(tok.slice(1)) >= 0;
+    if (tok[0] === '[') return tok.slice(1, -1) in el.attrs;
+    return String(el.tagName || '').toLowerCase() === tok.toLowerCase();
+  }
+  /* one comma group may be a descendant chain ("#ez3StyleChips [data-chip]") */
+  function matchesGroup(el, group) {
+    const parts = group.trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return false;
+    if (!simpleMatch(el, parts[parts.length - 1])) return false;
+    let node = el.parentNode;
+    for (let i = parts.length - 2; i >= 0; i--) {
+      let found = false;
+      while (node) { if (simpleMatch(node, parts[i])) { found = true; node = node.parentNode; break; } node = node.parentNode; }
+      if (!found) return false;
+    }
+    return true;
+  }
   function matchesSel(el, sel) {
-    return sel.split(',').map((s) => s.trim()).filter(Boolean).some((s) => {
-      if (s[0] === '#') return el.id === s.slice(1);
-      if (s[0] === '.') return String(el.className || '').split(/\s+/).indexOf(s.slice(1)) >= 0;
-      return String(el.tagName || '').toLowerCase() === s.toLowerCase();
-    });
+    return String(sel).split(',').map((x) => x.trim()).filter(Boolean).some((g) => matchesGroup(el, g));
   }
   function El(tag) {
     const el = {
@@ -275,6 +317,11 @@ function makeDom() {
       [head, body].forEach((r) => walk(r, (n) => { if (!hit && n.id === id) hit = n; }));
       return hit;
     },
+    querySelector: (sel) => {
+      let hit = null;
+      [head, body].forEach((r) => walk(r, (n) => { if (!hit && n !== r && matchesSel(n, sel)) hit = n; }));
+      return hit;
+    },
     addEventListener: (t, fn) => { (docListeners[t] = docListeners[t] || []).push(fn); },
     removeEventListener: (t, fn) => { const a = docListeners[t] || []; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); }
   };
@@ -316,6 +363,10 @@ function bootRevWork() {
   };
   sandbox.window = sandbox;
   sandbox.toast = (m, k) => { sandbox.toasts.push({ msg: String(m), kind: String(k || '') }); };
+  sandbox.__pt = { id: '7', name: 'Adam Tester', dob: '1980-04-02', mrn: 'MRN-9' };
+  sandbox.activePatient = () => sandbox.__pt;
+  sandbox.getActivePtId = () => (sandbox.__pt ? sandbox.__pt.id : '');
+  sandbox.selectPatient = (id) => { sandbox.selected = String(id); };
   sandbox.addEventListener = (t, fn) => { (dom.winListeners[t] = dom.winListeners[t] || []).push(fn); };
   sandbox.removeEventListener = (t, fn) => { const a = dom.winListeners[t] || []; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); };
   vm.createContext(sandbox);
@@ -331,6 +382,18 @@ function paintVisitScreen(h, opts) {
   const ez3Body = mk('div', 'mlsEz3Body', ez3);
   const wrap = mk('div', 'ez3Wrap', ez3Body);
   const adv = mk('button', 'ez3Adv', wrap);
+  /* the visit header card - the name the note is written for */
+  const ptCard = h.El('div'); ptCard.className = 'ez3-pt'; ptCard.textContent = opts.headerName || 'Adam Tester'; wrap.appendChild(ptCard);
+  /* the flow's OWN note editor, the style chips and the three-button row */
+  const ez3Note = mk('textarea', 'ez3Note', wrap);
+  const chipHost = mk('div', 'ez3StyleChips', wrap);
+  const chips = ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].map((label) => {
+    const c = h.El('button'); c.setAttribute('data-chip', label); c.className = 'ez3-chip'; c.textContent = label;
+    chipHost.appendChild(c); return c;
+  });
+  const ez3Edit = mk('button', 'ez3Edit', wrap);
+  const ez3Regen = mk('button', 'ez3Regen', wrap);
+  const ez3Copy = mk('button', 'ez3Copy', wrap);
   const flTx = mk('textarea', 'ez3flTranscript', wrap);
   const flGen = mk('button', 'ez3flGen', wrap);
   const ez3Gen = mk('button', 'ez3Gen', wrap);
@@ -350,14 +413,15 @@ function paintVisitScreen(h, opts) {
     adv.textContent = open ? 'engine repaint: hide' : 'engine repaint: show';
     if (opts.hidesFlow) wrap.style.setProperty('display', 'none');
   });
-  return { visitView, ez3, ez3Body, wrap, adv, flTx, flGen, ez3Gen, tx, genBtn, noteCard, step2, noteBox, saveBtn, copyBtn, push, emrCard, emrTable };
+  return { visitView, ez3, ez3Body, wrap, adv, ptCard, ez3Note, chipHost, chips, ez3Edit, ez3Regen, ez3Copy,
+           flTx, flGen, ez3Gen, tx, genBtn, noteCard, step2, noteBox, saveBtn, copyBtn, push, emrCard, emrTable };
 }
 
 /* ---- 6a. the module installs and answers ------------------------------- */
 {
   const h = bootRevWork();
   ok(h.api && h.api.installed === true, 'revwork did not install in a bare DOM');
-  eq(h.api.version, 'revwork-1.0.0', 'revwork version stamp moved without a suite update');
+  eq(h.api.version, 'revwork-1.1.0', 'revwork version stamp moved without a suite update');
   eq(h.api.SEND_TARGET, 'pushAllEmrBtn', 'the single Athena entry is not #pushAllEmrBtn at runtime');
   eq(Array.prototype.join.call(h.api.GEN_TARGETS, ','), 'ez3flGen,ez3Gen,genBtn',
     'the runtime Generate ladder is not ez3flGen -> ez3Gen -> genBtn');
@@ -429,8 +493,11 @@ function paintVisitScreen(h, opts) {
   eq(s.noteCard.childNodes.indexOf(root), s.noteCard.childNodes.indexOf(s.step2) + 1,
     'the review workspace is not directly under the "Review the note" step banner');
   for (const id of CONTROL_IDS) ok(h.doc.getElementById(id), 'the review workspace is missing #' + id);
-  ['mlsRevGen', 'mlsRevCopy', 'mlsRevSave', 'mlsRevSend', 'mlsRevOpNote', 'mlsRevAvs', 'mlsRevCodes', 'mlsRevCapture']
+  ['mlsRevSave', 'mlsRevSend', 'mlsRevCodes']
     .forEach((id) => eq(h.doc.getElementById(id).disabled, false, '#' + id + ' ships disabled'));
+  for (const [dup] of RETIRED_DUPLICATES) {
+    eq(h.doc.getElementById(dup), null, 'the retired duplicate ' + dup + ' is still built at runtime');
+  }
 
   /* the mirror: one note, two windows onto it */
   s.noteBox.value = 'SUBJECTIVE: knee pain.';
@@ -444,8 +511,7 @@ function paintVisitScreen(h, opts) {
   rev.dispatchEvent({ type: 'input', bubbles: true });
   eq(s.noteBox.value, 'SUBJECTIVE: LEFT knee pain.', 'an edit in the review box does not reach the one note');
   eq(bubbled, 1, 'the write-through did not announce itself, so nothing downstream re-reads the note');
-  eq(h.doc.getElementById('mlsRevGen').textContent, 'Regenerate note',
-    'the Generate control does not become Regenerate once a note exists');
+  ok(h.doc.getElementById('mlsRevIdentity'), 'the workspace lost its patient identity line');
 }
 
 /* ---- 6e. one generator, one Athena door (runtime) ---------------------- */
@@ -480,10 +546,10 @@ function paintVisitScreen(h, opts) {
   eq(s.push.clickCount, 1, 'Send pressed the hidden Athena control anyway');
   ok(h.sandbox.toasts.some((t) => /not part of your plan/.test(t.msg)), 'a plan-blocked Send says nothing');
 
-  /* Save and Copy press the app own handlers */
+  /* Save presses the app own handler; Copy is the FLOW's control now */
   s.push.style.removeProperty('display');
   eq(h.api.save(), 'saveNoteBtn', 'Save to history is not the app own control');
-  eq(h.api.copy(), 'copyEmrBtn', 'Copy is not the app own control');
+  eq(h.api.copy(), 'copyEmrBtn', 'Copy no longer routes to the app own control');
 }
 
 /* ---- 6f. the paste path reaches a visible transcript ------------------- */

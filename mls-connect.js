@@ -62715,7 +62715,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
 /* ===== end psr-1.0.0 ===================================================== */
 
 
-/* ===== revwork-1.0.0 begin ============================================== */
+/* ===== revwork-1.1.0 begin ============================================== */
 /* =============================================================================
  * revwork-1.0.0 (b1169)  --  THE REVIEW WORKSPACE, AND A FLOW THAT NEVER GOES
  * -----------------------------------------------------------------------------
@@ -62792,25 +62792,37 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'revwork-1.0.0';
+  var VERSION = 'revwork-1.1.0';
   try {
     var prior = window.__mlsRevWork;
     if (prior && prior.installed === true && typeof prior.revert === 'function') prior.revert();
   } catch (e0) {}
 
   /* ---- the ids this module owns ---------------------------------------- */
+  /* revwork-1.1.0 (b1177) - OWNER: "Make sure you're not adding in features
+     that already work without removing anything, creating duplicate stuff."
+     revwork-1.0.0 built a workspace button for five jobs the guided flow
+     ALREADY owns: Generate (#ez3Regen), Copy (#ez3Copy), the op-note entry
+     (#ez3Prep2), the after-visit summary (#ez3flAvs / #ez3QAvs) and the paste
+     entry (#ez3flPaste / #ez3QPaste). Those five are REMOVED here and the
+     originals are made to work instead - one control per job. What stays is
+     only what the flow genuinely lacks: the editable review note, Save to
+     history, Send to Athena, the codes step, and the identity line. */
   var ID = {
     root: 'mlsRevWork',
     status: 'mlsRevStatus',
+    identity: 'mlsRevIdentity',
     note: 'mlsRevNote',
-    gen: 'mlsRevGen',
-    copy: 'mlsRevCopy',
     save: 'mlsRevSave',
     send: 'mlsRevSend',
-    opnote: 'mlsRevOpNote',
-    avs: 'mlsRevAvs',
-    codes: 'mlsRevCodes',
-    capture: 'mlsRevCapture'
+    codes: 'mlsRevCodes'
+  };
+  /* the same line, painted above the flow's own note editor */
+  var FLOW_IDENTITY_ID = 'mlsRevIdentityFlow';
+  /* the ORIGINAL controls this module wires rather than replaces */
+  var ORIGINALS = {
+    edit: 'ez3Edit', regen: 'ez3Regen', copy: 'ez3Copy',
+    chips: 'ez3StyleChips', note: 'ez3Note'
   };
   /* the three containers of the guided flow. None of them may ever carry an
      inline hide while the visit view is on screen. */
@@ -63004,6 +63016,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     return true;
   }
   function doGenerate() {
+    if (!identityGuard('this note generation')) return '';
     if (!transcriptText()) {
       say('Capture, dictate or paste the visit first - then press Generate note.', 'err');
       revealTranscript();
@@ -63025,6 +63038,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   function doSave() {
     pushNoteUp();
     if (!noteText().trim()) { say('There is no note to save yet. Press Generate note first.', 'err'); return ''; }
+    if (!identityGuard('this save')) return '';
     var hit = pressFirst(['saveNoteBtn']);
     if (hit) return hit;
     if (isFn(window.saveCurrentNote)) { safe(function () { window.saveCurrentNote(true); }); return 'saveCurrentNote'; }
@@ -63037,6 +63051,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   function doSend() {
     pushNoteUp();
     if (!noteText().trim()) { say('Generate the note first, then review it before sending.', 'err'); return ''; }
+    if (!identityGuard('this Athena review')) return '';
     var send = $(SEND_TARGET);
     if (!send) { say('The Athena review step is not on this build.', 'err'); return ''; }
     if (inlineHidden(send)) {
@@ -63119,7 +63134,20 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       '#mlsRevWork .rw-btn.pri:hover{background:#204034;border-color:#204034}',
       '#mlsRevWork .rw-btn.send{background:#204034;border-color:#204034;color:#fff;font-weight:700}',
       '#mlsRevWork .rw-btn.send:hover{background:#2E6A4B;border-color:#2E6A4B}',
-      '#mlsRevWork .rw-foot{font-size:11.5px;color:#68756E;margin:10px 0 0;line-height:1.55}'
+      '#mlsRevWork .rw-foot{font-size:11.5px;color:#68756E;margin:10px 0 0;line-height:1.55}',
+      /* revwork-1.1.0: one identity line, one look, in both places */
+      '#mlsRevIdentity,#mlsRevIdentityFlow{display:block;font:700 13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;',
+        'border-radius:10px;padding:8px 11px;margin:0 0 9px}',
+      '#mlsRevIdentity{background:#fff;border:1px solid #CFE0D2;color:#204034}',
+      '#mlsRevIdentityFlow{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.22);color:#EAF1EE}',
+      '#mlsRevIdentity.rw-nopt,#mlsRevIdentityFlow.rw-nopt{background:#FCF3F3;border-color:#E7C4C4;color:#8B2525}',
+      /* the anchor OFFERS - it is a strip with two buttons, never a switch */
+      '#mlsRevAnchorOffer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:10px 13px;',
+        'border-radius:12px;background:#FCF8EF;border:1px solid #EFE4CE;color:#7A5A16;',
+        'font:600 13px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
+      '#mlsRevAnchorOffer button{cursor:pointer;border-radius:9px;padding:7px 13px;font:700 12.5px system-ui,-apple-system,"Segoe UI",sans-serif}',
+      '#mlsRevAnchorOffer .rw-anchor-go{background:#2E6A4B;border:1px solid #2E6A4B;color:#fff}',
+      '#mlsRevAnchorOffer .rw-anchor-no{background:#fff;border:1px solid #D9D6CD;color:#1A211C}'
     ].join('');
   }
   function ensureCss() {
@@ -63169,6 +63197,16 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     status.textContent = statusFor(readState());
     root.appendChild(status);
 
+    /* revwork-1.1.0 (owner ask 3): the same name + DOB + MRN line the flow
+       carries, directly above the note, so a wrong-patient note is visible at
+       a glance instead of one scroll away in a header card. */
+    var ident = document.createElement('div');
+    ident.id = ID.identity;
+    ident.className = 'rw-ident';
+    ident.setAttribute('role', 'status');
+    ident.textContent = identityText();
+    root.appendChild(ident);
+
     var ta = document.createElement('textarea');
     _mirrored = '';                                     /* a fresh box agrees with nothing yet */
     ta.id = ID.note;
@@ -63177,29 +63215,18 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     ta.addEventListener('input', function () { pushNoteUp(); paint(); });
     root.appendChild(ta);
 
+    /* revwork-1.1.0: FOUR buttons, and not one of them repeats a control the
+       flow above already carries. Generate/Regenerate, Copy, the op note and
+       the after-visit summary all live in the flow and are wired there. */
     var row1 = document.createElement('div');
     row1.className = 'rw-row';
-    row1.appendChild(mkBtn(ID.gen, genLabelFor(readState()), 'pri',
-      'Runs the same generator the guided flow runs, on the same transcript.', doGenerate));
-    row1.appendChild(mkBtn(ID.copy, 'Copy note text', '',
-      'Copies only the clinical note text.', doCopy));
-    row1.appendChild(mkBtn(ID.save, 'Save to history', '',
+    row1.appendChild(mkBtn(ID.save, 'Save to history', 'pri',
       'Saves this note into the patient history inside MLS.', doSave));
     row1.appendChild(mkBtn(ID.send, 'Send to Athena', 'send',
       'Opens the Athena review sheet. Nothing is written until you confirm there, and Sign & Save stays your own click inside athenaOne.', doSend));
-    root.appendChild(row1);
-
-    var row2 = document.createElement('div');
-    row2.className = 'rw-row';
-    row2.appendChild(mkBtn(ID.capture, 'Capture or paste the visit', '',
-      'Takes you to the transcript box the flow above is using.', doCapture));
-    row2.appendChild(mkBtn(ID.codes, 'Codes & billing', '',
+    row1.appendChild(mkBtn(ID.codes, 'Codes & billing', '',
       'Jumps to step 3 - the E/M, CPT and ICD fields Athena receives.', doCodes));
-    row2.appendChild(mkBtn(ID.avs, 'After-visit summary', '',
-      'Drafts the patient-facing summary for this visit.', doAvs));
-    row2.appendChild(mkBtn(ID.opnote, 'Op note - prep & draft', '',
-      'Drafts the operative / procedure note from your uploaded templates.', doOpNote));
-    root.appendChild(row2);
+    root.appendChild(row1);
 
     var foot = document.createElement('p');
     foot.className = 'rw-foot';
@@ -63220,9 +63247,11 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     var st = $(ID.status);
     var want = statusFor(s);
     if (st && st.textContent !== want) st.textContent = want;
-    var g = $(ID.gen);
-    var gl = genLabelFor(s);
-    if (g && g.textContent !== gl) g.textContent = gl;
+    var line = identityText();
+    var idEl = $(ID.identity);
+    if (idEl && idEl.textContent !== line) idEl.textContent = line;
+    markNoPatient(idEl);
+    paintFlowIdentity(line);
     return true;
   }
   function syncPanel() {
@@ -63232,7 +63261,232 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   }
 
   /* =======================================================================
-   *  7. RECONCILE - one function, every signal
+   *  7. ONE PATIENT IDENTITY, IN BOTH PLACES, AND A GUARD THAT READS IT
+   * -----------------------------------------------------------------------
+   * OWNER ask 3 (2026-09-01): the workspace and the flow must show the SAME
+   * name + DOB + MRN above the note, from the active patient, "so a wrong-
+   * patient note is visible at a glance". Ask 2 is why that matters: a note
+   * was generated under a patient the doctor never chose.
+   * ===================================================================== */
+  function activePt() {
+    return safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null);
+  }
+  function mrnOf(p) {
+    if (!p) return '';
+    var keys = ['mrn', 'MRN', 'medicalRecordNumber', 'patientMrn'];
+    for (var i = 0; i < keys.length; i++) {
+      var v = String(p[keys[i]] == null ? '' : p[keys[i]]).trim();
+      if (v) return v;
+    }
+    return '';
+  }
+  function identityText() {
+    var p = activePt();
+    var nm = p ? String(p.name || '').trim() : '';
+    if (!nm) return 'No chart is active - pick the patient before generating this note.';
+    var dob = String((p && p.dob) || '').trim();
+    var mrn = mrnOf(p);
+    return nm + '  \u00b7  ' + (dob ? 'DOB ' + dob : 'DOB not on file') +
+           '  \u00b7  ' + (mrn ? 'MRN ' + mrn : 'MRN not on file');
+  }
+  /* The same line, mounted directly above the flow's OWN note editor
+     (#ez3Note). Not a second identity - the same string, painted twice, from
+     one reader. */
+  function paintFlowIdentity(line) {
+    var host = $(ORIGINALS.note);
+    if (!host || !host.parentNode) return false;
+    var el = $(FLOW_IDENTITY_ID);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = FLOW_IDENTITY_ID;
+      el.setAttribute('role', 'status');
+    }
+    if (el.parentNode !== host.parentNode || el.nextSibling !== host) {
+      safe(function () { host.parentNode.insertBefore(el, host); });
+    }
+    if (el.textContent !== line) el.textContent = line;
+    markNoPatient(el);
+    return true;
+  }
+  function markNoPatient(el) {
+    if (!el || !el.classList) return;
+    var none = !activePt();
+    if (el.classList.contains('rw-nopt') !== none) el.classList.toggle('rw-nopt', none);
+  }
+  /* Tolerant on spelling, strict on person: accents folded, punctuation and
+     ordering ignored, so "Ana-Maria O'Brien" and "OBrien, Ana Maria" are the
+     same human and two different humans are still two. */
+  function normName(v) {
+    return String(v == null ? '' : v)
+      .normalize ? String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').sort().join(' ')
+      : String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').sort().join(' ');
+  }
+  function headerName() {
+    var el = safe(function () { return document.querySelector('#mlsEz3 .ez3-pt'); }, null);
+    var v = el ? String(el.textContent || '').trim() : '';
+    return /^no patient/i.test(v) ? '' : v;
+  }
+  /* THE REFUSAL THE OWNER ASKED FOR. The note is written for whoever the
+     header card names; if the active chart is somebody else, the write must
+     not proceed quietly. Fails OPEN when there is no header to read, so this
+     can only ever add a refusal, never remove a working path. */
+  function identityGuard(actionLabel) {
+    var head = headerName();
+    if (!head) return true;
+    var p = activePt();
+    var nm = p ? String(p.name || '').trim() : '';
+    if (!nm) {
+      say('MLS stopped ' + actionLabel + ' - the visit header shows "' + head +
+          '" but no chart is active. Open that patient, then try again.', 'err');
+      return false;
+    }
+    if (normName(nm) === normName(head)) return true;
+    say('MLS stopped ' + actionLabel + ' - the visit header shows "' + head +
+        '" and the active chart is "' + nm + '". Those must be the same person. Open the right chart first.', 'err');
+    return false;
+  }
+
+  /* =======================================================================
+   *  8. THE SCHEDULE ANCHOR MAY OFFER, NEVER SWITCH   (owner blocker)
+   * -----------------------------------------------------------------------
+   * MEASURED 2026-09-01 16:20: selectPatient(<Adam>) then the Visit dock
+   * button, paste, Generate - and the note came out under the schedule's
+   * "up now" patient, with getActivePtId() moved to that patient's id.
+   * feat_mls_upnow_activeselect.js is the writer, and its guard cannot work:
+   * it snapshots the active id on its FIRST poll tick and treats a later
+   * change as deliberate. An explicit selection made BEFORE that first tick
+   * is captured AS the snapshot, so it is indistinguishable from the stale id
+   * the module exists to replace - and gets overwritten.
+   * The rule is now simple enough that no snapshot can defeat it: THE ANCHOR
+   * OFFERS. It calls this instead of selectPatient whenever a chart is already
+   * active, and a human press is the only thing that moves the patient.
+   * ===================================================================== */
+  var ANCHOR_ID = 'mlsRevAnchorOffer';
+  function activeId() {
+    return safe(function () { return isFn(window.getActivePtId) ? String(window.getActivePtId() || '') : ''; }, '');
+  }
+  function anchorOffer(name, id) {
+    name = String(name == null ? '' : name).trim();
+    id = String(id == null ? '' : id).trim();
+    if (!name || !id) return false;
+    if (activeId() === id) return false;                 /* already there */
+    var host = $('mlsEz3Body') || $('visitView');
+    if (!host) return false;
+    var el = $(ANCHOR_ID);
+    if (el && el.__mlsFor === id && el.parentNode) return true;
+    if (!el) {
+      el = document.createElement('div');
+      el.id = ANCHOR_ID;
+      el.setAttribute('role', 'status');
+    }
+    if (el.parentNode !== host) safe(function () { host.insertBefore(el, host.firstChild || null); });
+    el.__mlsFor = id;
+    while (el.firstChild) el.removeChild(el.firstChild);
+    var msg = document.createElement('span');
+    msg.textContent = 'Up now on the schedule: ' + name + '. You are working in a different chart, so nothing was switched.';
+    el.appendChild(msg);
+    var go = document.createElement('button');
+    go.type = 'button'; go.className = 'rw-anchor-go';
+    go.textContent = 'Switch to ' + name;
+    go.addEventListener('click', function () {
+      safe(function () { if (isFn(window.selectPatient)) window.selectPatient(id); });
+      safe(function () { if (el.parentNode) el.parentNode.removeChild(el); });
+      bump();
+    });
+    el.appendChild(go);
+    var no = document.createElement('button');
+    no.type = 'button'; no.className = 'rw-anchor-no';
+    no.textContent = 'Stay here';
+    no.addEventListener('click', function () { safe(function () { if (el.parentNode) el.parentNode.removeChild(el); }); });
+    el.appendChild(no);
+    return true;
+  }
+
+  /* =======================================================================
+   *  9. THE ORIGINAL CONTROLS, MADE TO WORK
+   * -----------------------------------------------------------------------
+   * OWNER: "I like those buttons here but they do nothing."
+   *
+   * WHY THEY DID NOTHING, read out of the source:
+   *   - THE STYLE/LENGTH CHIPS. ez3Click forwards a [data-chip] press to the
+   *     app's own button by label (styleChipHosts -> #genStyleSeg /
+   *     #genLenSeg inside #captureCard), and those call setGenStyle() /
+   *     setGenLength(), which write a localStorage PREFERENCE for the NEXT
+   *     generation and repaint a segmented control the doctor cannot see
+   *     (#captureCard is display:none in this shell). So the forwarding
+   *     worked perfectly and the note on screen never moved. A preference is
+   *     not a result.
+   *   - EDIT NOTE. on('ez3Edit') flips S.editing and re-renders, which makes
+   *     #ez3Note non-readonly - but the formatted-view panel
+   *     (feat_mls_fixpack_0701 attachPreview) COLLAPSES that textarea while it
+   *     shows, so the doctor toggled the writability of a hidden box.
+   *
+   * THE MISSING HALF IS ADDED, THE WORKING HALF IS NOT REPEATED. This listener
+   * runs in the capture phase AFTER ez3Click (registered later on the same
+   * target), so the engine's own handler has already done its part when this
+   * runs: the chip preference is already written, the editing flag is already
+   * flipped. Nothing here presses those controls a second time.
+   *
+   * And for the case where the engine's delegated dispatch does NOT arrive at
+   * all, Regenerate verifies the dispatch instead of assuming it: if no
+   * generation lifecycle event lands within 700ms, it runs the same generator
+   * ladder itself. An engine that did fire clears the flag first, so the note
+   * can never be generated twice.
+   * ===================================================================== */
+  var _genPending = 0;
+  var _lastGenerated = null;
+  function markGenLifecycle() { _genPending = 0; }
+  function rememberGenerated() { _lastGenerated = noteText(); }
+  function noteEdited() {
+    if (_lastGenerated == null) return false;
+    return noteText() !== _lastGenerated;
+  }
+  function chipLabelOf(el) {
+    return safe(function () { return String(el.getAttribute('data-chip') || '').trim(); }, '');
+  }
+  function onChipPress(el) {
+    var label = chipLabelOf(el);
+    if (!label) return '';
+    if (!identityGuard('this restyle')) return '';
+    if (!noteText().trim()) {
+      say('Style set to ' + label + '. Generate the note and it comes out in that style.');
+      return 'preference';
+    }
+    if (noteEdited()) {
+      say('Style set to ' + label + '. Your edits are still here - press Regenerate when you want the note rewritten that way.');
+      return 'edited';
+    }
+    say('Rewriting this note as ' + label + '\u2026');
+    markGenLifecycle();
+    doGenerate();
+    return 'restyled';
+  }
+  function onRegenPress() {
+    if (!identityGuard('this regeneration')) return '';
+    say('Regenerating this note from the same transcript\u2026');
+    var stamp = ++_genPending;
+    setTimeout(function () {
+      if (_genPending !== stamp) return;       /* the engine's own handler got there */
+      _genPending = 0;
+      doGenerate();
+    }, 700);
+    return 'armed';
+  }
+  function onEditPress() {
+    setTimeout(function () {
+      var t = $(ORIGINALS.note);
+      if (!t) return;
+      if (t.readOnly) return;                  /* the engine closed editing - leave the view alone */
+      clearHide(t);                            /* the formatted-view panel collapses it */
+      safe(function () { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+      safe(function () { t.focus(); });
+    }, 60);
+    return 'revealed';
+  }
+
+  /* =======================================================================
+   *  10. RECONCILE - one function, every signal
    * ===================================================================== */
   function reconcile() {
     unhideFlow();
@@ -63257,7 +63511,13 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     var t = ev && ev.target;
     if (!t || !t.closest) return;
     var hit = safe(function () { return t.closest('#ez3Adv,.ez3fl-openws,#ez3flReview'); }, null);
-    if (hit) bump();
+    if (hit) { bump(); return; }
+    var chip = safe(function () { return t.closest('#ez3StyleChips [data-chip]'); }, null);
+    if (chip) { safe(function () { onChipPress(chip); }); return; }
+    var orig = safe(function () { return t.closest('#ez3Edit,#ez3Regen'); }, null);
+    if (!orig) return;
+    if (orig.id === ORIGINALS.edit) safe(onEditPress);
+    else safe(onRegenPress);
   }
   function watchWrap() {
     if (!window.MutationObserver) return;
@@ -63285,14 +63545,23 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       return o;
     }, null);
   }
+  function onGenStarted() { markGenLifecycle(); schedule(); }
+  function onGenSettled() {
+    markGenLifecycle();
+    bump();
+    /* the note lands a beat after the event; remember it so an edit can be
+       told apart from a fresh draft */
+    setTimeout(function () { safe(rememberGenerated); }, 700);
+  }
   function boot() {
     if (_installed) return;
     _installed = true;
     ensureCss();
     safe(function () { document.addEventListener('click', onDocClick, true); });
     safe(function () { window.addEventListener('mls:view-changed', schedule); });
-    safe(function () { window.addEventListener('mls:generation-started', schedule); });
-    safe(function () { window.addEventListener('mls:generation-settled', bump); });
+    safe(function () { window.addEventListener('mls:generation-started', onGenStarted); });
+    safe(function () { window.addEventListener('mls:generation-refused', markGenLifecycle); });
+    safe(function () { window.addEventListener('mls:generation-settled', onGenSettled); });
     safe(function () { window.addEventListener('mls:review-step', bump); });
     safe(function () {
       if (!window.MutationObserver || !document.body) return;
@@ -63327,10 +63596,23 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     installed: true,
     version: VERSION,
     IDS: ID,
+    ORIGINALS: ORIGINALS,
+    FLOW_IDENTITY_ID: FLOW_IDENTITY_ID,
+    ANCHOR_ID: ANCHOR_ID,
     FLOW_IDS: FLOW_IDS,
     GEN_TARGETS: GEN_TARGETS,
     SEND_TARGET: SEND_TARGET,
     TX_TARGETS: TX_TARGETS,
+    identityText: identityText,
+    headerName: headerName,
+    identityGuard: identityGuard,
+    normName: normName,
+    anchorOffer: anchorOffer,
+    chipPress: onChipPress,
+    regenPress: onRegenPress,
+    editPress: onEditPress,
+    rememberGenerated: rememberGenerated,
+    noteEdited: noteEdited,
     advLabel: advLabel,
     statusFor: statusFor,
     genLabelFor: genLabelFor,
@@ -63356,8 +63638,9 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       safe(function () { if (_noteObs) _noteObs.disconnect(); });
       safe(function () { document.removeEventListener('click', onDocClick, true); });
       safe(function () { window.removeEventListener('mls:view-changed', schedule); });
-      safe(function () { window.removeEventListener('mls:generation-started', schedule); });
-      safe(function () { window.removeEventListener('mls:generation-settled', bump); });
+      safe(function () { window.removeEventListener('mls:generation-started', onGenStarted); });
+      safe(function () { window.removeEventListener('mls:generation-refused', markGenLifecycle); });
+      safe(function () { window.removeEventListener('mls:generation-settled', onGenSettled); });
       safe(function () { window.removeEventListener('mls:review-step', bump); });
       safe(function () { if (_css && _css.parentNode) _css.parentNode.removeChild(_css); });
       safe(function () { var r = document.getElementById(ID.root); if (r && r.parentNode) r.parentNode.removeChild(r); });
@@ -63368,7 +63651,19 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       return true;
     }
   };
+  /* The name the schedule anchor calls. Kept separate from __mlsRevWork so a
+     feature module does not have to know which workspace build is loaded -
+     it asks for an offer and gets one, or gets false and does nothing. */
+  window.__mlsPtAnchor = {
+    installed: true,
+    version: VERSION,
+    offer: anchorOffer,
+    activeId: activeId,
+    headerName: headerName,
+    identityText: identityText,
+    guard: identityGuard
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
 })();
-/* ===== revwork-1.0.0 end ================================================ */
+/* ===== revwork-1.1.0 end ================================================ */

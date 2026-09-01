@@ -108,7 +108,39 @@
 
       if (String(p.id) === String(cur)){ done = true; stopPoll(); return; } // already aligned
 
-      // THE FIX: make every panel agree on the up-now patient.
+      /* revwork-1.1.0 (b1177) — CROSS-PATIENT BLOCKER, measured live 2026-09-01
+         16:20: the owner called selectPatient(<Adam>), opened Visit, pasted a
+         transcript and pressed Generate — and the note came out under the
+         schedule's up-now patient, with getActivePtId() moved to that id.
+
+         THIS LINE WAS THE WRITER, and the guard above cannot stop it. It
+         snapshots the active id on the FIRST tick of this poll and only treats
+         a LATER change as deliberate. An explicit selection made BEFORE that
+         first tick — which is exactly what "select the patient, then open
+         Visit" produces — becomes the snapshot itself, indistinguishable from
+         the stale id this module exists to replace. So the module overwrote
+         the doctor's own choice and every downstream binding followed it.
+
+         The rule is now one the snapshot cannot defeat: THE ANCHOR OFFERS.
+         When a chart is already active it can no longer switch anything; it
+         puts "Up now: X — switch?" on screen and a human press is the only
+         thing that moves the patient. The original alignment survives for the
+         one case that cannot harm anybody: NO active patient at all, where
+         there is no choice to override. */
+      if (cur){
+        var offered = false;
+        try {
+          var anchor = window.__mlsPtAnchor;
+          offered = !!(anchor && typeof anchor.offer === 'function' && anchor.offer(name, p.id));
+        } catch(e){}
+        // Do NOT burn the done flag on a refusal: if the doctor later clears the
+        // chart, the no-active-patient path below is still allowed to align.
+        if (!offered) return;
+        try { console.debug(TAG, 'offered up-now "' + name + '" id=' + p.id + ' (' + reason + ') - active chart left alone'); } catch(e){}
+        return;
+      }
+
+      // No active patient at all: aligning cannot override a choice nobody made.
       window.selectPatient(p.id);
       done = true; stopPoll();
       try { console.debug(TAG, 'aligned active patient to up-now "' + name + '" id=' + p.id + ' (' + reason + ')'); } catch(e){}
