@@ -24045,11 +24045,50 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
     +(known.length?('\n\nKNOWN PATIENT FACTS (already in our chart — fill these in, do NOT ask for them):\n- '+known.join('\n- ')):'')
     +(ctx.history?('\n\nPATIENT CHART / PRIOR HISTORY (use only documented, procedure-relevant facts; do not invent):\n'+String(ctx.history).slice(0,14000)):'')
     +'\n\nTEMPLATE (the doctor’s own prior op note — match its structure & style exactly):\n'+String(tplText||'').slice(0,9000);
-  var raw=await aiCallRaw(sys, user, (typeof getKey==='function'?getKey():''), {freeform:true,family:'opnote',mlsOpNotePatientId:String(exactPatient.id)});
+  /* noteq-1.0.0 (b1169): the operative-note contract. This lane is freeform,
+     so 'sys' does transport and the contract goes there. It carries the whole
+     TJC / Universal Protocol / LCD element set for an interventional pain
+     procedure plus the template law - which is exactly what the owner meant by
+     "professional medical quality" for an op note. */
+  var noteqOpCtx={template:String(tplText||''),procedureClass:''};
+  var noteqOp=__mlsNoteQualityContract('operative-procedure-note',noteqOpCtx);
+  var raw=await aiCallRaw(sys+noteqOp, user, (typeof getKey==='function'?getKey():''), {freeform:true,family:'opnote',mlsOpNotePatientId:String(exactPatient.id)});
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   var obj=null; try{ obj=JSON.parse(s); }catch(e){ try{ var m=s.match(/\{[\s\S]*\}/); if(m) obj=JSON.parse(m[0]); }catch(_){} }
   if(!obj||typeof obj!=='object') return {note:s, missing:[]};
-  return _opGuardDrugBlanks(tplText, _opGuardProcedureDate(dateStr, {note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]}));
+  var opOut={note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]};
+  /* Grade, and on a sub-floor draft take the ONE permitted repair pass. The
+     [[key]] placeholders this lane deliberately emits are the doctor's own
+     fill-in slots, so they are stripped before grading - flagging them as a
+     placeholder leak would be scoring the feature as a defect. */
+  try{
+    var opFirst=opOut, opSecond=null;
+    var opGraded=await __mlsNoteQualityOnce(
+      String(opFirst.note||'').replace(/\[\[[^\]]{1,60}\]\]/g,'not documented'),
+      'operative-procedure-note',
+      noteqOpCtx,
+      async function(retry){
+        var again=await aiCallRaw(sys+noteqOp+retry, user, (typeof getKey==='function'?getKey():''), {freeform:true,family:'opnote',mlsOpNotePatientId:String(exactPatient.id)});
+        var a=String(again||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
+        var ao=null; try{ ao=JSON.parse(a); }catch(e2){ try{ var m2=a.match(/\{[\s\S]*\}/); if(m2) ao=JSON.parse(m2[0]); }catch(_2){} }
+        if(ao&&typeof ao==='object'&&String(ao.note||'').trim()){
+          opSecond={note:String(ao.note||''), missing:Array.isArray(ao.missing)?ao.missing:opFirst.missing};
+          return String(ao.note||'').replace(/\[\[[^\]]{1,60}\]\]/g,'not documented');
+        }
+        return '';
+      }
+    );
+    /* Adopt the retry ONLY when it actually scored better. __mlsNoteQualityOnce
+       returns the winning text, so comparing against the retry's own text is
+       what tells us which draft won. */
+    if(opSecond&&opGraded&&opGraded.text===String(opSecond.note||'').replace(/\[\[[^\]]{1,60}\]\]/g,'not documented')){
+      opOut=opSecond;
+    }else{
+      opOut=opFirst;
+    }
+    try{ window.__mlsLastOpNoteQuality=opGraded?opGraded.res:null; }catch(eNoteqOpStamp){}
+  }catch(eNoteqOp){}
+  return _opGuardDrugBlanks(tplText, _opGuardProcedureDate(dateStr, opOut));
 }
 
 /* ── PROCEDURE-DATE GUARD (2026-08-06) ─────────────────────────────────────
@@ -26467,8 +26506,30 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
   const sys='You are a clinical documentation assistant. What you are doing is a MECHANICAL OPERATION on the TEMPLATE the doctor wrote, not a rewrite of the note. HOW TO PRODUCE THE NOTE -- REPRODUCE, THEN FILL. Work through the TEMPLATE from its first line to its last and reproduce EVERY line of it, in the order the template uses and in the words the template uses. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else -- headings, field labels, boilerplate sentences, standing instructions, attestations -- is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge, re-order or omit any template line. Do NOT drop a template line because it looks routine or repetitive. Do NOT replace the outline of the template with your own, or with a generic SOAP outline. The finished note must be a completed copy of the template, not a description of the visit. THEN FILL: move the clinical content of the VISIT NOTE (and, for fields the note does not cover, the TRANSCRIPT) into the field where it belongs. NOTHING THE DOCTOR DOCUMENTED MAY BE LOST -- every clinical statement in the VISIT NOTE must appear somewhere in your output: in the template field where it belongs, or, when the template has no field for it, under whatever catch-all the template itself provides (an "Other", "Comments" or "Additional findings" line if it has one), or otherwise appended at the end under a single "ADDITIONAL FINDINGS:" heading. Never delete a clinical fact in order to make it fit the template. A template field with no answer in the note or the transcript KEEPS ITS LINE and gets the explicit placeholder "not documented" -- never an invented finding, history, value or date, and never a deleted line. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
   const tplForModel=_tplTextForDraft(template.text).slice(0,12000);
   const user='TEMPLATE TO REPRODUCE - every line of it, in this order:\n"""\n'+tplForModel+'\n"""\n\nVISIT NOTE - EVERY CLINICAL STATEMENT IN IT MUST SURVIVE:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
+  /* noteq-1.0.0 (b1169): the template-fidelity contract on the reformat pass.
+     This is the pass whose entire job is "follow the template well", so it
+     gets the cross-cutting template contract - headings verbatim and in order,
+     boilerplate character-for-character with negations intact, every slot
+     resolved or explicitly marked, nothing invented to fill a blank. */
+  const noteqTplCtx={template:tplForModel,templateName:(template&&template.name)?template.name:''};
+  const noteqTpl=__mlsNoteQualityContract('template-fidelity',noteqTplCtx);
   try{
-    let out=(await aiCallRaw(sys,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat',signal:templateSignal})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let out=(await aiCallRaw(sys+noteqTpl,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat',signal:templateSignal})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    /* Grade the reformatted note against the template it was told to
+       reproduce, and take the ONE permitted repair pass when it fell short.
+       An aborted or stale run skips the retry entirely - the owner checks
+       below still gate every mutation. */
+    try{
+      if(!(templateSignal&&templateSignal.aborted)){
+        const tplGraded=await __mlsNoteQualityOnce(out,'template-fidelity',noteqTplCtx,async function(retry){
+          if(templateSignal&&templateSignal.aborted) return '';
+          const again=await aiCallRaw(sys+noteqTpl+retry,user,getKey(),{freeform:true,family:'soap',draftSubtype:'template_reformat',signal:templateSignal});
+          return String(again||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+        });
+        if(tplGraded&&String(tplGraded.text||'').trim()) out=tplGraded.text;
+        try{ window.__mlsLastTemplateNoteQuality=tplGraded?tplGraded.res:null; }catch(eNoteqTplStamp){}
+      }
+    }catch(eNoteqTplPass){}
     /* A deadline may already have released the Generate button while a legacy
        provider stub is still resolving.  The signal check is the last owner
        check before mutation, so that late formatter can never overwrite the
@@ -26484,6 +26545,9 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
       if(currentFormat==='soap') currentSoap=out; else currentInsurance=out;
       const nb=document.getElementById('noteBox');
       if(nb && nb.style.display!=='none') nb.value=out;
+      /* noteq-1.0.0 (b1169): the template pass replaced the text under the
+         strip, so the strip must be re-stated against the note now on screen. */
+      try{__mlsNoteQualityStrip('noteBox',window.__mlsLastTemplateNoteQuality,'template fit');}catch(eNoteqTplStrip){}
       if(currentFormat==='soap')try{_mlsSyncAthenaAfterStandardNoteMutation('template changed the standard note');}catch(eCanonicalTemplate){}
       try{_markVisitDirty();}catch(_){}
       /* vnfid-1.0.0 - MEASURE WHAT CAME BACK, THEN SAY IT OUT LOUD. Both
@@ -31181,6 +31245,10 @@ async function generateNote(){
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
     _mlsValidateStructuredNoteResult(result);
+    /* noteq-1.0.0 (b1169): grade the validated draft and, when it lands under
+       floor, run the ONE permitted repair pass - before any editor surface is
+       mutated, so a failed retry cannot disturb a good draft. */
+    try{ result=await _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run); }catch(eNoteqRepair){}
     /* Older /api/generate deployments may return the already-valid flat SOAP
        note without the newer athena_note sidecar. Reuse it only when it
        independently passes the exact five-destination validator; narrative,
@@ -31236,6 +31304,10 @@ async function generateNote(){
        the only action offered is asking again. A no-op when no template
        shaped this generation. */
     try{_mlsMeasurePrimaryTemplateFidelity(currentSoap);}catch(eVntplMeasure){}
+    /* noteq-1.0.0 (b1169): say the quality grade out loud under the note.
+       Amber when it is under floor, green when it clears. Never modal, never
+       blocking, and it never rewrites a word the doctor is reading. */
+    try{__mlsNoteQualityStrip('noteBox',window.__mlsLastNoteQuality,'visit note');}catch(eNoteqStripMain){}
     try{_mlsStartOptionalTemplate(transcript,generationBinding,generationEpoch,transcriptEl);}catch(eTemplateLaunch){
       try{window.__mlsLastTemplateGenerationReceipt={applied:false,reason:'template-launch-failed'};}catch(eTemplateReceipt){}
     }
@@ -32640,7 +32712,205 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
     chars:tplContract.templateText.length,at:Date.now()}:null; }catch(eGenTplReceipt){}
   var tplSysLine=tplContract?tplContract.sysLine:'';
   var tplBlock=tplContract?('\n\n'+tplContract.block):'';
-  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
+  /* noteq-1.0.0 (b1169): the quality contract rides the USER payload here for
+     the same measured reason turnsBlock, seedLine and tplBlock do - the hosted
+     structured lane POSTs {transcript, model, notePreferences, draftFamily,
+     draftTuning} and does not transport 'sys' at all, so a contract appended
+     to the system prompt would be silently dropped on the primary note, which
+     is the one note every visit produces. options.noteqFindings is present
+     only on the single repair pass and carries the prior draft's findings
+     verbatim; on a first pass both strings are empty and the prompt is
+     byte-for-byte what it was. */
+  var noteqBlock=__mlsNoteQualityContract('visit-note-soap',{
+    template:(tplContract&&tplContract.templateText)?tplContract.templateText:'',
+    templateName:(tplContract&&tplContract.name)?tplContract.name:'',
+    findings:options.noteqFindings||null
+  });
+  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock+noteqBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
+}
+
+/* noteq-1.0.0 (b1169): ONE repair pass for the PRIMARY structured note.
+   Runs after the first result validates and BEFORE any editor surface is
+   mutated, so a failed or worse retry leaves the original draft untouched.
+   Returns the result to display, and stamps the grade for the strip. */
+async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run){
+  var firstText='';
+  try{ firstText=String((result&&result.soap)||''); }catch(eNoteqFirst){ firstText=''; }
+  if(!firstText.trim()) return result;
+  var tplText='';
+  try{ tplText=(_mlsGenTplMeasure&&_mlsGenTplMeasure.text)?_mlsGenTplMeasure.text:''; }catch(eNoteqTpl){ tplText=''; }
+  var ctx={template:tplText};
+  var res=__mlsNoteQualityGrade(firstText,'visit-note-soap',ctx);
+  try{ window.__mlsLastNoteQuality=res; }catch(eNoteqStamp1){}
+  if(!res||res.pass){
+    __mlsNoteQualityRecord('visit-note-soap',res,false);
+    return result;
+  }
+  /* EXACTLY ONE. NOTEQ_MAX_REGEN is the bound and there is no loop. */
+  var regenerated=false;
+  try{
+    var second=await _mlsAwaitGeneration(
+      run,
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,noteqFindings:res}),
+      _mlsGenerationTimeoutMs('main',90000),
+      'generation-timeout'
+    );
+    _mlsValidateStructuredNoteResult(second);
+    var secondText=String((second&&second.soap)||'');
+    var secondRes=__mlsNoteQualityGrade(secondText,'visit-note-soap',ctx);
+    var pick=__mlsNoteQualityBetter(firstText,res,secondText,secondRes);
+    regenerated=true;
+    if(pick.used==='second'){ res=pick.res; result=second; }
+  }catch(eNoteqRegen){ /* the first draft stands, exactly as validated */ }
+  try{ window.__mlsLastNoteQuality=res; }catch(eNoteqStamp2){}
+  __mlsNoteQualityRecord('visit-note-soap',res,regenerated);
+  return result;
+}
+
+/* noteq-1.0.0 (b1169): THE NOTE-QUALITY FLOOR, wired at every generation site.
+   Owner: "they need to be tuned to actually give good outputs and not just an
+   output... don't let the quality ever degrade below that. the notes still
+   need to follow the templates too."
+
+   Two halves. contractFor() rides the prompt so the model AIMS at a
+   professional note; grade() reads the produced text back with regexes only
+   and says, honestly, what is missing. When a draft lands under floor we
+   regenerate EXACTLY ONCE with the findings quoted back, then keep whichever
+   draft scored higher - so a regeneration can never make the note worse.
+
+   Every entry point is wrapped in try/catch and degrades to a byte-for-byte
+   no-op: if feat_mls_note_quality.js has not loaded yet (it is deferred past
+   first paint), the contract is the empty string and the grade is null. The
+   quality lane must never be able to break a generation. */
+var NOTEQ_MAX_REGEN = 1;
+function __mlsNoteQualityApi(){
+  try{ return (window.__mlsNoteQuality && typeof window.__mlsNoteQuality.grade==='function') ? window.__mlsNoteQuality : null; }
+  catch(eNoteqApi){ return null; }
+}
+function __mlsNoteQualityContract(noteType,opts){
+  try{
+    var q=__mlsNoteQualityApi();
+    if(!q||typeof q.contractFor!=='function') return '';
+    var c=q.contractFor(noteType,opts||{});
+    return c?('\n\n'+c):'';
+  }catch(eNoteqContract){ return ''; }
+}
+function __mlsNoteQualityGrade(text,noteType,ctx){
+  try{
+    var q=__mlsNoteQualityApi();
+    if(!q) return null;
+    if(!String(text||'').trim()) return null;
+    return q.grade(text,noteType,ctx||{});
+  }catch(eNoteqGrade){ return null; }
+}
+function __mlsNoteQualityRecord(noteType,res,regenerated){
+  try{
+    var q=__mlsNoteQualityApi();
+    if(q&&q.ledger&&typeof q.ledger.record==='function'){
+      q.ledger.record({noteType:noteType,score:res?res.score:null,pass:res?!!res.pass:false,regenerated:!!regenerated});
+    }
+  }catch(eNoteqRecord){}
+}
+/* The better of two graded drafts. A regeneration that scored WORSE is
+   discarded and the original stands - the physician never pays for our retry. */
+function __mlsNoteQualityBetter(aText,aRes,bText,bRes){
+  try{
+    if(!bRes||!String(bText||'').trim()) return {text:aText,res:aRes,used:'first'};
+    if(!aRes) return {text:bText,res:bRes,used:'second'};
+    return (bRes.score>aRes.score)?{text:bText,res:bRes,used:'second'}:{text:aText,res:aRes,used:'first'};
+  }catch(eNoteqBetter){ return {text:aText,res:aRes,used:'first'}; }
+}
+/* ONE regeneration for a FREEFORM site. `again(extraContract)` must return the
+   new note text. Bounded by NOTEQ_MAX_REGEN - there is no loop here and there
+   is no second pass. */
+async function __mlsNoteQualityOnce(text,noteType,ctx,again){
+  var res=__mlsNoteQualityGrade(text,noteType,ctx);
+  if(!res||res.pass||typeof again!=='function'){
+    __mlsNoteQualityRecord(noteType,res,false);
+    return {text:text,res:res,regenerated:false};
+  }
+  var out={text:text,res:res,regenerated:false};
+  for(var attempt=0;attempt<NOTEQ_MAX_REGEN;attempt++){
+    var retry='';
+    try{
+      var q=__mlsNoteQualityApi();
+      retry=q?('\n\n'+q.contractFor(noteType,{template:(ctx&&ctx.template)||'',findings:res})):'';
+      if(!retry) break;
+      var second=await again(retry);
+      if(!String(second||'').trim()) break;
+      var secondRes=__mlsNoteQualityGrade(second,noteType,ctx);
+      var pick=__mlsNoteQualityBetter(text,res,second,secondRes);
+      out={text:pick.text,res:pick.res,regenerated:true};
+    }catch(eNoteqOnce){ /* the original draft stands */ }
+    break;
+  }
+  __mlsNoteQualityRecord(noteType,out.res,out.regenerated);
+  return out;
+}
+/* HONEST UI. Amber when the final draft is under floor, green when it clears.
+   Nothing modal, nothing blocking, and the physician's own edits are never
+   touched - this strip only ever reports. Reuses the #tplFidelityNotice
+   palette that already sits above the note. */
+function __mlsNoteQualityStrip(hostId,res,label){
+  try{
+    var host=document.getElementById(hostId);
+    if(!host||!host.parentNode) return null;
+    var id='mlsNoteQ_'+hostId;
+    var old=document.getElementById(id);
+    if(old&&old.parentNode) old.parentNode.removeChild(old);
+    if(!res) return null;
+    var strip=document.createElement('div');
+    strip.id=id;
+    strip.setAttribute('role','status');
+    strip.setAttribute('aria-live','polite');
+    var items=[];
+    var i;
+    for(i=0;i<res.missing.length;i++) items.push(res.missing[i].label);
+    for(i=0;i<res.forbidden.length;i++) items.push(res.forbidden[i].label);
+    for(i=0;i<res.templateGaps.length;i++){
+      items.push('Template section "'+res.templateGaps[i].heading+'" is '+res.templateGaps[i].kind+'.');
+    }
+    if(res.pass&&!items.length){
+      strip.style.cssText='margin-top:10px;background:#f7fbf9;border:1px solid #cfe0d7;border-radius:10px;padding:8px 12px;font-size:12.5px;color:#204034';
+      strip.textContent='Quality check passed'+(label?(' ('+label+')'):'')+': '+res.score+'/100, floor '+res.floor+'.';
+      host.parentNode.insertBefore(strip,host.nextSibling);
+      return strip;
+    }
+    strip.style.cssText='margin-top:10px;background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#7a5a16';
+    var head=document.createElement('div');
+    /* ASCII-only in every runtime constant: a latin1 writer downstream turns a
+       unicode dash into control bytes (banked 2026-08, constants stay ASCII). */
+    head.textContent='Quality check: '+items.length+' item'+(items.length===1?'':'s')+' to review'+
+      (label?(' ('+label+')'):'')+' - '+items.slice(0,3).join(' ');
+    strip.appendChild(head);
+    if(items.length>3){
+      var more=document.createElement('div');
+      more.style.cssText='display:none;margin-top:6px';
+      for(i=0;i<items.length;i++){
+        var li=document.createElement('div');
+        li.style.cssText='margin:3px 0';
+        li.textContent='• '+items[i];
+        more.appendChild(li);
+      }
+      var btn=document.createElement('button');
+      btn.type='button';
+      btn.style.cssText='margin-top:6px;background:none;border:0;padding:0;color:#7a5a16;text-decoration:underline;cursor:pointer;font-size:12.5px';
+      btn.textContent='Show all '+items.length;
+      btn.addEventListener('click',function(){
+        var open=more.style.display!=='none';
+        more.style.display=open?'none':'block';
+        btn.textContent=open?('Show all '+items.length):'Hide';
+      });
+      strip.appendChild(btn);
+      strip.appendChild(more);
+    }
+    var foot=document.createElement('div');
+    foot.style.cssText='margin-top:6px;opacity:.85';
+    foot.textContent='Score '+res.score+'/100, floor '+res.floor+'. This is a prompt to review, never a change to your note.';
+    strip.appendChild(foot);
+    host.parentNode.insertBefore(strip,host.nextSibling);
+    return strip;
+  }catch(eNoteqStrip){ return null; }
 }
 
 /* ---------------------------------------------------------
@@ -36917,7 +37187,22 @@ async function generateAVS(){
     let sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+avsSources.prefs;
     sys += '\n\nOUTPUT CONTRACT: use these exact headings, each on its own line and in this order: Why you came in today; What we found; What to do at home. Add other sections only when supported by the source.';
     const user='CLINICAL NOTE:\n'+avsSources.note+(avsSources.pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+avsSources.pctx):'');
-    const avsDraft=(await aiCallRaw(sys,user,avsSources.key,{freeform:true,family:'avs'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    /* noteq-1.0.0 (b1169): the after-visit summary is patient-facing prose and
+       has no rubric of its own; the SOAP contract is the closest honest fit and
+       its forbidden tier is what actually matters here - no AI voice, no
+       transcript artifacts, no stigmatizing language, no dangerous
+       abbreviations in a document the patient reads the day it is signed. */
+    const noteqAvsCtx={avs:true,template:''};
+    const noteqAvs=__mlsNoteQualityContract('visit-note-soap',noteqAvsCtx);
+    let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    try{
+      const avsGraded=await __mlsNoteQualityOnce(avsDraft,'visit-note-soap',noteqAvsCtx,async function(retry){
+        const again=await aiCallRaw(sys+noteqAvs+retry,user,avsSources.key,{freeform:true,family:'avs'});
+        return String(again||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+      });
+      if(avsGraded&&String(avsGraded.text||'').trim()) avsDraft=avsGraded.text;
+      try{ window.__mlsLastAvsQuality=avsGraded?avsGraded.res:null; }catch(eNoteqAvsStamp){}
+    }catch(eNoteqAvs){}
     if(!_athenaAsyncBindingStillSafe(avsBinding,'patient-summary drafting',avsEpoch)) return;
     if(JSON.stringify(_readAvsSources())!==avsSourceFingerprint){
       toast('The note or patient background changed while the summary was being written, so MLS discarded that older result. Review the current visit and generate it again. Nothing changed in Athena.','err');
@@ -36925,6 +37210,8 @@ async function generateAVS(){
     }
     currentAVS=avsDraft;
     showExtra('avsCard','avsBody',avsDraft);
+    /* noteq-1.0.0 (b1169): the same honest strip under the patient handout. */
+    try{__mlsNoteQualityStrip('avsBody',window.__mlsLastAvsQuality,'patient summary');}catch(eNoteqAvsStrip){}
     toast('Patient summary ready. Review before handing out.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='👤 Patient summary'; }

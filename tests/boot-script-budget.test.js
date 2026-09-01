@@ -528,7 +528,13 @@ const LOADER = 'mls-connect.js';
  *     They must be separately revertible, because reverting a notes surface
  *     must never disarm the provider derivation the roster filter depends on -
  *     and, the other way round, a doctor's written notes must not be reachable
- *     by a revert aimed at a provider label. */const CEILING = 269;
+ *     by a revert aimed at a provider label.
+ *
+ *   noteq-1.0.0 (b1169) feat_mls_note_quality.js
+ *   - DEFERRED (__mlsDeferAsset / requestIdleCallback, 2.5s timeout), so
+ *     EAGER_CEILING does not move. The quality floor is read AFTER a
+ *     generation, which is minutes into a session, never during sign-in.
+ *     +1 deferred module: 269 -> 270. */const CEILING = 270;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

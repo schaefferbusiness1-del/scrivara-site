@@ -41616,6 +41616,110 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 })();
 
+/* ============================================================================
+   noteq-1.0.0 (b1169) — THE QUALITY CONTRACT REACHES THE OP NOTE THAT ACTUALLY RUNS.
+
+   ScribeFlow's own _genOpNote carries the contract inline. But
+   feat_mls_opnote_integrity REPLACES window._genOpNote outright and builds
+   its own prompt, calling window.aiCallRaw(sys,user,key,opts) directly - and
+   that file is un-prefixed/shared, so it is outside this lane's editable set.
+   Wiring only the inline generator would therefore have delivered the contract
+   to the FALLBACK and not to the op note the doctor actually gets: the exact
+   "verify the dispatch, not the mechanism" failure banked on 2026-08-26.
+
+   So the contract is appended at the aiCallRaw chokepoint, the same shape as
+   feat_opnote_quality and feat_mls_note_defaults_reach above, and under the
+   same three rules learned from the 2026-07-30 regression:
+     1. Only argument 0 (the system prompt) is touched. The user payload ends
+        with the doctor's template and the model has just been told to copy its
+        structure; MLS text must never land inside the block being copied.
+     2. Idempotent - a prompt already carrying the stamp is left alone, so the
+        inline site keeps exactly the text it injects today and no prompt ever
+        receives the contract twice.
+     3. Classification is explicit and auditable, never append-to-everything.
+        Only prompts that WRITE an operative/procedure note qualify, and an
+        ingestion prompt never does: those read an EMR page and return JSON,
+        where a documentation standard is contamination, not instruction.
+
+   Installed AFTER both wrappers above and it never sets __mlsWrapped, so
+   feat_opnote_quality's own skip-if-wrapped guard is untouched. A missing or
+   still-loading note-quality module yields the empty string and the prompt
+   goes out byte-for-byte unchanged.
+
+   (The module is named without its .js extension throughout this comment on
+   purpose: boot-script-budget.test.js classifies each feat_*.js name by the
+   FIRST place it appears, so naming the deferred module here - above its own
+   loader - would silently reclassify it as an eager boot script.)
+   ==========================================================================*/
+(function(){
+  "use strict";
+  if(window.__mlsNoteQualityReach) return;
+
+  var STAMP='=== MLS PROFESSIONAL NOTE CONTRACT';
+  /* prompts that WRITE an operative or procedure note */
+  var OPNOTE_WANTED=/operative note|op[- ]?note|procedure note|operative report|operative\/procedure|full operative note text/i;
+  /* ...but never an ingestion prompt (same exclusions the reach wrapper uses) */
+  var INGEST=/You extract\b|You tag clinical note templates|appointment schedule from raw|You match a scheduled procedure/i;
+  /* the hosted /api/complete lane 413s past this, so a contract that does not
+     fit is dropped WHOLE rather than half-written - a truncated standard is
+     worse than none. */
+  var SYS_LIMIT=24000;
+
+  var dropped={opnoteDropped:0, applied:0};
+
+  function wantsOpNoteContract(sys){
+    if(typeof sys!=='string'||!sys) return false;
+    if(sys.indexOf(STAMP)>=0) return false;
+    if(INGEST.test(sys)) return false;
+    return OPNOTE_WANTED.test(sys);
+  }
+
+  function augment(sys){
+    try{
+      if(!wantsOpNoteContract(sys)) return sys;
+      var q=window.__mlsNoteQuality;
+      if(!q||typeof q.contractFor!=='function') return sys;
+      var tail='\n\n'+q.contractFor('operative-procedure-note',{});
+      if((sys.length+tail.length)>SYS_LIMIT){ dropped.opnoteDropped++; return sys; }
+      dropped.applied++;
+      return sys+tail;
+    }catch(e){ return sys; }
+  }
+
+  var installed=false;
+  function install(){
+    if(installed) return true;
+    var orig=window.aiCallRaw;
+    if(typeof orig!=='function') return false;
+    if(orig.__mlsNoteQualityWrapped){ installed=true; return true; }
+    var w=function(){
+      try{
+        var a0=arguments[0];
+        if(typeof a0==='string' && a0) arguments[0]=augment(a0);
+      }catch(e){}
+      return orig.apply(this,arguments);
+    };
+    w.__mlsNoteQualityWrapped=true;
+    /* deliberately NOT __mlsWrapped — see the header note */
+    window.aiCallRaw=w;
+    installed=true;
+    return true;
+  }
+
+  window.__mlsNoteQualityReach={
+    version:'noteq-1.0.0', wants:wantsOpNoteContract, augment:augment,
+    sysLimit:SYS_LIMIT,
+    counts:function(){ return { applied:dropped.applied, opnoteDropped:dropped.opnoteDropped }; },
+    installed:function(){ return installed; }
+  };
+
+  if(!install()){
+    /* aiCallRaw lives in the ScribeFlow inline script; on any surface where it
+       never appears this stops on its own instead of spinning forever. */
+    var n2=0, iv2=setInterval(function(){ if(install()||++n2>40) clearInterval(iv2); },500);
+  }
+})();
+
 /* feat_pkg_templates — ship a few well-structured starter op-note templates (item 13), ADDED only if
    not already present (never overwrites or deletes the doctor's existing templates). Each is a proper
    operative-note skeleton with [BRACKET] fill-ins so the physician completes the specifics. */
@@ -58877,6 +58981,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_provider_link.js"]'))return;var s=document.createElement('script');s.src='feat_mls_provider_link.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_provider_link.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* plv-1.0.0: deferred past first paint, exactly like the auto-merge beside it - a provider derivation is a late surface and has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pull_reconcile.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pull_reconcile.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_pull_reconcile.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* reconcile-1.0.0: athena-as-fact day reconciliation + the post-pull lawful duplicate sweep. Deferred past first paint beside the auto-merge it drives - both are post-pull surfaces and neither has a claim on the sign-in seconds (owner 5s bar). */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_quality.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_quality.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_note_quality.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* noteq-1.0.0 (b1169): deferred past first paint exactly like the provider link and the team notes beside it. The quality floor is read AFTER a generation, which is minutes into a session, so it has no claim on the sign-in seconds (owner 5s bar). Every caller in the shell degrades to a no-op while this is still loading. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_team_notes.js"]'))return;var s=document.createElement('script');s.src='feat_mls_team_notes.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_team_notes.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* tn-1.0.0: deferred past first paint, exactly like the provider link and the auto-merge beside it - the patient card is a late surface and has no claim on the sign-in seconds (owner 5s bar) */;(function(){try{
   var A='feat_mls_cross_day_context.js',V='xdc-2.0.4',old=window.__mlsCrossDayContext||null;
   if(old&&old.installed&&old.version===V)return;

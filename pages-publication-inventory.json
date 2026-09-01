@@ -206,6 +206,7 @@
     "feat_mls_note_editor.js",
     "feat_mls_note_jump.js",
     "feat_mls_note_metrics.js",
+    "feat_mls_note_quality.js",
     "feat_mls_notetools_exact.js",
     "feat_mls_offtab_navhide.js",
     "feat_mls_opmatch_boost.js",
