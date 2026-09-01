@@ -5914,10 +5914,15 @@
         retireOneClickButton();
         var p = document.getElementById('emrPanel');
         if (p) enhancePanel(p);
+        /* dayall-1.0.0: the day panel rides this same observer rather than
+           opening a second one. It is coalesced and signature-guarded, so its
+           own repaint cannot wake the observer that woke it. */
+        try { dayAllRefresh(); } catch (eD) {}
       });
       mo.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
     try { var p0 = document.getElementById('emrPanel'); if (p0) enhancePanel(p0); } catch (e) {}
+    try { dayAllRefresh(); } catch (eD0) {}
   }
   function revert() {
     stopped = true;
@@ -5925,6 +5930,10 @@
     try { var b = document.getElementById('wf2OneClick'); if (b) b.remove(); } catch (e) {}
     try { var a = document.getElementById('wf2AthenaActions'); if (a) a.remove(); } catch (e2) {}
     try { var g = document.getElementById('wf2AthenaGuide'); if (g) g.remove(); } catch (e3) {}
+    /* dayall-1.0.0 before opbatch-1.0.0: the day surface owns nothing the queue
+       owns, so it is torn down first and the queue's own stop-never-abandon
+       rule then runs unchanged underneath it. */
+    try { dayAllRevert(); } catch (e5) {}
     /* opbatch-1.0.0: a queue is stopped (never abandoned mid-write) and its
        progress surface removed before the sheet it drives is closed. */
     try { opBatchRevert(); } catch (e4) {}
@@ -6049,9 +6058,35 @@
      IT. This exists for the QUEUE's shape and the button's count only. Every
      gate below is re-run by the real entry point, and the real entry point is
      the one that decides. Nothing here can make a note sendable. */
+  /* dayall-1.0.0 (owner 2026-09-01: "every single visit for the day needs to be
+     able to be written to Athena"): THE CLOSED SET OF CHART-RECORD KINDS A
+     QUEUE MAY DRIVE. Read the same way OPBATCH_ACTIONS is read - it is a pin,
+     not a filter to be widened later on a hunch.
+
+     A filed VISIT NOTE carries NO kind at all (noteRecordFromState never sets
+     one); an OP NOTE carries kind:'opnote'. Those two, and nothing else. A
+     record carrying any other kind - today or after some future lane invents
+     one - is refused BY NAME rather than silently queued, which is exactly what
+     an open ban-list could not promise. */
+  var OPBATCH_KINDS = { '': 1, opnote: 1 };
+  function opBatchKind(rec) { return S(rec && rec.kind).trim().toLowerCase(); }
+  /* An Athena chart-import receipt is a pull artifact that happens to live in
+     the notes store. It is not a visit, it has no note the doctor wrote, and it
+     must never reach a write queue. The app's own ONE shared predicate decides;
+     a missing predicate degrades to the cc literal it tests, never to "queue
+     it". The fallback is deliberately BROADER than the shipped predicate (any
+     cc ending in the import literal, whatever separator precedes it): this file
+     is written through a latin1 pipeline and may not carry the dash character
+     the app's own cc uses, and erring broad here can only ever refuse MORE. */
+  function opBatchImportReceipt(rec) {
+    try { if (typeof window._mlsIsChartImportNote === 'function') return !!window._mlsIsChartImportNote(rec); } catch (e) {}
+    return /Athena chart import$/.test(S(rec && rec.cc));
+  }
   function opBatchScreen(rec) {
     if (!rec || !S(rec.id)) return { ok: false, why: 'that note is no longer in the chart' };
-    if (S(rec.kind) !== 'opnote') return { ok: false, why: 'that record is not an op note' };
+    var kind = opBatchKind(rec);
+    if (!OPBATCH_KINDS[kind]) return { ok: false, why: 'that record is not an op note' + (kind ? (' or a visit note (it is a "' + kind + '" record)') : '') };
+    if (opBatchImportReceipt(rec)) return { ok: false, why: 'that record is an Athena chart-import receipt, not a visit note' };
     if (rec.isDraft) return { ok: false, why: 'still a draft - finish and save it to the chart first' };
     var body = S(rec.text || rec.soap || '');
     if (!opBatchNorm(body)) return { ok: false, why: 'it has no note text to send' };
@@ -6064,11 +6099,40 @@
         if (b && b.identityConflict) return { ok: false, why: 'its patient identity conflicts with the linked chart' };
       }
     } catch (eB) {}
+    /* GATE 7 OF pushHistoryNoteToAthena, PRE-SCREENED. A generated visit note
+       carries a canonical five-destination payload whose fingerprint is pinned
+       to the record's own identity and visit fields; when that payload no longer
+       validates the real entry point refuses the note outright. Op notes take
+       the 'procedure' route and never meet this gate, so it is asked only of the
+       records that will actually be judged by it. A missing function degrades to
+       today's behaviour - never to a looser rule. */
+    if (kind !== 'opnote') {
+      try {
+        if (typeof window._mlsSavedAthenaCanonicalForWrite === 'function') {
+          var canon = window._mlsSavedAthenaCanonicalForWrite(rec);
+          if (canon && canon.required && !canon.ok) return { ok: false, why: 'its verified five-section Athena payload is no longer current (' + (S(canon.reason) || 'unverified') + ') - reopen it, regenerate the note, and save it again' };
+        }
+      } catch (eC) {}
+    }
     return { ok: true, why: '' };
   }
+  /* THE RECORD'S OWN STORED BODIES. A generated visit note reaches Athena as
+     FIVE named destinations built from its stored athenaNote, not as one blob
+     of its soap - so the sheet-match proof below needs both texts the record
+     itself carries. Nothing else is ever admitted here: the corpus is the
+     queued record and only the queued record. */
+  function opBatchBodies(rec) {
+    var out = [], seen = {};
+    [S(rec && rec.text) || S(rec && rec.soap), S(rec && rec.athenaNote)].forEach(function (raw) {
+      var v = opBatchNorm(raw);
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out;
+  }
   function opBatchItem(rec) {
-    return { id: S(rec.id), name: S(rec.patient), patientId: S(rec.patientId),
-      body: opBatchNorm(S(rec.text || rec.soap || '')).slice(0, 400), phase: 'waiting', why: '', action: '' };
+    return { id: S(rec.id), name: S(rec.patient), patientId: S(rec.patientId), kind: opBatchKind(rec),
+      body: opBatchNorm(S(rec.text || rec.soap || '')).slice(0, 400), bodies: opBatchBodies(rec),
+      phase: 'waiting', why: '', action: '' };
   }
   /* THE DAY'S OP NOTES, IN THE ORDER THE ROOM PAINTS THEM. window._opPrep is
      the op-note room's own row array and row._noteId is the chart record its
@@ -6076,15 +6140,25 @@
      An explicit id list (what the room's own button passes) is filtered by the
      same screen and never trusted: an id the screen refuses is reported, not
      queued. */
-  function opBatchEligible(ids) {
+  function opBatchEligible(ids, useGivenOrder) {
     var want = null;
     if (Array.isArray(ids) && ids.length) { want = {}; ids.forEach(function (x) { if (S(x)) want[S(x)] = 1; }); }
     var byId = {};
     opBatchNotes().forEach(function (n) { if (n && S(n.id)) byId[S(n.id)] = n; });
     var order = [], rows = [];
+    /* dayall-1.0.0: a DAY run is already in the order its own surface paints -
+       first appointment first - and that order is what the doctor is watching.
+       The op-note room's order is still the default, so nothing about its own
+       button changes; this branch is taken only when a caller hands over an
+       explicit list AND says the list is the order. It can add no id, remove no
+       gate and change no verdict - it decides sequence and nothing else. */
+    if (useGivenOrder === true && want) {
+      ids.forEach(function (x) { var k = S(x); if (k && order.indexOf(k) < 0) order.push(k); });
+    } else {
     try { rows = window._opPrep || []; } catch (e) { rows = []; }
     for (var i = 0; i < rows.length; i++) { var nid = S(rows[i] && rows[i]._noteId); if (nid) order.push(nid); }
     if (want) Object.keys(want).forEach(function (k) { if (order.indexOf(k) < 0) order.push(k); });
+    }
     var seen = {}, items = [], refused = [];
     for (var j = 0; j < order.length; j++) {
       var id = order[j];
@@ -6102,19 +6176,76 @@
      before anything is pressed - the sheet's own lock is the authority, this
      only refuses to press a sheet that is about a different patient or a
      different body of text (a rebind, a stale sheet, a race). */
+  /* dayall-1.0.0: the smallest run of a section's text that may stand as proof
+     that the open sheet was built from THIS record. Well under one clinical
+     section and far past anything two different encounters share by accident. */
+  var OPBATCH_SECTION_MIN = 40;
   function opBatchSheetMatches(state, item) {
     try {
       if (!state || state.closed || !state.manifest || !item) return false;
       var p = state.manifest.patient || {};
       if (S(item.patientId) && S(p.patientId) && S(p.patientId).trim() !== S(item.patientId).trim()) return false;
       if (S(item.name) && S(p.name) && !nameMatch(p.name, item.name)) return false;
-      if (!S(item.body)) return false;
+      var bodies = (Array.isArray(item.bodies) && item.bodies.length) ? item.bodies : [];
+      if (!S(item.body) && !bodies.length) return false;
       var rows = state.manifest.rows || [];
-      for (var i = 0; i < rows.length; i++) {
-        var t = opBatchNorm(rows[i] && rows[i].payload && rows[i].payload.noteText);
-        if (t && t.slice(0, 400) === item.body) return true;
+      var i, j, t;
+      /* RULE ONE, UNCHANGED: one row carries this record's own note text. This
+         is the whole proof for an op note and for a plain visit note, both of
+         which reach Athena as ONE row holding the whole body. */
+      for (i = 0; i < rows.length; i++) {
+        t = opBatchNorm(rows[i] && rows[i].payload && rows[i].payload.noteText);
+        if (t && S(item.body) && t.slice(0, 400) === item.body) return true;
       }
-      return false;
+      /* RULE TWO, dayall-1.0.0: A GENERATED VISIT NOTE HAS NO SUCH ROW. Its
+         review is FIVE named destinations (HPI, ROS, Exam, Assessment, Plan)
+         cut from the record's own stored canonical athenaNote, so no single row
+         ever holds the whole body and rule one refuses every one of them - the
+         queue would have skipped every generated visit note in the day with
+         "the review that opened is not this note", which is false.
+
+         The proof is still against the QUEUED RECORD and nothing else, but it
+         is asked PER LINE rather than per row, and that is not a convenience -
+         it is the difference between working and refusing everything. NOT
+         EVERY ROW ON THE SHEET IS A VERBATIM CUT OF THE RECORD. ap-1.0.0 adds
+         a combined "Assessment & Plan" row whose text MLS itself composes:
+         'Assessment:\n' + the assessment section + '\n\nPlan / Follow-up:\n' +
+         the plan section. Those two labels are MLS's own words and appear
+         nowhere in the saved note, so a whole-row substring test failed on
+         that row and, because one unexplained row refuses the sheet, refused
+         EVERY generated visit note in the day - the exact false refusal this
+         rule exists to remove. (Measured, not reasoned: without this the day
+         run wrote 1 of 3, and the 2 it skipped were the two generated visit
+         notes.)
+
+         So: every line of a row that carries at least OPBATCH_SECTION_MIN
+         characters must be found inside one of the bodies this record itself
+         stores, and one such line that is NOT found refuses the whole sheet.
+         A structural label ("Assessment:", "Plan / Follow-up:") is far below
+         that length and is therefore ignored - which is sound, because a run
+         too short to be a clinical statement cannot smuggle another
+         encounter's content past this test, while anything long enough to BE
+         clinical content must still be present in the queued record. The
+         identity checks above run first and stay first, an empty sheet still
+         has no hit, and a sheet carrying a foreign clinical section is still
+         refused on that section's own line. */
+      var hits = 0;
+      for (i = 0; i < rows.length; i++) {
+        var raw = S(rows[i] && rows[i].payload && rows[i].payload.noteText);
+        if (!opBatchNorm(raw)) continue;
+        var lines = raw.split(/\n+/);
+        for (var k = 0; k < lines.length; k++) {
+          var ln = opBatchNorm(lines[k]);
+          if (ln.length < OPBATCH_SECTION_MIN) continue;
+          var found = false;
+          for (j = 0; j < bodies.length; j++) {
+            if (bodies[j].indexOf(ln) >= 0) { found = true; break; }
+          }
+          if (!found) return false;
+          hits++;
+        }
+      }
+      return hits > 0;
     } catch (e) { return false; }
   }
   /* THE SHEET'S OWN WORDS FOR ITS OWN REFUSAL. Never paraphrased here. */
@@ -6193,7 +6324,7 @@
     }).join('');
     host.innerHTML =
       '<div style="display:flex;gap:8px;align-items:flex-start">' +
-        '<div style="flex:1;font-weight:850;font-size:13px">Sending op notes to Athena</div>' +
+        '<div style="flex:1;font-weight:850;font-size:13px">' + esc(S(run.title) || 'Sending op notes to Athena') + '</div>' +
         '<button type="button" id="mlsOpBatchStop" style="border:1px solid #d8ddd9;background:#fff;color:#204034;border-radius:9px;padding:6px 10px;font-weight:750;cursor:pointer;font:700 11.5px/1.2 inherit">' +
         (run.done ? 'Close' : 'Stop after this note') + '</button>' +
       '</div>' +
@@ -6230,6 +6361,11 @@
     opBatchPaint();
     opBatchSay(run.summary, opBatchCounts(run).written ? '' : 'err');
     opBatchNudgeRoom();
+    /* dayall-1.0.0: a caller that owns its own day surface is told the run
+       ended, so its checklist repaints from the SETTLED verdicts rather than
+       from a guess. It is called after the run is done and can change nothing
+       about it. */
+    if (typeof run.onFinish === 'function') { try { run.onFinish(opBatchStatus()); } catch (eF) {} }
   }
   function opBatchNext(run, i) {
     if (opBatchRun !== run || run.done) return;
@@ -6241,9 +6377,27 @@
   function opBatchCloseSheet() {
     try { closeUnifiedConfirmation(); } catch (e) {}
   }
+  /* dayall-1.0.0: A CALLER'S OWN BETWEEN-NOTES REFUSAL. The guard is asked once
+     before each note is opened, and it may only ever say STOP - it cannot start
+     a note, extend a queue, admit an id, or change a verdict, so no gate on this
+     path can be reached through it. It exists because a run that spans a whole
+     day has one failure mode a per-note guard structurally cannot see: the
+     calendar day itself turning over between two notes. dayfall-1.0.x and
+     navepoch-1.0.0 both guard WITHIN one sheet (a positively different painted
+     Day view; a stale probe generation) and neither can observe that the day the
+     run was started FOR has stopped being today. */
+  function opBatchGuardStop(run) {
+    if (!run || typeof run.guard !== 'function') return '';
+    var verdict = null;
+    try { verdict = run.guard(run); } catch (e) { return 'The run\'s own day check could not be re-proven, so nothing further was opened.'; }
+    if (!verdict || verdict.stop !== true) return '';
+    return opBatchNorm(verdict.reason) || 'The run refused to continue and nothing further was opened.';
+  }
   function opBatchStep(run, i) {
     if (opBatchRun !== run || run.done) return;
     if (run.cancel || i >= run.items.length) { opBatchFinish(run); return; }
+    var halt = opBatchGuardStop(run);
+    if (halt) { run.stop = halt; run.cancel = true; opBatchFinish(run); return; }
     run.i = i;
     var item = run.items[i];
     item.phase = 'opening';
@@ -6281,6 +6435,21 @@
         var s = unifiedAthenaState;
         if (!s || s.closed) return true;
         if (s.probe) return true;
+        /* dayall-1.0.0: AN MRN ADOPTION IN FLIGHT IS NOT A SETTLED REFUSAL.
+           mrnopen-1.0.0 measured that 76% of charts carry no MRN in MLS, so on
+           a real day most visits open BLOCKED on identity and mrnadopt-1.0.0
+           immediately starts its own read-only pass to pick the MRN up from the
+           open athenaOne chart and rebuild the review. That pass is async, and
+           while it runs there is no probe and probeSettled can already equal
+           probeGeneration - so this latch resolved "settled, no probe" and the
+           queue skipped the note with the sheet's half-finished status line
+           while the cure for that very note was still running. On a day of
+           real visits that skipped the majority of them.
+
+           Waiting here can only ever WAIT. It admits no id, relaxes no screen,
+           presses nothing, and is still bounded by OPBATCH_READY_MS, after
+           which the note is skipped honestly exactly as before. */
+        if (mrnAdoptRunning) return false;
         return s.probeSettled === s.probeGeneration && !s.probe;
       }, OPBATCH_READY_MS).then(function (settledInTime) {
         if (opBatchRun !== run || run.done) return;
@@ -6337,9 +6506,22 @@
           var verified = keys.filter(function (k) { return receipts[k] && receipts[k].status === 'verified'; });
           var rehearsed = keys.filter(function (k) { return receipts[k] && receipts[k].status === 'rehearsed'; });
           var uncertain = keys.filter(function (k) { return receipts[k] && receipts[k].status === 'uncertain'; });
-          if (verified.length) opBatchSettle(run, item, 'written', S(receipts[verified[0]].message), S(receipts[verified[0]].action));
+          /* dayall-1.0.0: A NOTE CAN NOW BE MORE THAN ONE DESTINATION. An op
+             note is one row and reads exactly as it always did. A generated
+             visit note is FIVE named rows, and on that shape "some verified"
+             used to print as a flat WRITTEN - the four that landed and the one
+             that did not read the same. An uncertain receipt is now judged
+             FIRST (it is the one outcome that halts the queue, so it must never
+             be painted over by a sibling that succeeded), and a partial pass
+             says which destinations landed instead of claiming the note did. */
+          var partial = keys.length > 1 && verified.length && verified.length < keys.length;
+          if (uncertain.length) opBatchSettle(run, item, 'skipped',
+            (keys.length > 1 ? (verified.length + ' of ' + keys.length + ' destinations were verified and one outcome is UNCERTAIN. ') : '') +
+            S(receipts[uncertain[0]].message), S(receipts[uncertain[0]].action));
+          else if (verified.length) opBatchSettle(run, item, 'written',
+            (partial ? (verified.length + ' of ' + keys.length + ' destinations written; the rest returned no verified receipt. ') : '') +
+            S(receipts[verified[0]].message), S(receipts[verified[0]].action));
           else if (rehearsed.length) opBatchSettle(run, item, 'rehearsed', S(receipts[rehearsed[0]].message), S(receipts[rehearsed[0]].action));
-          else if (uncertain.length) opBatchSettle(run, item, 'skipped', S(receipts[uncertain[0]].message), S(receipts[uncertain[0]].action));
           else if (!keys.length && wroteInTime === false) opBatchSettle(run, item, 'skipped', 'Its write ran past the 180-second bound with no receipt - inspect that exact Athena field before retrying this one.');
           else opBatchSettle(run, item, 'skipped', keys.length ? S(receipts[keys[0]].message) : 'Athena returned no receipt for this note. Nothing is claimed for it.');
           /* INVARIANT 4: an uncertain outcome halts the queue where it stands. */
@@ -6364,13 +6546,17 @@
     if (opBatchPullRunning()) return { started: false, reason: 'A pull or import is running. Let it finish, then send these op notes to Athena. Nothing was sent.' };
     if (unifiedAthenaState && !unifiedAthenaState.closed) return { started: false, reason: 'An Athena review is already open. Finish or close it, then start the send. Nothing was sent.' };
     if (athenaActionRunning) return { started: false, reason: 'Another Athena action is awaiting confirmation. Finish it first. Nothing was sent.' };
-    var found = opBatchEligible(opts.noteIds);
+    var found = opBatchEligible(opts.noteIds, opts.order === 'given');
     if (!found.items.length) {
       return { started: false, refused: found.refused,
-        reason: 'No op note on this day is ready for Athena yet. A note must be drafted, have every field filled in, and be saved to the chart before it can be sent.' };
+        reason: S(opts.emptyReason) || 'No op note on this day is ready for Athena yet. A note must be drafted, have every field filled in, and be saved to the chart before it can be sent.' };
     }
     var run = { v: OPBATCH_V, startedAt: Date.now(), finishedAt: 0, items: found.items, refused: found.refused,
-      i: 0, cancel: false, done: false, stop: '', summary: '' };
+      i: 0, cancel: false, done: false, stop: '', summary: '',
+      /* dayall-1.0.0: presentation and a stop-only guard. Neither can queue an
+         id, relax a screen, or reach the write lane. */
+      title: S(opts.title), guard: (typeof opts.guard === 'function' ? opts.guard : null),
+      onFinish: (typeof opts.onFinish === 'function' ? opts.onFinish : null) };
     opBatchRun = run;
     opBatchPaint();
     opBatchNudgeRoom();
@@ -6389,11 +6575,15 @@
   function opBatchStatus() {
     var run = opBatchRun;
     if (!run) return { v: OPBATCH_V, running: false, done: false, cancelRequested: false, total: 0, index: -1,
-      written: 0, rehearsed: 0, skipped: 0, summary: '', stop: '', notes: [] };
+      written: 0, rehearsed: 0, skipped: 0, notRun: 0, title: '', summary: '', stop: '', refused: [], notes: [] };
     var c = opBatchCounts(run);
     return { v: OPBATCH_V, running: !run.done, done: run.done, cancelRequested: run.cancel,
       total: run.items.length, index: run.i, written: c.written, rehearsed: c.rehearsed, skipped: c.skipped,
-      summary: run.summary, stop: run.stop,
+      /* dayall-1.0.0: the fourth bucket was always computed and never reported.
+         A caller that must account for EVERY note it queued cannot close its
+         own books without it. */
+      notRun: c.left, title: S(run.title),
+      summary: run.summary, stop: run.stop, refused: (run.refused || []).slice(),
       notes: run.items.map(function (x) { return { id: x.id, name: x.name, phase: x.phase, why: x.why, action: x.action }; }) };
   }
   function opBatchRevert() {
@@ -6407,15 +6597,15 @@
     v: OPBATCH_V, version: OPBATCH_V,
     start: opBatchStart, cancel: opBatchCancel, status: opBatchStatus,
     /* read-only seams: nothing below can open a review or send anything */
-    eligible: function (ids) {
-      var found = opBatchEligible(ids);
+    eligible: function (ids, useGivenOrder) {
+      var found = opBatchEligible(ids, useGivenOrder === true);
       return { count: found.items.length, refused: found.refused,
         items: found.items.map(function (x) { return { id: x.id, name: x.name }; }),
         ids: found.items.map(function (x) { return x.id; }) };
     },
     screen: opBatchScreen, pullRunning: opBatchPullRunning, matches: opBatchSheetMatches,
     sent: function () { return Object.keys(opBatchSent); },
-    actions: OPBATCH_ACTIONS, phases: OPBATCH_PHASE,
+    actions: OPBATCH_ACTIONS, kinds: OPBATCH_KINDS, sectionMin: OPBATCH_SECTION_MIN, phases: OPBATCH_PHASE,
     bounds: { open: OPBATCH_OPEN_MS, ready: OPBATCH_READY_MS, write: OPBATCH_WRITE_MS, close: OPBATCH_CLOSE_MS },
     summaryText: function () { return opBatchRun ? opBatchSummaryText(opBatchRun) : ''; },
     headline: function () { return opBatchRun ? opBatchHeadline(opBatchRun) : ''; },
@@ -6423,6 +6613,500 @@
   };
   window.__mlsOpBatchSend = OPBATCH_API;
   /* ===== end opbatch-1.0.0 ================================================ */
+
+  /* ===== dayall-1.0.0 =====================================================
+     Owner, 2026-09-01, verbatim: "visitors [visits] need to be stored
+     correctly in mls and at end of day you can click write all to Athens and
+     every single visit for the day needs to be able to be written to Athena".
+
+     TWO THINGS, AND THE FIRST ONE IS THE HARDER ONE.
+
+     (1) THE PRE-FLIGHT. "Every single visit for the day" is a claim about
+     STORAGE before it is a claim about writing, so this block first enumerates
+     the day and says, per visit, whether it is writable and - when it is not -
+     WHICH of a closed set of reasons is in the way. A day where two visits
+     cannot be written is not a failure to hide; it is two sentences the doctor
+     can act on before he leaves. Nothing here can make a visit writable: every
+     predicate below is a copy of a gate the real entry point owns, asked EARLY
+     so the answer is on screen, and re-asked by that entry point for real.
+
+     (2) THE PRESS. It queues the ready visits through the queue that already
+     exists. It does not own a driver, a manifest, a probe, a token or a
+     receipt, and it never will: opbatch-1.0.0's four invariants (sequential,
+     the closed OPBATCH_ACTIONS allowlist, cancel-between-notes-never-mid-write,
+     halt-on-uncertainty) are the safety of this feature too, unchanged and
+     unreachable from here. Sign & Save is not in that allowlist and never
+     becomes one: every completion line this block writes says, in those words,
+     that each note still has to be signed by the doctor in athenaOne.
+
+     WHAT dayall ADDS THAT opbatch COULD NOT HAVE. One thing: THE DAY. The
+     queue's per-note guards are all WITHIN one sheet - dayfall-1.0.x refuses a
+     positively different painted Day view, navepoch-1.0.0 refuses a stale probe
+     generation - and neither can observe the calendar turning over between two
+     notes of a long run. A run started for the 1st must not keep writing into
+     encounters after midnight as though it were still the 1st, so this block
+     hands the queue a stop-only guard that re-proves the day before every note
+     and stops honestly when it has moved.
+
+     WHAT IT MAY NEVER DO:
+       - never pick a day, an appointment or an encounter for a visit (the
+         record's own stored binding is the authority; where a visit has none,
+         this SAYS SO and the sheet's own apptpick/wfbind cures ask athenaOne);
+       - never mutate a saved record (the canonical five-section payload's
+         fingerprint is pinned to visitDate / provider / appointmentId /
+         encounterId / encounterUrl / the patient identity, so writing any of
+         them onto an existing note would silently un-write the note);
+       - never report a visit it did not account for. written + rehearsed +
+         skipped + not-run + refused-at-queue + not-ready == the day's total,
+         and the panel prints that identity rather than asserting it.
+
+     Public seam (also the test seam):
+       window.__mlsDayWriteAll { audit, start, cancel, status, verdict, ... }
+     ==================================================================== */
+  var DAYALL_V = 'dayall-1.0.0';
+  var DAYALL_HOST_ID = 'mlsDayWriteAll';
+  var DAYALL_BTN_ID = 'mlsDayWriteAllGo';
+  var DAYALL_DAY_ID = 'mlsDayWriteAllDay';
+  /* THE CLOSED VERDICT SET. One code per visit, and the FIRST one that applies
+     wins, so a checklist row always carries exactly one reason. Adding a code
+     here is a deliberate act; deriving one at a call site is not allowed,
+     because a verdict nobody enumerated is a verdict nobody can test. */
+  var DAYALL_REASONS = {
+    ready: 'Ready to write.',
+    kind: 'Not a visit note or an op note, so it is not part of the day\'s visits.',
+    'import': 'An Athena chart-import receipt, not a visit.',
+    draft: 'Still a draft. Finish it and save it to the chart first.',
+    'no-text': 'It has no note text to send.',
+    blanks: 'It still has unresolved fields to fill in.',
+    identity: 'No MRN on file, and no name and date of birth together. MLS will not write a note it cannot address.',
+    quarantined: 'Quarantined: its patient binding was not safe. Recreate it as a New visit for the correct patient.',
+    conflict: 'Its stored patient identity conflicts with the chart it is linked to.',
+    canonical: 'Its verified five-section Athena payload is no longer current. Reopen it, regenerate the note, and save it again.',
+    'already-written': 'Already written into Athena in this browser session.'
+  };
+  /* The two ways a patient may be addressed, per the owner ruling of
+     2026-08-28: an MRN, or a name AND a date of birth together. Name alone
+     never qualifies - that is the same law the merge and the survivor lookup
+     are built on, and it is not relaxed here. */
+  var DAYALL_ID_MRN = 'mrn';
+  var DAYALL_ID_NAMEDOB = 'name-dob';
+  var dayAllChosen = '';          /* '' means "today", re-read on every paint */
+  var dayAllRunDay = '';          /* the day a LIVE run was started for */
+  var dayAllRunToday = '';        /* what "today" was when that run started */
+  var dayAllRunAudit = null;      /* the audit that produced that run */
+  var dayAllRunRefused = 0;       /* ids the queue's own screen refused at start */
+  var dayAllLast = null;          /* the last settled run, for the panel */
+  var dayAllSig = '';
+  var dayAllQueued = false;
+  var dayAllOff = false;
+
+  function dayAllNorm(v) { return S(v).replace(/\s+/g, ' ').trim(); }
+  /* THE ACCOUNT'S OWN DAY, NEVER toISOString(). tzcarry-1.0.0 measured that a
+     UTC key files every note saved after about 8pm Eastern onto tomorrow, so
+     the app's own account-timezone key is used whenever it is on the page. */
+  function dayAllKeyOf(ts) {
+    try { if (typeof window._acctDateKeyOf === 'function') return S(window._acctDateKeyOf(new Date(ts))); } catch (e) {}
+    try {
+      var d = new Date(ts);
+      if (isNaN(d.getTime())) return '';
+      var m = d.getMonth() + 1, dy = d.getDate();
+      return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dy < 10 ? '0' : '') + dy;
+    } catch (e2) {}
+    return '';
+  }
+  function dayAllToday() {
+    try { if (typeof window._acctTodayKey === 'function') { var k = S(window._acctTodayKey()); if (/^\d{4}-\d{2}-\d{2}$/.test(k)) return k; } } catch (e) {}
+    return dayAllKeyOf(Date.now());
+  }
+  /* ISO FIRST, ANCHORED - the isodob-1.0.0 lesson applied to a day key. Run
+     left to right, an M/D/Y pattern matches INSIDE "2026-03-04" and reads the
+     4th of March as the 3rd of February 2004. A four-digit year in front is
+     unambiguous, so it is tested on its own pattern before anything else. */
+  function dayAllKey(v) {
+    var s = S(v);
+    var iso = /^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/.exec(s);
+    var y, mo, dy;
+    if (iso) { y = iso[1]; mo = Number(iso[2]); dy = Number(iso[3]); }
+    else {
+      var m = /^\s*([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{4})(?!\d)/.exec(s);
+      if (!m) return '';
+      mo = Number(m[1]); dy = Number(m[2]); y = m[3];
+    }
+    if (!(mo >= 1 && mo <= 12) || !(dy >= 1 && dy <= 31)) return '';
+    return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (dy < 10 ? '0' : '') + dy;
+  }
+  /* WHICH DAY DOES THIS RECORD BELONG TO, AND HOW DO WE KNOW? The ladder is
+     the app's own (the copilot's visitDate -> visitTimestamp -> updated ->
+     created chain), and the rung that answered is REPORTED, because the three
+     rungs do not mean the same thing:
+       'bound'    - the record stores the encounter day it was written for
+       'stamp'    - the record stores the encounter's timestamp
+       'recorded' - neither; this is the day the note was SAVED IN MLS, which
+                    for a note finished the next morning is not the visit day.
+     Nothing here writes a day back onto the record, and nothing here lets a
+     'recorded' day become the day the WRITE uses: the write's day is whatever
+     the record itself stored, which is exactly the point. */
+  function dayAllDayOf(rec) {
+    var d = dayAllKey(rec && rec.visitDate);
+    if (d) return { day: d, source: 'bound' };
+    var ts = Number(rec && (rec.visitTimestamp || rec.encounterTimestamp)) || 0;
+    if (ts > 0) { d = dayAllKeyOf(ts); if (d) return { day: d, source: 'stamp' }; }
+    ts = Number(rec && (rec.updated || rec.created)) || 0;
+    if (ts > 0) { d = dayAllKeyOf(ts); if (d) return { day: d, source: 'recorded' }; }
+    return { day: '', source: 'none' };
+  }
+  /* MAY MLS ADDRESS THIS PATIENT AT ALL? Owner ruling 2026-08-28: an MRN, or a
+     name AND a DOB. This READS the binding the write chain itself builds, so
+     the survivor-id resolution and the stored-vs-chart snapshot are the same
+     ones the write will use. */
+  function dayAllIdentity(rec) {
+    var pt = null;
+    try { if (typeof window._athenaBindingForSavedRecord === 'function') pt = (window._athenaBindingForSavedRecord(rec) || {}).patient || null; } catch (e) { pt = null; }
+    var name = dayAllNorm((pt && pt.name) || (rec && rec.patient));
+    var dob = dayAllNorm((pt && pt.dob) || (rec && (rec.patientDob || rec.dob)));
+    var mrn = S((pt && pt.mrn) || (rec && (rec.patientMrn || rec.mrn))).replace(/\D/g, '');
+    if (mrn) return { ok: true, how: DAYALL_ID_MRN, name: name, dob: dob, mrn: mrn };
+    if (name && name.toLowerCase() !== 'unlabeled' && nrmDob(dob)) return { ok: true, how: DAYALL_ID_NAMEDOB, name: name, dob: dob, mrn: '' };
+    return { ok: false, how: '', name: name, dob: dob, mrn: '' };
+  }
+  /* IS THIS RECORD ONE OF THE DAY'S VISITS AT ALL? Deliberately separate from
+     the verdict: a template, a receipt or a foreign record is not a visit that
+     failed - it is not a visit, and it must not appear in a day's denominator. */
+  function dayAllIsVisit(rec) {
+    if (!rec || !S(rec.id)) return false;
+    if (!OPBATCH_KINDS[opBatchKind(rec)]) return false;
+    if (opBatchImportReceipt(rec)) return false;
+    return true;
+  }
+  /* ONE VISIT, JUDGED. First applicable code wins, and the order is the order
+     the real entry point applies its own gates in, so the reason on screen is
+     the reason the press would give. */
+  function dayAllVerdict(rec) {
+    var day = dayAllDayOf(rec);
+    var out = { id: S(rec && rec.id), name: dayAllNorm(rec && rec.patient) || 'This visit',
+      kind: opBatchKind(rec) === 'opnote' ? 'opnote' : 'visit',
+      day: day.day, daySource: day.source, ready: false, code: '', why: '',
+      identity: '', unbound: true, appointmentId: '', encounterId: '' };
+    if (!dayAllIsVisit(rec)) {
+      out.code = opBatchImportReceipt(rec) ? 'import' : 'kind';
+      out.why = DAYALL_REASONS[out.code];
+      return out;
+    }
+    var bind = null;
+    try { if (typeof window._athenaBindingForSavedRecord === 'function') bind = window._athenaBindingForSavedRecord(rec); } catch (e) { bind = null; }
+    var ctx = (bind && bind.visitContext) || {};
+    out.appointmentId = S(ctx.appointmentId);
+    out.encounterId = S(ctx.encounterId);
+    /* AN UNBOUND VISIT IS NOT A BLOCKED ONE. MLS must never pick an appointment,
+       so a visit with no stored appointment or encounter is still writable: the
+       review's own apptpick-1.0.0 asks athenaOne for that day's appointments and
+       refuses ambiguity itself. The flag exists so the doctor is told which
+       visits will take the longer road, never to stop one. */
+    out.unbound = !(out.appointmentId || out.encounterId);
+    var id = dayAllIdentity(rec);
+    out.identity = id.how;
+    /* The queue's own screen owns draft / no-text / blanks / quarantine /
+       conflict / canonical, and it is asked here so there is exactly ONE place
+       those rules live. Its sentence is mapped onto this block's closed code
+       set; the code, not the prose, is what anything downstream may branch on. */
+    var scr = opBatchScreen(rec);
+    if (!scr.ok) {
+      var w = S(scr.why);
+      out.code = /still a draft/.test(w) ? 'draft'
+        : /no note text/.test(w) ? 'no-text'
+        : /unresolved field/.test(w) ? 'blanks'
+        : /quarantined/.test(w) ? 'quarantined'
+        : /identity conflicts/.test(w) ? 'conflict'
+        : /five-section/.test(w) ? 'canonical'
+        : /chart-import receipt/.test(w) ? 'import' : 'kind';
+      out.why = w.charAt(0).toUpperCase() + w.slice(1) + (/[.!]$/.test(w) ? '' : '.');
+      return out;
+    }
+    /* Identity is judged AFTER the note's own gates on purpose: a draft with no
+       DOB is a draft first, and telling the doctor to go find a date of birth
+       for a note he has not finished writing would be the wrong instruction. */
+    if (!id.ok) { out.code = 'identity'; out.why = DAYALL_REASONS.identity; return out; }
+    if (opBatchSent[S(rec.id)]) { out.code = 'already-written'; out.why = DAYALL_REASONS['already-written']; return out; }
+    out.ready = true;
+    out.code = 'ready';
+    out.why = DAYALL_REASONS.ready;
+    return out;
+  }
+  function dayAllNotes() { return opBatchNotes(); }
+  function dayAllChosenDay() {
+    var chosen = dayAllKey(dayAllChosen);
+    return chosen || dayAllToday();
+  }
+  /* THE DAY'S AUDIT. Everything the record store holds for the chosen day, and
+     the accounting identity printed rather than assumed. */
+  function dayAllAudit(day) {
+    var want = dayAllKey(day) || dayAllChosenDay();
+    var recs = dayAllNotes();
+    var ready = [], notReady = [], seen = {};
+    for (var i = 0; i < recs.length; i++) {
+      var rec = recs[i];
+      if (!rec || !S(rec.id) || seen[S(rec.id)]) continue;
+      if (!dayAllIsVisit(rec)) continue;              /* not a visit: never in the denominator */
+      var d = dayAllDayOf(rec);
+      if (d.day !== want) continue;
+      seen[S(rec.id)] = 1;
+      var v = dayAllVerdict(rec);
+      if (v.ready) ready.push(v); else notReady.push(v);
+    }
+    var total = ready.length + notReady.length;
+    return { v: DAYALL_V, day: want, today: dayAllToday(), total: total,
+      ready: ready, notReady: notReady,
+      counts: { ready: ready.length, notReady: notReady.length, total: total },
+      unbound: ready.filter(function (x) { return x.unbound; }).length,
+      /* The closure is COMPUTED, so a suite can watch it fail rather than take
+         this block's word that it cannot. */
+      closure: (ready.length + notReady.length) === total,
+      ids: ready.map(function (x) { return x.id; }) };
+  }
+  /* THE CROSS-NOTE DAY GUARD. Stop-only, asked before every note. */
+  function dayAllGuard() {
+    if (!dayAllRunDay) return { stop: false, reason: '' };
+    var now = dayAllToday();
+    /* A run for a PAST day is a deliberate catch-up and midnight means nothing
+       to it - only a run started for what was then TODAY can be overtaken by the
+       clock. This is measured against the day the run was started for, never
+       against a re-read of the picker, which the doctor may change mid-run. */
+    if (dayAllRunDay !== dayAllRunToday) return { stop: false, reason: '' };
+    if (now === dayAllRunDay) return { stop: false, reason: '' };
+    return { stop: true, reason: 'The day changed while this run was going: it was started for ' + dayAllRunDay +
+      ' and it is now ' + now + '. Nothing after the note that had already started was opened. Re-open ' + dayAllRunDay +
+      ' and press Write all again to finish it.' };
+  }
+  function dayAllStatus() {
+    var st = opBatchStatus();
+    var mine = !!(dayAllRunDay && st && S(st.title) && S(st.title).indexOf(DAYALL_V) >= 0);
+    return { v: DAYALL_V, day: dayAllRunDay || dayAllChosenDay(), running: mine && st.running === true,
+      done: mine ? st.done === true : false, batch: st, mine: mine,
+      last: dayAllLast ? { day: dayAllLast.day, line: dayAllLast.line, accounting: dayAllLast.accounting } : null };
+  }
+  /* THE COMPLETION LINE. It must account for every visit the day had, and it
+     must say - in these words - that signing is still the doctor's own click in
+     athenaOne, because that is the one thing a batch may never do for him. */
+  /* THE QUEUE'S OWN COUNTS, WHICHEVER SHAPE THEY ARRIVE IN. This block reads
+     the batch status from two places: dayAllStatus() nests it under .batch,
+     while opbatch's onFinish hands the batch status over BARE. Reading only
+     the nested shape silently produced an all-zero summary on the one path
+     that actually settles a run - the day line said "0 notes written" after
+     writing every one of them, which is the exact dishonesty this block was
+     written to prevent. Both shapes are accepted, and neither is guessed at:
+     a batch status is identified by carrying its own numeric total. */
+  function dayAllBatchOf(status) {
+    if (!status || typeof status !== 'object') return {};
+    if (status.batch && typeof status.batch === 'object') return status.batch;
+    if (typeof status.total === 'number') return status;
+    return {};
+  }
+  function dayAllAccounting(status, audit, refusedCount) {
+    var b = dayAllBatchOf(status);
+    return { written: Number(b.written || 0), rehearsed: Number(b.rehearsed || 0),
+      skipped: Number(b.skipped || 0), notRun: Number(b.notRun || 0),
+      refusedAtQueue: Number(refusedCount || 0), notReady: audit ? audit.counts.notReady : 0,
+      total: audit ? audit.counts.total : 0 };
+  }
+  function dayAllAccountsFor(a) {
+    if (!a) return false;
+    return (a.written + a.rehearsed + a.skipped + a.notRun + a.refusedAtQueue + a.notReady) === a.total;
+  }
+  function dayAllLine(a, day) {
+    var bits = [];
+    bits.push(a.written + ' note' + (a.written === 1 ? '' : 's') + ' written to athena');
+    if (a.rehearsed) bits.push(a.rehearsed + ' rehearsed (probe only - nothing written)');
+    if (a.skipped) bits.push(a.skipped + ' skipped, each with its reason');
+    if (a.notRun) bits.push(a.notRun + ' not run');
+    if (a.refusedAtQueue) bits.push(a.refusedAtQueue + ' refused by the queue before it opened');
+    if (a.notReady) bits.push(a.notReady + ' not ready');
+    return bits.join('; ') + '. That is ' +
+      (a.written + a.rehearsed + a.skipped + a.notRun + a.refusedAtQueue + a.notReady) +
+      ' of ' + a.total + ' visit' + (a.total === 1 ? '' : 's') + ' on ' + day + ' accounted for. ' +
+      'Nothing was saved and nothing was signed - sign each in athenaOne.';
+  }
+  function dayAllSettle(status) {
+    var audit = dayAllRunAudit;
+    var a = dayAllAccounting(status, audit, dayAllRunRefused);
+    dayAllLast = { day: dayAllRunDay, at: Date.now(), line: dayAllLine(a, dayAllRunDay),
+      accounting: a, closed: dayAllAccountsFor(a),
+      notes: (dayAllBatchOf(status).notes || []).slice() };
+    dayAllRunDay = '';
+    dayAllRunToday = '';
+    dayAllRunAudit = null;
+    dayAllRunRefused = 0;
+    dayAllSig = '';
+    dayAllPaint();
+    try { if (typeof window.toast === 'function') window.toast(dayAllLast.line, dayAllLast.accounting.written ? '' : 'err'); } catch (e) {}
+    return dayAllLast;
+  }
+  function dayAllStart(day) {
+    if (dayAllOff) return { started: false, reason: 'The day write-all was reverted. Nothing was sent.' };
+    var want = dayAllKey(day) || dayAllChosenDay();
+    var audit = dayAllAudit(want);
+    if (!audit.total) return { started: false, day: want, audit: audit,
+      reason: 'There are no visits recorded for ' + want + '. Nothing was sent.' };
+    if (!audit.ready.length) return { started: false, day: want, audit: audit,
+      reason: 'None of the ' + audit.total + ' visit' + (audit.total === 1 ? '' : 's') + ' on ' + want +
+        ' is ready for Athena. Each one\'s reason is listed above it. Nothing was sent.' };
+    dayAllRunDay = want;
+    dayAllRunToday = dayAllToday();
+    dayAllRunAudit = audit;
+    dayAllRunRefused = 0;
+    /* THE ONE DRIVER. Every id here is re-screened by the queue, every gate is
+       re-run per note by the sheet, and the closed action allowlist is enforced
+       at the press - none of which this block can reach. */
+    var res = opBatchStart({
+      noteIds: audit.ids,
+      order: 'given',
+      title: 'Writing ' + want + ' to Athena (' + DAYALL_V + ')',
+      guard: dayAllGuard,
+      onFinish: dayAllSettle,
+      emptyReason: 'No visit on ' + want + ' is ready for Athena. Nothing was sent.'
+    });
+    if (!res || res.started !== true) {
+      dayAllRunDay = ''; dayAllRunToday = ''; dayAllRunAudit = null;
+      return { started: false, day: want, audit: audit, reason: S(res && res.reason) || 'The Athena send did not start. Nothing was sent.' };
+    }
+    dayAllRunRefused = (res.refused || []).length;
+    dayAllSig = '';
+    dayAllPaint();
+    return { started: true, day: want, total: res.total, queued: res.total,
+      refused: res.refused || [], notReady: audit.counts.notReady, audit: audit, ids: res.ids };
+  }
+  function dayAllCancel() {
+    if (!dayAllRunDay) return { cancelled: false, reason: 'No day write-all is running.' };
+    return opBatchCancel('Stopped by the doctor. The note already being written finishes on its own; nothing after it runs.');
+  }
+
+  /* ---------------- the day surface -------------------------------------
+     History is where the day's filed visits already live, and where each one
+     already carries its own single-note "Review Athena actions" primary. The
+     day-level control belongs one level up from those rows, on the same card,
+     so "write all of these" reads as exactly what it is. */
+  function dayAllHostCard() {
+    try { return document.getElementById('historyCard'); } catch (e) { return null; }
+  }
+  function dayAllVisible() {
+    try {
+      var v = document.getElementById('historyView');
+      if (!v) return false;
+      return S(v.style && v.style.display) !== 'none';
+    } catch (e) { return false; }
+  }
+  function dayAllRowHtml(x) {
+    var tone = x.ready ? '#205c43' : '#8b2525';
+    var word = x.ready ? 'READY' : 'NEEDS ATTENTION';
+    var flags = [];
+    if (x.ready && x.unbound) flags.push('no Athena appointment stored - its review will ask athenaOne for that day');
+    if (x.daySource === 'recorded') flags.push('day taken from when it was saved in MLS, not from a stored encounter date');
+    if (x.identity === DAYALL_ID_NAMEDOB) flags.push('no MRN on file - addressed by name and date of birth');
+    return '<div data-mls-dayall-row="' + esc(x.id) + '" data-mls-dayall-code="' + esc(x.code) + '" style="border-top:1px solid #e6efe9;padding:6px 0">' +
+      '<b style="font-weight:750">' + esc(x.name) + '</b>' +
+      '<span style="float:right;font-weight:800;color:' + tone + '">' + word + '</span>' +
+      '<div style="clear:both;color:#52675c;font-size:11.5px">' + esc(x.why) + '</div>' +
+      (flags.length ? ('<div style="color:#6d5010;font-size:11px;margin-top:2px">' + esc(flags.join('; ')) + '</div>') : '') +
+      '</div>';
+  }
+  function dayAllHtml(audit, st) {
+    var running = !!(st && st.running);
+    var rows = audit.ready.concat(audit.notReady).map(dayAllRowHtml).join('');
+    var head = 'Ready to write: ' + audit.counts.ready + ' - Need attention: ' + audit.counts.notReady;
+    return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:180px;font-weight:850;font-size:13.5px;color:#204034">End of day - write all to Athena</div>' +
+        '<label for="' + DAYALL_DAY_ID + '" style="font-size:11.5px;color:#52675c">Day</label>' +
+        '<input type="date" id="' + DAYALL_DAY_ID + '" value="' + esc(audit.day) + '" style="font-size:12.5px;padding:5px 8px;border:1px solid #cfe0d7;border-radius:8px">' +
+        '<button type="button" id="' + DAYALL_BTN_ID + '" style="border:1px solid #2E6A4B;background:' + (running ? '#fff' : '#2E6A4B') + ';color:' + (running ? '#204034' : '#fff') + ';border-radius:10px;padding:7px 13px;font-weight:800;cursor:pointer;font:800 12.5px/1.2 inherit">' +
+        (running ? 'Stop after this note' : ('Write all to Athena (' + audit.counts.ready + ')')) + '</button>' +
+      '</div>' +
+      '<div data-mls-dayall-head="1" style="margin-top:6px;font-weight:750;color:#204034;font-size:12.5px">' + esc(head) + '</div>' +
+      (audit.total ? ('<div style="margin-top:6px">' + rows + '</div>')
+        : '<div style="margin-top:6px;color:#52675c;font-size:12px">No visits are recorded for this day yet.</div>') +
+      (dayAllLast ? ('<div data-mls-dayall-last="1" style="margin-top:8px;padding:8px 10px;border:1px solid #cfe0d7;background:#f2f8f4;border-radius:9px;color:#204034;font-size:11.5px">' + esc(dayAllLast.line) + '</div>') : '') +
+      '<div style="margin-top:8px;padding:8px 10px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:11.5px">' +
+        '<b>Nothing is saved and nothing is signed.</b> Each visit gets its own read-only Athena check, its own confirmation-bound write and its own receipt, one at a time. ' +
+        'Save and Sign &amp; Save stay yours in athenaOne - sign each note there.</div>';
+  }
+  function dayAllPaint() {
+    if (dayAllOff || stopped) return;
+    var card = dayAllHostCard();
+    if (!card) return;
+    var host = null;
+    try { host = document.getElementById(DAYALL_HOST_ID); } catch (e) { host = null; }
+    if (!host) {
+      try {
+        host = document.createElement('div');
+        host.id = DAYALL_HOST_ID;
+        host.setAttribute('role', 'group');
+        host.setAttribute('aria-label', 'Write the day\'s visits to Athena');
+        host.style.cssText = 'margin:10px 0 4px;padding:11px 13px;border:1px solid #cfe0d7;border-radius:12px;background:#fff;' +
+          'font:12.5px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#204034';
+      } catch (e2) { return; }
+    }
+    if (host.parentNode !== card) {
+      try {
+        var anchor = document.getElementById('histSearchRow');
+        if (anchor && anchor.parentNode === card && card.insertBefore) card.insertBefore(host, anchor);
+        else card.appendChild(host);
+      } catch (e3) { try { card.appendChild(host); } catch (e4) { return; } }
+    }
+    var st = dayAllStatus();
+    var audit = dayAllAudit(dayAllRunDay || dayAllChosenDay());
+    var html = dayAllHtml(audit, st);
+    /* REPAINT ONLY ON CHANGE. This block is woken by the same body-wide
+       observer the write flow already runs, and an unconditional innerHTML
+       write would both fight the doctor's own focus in the day field and wake
+       the observer again on every mutation. */
+    if (dayAllSig === html) return;
+    dayAllSig = html;
+    host.innerHTML = html;
+    try {
+      var go = document.getElementById(DAYALL_BTN_ID);
+      if (go) go.addEventListener('click', function () {
+        if (dayAllStatus().running) { dayAllCancel(); dayAllSig = ''; dayAllPaint(); return; }
+        var res = dayAllStart(dayAllChosenDay());
+        if (!res || res.started !== true) {
+          try { if (typeof window.toast === 'function') window.toast(S(res && res.reason) || 'The Athena send did not start. Nothing was sent.', 'err'); } catch (eT) {}
+        }
+      }, false);
+      var pick = document.getElementById(DAYALL_DAY_ID);
+      if (pick) pick.addEventListener('change', function () {
+        if (dayAllStatus().running) return;         /* a running queue owns its day */
+        dayAllChosen = dayAllKey(pick.value);
+        dayAllSig = '';
+        dayAllPaint();
+      }, false);
+    } catch (e5) {}
+  }
+  function dayAllRefresh() {
+    if (dayAllOff || stopped || dayAllQueued) return;
+    if (!dayAllVisible() && !dayAllRunDay) return;
+    dayAllQueued = true;
+    setTimeout(function () { dayAllQueued = false; try { dayAllPaint(); } catch (e) {} }, 250);
+  }
+  function dayAllRevert() {
+    dayAllOff = true;
+    try { if (dayAllRunDay) opBatchCancel('The day write-all was reverted.'); } catch (e) {}
+    dayAllRunDay = ''; dayAllRunToday = ''; dayAllRunAudit = null; dayAllRunRefused = 0;
+    dayAllSig = '';
+    try { var h = document.getElementById(DAYALL_HOST_ID); if (h) h.remove(); } catch (e2) {}
+    return true;
+  }
+  var DAYALL_API = {
+    v: DAYALL_V, version: DAYALL_V,
+    audit: dayAllAudit, start: dayAllStart, cancel: dayAllCancel, status: dayAllStatus,
+    /* read-only seams: nothing below can open a review or send anything */
+    verdict: dayAllVerdict, isVisit: dayAllIsVisit, identity: dayAllIdentity,
+    dayOf: dayAllDayOf, dayKey: dayAllKey, today: dayAllToday, chosenDay: dayAllChosenDay,
+    reasons: DAYALL_REASONS, guard: dayAllGuard,
+    accounting: function () { return dayAllLast ? dayAllLast.accounting : null; },
+    accountsFor: dayAllAccountsFor, line: dayAllLine, last: function () { return dayAllLast; },
+    setDay: function (d) { var k = dayAllKey(d); if (!k) return ''; dayAllChosen = k; dayAllSig = ''; return k; },
+    paint: dayAllPaint, refresh: dayAllRefresh, hostId: DAYALL_HOST_ID, buttonId: DAYALL_BTN_ID,
+    queue: OPBATCH_API, revert: dayAllRevert
+  };
+  window.__mlsDayWriteAll = DAYALL_API;
+  /* ===== end dayall-1.0.0 ================================================= */
 
   window.__mlsWriteFlow = {
     installed: true, version: VERSION, state: STATE,
@@ -6519,6 +7203,10 @@
        presses the sheet's own primary, one note at a time. Same object as
        window.__mlsOpBatchSend. */
     opBatch: OPBATCH_API,
+    /* dayall-1.0.0: the day's integrity audit and the one press that queues it.
+       It owns no write of its own either - it hands ready ids to opBatch and a
+       stop-only day guard. Same object as window.__mlsDayWriteAll. */
+    dayAll: DAYALL_API,
     revert: revert
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

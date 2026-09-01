@@ -1242,6 +1242,7 @@ const tests = [
   'fill-ux-clarity.test.js',
   'write-auto-chain.test.js',
   'month-report-surface.test.js',
+  'day-writeall.test.js',
   'shared-notes.test.js',
   'phone-surface.test.js',
   'pull-heal.test.js',
