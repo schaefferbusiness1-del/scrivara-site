@@ -20,7 +20,20 @@ assert.ok(bg.includes('if (metas.length !== 1) { hetCommit(); return null; }'),
   'the one-context-META uniqueness refusal is gone');
 assert.ok(bg.includes('if (!encId || encId.length < 3 || !metaPatient || !wantMrn || metaPatient !== wantMrn) { hetCommit(); return null; }'),
   'the meta patient_id === expected MRN gate is gone - a foreign chart could qualify');
-assert.ok(bg.includes('if (appts.length !== 1) { hetCommit(); return null; }'),
+/* RE-AIMED 2026-09-02 (found red on an untouched b1196 baseline, before this
+   session's app-side change and unrelated to it). apptmulti-1.0.0 (ext 3.0.99)
+   rewrote this one refusal from a single line into a block: a stage that paints
+   MORE THAN ONE distinct appointment id may still bind, but ONLY when exactly
+   one of them equals the request's expected appointment id, and the downstream
+   candidate gate re-checks that same id against expectedContext.appointmentId.
+   The refusal itself is unchanged and is still what is pinned here - every
+   other shape (zero ids, several ids, no expected id, more than one match) hits
+   `else { hetCommit(); return null; }` exactly as before. The pin is not
+   dropped: it now names BOTH halves of the block, so neither the narrowing
+   condition nor the refusal tail can be removed without reddening this line. */
+assert.ok(bg.includes('if (hetWantAppt && hetApptHits.length === 1) { appts = hetApptHits; }'),
+  'the exact-expected-appointment narrowing (apptmulti-1.0.0) is gone');
+assert.ok(bg.includes('else { hetCommit(); return null; }'),
   'the unique-appointment refusal is gone');
 assert.ok(bg.includes('if (provs.length !== 1) { hetCommit(); return null; }'),
   'the unique-credentialed-provider refusal is gone');
@@ -59,7 +72,15 @@ assert.ok(bg.includes('var eid = hetStage ? hetStage.encounterId : encounterIdFo
   'the encounter-id source seam is gone');
 assert.ok(bg.includes('var observedAppointmentId = hetStage ? hetStage.appointmentId : appointmentIdFor(fr, targetRoot, observedIdentity.root);'),
   'the appointment-id source seam is gone');
-assert.ok(bg.includes('var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root);'),
+/* RE-AIMED 2026-09-02 (found red on an untouched b1196 baseline, unrelated to
+   this session's app-side change). ckmeta-1.0.0 (ext 3.0.99) passes the
+   caller's EXPECTED visit date into the classic reader as a fourth argument, so
+   a CHECKED-IN header that paints a second labeled date (arrival) can bind IFF
+   exactly one labeled date equals it - the downstream visit-date gate pinned
+   below re-checks that same equality, so a wrong date still cannot survive. The
+   seam being pinned is unchanged: the machine-typed stage values are still
+   preferred and the classic reader is still the only fallback. */
+assert.ok(bg.includes('var encounterMeta = hetStage ? { root: targetRoot, visitDate: hetStage.visitDate, provider: hetStage.provider } : encounterMetadataFor(fr, targetRoot, observedIdentity.root, dateKey(expectedContext.visitDate));'),
   'the visit-metadata source seam is gone');
 
 /* the downstream equality gates still stand for both paths (het-1.1.6 added
@@ -75,8 +96,18 @@ assert.ok(bg.includes("if (digits(expectedContext.appointmentId) && observedAppo
 /* behavioral: the three uniqueness regexes, extracted from the SHIPPED bytes
    and executed against live-shaped fixtures (escaped + plain serializations,
    a non-credentialed DisplayName decoy, a dated ScheduledDate object) */
+/* RE-AIMED 2026-09-02 (found red on an untouched b1196 baseline, unrelated to
+   this session's app-side change). The slice used to be a magic 3200 bytes from
+   the function's start, so apptmulti-1.0.0 (ext 3.0.99) growing the helper by
+   its expected-appointment narrowing pushed the third regex outside the window
+   and this suite reported "1 !== 3" - a MEASUREMENT artefact, not a missing
+   regex. Bound the slice by the next function instead, so the helper can grow
+   again without silently un-measuring what follows it. Nothing is dropped:
+   all three regexes are still extracted from the SHIPPED bytes and executed. */
 const helperStart = bg.indexOf('function hetStageEncounterContext');
-const helper = bg.slice(helperStart, helperStart + 3200);
+const helperEnd = bg.indexOf('function encounterMetadataFor', helperStart);
+assert.ok(helperStart > 0 && helperEnd > helperStart, 'the stage-context helper no longer sits before encounterMetadataFor');
+const helper = bg.slice(helperStart, helperEnd);
 const rex = (helper.match(/hetUniq\(\/(.+?)\/g/g) || []).map(s => new RegExp(s.slice(9, -2), 'g'));
 assert.strictEqual(rex.length, 3, 'expected exactly three hetUniq regexes in the helper');
 const fix = 'x\\"AppointmentID\\":\\"55816420\\"y' + '"AppointmentID":"55816420"'
@@ -202,8 +233,16 @@ console.log('PASS het-1.1.8 pins: complete parsed foreign identities block meta-
 {
   const snStart = bg.indexOf("var snTabs = ");
   assert.ok(snStart > 0, 'the stage-nav whitelist is gone');
-  assert.ok(bg.includes("var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P', ap: 'A/P' };"),
+  /* RE-AIMED 2026-09-02 (found red on an untouched b1196 baseline, unrelated to
+     this session's app-side change). procnav-3.0.97 added the one missing
+     entry - Procedure Documentation lives under the PE stage tab - and its
+     in-line reason now sits inside the object literal, so the old whole-literal
+     equality could never match again. The GUARANTEE this pin exists for is
+     unchanged and is still enforced below: the whitelist is a closed set of
+     documentation tabs and Sign-off / Review are not in it. */
+  assert.ok(bg.includes("var snTabs = { hpi: 'HPI', ros: 'ROS', exam: 'PE', assessment: 'A/P', plan: 'A/P', ap: 'A/P', procedure: 'PE'"),
     'the stage-nav tab whitelist changed - Sign-off/Review must never be reachable');
+  assert.ok(!/snTabs = \{[^}]*Review/i.test(bg), 'Review leaked into the stage-nav whitelist');
   assert.ok(!/snTabs = \{[^}]*Sign/i.test(bg), 'Sign-off leaked into the stage-nav whitelist');
   const snBlock = bg.slice(snStart, bg.indexOf('var frames = sameOriginFrames()', snStart));
   assert.ok(snBlock.includes('var snStage = hetStageEncounterContext(snFr, expectedPatient);'),

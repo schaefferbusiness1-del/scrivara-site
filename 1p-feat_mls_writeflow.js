@@ -908,7 +908,7 @@
    'named-section-final-action-unsupported no-athena-tab no-chart-open no-name-match no-response no-results ' +
    'not-persisted not-watching ' +
    'note-content-required note-destination-mismatch note-editor-not-empty note-payload-mismatch ' +
-   'note-section-count-mismatch note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
+   'note-section-count-mismatch note-section-not-on-surface note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
    'note-write-unverified numeric-only-field-refused one-exact-order-isolated-readback-verified ' +
    'open-deadline-exceeded open-timeout order-client-id-mismatch order-exact-already-present ' +
    'order-existing-duplicate-rejected order-field-too-long order-id-required order-not-reviewed ' +
@@ -2631,6 +2631,27 @@
     /* ---- one named step (amber) ------------------------------------- */
     'note-editor-not-empty': { fix: true, copy: true,
       say: 'One step needed: {where} already has text in it. MLS never types over text a person or an Athena template put there - for an op note that text is usually the procedure template skeleton. Clear that field in athenaOne (or keep what is already documented there), then press Check Athena again. Copy this section below if you would rather paste it yourself.' },
+    /* secsurf-1.0.0 (app side of MLS Assist 3.0.109; measured live 2026-09-02
+       00:5x-01:1x on the owner's tab under 3.0.107). Reviewed HPI, ROS and
+       Physical Exam each verified and read back inside ~30s; "Write reviewed
+       Assessment narrative" sat in the read-only check for the whole 150s bound
+       TWICE and never settled, so the queue never reached Plan / Follow-up or
+       the combined Assessment & Plan row. The extension was answering a section
+       whose OWN editor is not resolvable with the same code as "no encounter is
+       open at all" (context-unverified), and that code is the one the probe
+       ladder reads as "athenaOne is still painting the encounter it just
+       opened" - so it paced, re-opened, re-armed the pacing, and recycled
+       against a surface that was already painted and would never change.
+       3.0.109 says which of the two it measured. THIS ENTRY IS WHAT SETTLES IT:
+       the code is on no auto-open list, on no automatic-re-check list, and it
+       carries no "Open it and re-check" control, because the encounter is
+       already open and re-driving navigation at a painting surface destroys it
+       (openpace-1.0.0). One named step, plus the destination this surface
+       actually has when its A/P stage renders ONE combined field (ap-1.0.0).
+       Under an older extension the sentence never appears and behaviour is
+       byte-for-byte what it is today. */
+    'note-section-not-on-surface': { fix: true, copy: true,
+      say: 'One step needed: athenaOne has this encounter open, but MLS could not resolve one exact editor for {where} on the surface it is showing. Open that section\'s own stage tab in athenaOne (A/P for Assessment and Plan; HPI, ROS or PE for the others) and press Check Athena again. If this athenaOne renders ONE combined Assessment & Plan field instead of separate ones, send the "Write reviewed Assessment & Plan (combined)" row in this review - that is the destination this surface has. Copy this section below to paste it yourself.' },
     'no-athena-tab': { fix: true,
       say: 'One step needed: no signed-in athenaOne tab is open. Open athenaOne and sign in, then press Check Athena again.' },
     'no-chart-open': { fix: true, open: true,

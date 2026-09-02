@@ -1,5 +1,5 @@
 {
-  "version": "3.0.108",
+  "version": "3.0.109",
   "minChrome": 116,
-  "notes": "v3.0.108 - Writes: one confirmed press now writes every checked note section, one at a time, each read back before the next. The exact confirm button carries the ordered list of section fingerprints, the extension authorizes that list from the same real click, and every write must match the next fingerprint on it; anything off the list, out of order, or after ten minutes is refused as before. Save and Sign remain your own clicks in athenaOne. Everything from v3.0.107 remains. Requires Chrome 116+."
+  "notes": "v3.0.109 - Writes: when athenaOne shows one combined Assessment and Plan editor, a reviewed Assessment or Plan section now answers at once that its named field is not on that surface, instead of being re-checked for minutes as if the page were still loading; the combined Assessment and Plan row is the one that lands there. Everything from v3.0.108 remains. Requires Chrome 116+."
 }

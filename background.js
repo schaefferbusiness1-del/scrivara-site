@@ -1295,6 +1295,19 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (hetStage) hetDiag.postGate = 'pushed';
       candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget });
     }
+    /* secsurf-1.0.0 (3.0.109, measured live 2026-09-02): a named section whose
+       OWN editor is not resolvable is not the same refusal as "no encounter is
+       open at all", and answering both with context-unverified is what made the
+       app pace and re-open forever against a surface that was already painted.
+       qualified === true means a machine-typed stage frame bound THIS patient's
+       encounter; noteTargetFound === false means the requested section's editor
+       was not resolvable inside it; an unset postGate means no frame ever bound
+       an editor and was dropped by a later gate (that is a different refusal).
+       Still refused, still blocked, nothing read or written beyond this same
+       read-only pass - only the sentence and the code get honest. */
+    if (candidates.length === 0 && mode !== 'teach' && action === 'write_note' && requestedNoteSection && requestedNoteSection !== 'note' && hetDiag.qualified === true && hetDiag.noteTargetFound === false && !hetDiag.postGate) {
+      return { ok: false, blocked: true, reason: 'note-section-not-on-surface', hetDiag: hetDiag, hetFrames: hetFrames, noteSection: requestedNoteSection, destination: NAMED_NOTE_DESTINATIONS[requestedNoteSection] || '', error: 'This encounter is open in athenaOne, but MLS could not resolve one exact editor for the reviewed section on the surface it is showing. Nothing was changed.' };
+    }
     if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, hetFrames: hetFrames, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
     var hit = candidates[0], observedPatient = hit.observedIdentity, noteScope = hit.noteTarget && hit.noteTarget.root, noteEditor = hit.noteTarget && hit.noteTarget.editor;
     var bill = hit.bill, orderTarget = hit.orderTarget, actionControl = bill ? bill.el : (orderTarget ? orderTarget.search : hit.noteTarget.control);

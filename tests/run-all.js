@@ -48,6 +48,15 @@ const AUTOMATED_PROOF_FILES = new Set([
      one; and a day whose calendar rendered other clinicians but not the
      scoped provider is an honest EMPTY day, never needs-attention. */
   'scoped-pull-keeps-others-proof.js',
+  /* secsurf-1.0.0 (measured live 2026-09-02): the Assessment / Plan / A&P
+     read-only check that never settled. A named section whose own editor is not
+     resolvable was answered with the same code as "no encounter is open at all"
+     (context-unverified), which the probe ladder reads as "still painting" -
+     so it paced, re-opened the encounter, re-armed the pacing and recycled
+     against a surface that was already painted. The 3.0.109 splice says which
+     of the two it measured; the clarity table settles it in one step and points
+     at the combined Assessment & Plan destination a one-field A/P stage has. */
+  'assessment-probe-proof.js',
   /* vntpl-1.1.0 (2026-09-01): the standard visit note only ever takes a
      VISIT-NOTE template. Nine straight backend refusals came from a
      TEMPLATE_CONTRACT built out of an OPERATIVE REPORT; the op-note room keeps
@@ -1302,6 +1311,7 @@ const tests = [
   'follow-residue-proof.js',
   'capture-keeps-selection-proof.js',
   'scoped-pull-keeps-others-proof.js',
+  'assessment-probe-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',
   'visit-walkthrough-proof.js',
