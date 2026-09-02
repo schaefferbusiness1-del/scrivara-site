@@ -180,9 +180,39 @@ for (const row of namedWriteRows) {
     'the combined row must not change the reviewed bytes');
 }
 assert(!namedManifest.rows.some(row => row.id === 'write-note'), 'named sections still created a generic encounter-note write row');
-for (const id of ['save-named-sections-manual', 'sign-named-sections-manual']) {
-  const row = namedManifest.rows.find(item => item.id === id);
-  assert(row && row.capability === 'manual' && !row.action, `${id} did not fail closed as a manual final action`);
+/* savenamed-app-1.0.0 - RE-AIMED ON AN OWNER RULING, 2026-09-02, verbatim:
+     unblock the save block in mls assistant it should be able to do it if
+     someone clicks save on mls site
+   ...and, the same minute, "no one should have to touch Athena this entire
+   process". The pin above held BOTH final actions manual. That was right while
+   MLS Assist had no way to save a named-section encounter; MLS Assist 3.0.111
+   (savenamed-1.0.0) added one, on the SAME supervised probe/execute path, with
+   its own closed control allowlist and a read-back. So the SAVE row is now an
+   ordinary executable save_draft row that sorts last, and the half of this pin
+   that was always the safety property - SIGN is never executable and stays the
+   doctor's own click - is asserted here on its own, unchanged and unweakened. */
+{
+  const saveRow = namedManifest.rows.find(item => item.id === 'save-named-sections');
+  assert(saveRow, 'the named-section review lost its encounter-save row entirely');
+  assert.strictEqual(saveRow.action, 'save_draft', 'the encounter-save row is not the supervised save_draft action');
+  assert.strictEqual(saveRow.capability, 'ready', 'the encounter-save row did not arrive executable on a bound review');
+  assert.strictEqual(saveRow.kind, 'save', 'the encounter-save row changed kind');
+  assert(!namedManifest.rows.some(item => item.id === 'save-named-sections-manual'),
+    'the dead manual save row is still minted beside the executable one');
+  /* it carries the ALL-NAMED payload unchanged - that tuple list is what
+     declares the shape to MLS Assist, so it may never be trimmed or retargeted */
+  assert.deepStrictEqual(saveRow.payload.sections.map(s => s.key), ['hpi', 'ros', 'exam', 'assessment', 'plan'],
+    'the encounter-save row no longer carries the reviews own named sections');
+  assert(saveRow.payload.sections.every(s => s.execute === true),
+    'a section on the encounter-save payload is not execute:true, so MLS Assist would refuse the shape');
+  /* and it sorts AFTER every note write */
+  const lastNote = Math.max(...namedManifest.rows.filter(r => r.action === 'write_note').map(r => namedManifest.rows.indexOf(r)));
+  assert(namedManifest.rows.indexOf(saveRow) > lastNote, 'the encounter-save row does not sort last, after every note row');
+}
+{
+  const row = namedManifest.rows.find(item => item.id === 'sign-named-sections-manual');
+  assert(row && row.capability === 'manual' && !row.action,
+    'SIGN & SAVE BECAME EXECUTABLE - it stays the doctors own click in athenaOne, on every review');
 }
 const mixedManifest = window.__mlsWriteFlow.buildUnifiedManifest(Object.assign({}, reviewOpts, { plan: [], sections: [
   { key: 'note', text: 'Generic text must not become a fallback.' },

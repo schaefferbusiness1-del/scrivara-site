@@ -84,8 +84,8 @@ function eq(a, b, msg) {
 /* ==========================================================================
  * 0.  THE THREE SOURCE REGIONS THIS SUITE READS
  * ======================================================================== */
-const RW_BEGIN = '/* ===== revwork-1.1.0 begin ============================================== */';
-const RW_END = '/* ===== revwork-1.1.0 end ================================================ */';
+const RW_BEGIN = '/* ===== revwork-1.2.0 begin ============================================== */';
+const RW_END = '/* ===== revwork-1.2.0 end ================================================ */';
 ok(CONNECT.indexOf(RW_BEGIN) > 0, 'the revwork block is missing from 1p-mls-connect.js');
 const RW_BLOCK = CONNECT.slice(CONNECT.indexOf(RW_BEGIN) + RW_BEGIN.length, CONNECT.indexOf(RW_END));
 ok(RW_BLOCK.length > 20000, 'the revwork block could not be sliced');
@@ -438,12 +438,16 @@ function paintVisitScreen(h) {
   const noteCard = mk('div', 'noteCard', visitView);
   const step2 = mk('div', 'mlsAtStep2', noteCard);
   const noteBox = mk('textarea', 'noteBox', noteCard);
-  const saveBtn = mk('button', 'saveNoteBtn', noteCard);
-  const copyBtn = mk('button', 'copyEmrBtn', noteCard);
-  const push = mk('button', 'pushAllEmrBtn', noteCard);
+  /* reviewfix-1.0.0: the shell keeps these four in ONE `.note-actions` row and
+     the review workspace adopts the ROW, so the stub has to have one. */
+  const actions = h.El('div'); actions.className = 'note-actions'; noteCard.appendChild(actions);
+  const signBtn = mk('button', 'signBtn', actions);
+  const saveBtn = mk('button', 'saveNoteBtn', actions);
+  const copyBtn = mk('button', 'copyEmrBtn', actions);
+  const push = mk('button', 'pushAllEmrBtn', actions);
   const emrCard = mk('div', 'emrCard', visitView);
   return { visitView, ez3, ez3Body, wrap, adv, ptCard, ez3Note, chipHost, chips, ez3Edit, ez3Regen, ez3Copy,
-           flTx, flGen, ez3Gen, tx, genBtn, noteCard, step2, noteBox, saveBtn, copyBtn, push, emrCard };
+           flTx, flGen, ez3Gen, tx, genBtn, noteCard, step2, noteBox, actions, signBtn, saveBtn, copyBtn, push, emrCard };
 }
 /* the "Formatted view (live)" panel, in the shape feat_mls_fixpack_0701
    attachPreview leaves it: a wrap with its own Edit toggle, and the source
@@ -699,15 +703,25 @@ function attachFormattedView(h, ta) {
   s.tx.value = 'doctor and patient talking';
   h.api.sync();
 
-  const save = h.doc.getElementById('mlsRevSave');
-  const send = h.doc.getElementById('mlsRevSend');
+  /* reviewfix-1.0.0 RE-AIMED THIS PIN AND KEPT ITS PROPERTY: "the review
+     workspace's controls act on the FIRST press". #mlsRevSave and #mlsRevSend
+     were PROXIES that pressed #saveNoteBtn and #pushAllEmrBtn; the owner
+     counted them as duplicates of controls already on the same screen, so
+     they are retired and the ORIGINALS are adopted into the panel. The press
+     tested here is therefore the doctor's press on the app's own button, and
+     the property is stronger: there is no second control that could have
+     received it. */
+  const slot = h.doc.getElementById('mlsRevSlot');
   const codes = h.doc.getElementById('mlsRevCodes');
-  ok(save && send && codes, 'the review workspace lost one of its three controls');
-  [save, send, codes].forEach((b) => eq(b.disabled, false, 'a review control ships disabled - it eats the click'));
+  ok(slot && codes, 'the review workspace lost its slot or its codes entry');
+  eq(h.doc.getElementById('mlsRevSave'), null, 'the retired Save proxy is back');
+  eq(h.doc.getElementById('mlsRevSend'), null, 'the retired Send proxy is back');
+  eq(codes.disabled, false, 'a review control ships disabled - it eats the click');
+  eq(s.actions.parentNode, slot, 'the last-step row is not in the review workspace');
 
-  save.click();
+  eq(h.api.save(), 'saveNoteBtn', 'Save to history did not reach the app own control');
   eq(s.saveBtn.clickCount, 1, 'Save to history did not act on the FIRST press');
-  send.click();
+  eq(h.api.send(), 'pushAllEmrBtn', 'Send to Athena did not reach the app own control');
   eq(s.push.clickCount, 1, 'Send to Athena did not act on the FIRST press');
   eq(s.push.scrolls.length, 0, 'Send scrolled to a control that was already on screen');
   codes.click();
@@ -721,20 +735,27 @@ function attachFormattedView(h, ta) {
   h.clock.advance(1200);
   s.noteBox.value = 'S: knee pain.';
   h.api.sync();
-  const note = h.doc.getElementById('mlsRevNote');
+  /* reviewfix-1.0.0: the note the doctor types in and the button he may be
+     about to press are now the app's OWN nodes, borrowed into the panel. The
+     property is unchanged and the stakes are higher: replacing one of these
+     would not lose a copy, it would lose the note. */
+  const note = h.doc.getElementById('noteBox');
   const status = h.doc.getElementById('mlsRevStatus');
   const ident = h.doc.getElementById('mlsRevIdentity');
-  const save = h.doc.getElementById('mlsRevSave');
-  ok(note && status && ident && save, 'the review workspace did not build');
+  const save = h.doc.getElementById('saveNoteBtn');
+  const slot = h.doc.getElementById('mlsRevSlot');
+  ok(note && status && ident && save && slot, 'the review workspace did not build');
+  eq(note.parentNode, slot, 'the one note is not in the review workspace');
 
   s.noteBox.value = 'S: knee pain, left. A: OA.';
   h.api.sync();
   h.clock.advance(4000);
-  eq(h.doc.getElementById('mlsRevNote'), note, 'a repaint replaced the note box the doctor is typing in');
+  eq(h.doc.getElementById('noteBox'), note, 'a repaint replaced the note box the doctor is typing in');
+  eq(note.parentNode, slot, 'a repaint moved the note out of the review workspace');
   eq(h.doc.getElementById('mlsRevStatus'), status, 'a repaint replaced the status line');
   eq(h.doc.getElementById('mlsRevIdentity'), ident, 'a repaint replaced the patient identity line');
-  eq(h.doc.getElementById('mlsRevSave'), save, 'a repaint replaced a button the doctor may be about to press');
-  eq(note.value, 'S: knee pain, left. A: OA.', 'the note text was not patched into the surviving node');
+  eq(h.doc.getElementById('saveNoteBtn'), save, 'a repaint replaced a button the doctor may be about to press');
+  eq(note.value, 'S: knee pain, left. A: OA.', 'the one note lost its text across a repaint');
 }
 
 /* ---- 6m. the schedule anchor still only OFFERS, and offers in place ---- */

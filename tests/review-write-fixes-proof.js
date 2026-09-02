@@ -447,7 +447,18 @@ const FLOWS = [FLOW_FILE, 'feat_mls_writeflow.js', 'cloned-feat_mls_writeflow.js
       sheetclarReadyRow: () => (opts.readyRow === false ? null : { id: 'r1', label: 'the note' }),
       probeOnlyActive: () => false,
       bxCheckBoxes: () => (opts.boxes || []),
-      unifiedPrimaryPlan: () => opts.plan || { mode: 'batch', rows: [{}], reason: '' }
+      unifiedPrimaryPlan: () => opts.plan || { mode: 'batch', rows: [{}], reason: '' },
+      /* savenamed-app-1.0.0 (owner ruling 2026-09-02): the shipped state
+         derivation now asks the review's own encounter-save row two read-only
+         questions - is this row the save, and is a save still owed - so the
+         sandbox answers them. Default NO, which is a review with no save row
+         at all and keeps every sentence below byte-for-byte. */
+      savenamedIsRow: (row) => opts.saveIsRow === true && !!row,
+      savenamedOwedRow: () => (opts.saveOwed ? { id: 'save-named-sections' } : null),
+      savenamedVerified: () => opts.saveVerified === true,
+      SAVENAMED_PILL_LABEL: 'ONE PRESS LEFT',
+      SAVENAMED_PILL_SHORT: 'PILL SHORT SENTINEL',
+      SAVENAMED_DONE_SHORT: 'DONE SHORT SENTINEL'
     });
     vm.runInContext(base + '\nthis.__out = sheetclarStateBase(' + JSON.stringify(opts.state || {}) + ', ' +
       JSON.stringify(opts.kind || '') + ');', context, { filename: 'sheetclar-state.js' });

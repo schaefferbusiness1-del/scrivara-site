@@ -118,9 +118,21 @@ const HEAD_REGIONS = [
      halt-on-uncertain, same verified-only counting. Regions 1-4, 6 and 7 did
      not move, which is the check that this was a sequencing change and not a
      write-path change. Proven in tests/write-next-press-proof.js. */
+  /* MOVED DELIBERATELY A SECOND TIME, pullshield-1.0.0 (2026-09-02). The one
+     caller of wfbindPullBusy() that never consulted it: this queue probed
+     straight into the single athenaOne tab a schedule pull was driving, and a
+     pull that ENDS drives athenaOne back to its dashboard - the surface every
+     read-only check refuses on. The step now awaits a bounded, hidden-safe wait
+     on that same lease before it checks a row, and a pull that never lets go
+     settles the row as NOT ATTEMPTED (an attempt record, never a receipt) and
+     the queue moves on. Every gate, latch, bound, token, payload and receipt
+     path in this region is untouched - it can only DELAY or SKIP. Measured, not
+     assumed: on the pre-edit staged tree this region still hashed to 44e41349,
+     so savenamed-app-1.0.0 did not move it. Proven in
+     tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '44e41349ee1d1009cb29f74f1a484a9b70e9c6fc8f29a56017c74c207b98a0ab'],
+    '85e30a6375f57e7637dbc2a4380d978be55e47f7bd9b99b0ee7d60c11acceac1'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '5f712227078089f313988b254825795ed695d22fa6393e5a3c635d92ebcbb6f2'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',

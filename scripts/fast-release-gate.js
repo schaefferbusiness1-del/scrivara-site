@@ -119,8 +119,57 @@ const ROOT = path.resolve(__dirname, '..');
        the surface stamp cannot fire on a calendar or schedule frame, and lifts
        the spliced decision block into a sandbox to prove the restore is taken
        once for a dashboard control, never for a calendar one, and never twice
-       inside one request. */
-const FULL_GATE_TESTS = 946;
+       inside one request.
+       +1 (f16-context-clear-owner-runtime.test.js, f16ctx-1.1.0, 2026-09-02
+       10:xx) = 950 - F16's 2500 ms #contextBox janitor cleared the context the
+       app itself had just prefilled for the patient now open (newVisit() blanks
+       the box, prefillContextFromProfile() refills it from that chart), up to
+       2.5 s after the chart opened and with a toast blaming "the previous
+       patient"; mid-run it also failed the post-response source fingerprint and
+       discarded the finished note. The skip now requires BOTH an
+       __mlsOpenSwitchFix.resets delta and changed bytes, and this suite lifts
+       the shipped interval and the shipped prefill to prove a cross-tab switch,
+       a newVisit() that threw and a stale reset level all still clear. */
+/* +1 draftsig-1.0.0 (owner-measured 2026-09-02): tests/draft-has-no-signature-proof.js
+   — a DRAFT never carries a signature line. The generated note in the owner's
+   own tab ended with a bare "Electronically signed by:" on an unsigned draft,
+   and every draft that day carried his name before anything was signed. The
+   block is now appended only when he signs in MLS. */
+/* +1 upnowstate-1.0.0 (owner-measured 2026-09-02, late morning):
+   tests/upnow-banner-state-proof.js - the schedule banner is no longer a
+   load-time sentence that outlives the step it names. It read "Up now:
+   <patient> - loaded & ready. Hit Start recording." on a screen that already
+   held a captured transcript, the generated note and a step bar on Review &
+   Sign. Its tail now names the state the visit is really in, it stands down
+   when the up-now patient is not the active chart, and it never touches the
+   pull lane's sentences on the same shared node. */
+/* +1 switch-nag-proof.js — nonag-1.0.0 (2026-09-02, measured in the owner's
+   tab): the "You have an unsaved visit/note ... Continue switching?" question
+   kept re-opening because every MACHINE arrival at setActivePtId/selectPatient
+   reached the same guard as a doctor's press. A machine arrival now refuses
+   silently and paints the schedule strip instead; a doctor press asks once per
+   (held visit, target). */
+/* +1 reviewfix-1.0.0 (owner-measured 2026-09-02, screenshot of the "2  Review
+   the note" banner): tests/review-section-one-door-proof.js - the review
+   section is ONE place. The same generated note was painted twice inside
+   #noteCard (the review workspace AND the Clinical note card under it, each
+   with its own formatted view, Save to history and Athena entry), and the
+   workspace's Save/Send were PROXIES that could not carry the app's own gate
+   reasons. The proxies and the mirror textarea are retired, the app's own
+   #noteBox, editor bar, Copy section row and last-step action row are
+   adopted into the one panel, Codes & billing reveals instead of scrolling,
+   and a stale second "Next: Review & send to Athena" is removed. */
+/* +1 beadwait-1.0.0 (measured live 2026-09-02 16:26, ext 3.0.110):
+   tests/beadwait-splice-proof.js - the encounter frame binds BEFORE athenaOne
+   paints its stage-tab strip. All six named-section probes refused 0.4 s apart
+   with note-section-not-on-surface and stageNav no-bead 13 s after the app
+   opened the encounter, yet 22 s later the same frame carried six visible
+   li.nav-bead elements and a re-check wrote HPI, ROS, PE and the combined A&P.
+   scripts/splice-30111-beadwait.js turns sn-1.0.0's single look into a bounded
+   poll of the SAME shipped lookup (15 looks, 800 ms apart, 12 s ceiling) and
+   the flat 1600 ms post-click sleep into a bounded poll of the shipped
+   read-only findNamedNoteAction (400 ms, 8 s ceiling). It grants nothing. */
+const FULL_GATE_TESTS = 962;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

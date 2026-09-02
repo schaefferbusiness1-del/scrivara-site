@@ -353,6 +353,14 @@ function whatHappenedRow(html, label) {
     const noteRows = manifest.rows.filter(r => r.action === 'write_note' && r.capability === 'ready');
     eq(noteRows.length, 3, 'the three-section fixture did not build three READY note rows');
     eq(h.boxes().length, 3, 'the shipped markup did not carry one include checkbox per READY note row');
+    /* apsel-1.0.0 (2026-09-02 09:xx) SCOPE NOTE, deliberate and NOT a re-aim:
+       the arrival default now un-ticks exactly one side of the mutually
+       exclusive Assessment / Plan / combined group, because only one of those
+       two shapes exists on any athenaOne A/P stage (his renders one combined
+       field). THIS fixture is hpi/ros/exam - it mints no A/P row at all - so
+       "every READY note section arrives checked" is still the whole truth here
+       and the assertion is unchanged. The A/P arrival is proven, in both
+       directions, in tests/ap-one-destination-proof.js. */
     h.boxes().forEach(b => ok(b.checked === true, 'the sheet no longer arrives with every READY note section checked'));
 
     /* he unchecks two, and only the first one lands */

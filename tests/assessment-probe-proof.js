@@ -187,6 +187,68 @@ const seam = (function () {
     'the auto-open allowlist was rewritten - a section refusal must never drive athenaOne navigation');
 }
 
+/* ============= 1b. THE STEP THE EXTENSION HAS ALREADY TAKEN (apdead-5)
+ * Measured 2026-09-02 against the shipped bytes. MLS Assist resolves the
+ * requested section's OWN stage tab before it looks for candidates and reports
+ * what it did there on hetDiag.stageNav. On the one-field A/P surface that
+ * produces this refusal the value is 'already-open' - so the sentence opened
+ * with "Open that section's own stage tab", a step the extension had just
+ * proved done, and the doctor's only cycle (Check Athena again) returns the
+ * identical sentence: a dead end. The cure is a sibling sentence used ONLY when
+ * the tab is provably open, and it must say nothing that was not measured - no
+ * claim that this practice renders a combined field, and no claim that MLS
+ * unticked or changed any row (nothing implements that, and rowsel-1.0.0
+ * reserves an unchecked row for the doctor's own choice). Every other stageNav
+ * value, and every older extension that reports none, keeps today's sentence
+ * byte-for-byte. */
+{
+  const clar = seam.clarity.classify(CODE);
+  const ROW = { destination: 'Athena encounter > Assessment & Plan > Assessment', label: 'Write reviewed Assessment narrative' };
+  eq(typeof clar.sayOpen, 'string',
+    'the clarity entry carries no sentence for the surface whose stage tab MLS itself already opened - the refusal still leads with that navigation');
+  ok(clar.sayOpen.length > 0, 'the stage-tab-open sentence is empty');
+
+  const shipped = seam.clarity.say(clar, ROW);
+  const openSay = seam.clarity.say(clar, ROW, 'already-open');
+  const openedSay = seam.clarity.say(clar, ROW, 'opened-A/P');
+  [['already-open', openSay], ['opened-A/P', openedSay]].forEach(function (pair) {
+    const w = pair[0], s = pair[1];
+    eq(s.indexOf("Open that section's own stage tab"), -1,
+      'stageNav=' + w + ': the refusal still leads with a navigation the extension already performed and reported');
+    ok(s.indexOf('Check Athena again') > 0,
+      'stageNav=' + w + ': the sentence lost the control that re-runs the read-only check');
+    ok(s.indexOf('Assessment & Plan (combined)') > 0,
+      'stageNav=' + w + ': the sentence lost the combined destination that IS on a one-field A/P surface');
+    ok(s.indexOf(ROW.destination) > 0,
+      'stageNav=' + w + ': the sentence does not name the exact destination it could not resolve');
+    ok(/Nothing was changed and nothing was sent\.$/.test(s),
+      'stageNav=' + w + ': the sentence lost the no-change guarantee');
+    eq(/still painting/i.test(s), false,
+      'stageNav=' + w + ': the settled refusal still claims the surface is painting');
+    eq(/unticked|un-ticked|MLS has unchecked/i.test(s), false,
+      'stageNav=' + w + ': the sentence claims a row change that nothing implements');
+  });
+
+  eq(seam.clarity.say(clar, ROW, 'no-bead'), shipped,
+    'a stage tab the extension could not find changed the sentence - that doctor still has a tab to open');
+  eq(seam.clarity.say(clar, ROW, 'forbidden-control'), shipped,
+    'a stage tab the extension refused to click changed the sentence');
+  eq(seam.clarity.say(clar, ROW, 'click-failed'), shipped,
+    'a stage tab click that failed changed the sentence');
+  eq(seam.clarity.say(clar, ROW, ''), shipped,
+    'an extension that reports no stage-tab outcome changed the sentence');
+  eq(seam.clarity.say(clar, ROW), shipped,
+    'the two-argument call (the execute path and the diagnostics seam) no longer returns the shipped sentence');
+
+  /* the sensor. The extension already returns this outcome on every probe;
+     recording it is the only way a sentence can know the step was taken. */
+  const REC = FLOW.slice(FLOW.indexOf('function wfautoRecordProbe(state, row, probe, stage) {'),
+    FLOW.indexOf('function wfautoEligible(state) {'));
+  ok(REC.length > 0, 'the read-only probe sensor is no longer where this suite expects it');
+  ok(REC.indexOf('hetDiag') > 0 && REC.indexOf('stageNav') > 0,
+    'the stage-tab outcome the extension already returns is still discarded');
+}
+
 /* ================================== 2. THE WRITE PATH IS BYTE-IDENTICAL
  * The same seven regions tests/write-next-press-proof.js pins, checked here
  * because this cure lives one line away from the probe ladder and must not have
@@ -220,6 +282,10 @@ const seam = (function () {
     'the pacing branch this cure routes around is gone from the probe ladder');
   eq(LADDER.indexOf(CODE), -1,
     'the cure was written INTO the pinned probe ladder instead of into the clarity table beside it');
+  /* apdead-5 is routed around the same ladder: the stage-tab outcome is read by
+     the sensor and the clarity renderer, never by the pinned probe path. */
+  eq(LADDER.indexOf('stageNav'), -1,
+    'the apdead-5 cure was written INTO the pinned probe ladder');
 }
 
 /* =============================================== 3. THE SHEET, AT RUNTIME
@@ -429,6 +495,16 @@ const SECSURF_REFUSAL = {
     ok(probeText.indexOf('Assessment & Plan (combined)') > 0,
       'the settled sentence does not point at the combined destination this surface has');
     ok(/Nothing was changed and nothing was sent\.$/.test(probeText), 'the settled sentence lost the no-change guarantee');
+    /* apdead-5, end to end: this fixture's answer carries hetDiag.stageNav
+       'already-open' - the extension opened or confirmed the A/P stage tab
+       BEFORE it looked for candidates and said so on this very probe. The
+       sentence the doctor reads must therefore not begin by telling him to
+       open it. This is the whole wiring: the sensor records the outcome, the
+       renderer reads it, the clarity table has a sentence for it. */
+    eq(probeText.indexOf("Open that section's own stage tab"), -1,
+      'THE SETTLED REFUSAL STILL LEADS WITH A STAGE-TAB NAVIGATION THE EXTENSION ALREADY PERFORMED AND REPORTED ON THIS PROBE');
+    ok(probeText.indexOf('the stage tab for Athena encounter > Assessment & Plan > Assessment is already open') > 0,
+      'the settled refusal does not say what the extension actually measured about that section\'s stage tab');
 
     /* the two controls a settled refusal must leave behind */
     ok(h.el('mlsAthenaUnifiedRecheck'), 'the settled refusal left no "Check Athena again" control - which is also the queue settle latch');

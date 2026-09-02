@@ -89,9 +89,33 @@ const HEAD_REGIONS = [
      halt-on-uncertain, same verified-only counting. Regions 1-4, 6 and 7 did
      not move, which is the check that this was a sequencing change and not a
      write-path change. Proven in tests/write-next-press-proof.js. */
+  /* MOVED DELIBERATELY A SECOND TIME, pullshield-1.0.0 (2026-09-02). MEASURED:
+     wfbindPullBusy() has always answered, from the schedule importer's own
+     lease and busy stamp, whether a pull is driving athenaOne right now -
+     wfbindRun and the canonical generation path both consult it and refuse
+     rather than stomp it - and this queue was the one caller that did not. It
+     probed straight into a tab another lane was navigating, and a pull that
+     ENDS drives athenaOne back to its dashboard, which is the surface every
+     read-only check refuses on. Measured on the same 2026-09-02 16:09-16:31
+     run that produced paintwait-1.0.0.
+     WHAT CHANGED IN THIS REGION, and only this: before a row is checked, the
+     step awaits pullshieldClear(state) - a bounded, hidden-safe wait on that
+     same lease - and a pull that never lets go settles the row as NOT
+     ATTEMPTED (pullshieldSettle records an attempt, never a receipt) and the
+     queue moves on. Every gate, latch, bound, token, payload and receipt path
+     is untouched: same probeUnifiedRow, same executeUnifiedSelection, same
+     150s / 180s ceilings, same halt-on-uncertain, same verified-only counting,
+     same wfnextQueueRows. It can only ever DELAY or SKIP a row; there is no new
+     path to a write.
+     MEASURED, NOT ASSUMED: on the pre-edit staged tree this region hashed to
+     44e41349..., i.e. savenamed-app-1.0.0 did NOT move it and
+     tests/sheet-rows-and-reopen-proof.js was green at 231 checks. Regions 1-4,
+     6 and 7 did not move for this lane either - which is the check that this
+     was a sequencing change and not a write-path change. Proven in
+     tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '44e41349ee1d1009cb29f74f1a484a9b70e9c6fc8f29a56017c74c207b98a0ab'],
+    '85e30a6375f57e7637dbc2a4380d978be55e47f7bd9b99b0ee7d60c11acceac1'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '5f712227078089f313988b254825795ed695d22fa6393e5a3c635d92ebcbb6f2'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',
@@ -132,11 +156,37 @@ const HEAD_REGIONS = [
 
 /* ============ 0b. THE THREE THINGS WRITEUI PROMISED NOT TO RE-DECIDE ======
  * A presentation pass may move the word and the button; it may not change WHAT
- * decides them. These three regions are byte-identical to b1183. */
+ * decides them. Two of these three regions are byte-identical to b1183; the
+ * arrival default was re-aimed once, deliberately, by apsel-1.0.0 - see the
+ * reason above it and the property assertions under the digest loop. */
 const KEEP_REGIONS = [
+  /* RE-AIMED DELIBERATELY, apsel-1.0.0 (measured 2026-09-02 09:xx on the
+     owner's own tab, MLS Assist 3.0.107). This digest pins that a PRESENTATION
+     pass did not quietly re-decide which sections arrive selected. apsel-1.0.0
+     is not a presentation pass: it is a reviewed change to the arrival default
+     itself, made because the shipped default guaranteed a DEAD ROW.
+     THE MEASUREMENT. ap-1.0.0 mints THREE Assessment/Plan rows on any review
+     with one assessment and one plan - separate Assessment, separate Plan, and
+     the combined "Assessment & Plan" - and only ONE of those two shapes exists
+     on a given athenaOne A/P stage. All three arrived ticked, so the doctor's
+     default press always attempted at least one destination that cannot exist,
+     against the owner ruling "nothing here should be blocked or manual or not
+     attempted once its run".
+     WHAT CHANGED, AND ONLY THIS: exactly ONE of the group arrives ticked - the
+     combined row unless this athenaOne has already answered that it renders
+     separate fields. Nothing is removed: all three rows are still minted, still
+     rendered, still one tick away, and the un-ticked side now carries a sentence
+     saying it is the alternative. The properties this digest can no longer
+     carry by itself are asserted immediately below, off the shipped source, and
+     the runtime half (exactly one A/P box ticked, never both sides, DONE
+     reachable in both shapes) is tests/ap-one-destination-proof.js.
+     KEEP_REGIONS[1] (the button plan and its sync) and KEEP_REGIONS[2] (the
+     state derivation, sheetclarStateBase) did NOT move - which is the check
+     that this was a SELECTION change and not a plan or state change - and none
+     of the seven SHA-pinned write-path regions moved either. */
   ['the arrival default (unifiedDefaultChecked)',
     '  function unifiedDefaultChecked(row) {', '  function unifiedReadyRowHtml(',
-    '3e76777a9a083c3630ef38fe5d0d03425ed7176863574806ba4dbe8422d87971'],
+    '6661e3d8a4081d9a85a03f1edaca01d335fcb8fe609f861990a2834ab3ec4054'],
   /* RE-AIMED DELIBERATELY, wfdone-1.0.0 (measured 2026-09-02, adversarial
      replay of the one-press lane). This digest pins that a PRESENTATION pass
      did not quietly re-decide the button. wfdone-1.0.0 is not a presentation
@@ -153,12 +203,51 @@ const KEEP_REGIONS = [
      unifiedSyncPrimaryButton is byte-identical - which is exactly what
      planNeverEnablesOnDone below asserts against the shipped function. None of
      the seven SHA-pinned write-path regions moved. */
+  /* RE-AIMED DELIBERATELY A SECOND TIME, savenamed-app-1.0.0 (OWNER RULING
+     2026-09-02, verbatim: "unblock the save block in mls assistant it should be
+     able to do it if someone clicks save on mls site" / "no one should have to
+     touch Athena this entire process"). This is again NOT a presentation pass:
+     MLS Assist 3.0.111 gave the named-section review a supervised encounter
+     save, so the review now owes the doctor ONE MORE PRESS after its sections
+     land - and a plan that only ever counted the include checkboxes killed the
+     button one press early, which is the wfdone defect above, one row later.
+     WHAT THE RE-AIM IS ALLOWED TO HAVE CHANGED, and the block below asserts:
+     the ONLY row that can newly join a plan is the manifest's own save row, and
+     only through savenamedOwedRow, whose readiness rule is "every checked note
+     section has landed or lands ahead of it on this same press"; the legacy
+     single-row shortcut is NARROWED (it now also requires that no save is
+     riding the press), never widened; unifiedSyncPrimaryButton is still
+     byte-identical; and none of the seven SHA-pinned write-path regions moved.
+     sheetclarStateBase moved for the same ruling and for one reason only: with
+     a save still owed the pill may not say DONE, and once the save has landed
+     and been read back it may not tell him to go and save it in athenaOne. */
+  /* RE-AIMED DELIBERATELY A THIRD TIME, apcover-1.0.0 (2026-09-02, measured on
+     the owner's own tab at 16:31). This is again NOT a presentation pass.
+     apsel-1.0.0 stopped the sheet COUNTING the mutually exclusive Assessment /
+     Plan / combined rows three times; it did not stop the plan OWING them. With
+     the combined "Assessment & Plan" row verified, the separate rows refused
+     with note-section-not-on-surface and hetDiag stageNav 'opened-A/P' /
+     'already-open' - this athenaOne renders ONE combined A&P field - and the
+     button still read "Confirm & write all 2, starting with Assessment
+     narrative", a press whose only possible outcome was the same refusal. That
+     is the wfdone defect above, one row later.
+     WHAT THE RE-AIM IS ALLOWED TO HAVE CHANGED, and the block below asserts:
+     ONE clause on the wfdone owed filter - `&& !apCovered(state, r)` - which
+     can only ever SHRINK the owed list, i.e. only ever DISABLE. No new row can
+     join a plan, `rows` (bxCheckedRows) is untouched so the doctor's own ticks
+     are untouched, the legacy single-row shortcut is unchanged, and
+     unifiedSyncPrimaryButton is still byte-identical. The arrival default
+     (KEEP_REGIONS[0]) and the state derivation (KEEP_REGIONS[2]) did NOT move
+     for this lane - which is the check that this was an OWED-WORK change and
+     not a selection or a state change - and of the seven SHA-pinned write-path
+     regions only the batch queue moved, for pullshield-1.0.0 above. Proven in
+     tests/write-sheet-agreement-proof.js. */
   ['the primary button plan and its sync (unifiedPrimaryPlan + unifiedSyncPrimaryButton)',
     '  function unifiedPrimaryPlan(state) {', "  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler",
-    '1e76307534521b476feef2608f57b29d98b1e823f3e4a0d3a62b86e6985cf4a5'],
+    '1b31b746fffd76035fc9ae472147ad4cb73649ceb368bcfd15833561e2887aae'],
   ['the state derivation (sheetclarStateBase)',
     '  function sheetclarStateBase(state, kind) {', '  function paintSheetclarState(state, kind) {',
-    '7a1442c1edd6955ea03080d777ac98d48b7a72f52922e6ac4b4b5d99d8a52de3']
+    '0b63410b3ead86ef078ab3f3c33651b930ee6c16a4af9df4ee26b3b3cd1dce37']
 ];
 KEEP_REGIONS.forEach(function (r) {
   const i = FLOW.indexOf(r[1]);
@@ -168,6 +257,47 @@ KEEP_REGIONS.forEach(function (r) {
   eq(crypto.createHash('sha256').update(FLOW.slice(i, j), 'utf8').digest('hex'), r[3],
     'WRITEUI RE-DECIDED SOMETHING IT MAY ONLY REPAINT: ' + r[0]);
 });
+
+/* apsel-1.0.0 (2026-09-02 09:xx): the arrival digest above was re-aimed once,
+   on purpose, so these are the properties it can no longer carry by itself.
+   They are read off the SHIPPED source, and they are the whole of what the
+   re-aim is allowed to have changed: the ready/write_note gate is untouched,
+   the new rule is an EXCEPTION that can only ever reach the A/P group, the two
+   sides of that group are mutually exclusive by construction, and the doctor's
+   own tick outranks the learned preference. */
+{
+  const AT = FLOW.indexOf('  function unifiedDefaultChecked(row) {');
+  const END = FLOW.indexOf('  function unifiedReadyRowHtml(', AT);
+  ok(AT > 0 && END > AT, 'the arrival default is no longer where this suite reads it');
+  const ARRIVE = FLOW.slice(AT, END);
+  ok(ARRIVE.indexOf("if (!(row && row.capability === 'ready' && row.action === 'write_note')) return false;") > 0,
+    'THE READY / WRITE-NOTE GATE IS GONE - something other than a READY reviewed note section can now arrive selected');
+  ok(ARRIVE.indexOf('var g = apGroupKind(row);') > 0 && ARRIVE.indexOf('if (!g) return true;') > 0,
+    'THE A/P RULE STOPPED BEING AN EXCEPTION - a section outside the Assessment/Plan group can now arrive UNticked');
+  ok(ARRIVE.indexOf("if (g === 'assessment_and_plan') return pref !== 'separate';") > 0,
+    'the combined Assessment & Plan row is no longer the unlearned default - the only measured surface renders exactly that one field');
+  ok(ARRIVE.indexOf("return pref === 'separate';") > 0,
+    'the separate Assessment/Plan pair no longer arrives ticked on a surface that answered "separate"');
+  ok(ARRIVE.indexOf('var pref = apPickThisSheet || apSurfacePref();') > 0,
+    "the doctor's own tick for this sheet no longer outranks the learned surface preference");
+  /* the group is a two-state selector: for any preference value, exactly one
+     of the two branches above is true, so both sides can never arrive ticked
+     and neither can arrive with both un-ticked. */
+  ['combined', 'separate', ''].forEach(function (pref) {
+    const combined = (pref !== 'separate'), separate = (pref === 'separate');
+    ok(combined !== separate,
+      'THE A/P PAIR IS NO LONGER MUTUALLY EXCLUSIVE at preference "' + pref + '" - the guaranteed dead row is back');
+  });
+  /* and the alternative side is a SENTENCE, never a second control */
+  ok(FLOW.indexOf('function apAlternativeNoteHtml(row) {') > 0,
+    'the un-ticked A/P alternative lost the one sentence that says what it is');
+  ok(FLOW.indexOf("data-mls-ap-alt=\"' + esc(row.id) + '\"") > 0,
+    'the A/P alternative sentence lost the hook a suite reads it by');
+  eq((FLOW.match(/apAlternativeNoteHtml\(row\)/g) || []).length, 2,
+    'the A/P alternative sentence is emitted somewhere other than the one ready-row renderer');
+  eq((FLOW.match(/data-mls-ap-alt/g) || []).length, 1,
+    'the A/P alternative sentence gained a second emitter - one row, one sentence');
+}
 
 /* wfdone-1.0.0 (2026-09-02): the plan digest above was re-aimed once, on
    purpose, so these are the properties it can no longer carry by itself. They
@@ -183,10 +313,23 @@ KEEP_REGIONS.forEach(function (r) {
   const PLAN = FLOW.slice(PLAN_AT, SYNC_AT), SYNC = FLOW.slice(SYNC_AT, END_AT);
   ok(PLAN.indexOf('var wfdoneOwed = rows.filter(') > 0,
     'THE FINISHED-SHEET BRANCH IS GONE - a live Confirm can again name a write that cannot happen');
-  ok(PLAN.indexOf("if (!wfdoneOwed.length) return { mode: 'none', rows: [], reason: WFDONE_NOTHING_LEFT_REASON };") > 0,
+  /* savenamed-app-1.0.0: the finished-sheet branch is intact and still returns
+     the dead plan with its own reason - it now yields ONLY to the review's own
+     armed save row, which is the one press a finished sheet can still owe. */
+  ok(PLAN.indexOf("if (!wfdoneOwed.length) return saveOwed ? { mode: 'batch', rows: [saveOwed], reason: '' } : { mode: 'none', rows: [], reason: WFDONE_NOTHING_LEFT_REASON };") > 0,
     'the finished-sheet branch no longer returns a dead plan carrying its own reason');
   eq((PLAN.match(/mode: 'none'/g) || []).length, 4, 'the plan gained or lost a refusal branch beyond the one wfdone-1.0.0 added');
-  eq((PLAN.match(/mode: 'batch'/g) || []).length, 1, 'THE FINISHED-SHEET BRANCH CAN NOW ENABLE THE BUTTON - it may only ever make it dead');
+  /* savenamed-app-1.0.0: the two new 'batch' returns are the SAME row, reached
+     the SAME way - `saveOwed`, and nothing else, may join a plan. */
+  eq((PLAN.match(/mode: 'batch'/g) || []).length, 3, 'the plan gained a batch path beyond the two savenamed-app-1.0.0 added');
+  eq((PLAN.match(/rows: \[saveOwed\]/g) || []).length, 2,
+    'a new batch return carries something other than the review\'s own armed save row');
+  eq((PLAN.match(/var saveOwed = savenamedOwedRow\(state\);/g) || []).length, 1,
+    'the save row reaches the plan through something other than its one readiness rule');
+  ok(PLAN.indexOf("      if (!(selRec && selRec.status === 'verified')) return { mode: 'single', rows: [sel], reason: '' };") > 0,
+    'the legacy Save/Sign/order shortcut no longer stands aside for a row that already landed - a verified row would hold the button live with nothing to send');
+  ok(PLAN.indexOf('if (rows.length === 1 && !saveOwed && selectable') > 0,
+    'the legacy single-row shortcut no longer stands aside when the save is riding this press - one press would then run two rows through the one-row path');
   eq((PLAN.match(/mode: 'single'/g) || []).length, 3, 'the plan gained a new legacy-single path - wfdone may only ever refuse');
   eq(crypto.createHash('sha256').update(SYNC, 'utf8').digest('hex'),
     '894175be89041031f2d705337318289c7f6a5c85ea485e79eb6010d6c84eb63a',
@@ -667,15 +810,27 @@ function primaryFollowsPlan(h, where) {
     const procedureRow = manifest.rows.filter(r => r.action === 'write_note')[0];
     ok(html.indexOf('MLS will write this text into ' + procedureRow.destination + '.') > 0,
       'the header sentence does not name the exact Athena section this write lands in');
-    ok(html.indexOf('Save and Sign &amp; Save stay yours in athenaOne.') > 0,
-      'the header sentence does not hand Save and Sign back to the doctor');
+    /* savenamed-app-1.0.0 (OWNER RULING 2026-09-02: "unblock the save block in
+       mls assistant..." / "no one should have to touch Athena this entire
+       process"). This fixture is an OP NOTE, whose reviewed section is the
+       named 'procedure' destination - so under MLS Assist 3.0.111 it carries
+       the supervised encounter-save row, and the header may no longer hand Save
+       back to the doctor. SIGN still is his, and the sentence still says so;
+       that half is the one this line was really guarding. */
+    ok(html.indexOf('MLS saves the encounter itself once the sections land; Sign &amp; Save stays yours in athenaOne.') > 0,
+      'the header sentence does not hand Sign back to the doctor, or claims Save is still his after 3.0.111 took it over');
+    eq(html.indexOf('Save and Sign &amp; Save stay yours in athenaOne.'), -1,
+      'the header still tells the doctor to go and save an encounter MLS will save for him');
 
     /* 3d. no duplicate controls anywhere */
-    eq(tally(html, 'name="mlsAthenaUnifiedAction"'), 1, 'a one-section sheet rendered more than one action radio');
-    eq(tally(html, 'class="mls-bx-check"'), 1, 'a one-section sheet rendered more than one include checkbox');
+    /* savenamed-app-1.0.0: TWO ready rows now - the op-note write and the
+       encounter save - so there IS a choice and the radio is a real control
+       again. writeui-1.0.0's rule is unchanged: a SOLE ready row hides it. */
+    eq(tally(html, 'name="mlsAthenaUnifiedAction"'), 2, 'the op-note sheet rendered a radio for something other than its write row and its save row');
+    eq(tally(html, 'class="mls-bx-check"'), 1, 'a one-section sheet rendered more than one include checkbox - the save row must never carry one');
     eq(tally(html, 'data-mls-copy-note="'), 1, 'the sheet rendered more than one Copy note button');
-    ok(/name="mlsAthenaUnifiedAction"[^>]*style="display:none"/.test(html),
-      'the sole READY row still paints a radio beside its checkbox - two controls for one act');
+    eq(/name="mlsAthenaUnifiedAction"[^>]*style="display:none"/.test(html), false,
+      'a sheet with two READY rows hid the radio that picks between them');
     eq(h.boxes().length, 1, 'the include checkbox is gone');
     eq(h.boxes()[0].checked, true, 'the single READY section no longer arrives checked');
   }
@@ -697,9 +852,30 @@ function primaryFollowsPlan(h, where) {
     const openAt = html.indexOf('data-mls-view-text="' + row.id + '"');
     ok(openAt > 0, 'the one section has no view-text disclosure');
     const closeAt = html.indexOf('</details>', openAt);
-    const textAt = html.indexOf(OP_TEXT);
+    /* RE-AIMED, preview-1.0.0 (OWNER 2026-09-02, verbatim: "make a better write
+       UI by actually showing what's going to be written in cleaner if
+       possible"). writeui-1.0.0 put the payload behind this disclosure because
+       what sat on the page was an ENGINEER'S SLAB - a monospace block with two
+       hex ids under it - above the fold on every review. The owner has since
+       asked for the opposite of what that pass optimised for: the doctor is to
+       SEE the text that will land. So the property is re-aimed, not dropped -
+       the SLAB, its monospace and the two hashes still live inside this
+       disclosure and nowhere else, and the row's own reading-type preview
+       (data-mls-preview-text, white-space:pre-wrap, clamped to two lines behind
+       an aria-expanded button) is what is allowed to show the same string above
+       it. tests/write-sheet-agreement-proof.js pins that the preview text IS
+       the payload the execute sends, byte for byte. */
+    const textAt = html.indexOf(OP_TEXT, openAt);
     ok(textAt > openAt && textAt < closeAt,
-      'THE EXACT PAYLOAD IS STILL POURED ONTO THE PAGE - it must live inside its own section\'s disclosure');
+      'THE EXACT PAYLOAD LEFT ITS OWN SECTION\'S DISCLOSURE');
+    eq(tally(html, '<pre'), tally(html, 'data-mls-view-text="'),
+      'THERE IS A MONOSPACE PAYLOAD SLAB THAT BELONGS TO NO SECTION DISCLOSURE - the engineer view may only live inside one');
+    const preAt = html.indexOf('<pre');
+    ok(preAt > html.indexOf('data-mls-view-text="'), 'a payload slab is poured onto the page before any disclosure opens');
+    const pvAt = html.indexOf('data-mls-preview-text="' + row.id + '"');
+    ok(pvAt > 0 && pvAt < openAt, 'the reading-type preview does not sit on the row, above its engineer disclosure');
+    ok(html.indexOf('data-mls-preview-toggle="' + row.id + '" aria-expanded=') > 0,
+      'the reading-type preview has no keyboard-reachable aria-expanded toggle');
     /* the doctor's heading survived, byte for byte */
     ok(html.indexOf('Review the exact text going to ' + row.destination) > 0,
       'the note review lost the heading that names its exact Athena destination');
@@ -729,8 +905,18 @@ function primaryFollowsPlan(h, where) {
     eq(go.disabled, false, 'the verified sheet left Confirm grey');
     go.click();
     await settle(900);
-    eq(h.executes().length, 1, 'the human Confirm click did not issue exactly one execute');
-    pill(h, 'DONE', 'after a verified write');
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02). This harness advertises
+       MLS Assist 3.0.108+ (batchArm), where ONE trusted click mints an ordered
+       authorization the extension consumes one item per execute - that is the
+       lane tests/write-next-press-proof.js section 6 already pins at three
+       executes from one press. Under 3.0.111 the review's own encounter save
+       rides that same list as the FINAL item, so this press is the op-note
+       write and then the save: two executes, one click, each with its own
+       read-only check and its own receipt. */
+    eq(h.executes().length, 2, 'the human Confirm click did not issue the write and then the encounter save');
+    eq(h.executes()[0].action, 'write_note', 'the press did not write the note first');
+    eq(h.executes()[1].action, 'save_draft', 'the encounter save did not ride last on the same press');
+    pill(h, 'DONE', 'after a verified write and a verified encounter save');
     primaryFollowsPlan(h, 'after a verified write');
   }
   {
@@ -787,7 +973,13 @@ function primaryFollowsPlan(h, where) {
     eq(h.receiptHtml(), '', 'the receipt painted before there was an outcome');
     h.wf.diagnostics.sheetUx.press(h.el('mlsAthenaUnifiedGo'));
     await settle(2600);
-    eq(h.executes().length, 3, 'the one press did not send all three checked sections');
+    /* savenamed-app-1.0.0: three sections and then the encounter save, on the
+       one batch-arm press. The save is always the LAST item and is never
+       counted as a section anywhere the doctor reads. */
+    eq(h.executes().length, 4, 'the one press did not send all three checked sections and then save the encounter');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'write_note', 'write_note', 'save_draft'],
+      'the encounter save did not ride last on the same press');
+    checks++;
     const prog = String(h.el('mlsAthenaUnifiedProgress').innerHTML || '');
     ok(prog.indexOf('data-mls-prog-headline') > 0, 'the loading bar never painted a headline');
     ok(/data-mls-prog-pct="100"/.test(prog), 'a finished batch never filled the bar');
@@ -822,7 +1014,18 @@ function primaryFollowsPlan(h, where) {
     await settle(300);
     h.wf.diagnostics.sheetUx.press(h.el('mlsAthenaUnifiedGo'));
     await settle(2600);
-    eq(h.executes().length, 1, 'the refused section was written anyway');
+    /* savenamed-app-1.0.0: the refused section is STILL never written - that is
+       the property this line guards, and it is asserted on the actions below.
+       What changed is that the same batch-arm press also runs the review's own
+       encounter save, which is a draft save of whatever DID land: it protects
+       the section that landed, it signs nothing, and the receipt below still
+       names the section that did not land and why. */
+    eq(h.executes().length, 2, 'the refused section was written anyway, or the encounter save did not ride the same press');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'save_draft'],
+      'the refused section was written anyway');
+    checks++;
+    eq(h.executes().filter(m => m.rowHash === noteRows[1].rowHash).length, 0,
+      'THE REFUSED SECTION REACHED AN EXECUTE');
     pill(h, 'PARTLY DONE', 'when one of two sections landed');
     const rec = h.receiptHtml();
     ok(rec.indexOf('data-mls-receipt-missed="1"') > 0, 'a partial send does not name what did not land');
@@ -854,5 +1057,5 @@ function primaryFollowsPlan(h, where) {
     eq(h.executes().length, 0, 'a sheet with no READY section still reached Athena');
   }
 
-  console.log('PASS write-ui: ' + checks + ' checks - writeui-1.0.0 (b1184) is presentation only: the identity lock, probe ladder, receipt mint, execute, batch queue and both closed allowlists are byte-identical by the SAME SHA-256 digests sheet-clarity and write-auto-chain pin, and the arrival default, the primary-button plan and the state derivation are byte-identical to b1183; the rebuilt sheet reads header -> the four step chips in their reserved host -> ONE status pill and ONE sentence -> the loading bar -> the receipt -> the sections checklist -> one closed "How this works" that still carries every disclosure verbatim; the exact text ships CLOSED behind one per-section toggle with the payload/row ids in its footer; the primary button follows unifiedPrimaryPlan in every state; and a finished send turns the sheet into a receipt that names what landed where, says Athena read it back, offers the encounter link, and on a partial send names what did not land and why');
+  console.log('PASS write-ui: ' + checks + ' checks - writeui-1.0.0 (b1184) is presentation only: the identity lock, probe ladder, receipt mint, execute, batch queue and both closed allowlists are byte-identical by the SAME SHA-256 digests sheet-clarity and write-auto-chain pin, the primary-button plan and the state derivation are byte-identical to b1183 and the arrival default is byte-identical to its one deliberate apsel-1.0.0 re-aim, whose properties are re-asserted off the shipped source (the ready/write-note gate untouched, the Assessment/Plan rule an exception that reaches nothing else, and its two sides mutually exclusive at every preference); the rebuilt sheet reads header -> the four step chips in their reserved host -> ONE status pill and ONE sentence -> the loading bar -> the receipt -> the sections checklist -> one closed "How this works" that still carries every disclosure verbatim; the exact text ships CLOSED behind one per-section toggle with the payload/row ids in its footer; the primary button follows unifiedPrimaryPlan in every state; and a finished send turns the sheet into a receipt that names what landed where, says Athena read it back, offers the encounter link, and on a partial send names what did not land and why');
 })().catch(err => { console.error(err); process.exit(1); });

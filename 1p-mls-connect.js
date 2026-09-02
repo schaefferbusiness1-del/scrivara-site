@@ -7864,6 +7864,57 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3fl-review{display:inline-flex;align-items:center;justify-content:center;background:#204034;border:1px solid #204034;border-radius:11px;color:#fff;font-size:14px;font-weight:750;cursor:pointer;padding:11px 17px;}',
     '#mlsEz3 .ez3fl-review:hover{background:#2E6A4B;border-color:#2E6A4B;}',
     '#mlsEz3 .ez3fl-nextrow span{color:#68756E;font-size:11.5px;}',
+    /* visitpage-1.0.0 (owner 2026-09-02: "the time for Next: Review & send to
+       Athena shows up twice on a certain page... the bottom one's correct, the
+       top one does nothing. You click the button, it just takes to the bottom
+       one.")
+
+       MEASURED on this shell, 1366x900, drafted state, workspace closed. Three
+       visible doors to ONE job, top to bottom:
+         #ez3flReview   "Next: Review & send to Athena"  720x62  @y670
+         #ez3Send       "Review Athena actions"          720x82  @y1680
+         #pushAllEmrBtn "Review Athena actions"          192x37  @y3367
+       Two of them carry the IDENTICAL accessible name, and #ez3Send's handler
+       is requestSend() -> p.click() on #pushAllEmrBtn, i.e. the top one's whole
+       job is to press the bottom one. That is the duplicate the owner is
+       looking at.
+
+       The yield is the SAME mechanism, in the same shape, as the Generate and
+       transcript yields above: the class is a CLAIM, the :has() rule reads the
+       FACT (the lane is really mounted AND its Next is really offered), so it
+       can never hide the LAST review control on the screen. Phone is excluded
+       outright - the lane is CSS-hidden there and the engine bar is all that
+       is left. Node removal is never used; drop the lane and #ez3Send is back
+       on its own. #pushAllEmrBtn is untouched: it is the real door, it lives in
+       the workspace card, and the flow lane now presses it through #ez3Send's
+       own name/DOB gate rather than parking focus on it. */
+    'body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) #ez3flNoteWrap:not([hidden]) #ez3flReview) #ez3Send{display:none!important}',
+    /* JS-owned fallback for browsers without :has(), derived from the same
+       visible node, so it cannot hide the engine control when the lane's Next
+       is absent or hidden. */
+    'body:not(.mls-phone).ez3fl-top-next-owns #ez3Send{display:none!important}',
+    /* recvis-1.0.0 (owner 2026-09-02: "sometimes when I click start recording,
+       it doesn't record"). THE LANE'S ONE PLACE TO SAY WHY A PRESS DID NOT
+       RECORD. A toast is gone in seconds and can be routed to the quiet tray;
+       a press that ends with nothing recording has to leave a mark where the
+       doctor pressed. Red for a stop, amber for "on but nothing is arriving" -
+       the second is an observation, not a refusal, and must not read like one. */
+    '#mlsEz3 .ez3fl-recfail{flex-basis:100%;display:flex;align-items:center;gap:10px;flex-wrap:wrap;' +
+      'margin-top:4px;padding:9px 12px;border-radius:11px;font-size:12.5px;font-weight:600;line-height:1.4;}',
+    '#mlsEz3 .ez3fl-recfail[hidden]{display:none!important;}',
+    '#mlsEz3 .ez3fl-recfail[data-kind="err"]{background:#FCF1F1;border:1px solid #E9C9C9;color:#9F2D2D;}',
+    '#mlsEz3 .ez3fl-recfail[data-kind="warn"]{background:#FBF6E9;border:1px solid #E6D8B0;color:#7A5B12;}',
+    '#mlsEz3 .ez3fl-recfail[data-kind="wait"]{background:#F1F6F2;border:1px solid #CFE0D2;color:#204034;}',
+    '#mlsEz3 .ez3fl-recfail .ez3fl-refailwhy{flex:1 1 240px;min-width:0;}',
+    '#mlsEz3 .ez3fl-refailgo{flex:0 0 auto;background:#204034;border:1px solid #204034;border-radius:9px;' +
+      'color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;padding:7px 13px;}',
+    '#mlsEz3 .ez3fl-refailgo:hover{background:#2E6A4B;border-color:#2E6A4B;}',
+    '#mlsEz3 .ez3fl-refailgo[hidden]{display:none!important;}',
+    /* The success state has to be as unmistakable as the failure one: the pill
+       says "Pause recording", the body carries .mls-recording, and this counter
+       MOVES. A number that changes is the only proof a microphone is live that
+       does not require trusting a label. */
+    '#mlsEz3 .ez3fl-txmeta #ez3flCount[data-live="1"]{color:#9F2D2D;font-weight:700;}',
     '#mlsEz3 .ez3fl-quick{flex-basis:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}',
     '#mlsEz3 .ez3fl-qlbl{font-size:10px;font-weight:700;letter-spacing:.07em;color:var(--muted);}',
     '#mlsEz3 .ez3fl-qchip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;color:#55605A;font-size:12.5px;font-weight:600;cursor:pointer;padding:6px 12px;transition:background .15s ease,color .15s ease;}',
@@ -8233,16 +8284,163 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return did;
   }
   try { window.__mlsStopAllCapture = mlsStopAllCapture; } catch (eSx) {}
+  /* ===== recvis-1.0.0 begin ============================================== */
+  /* OWNER, 2026-09-02: "sometimes when I click start recording, it doesn't
+     record."
+
+     WHAT THE PRESS ACTUALLY IS, end to end, and where it can end in silence.
+     The hero (#ez3ActiveGo / #ez3Rec / #ez3Next) calls
+     lockAndStart(appt,{record:true}), whose last line is
+
+         if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
+
+     — a click, fired and never read. #captureBtn -> toggleCapture() ->
+     startCapture(), and startCapture() returns FALSE on six different paths:
+     the scheduled-action gate, the Athena prepare gate, consent not yet given
+     (it opens the dialog and returns), no recognizer in this browser, a
+     changed visit epoch mid-start, and a throw out of recog.start(). Three of
+     those paint into #micWarn, which lives inside #captureCard - a node the
+     calm shell hides permanently, measured at b940 - and the rest say nothing
+     at all. On top of that the speech hub can hand the lease over
+     ASYNCHRONOUSLY: claim() returns pending, begin() waits on whenReady, and
+     if that barrier never resolves the button has ALREADY been repainted
+     "Recording... Stop Visit" and capturing is ALREADY true while
+     recog.start() has never been called. The pill says live and not one word
+     is being captured. That is the shape of "sometimes it doesn't record".
+
+     THIS BLOCK IS THE LANE'S MEMORY OF THAT PRESS. It starts nothing, retries
+     nothing, and changes no gate - the consent law is untouched, fresh consent
+     per new encounter, and every refusal sentence below is the lane repeating
+     a verdict something else reached. It only makes the verdict PERSIST where
+     the doctor pressed, with the one thing to do next.
+
+     NO NEW TIMER (hidden-tab law). Every check below rides a pass the lane
+     already runs: the two post-press syncs, the #captureBtn MutationObserver,
+     and the existing visibility-gated 2.5 s sweep, which returns early while
+     the tab is hidden. Elapsed time is read from Date.now() at those passes,
+     never counted by a timer of our own. */
+  var _recFail = null;      /* { why, kind, at } - the last press's verdict */
+  var _recPending = null;   /* { at } - a start deferred behind the consent dialog */
+  var _recLive = null;      /* { since, words, moved } - since the pill went live */
+  var _recArmed = null;     /* { at, patientId } - a start was requested somewhere */
+  /* EVERY DOOR THAT STARTS A RECORDING, not just this lane's pill. b940 moved
+     starting to the HERO (#ez3Nxt / #ez3Now / #ez3Next / #ez3ActiveGo) and left
+     the lane pill for Pause/Resume only - so the press the owner is describing
+     does not pass through toggleTopRecording() at all. It goes
+     hero -> lockAndStart(appt,{record:true}) -> captureBtn().click(), and that
+     last click is fired and never read. This lane cannot make the engine read
+     it, but it can WATCH the same press and then look at the result, which is
+     the same answer arrived at from the outside. */
+  var REC_START_SEL = '#ez3ActiveGo,#ez3Rec,#ez3Rec2,#ez3Next,#ez3Nxt,#ez3Now,#captureBtn,.ez3fl-recbtn';
+  /* The engine's own predicate, copied deliberately rather than shared: these
+     hero buttons double as "go to the next patient" with data-rec="0", and
+     painting "recording did not start" after one of those would be a lie. */
+  function recPressWanted(el) {
+    try { return !!el && el.getAttribute('data-rec') !== '0'; } catch (e) { return false; }
+  }
+  /* A start is only judged after the app has had a beat to open its consent
+     dialog or paint its own refusal. Read from Date.now() on a pass the lane
+     already runs - never counted by a timer of this block's own. */
+  var REC_ARM_GRACE_MS = 1200;
+  /* A doctor may genuinely be quiet for a while at the top of a visit, so this
+     is deliberately long and deliberately worded as an observation rather than
+     a refusal. It exists for the case where NOTHING will ever arrive. */
+  var REC_SILENT_MS = 20000;
+  var REC_SILENT_WHY = 'The recorder is on but no words have arrived yet - check that the right microphone is selected, or press Pause and start again.';
+  function recFailSet(why, kind) {
+    why = String(why == null ? '' : why).trim();
+    if (!why) return;
+    if (_recFail && _recFail.why === why) return;   /* do not restart the row */
+    _recFail = { why: why, kind: kind || 'err', at: Date.now() };
+  }
+  function recFailClear() { _recFail = null; }
+  /* The consent dialog's own in-flight promise. A truthy value means the
+     doctor is looking at "Patient consent required" right now, which is a
+     legitimate not-yet and must never be painted as a failure. */
+  function consentAskOpen() {
+    try { return !!window._mlsConsentAsk; } catch (e) { return false; }
+  }
+  /* Who holds the microphone lease, if anyone. dictate/phone/copilot register
+     with the same hub, so this names the real competitor instead of guessing. */
+  function speechOwnerLabel() {
+    try {
+      var hub = window.__mlsSpeechHub;
+      if (!hub && typeof window.mlsSpeechHub === 'function') hub = window.mlsSpeechHub();
+      var cur = hub && typeof hub.current === 'function' ? hub.current() : null;
+      if (!cur || cur.id === 'visit') return '';
+      return String(cur.label || cur.id || '');
+    } catch (e) { return ''; }
+  }
+  /* #micWarn is the page's own diagnosis and it is often written into a node
+     the calm shell has hidden. Lift the SENTENCE, wherever the node is. */
+  function micWarnSentence() {
+    try {
+      var w = document.getElementById('micWarn');
+      if (!w) return '';
+      var span = w.querySelector('span');
+      return String((span && span.textContent) || '').trim();
+    } catch (e) { return ''; }
+  }
+  /* The one sentence per failure mode. Each names what happened and the next
+     press, because a reason with no next action is only half a message. */
+  function recStartVerdict(patientIdAtPress) {
+    if (recordingNow()) return null;                       /* it started */
+    if (consentAskOpen()) {
+      return { why: 'Waiting on the consent dialog - confirm consent and capture starts.', kind: 'wait' };
+    }
+    var now = verifiedActivePatient();
+    if (patientIdAtPress && (!now || String(now.id) !== String(patientIdAtPress))) {
+      return { why: 'The open patient changed while recording was starting, so nothing was recorded. Reopen the patient and press Start recording again.', kind: 'err' };
+    }
+    var mic = micWarnSentence();
+    if (/blocked|not-allowed|allow mic|microphone access/i.test(mic)) {
+      return { why: 'Microphone blocked - allow it in the address bar, then press Start again.', kind: 'err' };
+    }
+    if (mic) return { why: mic, kind: 'err' };
+    var other = speechOwnerLabel();
+    if (other) return { why: 'Another recording is running (' + other + ') - stop it first, then press Start again.', kind: 'err' };
+    return { why: 'Recording did not start and MLS was not told why. Press Start again, or type/paste the visit below - nothing has been lost.', kind: 'err' };
+  }
+  /* One document-level listener, capture phase - a LISTENER, not a timer, and
+     it starts nothing: it only records that a start was asked for, so the
+     passes this lane already runs can look at what came of it. */
+  function laneRecordPress(ev) {
+    try {
+      var t = ev && ev.target;
+      var btn = (t && t.closest) ? t.closest(REC_START_SEL) : null;
+      if (!btn || !recPressWanted(btn)) return;
+      if (recordingNow()) { _recArmed = null; return; }   /* this press is a stop */
+      var p = verifiedActivePatient();
+      _recArmed = { at: Date.now(), patientId: p ? String(p.id) : '' };
+      recFailClear();
+      scheduleLaneSync();
+    } catch (e) {}
+  }
+  /* ===== recvis-1.0.0 end ================================================ */
   function toggleTopRecording() {
     var cb = $('captureBtn');
-    if (!cb) { flowToast('The recorder is still loading. Try again in a moment.', 'err'); return; }
+    if (!cb) {
+      recFailSet('The recorder is still loading. Wait a moment, then press Start recording again.', 'err');
+      flowToast('The recorder is still loading. Try again in a moment.', 'err');
+      scheduleLaneSync();
+      return;
+    }
     var live = recordingNow();
     if (!live) {
       var patient = verifiedActivePatient();
       if (!patient) {
+        recFailSet('No patient is open, so there is no chart to lock this recording to. Choose the patient, then press Start recording again.', 'err');
         flowToast('Choose a patient first so this recording is locked to the correct chart.', 'err');
+        scheduleLaneSync();
         return;
       }
+      /* recvis-1.0.0: the press is about to happen - clear the previous
+         verdict so an old sentence can never be read as this press's answer,
+         and remember who we started for so a mid-start patient switch is
+         detectable without a timer. */
+      recFailClear();
+      _recPending = null;
+      var patientAtPress = String(patient.id);
       var seg = segmentApi();
       try {
         if (seg && typeof seg.isArmed === 'function' && seg.isArmed() && typeof seg.stopSegment === 'function') seg.stopSegment();
@@ -8259,9 +8457,42 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              gets the unchanged fail-closed refusal. */
           var started = seg.startSegment('visit');
           var awaitingConsent = started === (seg.CONSENT_PENDING || 'consent-pending');
-          if (!started && !awaitingConsent) { flowToast('The recorder could not start. Your existing transcript is safe.', 'err'); return; }
+          if (!started && !awaitingConsent) {
+            /* recvis-1.0.0: a null from startSegment is the fail-closed
+               refusal, and until now it was a toast and nothing else. Ask the
+               page WHY before repeating the generic line - #micWarn, the
+               speech-hub owner and a mid-start patient switch are all readable
+               right here, synchronously. */
+            var vSeg = recStartVerdict(patientAtPress);
+            recFailSet(vSeg ? vSeg.why : 'The recorder could not start. Your transcript is safe - press Start recording again.',
+              vSeg ? vSeg.kind : 'err');
+            flowToast('The recorder could not start. Your existing transcript is safe.', 'err');
+            scheduleLaneSync();
+            return;
+          }
+          /* recvis-1.0.0: a deferred start is NOT a failure - it is the
+             consent dialog. Remember it so the lane can tell the difference
+             later between "confirmed and recording" and "the dialog closed and
+             nothing happened", which is the one consent outcome that said
+             nothing at all. */
+          if (awaitingConsent) { _recPending = { at: Date.now() }; _recArmed = null; }
         } else cb.click();
-      } catch (e) { flowToast('The recorder could not start. Please try again.', 'err'); return; }
+      } catch (e) {
+        recFailSet('The recorder hit an error and stopped: ' + ((e && e.message) ? e.message : e) + ' - your transcript is safe. Press Start recording again.', 'err');
+        flowToast('The recorder could not start. Please try again.', 'err');
+        scheduleLaneSync();
+        return;
+      }
+      /* recvis-1.0.0: THE PRESS IS NOW READ, NOT ASSUMED. startCapture() sets
+         #captureBtn.recording synchronously, before it ever waits on the
+         speech-hub lease, so by the time control returns here a real start is
+         already visible in the control this lane reads its state out of. No
+         start, no pending consent, and no exception means the press ended with
+         nothing recording - which is exactly the case that has been silent. */
+      if (!recordingNow() && !_recPending) {
+        var v = recStartVerdict(patientAtPress);
+        if (v) { recFailSet(v.why, v.kind); flowToast(v.why, v.kind === 'wait' ? '' : 'err'); }
+      }
     } else {
       /* Pause is non-destructive: never route through the legacy captureBtn
          click (its stop path can raise a stop-and-generate confirmation).
@@ -8284,7 +8515,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
         }
       }
-      catch (e2) { flowToast('The recorder could not pause. Please try again.', 'err'); return; }
+      catch (e2) {
+        recFailSet('The recorder could not pause: ' + ((e2 && e2.message) ? e2.message : e2) + ' - your transcript is safe. Press Pause again.', 'err');
+        flowToast('The recorder could not pause. Please try again.', 'err');
+        scheduleLaneSync();
+        return;
+      }
+      /* recvis-1.0.0: a completed pause retires every recording verdict. */
+      recFailClear(); _recPending = null; _recLive = null;
     }
     setTimeout(function () { syncTopLane(_primaryLane || document.querySelector('.ez3fl-record')); }, 250);
     setTimeout(function () { syncTopLane(_primaryLane || document.querySelector('.ez3fl-record')); }, 900);
@@ -8381,6 +8619,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { note.dispatchEvent(new Event('input', { bubbles: true })); } catch (eSync) {}
     }
     if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
+    /* nextgate-1.1.0 (measured 2026-09-02 10:xx): the dim on #ez3flReview is
+       deliberately not `disabled`, so the click still arrives here - answer it
+       with the same sentence the tooltip carries. Placement is load-bearing:
+       this must sit AFTER the #ez3flNote -> #noteBox adoption above, or a note
+       that was generated and never typed into is judged on an empty #noteBox. */
+    try { if (noteLooksLikeRefusal(note.value)) { flowToast(NEXTGATE_REFUSAL_WHY, 'err'); return; } } catch (eNextGateRefusal) {}
 
     /* A Lite account cannot reach this review at all, and until now said nothing.
        applyLitePortal (ScribeFlow.html) calls mlsRoleHide on
@@ -8514,10 +8758,47 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             ? ' It is further down this page; the page has been left exactly where you are.'
             : '';
           send.focus({ preventScroll: true });
-          /* Name the real control and the real next step. Focus alone is not
-             feedback — a doctor who did not see the highlight move has no way to
-             know the click registered, and this is the last gate before Athena. */
-          flowToast('Ready to review — press Enter, or use "Review Athena actions", to see exactly what will be sent.' + reviewReachNote, '');
+          /* visitpage-1.0.0 (owner 2026-09-02: "the top one does nothing. You
+             click the button, it just takes to the bottom one.")
+
+             THIS IS THE FOURTH TIME THIS CONTROL HAS BEEN REPORTED DEAD, and
+             the first three fixes all treated the symptom. b666 revealed the
+             destination by scrolling to it; b669 kept that scroll clear of the
+             fixed bubble; b940 ruled the viewport move out entirely and left
+             focus + a sentence; rvack-1.0.0 added a pulse at both ends. Every
+             one of them was an attempt to make a FOCUS MOVE feel like an
+             action. MEASURED here, 1366x900: pressing #ez3flReview left
+             window.scrollY at 0, moved document.activeElement to #pushAllEmrBtn
+             2,697 px below the fold, and hid #ez3flNoteWrap. Nothing the doctor
+             could see happened where he pressed, and the only remaining door
+             was one he had to go and find. The honest reading of the label
+             "Next: Review & send to Athena" is that pressing it OPENS THE
+             REVIEW. So it does.
+
+             THROUGH THE ENGINE'S OWN DOOR, NOT AROUND IT. #ez3Send is
+             requestSend(), which carries the name/DOB mismatch confirm before
+             it clicks #pushAllEmrBtn; clicking #pushAllEmrBtn straight from
+             here would skip that gate. So press #ez3Send when it exists and
+             fall back to the raw destination only on a shell that does not
+             render it (the phone lane). Same state machine, one owner — the
+             rule toggleWorkspaceFromLane() already follows for #ez3Adv.
+
+             NOTHING IS SENT BY THIS. #pushAllEmrBtn's own title: "Review exact
+             Athena destinations. Every available READY item is checked and
+             confirmed separately." It opens the b29 review-and-confirm sheet,
+             which is the step this button is named after. Every gate above
+             (generation in flight, a model refusal, an empty note, a Lite tier)
+             has already been answered before this line is reached. */
+          var reviewDoor = $('ez3Send') || send;
+          var reviewOpened = false;
+          try { reviewDoor.click(); reviewOpened = true; } catch (eDoor) { reviewOpened = false; }
+          /* Name what actually happened. Focus alone is not feedback — a doctor
+             who did not see the highlight move has no way to know the click
+             registered, and this is the last gate before Athena. */
+          flowToast(reviewOpened
+            ? 'Athena review opened — nothing is sent until you confirm it there.'
+            : ('The review could not be opened from here.' + reviewReachNote +
+               ' Use "Review Athena actions" on the note card.'), reviewOpened ? '' : 'err');
           /* rvack-1.0.0 (owner 2026-08-20: "the review and send to athena
              doesnt work at all"): with scrolling ruled out (b940) and the toast
              routable to the quiet tray, a click could complete with NOTHING the
@@ -8584,6 +8865,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scripts, and a latin1 writer in that chain turns a literal U+2026 into
      control bytes - so the trailing pause is three dots, not an ellipsis. */
   var GEN_RUN_HINT = 'Generating your note - usually under a minute...';
+  /* nextgate-1.1.0 (measured 2026-09-02 10:xx): ONE refusal predicate, shared
+     by the paint and by the door. Per gcx the Next control is deliberately NOT
+     `disabled` - a swallowed click is the defect that doctrine exists to
+     prevent - so the dim + tooltip are advisory and the click still arrives at
+     openReviewStep(). Until now only syncTopLane() knew what a refusal looked
+     like, so a dimmed Next still opened the Athena review on a model refusal
+     and carried that sentence forward as the visit's clinical note. Same
+     bytes, same sentence, both places. */
+  var NEXTGATE_REFUSAL_WHY = 'The AI answered with a refusal instead of a note - generate again before reviewing.';
+  function noteLooksLikeRefusal(text) {
+    try { return /^\s*(?:i['\u2019]?m sorry|i am sorry|i cannot|i can['\u2019]?t|unable to)/i.test(String(text == null ? '' : text)); } catch (eRefusal) { return false; }
+  }
   var _genRun = { id: 0, active: false, settled: null };
   function genTranscriptText() {
     var t = $('transcript');
@@ -8709,6 +9002,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e2) {}
     return owns;
   }
+  /* visitpage-1.0.0: THE SAME OWNERSHIP CLAIM, ONE STEP LATER IN THE FLOW.
+     While the lane's "Next: Review & send to Athena" is really on screen it is
+     the door to the Athena review, and the engine's #ez3Send ("Review Athena
+     actions") is the same job under a second name - measured on this shell as
+     two visible controls with the identical accessible name, 1,742 px apart,
+     the upper one's handler being requestSend() -> click the lower one.
+     Derived from the same visible node the :has() rule reads, so the class can
+     never hide the engine control when the lane's Next is absent or hidden;
+     it is only the fallback for a browser without :has(). */
+  function syncTopNextOwnership(rec, noteWrap, rvBtn) {
+    var owns = false;
+    try {
+      owns = !!(rec && noteWrap && rvBtn && !noteWrap.hidden && !rvBtn.hidden && topLaneIsVisible(rec));
+    } catch (e) { owns = false; }
+    try {
+      var body = document.body;
+      if (body && body.classList.contains('ez3fl-top-next-owns') !== owns) body.classList.toggle('ez3fl-top-next-owns', owns);
+    } catch (e2) {}
+    return owns;
+  }
   function setTopVoiceChip(rec, id, on, idleLabel, activeLabel) {
     var chip = rec && rec.querySelector('#' + id); if (!chip) return;
     on = !!on;
@@ -8769,7 +9082,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     syncPrimaryVoiceTools(rec);
-    if (!rec || !rec.parentNode) { syncTopGenerationOwnership(null, null); return; }
+    if (!rec || !rec.parentNode) { syncTopGenerationOwnership(null, null); syncTopNextOwnership(null, null, null); return; }
     var live = recordingNow();
     /* 2026-07-28: an active phone session is LIVE - the pill reads Stop and
        the canonical stop reaches it (before, it was stoppable only from the
@@ -8877,7 +9190,69 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (document.activeElement !== topTx) { if (txMirror) txMirror.set(topTx, text); else topTx.value = text; }
       else if (txMirror && text.length > topTx.value.length && text.slice(0, topTx.value.length) === topTx.value) txMirror.set(topTx, text);
     }
-    if (count) { var words = text.trim() ? text.trim().split(/\s+/).length : 0; setLaneText(count, words + ' word' + (words === 1 ? '' : 's') + ' captured'); }
+    var words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    if (count) {
+      /* recvis-1.0.0: THE SUCCESS STATE HAS TO BE UNMISTAKABLE. "N words
+         captured" is the same sentence whether the microphone is live or the
+         doctor pasted the text an hour ago. While capture is live the counter
+         says so and is coloured as a live indicator - and it MOVES, which is
+         the only proof of a working microphone that does not ask the doctor to
+         trust a label. */
+      setLaneText(count, (live ? 'Listening - ' : '') + words + ' word' + (words === 1 ? '' : 's') + ' captured');
+      setLaneAttr(count, 'data-live', live ? '1' : '0');
+    }
+    /* ===== recvis-1.0.0: the press's verdict, maintained on passes that
+       already run - never on a timer of this block's own ================== */
+    if (live) {
+      /* The pill is live. Either words are arriving (clear everything and stop
+         asking) or they are not, and the second case is the speech-hub
+         handover that leaves capturing:true with recog.start() never called. */
+      _recPending = null; _recArmed = null;
+      if (!_recLive) _recLive = { since: Date.now(), words: words, moved: false };
+      else if (words > _recLive.words) { _recLive.words = words; _recLive.moved = true; recFailClear(); }
+      else if (!_recLive.moved && (Date.now() - _recLive.since) > REC_SILENT_MS) recFailSet(REC_SILENT_WHY, 'warn');
+    } else {
+      _recLive = null;
+      /* A start that was deferred behind the consent dialog: the dialog is
+         gone and nothing is recording, so it was cancelled or declined. That
+         is the one consent outcome the app never said anything about - the
+         decline path toasts, but Cancel just closes. */
+      if (_recPending && !consentAskOpen()) {
+        _recPending = null;
+        /* The armed press and the pending consent are the SAME press. Retiring
+           the arm here is what stops the generic "not told why" verdict below
+           from landing on top of the specific one in the same pass. */
+        _recArmed = null;
+        recFailSet('Recording did not start - consent was not confirmed for this visit. Press Start recording again when you have it.', 'err');
+      }
+      /* THE HERO PRESS, ANSWERED. Something asked for a recording, the grace
+         has passed, no dialog is up and nothing is capturing. That is the
+         owner's "sometimes when I click start recording, it doesn't record",
+         and until now it was the state in which the app said nothing at all. */
+      if (_recArmed && !consentAskOpen() && (Date.now() - _recArmed.at) > REC_ARM_GRACE_MS) {
+        var armedFor = _recArmed.patientId;
+        _recArmed = null;
+        var vArm = recStartVerdict(armedFor);
+        if (vArm) recFailSet(vArm.why, vArm.kind);
+      }
+    }
+    var fail = rec.querySelector('.ez3fl-recfail');
+    if (fail) {
+      var failWhy = fail.querySelector('.ez3fl-refailwhy');
+      var failGo = fail.querySelector('.ez3fl-refailgo');
+      /* NOT gated on the record pill. b940 hides that pill in exactly the
+         state the hero starts a recording from, so gating the reason on it
+         would have hidden the message in the one case it exists for. */
+      var show = !!(_recFail && _recFail.why);
+      setLaneHidden(fail, !show);
+      if (show) {
+        setLaneText(failWhy, _recFail.why);
+        setLaneAttr(fail, 'data-kind', _recFail.kind || 'err');
+        /* Retry is offered for a stopped recorder, never for "on but silent" -
+           there the honest action is Pause first, which the pill already is. */
+        setLaneHidden(failGo, live || _recFail.kind === 'wait');
+      }
+    }
     /* Review/send owns the lower #noteBox card. The prior-step wrapper now owns
        only a compact Next action; hide that action while its destination is
        open and restore it when Back closes the workspace. */
@@ -8890,15 +9265,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var rvBtn = noteWrap ? noteWrap.querySelector('#ez3flReview') : null;
       if (rvBtn) {
         var rvRun = false; try { rvRun = !!(_genRun && _genRun.active); } catch (eRvRun) { rvRun = false; }
-        var rvRefusal = /^\s*(?:i['\u2019]?m sorry|i am sorry|i cannot|i can['\u2019]?t|unable to)/i.test(noteText);
+        var rvRefusal = noteLooksLikeRefusal(noteText);
         var rvBlocked = rvRun || !noteText.trim() || rvRefusal;
-        var rvWhy = rvRun ? 'Your note is still generating - review opens when it is ready.' : (rvRefusal ? 'The AI answered with a refusal instead of a note - generate again before reviewing.' : 'Generate a note first.');
+        var rvWhy = rvRun ? 'Your note is still generating - review opens when it is ready.' : (rvRefusal ? NEXTGATE_REFUSAL_WHY : 'Generate a note first.');
         setLaneAttr(rvBtn, 'aria-disabled', rvBlocked ? 'true' : 'false');
         if (rvBlocked) setLaneAttr(rvBtn, 'title', rvWhy); else if (rvBtn.hasAttribute('title')) rvBtn.removeAttribute('title');
         if (rvBtn.classList.contains('dim') !== rvBlocked) rvBtn.classList.toggle('dim', rvBlocked);
         var rvNote = noteWrap.querySelector('.ez3fl-nextrow > span');
         if (rvNote) setLaneText(rvNote, rvBlocked ? rvWhy : 'Nothing sends automatically. You review every section and confirm the final action.');
       }
+      /* visitpage-1.0.0: ONE DOOR PER STATE. The claim is written from the
+         same node the CSS reads, and it is written on EVERY sync - including
+         the sync that hides the lane's Next when the review step opens, which
+         is when the engine's #ez3Send has to come straight back. */
+      syncTopNextOwnership(rec, noteWrap, rvBtn);
     } catch (eNextGate) {}
     if (topNote && note && document.activeElement !== topNote && topNote.value !== noteText) topNote.value = noteText;
   }
@@ -9029,6 +9409,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           hint.className = 'ez3fl-rechint';
           hint.textContent = 'Records locally and drafts the note here - nothing goes to Athena until you review and send it.';
           rec.appendChild(rb); rec.appendChild(ob); rec.appendChild(gb); rec.appendChild(hint);
+          /* recvis-1.0.0: the one place this lane says why a press did not
+             record. Directly under the pill that was pressed, because that is
+             where the doctor is looking, and aria-live so a screen reader is
+             told without having to go hunting. It is EMPTY and hidden until
+             something fails; nothing paints it on a healthy press. */
+          var failRow = document.createElement('div');
+          failRow.className = 'ez3fl-recfail';
+          failRow.hidden = true;
+          failRow.setAttribute('role', 'status');
+          failRow.setAttribute('aria-live', 'polite');
+          failRow.innerHTML = '<span class="ez3fl-refailwhy"></span>' +
+            '<button type="button" class="ez3fl-refailgo">Start recording again</button>';
+          failRow.querySelector('.ez3fl-refailgo').addEventListener('click', function () {
+            /* The SAME door, never a second start path: this is the pill's own
+               handler, so every gate (patient, consent, segment, hub) is the
+               one that just refused, and a retry that would refuse again
+               refuses in the same words rather than inventing a new outcome. */
+            if (recordingNow()) return;
+            toggleTopRecording();
+          });
+          rec.appendChild(failRow);
           var txWrap = document.createElement('div');
           txWrap.className = 'ez3fl-transcript';
           txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript</label><span>Type, paste, pause, and resume without losing anything</span></div>' +
@@ -9415,6 +9816,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     document.addEventListener('input', laneSignal, true);
     document.addEventListener('change', laneSignal, true);
     document.addEventListener('click', laneSignal, true);
+    /* recvis-1.0.0: every door that starts a recording, watched from one
+       listener. Capture phase, so a handler that stops propagation cannot hide
+       the press from the lane that has to explain its outcome. */
+    document.addEventListener('click', laneRecordPress, true);
     window.addEventListener('mls:view-changed', laneViewChanged);
     window.addEventListener('mls:generation-started', onLaneGenStarted);
     window.addEventListener('mls:generation-settled', onLaneGenSettled);
@@ -9446,6 +9851,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       started: noteGenStarted, settled: noteGenSettled, paintHint: paintLaneHint,
       RUN_HINT: GEN_RUN_HINT
     },
+    /* recvis-1.0.0: the last press's verdict, probeable from the console on a
+       live tab, so "start recording did nothing" can be answered with what the
+       lane actually saw. Read-only; nothing here starts or stops a recorder. */
+    recRun: {
+      state: function () {
+        return {
+          fail: _recFail ? { why: _recFail.why, kind: _recFail.kind, at: _recFail.at } : null,
+          pendingConsent: !!_recPending,
+          armed: !!_recArmed,
+          live: recordingNow(),
+          liveSince: _recLive ? _recLive.since : 0,
+          wordsMoved: !!(_recLive && _recLive.moved),
+          hubOwner: speechOwnerLabel(),
+          micWarn: micWarnSentence()
+        };
+      },
+      verdict: recStartVerdict,
+      clear: recFailClear,
+      SILENT_MS: REC_SILENT_MS,
+      SILENT_WHY: REC_SILENT_WHY
+    },
     revert: function () {
       try { setReviewStepOpen(false); } catch (e0) {}
       try { if (_obs) _obs.disconnect(); } catch (e) {}
@@ -9454,12 +9880,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (_laneIv) clearInterval(_laneIv); } catch (e) {}
       try { if (_laneRaf != null) { if (window.cancelAnimationFrame) window.cancelAnimationFrame(_laneRaf); else clearTimeout(_laneRaf); } } catch (e) {}
       try { document.removeEventListener('input', laneSignal, true); document.removeEventListener('change', laneSignal, true); document.removeEventListener('click', laneSignal, true); } catch (e) {}
+      try { document.removeEventListener('click', laneRecordPress, true); } catch (e) {}
       try { window.removeEventListener('mls:view-changed', laneViewChanged); } catch (e) {}
       try { window.removeEventListener('mls:generation-started', onLaneGenStarted); } catch (e) {}
       try { window.removeEventListener('mls:generation-settled', onLaneGenSettled); } catch (e) {}
       try { if (window.__mlsGenerationRunState === genRunState) delete window.__mlsGenerationRunState; } catch (e) {}
       try { if (_topSegmentStopIv) clearInterval(_topSegmentStopIv); } catch (e) {}
       try { document.body.classList.remove('mls-top-voice-tools'); } catch (e) {}
+      /* visitpage-1.0.0 / recvis-1.0.0: a reverted lane must not leave the
+         engine's #ez3Send hidden behind a claim nobody owns any more, and must
+         not leave a stale recording verdict behind either. */
+      try { document.body.classList.remove('ez3fl-top-next-owns'); } catch (e) {}
+      try { recFailClear(); _recPending = null; _recLive = null; _recArmed = null; } catch (e) {}
       try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
       _primaryLane = null;
       try { window.__mlsEz3Flow.installed = false; } catch (e) {}
@@ -28427,18 +28859,45 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        (getContext() → buildPatientContext) but nothing clears it on patient
        switch — patient A's pasted background silently grounded patient B's
        note. Watch the active-patient id and clear the box on change. */
+    /* f16ctx-1.1.0 (measured 2026-09-02 10:xx): the tick used to clear on ANY
+       id change - including the switch the app itself just performed. Opening
+       a chart from Patients runs goNewVisitForPatient(), which calls newVisit()
+       (that blanks #contextBox) and then prefillContextFromProfile(), which
+       refills it from the patient NOW active. Up to 2.5 s later this interval
+       deleted that correct, freshly written context and blamed "the previous
+       patient"; a clear landing after a request went out also fails the
+       post-response source-fingerprint compare and discards the finished note.
+       Skip the clear only when BOTH hold: (a) the app's own switch chokepoint
+       ran its reset for this switch (__mlsOpenSwitchFix.resets moved since the
+       previous tick) AND (b) the bytes in the box are not the ones the previous
+       tick saw under the old id. Either alone is not enough - (b) is what
+       covers a newVisit() that threw and left patient A's paste standing while
+       resets still incremented. Fail-closed everywhere else: an id that moves
+       with no reset (another tab writing localStorage, any future switch path
+       that bypasses selectPatient/setActivePtId, or __mlsOpenSwitchFix not
+       installed at all) still clears exactly as before. */
     var lastPtId = safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : null; }, null);
+    var lastCtxSeen = safe(function () { var b0 = $('contextBox'); return (b0 && b0.value) || ''; }, '');
+    var lastResets = safe(function () { return (window.__mlsOpenSwitchFix && window.__mlsOpenSwitchFix.resets) || 0; }, 0);
     timers.push(setInterval(function () {
       var id = safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : null; }, null);
-      if (id === lastPtId) return;
-      lastPtId = id;
       var box = $('contextBox');
-      if (box && box.value && box.value.trim()) {
+      var nowVal = (box && box.value) || '';
+      var nowResets = safe(function () { return (window.__mlsOpenSwitchFix && window.__mlsOpenSwitchFix.resets) || 0; }, 0);
+      if (id === lastPtId) { lastCtxSeen = nowVal; lastResets = nowResets; return; }
+      lastPtId = id;
+      var appReset = nowResets > lastResets;          /* the app reset this switch */
+      var freshBytes = nowVal !== lastCtxSeen;        /* written after that reset */
+      if (appReset && freshBytes) {
+        api.contextClearsSkipped = (api.contextClearsSkipped || 0) + 1;  /* silence is the correct outcome */
+      } else if (box && box.value && box.value.trim()) {
         api.lastClearedContext = box.value;   /* recoverable from the console */
         box.value = '';
         api.contextClears = (api.contextClears || 0) + 1;
         toastSafe('Cleared the pasted visit context from the previous patient (it never carries over).');
       }
+      lastCtxSeen = (box && box.value) || '';
+      lastResets = nowResets;
     }, 2500));
     /* (b) read-only contamination scan — the b50 class of bug: another
        patient's full name inside this patient's summary/history. */
@@ -41321,6 +41780,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try{var lease=window.__mlsSchedulePullLease;if(lease&&Date.now()-Number(lease.at||0)<180000)return true;}catch(e2){}
     try{if(window.__mlsPullBusyAt&&Date.now()-window.__mlsPullBusyAt<90000)return true;var k=(typeof window.uns==='function')?window.uns('mlsPullBusyXTabV1'):'mlsPullBusyXTabV1';var t=Number(localStorage.getItem(k)||0);return t>0&&Date.now()-t<90000;}catch(e3){return false;}
   }
+  /* genrefresh-1.0.0 (measured 2026-09-02 10:xx): pullBusy() knows only about
+     schedule pulls. The same banner sat over a live recording and over an
+     in-flight /api/generate, and Refresh navigated: the AbortController died
+     with the tab, the paid generate call was thrown away, and the last
+     un-flushed utterance was lost - with nothing but the browser generic
+     leave-site dialog in between. Same shape as the pull branch: name the
+     state, do not navigate, let the doctor press again when it is over.
+     Every read is its own try/catch and defaults to NOT busy, so an unknown
+     shell can always still refresh. */
+  function visitBusy(){
+    try{ if(window._mlsActiveGeneration) return 'generating'; }catch(e0){}
+    try{ var gs=window.__mlsGenerationRunState; if(typeof gs==='function'){ var gr=gs(); if(gr&&gr.active) return 'generating'; } }catch(e1){}
+    try{ var dp=window.__mlsDirectPhoneCapture; var st=(dp&&typeof dp.state==='function')?dp.state():null; if(st&&/^(starting|recording|stopping)$/.test(String(st.status||''))) return 'recording'; }catch(e2){}
+    try{ var seg=window.__mlsRecSegments; if(seg&&typeof seg.isArmed==='function'&&seg.isArmed()) return 'recording'; }catch(e3){}
+    /* unqualified on purpose: `capturing` is a global LEXICAL binding in the
+       shell, so window.capturing is undefined; the catch also covers the TDZ
+       ReferenceError if this runs before that block evaluates. */
+    try{ if(typeof capturing!=='undefined'&&capturing) return 'recording'; }catch(e4){}
+    return '';
+  }
   function showBanner(newv){
     if(banner&&banner.parentNode) return;
     banner=document.createElement('div'); banner.id='mlsVerBanner';
@@ -41331,6 +41810,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        never arm a delayed reload from one click, even between retry stamps. */
     var goRefresh=function(){ try{location.href=location.pathname+'?rv='+encodeURIComponent(newv);}catch(_){location.reload();} };
     b.onclick=function(){
+      var vb=visitBusy();
+      if(vb){ b.disabled=false; b.textContent=(vb==='recording'?'Recording - refresh afterward':'Generating a note - refresh afterward'); return; }
       if(!pullBusy())return goRefresh();
       b.disabled=false; b.textContent='Pull running — refresh afterward';
     };
@@ -52309,7 +52790,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_lastmonth_b51.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706b51c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* b51: Pull Last Month button + honest relabel of the rolling pull button - see feat_mls_lastmonth_b51.js header. Revert: window.__mlsLastMonthB51.revert() */
 
 
-;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260802b53c6";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Revert: window.__mlsPatientLock.revert() */
+;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260902b53c7";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Token moved for nonag-1.0.0 (2026-09-02): the module changed, and a versioned asset is served cache-first, so a returning browser would keep replaying the nagging copy. Revert: window.__mlsPatientLock.revert() */
 
 
 /* =========================================================================
@@ -64258,7 +64739,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
 /* ===== end psr-1.0.0 ===================================================== */
 
 
-/* ===== revwork-1.1.0 begin ============================================== */
+/* ===== revwork-1.2.0 begin ============================================== */
 /* =============================================================================
  * revwork-1.0.0 (b1169)  --  THE REVIEW WORKSPACE, AND A FLOW THAT NEVER GOES
  * -----------------------------------------------------------------------------
@@ -64335,7 +64816,51 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'revwork-1.1.0';
+  var VERSION = 'revwork-1.2.0';
+
+  /* =======================================================================
+   *  reviewfix-1.0.0 (2026-09-02) - THE REVIEW SECTION IS ONE PLACE
+   * -----------------------------------------------------------------------
+   * OWNER, with a screenshot of the "2  Review the note" banner: "fix the
+   * review the notes section. It's very bad in terms of many of the buttons
+   * do not work. I need all the buttons to work and all the duplicate items
+   * to be gone and everything." He had already measured the cause: the SAME
+   * generated note was painted TWICE inside one card - this module's own
+   * workspace (its mirror textarea + a "Formatted view (live)" + Save to
+   * history / Send to Athena / Codes & billing) AND, directly underneath it,
+   * the shell's "Clinical note - Draft" card with its OWN formatted view, its
+   * own editor bar (Undo / Redo / Versions / Original vs edited / Final
+   * preview / Dictate / +Assessment / +Plan / Replace text / Delete), its own
+   * Copy section row, Clinical tools, and its own Review & Sign / Save to
+   * history / Copy note text / Review Athena actions / More tools.
+   *
+   * WHY THE BUTTONS "DID NOT WORK". revwork-1.1.0 minted PROXIES: #mlsRevSave
+   * pressed #saveNoteBtn, #mlsRevSend pressed #pushAllEmrBtn, #mlsRevNote
+   * mirrored #noteBox. A proxy is a second control for one verb, it carries
+   * none of the original's gate reasons (enableOutputs writes
+   * data-mls-gate-reason onto the ORIGINAL, never onto a copy), and a mirror
+   * is a second copy of the note's state. So the doctor saw two Save buttons,
+   * two Send buttons and two notes, and the one he pressed was as likely as
+   * not the one that could not answer.
+   *
+   * THE FIX IS THE SAME DOCTRINE revwork-1.1.0 applied to the other five
+   * controls, finished: STOP MINTING PROXIES, ADOPT THE ORIGINALS. The
+   * workspace no longer draws a note, a Save or a Send of its own. It ADOPTS,
+   * into one panel and in the order a doctor works:
+   *     #noteBox (+ its one .mls-fp-fmt formatted view)   the ONE note
+   *     #mlsNeBar        Undo/Redo/Versions/compare/preview/dictate/sections
+   *     #secCopyRow      Copy section S/O/A/P + Regenerate
+   *     .note-actions    Review & Sign / Save to history / Copy note text /
+   *                      Review Athena actions / More tools
+   *     #noteActionGate  the visible reason those turn on
+   *     #visitToolsToggleRow  Clinical tools (its group stays below, one click)
+   * NOTHING IS DELETED. Every node keeps its id, its handler, its guards and
+   * its disabled state; only its PLACE changes, and revert() puts each one
+   * back where it was found. The tools that could not move (the output cards -
+   * coding, superbill, red flags, handout, FHIR, legal, the Clinical tools
+   * group itself) stay in the card below their one disclosure, exactly as
+   * they already were.
+   * ===================================================================== */
   try {
     var prior = window.__mlsRevWork;
     if (prior && prior.installed === true && typeof prior.revert === 'function') prior.revert();
@@ -64348,18 +64873,36 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
      ALREADY owns: Generate (#ez3Regen), Copy (#ez3Copy), the op-note entry
      (#ez3Prep2), the after-visit summary (#ez3flAvs / #ez3QAvs) and the paste
      entry (#ez3flPaste / #ez3QPaste). Those five are REMOVED here and the
-     originals are made to work instead - one control per job. What stays is
-     only what the flow genuinely lacks: the editable review note, Save to
-     history, Send to Athena, the codes step, and the identity line. */
+     originals are made to work instead - one control per job.
+     reviewfix-1.0.0: the last three proxies (mlsRevNote / mlsRevSave /
+     mlsRevSend) are removed by the same rule. What this module still MINTS is
+     only what no shipped control provides: the status sentence, the identity
+     line, the slot the adopted note lands in, and the codes step entry. */
   var ID = {
     root: 'mlsRevWork',
     status: 'mlsRevStatus',
     identity: 'mlsRevIdentity',
-    note: 'mlsRevNote',
-    save: 'mlsRevSave',
-    send: 'mlsRevSend',
+    slot: 'mlsRevSlot',
+    tools: 'mlsRevTools',
     codes: 'mlsRevCodes'
   };
+  /* reviewfix-1.0.0: THE ADOPTION LIST, in the order the panel shows them.
+     `sel` is resolved fresh on every reconcile because the engine and the
+     note-editor module both rebuild their own nodes; `id` entries are looked
+     up by getElementById so a rebuilt node is re-adopted, never duplicated. */
+  var ADOPT = [
+    { key: 'disclaim', sel: '#noteCard .disclaim', why: 'AI-generated - review before signing' },
+    { key: 'genError', id: 'noteGenError', why: 'the generation error line for this note' },
+    { key: 'empty', id: 'noteEmpty', why: 'the empty state of this note' },
+    { key: 'note', id: 'noteBox', why: 'the one note' },
+    { key: 'nebar', id: 'mlsNeBar', why: 'undo / redo / versions / compare / preview / dictate / section tools' },
+    { key: 'seccopy', id: 'secCopyRow', why: 'copy section + regenerate' },
+    /* the primary last-step row. `via` is the honest fallback: the row itself
+       carries no id, so the control that must be in it names it. */
+    { key: 'actions', sel: '#noteCard .note-actions:not(#moreTools)', via: 'signBtn', why: 'review & sign / save / copy / review athena actions / more tools' },
+    { key: 'gate', id: 'noteActionGate', why: 'the visible reason those actions are off' },
+    { key: 'clintools', id: 'visitToolsToggleRow', why: 'clinical tools disclosure' }
+  ];
   /* the same line, painted above the flow's own note editor */
   var FLOW_IDENTITY_ID = 'mlsRevIdentityFlow';
   /* the ORIGINAL controls this module wires rather than replaces */
@@ -64514,34 +65057,117 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   function genLabelFor(s) { return (s && s.note) ? 'Regenerate note' : 'Generate note'; }
 
   /* =======================================================================
-   *  4. THE MIRROR  (#mlsRevNote <-> #noteBox, one source of truth)
+   *  4. ADOPTION  (reviewfix-1.0.0 - THE MIRROR IS GONE)
+   * -----------------------------------------------------------------------
+   * revwork-1.1.0 kept a second textarea, #mlsRevNote, and mirrored it against
+   * #noteBox in both directions with a _mirrored "last agreement" value to
+   * stop the stale copy overwriting a fresh generation. That machinery existed
+   * ONLY because there were two boxes. There is now one: the app's own
+   * #noteBox is MOVED into this panel, so every engine, every widget and every
+   * tool still reads and writes the exact node it always did, and no value can
+   * disagree with itself. A mirror is a copy of state; this is a change of
+   * PLACE, which is the one thing that costs nothing.
+   *
+   * Every adoption records where the node CAME FROM (parent + next sibling) so
+   * revert() can put it back. Nothing is created, nothing is destroyed, and a
+   * node whose original parent has since been rebuilt is simply left in the
+   * panel rather than dropped on the floor.
    * ===================================================================== */
-  /* _mirrored is the last value the two boxes AGREED on. Without it the mirror
-     is a loaded gun: a note generated into #noteBox that this panel has not
-     read back yet would be overwritten by the review box's stale (usually
-     empty) contents the first time the doctor pressed Save or Send. Only text
-     the doctor actually typed HERE - a value that differs from the last
-     agreement - is ever written upward. */
-  var _mirrored = '';
-  function pushNoteUp() {
-    var r = $(ID.note), n = $('noteBox');
-    if (!r || !n) return false;
-    var rv = String(r.value == null ? '' : r.value);
-    if (rv === _mirrored) return false;                 /* nothing typed here since the last sync */
-    if (String(n.value == null ? '' : n.value) === rv) { _mirrored = rv; return false; }
-    n.value = rv;
-    _mirrored = rv;
-    safe(function () { n.dispatchEvent(new Event('input', { bubbles: true })); });
+  var _adopted = [];                                    /* [{key,el,parent,next}] */
+  function adoptTarget(entry) {
+    if (entry.id) return $(entry.id);
+    var hit = entry.sel ? safe(function () { return document.querySelector(entry.sel); }, null) : null;
+    if (hit) return hit;
+    if (!entry.via) return null;
+    /* the row a named control lives in - used only when the selector cannot be
+       evaluated, never to reach past #noteCard or to pick up #moreTools */
+    return safe(function () {
+      var c = $(entry.via);
+      var p = c && c.parentNode;
+      if (!p || p.id === 'moreTools' || p.id === ID.slot) return null;
+      var card = $('noteCard');
+      if (card && p !== card && !(card.contains ? card.contains(p) : true)) return null;
+      return p;
+    }, null);
+  }
+  /* THE NOTE'S OWN FURNITURE TRAVELS WITH THE NOTE. Two separate modules
+     decorate #noteBox by inserting nodes immediately BEFORE it in whatever its
+     parent happens to be: feat_mls_fixpack_0701 (.mls-fp-fmt, the "Formatted
+     view (live)" card) and __mlsFormat (.mlsf-bar + .mlsf-note). Left behind,
+     they would be a rendered note in one place and a raw box in another - the
+     exact duplicate this pass exists to remove. They are identified by
+     POSITION, not by a class scan of the card: several other textareas in
+     #noteCard (the legal body, the handout, the procedure note) carry a
+     .mls-fp-fmt of their own and must not be dragged along.
+     Decoration that happens AFTER the move needs nothing: both modules insert
+     relative to the textarea, which is by then already in the panel. */
+  var FURNITURE = ['mls-fp-fmt', 'mlsf-bar', 'mlsf-note'];
+  function isFurniture(el) {
+    if (!el || !el.classList) return false;
+    for (var i = 0; i < FURNITURE.length; i++) { if (el.classList.contains(FURNITURE[i])) return true; }
+    return false;
+  }
+  function furnitureOf(el) {
+    var out = [];
+    safe(function () {
+      var p = el && el.parentNode;
+      if (!p || !p.childNodes) return;
+      var kids = p.childNodes, at = -1, i;
+      for (i = 0; i < kids.length; i++) { if (kids[i] === el) { at = i; break; } }
+      if (at < 0) return;
+      for (i = at - 1; i >= 0; i--) {
+        if (!isFurniture(kids[i])) break;
+        out.unshift(kids[i]);
+      }
+    });
+    return out;
+  }
+  function adoptInto(host, entry) {
+    var el = adoptTarget(entry);
+    if (!el || !host) return false;
+    if (el.parentNode === host) return false;           /* already home */
+    var seen = null, i;
+    for (i = 0; i < _adopted.length; i++) { if (_adopted[i].key === entry.key) { seen = _adopted[i]; break; } }
+    if (!seen || seen.el !== el) {
+      seen = { key: entry.key, el: el, parent: el.parentNode || null, next: el.nextSibling || null, why: entry.why };
+      if (i < _adopted.length) _adopted[i] = seen; else _adopted.push(seen);
+    }
+    var kit = furnitureOf(el);
+    seen.kit = kit;
+    for (i = 0; i < kit.length; i++) { (function (f) { safe(function () { host.appendChild(f); }); }(kit[i])); }
+    safe(function () { host.appendChild(el); });
     return true;
   }
-  function pullNoteDown() {
-    var r = $(ID.note), n = $('noteBox');
-    if (!r || !n) return false;
-    if (safe(function () { return document.activeElement === r; }, false)) return false;
-    var want = String(n.value == null ? '' : n.value);
-    if (String(r.value == null ? '' : r.value) === want) { _mirrored = want; return false; }
-    r.value = want;
-    _mirrored = want;
+  /* Runs on every reconcile. Cheap: each entry short-circuits the moment the
+     node is already the panel's child, which is the steady state. */
+  function adoptAll() {
+    var host = $(ID.slot);
+    if (!host) return 0;
+    var n = 0;
+    for (var i = 0; i < ADOPT.length; i++) { if (adoptInto(host, ADOPT[i])) n++; }
+    return n;
+  }
+  /* THE OTHER HALF OF EVERY MOVE. revert() (and a rebuild of the panel) must
+     put the app's own controls back in the card, or a hot reload of this one
+     module would take the doctor's note and his whole action row with it. */
+  function releaseAdopted() {
+    for (var i = _adopted.length - 1; i >= 0; i--) {
+      (function (a) {
+        if (!a || !a.el) return;
+        safe(function () {
+          var home = (a.parent && a.parent.isConnected !== false) ? a.parent : $('noteCard');
+          if (!home) return;
+          var ref = (a.next && a.next.parentNode === home) ? a.next : null;
+          /* the furniture the note arrived with, plus anything that decorated
+             it while it was here - both are the nodes sitting directly in
+             front of it right now */
+          var kit = furnitureOf(a.el);
+          for (var k = 0; k < kit.length; k++) home.insertBefore(kit[k], ref);
+          home.insertBefore(a.el, ref);
+        });
+      }(_adopted[i]));
+    }
+    _adopted = [];
     return true;
   }
 
@@ -64592,7 +65218,6 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     return hit;
   }
   function doCopy() {
-    pushNoteUp();
     if (!noteText().trim()) { say('There is no note to copy yet. Press Generate note first.', 'err'); return ''; }
     var hit = pressFirst(['copyEmrBtn', 'copyBtn']);
     if (hit) return hit;
@@ -64601,7 +65226,6 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     return '';
   }
   function doSave() {
-    pushNoteUp();
     if (!noteText().trim()) { say('There is no note to save yet. Press Generate note first.', 'err'); return ''; }
     if (!identityGuard('this save')) return '';
     var hit = pressFirst(['saveNoteBtn']);
@@ -64614,7 +65238,6 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
      stops - nothing is written until the doctor confirms there, section by
      section, exactly as before. */
   function doSend() {
-    pushNoteUp();
     if (!noteText().trim()) { say('Generate the note first, then review it before sending.', 'err'); return ''; }
     if (!identityGuard('this Athena review')) return '';
     var send = $(SEND_TARGET);
@@ -64651,18 +65274,37 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     });
     return 'ensured';
   }
+  /* reviewfix-1.0.0: A SCROLL IS NOT AN ACTION. This control used to open the
+     workspace and scroll, which on a screen where the codes card was already
+     in view did nothing a doctor could see - the owner's "buttons that do not
+     work", exactly. It now REVEALS the codes: it clears an inline hide on the
+     card (the visit-focus fold writes one), shows the table when there is a
+     note to fill it from, and only then moves the page, and only if the card
+     is off screen. It never fabricates a code - the table's contents are
+     written by the app's own generation, never here. */
   function doCodes() {
     openWorkspace();
-    var target = $('mlsAtStep3') || $('emrCard');
+    var card = $('emrCard');
+    var target = $('mlsAtStep3') || card;
     if (!target) { say('The codes step is not on this build.', 'err'); return ''; }
-    bring(target);                              /* walkfix-1.0.0: only if off screen */
+    var revealed = false;
+    if (card && clearHide(card)) revealed = true;
     var tbl = $('emrTable');
-    if (tbl && inlineHidden(tbl)) {
-      say(noteText().trim()
-        ? 'The codes fill from the note. If they are still empty, press Regenerate note.'
-        : 'Generate the note first - the codes fill from it.');
+    var have = noteText().trim();
+    if (!have) {
+      say('Generate the note first - the codes fill from it.');
+    } else if (tbl && inlineHidden(tbl)) {
+      /* The app writes display:'' on this table the moment the fields exist.
+         A hidden table with a note on screen means they have not been filled
+         yet - so SAY that, rather than clearing the hide and showing an empty
+         grid. This module never writes a display:none and never invents a
+         code; the only hide it may touch is one it can honestly remove. */
+      say('The codes fill from the note. If they are still empty, press Regenerate.');
+    } else if (tbl) {
+      if (clearHide(tbl)) revealed = true;
     }
-    return 'emrCard';
+    bring(target);                              /* walkfix-1.0.0: only if off screen */
+    return revealed ? 'emrCard:revealed' : 'emrCard';
   }
   function doCapture() {
     if (revealTranscript()) return 'transcript';
@@ -64686,10 +65328,24 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       '#mlsRevWork .rw-h b{font-size:15px;color:#204034}',
       '#mlsRevWork .rw-h span{font-size:12px;color:#55605A}',
       '#mlsRevStatus{display:block;font-size:12.5px;line-height:1.55;color:#55605A;margin:0 0 10px}',
-      '#mlsRevNote{display:block;width:100%;min-height:230px;box-sizing:border-box;resize:vertical;',
-        'background:#fff;color:#1A211C;border:1px solid #CFE0D2;border-radius:10px;padding:12px;',
+      /* reviewfix-1.0.0: the ADOPTED note is the app's own #noteBox, so it is
+         styled where it now lives instead of a second box being drawn to look
+         like it. Only geometry is set here; colour and the display flip stay
+         with their existing owners (showNote / the formatted view). */
+      '#mlsRevSlot{display:block}',
+      '#mlsRevSlot>#noteBox{width:100%;min-height:230px;box-sizing:border-box;resize:vertical;',
+        'border:1px solid #CFE0D2;border-radius:10px;padding:12px;',
         'font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
-      '#mlsRevNote:focus{outline:none;border-color:#78B99D;box-shadow:0 0 0 3px rgba(46,106,75,.14)}',
+      '#mlsRevSlot>#noteBox:focus{outline:none;border-color:#78B99D;box-shadow:0 0 0 3px rgba(46,106,75,.14)}',
+      '#mlsRevSlot>.mls-fp-fmt{margin:0 0 8px}',
+      '#mlsRevSlot>.mlsf-bar{margin:0 0 6px}',
+      '#mlsRevSlot>.mlsf-note{margin:0 0 8px}',
+      '#mlsRevSlot>.disclaim{margin:0 0 8px}',
+      '#mlsRevSlot>#noteEmpty{margin:0 0 8px}',
+      '#mlsRevSlot>#mlsNeBar{margin:10px 0 2px}',
+      '#mlsRevSlot>#secCopyRow{margin-top:9px}',
+      '#mlsRevSlot>.note-actions{margin-top:13px}',
+      '#mlsRevSlot>#visitToolsToggleRow{margin:10px 0 0}',
       '#mlsRevWork .rw-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}',
       '#mlsRevWork .rw-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;',
         'border:1px solid #D9D6CD;background:#fff;color:#1A211C;border-radius:11px;padding:10px 15px;',
@@ -64742,19 +65398,22 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     if (!card) return null;
     var have = $(ID.root);
     if (have && have.parentNode === card) return have;
-    if (have && have.parentNode) safe(function () { have.parentNode.removeChild(have); });
+    /* reviewfix-1.0.0: the panel now HOLDS the app's own note and action row.
+       Removing it without releasing them first would take the doctor's note,
+       his editor bar and his whole last-step row out of the document. */
+    if (have && have.parentNode) {
+      releaseAdopted();
+      safe(function () { have.parentNode.removeChild(have); });
+    }
 
     var root = document.createElement('div');
     root.id = ID.root;
 
-    var head = document.createElement('div');
-    head.className = 'rw-h';
-    var hb = document.createElement('b');
-    hb.textContent = 'Review the note';
-    var hs = document.createElement('span');
-    hs.textContent = 'The same visit, the same note, the same Athena step as the flow above.';
-    head.appendChild(hb); head.appendChild(hs);
-    root.appendChild(head);
+    /* reviewfix-1.0.0: NO SECOND HEADING. The step banner directly above this
+       panel already reads "2  Review the note - Edit anything, then sign, save
+       to history, or send to Athena", and the card's own h2 names the note and
+       carries the format + draft badges. A third title saying the same thing
+       was one of the duplicate items the owner counted. */
 
     var status = document.createElement('span');
     status.id = ID.status;
@@ -64772,33 +65431,41 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     ident.textContent = identityText();
     root.appendChild(ident);
 
-    var ta = document.createElement('textarea');
-    _mirrored = '';                                     /* a fresh box agrees with nothing yet */
-    ta.id = ID.note;
-    ta.setAttribute('aria-label', 'Generated note - review and edit');
-    ta.placeholder = 'The generated note appears here. Edit anything before you save or send.';
-    ta.addEventListener('input', function () { pushNoteUp(); paint(); });
-    root.appendChild(ta);
+    /* reviewfix-1.0.0: THE SLOT. Empty on purpose - adoptAll() fills it with
+       the app's own note, its one formatted view, its editor bar, its Copy
+       section row, its last-step action row, that row's gate sentence and the
+       Clinical tools disclosure. No textarea is created here: a second box was
+       the duplicate note the owner measured. */
+    var slot = document.createElement('div');
+    slot.id = ID.slot;
+    root.appendChild(slot);
 
-    /* revwork-1.1.0: FOUR buttons, and not one of them repeats a control the
-       flow above already carries. Generate/Regenerate, Copy, the op note and
-       the after-visit summary all live in the flow and are wired there. */
+    /* reviewfix-1.0.0: Save to history, Send to Athena and Copy note text are
+       NOT drawn here any more - the adopted #saveNoteBtn / #pushAllEmrBtn /
+       #copyEmrBtn are those controls, with the app's own guards and the app's
+       own written reason when they are off. The one entry that has no shipped
+       control anywhere is the codes step, so it is the only button this module
+       still owns. */
     var row1 = document.createElement('div');
     row1.className = 'rw-row';
-    row1.appendChild(mkBtn(ID.save, 'Save to history', 'pri',
-      'Saves this note into the patient history inside MLS.', doSave));
-    row1.appendChild(mkBtn(ID.send, 'Send to Athena', 'send',
-      'Opens the Athena review sheet. Nothing is written until you confirm there, and Sign & Save stays your own click inside athenaOne.', doSend));
+    row1.id = ID.tools;
     row1.appendChild(mkBtn(ID.codes, 'Codes & billing', '',
-      'Jumps to step 3 - the E/M, CPT and ICD fields Athena receives.', doCodes));
+      'Shows step 3 - the E/M, CPT and ICD fields Athena receives - and brings it into view.', doCodes));
     root.appendChild(row1);
 
     var foot = document.createElement('p');
     foot.className = 'rw-foot';
-    foot.textContent = 'This workspace edits the one note. Anything typed here is the same note the flow above shows, ' +
-      'and Send opens the same reviewed Athena sheet - one confirmation per section, nothing auto-chains.';
+    foot.textContent = 'This is the one place the note is edited. Review & Sign saves and signs it inside MLS only; ' +
+      'Review Athena actions opens the reviewed sheet - one confirmation per section, nothing auto-chains, ' +
+      'and Sign & Save stays your own click inside athenaOne.';
     root.appendChild(foot);
 
+    /* The panel stays DIRECTLY under the step banner - "2  Review the note" is
+       its heading, which is why this module draws none of its own. The card's
+       note-side furniture (the AI-generated disclaimer, the generation error
+       line, the empty state) is adopted INTO the panel instead of the panel
+       being pushed below it, so the note and the sentences about the note stay
+       in one place. */
     var anchor = $('mlsAtStep2');
     if (anchor && anchor.parentNode === card && anchor.nextSibling) card.insertBefore(root, anchor.nextSibling);
     else if (anchor && anchor.parentNode === card) card.appendChild(root);
@@ -64821,8 +65488,63 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   }
   function syncPanel() {
     buildPanel();
-    pullNoteDown();
+    adoptAll();                                /* reviewfix-1.0.0: no mirror to pull */
     return paint();
+  }
+
+  /* =======================================================================
+   *  6b. ONE NEXT DOOR   (reviewfix-1.0.0)
+   * -----------------------------------------------------------------------
+   * OWNER: '"Next: Review & send to Athena" appears twice, and the top copy
+   * only scrolls.' The lane builds exactly one such control (#ez3flReview,
+   * created once inside #ez3flNoteWrap and pinned as created-once by
+   * visit-walkthrough-proof), so a second one on screen is a STALE NODE: the
+   * engine rebuilds #ez3Wrap from an HTML string on its own cadence and the
+   * lane re-mounts, and any window in which the old tree is still attached -
+   * a lane parked outside #mlsEz3Body, a mid-render double mount - leaves two
+   * live copies of the same id. document.getElementById returns the FIRST, so
+   * the doctor can be looking at the second one, whose listener belongs to a
+   * detached lane and therefore does nothing but let the browser scroll.
+   * This keeps the FIRST connected copy and removes the rest. It never
+   * creates a Next control and never presses one; if there is only one - the
+   * steady state - it does nothing at all.
+   * ===================================================================== */
+  function nextDoors() {
+    return safe(function () {
+      var all = document.querySelectorAll('#ez3flReview,.ez3fl-review');
+      var out = [], i;
+      for (i = 0; i < all.length; i++) { if (out.indexOf(all[i]) < 0) out.push(all[i]); }
+      return out;
+    }, []);
+  }
+  /* The keeper is the copy inside the LIVE lane (#mlsEz3Body ... .ez3fl-record),
+     because that is the one syncTopLane paints the dim, the reason and the
+     hide onto. Only if no copy is in the live lane does the first in document
+     order win, so this can never leave the doctor with none. */
+  function keeperDoor(doors) {
+    for (var i = 0; i < doors.length; i++) {
+      var host = safe(function () { return doors[i].closest ? doors[i].closest('#mlsEz3Body') : null; }, null);
+      if (host) return doors[i];
+    }
+    return doors[0];
+  }
+  function dedupeNextDoor() {
+    var doors = nextDoors();
+    if (doors.length < 2) return 0;
+    var keep = keeperDoor(doors);
+    var n = 0;
+    for (var i = 0; i < doors.length; i++) {
+      var d = doors[i];
+      if (!d || d === keep) continue;
+      /* take the whole row with it - the row is only this button plus the
+         sentence that explains this button */
+      var row = safe(function () { return d.closest ? d.closest('.ez3fl-nextrow') : null; }, null);
+      var gone = (row && row.parentNode) ? row : d;
+      if (!gone || !gone.parentNode) continue;
+      safe(function () { gone.parentNode.removeChild(gone); });
+      n++;
+    }
+    return n;
   }
 
   /* =======================================================================
@@ -65156,9 +65878,30 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     unhideFlow();
     relabelAdv();
     syncPanel();
+    dedupeNextDoor();                          /* reviewfix-1.0.0 */
     enforceEdit();                             /* walkfix-1.0.0 (b1184) */
     watchWrap();
     watchNote();
+  }
+  /* reviewfix-1.0.0: THE REVIEW STEP ARRIVES WITHOUT MOVING THE PAGE.
+     The first draft of this handler brought the panel into view when the step
+     opened. That is exactly what the owner ruled out at b940 - "when I click
+     review and sign it should not scroll me down" - and
+     tests/1p-visit-lane-survives-contract.test.js pins it: "the quiet
+     transition must not walk the doctor to the lower note". So NOTHING here
+     scrolls. What the step opening does instead is force a full reconcile at
+     the one moment the destination has to be correct: the workspace has just
+     been opened by openReviewStep, the card and everything in it may have been
+     repainted in that same tick, and this is what re-claims the note, the
+     editor bar and the last-step row into the one panel. The visible arrival
+     is the lane standing its own Next door down (syncTopLane hides
+     #ez3flNoteWrap while _reviewStepOpen) and this panel being complete when
+     the doctor looks at it - never the viewport moving under him. */
+  function onReviewStep(ev) {
+    bump();
+    var open = safe(function () { return !!(ev && ev.detail && ev.detail.open); }, false);
+    if (!open) return;
+    setTimeout(function () { safe(reconcile); }, 160);
   }
   function schedule() {
     if (_deb) return;
@@ -65229,7 +65972,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     safe(function () { window.addEventListener('mls:generation-started', onGenStarted); });
     safe(function () { window.addEventListener('mls:generation-refused', markGenLifecycle); });
     safe(function () { window.addEventListener('mls:generation-settled', onGenSettled); });
-    safe(function () { window.addEventListener('mls:review-step', bump); });
+    safe(function () { window.addEventListener('mls:review-step', onReviewStep); });
     safe(function () {
       if (!window.MutationObserver || !document.body) return;
       /* body.classList changes constantly in this app (voice tools, ez3sec0,
@@ -65294,6 +66037,13 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     clearHide: clearHide,
     unhideFlow: unhideFlow,
     revealTranscript: revealTranscript,
+    /* reviewfix-1.0.0: the adoption seam, read-only for a suite */
+    ADOPT: ADOPT,
+    adopt: adoptAll,
+    release: releaseAdopted,
+    adopted: function () { return _adopted.map(function (a) { return a.key; }); },
+    nextDoors: nextDoors,
+    dedupeNextDoor: dedupeNextDoor,
     build: buildPanel,
     sync: syncPanel,
     reconcile: reconcile,
@@ -65316,8 +66066,13 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       safe(function () { window.removeEventListener('mls:generation-started', onGenStarted); });
       safe(function () { window.removeEventListener('mls:generation-refused', markGenLifecycle); });
       safe(function () { window.removeEventListener('mls:generation-settled', onGenSettled); });
-      safe(function () { window.removeEventListener('mls:review-step', bump); });
+      safe(function () { window.removeEventListener('mls:review-step', onReviewStep); });
       safe(function () { if (_css && _css.parentNode) _css.parentNode.removeChild(_css); });
+      /* reviewfix-1.0.0: PUT THE APP'S OWN CONTROLS BACK FIRST. The panel now
+         HOLDS #noteBox, the editor bar, the Copy section row and the whole
+         last-step action row; removing the panel without releasing them would
+         take the doctor's note and every note action out of the document. */
+      safe(releaseAdopted);
       safe(function () { var r = document.getElementById(ID.root); if (r && r.parentNode) r.parentNode.removeChild(r); });
       _iv = _deb = _bodyObs = _wrapObs = _noteObs = null;
       _wrapWatched = _noteWatched = null;
@@ -65341,4 +66096,315 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
 })();
-/* ===== revwork-1.1.0 end ================================================ */
+/* ===== revwork-1.2.0 end ================================================ */
+
+/* =============================================================================
+ * __mlsUpNowState   upnowstate-1.0.0   (owner-measured 2026-09-02, late morning)
+ * -----------------------------------------------------------------------------
+ * MEASURED IN THE OWNER'S OWN TAB, on a real visit, on the Visit screen: the
+ * schedule banner (#heroPullStatus) read
+ *
+ *     "Up now: <patient> - loaded & ready. Hit Start recording."
+ *
+ * while the SAME screen showed a captured transcript ("9 words captured"),
+ * "Your note is ready below", the generated note itself, and the step bar
+ * sitting on Review & Sign. The banner was naming a step the doctor had
+ * finished three steps earlier. He called it a stale UI element and that is
+ * exactly what it is: the sentence is written ONCE, when the patient is
+ * loaded, by the shell's _calLoadNextUp (and re-written with the same bytes by
+ * the up-now sync module's adopt path), and nothing in the whole visit ever
+ * revises it. Every other surface on that screen had moved on.
+ *
+ * WHAT THIS IS. One repaint of the ONE banner that already exists, so its tail
+ * names the state the visit is actually in. It is not a second banner. It
+ * creates, moves, hides and restyles nothing, it never changes who the banner
+ * names, it touches no control, and it starts no timer.
+ *
+ * HOW IT CANNOT STEAL A SURFACE. #heroPullStatus is shared - the pull lane
+ * writes its progress sentences into that same node (progressSay), and the
+ * real-time up-now module writes "No more patients today." there. So this
+ * module repaints ONLY a node that at that instant holds an up-now sentence:
+ * the exact clock + "Up now: <b>name</b>" + optional time + em-dash head the
+ * two shipped painters emit, and it replaces ONLY the tail after that head.
+ * Anything else fails the head test and is left completely alone. The head is
+ * carried over byte-for-byte from whoever painted it, so a repaint can never
+ * rename a patient, drop their appointment time, or double-escape a name.
+ *
+ * WHEN THE UP-NOW PATIENT IS NOT THE ACTIVE PATIENT IT REPAINTS NOTHING. That
+ * case already has an honest owner - the schedule anchor's "Up now on the
+ * schedule: <name>. You are working in a different chart, so nothing was
+ * switched." strip, and today's lateness strip - and a second sentence about
+ * it is precisely the second banner this must not add. Standing down is the
+ * whole behaviour there.
+ *
+ * REPAINTS ON THE EVENTS THE FLOW LANE ALREADY EMITS. The engine's
+ * mls:generation-started / -settled / -refused, mls:active-patient-changed,
+ * mls:view-changed, mls:review-step, and the same capture-phase input/change/
+ * click signals the flow lane itself listens on - plus a MutationObserver on
+ * the banner, so the instant a shipped painter re-writes the load-time
+ * sentence over a visit already in flight it is corrected. NO setInterval and
+ * NO setTimeout: a hidden tab freezes those, and this surface has to be right
+ * the moment the doctor looks at it.
+ *
+ * Reversible: window.__mlsUpNowState.revert(). The source is pure ASCII on
+ * purpose - every non-ASCII byte in the shipped sentences is written as a
+ * unicode escape, because these constants are re-emitted by both derive
+ * scripts and a latin1 writer in that chain turns literal astral characters
+ * into control bytes.
+ * Proven by tests/upnow-banner-state-proof.js, which lifts the delimited block
+ * below out of this file and drives the shipped painter through every state
+ * with a DOM stub.
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  if (window.__mlsUpNowState) return;
+  var VERSION = 'upnowstate-1.0.0';
+  var BANNER_ID = 'heroPullStatus';
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function $(id) { return document.getElementById(id); }
+
+  /* ===== upnowstate-1.0.0 begin ========================================== */
+  /* The exact bytes the two shipped painters write, as unicode escapes. At
+     runtime these are the same alarm clock, em dash and studio microphone the
+     shell's _calLoadNextUp emits - which is why a visit that really IS only
+     loaded gets a byte-identical string back and therefore no write at all. */
+  var UPNOW_HEAD = '\u23F0 Up now: <b>';
+  var UPNOW_SEP = ' \u2014 ';
+  var UPNOW_TAIL = {
+    ready: 'loaded &amp; ready. Hit \uD83C\uDF99\uFE0F Start recording.',
+    recording: 'recording now - stop when you are done.',
+    transcript: 'transcript captured - Generate one note.',
+    note: 'note ready - review, then send to Athena.',
+    sent: 'in Athena - this note is written and verified.'
+  };
+  function upNowUnescape(s) {
+    return String(s == null ? '' : s)
+      .split('&lt;').join('<')
+      .split('&gt;').join('>')
+      .split('&quot;').join('"')
+      .split('&#39;').join("'")
+      .split('&amp;').join('&');
+  }
+  /* Suffixes and credentials are not part of who somebody is. Stripped only
+     from the END, so a person actually called Do or Iv keeps their name. */
+  var UPNOW_SUFFIX = { jr: 1, sr: 1, ii: 1, iii: 1, iv: 1, md: 1, do: 1, np: 1, pa: 1, rn: 1 };
+  function upNowNormName(v) {
+    var t = String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
+    while (t.length > 1 && UPNOW_SUFFIX[t[t.length - 1]] === 1) t.pop();
+    return t.join(' ').trim();
+  }
+  /* Order-free, initial-free token compare. An exact-name test is the defect
+     class that mints duplicate charts; here it would have a quieter failure -
+     the schedule's "SCHAEFFER, ADAM J OV1." and the chart's "Adam Schaeffer"
+     are one person, and an exact compare would call them strangers and make
+     this module stand down on the very visit it exists for. */
+  function upNowKeyTokens(v) {
+    return upNowNormName(v).split(' ').filter(function (x) { return x.length > 1; }).sort();
+  }
+  function upNowSamePerson(a, b) {
+    var x = upNowKeyTokens(a), y = upNowKeyTokens(b);
+    /* A single-token name on either side is refused outright - even when the
+       two strings are identical. One shared word is not an identity, and the
+       cost of refusing is the mildest failure this module has: it stands down
+       and today's surface keeps the banner. */
+    if (x.length < 2 || y.length < 2) return false;
+    if (x.join(' ') === y.join(' ')) return true;
+    /* One side may carry a middle name, a schedule code or a credential the
+       other omits: every token of the shorter must appear in the longer. */
+    var s = x.length <= y.length ? x : y;
+    var l = x.length <= y.length ? y : x;
+    for (var i = 0; i < s.length; i++) { if (l.indexOf(s[i]) < 0) return false; }
+    return true;
+  }
+  /* The ONE test for "this node currently holds an up-now sentence". Anything
+     that fails it belongs to somebody else and is never touched. */
+  function upNowSplitBanner(html) {
+    var s = String(html == null ? '' : html);
+    if (s.indexOf(UPNOW_HEAD) !== 0) return null;
+    var close = s.indexOf('</b>', UPNOW_HEAD.length);
+    if (close < 0) return null;
+    var sep = s.indexOf(UPNOW_SEP, close);
+    if (sep < 0) return null;
+    return {
+      head: s.slice(0, sep + UPNOW_SEP.length),
+      tail: s.slice(sep + UPNOW_SEP.length),
+      name: upNowUnescape(s.slice(UPNOW_HEAD.length, close))
+    };
+  }
+  /* ctx: { upName, activeName, recording, transcript, note, sent }.
+     The visit's own order, with two deliberate precedences. RECORDING outranks
+     everything, because a live microphone is the most consequential thing on
+     the screen. A verified write outranks "note ready", because once it has
+     landed the doctor's only remaining question is whether it landed. */
+  function upNowVisitState(ctx) {
+    ctx = ctx || {};
+    if (!upNowSamePerson(ctx.upName, ctx.activeName)) return 'elsewhere';
+    if (ctx.recording) return 'recording';
+    if (ctx.sent) return 'sent';
+    if (String(ctx.note == null ? '' : ctx.note).trim()) return 'note';
+    if (String(ctx.transcript == null ? '' : ctx.transcript).trim()) return 'transcript';
+    return 'ready';
+  }
+  /* {state, html} for a banner this module owns, or null for one it does not.
+     html is '' when the state has no sentence of its own here ('elsewhere'),
+     which is how "leave the honest strip alone" is expressed. */
+  function upNowPlan(html, ctx) {
+    var parts = upNowSplitBanner(html);
+    if (!parts) return null;
+    ctx = ctx || {};
+    var state = upNowVisitState({
+      upName: ctx.upName || parts.name,
+      activeName: ctx.activeName,
+      recording: ctx.recording,
+      transcript: ctx.transcript,
+      note: ctx.note,
+      sent: ctx.sent
+    });
+    return { state: state, name: parts.name, html: UPNOW_TAIL[state] ? (parts.head + UPNOW_TAIL[state]) : '' };
+  }
+  /* Guarded writer - writes only on change, so the MutationObserver that calls
+     this cannot drive itself and a repaint of an already-correct banner costs
+     nothing. */
+  function upNowPaintBanner(el, ctx) {
+    if (!el) return null;
+    var plan = upNowPlan(el.innerHTML, ctx);
+    if (!plan || !plan.html) return plan;
+    if (el.innerHTML !== plan.html) el.innerHTML = plan.html;
+    if (el.getAttribute('data-mls-upnow-state') !== plan.state) el.setAttribute('data-mls-upnow-state', plan.state);
+    return plan;
+  }
+  /* ===== upnowstate-1.0.0 end ============================================ */
+
+  function upNowFieldText(id) {
+    return safe(function () { var e = $(id); return e ? String(e.value == null ? '' : e.value) : ''; }, '');
+  }
+  function upNowActiveName() {
+    return safe(function () {
+      /* getPatients() is an ARRAY; the active id has its own getter. */
+      var id = (typeof window.getActivePtId === 'function') ? String(window.getActivePtId() || '') : '';
+      if (!id) return '';
+      var list = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && String(list[i].id || '') === id) return String(list[i].name || '');
+      }
+      return '';
+    }, '');
+  }
+  function upNowRecording() {
+    return safe(function () {
+      var b = $('captureBtn');
+      /* class-first truth, the same test the flow lane uses */
+      return !!(b && (b.classList.contains('recording') || /stop/i.test(b.textContent || '')));
+    }, false);
+  }
+  var _hashCache = { text: null, hash: '' };
+  /* A note is "in Athena" only when the write flow's OWN receipt says a
+     verified note write landed for this patient carrying this note's hash -
+     never because a sheet was opened or a button was pressed. The receipt's
+     proof expiry is deliberately not required: expiry governs whether a proof
+     may still AUTHORIZE another action, not whether the write happened, and a
+     banner that forgot a real write after a few minutes would only be a newer
+     lie in place of the old one. An edited note stops matching, so the banner
+     drops back to "note ready" - which is the truth about the edited text. */
+  function upNowSent(activeName) {
+    return safe(function () {
+      var wf = window.__mlsWriteFlow;
+      if (!wf || !wf.state || !wf.state.verifiedWrites || typeof wf.previewHash !== 'function') return false;
+      var map = wf.state.verifiedWrites;
+      var keys = Object.keys(map);
+      if (!keys.length) return false;
+      var note = upNowFieldText('noteBox');
+      if (!note.trim()) return false;
+      if (_hashCache.text !== note) {
+        _hashCache = { text: note, hash: safe(function () { return String(wf.previewHash(note) || ''); }, '') };
+      }
+      var hash = _hashCache.hash;
+      if (!hash) return false;
+      for (var i = 0; i < keys.length; i++) {
+        var r = map[keys[i]];
+        if (!r || r.verified !== true) continue;
+        if (String(r.noteHash || '') !== hash) continue;
+        if (upNowSamePerson(r.patientName, activeName)) return true;
+      }
+      return false;
+    }, false);
+  }
+  function upNowCtx() {
+    var activeName = upNowActiveName();
+    return {
+      activeName: activeName,
+      recording: upNowRecording(),
+      transcript: upNowFieldText('transcript'),
+      note: upNowFieldText('noteBox'),
+      sent: upNowSent(activeName)
+    };
+  }
+
+  var api = {
+    installed: true,
+    version: VERSION,
+    banner: BANNER_ID,
+    last: null,
+    read: upNowCtx,
+    /* read-only seam: the SHIPPED functions, so a suite pins these instead of
+       agreeing with a re-implementation of them. Nothing here can record,
+       generate, send, or move a patient. */
+    pure: {
+      v: VERSION, head: UPNOW_HEAD, sep: UPNOW_SEP, tails: UPNOW_TAIL,
+      normName: upNowNormName, samePerson: upNowSamePerson,
+      split: upNowSplitBanner, state: upNowVisitState,
+      plan: upNowPlan, paint: upNowPaintBanner
+    }
+  };
+  window.__mlsUpNowState = api;
+
+  var _obs = null;
+  var _painting = false;
+  function watchBanner() {
+    safe(function () {
+      var el = $(BANNER_ID);
+      if (!el || el.__mlsUpNowWatched || typeof MutationObserver !== 'function') return;
+      el.__mlsUpNowWatched = true;
+      if (!_obs) _obs = new MutationObserver(function () { repaint(); });
+      _obs.observe(el, { childList: true, characterData: true, subtree: true });
+    });
+  }
+  function repaint() {
+    if (_painting) return;
+    _painting = true;
+    try {
+      watchBanner();
+      api.last = upNowPaintBanner($(BANNER_ID), upNowCtx());
+    } catch (e) {} finally { _painting = false; }
+  }
+  api.repaint = repaint;
+
+  var DOC_SIGNALS = ['input', 'change', 'click'];
+  var WIN_SIGNALS = ['mls:generation-started', 'mls:generation-settled', 'mls:generation-refused',
+    'mls:active-patient-changed', 'mls:view-changed', 'mls:review-step'];
+  function onSignal() { repaint(); }
+  function boot() {
+    var i;
+    for (i = 0; i < DOC_SIGNALS.length; i++) safe(function () { document.addEventListener(DOC_SIGNALS[i], onSignal, true); });
+    for (i = 0; i < WIN_SIGNALS.length; i++) safe(function () { window.addEventListener(WIN_SIGNALS[i], onSignal); });
+    repaint();
+  }
+  api.revert = function () {
+    var i;
+    for (i = 0; i < DOC_SIGNALS.length; i++) safe(function () { document.removeEventListener(DOC_SIGNALS[i], onSignal, true); });
+    for (i = 0; i < WIN_SIGNALS.length; i++) safe(function () { window.removeEventListener(WIN_SIGNALS[i], onSignal); });
+    safe(function () { if (_obs) { _obs.disconnect(); _obs = null; } });
+    safe(function () {
+      var el = $(BANNER_ID);
+      if (!el) return;
+      try { delete el.__mlsUpNowWatched; } catch (e) { el.__mlsUpNowWatched = false; }
+      el.removeAttribute('data-mls-upnow-state');
+    });
+    api.installed = false;
+    safe(function () { delete window.__mlsUpNowState; });
+    return true;
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+})();
+/* ===== upnowstate-1.0.0 module end ====================================== */

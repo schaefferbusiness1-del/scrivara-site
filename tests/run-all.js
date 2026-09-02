@@ -33,6 +33,17 @@ const AUTOMATED_PROOF_FILES = new Set([
      a 28 s generation that settled failed in silence, and a History Athena
      review refusal that lived only in a toast. */
   'refusal-visibility-proof.js',
+  /* visitpage-1.0.0 / recvis-1.0.0 (owner 2026-09-02, from a screenshot of the
+     Visit page mid-generation): "the time for [Next: Review & send to Athena]
+     shows up twice... the bottom one's correct, the top one does nothing", and
+     "sometimes when I click start recording, it doesn't record". One visible
+     Next door per state and a press that OPENS the review instead of parking
+     focus 2,700 px below the fold; a next-step chip that is true or absent and
+     never on top of the transcript header; and every way a record press can end
+     with nothing recording made visible on the lane with its own sentence and
+     the next press. */
+  'visit-next-one-door-proof.js',
+  'start-recording-visible-proof.js',
   /* residue-1.0.0 (b1189): a chart MLS itself opened in athenaOne is never a
      chart Follow adopts - not while the lane drives, and not in the quiet
      afterwards when the reader has finished and left the chart parked. */
@@ -41,6 +52,12 @@ const AUTOMATED_PROOF_FILES = new Set([
      doctor's active patient - it keeps every row, chart fact and visit it
      was already saving and skips ONLY the selection change. */
   'capture-keeps-selection-proof.js',
+  /* nonag-1.0.0 (2026-09-02, measured in the owner's tab): the unsaved-visit
+     question belongs to the doctor, once. A machine arrival at the switch
+     chokepoint - schedule tick, up-now anchor, athenaOne follow, day-strip
+     alignment, pull-done landing - never asks and never takes the note; its
+     only surface is the "nothing was switched" strip. */
+  'switch-nag-proof.js',
   /* scoperec-1.0.0 / visitid-1.0.0 / scopeempty-1.0.0 (2026-09-01, measured
      live): a provider-scoped pull of a day replaces only that provider's
      rows and leaves every other clinician's row byte-identical; a re-pull
@@ -57,6 +74,19 @@ const AUTOMATED_PROOF_FILES = new Set([
      of the two it measured; the clarity table settles it in one step and points
      at the combined Assessment & Plan destination a one-field A/P stage has. */
   'assessment-probe-proof.js',
+  /* apsel-1.0.0 (owner-measured 2026-09-02 09:xx, MLS Assist 3.0.107): a review
+     with one assessment and one plan mints THREE Assessment/Plan rows - the
+     separate pair and the combined row - and an athenaOne A/P stage renders
+     EITHER one combined field OR separate ones, never both. All three arrived
+     ticked, so the default press always attempted a destination that cannot
+     exist; and every one of them was counted as its own destination, so the
+     pill could never reach DONE and the green "Everything on this review is in
+     Athena" banner could never fire on an A/P-bearing review, however perfectly
+     the writes behaved. This suite pins that all six destinations are still
+     minted and one tick away, that exactly ONE of the group arrives ticked, and
+     that the collapsed count reaches DONE on a combined-field surface and on a
+     separate-field surface alike while a partial send still reads PARTLY DONE. */
+  'ap-one-destination-proof.js',
   /* rowsel-1.0.0 / reopen-1.0.0 / regenkeep-1.0.0 (owner-measured 2026-09-02,
      b1197): a section the doctor UNCHECKED reads NOT SELECTED and is counted
      in neither half of "Not written - N of M" (M is the checked rows), while a
@@ -66,6 +96,16 @@ const AUTOMATED_PROOF_FILES = new Set([
      model call; and the sheet's Regenerate keeps the exact visit the doctor
      just bound by hand instead of resetting the review to the creation day. */
   'sheet-rows-and-reopen-proof.js',
+  /* draftsig-1.0.0 (owner-measured 2026-09-02, a real visit in his own tab): a
+     DRAFT must never carry a signature line. The generated note ended with a
+     bare "Electronically signed by:" attesting to nobody, and every draft that
+     day carried the doctor's name before anything was signed, because
+     applyVisitCommentToNote() ran withSignatureBlock() on generation. The block
+     is now appended only when the doctor signs in MLS, an empty credential
+     appends nothing at all, stripSignatureBlock removes the bare label the
+     defect minted as well as the old literal, and the athena derivation of a
+     draft is proven byte-identical with and without a signature block. */
+  'draft-has-no-signature-proof.js',
   /* attn-1.0.0 (owner-measured 2026-09-02, the August month pull for one PA):
      needs-attention must mean the owner has to act. A day the job completed is
      re-opened by the month reconciliation only when the month-owner RELEASE
@@ -104,6 +144,93 @@ const AUTOMATED_PROOF_FILES = new Set([
      insertion (so every deadline and the whole __gotoDeadline funnel are
      byte-identical), and lifts the spliced decision block into a sandbox. */
   'surfnav-splice-proof.js',
+  /* savenamed-1.0.0 (owner ruling 2026-09-02, verbatim on the next line):
+       unblock the save block in mls assistant it should be able to do it if
+       someone clicks save on mls site
+     A review that places NAMED Athena sections (Reviewed HPI, ROS, Physical
+     Exam, Assessment & Plan - the shape this practice actually has) could not
+     reach ANY save: findNoteAction resolves a Save control only inside exactly
+     one GENERIC encounter-note scope holding exactly one editor, and the
+     driver refused save_draft for the named shape outright, BEFORE the
+     probe/execute split, so there was not even a read-only verification of an
+     encounter save to build on. scripts/splice-30111-savenamed.js adds one
+     more leg on the SAME supervised path - same candidate loop, same identity
+     gates, same one-use token, same fresh-trusted-click requirement, same
+     clickOnce boundary - that resolves the encounter Save through its own
+     CLOSED label allowlist and answers verified only on a read-back. This
+     suite runs the splice against a temp COPY of background.js, proves it is a
+     pure eight-span insertion (so the generic save_draft leg, the note-scope
+     region, the scoped-status rule and the write-safety guard are
+     byte-identical), and lifts the shape flag, the finder, the closed refusals
+     and the execute leg into a sandbox - including that Sign & Save, Sign,
+     Close encounter and Bill are refused without ever being clicked. */
+  'savenamed-splice-proof.js',
+  /* beadwait-1.0.0 - ONE bounded wait in the same driver. MEASURED LIVE
+     2026-09-02 16:26 (ext 3.0.110): the app opened the encounter through the
+     appointment row at 16:26:33 and 13 s later all six named-section probes
+     refused 0.4 s apart with note-section-not-on-surface and hetDiag
+     qualified:true, rank:6, noteTargetFound:false, stageNav no-bead - yet at
+     16:26:55 the SAME frame carried six visible li.nav-bead elements and a
+     re-check at 16:29 wrote HPI, ROS, PE and the combined A&P. The encounter
+     frame binds BEFORE athenaOne paints its stage-tab strip, and sn-1.0.0
+     looked exactly once. scripts/splice-30111-beadwait.js replaces that single
+     look with a bounded poll of the SAME shipped lookup (up to 15 looks 800 ms
+     apart, inside a 12 s ceiling) and the flat 1600 ms post-click sleep with a
+     bounded poll of the shipped read-only findNamedNoteAction (every 400 ms to
+     an 8 s ceiling). It grants NOTHING - the whitelist, the machine-bound
+     stage context, the forbidden-control ban, the at-most-one-click rule and
+     every refusal code are unchanged. This suite runs the splice against a
+     temp COPY of background.js, proves it is a pure two-span line replacement,
+     and runs the block itself on a virtual clock. */
+  'beadwait-splice-proof.js',
+  /* savenamed-app-1.0.0 - the APP half of the same owner ruling. The review's
+     Save row was `action:'' capability:'manual'` and never called the bridge,
+     so the sheet's own words sent the doctor into athenaOne to finish by hand.
+     It is now a supervised save_draft row that sorts LAST after every note row,
+     carries the all-named payload it already had (that tuple list is what
+     declares the shape to MLS Assist - there is no new request field) and
+     carries NO include checkbox: its readiness is the ROW'S OWN RULE - nothing
+     checked, nothing armed; on an older extension it arms only once every
+     checked section is VERIFIED and becomes the next Confirm press; on a
+     batch-arm extension it rides the SAME press as the final item. This suite
+     lifts the shipped functions, runs both lanes end to end, pins the words the
+     row reads (WAITING FOR YOUR PRESS / VERIFIED / NOT SENT, never MANUAL), the
+     six new refusal codes and their doctor sentences, the running 3.0.110's old
+     refusal mapped to one sentence with no loop, and that Sign & Save is still
+     manual and still not executable - each against the PRE-FIX bytes as a
+     negative control. */
+  'savenamed-app-proof.js',
+  /* paintwait-1.0.0 / pullshield-1.0.0 / ledger-1.0.0 (owner-measured live
+     2026-09-02 16:09-16:31, ext 3.0.110, site b1207). The batch's auto-open
+     landed ok at 16:26:33; the first row check answered twelve seconds later
+     with note-section-not-on-surface and hetDiag stageNav 'no-bead', and the
+     other five rows answered identically 0.4s apart - yet at 16:26:55 the
+     athena frame had all six stage beads painted and a manual re-check at
+     16:29:46 passed. The encounter frame binds BEFORE its tab strip paints, and
+     the app took the first no-bead answer as final because openpace's re-probe
+     is gated on a different family of codes. It now paces that answer exactly
+     as openpace does on a fresh open, gives a stale one exactly ONE bounded 6s
+     re-probe per row, and refuses at once when the extension PROVED the stage
+     tab open. Two more measured seams ride with it: the queue waits for a
+     schedule pull that owns the same single athenaOne tab and settles a row it
+     gives up on as NOT ATTEMPTED rather than as a refusal it never made, and a
+     passing read-only check erases and repaints its own stale
+     "NOT SENT - READ-ONLY CHECK REFUSED" ledger line while a starting batch
+     drops the previous batch's refusals for the rows it is about to check. */
+  'paintwait-queue-proof.js',
+  /* readysay-1.0.0 / apcover-1.0.0 / preview-1.0.0 (same run, 16:29-16:31, plus
+     the owner's own words that day: "make a better write UI by actually showing
+     what's going to be written in cleaner if possible"). The sheet said three
+     different things about one press: the READY pill said it ran only the HPI,
+     the button said "Confirm & write all 6, starting with HPI", the aria-label
+     said something else again - and the press wrote four sections. They are now
+     one claim, with the exact phrase MLS Assist mints its write authorization
+     from still leading the aria-label. The A/P shape this athenaOne does not
+     have leaves the queue and the button the moment the other shape lands, in
+     both directions, instead of being offered as a press that can only refuse.
+     And every ready write row shows the exact text that will land, in reading
+     type with its line breaks, byte for byte the string the execute sends. */
+  'write-sheet-agreement-proof.js',
   /* retryvis-1.0.0 (owner-measured 2026-09-02 05:1x): the month card said
      "Finished, with days that still need attention - press Retry" while
      #ez3PullRetry computed display:none, because pCounts returns before it
@@ -125,6 +252,17 @@ const AUTOMATED_PROOF_FILES = new Set([
      words, and on MLS Assist 3.0.108+ the ordered batch authorization is on the
      button before the trusted click. */
   'write-next-press-proof.js',
+  /* upnowstate-1.0.0 (owner-measured 2026-09-02, late morning, on a real visit):
+     the schedule banner still read "Up now: <patient> - loaded & ready. Hit
+     Start recording." while the same screen showed a captured transcript, the
+     generated note, and the step bar on Review & Sign - it names the step ONCE,
+     when the patient loads, and nothing in the visit ever revised it. This
+     suite lifts the shipped block out of the bundle and drives it through every
+     state (ready / recording / transcript / note / sent), proves it stands down
+     when the up-now patient is not the active chart, proves it never touches a
+     pull-progress sentence on the same shared node, and proves it starts no
+     timer. */
+  'upnow-banner-state-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
@@ -153,7 +291,30 @@ const AUTOMATED_PROOF_FILES = new Set([
      now recognizes that label (and the older "All providers" wording) as the
      'all' scope, and never forwards a name the provider roster does not
      recognize. */
-  'pad-provider-proof.js'
+  'pad-provider-proof.js',
+  /* fmt-1.0.0 (owner-measured 2026-09-02, a real visit in his own tab): the
+     generated note came out in the NARRATIVE prose family - "History: ...
+     Examination: Not documented ... Plan: Not documented" - and he said "this
+     is not a good format and its missing the hpi and other stuff". The stored
+     format was 'narrative', which no code path defaults to; the same account
+     carried test-lane saved formats ("QA HPI Template 2026 ...", "Engineering
+     Compliance Assessment Template"), and a bare stored string cannot tell a
+     test lane's press from the doctor's. The display default is now the chart
+     shape unless a stamped explicit choice says otherwise, and QA-pattern saved
+     formats are hidden from the pickers and the tuning payload without deleting
+     anything the doctor can still ask to remove. */
+  'note-format-default-proof.js',
+  /* reviewfix-1.0.0 (owner-measured 2026-09-02, with a screenshot of the
+     "2  Review the note" banner): "fix the review the notes section ... many
+     of the buttons do not work ... all the duplicate items to be gone". The
+     same generated note was painted TWICE in one card - the review workspace
+     and the Clinical note card below it - each with its own formatted view
+     and its own Save / Send row, and "Next: Review & send to Athena"
+     appeared twice with the top copy only scrolling. This pins the section
+     as ONE place: one note surface, at most one control per verb, every
+     control wired to an observable effect, and every checker proved red on
+     the pre-fix shape. */
+  'review-section-one-door-proof.js'
 ]);
 
 const tests = [
@@ -896,9 +1057,28 @@ const tests = [
   'generate-note-lifecycle-runtime.test.js',
   'generation-abort-transport-runtime.test.js',
   'generation-legacy-athena-sidecar-runtime.test.js',
+  /* gkey/gsrc/gsx/gsup (2026-09-02): four measured defects on the ONE
+     post-response guard, each proved against the shipped engine with the
+     pre-fix bytes reverted in memory as its control - a cosmetic #patientLabel
+     repaint from the "up now" schedule fill destroying a finished note; no
+     receipt naming WHICH comparand discarded a run; the calm-vs-alarming
+     sentence chosen from an input-event flag, so a bare .value= rewrite was
+     reported as a patient mix-up; and a duplicate pre-gate supersede abort
+     that silently killed a healthy run on any press that was then refused. */
+  'generation-discard-attribution-runtime.test.js',
+  /* sidecar-1.0.0 (2026-09-02): a refused athena_note sidecar degrades the
+     ATHENA ROUTE, never the note. The validator bytes are unchanged (proved by
+     a negative control that 'ROS: Negative.' still fails closed) and the write
+     is strictly no weaker (proved by the 'none' control that would otherwise
+     stage five unvalidated clinical rows). */
+  'athena-sidecar-degrades-route-not-note.test.js',
   'athena-dual-note-contract.test.js',
   'athena-dual-note-state-runtime.test.js',
   'structured-note-flat-staging-contract.test.js',
+  /* fmt-1.0.0: which format the doctor gets when nobody has said anything, and
+     what it takes to move it. Executes the shipped resolver out of all three
+     shells; a hunk applied to one twin and not the other reds here. */
+  'note-format-default-proof.js',
   'parse-gen-json-fail-closed-contract.test.js',
   'freeform-family-loader-fallback-contract.test.js',
   /* Main hosted visit notes keep the backend-owned safety prompt and carry
@@ -1373,16 +1553,34 @@ const tests = [
   'refusal-visibility-proof.js',
   'follow-residue-proof.js',
   'capture-keeps-selection-proof.js',
+  'switch-nag-proof.js',
   'scoped-pull-keeps-others-proof.js',
   'assessment-probe-proof.js',
+  'ap-one-destination-proof.js',
   'sheet-rows-and-reopen-proof.js',
+  'draft-has-no-signature-proof.js',
   'pad-provider-proof.js',
   'attention-days-proof.js',
   'nav-home-proof.js',
   'surfnav-splice-proof.js',
+  'savenamed-splice-proof.js',
+  'beadwait-splice-proof.js',
+  'savenamed-app-proof.js',
+  /* paintwait-1.0.0 / pullshield-1.0.0 / ledger-1.0.0: the read-only check, the
+     athenaOne tab it shares with the schedule pull, and the ledger that
+     outlived its own truth (owner-measured live 2026-09-02 16:09-16:31). */
+  'paintwait-queue-proof.js',
+  /* readysay-1.0.0 / apcover-1.0.0 / preview-1.0.0: the READY sentence, the
+     button and its aria-label are one claim; the A/P shape this athenaOne does
+     not have is covered, not owed; and each write row shows the exact text that
+     will land (owner, same day: "actually showing what's going to be written"). */
+  'write-sheet-agreement-proof.js',
   'retry-visible-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',
+  'upnow-banner-state-proof.js',
+  'visit-next-one-door-proof.js',
+  'start-recording-visible-proof.js',
   'visit-walkthrough-proof.js',
   'phone-fixes-proof.js',
   'note-quality-proof.js',
@@ -1391,6 +1589,7 @@ const tests = [
   'ai-studio-fixes-proof.js',
   'review-write-fixes-proof.js',
   'review-workspace-proof.js',
+  'review-section-one-door-proof.js',
   'pull-resume-proof.js',
   'day-writeall.test.js',
   'shared-notes.test.js',
@@ -2169,7 +2368,19 @@ const tests = [
      the prefill only touches an EMPTY field, once, and a field he cleared
      stays cleared across a save and a reload; an ambiguous note kind stays
      unset. A hostile template stays inert DATA. */
-  'template-auto-suggest-pins.test.js'
+  'template-auto-suggest-pins.test.js',
+  /* f16ctx-1.1.0 (measured 2026-09-02 10:xx): F16's 2500 ms #contextBox
+     janitor could not tell patient A's stale paste from the context the app
+     ITSELF had just written for the patient now open - goNewVisitForPatient()
+     runs newVisit() (which blanks the box) then prefillContextFromProfile()
+     (which refills it from that chart's own problems/meds/allergies), and up
+     to 2.5 s later the tick deleted it and blamed "the previous patient".
+     #contextBox is a real request input and one of the values compared after
+     the response, so a clear landing mid-run also discarded the finished note
+     as "The patient or visit source changed". The skip now needs BOTH a
+     __mlsOpenSwitchFix.resets delta and changed bytes; a cross-tab switch, a
+     newVisit() that threw, and a stale reset level all still clear. */
+  'f16-context-clear-owner-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -332,8 +332,18 @@ function tally(html, needle) { return html.split(needle).length - 1; }
     go.click();
     await settle(1200);
 
-    eq(h.executes().length, 3, 'the ONE button did not send all three checked sections');
-    ok(h.probes().length >= 3, 'a section was executed without its own fresh read-only check');
+    /* savenamed-app-1.0.0 (OWNER RULING 2026-09-02: "unblock the save block in
+       mls assistant it should be able to do it if someone clicks save on mls
+       site" / "no one should have to touch Athena this entire process"). On a
+       batch-arm extension the ONE press now also runs the review's own
+       encounter save, as the LAST item, on the same supervised path: its own
+       probe, its own execute, its own receipt. Everything this block guards
+       about that path is asserted below and is unchanged. */
+    eq(h.executes().length, 4, 'the ONE button did not send all three checked sections and then save the encounter');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'write_note', 'write_note', 'save_draft'],
+      'the encounter save did not ride last on the same press');
+    checks++;
+    ok(h.probes().length >= 4, 'a section or the encounter save was executed without its own fresh read-only check');
     const order = h.actions().map(m => m.mode);
     for (let i = 0; i < order.length; i++) {
       if (order[i] !== 'execute') continue;
@@ -345,8 +355,13 @@ function tally(html, needle) { return html.split(needle).length - 1; }
       ok(rec && rec.status === 'verified', 'checked section ' + row.id + ' has no verified receipt of its own');
       eq(rec.rowHash, row.rowHash, 'the receipt for ' + row.id + ' is not bound to that exact row');
     });
-    eq(Object.keys(state.receipts).length, 3, 'the batch produced a different number of receipts than checked rows');
-    ok(h.actions().every(m => m.action === 'write_note'), 'the merged button ran an action other than the checked note writes');
+    eq(Object.keys(state.receipts).length, 4, 'the batch produced a different number of receipts than the rows it ran');
+    /* savenamed-app-1.0.0: exactly TWO actions can appear, and the second one
+       is the review's own encounter save. Nothing signs, bills or orders. */
+    ok(h.actions().every(m => m.action === 'write_note' || m.action === 'save_draft'),
+      'the merged button ran an action other than the checked note writes and the encounter save');
+    eq(h.actions().filter(m => m.action === 'save_draft' && m.mode === 'execute').length, 1,
+      'the encounter save ran more than once, or not at all');
     ok(h.wf.diagnostics.state().halted !== true, 'a clean batch halted the review');
   }
 
@@ -374,8 +389,21 @@ function tally(html, needle) { return html.split(needle).length - 1; }
     eq(merged.boxes().length, 1, 'the single-section sheet did not render exactly one include checkbox');
     merged.el('mlsAthenaUnifiedGo').click();
     await settle(600);
-    eq(merged.executes().length, 1, 'one checked section did not issue exactly one execute');
-    eq(merged.probes().length, legacy.probes().length, 'one checked section changed the number of read-only checks');
+    /* savenamed-app-1.0.0: the equivalence this block exists to prove is about
+       the NOTE WRITE - same probe, same execute request, same receipt - and it
+       is asserted below, unchanged, on executes()[0]. The second execute is the
+       review's own encounter save riding the same batch-arm press; the legacy
+       control lane has no include checkboxes at all, so nothing arms a save
+       there and it stays a one-row press. */
+    eq(merged.executes().length, 2, 'one checked section did not issue its write and then the encounter save');
+    eq(merged.executes()[1].action, 'save_draft', 'the second execute on the press was not the encounter save');
+    /* every row a press runs gets its OWN fresh read-only check, so a press that
+       runs the write and the save costs two on top of the sheet's opening one.
+       The legacy control has no checkboxes, presses through the one-row lane,
+       and re-uses the opening check - which is why it is the control. */
+    eq(merged.probes().length, legacy.probes().length + 2, 'a row on this press ran without its own read-only check');
+    eq(merged.probes()[merged.probes().length - 1].action, 'save_draft',
+      'the encounter save was executed without its own read-only check');
     const mergedReceipt = stripTime(merged.wf.diagnostics.state().receipts[rowId]);
     assert.deepStrictEqual(mergedReceipt, legacyReceipt,
       'ONE CHECKED SECTION IS NOT EQUIVALENT TO THE LEGACY SINGLE-ROW PRESS - the receipts differ');
@@ -582,8 +610,12 @@ function tally(html, needle) { return html.split(needle).length - 1; }
     await settle(80);
     const html = h.cardHtml();
     const blocked = tally(html, 'BLOCKED &middot; NOTHING SENT');
-    eq(blocked, 2, 'the mixed-reason fixture did not produce exactly two blocked rows');
-    eq(tally(html, '<b>Why:</b>'), 2, 'a per-row UNIQUE reason was collapsed away with the boilerplate');
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): the third blocked row is
+       the review's own encounter-save row, which is an EXECUTABLE action now
+       and therefore fails closed on the same unbound identity as the note it
+       would save - exactly as it must. */
+    eq(blocked, 3, 'the mixed-reason fixture did not produce exactly three blocked rows');
+    eq(tally(html, '<b>Why:</b>'), 3, 'a per-row UNIQUE reason was collapsed away with the boilerplate');
     eq(tally(html, 'are blocked for the same reason.') + tally(html, 'need the same one thing:'), 0,
       'rows with different reasons were reported as sharing one');
   }

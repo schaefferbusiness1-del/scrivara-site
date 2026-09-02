@@ -952,6 +952,99 @@ async function mlsAthenaActionV2DriverFn(req) {
       return { ok: true, target: target, binding: { selector: selector, sectionLabel: sectionLabel, label: text(td.label || sectionLabel), framePath: frame.path, frameUrl: String(frame.url || '').split('#')[0], tag: observedTag, targetFingerprint: fingerprint } };
     }
     /* ATHENA_ACTION_V2_NOTE_SCOPE_END */
+    /* ATHENA_ACTION_V2_SAVENAMED_HELPERS_START */
+    /* savenamed-1.0.0 (3.0.111, owner ruling 2026-09-02) - the
+       encounter-level Save for a review that placed NAMED Athena sections.
+       findNoteAction can only see a Save that sits inside exactly one
+       GENERIC encounter-note scope holding exactly one editor, and the
+       named-section surface has neither, so a practice whose reviews are
+       HPI/ROS/Exam/Assessment-and-Plan could not reach ANY save at all.
+       This finder drops that generic-scope requirement and NOTHING else.
+       WHAT MAY BE CLICKED STAYS NARROWER THAN THE GENERIC LEG:
+         - exactSave: the label core must EQUAL save / save draft / save
+           note, and its own ban already refuses sign, submit, post, bill,
+           charge, claim, delete, discard and void;
+         - SNV_FORBIDDEN_SAVE_LABEL: additionally refuses order, close,
+           finalize and attest, so Sign & Save, Sign, Close encounter and
+           Bill are structurally unreachable;
+         - wsForbiddenControl: the shipped final/irrevocable-control ban;
+         - SNV_BANNED_REGION: refuses a control that lives anywhere inside
+           an orders, billing, charges, claims, prescription, medication or
+           signature region, so a Save button belonging to some other
+           workspace inside the same frame can never be taken;
+         - exactly ONE surviving candidate, or the leg refuses.
+       Identity is NOT this finder's job and it does not attempt it: it is
+       called from inside the candidate loop, AFTER the patient banner and
+       machine-typed stage-context gates and BEFORE the encounter-id,
+       appointment-id, visit-date and provider gates, so the control it
+       returns either belongs to the one bound encounter or its candidate
+       is dropped by those unchanged gates. */
+    var SNV_SAVE_CORES = { 'save': 1, 'save draft': 1, 'save note': 1 };
+    var SNV_FORBIDDEN_SAVE_LABEL = /\b(sign|bill|billing|order|orders|close|finalize|finalise|attest|submit|post|charge|charges|claim|claims|delete|discard|void|cancel)\b/;
+    var SNV_BANNED_REGION = /\b(order|orders|billing|charge|charges|claim|claims|prescription|prescriptions|medication|medications|erx|e rx|sign|signature|signoff|attest|finalize|finalise)\b/;
+    var SNV_ENCOUNTER_REGION = /\b(encounter|visit|clinical|chart|documentation|note)\b/;
+    function snvLabelSources(el) {
+      var raw = [];
+      try { raw = [el.textContent, el.value, el.getAttribute && el.getAttribute('aria-label'), el.getAttribute && el.getAttribute('title')].filter(function (v) { return String(v || '').trim(); }); } catch (eSnvLs) {}
+      if (!raw.length) raw = [label(el)];
+      return raw.map(norm);
+    }
+    function snvSaveCore(el) {
+      /* The receipt's control name is a member of the CLOSED allowlist or
+         the empty string - never free text lifted off the page. */
+      var src = snvLabelSources(el), i;
+      for (i = 0; i < src.length; i++) if (SNV_SAVE_CORES[src[i]] === 1) return src[i];
+      return '';
+    }
+    function snvForbiddenSaveLabel(el) {
+      var src = snvLabelSources(el), i;
+      for (i = 0; i < src.length; i++) if (SNV_FORBIDDEN_SAVE_LABEL.test(src[i])) return true;
+      return false;
+    }
+    function snvOwnDescriptor(el) {
+      /* The element's OWN machine attributes only - deliberately NOT
+         scopeDescriptor, which also sweeps up descendant headings. A
+         container that inherited its children's headings would let one
+         Orders card inside the encounter ban the whole encounter, and would
+         let an outer shell's heading text vouch for a region it does not
+         own. */
+      var out = '';
+      try { out = [el.id, el.getAttribute && el.getAttribute('name'), el.getAttribute && el.getAttribute('aria-label'), el.getAttribute && el.getAttribute('data-testid'), el.getAttribute && el.getAttribute('data-component'), String(el.className || '')].join(' '); } catch (eSnvOd) {}
+      return norm(out);
+    }
+    function snvScopeTag(el) {
+      /* A PHI-free name for the region the control was found in: the
+         container's own machine attributes with every digit run removed, so
+         no id - and therefore no MRN- or encounter-shaped number - can ride
+         into a receipt. Capped at 80 characters. */
+      return snvOwnDescriptor(el).replace(/[0-9]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    }
+    function snvSaveScope(frame, control) {
+      var cur = control, guard = 0, scope = null;
+      while (cur && guard++ < 12) {
+        var snvD = snvOwnDescriptor(cur);
+        if (SNV_BANNED_REGION.test(snvD)) return null;
+        if (!scope && SNV_ENCOUNTER_REGION.test(snvD)) scope = cur;
+        cur = parentAcrossRoots(cur);
+      }
+      if (scope) return scope;
+      try { return (frame && frame.doc && frame.doc.body) || null; } catch (eSnvSc) { return null; }
+    }
+    function snvFindEncounterSave(frame) {
+      var all = [], accepted = [], refused = 0, i, snvScope;
+      try { all = interactive(frame.doc, frame.w); } catch (eSnvAll) { all = []; }
+      for (i = 0; i < all.length; i++) {
+        if (!exactSave(all[i])) continue;
+        if (snvForbiddenSaveLabel(all[i]) || wsForbiddenControl(all[i])) { refused++; continue; }
+        snvScope = snvSaveScope(frame, all[i]);
+        if (!snvScope) { refused++; continue; }
+        accepted.push({ control: all[i], editor: all[i], root: snvScope, strength: 3, encounterSave: true, labelCore: snvSaveCore(all[i]) });
+      }
+      var snvWhy = accepted.length === 1 ? 'found' : (accepted.length > 1 ? 'save-control-ambiguous' : (refused ? 'forbidden-control' : 'save-control-not-found'));
+      if (hetDiag.savenamed !== 'found') hetDiag.savenamed = snvWhy;
+      return accepted.length === 1 ? accepted[0] : null;
+    }
+    /* ATHENA_ACTION_V2_SAVENAMED_HELPERS_END */
     /* ATHENA_ACTION_V2_SCOPED_STATUS_START */
     function statusElements(root) {
       if (!root || !root.querySelectorAll) return [];
@@ -1158,6 +1251,31 @@ async function mlsAthenaActionV2DriverFn(req) {
     if (!text(expectedPatient.name) || !dateKey(expectedPatient.dob) || !digits(expectedPatient.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'Expected patient name, DOB, and MRN are required.' };
     var reviewedNote = noteNorm(req.noteText), notePolicy = String(req.notePolicy || 'empty_only');
     var requestedNoteSection = 'note';
+    /* ===== savenamed-1.0.0 (3.0.111) ==================================
+       OWNER RULING 2026-09-02, verbatim on the next line:
+         unblock the save block in mls assistant it should be able to do it
+         if someone clicks save on mls site
+       - a trusted press on the MLS site may drive athenaOne's encounter
+       Save (save DRAFT) for the reviews that write named sections. Sign
+       stays the doctor's manual click in athenaOne.
+       THE SHAPE IS DECLARED BY THE REQUEST ITSELF - there is NO new field.
+       The app already sends the reviewed destinations in `sections`, and
+       every one of those tuples (key, text, execute, destination) is inside
+       notePayloadKey, which is hashed into the one-use action token and
+       re-compared byte for byte at execute - so the shape a probe verified
+       is provably the shape an execute runs.
+       This leg is taken ONLY when EVERY reviewed section is a named Athena
+       destination (never 'note'), every one is execute:true, and every one
+       carries the exact reviewed NAMED_NOTE_DESTINATIONS string for its
+       canonical key. A generic or mixed shape, and every teach request,
+       keep the shipped behaviour byte for byte. */
+    var snvNamedSave = false;
+    try {
+      snvNamedSave = action === 'save_draft' && mode !== 'teach' && noteSections.length > 0 && noteSections.every(function (section) {
+        var snvKey = canonicalNamedNoteKey(section && section.key);
+        return !!snvKey && snvKey !== 'note' && section.execute === true && text(section.destination) === NAMED_NOTE_DESTINATIONS[snvKey];
+      });
+    } catch (eSnvShape) { snvNamedSave = false; }
     if (action === 'write_note') {
       var executableSections = noteSections.filter(function (section) { return section && section.execute === true; });
       if (noteSections.length !== 1 || executableSections.length !== 1) return { ok: false, blocked: true, reason: 'note-section-count-mismatch', error: 'One confirmed Athena note destination is required per write.' };
@@ -1168,6 +1286,14 @@ async function mlsAthenaActionV2DriverFn(req) {
       }
       if (noteNorm(executableSections[0].text) !== reviewedNote) return { ok: false, blocked: true, reason: 'note-section-payload-mismatch', error: 'The named section payload does not match the exact reviewed text.' };
     } else if ((action === 'save_draft' || action === 'sign_encounter') && noteSections.some(function (section) { return canonicalNamedNoteKey(section && section.key) && canonicalNamedNoteKey(section && section.key) !== 'note'; })) {
+      /* savenamed-1.0.0: this refusal still owns every OTHER named-section
+         final action - sign_encounter ALWAYS, and any save_draft whose
+         reviewed shape is generic or mixed. The one shape declared above
+         walks past it into the same probe/execute split, the same identity
+         gates and the same one-use token every note write already uses.
+         The guard is a bare if on its own line so the shipped refusal line
+         below stays byte-identical. */
+      if (!snvNamedSave)
       return { ok: false, blocked: true, reason: 'named-section-final-action-unsupported', error: 'Review and save independently placed named sections directly in Athena.' };
     }
     var checkedOrder = action === 'place_order' ? driverOrderContract(order) : null;
@@ -1194,13 +1320,84 @@ async function mlsAthenaActionV2DriverFn(req) {
             try { snBeads = deepQueryAll(snFr.doc, 'li.nav-bead'); } catch (eSn0) { snBeads = []; }
             var snBead = null;
             for (var snj = 0; snj < snBeads.length; snj++) { if (text(snBeads[snj].textContent) === snWant) { snBead = snBead || snBeads[snj]; } }
-            if (!snBead || !visible(snBead, snFr.w)) { hetDiag.stageNav = 'no-bead'; break; }
+            /* beadwait-1.0.0 (3.0.111) - THE BEAD WAIT.
+               MEASURED LIVE 2026-09-02 16:26 (ext 3.0.110): the app opened
+               the encounter through the appointment row at 16:26:33 and
+               13 s later all six named-section probes refused 0.4 s apart
+               with note-section-not-on-surface and hetDiag qualified:true,
+               rank:6, noteTargetFound:false, stageNav no-bead - yet at
+               16:26:55 the SAME frame carried six visible li.nav-bead
+               elements (Review, HPI, ROS, PE, A/P, Sign-off), and a
+               re-check at 16:29 wrote HPI, ROS, PE and the combined A&P.
+               The encounter frame therefore BINDS - its machine-typed
+               stage context is already present, which is what let the
+               probe get this far - BEFORE athenaOne paints the stage-tab
+               strip, and the shipped line looked exactly once.
+               THIS IS A WAIT, NOT A PERMISSION. The same deepQueryAll, the
+               same exact-label equality and the same visible() test are
+               re-run, up to 15 looks 800 ms apart - the last look lands at
+               11.2 s, inside a 12 s ceiling - stopping at the FIRST look
+               that finds a visible bead. The whitelist above, the
+               machine-bound stage context above and every gate below are
+               untouched, nothing is clicked here, and an exception inside
+               a look counts as NOT FOUND for that look and never escapes
+               the block. If the strip never paints, the refusal on the
+               last line of this span is the shipped one, byte for byte,
+               and the unchanged candidate loop below still answers.
+               The two receipts are diagnostics only - nothing reads them
+               to decide anything - so the next live measurement can tell
+               a strip that never painted from one that painted late. */
+            var snWaitAt = Date.now(), snLooks = 1;
+            var snBeadVisible = function (b) { try { return !!(b && visible(b, snFr.w)); } catch (eSnV) { return false; } };
+            var snLookForBead = function () {
+              var got = [], found = null, snk;
+              try {
+                got = deepQueryAll(snFr.doc, 'li.nav-bead');
+                for (snk = 0; snk < got.length; snk++) { if (text(got[snk].textContent) === snWant) { found = found || got[snk]; } }
+              } catch (eSnL) { found = null; }
+              return snBeadVisible(found) ? found : null;
+            };
+            if (!snBeadVisible(snBead)) snBead = null;
+            while (!snBead && snLooks < 15) {
+              await sleep(800);
+              snLooks++;
+              snBead = snLookForBead();
+            }
+            hetDiag.stageNavWaitMs = Math.max(0, Math.round(Date.now() - snWaitAt));
+            hetDiag.stageNavLooks = snLooks;
+            if (!snBead) { hetDiag.stageNav = 'no-bead'; break; }
             if (/\bopened\b/.test(String(snBead.className || ''))) { hetDiag.stageNav = 'already-open'; break; }
             var snClick = null; try { snClick = snBead.querySelector('a,button,span') || snBead; } catch (eSn1) { snClick = snBead; }
             if (wsForbiddenControl(snClick)) { hetDiag.stageNav = 'forbidden-control'; break; }
             try { snClick.click(); } catch (eSn2) { hetDiag.stageNav = 'click-failed'; break; }
+            /* beadwait-1.0.0 (3.0.111) - THE EDITOR WAIT.
+               sn-1.0.0 slept a flat 1600 ms after opening the stage tab and
+               then let the candidate loop re-derive. On the surface
+               measured above, the strip and the section editor under it
+               can paint later than that, and the loop's honest answer for
+               a section whose editor has not painted yet is the same
+               note-section-not-on-surface refusal the doctor saw.
+               The fixed sleep becomes the SAME question asked repeatedly:
+               the shipped, read-only findNamedNoteAction, every 400 ms,
+               after a minimum first 400 ms sleep, up to an 8000 ms ceiling
+               (20 looks), stopping at the first truthy answer.
+               IT CLICKS NOTHING. The one stage-tab click already happened
+               on the line above and cannot happen twice - there is no
+               click in this span at all. If the editor never resolves, the
+               block falls through exactly as it did before, and the
+               unchanged candidate loop below re-derives and refuses
+               honestly. The receipts are diagnostics only. */
             hetDiag.stageNav = 'opened-' + snWant;
-            await sleep(1600);
+            var snEdAt = Date.now(), snEdLooks = 0, snEdOk = false;
+            while (snEdLooks < 20) {
+              await sleep(400);
+              snEdLooks++;
+              try { snEdOk = !!findNamedNoteAction(snFr, action, requestedNoteSection); } catch (eSnEd) { snEdOk = false; }
+              if (snEdOk) break;
+            }
+            hetDiag.stageNavEditorMs = Math.max(0, Math.round(Date.now() - snEdAt));
+            hetDiag.stageNavEditorLooks = snEdLooks;
+            hetDiag.stageNavEditor = snEdOk ? 'ready' : 'not-ready';
             break;
           }
         }
@@ -1268,6 +1465,15 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (action === 'stage_billing') { billTarget = billingField(fr); if (!billTarget.el) continue; }
       else if (action === 'place_order') { orderTarget = orderWorkspace(fr); if (!orderTarget.search) continue; }
       else {
+        /* savenamed-1.0.0: a named-section surface has no generic
+           encounter-note scope for findNoteAction to resolve, so the
+           encounter Save is resolved by its own closed-allowlist finder.
+           Everything else in this loop is unchanged: the patient banner and
+           machine-typed stage-context gates already ran ABOVE this line, and
+           the encounter-id, appointment-id, visit-date and provider gates
+           all still run BELOW it, so this control belongs to the one bound
+           encounter or its candidate is dropped. */
+        if (snvNamedSave) noteTarget = snvFindEncounterSave(fr); else
         noteTarget = (action === 'write_note' && requestedNoteSection !== 'note') ? findNamedNoteAction(fr, action, requestedNoteSection) : findNoteAction(fr, action);
         if (hetStage) hetDiag.noteTargetFound = !!noteTarget;
         hetRec.note = !!noteTarget;
@@ -1277,6 +1483,17 @@ async function mlsAthenaActionV2DriverFn(req) {
            when Athena prefilled the editor so the driver can return the
            specific, non-mutating note-editor-not-empty receipt. Other action
            types still require the reviewed value at candidate admission. */
+        /* savenamed-1.0.0: this admission gate asks one editor to already
+           hold the whole reviewed note. On a named-section surface the
+           reviewed text lives in the SEVERAL section editors the write rows
+           already placed and read back one at a time, and athenaOne shows
+           only the open stage tab's section at once, so the question is not
+           answerable here and asking it would refuse every save forever.
+           It is skipped for that one leg and for nothing else; every
+           ENCOUNTER gate below still runs. What binds the content is the
+           one-use token: it carries the exact reviewed sections and is
+           re-compared at execute. */
+        if (!snvNamedSave)
         if (mode !== 'teach' && action !== 'write_note' && currentNote !== reviewedNote) {
           if (hetStage) hetDiag.postGate = 'current-note';
           continue;
@@ -1307,6 +1524,22 @@ async function mlsAthenaActionV2DriverFn(req) {
        read-only pass - only the sentence and the code get honest. */
     if (candidates.length === 0 && mode !== 'teach' && action === 'write_note' && requestedNoteSection && requestedNoteSection !== 'note' && hetDiag.qualified === true && hetDiag.noteTargetFound === false && !hetDiag.postGate) {
       return { ok: false, blocked: true, reason: 'note-section-not-on-surface', hetDiag: hetDiag, hetFrames: hetFrames, noteSection: requestedNoteSection, destination: NAMED_NOTE_DESTINATIONS[requestedNoteSection] || '', error: 'This encounter is open in athenaOne, but MLS could not resolve one exact editor for the reviewed section on the surface it is showing. Nothing was changed.' };
+    }
+    /* savenamed-1.0.0: the encounter-save leg answers its own outcomes with
+       CLOSED codes instead of the one generic context-unverified sentence,
+       so the app can name what actually happened and the doctor is not sent
+       to look for an encounter that is open. encounter-mismatch is read off
+       the SAME hetDiag.postGate the write lane already sets when the bound
+       frame's encounter or appointment id does not equal the reviewed one;
+       the other three come from the finder above. Nothing here is clicked,
+       read or written - this is the same read-only pass. Any other outcome
+       still falls through to the unchanged refusal below. */
+    if (snvNamedSave && candidates.length === 0) {
+      var snvGate = String(hetDiag.postGate || ''), snvWhy = String(hetDiag.savenamed || '');
+      if (snvGate === 'encounter-id' || snvGate === 'appointment-id') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: false, reason: 'encounter-mismatch', hetDiag: hetDiag, hetFrames: hetFrames, error: 'The encounter open in athenaOne is not the encounter in this review. Nothing was saved.', noAutomaticChaining: 'no-automatic-chaining' };
+      if (snvWhy === 'save-control-ambiguous') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: snvGate === 'pushed', reason: 'save-control-ambiguous', hetDiag: hetDiag, hetFrames: hetFrames, error: 'More than one Save control is showing in this encounter, so MLS cannot tell which one saves it. Save it in athenaOne. Nothing was changed.', noAutomaticChaining: 'no-automatic-chaining' };
+      if (snvWhy === 'forbidden-control') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: snvGate === 'pushed', reason: 'forbidden-control', hetDiag: hetDiag, hetFrames: hetFrames, error: 'The only Save-like control MLS can see in this encounter is a Sign, billing, order or close control. MLS will never click one. Nothing was changed.', noAutomaticChaining: 'no-automatic-chaining' };
+      if (snvWhy === 'save-control-not-found') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: snvGate === 'pushed', reason: 'save-control-not-found', hetDiag: hetDiag, hetFrames: hetFrames, error: 'MLS could not see one exact Save control in the open encounter. Nothing was changed.', noAutomaticChaining: 'no-automatic-chaining' };
     }
     if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, hetFrames: hetFrames, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
     var hit = candidates[0], observedPatient = hit.observedIdentity, noteScope = hit.noteTarget && hit.noteTarget.root, noteEditor = hit.noteTarget && hit.noteTarget.editor;
@@ -1352,6 +1585,17 @@ async function mlsAthenaActionV2DriverFn(req) {
     if (mode === 'teach') return { ok: true, mode: 'teach', action: action, readOnly: true, reason: 'taught-destination-validated', contextVerified: true, context: context, targetValidated: true, target: taughtValidation.binding, noAutomaticChaining: 'no-automatic-chaining' };
     if (action === 'write_note' && notePolicy === 'empty_only' && editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
     /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
+    /* savenamed-1.0.0: the encounter-save probe is READ-ONLY exactly like
+       every other probe on this path. It has already resolved the one exact
+       Save control and passed every identity gate above, and it clicks
+       nothing - the mutation boundary is still further down, behind the
+       one-use token and the handler's fresh-trusted-click requirement. It
+       answers the same ok / contextVerified / context shape the caller mints
+       that token from, and adds only PHI-free receipt fields: labelCore is a
+       member of the closed save allowlist by construction, scope is the
+       region's machine attributes with every digit removed, and
+       encounterMatched states that the reviewed encounter is the open one. */
+    if (snvNamedSave && mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: 'context-verified', contextVerified: true, context: context, savenamed: true, encounterMatched: true, sectionsDeclared: noteSections.length, control: { labelCore: snvSaveCore(actionControl), scope: snvScopeTag(actionScope) }, noAutomaticChaining: 'no-automatic-chaining' };
     if (mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: action === 'stage_billing' ? 'billing-context-verified' : (action === 'place_order' ? 'order-workspace-context-verified' : 'context-verified'), contextVerified: true, context: context, noAutomaticChaining: 'no-automatic-chaining' };
     if (mode !== 'execute') return { ok: false, blocked: true, reason: 'unknown-action' };
     /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
@@ -2011,6 +2255,62 @@ async function mlsAthenaActionV2DriverFn(req) {
 
     function clickOnce(el) { if (wsForbiddenControl(el) && !(action === 'sign_encounter' && exactSign(el))) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
 
+    /* ATHENA_ACTION_V2_SAVENAMED_EXECUTE_START */
+    /* savenamed-1.0.0 (3.0.111, owner ruling 2026-09-02): a trusted press on
+       the MLS site drives athenaOne's encounter Save for a review that
+       placed NAMED sections. This block adds NO authorization of its own.
+       Everything that authorizes this click already happened and is
+       unchanged: the read-only probe above minted a one-use action token
+       bound to this exact patient, encounter and reviewed section payload;
+       the handler refused to inject execute without a FRESH TRUSTED CLICK
+       (userGesture + gestureProof, or a consumed batch-hash item from the
+       same trusted click), re-checked every token equality, re-queried the
+       Athena tab, and took the single executeBusy lane; and this driver then
+       re-ran the whole candidate loop and every identity gate against the
+       live DOM before reaching this line.
+       WHY IT CANNOT REACH A SIGN CONTROL. The label allowlist is CLOSED and
+       is re-checked here, immediately before the click, because the DOM can
+       repaint between probe and execute: exactSave requires the label core
+       to EQUAL save / save draft / save note; SNV_FORBIDDEN_SAVE_LABEL
+       additionally refuses any label containing sign, bill, order, close,
+       finalize or attest; wsForbiddenControl refuses every final or
+       irrevocable control; and clickOnce refuses again at the boundary. Sign
+       & Save, Sign, Close encounter and Bill are unreachable by
+       construction. Orders, billing, diagnoses and Sign remain the doctor's
+       manual click in athenaOne, and nothing is chained after this one.
+       THE READ-BACK SIGNAL, AND WHY IT CANNOT MISFIRE. newScopedStatus is
+       the extension's ONE existing piece of knowledge about how these stage
+       surfaces announce a save, and this leg reuses it verbatim, with the
+       same closed phrase set the generic save_draft leg has shipped with
+       (draft saved / note saved / saved successfully / changes saved). Its
+       rule is the strong one: the status node must be NEWLY CREATED after
+       our click - a pre-existing node that merely changes its text does NOT
+       count, which is what makes athenaOne's reused global toast nodes
+       unable to vouch for us. The phrase set is closed, so unrelated
+       athenaOne copy cannot satisfy it. The roots are this bound encounter's
+       own scope plus its frame, and that frame is machine-bound to the
+       expected patient's encounter while the single executeBusy lane
+       guarantees nothing else of ours is running in it. The extension
+       carries no knowledge of an athenaOne unsaved/dirty marker, so none is
+       asserted here. No signal inside the window is reported honestly as
+       save-readback-missing with partialMutation:true - the click happened
+       and only the confirmation is missing; nothing claims a verified save. */
+    if (snvNamedSave && action === 'save_draft') {
+      if (!exactSave(actionControl) || snvForbiddenSaveLabel(actionControl) || wsForbiddenControl(actionControl)) {
+        return { ok: false, blocked: true, action: action, attempted: false, verified: false, saved: false, savenamed: true, encounterMatched: true, control: { labelCore: snvSaveCore(actionControl), scope: snvScopeTag(actionScope) }, reason: 'forbidden-control', error: 'The control MLS bound for this encounter save is a Sign, billing, order or close control. MLS will never click one. Nothing was changed.', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      }
+      var snvRoots = [actionScope];
+      try { if (hit.frame.doc && hit.frame.doc.body && hit.frame.doc.body !== actionScope) snvRoots.push(hit.frame.doc.body); } catch (eSnvRoots) {}
+      var snvBefore = statusEvidenceSnapshot(snvRoots);
+      mutationAttempted = true;
+      clickOnce(actionControl);
+      await sleep(1400);
+      var snvSaved = newScopedStatus(snvBefore, snvRoots, /\b(draft saved|note saved|saved successfully|changes saved)\b/);
+      var snvReceipt = { action: action, attempted: true, savenamed: true, encounterMatched: true, sectionsDeclared: noteSections.length, control: { labelCore: snvSaveCore(actionControl), scope: snvScopeTag(actionScope) }, signed: false, context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      if (!snvSaved) return Object.assign(snvReceipt, { ok: false, verified: false, saved: false, partialMutation: true, reason: 'save-readback-missing', error: 'MLS pressed the encounter Save control, but athenaOne did not paint a saved confirmation MLS can read. Check the open encounter in athenaOne before treating this review as saved.' });
+      return Object.assign(snvReceipt, { ok: true, verified: true, saved: true, partialMutation: false, reason: 'exact-save-control-context-verified' });
+    }
+    /* ATHENA_ACTION_V2_SAVENAMED_EXECUTE_END */
     /* ATHENA_ACTION_V2_SAVE_DRAFT_START */
     /* SAVE_DRAFT_START */
     if (action === 'save_draft') {

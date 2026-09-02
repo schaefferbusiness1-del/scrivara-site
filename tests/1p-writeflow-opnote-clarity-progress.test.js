@@ -325,9 +325,24 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     eq(writes[0].capability, 'ready', 'a bound op note did not reach READY: ' + writes[0].reason);
     eq(writes[0].payload.sectionKey, 'procedure', 'the op-note payload does not name its section key');
     eq(String(writes[0].payload.noteText), OP_BODY, 'the op-note payload is not the reviewed op-note text');
-    /* Save / Sign never bind themselves to one named editor */
-    manifest.rows.filter(r => r.kind === 'save' || r.kind === 'sign').forEach(r => {
-      eq(r.capability, 'manual', 'a final action was bound to the op note\'s single named editor');
+    /* savenamed-app-1.0.0 - RE-AIMED ON AN OWNER RULING, 2026-09-02, verbatim:
+       "unblock the save block in mls assistant it should be able to do it if
+       someone clicks save on mls site" / "no one should have to touch Athena
+       this entire process". The property this line guarded is that a final
+       action is never bound to ONE NAMED SECTION EDITOR - and it still is not:
+       MLS Assist 3.0.111 resolves the ENCOUNTER's own Save through its own
+       closed label allowlist, inside the encounter scope, refusing a Sign,
+       billing, order or close control without ever clicking one, and it answers
+       verified only on a read-back. SIGN is untouched and stays manual. */
+    manifest.rows.filter(r => r.kind === 'sign').forEach(r => {
+      eq(r.capability, 'manual', 'SIGN was bound to something MLS may click - it stays the doctors own click in athenaOne');
+      eq(r.action, '', 'the sign row became executable');
+    });
+    manifest.rows.filter(r => r.kind === 'save').forEach(r => {
+      eq(r.capability, 'ready', 'the supervised encounter save did not reach READY on a bound op note: ' + r.reason);
+      eq(r.action, 'save_draft', 'the encounter-save row is not the supervised save_draft action');
+      eq(r.destination, 'Athena encounter > Save / Save Draft control',
+        'the encounter-save row names a section editor instead of the encounters own Save control');
     });
   }
   /* the unbound control: the SAME op note with no appointment stays blocked */
@@ -355,20 +370,37 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     eq(go.disabled, false, 'the op-note sheet never enabled its send after the read-only check verified');
     go.click();
     await settle(900);
-    eq(h.executes().length, 1, 'the op note did not reach exactly one execute');
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): on a batch-arm extension
+       the one press writes the op note and then runs the review's own
+       supervised encounter save, as the LAST item and on the same path. */
+    eq(h.executes().length, 2, 'the op note did not reach its write and then the encounter save');
     eq(h.executes()[0].action, 'write_note', 'the op note ran an action other than the reviewed note write');
+    eq(h.executes()[1].action, 'save_draft', 'the second execute on the press was not the encounter save');
     eq(String(h.executes()[0].sections[0].key), 'procedure', 'the executed section is not the procedure section');
     ok(h.probes().length >= 1, 'the op note executed without its own read-only probe');
     const rec = h.wf.diagnostics.state().receipts[row.id];
     ok(rec && rec.status === 'verified', 'the op-note write produced no verified receipt');
     eq(rec.rowHash, row.rowHash, 'the op-note receipt is not bound to that exact immutable row');
-    /* the status line keeps the receipt's own sentence... */
-    ok(/read back successfully/.test(h.statusText()), 'the op-note status line lost its receipt sentence: ' + h.statusText());
+    /* savenamed-app-1.0.0: with the encounter save riding the same press this is
+       a two-row run, so the status line carries the QUEUE's summary and the
+       per-row read-back sentence lives in the receipt panel, minted by the
+       byte-identical receipt path. Both are asserted so neither can go missing. */
+    ok(/read back successfully/.test(String(h.el('mlsAthenaUnifiedReceipt').innerHTML || '')),
+      'the op-note per-row read-back receipt sentence was lost');
+    ok(/Done: 1 of 1 section written to Athena and read back\./.test(h.statusText()),
+      'the op-note status line lost its run summary: ' + h.statusText());
     /* ...and the loading surface's headline is the receipt-DERIVED summary */
     const summary = h.wf.diagnostics.progress.headline();
     ok(/Done: 1 of 1 section written to Athena and read back\./.test(summary),
       'the final summary does not report the receipt-backed count: ' + summary);
-    ok(/Nothing was saved or signed/.test(summary), 'the final summary dropped the save/sign honesty: ' + summary);
+    /* savenamed-app-1.0.0: the summary may not claim nothing was saved on a run
+       that saved the encounter, and Sign is the one thing left. */
+    ok(/MLS saved the encounter in athenaOne and read the save back\./.test(summary),
+      'the final summary does not report the encounter save: ' + summary);
+    ok(/Nothing was signed - Sign stays your own click in athenaOne\./.test(summary),
+      'the final summary dropped the sign honesty: ' + summary);
+    eq(/Nothing was saved or signed/.test(summary), false,
+      'the final summary still claims nothing was saved on a run that saved the encounter: ' + summary);
     ok(h.progressHtml().indexOf('data-mls-prog-pct="100"') > 0, 'a verified single write never filled its bar');
   }
 
@@ -452,12 +484,18 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     ok(html.indexOf('data-mls-prog-headline') > 0, 'the progress surface never painted a headline');
     ok(/data-mls-prog-pct="100"/.test(html), 'a finished send never filled its bar');
     const checked = h.boxes().filter(b => b.checked).length;
-    eq(h.executes().length, checked, 'the batch did not execute exactly the checked sections');
-    /* one settled verdict per section, and every "written" is receipt-backed */
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): the checked SECTIONS, and
+       then the review's own encounter save as the last item of the same press. */
+    const ran = checked + 1;
+    eq(h.executes().length, ran, 'the batch did not execute exactly the checked sections and then the encounter save');
+    eq(h.executes().filter(m => m.action === 'write_note').length, checked,
+      'the batch executed a note write for something other than the checked sections');
+    eq(h.executes()[ran - 1].action, 'save_draft', 'the encounter save did not ride last on the same press');
+    /* one settled verdict per row, and every "written" is receipt-backed */
     const state = h.wf.diagnostics.state();
     const snap = h.wf.diagnostics.progress.snapshot();
     ok(snap, 'the progress surface kept no snapshot of what it reported');
-    eq(snap.rows.length, checked, 'the progress surface tracked a different number of sections than were sent');
+    eq(snap.rows.length, ran, 'the progress surface tracked a different number of rows than were sent');
     snap.rows.forEach(r => {
       ok(r.phase !== 'wait' && r.phase !== 'check' && r.phase !== 'write',
         'a finished send left ' + r.label + ' with an unsettled phase: ' + r.phase);
@@ -469,12 +507,19 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     });
     const counts = h.wf.diagnostics.progress.counts();
     eq(counts.pending, 0, 'a finished send left sections pending');
-    eq(counts.written, checked, 'the progress counts disagree with the receipts');
+    eq(counts.written, ran, 'the progress counts disagree with the receipts');
     /* the honest final summary */
     const summary = h.statusText();
     ok(new RegExp('Done: ' + checked + ' of ' + checked + ' sections written to Athena and read back\\.').test(summary),
       'the final summary is not the receipt-derived count: ' + summary);
-    ok(/Nothing was saved or signed/.test(summary), 'the final summary dropped the save/sign honesty: ' + summary);
+    /* savenamed-app-1.0.0: the summary may not claim nothing was saved on a run
+       that saved the encounter, and Sign is the one thing left. */
+    ok(/MLS saved the encounter in athenaOne and read the save back\./.test(summary),
+      'the final summary does not report the encounter save: ' + summary);
+    ok(/Nothing was signed - Sign stays your own click in athenaOne\./.test(summary),
+      'the final summary dropped the sign honesty: ' + summary);
+    eq(/Nothing was saved or signed/.test(summary), false,
+      'the final summary still claims nothing was saved on a run that saved the encounter: ' + summary);
   }
   /* 4b. a MIXED run: the summary may not launder a refusal into a write ---- */
   {
@@ -496,8 +541,17 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     const written = snap.rows.filter(r => r.phase === 'done').length;
     const refused = snap.rows.filter(r => r.phase === 'refused' || r.phase === 'timeout').length;
     eq(refused, 1, 'the refused section is not reported as not-sent');
-    eq(written, total - 1, 'the sections that did land are not all reported as written');
-    eq(h.executes().length, total - 1, 'a refused read-only check still reached an execute');
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): the encounter save runs at
+       the end of the same press. It is a DRAFT save of whatever did land - it
+       protects the sections that went in, it signs nothing, and it can never
+       turn a refusal into a write: the refused section is still refused, is
+       still named, and still never reached an execute. */
+    eq(written, total, 'the rows that did land are not all reported as written');
+    eq(h.executes().length, total, 'a refused read-only check still reached an execute');
+    eq(h.executes().filter(m => m.action === 'write_note').length, total - 1,
+      'A REFUSED READ-ONLY CHECK STILL REACHED A NOTE WRITE');
+    eq(h.executes().filter(m => m.action === 'save_draft').length, 1,
+      'the encounter save did not run once at the end of the press');
     const summary = h.statusText();
     ok(new RegExp('Done: ' + (total - 1) + ' of ' + total + ' sections written').test(summary),
       'the mixed summary overstates what landed: ' + summary);

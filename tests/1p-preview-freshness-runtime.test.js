@@ -237,6 +237,80 @@ function harness() {
   assert.strictEqual(h.location.href, initialHref, 'Refresh killed an importer/month/history operation between heartbeat stamps');
   h.setImporterBusy(false);
 
+  /* genrefresh-1.0.0 (measured 2026-09-02 10:xx) — the banner guarded a
+     schedule pull and nothing else.
+     pullBusy() inspects __mlsDaySwitch / __mlsSI / __mlsSchedulePullLease /
+     mlsPullBusyXTabV1. It knows nothing about a live microphone session and
+     nothing about an in-flight /api/generate. The banner is fixed at
+     bottom:100px on an 8 s / 180 s / focus / visibilitychange cadence, so it
+     lands mid-visit unannounced, and pressing Refresh navigated: the
+     AbortController died with the tab and the paid generate call was thrown
+     away (the doctor re-presses Generate after the reload and pays twice), or
+     the last un-flushed utterance was lost. The only thing in between was the
+     browser's generic leave-site dialog, which names neither state.
+     The pull branch already proved the pattern; visitBusy() extends it. */
+  {
+    const timersBeforeVisit = h.timeouts.length;
+    const intervalsBeforeVisit = h.intervals.length;
+
+    /* P1 — an in-flight generation, read from the engine's own run object */
+    h.window._mlsActiveGeneration = { id: 1 };
+    refresh.onclick();
+    assert.strictEqual(h.location.href, initialHref,
+      'Refresh navigated during an in-flight generation — the AbortController dies with the tab ' +
+      'and the paid /api/generate call is thrown away');
+    assert.strictEqual(h.reloads(), 0, 'Refresh reloaded during an in-flight generation');
+    assert.strictEqual(refresh.disabled, false,
+      'the Refresh button was disabled instead of naming the state and staying pressable later');
+    assert.strictEqual(refresh.textContent, 'Generating a note - refresh afterward',
+      'the deferred Refresh must name the generation the way it already names a pull. Got: ' +
+      refresh.textContent);
+    assert.strictEqual(h.timeouts.length, timersBeforeVisit,
+      'a generation-busy Refresh armed a delayed auto-reload timeout');
+    assert.strictEqual(h.intervals.length, intervalsBeforeVisit,
+      'a generation-busy Refresh armed a delayed auto-reload interval');
+    h.window._mlsActiveGeneration = null;
+
+    /* P2 — a live recording, read from the shell's own global lexical binding.
+       `capturing` is `let` at the top level of the shell script, so
+       window.capturing is undefined and the read must be unqualified. */
+    vm.runInContext('var capturing = true;', h.context);
+    refresh.onclick();
+    assert.strictEqual(h.location.href, initialHref,
+      'Refresh navigated during a live recording — everything the recogniser had not yet flushed ' +
+      'to #transcript is lost');
+    assert.strictEqual(refresh.textContent, 'Recording - refresh afterward',
+      'the deferred Refresh must name the recording. Got: ' + refresh.textContent);
+    vm.runInContext('capturing = false;', h.context);
+
+    /* P3 — the direct-phone capture owner */
+    h.window.__mlsDirectPhoneCapture = { state: () => ({ status: 'starting' }) };
+    refresh.onclick();
+    assert.strictEqual(h.location.href, initialHref,
+      'Refresh navigated while the phone capture session was starting');
+    assert.strictEqual(refresh.textContent, 'Recording - refresh afterward',
+      'a starting phone capture must defer Refresh as a recording. Got: ' + refresh.textContent);
+    delete h.window.__mlsDirectPhoneCapture;
+
+    /* NEGATIVE CONTROL — mandatory. Without this the three assertions above
+       would also pass on a Refresh button that never navigates at all. */
+    delete h.window.__mlsPullBusyAt;
+    h.localStorage.setItem('acct:mlsPullBusyXTabV1', '0');
+    refresh.onclick();
+    assert.ok(/^\/1p\/\?rv=/.test(h.location.href),
+      'an idle tab no longer refreshes when Refresh is pressed — the guard above is measuring a ' +
+      'wedged button, not a working one. href=' + h.location.href);
+    h.location.href = initialHref;
+
+    /* REGRESSION CONTROL — the pull branch keeps its own (em-dash) label */
+    h.setDaySwitchBusy(true);
+    refresh.onclick();
+    assert.strictEqual(h.location.href, initialHref, 'Refresh navigated during a Day pull');
+    assert.strictEqual(refresh.textContent, 'Pull running — refresh afterward',
+      'the pull branch was relabelled by the visit-busy change. Got: ' + refresh.textContent);
+    h.setDaySwitchBusy(false);
+  }
+
   h.requests.length = 0;
   await h.emit('window', 'focus');
   await h.emit('document', 'visibilitychange');

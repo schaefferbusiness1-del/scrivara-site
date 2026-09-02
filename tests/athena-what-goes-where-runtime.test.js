@@ -245,8 +245,20 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 12));
      (nothing silently batched behind a single confirmation), so tie the count
      to the row set rather than to a literal that drifts whenever a
      destination is added. */
-  assert.strictEqual(namedCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, namedWriteRows.length,
+  /* savenamed-app-1.0.0 (OWNER RULING 2026-09-02: "unblock the save block in
+     mls assistant it should be able to do it if someone clicks save on mls
+     site"). The law is unchanged - one radio per READY row, nothing silently
+     batched behind a single confirmation - and the row set is now the named
+     writes PLUS the review's own supervised encounter save, which is a READY
+     row of its own with its own destination, its own probe and its own
+     receipt. Tie the count to the READY rows so it keeps following the shape. */
+  const namedReadyRows = namedManifest.rows.filter(row => row.capability === 'ready' && row.action);
+  assert.strictEqual(namedCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, namedReadyRows.length,
     'each named Athena field must remain its own selectable confirmation');
+  assert.strictEqual(namedReadyRows.length, namedWriteRows.length + 1,
+    'the named review lost its supervised encounter-save row, or gained a ready row that is not one');
+  assert.strictEqual(namedReadyRows.filter(row => row.action === 'save_draft').length, 1,
+    'the named review offers more than one encounter save');
   assert.strictEqual(namedWriteRows.length, 6, 'the named fixture no longer offers six exact destinations');
 
   const probesBeforeProcedure = sent.filter(message => message.mode === 'probe').length;
@@ -263,7 +275,12 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 12));
   assert(/What: Reviewed procedure \/ operative-note draft/.test(procedureCard.innerHTML), 'procedure artifact is not plainly identified');
   assert(/Where:<\/b> Athena encounter > Physical Exam > Procedure Documentation/.test(procedureCard.innerHTML), 'procedure row does not name its exact Athena destination');
   assert(/READY (?:&middot;|·) SEPARATE CONFIRMATION/.test(procedureCard.innerHTML), 'procedure row does not plainly state its separate-confirmation boundary');
-  assert.strictEqual(procedureCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, 1, 'exact procedure row is not independently selectable');
+  /* savenamed-app-1.0.0: the op note is a NAMED destination, so this review
+     also carries the supervised encounter-save row - two READY rows, two
+     radios, one per row, exactly as the law says. */
+  assert.strictEqual(procedureCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, 2, 'exact procedure row is not independently selectable');
+  assert.strictEqual(procedureManifest.rows.filter(row => row.capability === 'ready' && row.action === 'save_draft').length, 1,
+    'the op-note review lost its supervised encounter-save row');
   await wait();
   const procedureProbes = sent.filter(message => message.mode === 'probe').slice(probesBeforeProcedure);
   assert.strictEqual(procedureProbes.length, 1, 'procedure review did not start exactly one read-only probe');

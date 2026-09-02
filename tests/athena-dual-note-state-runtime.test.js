@@ -287,7 +287,28 @@ for (const file of shells) {
   ok(source.includes("context:(document.getElementById('contextBox')||{}).value||'', visitComment:(document.getElementById('visitComment')||{}).value||''"), file + ': recovery draft omits canonical source fields');
   ok(source.includes("if(typeof _mlsRestoreAthenaState==='function') _mlsRestoreAthenaState(d);"), file + ': recovery draft does not revalidate restored canonical state');
   ok(source.includes("athenaNoteSourceFingerprint: safe(function ()"), file + ': per-patient draft switch drops canonical state');
-  ok(source.includes("_mlsAthenaGenerationSourceFingerprint(generationBinding)!==generationSourceFingerprint"), file + ': late generation result ignores source changes');
+  /* gkey-1.0.0 (2026-09-02): RE-AIMED, not removed. This pinned the SPELLING
+     `_mlsAthenaGenerationSourceFingerprint(generationBinding)!==generationSourceFingerprint`
+     while the property it guards is "a late generation result is discarded when
+     the SOURCE moved". #patientLabel was inside that fingerprint and is
+     editable DISPLAY text the request never reads - the "up now" schedule fill
+     repaints it mid-generation with no input event - so a cosmetic repaint was
+     destroying finished notes. The comparison now runs over a key that carries
+     every source field EXCEPT patientLabel; the four assertions below pin that
+     property directly, which is strictly stronger than the old spelling.
+     Behaviour proof (eight negative controls, each still aborting, plus the
+     pre-fix bytes reproducing the discard): generation-discard-attribution-runtime. */
+  ok(source.includes("_mlsAthenaGenerationKey(generationBinding)!==generationKey"), file + ': late generation result ignores source changes');
+  ok(source.includes("const generationKey=_mlsAthenaGenerationKey(generationBinding);"), file + ': the generation source key is no longer captured at request time');
+  const generationKeyFn = (function () {
+    const start = source.indexOf('function _mlsAthenaGenerationKey(binding){');
+    const end = source.indexOf('\nfunction _mlsAthenaGenerationDivergedFields(', start);
+    ok(start >= 0 && end > start, file + ': the generation source key helper is gone');
+    return source.slice(start, end);
+  })();
+  ok(generationKeyFn.includes('JSON.stringify({v:s.v,transcript:s.transcript,context:s.context,visitComment:s.visitComment,activePatientId:s.activePatientId,patient:s.patient,visit:s.visit})'),
+    file + ': the generation source key dropped a real identity or clinical field');
+  ok(!generationKeyFn.includes('patientLabel'), file + ': patientLabel came back into the generation source key');
   ok(source.includes("out.patientSummary=(typeof getGenPatientSummary==='function'&&getGenPatientSummary()===true)"), file + ': hosted preference object drops patient-summary choice');
   ok(!source.includes("notePreferences:hostedNotePreferences(), patientSummary:"), file + ': patient-summary choice escaped the sanitized preference object');
   ok(source.includes("patientLabel: document.getElementById('patientLabel').value"), file + ': saved record does not retain the exact source patient label');

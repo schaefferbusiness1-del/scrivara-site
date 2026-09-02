@@ -1,5 +1,5 @@
 {
-  "version": "3.0.110",
+  "version": "3.0.111",
   "minChrome": 116,
-  "notes": "v3.0.110 - Pulls: when a day's date navigation begins on athenaOne's dashboard, whose week strip looks like a calendar date control, MLS Assist now opens Calendar > View Calendar first and re-detects the real control, once, before switching the day - a day no longer fails its navigation three times in a row because the previous day ended on the dashboard, and the receipt says the surface was restored. Everything from v3.0.109 remains. Requires Chrome 116+."
+  "notes": "v3.0.111 - Writes: after the reviewed note sections land, MLS Assist can now save the encounter in athenaOne itself on your press - it finds the encounter's own Save control (never Sign, never billing or orders), checks it read-only first, clicks it once, and reads athenaOne's saved confirmation back before it says so. Sign stays your click. Everything from v3.0.110 remains. Requires Chrome 116+."
 }

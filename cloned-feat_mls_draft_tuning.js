@@ -309,6 +309,74 @@
     });
     return out.length ? out : defaults;
   }
+  /* ===== fmt-1.0.0 (2026-09-02) — TEST-LANE ARTIFACTS ARE NOT THE DOCTOR'S
+     FORMATS.
+     On 2026-09-01 the owner's account was measured carrying saved formats named
+     "QA HPI Template 2026 ..." and "Engineering Compliance Assessment Template".
+     No doctor typed those; earlier test lanes did, through this same Settings
+     editor. A saved format's NAME reaches a real generation (see memory:
+     a-saved-profile-name-steered-the-note-model — an op-note-only library once
+     turned a visit note into a 12-line operative report), so a leftover QA
+     format is not cosmetic.
+     THEY ARE HIDDEN, NOT DELETED. This filter is read-only and client-side: it
+     runs on the pickers and on the tuning payload, never on a persistence path,
+     and the account copy on the server is left exactly as it is. Settings names
+     the count and offers one Remove — the doctor's click, not ours. If every
+     saved format in a family matches, the shipped defaults are shown rather than
+     an empty picker, because a picker with no options is a worse defect than the
+     one being fixed. ===== */
+  var TEST_LANE_PROFILE_NAME = /QA HPI Template|Engineering Compliance|QA .* Template 2026/i;
+  function isTestLaneProfile(row) {
+    try { return !!(row && TEST_LANE_PROFILE_NAME.test(String(row.label == null ? '' : row.label))); }
+    catch (e) { return false; }
+  }
+  function withoutTestLaneProfiles(id, list) {
+    var rows = Array.isArray(list) ? list : [];
+    var kept = rows.filter(function (row) { return !isTestLaneProfile(row); });
+    return kept.length ? kept : sectionProfiles(id);
+  }
+  /* The reader every PICKER and every TUNING PAYLOAD uses. sanitizeSectionProfiles
+     stays the writer's sanitizer and keeps returning everything stored, so no
+     saved row is ever dropped on its way back to disk. */
+  function visibleSectionProfiles(id, input) {
+    return withoutTestLaneProfiles(id, sanitizeSectionProfiles(id, input));
+  }
+  /* Every hidden artifact currently stored, family by family — the number the
+     Settings line reports and the exact set its Remove deletes. */
+  function testLaneProfiles() {
+    var state = read(), out = [];
+    PROFILE_FAMILIES.forEach(function (id) {
+      var family = state.families[id];
+      var rows = family && Array.isArray(family.profiles) ? family.profiles : [];
+      rows.forEach(function (row) {
+        if (isTestLaneProfile(row)) out.push({ family: id, id: row.id, label: row.label });
+      });
+    });
+    return out;
+  }
+  /* The doctor's click. Removes only the matching rows, re-points any active
+     selection that pointed at one, writes through this module's own persistence
+     and then asks the app's EXISTING account sync to carry the deletion to the
+     server. Returns how many were actually removed — 0 if the write did not
+     land, so the caller can never claim a deletion that did not happen. */
+  function removeTestLaneProfiles() {
+    var state = read(), removed = 0;
+    PROFILE_FAMILIES.forEach(function (id) {
+      var family = state.families[id];
+      if (!family || !Array.isArray(family.profiles)) return;
+      var kept = family.profiles.filter(function (row) { return !isTestLaneProfile(row); });
+      if (kept.length === family.profiles.length) return;
+      removed += family.profiles.length - kept.length;
+      family.profiles = kept.length ? kept : sectionProfiles(id);
+      if (!family.profiles.some(function (row) { return row.id === family.activeProfile; })) {
+        family.activeProfile = family.profiles[0].id;
+      }
+    });
+    if (!removed) return 0;
+    if (!write(state)) return 0;
+    try { if (typeof window.syncPrefsToServer === 'function') window.syncPrefsToServer({ notify: false }); } catch (eSync) {}
+    return removed;
+  }
   function activeSectionProfile(id, profiles, requested) {
     var list = Array.isArray(profiles) && profiles.length ? profiles : sectionProfiles(id);
     var wanted = profileId(requested, '');
@@ -432,7 +500,8 @@
     PROFILE_FAMILIES.forEach(function (id) {
       var state = read().families[id] || familyDefaults(id);
       var request = nested[id] && typeof nested[id] === 'object' && !Array.isArray(nested[id]) ? nested[id] : {};
-      var profiles = sanitizeSectionProfiles(id, Array.isArray(request.profiles) ? request.profiles : state.profiles);
+      /* fmt-1.0.0: routing chooses only among formats the doctor can see. */
+      var profiles = visibleSectionProfiles(id, Array.isArray(request.profiles) ? request.profiles : state.profiles);
       var explicit = cleanText(request.profileId || request.activeProfile, 48);
       var chosen = explicit ? activeSectionProfile(id, profiles, explicit) : routedSectionProfile(id, profiles, state.activeProfile, envelope).profile;
       out.families[id] = { profileId: chosen.id };
@@ -840,7 +909,9 @@
     });
     if (isProfileFamily(id)) {
       var suppliedProfiles = Array.isArray(request.profiles) ? request.profiles : base.profiles;
-      var profiles = sanitizeSectionProfiles(id, suppliedProfiles);
+      /* fmt-1.0.0: THIS is the payload. A test-lane format can never be the
+         selected one, and its name can never travel with a generation. */
+      var profiles = visibleSectionProfiles(id, suppliedProfiles);
       var selected = activeSectionProfile(id, profiles, request.profileId || request.activeProfile || base.activeProfile);
       if (request.profile && typeof request.profile === 'object' && !Array.isArray(request.profile)) {
         var override = sanitizeSectionProfiles(id, [Object.assign({}, selected, request.profile)])[0];
@@ -1408,7 +1479,7 @@
     if (instructionLabel) instructionLabel.textContent = isSection ? 'AI prompt comments for this saved format' : 'AI prompt comments for this saved format';
     if (!isSection) paintProfileButtons([]);
     if (!isSection || !profile || !mode || !template) return;
-    profiles = sanitizeSectionProfiles(id, profiles);
+    profiles = visibleSectionProfiles(id, profiles); /* fmt-1.0.0: the Settings picker */
     profile.innerHTML = profiles.map(function (row) { return '<option value="' + row.id + '">' + row.label + '</option>'; }).join('');
     profile.value = activeProfile || profiles[0].id;
     profile.setAttribute('data-active-profile', profile.value);
@@ -1571,7 +1642,43 @@
     activeFamily = 'soap';
     mountSettings();
     loadUi(activeFamily);
+    try { renderTestProfileLine(); } catch (eTpl) {} /* fmt-1.0.0 */
     return true;
+  }
+  /* fmt-1.0.0: ONE Settings line, hosted in Note defaults beside the note
+     format, because it answers the same question the owner asked — which saved
+     format is steering my note. It names them, so "hidden" is never a silent
+     disappearance, and Remove is a doctor's press that calls the module's own
+     persistence plus the app's existing account sync. */
+  function renderTestProfileLine() {
+    var el = q('mlsDtTestProfileLine');
+    if (!el) return 0;
+    var found = testLaneProfiles();
+    while (el.firstChild) el.removeChild(el.firstChild);
+    if (!found.length) { el.style.display = 'none'; return 0; }
+    el.style.display = '';
+    var msg = document.createElement('span');
+    msg.textContent = found.length + ' test profile' + (found.length === 1 ? '' : 's') + ' hidden (' +
+      found.map(function (row) { return row.label; }).join(', ') +
+      '). MLS test lanes created these, not you. They are not offered in any picker and are never sent with a note. ';
+    el.appendChild(msg);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-ghost';
+    btn.id = 'mlsDtTestProfileRemove';
+    btn.textContent = 'Remove';
+    btn.addEventListener('click', function () {
+      var n = removeTestLaneProfiles();
+      try {
+        if (typeof window.toast === 'function') {
+          window.toast(n ? (n + ' test profile' + (n === 1 ? '' : 's') + ' removed.') : 'Those test profiles could not be removed on this device.', n ? 'ok' : 'err');
+        }
+      } catch (eToast) {}
+      if (n) { try { beginSettings(); } catch (eRe) { renderTestProfileLine(); } }
+      else renderTestProfileLine();
+    });
+    el.appendChild(btn);
+    return found.length;
   }
   function settingsScopeFailure() {
     workingScopeInvalid = true;
@@ -1648,8 +1755,14 @@
     sanitize: sanitize,
     read: read,
     write: write,
-    profiles: function (id) { var family = familyId(id); return isProfileFamily(family) ? clone(read().families[family].profiles || sectionProfiles(family)) : []; },
-    profileState: function (id) { var family = familyId(id), state = read().families[family], profiles = isProfileFamily(family) ? (state.profiles || sectionProfiles(family)) : []; return { activeProfile: state.activeProfile || '', activeLabel: (profiles.filter(function (row) { return row.id === state.activeProfile; })[0] || profiles[0] || {}).label || '', profiles: clone(profiles) }; },
+    /* fmt-1.0.0: both readers feed PICKERS (the visit screen's per-section
+       overrides and Settings), so both hide test-lane artifacts. Nothing here
+       writes, so nothing here deletes. */
+    profiles: function (id) { var family = familyId(id); return isProfileFamily(family) ? clone(visibleSectionProfiles(family, read().families[family].profiles)) : []; },
+    profileState: function (id) { var family = familyId(id), state = read().families[family], profiles = isProfileFamily(family) ? visibleSectionProfiles(family, state.profiles) : []; return { activeProfile: state.activeProfile || '', activeLabel: (profiles.filter(function (row) { return row.id === state.activeProfile; })[0] || profiles[0] || {}).label || '', profiles: clone(profiles) }; },
+    testProfiles: testLaneProfiles,
+    removeTestProfiles: removeTestLaneProfiles,
+    isTestProfile: isTestLaneProfile,
     profileEditor: profileEditor,
     exampleImporter: exampleImporter,
     autoRoute: automaticRoutes,

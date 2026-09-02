@@ -420,6 +420,26 @@ async function runtime() {
     ok(s.noteWrapVisible, 'Back did not restore the required compact Next action');
 
     /* ---- 5. IT REBUILDS ITSELF, WITH NO USER INPUT AT ALL ---------------- */
+    /* visitpage-1.0.0 (2026-09-02) — SETUP, NOT A RELAXED PIN. Step 4a presses
+       "Next: Review & send to Athena", and as of visitpage-1.0.0 that control
+       OPENS THE ATHENA REVIEW instead of parking focus on a control 2,700 px
+       below the fold (owner: "the top one does nothing. You click the button,
+       it just takes to the bottom one."). So from here on there is a dialog on
+       screen, and nextglow's first rule is that a dialog wins outright — the
+       glow correctly resolves inside the sheet (measured: mlsClunkyAthenaRecheck
+       in #mlsAthenaUnifiedFix). #ez3Adv closes the WORKSPACE, not the sheet.
+       The property step 5 exists to prove is unchanged and still asserted
+       verbatim below: after the engine razes the lane, the glow must follow
+       the rebuilt room instead of holding a detached node. It just has to be
+       measured on a screen with no dialog over it, which is the state the step
+       was always written for. */
+    await page.evaluate(() => {
+      try {
+        const wf = window.__mlsWriteFlow;
+        if (wf && typeof wf.closeUnifiedConfirmation === 'function') wf.closeUnifiedConfirmation();
+      } catch (e) {}
+    });
+    await page.waitForTimeout(500);
     const razed = await page.evaluate(() => window.__vlT.razeLane());
     ok(razed >= 1, 'nothing was there to raze — the lane was already gone');
     s = await until(page, (x) => x.lane && x.laneVisible && x.review, 4000);

@@ -28,7 +28,16 @@ let checks = 0;
 function ok(cond, msg) { assert.ok(cond, msg); checks++; }
 
 /* ---- source pins ---- */
-ok(/state\.reopenOpts = reopenOptions\(opts, manifest\);\s*\n\s*srrArmIfUnbound\(state\); \/\* srr-1\.0\.0 \*\//.test(src),
+/* RE-AIMED DELIBERATELY 2026-09-02 11:2x (apsel-1.0.0): the pin used to demand that
+   srrArmIfUnbound follow reopenOptions on the very next line. apsel-1.0.0 places one
+   bare assignment (apPickThisSheet = '') between them - no early return, no branch -
+   so the PROPERTY (the arm happens right after reopenOpts is built, before anything
+   else runs on the sheet) still holds. The pin now allows a short straight-line gap
+   with no return/throw/if inside it, which is what 'right after' means. */
+ok((function () {
+  const m = /state\.reopenOpts = reopenOptions\(opts, manifest\);([\s\S]{0,400}?)srrArmIfUnbound\(state\); \/\* srr-1\.0\.0 \*\//.exec(src);
+  return !!m && !/\b(?:return|throw|if\s*\(|else|for\s*\(|while\s*\()/.test(m[1]);
+})(),
   'srrArmIfUnbound must arm right after reopenOpts is built');
 ok(/ticks > 60\) \{ clearInterval\(timer\); return; \}/.test(src), 'the poller must cap at 60 ticks (5 minutes)');
 const tickBody = src.slice(src.indexOf('/* srr-1.0.0'), src.indexOf('function renderUnifiedOrderSummary'));

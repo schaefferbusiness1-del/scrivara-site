@@ -3545,13 +3545,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <!-- ===== NOTE GENERATION OPTIONS ===== -->
       <div id="genOptionsBar">
         <div class="genopt-row">
-          <span class="genopt-lbl">Style</span>
+          <span class="genopt-lbl">Format</span>
+          <!-- fmt-1.0.0: the button TEXT is unchanged - the Easy view's chips
+               forward to these by label - but each title now says plainly what
+               the format IS. The SOAP title used to read "Subjective/Objective",
+               which is not what GEN_STYLE_LINE.soap asks the model for. -->
           <div class="genseg" id="genStyleSeg">
-            <button type="button" data-v="soap" class="on" onclick="setGenStyle('soap')" title="Classic Subjective/Objective/Assessment/Plan">SOAP</button>
-            <button type="button" data-v="apso" onclick="setGenStyle('apso')" title="Assessment &amp; Plan first">APSO</button>
-            <button type="button" data-v="narrative" onclick="setGenStyle('narrative')" title="Flowing prose">Narrative</button>
-            <button type="button" data-v="problem" onclick="setGenStyle('problem')" title="Assessment &amp; Plan organized by problem">Problem-based</button>
-            <button type="button" data-v="hp" onclick="setGenStyle('hp')" title="Comprehensive History &amp; Physical">H&amp;P</button>
+            <button type="button" data-v="soap" class="on" onclick="setGenStyle('soap')" title="HPI / ROS / Exam / Assessment / Plan — matches the athena chart fields">SOAP</button>
+            <button type="button" data-v="apso" onclick="setGenStyle('apso')" title="The same five sections, Assessment and Plan first">APSO</button>
+            <button type="button" data-v="narrative" onclick="setGenStyle('narrative')" title="Flowing prose paragraphs — no chart fields">Narrative</button>
+            <button type="button" data-v="problem" onclick="setGenStyle('problem')" title="Assessment &amp; Plan grouped by problem">Problem-based</button>
+            <button type="button" data-v="hp" onclick="setGenStyle('hp')" title="Full history and physical">H&amp;P</button>
           </div>
         </div>
         <div class="genopt-row">
@@ -3593,7 +3597,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- NOTE -->
     <div class="card" id="noteCard">
       <h2><span class="ic">📝</span> Clinical note
-        <span id="statusBadge" class="badge draft" style="margin-left:auto">● Draft</span>
+        <!-- fmt-1.0.0: the ACTIVE note format, named on the card that holds the
+             note, so a wrong format is visible before the note is generated. -->
+        <span id="noteFormatBadge" class="mini" style="margin-left:auto;color:var(--muted);font-weight:600">Format: HPI / ROS / Exam / Assessment / Plan</span>
+        <span id="statusBadge" class="badge draft" style="margin-left:8px">● Draft</span>
       </h2>
       <p class="sub">A clean SOAP note, generated from the visit. Edit anything before signing.</p>
 
@@ -5107,6 +5114,24 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="set-section">
       <p class="set-head">📝 Note defaults</p>
       <p class="set-desc">Defaults applied to new notes. The note style is shared with MLS as a writing preference.</p>
+      <!-- ===== fmt-1.0.0 — THE NOTE FORMAT, SAID PLAINLY. This is the same
+           preference as the Format segment on the visit screen (setGenStyle);
+           it is here because Settings is where a doctor looks for a default,
+           and because the sentence under it is the one that was missing: which
+           format matches the athena chart fields. ===== -->
+      <div class="field">
+        <label for="noteFormatSel">Note format — the sections MLS writes</label>
+        <select class="sf-select" id="noteFormatSel">
+          <option value="soap">HPI / ROS / Exam / Assessment / Plan — matches the athena chart fields (recommended)</option>
+          <option value="apso">APSO — the same five sections, Assessment and Plan first</option>
+          <option value="narrative">Narrative — flowing prose paragraphs, no chart fields</option>
+          <option value="problem">Problem-based — assessment and plan grouped by problem</option>
+          <option value="hp">H&amp;P — full history and physical</option>
+        </select>
+        <p class="set-desc" style="margin-top:6px">This is the <b>shape</b> of the note. <b>HPI / ROS / Exam / Assessment / Plan</b> is the chart shape: those five headings are what MLS stages into athenaOne field by field. The other formats are useful free-form drafts, but athenaOne receives one block of text instead of five fields. The visit screen shows the active format on the note card, and the same control sits beside <b>Format</b> there.</p>
+        <p class="mini" id="noteFormatMigrationNote" style="display:none;color:#8A5A00;margin-top:4px"></p>
+        <p class="mini" id="mlsDtTestProfileLine" style="display:none;color:#8A5A00;margin-top:6px"></p>
+      </div>
       <div class="set-grid2">
         <div class="field">
           <label for="defaultFormat">Default note format</label>
@@ -5273,8 +5298,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- QoL: provider signature block (MLS) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label for="qolSignature" style="font-size:15px">✍️ Provider signature block <span style="font-weight:400;color:var(--muted)">(appended to notes)</span></label>
-      <p class="note" style="margin:2px 0 10px">Saved credentials added to the bottom of every generated note under an "Electronically signed by:" line. Leave blank to append nothing.<br>
+      <label for="qolSignature" style="font-size:15px">✍️ Provider signature block <span style="font-weight:400;color:var(--muted)">(appended when you sign)</span></label>
+      <p class="note" style="margin:2px 0 10px">Saved credentials added to the bottom of a note under an "Electronically signed by:" line when you sign it in MLS (Review &amp; Sign). A draft never carries one. Leave blank to append nothing.<br>
         <span style="color:var(--muted)">e.g. Matthew W. Schaeffer, MD — Chester County Spine Care</span></p>
       <textarea id="qolSignature" class="note-box" style="min-height:64px" placeholder="Your name, credentials, practice…"></textarea>
     </div>
@@ -5383,13 +5408,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.110</b> · requires Chrome 116+</p>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.111</b> · requires Chrome 116+</p>
         <a class="btn-primary" id="extStoreBtn" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px;margin:0 8px 8px 0">🧩 Open MLS Assist in the Chrome Web Store</a>
-        <a class="btn-ghost" id="extDlBtn" href="MLS_Assist_v3.0.110.bin" download="MLS_Assist_v3.0.110.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.110</span> (.zip)</a>
+        <a class="btn-ghost" id="extDlBtn" href="MLS_Assist_v3.0.111.bin" download="MLS_Assist_v3.0.111.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.111</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0"><b>Easiest:</b> install from the Chrome Web Store with the first button — Chrome keeps it updated. The direct download is the second option (exact pinned version). If you download it, then follow the four setup steps under <b>Integrations → Advanced integrations</b> in this dialog — or the illustrated guide at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. Already have it? Updating is the same four steps over the old folder.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.110</span>)</summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.110 - Pulls: when a day's date navigation begins on athenaOne's dashboard, whose week strip looks like a calendar date control, MLS Assist now opens Calendar > View Calendar first and re-detects the real control, once, before switching the day - a day no longer fails its navigation three times in a row because the previous day ended on the dashboard, and the receipt says the surface was restored. Everything from v3.0.109 remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.111</span>)</summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.111 - Writes: after the reviewed note sections land, MLS Assist can now save the encounter in athenaOne itself on your press - it finds the encounter's own Save control (never Sign, never billing or orders), checks it read-only first, clicks it once, and reads athenaOne's saved confirmation back before it says so. Sign stays your click. Everything from v3.0.110 remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -5589,7 +5614,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save every dated prior visit note as well (slower, most complete). Off: pulls still open each scheduled chart and save its identity, chart facts (problems, medications, allergies) and the pulled day's own visit note — only OLDER visit notes are skipped. The single-patient pull button still reads the one patient you explicitly chose.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.110.zip" download="MLS_Assist_v3.0.110.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.110 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.111.zip" download="MLS_Assist_v3.0.111.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.111 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
       </div>
       <!-- ===== advint-1.0.0 — one disclosure for everything a physician never needs =====
@@ -9683,14 +9708,57 @@ function applyTextSizePreview(v){
 function applyCompactPreview(on){ var w=!!on; if(document.body.classList.contains('compact')!==w) document.body.classList.toggle('compact', w); }
 
 /* Strip any prior signature block off the end of a note so re-generating or
-   re-saving never duplicates it (idempotent). Mirrors stripCommentBlock(). */
+   re-saving never duplicates it (idempotent). Mirrors stripCommentBlock().
+   draftsig-1.0.0 (owner-measured 2026-09-02): THE TAIL IS OPTIONAL NOW. The
+   shape in the owner's tab was a BARE "Electronically signed by:" with nothing
+   after it, and the old pattern required a newline immediately after the colon
+   - so the one shape the defect actually minted was the one shape strip could
+   not remove, and it round-tripped through every save and every reopen. Both
+   shapes are accepted: the old literal (label, newline, credential block) and
+   the bare label, with or without trailing spaces. Nothing else moves, so every
+   older saved note and the athena derivation door still strip exactly what they
+   stripped before. */
 function stripSignatureBlock(text){
-  return (text||'').replace(/\n*Electronically signed by:\n[\s\S]*$/,'').replace(/\s+$/,'');
+  return (text||'').replace(/\n*Electronically signed by:[ \t]*(?:\n[\s\S]*)?$/,'').replace(/\s+$/,'');
+}
+/* draftsig-1.0.0 — IS AN ATTESTATION TRUE RIGHT NOW?
+   The saved-credential signature block is an ATTESTATION: it says a named
+   clinician put their name to this note. On an unsigned draft that is a false
+   statement, and the owner measured it on a real visit on 2026-09-02 - every
+   generated draft carried "Electronically signed by: <doctor name>" before
+   anything was signed, and with the credential setting empty it carried a bare
+   "Electronically signed by:" attesting to nobody.
+   Two independent witnesses of "the doctor signed this in MLS", both written by
+   signNote() and by the history restore that reopens a signed note: the
+   module-level `signed` badge state, and a visible #signLine carrying the
+   attestation sentence. Either one alone is enough; neither is guessed, and a
+   draft satisfies neither. `signed` is a top-level let, so the typeof read is
+   wrapped against a temporal-dead-zone throw. */
+function _signatureBlockArmed(){
+  try{ if(typeof signed!=='undefined' && signed===true) return true; }catch(eSigArmed){}
+  try{
+    var l=document.getElementById('signLine');
+    if(l && l.style && l.style.display!=='none' && String(l.textContent||'').trim()) return true;
+  }catch(eSigLine){}
+  return false;
 }
 /* Return the note with the saved signature appended. Empty signature appends
-   nothing. Always strips a prior signature block first (idempotent). */
+   nothing. Always strips a prior signature block first (idempotent).
+   draftsig-1.0.0: THIS IS A POLICY GATE, not an unconditional append. On a note
+   that is NOT signed in MLS it STRIPS instead of appending, so a draft can never
+   carry an attestation and a stale one carried in from an older save is removed
+   on the next fold. Every existing caller therefore became correct without
+   moving - applyVisitCommentToNote() on generate / save / Settings-save, and
+   cwAppendToNote()'s re-append after a widget block. signNote() is the only
+   thing that opens the gate, which is exactly the owner's rule: the block is
+   appended when the doctor signs in MLS and at no other moment. An empty
+   credential still appends NOTHING, signed or not - there is never a bare
+   "Electronically signed by:" line, because the real attestation the doctor
+   sees and copies is the #signLine sentence, which names the signer and the
+   timestamp and does not depend on this setting. */
 function withSignatureBlock(text){
   const base=stripSignatureBlock(text);
+  if(!_signatureBlockArmed()) return base;
   const sig=getQolSignature().trim();
   return sig ? (base+'\n\nElectronically signed by:\n'+sig) : base;
 }
@@ -10277,6 +10345,11 @@ function openSettings(){
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) _gbu.value=localStorage.getItem(uns('googleBusinessUrl'))||'';
   if(typeof renderLogoSetting==='function') renderLogoSetting();
   const _df=document.getElementById('defaultFormat'); if(_df) _df.value=getDefaultFormat();
+  /* fmt-1.0.0: show the format that is ACTUALLY IN FORCE (the stamped choice, or
+     SOAP), never the unstamped stored string — displaying that string is what
+     made a test lane's press look like the doctor's own setting. */
+  const _nf=document.getElementById('noteFormatSel'); if(_nf) _nf.value=getGenStyle();
+  try{ refreshNoteFormatMigrationNote(); }catch(eNfm){} /* fmt-1.0.0 */
   const _adp=document.getElementById('autoDraftPrior'); if(_adp) _adp.checked=getAutoDraftPrior(); /* autodraft-1.0.0 */
   const _nm=document.getElementById('noteModelSel'); if(_nm){ _nm.value=getNoteModel(); const _nmPrem=(typeof effectivePremium==='function')?effectivePremium():false; _nm.disabled=!_nmPrem; const _nmh=document.getElementById('noteModelHint'); if(_nmh && !_nmPrem) _nmh.textContent='Model selection is a Premium feature — Standard always uses the fast model. Upgrade to choose the stronger model.'; }
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) _nst.value=getMlsNoteStyle();
@@ -10455,6 +10528,10 @@ function saveSettings(){
   const _facA=document.getElementById('facilityAddress'); if(_facA) localStorage.setItem(uns('facilityAddress'),(_facA.value||'').trim());
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) localStorage.setItem(uns('googleBusinessUrl'),(_gbu.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
+  /* fmt-1.0.0: saving Settings with this control on screen IS the explicit
+     choice, so it stamps. That is what makes a doctor's Narrative stick while a
+     test lane's leftover 'narrative' string does not. */
+  const _nf=document.getElementById('noteFormatSel'); if(_nf) setGenStyle(_nf.value,'settings');
   const _adp=document.getElementById('autoDraftPrior'); if(_adp) setAutoDraftPrior(!!_adp.checked); /* autodraft-1.0.0 */
   const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(['gpt-5.6-luna','gpt-5-mini','gpt-4o','gpt-4o-mini'].indexOf(_nm.value)>=0)?_nm.value:'gpt-5.6-luna'); /* 2026-08-11: honor every offered model; the old ternary coerced any non-4o pick (incl. the shipped gpt-5-mini default) back to gpt-4o on every Settings save */
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
@@ -27236,7 +27313,7 @@ let currentNoteId=null; // id of the history record being edited (null = brand n
 
 function newVisit(opts){
   opts=opts||{};
-  try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed');}catch(eGeneration){}
+  try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed','new-visit');}catch(eGeneration){}
   try{var _vh=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(_vh&&_vh.current&&_vh.current()){_vh.claim('visit-reset');_vh.release('visit-reset');}}catch(eSpeech){}
   /* a NEW encounter always requires fresh recording consent — without this,
      an unbound walk-in's day-keyed consent silently spanned every same-day
@@ -31219,20 +31296,80 @@ function _mlsEmitGeneration(kind,detail){
      is emitted only from a real refusal/settlement, never from a facade. */
   if(kind==='settled')try{window.dispatchEvent(new CustomEvent('mls:generation-complete',{detail:detail}));}catch(e2){}
 }
-function _mlsGenerationAbortError(reason){
+function _mlsGenerationAbortError(reason,field){
   var e=new Error(String(reason||'generation-aborted'));
   e.name='AbortError'; e.code=String(reason||'generation-aborted');
+  if(field)e.mlsDiscardField=String(field);
   return e;
 }
-function _mlsAbortGenerationRun(run,reason){
+/* gsrc-1.1.0 (measured 2026-09-02 10:xx) -- NAME the comparand that discarded
+   a generation run. Both discard sites threw the same opaque 'source-changed'
+   and the catch turned both into one sentence, so a field report ("it says the
+   patient changed and I never touched anything") could not be attributed to a
+   field without re-measuring live. These return KEY NAMES ONLY; they never
+   read, log, or return a value out of the parsed state - that is what keeps
+   the receipt PHI-free, because _mlsAthenaSourceState carries the transcript,
+   the context box, the visit comment and patient identity verbatim. The abort
+   CODE stays 'source-changed' at every site: it is pinned receipt vocabulary
+   and is re-emitted verbatim into the flow lane's hint. */
+function _mlsFirstDifferingSourceField(a,b){var pa=null,pb=null;try{pa=JSON.parse(String(a||''));}catch(e){}try{pb=JSON.parse(String(b||''));}catch(e2){}if(!pa||!pb)return 'unknown';var keys=['transcript','context','visitComment','patientLabel','activePatientId'];for(var i=0;i<keys.length;i++){if(String(pa[keys[i]]||'')!==String(pb[keys[i]]||''))return keys[i];}try{if(JSON.stringify(pa.patient||null)!==JSON.stringify(pb.patient||null))return 'patient';}catch(e3){}try{if(JSON.stringify(pa.visit||null)!==JSON.stringify(pb.visit||null))return 'visit';}catch(e4){}return 'unknown';}
+function _mlsNoteGenerationDiscard(runId,field){try{window.__mlsLastGenerationDiscard={runId:Number(runId||0)||0,field:String(field||'unknown'),at:Date.now()};}catch(e){}return String(field||'unknown');}
+/* gkey-1.0.0 (measured 2026-09-02 10:xx) -- #patientLabel is editable DISPLAY
+   text, not an identity source, and the request never read it:
+   buildPatientContext() reads activePatient() and #contextBox only. But
+   _calLoadNextUp() -> _heroSyncName() repaints it from whichever schedule row
+   is "up now", with a bare pl.value=n assignment and NO input event - so a
+   cosmetic label repaint mid-generation made the post-response guard discard a
+   FINISHED note as 'source-changed' and accuse the doctor of a patient mix-up
+   that never happened (measured on 2 of 4 first presses, 2026-09-02 08:2x).
+   The generation-time comparison therefore drops patientLabel and ONLY
+   patientLabel. _mlsAthenaSourceState itself is deliberately left alone: the
+   canonical athena-note staleness check and the saved-record comparison both
+   depend on its exact shape. visitComment stays in the key - it is stable
+   across the generation window and dropping it is unproven. */
+function _mlsAthenaGenerationKey(binding){
+  try{
+    var s=_mlsAthenaSourceState(binding,false);
+    if(!s)return '';
+    return JSON.stringify({v:s.v,transcript:s.transcript,context:s.context,visitComment:s.visitComment,activePatientId:s.activePatientId,patient:s.patient,visit:s.visit});
+  }catch(e){return '';}
+}
+function _mlsAthenaGenerationDivergedFields(capturedJson,binding){
+  try{
+    var was=JSON.parse(String(capturedJson||'')),now=_mlsAthenaSourceState(binding,false);
+    if(!was||!now)return [];
+    var keys=['transcript','context','visitComment','patientLabel','activePatientId','patient','visit'],out=[],k='';
+    for(var i=0;i<keys.length;i++){
+      k=keys[i];
+      if(JSON.stringify(was[k]===undefined?null:was[k])!==JSON.stringify(now[k]===undefined?null:now[k]))out.push(k);
+    }
+    return out;
+  }catch(e){return [];}
+}
+/* gsx-1.1.0 (measured 2026-09-02 10:xx) -- "did anything ELSE move?".
+   _athenaEditorFingerprint() is JSON.stringify([transcript,note,soap,ins,
+   coding,orders]), so index 0 IS the transcript; _mlsAthenaSourceState builds
+   an object literal whose transcript key IS the transcript. Removing that one
+   member is what makes the question answerable, and it is what lets a
+   transcript rewritten by a bare .value= (live dictation, a draft restore, a
+   per-patient stash restore - none of which fire an input event) be reported
+   calmly instead of as a patient mix-up. patientLabel is removed here too,
+   because gkey-1.0.0 above already took it out of the decision; leaving it in
+   would let a cosmetic repaint force the alarming sentence back. Any parse
+   failure returns null and the caller then keeps today's alarming sentence -
+   fail closed toward the safety-flavoured message. */
+function _mlsGenerationFingerprintRest(fp){try{var a=JSON.parse(String(fp||''));return Array.isArray(a)?JSON.stringify(a.slice(1)):null;}catch(e){return null;}}
+function _mlsGenerationSourceRest(fp){try{var o=JSON.parse(String(fp||''));if(!o||typeof o!=='object'||Array.isArray(o))return null;delete o.transcript;delete o.patientLabel;return JSON.stringify(o);}catch(e){return null;}}
+function _mlsAbortGenerationRun(run,reason,field){
   if(!run||run.settled||!run.controller)return false;
   run.abortReason=String(reason||'generation-aborted');
+  if(field)run.abortDiscardField=String(field);
   try{run.controller.abort(run.abortReason);}catch(e){try{run.controller.abort();}catch(e2){}}
   return true;
 }
-function _mlsAbortActiveGeneration(reason){
-  var main=_mlsAbortGenerationRun(_mlsActiveGeneration,reason);
-  var template=_mlsAbortGenerationRun(_mlsActiveGenerationTemplate,reason);
+function _mlsAbortActiveGeneration(reason,field){
+  var main=_mlsAbortGenerationRun(_mlsActiveGeneration,reason,field);
+  var template=_mlsAbortGenerationRun(_mlsActiveGenerationTemplate,reason,field);
   return main||template;
 }
 function _mlsAwaitGeneration(run,promise,timeoutMs,timeoutReason){
@@ -31279,7 +31416,7 @@ function _mlsSettleGeneration(run,status,code,message){
   run.settled=true;
   try{if(run.sourceEl&&run.sourceHandler)run.sourceEl.removeEventListener('input',run.sourceHandler);}catch(e){}
   if(_mlsActiveGeneration===run)_mlsActiveGeneration=null;
-  _mlsEmitGeneration('settled',{runId:run.id,status:status||'failed',code:String(code||''),message:String(message||'')});
+  _mlsEmitGeneration('settled',{runId:run.id,status:status||'failed',code:String(code||''),message:String(message||''),discardField:String((run&&run.abortDiscardField)||'')});
 }
 /* gcx-1.0.0 (2026-08-27) -- owner: the big Generate button "just glitches out
    and does nothing" when the anti-invention evidence gate refuses. The gate
@@ -31497,7 +31634,12 @@ function _mlsGenerationDraftTuning(evidence){
   return tuning;
 }
 async function generateNote(){
-  _mlsAbortActiveGeneration('superseded');
+  /* gsup-1.0.0 (measured 2026-09-02 10:xx): the supersede abort lives ONLY in
+     _mlsStartGeneration, where a replacement run really is being created. A
+     duplicate here ran BEFORE the five refusals below, so a press that was
+     then refused killed the healthy, already-paid-for run that was about to
+     land - and the 'superseded' catch branch is deliberately silent, so it
+     vanished without a toast and without an inline line. Do not re-add it. */
   const transcriptEl=document.getElementById('transcript');
   const transcript=transcriptEl?transcriptEl.value.trim():'';
   if(!transcript)return _mlsRefuseGeneration('empty-transcript','Capture or paste a visit first.');
@@ -31524,9 +31666,16 @@ async function generateNote(){
     const generationBinding=currentVisitAthenaBinding||_athenaBindingForCurrentVisit('generated');
     const generationEpoch=currentVisitAthenaEpoch;
     const generationSourceFingerprint=_mlsAthenaGenerationSourceFingerprint(generationBinding);
+    /* gkey-1.0.0: the FULL state string is still captured because the discard
+       receipt parses it; only the COMPARISON below narrows to the key. */
+    const generationKey=_mlsAthenaGenerationKey(generationBinding);
     const generationFingerprint=_athenaEditorFingerprint();
     const generationFormat=currentFormat;
     const generationOptFingerprint=JSON.stringify(currentOpt||null);
+    /* gsx-1.1.0: baselines for "did anything ELSE move?" at the throw site. */
+    const generationTranscriptValue=transcriptEl?String(transcriptEl.value||''):'';
+    const generationFingerprintRest=_mlsGenerationFingerprintRest(generationFingerprint);
+    const generationSourceRest=_mlsGenerationSourceRest(generationSourceFingerprint);
     const generationStyle=getGenStyle();
     const key=getKey();
     if(!hasAiNow){
@@ -31585,10 +31734,48 @@ async function generateNote(){
        the source, so its marked carried appendix must be stripped first. The
        real sidecar is NOT cleaned - a model that leaks the marker into
        athena_note fails validation closed instead of shipping stale history. */
-    const canonicalAthenaNote=_mlsValidateAthenaNote(result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note);
-    if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch))throw _mlsGenerationAbortError('source-changed');
-    if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint||_mlsAthenaGenerationSourceFingerprint(generationBinding)!==generationSourceFingerprint){
-      throw _mlsGenerationAbortError('source-changed');
+    /* sidecar-1.0.0 (measured 2026-09-02 10:xx): a refused athena_note sidecar
+       degrades the ATHENA ROUTE, never the note. This validator throws on an
+       ordinary model answer - 'ROS: Negative.' is non-substantive by contract
+       - and an unguarded throw here unwound the whole run to the catch below,
+       so a DISPLAY note that had already passed _mlsValidateStructuredNoteResult
+       was destroyed and the doctor got nothing for a paid generation. The
+       validator bytes and the write gate are unchanged; only the blast radius
+       is. */
+    let canonicalAthenaNoteOrNull=null,athenaSidecarReason='';
+    try{ canonicalAthenaNoteOrNull=_mlsValidateAthenaNote(result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note); }
+    catch(eAthenaSidecar){ athenaSidecarReason=String((eAthenaSidecar&&eAthenaSidecar.mlsAi&&eAthenaSidecar.mlsAi.detail)||'malformed athena_note').slice(0,120); }
+    const canonicalAthenaNote=canonicalAthenaNoteOrNull;
+    if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)){try{run.abortDiscardField='binding';_mlsNoteGenerationDiscard(run.id,'binding');}catch(eDbind){}throw _mlsGenerationAbortError('source-changed','binding');}
+    /* gkey-1.0.0 + gsrc-1.1.0 + gsx-1.1.0: the comparison drops #patientLabel
+       (see _mlsAthenaGenerationKey); every discard now names the comparand that
+       caused it; and a transcript that moved alone gets its own calm sentence.
+       The disjunction is still the ONLY thing that decides the throw, and the
+       labelling ladder is wrapped so a labelling throw can never be the reason
+       a discard fails to fire. Ladder order is load-bearing:
+       _athenaEditorFingerprint() ALSO contains the transcript, so the source
+       key must be consulted first or every transcript change reads 'editor'. */
+    var _mlsDiscardField='';
+    try{
+      if(currentFormat!==generationFormat)_mlsDiscardField='format';
+      else if(JSON.stringify(currentOpt||null)!==generationOptFingerprint)_mlsDiscardField='coding-optimizer';
+      else if(_mlsAthenaGenerationKey(generationBinding)!==generationKey)_mlsDiscardField=_mlsFirstDifferingSourceField(generationSourceFingerprint,_mlsAthenaGenerationSourceFingerprint(generationBinding));
+      else if(_athenaEditorFingerprint()!==generationFingerprint)_mlsDiscardField='editor';
+    }catch(eDiscardLabel){_mlsDiscardField='unknown';}
+    if(currentFormat!==generationFormat||_athenaEditorFingerprint()!==generationFingerprint||JSON.stringify(currentOpt||null)!==generationOptFingerprint||_mlsAthenaGenerationKey(generationBinding)!==generationKey){
+      try{window.__mlsLastGenerationAbortFields=_mlsAthenaGenerationDivergedFields(generationSourceFingerprint,generationBinding);}catch(eDiag){}
+      try{
+        var _nowFpRest=_mlsGenerationFingerprintRest(_athenaEditorFingerprint());
+        var _nowSrcRest=_mlsGenerationSourceRest(_mlsAthenaGenerationSourceFingerprint(generationBinding));
+        var _nowTranscript=String((document.getElementById('transcript')||{}).value||'');
+        run.abortDiff=(currentFormat===generationFormat
+          &&JSON.stringify(currentOpt||null)===generationOptFingerprint
+          &&generationFingerprintRest!==null&&_nowFpRest!==null&&_nowFpRest===generationFingerprintRest
+          &&generationSourceRest!==null&&_nowSrcRest!==null&&_nowSrcRest===generationSourceRest
+          &&_nowTranscript!==generationTranscriptValue)?'transcript-only':'source';
+      }catch(eDiff){run.abortDiff='source';}
+      try{run.abortDiscardField=_mlsDiscardField||'unknown';_mlsNoteGenerationDiscard(run.id,_mlsDiscardField||'unknown');}catch(eDiscardReceipt){}
+      throw _mlsGenerationAbortError('source-changed',_mlsDiscardField||'unknown');
     }
     currentSoap=_reorderNoteForStyle(result.note, generationStyle);
     currentNoteProvenance=generationStyle==='soap'?'generated_soap':'generated_nonsoap';
@@ -31606,7 +31793,20 @@ async function generateNote(){
     /* Bind the exact sidecar only after every deterministic display mutation
        (default comment/signature) has settled. Its fingerprint therefore owns
        the exact standard note the clinician reviewed, not the pre-render text. */
-    _mlsSetAthenaNote(canonicalAthenaNote.text,'generated');
+    if(canonicalAthenaNote){
+      _mlsSetAthenaNote(canonicalAthenaNote.text,'generated');
+    }else{
+      /* sidecar-1.0.0: these three assignments are LOAD-BEARING, not belt and
+         braces. _mlsMarkAthenaNoteStale returns early when provenance is
+         'none' (which is every FIRST generation), and _mlsAthenaCanonicalForWrite
+         answers null on 'none' - that drops _athenaBuildPlan into its
+         typed/manual branch and stages five UNVALIDATED clinical rows. Pinning
+         'stale' is what makes the write refuse instead. Mirrors the precedent in
+         _mlsSyncAthenaAfterStandardNoteMutation. */
+      try{_mlsMarkAthenaNoteStale('athena sidecar rejected: '+athenaSidecarReason);}catch(eStaleMark){}
+      try{currentAthenaNote='';currentAthenaNoteSourceFingerprint='';currentAthenaNoteProvenance='stale';}catch(eStalePin){}
+      try{_mlsAthenaClearReopenAnchor();}catch(eStaleAnchor){}
+    }
     showNote(currentFormat==='insurance'?currentInsurance:currentSoap);
     renderCoding(currentCoding);
     document.getElementById('optCard').style.display='none';
@@ -31615,7 +31815,11 @@ async function generateNote(){
     autoPopulateExtras(result);
     // If a patient-friendly summary was requested, drop it into the handout / after-visit summary.
     try{ if(result.patient_summary){ currentHandout=result.patient_summary; var hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; } var hc=document.getElementById('handoutCard'); if(hc){ hc.style.display='block'; } } }catch(e){}
-    toast(result.mlsDocumentedOnlyFallback?'Note generated from the documented words only. Review and add anything that was not captured.':(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.'),'ok');
+    toast(athenaSidecarReason?'Your note is ready to review. MLS could not build the five-field Athena payload for this draft, so Send to Athena is unavailable until you regenerate.':(result.mlsDocumentedOnlyFallback?'Note generated from the documented words only. Review and add anything that was not captured.':(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.')),athenaSidecarReason?'':'ok');
+    /* sidecar-1.0.0: a toast fades; the refusal of the Athena ROUTE must not.
+       generateNote clears both ids on entry, so this cannot leak into the next
+       run. */
+    if(athenaSidecarReason){try{window.__mlsLastAthenaSidecarReason=athenaSidecarReason;}catch(eSidecarProbe){}try{['genError','noteGenError'].forEach(function(id){var el=document.getElementById(id);if(el){el.textContent='Your note is ready to review. MLS could not build the five-field Athena payload for this draft ('+athenaSidecarReason+'), so Send to Athena is unavailable until you regenerate.';el.style.display='block';}});}catch(eSidecarSurface){}}
     /* Main draft owns the Generate lifecycle and settles now. Optional
        template formatting has its own source listener/controller/deadline;
        it may improve this successful draft later, but it can neither keep the
@@ -31647,13 +31851,27 @@ async function generateNote(){
     }else if(abortCode==='source-changed'){
       outcome='aborted'; outcomeCode=abortCode;
       if(run&&run.abortWasTranscriptEdit===true){
+        try{run.abortDiscardField='transcript-edit';_mlsNoteGenerationDiscard(run.id,'transcript-edit');}catch(eD1){}
         /* gsx-1.0.0: the doctor edited the transcript. Nothing is wrong, nothing
            was mixed up, and this is not an error - say so, and say what to do.
            No toast type: the neutral skin, plus role=status/aria-live=polite
            instead of the assertive alert an 'err' would raise. */
         outcomeMessage='You edited the transcript, so MLS stopped that draft. Your text is safe—click Generate when you are ready.';
         toast(outcomeMessage,'');
+      }else if(run&&run.abortDiff==='transcript-only'){
+        /* gsx-1.1.0 (measured 2026-09-02 10:xx): the transcript moved with NO
+           input event - live dictation assigns .value directly, as do the
+           unsaved-draft restore and the per-patient editor stash. Nothing about
+           the patient or the visit changed, so do not send the doctor hunting
+           for a chart mix-up. The decision is made AT THE THROW SITE, never
+           here: newVisit() and _athenaHandleActivePatientChange() also clear or
+           reload the transcript as part of a genuine patient switch, and a
+           catch-side transcript compare would call that "you edited the
+           transcript". */
+        outcomeMessage='The visit transcript changed while MLS was generating, so that draft was stopped. Your text is safe—click Generate when you are ready.';
+        toast(outcomeMessage,'');
       }else{
+        try{if(!(window.__mlsLastGenerationDiscard&&window.__mlsLastGenerationDiscard.runId===(run&&run.id)))_mlsNoteGenerationDiscard(run&&run.id,(err&&err.mlsDiscardField)||(run&&run.abortDiscardField)||'unknown');}catch(eD2){}
         outcomeMessage='The patient or visit source changed while MLS was generating. The older result was discarded—review the current visit and generate again.';
         toast(outcomeMessage,'err');
       }
@@ -32167,7 +32385,56 @@ function getNoteStyle(){
 }
 /* ===== NOTE GENERATION OPTIONS — per-visit style / length / focus that feed the
    main Generate Note call. Style & length persist; focus is per-visit. ===== */
-function getGenStyle(){ var v=localStorage.getItem(uns('genStyle')); if(v) return v; var ns=(getNoteStyle()||'SOAP').toLowerCase(); return ns==='apso'?'apso':(ns==='narrative'?'narrative':'soap'); }
+/* ===== fmt-1.0.0 (owner-measured 2026-09-02, real visit) — THE DISPLAY DEFAULT
+   IS THE CHART SHAPE, AND ONLY THE DOCTOR CAN MOVE IT.
+   WHAT HE SAW: a generated note headed "History: ... Examination: Not documented
+   in today's transcript. Assessment: 1. ... Plan: Not documented in today's
+   transcript." — the NARRATIVE prose family — and said "this is not a good
+   format and its missing the hpi and other stuff".
+   WHY: uns('genStyle') held 'narrative' on that account. Nothing in this file
+   ever defaults to narrative. The ONLY writer is setGenStyle(), and its only
+   pressers are the five #genStyleSeg buttons and the Easy view's style chips
+   that forward to them. On 2026-09-01 the same account carried draft-tuning
+   profiles named "QA HPI Template 2026 ..." and "Engineering Compliance
+   Assessment Template" — artifacts of TEST LANES driving this app through those
+   very controls. In one bare string, a value a test lane pressed is
+   indistinguishable from a value the doctor chose.
+   SO THE STRING IS NO LONGER THE CHOICE. An explicit pick writes a stamp —
+   {format, chosenAt, source} — and only a stamped format is honoured. A stored
+   format with no stamp is treated as UNSET, and unset is 'soap': HPI / ROS /
+   EXAM / ASSESSMENT / PLAN, the five flat headings athenaOne stages field by
+   field (GEN_STYLE_LINE.soap below is the prompt that produces them, and
+   hostedNotePreferences() maps exactly this value to the backend's
+   flat_hpi_ros_exam_assessment_plan_v1 family).
+   THE OLD VALUE IS NOT DELETED. uns('genStyle') is left exactly as it was and
+   Settings says out loud which stored format is being ignored and why, so a
+   doctor who really did choose Narrative gets it back with one press instead of
+   finding a setting silently gone. ===== */
+var GEN_FORMAT_IDS=['soap','apso','narrative','problem','hp'];
+var GEN_FORMAT_NAMES={soap:'HPI / ROS / Exam / Assessment / Plan',apso:'APSO',narrative:'Narrative',problem:'Problem-based',hp:'H&P'};
+var GEN_FORMAT_CHOICE_KEY='genStyleChoiceV1';
+function genFormatName(v){ var k=String(v||''); return Object.prototype.hasOwnProperty.call(GEN_FORMAT_NAMES,k)?GEN_FORMAT_NAMES[k]:GEN_FORMAT_NAMES.soap; }
+/* The stamp, or null. A malformed, unknown or unstamped value is null — never a
+   half-trusted format. */
+function getGenStyleChoice(){
+  try{
+    var raw=localStorage.getItem(uns(GEN_FORMAT_CHOICE_KEY)); if(!raw) return null;
+    var o=JSON.parse(raw); if(!o||typeof o!=='object'||Array.isArray(o)) return null;
+    var f=String(o.format||''); if(GEN_FORMAT_IDS.indexOf(f)<0) return null;
+    var at=String(o.chosenAt||''); if(!at) return null;
+    return {format:f, chosenAt:at, source:String(o.source||'')};
+  }catch(e){ return null; }
+}
+/* The format that IS stored but is NOT being used — the one sentence Settings
+   owes the doctor. '' when there is nothing to say: nothing stored, a stored
+   'soap' (already the chart shape), or a real stamped choice. */
+function getGenStyleIgnored(){
+  if(getGenStyleChoice()) return '';
+  var v='';
+  try{ v=String(localStorage.getItem(uns('genStyle'))||''); }catch(e){ return ''; }
+  return (v&&v!=='soap'&&GEN_FORMAT_IDS.indexOf(v)>=0)?v:'';
+}
+function getGenStyle(){ var c=getGenStyleChoice(); return c?c.format:'soap'; }
 function refreshGenSectionProfiles(){
   var api=window.__mlsDraftTuning, row=document.getElementById('genSectionProfilesRow');
   if(!api||!api.installed||typeof api.profiles!=='function') return;
@@ -32187,10 +32454,42 @@ function getGenLength(){ return localStorage.getItem(uns('genLength'))||'standar
 function getGenInstr(){ var el=document.getElementById('genInstr'); return el?el.value.trim():''; }
 function getGenPatientSummary(){ var el=document.getElementById('genPatientSummary'); return !!(el&&el.checked); }
 function _genSegSet(segId, v){ var seg=document.getElementById(segId); if(!seg) return; var btns=seg.querySelectorAll('button'); for(var i=0;i<btns.length;i++){ btns[i].classList.toggle('on', btns[i].getAttribute('data-v')===v); } }
-function setGenStyle(v){ try{ localStorage.setItem(uns('genStyle'), v); }catch(e){} _genSegSet('genStyleSeg', v); try{ refreshAutoDraftPriorRow(); }catch(eAdRow){} /* autodraft-1.0.0: the carry depends on the style */ }
+/* fmt-1.0.0: a press here is the doctor saying so, so it writes BOTH the format
+   and the stamp that makes it a choice. Without the stamp getGenStyle() would
+   keep answering 'soap' and the press would appear to do nothing. */
+function setGenStyle(v, source){
+  var f=(GEN_FORMAT_IDS.indexOf(String(v))>=0)?String(v):'soap';
+  try{ localStorage.setItem(uns('genStyle'), f); }catch(e){}
+  try{ localStorage.setItem(uns(GEN_FORMAT_CHOICE_KEY), JSON.stringify({format:f, chosenAt:new Date().toISOString(), source:String(source||'settings')})); }catch(eStamp){}
+  _genSegSet('genStyleSeg', f);
+  try{ refreshNoteFormatBadge(); }catch(eBadge){}
+  try{ refreshNoteFormatMigrationNote(); }catch(eMig){}
+  try{ refreshAutoDraftPriorRow(); }catch(eAdRow){} /* autodraft-1.0.0: the carry depends on the style */
+}
+/* fmt-1.0.0: the note card names the format the next note will be written in, so
+   a wrong format is visible AT A GLANCE instead of being discovered in the
+   generated note. */
+function refreshNoteFormatBadge(){
+  var el=document.getElementById('noteFormatBadge'); if(!el) return;
+  var f=getGenStyle();
+  el.textContent='Format: '+genFormatName(f);
+  el.title=(f==='soap')
+    ? 'HPI / ROS / Exam / Assessment / Plan - the five flat headings that match the athena chart fields. Change it under Format on the visit screen or in Settings > Note defaults.'
+    : genFormatName(f)+' - not the athena chart shape, so athenaOne gets one block of text instead of five fields. Change it under Format on the visit screen or in Settings > Note defaults.';
+  el.setAttribute('data-format', f);
+}
+/* fmt-1.0.0: never delete a doctor's real setting silently — if a stored format
+   is being ignored for want of a stamp, Settings says so and offers it back. */
+function refreshNoteFormatMigrationNote(){
+  var el=document.getElementById('noteFormatMigrationNote'); if(!el) return;
+  var ignored=getGenStyleIgnored();
+  if(!ignored){ el.style.display='none'; el.textContent=''; return; }
+  el.style.display='';
+  el.textContent='A "'+genFormatName(ignored)+'" format is stored on this device but was never chosen here, so MLS is writing notes as HPI / ROS / Exam / Assessment / Plan. Your stored setting has not been deleted - choose "'+genFormatName(ignored)+'" above and save to use it again.';
+}
 function setGenLength(v){ try{ localStorage.setItem(uns('genLength'), v); }catch(e){} _genSegSet('genLenSeg', v); }
 function toggleGenFocus(){ var el=document.getElementById('genInstr'); var b=document.getElementById('genFocusToggle'); if(!el) return; var show=el.style.display==='none'; el.style.display=show?'block':'none'; if(b) b.classList.toggle('on',show); if(show) el.focus(); }
-function initGenOptions(){ _genSegSet('genStyleSeg', getGenStyle()); _genSegSet('genLenSeg', getGenLength()); try{refreshGenSectionProfiles();}catch(e){} try{refreshAutoDraftPriorRow();}catch(eAdRow){} /* autodraft-1.0.0 */ }
+function initGenOptions(){ _genSegSet('genStyleSeg', getGenStyle()); _genSegSet('genLenSeg', getGenLength()); try{refreshGenSectionProfiles();}catch(e){} try{refreshNoteFormatBadge();}catch(eBadge){} /* fmt-1.0.0 */ try{refreshAutoDraftPriorRow();}catch(eAdRow){} /* autodraft-1.0.0 */ }
 var GEN_STYLE_LINE={
   soap:'FORMAT THE NOTE AS STANDARD SOAP using EXACTLY five flat top-level sections in this exact order, each heading alone on its own line: HPI, ROS, EXAM, ASSESSMENT, PLAN. Use no SUBJECTIVE/OBJECTIVE wrapper headings, do not combine ASSESSMENT and PLAN, and do not put content on a heading line. These exact headings are required for optional five-field Athena staging.',
   apso:'FORMAT THE NOTE AS APSO: put ASSESSMENT and PLAN FIRST, then SUBJECTIVE and OBJECTIVE (same content, reordered) — clinicians scan A/P first.',
@@ -34566,8 +34865,25 @@ function signNote(){
   const line=document.getElementById('signLine');
   line.style.display='block';
   line.textContent=`Electronically signed by ${name} on ${ts}. AI-generated — reviewed before signing.`;
+  /* draftsig-1.0.0 (owner P0 2026-09-02): THE SAVED-CREDENTIAL SIGNATURE BLOCK
+     IS FOLDED INTO THE NOTE HERE, AND NOWHERE ELSE. The badge and #signLine are
+     set above, so _signatureBlockArmed() is now open and this fold appends the
+     block for the first time; before today the same fold ran on every
+     GENERATION and painted an attestation onto an unsigned draft. The call is
+     idempotent (strip-then-append) and appends nothing when the credential
+     setting is empty, so it can also run again on the failure path below. */
+  if(currentFormat==='soap'){ try{ applyVisitCommentToNote(); }catch(eSignFold){} }
   // auto-save the signed note to history
-  if(saveCurrentNote(false)!==true){ setBadge(false); line.style.display='none'; toast('The note was not signed because it could not be saved safely.','err'); return; }
+  if(saveCurrentNote(false)!==true){ setBadge(false); line.style.display='none';
+    /* draftsig-1.0.0: the note is NOT signed, so it must not keep the block the
+       fold above just added. The gate is closed again by the un-sign on this
+       same line, so this call now STRIPS it and the draft is left as it was.
+       The un-sign itself keeps its exact one-line shape: tests/sign-claim-
+       requires-receipt.test.js pins it as the proof that the four Sign proxies
+       may trust #signLine as a receipt. */
+    if(currentFormat==='soap'){ try{ applyVisitCommentToNote(); }catch(eSignUnfold){} }
+    toast('The note was not signed because it could not be saved safely.','err'); return;
+  }
   toast('Note signed and saved to history on this device.','ok');
 }
 function fullText(){
@@ -34701,7 +35017,7 @@ function _athenaCurrentMatchesBound(binding){
 }
 function _athenaHandleActivePatientChange(previousId,nextId){
   if(String(previousId||'')===String(nextId||''))return;
-  try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed');}catch(eGeneration){}
+  try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed','active-patient');}catch(eGeneration){}
   try{_athenaResetSuperbill(true);}catch(e){}
   try{if(typeof _resetAiVisitOutputs==='function')_resetAiVisitOutputs();}catch(eAi){}
   try{var speech=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(speech&&speech.current&&speech.current()){speech.claim('patient-switch');speech.release('patient-switch');}}catch(e1){}
@@ -54321,6 +54637,16 @@ input[data-mls-next="1"],select[data-mls-next="1"],textarea[data-mls-next="1"]{
    double-tooltip this app deletes every `title` to avoid, which is why the tag
    does not also open on hover. */
 #mlsNgTag[data-shown="1"][data-reveal="1"]{ display:inline-flex; }
+/* visitpage-1.0.0 (owner 2026-09-02): AND NOT WHEN IT WOULD COVER SOMEBODY
+   ELSE'S WORDS. The pill is position:fixed, so it cannot push layout - it can
+   only cover - and the measured case had it sitting on the transcript card's
+   own header ("Visit transcript"), 5,057 px^2 of overlap, while the sentence
+   under it was about a transcript that was already full. paintTag() now looks
+   for a free row above the control and then below it, and when neither is
+   free it stamps data-blocked and the pill stays off. Nothing is lost: since
+   1.1.0 the reason lives on the control itself as data-tip and aria-label, so
+   the pill was always the decoration and never the message. */
+#mlsNgTag[data-blocked="1"]{ display:none !important; }
 /* AN INLINE LINK THAT IS THE NEXT STEP BECOMES A BUTTON. Owner: "Open in
    History →" must be BIG and glowing. It ships as a bare inline <a> inside a
    sentence, so a halo alone would ring a line of text. Scoped to
@@ -54398,6 +54724,29 @@ a[data-mls-next="1"]{
   function noteSigned() {
     var b = el('statusBadge');
     return !!(b && /signed/i.test(txt(b.textContent)));
+  }
+  /* visitpage-1.0.0 (owner 2026-09-02, from his own screenshot of the Visit
+     page mid-generation): A NOTE BEING WRITTEN IS ITS OWN STATE.
+     MEASURED on this shell, 1366x900, drafted-state harness: with 280 words in
+     the transcript and a run in flight, the lane hides/disables #ez3flGen, the
+     `paused` row's unblock hop fired, and the pill painted
+     "NEXT — Record or paste some visit text first" ON TOP OF the transcript
+     card's own header (tag 240x22 at y485, .ez3fl-txhead 690x28 at y478 —
+     5,057 px^2 of overlap), over a transcript that was already full.
+     Two lies in one pill: the sentence, and the place.
+     The engine's own lifecycle is the honest signal and the flow lane already
+     publishes it read-only, so this asks that rather than re-deriving a run
+     from a disabled button (#genBtn.disabled is dimmed for several reasons
+     that are not a run). The button proxy stays as the fallback for a shell
+     where the lane is absent. */
+  function generating() {
+    var s = safe(function () {
+      var f = window.__mlsEz3Flow;
+      return (f && f.genRun && typeof f.genRun.state === 'function') ? f.genRun.state() : null;
+    }, null);
+    if (s && typeof s.active === 'boolean') return s.active === true;
+    var g = el('ez3flGen') || el('genBtn');
+    return !!(g && g.disabled === true && hasTranscript() && !hasNote());
   }
   function activePatientId() {
     return safe(function () {
@@ -54622,9 +54971,31 @@ a[data-mls-next="1"]{
         { when: function () { return visitState() === 'recording'; },
           steps: ['.ez3fl-recbtn', '#ez3Stop', '#ez3Rec2', '#captureBtn'],
           why: 'Pause when you are done talking' },
+        /* visitpage-1.0.0: A NOTE IS BEING WRITTEN — THERE IS NO NEXT STEP.
+           This state must come BEFORE `paused`, because that is exactly the
+           state a run happens in: the transcript is full, the recorder is
+           stopped, and every forward control on the screen is deliberately
+           refusing until the engine answers. The honest answer is that there
+           is nothing to press, so `halt` stops the ladder here instead of
+           falling through to a less specific row and inventing one. The glow
+           and the pill both go dark for the length of the run and come back
+           on `mls:generation-settled` — which this block already listens to
+           through the document-level input/click/change refresh and the
+           standing keep() invariant, because visitState() changes with the
+           note. */
+        { when: generating, steps: [], halt: true },
         { when: function () { return visitState() === 'paused'; },
           steps: [
+            /* visitpage-1.0.0: THE UNBLOCK HOP IS ONLY HONEST WHEN THE THING
+               IT NAMES IS REALLY MISSING. `unblockWhen` is the gate the
+               measured defect needed: Generate refuses for several reasons
+               and only ONE of them is an empty transcript, but the hop fired
+               for all of them and said "Record or paste some visit text
+               first" over 280 captured words. With the gate, a refusal this
+               row cannot explain resolves nothing here and the ladder moves
+               on rather than lying at the doctor. */
             { sel: '#ez3flGen', unblock: '#ez3flTranscript',
+              unblockWhen: function () { return !hasTranscript(); },
               why: 'Record or paste some visit text first' },
             '#ez3Gen', '#genBtn'
           ],
@@ -54814,8 +55185,14 @@ a[data-mls-next="1"]{
     /* THE UNBLOCK HOP. The step exists and is on screen but refuses, so glow
        what makes it possible and say so. Never glow the refusing control. */
     if (typeof step !== 'string' && step.unblock && blocked(e)) {
-      var u = q(step.unblock, host) || q(step.unblock);
-      if (eligible(u)) return { el: u, why: step.why || rowWhy };
+      /* visitpage-1.0.0: the hop is gated by the step's own predicate when it
+         carries one. No predicate = the 1.1.0 behaviour, unchanged. */
+      var mayHop = (typeof step.unblockWhen !== 'function')
+        || safe(function () { return step.unblockWhen() === true; }, false);
+      if (mayHop) {
+        var u = q(step.unblock, host) || q(step.unblock);
+        if (eligible(u)) return { el: u, why: step.why || rowWhy };
+      }
     }
     return null;
   }
@@ -54830,6 +55207,12 @@ a[data-mls-next="1"]{
         var hit = resolveStep(st.steps[k], host, st.why);
         if (hit) return { room: row.id, state: s, el: hit.el, why: hit.why || '' };
       }
+      /* visitpage-1.0.0: A STATE MAY DECLARE THAT THERE IS NOTHING TO PRESS.
+         The fall-through below is right for a state that MISSED; it is wrong
+         for a state that is telling the truth about the app being busy. `halt`
+         is that declaration, and it is the difference between a dark glow and
+         an invented one. */
+      if (st.halt) return { room: row.id, state: s, el: null, why: '' };
     }
     return { room: row.id, state: -1, el: null, why: '' };
   }
@@ -54864,6 +55247,9 @@ a[data-mls-next="1"]{
           var hit = resolveStep(st.steps[k], host, st.why);
           if (hit) return { room: row.id, state: s, el: hit.el, why: hit.why || '' };
         }
+        /* visitpage-1.0.0: ...unless the state says the room is deliberately
+           between steps (see tryRow). */
+        if (st.halt) return { room: row.id, state: s, el: null, why: '' };
         /* this state matched and produced nothing actionable: fall through to
            the row's later, less specific states rather than leaving the room
            dark — the measured failure of the ring this replaces */
@@ -54898,9 +55284,9 @@ a[data-mls-next="1"]{
   function paintTag(target, why) {
     var t = tag();
     if (!t) return;
-    if (!target) { t.removeAttribute('data-shown'); return; }
+    if (!target) { t.removeAttribute('data-shown'); t.removeAttribute('data-blocked'); return; }
     var r = safe(function () { return target.getBoundingClientRect(); }, null);
-    if (!r) { t.removeAttribute('data-shown'); return; }
+    if (!r) { t.removeAttribute('data-shown'); t.removeAttribute('data-blocked'); return; }
     t.textContent = '';
     var lead = document.createElement('span');
     lead.textContent = 'NEXT';
@@ -54921,8 +55307,51 @@ a[data-mls-next="1"]{
     if (top < 4) top = Math.min(r.bottom + 6, innerHeight - tr.height - 4);
     if (left + tr.width > innerWidth - 6) left = innerWidth - tr.width - 6;
     if (left < 6) left = 6;
+    /* visitpage-1.0.0: THE PILL GETS ITS OWN ROW, OR IT DOES NOT PAINT.
+       Measured only when the tag really has a box - it is display:none until
+       it is revealed, and a 0x0 rect would make every sample point land on
+       whatever is under the control's top-left corner and blank a pill that
+       was never on screen. In that case the 1.1.0 placement stands exactly as
+       it was, which is what keeps `tagArmed` true in every state a suite
+       already pins. */
+    if (tr.width > 0 && tr.height > 0) {
+      var free = freeRow(top, left, tr.width, tr.height, target);
+      if (!free) {
+        var alt = (top <= r.top) ? Math.min(r.bottom + 6, innerHeight - tr.height - 4)
+                                 : Math.max(4, r.top - tr.height - 6);
+        if (freeRow(alt, left, tr.width, tr.height, target)) { top = alt; free = true; }
+      }
+      if (free) t.removeAttribute('data-blocked');
+      else t.setAttribute('data-blocked', '1');
+    } else t.removeAttribute('data-blocked');
     t.style.top = Math.round(top) + 'px';
     t.style.left = Math.round(left) + 'px';
+  }
+  /* Is this strip of viewport free of anybody else's TEXT? Five sample points
+     through document.elementFromPoint - no tree walk, no layout thrash beyond
+     the hit tests themselves, and the tag cannot answer for itself because it
+     is pointer-events:none. A hit only counts when the element has text of its
+     OWN (a direct text child): a container that merely spans the area is not
+     something the pill can obscure. */
+  function freeRow(top, left, w, h, target) {
+    var pts = [[left + 5, top + h / 2], [left + w / 2, top + h / 2], [left + w - 5, top + h / 2],
+               [left + w / 2, top + 2], [left + w / 2, top + h - 2]];
+    for (var i = 0; i < pts.length; i++) {
+      var x = pts[i][0], y = pts[i][1];
+      if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+      var hit = safe(function () { return document.elementFromPoint(x, y); }, null);
+      if (!hit) continue;
+      if (target && safe(function () { return hit === target || target.contains(hit) || hit.contains(target); }, false)) continue;
+      var own = '';
+      safe(function () {
+        var kids = hit.childNodes || [];
+        for (var c = 0; c < kids.length; c++) {
+          if (kids[c] && kids[c].nodeType === 3) own += String(kids[c].nodeValue || '');
+        }
+      });
+      if (trimmed(own)) return false;
+    }
+    return true;
   }
 
   /* ---------------- marking ------------------------------------------- */
@@ -54986,7 +55415,10 @@ a[data-mls-next="1"]{
     if (on) { if (t.getAttribute('data-reveal') !== '1') t.setAttribute('data-reveal', '1'); }
     else if (t.getAttribute('data-reveal')) t.removeAttribute('data-reveal');
   }
-  function onReveal() { paintTag(_marked, _last.why); setReveal(true); }
+  /* visitpage-1.0.0: REVEAL FIRST, THEN PLACE. The tag is display:none until
+     data-reveal is on it, so painting first handed paintTag a 0x0 rect and it
+     could not tell whether the row it was about to use was free. */
+  function onReveal() { setReveal(true); paintTag(_marked, _last.why); }
   function onUnreveal() { setReveal(false); }
   function armReveal(node) {
     if (_revealOn) {
@@ -55255,7 +55687,10 @@ a[data-mls-next="1"]{
            fail when the pill is not painted. tagArmed is the other half: the
            resolve produced a tag and placed it, which is true in every state
            whether or not the doctor has focused the control. */
-        tagShown: !!(t && t.getAttribute('data-shown') === '1' && t.getAttribute('data-reveal') === '1'),
+        tagShown: !!(t && t.getAttribute('data-shown') === '1' && t.getAttribute('data-reveal') === '1'
+          && t.getAttribute('data-blocked') !== '1'),
+        /* visitpage-1.0.0: the pill resolved but had nowhere to stand. */
+        tagBlocked: !!(t && t.getAttribute('data-blocked') === '1'),
         tagArmed: !!(t && t.getAttribute('data-shown') === '1'),
         /* what the control itself now carries, so the reason is provably
            reachable without the pill */

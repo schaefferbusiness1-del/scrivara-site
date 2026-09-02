@@ -73,8 +73,8 @@ function eq(a, b, msg) {
 /* ==========================================================================
  * 0.  THE MODULE EXISTS, AND IT IS THE ONLY THING THIS SUITE RUNS
  * ======================================================================== */
-const BEGIN = '/* ===== revwork-1.1.0 begin ============================================== */';
-const END = '/* ===== revwork-1.1.0 end ================================================ */';
+const BEGIN = '/* ===== revwork-1.2.0 begin ============================================== */';
+const END = '/* ===== revwork-1.2.0 end ================================================ */';
 ok(CONNECT.indexOf(BEGIN) > 0, 'the revwork block is missing from 1p-mls-connect.js');
 ok(CONNECT.indexOf(END) > CONNECT.indexOf(BEGIN), 'the revwork block has no end marker');
 eq(CONNECT.split(BEGIN).length - 1, 1, 'the revwork block is duplicated');
@@ -133,8 +133,20 @@ ok(/Open the review workspace below/.test(CONNECT),
 /* ==========================================================================
  * 3.  THE REVIEW WORKSPACE  (static half)
  * ======================================================================== */
-const CONTROL_IDS = ['mlsRevWork', 'mlsRevStatus', 'mlsRevIdentity', 'mlsRevNote',
-  'mlsRevSave', 'mlsRevSend', 'mlsRevCodes'];
+/* reviewfix-1.0.0 (owner 2026-09-02) RE-AIMED THIS PIN, AND IT IS THE SAME
+   PROPERTY, NOT A WEAKER ONE. The property is "the review workspace declares,
+   in one place, every id it owns". What changed is which ids it OWNS: three of
+   them (mlsRevNote, mlsRevSave, mlsRevSend) were PROXIES for controls the app
+   already ships - a second note textarea mirrored against #noteBox, and two
+   buttons whose only body was to press #saveNoteBtn and #pushAllEmrBtn. The
+   owner counted them as duplicates on a screen that painted the same note
+   twice. They are retired below by the same rule that retired mlsRevGen and
+   the other four in revwork-1.1.0, and the originals are ADOPTED into the
+   panel instead - so the workspace still has a note, a Save and a Send, and
+   each is now the ONE control with the app's own guards and the app's own
+   written reason when it is off. */
+const CONTROL_IDS = ['mlsRevWork', 'mlsRevStatus', 'mlsRevIdentity', 'mlsRevSlot',
+  'mlsRevTools', 'mlsRevCodes'];
 for (const id of CONTROL_IDS) {
   ok(CODE.indexOf("'" + id + "'") > 0, 'the review workspace no longer declares the id ' + id);
 }
@@ -142,9 +154,13 @@ for (const id of CONTROL_IDS) {
    without removing anything, creating duplicate stuff." Each of these five had
    a working original in the guided flow, so the workspace copy is gone and the
    original is wired instead. One control per job. */
+/* reviewfix-1.0.0 added the last three. mlsRevNote duplicated #noteBox (two
+   textareas holding one note, kept in step by a mirror), mlsRevSave
+   duplicated #saveNoteBtn and mlsRevSend duplicated #pushAllEmrBtn. */
 const RETIRED_DUPLICATES = [
   ['mlsRevGen', 'ez3Regen'], ['mlsRevCopy', 'ez3Copy'], ['mlsRevOpNote', 'ez3Prep2'],
-  ['mlsRevAvs', 'ez3flAvs'], ['mlsRevCapture', 'ez3flPaste']
+  ['mlsRevAvs', 'ez3flAvs'], ['mlsRevCapture', 'ez3flPaste'],
+  ['mlsRevNote', 'noteBox'], ['mlsRevSave', 'saveNoteBtn'], ['mlsRevSend', 'pushAllEmrBtn']
 ];
 for (const [dup, original] of RETIRED_DUPLICATES) {
   ok(CODE.indexOf("'" + dup + "'") < 0,
@@ -406,9 +422,15 @@ function paintVisitScreen(h, opts) {
   const noteCard = mk('div', 'noteCard', visitView);
   const step2 = mk('div', 'mlsAtStep2', noteCard);
   const noteBox = mk('textarea', 'noteBox', noteCard);
-  const saveBtn = mk('button', 'saveNoteBtn', noteCard);
-  const copyBtn = mk('button', 'copyEmrBtn', noteCard);
-  const push = mk('button', 'pushAllEmrBtn', noteCard);
+  /* reviewfix-1.0.0: the shell ships these four inside ONE `.note-actions` row
+     (1pScribeFlow.html, the primary last-step row), and the row - not the
+     buttons - is what the workspace adopts. Painting them as loose children
+     would measure a shape the product does not have. */
+  const actions = h.El('div'); actions.className = 'note-actions'; noteCard.appendChild(actions);
+  const signBtn = mk('button', 'signBtn', actions);
+  const saveBtn = mk('button', 'saveNoteBtn', actions);
+  const copyBtn = mk('button', 'copyEmrBtn', actions);
+  const push = mk('button', 'pushAllEmrBtn', actions);
   const emrCard = mk('div', 'emrCard', visitView);
   const emrTable = mk('table', 'emrTable', emrCard);
   /* the engine handler, verbatim in behaviour: flip the class, repaint. */
@@ -417,7 +439,7 @@ function paintVisitScreen(h, opts) {
     adv.textContent = open ? 'engine repaint: hide' : 'engine repaint: show';
     if (opts.hidesFlow) wrap.style.setProperty('display', 'none');
   });
-  return { visitView, ez3, ez3Body, wrap, adv, ptCard, ez3Note, chipHost, chips, ez3Edit, ez3Regen, ez3Copy,
+  return { visitView, ez3, ez3Body, wrap, adv, ptCard, ez3Note, chipHost, chips, ez3Edit, ez3Regen, ez3Copy, actions, signBtn,
            flTx, flGen, ez3Gen, tx, genBtn, noteCard, step2, noteBox, saveBtn, copyBtn, push, emrCard, emrTable };
 }
 
@@ -425,7 +447,7 @@ function paintVisitScreen(h, opts) {
 {
   const h = bootRevWork();
   ok(h.api && h.api.installed === true, 'revwork did not install in a bare DOM');
-  eq(h.api.version, 'revwork-1.1.0', 'revwork version stamp moved without a suite update');
+  eq(h.api.version, 'revwork-1.2.0', 'revwork version stamp moved without a suite update');
   eq(h.api.SEND_TARGET, 'pushAllEmrBtn', 'the single Athena entry is not #pushAllEmrBtn at runtime');
   eq(Array.prototype.join.call(h.api.GEN_TARGETS, ','), 'ez3flGen,ez3Gen,genBtn',
     'the runtime Generate ladder is not ez3flGen -> ez3Gen -> genBtn');
@@ -497,25 +519,42 @@ function paintVisitScreen(h, opts) {
   eq(s.noteCard.childNodes.indexOf(root), s.noteCard.childNodes.indexOf(s.step2) + 1,
     'the review workspace is not directly under the "Review the note" step banner');
   for (const id of CONTROL_IDS) ok(h.doc.getElementById(id), 'the review workspace is missing #' + id);
-  ['mlsRevSave', 'mlsRevSend', 'mlsRevCodes']
-    .forEach((id) => eq(h.doc.getElementById(id).disabled, false, '#' + id + ' ships disabled'));
+  /* gcx: the one control this module still MINTS must never ship disabled.
+     The adopted originals are a different case on purpose - #saveNoteBtn and
+     the rest ship disabled and enableOutputs() writes the reason onto them,
+     which is more honest than a copy that cannot explain itself. */
+  eq(h.doc.getElementById('mlsRevCodes').disabled, false, '#mlsRevCodes ships disabled');
   for (const [dup] of RETIRED_DUPLICATES) {
     eq(h.doc.getElementById(dup), null, 'the retired duplicate ' + dup + ' is still built at runtime');
   }
 
-  /* the mirror: one note, two windows onto it */
+  /* reviewfix-1.0.0: ONE NOTE, IN THE WORKSPACE. The mirror this block used to
+     pin is gone because the second box is gone: the app's own #noteBox is
+     MOVED into the panel, so "does the generated note reach the review box"
+     and "does an edit here reach the one note" are the same question asked of
+     one node, and cannot be answered wrong. */
+  const slot = h.doc.getElementById('mlsRevSlot');
+  ok(slot, 'the review workspace has no slot for the adopted note');
+  eq(s.noteBox.parentNode, slot, 'the one note is not inside the review workspace');
+  eq(h.doc.getElementById('mlsRevNote'), null, 'a second note textarea is back in the workspace');
   s.noteBox.value = 'SUBJECTIVE: knee pain.';
   h.api.sync();
-  eq(h.doc.getElementById('mlsRevNote').value, 'SUBJECTIVE: knee pain.',
-    'a generated note does not reach the review box');
-  const rev = h.doc.getElementById('mlsRevNote');
-  let bubbled = 0;
-  s.noteBox.addEventListener('input', () => { bubbled++; });
-  rev.value = 'SUBJECTIVE: LEFT knee pain.';
-  rev.dispatchEvent({ type: 'input', bubbles: true });
-  eq(s.noteBox.value, 'SUBJECTIVE: LEFT knee pain.', 'an edit in the review box does not reach the one note');
-  eq(bubbled, 1, 'the write-through did not announce itself, so nothing downstream re-reads the note');
+  eq(s.noteBox.parentNode, slot, 'a reconcile moved the note out of the review workspace');
+  eq(s.noteBox.value, 'SUBJECTIVE: knee pain.', 'a reconcile changed the note text');
+  /* and the app's own last-step row came with it, whole */
+  eq(s.actions.parentNode, slot, 'the last-step action row is not in the review workspace');
+  eq(s.saveBtn.parentNode, s.actions, 'Save to history left its own row');
+  eq(s.push.parentNode, s.actions, 'Review Athena actions left its own row');
+  eq(s.copyBtn.parentNode, s.actions, 'Copy note text left its own row');
+  eq(s.signBtn.parentNode, s.actions, 'Review & Sign left its own row');
   ok(h.doc.getElementById('mlsRevIdentity'), 'the workspace lost its patient identity line');
+  /* revert must PUT THEM BACK - a hot reload of this module may not take the
+     doctor's note and his whole action row out of the document */
+  h.api.revert();
+  eq(h.doc.getElementById('mlsRevWork'), null, 'revert left the panel behind');
+  eq(s.noteBox.parentNode, s.noteCard, 'revert did not return the note to #noteCard');
+  eq(s.actions.parentNode, s.noteCard, 'revert did not return the last-step row to #noteCard');
+  eq(s.saveBtn.parentNode, s.actions, 'revert scattered the last-step row');
 }
 
 /* ---- 6e. one generator, one Athena door (runtime) ---------------------- */
@@ -584,8 +623,20 @@ ok(/awaitingConsent/.test(CONNECT) && /seg\.CONSENT_PENDING/.test(CONNECT),
   /* the exact refusal must survive for the cases that ARE failures */
   const at = CONNECT.indexOf('The recorder could not start. Your existing transcript is safe.');
   ok(at > 0, 'the fail-closed recorder refusal was deleted rather than narrowed');
-  const line = CONNECT.slice(CONNECT.lastIndexOf('\n', at) + 1, CONNECT.indexOf('\n', at));
-  ok(/!started && !awaitingConsent/.test(line),
+  /* recvis-1.0.0 (2026-09-02) — SLICE RE-AIMED, PROPERTY UNCHANGED. This read
+     the ONE line the refusal sits on, which held both the gate and the toast
+     while the refusal was a one-liner. recvis-1.0.0 turned it into a block —
+     the refusal now also asks the page WHY (mic, speech-hub owner, a mid-start
+     patient switch) and leaves a persistent reason on the lane, because a toast
+     that is gone in seconds is how "sometimes it doesn't record" stayed
+     invisible. So the gate is one line up, inside the enclosing `if`, and the
+     slice reads the ENCLOSING STATEMENT instead of one line. What is asserted
+     is exactly what was asserted before: this refusal fires only for a REAL
+     failure and never for a pending consent. */
+  const stmt = CONNECT.slice(Math.max(0, at - 900), at);
+  const guard = stmt.lastIndexOf('if (');
+  ok(guard >= 0, 'the recorder refusal is no longer inside a guard at all');
+  ok(/!started && !awaitingConsent/.test(stmt.slice(guard)),
     'the recorder refusal is not gated on "a real failure, not a pending consent"');
 }
 /* run startSegment itself on all three outcomes */
@@ -772,8 +823,9 @@ function startSegmentHarness(world) {
   console.log('PASS review-workspace: ' + checks + ' checks - the guided flow cannot be hidden by the workspace toggle ' +
     '(proved by replaying the owner exact press against a DOM that hides #ez3Wrap, and by the invariant refusing to ' +
     'fight a legitimately closed visit view); the toggle is a true toggle with both labels naming the review workspace ' +
-    'BELOW the flow; #mlsRevWork is built inside #noteCard under the "Review the note" banner with eleven live, ' +
-    'never-disabled controls mirroring the one #noteBox; Generate walks the SAME ez3flGen -> ez3Gen -> genBtn ladder ' +
+    'BELOW the flow; #mlsRevWork is built inside #noteCard under the "Review the note" banner and ADOPTS the app own ' +
+    '#noteBox and its whole last-step row instead of mirroring them, with revert putting every borrowed node back; ' +
+    'Generate walks the SAME ez3flGen -> ez3Gen -> genBtn ladder ' +
     'generateTopNote walks and Send presses #pushAllEmrBtn and nothing else, with the write path closed action set ' +
     'byte-unchanged; both paste entries route through one revealer that finds a transcript the doctor can see; a ' +
     'pending consent arms the span, returns a truthy sentinel, starts the recorder when the doctor confirms and never ' +

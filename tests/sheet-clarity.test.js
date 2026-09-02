@@ -115,9 +115,21 @@ const HEAD_REGIONS = [
      halt-on-uncertain, same verified-only counting. Regions 1-4, 6 and 7 did
      not move, which is the check that this was a sequencing change and not a
      write-path change. Proven in tests/write-next-press-proof.js. */
+  /* MOVED DELIBERATELY A SECOND TIME, pullshield-1.0.0 (2026-09-02). The one
+     caller of wfbindPullBusy() that never consulted it: this queue probed
+     straight into the single athenaOne tab a schedule pull was driving, and a
+     pull that ENDS drives athenaOne back to its dashboard - the surface every
+     read-only check refuses on. The step now awaits a bounded, hidden-safe wait
+     on that same lease before it checks a row, and a pull that never lets go
+     settles the row as NOT ATTEMPTED (an attempt record, never a receipt) and
+     the queue moves on. Every gate, latch, bound, token, payload and receipt
+     path in this region is untouched - it can only DELAY or SKIP. Measured, not
+     assumed: on the pre-edit staged tree this region still hashed to 44e41349,
+     so savenamed-app-1.0.0 did not move it. Proven in
+     tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '44e41349ee1d1009cb29f74f1a484a9b70e9c6fc8f29a56017c74c207b98a0ab'],
+    '85e30a6375f57e7637dbc2a4380d978be55e47f7bd9b99b0ee7d60c11acceac1'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '5f712227078089f313988b254825795ed695d22fa6393e5a3c635d92ebcbb6f2'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',
@@ -430,7 +442,21 @@ function walk(node, fn) { fn(node); node.children.forEach(c => walk(c, fn)); }
     /* and the human click is what sends */
     go.click();
     await settle(600);
-    eq(h.executes().length, 1, 'the human Confirm click did not issue exactly one execute');
+    /* savenamed-app-1.0.0 (OWNER RULING 2026-09-02: "unblock the save block in
+       mls assistant it should be able to do it if someone clicks save on mls
+       site"). This harness pongs as MLS Assist 3.0.108+ (batchArm), where ONE
+       trusted click mints an ordered authorization the extension consumes one
+       item per execute. Under 3.0.111 the named-section review's own encounter
+       save rides that same list as the FINAL item, so this click is the section
+       write and then the encounter save - still one human click, still one
+       read-only check and one receipt per row, and still nothing signed. The
+       property this line guards - that the CLICK is what sends, and that a
+       default-checked section never sends itself - is asserted above and is
+       unchanged. */
+    eq(h.executes().length, 2, 'the human Confirm click did not issue the section write and then the encounter save');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'save_draft'],
+      'the encounter save did not ride last on the same trusted press');
+    checks++;
   }
   {
     /* THE MEASURED CAUSE, isolated: a control whose state did NOT come from the
@@ -611,10 +637,34 @@ function walk(node, fn) { fn(node); node.children.forEach(c => walk(c, fn)); }
     ok(/data-mls-state-short="1"/.test(h.stateHtml()), 'the state line carries no short sentence');
     const short = (/data-mls-state-short="1"[^>]*>([^<]*)</.exec(h.stateHtml()) || [])[1] || '';
     /* esc() renders the ampersand as &amp; - the short line is HTML, not text */
-    ok(/One click on Confirm &amp; Send runs only Write reviewed HPI\./.test(short),
-      'the READY sentence no longer names the one thing the click does: ' + short);
-    ok(/no save, no signature, no billing, no orders/.test(short),
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): this harness is a 3.0.108+
+       batch-arm extension, so the one click runs the section AND the review's
+       own encounter save. The sentence must name BOTH - saying "no save" on a
+       press that saves is the exact class of lie this pill exists to prevent -
+       and it still names every exclusion that is still true. */
+    /* RE-AIMED, readysay-1.0.0 (measured on the owner's own tab 2026-09-02
+       16:29-16:31, and the owner ruling of 2026-09-01 23:05 that governs it:
+       "nothing here should be blocked or manual or not attempted once its
+       run"). The sentence this pin froze describes a ONE-ROW press, and this
+       harness is a batch-arm extension where one trusted click authorizes the
+       whole ordered list: on his tab the pill said "One click on Confirm & Send
+       runs only Write reviewed HPI" while the button under it said "Confirm &
+       write all 6, starting with HPI" and the press wrote four sections. The
+       sentence now says what the batch actually does. Every safety property
+       this pin protects is asserted UNCHANGED below and is stronger, not
+       weaker: the save is still named on a press that saves, "no save" is still
+       forbidden on that press, and every exclusion that is still true is still
+       stated. The one-row wording itself is still pinned - on an extension that
+       cannot take a batch authorization - by tests/write-sheet-agreement-proof.js. */
+    ok(/One press writes all 1 checked section, one at a time, each read back before the next, then saves the encounter\./.test(short),
+      'the READY sentence no longer names what the click does: ' + short);
+    /* readysay-1.0.0: the exclusions now open their own sentence, so the first
+       word is capitalised. The PROPERTY is unchanged and still exact - all
+       three exclusions, in this order, on the same line. */
+    ok(/[Nn]o signature, no billing, no orders/.test(short),
       'the READY sentence dropped the scope honesty: ' + short);
+    eq(/[Nn]o save,/.test(short), false,
+      'THE PILL PROMISED NO SAVE ON A PRESS THAT SAVES: ' + short);
 
     /* EVERY honest fact survives, verbatim, one disclosure below */
     ok(h.statusText().indexOf('Ready — the exact chart is verified. One click on Confirm & Send runs only Write reviewed HPI. Nothing else.') === 0,
@@ -624,12 +674,34 @@ function walk(node, fn) { fn(node); node.children.forEach(c => walk(c, fn)); }
     /* DONE says what the doctor must now do himself, in the big line */
     h.el('mlsAthenaUnifiedGo').click();
     await settle(900);
-    eq(h.executes().length, 1, 'the words fixture did not reach one execute');
+    eq(h.executes().length, 2, 'the words fixture did not reach the write and the encounter save');
     eq(h.stateWord(), 'DONE', 'a verified write does not say DONE: ' + h.stateWord());
     const doneShort = (/data-mls-state-short="1"[^>]*>([^<]*)</.exec(h.stateHtml()) || [])[1] || '';
-    ok(/Save, then Sign/.test(doneShort), 'the DONE line does not name Save then Sign as THE next manual step: ' + doneShort);
-    ok(/MLS never saves and never signs/.test(doneShort), 'the DONE line dropped the never-saves-never-signs honesty: ' + doneShort);
-    ok(/read back successfully/.test(h.statusText()), 'the receipt sentence was lost from the full detail: ' + h.statusText());
+    /* savenamed-app-1.0.0 (OWNER RULING 2026-09-02, verbatim: "unblock the save
+       block in mls assistant it should be able to do it if someone clicks save
+       on mls site" and, the same minute, "no one should have to touch Athena
+       this entire process"). Until 3.0.111 this line was the end of the road
+       and it sent him to athenaOne for BOTH remaining steps. The half of it
+       that was really being guarded - that MLS never SIGNS, and that Sign is
+       his own click - is asserted here and is stronger than it was, because it
+       is now the only manual step left and the line must say so. */
+    ok(/MLS saved this encounter there and read the save back/.test(doneShort),
+      'the DONE line does not say the encounter was saved and read back: ' + doneShort);
+    ok(/Only Sign is left, and Sign stays your own click in athenaOne\./.test(doneShort),
+      'the DONE line does not hand Sign - and only Sign - back to the doctor: ' + doneShort);
+    eq(/MLS never saves/.test(doneShort), false,
+      'the DONE line still claims MLS never saves, on a review MLS just saved: ' + doneShort);
+    /* savenamed-app-1.0.0: with the encounter save riding the same press this
+       sheet is a two-row run, so the status line carries the QUEUE's summary
+       and the per-row read-back sentence lives in the receipt panel, where the
+       receipt mint (resultToUnifiedReceipt, byte-identical) put it. Both are
+       asserted so neither can quietly go missing. */
+    const doneReceipt = String(h.el('mlsAthenaUnifiedReceipt').innerHTML || '');
+    ok(/read back successfully/.test(doneReceipt), 'the per-row read-back receipt sentence was lost: ' + doneReceipt);
+    ok(/MLS saved the encounter in athenaOne and read the save back\./.test(h.statusText()),
+      'the run summary does not say the encounter was saved and read back: ' + h.statusText());
+    ok(/Encounter saved in athenaOne and read back\./.test(doneReceipt),
+      'the save row does not read back its own verified sentence: ' + doneReceipt);
   }
   {
     /* A REFUSAL KEEPS ITS FULL HONEST TEXT AND IS NEVER FOLDED AWAY */
@@ -710,7 +782,14 @@ function walk(node, fn) { fn(node); node.children.forEach(c => walk(c, fn)); }
     ok(typeof h.wf.diagnostics.sheetUx.press === 'function', 'the batch lane lost the seam it presses');
     h.wf.diagnostics.sheetUx.press(h.el('mlsAthenaUnifiedGo'));
     await settle(2400);
-    eq(h.executes().length, 3, 'the one press did not send all three checked sections');
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): three sections and then
+       the review's own encounter save, on the ONE batch-arm press. The save is
+       always the LAST item and each row still runs its own read-only check and
+       mints its own receipt. */
+    eq(h.executes().length, 4, 'the one press did not send all three checked sections and then save the encounter');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'write_note', 'write_note', 'save_draft'],
+      'the encounter save did not ride last on the same press');
+    checks++;
     const state = h.wf.diagnostics.state();
     manifest.rows.filter(r => r.action === 'write_note').forEach(row => {
       const rec = state.receipts[row.id];

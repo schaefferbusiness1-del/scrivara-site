@@ -49,6 +49,11 @@
  * 1), one-press-one-section with nothing pre-probed (section 3), the re-arm and
  * the accumulating receipt (section 4), the bounded no-hang settle (section 5),
  * and the batch lane's list being on the button before any click (section 6).
+ * wfscope-1.0.0 adds to section 3 the loading panel's own honesty - it counts
+ * the checked REVIEW, so a press that wrote one of three may not say "Done", may
+ * not fill green and may not print "0 still to go" - and pins in section 6 that
+ * a press whose queue IS the whole checked review still paints exactly what it
+ * always did.
  *
  * Run:  node tests/write-next-press-proof.js
  */
@@ -377,6 +382,13 @@ function makeHarness(options) {
         capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true } });
     }
     if (m.type === 'mlsAppAthenaActionV2') {
+      /* wfrearm-1.0.0: the two shapes section 9 needs. `failExecute` is a count
+         of WRITES Athena refuses after the read-only check passed - the exact
+         live shape (a note editor that is not empty). `refuseProbe` refuses the
+         READ-ONLY check instead, which is the negative control: nothing may
+         re-arm off a check that did not pass. */
+      if (options.failExecute && m.mode === 'execute' && options.failExecute-- > 0) return deliver('mlsAppAthenaActionV2Result', m.requestId, { ok: false, blocked: true, reason: 'note-editor-not-empty' });
+      if (options.refuseProbe && m.mode === 'probe') return deliver('mlsAppAthenaActionV2Result', m.requestId, { ok: false, blocked: true, reason: 'note-editor-not-empty' });
       /* the measured stall: this row's read-only check is never answered by
          anything - not the extension, not a deadline. Only the bound can end
          it, which is precisely what must not take three minutes on screen. */
@@ -404,6 +416,9 @@ function makeHarness(options) {
   return {
     window, document: dom.document, el: dom.resolve, boxes: dom.boxes, cardHtml: dom.cardHtml,
     planText: () => dom.planNode.textContent, posted,
+    /* wfscope-1.0.0: the loading panel the owner asked to keep, read the same
+       way tests/sheet-clarity.test.js reads it. */
+    progressHtml: () => String(dom.resolve('mlsAthenaUnifiedProgress').innerHTML || ''),
     wf: window.__mlsWriteFlow,
     next: () => window.__mlsWriteFlow.diagnostics.wfnext,
     arms: () => posted.filter(m => m.type === 'mlsAppAthenaRemoteArmV1'),
@@ -487,6 +502,36 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
       'the state sentence does not name what the next press does');
     ok(pill.short.indexOf('Nothing runs for it until you do') > 0,
       'the state sentence does not say that nothing is attempted until he presses');
+
+    /* wfscope-1.0.0 (2026-09-02 12:xx): AND THE LOADING BAR COUNTS THE REVIEW.
+       Measured on the shipped bytes before this fix, with exactly this harness:
+       the panel painted "Done: 1 of 1 section written to Athena and read back.",
+       a full green bar at data-mls-prog-pct="100", and "1 written, 0 not sent,
+       0 still to go" - three inches above a plan reading "1 of 3 already
+       landed" and a button reading "Confirm & write 2 of 3". The queue is one
+       section; the review is three. */
+    const prog = h.progressHtml();
+    eq((prog.match(/data-mls-prog-row=/g) || []).length, 1,
+      'the run panel queued a section nobody pressed for');
+    ok(prog.indexOf('1 written, 0 not sent, 2 still to go') > 0,
+      'the footer does not count the checked sections this press did not reach: ' + prog);
+    eq(/data-mls-prog-pct="100"/.test(prog), false,
+      'the bar filled to 100% with two checked sections unwritten');
+    ok(prog.indexOf('Written 1 of 3 sections to Athena and read back so far.') > 0,
+      'the panel does not report the review-wide count after a one-of-three press: ' + prog);
+    eq(prog.indexOf('Done:'), -1, 'the panel said Done with two sections still to write');
+    ok(prog.indexOf('2 more checked sections still need their own Confirm press') > 0,
+      'the panel does not say the two unpressed sections are still owed: ' + prog);
+    ok(prog.indexOf('nothing runs for them until you press') > 0,
+      'the panel does not repeat that nothing runs for a section until he presses');
+    /* ...and nothing above it moved: the still-owed sections are a COUNT, not
+       queued rows, so the button, the plan and the word are what they were. */
+    eq(go.textContent, 'Confirm & write 2 of 3: Review of Systems',
+      'the loading count changed what the next press is for');
+    eq(h.planText(),
+      '3 sections checked - each needs its own Confirm press; MLS writes them one at a time and asks you before each. 1 of 3 already landed.',
+      'the up-front sentence drifted when the loading bar started counting the review');
+    eq(pill.label, 'PARTLY DONE', 'the pill changed when the loading bar started counting the review');
   }
 
   /* ================== 4. PRESS BY PRESS TO DONE, RECEIPT ACCUMULATING ======
@@ -514,8 +559,28 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     const st = h.wf.diagnostics.state();
     const verified = Object.keys(st.receipts).filter(k => st.receipts[k].status === 'verified');
     eq(verified.length, 3, 'three presses did not leave three verified receipts');
+    /* savenamed-app-1.0.0 (OWNER RULING 2026-09-02: "unblock the save block in
+       mls assistant it should be able to do it if someone clicks save on mls
+       site" / "no one should have to touch Athena this entire process"). This
+       harness is an OLD extension (3.0.84, no batchArm), so the queue is handed
+       exactly one row per press - and after the last section lands, the review's
+       own encounter save is simply the NEXT press, named on the button. That is
+       the whole of the fallback lane. */
+    eq(h.next().remainingRows().length, 1, 'the encounter save is not the one thing left after every section landed');
+    eq(h.next().remainingRows()[0].id, h.wf.diagnostics.savenamed.rowId, 'something other than the encounter save is still owed');
+    eq(h.planText(), 'All 3 checked sections are in Athena and verified. One press is left: MLS saves the encounter in athenaOne for you. Sign stays your own click.',
+      'the up-front line does not name the one press that is left');
+    eq(h.wf.diagnostics.sheetClarity.stateFor('').label, 'ONE PRESS LEFT', 'the pill claims DONE while the encounter save is still owed');
+    eq(go.disabled, false, 'the primary button went dead with the encounter save still owed');
+    eq(go.textContent, 'Confirm & save the encounter in athenaOne', 'the button does not name the save press');
+
+    /* ...and that ONE press finishes the review */
+    go.click();
+    await settle(900);
+    eq(h.executes().length, 4, 'the save press did not reach exactly one more execute');
+    eq(h.executes()[3].action, 'save_draft', 'the fourth press ran something other than the encounter save');
     eq(h.next().remainingRows().length, 0, 'the sheet still thinks something is left to write');
-    eq(h.planText(), 'All 3 checked sections are in Athena and verified. Save and Sign stay yours in athenaOne.',
+    eq(h.planText(), 'All 3 checked sections are in Athena and verified, and MLS saved the encounter in athenaOne. Only Sign is left, and Sign stays your own click in athenaOne.',
       'done does not say done');
     eq(h.wf.diagnostics.sheetClarity.stateFor('').label, 'DONE', 'the pill does not say DONE when everything landed');
     eq(go.disabled, true, 'the primary button is still live with nothing left to send');
@@ -557,13 +622,22 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     await settle(60);
     for (let p = 1; p <= 3 && !go.disabled; p++) { go.click(); await settle(700); }
 
-    eq(h.executes().length, 2, 'the two checked sections did not both land');
+    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): three presses on this old
+       extension - the two checked sections and then the review's own encounter
+       save, which is the third press and the last one. The wfdone property this
+       block exists for is unchanged and asserted right below: once there really
+       is nothing left, the plan says 'none' and the button is DEAD carrying
+       that plan's own reason. */
+    eq(h.executes().length, 3, 'the two checked sections and the encounter save did not all land');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'write_note', 'save_draft'],
+      'the encounter save was not the last press of the review');
+    checks++;
     eq(go.disabled, true, 'THE MEASURED DEFECT: every checked section landed and the primary button is still live');
     eq(go.textContent, 'Nothing left to send', 'THE MEASURED DEFECT: the button still names a write that cannot happen');
     const plan = h.wf.diagnostics.sheetUx.plan(h.wf.diagnostics.state());
     eq(plan.mode, 'none', 'the plan still claims a batch to send when every checked section is verified');
     eq(go.getAttribute('data-mls-primary-blocked'), plan.reason, 'the dead button does not carry the plan\'s own reason');
-    eq(h.planText(), 'All 2 checked sections are in Athena and verified. Save and Sign stay yours in athenaOne.',
+    eq(h.planText(), 'All 2 checked sections are in Athena and verified, and MLS saved the encounter in athenaOne. Only Sign is left, and Sign stays your own click in athenaOne.',
       'the up-front line and the button no longer agree');
     eq(h.el('mlsAthenaUnifiedReceipt').innerHTML.indexOf('Everything on this review is in Athena'), -1,
       'the green banner fired with a note row still not in Athena');
@@ -576,7 +650,7 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
       'the revived button does not name the section the next press writes');
     go.click();
     await settle(900);
-    eq(h.executes().length, 3, 'the re-checked section was not written by its own press');
+    eq(h.executes().length, 4, 'the re-checked section was not written by its own press');
     eq(go.disabled, true, 'the finished sheet left the button live again');
     eq(go.textContent, 'Nothing left to send', 'the finished sheet does not say there is nothing left');
   }
@@ -620,6 +694,11 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
       'the pill is stuck on SENDING after the queue settled');
     eq(go.disabled, false, 'the doctor cannot press again - the sheet has dead-ended');
     eq(go.textContent, 'Confirm & write 1 of 3: HPI', 'the button did not re-arm for a retry of the same section');
+    /* wfrearm-1.0.0: the re-arm section 9 adds is evidence-gated, and THIS is
+       the stage that has no evidence - its read-only check never answered at
+       all, so the button must be handed back with the label and nothing else. */
+    eq(go.getAttribute('data-mls-athena-action'), null,
+      'a read-only stage that never answered left a binding on Confirm');
   }
 
   /* ============ 6. THE BATCH LANE: THE LIST IS ON THE BUTTON BEFORE A CLICK ==
@@ -635,14 +714,22 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     const go = h.el('mlsAthenaUnifiedGo');
 
     eq(h.next().batchArmReady(), true, 'the sheet did not hear the extension advertise batchArm');
-    eq(h.planText(), '3 sections checked - one press writes all 3, one at a time, each read back before the next.',
+    /* savenamed-app-1.0.0 (OWNER RULING 2026-09-02: "unblock the save block in
+       mls assistant it should be able to do it if someone clicks save on mls
+       site" / "no one should have to touch Athena this entire process"). On the
+       BATCH-ARM lane the review's own encounter save rides the SAME press as
+       the final item - so the up-front sentence says so before the first press,
+       the button says so, and the ordered authorization on the button carries
+       one entry for it. Sections are still counted as sections: the save is
+       named by its own clause and never inflates "all N". */
+    eq(h.planText(), '3 sections checked - one press writes all 3, one at a time, each read back before the next. The same press then saves the encounter in athenaOne for you; Sign stays your own click.',
       'the batch lane does not promise what it can actually keep');
-    eq(go.textContent, 'Confirm & write all 3, starting with HPI', 'the batch lane\'s button does not say what one press does');
+    eq(go.textContent, 'Confirm & write all 3, starting with HPI, then save the encounter', 'the batch lane\'s button does not say what one press does');
 
     const count = go.getAttribute('data-mls-batch-count');
     const hashes = String(go.getAttribute('data-mls-batch-hashes') || '').split(',');
-    eq(count, '3', 'the ordered authorization is not on the button before the click');
-    eq(hashes.length, 3, 'the hash list does not carry one entry per section this press will run');
+    eq(count, '4', 'the ordered authorization is not on the button before the click');
+    eq(hashes.length, 4, 'the hash list does not carry one entry per row this press will run');
     eq(hashes[0], go.getAttribute('data-mls-preview-hash'),
       'the list does not begin with the button\'s own preview hash - MLS Assist would refuse to mint the batch');
     ok(hashes.every(x => x.length >= 8 && x.indexOf(',') < 0), 'a hash on the list cannot survive the extension\'s own parse');
@@ -650,18 +737,44 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
 
     go.click();
     await settle(1400);
-    eq(h.executes().length, 3, 'the batch lane did not write every checked section from one press');
-    assert.deepStrictEqual(h.sectionsOf(h.executes()), ['hpi', 'ros', 'exam'], 'the batch ran the sections out of order');
+    eq(h.executes().length, 4, 'the batch lane did not write every checked section from one press and then save the encounter');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'write_note', 'write_note', 'save_draft'],
+      'the encounter save did not ride LAST on the one press');
+    checks++;
+    assert.deepStrictEqual(h.sectionsOf(h.executes().filter(m => m.action === 'write_note')), ['hpi', 'ros', 'exam'],
+      'the batch ran the sections out of order');
     checks++;
     eq(h.arms().length, 0, 'the sheet self-armed instead of letting the one trusted click authorize the batch');
-    /* every execute still carries exactly one section and its own probe */
-    h.executes().forEach(function (m) {
+    /* every note execute still carries exactly one section and its own probe.
+       savenamed-app-1.0.0: the SAVE carries the review's whole named list, and
+       it must - that tuple list is what declares the shape to MLS Assist, and
+       the extension refuses the save leg unless every one of them is a named
+       destination with its exact reviewed destination string. */
+    h.executes().filter(m => m.action === 'write_note').forEach(function (m) {
       eq((m.sections || []).filter(s => s.execute === true).length, 1,
         'an execute carried more than one section - the driver takes exactly one per write');
     });
+    {
+      const save = h.executes()[3];
+      assert.deepStrictEqual((save.sections || []).map(s => s.key), ['hpi', 'ros', 'exam'],
+        'the encounter save did not carry the review\'s own named sections');
+      checks++;
+      ok((save.sections || []).every(s => s.execute === true && String(s.destination || '').indexOf('Athena encounter > ') === 0),
+        'a section on the encounter save is not a named execute:true destination - MLS Assist would refuse the shape');
+    }
     eq(h.next().remainingRows().length, 0, 'the batch lane left work behind');
-    eq(h.planText(), 'All 3 checked sections are in Athena and verified. Save and Sign stay yours in athenaOne.',
+    eq(h.planText(), 'All 3 checked sections are in Athena and verified, and MLS saved the encounter in athenaOne. Only Sign is left, and Sign stays your own click in athenaOne.',
       'the batch lane does not say done when it is done');
+    /* wfscope-1.0.0 NO-DRIFT PIN: when the press's queue IS the whole checked
+       review - every batch-arm run, and every single-section review - the
+       loading panel is byte-for-byte what it always was. "Done" and a full bar
+       are still exactly what a finished review looks like. */
+    const batchProg = h.progressHtml();
+    ok(batchProg.indexOf('Done: 3 of 3 sections written to Athena and read back.') > 0,
+      'a batch that wrote the whole checked review no longer says Done: ' + batchProg);
+    ok(/data-mls-prog-pct="100"/.test(batchProg), 'a finished batch never filled its bar');
+    eq(batchProg.indexOf('still need their own Confirm press'), -1,
+      'a finished batch was told sections are still owed');
   }
 
   /* ===== 7. THE SPENT OR EXPIRED WRITE ARM IS SAID IN WORDS THAT WORK ======
@@ -704,5 +817,198 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
       'the auto-open allowlist was rewritten - a spent arm must never drive athenaOne navigation');
   }
 
-  console.log('PASS write-next-press-proof: ' + checks + ' checks - the seven write-path regions are byte-identical to the digests sheet-clarity and write-auto-chain both carry; the sheet never arms MLS Assist itself; the number of checked sections and the cost in presses are stated before the first press; one press writes exactly one section and neither probes nor writes anything for a section nobody pressed for; the sheet stays open, re-arms with the next section named, accumulates one receipt and reaches DONE; a read-only stage nothing will settle is retried once and then settled in the doctor\'s words with the button live again; and on an extension that can take a batch authorization the ordered list is on the button before the trusted click and one press writes all of them, one section per execute; with a section left unchecked the finished sheet kills its own button from the PLAN and says "Nothing left to send" instead of naming a write that would be refused, and re-ticking that section revives it; and the spent or expired write arm is said in words that name the fresh-check step instead of the extension instruction that reproduces it');
+  /* == 8. A SECTION THAT CAN NEVER BE WRITTEN DOES NOT STARVE THE OTHERS =====
+   * wfstarve-1.0.0, MEASURED 2026-09-02 09:xx on the owner's own tab (Adam
+   * #7833832, encounter 08-31, MLS Assist 3.0.107): the Assessment narrative
+   * settled "not sent", the button re-armed for the SAME section, and every
+   * later press ran the same dead end - so Plan / Follow-up and A&P (combined)
+   * were never probed and never written. The cause is in this file: a settled
+   * row mints NO receipt, wfnextRemainingRows drops a row only on a VERIFIED
+   * receipt, and on any extension below 3.0.108 the queue is handed exactly
+   * remaining[0]. Nothing unchecks the row, so remaining[0] never changes.
+   *
+   * The cure keeps the doctor's own retry (section 5 above still pins it) and
+   * then moves the row to the BACK of the same list. It is never removed, never
+   * unchecked, never called blocked, and it comes back around after the others.
+   *
+   * The load-bearing assertion is the deepStrictEqual on what was executed:
+   * on the pre-fix bytes that list is EMPTY, because nothing but the dead
+   * section is ever reached. */
+  {
+    const h = makeHarness({ deadSection: 'hpi' });
+    const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: SECTIONS, expectedContext: BOUND, receiptSessionId: 'next-starve' });
+    await settle(200);
+    const noteRows = manifest.rows.filter(r => r.action === 'write_note' && r.capability === 'ready');
+    eq(noteRows.length, 3, 'the fixture did not produce three READY note rows');
+    const deadId = noteRows[0].id;
+    const go = h.el('mlsAthenaUnifiedGo');
+
+    /* press 1 - the retry the sheet promises him is still his */
+    go.click();
+    await settle(9000);
+    eq(go.textContent, 'Confirm & write 1 of 3: HPI',
+      'the one documented retry was taken away - WFNEXT_CHECK_TIMEOUT_MSG promises "press Confirm again to retry it"');
+    eq(h.next().settleCount(deadId), 1, 'the sheet did not count the first settle, or counted it twice');
+    eq(h.next().deferred(deadId), false, 'the section was moved to the back before the doctor spent his one retry');
+    eq(h.planText().indexOf(h.next().deferredClause), -1, 'the up-front sentence announced a deferral that has not happened');
+
+    /* press 2 - he spent it, and it settled again */
+    go.click();
+    await settle(9000);
+    eq(h.next().settleCount(deadId), 2, 'the second settle was not counted');
+    eq(h.next().deferred(deadId), true, 'a section that settled twice is still at the front of the queue');
+    eq(go.textContent, 'Confirm & write 1 of 3: Review of Systems',
+      'THE MEASURED DEFECT: a section that failed twice is STILL first, so every later press is the same dead end');
+    eq(h.next().remainingRows().length, 3, 'a checked section vanished from the remaining list instead of moving to the end');
+    eq(h.next().remainingRows()[2].id, deadId, 'the deferred section is not at the back of the list');
+    eq(h.next().queueRows().length, 1, 'the deferral changed how many sections one press authorizes');
+    eq(h.next().queueRows()[0].id, h.next().remainingRows()[0].id, 'the press does not run the section the button names');
+
+    /* presses 3 and 4 - THE WHOLE POINT: the other checked sections get run */
+    go.click();
+    await settle(9000);
+    go.click();
+    await settle(9000);
+    assert.deepStrictEqual(h.sectionsOf(h.executes()), ['ros', 'exam'],
+      'THE MEASURED DEFECT: sections 2..N were never probed or written while section 1 was un-writable');
+    checks++;
+    const st = h.wf.diagnostics.state();
+    eq(Object.keys(st.receipts).filter(k => st.receipts[k].status === 'verified').length, 2,
+      'the two writable sections did not both land and read back');
+    eq(h.executes().filter(m => (m.sections || []).some(s => s.key === 'hpi')).length, 0,
+      'the section whose read-only check never answers was WRITTEN - the deferral must never bypass the check');
+
+    /* it is still checked, still owed, and it comes back around */
+    eq(h.next().remainingRows().length, 1, 'the deferred section stopped being counted as work still owed');
+    eq(h.next().remainingRows()[0].id, deadId, 'the deferred section did not come back around after the others');
+    ok(h.planText().indexOf(h.next().deferredClause) > 0,
+      'the up-front sentence never tells him a section was moved to the end');
+    eq(h.next().deferredClause,
+      ' One section was moved to the end after it did not answer twice; MLS is writing the others first and comes back to it.',
+      'the deferral clause drifted from the sentence this suite pins');
+    const hpiProbesBefore = h.sectionsOf(h.probes()).filter(k => k === 'hpi').length;
+    go.click();
+    await settle(9000);
+    ok(h.sectionsOf(h.probes()).filter(k => k === 'hpi').length > hpiProbesBefore,
+      'the deferred section never came back around - a press with only it left ran nothing');
+
+    /* the receipt stays honest: the reason wfatt-1.0.0 gives him is KEPT and
+       the deferral is added to it, never substituted for it */
+    const receipt = h.el('mlsAthenaUnifiedReceipt').innerHTML;
+    ok(receipt.indexOf(h.next().deferredMsg) > 0, 'the receipt never says the section was moved to the end');
+    eq(h.next().deferredMsg,
+      'This section did not answer twice, so MLS moved it to the end of the list and is writing the other checked sections first. It is still checked and still owed - your presses come back to it.',
+      'the deferral sentence drifted from the wording this suite pins');
+    ok(receipt.indexOf(h.wf.diagnostics.attemptLedger.checkTimeoutMsg) > 0,
+      'the deferral REPLACED the reason the doctor saw on screen instead of adding to it');
+    eq(receipt.toLowerCase().indexOf('not attempted'), -1, 'a section the run probed six times is reported as never attempted');
+    eq(receipt.toLowerCase().indexOf('blocked'), -1, 'a section that is still checked and still owed is reported as BLOCKED');
+    eq(h.next().deferredStatus, 'moved to the end', 'the deferred status word drifted');
+    eq(h.arms().length, 0, 'the sheet armed the extension itself');
+    eq(go.disabled, false, 'the sheet dead-ended - the doctor cannot press again for the section that is still owed');
+  }
+
+  /* ============ 9. A REFUSED WRITE DOES NOT WEDGE THE SHEET ================
+   * wfrearm-1.0.0, MEASURED 2026-09-02 10:xx by replaying the shipped bytes in
+   * this same harness. A press whose READ-ONLY CHECK PASSED and whose WRITE was
+   * refused (the live shape: the note editor is not empty) left the button
+   * carrying:
+   *
+   *     data-mls-athena-action = null      (executeUnifiedSelection strips it)
+   *     data-mls-preview-hash  = null
+   *     ...and the button still LIVE on the batch plan, still labelled
+   *        "Confirm & write 1 of 3: HPI"
+   *
+   * ...because the only re-arm was gated on something having LANDED, and
+   * nothing had. MLS Assist mints its write authorization from the attributes
+   * present AT CLICK TIME, so every later press dispatched an execute the
+   * extension had to refuse with 'fresh-trusted-click-required' - "Click the
+   * matching Athena action button again before continuing", which IS the button
+   * he just pressed. With two or more READY sections the section radios give
+   * him an accidental way out (their change handler re-probes); on a
+   * one-section op-note sheet writeui-1.0.0 hides that radio, so there was no
+   * control left on the sheet that could re-bind it. Permanently wedged.
+   *
+   * The load-bearing assertion is what the button was CARRYING at the instant
+   * of the SECOND click - recorded by wrapping click(), never read afterwards,
+   * because afterwards is exactly when the shipped probe re-binds it app-side
+   * while the extension has already refused. On the pre-fix bytes that recorded
+   * value is null.
+   *
+   * Nothing here weakens a gate: the app-side execute still needs state.probe
+   * bound to this exact row (it is null at the moment of the re-arm), and the
+   * extension still mints its own arm from the doctor's own trusted click. The
+   * two negatives below keep the re-arm honest - a read-only check that REFUSED
+   * and one that never answered at all must both leave the binding off. */
+  {
+    const h = makeHarness({ failExecute: 1 });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: SECTIONS, expectedContext: BOUND, receiptSessionId: 'next-refused' });
+    await settle(160);
+    const go = h.el('mlsAthenaUnifiedGo');
+    /* what the button carried AT CLICK TIME - the only thing MLS Assist reads */
+    const atClick = [];
+    const realClick = go.click;
+    go.click = function () { atClick.push(go.getAttribute('data-mls-athena-action')); realClick.call(go); };
+
+    eq(go.getAttribute('data-mls-athena-action'), 'write_note',
+      'the opening read-only check did not bind the first press');
+
+    go.click();
+    await settle(900);
+    eq(h.executes().length, 1, 'the refused press did not reach exactly one write');
+    const hpiId = h.next().remainingRows()[0].id;
+    const st1 = h.wf.diagnostics.state();
+    eq(st1.receipts[hpiId].status, 'blocked', 'a write Athena refused outright was not recorded as blocked');
+    eq(st1.halted, false, 'a plain refusal halted the manifest - nothing was partially written');
+    eq(h.next().remainingRows()[0].id, hpiId, 'the refused section is no longer the one the next press names');
+
+    eq(go.getAttribute('data-mls-athena-action'), 'write_note',
+      'THE MEASURED DEFECT: a press that landed nothing left Confirm with no extension binding, so every later press is refused');
+    ok(String(go.getAttribute('data-mls-preview-hash') || '').length >= 8,
+      'the binding is only half there - MLS Assist reads the action AND the preview hash off the button at click time');
+    eq(go.disabled, false, 'the refused sheet took the button away as well');
+
+    go.click();
+    await settle(900);
+    assert.deepStrictEqual(atClick, ['write_note', 'write_note'],
+      'THE MEASURED DEFECT: the second press reached MLS Assist carrying no action attribute, so the extension refuses it with the instruction to press the button he just pressed');
+    checks++;
+    eq(h.executes().length, 2, 'the second press did not reach a write at all');
+    eq(h.wf.diagnostics.state().receipts[hpiId].status, 'verified',
+      'the retry Athena accepted did not land and read back');
+    eq(h.arms().length, 0, 'the sheet armed the extension itself instead of letting the doctor\'s click do it');
+
+    /* NEGATIVE 1 - the read-only check REFUSED. There is no evidence this
+       section can be written, so the button must be handed back bare. */
+    const r = makeHarness({ refuseProbe: true });
+    r.wf.openUnifiedConfirmation({ patient: PATIENT, sections: SECTIONS, expectedContext: BOUND, receiptSessionId: 'next-refuseprobe' });
+    await settle(160);
+    const rgo = r.el('mlsAthenaUnifiedGo');
+    rgo.click();
+    await settle(900);
+    eq(rgo.getAttribute('data-mls-athena-action'), null,
+      'a sheet whose read-only check REFUSED was left carrying a write binding');
+    eq(r.executes().length, 0, 'a section whose read-only check refused was WRITTEN');
+
+    /* NEGATIVE 2 - the read-only check never answered at all. The bounded
+       two-attempt stage and the sentence it settles in are unchanged, and it
+       still ends unarmed. (Section 5 pins the same three facts on the same
+       shape; both must hold, because this is the case a landed-count-free
+       re-arm would be most tempted to bless.) */
+    const d = makeHarness({ deadSection: 'hpi' });
+    d.wf.openUnifiedConfirmation({ patient: PATIENT, sections: SECTIONS, expectedContext: BOUND, receiptSessionId: 'next-refusedead' });
+    await settle(200);
+    const dgo = d.el('mlsAthenaUnifiedGo');
+    const dBefore = d.probes().length;
+    dgo.click();
+    await settle(9000);
+    eq(d.probes().length - dBefore, 2,
+      'the stalled read-only stage no longer makes exactly TWO bounded attempts inside the one run');
+    eq(dgo.getAttribute('data-mls-athena-action'), null,
+      'a read-only stage that never answered left a binding on Confirm');
+    ok(String(d.el('mlsAthenaUnifiedProbe').textContent).indexOf(d.next().checkTimeoutMsg) > 0,
+      'the settled section lost the sentence that tells him it did not answer and can be pressed again');
+  }
+
+  console.log('PASS write-next-press-proof: ' + checks + ' checks - the seven write-path regions are byte-identical to the digests sheet-clarity and write-auto-chain both carry; the sheet never arms MLS Assist itself; the number of checked sections and the cost in presses are stated before the first press; one press writes exactly one section and neither probes nor writes anything for a section nobody pressed for; the sheet stays open, re-arms with the next section named, accumulates one receipt and reaches DONE; a read-only stage nothing will settle is retried once and then settled in the doctor\'s words with the button live again; and on an extension that can take a batch authorization the ordered list is on the button before the trusted click and one press writes all of them, one section per execute; with a section left unchecked the finished sheet kills its own button from the PLAN and says "Nothing left to send" instead of naming a write that would be refused, and re-ticking that section revives it; and the spent or expired write arm is said in words that name the fresh-check step instead of the extension instruction that reproduces it; and a section that can never be written keeps the one documented retry, then moves to the BACK of the same list so every other checked section is written, still checked and still owed, with its own reason kept and the deferral added to it; and a press whose read-only check passed but whose WRITE Athena refused hands the button back still carrying the action and preview-hash MLS Assist reads at click time, so the very next press is a real retry instead of "click the matching Athena action button again" - while a check that refused, and one that never answered at all, both leave that binding off; and the loading panel counts the checked REVIEW rather than the one-section queue it was handed - a press that wrote 1 of 3 reads "Written 1 of 3 sections to Athena and read back so far", "1 written, 0 not sent, 2 still to go", a bar below 100% and one line saying the other two still need their own Confirm press, with no unpressed section queued as a row, while a press whose queue IS the whole checked review still says "Done: 3 of 3" on a full bar');
 })().catch(err => { console.error('FAIL: ' + (err && err.message ? err.message : err)); process.exit(1); });

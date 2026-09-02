@@ -102,9 +102,19 @@ const STATES = [
 /* ---- 1. EVERY SITE RESOLVES THROUGH THE SHARED RESOLVER ---------------- */
 /* Executed: each site's own expression is lifted from source and evaluated, so a
    site that merely MENTIONS the resolver while reading something else fails. */
+/* RE-AIMED 2026-09-02 (draftsig-1.0.0, while auditing every signature path).
+   This pin spelled signNote()'s signer line as `const name=clinicalProviderName()
+   ||'Clinician';` and had been RED since noteact-1.0.0 landed on 2026-08-27 -
+   which STRENGTHENED the very property the pin guards. signNote() no longer
+   falls back to the anonymous 'Clinician' attestation at all: an unresolved
+   signer now REFUSES to sign and sends the doctor to Settings. The pin was
+   holding a spelling, not the property, so it is re-aimed at the shipped shape
+   and at the refusal that replaced the fallback. The property is unchanged and
+   still executed below: the signer resolves through clinicalProviderName() and
+   the block never reads getName(). */
 const SITES = [
   { what: 'signNote() — the electronic signature written INTO THE CHART',
-    fn: 'function signNote(', needle: "const name=clinicalProviderName()||'Clinician';", varName: 'name' },
+    fn: 'function signNote(', needle: 'const resolvedSigner=clinicalProviderName();', varName: 'name' },
   { what: 'ordersAsText() — the sheet pasted into a pharmacy portal',
     fn: 'function ordersAsText(', needle: "clinicalProviderName()||'Clinician'", varName: null }
 ];
@@ -116,6 +126,20 @@ const SITES = [
     assert(!/\bgetName\s*\(\s*\)/.test(body),
       site.what + ' still reads getName() — the device-local LOGIN name, which is not even synced to the ' +
       'server. On a shared login this names the wrong person.');
+  }
+
+  /* noteact-1.0.0's replacement for the 'Clinician' fallback, pinned where the
+     old spelling used to be: an unresolved signer REFUSES rather than signing
+     the chart in nobody's name, and the name that is signed is that resolved
+     signer and nothing else. */
+  {
+    const sign = stripComments(block(APP, 'function signNote(')).replace(/\s+/g, ' ');
+    assert(sign.includes('const resolvedSigner=clinicalProviderName(); if(!resolvedSigner){'),
+      'signNote() must REFUSE when the shared resolver cannot name the signer');
+    assert(sign.includes('const name=resolvedSigner;'),
+      'signNote() must sign with the resolved signer and nothing else');
+    assert(!/'Clinician'/.test(sign),
+      'signNote() must not have regained an anonymous "Clinician" attestation');
   }
 
   /* the five shared letterhead sites, counted so none is left behind */
@@ -170,9 +194,19 @@ const SITES = [
 /* Executed end to end: build the attestation string the four identity states
    produce, and require that the account name cannot appear when a roster proves
    the login belongs to somebody else. */
+/* RE-AIMED 2026-09-02 (draftsig-1.0.0). This block lifted `const name=<expr>;`
+   and evaluated it; noteact-1.0.0 (2026-08-27) renamed that to
+   `const resolvedSigner=clinicalProviderName();` AND removed the degrade-to-
+   'Clinician' branch this block used to require - an unresolved signer now
+   REFUSES to sign at all. The old expectation ("the signature must degrade to
+   the generic literal") therefore pinned behaviour the shipped code deliberately
+   made STRICTER, and the suite had been dead since. The property that matters is
+   unchanged and still executed: the account name can never reach the chart when
+   a roster proves the login belongs to somebody else. What was a generic
+   attestation is now no attestation. */
 {
   const sign = block(APP, 'function signNote(');
-  const expr = /const name=([^;]+);/.exec(stripComments(sign));
+  const expr = /const resolvedSigner=([^;]+);/.exec(stripComments(sign));
   assert(expr, 'the signature name expression was not found in signNote()');
   for (const st of STATES) {
     const ctx = { String, console };
@@ -180,7 +214,8 @@ const SITES = [
     ctx.getName = () => st.docname;
     vm.createContext(ctx);
     const name = vm.runInContext('(' + expr[1] + ')', ctx);
-    const line = 'Electronically signed by ' + name + ' on <date>.';
+    /* signNote() refuses on a falsy signer, so there is no line at all then */
+    const line = name ? ('Electronically signed by ' + name + ' on <date>.') : '';
     if (st.want === CLINICAL) {
       assert(line.includes(CLINICAL), st.key + ': the signature does not name the configured clinician: ' + line);
     }
@@ -188,8 +223,9 @@ const SITES = [
       assert(!line.includes(ACCOUNT),
         'THE FALSE ATTESTATION: with a verified roster proving the login belongs to somebody else, the ' +
         'note is still signed "' + line + '". That string is saved into the chart.');
-      assert(line.includes('Clinician'),
-        st.key + ': the signature must degrade to the generic literal, not to an empty name: ' + line);
+      assert.strictEqual(line, '',
+        st.key + ': an unidentifiable signer must produce NO attestation - signNote() refuses and sends ' +
+        'the doctor to Settings rather than signing the chart in a generic name.');
     }
     /* the solo account the setup wizard deliberately leaves with docname only must
        keep signing with its own name — blanking it would regress every solo user */

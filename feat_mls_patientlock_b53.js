@@ -75,7 +75,7 @@
 (function () {
   "use strict";
   if (window.__mlsPatientLock) return;
-  var VERSION = "1.0.2-b53";
+  var VERSION = "1.0.3-b53-nonag";
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === "function"; }
@@ -91,7 +91,7 @@
     return { id: p.id || "", name: String(p.name || "").trim(), dob: String(p.dob || "").trim(), at: Date.now() };
   }
   function currentActive() { return safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null); }
-  function clearLock() { LOCK.snapshot = null; LOCK.hasPendingWork = false; LOCK.capturing = false; }
+  function clearLock() { LOCK.snapshot = null; LOCK.hasPendingWork = false; LOCK.capturing = false; resetDeclined(); }
 
   /* ---------------- item 11: snapshot who is actually being recorded ---------------- */
   if (isFn(window.startCapture)) {
@@ -100,6 +100,7 @@
       LOCK.snapshot = snapshotOf(currentActive());
       LOCK.capturing = true;
       LOCK.hasPendingWork = true;
+      resetDeclined(); /* nonag-1.0.0: a new visit is a new set of (visit, target) pairs */
       var out = origStart.apply(this, arguments);
       /* 2026-07-23 wedge: startCapture returns false on EVERY refused start
          (consent pending/declined/canceled, prep refusal, no recognizer). No
@@ -123,6 +124,122 @@
   function blockWhileCapturing(lockedName) {
     safe(function () { var m = "Recording is in progress for " + (lockedName || "the current patient") + " - stop the recording before switching patients (switching now risks the transcript landing on the wrong patient)."; if (typeof window.toast === "function") window.toast(m, "err"); else window.alert(m); });
   }
+  /* ===================== nonag-1.0.0 (2026-09-02) ==========================
+   * MEASURED in the owner's tab on 2026-09-02, late morning (build b1205, the
+   * copy live at the time): with an unsaved generated note
+   * for the active patient open on the Visit screen, the abandon question
+   * below re-opened again and again - "it just keeps popping up" - while the
+   * schedule's "Up now: <patient> - loaded & ready" banner and the "Up now on
+   * the schedule: <other patient>. You are working in a different chart, so
+   * nothing was switched." strip were both on screen.
+   *
+   * THE QUESTION WAS NEVER THE BUG - ITS CALLERS WERE. setActivePtId and
+   * selectPatient are the switch chokepoint for the WHOLE app, so every
+   * MACHINE arrival funnels through this guard too: the up-next/schedule tick,
+   * the up-now anchor, the athenaOne follow, the day-strip header alignment,
+   * the pull-done landing, the day-note catch-up, a visibility/focus handler,
+   * a setInterval. Each arrival re-ran decideSwitch, each one re-opened the
+   * dialog the doctor had just dismissed, and none of them had any answer to
+   * give: a tick cannot consent to abandoning a doctor's note.
+   *
+   * THE RULE, and nothing is loosened by it:
+   *   - A MACHINE arrival never asks and never switches away from unsaved
+   *     work. It is refused silently, and the only thing it may paint is the
+   *     schedule anchor strip - whose own "Switch to X" button IS the doctor's
+   *     action, and goes through this guard as one.
+   *   - A DOCTOR arrival asks exactly ONCE per (held visit, target patient).
+   *     Cancel is remembered for that pair and is not asked again until the
+   *     target changes, a new visit is recorded, or the visit is saved / sent /
+   *     cleared (clearLock). OK still switches, exactly as before.
+   * Both refusals stay fail-closed. This removes no guard; it stops one from
+   * firing at events nobody triggered.
+   *
+   * SECOND MEASUREMENT, same tab, 2026-09-02 about 11:5x, same class: an
+   * explicit setActivePtId('<other chart>') returned without throwing and
+   * activePatient() STILL named the schedule's up-now patient afterwards, so
+   * the generation that followed ran under her context. The schedule/visit
+   * anchor had re-asserted the up-now patient over a selection somebody made
+   * on purpose. So the rule has a second half, and it holds whether or not
+   * there is unsaved work:
+   *   - AN EXPLICIT SELECTION WINS AND STAYS. Once the doctor's own press (or
+   *     __mlsPatientLock.switchAsDoctor) has put a chart on screen, no machine
+   *     arrival may move the active patient off it. The anchor may paint its
+   *     honest strip - "Up now on the schedule: X ... nothing was switched",
+   *     with its own Switch button - and nothing else.
+   * ========================================================================= */
+  var GESTURE_MS = 1500;
+  var GESTURE_TYPES = { click: 1, dblclick: 1, mousedown: 1, mouseup: 1, pointerdown: 1, pointerup: 1, touchend: 1, keydown: 1, keyup: 1, keypress: 1, submit: 1, change: 1 };
+  var lastGestureAt = 0;
+  var gestureWatch = false;
+  safe(function () {
+    var d = window.document;
+    if (!d || !isFn(d.addEventListener)) return;
+    var stamp = function (e) { if (e && e.isTrusted === true) lastGestureAt = Date.now(); };
+    Object.keys(GESTURE_TYPES).forEach(function (t) { d.addEventListener(t, stamp, true); });
+    gestureWatch = true;
+  });
+  /* Is a human hand behind THIS call? A doctor's switch is always dispatched
+     inside a trusted UI event - a patient row, "Switch to X", a search pick, a
+     History reopen. A tick, a poll, a fetch completion and a visibility
+     handler are not. window.event is the event being dispatched right now, and
+     the capture-phase stamp additionally covers the short press -> microtask ->
+     selectPatient chains this app uses. If NEITHER can be observed (no DOM to
+     listen on at all), this fails OPEN toward the doctor and the pre-nonag
+     ask-every-time behavior stands - a real press is never silently refused
+     because the classifier could not run. */
+  var asDoctorDepth = 0; /* switchAsDoctor(): an explicit selection with no event behind it */
+  function doctorGesture() {
+    if (asDoctorDepth > 0) return true;
+    if (!gestureWatch) return true;
+    var ev = safe(function () { return window.event; }, null);
+    if (ev && ev.isTrusted === true && GESTURE_TYPES[safe(function () { return String(ev.type || ""); }, "")] === 1) return true;
+    return (Date.now() - lastGestureAt) <= GESTURE_MS;
+  }
+  /* THE CHART THE DOCTOR CHOSE, and the whole of "an explicit selection stays".
+     Stamped only by a switch this guard allowed for a human arrival - a press,
+     an answered abandon dialog, or switchAsDoctor. While that chart is the
+     active one, a machine arrival cannot move off it. */
+  var chosenId = null;
+  function rememberChosen(targetId) { chosenId = (targetId === null || targetId === undefined) ? '' : String(targetId); }
+  function activeIdNow() { return safe(function () { return isFn(window.getActivePtId) ? String(window.getActivePtId() || '') : ''; }, ''); }
+  function wouldOverrideChosenChart(targetId) {
+    if (!chosenId) return false;
+    if (activeIdNow() !== chosenId) return false;           /* the doctor's chart is not the one on screen */
+    return String(targetId == null ? '' : targetId) !== chosenId;
+  }
+  var declined = null; /* {targetId: 1} the doctor's own Cancels, for the visit currently held */
+  function resetDeclined() { declined = null; }
+  function declinedTarget(targetId) { return !!(declined && declined[String(targetId)] === 1); }
+  function rememberDeclined(targetId) { if (!declined) declined = {}; declined[String(targetId)] = 1; }
+  function nameOfTarget(targetId) {
+    return safe(function () { var p = isFn(window.findPatient) ? window.findPatient(String(targetId)) : null; return p ? String(p.name || "").trim() : ""; }, "");
+  }
+  /* The ONE surface a machine arrival may paint: the schedule anchor strip
+     ("Up now on the schedule: X. You are working in a different chart, so
+     nothing was switched." + Switch to X / Stay here). anchorOffer is
+     idempotent for the same target, so a poll that keeps arriving cannot stack
+     anything up, and an absent workspace simply leaves silence. */
+  function offerInsteadOfSwitching(targetId) {
+    return safe(function () {
+      var a = window.__mlsPtAnchor;
+      var nm = nameOfTarget(targetId);
+      if (!a || !isFn(a.offer) || !nm) return false;
+      return a.offer(nm, String(targetId)) === true;
+    }, false);
+  }
+  var lastStaySaidAt = 0;
+  /* A doctor press on a target already declined for this visit must not reopen
+     the dialog - but it must not look broken either. A toast is not a prompt:
+     it blocks nothing, asks nothing, and answers nothing. */
+  function saidStayingHere() {
+    if (Date.now() - lastStaySaidAt < 2000) return;
+    lastStaySaidAt = Date.now();
+    safe(function () {
+      var nm = (LOCK.snapshot && LOCK.snapshot.name) || "the current patient";
+      var m = "Staying on " + nm + " - the unsaved visit/note is still here. Save it or start a new visit, then switch.";
+      if (typeof window.toast === "function") window.toast(m, "err");
+    });
+  }
   /* 2026-07-22 non-blocking rewrite: the switch is REFUSED immediately (fail
    * closed), the in-app dialog asks, and a confirmed answer re-invokes the
    * canonical setActivePtId with a short-lived one-shot token this guard
@@ -138,7 +255,11 @@
     var ask = (typeof window.mlsConfirm === 'function') ? window.mlsConfirm : function (m) { return Promise.resolve(safe(function () { return window.confirm(m); }, true)); };
     abandonAsk = ask("You have an unsaved visit/note for " + (lockedName || "the current patient") + ".\n\nSwitching patients now will leave that work behind - it will NOT follow the new patient. Continue switching?").then(function (ok) {
       abandonAsk = null;
-      if (!ok) return;
+      /* nonag-1.0.0: Cancel is an ANSWER, and it holds for this (visit, target)
+         pair until the target changes or the visit is saved/cleared. Without
+         this the very next arrival - human or machine - asked it all over
+         again, which is the nag the owner measured. */
+      if (!ok) { rememberDeclined(targetId); return; }
       pendingAbandon = { target: String(targetId), at: Date.now() };
       safe(function () {
         /* re-run BOTH wrapped entries (Easy v2's choosePatientRow pattern):
@@ -192,9 +313,30 @@
   }
   function decideSwitch(targetId) {
     var state = switchState(targetId);
-    if (state === 'blocked') { blockWhileCapturing(LOCK.snapshot && LOCK.snapshot.name); return false; }
-    if (state === 'confirmed') { pendingAbandon = null; clearLock(); return true; }
-    if (state === 'ask') return confirmAbandon(LOCK.snapshot.name, targetId);
+    /* nonag-1.0.0: classify the ARRIVAL, not the patient. switchState above
+       stays pure; this is where anything may be said or painted. */
+    var human = doctorGesture();
+    /* nonag-1.0.0, second half: the anchor's re-assertion. A machine arrival
+       may not move the active patient off the chart the doctor chose, with or
+       without unsaved work - it offers the strip instead. Evaluated before the
+       states below so it also covers 'allow', which is where the measured
+       re-assertion happened (nothing was being recorded; the chart just moved
+       back to the schedule's up-now patient underneath the doctor). */
+    if (!human && wouldOverrideChosenChart(targetId)) { offerInsteadOfSwitching(targetId); return false; }
+    if (state === 'blocked') {
+      /* The recording block stands either way - only the message is for the
+         doctor who pressed something, never for a tick nobody triggered. */
+      if (human) blockWhileCapturing(LOCK.snapshot && LOCK.snapshot.name);
+      else offerInsteadOfSwitching(targetId);
+      return false;
+    }
+    if (state === 'confirmed') { pendingAbandon = null; clearLock(); rememberChosen(targetId); return true; }
+    if (state === 'ask') {
+      if (!human) { offerInsteadOfSwitching(targetId); return false; }   /* nonag-1.0.0: a machine never asks and never takes the work */
+      if (declinedTarget(targetId)) { saidStayingHere(); return false; } /* nonag-1.0.0: already answered for this exact pair */
+      return confirmAbandon(LOCK.snapshot.name, targetId);
+    }
+    if (human) rememberChosen(targetId); /* nonag-1.0.0: this chart is now the doctor's explicit choice */
     return true;
   }
   /* True when this exact switch is about to be REFUSED (recording block, or the
@@ -293,7 +435,24 @@
     version: VERSION,
     /* pure, side-effect-free; safe for an outer wrapper to call on every switch */
     switchWillBeRefused: switchWillBeRefused,
+    /* nonag-1.0.0: an EXPLICIT selection with no user event behind it - a
+       console/API call, or a feature that means "the doctor chose this". It is
+       treated exactly as a press: it asks once if there is unsaved work, it is
+       never swallowed silently, and the chart it lands on then stays put
+       against every machine arrival. A bare setActivePtId() from a script is
+       indistinguishable from a schedule tick, which is why this exists. */
+    switchAsDoctor: function (id) {
+      asDoctorDepth++;
+      try {
+        safe(function () { if (isFn(window.setActivePtId)) window.setActivePtId(id); });
+        safe(function () { if (isFn(window.selectPatient)) window.selectPatient(id); });
+      } finally { asDoctorDepth--; }
+      return activeIdNow() === String(id == null ? '' : id);
+    },
     _debugState: function () { return safe(function () { return JSON.parse(JSON.stringify(LOCK)); }, LOCK); },
+    /* nonag-1.0.0 live handle: is the arrival classifier watching, and which
+       targets has the doctor already declined for the visit now held. */
+    _nonagState: function () { return { gestureWatch: gestureWatch, lastGestureAt: lastGestureAt, chosenId: chosenId, declined: Object.keys(declined || {}) }; },
     revert: function () { window.__mlsPatientLock.installed = false; }
   };
 })();
